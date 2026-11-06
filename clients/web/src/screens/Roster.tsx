@@ -86,8 +86,8 @@ function PersonRow({ m, slug, canManage, tagNames, act }: { m: RosterMember; slu
           <span className="mono">{m.role === 'lead' ? 'Team lead' : 'Member'}</span>
         )}
         {m.tags.map((t) => (
-          <span key={t} className="tagx">
-            {t}
+          <span key={t} className="tagx" title={t}>
+            {t.replace(/^role:/, '')}
             {canManage ? (
               <button type="button" className="tag-x" aria-label={`Remove ${t} from ${m.displayName}`} onClick={() => void act(() => unassignTeamTag(slug, m.personId, t))}><CloseIcon size={10} /></button>
             ) : null}
@@ -103,7 +103,7 @@ function PersonRow({ m, slug, canManage, tagNames, act }: { m: RosterMember; slu
               void act(() => assignTeamTag(slug, m.personId, value.startsWith('role:') ? value : `role:${value}`)).then(() => setTag(''));
             }}
           >
-            <input aria-label={`Tag for ${m.displayName}`} list={listId} value={tag} onChange={(e) => setTag(e.target.value)} placeholder="role:on-call" />
+            <input aria-label={`Tag for ${m.displayName}`} list={listId} value={tag} onChange={(e) => setTag(e.target.value)} placeholder="on-call" />
             <datalist id={listId}>{tagNames.map((t) => <option key={t} value={t} />)}</datalist>
             <button type="submit" className="btn" aria-label={`Add tag to ${m.displayName}`}>Add tag</button>
           </form>
@@ -178,7 +178,7 @@ export function Roster() {
           <div className="roster" data-landmark="roster">
             <PageHeader title={<>{t.name}{t.archivedAt ? ' (archived)' : ''}</>} />
             <p className="lede" data-landmark="lede">
-              {members.length} {members.length === 1 ? 'person' : 'people'}{def ? `, ${def.bots.length} bots, ${def.channels.length} channels` : ''}. This team's memory is stored in the <span className="mono">team:{t.slug}</span> bank and is not readable from other teams.
+              {members.length} {members.length === 1 ? 'person' : 'people'}{def ? `, ${def.bots.length} bots, ${def.channels.length} channels` : ''}. This team's memory is kept apart and is not readable from other teams.
             </p>
             {error ? <Alert>{error}</Alert> : null}
 
@@ -249,7 +249,7 @@ export function Roster() {
               <h2 className="bh" id="memory">Memory</h2>
               <div className="mrow memory-row">
                 <div>Team bank<div className="d">Built from everything that happens in this team's channels</div></div>
-                <div className="mono">Hindsight · team:{t.slug}</div>
+                <div className="mono" title={`team:${t.slug}`}>Kept apart from other teams</div>
               </div>
             </section>
           </div>

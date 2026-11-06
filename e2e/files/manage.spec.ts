@@ -28,7 +28,7 @@ test('a new page, a new folder, rename, move and delete: one commit each, by Nad
     const dialog = page.getByTestId('dialog-new-file');
     await dialog.getByLabel('Name').fill('retro');
     await dialog.getByRole('button', { name: 'Create' }).click();
-    await expect(page.getByTestId('file-view-path')).toHaveText('pages/retro.md');
+    await expect(page.getByTestId('file-view-path')).toHaveAttribute('title', 'pages/retro.md');
     expect(await blobOf(api, 'pages/retro.md')).toBe('# Retro\n\n');
     let commits = await commitsOf(stack);
     expect(commits.length).toBe(before + 1);

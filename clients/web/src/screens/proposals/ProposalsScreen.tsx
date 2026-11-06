@@ -1,3 +1,4 @@
+import { friendlyPath } from '../../components/friendlyPath';
 import { PageHeader } from '../../components/PageHeader';
 import type { Proposal, ProposalDetail } from '@manythreads/shared';
 import { useState } from 'react';
@@ -27,7 +28,7 @@ function Row({ p, slug }: { p: Proposal; slug: string }) {
       <span className="pp-row-main">
         <span className="pp-row-title">{p.title}</span>
         <span className="pp-row-meta">
-          <span className="mono">{p.path}</span> · {opWords(p)} · {p.authorName} · <Time iso={p.createdAt} />
+          <span title={p.path}>{friendlyPath(p.path)}</span> · {opWords(p)} · {p.authorName} · <Time iso={p.createdAt} />
         </span>
       </span>
       <span className="pp-row-side">
@@ -147,7 +148,7 @@ export function ProposalPage() {
                 testIds={{ title: 'proposal-title' }}
                 description={(
                   <>
-                    {opWords(p)} <span className="mono">{p.path}</span> ({placeOf(p.path).toLowerCase()}) · proposed by {p.authorName}{p.authorKind === 'bot' ? ' (a bot)' : ''} · <Time iso={p.createdAt} />
+                    {opWords(p)} <span title={p.path}>{friendlyPath(p.path)}</span> ({placeOf(p.path).toLowerCase()}) · proposed by {p.authorName}{p.authorKind === 'bot' ? ' (a bot)' : ''} · <Time iso={p.createdAt} />
                   </>
                 )}
                 actions={<StatusPill status={p.status} />}

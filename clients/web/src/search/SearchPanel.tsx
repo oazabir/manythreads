@@ -1,3 +1,4 @@
+import { friendlyPath } from '../components/friendlyPath';
 import { useMemo } from 'react';
 import { parseSearchText, type SearchFileHit, type SearchMessageHit, type SearchPageHit, type SearchThreadHit } from '@manythreads/shared';
 import { useNavigate } from 'react-router';
@@ -152,7 +153,7 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
                   >
                     <span className="hit-where">
                       <span className="hit-ch">Page</span>
-                      <span>{h.path}</span>
+                      <span title={h.path}>{friendlyPath(h.path)}</span>
                       <span data-vt-mask>{ago(h.updatedAt)}</span>
                     </span>
                     <span className="hit-snip"><Highlight text={h.snippet || h.name} query={words} /></span>

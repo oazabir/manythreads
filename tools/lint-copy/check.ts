@@ -9,7 +9,7 @@ import ts from 'typescript';
  * hold labels. Text inside `<code>`, `<pre>` and `<kbd>` is skipped (it is shown as a command or a name on purpose).
  */
 
-export type CopyRule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
+export type CopyRule = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8';
 export type CopyFinding = { file: string; line: number; rule: CopyRule; text: string };
 export type AllowEntry = { file: string; text: string; why: string };
 
@@ -27,6 +27,12 @@ const RULES: { rule: CopyRule; re: RegExp }[] = [
   { rule: 'R6', re: /\b(?:10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|localhost:\d+|127\.0\.0\.1)/ },
   { rule: 'R7', re: /\b(?:OKF|RLS|outbox|allowlist|broker|slug|frontmatter|DLP|loader)\b/i },
 ];
+
+/**
+ * R8: a value that holds a path or a branch shown as it is. The text is built from data, so the other rules cannot see it; the name of
+ * the variable gives it away (`{row.path}`, `{p.path}`, `{card.branch}`). Show a plain name (friendlyPath) and keep the raw value in a tooltip.
+ */
+const DATA_PATH = /^(?:[\w$]+\.)*(?:path|filePath|repoPath|branch)$/;
 
 /** A web address (api.github.com) is not a setting name, so R3 leaves it alone. */
 const HOST_END = /\.(?:com|org|net|io|dev|ai|to|app|cloud)$/;
@@ -75,6 +81,11 @@ export function lintSource(file: string, source: string): CopyFinding[] {
       if (ts.isJsxText(node)) add(node, node.text);
       else if (ts.isJsxExpression(node) && node.expression && !ts.isJsxAttribute(node.parent)) {
         strings(node.expression, add);
+        const e = node.expression;
+        if ((ts.isIdentifier(e) || ts.isPropertyAccessExpression(e)) && DATA_PATH.test(e.getText(sf))) {
+          const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+          out.push({ file, line, rule: 'R8', text: `{${e.getText(sf)}}` });
+        }
       } else if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) || ts.isJsxAttribute(node) && ts.isJsxNamespacedName(node.name)) {
         const name = node.name.getText(sf);
         if (ATTRS.has(name) && !SKIP_ATTRS.has(name) && node.initializer) {

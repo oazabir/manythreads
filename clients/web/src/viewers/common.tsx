@@ -1,3 +1,4 @@
+import { friendlyPath } from '../components/friendlyPath';
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { baseName } from './mime';
 
@@ -5,7 +6,7 @@ import { baseName } from './mime';
 export function ViewerBar({ path, children }: { path: string; children?: ReactNode }) {
   return (
     <div className="vw-bar" data-testid="viewer-bar">
-      <span className="vw-path" title={path}>{path}</span>
+      <span className="vw-path" title={path}>{friendlyPath(path)}</span>
       <div className="vw-actions">{children}</div>
     </div>
   );

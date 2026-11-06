@@ -330,9 +330,8 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
                       <span className="bd-card-state">{STATE_LABEL[card.state]}</span>
                     </div>
                     <p className="bd-card-title">{card.title}</p>
-                    <p className="bd-card-meta">
+                    <p className="bd-card-meta" title={`Work branch: ${card.branch}`}>
                       <span data-testid="card-owner-label">{ownerLabel(card.ownerId, people.roster, people.bots)}</span>
-                      <span className="mono">{card.branch}</span>
                     </p>
                     {card.blockerReason ? <p className="bd-card-blocker">{card.blockerReason}</p> : null}
                     {card.reworkCount > 0 || card.handoffCount > 0 ? (

@@ -56,12 +56,12 @@ test('Omar creates Engineering from the template, invites Nadia and Rafi, and ta
   const rafi = people.locator(`[data-person="${personaEmail('rafi')}"]`);
   await rafi.getByLabel(/^Tag for /).fill('role:release-manager');
   await rafi.getByRole('button', { name: /^Add tag to / }).click();
-  await expect(rafi.locator('.tagx', { hasText: 'role:release-manager' })).toHaveCount(1);
+  await expect(rafi.locator('.tagx', { hasText: 'release-manager' })).toHaveCount(1);
   await expect(people.locator(`[data-person="${personaEmail('nadia')}"] .tagx`)).toHaveCount(0);
 
   // and it is still there after a reload
   await page.reload();
-  await expect(page.locator(`[data-person="${personaEmail('rafi')}"] .tagx`, { hasText: 'role:release-manager' })).toHaveCount(1);
+  await expect(page.locator(`[data-person="${personaEmail('rafi')}"] .tagx`, { hasText: 'release-manager' })).toHaveCount(1);
 
   // applying the template again for the same slug creates nothing new
   await page.goto('/teams');

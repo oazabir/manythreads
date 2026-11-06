@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { fileKind, fileSize } from '../../channels/format';
+import { friendlyPath } from '../../components/friendlyPath';
 import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { usePanelSub, usePanelTitle } from '../../kernel/panel/sub';
@@ -21,7 +22,7 @@ export function describe(row: FileRow): string {
     return [row.size === null ? null : fileSize(row.size), kind.label].filter(Boolean).join(' · ');
   }
   const folder = parentOf(row.path);
-  return [folder === '' ? 'Top folder' : folder, row.by ? `updated by ${row.by.name}` : null, row.modifiedAt ? whenLabel(row.modifiedAt) : null].filter(Boolean).join(' · ');
+  return [friendlyPath(folder), row.by ? `updated by ${row.by.name}` : null, row.modifiedAt ? whenLabel(row.modifiedAt) : null].filter(Boolean).join(' · ');
 }
 
 function Kv({ row, files }: { row: FileRow; files: TeamFiles }) {
@@ -29,7 +30,7 @@ function Kv({ row, files }: { row: FileRow; files: TeamFiles }) {
   return (
     <dl className="fp-kv" data-testid="file-details">
       <dt>Path</dt>
-      <dd className="mono" data-testid="file-path">{row.path}</dd>
+      <dd data-testid="file-path" title={row.path}>{friendlyPath(row.path)}</dd>
       {row.by ? (<><dt>Posted by</dt><dd data-vt-mask>{row.by.name}</dd></>) : null}
       {channel ? (<><dt>In</dt><dd>{`# ${channel}`}</dd></>) : null}
       <dt>Visible to</dt>

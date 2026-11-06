@@ -1,5 +1,6 @@
 import type { InstallRecipeResponse, RecipeCard } from '@manythreads/shared';
 import type { ReactNode } from 'react';
+import { friendlyPath } from '../../components/friendlyPath';
 import { Link } from 'react-router';
 import { checksLine, fileRole, filedLine, needsLine, runtimeLine, stateLook, type InstallGate } from './words';
 
@@ -79,7 +80,7 @@ export function RecipeFacts({ card }: { card: RecipeCard }) {
         <p className="rg-p faint">Three proposals for a team lead or workspace admin to read and approve. Nothing changes before then.</p>
         <ul className="rg-files">
           {card.paths.map((p) => (
-            <li key={p}><span className="rg-role">{fileRole(p)}</span> <span className="mono rg-path">{p}</span></li>
+            <li key={p}><span className="rg-role">{fileRole(p)}</span> <span className="rg-path" title={p}>{friendlyPath(p)}</span></li>
           ))}
         </ul>
       </Facts>
@@ -103,7 +104,7 @@ export function Filed({ slug, result }: { slug: string; result: InstallRecipeRes
         {result.proposals.map((p) => (
           <li key={p.id}>
             <Link to={`/t/${slug}/proposals/${p.id}`} data-testid="recipe-proposal-link">{fileRole(p.path)}</Link>{' '}
-            <span className="mono rg-path">{p.path}</span>
+            <span className="rg-path" title={p.path}>{friendlyPath(p.path)}</span>
             {p.checksOk ? null : <span className="rg-bad"> · a check failed, open it to see why</span>}
           </li>
         ))}

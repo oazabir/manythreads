@@ -1,3 +1,4 @@
+import { friendlyPath } from '../../components/friendlyPath';
 import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { ViewerMessage } from '../../viewers/common';
@@ -32,7 +33,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
   return (
     <div className="fview" data-landmark="file-view" data-testid="file-view" data-path={row.path}>
       <div className="fvh">
-        <span className="p" data-testid="file-view-path">{row.path}</span>
+        <span className="p" data-testid="file-view-path" title={row.path}>{friendlyPath(row.path)}</span>
         <span className="m" data-vt-mask>{row.modifiedAt ? `updated ${whenLabel(row.modifiedAt)}` : ''}{row.by ? ` by ${row.by.name}` : ''}</span>
         <div className="r">
           {git ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: row.path })}>History</button> : null}

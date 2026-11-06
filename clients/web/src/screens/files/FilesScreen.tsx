@@ -1,3 +1,4 @@
+import { friendlyPath } from '../../components/friendlyPath';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Dialog } from '../../components/Dialog';
@@ -73,7 +74,7 @@ export function FilesScreen() {
   const info = state?.listing?.folder;
   const rootState = folders.get(ROOT);
   const rows = state?.listing?.rows ?? [];
-  const fileCount = rows.filter((r) => r.kind === 'file').length;
+  const itemCount = rows.length;
 
   const go = useCallback(
     (next: { folder?: string; open?: string | null }): void => {
@@ -250,7 +251,7 @@ export function FilesScreen() {
         else setTextOnly((n) => [...n, ...[...e.dataTransfer.files].map((f) => f.name)]);
       }}
     >
-      <PageHeader title="Files" description={open ? open : `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`} actions={narrow ? undefined : actions} />
+      <PageHeader title="Files" description={open ? friendlyPath(open) : `${itemCount} ${itemCount === 1 ? 'item' : 'items'}`} actions={narrow ? undefined : actions} />
       <div className="fbody">
         {narrow ? null : tree}
         {open ? (

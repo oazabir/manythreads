@@ -27,7 +27,7 @@ test('WYSIWYG edit, a table from the slash menu, the Raw toggle, one save is one
     // open it from the tree: the page fills the middle column
     await tree(page, 'pages/runbook.md').click();
     const view = page.getByTestId('file-view');
-    await expect(view.getByTestId('file-view-path')).toHaveText('pages/runbook.md');
+    await expect(view.getByTestId('file-view-path')).toHaveAttribute('title', 'pages/runbook.md');
     const md = view.getByTestId('viewer-markdown');
     await expect(md.locator('.md-prose h1')).toHaveText('Production deploy runbook');
     await expect(md.getByRole('button', { name: 'Save' })).toBeDisabled();

@@ -1,3 +1,4 @@
+import { friendlyPath } from '../../components/friendlyPath';
 import type { WorkshopEntry, WorkshopMode, WorkshopSessionSummary } from '@manythreads/shared';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -185,7 +186,7 @@ export function EntryView({ entry, slug, onCorrect }: { entry: WorkshopEntry; sl
           <p className="ws-who">{PROPOSAL_ROLE_WORDS[entry.role]}</p>
           <p className="ws-text" data-vt-mask>{entry.title}</p>
           <p className="ws-row">
-            <span className="mono ws-path">{entry.path}</span>
+            <span className="ws-path" title={entry.path}>{friendlyPath(entry.path)}</span>
             <Link className="btn s" to={`/t/${slug}/proposals/${entry.proposalId}`} data-testid="ws-proposal-link">Review the proposal</Link>
           </p>
         </li>

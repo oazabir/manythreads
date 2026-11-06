@@ -1,3 +1,4 @@
+import { friendlyPath } from '../../components/friendlyPath';
 import type { ProposalDetail, SetupSession } from '@manythreads/shared';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
@@ -109,7 +110,7 @@ function Loaded({ slug, session, rows, reload }: { slug: string; session: SetupS
           <div key={r.ref.proposalId} className="su-file" data-testid="setup-file" data-role={r.ref.role}>
             <div className="su-file-head">
               <b>{r.ref.role === 'bot' ? 'The bot (draft of its description file)' : r.ref.role === 'skill' ? 'A new skill (saved instructions)' : 'A change to the team file'}</b>
-              <span className="mono su-path">{r.ref.path}</span>
+              <span className="su-path" title={r.ref.path}>{friendlyPath(r.ref.path)}</span>
               <span className="su-file-tag">{placeOf(r.ref.path)}</span>
               <StatusPill status={r.detail.proposal.status} />
             </div>

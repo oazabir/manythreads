@@ -1,3 +1,4 @@
+import { friendlyName } from '../../components/friendlyPath';
 import { Fragment } from 'react';
 import { ago, clock, fileKind, fileSize } from '../../channels/format';
 import { FolderIcon, LockIcon } from '../../shell/icons';
@@ -103,7 +104,7 @@ export function FileList({ teamName, folder, info, state, selected, filters, onF
             return (
               <Fragment key={path}>
                 <span className={`crumb-sep ${i === 0 ? 'first' : ''}`} aria-hidden="true"> / </span>
-                {last ? <b aria-current="page">{p}</b> : <button type="button" className="crumb-link" onClick={() => onFolder(path)}>{p}</button>}
+                {last ? <b aria-current="page">{friendlyName(path, p)}</b> : <button type="button" className="crumb-link" onClick={() => onFolder(path)}>{friendlyName(path, p)}</button>}
               </Fragment>
             );
           })}
@@ -201,7 +202,7 @@ export function FileList({ teamName, folder, info, state, selected, filters, onF
                 >
                   <div role="cell"><Icon row={row} /></div>
                   <div role="cell" className="fname">
-                    <span className="fname-text">{row.kind === 'folder' ? `${row.name}/` : row.name}</span>
+                    <span className="fname-text" title={row.path}>{friendlyName(row.path, row.name)}</span>
                     {row.readOnlyReason === 'change_by_pull_request' ? <span className="flock" title={READ_ONLY_COPY}><LockIcon /></span> : null}
                   </div>
                   <div role="cell" className="src">{whereOf(row)}</div>

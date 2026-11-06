@@ -1,3 +1,4 @@
+import { friendlyPath } from '../../components/friendlyPath';
 import { lineDiff, PROPOSAL_MAX_CHARS, type ProposalDetail } from '@manythreads/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
@@ -147,7 +148,7 @@ export function ProposeDialog({
           <input className="dlg-input mono" value={target} onChange={(e) => setTarget(e.target.value)} data-testid="propose-path" spellCheck={false} />
         </label>
       ) : (
-        <p className="dlg-text"><span className="mono" data-testid="propose-target">{path}</span></p>
+        <p className="dlg-text"><span className="mono" data-testid="propose-target" title={path}>{friendlyPath(path)}</span></p>
       )}
       <label className="dlg-label pp-field">
         What this change is

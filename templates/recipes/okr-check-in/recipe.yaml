@@ -9,5 +9,5 @@ schedule:
   label: Mondays at 09:00 UTC
 channels: []
 needs:
-  - The team's goals written down in a file or page (for example `pages/goals.md`)
+  - The team's goals written down in a file or page (for example a page called Goals)
 botSlug: goals-check-in

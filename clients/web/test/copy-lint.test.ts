@@ -31,6 +31,13 @@ describe('copy lint rules', () => {
     expect(rules('export const A = () => <p className="a_b.md" data-x="bots/y.md" />;')).toEqual([]);
   });
 
+  it('catches a path or branch shown as it is (R8), not a plain name or an attribute', () => {
+    expect(rules('export const A = ({ row }) => <span>{row.path}</span>;')).toEqual(['R8']);
+    expect(rules('export const A = ({ card }) => <p>{card.branch}</p>;')).toEqual(['R8']);
+    expect(rules('export const A = ({ row }) => <span title={row.path}>{friendlyPath(row.path)}</span>;')).toEqual([]);
+    expect(rules('export const A = ({ row }) => <code>{row.path}</code>;')).toEqual([]);
+  });
+
   it('skips code, pre and kbd', () => {
     expect(rules(jsx('<code>bots/x/BOT.md</code>'))).toEqual([]);
     expect(rules('export const A = () => <pre>TEAM.md {`handover.mayTag`}</pre>;')).toEqual([]);

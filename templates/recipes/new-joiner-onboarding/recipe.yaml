@@ -10,6 +10,6 @@ schedule:
 channels:
   - "#general"
 needs:
-  - A team description in `TEAM.md`
+  - A short description of the team in the team file
   - Handbook files or a knowledge base the new person may read
 botSlug: welcome-guide

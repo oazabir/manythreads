@@ -1,4 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
+import { friendlyName } from '../../components/friendlyPath';
 import { CaretIcon } from '../../shell/icons';
 import { MEMORY_COPY, ROOT, sortRows, treeShows, type FileRow } from './model';
 import type { FolderState } from './useFolders';
@@ -89,7 +90,7 @@ export function Tree({ teamName, get, expanded, folder, open: opened, onToggle, 
             ) : (
               <span className="car" />
             )}
-            <span className="tname">{isFolder ? `${row.name}/` : row.name}</span>
+            <span className="tname">{friendlyName(row.path, row.name)}</span>
           </div>
           {open ? <div role="group">{level(row.path, depth + 1)}</div> : null}
         </div>
