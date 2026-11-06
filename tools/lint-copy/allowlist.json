@@ -1,0 +1,18 @@
+[
+  { "file": "clients/web/src/channels/BookmarksBar.tsx", "text": "pages/handbook.md", "why": "Placeholder example in an input a person types a file path into; it is shown faint and replaced when typing." },
+  { "file": "clients/web/src/screens/files/dialogs.tsx", "text": "release-notes.md", "why": "Placeholder example of a file name in the new-file box; the person types a real file name." },
+  { "file": "clients/web/src/screens/bots/tabs.tsx", "text": "memory.md", "why": "Placeholder example of a file name in a field an editor of the bot fills in." },
+  { "file": "clients/web/src/screens/bots/tabs.tsx", "text": "require_approval", "why": "The exact rule word an editor types into the bot's rules; it is a value, not prose." },
+  { "file": "clients/web/src/screens/bots/tabs.tsx", "text": "dlp", "why": "Part of the exact rule word an editor types (dlp:require_approval)." },
+  { "file": "clients/web/src/screens/boards/ScheduledJobsView.tsx", "text": "routines/weekly.yaml", "why": "Placeholder example of the job file path in a lead's form." },
+  { "file": "clients/web/src/screens/boards/ScheduledJobsView.tsx", "text": "pages/reports/weekly.md", "why": "Placeholder example of the output page path in a lead's form." },
+  { "file": "clients/web/src/screens/admin/llm/Guard.tsx", "text": "allowlist", "why": "Admin-only settings label for the list of addresses the model gateway may call." },
+  { "file": "clients/web/src/screens/admin/llm/Guard.tsx", "text": "localhost:11434", "why": "Admin-only placeholder example of a local model address." },
+  { "file": "clients/web/src/screens/agents/AgentsScreen.tsx", "text": "api_server", "why": "Setup steps for the person who connects a Hermes server: the exact setting name to turn on there." },
+  { "file": "clients/web/src/screens/agents/AgentsScreen.tsx", "text": "bridge.json", "why": "Setup steps for the person who runs the bridge: the exact file name to save." },
+  { "file": "clients/web/src/webhooks/OutgoingPanel.tsx", "text": "channel_name", "why": "Developer help listing the exact field names of the JSON message sent to an outgoing webhook." },
+  { "file": "clients/web/src/webhooks/OutgoingPanel.tsx", "text": "user_name", "why": "Developer help listing the exact field names of the JSON message sent to an outgoing webhook." },
+  { "file": "clients/web/src/webhooks/OutgoingPanel.tsx", "text": "trigger_word", "why": "Developer help listing the exact field names of the JSON message sent to an outgoing webhook." },
+  { "file": "clients/web/src/webhooks/TokensPanel.tsx", "text": "chat.postMessage", "why": "Developer help naming the Slack-compatible call a token can make." },
+  { "file": "clients/web/src/webhooks/TokensPanel.tsx", "text": "thread_ts", "why": "Developer help naming the exact field of the Slack-compatible call." }
+]

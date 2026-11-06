@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.28.0",
   "engines": { "node": ">=22" },
   "scripts": {
-    "lint": "eslint . && stylelint \"**/*.css\"",
+    "lint": "eslint . && stylelint \"**/*.css\" && tsx tools/lint-copy/cli.ts",
     "typecheck": "pnpm -r --workspace-concurrency=2 typecheck",
     "build": "pnpm -r build",
     "test": "vitest run --project unit --project rls --project events --project schema-compat",
