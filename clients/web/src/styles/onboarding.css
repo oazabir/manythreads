@@ -264,3 +264,20 @@
     min-height: 36px;
   }
 }
+
+.ob-fold {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.ob-fold[aria-expanded='false'] {
+  transform: rotate(-90deg);
+}

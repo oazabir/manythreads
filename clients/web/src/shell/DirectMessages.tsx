@@ -11,6 +11,7 @@ import { AddIcon } from './icons';
 import { useDismiss } from './useDismiss';
 import { unreadLook } from './unreadLook';
 import { FoldButton } from './FoldButton';
+import { RowMenu } from './RowMenu';
 import { Pill } from './Pill';
 import { useFold } from './sectionFold';
 import { PresenceDot } from '../presence/PresenceDot';
@@ -107,13 +108,15 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
         const others = d.participants.filter((p) => p.personId !== session.person.id);
         const peer = others.length === 1 ? others[0] : undefined;
         return (
-          <NavLink key={d.channel.id} to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''} ${look.muted ? 'muted' : ''}`} data-unread={n > 0 ? n : undefined}>
-            <span className="h"><span className={`dot ${look.bold ? 'on' : ''}`} aria-hidden="true" /></span>
-            <span className="it-label">{label}</span>
-            {peer ? <PresenceDot personId={peer.personId} status /> : null}
-            <LiveBadge channelId={d.channel.id} dm />
-            {look.badge ? <Pill n={n} tone={look.badge} /> : null}
-          </NavLink>
+          <RowMenu key={d.channel.id} conv={{ id: d.channel.id, name: null, kind: 'dm', label }} slug={slug} testId="dm-row-menu">
+            <NavLink to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''} ${look.muted ? 'muted' : ''}`} data-unread={n > 0 ? n : undefined}>
+              <span className="h"><span className={`dot ${look.bold ? 'on' : ''}`} aria-hidden="true" /></span>
+              <span className="it-label">{label}</span>
+              {peer ? <PresenceDot personId={peer.personId} status /> : null}
+              <LiveBadge channelId={d.channel.id} dm />
+              {look.badge ? <Pill n={n} tone={look.badge} /> : null}
+            </NavLink>
+          </RowMenu>
         );
       })}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { LiveBadge } from '../meetings/LiveBadge';
 import { IDLE_CHANNEL_DAYS, type NavChannel, type SidebarPrefs } from '@manythreads/shared';
@@ -7,7 +7,7 @@ import { useUnread } from '../channels/hooks';
 import { levelsStore } from '../notifications/levelsStore';
 import { useShell } from './context';
 import { useChannelFeed } from './channelFeed';
-import { AddIcon, ArrowDownIcon, ArrowUpIcon, CaretIcon, LockIcon, MoreIcon, OptionsIcon, StarIcon } from './icons';
+import { AddIcon, ArrowDownIcon, ArrowUpIcon, CaretIcon, LockIcon, OptionsIcon, StarIcon } from './icons';
 import { channelPath } from './nav';
 import { NewChannelDialog } from './NewChannel';
 import { canCreateChannel } from './newChannel';
@@ -16,6 +16,7 @@ import { arrangeSidebar, dropId, FULL_STARS_TEXT, isStarred, moveId, reorderShow
 import { sidebarPrefsStore, useSidebarPrefs } from './sidebarPrefsStore';
 import { unreadLook, type UnreadLook } from './unreadLook';
 import { useDismiss } from './useDismiss';
+import { RowMenu, useCloseWhenSidebarLeaves, useMenuKeys } from './RowMenu';
 
 /** The channel open now, from the address (`/t/<team>/c/<name>`), or null. */
 export function openChannelName(pathname: string): string | null {
@@ -26,49 +27,6 @@ export function openChannelName(pathname: string): string | null {
   } catch {
     return m[1];
   }
-}
-
-/**
- * Arrow keys, Home and End move between the items of a menu; the first item gets focus when the menu opens; Tab closes the menu and carries on
- * from the button that opened it (a menu is one stop in the tab order, not a trap).
- */
-function useMenuKeys(open: boolean, menu: RefObject<HTMLElement | null>, close: () => void): (e: KeyboardEvent) => void {
-  useEffect(() => {
-    if (open) menu.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
-  }, [open, menu]);
-  return (e) => {
-    if (e.key === 'Tab') {
-      close();
-      return;
-    }
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
-    const items = [...(menu.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)') ?? [])];
-    if (items.length === 0) return;
-    e.preventDefault();
-    const at = items.indexOf(document.activeElement as HTMLElement);
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : e.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length;
-    items[next]?.focus();
-  };
-}
-
-/**
- * Closes an open menu when the sidebar around it is put away (the phone's drawer closing makes the sidebar inert): a menu left open there would
- * come back open, and report itself as expanded while nobody can reach it.
- */
-function useCloseWhenSidebarLeaves(open: boolean, box: RefObject<HTMLElement | null>, close: () => void): void {
-  const closeRef = useRef(close);
-  useEffect(() => {
-    closeRef.current = close;
-  });
-  useEffect(() => {
-    const rail = open ? box.current?.closest('aside') : null;
-    if (!rail) return;
-    const watch = new MutationObserver(() => {
-      if (rail.hasAttribute('inert')) closeRef.current();
-    });
-    watch.observe(rail, { attributes: true, attributeFilter: ['inert'] });
-    return () => watch.disconnect();
-  }, [open, box]);
 }
 
 /** Runs a change of the sidebar and shows its one plain-language error line if the server refuses it. */
@@ -112,19 +70,23 @@ type RowProps = {
 
 /** One channel of the list. A person who can arrange their sidebar also gets a menu on the row: a button shown on hover and focus (always shown on a touch screen). */
 function ChannelRow({ slug, channel, count, look, starred, personal, stars, report, notify, setProblem }: RowProps) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  const close = (): void => {
-    if (panel.current?.contains(document.activeElement)) button.current?.focus();
-    setOpen(false);
-  };
-  useDismiss(open, close, box);
-  useCloseWhenSidebarLeaves(open, box, close);
-  const keys = useMenuKeys(open, panel, close);
   const name = channel.name.replace(/^#/, '');
-  const toggleStar = (): void => {
+  const link = (
+    <NavLink to={channelPath(slug, channel.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''} ${look.muted ? 'muted' : ''}`} data-unread={count > 0 ? count : undefined}>
+      <span className="h">{channel.isPrivate ? <LockIcon /> : '#'}</span>
+      <span className="it-label">{name}</span>
+      <LiveBadge channelId={channel.id} />
+      {look.badge ? <Pill n={count} tone={look.badge} /> : null}
+    </NavLink>
+  );
+  if (!personal) {
+    return (
+      <div className="sb-row" data-sb-row={channel.id}>
+        {link}
+      </div>
+    );
+  }
+  const toggleStar = (close: () => void): void => {
     const patch = starPatch(stars, channel.id, !starred);
     close();
     if (!patch) {
@@ -135,38 +97,19 @@ function ChannelRow({ slug, channel, count, look, starred, personal, stars, repo
     report(sidebarPrefsStore.update(slug, patch));
   };
   return (
-    <div className={`sb-row ${open ? 'sb-open' : ''}`} ref={box} data-sb-row={channel.id}>
-      <NavLink to={channelPath(slug, channel.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''}`} data-unread={count > 0 ? count : undefined}>
-        <span className="h">{channel.isPrivate ? <LockIcon /> : '#'}</span>
-        <span className="it-label">{name}</span>
-        <LiveBadge channelId={channel.id} />
-        {look.badge ? <Pill n={count} tone={look.badge} /> : null}
-      </NavLink>
-      {personal ? (
-        <>
-          <button
-            type="button"
-            ref={button}
-            className="sb-more"
-            aria-label={`Options for #${name}`}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            data-testid="channel-row-menu"
-            onClick={() => setOpen((o) => !o)}
-          >
-            <MoreIcon />
-          </button>
-          {open ? (
-            <div className="sb-menu" role="menu" aria-label={`Options for #${name}`} ref={panel} onKeyDown={keys}>
-              <button type="button" role="menuitem" className="sb-item" data-testid="channel-row-star" onClick={toggleStar}>
-                <span className="sb-ic"><StarIcon filled={starred} /></span>
-                {starred ? 'Remove star' : 'Star channel'}
-              </button>
-            </div>
-          ) : null}
-        </>
-      ) : null}
-    </div>
+    <RowMenu
+      conv={{ id: channel.id, name: channel.name, kind: 'channel', label: `#${name}` }}
+      slug={slug}
+      testId="channel-row-menu"
+      extra={(close) => (
+        <button type="button" role="menuitem" className="sb-item" data-testid="channel-row-star" onClick={() => toggleStar(close)}>
+          <span className="sb-ic"><StarIcon filled={starred} /></span>
+          {starred ? 'Remove star' : 'Star channel'}
+        </button>
+      )}
+    >
+      {link}
+    </RowMenu>
   );
 }
 
@@ -533,7 +476,7 @@ export function ChannelGroups({ slug, guest }: { slug: string; guest: boolean })
         <div className="nc-row">
           <button type="button" className="it nc-btn" aria-haspopup="dialog" data-testid="new-channel" onClick={() => setCreatingIn(slug)}>
             <span className="h" aria-hidden="true"><AddIcon size={14} /></span>
-            <span className="it-label">New channel</span>
+            <span className="it-label">Add channel</span>
           </button>
         </div>
       ) : null}

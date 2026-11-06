@@ -8,9 +8,11 @@ import { useQuery } from '../app/useQuery';
 import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { Brand } from './ui';
 import { BackIcon } from '../shell/icons';
+import { useDocumentTitle } from '../shell/usePageTitle';
 
 /** Centred card for sign-in, bootstrap and invite screens. */
 export function AuthFrame({ title, lede, children, footer }: { title: string; lede?: ReactNode; children: ReactNode; footer?: ReactNode }) {
+  useDocumentTitle(title);
   return (
     <div className="auth" data-testid="app-frame">
       <main className="auth-card" data-landmark="auth-card">
@@ -29,6 +31,7 @@ export function AuthFrame({ title, lede, children, footer }: { title: string; le
 /** Page with a slim top bar (account). */
 export function PlainFrame({ title, children }: { title: ReactNode; children: ReactNode }) {
   const session = useSession();
+  useDocumentTitle(typeof title === 'string' ? title : null);
   return (
     <div className="plain" data-testid="app-frame">
       <header className="plain-bar" data-landmark="header">
@@ -122,6 +125,7 @@ export function SettingsFrame() {
     heading: g.heading,
     items: g.heading === 'Teams' ? [{ to: '/teams', label: 'All teams' }, ...g.items.filter((i) => i.to !== '/teams')] : g.items,
   }));
+  useDocumentTitle(groups.flatMap((g) => g.items).find((i) => i.to === loc.pathname)?.label.replace(/^＋ /, '') ?? 'Settings');
   const selectValue = selectGroups.flatMap((g) => g.items).some((i) => i.to === loc.pathname) ? loc.pathname : '';
 
   return (

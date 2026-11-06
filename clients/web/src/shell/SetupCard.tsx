@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ArrowDownIcon } from './icons';
 import { Link } from 'react-router';
 import { dismissOnboarding } from '../api/endpoints';
 import { isApiError } from '../api/client';
@@ -12,14 +13,32 @@ import { announceOnboardingChange, useOnboarding } from '../screens/onboarding/u
  * is put away, this renders nothing and reads nothing beyond the checklist's own state.
  */
 
+const FOLD_KEY = (personId: string): string => `mt.setup.folded:${personId}`;
+const readFolded = (personId: string): boolean => {
+  try {
+    return localStorage.getItem(FOLD_KEY(personId)) === '1';
+  } catch {
+    return false;
+  }
+};
+const writeFolded = (personId: string, folded: boolean): void => {
+  try {
+    localStorage.setItem(FOLD_KEY(personId), folded ? '1' : '0');
+  } catch {
+    /* the fold lasts until reload */
+  }
+};
+
 export function SetupCard() {
   const session = useSession();
   return isAdmin(session) ? <Card /> : null;
 }
 
 function Card() {
+  const session = useSession();
   const view = useOnboarding('card');
   const [error, setError] = useState<string | null>(null);
+  const [folded, setFolded] = useState(() => readFolded(session.person.id));
   if (view.status !== 'ok' || view.summary.dismissed) return null;
   const { summary } = view;
   const pct = Math.round((summary.handled / summary.total) * 100);
@@ -28,7 +47,21 @@ function Card() {
       <div className="ob-card-title">
         <span>{summary.finished ? 'Setup is done' : 'Finish setting up'}</span>
         <span className="cnt" data-testid="setup-card-count">{summary.handled} of {summary.total}</span>
+        <button
+          type="button"
+          className="ob-fold"
+          aria-expanded={!folded}
+          aria-label={folded ? 'Show the setup steps' : 'Fold the setup steps'}
+          onClick={() => {
+            writeFolded(session.person.id, !folded);
+            setFolded(!folded);
+          }}
+        >
+          <ArrowDownIcon size={12} />
+        </button>
       </div>
+      {folded ? null : (
+        <>
       <div className="ob-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></div>
       {summary.finished ? (
         <>
@@ -50,6 +83,8 @@ function Card() {
         <p>
           Next: <Link to="/onboarding">{summary.next ? `${summary.next.title}` : 'Setup'}</Link>
         </p>
+      )}
+        </>
       )}
     </aside>
   );
