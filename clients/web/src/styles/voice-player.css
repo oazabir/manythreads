@@ -1,0 +1,157 @@
+/*
+ * The voice-message player in a message row (`vp-`) and its search-result label (PLAN P14-17). Tokens only. Shared classes are used, never
+ * redefined. Layout rule: pressing play, the time running or the speed changing never moves anything: the time sits in a column of fixed
+ * width with tabular digits, the waveform takes the rest of the row, and the bars are a fixed height box whose fill changes colour only.
+ * The player has no animation (the bars change colour as the clip plays, nothing slides), so reduced motion needs no rule. Phone: one row (play, waveform, time, speed); under 360 px every second bar is hidden; every control is at least 44 px on a touch screen.
+ */
+
+.vp {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 420px;
+  margin-top: 2px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.vp-play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--human);
+  color: var(--surface);
+  cursor: pointer;
+}
+
+.vp-play:hover {
+  opacity: 0.88;
+}
+
+.vp-play[aria-busy="true"] {
+  opacity: 0.7;
+}
+
+.vp-wave {
+  display: flex;
+  flex: 1 1 96px;
+  align-items: center;
+  gap: 2px;
+  min-width: 96px;
+  height: 32px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.vp-bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  max-width: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--rule);
+}
+
+.vp-bar.on {
+  background: var(--human);
+}
+
+.vp-time {
+  flex: none;
+  min-width: 78px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.vp-speed {
+  flex: none;
+  min-width: 40px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--shell);
+  color: var(--ink);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.vp-speed:hover {
+  background: var(--nav-on);
+}
+
+.vp-error {
+  flex: 1 0 100%;
+  margin: 0 0 0 4px;
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+.vp-play:focus-visible,
+.vp-speed:focus-visible,
+.vp-wave:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* the lines under the player */
+.vp-note,
+.vp-none {
+  margin: 2px 0 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.vp-none {
+  font-size: var(--fs-small);
+}
+
+.vp-note {
+  margin-top: 0;
+}
+
+.vp-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+@media (width <= 360px) {
+  .vp-bar:nth-child(even) {
+    display: none;
+  }
+
+  .vp-time {
+    min-width: 66px;
+  }
+}
+
+@media (pointer: coarse) {
+  .vp-play {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vp-speed {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .vp-wave {
+    height: 44px;
+  }
+}

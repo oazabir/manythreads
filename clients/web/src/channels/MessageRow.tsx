@@ -23,6 +23,8 @@ import { NO_THREAD_CLICK, copyText, rowShortcut, isExpanded, messageLinkUrl, rem
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
+import { VoiceNoTranscript, VoicePlayer, VoiceTranscriptNote } from './voice/VoicePlayer';
+import { voiceClip, withoutClip } from './voice/playerFormat';
 import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
@@ -200,7 +202,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     return () => window.removeEventListener(EDIT_EVENT, onEdit);
   }, [canEdit, m.id, m.body]);
   // an image is drawn as a picture, not as a file card; a message may carry both kinds at once
-  const attached = splitAttachments(m.attachments);
+  // a voice message draws its clip as a player (above its text), not as a file card
+  const clip = deleted ? null : voiceClip(m.meta.voice, m.attachments);
+  const attached = splitAttachments(withoutClip(m.attachments, clip));
   const markUnread = async (): Promise<void> => {
     try {
       await actions.markUnread?.(m.id);
@@ -346,6 +350,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
           {done ? <span className="row-done" role="status">{done}</span> : null}
         </AuthorLine>
+        {clip ? <VoicePlayer voice={clip.voice} who={name} /> : null}
         {deleted ? (
           <div className="txt tomb">This message was deleted.</div>
         ) : editing !== null ? (
@@ -399,12 +404,18 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           // a poll: the card replaces the text (the text is still stored, for search and for bots)
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
         ) : (
-          <>
-            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={m.body} teamSlug={teamSlug} /></div>
-            {clamped ? (
-              <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
-            ) : null}
-          </>
+          clip?.voice.transcript === 'none' ? (
+            // no transcript: the stored text is only a stand-in line ("Voice message (0:42)"), so it is not drawn
+            <VoiceNoTranscript />
+          ) : (
+            <>
+              <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={m.body} teamSlug={teamSlug} /></div>
+              {clamped ? (
+                <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
+              ) : null}
+              {clip ? <VoiceTranscriptNote voice={clip.voice} /> : null}
+            </>
+          )
         )}
         {!deleted && m.forward ? <ForwardCard card={m.forward} /> : null}
         {!deleted && m.alsoSentFromThread ? (

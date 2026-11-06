@@ -10,6 +10,8 @@ import type { PanelEntry } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { useOpenMessage, type MessageTarget } from '../shell/messageLink';
 import { Highlight } from './SearchHighlight';
+import { VoiceHitLabel } from '../channels/voice/VoicePlayer';
+import { voiceHitLength } from '../channels/voice/playerFormat';
 import { SearchFilterBar } from './SearchFilterBar';
 import { parseSearchEntry, searchEntry } from './searchEntry';
 
@@ -89,7 +91,12 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
                     <span>{people.byActor(h.authorId)?.name ?? ''}</span>
                     <span data-vt-mask>{ago(h.createdAt)}</span>
                   </span>
-                  <span className="hit-snip"><Highlight text={h.snippet} query={words} /></span>
+                  {voiceHitLength(h.snippet) !== null ? (
+                    // a voice message with no transcript: its stored text is only a stand-in line, so say what it is and how long
+                    <VoiceHitLabel length={voiceHitLength(h.snippet) ?? ''} />
+                  ) : (
+                    <span className="hit-snip"><Highlight text={h.snippet} query={words} /></span>
+                  )}
                 </button>
               </li>
             ))}
