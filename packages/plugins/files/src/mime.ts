@@ -41,6 +41,13 @@ export function sniffMime(head: Uint8Array): string | undefined {
 
 const TOKEN = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
 
+/** Audio types that share a container (and so the first bytes) with a video type: declared type -> what the bytes sniff as. */
+const AUDIO_CONTAINERS: Readonly<Record<string, string>> = {
+  'audio/webm': 'video/webm',
+  'audio/mp4': 'video/mp4',
+  'audio/ogg': 'audio/ogg',
+};
+
 /**
  * The type to store. The bytes win over the header: a recognised signature decides. Otherwise the declared type is kept when it is a
  * well formed `type/subtype` (parameters dropped), except an image type the bytes do not confirm (a script dressed as `image/png`),
@@ -51,6 +58,9 @@ export function decideMime(declared: string | undefined, head: Uint8Array): stri
   const d = (declared ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
   const clean = TOKEN.test(d) ? d : undefined;
   if (sniffed) {
+    // A browser's recording (MediaRecorder) is a WebM or MP4 container whose first bytes look like a video's: when the sender says it is audio and the
+    // container matches, the file is audio (a voice message). Only these three declared types; anything else keeps the sniffed type.
+    if (clean && AUDIO_CONTAINERS[clean] === sniffed) return clean;
     // A zip may be an Office file or a jar: keep a declared specific zip-based type, not a conflicting one.
     if (sniffed === 'application/zip' && clean && /^application\/(vnd\.|epub|x-zip|java-archive|x-tar)/.test(clean)) return clean;
     return sniffed;

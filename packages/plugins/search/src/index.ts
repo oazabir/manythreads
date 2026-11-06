@@ -47,7 +47,9 @@ export default definePlugin({
     });
     ctx.capabilities.register('files.search', async (input, tx) => {
       const i = CapabilityInput.parse(input);
-      return { hits: await searchFiles(tx, normalizeQuery(i.query), i.teamId ?? null, i.limit) };
+      const hits = await searchFiles(tx, normalizeQuery(i.query), i.teamId ?? null, i.limit);
+      // a bot reads a voice message by its transcript, never the recording (P14-17)
+      return { hits: tx.actor.kind === 'bot' ? hits.filter((h) => !h.mime.startsWith('audio/')) : hits };
     });
   },
 });

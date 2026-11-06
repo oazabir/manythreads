@@ -91,7 +91,9 @@ async function attachmentsFor(tx: PluginTx, messages: readonly MessageRow[]): Pr
     'SELECT f.id, f.name, f.size, f.mime FROM app.files f WHERE f.id = ANY ($1::uuid[])',
     [[...new Set([...wanted.values()].flat())]],
   );
-  const byId = new Map(res.rows.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
+  // A bot reads a voice message by its transcript, never the recording: audio files are not listed for a bot (P14-17).
+  const visible = tx.actor.kind === 'bot' ? res.rows.filter((r) => !r.mime.startsWith('audio/')) : res.rows;
+  const byId = new Map(visible.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
   for (const [messageId, ids] of wanted) out.set(messageId, ids.flatMap((id) => byId.get(id) ?? []));
   return out;
 }

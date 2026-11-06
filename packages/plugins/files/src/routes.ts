@@ -260,6 +260,8 @@ export function registerFileRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { fileId } = FilePathParams.parse(req.params);
       const file = await requireFile(tx, fileId);
+      // A bot reads a voice message by its transcript (the message text), never the recording (P14-17).
+      if (tx.actor.kind === 'bot' && file.mime.startsWith('audio/')) throw forbidden('Bots read the transcript, not the audio.');
       const storage = storageOf(ctx);
       let stream;
       try {

@@ -117,6 +117,7 @@ export function registerMessageRoutes(deps: Deps): void {
         body: body.body,
         threadRootId: body.threadRootId ?? null,
         attachmentIds: body.attachments ?? [],
+        ...(body.voice ? { voice: body.voice } : {}),
         ...(body.confirmBroadcast ? { confirmBroadcast: true } : {}),
       });
       // sent: the draft of this box goes, on every device (a person's own row; nothing for a bot)
@@ -128,6 +129,7 @@ export function registerMessageRoutes(deps: Deps): void {
           body: body.body,
           threadRootId: null,
           attachmentIds: body.attachments ?? [],
+          ...(body.voice ? { voice: body.voice } : {}),
           meta: { alsoSentFrom: { threadRootId: body.threadRootId, replyId: posted.id } },
           skipRefs: true,
         });

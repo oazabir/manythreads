@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Message } from '../../entities/message.ts';
+import { Message, VoiceMeta } from '../../entities/message.ts';
 
 export const PostMessageRequest = Message.pick({ channelId: true, body: true, threadRootId: true })
   .extend({
@@ -15,6 +15,11 @@ export const PostMessageRequest = Message.pick({ channelId: true, body: true, th
      * names either word in a room of more than 20 other readers (409 `broadcast_needs_confirmation`).
      */
     confirmBroadcast: z.boolean().optional(),
+    /**
+     * A voice message (P14-17): the clip is the one entry of `attachments` and `voice.fileId` names it; `body` is the transcript, or
+     * `voiceFallbackBody(durationMs)` when there is none. Stored as `meta.voice`. People only, and not guests (403).
+     */
+    voice: VoiceMeta.optional(),
   })
   .strict();
 export type PostMessageRequest = z.infer<typeof PostMessageRequest>;

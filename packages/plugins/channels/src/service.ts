@@ -10,6 +10,7 @@ import {
   type MessagePostedPush,
   type ReactionChangedPush,
   type ReactionSummary,
+  type VoiceMeta,
   toPlainText,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, notFound } from './http.ts';
@@ -126,7 +127,9 @@ export async function attachmentsFor(
     'SELECT f.id, f.name, f.size, f.mime FROM app.files f WHERE f.id = ANY ($1::uuid[])',
     [[...new Set([...wanted.values()].flat())]],
   );
-  const byId = new Map(res.rows.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
+  // A bot reads a voice message by its transcript, never the recording: audio files are not listed for a bot (P14-17).
+  const visible = tx.actor.kind === 'bot' ? res.rows.filter((r) => !r.mime.startsWith('audio/')) : res.rows;
+  const byId = new Map(visible.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
   for (const [messageId, ids] of wanted) {
     out.set(messageId, ids.flatMap((id) => byId.get(id) ?? []));
   }
@@ -277,6 +280,8 @@ export interface PostMessageInput {
   threadRootId?: string | null;
   /** Files the poster already uploaded to this channel (the files plugin); their cards are resolved when the message is read. */
   attachmentIds?: readonly string[];
+  /** A voice message (P14-17): the clip is the one attachment and this names it; stored as `meta.voice`. People who are not guests only. */
+  voice?: VoiceMeta;
   /** Extra `meta` for the row (the run that wrote it, an integration's own bookkeeping). */
   meta?: Record<string, unknown>;
   /** Do not record mentions and links (the copy made by "Also send to channel": the reply it copies has already notified everybody named). */
@@ -297,6 +302,25 @@ export interface PostedMessage {
   push: ChannelMessage;
   /** Role groups the message named whose mention was cut at the per-group limit (the author is told); empty almost always. */
   groupNotices: GroupNotice[];
+}
+
+/**
+ * Who may record a voice message (P14-17): a person who is not a guest (a guest can play a clip but not record one). Asked before any file is looked at.
+ */
+async function checkVoiceSender(tx: PluginTx): Promise<void> {
+  if (tx.actor.kind !== 'person') throw forbidden('Only people can send voice messages');
+  const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
+  if (role === 'guest') throw forbidden('Guests can play voice messages but not record them.');
+}
+
+/**
+ * The file rules of a voice message, on top of the attachment rules (the file is the author's own, in this channel): exactly one attachment,
+ * `voice.fileId` is that attachment, and it is audio. The length is bounded by the shared schema (five minutes).
+ */
+function checkVoiceFile(voice: VoiceMeta, attachmentIds: readonly string[], cards: readonly FileSummary[]): void {
+  if (attachmentIds.length !== 1) throw conflict('A voice message carries exactly one file: its recording');
+  if (attachmentIds[0] !== voice.fileId) throw invalid('voice.fileId: must be the file attached to the message');
+  if (!cards[0]?.mime.startsWith('audio/')) throw invalid('voice.fileId: the recording must be an audio file');
 }
 
 /**
@@ -321,6 +345,7 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
     if (root.thread_root_id) throw conflict('Reply to the first message of the thread, not to a reply');
     if (root.deleted_at) throw conflict('That message was deleted');
   }
+  if (input.voice) await checkVoiceSender(tx);
   const attachmentIds = input.attachmentIds ?? [];
   if (new Set(attachmentIds).size !== attachmentIds.length) throw invalid('attachments: a file can be attached once');
   let cards: FileSummary[] = [];
@@ -344,7 +369,8 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
     const byId = new Map(found.rows.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
     cards = attachmentIds.map((id) => byId.get(id)!);
   }
-  const meta = { ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}), ...(input.meta ?? {}) };
+  if (input.voice) checkVoiceFile(input.voice, attachmentIds, cards);
+  const meta = { ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}), ...(input.voice ? { voice: input.voice } : {}), ...(input.meta ?? {}) };
   const res = await tx.query<MessageRow>(
     `INSERT INTO app.messages AS m (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
      VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::jsonb) RETURNING ${MESSAGE_COLUMNS}`,
@@ -458,7 +484,10 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
   if (kind?.poll === true) throw conflict('A poll cannot be edited. Delete it and ask again.');
   await requirePost(tx, channel);
   const res = await tx.query(
-    `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now() WHERE id = $1 AND channel_id = $2 RETURNING id`,
+    // the text of a voice message was written by the device or by hand; either way, once it is edited it says "edited" (P14-17)
+    `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now(),
+            meta = CASE WHEN meta ? 'voice' THEN jsonb_set(meta, '{voice,transcript}', '"edited"') ELSE meta END
+      WHERE id = $1 AND channel_id = $2 RETURNING id`,
     [messageId, channelId, body, toPlainText(body)],
   );
   if (res.rows.length === 0) throw forbidden('You cannot edit this message');

@@ -848,6 +848,57 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           }
+        },
+        "voice": {
+          "type": "object",
+          "properties": {
+            "fileId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 300000
+            },
+            "language": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "transcript": {
+              "type": "string",
+              "enum": [
+                "device",
+                "edited",
+                "none"
+              ]
+            },
+            "peaks": {
+              "maxItems": 64,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            }
+          },
+          "required": [
+            "fileId",
+            "durationMs",
+            "language",
+            "transcript",
+            "peaks"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

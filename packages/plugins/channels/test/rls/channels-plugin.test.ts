@@ -237,6 +237,36 @@ describe('writing: the policies and guards', () => {
     expect(await code(as(nadia, (tx) => tx.query('DELETE FROM app.messages WHERE id = $1', [msg['releases']])))).toBe('42501');
   });
 
+  it('voice message (migration 0017): the author editing the text may mark the transcript edited, and nothing else in meta changes', async () => {
+    const voice = { fileId: randomUuid(), durationMs: 42_000, language: 'en', transcript: 'device', peaks: [1, 2, 3] };
+    const make = (meta: object): Promise<string> =>
+      sys(async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, meta) VALUES ($1, $2, $3, 'said', 'said', $4::jsonb) RETURNING id`,
+            [nadia.workspaceId, ch['eng-general'], nadia.actorId, JSON.stringify(meta)],
+          )
+        ).rows[0]!.id,
+      );
+    const edit = (p: Persona, id: string, set: string): Promise<{ rowCount: number | null }> => as(p, (tx) => tx.query(`UPDATE app.messages SET ${set} WHERE id = $1`, [id]));
+    const text = "body = 'said it again', body_plain = 'said it again', edited_at = now()";
+    const marked = "meta = jsonb_set(meta, '{voice,transcript}', '\"edited\"')";
+    const id = await make({ voice, attachments: [voice.fileId] });
+    // not without an edit of the text, and not by anyone but the author
+    expect(await code(edit(nadia, id, marked))).toBe('42501');
+    expect(await code(edit(rafi, id, `${text}, ${marked}`))).toBe(undefined); // no row for rafi: the update policy keeps it away (0 rows, no error)
+    expect((await sys(async (tx) => (await tx.query<{ t: string }>("SELECT meta -> 'voice' ->> 'transcript' AS t FROM app.messages WHERE id = $1", [id])).rows[0]!)).t).toBe('device');
+    // not another part of meta, nor another value of the transcript, nor a voice the message did not have
+    expect(await code(edit(nadia, id, `${text}, meta = jsonb_set(meta, '{voice,durationMs}', '1')`))).toBe('42501');
+    expect(await code(edit(nadia, id, `${text}, meta = jsonb_set(meta, '{voice,transcript}', '"none"')`))).toBe('42501');
+    expect(await code(edit(nadia, id, `${text}, meta = meta - 'attachments'`))).toBe('42501');
+    const plain = await make({});
+    expect(await code(edit(nadia, plain, `${text}, meta = '{"voice": {"transcript": "edited"}}'::jsonb`))).toBe('42501');
+    // the author's own edit of the text marks it
+    expect((await edit(nadia, id, `${text}, ${marked}`)).rowCount).toBe(1);
+    expect((await sys(async (tx) => (await tx.query<{ v: typeof voice }>("SELECT meta -> 'voice' AS v FROM app.messages WHERE id = $1", [id])).rows[0]!)).v).toEqual({ ...voice, transcript: 'edited' });
+  });
+
   it('threads: replies count in the same statement; a reply to a reply or across channels is refused', async () => {
     const reply = (channelId: string, root: string, p: Persona = nadia): Promise<unknown> =>
       as(p, (tx) => tx.query(

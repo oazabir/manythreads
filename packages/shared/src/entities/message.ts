@@ -15,6 +15,35 @@ export const MessageBody = z
   .max(40_000)
   .refine((v) => !hasNul(v), { message: NO_NUL_MESSAGE }); // markdown
 
+/** The longest voice message: five minutes. */
+export const VOICE_MAX_MS = 300_000;
+
+/**
+ * What a voice message keeps beside its text (P14-17). The message's body is the transcript (so search, notifications and bots read it
+ * with no extra code); the clip itself is a file attached to the message, and `fileId` names it again here so a reader knows which
+ * attachment to draw as a player. `transcript` says where the body came from: `device` (the sender's own device wrote it), `edited`
+ * (a person changed it afterwards) or `none` (no transcript: the body is only a stand-in line, see `voiceFallbackBody`).
+ * `peaks` are up to 64 loudness values (0 to 255) for the waveform.
+ */
+export const VoiceMeta = z.strictObject({
+  fileId: FileId,
+  durationMs: z.number().int().min(500).max(VOICE_MAX_MS),
+  language: z
+    .string()
+    .regex(/^[a-z]{2,3}(-[A-Z]{2})?$/)
+    .nullable(),
+  transcript: z.enum(['device', 'edited', 'none']),
+  peaks: z.array(z.number().int().min(0).max(255)).max(64),
+});
+export type VoiceMeta = z.infer<typeof VoiceMeta>;
+
+/** The body of a voice message that has no transcript: `Voice message (0:42)`. */
+export function voiceFallbackBody(durationMs: number): string {
+  const total = Math.max(0, Math.round(durationMs / 1000));
+  const seconds = total % 60;
+  return `Voice message (${Math.floor(total / 60)}:${seconds < 10 ? '0' : ''}${seconds})`;
+}
+
 export const Message = z.object({
   id: MessageId,
   workspaceId: WorkspaceId,
@@ -36,6 +65,8 @@ export const Message = z.object({
     surfaceRef: z.string().optional(),
     /** Files attached to the message, in the order the sender listed them (rows of `files` in the same channel, uploaded by the author). */
     attachments: z.array(FileId).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),
+    /** A voice message (P14-17): the clip (also `attachments[0]`), its length, language and where the text came from. A value that does not read (a newer shape) is dropped, never the message. */
+    voice: VoiceMeta.optional().catch(undefined),
   }),
   createdAt: IsoDateTime,
 });
