@@ -9,7 +9,8 @@ import { WEB, PERSONA_PASSWORD, authState, personaEmail } from '../support/env.t
 test.describe('router navigation', () => {
   test.use({ baseURL: WEB });
 
-  test('a deep link opens, Back and Forward walk the history', async ({ browser }) => {
+  test('a deep link opens, Back and Forward walk the history', async ({ browser, isMobile }) => {
+    test.skip(isMobile, 'desktop layout: the Teams link is in the settings navigation');
     const context = await browser.newContext({ baseURL: WEB, storageState: authState('omar') });
     const page = await context.newPage();
     try {
