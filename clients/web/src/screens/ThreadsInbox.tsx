@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { ThreadInboxItem } from '@manythreads/shared';
 import { LaterTab, type LaterView } from '../later/LaterPanes';
@@ -8,7 +8,6 @@ import { isApiError } from '../api/client';
 import { fetchThread, fetchThreadInbox } from '../api/endpoints';
 import { typingIn } from '../app/quick-switcher';
 import { useQuery } from '../app/useQuery';
-import { useSession } from '../app/session';
 import { ThreadBody } from '../channels/ThreadPanel';
 import { useUnread } from '../channels/hooks';
 import { channelStore, threadKey } from '../channels/store';
@@ -17,7 +16,9 @@ import { useNarrow } from '../shell/useNarrow';
 import { Bell } from '../notifications/Bell';
 import { BackIcon } from '../shell/icons';
 import { WelcomeCard } from '../welcome/WelcomeCard';
+import { PageHeader } from '../components/PageHeader';
 import { ThreadCard } from './ThreadCard';
+import { groupThreads } from './threadCard';
 
 type Tab = 'followed' | 'unread' | 'mine' | 'later';
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -32,6 +33,8 @@ const EMPTY: Record<Tab, { title: string; body: string }> = {
   mine: { title: 'No threads of yours yet', body: 'Threads you start show up here.' },
   later: { title: 'Nothing saved for later', body: 'Messages you save or ask to be reminded of show up here.' },
 };
+/** One suggestion under each empty state. */
+const SUGGEST: Record<Tab, string> = { followed: 'Press Ctrl K to find a channel and join in.', unread: 'Press Ctrl K to find a channel and join in.', mine: 'Reply in a channel to start a thread.', later: 'Save a message from its menu.' };
 const NO_THREADS = { items: [] as ThreadInboxItem[], nextCursor: null };
 
 const tabOf = (raw: string | null): Tab => (raw === 'unread' || raw === 'mine' || raw === 'later' ? raw : 'followed');
@@ -39,7 +42,6 @@ const tabOf = (raw: string | null): Tab => (raw === 'unread' || raw === 'mine' |
 /** The Threads inbox (SPEC 6.1): Followed · Unread · Mine · Later (saved messages and reminders, PLAN P14-04) on the left, the selected thread on the right. j and k move, e marks it read. */
 export function ThreadsInbox() {
   const { team } = useShell();
-  const session = useSession();
   const slug = team?.slug ?? '';
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -75,6 +77,7 @@ export function ThreadsInbox() {
   useEffect(() => {
     shown.current = items;
   }, [items]);
+  const groups = useMemo(() => groupThreads(items, new Date()), [items]);
   const absent = q.status === 'error' && isApiError(q.error) && q.error.status === 404;
 
   const open = useCallback(
@@ -164,7 +167,7 @@ export function ThreadsInbox() {
   // the tabs, shared by the thread tabs and Later; Later's badge counts the reminders that are due
   const header = (
     <header className="inh" data-landmark={narrow ? undefined : 'header'}>
-      {narrow ? null : <h1 className="inh-title"><span className="sr-only">{`${session.workspace.name}: `}</span>Threads</h1>}
+      {narrow ? null : <PageHeader compact title="Threads" />}
       <div className="tabs2" role="tablist" aria-label="Threads">
         {TABS.filter((t) => t.id !== 'later' || later.supported).map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
@@ -179,7 +182,6 @@ export function ThreadsInbox() {
   if (tab === 'later' && later.supported) {
     return (
       <div className="threads-home">
-        <WelcomeCard slug={slug} />
         <LaterTab
           header={header}
           narrow={narrow}
@@ -201,7 +203,6 @@ export function ThreadsInbox() {
   }
   return (
     <div className="threads-home">
-    <WelcomeCard slug={slug} />
     <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="threads-inbox">
       {showList ? (
         <div className="inl" data-landmark="thread-list">
@@ -212,6 +213,8 @@ export function ThreadsInbox() {
             <div className="inl-empty" data-testid="threads-empty">
               <p className="view-empty-title">{EMPTY[tab].title}</p>
               <p className="view-empty-body">{EMPTY[tab].body}</p>
+              <p className="view-empty-body">{SUGGEST[tab]}</p>
+              {tab === 'followed' ? <WelcomeCard slug={slug} /> : null}
             </div>
           ) : q.status === 'error' ? (
             <div className="inl-empty" role="alert">
@@ -220,17 +223,22 @@ export function ThreadsInbox() {
             </div>
           ) : (
             <ul className="inlist" ref={listRef} role="listbox" aria-label={`${TABS.find((t) => t.id === tab)?.label ?? ''} threads`}>
-              {items.map((it) => (
-                <ThreadCard
-                  key={it.rootMessageId}
-                  item={it}
-                  teamSlug={slug}
-                  selected={it.rootMessageId === selected}
-                  onOpen={() => open(it.rootMessageId)}
-                  onMarkRead={() => markThreadRead(it.rootMessageId)}
-                  onChanged={q.reload}
-                  onOpenInChannel={(to) => navigate(to)}
-                />
+              {groups.map((g) => (
+                <Fragment key={g.day}>
+                  <li role="presentation" className="thc-day" data-testid="thread-day">{g.day}</li>
+                  {g.items.map((it) => (
+                    <ThreadCard
+                      key={it.rootMessageId}
+                      item={it}
+                      teamSlug={slug}
+                      selected={it.rootMessageId === selected}
+                      onOpen={() => open(it.rootMessageId)}
+                      onMarkRead={() => markThreadRead(it.rootMessageId)}
+                      onChanged={q.reload}
+                      onOpenInChannel={(to) => navigate(to)}
+                    />
+                  ))}
+                </Fragment>
               ))}
             </ul>
           )}

@@ -10,7 +10,7 @@ import { laterErrorText, useLater } from '../later/RemindMenu';
 import { laterStore } from '../later/store';
 import { useDismiss } from '../shell/useDismiss';
 import { BellIcon, BellOffIcon, CopyLinkIcon, HashIcon, MarkReadIcon, MoreIcon, NewWindowIcon, SaveForLaterIcon } from '../shell/icons';
-import { channelLabel, followEntry, markerLabel, repliesLine, withHandles } from './threadCard';
+import { channelLabel, followEntry, markerLabel, repliesLine, replySnippet, withHandles } from './threadCard';
 
 /*
  * One row of the Threads list: who started the thread, where it lives, when it last moved, the first message, who is in it and how many
@@ -57,6 +57,7 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
   const rootName = (item.rootAuthor && people.byActor(item.rootAuthor.actorId)?.name) ?? item.rootAuthor?.displayName ?? 'Someone';
   const saved = laterStore.itemFor(item.rootMessageId);
   const follow = followEntry(item.followed);
+  const snippet = replySnippet(item);
   const extra = item.participantCount - item.participants.length;
 
   useEffect(() => {
@@ -135,6 +136,7 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
             <time className="thc-time" dateTime={item.lastReplyAt} data-vt-mask>{ago(item.lastReplyAt)}</time>
           </span>
           <span className="thc-text" data-vt-mask>{withHandles(item.title).map((p, i) => (p.handle ? <span key={i} className="thc-handle">{p.text}</span> : p.text))}</span>
+          {snippet ? <span className="thc-snippet" data-vt-mask>{snippet}</span> : null}
           <span className="thc-foot">
             {item.participants.length > 0 ? (
               <span className="thc-faces">

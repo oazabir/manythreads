@@ -54,15 +54,14 @@ describe('one h1 per page', () => {
   });
 });
 
-const PENDING: string[] = ['screens/ThreadsInbox.tsx', 'screens/conversations/ConversationView.tsx'];
+const PENDING: string[] = ['screens/conversations/ConversationView.tsx'];
 
 /**
  * Route screens that do not import PageHeader themselves, and why. The list must only shrink.
- * ThreadsInbox and ConversationView draw their own h1 inside a list pane (ConversationView registers it with OwnsPageTitle); the rest
+ * ConversationView draws its own h1 inside a list pane (it registers it with OwnsPageTitle); the rest
  * have no heading of their own (a redirect, a guard, or the shell's fallback h1 names a channel or DM).
  */
 const PENDING_ROUTE_FILES: Record<string, string> = {
-  'screens/ThreadsInbox.tsx': 'owns its h1 (list pane title)',
   'screens/conversations/ConversationView.tsx': 'owns its h1 and registers it with OwnsPageTitle',
   'screens/ChannelView.tsx': 'the shell h1 carries the channel name',
   'screens/AdminOnly.tsx': 'a route guard, draws no heading',

@@ -180,7 +180,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       {variant === 'main' ? (
         <div className="chead thread-head">
           <h3 className="thread-title">{threadState?.title ?? root.bodyPlain.slice(0, 80)}</h3>
-          {channelName ? <span className="topic"># {channelName}</span> : null}
+          {channelName || tl.channel?.kind === 'dm' ? <span className="topic" data-testid="thread-place">{channelName ? `Thread in #${channelName}` : 'Thread in a direct message'}</span> : null}
           <div className="right">
             {threadState ? (
               <button type="button" className="btn s" aria-pressed={threadState.followed} disabled={busy} onClick={() => void toggleFollow()}>

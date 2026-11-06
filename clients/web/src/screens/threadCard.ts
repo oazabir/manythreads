@@ -42,3 +42,31 @@ export function withHandles(text: string): ReadonlyArray<{ text: string; handle:
 /** The label of the follow entry in the Actions menu, with the sentence under it. */
 export const followEntry = (followed: boolean): { label: string; hint: string } =>
   followed ? { label: 'Unfollow thread', hint: 'You won’t be notified about replies' } : { label: 'Follow thread', hint: 'You will be notified about replies' };
+
+export type ThreadDay = 'Today' | 'Yesterday' | 'This week' | 'Earlier';
+
+const dayStart = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/** Which day group a thread belongs to, by its newest reply on the reader's clock. */
+export function dayOf(iso: string, now: Date): ThreadDay {
+  const days = Math.round((dayStart(now) - dayStart(new Date(iso))) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return days < 7 ? 'This week' : 'Earlier';
+}
+
+/** The list cut into day groups, keeping the order it came in (newest first); an empty group is left out. */
+export function groupThreads<T extends Pick<ThreadInboxItem, 'lastReplyAt'>>(items: readonly T[], now: Date): ReadonlyArray<{ day: ThreadDay; items: T[] }> {
+  const out: Array<{ day: ThreadDay; items: T[] }> = [];
+  for (const it of items) {
+    const day = dayOf(it.lastReplyAt, now);
+    const last = out.at(-1);
+    if (last && last.day === day) last.items.push(it);
+    else out.push({ day, items: [it] });
+  }
+  return out;
+}
+
+/** The newest reply as the row shows it: "Name: preview"; null when none is left to show. */
+export const replySnippet = (item: Pick<ThreadInboxItem, 'lastReply'>): string | null =>
+  item.lastReply && item.lastReply.preview.trim() ? `${item.lastReply.authorName}: ${item.lastReply.preview.trim()}` : null;

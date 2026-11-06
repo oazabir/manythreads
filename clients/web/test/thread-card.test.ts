@@ -41,3 +41,24 @@ describe('the words of a Threads row', () => {
     expect(followEntry(false).label).toBe('Follow thread');
   });
 });
+
+import { dayOf, groupThreads, replySnippet } from '../src/screens/threadCard';
+
+describe('day groups of the Threads list', () => {
+  const now = new Date(2026, 10, 6, 12, 0, 0);
+  const at = (daysAgo: number): string => new Date(2026, 10, 6 - daysAgo, 9, 0, 0).toISOString();
+  it('names the day by the reader clock', () => {
+    expect(dayOf(at(0), now)).toBe('Today');
+    expect(dayOf(at(1), now)).toBe('Yesterday');
+    expect(dayOf(at(4), now)).toBe('This week');
+    expect(dayOf(at(9), now)).toBe('Earlier');
+  });
+  it('keeps the order and starts a group when the day changes', () => {
+    const g = groupThreads([{ lastReplyAt: at(0) }, { lastReplyAt: at(0) }, { lastReplyAt: at(1) }, { lastReplyAt: at(12) }], now);
+    expect(g.map((x) => [x.day, x.items.length])).toEqual([['Today', 2], ['Yesterday', 1], ['Earlier', 1]]);
+  });
+  it('shows the newest reply as "Name: preview"', () => {
+    expect(replySnippet({ lastReply: { authorName: 'Tester', preview: ' 213 passing ' } })).toBe('Tester: 213 passing');
+    expect(replySnippet({ lastReply: null })).toBeNull();
+  });
+});

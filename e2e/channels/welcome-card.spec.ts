@@ -28,13 +28,9 @@ test('Priya sees the checklist, joins #general from it, and dismissing it sticks
     const card = page.getByTestId('welcome-card');
     await expect(card).toContainText('Welcome, Priya');
     const steps = card.getByTestId('welcome-step');
-    await expect(steps).toHaveCount(3);
+    await expect(steps).toHaveCount(2);
     await expect(steps.nth(0)).toContainText('Join #general');
     await expect(steps.nth(1)).toContainText('Follow a thread');
-    await expect(steps.nth(2)).toContainText('Ask Brain');
-    await expect(steps.nth(2)).toContainText('Available soon');
-    await expect(steps.nth(2)).toHaveAttribute('aria-disabled', 'true');
-    await expect(steps.nth(2).getByRole('button')).toHaveCount(0);
     await expect(steps.nth(0)).toHaveAttribute('data-done', 'false');
 
     await steps.nth(0).getByRole('button', { name: 'Join' }).click();

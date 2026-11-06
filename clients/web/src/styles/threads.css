@@ -115,6 +115,25 @@
 
 .thc.unread .thc-text {
   color: var(--ink);
+  font-weight: 600;
+}
+
+.thc-snippet {
+  display: block;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thc-day {
+  margin: 0;
+  padding: 10px 14px 4px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  list-style: none;
 }
 
 .thc-handle {

@@ -8,9 +8,8 @@ import { CloseIcon } from '../shell/icons';
 import { CheckIcon } from '../shell/icons';
 
 /*
- * The first-day checklist of the Threads home for members (PLAN P3-14): join #general, follow a thread, ask Brain. Dismissing it is
+ * The first-day checklist of the Threads home for members (PLAN P3-14): join #general, follow a thread. It shows in the Followed list only while that list is empty. Dismissing it is
  * remembered per person in this browser (localStorage, which may be blocked: the card then simply comes back next visit).
- * The Brain step is inert until Brain exists.
  */
 const KEY = (personId: string): string => `manythreads.welcome.dismissed.${personId}`;
 
@@ -88,11 +87,6 @@ export function WelcomeCard({ slug }: { slug: string }) {
         <Step done={followed.status === 'ok' && followed.data === true} label="Follow a thread">
           {followed.status === 'ok' && followed.data === true ? null : <span className="wc-hint">Open a thread and turn on Follow</span>}
         </Step>
-        <li className="wc-step inert" data-testid="welcome-step" data-done="false" aria-disabled="true">
-          <span className="wc-box" aria-hidden="true" />
-          <span className="wc-label">Ask Brain</span>
-          <span className="wc-aside"><span className="wc-hint">Available soon</span></span>
-        </li>
       </ul>
       {error ? <p className="wc-error" role="alert">{error}</p> : null}
     </section>
