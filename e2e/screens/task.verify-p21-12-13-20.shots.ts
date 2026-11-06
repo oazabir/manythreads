@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- live probe */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
@@ -16,7 +15,6 @@ mkdirSync(OUT, { recursive: true });
 test.describe.configure({ mode: 'serial' });
 const fivexx: string[] = [];
 const JARGON = ['BOT.md', 'TEAM.md', 'bots/', 'routines/', 'slug', 'frontmatter', 'uuid', 'YAML', 'markdown'];
-const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const T = '/t/engineering';
 const pages: Array<[string, string, boolean]> = [
   ['boards', `${T}/boards`, true], ['org', `${T}/org`, true], ['jobs', `${T}/jobs`, true], ['recipes', `${T}/recipes`, true],

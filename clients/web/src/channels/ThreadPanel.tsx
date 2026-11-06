@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useMatch } from 'react-router';
-import type { FileSummary } from '@manythreads/shared';
 import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { channelPath } from '../shell/nav';
@@ -11,7 +10,7 @@ import { usePanelSub } from '../kernel/panel/sub';
 import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
 import { CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
-import { Composer } from './Composer';
+import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
 import { continuesRun } from './runs';
 import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
@@ -131,10 +130,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     [channelId, rootId],
   );
   const send = useCallback(
-    (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => {
+    (body: string, { attachments, confirmBroadcast, voice }: SendOptions) => {
       if (!channelId) return;
       stuck.current = true;
-      void channelStore.send(channelId, rootId, body, attachments, false, confirmBroadcast === true);
+      void channelStore.send(channelId, rootId, body, attachments, false, confirmBroadcast === true, voice);
     },
     [channelId, rootId],
   );

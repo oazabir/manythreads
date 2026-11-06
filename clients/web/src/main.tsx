@@ -38,6 +38,7 @@ import './styles/switcher.css';
 import './styles/emoji.css';
 import './styles/polls.css';
 import './styles/voice-player.css';
+import './styles/recorder.css';
 import './styles/onboarding.css';
 import './styles/import.css';
 import './styles/runners.css';

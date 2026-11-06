@@ -35,10 +35,6 @@ const shoot = async (page: Page, n: string): Promise<void> => {
   await page.screenshot({ path: join(OUT, `${n}.png`) });
   log(`shot ${n}`);
 };
-const csrf = async (ctx: BrowserContext): Promise<Record<string, string>> => {
-  const c = (await ctx.cookies()).find((x) => x.name.endsWith('manythreads_csrf'));
-  return c ? { 'x-csrf-token': c.value } : {};
-};
 const noSideways = async (page: Page, label: string): Promise<void> => {
   const w = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
   log(`${label} scrollWidth ${w.sw} client ${w.cw} => ${w.sw <= w.cw ? 'OK' : 'SIDEWAYS'}`);
@@ -90,7 +86,6 @@ test('sidebar desktop: header, hint, folds, row menu', async () => {
   // row menu
   const row = page.locator('[data-landmark="sidebar"] a[href$="/c/dev"]').first();
   await row.hover();
-  const trig = page.locator('[data-landmark="sidebar"] [data-testid="channel-row-menu"]').nth(1);
   log(`channel row menus ${await page.getByTestId('channel-row-menu').count()} aria ${JSON.stringify(await page.getByTestId('channel-row-menu').evaluateAll((e) => e.slice(0, 3).map((x) => x.getAttribute('aria-label'))))}`);
   await shoot(page, '03b-row-hover-1440');
   await page.getByRole('button', { name: 'Options for dev' }).or(page.getByRole('button', { name: 'Options for #dev' })).first().click({ timeout: 4000 }).catch((e) => log(`row menu click failed ${String(e).slice(0, 80)}`));

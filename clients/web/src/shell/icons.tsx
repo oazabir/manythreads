@@ -5,6 +5,7 @@ import {
   LinkIcon, LockIcon as ProLock, MenuIcon as ProMenu, MoonIcon as ProMoon, MoreIcon as ProMore, SearchIcon as ProSearch, SendIcon as ProSend, SettingsIcon,
   StarIcon as ProStar, ArrowSyncIcon, TuneIcon, CheckmarkIcon, AddIcon as ProAdd, SubtractIcon as ProSubtract, PencilIcon as ProPencil, MailIcon as ProMail, HashIcon as ProHash, MentionIcon as ProMention,
   WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon, SparkleIcon, AndroidIcon, ArrowLeftIcon, ArrowRightIcon, DeleteIcon, ArrowLeftRightIcon,
+  MicrophoneIcon, PauseIcon as PauseIcon_, PlayIcon as PlayIcon_, SquareIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -90,3 +91,10 @@ export const ColumnLeftIcon = proIcon(ArrowLeftIcon, 14);
 export const ColumnRightIcon = proIcon(ArrowRightIcon, 14);
 export const ColumnDeleteIcon = proIcon(DeleteIcon, 14);
 export const ColumnGripIcon = proIcon(ArrowLeftRightIcon, 14);
+
+/* Voice messages (P14-17): the recorder in the composer. The stop square is drawn filled with `<StopIcon filled />`. */
+export const MicIcon = proIcon(MicrophoneIcon, 16);
+export const StopIcon = proIcon(SquareIcon, 14);
+export const PlayIcon = proIcon(PlayIcon_, 14);
+export const PauseIcon = proIcon(PauseIcon_, 14);
+export const TrashIcon = proIcon(DeleteIcon, 15);

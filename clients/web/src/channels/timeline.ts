@@ -1,4 +1,4 @@
-import type { ChannelMessage, FileSummary, ReactionSummary, ThreadChannelRef, ThreadState } from '@manythreads/shared';
+import type { ChannelMessage, FileSummary, ReactionSummary, ThreadChannelRef, ThreadState, VoiceMeta } from '@manythreads/shared';
 
 /*
  * What the channel view and the thread panel show, as plain data with pure updates (the store applies them; the tests call them
@@ -14,6 +14,8 @@ export type PendingSend = {
   createdAt: string;
   alsoToChannel?: boolean;
   confirmBroadcast?: boolean;
+  /** A voice message (P14-17): the clip is `attachments[0]`; kept so a retry sends the same meta. */
+  voice?: VoiceMeta;
   /** Set on a failed send that the server refused only because `@channel` / `@here` would notify a big room: its sentence ("@channel will notify 52 people."). "Send anyway" confirms it. */
   askConfirm?: string;
 };

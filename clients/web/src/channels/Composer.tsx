@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary } from '@manythreads/shared';
+import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary, type VoiceMeta } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchBroadcastReach, sendTyping, uploadChannelFile } from '../api/endpoints';
 import { createTask, fetchChannelBoards } from '../screens/boards/api';
 import { botBoardOf, branchFor } from '../screens/boards/board';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
+import { ShellContext } from '../shell/context';
 import { useDismiss } from '../shell/useDismiss';
+import { Recorder, RecorderNotice } from './voice/Recorder';
+import { useRecorder } from './voice/useRecorder';
+import { recorderSupported } from './voice/support';
 import { SlashHelp } from './SlashHelp';
 import { RemindersDialog } from '../later/RemindersDialog';
 import { refreshDirectory } from '../shell/channelFeed';
@@ -59,6 +63,14 @@ type Upload = {
   abort?: AbortController;
 };
 
+/** What goes out with the text: the files already uploaded, the writer's "Send anyway" for `@channel` / `@here` in a big room, and the meta of a voice message. */
+export type SendOptions = {
+  attachments: FileSummary[];
+  confirmBroadcast?: boolean;
+  /** A voice message (P14-17): the clip is the one entry of `attachments`; the text is the stand-in line or the transcript. */
+  voice?: VoiceMeta;
+};
+
 export type ComposerProps = {
   /** Where the draft is kept: one per channel or thread. */
   draftKey: string;
@@ -71,10 +83,12 @@ export type ComposerProps = {
   /** Channel names offered after `#`. */
   channelNames: readonly string[];
   /**
-   * Called with the text (and the files already uploaded); the caller shows the message at once and handles failure. `confirmBroadcast` is true when the
+   * Called with the text and the options (see `SendOptions`); the caller shows the message at once and handles failure. `confirmBroadcast` is true when the
    * writer agreed that `@channel` or `@here` goes to a big room.
    */
-  onSend: (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => void;
+  onSend: (body: string, options: SendOptions) => void;
+  /** Offer the microphone button (a voice message). Off where a voice message makes no sense. It is also hidden for guests and where files or recording are not supported. */
+  voice?: boolean;
   /** Focus the box when it appears (the thread panel). */
   autoFocus?: boolean;
   /** The Up arrow in an empty box: open the reader's last message of their own for editing (absent where there is nothing to edit). */
@@ -108,8 +122,14 @@ type PickItem = {
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
-export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false, onEditLast, slash, sendLater = false }: ComposerProps) {
+export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, voice = true, autoFocus = false, onEditLast, slash, sendLater = false }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
+  const guest = useContext(ShellContext)?.guest ?? false;
+  const rec = useRecorder();
+  const resetRecorder = rec.reset;
+  const [canRecord] = useState(() => recorderSupported());
+  const voiceOn = voice && canRecord && filesOn && !guest;
+  const voiceActive = voiceOn && (rec.state.phase === 'recording' || rec.state.phase === 'preview');
   const [text, setText] = useState(() => readDraft(draftKey));
   // true while a "Send later" request is out; the ref is what the handlers read, the state is what the buttons show
   const scheduling = useRef(false);
@@ -155,6 +175,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const nextId = useRef(1);
   const selection = useRef<[number, number] | null>(null);
   const draftFor = useRef(draftKey);
+  const focusBox = useCallback(() => void requestAnimationFrame(() => area.current?.focus()), []);
   const lastTyping = useRef(0);
   const typingOff = useRef(false);
 
@@ -162,6 +183,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   useEffect(() => {
     if (draftFor.current === draftKey) return;
     draftFor.current = draftKey;
+    resetRecorder();
     setText(readDraft(draftKey));
     setNotice(null);
     setDismissed(null);
@@ -172,7 +194,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       });
       return [];
     });
-  }, [draftKey]);
+  }, [draftKey, resetRecorder]);
   useEffect(() => {
     const t = setTimeout(() => writeDraft(draftFor.current, text), 250);
     return () => clearTimeout(t);
@@ -515,7 +537,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       void askBroadcast(body, ready);
       return;
     }
-    onSend(body, ready);
+    onSend(body, { attachments: ready });
     clearBox();
   };
 
@@ -541,7 +563,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         setBcast({ ask, body, files });
         return;
       }
-      onSend(body, files);
+      onSend(body, { attachments: files });
       clearBox();
     } finally {
       asking.current = false;
@@ -571,7 +593,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       void scheduleFor(b.later, true);
       return;
     }
-    onSend(b.body, b.files, true);
+    onSend(b.body, { attachments: b.files, confirmBroadcast: true });
     clearBox();
   };
   const cancelBroadcast = (): void => {
@@ -843,6 +865,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
             ))}
           </ul>
         ) : null}
+        {voiceOn ? <RecorderNotice rec={rec} /> : null}
         {notice ? (
           <p className={`cnotice ${notice.tone}`} role={notice.tone === 'bad' ? 'alert' : 'status'} data-testid="slash-notice">
             <span>{notice.text}</span>
@@ -867,7 +890,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
             <button type="button" className="btn s" onClick={cancelBroadcast}>Cancel</button>
           </div>
         ) : null}
-        <div className="cinput">
+        <div className={`cinput ${voiceActive ? 'vr-on' : ''}`}>
           {open ? (
             <ul className={`picker ${slashContext ? 'slash' : ''}`} id={listId} role="listbox" aria-label={menuLabel} data-testid={slashContext ? 'slash-menu' : undefined}>
               {items.map((it, i) => (
@@ -905,14 +928,16 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
             onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            hidden={voiceActive}
           />
           {filesOn ? (
             <>
               <input ref={fileInput} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(e) => { addFiles(filesOf(e.target.files)); e.target.value = ''; }} />
-              <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" onClick={() => fileInput.current?.click()}><ClipIcon /></button>
+              <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" hidden={voiceActive} onClick={() => fileInput.current?.click()}><ClipIcon /></button>
             </>
           ) : null}
-          <span className="sch-split">
+          {voiceOn ? <Recorder rec={rec} channelId={channelId} showMic={text === '' && uploads.length === 0} onSend={onSend} returnFocus={focusBox} /> : null}
+          <span className="sch-split" hidden={voiceActive}>
             <button type="button" className="btn primary send" aria-label="Send" disabled={!canSend || schedulingNow} onClick={send}><SendIcon /><span>Send</span></button>
             {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}
           </span>

@@ -340,7 +340,8 @@ export function ConversationView() {
                     threadRootId={null}
                     people={people}
                     channelNames={channelNames}
-                    onSend={(body, attachments) => void start(body, attachments)}
+                    voice={false}
+                    onSend={(body, { attachments }) => void start(body, attachments)}
                     autoFocus={!narrow && viaTabs !== pageKey}
                   />
                 </div>

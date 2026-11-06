@@ -12,6 +12,7 @@ import {
   type Message,
   type PollView,
   type ReactionSummary,
+  type VoiceMeta,
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { isApiError } from '../api/client';
@@ -498,7 +499,7 @@ export class ChannelStore {
 
   // ---- writes ------------------------------------------------------------------------------------------------
   /** Optimistic send: the message shows at once as "sending"; on failure it stays with "Not sent · Retry". */
-  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false, confirmBroadcast = false): Promise<void> {
+  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false, confirmBroadcast = false, voice?: VoiceMeta): Promise<void> {
     const key = rootId ? threadKey(rootId) : channelKey(channelId);
     const item: PendingSend = {
       localId: idOf(),
@@ -509,6 +510,7 @@ export class ChannelStore {
       ...(alsoToChannel && rootId ? { alsoToChannel: true } : {}),
       // the writer confirmed that @channel or @here goes to a big room; kept so a retry sends what was confirmed
       ...(confirmBroadcast ? { confirmBroadcast: true } : {}),
+      ...(voice ? { voice } : {}),
     };
     this.put(key, (t) => ({ ...t, pending: [...t.pending, item] }));
     await this.deliver(key, channelId, rootId, item);
@@ -532,7 +534,7 @@ export class ChannelStore {
 
   private async deliver(key: string, channelId: string, rootId: string | null, item: PendingSend): Promise<void> {
     try {
-      const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true, item.confirmBroadcast === true);
+      const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true, item.confirmBroadcast === true, item.voice);
       this.applyPosted(asChannelMessage(m, item.attachments), item.localId);
       // the push may have come first and already removed the pending copy; either way it is gone now
       this.put(key, (t) => ({ ...t, pending: t.pending.filter((p) => p.localId !== item.localId) }));

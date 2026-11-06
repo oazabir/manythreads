@@ -235,6 +235,7 @@ import {
   MarkReadRequest,
   MarkReadResponse,
   PostMessageRequest,
+  type VoiceMeta,
   PostMessageResponse,
   ReactRequest,
   ReactResponse,
@@ -698,6 +699,8 @@ export const postMessage = (
   attachments: readonly string[] = [],
   alsoToChannel = false,
   confirmBroadcast = false,
+  /** A voice message (P14-17): the clip is the one entry of `attachments`. */
+  voice?: VoiceMeta,
 ) =>
   call(
     postMessageRoute,
@@ -709,6 +712,7 @@ export const postMessage = (
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(alsoToChannel && threadRootId ? { alsoToChannel: true } : {}),
       ...(confirmBroadcast ? { confirmBroadcast: true } : {}),
+      ...(voice ? { voice } : {}),
     } as PostMessageRequest,
     { channelId },
   );

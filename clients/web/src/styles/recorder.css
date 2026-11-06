@@ -1,0 +1,205 @@
+/* The voice message recorder in the composer (PLAN P14-17): the mic button, the recording bar and the preview. Classes are prefixed `vr-`.
+   The composer row (`.cinput`, `.clip`, `.send`, `.icon-btn`, `.btn`) belongs to channels.css and shell.css and is not redefined here, only
+   hidden while a recording or a preview takes its place. Tokens only. */
+
+/* while recording or previewing, the text box, the clip button and Send give way */
+.cinput > textarea[hidden],
+.cinput .clip[hidden],
+.cinput .sch-split[hidden] {
+  display: none;
+}
+
+/* ---- the mic button ---- */
+.vr-mic {
+  flex: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.vr-mic:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.vr-mic.on {
+  background: var(--alert-wash);
+  color: var(--alert);
+}
+
+/* ---- the recording bar ---- */
+.vr-bar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 4px;
+}
+
+.vr-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--alert);
+  animation: vr-pulse 1.2s ease-in-out infinite;
+}
+
+.vr-word {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vr-bar.cancelling .vr-word {
+  color: var(--alert-ink);
+}
+
+.vr-time {
+  flex: none;
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.vr-meter {
+  flex: 1;
+  height: 6px;
+  min-width: 24px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--hairline);
+}
+
+.vr-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--human);
+  transform-origin: left center;
+  transition: transform 80ms linear;
+}
+
+.vr-bar.cancelling .vr-fill {
+  background: var(--alert);
+}
+
+.vr-cancel {
+  flex: none;
+}
+
+/* ---- the preview ---- */
+.vr-preview {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 6px 4px;
+}
+
+.vr-play {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.vr-wave {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 80px;
+  height: 32px;
+}
+
+.vr-b {
+  flex: 1;
+  min-width: 1px;
+  border-radius: var(--radius-sm);
+  background: var(--rule);
+}
+
+.vr-b.played {
+  background: var(--human);
+}
+
+.vr-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.vr-note.bad {
+  color: var(--alert-ink);
+}
+
+.vr-actions {
+  display: flex;
+  flex-basis: 100%;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.vr-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vr-notice .icon-btn {
+  margin-left: auto;
+}
+
+@keyframes vr-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-dot {
+    animation: none;
+  }
+
+  .vr-fill {
+    transition: none;
+  }
+}
+
+/* ---- phone ---- */
+@media (width <= 760px) {
+  /* a finger-sized target; the bar's hint is shortened by ellipsis, not wrapped */
+  .vr-mic {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vr-bar {
+    gap: 8px;
+    padding: 0;
+  }
+
+  .vr-actions .btn {
+    min-height: 40px;
+  }
+}
+
+/* under 360 px the waveform keeps every second bar */
+@media (width <= 360px) {
+  .vr-b:nth-child(even) {
+    display: none;
+  }
+}

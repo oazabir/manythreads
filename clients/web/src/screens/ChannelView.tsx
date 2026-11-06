@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router';
-import type { FileSummary } from '@manythreads/shared';
 import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { BookmarksBar } from '../channels/BookmarksBar';
-import { Composer } from '../channels/Composer';
+import { Composer, type SendOptions } from '../channels/Composer';
 import { estimateItem, buildListItems, dayAt, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
 import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
 import { lastEditableOwn } from '../channels/messageActions';
@@ -276,8 +275,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   );
 
   const send = useCallback(
-    (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => {
-      void channelStore.send(channelId, null, body, attachments, false, confirmBroadcast === true);
+    (body: string, { attachments, confirmBroadcast, voice }: SendOptions) => {
+      void channelStore.send(channelId, null, body, attachments, false, confirmBroadcast === true, voice);
       api.current?.scrollToBottom();
     },
     [channelId],
