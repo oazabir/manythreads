@@ -74,6 +74,7 @@ test('Omar tests Brain: an answer, the writes held back as not done, nothing cha
     // ---- (a) the button and the empty panel
     await omar.goto(`/t/${TEAM}/bots/${BOT}`);
     await omar.getByTestId('bot-page').waitFor(T);
+    await omar.getByTestId('bot-more').click();
     await omar.getByTestId('open-test').click();
     await expect(omar.getByTestId('test-panel')).toBeVisible(T);
     await shot(omar, '01-test-panel-open');
@@ -108,6 +109,8 @@ test('Omar tests Brain: an answer, the writes held back as not done, nothing cha
     priya = await signIn(browser, 'priya');
     await priya.goto(`/t/${TEAM}/bots/${BOT}`);
     await priya.getByTestId('bot-page').waitFor(T);
+    await priya.getByTestId('bot-more').click();
+    await expect(priya.getByTestId('back-to-roster')).toBeVisible(T);
     await expect(priya.getByTestId('open-test')).toHaveCount(0);
     await shot(priya, '04-priya-no-test-button');
     const denied = await apiOf(priya).post(`/api/teams/${TEAM}/bots/${BOT}/test`, { question: 'May I?' });
@@ -118,6 +121,7 @@ test('Omar tests Brain: an answer, the writes held back as not done, nothing cha
     phone = await signIn(browser, 'omar', true);
     await phone.goto(`/t/${TEAM}/bots/${BOT}`);
     await phone.getByTestId('bot-page').waitFor(T);
+    await phone.getByTestId('bot-more').click();
     await phone.getByTestId('open-test').click();
     await phone.getByTestId('test-question').fill('Who owns the release checklist?');
     await phone.getByTestId('test-run').click();

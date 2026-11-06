@@ -10,6 +10,7 @@ import { Alert, Avatar, Notice } from '../../components/ui';
 import { useCrumbTail } from '../../shell/topic';
 import { botMdPath, deployBot, fetchMcpTools } from './api';
 import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
+import { MoreMenu, type MoreItem } from './MoreMenu';
 import { TabPanel } from './tabs';
 import { BotTestPanel } from './test-panel';
 import { canOfferTest } from './test-run';
@@ -166,6 +167,19 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
     }
   };
 
+  // The "…" menu (P21-17): everything the header keeps out of the way. Test is a rehearsal for someone who may manage the bot (P7-11; the server
+  // checks again and holds back every write); Change picture is a lead's or, for Brain, an admin's.
+  const moreItems: MoreItem[] = [
+    ...(canOfferTest({ canEdit, status: bot.status, conversational: bot.conversational, runtime: bot.runtime })
+      ? [{ label: testing ? 'Hide the test' : 'Test', testId: 'open-test', onSelect: () => setTesting((v) => !v) }]
+      : []),
+    ...(canPick ? [{ label: 'Change picture', testId: 'bot-change-picture', onSelect: () => setPicking(true) }] : []),
+    { label: 'Roster', testId: 'back-to-roster', to: `/t/${slug}/bots` },
+    { label: 'Open the file', testId: 'open-in-files', to: `/t/${slug}/files?open=${encodeURIComponent(path)}` },
+    { label: 'Proposals', testId: 'bot-proposals', to: `/t/${slug}/proposals` },
+    { label: 'Usage', testId: 'bot-usage', to: `/t/${slug}/bots/${bot.slug}/usage` },
+  ];
+
   const invalid = bot.invalid;
   return (
     <>
@@ -182,23 +196,15 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
         <div className="b-head-act">
           {/* no conversation trigger, no 1:1 chat: nothing is drawn (the API answers 409 as well) */}
           {bot.status === 'active' && bot.conversational ? (
-            <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="open-conversation">Talk to {bot.name}</Link>
-          ) : null}
-          {/* the Test action (P7-11): a rehearsal for someone who may manage the bot; the server checks again and holds back every write */}
-          {canOfferTest({ canEdit, status: bot.status, conversational: bot.conversational, runtime: bot.runtime }) ? (
-            <button type="button" className="btn s" aria-expanded={testing} onClick={() => setTesting((v) => !v)} data-testid="open-test">Test</button>
+            <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} aria-label={`Talk to ${bot.name}`} data-testid="open-conversation">Talk</Link>
           ) : null}
           {/* the Deploy action (P8-34): commits the definition, makes the knowledge ready, switches the connection on; the server checks every part and reports each */}
           {canEdit && draft.frontmatter ? (
-            <button type="button" className="btn s primary" disabled={deployWait !== null} title={deployWait ?? 'Commit the definition, make its knowledge ready and switch on its connection'} onClick={() => void doDeploy()} data-testid="deploy-bot">
+            <button type="button" className="btn s" disabled={deployWait !== null} title={deployWait ?? 'Commit the definition, make its knowledge ready and switch on its connection'} onClick={() => void doDeploy()} data-testid="deploy-bot">
               {deploying ? 'Deploying…' : 'Deploy'}
             </button>
           ) : null}
-          {canPick ? <button type="button" className="btn s" onClick={() => setPicking(true)} data-testid="bot-change-picture">Change picture</button> : null}
-          <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
-          <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
-          <Link className="btn s" to={`/t/${slug}/proposals`} data-testid="bot-proposals">Proposals</Link>
-          <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/usage`} data-testid="bot-usage">Usage</Link>
+          <MoreMenu label="More actions" testId="bot-more" compact items={moreItems} />
         </div>
       </header>
 

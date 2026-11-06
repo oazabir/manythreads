@@ -35,6 +35,7 @@ test.afterAll(async () => {
 test('a lead presses Test, asks one question, reads the answer, and every write the bot tried is listed as not done', async ({ browser, playwright, isMobile }) => {
   const { page, close } = await openBot(browser, playwright, stack, 'omar', 'brain');
   try {
+    await page.getByTestId('bot-more').click();
     await page.getByTestId('open-test').click();
     const panel = page.getByTestId('test-panel');
     await expect(panel).toBeVisible();
@@ -85,6 +86,8 @@ test('a plain member is not offered Test, and the API refuses them', async ({ br
   const { page, close } = await openBot(browser, playwright, stack, 'nadia', 'brain');
   try {
     await expect(page.getByTestId('bot-title')).toContainText('Brain');
+    await page.getByTestId('bot-more').click();
+    await expect(page.getByTestId('back-to-roster')).toBeVisible();
     await expect(page.getByTestId('open-test')).toHaveCount(0);
   } finally {
     await close();

@@ -76,6 +76,7 @@ test('Omar sees it in the roster, chooses a bot picture, and Rafi goes back to i
     await page.goto(`/t/engineering/bots/${slug}`);
     // every bot is given a random animal when it is created: remember it, so the check leaves the bot as it found it
     const original = await page.locator('[data-landmark="bot-head"] .av').getAttribute('data-avatar');
+    await page.getByTestId('bot-more').click();
     await page.getByTestId('bot-change-picture').click();
     const dialog = page.getByTestId('avatar-picker');
     await expect(dialog.locator('.avp-cell')).toHaveCount(25, T);
@@ -91,6 +92,7 @@ test('Omar sees it in the roster, chooses a bot picture, and Rafi goes back to i
     await shoot(page, '9-bot-roster');
     // put both back
     await page.goto(`/t/engineering/bots/${slug}`);
+    await page.getByTestId('bot-more').click();
     await page.getByTestId('bot-change-picture').click();
     if (original?.startsWith('preset:')) {
       await page.getByTestId(`avatar-${original.slice(7)}`).click();

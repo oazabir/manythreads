@@ -38,6 +38,7 @@
 .b-head-act {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
@@ -145,6 +146,11 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* the bot page's "…" is the icon alone: a square button the size of its neighbours */
+.bot-screen .b-more-btn {
+  padding-inline: 8px;
 }
 
 .menu.b-more-pop {
@@ -1072,5 +1078,20 @@
 
   .b-head-act {
     flex: 1 1 100%;
+  }
+}
+
+/* P21-17: on the bot page the two actions and "…" stay in one row under the name (nothing wraps, nothing overlaps) */
+@media (width <= 720px) {
+  .bot-screen .b-head-act {
+    flex-wrap: nowrap;
+  }
+
+  .bot-screen .b-head-act .btn {
+    white-space: nowrap;
+  }
+
+  .bot-screen .b-head-act .b-more {
+    margin-inline-start: auto;
   }
 }
