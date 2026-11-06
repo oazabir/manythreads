@@ -93,7 +93,8 @@ const isoOf = (t: number): string => new Date(t).toISOString().slice(0, 10);
  */
 export function fillDays(days: readonly UsageDay[], rangeDays: number, until?: string): UsageDay[] {
   const end = until ?? days[days.length - 1]?.day ?? isoOf(Date.now());
-  const last = new Date(`${end}T00:00:00.000Z`).getTime();
+  const parsed = new Date(`${end}T00:00:00.000Z`).getTime();
+  const last = Number.isNaN(parsed) ? Date.parse(`${isoOf(Date.now())}T00:00:00.000Z`) : parsed; // a malformed day must not throw while drawing
   const byDay = new Map(days.map((d) => [d.day, d]));
   const moneyHidden = days.length > 0 && days.every((d) => d.spendUsd === null);
   const out: UsageDay[] = [];

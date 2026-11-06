@@ -312,6 +312,11 @@
   .ob-actions .btn {
     min-height: 36px;
   }
+
+  .ob-toggle {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 .ob-fold {

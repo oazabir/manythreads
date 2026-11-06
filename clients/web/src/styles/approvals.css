@@ -308,6 +308,11 @@
     opacity: 1;
     pointer-events: auto;
   }
+
+  .apr-row-actions .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* the detail: the header holds the tag, the age and the two buttons; the sentence under it is the title */
@@ -356,6 +361,7 @@
 
   .apr-head-actions .btn {
     flex: 1;
+    min-height: 44px;
     padding: 9px 12px;
   }
 

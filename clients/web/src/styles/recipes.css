@@ -335,7 +335,10 @@
   }
 
   .rg-add {
-    min-height: 36px;
+    top: 6px;
+    right: 8px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .rg-item.has-add .rg-card-top {

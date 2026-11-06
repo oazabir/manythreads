@@ -40,4 +40,12 @@ describe('a request as one sentence', () => {
   it('does not describe a memory-sharing request as a bot call', () => {
     expect(approvalSentence({ ...base, botName: null, tool: MEMORY_DIGEST_SEND_TOOL, summary: 'Send the Monday digest' })).toBe('Nadia asked: Send the Monday digest');
   });
+
+  it('never throws on odd input: a tool named like an object method, a missing preview or summary', () => {
+    expect(approvalAction({ ...base, tool: 'constructor' })).toBe('use constructor');
+    expect(approvalAction({ ...base, tool: 'toString', argsPreview: {} })).toBe('use toString');
+    const odd = { ...base, tool: 'email.send', argsPreview: null as never, summary: undefined as never, requesterName: undefined as never };
+    expect(approvalSentence(odd)).toBe('Support responder wants to send an email');
+    expect(approvalAction({ ...odd, tool: 'crm.merge' })).toBe('use crm.merge');
+  });
 });

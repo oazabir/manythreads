@@ -25,7 +25,9 @@ export function DayChart({ title, id, days, rangeDays, pick, failed, unit, barUn
   const max = all.reduce((m, d) => Math.max(m, pick(d)), 0);
   const first = all[0];
   const last = all[all.length - 1];
-  const [active, setActive] = useState(all.length - 1);
+  const [picked, setActive] = useState(all.length - 1);
+  // the range can shrink while the chart stays mounted (7 days after 30): a stale index must not leave every bar out of the tab order
+  const active = Math.min(Math.max(picked, 0), Math.max(all.length - 1, 0));
 
   const move = (e: KeyboardEvent<HTMLElement>, i: number) => {
     const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : null;

@@ -56,7 +56,7 @@ export function Onboarding() {
                 {summary.steps.map((s) => {
                   const next = summary.next?.id === s.id;
                   const b = badge(s, next);
-                  const open = isStepOpen(s.id, folded, chosen);
+                  const open = isStepOpen(s.id, folded, chosen, s.status);
                   return (
                     <div key={s.id} className="ob-step" id={`ob-${s.id}`} data-step={s.id} data-done={s.done ? 'true' : 'false'} data-status={s.status} data-next={next ? 'true' : 'false'} data-open={open ? 'true' : 'false'}>
                       <span className="ob-num" aria-hidden="true">{s.n}</span>
@@ -68,7 +68,7 @@ export function Onboarding() {
                             type="button"
                             className="ob-toggle"
                             aria-expanded={open}
-                            aria-controls={`ob-body-${s.id}`}
+                            aria-controls={open ? `ob-body-${s.id}` : undefined}
                             aria-label={`${open ? 'Fold' : 'Open'} step ${s.n}, ${s.title}`}
                             data-testid={`ob-toggle-${s.id}`}
                             onClick={() => setChosen((c) => ({ ...c, [s.id]: !open }))}

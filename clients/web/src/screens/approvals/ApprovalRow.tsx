@@ -38,7 +38,7 @@ export function ApprovalRow({ approval: a, slug, selected, onOpen, onDecided }: 
 
   return (
     <div className="apr-row">
-      <button type="button" className={`trow apr-trow ${selected ? 'on' : ''}`} onClick={onOpen}>
+      <button type="button" className={`trow apr-trow ${selected ? 'on' : ''}`} onClick={onOpen} aria-current={selected ? 'true' : undefined}>
         <AskerAvatar approval={a} />
         <span className="trow-main">
           <span className="apr-sentence" data-testid="approval-row-sentence">{approvalSentence(a)}</span>

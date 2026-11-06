@@ -19,7 +19,10 @@ const RISK: Record<ApprovalSource, Risk> = {
   grant: { label: 'Needs approval', tone: 'warn', hint: 'This tool is set to ask a person first.' },
 };
 
-export const riskOf = (a: Pick<Approval, 'source'>): Risk => RISK[a.source];
+/** Used when a newer server names a source this build does not know: the tag still reads, and nothing throws. */
+const UNKNOWN_RISK: Risk = { label: 'Needs approval', tone: 'warn', hint: 'A person has to approve this first.' };
+
+export const riskOf = (a: Pick<Approval, 'source'>): Risk => (Object.hasOwn(RISK, a.source) ? RISK[a.source] : UNKNOWN_RISK);
 
 /** The CSS class of the tag: the shared `.chip` with a tone. */
 export const riskClass = (r: Risk): string => (r.tone === 'neutral' ? 'chip' : `chip ${r.tone}`);

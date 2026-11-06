@@ -29,6 +29,13 @@ describe('folding the finished steps of Setup', () => {
     expect(isStepOpen('signin', folded, { signin: false })).toBe(false);
   });
 
+  it('opens a folded step by itself when it is to do again', () => {
+    const folded = collapsedAtStart(steps);
+    expect(isStepOpen('bootstrap', folded, {}, 'todo')).toBe(true);
+    expect(isStepOpen('bootstrap', folded, {}, 'done')).toBe(false);
+    expect(isStepOpen('bootstrap', folded, { bootstrap: false }, 'todo')).toBe(false);
+  });
+
   it('folds nothing on a fresh install where every step is still to do', () => {
     expect(collapsedAtStart(steps.map((s) => ({ ...s, status: 'todo' as const }))).size).toBe(0);
   });

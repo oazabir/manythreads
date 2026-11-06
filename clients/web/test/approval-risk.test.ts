@@ -23,4 +23,11 @@ describe('the risk tag of a waiting request', () => {
     expect(riskClass(riskOf({ source: 'grant' }))).toBe('chip warn');
     expect(riskClass(riskOf({ source: 'dispatch' }))).toBe('chip');
   });
+
+  it('gives a source this build does not know a plain tag instead of throwing', () => {
+    const r = riskOf({ source: 'something-new' as never });
+    expect(r.label).toBe('Needs approval');
+    expect(riskClass(r)).toBe('chip warn');
+    expect(riskOf({ source: 'constructor' as never }).label).toBe('Needs approval');
+  });
 });

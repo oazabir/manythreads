@@ -11,6 +11,7 @@ type Preview = Approval['argsPreview'];
 
 /** The first non-empty text among these keys of the preview, trimmed to one short line. */
 function pick(preview: Preview, keys: readonly string[]): string {
+  if (typeof preview !== 'object' || preview === null) return '';
   for (const key of keys) {
     const v = preview[key];
     if (typeof v === 'string' && v.trim() !== '') {
@@ -32,7 +33,7 @@ const PHRASES: Record<string, Phrase> = {
   'intercom.reply': (p) => (pick(p, ['customer']) ? `reply to ${pick(p, ['customer'])} on Intercom` : 'reply to a customer on Intercom'),
   'pages.write': (p) => {
     const path = pick(p, ['path', 'title']);
-    const create = p['mode'] === 'create';
+    const create = typeof p === 'object' && p !== null && p['mode'] === 'create';
     return path ? `${create ? 'create' : 'change'} the page ${path}` : `${create ? 'create' : 'change'} a page`;
   },
   'files.write': (p) => (pick(p, ['path']) ? `write the file ${pick(p, ['path'])}` : 'write a file'),
@@ -47,11 +48,13 @@ const PHRASES: Record<string, Phrase> = {
 
 /** The action alone, as a verb phrase ("send an email to m.okafor"). */
 export function approvalAction(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source'>): string {
-  const known = PHRASES[a.tool];
+  // own keys only: a tool called "constructor" or "toString" must not pick a function off the prototype
+  const known = Object.hasOwn(PHRASES, a.tool) ? PHRASES[a.tool] : undefined;
   if (known) return known(a.argsPreview);
   if (a.source === 'dlp') return 'send a message to the model';
   // the server's summary is "tool · what it is about": keep the "what" when there is one
-  const hint = a.summary.includes(' · ') ? a.summary.slice(a.summary.indexOf(' · ') + 3).trim() : pick(a.argsPreview, ['to', 'path', 'name', 'title', 'subject', 'query']);
+  const summary = typeof a.summary === 'string' ? a.summary : '';
+  const hint = summary.includes(' · ') ? summary.slice(summary.indexOf(' · ') + 3).trim() : pick(a.argsPreview, ['to', 'path', 'name', 'title', 'subject', 'query']);
   return hint ? `use ${a.tool} (${hint})` : `use ${a.tool}`;
 }
 
@@ -60,6 +63,7 @@ export function approvalSentence(a: Pick<Approval, 'tool' | 'summary' | 'argsPre
   if (isShareApproval(a)) return `${a.requesterName} asked: ${a.summary}`;
   const bot = a.botName ?? 'a bot';
   const action = approvalAction(a);
-  if (a.requesterName === bot || a.requesterName.trim() === '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} wants to ${action}`;
-  return `${a.requesterName} asked ${bot} to ${action}`;
+  const asker = typeof a.requesterName === 'string' ? a.requesterName : '';
+  if (asker === bot || asker.trim() === '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} wants to ${action}`;
+  return `${asker} asked ${bot} to ${action}`;
 }

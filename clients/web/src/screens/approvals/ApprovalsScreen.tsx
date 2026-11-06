@@ -111,9 +111,9 @@ export function ApprovalsScreen() {
                 <button type="button" className="btn s" onClick={q.reload}>Try again</button>
               </div>
             ) : (
-              <ul className="inlist" role="listbox" aria-label={`${tab === 'waiting' ? 'Waiting' : 'Decided'} approvals`}>
+              <ul className="inlist" aria-label={`${tab === 'waiting' ? 'Waiting' : 'Decided'} approvals`}>
                 {items.map((a) => (
-                  <li key={a.id} role="option" aria-selected={a.id === selected} data-testid="approval-row" data-approval={a.id} data-status={a.status} data-overdue={a.status === 'pending' && waitAge(a.createdAt).overdue ? 'true' : 'false'}>
+                  <li key={a.id} data-testid="approval-row" data-approval={a.id} data-status={a.status} data-overdue={a.status === 'pending' && waitAge(a.createdAt).overdue ? 'true' : 'false'}>
                     <ApprovalRow approval={a} slug={slug} selected={a.id === selected} onOpen={() => open(a.id)} onDecided={() => { q.reload(); settled.reload(); }} />
                   </li>
                 ))}

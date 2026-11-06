@@ -23,6 +23,14 @@ describe('usage chart days', () => {
     expect(out.map((d) => [d.day, d.runs])).toEqual([['2026-11-02', 2], ['2026-11-03', 3]]);
   });
 
+  it('does not throw for a malformed last day, and counts days in UTC across a clock change', () => {
+    expect(fillDays([day('not-a-day', 1)], 3)).toHaveLength(3);
+    // 27 and 28 Oct 2026 straddle the end of daylight saving in Europe; a day is still exactly one UTC day
+    expect(fillDays([], 3, '2026-10-28').map((d) => d.day)).toEqual(['2026-10-26', '2026-10-27', '2026-10-28']);
+    expect(fillDays([], 3, '2026-03-30').map((d) => d.day)).toEqual(['2026-03-28', '2026-03-29', '2026-03-30']);
+    expect(fillDays([], 365, '2026-11-05')).toHaveLength(365);
+  });
+
   it('keeps money hidden for a reader who may not see it', () => {
     const out = fillDays([day('2026-11-03', 1, null)], 3);
     expect(out.map((d) => d.spendUsd)).toEqual([null, null, null]);

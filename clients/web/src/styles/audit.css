@@ -330,6 +330,12 @@
     flex-basis: 100%;
   }
 
+  .audit-chip,
+  .audit-more-who,
+  .audit-fold-btn {
+    min-height: 44px;
+  }
+
   .audit-filter-actions {
     flex-direction: column;
     align-items: stretch;
