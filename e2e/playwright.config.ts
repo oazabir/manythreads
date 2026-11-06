@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 import {
   API_EMPTY_PORT,
@@ -14,6 +15,18 @@ import { E2E_POOL_ENV } from './support/pools.ts';
 const PERF_SPECS = '**/perf-*.spec.ts';
 /** The desktop shell smoke test: needs Windows, a Rust build and the live site; it has its own config (desktop/desktop.config.ts). */
 const DESKTOP_SHELL = '**/desktop/**';
+/** Voice message specs (P14-17): they need Chromium's fake microphone, so only the `voice` projects run them. */
+const VOICE_SPECS = '**/voice-*.spec.ts';
+const VOICE_MOBILE_SPEC = '**/voice-mobile.spec.ts';
+/**
+ * Chromium flags for the voice projects: a fake microphone that plays the fixture on a loop, no permission prompt. The web build for the e2e run has the
+ * fake speech engine on (VITE_MANYTHREADS_FAKE_ASR=1, see webServer below), so every clip "says" the same known sentence.
+ */
+const FAKE_MIC = [
+  '--use-fake-ui-for-media-stream',
+  '--use-fake-device-for-media-stream',
+  `--use-file-for-fake-audio-capture=${fileURLToPath(new URL('./fixtures/speech/hello.wav', import.meta.url))}`,
+];
 
 const external = process.env.MANYTHREADS_URL;
 const baseURL = external ?? `http://localhost:${WEB_PORT}`;
@@ -51,7 +64,8 @@ const webServer = (port: number, apiPortForWeb: number, build: boolean) => ({
   url: `http://localhost:${port}`,
   reuseExistingServer: false,
   timeout: 180_000,
-  env: { MANYTHREADS_API_ORIGIN: `http://127.0.0.1:${apiPortForWeb}` },
+  // The first web server builds the client: the build carries the fake speech engine (a test switch; production images never set it).
+  env: { MANYTHREADS_API_ORIGIN: `http://127.0.0.1:${apiPortForWeb}`, ...(build ? { VITE_MANYTHREADS_FAKE_ASR: '1' } : {}) },
 });
 
 export default defineConfig({
@@ -85,14 +99,26 @@ export default defineConfig({
     },
     {
       name: 'desktop',
-      testIgnore: ['**/api/**', DESKTOP_SHELL, PERF_SPECS],
+      testIgnore: ['**/api/**', DESKTOP_SHELL, PERF_SPECS, VOICE_SPECS],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile-web',
       // Visual specs (plate comparison) run on desktop only.
-      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', DESKTOP_SHELL, PERF_SPECS],
+      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', DESKTOP_SHELL, PERF_SPECS, VOICE_SPECS],
       use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+    },
+    {
+      // Voice messages on the desktop layout and on a 390 px phone, with a fake microphone playing e2e/fixtures/speech/hello.wav.
+      name: 'voice',
+      testMatch: VOICE_SPECS,
+      testIgnore: [VOICE_MOBILE_SPEC],
+      use: { browserName: 'chromium', viewport: { width: 1440, height: 900 }, permissions: ['microphone'], launchOptions: { args: FAKE_MIC } },
+    },
+    {
+      name: 'voice-mobile',
+      testMatch: VOICE_MOBILE_SPEC,
+      use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, permissions: ['microphone'], launchOptions: { args: FAKE_MIC } },
     },
     {
       // A frame-time budget measures the machine as much as the page: p95 under 20 ms held on a quiet box and read 33 ms (two missed
