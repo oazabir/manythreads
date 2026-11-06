@@ -130,9 +130,11 @@
 }
 
 .ntf-preview {
+  display: -webkit-box;
   overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .ntf-time {
@@ -775,4 +777,72 @@
   .welcome {
     margin: 10px 14px;
   }
+}
+
+/* The bell's Unread/All tabs, day groups and the unread dot (P21-10). */
+.ntf-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ntf-tab {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.ntf-tab[aria-pressed='true'] {
+  background: var(--you-wash);
+  color: var(--ink);
+}
+
+.ntf-day {
+  margin: 0;
+  padding: 8px 14px 4px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.ntf-group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ntf.unread .ntf-title {
+  font-weight: 700;
+}
+
+.ntf-dot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--human);
+}
+
+
+.search-kbd {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  color: var(--faint);
+  font: inherit;
+  font-size: var(--fs-tiny);
+}
+
+.search-all {
+  display: inline-block;
+  margin: 4px 0 8px;
+  font-size: var(--fs-caption);
 }

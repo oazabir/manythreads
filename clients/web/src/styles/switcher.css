@@ -134,3 +134,26 @@
     left: 12px;
   }
 }
+
+.qs-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.qs-tab {
+  padding: 2px 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.qs-tab[aria-pressed='true'] {
+  background: var(--you-wash);
+  color: var(--txt);
+}

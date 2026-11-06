@@ -43,6 +43,7 @@ import { ScheduledJobsScreen } from './screens/boards/ScheduledJobsScreen';
 import { ConversationRedirect, ConversationView } from './screens/conversations/ConversationView';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
+import { SearchScreen } from './screens/search/SearchScreen';
 import { Teams } from './screens/Teams';
 import { Onboarding } from './screens/onboarding/Onboarding';
 import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
@@ -85,6 +86,7 @@ function AppRoutes() {
             <Route path="/" element={<HomeView />} />
             <Route path="/open" element={<OpenRoute />} />
             <Route path="/t/:team" element={<TeamHome />} />
+            <Route path="/t/:team/search" element={<RequireTeam><SearchScreen /></RequireTeam>} />
             <Route path="/t/:team/threads" element={<RequireTeam><ThreadsInbox /></RequireTeam>} />
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/memory" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense></RequireTeam>} />

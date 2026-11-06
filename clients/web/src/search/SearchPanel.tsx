@@ -1,7 +1,7 @@
 import { friendlyPath } from '../components/friendlyPath';
 import { useMemo } from 'react';
 import { parseSearchText, type SearchFileHit, type SearchMessageHit, type SearchPageHit, type SearchThreadHit } from '@manythreads/shared';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { fileContentUrl, searchEverything } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { ago, fileKind, fileSize } from '../channels/format';
@@ -18,7 +18,7 @@ const moreNote = 'There are more. Add a filter or a word to narrow the search.';
 const where = (c: HitChannel | null): string => (c === null ? 'File' : c.kind === 'channel' ? `#${(c.name ?? '').replace(/^#/, '')}` : c.kind === 'dm' ? 'Direct message' : 'Bot conversation');
 
 /** Search results (PLAN P3-16 wireframe): Messages, Threads, Files with counts; a click lands on the message, the thread or the file. */
-export function SearchPanel({ entry }: { entry: PanelEntry }) {
+export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEntry; onSearch?: (entry: PanelEntry) => void; full?: boolean }) {
   const { q, channelId } = parseSearchEntry(entry.id);
   const { team, teams, guest } = useShell();
   const navigate = useNavigate();
@@ -174,7 +174,8 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
         <b>{q}</b>
         {channelId ? <span className="search-scope"> in this conversation</span> : null}
       </p>
-      <SearchFilterBar filters={filters} channelId={channelId} />
+      <SearchFilterBar filters={filters} channelId={channelId} {...(onSearch ? { onSearch } : {})} />
+      {!full && !short && !channelId && team ? <Link className="search-all" to={`/t/${encodeURIComponent(team.slug)}/search?q=${encodeURIComponent(q)}`}>See all results</Link> : null}
       {body()}
     </div>
   );

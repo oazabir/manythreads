@@ -190,3 +190,60 @@ export const openConversationOf = (pathname: string): { kind: 'channel'; name: s
   }
   return m[1] === 'c' ? { kind: 'channel', name: value } : { kind: 'dm', id: value };
 };
+
+/* ---- recent places, one row per person, tabs ------------------------------------------------------------------------------------ */
+
+/**
+ * With nothing typed, the places the person was in last go first (most recent first); the rest keep their order. A typed query is left to
+ * the ranking.
+ */
+export const withRecent = (items: readonly SwitcherItem[], recentKeys: readonly string[], query: string): SwitcherItem[] => {
+  if (query.trim() !== '') return [...items];
+  const byKey = new Map(items.map((it) => [it.key, it]));
+  const recent = recentKeys.flatMap((k) => {
+    const it = byKey.get(k);
+    return it ? [it] : [];
+  });
+  const seen = new Set(recent.map((it) => it.key));
+  return [...recent, ...items.filter((it) => !seen.has(it.key))];
+};
+
+/**
+ * Drops the person row of anyone you already have a 1:1 conversation with: the conversation row says the same thing and opens the same
+ * place. `dms` are the summaries whose other participants are looked up by person id.
+ */
+export const dedupePeople = (items: readonly SwitcherItem[], dms: readonly DirectMessageSummary[], selfPersonId: string): SwitcherItem[] => {
+  const withDm = new Set<string>(
+    dms.flatMap((d) => {
+      const others = d.participants.filter((p) => p.personId !== selfPersonId);
+      return others.length === 1 && others[0] ? [others[0].personId] : [];
+    }),
+  );
+  return items.filter((it) => !(it.kind === 'person' && it.personId !== null && withDm.has(it.personId)));
+};
+
+export type SwitcherTab = 'all' | 'channels' | 'people' | 'bots' | 'files';
+export const SWITCHER_TABS: ReadonlyArray<{ id: SwitcherTab; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'channels', label: 'Channels' },
+  { id: 'people', label: 'People' },
+  { id: 'bots', label: 'Bots' },
+  { id: 'files', label: 'Files' },
+];
+const TAB_KINDS: Readonly<Record<SwitcherTab, readonly SwitcherKind[] | null>> = {
+  all: null,
+  channels: ['channel'],
+  people: ['dm', 'person'],
+  bots: ['bot'],
+  files: ['file', 'page'],
+};
+export const filterByTab = (items: readonly SwitcherItem[], tab: SwitcherTab): SwitcherItem[] => {
+  const kinds = TAB_KINDS[tab];
+  return kinds ? items.filter((it) => kinds.includes(it.kind)) : [...items];
+};
+
+/** The tab Tab (dir 1) or Shift+Tab (dir -1) moves to, wrapping round. */
+export const nextTab = (tab: SwitcherTab, dir: 1 | -1): SwitcherTab => {
+  const at = SWITCHER_TABS.findIndex((t) => t.id === tab);
+  return SWITCHER_TABS[(at + dir + SWITCHER_TABS.length) % SWITCHER_TABS.length]?.id ?? 'all';
+};

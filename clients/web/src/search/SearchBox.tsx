@@ -3,6 +3,8 @@ import { usePanel } from '../kernel/panel';
 import { SearchIcon } from '../shell/icons';
 import { parseSearchEntry, searchEntry, SEARCH_PANEL } from './searchEntry';
 
+const isMac = (): boolean => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+
 /**
  * A search box that opens the results in the right panel (`search:<query>`). Pressing Enter searches; searching again replaces the
  * results on top instead of stacking them. `channelId` limits the results to one conversation.
@@ -30,7 +32,23 @@ export function SearchBox({ placeholder, channelId = null, label = 'Search', cla
     <form role="search" className={`search-box ${className}`} onSubmit={submit} aria-label={label}>
       <SearchIcon />
       <span className="sr-only">{label}</span>
-      <input type="search" enterKeyHint="search" placeholder={placeholder} aria-label={label} autoFocus={autoFocus} value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} />
+      <input
+        type="search"
+        enterKeyHint="search"
+        placeholder={placeholder}
+        aria-label={label}
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && value !== '') {
+            e.preventDefault();
+            setValue('');
+          } else if (e.key === 'Escape') (e.target as HTMLInputElement).blur();
+        }}
+        maxLength={200}
+      />
+      {value === '' && !channelId ? <kbd className="search-kbd" aria-hidden="true">{isMac() ? '⌘K' : 'Ctrl K'}</kbd> : null}
     </form>
   );
 }

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { NavChannelGroup } from '@manythreads/shared';
+import { NavChannelGroup, type DirectMessageSummary } from '@manythreads/shared';
+import { pushRecent } from '../src/app/recentPlaces';
 import {
   botItems,
+  dedupePeople,
+  filterByTab,
+  nextTab,
+  withRecent,
   cardItems,
   channelItems,
   dmItems,
@@ -227,5 +232,45 @@ describe('openConversationOf', () => {
     expect(openConversationOf('/t/eng/dm/abc-1')).toEqual({ kind: 'dm', id: 'abc-1' });
     expect(openConversationOf('/t/eng/threads')).toBeNull();
     expect(openConversationOf('/t/eng/c/%E0%A4%A')).toEqual({ kind: 'channel', name: '%E0%A4%A' });
+  });
+});
+
+describe('recent, dedupe and tabs', () => {
+  const a = { key: 'channel:1', kind: 'channel', label: 'dev', hint: '', to: '/x', personId: null, isPrivate: false } as const;
+  const b = { key: 'channel:2', kind: 'channel', label: 'ops', hint: '', to: '/y', personId: null, isPrivate: false } as const;
+  const p = { key: 'person:nadia', kind: 'person', label: 'Nadia', hint: '', to: null, personId: 'nadia', isPrivate: false } as const;
+  const f = { key: 'file:1', kind: 'file', label: 'plan.pdf', hint: '', to: '/f', personId: null, isPrivate: false } as const;
+
+  it('puts recent places first only when nothing is typed', () => {
+    expect(withRecent([a, b, p], ['channel:2', 'gone'], '').map((i) => i.key)).toEqual(['channel:2', 'channel:1', 'person:nadia']);
+    expect(withRecent([a, b], ['channel:2'], 'd').map((i) => i.key)).toEqual(['channel:1', 'channel:2']);
+  });
+
+  it('drops the person row when a 1:1 conversation exists', () => {
+    const dm = {
+      channel: { id: '11111111-1111-4111-8111-111111111111', name: null, isPrivate: true },
+      participants: [
+        { personId: 'me', displayName: 'Me' },
+        { personId: 'nadia', displayName: 'Nadia' },
+      ],
+      unreadCount: 0,
+    } as unknown as DirectMessageSummary;
+    expect(dedupePeople([a, p], [dm], 'me')).toEqual([a]);
+    expect(dedupePeople([a, p], [], 'me')).toEqual([a, p]);
+  });
+
+  it('filters by tab and cycles', () => {
+    expect(filterByTab([a, p, f], 'channels')).toEqual([a]);
+    expect(filterByTab([a, p, f], 'files')).toEqual([f]);
+    expect(filterByTab([a, p, f], 'all')).toHaveLength(3);
+    expect(nextTab('files', 1)).toBe('all');
+    expect(nextTab('all', -1)).toBe('files');
+  });
+
+  it('keeps eight recent places, newest first, no repeats', () => {
+    const list = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    expect(pushRecent(list, 'c')).toEqual(['c', 'a', 'b', 'd', 'e', 'f', 'g', 'h']);
+    expect(pushRecent(list, 'z')).toHaveLength(8);
+    expect(pushRecent(list, 'z')[0]).toBe('z');
   });
 });

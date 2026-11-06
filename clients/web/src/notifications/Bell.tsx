@@ -9,6 +9,7 @@ import { bellLabel } from '../presence/settingsModel';
 import { useDismiss } from '../shell/useDismiss';
 import { browserAlerts, notificationStore, notificationTitle } from './store';
 import { ago } from '../channels/format';
+import { forTab, groupByDay, type BellTab } from './model';
 
 export function useNotifications() {
   return useSyncExternalStore(notificationStore.subscribe, notificationStore.snapshot);
@@ -19,7 +20,7 @@ const GLYPH: Record<InboxItem['kind'], ReactNode> = { mention: <MentionIcon />, 
 function Item({ n, onOpen }: { n: InboxItem; onOpen: (n: InboxItem) => void }) {
   const unread = n.readAt === null;
   return (
-    <li>
+    <li className="ntf-li">
       <button type="button" className={`ntf ${unread ? 'unread' : ''}`} data-testid="notification" data-kind={n.kind} data-unread={unread} onClick={() => onOpen(n)}>
         <span className="ntf-ic" aria-hidden="true">{GLYPH[n.kind]}</span>
         <span className="ntf-main">
@@ -27,6 +28,7 @@ function Item({ n, onOpen }: { n: InboxItem; onOpen: (n: InboxItem) => void }) {
           <span className="ntf-preview">{n.preview}</span>
         </span>
         <span className="ntf-time" data-vt-mask>{ago(n.createdAt)}</span>
+        {unread ? <span className="ntf-dot" aria-hidden="true" /> : null}
       </button>
     </li>
   );
@@ -69,6 +71,7 @@ export function Bell() {
   const dnd = useMyDnd();
   const resume = useSaver();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<BellTab>('unread');
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
 
@@ -80,6 +83,7 @@ export function Bell() {
   }, [open]);
 
   if (!snap.supported) return null;
+  const shown = forTab(snap.items, tab);
   const prefsOn = snap.prefs !== null && (snap.prefs.mention.browser || snap.prefs.reply.browser || snap.prefs.dm.browser);
 
   const go = (n: InboxItem): void => {
@@ -107,8 +111,12 @@ export function Bell() {
         <div className="ntf-pop" role="dialog" aria-label="Notifications" data-testid="notifications-popover">
           <header className="ntf-head">
             <b>Notifications</b>
-            <button type="button" className="link-btn" disabled={snap.unread === 0} onClick={() => void notificationStore.markRead()}>Mark all</button>
+            <button type="button" className="btn s" disabled={snap.unread === 0} onClick={() => void notificationStore.markRead()}>Mark all read</button>
           </header>
+          <div className="ntf-tabs" role="group" aria-label="Show">
+            <button type="button" className="ntf-tab" aria-pressed={tab === 'unread'} onClick={() => setTab('unread')}>Unread</button>
+            <button type="button" className="ntf-tab" aria-pressed={tab === 'all'} onClick={() => setTab('all')}>All</button>
+          </div>
           {dnd.banner ? (
             <div className="ntf-paused">
               <PausedNote banner={dnd.banner} onResume={() => void resume.run(resumeNow)} busy={resume.busy} error={resume.error}>
@@ -120,10 +128,17 @@ export function Bell() {
             <p className="ntf-note" aria-busy="true">Loading…</p>
           ) : snap.itemsStatus === 'error' ? (
             <p className="ntf-note" role="alert">Could not load notifications. <button type="button" className="link-btn" onClick={() => void notificationStore.loadItems()}>Try again</button></p>
-          ) : snap.items.length === 0 ? (
-            <p className="ntf-note" data-testid="notifications-empty">You are all caught up.</p>
+          ) : shown.length === 0 ? (
+            <p className="ntf-note" data-testid="notifications-empty">{tab === 'unread' && snap.items.length > 0 ? 'You are all caught up. Switch to All to see earlier ones.' : 'You are all caught up.'}</p>
           ) : (
-            <ul className="ntf-list">{snap.items.map((n) => <Item key={n.id} n={n} onOpen={go} />)}</ul>
+            <div className="ntf-list">
+              {groupByDay(shown, new Date()).map((g) => (
+                <section key={g.day} aria-label={g.day}>
+                  <h3 className="ntf-day">{g.day}</h3>
+                  <ul className="ntf-group">{g.items.map((n) => <Item key={n.id} n={n} onOpen={go} />)}</ul>
+                </section>
+              ))}
+            </div>
           )}
           <AlertsRow prefsOn={prefsOn} prefsKnown={snap.prefs !== null} />
         </div>

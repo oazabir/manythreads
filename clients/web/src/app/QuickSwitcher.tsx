@@ -16,12 +16,19 @@ import { sayToast } from '../kernel/toast';
 import { anyDismissOpen } from '../shell/useDismiss';
 import { escMarksRead } from '../channels/messageActions';
 import { useSession } from './session';
+import { readRecent, recordRecent } from './recentPlaces';
 import {
   botItems,
   cardItems,
   channelItems,
+  dedupePeople,
   dmItems,
   fileItems,
+  filterByTab,
+  nextTab,
+  SWITCHER_TABS,
+  withRecent,
+  type SwitcherTab,
   isQuickSwitcherKey,
   nextIndex,
   nextUnreadStop,
@@ -121,11 +128,20 @@ export function QuickSwitcher() {
   const [mode, setMode] = useState<Mode>('closed');
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [tab, setTab] = useState<SwitcherTab>('all');
+  const [recent, setRecent] = useState<string[]>([]);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
   const sources = useSources(slug, mode === 'switcher', guest);
   const fileHits = useFileHits(mode === 'switcher', query);
+
+  // the place in the address bar is remembered per person and team, for the top of the list when nothing is typed
+  const here = openConversationOf(loc.pathname);
+  const hereKey = here?.kind === 'dm' ? `dm:${here.id}` : here?.kind === 'channel' ? (() => { const c = findChannel(feed.groups, here.name); return c ? `channel:${c.id}` : null; })() : null;
+  useEffect(() => {
+    if (slug && hereKey) recordRecent(session.person.id, slug, hereKey);
+  }, [slug, hereKey, session.person.id]);
 
   const all = useMemo<SwitcherItem[]>(() => {
     if (!slug) return [];
@@ -133,7 +149,7 @@ export function QuickSwitcher() {
     return [
       ...channelItems(feed.groups, slug),
       ...dmItems(dms.items, me, slug),
-      ...personItems(sources.people, me),
+      ...dedupePeople(personItems(sources.people, me), dms.items, me),
       ...botItems(sources.bots, slug),
       ...sectionItems(slug, guest),
       ...pageItems(sources.pages, slug),
@@ -141,7 +157,7 @@ export function QuickSwitcher() {
       ...fileItems(fileHits, slug, sources.teamId),
     ];
   }, [slug, feed.groups, dms.items, sources, fileHits, guest, session.person.id]);
-  const results = useMemo(() => rankItems(all, query), [all, query]);
+  const results = useMemo(() => filterByTab(withRecent(rankItems(all, query), recent, query), tab), [all, query, recent, tab]);
   const selected = results[active];
 
   // Everything the keys below read at the moment of the press, held in one ref so the listener is attached once.
@@ -156,8 +172,11 @@ export function QuickSwitcher() {
   const open = useCallback((what: Exclude<Mode, 'closed'>): void => {
     setQuery('');
     setActive(0);
+    setTab('all');
+    const { slug: team } = latest.current;
+    setRecent(team ? readRecent(session.person.id, team) : []);
     setMode(what);
-  }, []);
+  }, [session.person.id]);
   const close = useCallback((): void => setMode('closed'), []);
 
   useEffect(() => {
@@ -254,7 +273,11 @@ export function QuickSwitcher() {
   );
 
   const onSearchKey = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      setTab((t) => nextTab(t, e.shiftKey ? -1 : 1));
+      setActive(0);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       setActive((i) => nextIndex(results.length, i, e.key));
     } else if (e.key === 'Enter' && selected) {
@@ -327,6 +350,13 @@ export function QuickSwitcher() {
           }}
           onKeyDown={onSearchKey}
         />
+        <div className="qs-tabs" role="group" aria-label="Show">
+          {SWITCHER_TABS.map((t) => (
+            <button key={t.id} type="button" className="qs-tab" aria-pressed={tab === t.id} tabIndex={-1} onClick={() => { setTab(t.id); setActive(0); }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
         {loading ? (
           <p className="dlg-hint" aria-busy="true">Loading…</p>
         ) : results.length === 0 ? (

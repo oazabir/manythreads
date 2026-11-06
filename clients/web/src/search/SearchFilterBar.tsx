@@ -4,7 +4,7 @@ import { deleteSavedSearch, fetchSavedSearches, saveSearch } from '../api/endpoi
 import { isApiError } from '../api/client';
 import { useQuery } from '../app/useQuery';
 import { usePeople } from '../channels/hooks';
-import { usePanel } from '../kernel/panel';
+import { usePanel, type PanelEntry } from '../kernel/panel';
 import { searchEntry } from './searchEntry';
 import { CloseIcon } from '../shell/icons';
 
@@ -25,14 +25,15 @@ export function filterChips(f: SearchFilters): { key: string; label: string; rem
  * Filters of the search (PLAN P14-11): the chips of what is applied (each removable), a form to add more, and the person's saved searches.
  * Everything here only rewrites the text of the search box; the server reads the same words, so a typed `from:nadia` and a chip are one thing.
  */
-export function SearchFilterBar({ filters, channelId }: { filters: SearchFilters; channelId: string | null }) {
+export function SearchFilterBar({ filters, channelId, onSearch }: { filters: SearchFilters; channelId: string | null; onSearch?: (entry: PanelEntry) => void }) {
   const panel = usePanel();
+  const go = onSearch ?? panel.replace;
   const people = usePeople();
   const ids = useId();
   const [open, setOpen] = useState<'filters' | 'saved' | null>(null);
   const chips = filterChips(filters);
 
-  const run = (next: SearchFilters): void => panel.replace(searchEntry(formatSearchText(next), channelId));
+  const run = (next: SearchFilters): void => go(searchEntry(formatSearchText(next), channelId));
   const toggle = (which: 'filters' | 'saved'): void => setOpen((o) => (o === which ? null : which));
 
   return (
@@ -60,7 +61,7 @@ export function SearchFilterBar({ filters, channelId }: { filters: SearchFilters
       {open === 'filters' ? (
         <FilterForm id={`${ids}-filters`} filters={filters} names={people.list.map((p) => p.name)} onApply={(f) => { run(f); setOpen(null); }} />
       ) : null}
-      {open === 'saved' ? <Saved id={`${ids}-saved`} filters={filters} channelId={channelId} /> : null}
+      {open === 'saved' ? <Saved go={go} id={`${ids}-saved`} filters={filters} channelId={channelId} /> : null}
     </div>
   );
 }
@@ -124,8 +125,7 @@ function FilterForm({ id, filters, names, onApply }: { id: string; filters: Sear
   );
 }
 
-function Saved({ id, filters, channelId }: { id: string; filters: SearchFilters; channelId: string | null }) {
-  const panel = usePanel();
+function Saved({ id, filters, channelId, go }: { id: string; filters: SearchFilters; channelId: string | null; go: (entry: PanelEntry) => void }) {
   const list = useQuery('saved-searches', () => fetchSavedSearches());
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -168,7 +168,7 @@ function Saved({ id, filters, channelId }: { id: string; filters: SearchFilters;
         <ul className="sf-list" data-testid="saved-list">
           {list.data.items.map((s) => (
             <li key={s.id}>
-              <button type="button" className="sf-run" onClick={() => panel.replace(searchEntry(s.query, channelId))}>
+              <button type="button" className="sf-run" onClick={() => go(searchEntry(s.query, channelId))}>
                 <b>{s.name}</b>
                 <span>{s.query}</span>
               </button>
