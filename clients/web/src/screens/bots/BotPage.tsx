@@ -188,8 +188,15 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
     if (view.section === null) scrolled.current = null;
     if (!ready || view.section === null || scrolled.current === view.section) return;
     scrolled.current = view.section;
+    // the first section of a group already sits under the tabs: scrolling to it would push the head and the tabs out of sight
+    if (BOT_GROUPS.find((g) => g.id === view.group)?.sections[0] === view.section) return;
     document.getElementById(`sec-${view.section}`)?.scrollIntoView({ block: 'start' });
-  }, [ready, view.section]);
+  }, [ready, view.section, view.group]);
+
+  // on a phone the strip scrolls sideways: a link to a group further along brings that tab into view
+  useEffect(() => {
+    document.getElementById(`bot-tab-${group}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [group]);
 
   // The group strip is a tablist: arrow keys move between the five, Home and End jump to the ends, and the focus follows.
   const onTabKey = (e: KeyboardEvent<HTMLElement>): void => {

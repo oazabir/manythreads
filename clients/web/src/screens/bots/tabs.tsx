@@ -683,7 +683,6 @@ export function AuditTab({ bot, runs, slug }: TabProps) {
   );
 }
 
-/** The tab panel for one id; Audit and Behaviour need the page's data, the rest only the draft. */
 /** One group of the bot page: its sections stacked, each under its own heading (P21-17). */
 export function GroupPanel({ group, ...props }: TabProps & { group: BotGroupId }) {
   const sections = BOT_GROUPS.find((g) => g.id === group)?.sections ?? [];
@@ -698,6 +697,7 @@ export function GroupPanel({ group, ...props }: TabProps & { group: BotGroupId }
   );
 }
 
+/** The panel for one section id; Audit and Behaviour need the page's data, the rest only the draft. */
 export function TabPanel({ id, ...props }: TabProps & { id: string }) {
   switch (id) {
     case 'identity':

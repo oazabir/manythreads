@@ -33,7 +33,7 @@ export function MoreMenu({ label, testId, items, compact = false }: { label: str
         <div className="menu b-more-pop" role="menu" aria-label={label} ref={panel} onKeyDown={keys}>
           {items.map((it) =>
             it.to !== undefined ? (
-              <Link key={it.testId} to={it.to} role="menuitem" className="menu-item" data-testid={it.testId} onClick={() => setOpen(false)}>{it.label}</Link>
+              <Link key={it.testId} to={it.to} role="menuitem" className="menu-item" data-testid={it.testId} onClick={close}>{it.label}</Link>
             ) : (
               <button
                 key={it.testId}

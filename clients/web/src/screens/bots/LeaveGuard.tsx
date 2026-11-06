@@ -12,7 +12,10 @@ export function LeaveGuard({ dirty }: { dirty: boolean }) {
 
   useEffect(() => {
     if (!dirty) return;
-    const onUnload = (e: BeforeUnloadEvent): void => e.preventDefault();
+    const onUnload = (e: BeforeUnloadEvent): void => {
+      e.preventDefault();
+      e.returnValue = ''; // older browsers only show their prompt when this is set
+    };
     window.addEventListener('beforeunload', onUnload);
     return () => window.removeEventListener('beforeunload', onUnload);
   }, [dirty]);
