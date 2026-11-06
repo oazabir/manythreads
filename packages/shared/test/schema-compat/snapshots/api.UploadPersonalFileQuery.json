@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "folderPath": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "conflict": {
+      "default": "rename",
+      "type": "string",
+      "enum": [
+        "rename",
+        "version"
+      ]
+    }
+  },
+  "required": [
+    "folderPath"
+  ]
+}

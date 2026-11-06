@@ -18,13 +18,13 @@ export type FilesTreeSource = z.infer<typeof FilesTreeSource>;
 /**
  * Why a row cannot be edited by the caller here. `change_by_pull_request`: `bots/`, `TEAM.md`, `skills/`, `routines/` for everyone who can post in the
  * team (since P7-01 these change only through a proposal a lead or admin applies; the value keeps its old name so the wire format does not change). `attachment`: an uploaded file never changes in place (replace it by uploading again).
- * `no_write_access`: the caller may read but not post in the team.
+ * `no_write_access`: the caller may read but not post in the team. `admin_view`: an admin looking into someone's Personal space during an audited open (read-only by the database).
  */
-export const FilesReadOnlyReason = z.enum(['change_by_pull_request', 'attachment', 'no_write_access']);
+export const FilesReadOnlyReason = z.enum(['change_by_pull_request', 'attachment', 'no_write_access', 'admin_view']);
 export type FilesReadOnlyReason = z.infer<typeof FilesReadOnlyReason>;
 
-/** Who maintains a folder besides people: `team_memory` is `memory/` (the journal is written by the team's memory; facts may be edited by hand). */
-export const FilesManagedBy = z.enum(['team_memory']);
+/** Who maintains a folder besides people: `team_memory` is `memory/` (the journal is written by the team's memory; facts may be edited by hand); `personal_memory` is the `Memory` folder of a Personal space. */
+export const FilesManagedBy = z.enum(['team_memory', 'personal_memory']);
 export type FilesManagedBy = z.infer<typeof FilesManagedBy>;
 
 /** One row of the tree. The shape is identical for every store; fields that do not apply are null. */

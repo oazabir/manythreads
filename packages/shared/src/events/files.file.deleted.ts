@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SpaceRef } from '../entities/space.ts';
 import { ActorId, ChannelId, FileId, TeamId, WorkspaceId } from '../ids.ts';
 
 /** A file row and its bytes were removed by its uploader or a lead of the channel's team. */
@@ -10,5 +11,7 @@ export const FilesFileDeletedEvent = z.object({
   teamId: TeamId.nullable(),
   fileId: FileId,
   deletedBy: ActorId,
+  /** `person:<id>` when a Personal file was deleted; absent for a channel file. */
+  space: SpaceRef.optional(),
 });
 export type FilesFileDeletedEvent = z.infer<typeof FilesFileDeletedEvent>;

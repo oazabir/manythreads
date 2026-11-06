@@ -23,6 +23,9 @@ import { RemindersReminderDueEvent } from './reminders.reminder.due.ts';
 import { RemindersReminderChangedEvent } from './reminders.reminder.changed.ts';
 import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
 import { FilesFileDeletedEvent } from './files.file.deleted.ts';
+import { FilesFileRestoredEvent } from './files.file.restored.ts';
+import { PersonalSpaceOpenedEvent } from './personal.space.opened.ts';
+import { PersonalSpaceExportedEvent } from './personal.space.exported.ts';
 import { RepoRepoCommittedEvent } from './repo.repo.committed.ts';
 import { PagesPageWrittenEvent } from './pages.page.written.ts';
 import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
@@ -206,6 +209,9 @@ export const eventRegistry = {
   'reminders.reminder.changed': { 1: RemindersReminderChangedEvent },
   'files.file.uploaded': { 1: FilesFileUploadedEvent },
   'files.file.deleted': { 1: FilesFileDeletedEvent },
+  'files.file.restored': { 1: FilesFileRestoredEvent },
+  'personal.space.opened': { 1: PersonalSpaceOpenedEvent },
+  'personal.space.exported': { 1: PersonalSpaceExportedEvent },
   'repo.repo.committed': { 1: RepoRepoCommittedEvent },
   'pages.page.written': { 1: PagesPageWrittenEvent },
   'bots.bot.loaded': { 1: BotsBotLoadedEvent },
@@ -415,6 +421,9 @@ export type AnyEvent =
   | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>
+  | z.infer<typeof FilesFileRestoredEvent>
+  | z.infer<typeof PersonalSpaceOpenedEvent>
+  | z.infer<typeof PersonalSpaceExportedEvent>
   | z.infer<typeof RepoRepoCommittedEvent>
   | z.infer<typeof PagesPageWrittenEvent>
   | z.infer<typeof BotsBotLoadedEvent>
@@ -510,6 +519,9 @@ export type LatestEvent =
   | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>
+  | z.infer<typeof FilesFileRestoredEvent>
+  | z.infer<typeof PersonalSpaceOpenedEvent>
+  | z.infer<typeof PersonalSpaceExportedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEventV2>

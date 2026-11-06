@@ -4,6 +4,7 @@
   "enum": [
     "change_by_pull_request",
     "attachment",
-    "no_write_access"
+    "no_write_access",
+    "admin_view"
   ]
 }

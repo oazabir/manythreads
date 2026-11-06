@@ -39,6 +39,9 @@ export type RunId = z.infer<typeof RunId>;
 export const FileId = z.uuid().brand<'FileId'>();
 export type FileId = z.infer<typeof FileId>;
 
+export const FileVersionId = z.uuid().brand<'FileVersionId'>();
+export type FileVersionId = z.infer<typeof FileVersionId>;
+
 export const TaskId = z.uuid().brand<'TaskId'>();
 export type TaskId = z.infer<typeof TaskId>;
 
