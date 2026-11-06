@@ -8,6 +8,14 @@ Current state (synced with the code on 2026-11-03; task by task in PLAN.md §8 B
 - **Owner question:** the icon is `AndroidIcon` as a stand-in (ProIcons 4.13.7 has no bot icon); `SparkleIcon` or `BrainIcon` is a one-line change in `shell/icons.tsx`.
 - **Gaps:** no phone column switcher (the strip snaps column by column); a bot that claims a card during a mention run does not show on it (only `task_assigned` runs record the card); a queued run shows only when the board reads again (no push when the job is queued).
 
+## Loop 2026-11-06 (fifth pass): live re-check of the bot icon push and Runners (P19-01, P19-04 to P19-09) at fd1bf88d
+
+- **PASS live (task A, fix 7b811222):** on an open board with no reload the bot icon appeared 3 s after a handoff (a `tasks.activity.changed` frame reached the page) and was gone at 21 s when the run ended; the server list was empty after the run.
+- **PASS live (task B, Omar, 1440 and 390, view only, no 5xx, no console errors, no sideways scroll):** Runners page lists host-customer-support, host-engineering, host-marketing (Hermes gateway, Ready, On, teams and bot counts right) and the old team connection `managed` with Adopt; the Add chooser shows Claude Code shut with "Not turned on in this install." and Codex shut with its old words; `GET /api/admin/bot-runners/nodes` answers 200 with one Ready machine. No node control is shown because no pod runner exists on the site (only the API was read). Nothing was created or changed.
+- **PASS (task C):** the Engineering board (17 cards, 5 columns) and Threads load with no errors.
+- **Owner-blocked, unchanged:** the real Claude sign-in file, the real refresh and error texts, the egress host list, k3s Secrets encryption, a second Claude login, and the `claudePod` flag, which stays off.
+- **Left behind:** three Done cards titled "F6 ..." on the Engineering board (cards cannot be deleted). The probe script `e2e/screens/task.verify-runners.shots.ts` is committed.
+
 ## Loop 2026-11-06 (fourth pass): live check of P6-13, P6-14 and the search padding at 4edb2226
 
 - **PASS live (Omar, 1440 and 390, no 5xx):** search screen (`/t/engineering/search?q=release`) query, rows and header share the same left edge (268 px at 1440, 20 px at 390); custom columns on the Engineering board: add "QA (verify)", rename, Alt+Left (live region says "is now column 5 of 6"), menu Move left and Move right, drag a card in, place kept after reload, delete refused with a plain sentence, then move out and delete; Nadia sees no add, grip or menu controls; the 390 column menu is inside the screen; a real plan-reviewer run showed the animated icon on the card and in the card panel.
