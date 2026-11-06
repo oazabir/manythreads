@@ -154,8 +154,8 @@ export function registerSigninRoutes(ctx: PluginContext): void {
       const result = await pods.checkSignin({ runnerName: runner.name });
       if (result === 'rejected' || result === 'expired' || result === 'no_scope') {
         await tx.query(`UPDATE app.bot_runners SET status = 'needs_sign_in', status_detail = $2, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid`, [id, CHECK_MESSAGES[result]]);
-      } else if (result === 'ok' && runner.status === 'needs_sign_in') {
-        await tx.query(`UPDATE app.bot_runners SET status = 'starting', status_detail = NULL, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid`, [id]);
+      } else if (result === 'ok' && (runner.status === 'needs_sign_in' || runner.status === 'paused')) {
+        await tx.query(`UPDATE app.bot_runners SET status = 'starting', status_detail = NULL, paused_until = NULL, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid`, [id]);
       } else if (result !== 'unreachable') {
         await tx.query('UPDATE app.bot_runners SET last_checked_at = now() WHERE id = $1::uuid', [id]);
       }

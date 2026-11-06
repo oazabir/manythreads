@@ -119,7 +119,7 @@ export interface BotRunnersProvider extends ProviderImpl {
   /** Count one finished run of a Claude Code runner for the team that used it (P19-07): runs, seconds and the CLI's own cost figure, per runner, team and day. Runs as the system actor. */
   recordUsage(input: { runner: string; teamId: string; seconds: number; cost: number | null }): Promise<void>;
   /**
-   * A Claude Code runner stopped taking runs by itself: `plan_limit` pauses it until `until` (null: until an admin checks it), `needs_sign_in` marks it so until a new sign-in file is uploaded.
+   * A Claude Code runner stopped taking runs by itself: `plan_limit` pauses it until `until` (null or not usable: a short default, then the next run tries again), `needs_sign_in` marks it so until a new sign-in file is uploaded.
    * Writes the state and the `claude_pod.runner.paused` event once (a runner already in that state is left alone). Runs as the system actor.
    */
   pauseRunner(input: { runner: string; teamId: string; reason: 'plan_limit' | 'needs_sign_in'; until: string | null }): Promise<void>;

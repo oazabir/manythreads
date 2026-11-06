@@ -11,6 +11,10 @@ while true; do
       [ -n "$origin" ] || continue
       # the names come from our own database but are checked again: letters, digits, dot, dash and underscore only
       case "$team$bot$project" in *[!A-Za-z0-9._-]*) echo "repo-sync: skipping a name with odd characters"; continue ;; esac
+      # a name that is only dots would climb out of its folder
+      case "$team" in .*) echo "repo-sync: skipping a name that starts with a dot"; continue ;; esac
+      case "$bot" in .*) echo "repo-sync: skipping a name that starts with a dot"; continue ;; esac
+      case "$project" in .*) echo "repo-sync: skipping a name that starts with a dot"; continue ;; esac
       case "$origin" in https://*) ;; *) echo "repo-sync: skipping $project: not an https address"; continue ;; esac
       dir="/work/$team/$bot/$project"
       if [ -d "$dir/.git" ]; then

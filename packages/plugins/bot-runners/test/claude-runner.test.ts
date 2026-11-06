@@ -16,7 +16,7 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { pauseRunner, recordUsage, resolveRunner } from '../src/resolve.ts';
+import { DEFAULT_PAUSE_MS, MAX_PAUSE_MS, pauseEnd, pauseRunner, recordUsage, resolveRunner } from '../src/resolve.ts';
 
 // P19-07: a shared Claude Code runner in resolveRunner (the team list is the permission, a refusal is judged before anything is started), usage per team, and the pause.
 
@@ -27,7 +27,6 @@ let ctx: PluginContext;
 const emitted: Array<Record<string, unknown>> = [];
 const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: omar.workspaceId });
 const pods: Pick<ClaudePodsProvider, 'bridge'> = { bridge: async ({ runnerName }) => ({ address: `http://claude-${runnerName}.bots.svc:8650`, key: 'bridge-key-0123456789' }) };
-const nowMs = Date.parse('2026-11-06T12:00:00Z');
 
 const make = (name: string, over: { enabled?: boolean; status?: string; teams?: string[]; allTeams?: boolean; pausedUntil?: string | null } = {}): Promise<string> =>
   sys(async (tx) => {
@@ -51,7 +50,7 @@ beforeAll(async () => {
     secrets: { get: (tx: Tx, id: string) => getSecret(tx, id) },
     providers: { get: (id: string) => (id === 'claude.pods' ? pods : undefined) },
     audit: { emit: async (_tx: unknown, e: Record<string, unknown>) => void emitted.push(e) },
-    runtime: { now: () => new Date(nowMs) },
+    runtime: { now: () => new Date() },
   } as unknown as PluginContext;
   await make('claude-shared', { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] });
 }, 120_000);
@@ -132,5 +131,18 @@ describe('usage and the pause', () => {
     const row = (await sys((tx) => tx.query<{ status: string; status_detail: string }>("SELECT status, status_detail FROM app.bot_runners WHERE name = 'c-401'"))).rows[0]!;
     expect(row.status).toBe('needs_sign_in');
     expect(row.status_detail).toMatch(/Upload a new sign-in file/);
+  });
+});
+
+describe('how long a plan-limit pause lasts', () => {
+  const now = Date.parse('2026-11-06T10:00:00.000Z');
+  it('takes the reset time, or a short default when there is none, it is past, or it is not a date', () => {
+    expect(pauseEnd('2026-11-06T12:00:00.000Z', now)).toBe('2026-11-06T12:00:00.000Z');
+    expect(Date.parse(pauseEnd(null, now)) - now).toBe(DEFAULT_PAUSE_MS);
+    expect(Date.parse(pauseEnd('2026-11-06T09:00:00.000Z', now)) - now).toBe(DEFAULT_PAUSE_MS);
+    expect(Date.parse(pauseEnd('nonsense', now)) - now).toBe(DEFAULT_PAUSE_MS);
+  });
+  it('never trusts a far-off date', () => {
+    expect(Date.parse(pauseEnd('2033-01-01T00:00:00.000Z', now)) - now).toBe(MAX_PAUSE_MS);
   });
 });

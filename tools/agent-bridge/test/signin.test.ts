@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { classifyFailure, limitResetsAt, SigninGate } from '../src/signin.ts';
+import { DEFAULT_LIMIT_WAIT_MS, classifyFailure, limitResetsAt, SigninGate } from '../src/signin.ts';
 import { auth, events, harness, start, type Harness } from './support.ts';
 
 // P19-06: the Claude sign-in in the bridge: the failure table, the gate that lets one run renew the file, the check route, and "after a 401, no retry".
@@ -34,6 +34,9 @@ describe('the failure table', () => {
     expect(classifyFailure('API Error: 401 FAKE401')).toBe('needs_sign_in');
     expect(classifyFailure('Claude AI usage limit reached|1900000000 FAKELIMIT')).toBe('plan_limit');
     expect(classifyFailure('Credit balance is too low')).toBeNull();
+    expect(classifyFailure('API Error: 401 {"type":"error","error":{"type":"authentication_error"}}')).toBe('needs_sign_in');
+    // a 401 a tool met on some website is not about the account
+    expect(classifyFailure('the page at example.com answered 401 so I stopped')).toBeNull();
     expect(limitResetsAt('usage limit reached|1900000000')).toBe(1900000000000);
     expect(limitResetsAt('nothing here')).toBeNull();
   });
@@ -111,5 +114,16 @@ describe('the gate', () => {
     let peak = 0;
     await Promise.all([1, 2, 3].map(() => gate.run(async () => { inside++; peak = Math.max(peak, inside); await new Promise((r) => setTimeout(r, 20)); inside--; })));
     expect(peak).toBe(3);
+  });
+});
+
+describe('a plan limit with no reset time', () => {
+  it('stands for a short while and then lets a run through', () => {
+    let t = 1_000_000;
+    const gate = new SigninGate(join(tmpdir(), 'nowhere-at-all'), () => t);
+    gate.noteFailure('plan_limit', 'usage limit reached');
+    expect(gate.standing()?.kind).toBe('plan_limit');
+    t += DEFAULT_LIMIT_WAIT_MS + 1;
+    expect(gate.standing()).toBeNull();
   });
 });

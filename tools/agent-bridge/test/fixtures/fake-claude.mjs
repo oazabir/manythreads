@@ -44,7 +44,7 @@ if (cfg && existsSync(join(cfg, '.credentials.json'))) {
   const oauth = doc.claudeAiOauth ?? {};
   const usedPath = join(cfg, '.used-refresh');
   if (oauth.expiresAt - Date.now() < 20 * 60_000) {
-    await new Promise((r) => setTimeout(r, 150)); // a refresh takes a moment
+    await new Promise((r) => setTimeout(r, 500)); // a refresh takes a moment (long enough that a second run started under load still meets the first one)
     const used = existsSync(usedPath) ? readFileSync(usedPath, 'utf8').split('\n') : [];
     if (used.includes(oauth.refreshToken)) {
       out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'API Error: 401 refresh token already used', session_id: sid });

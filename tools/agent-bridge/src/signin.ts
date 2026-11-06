@@ -12,7 +12,7 @@ import { join } from 'node:path';
 export const FAILURE_PATTERNS: ReadonlyArray<{ kind: 'needs_sign_in' | 'plan_limit'; pattern: RegExp }> = [
   { kind: 'needs_sign_in', pattern: /FAKE401/ },
   { kind: 'plan_limit', pattern: /FAKELIMIT/ },
-  { kind: 'needs_sign_in', pattern: /\b401\b|invalid (api key|authentication|credentials)|oauth token (has )?(expired|revoked)|please run \/login|not logged in/ },
+  { kind: 'needs_sign_in', pattern: /(?:api error|status(?: code)?|http|error)\W{0,3}401\b|authentication_error|invalid (api key|authentication|credentials)|oauth token (has )?(expired|revoked)|please run \/login|not logged in/ },
   { kind: 'plan_limit', pattern: /usage limit reached|rate limit reached|5-hour limit|weekly limit|limit will reset/ },
 ];
 
@@ -54,6 +54,9 @@ export function readFileFacts(configDir: string): FileFacts {
     return { exists: false, valid: false, scopeOk: false, expiresAt: null, mtimeMs: null };
   }
 }
+
+/** How long a plan limit stands when the CLI's text gave no reset time; then one run is let through to find out. */
+export const DEFAULT_LIMIT_WAIT_MS = 30 * 60_000;
 
 export type CheckResult = 'ok' | 'rejected' | 'expired' | 'no_scope' | 'limit';
 
@@ -101,7 +104,7 @@ export class SigninGate {
 
   /** A run failed for an account reason: remember it until the sign-in file changes (or, for a limit, until the plan resets). */
   noteFailure(kind: AccountFailure, text: string): void {
-    this.failure = { kind, since: this.now(), mtimeMs: readFileFacts(this.configDir).mtimeMs, until: kind === 'plan_limit' ? limitResetsAt(text) : null };
+    this.failure = { kind, since: this.now(), mtimeMs: readFileFacts(this.configDir).mtimeMs, until: kind === 'plan_limit' ? limitResetsAt(text) ?? this.now() + DEFAULT_LIMIT_WAIT_MS : null };
   }
 
   /** The failure still standing, or null (a replaced file or a passed reset clears it). */

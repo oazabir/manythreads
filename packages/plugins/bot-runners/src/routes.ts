@@ -1,4 +1,4 @@
-import { conflict, forbidden, invalid, json, requireTeam, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { conflict, forbidden, invalid, json, requireTeam, route, type ClaudePodsProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { checkHermesGateway } from '@manythreads/sdk/hermes-outbound';
 import {
   BotRunnerPathParams,
@@ -269,6 +269,17 @@ export function registerRoutes(ctx: PluginContext): void {
       }
       const gone = await tx.query('DELETE FROM app.bot_runners WHERE id = $1::uuid RETURNING id', [id]);
       if (gone.rows.length !== 1) throw forbidden();
+      // A Claude Code runner's sign-in file lives in the pod's Secret: it goes with the runner, so a later runner of the same name never inherits it. Written last so a refusal rolls the delete back.
+      if (current.kind === 'claude_cli') {
+        const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
+        if (pods) {
+          try {
+            await pods.removeCredentials({ runnerName: current.name });
+          } catch {
+            throw conflict('The cluster did not remove the sign-in file. Nothing was changed; try again in a moment.');
+          }
+        }
+      }
       if (current.secret_id !== null) await ctx.secrets.delete(tx, current.secret_id);
       await ctx.audit.emit(tx, { type: 'bot_runner.runner.deleted', workspaceId, runnerId: id, name: current.name, kind: current.kind, actorId: tx.actor.id, at: now(ctx) });
       return json(DeleteBotRunnerResponse.parse({ deleted: true }));

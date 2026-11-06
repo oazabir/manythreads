@@ -261,10 +261,22 @@ const PAUSE_DETAIL = {
   needs_sign_in: 'Claude refused this sign-in. Upload a new sign-in file to start this runner again.',
 } as const;
 
+/** A pause with no usable reset time lasts this long, then the next run tries again (a pause with no end would hold the runner until an admin uploads a file). */
+export const DEFAULT_PAUSE_MS = 30 * 60_000;
+/** The longest pause taken from the CLI's own text (its weekly limit is the longest); a number in the text that looks like a far-off date is not trusted. */
+export const MAX_PAUSE_MS = 8 * 24 * 3_600_000;
+
+/** When a plan-limit pause ends: the reset time the bridge read, kept within a day-and-a-bit of sanity; else a short default. */
+export function pauseEnd(resetsAt: string | null, nowMs: number): string {
+  const asked = resetsAt === null ? Number.NaN : Date.parse(resetsAt);
+  const ms = Number.isFinite(asked) && asked > nowMs ? Math.min(asked, nowMs + MAX_PAUSE_MS) : nowMs + DEFAULT_PAUSE_MS;
+  return new Date(ms).toISOString();
+}
+
 export async function pauseRunner(ctx: PluginContext, input: { runner: string; teamId: string; reason: 'plan_limit' | 'needs_sign_in'; until: string | null }): Promise<void> {
   await ctx.db.system(async (tx) => {
     const status = input.reason === 'plan_limit' ? 'paused' : 'needs_sign_in';
-    const until = input.reason === 'plan_limit' ? input.until : null;
+    const until = input.reason === 'plan_limit' ? pauseEnd(input.until, ctx.runtime.now().getTime()) : null;
     const changed = await tx.query<{ id: string; workspace_id: string; name: string }>(
       `UPDATE app.bot_runners r
           SET status = $3, status_detail = $4, paused_until = $5::timestamptz, last_checked_at = now(), updated_at = now()

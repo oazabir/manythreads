@@ -138,6 +138,14 @@ describe('uploading a sign-in file', () => {
     expect(types).toEqual(expect.arrayContaining(['claude_pod.credentials.uploaded', 'claude_pod.credentials.replaced', 'claude_pod.credentials.removed']));
   });
 
+  it('deleting the runner removes its sign-in Secret, so a runner of the same name starts without one', async () => {
+    const id = await create('sign-h');
+    await put(omar, id, fakeCredentials('h'));
+    expect(secretOf('sign-h')).toBeDefined();
+    expect((await w.call<any>(omar, 'DELETE', `/api/admin/bot-runners/${id}`)).status).toBe(200);
+    expect(secretOf('sign-h')).toBeUndefined();
+  });
+
   it('answers the check as unreachable when the pod is not running', async () => {
     const id = await create('sign-g');
     await put(omar, id, fakeCredentials('g'));
