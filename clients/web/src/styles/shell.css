@@ -112,11 +112,28 @@ button.team {
   min-width: 0;
 }
 
-.rail .team small {
-  display: block;
+.rail .team-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--surface);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.rail .menu-head {
+  font-weight: 600;
+}
+
+.rail .menu-key {
+  margin-left: auto;
   color: var(--faint);
-  font-size: var(--fs-tiny);
-  line-height: 1.2;
+  font: inherit;
+  font-size: var(--fs-caption);
 }
 
 .rail .team b {
@@ -229,7 +246,7 @@ a.it:hover {
 }
 
 .it.on {
-  background: var(--nav-on);
+  background: var(--you-wash);
   color: var(--ink);
   font-weight: 500;
 }
@@ -251,6 +268,18 @@ a.it:hover {
 
 .pill.g {
   background: var(--dot-off);
+}
+
+.pill.mention {
+  background: var(--mention);
+}
+
+.pill.attention {
+  background: var(--attention);
+}
+
+.it.muted {
+  opacity: 0.6;
 }
 
 .hint {
@@ -285,6 +314,34 @@ a.it:hover {
   font-size: var(--fs-tiny);
   letter-spacing: 0.01em;
   text-decoration: none;
+}
+
+.sec-row {
+  display: flex;
+  align-items: center;
+}
+
+.sec-row .sec {
+  flex: 1;
+  min-width: 0;
+}
+
+.sec-fold {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 10px 0 0 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.sec-fold:hover {
+  color: var(--ink);
 }
 
 a.sec:hover {
@@ -366,7 +423,9 @@ a.sec:hover {
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 6px 10px;
   border: 0;

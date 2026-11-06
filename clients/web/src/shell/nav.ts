@@ -11,7 +11,7 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'org', order: 23, label: 'Org chart', kind: 'item', path: '/org', icon: 'org' },
   { id: 'jobs', order: 26, label: 'Jobs', kind: 'item', path: '/jobs', icon: 'jobs' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
-  { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', emptyState: 'Nothing waiting', badge: { source: 'approvals.waiting', tone: 'quiet' } },
+  { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
   { id: 'direct-messages', order: 45, label: 'Direct messages', kind: 'header', emptyState: 'No conversations yet' },
   { id: 'bots', order: 50, label: 'Bots', kind: 'header', path: '/bots', emptyState: 'No bots yet' },

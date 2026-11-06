@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router';
+import { Link, NavLink, useMatch, useNavigate } from 'react-router';
 import type { NavContribution } from '@manythreads/shared';
 import { useSession } from '../app/session';
 import { useUnread, usePeople } from '../channels/hooks';
@@ -9,7 +9,10 @@ import { dmLabel, openConversation, useDms } from '../dms/store';
 import { navHref } from './nav';
 import { AddIcon } from './icons';
 import { useDismiss } from './useDismiss';
-import { badgeText, unreadLook } from './unreadLook';
+import { unreadLook } from './unreadLook';
+import { FoldButton } from './FoldButton';
+import { Pill } from './Pill';
+import { useFold } from './sectionFold';
 import { PresenceDot } from '../presence/PresenceDot';
 import { LiveBadge } from '../meetings/LiveBadge';
 
@@ -82,16 +85,21 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
   useEffect(() => {
     void levelsStore.load();
   }, []);
+  const activeId = useMatch('/t/:team/dm/:id')?.params.id ?? null;
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
+  const [folded, toggleFolded] = useFold(session.person.id, slug, 'dm');
   const href = navHref(item, slug);
   const heading = href ? <Link className="sec sec-link" to={href}>{item.label}</Link> : <div className="sec"><span>{item.label}</span></div>;
   return (
     <>
-      {heading}
+      <div className="sec-row">
+        <FoldButton folded={folded} label={item.label} onToggle={toggleFolded} />
+        {heading}
+      </div>
       <div className="dm-list" data-slot="direct-messages">
-      {feed.items.map((d) => {
+      {feed.items.filter((d) => !folded || (unread[d.channel.id] ?? d.unreadCount) > 0 || d.channel.id === activeId).map((d) => {
         const n = unread[d.channel.id] ?? d.unreadCount;
         const label = dmLabel(d, session.person.id);
         const look = unreadLook(n, levels, d.channel.id, 'dm');
@@ -99,12 +107,12 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
         const others = d.participants.filter((p) => p.personId !== session.person.id);
         const peer = others.length === 1 ? others[0] : undefined;
         return (
-          <NavLink key={d.channel.id} to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''}`} data-unread={n > 0 ? n : undefined}>
+          <NavLink key={d.channel.id} to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''} ${look.muted ? 'muted' : ''}`} data-unread={n > 0 ? n : undefined}>
             <span className="h"><span className={`dot ${look.bold ? 'on' : ''}`} aria-hidden="true" /></span>
             <span className="it-label">{label}</span>
             {peer ? <PresenceDot personId={peer.personId} status /> : null}
             <LiveBadge channelId={d.channel.id} dm />
-            {look.badge ? <span className={`pill ${look.badge === 'quiet' ? 'g' : ''}`} data-vt-mask>{badgeText(n)}</span> : null}
+            {look.badge ? <Pill n={n} tone={look.badge} /> : null}
           </NavLink>
         );
       })}
@@ -113,7 +121,7 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
       <div className="dm-new" ref={box}>
         <button type="button" className="it dm-new-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <span className="h" aria-hidden="true"><AddIcon size={14} /></span>
-          <span className="it-label">New</span>
+          <span className="it-label">New message</span>
         </button>
         {open ? <NewConversation slug={slug} onDone={() => setOpen(false)} /> : null}
       </div>

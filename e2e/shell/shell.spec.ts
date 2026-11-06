@@ -31,7 +31,6 @@ test.describe('Nadia, a member', () => {
     await expect(sidebar).not.toContainText('No files yet');
     // Files and Boards are built screens: their sidebar rows carry no "nothing here" subtitle.
     await expect(sidebar).not.toContainText('No boards yet');
-    await expect(sidebar).toContainText('Nothing waiting');
     await expect(sidebar).toContainText('No bots yet');
     await expect(sidebar).not.toContainText(/phase|later/i);
     // search placeholder names the team; the person is named at the bottom

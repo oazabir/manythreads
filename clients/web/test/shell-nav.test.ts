@@ -37,7 +37,8 @@ describe('sidebar contract', () => {
     expect(copy['files']).toBeUndefined();
     // Boards is a real screen now, so the sidebar must not subtitle it "No boards yet" beside a board that exists.
     expect(copy['boards']).toBeUndefined();
-    expect(copy['approvals']).toBe('Nothing waiting');
+    // Approvals shows a count only while something waits; an empty row carries no subtitle
+    expect(copy['approvals']).toBeUndefined();
     expect(copy['bots']).toBe('No bots yet');
     expect(JSON.stringify(CORE_NAV)).not.toMatch(/later phase|phase \d/i);
   });

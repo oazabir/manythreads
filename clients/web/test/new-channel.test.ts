@@ -106,11 +106,11 @@ describe('how an unread row looks', () => {
   it('is bold with a count at the default levels, also before the levels have loaded', () => {
     expect(unreadLook(3, null, uuid(1), 'channel')).toEqual({ bold: true, badge: 'unread' });
     expect(unreadLook(3, levels('mentions'), uuid(1), 'channel')).toEqual({ bold: true, badge: 'unread' });
-    expect(unreadLook(3, levels('all'), uuid(1), 'dm')).toEqual({ bold: true, badge: 'unread' });
+    expect(unreadLook(3, levels('all'), uuid(1), 'dm')).toEqual({ bold: true, badge: 'mention' });
   });
   it('keeps a grey count and no bold label for a conversation set to nothing', () => {
-    expect(unreadLook(3, levels('mentions', [[uuid(1), 'nothing']]), uuid(1), 'channel')).toEqual({ bold: false, badge: 'quiet' });
-    expect(unreadLook(3, levels('nothing'), uuid(2), 'channel')).toEqual({ bold: false, badge: 'quiet' });
+    expect(unreadLook(3, levels('mentions', [[uuid(1), 'nothing']]), uuid(1), 'channel')).toEqual({ bold: false, badge: 'quiet', muted: true });
+    expect(unreadLook(3, levels('nothing'), uuid(2), 'channel')).toEqual({ bold: false, badge: 'quiet', muted: true });
     // an own choice beats the default
     expect(unreadLook(3, levels('nothing', [[uuid(2), 'all']]), uuid(2), 'channel')).toEqual({ bold: true, badge: 'unread' });
   });

@@ -109,10 +109,6 @@ export function Shell() {
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <a className="skip-link" href="#content" onClick={(e) => { e.preventDefault(); document.getElementById('content')?.focus(); }}>{onChat ? 'Skip to messages' : 'Skip to content'}</a>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
-          <div className="ws">
-            <span className="mark" aria-hidden="true">{session.workspace.name.slice(0, 1).toUpperCase()}</span>
-            <b className="ws-name">{session.workspace.name}</b>
-          </div>
           <div className="region team-switch" data-landmark="team-switch">
             <TeamSwitch />
           </div>

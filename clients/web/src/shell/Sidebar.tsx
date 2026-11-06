@@ -25,7 +25,7 @@ function NavItem({ item, slug }: { item: NavContribution; slug: string }) {
     </>
   );
   return href ? (
-    <NavLink to={href} className={({ isActive }) => `it ${isActive || (atHome && item.id === 'threads') ? 'on' : ''} ${count !== null && item.badge?.tone !== 'quiet' ? 'unread' : ''}`}>
+    <NavLink to={href} className={({ isActive }) => `it ${isActive || (atHome && item.id === 'threads') ? 'on' : ''} ${count !== null && item.badge?.tone !== 'quiet' && item.badge?.tone !== 'attention' ? 'unread' : ''}`}>
       {body}
     </NavLink>
   ) : (

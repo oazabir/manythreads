@@ -1,10 +1,20 @@
-import { useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { isAdmin, useSession } from '../app/session';
 import { useShell } from './context';
 import { CaretIcon } from './icons';
 import { teamSwitchPath } from './nav';
 import { useDismiss } from './useDismiss';
+
+/** The letter a team shows in its mark. */
+const markOf = (name: string): string => name.trim().slice(0, 1).toUpperCase() || '·';
+
+/** Alt+1..9 jumps to the Nth team, unless the person is typing. */
+export function teamIndexForKey(e: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'code'>): number | null {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
+  const m = /^Digit([1-9])$/.exec(e.code);
+  return m?.[1] ? Number(m[1]) - 1 : null;
+}
 
 /** Team switcher: shows the current team; the menu lists the person's teams and keeps the section they are in. */
 export function TeamSwitch() {
@@ -14,13 +24,27 @@ export function TeamSwitch() {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (guest) return;
+    const onKey = (e: KeyboardEvent): void => {
+      const i = teamIndexForKey(e);
+      const t = i === null ? undefined : teams[i];
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (!t || el?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      e.preventDefault();
+      void navigate(teamSwitchPath(loc.pathname, t.slug));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [guest, teams, loc.pathname, navigate]);
 
   const name = team?.name ?? (teamsLoading ? '' : guest ? 'Shared with you' : 'No team');
   if (guest) {
     return (
       <div className="team" data-guest>
+        <span className="team-mark" aria-hidden="true">{markOf(name)}</span>
         <div className="team-text">
-          <small>Team</small>
           <b>{name}</b>
         </div>
       </div>
@@ -29,15 +53,16 @@ export function TeamSwitch() {
   return (
     <div className="team-wrap" ref={box}>
       <button type="button" className="team" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="team-mark" aria-hidden="true">{markOf(name)}</span>
         <span className="team-text">
-          <small>Team</small>
           <b>{name || ' '}</b>
         </span>
         <span className="car"><CaretIcon open /></span>
       </button>
       {open ? (
         <div className="menu" role="menu" aria-label="Teams">
-          {teams.map((t) => (
+          <p className="menu-note menu-head">{session.workspace.name}</p>
+          {teams.map((t, i) => (
             <Link
               key={t.slug}
               role="menuitemradio"
@@ -46,7 +71,9 @@ export function TeamSwitch() {
               to={teamSwitchPath(loc.pathname, t.slug)}
               onClick={() => setOpen(false)}
             >
-              {t.name}
+              <span className="team-mark" aria-hidden="true">{markOf(t.name)}</span>
+              <span className="it-label">{t.name}</span>
+              {i < 9 ? <kbd className="menu-key" title={`Alt+${i + 1} switches to this team`}>{`Alt+${i + 1}`}</kbd> : null}
             </Link>
           ))}
           {teams.length === 0 ? <p className="menu-note">You are not on a team yet.</p> : null}

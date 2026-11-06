@@ -7,7 +7,7 @@ export const NavBadge = z.strictObject({
   /** Which counter feeds the badge. The shell resolves it; an unknown or missing source shows nothing. */
   source: z.string().regex(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/),
   /** `unread` is the loud blue pill, `quiet` the grey one (approvals, noisy channels). */
-  tone: z.enum(['unread', 'quiet']).default('unread'),
+  tone: z.enum(['unread', 'quiet', 'attention']).default('unread'),
 });
 export type NavBadge = z.infer<typeof NavBadge>;
 
