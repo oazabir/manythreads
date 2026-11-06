@@ -237,6 +237,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   const access: PluginAccess = {
     readableTeamIds: (tx, perm) => idsOf(tx, 'SELECT app.readable_team_ids($1::text) AS ids', perm),
     readableChannelIds: (tx, perm) => idsOf(tx, 'SELECT app.visible_channel_ids($1::text) AS ids', perm),
+    readableSpaceIds: (tx, perm) => idsOf(tx, 'SELECT app.readable_space_ids($1::text) AS ids', perm),
   };
 
   const ownQueue = (queue: string): void => {

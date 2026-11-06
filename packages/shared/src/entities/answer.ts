@@ -3,6 +3,7 @@ import { IsoDateTime } from '../common/time.ts';
 import { OkfTrustTier } from '../okf/concept.ts';
 import { BotId, ChannelId, FileId, MessageId, PersonId, RunId, TeamId } from '../ids.ts';
 import { ChannelKind } from './channel.ts';
+import { SpaceRef } from './space.ts';
 
 // The Answer (SPEC §12.4 and §14, PLAN P5-18): what a bot finishes a reply with. The text is a message in the thread like any other; the payload
 // rides on that message as `meta.answer`, and the client draws numbered citations, a lineage, what the run reached, what was out of scope, and
@@ -154,6 +155,8 @@ export const AnswerMemoryCitation = z.object({
   deprecated: z.boolean(),
   /** The team a received digest came from, when the concept is a shared one. */
   fromTeam: TeamId.nullable().default(null),
+  /** The space the concept was read from (`team:<id>` or `person:<id>`); absent on citations written before Personal spaces. */
+  space: SpaceRef.optional(),
 });
 
 /**

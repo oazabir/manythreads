@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { definePlugin, type PluginTx } from '@manythreads/sdk';
-import { LENA, OMAR, PRIYA, SAMEERA, TEAM_IDS } from '@manythreads/test-utils';
+import { LENA, NADIA, OMAR, PRIYA, SAMEERA, TEAM_IDS } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ExtensionRegistries, createMemoryKv, createPluginContext } from '../../src/plugins/index.ts';
 import { createRealtime, type Realtime } from '../../src/transport/realtime.ts';
@@ -34,6 +34,16 @@ describe('ctx.access', () => {
     expect(await teams(SAMEERA, 'manage')).toEqual([]);
     expect(sorted(await teams(OMAR, 'read'))).toEqual(sorted(Object.values(TEAM_IDS)));
     expect(await teams(LENA, 'read')).toEqual([]);
+  });
+
+  it('readableSpaceIds is app.readable_space_ids: the caller\'s own person id plus their teams; empty for system and for a word nobody defined (P20-01)', async () => {
+    const spaces = (p: Parameters<World['as']>[0], perm: 'read' | 'post' | 'manage') => w.as(p, (tx) => ctx.access.readableSpaceIds(tx as unknown as PluginTx, perm));
+    expect(sorted(await spaces(NADIA, 'read'))).toEqual(sorted([NADIA.personId, TEAM_IDS.Engineering]));
+    expect(await spaces(NADIA, 'manage')).toEqual([NADIA.personId]);
+    expect(await spaces(LENA, 'read')).toEqual([LENA.personId]);
+    expect(sorted(await spaces(OMAR, 'post'))).toEqual(sorted([OMAR.personId, ...Object.values(TEAM_IDS)]));
+    expect(await w.system((tx) => ctx.access.readableSpaceIds(tx as unknown as PluginTx, 'read'))).toEqual([]);
+    expect(await w.as(OMAR, (tx) => ctx.access.readableSpaceIds(tx as unknown as PluginTx, 'nope' as never))).toEqual([]);
   });
 
   it('is empty for the system actor and for a permission nobody defined', async () => {

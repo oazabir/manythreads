@@ -6,6 +6,7 @@ export interface PersonRow {
   display_name: string;
   primary_email: string;
   status: string;
+  suspended_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -17,6 +18,7 @@ export const toPerson = (row: PersonRow): Person =>
     displayName: row.display_name,
     primaryEmail: row.primary_email,
     status: row.status,
+    suspendedAt: row.suspended_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   });

@@ -154,4 +154,11 @@ export interface PluginAccess {
    * Needs the channels plugin's migrations (it owns `app.visible_channel_ids`); rejects when they are not applied.
    */
   readableChannelIds(tx: PluginTx, perm: Exclude<AccessPermission, 'manage'>): Promise<string[]>;
+  /**
+   * The spaces the caller may `perm` in, as one list of ids: the caller's own person id (their Personal space), every id of `readableTeamIds`, and, for
+   * `read` by a workspace owner or admin only, the person ids whose Personal space they have a live audited open on (60 minutes). A suspended person,
+   * a system actor and an unknown permission get an empty list; a guest gets only their own person id. Tell a team id from a person id by the table
+   * column you compare it with (`team_id` / `owner_person_id`), or build a `Space` from it. Needs kernel migration 0016.
+   */
+  readableSpaceIds(tx: PluginTx, perm: AccessPermission): Promise<string[]>;
 }

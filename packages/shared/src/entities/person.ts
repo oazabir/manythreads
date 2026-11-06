@@ -13,6 +13,8 @@ export const Person = z.object({
   displayName: z.string().min(1),
   primaryEmail: z.string().min(3),
   status: PersonStatus,
+  /** When the person was deactivated (kernel migration 0016); null while active. The 30-day clock of a leaver's Personal space starts here. */
+  suspendedAt: IsoDateTime.nullable().default(null),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

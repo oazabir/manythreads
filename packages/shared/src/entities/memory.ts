@@ -4,6 +4,7 @@ import { ActorId, RunId, TeamId, WorkspaceId } from '../ids.ts';
 import { OkfFrontmatter, OkfStatus, OkfTrustTier, isStale, trustTier } from '../okf/concept.ts';
 import { RunSourceScope } from './bot.ts';
 import { GitSha } from './repo.ts';
+import { SpaceRef } from './space.ts';
 
 // The memory retain log (PLAN.md A.5, P5-13; SPEC §12.1, §15): what the platform put into a team's memory bank, replaced there, took out of it, or
 // refused to put there, and why. Every enum here matches a CHECK of the memory plugin's migration 0001_retain_log.sql (and is listed in the
@@ -186,6 +187,8 @@ export const MemoryConceptSummary = z.object({
   shareNever: z.boolean(),
   /** The team a received digest came from (the extension key `from`), when it names one. */
   fromTeam: TeamId.nullable(),
+  /** The space the concept lives in (`team:<id>` or `person:<id>`); absent for concepts read before Personal spaces. */
+  space: SpaceRef.optional(),
   blobSha: GitSha,
   generatedAt: IsoDateTime.nullable(),
 });

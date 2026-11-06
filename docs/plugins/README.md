@@ -247,12 +247,23 @@ USING ((SELECT app.is_system()) OR team_id = ANY ((SELECT app.readable_team_ids(
 | `app.member_team_ids(permission)` | the same without the admin override: "members only" tables (events, entity links, capability grants) |
 | `app.acl_grant_ids(resource_type, permission)` | ids of that resource type the caller holds an `acl_entries` grant on, as a person, a member of a granted team, or a holder of a granted role (grants only: combine with the team set) |
 | `app.held_role_ids()` | role tags the caller holds |
+| `app.readable_space_ids(permission)` (kernel 0016) | the caller's own person id (their Personal space) plus `readable_team_ids(permission)`; for `read` by a workspace owner/admin also the person ids they hold a live audited open on (`app.personal_space_access`, 60 minutes, opened with `app.open_personal_space(person, reason)`); a suspended person gets `{}`, a guest only their own person id |
 
 ```sql
 -- team rows readable by team access OR by an ACL grant (the stub_resources policy of the test-kernel plugin):
 USING ((SELECT app.is_system())
    OR team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])
    OR (workspace_id = (SELECT app.workspace_id()) AND id = ANY ((SELECT app.acl_grant_ids('stub_resource', 'read'))::uuid[])))
+```
+
+Data that belongs to one person or one team (a **space**) uses one policy shape, with exactly one of `team_id` / `owner_person_id` set (`CHECK (num_nonnulls(team_id, owner_person_id) = 1)`):
+
+```sql
+USING ((SELECT app.is_system())
+   OR owner_person_id = ANY ((SELECT app.readable_space_ids('read'))::uuid[])
+   OR team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[]))
+-- INSERT / UPDATE / DELETE: owner_person_id = (SELECT app.person_id()) OR team_id = ANY ((SELECT app.readable_team_ids('post'))::uuid[])
+-- (never 'write': it is not a permission; 'manage' is leads only). An admin's open reaches Personal rows for reading only.
 ```
 
 Rules of the idiom:
