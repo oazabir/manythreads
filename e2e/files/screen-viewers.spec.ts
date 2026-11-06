@@ -50,7 +50,7 @@ test('attachments of #dev open in their viewers from the list', async ({ browser
     await expect(img).toBeVisible();
     await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
     const details = panel.getByTestId('file-details');
-    await expect(details).toContainText('channels/dev/latency-before-after.png');
+    await expect(details).toContainText('Channels › dev › latency-before-after.png');
     await expect(details).toContainText('Rafi');
     await expect(details).toContainText('# dev');
     await expect(panel.getByTestId('panel-title')).toHaveText('latency-before-after.png');

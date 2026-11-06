@@ -46,7 +46,7 @@ test('one tree over the repo and the attachments of #dev', async ({ browser, pla
     for (const name of ['deploy-plan-v2.14.pdf', 'latency-before-after.png', 'canary-rollout.mp4', 'release-notes-v2.14.docx']) {
       await expect(page.locator(`[data-testid="file-row"][data-path="channels/dev/${name}"]`)).toBeVisible();
     }
-    await expect(page.getByTestId('breadcrumb')).toContainText('Engineering / channels / dev');
+    await expect(page.getByTestId('breadcrumb')).toContainText('Engineering / Channels / dev');
 
     // a git folder and a channel folder draw the same rows: same cells, same test ids, same attributes
     await tree(page, 'pages').click();
@@ -82,7 +82,7 @@ test('the list opens a folder and a file; the breadcrumb walks back', async ({ b
     await expect(panel.getByTestId('viewer-csv')).toBeVisible();
     await expect(row(page, 'pages/reports/signups.csv')).toHaveAttribute('aria-selected', 'true');
     // the breadcrumb goes back up
-    await page.getByTestId('breadcrumb').getByRole('button', { name: 'pages', exact: true }).click();
+    await page.getByTestId('breadcrumb').getByRole('button', { name: 'Pages', exact: true }).click();
     await expect(page).toHaveURL(/path=pages(&|$)/);
     await expect(row(page, 'pages/runbook.md')).toBeVisible();
     await page.getByTestId('breadcrumb').getByRole('button', { name: 'Engineering', exact: true }).click();
