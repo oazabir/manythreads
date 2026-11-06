@@ -53,6 +53,8 @@ export function Recorder({ rec, channelId, showMic, onSend, returnFocus }: Recor
     if (phase !== 'recording' && phase !== 'preview') return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
+      // Esc inside another dialog, menu or list (opened while the recording waits) belongs to that one: a recording is not thrown away by it
+      if (e.target instanceof Element && e.target.closest('[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[role="combobox"]')) return;
       // in the transcript box Esc only leaves the box (the box handles it), it does not throw the clip away
       if (phase === 'preview' && e.target instanceof Element && e.target.closest('.vr-text')) return;
       e.preventDefault();

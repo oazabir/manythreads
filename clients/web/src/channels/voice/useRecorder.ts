@@ -21,6 +21,8 @@ function makeLevelReader(stream: StreamLike): LevelReader | null {
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     source.connect(analyser);
+    // Safari starts a context made after an `await` suspended; without this the meter and the waveform stay flat
+    void ctx.resume?.().catch(() => undefined);
     const data = new Uint8Array(analyser.fftSize);
     return {
       read() {

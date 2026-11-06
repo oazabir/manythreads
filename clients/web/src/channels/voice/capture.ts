@@ -127,6 +127,10 @@ export class Capture {
     try {
       this.begin(stream);
     } catch (err) {
+      // `begin` may have got as far as the level reader or the recorder: let go of all of it, not only the tracks
+      this.stopTicks?.();
+      this.stopTicks = null;
+      this.release();
       stream.getTracks().forEach((t) => t.stop());
       this.set({ phase: 'error', message: micErrorText(err) }, '');
     }

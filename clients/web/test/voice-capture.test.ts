@@ -66,6 +66,22 @@ function rig(opts: { deny?: boolean; level?: number } = {}) {
 }
 
 describe('voice capture', () => {
+  it('lets go of the microphone and the level reader when starting the recorder fails', async () => {
+    const r = rig();
+    let closed = 0;
+    const deps = (r.cap as unknown as { deps: CaptureDeps }).deps;
+    deps.makeLevelReader = () => ({ read: () => 0, close: () => void (closed += 1) });
+    r.recorder.start = () => {
+      throw new Error('cannot start');
+    };
+    const started = r.cap.start();
+    await r.answer();
+    await started;
+    expect(r.cap.state.phase).toBe('error');
+    expect(r.track.stopped).toBe(true);
+    expect(closed).toBe(1);
+  });
+
   it('asks for the microphone, records, and keeps a clip for the preview', async () => {
     const r = rig();
     const started = r.cap.start();

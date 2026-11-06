@@ -1,3 +1,4 @@
+import { sayToast } from '../../kernel/toast';
 import type { Transcript } from '../../speech';
 
 /**
@@ -7,6 +8,8 @@ import type { Transcript } from '../../speech';
  * The server marks an edited voice message `edited`, so a late transcript reads "corrected by hand" rather than "written on the sender's device":
  * the server has no way to take a late `device` transcript, and this stays honest about it.
  */
+
+export const LATE_FAILED = "Couldn't add the words to your voice message. You can add them from its menu.";
 
 export type LateTarget = { channelId: string; rootId: string | null; messageId: string };
 export type LateApply = (target: LateTarget, text: string) => Promise<void>;
@@ -56,7 +59,8 @@ export class LateTranscripts {
     if (!entry || !entry.settled || !entry.target) return;
     this.entries.delete(fileId);
     if (entry.text === null) return;
-    void this.applier(entry.target, entry.text).catch(() => undefined); // the message still plays and can be given a transcript from its menu
+    // the message still plays and can be given a transcript from its menu; say so, so the missing words are not a mystery
+    void this.applier(entry.target, entry.text).catch(() => sayToast(LATE_FAILED));
   }
 }
 

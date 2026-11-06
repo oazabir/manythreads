@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChannelMessage } from '@manythreads/shared';
 import { setTransport } from '../src/api/client';
 import { canAddTranscript } from '../src/channels/messageActions';
 import { ChannelStore, channelKey } from '../src/channels/store';
-import { LateTranscripts } from '../src/channels/voice/late';
+import { LATE_FAILED, LateTranscripts } from '../src/channels/voice/late';
 import { buildVoiceSend } from '../src/channels/voice/send';
 import {
   CHECK_NOTE,
@@ -24,6 +24,9 @@ const blob = new Blob(['x'], { type: 'audio/webm' });
 const transcript = (text: string, language: string | null = 'en'): Transcript => ({ segments: [{ text, startMs: 0, endMs: 1000 }], text, language });
 const engineOf = (fn: SpeechEngine['transcribe']): SpeechEngine => ({ kind: 'whisper', model: 'tiny', transcribe: fn });
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+const said = vi.hoisted(() => [] as string[]);
+vi.mock('../src/kernel/toast', () => ({ sayToast: (t: string) => said.push(t) }));
 
 describe('the lines the preview shows', () => {
   it('says what is going on, with a percentage only once there is one', () => {
@@ -178,13 +181,15 @@ describe('send without waiting', () => {
     expect(saved).toEqual([]);
   });
 
-  it('a failing save does not throw', async () => {
+  it('a failing save does not throw, and says so in a notice', async () => {
+    said.length = 0;
     const late = new LateTranscripts();
     late.setApplier(() => Promise.reject(new Error('offline')));
     late.watch('a', Promise.resolve(transcript('x')));
     late.posted('a', { channelId: 'c', rootId: null, messageId: 'm' });
     await flush();
     expect(late.watching('a')).toBe(false);
+    expect(said).toEqual([LATE_FAILED]);
   });
 });
 
