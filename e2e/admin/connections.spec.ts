@@ -45,7 +45,7 @@ test('an admin adds a mailbox: Kubernetes is shut with its reason, the credentia
     await page.getByTestId('connection-kind-email').click();
 
     const form = page.getByTestId('connection-add-form');
-    await form.getByLabel('Name').fill('Support mailbox');
+    await form.getByLabel('Name', { exact: true }).fill('Support mailbox');
     await expect(form.getByLabel('Short name')).toHaveValue('support-mailbox');
     await form.getByTestId('connection-credential').fill(PASSWORD);
     await expect(form.getByTestId('connection-credential')).toHaveAttribute('type', 'password');
@@ -90,7 +90,7 @@ test('an admin switches it off and on, changes the name and the end date, and re
 
     await mailbox.getByTestId('connection-change').click();
     const form = page.getByTestId('connection-change-form');
-    await form.getByLabel('Name').fill('Sales mailbox');
+    await form.getByLabel('Name', { exact: true }).fill('Sales mailbox');
     await form.getByLabel('Stops working on (optional)').fill('2099-12-31');
     await page.getByTestId('connection-change-submit').click();
     await expect(form).toBeHidden();
