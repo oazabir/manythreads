@@ -45,7 +45,7 @@ export const RHYTHMS: ReadonlyArray<{ minutes: number | null; label: string }> =
   { minutes: 10080, label: 'Every week' },
 ];
 
-const SOURCE_NAME: Record<KnowledgeSource['kind'], string> = { upload: 'Uploaded files', repo: 'The base’s folder in the team repo', url: 'Web page' };
+const SOURCE_NAME: Record<KnowledgeSource['kind'], string> = { upload: 'Uploaded files', repo: 'The base’s folder in the team files', url: 'Web page' };
 
 /** The words for a source's last read: when it was, or why it failed. */
 export function sourceLine(s: Pick<KnowledgeSource, 'lastSyncedAt' | 'error'>): string {

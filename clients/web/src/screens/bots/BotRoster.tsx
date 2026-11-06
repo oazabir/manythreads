@@ -107,12 +107,12 @@ export function BotRoster() {
                 <div className="b-empty" data-testid="roster-empty">
                   <p className="b-empty-title">No bots yet</p>
                   <p className="b-empty-body">
-                    A bot is a folder in the team repo: <span className="mono">bots/&lt;slug&gt;/BOT.md</span>. Describe what you want and a helper drafts it for
-                    you to approve, or propose the file yourself in Files — once a workspace admin applies it, a valid definition appears here within seconds.
+                    Each bot is described in a file the team can review. Describe what you want and a helper drafts it for
+                    you to approve, or propose the file yourself in Files. Once a workspace admin applies it, the bot appears here within seconds.
                   </p>
                   {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-empty-add">Add a bot</Link>}
                   <Link className="btn" to={`/t/${slug}/recipes`} data-testid="roster-empty-recipes">Browse recipes</Link>
-                  <Link className="btn" to={`/t/${slug}/files?path=bots`}>Open bots/ in Files</Link>
+                  <Link className="btn" to={`/t/${slug}/files?path=bots`}>Open the bots in Files</Link>
                 </div>
               ) : (
                 <div className="b-list" data-landmark="bot-roster">

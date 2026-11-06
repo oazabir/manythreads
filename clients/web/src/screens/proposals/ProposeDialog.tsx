@@ -137,7 +137,7 @@ export function ProposeDialog({
     >
       <div className="dlg-form">
       <p className="dlg-text">
-        Changes to <span className="mono">bots/</span>, <span className="mono">TEAM.md</span>, <span className="mono">skills/</span> and <span className="mono">routines/</span> go
+        Changes to bots, the team file, skills and routines go
         through a proposal: a team lead or workspace admin looks at the lines that change, then applies them.
         {canApply ? ' You can also propose and apply in one step; it is still kept on record.' : ''}
       </p>

@@ -100,7 +100,7 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
     <div className="bd-scheduled-jobs" data-testid="scheduled-jobs">
       <div className="bd-toolbar">
         <p className="bd-hint">
-          Jobs run as a bot on a schedule. {canManage ? 'As a lead you can add one here.' : 'A lead saves a new one; a member proposes it in Files, under routines/, and a lead applies it.'}
+          Jobs run as a bot on a schedule. {canManage ? 'As a lead you can add one here.' : 'A lead saves a new one; a member proposes it in Files, and a lead applies it.'}
         </p>
         {canManage ? (
           <div className="bd-toolbar-act">
@@ -149,11 +149,11 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
           {draft.kind === 'routine' ? (
             <div className="bd-row2">
               <label className="bd-field">
-                <span>Contract (`routines/…`)</span>
+                <span>Job file</span>
                 <input value={draft.contractPath} onChange={(e) => setDraft({ ...draft, contractPath: e.target.value })} placeholder="routines/weekly.yaml" className="mono" data-testid="scheduled-job-contract" />
               </label>
               <label className="bd-field">
-                <span>Output page (`pages/…`)</span>
+                <span>Output page</span>
                 <input value={draft.outputPath} onChange={(e) => setDraft({ ...draft, outputPath: e.target.value })} placeholder="pages/reports/weekly.md" className="mono" data-testid="scheduled-job-output" />
               </label>
             </div>

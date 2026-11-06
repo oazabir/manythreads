@@ -154,7 +154,7 @@ export function ShareCard({ slug, share, canManage, sharingOn, onChanged }: Prop
                           <span>{leftOutLine(g)}</span>
                           <ul className="ms-paths">
                             {g.items.slice(0, 8).map((e) => (
-                              <li key={e.path} className="mono">{e.title || e.path}</li>
+                              <li key={e.path} title={e.path}>{e.title || e.path}</li>
                             ))}
                             {g.items.length > 8 ? <li className="faint">and {String(g.items.length - 8)} more</li> : null}
                           </ul>

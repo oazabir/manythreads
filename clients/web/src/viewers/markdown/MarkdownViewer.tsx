@@ -155,7 +155,7 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
       {live ? <LivePageEditor path={path} teamSlug={context.teamSlug} onExit={leaveLive} /> : null}
       <div className="md-editor" hidden={mode !== 'rich' || live}>
         <EditorContent editor={editor} />
-        {frontmatter !== '' ? <p className="vw-note">This page has frontmatter. Use Raw to change it.</p> : null}
+        {frontmatter !== '' ? <p className="vw-note">This page starts with a block of settings. Use Raw to change it.</p> : null}
       </div>
       {mode === 'raw' && !live ? (
         <textarea

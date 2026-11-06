@@ -49,7 +49,7 @@ export function IdentityTab({ draft, canEdit }: TabProps) {
   const f = fm(draft);
   const set = sectionOf(draft);
   return (
-    <Block title="Identity" count="name, role, kind, runtime, visibility">
+    <Block title="Identity" count="Name, job and who can see it">
       <TextField label="Name" value={f.name} readOnly={!canEdit} testId="bot-name" error={draft.issueAt('name')?.message} onChange={(name) => set('name', name)} hint="Shown on the roster and wherever the bot is mentioned." />
       <TextField label="Role" value={f.role} readOnly={!canEdit} testId="bot-role" error={draft.issueAt('role')?.message} onChange={(role) => set('role', role)} hint="One line: what this bot is for. The platform never reads meaning into it." />
       <SelectField
@@ -85,11 +85,11 @@ export function IdentityTab({ draft, canEdit }: TabProps) {
 export function BehaviourTab({ draft, canEdit }: TabProps) {
   const edited = draft.body !== draft.originalBody;
   return (
-    <Block title="Behaviour" count={edited ? 'edited' : 'unchanged'} action={<span className="b-hint">The body of BOT.md is the prompt itself.</span>}>
+    <Block title="Behaviour" count={edited ? 'edited' : 'unchanged'} action={<span className="b-hint">What the bot is told before every conversation.</span>}>
       <textarea
         className="b-body"
         data-testid="bot-body"
-        aria-label="Behaviour — the body of BOT.md"
+        aria-label="Behaviour: what the bot is told before every conversation"
         spellCheck={false}
         readOnly={!canEdit}
         value={draft.body}
@@ -98,7 +98,7 @@ export function BehaviourTab({ draft, canEdit }: TabProps) {
       <p className="b-hint">
         {canEdit
           ? 'This text is what the bot is. Everything the platform enforces regardless of it — budgets, approvals, who it may tag — is applied by the platform, not by the prompt.'
-          : 'You can read this definition but not change it. Changes to bots/ go through a proposal.'}
+          : 'You can read this definition but not change it. Changes to bots go through a proposal.'}
       </p>
     </Block>
   );
@@ -107,6 +107,16 @@ export function BehaviourTab({ draft, canEdit }: TabProps) {
 // ---- Triggers -----------------------------------------------------------------------------------------------------------
 const TRIGGER_TYPES = ['conversation', 'mention', 'routine', 'task_assigned', 'inbox', 'channel_message', 'webhook'] as const;
 type TriggerType = (typeof TRIGGER_TYPES)[number];
+/** What each trigger means in plain words; the code name stays as the option value and in the tooltip. */
+export const TRIGGER_LABEL: Record<TriggerType, string> = {
+  conversation: 'When someone talks to it',
+  mention: 'When mentioned',
+  routine: 'On a schedule',
+  task_assigned: 'When a card is assigned to it',
+  inbox: 'When mail arrives',
+  channel_message: 'On every message in a channel',
+  webhook: 'When another service calls in',
+};
 type Triggers = NonNullable<BotFrontmatter['triggers']>;
 
 export function TriggersTab({ draft, canEdit }: TabProps) {
@@ -141,7 +151,7 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
             ) : null}
             {t.type === 'routine' ? (
               <div className="b-trg-fields">
-                <TextField label="Routine" value={t.routine ?? ''} readOnly={!canEdit} onChange={(routine) => replace(i, { ...t, routine: routine === '' ? undefined : routine })} hint={<span>The slug under <Mono>routines/</Mono>.</span>} />
+                <TextField label="Routine" value={t.routine ?? ''} readOnly={!canEdit} onChange={(routine) => replace(i, { ...t, routine: routine === '' ? undefined : routine })} hint="The routine's short name." />
                 <TextField label="Cron" value={t.cron ?? ''} readOnly={!canEdit} onChange={(cron) => replace(i, { ...t, cron: cron === '' ? undefined : cron })} hint="For example 0 9 * * 1 — Mondays 09:00." />
               </div>
             ) : null}
@@ -195,7 +205,7 @@ function AddTrigger({ onAdd, existing }: { onAdd: (type: TriggerType) => void; e
   return (
     <>
       <select aria-label="Trigger type to add" value={type} onChange={(e) => setType(e.target.value as TriggerType)}>
-        {TRIGGER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        {TRIGGER_TYPES.map((t) => <option key={t} value={t} title={t}>{TRIGGER_LABEL[t]}</option>)}
       </select>
       <button type="button" className="btn s" data-testid="add-trigger" disabled={existing.includes(type)} onClick={() => onAdd(type)}>Add trigger</button>
     </>
@@ -227,7 +237,7 @@ export function CapabilitiesTab({ draft, canEdit, slug }: TabProps) {
           placeholder="messages.post"
           valid={capabilityOk}
           testId="caps-native"
-          hint={<span>One allowlist: native tools, runtime tools and connection tools together. <Mono>person:*</Mono> means the asking person&apos;s own connections.</span>}
+          hint={<span>One list of every tool the bot may use: built-in tools, the runtime&apos;s tools and connection tools together. <Mono>person:*</Mono> means the asking person&apos;s own connections.</span>}
         />
       </Block>
       <Block title="Runtime" count="inside the bot's own sandbox">
@@ -255,8 +265,7 @@ export function CapabilitiesTab({ draft, canEdit, slug }: TabProps) {
       </Block>
       <Block title="Never bot-writable">
         <p className="b-notset">
-          <Mono>bots/</Mono>, <Mono>TEAM.md</Mono>, <Mono>skills/</Mono> and <Mono>routines/</Mono> are not in any allowlist and cannot be: a change to them
-          arrives only as an approved proposal, whatever this file says. The broker refuses the write and records the denial.
+          Changes to bots, the team file, skills and routines always need a person's approval, whatever this bot's settings say. A direct write is refused and the refusal is recorded.
         </p>
       </Block>
     </>
@@ -271,7 +280,7 @@ export function KnowledgeTab({ draft, canEdit, slug }: TabProps) {
   const canAdd = SLUG_RE.test(base.trim()) && !bases.some((b) => b.base === base.trim());
   return (
     <Block title="Knowledge" count={`${bases.length} ${bases.length === 1 ? 'base' : 'bases'}`}>
-      {bases.length === 0 ? <NotSet>No knowledge bases: this bot answers from the team repo, messages and memory only.</NotSet> : null}
+      {bases.length === 0 ? <NotSet>No knowledge bases: this bot answers from team files, messages and memory only.</NotSet> : null}
       {bases.map((k, i) => (
         <div className="b-rowline" key={`${k.base}-${String(i)}`} data-testid="knowledge-row">
           <div className="b-lab"><Mono>knowledge/{k.base}</Mono></div>
@@ -290,7 +299,7 @@ export function KnowledgeTab({ draft, canEdit, slug }: TabProps) {
       ))}
       {canEdit ? (
         <div className="b-add-row">
-          <input aria-label="Knowledge base slug" placeholder="architecture-docs" value={base} onChange={(e) => setBase(e.target.value)} />
+          <input aria-label="Knowledge base name" placeholder="architecture-docs" value={base} onChange={(e) => setBase(e.target.value)} />
           <button type="button" className="btn s" disabled={!canAdd} onClick={() => { set([...bases, { base: base.trim() }]); setBase(''); }}>Add base</button>
         </div>
       ) : null}
@@ -299,15 +308,15 @@ export function KnowledgeTab({ draft, canEdit, slug }: TabProps) {
 }
 
 // ---- Memory -------------------------------------------------------------------------------------------------------------
-export function MemoryTab({ draft, canEdit, bot, slug }: TabProps) {
+export function MemoryTab({ draft, canEdit, slug }: TabProps) {
   const m = fm(draft).memory ?? {};
   const grant = m.grants?.[0];
   const bank = `team:${slug}`;
   const setMemory = (patch: Partial<NonNullable<BotFrontmatter['memory']>>): void => draft.patch((d) => ({ ...d, memory: { ...d.memory, ...patch } }));
   return (
     <>
-      <Block title="Private file" count="this bot only, in the team repo">
-        <TextField label="File" value={m.file ?? ''} readOnly={!canEdit} placeholder="memory.md" onChange={(file) => setMemory({ file: file === '' ? undefined : file })} hint={<Mono>bots/{bot.slug}/memory.md</Mono>} />
+      <Block title="Private file" count="Only this bot reads it">
+        <TextField label="File" value={m.file ?? ''} readOnly={!canEdit} placeholder="memory.md" onChange={(file) => setMemory({ file: file === '' ? undefined : file })} hint="The bot's own notes, kept in the team files." />
         <NumberField label="Max lines" value={m.maxLines} readOnly={!canEdit} min={1} onChange={(maxLines) => setMemory({ maxLines })} hint="When the file crosses this, the Workshop proposes a compaction." />
         <TextField label="People notes" value={m.people ?? ''} readOnly={!canEdit} placeholder="people/<id>.md" onChange={(people) => setMemory({ people: people === '' ? undefined : people })} />
       </Block>
@@ -368,7 +377,7 @@ export function ModelTab({ draft, canEdit }: TabProps) {
         <NumberField label="Max tokens per run" value={m?.budgets?.maxTokensPerRun} readOnly={locked} onChange={(maxTokensPerRun) => patchModelConfig({ budgets: { ...m?.budgets, maxTokensPerRun } })} />
         <NumberField label="Requests per minute" value={m?.rateLimit?.requestsPerMinute} readOnly={locked} onChange={(rpm) => patchModelConfig({ rateLimit: rpm === undefined ? undefined : { requestsPerMinute: rpm } })} />
       </Block>
-      <Block title="Subscription" count="bypasses the gateway guard">
+      <Block title="Subscription" count="Not checked by the team's safety rules">
         <SwitchRow
           label="Bind a person's subscription"
           hint="Off by default. A subscription runtime is bound to one person and never to anything the platform triggers."
@@ -376,7 +385,7 @@ export function ModelTab({ draft, canEdit }: TabProps) {
           readOnly={!canEdit}
           onChange={(on) => draft.patch((d) => ({ ...d, model: on ? { subscription: 'claude-code' } : { aliases: aliases.length > 0 ? aliases : ['fast'] } }))}
         />
-        {sub !== undefined ? <p className="b-warnline">Subscription · bypasses the gateway guard</p> : null}
+        {sub !== undefined ? <p className="b-warnline">Subscription · not checked by the team's safety rules</p> : null}
       </Block>
     </>
   );
@@ -401,7 +410,7 @@ export function GuardTab({ draft, canEdit }: TabProps) {
             { value: 'customer-facing', label: 'customer-facing' },
           ]}
           onChange={(preset) => setGuard({ preset })}
-          hint="Bound at Workspace → LLM; its rules run at pre_egress and before the model call."
+          hint="Set in Workspace → LLM. Its rules are checked before anything leaves for the model."
         />
       </Block>
       <Block title="Gate list" count="hand to a person before any model call">
@@ -421,7 +430,7 @@ export function GuardTab({ draft, canEdit }: TabProps) {
           values={g.rules ?? []}
           readOnly={!canEdit}
           onChange={(rules) => setGuard({ rules: rules.length > 0 ? rules : undefined })}
-          hint={<span>Free text the runtimes apply on top of the preset. <Mono>dlp:require_approval</Mono> holds a call that trips the guard in the Approvals inbox instead of redacting it.</span>}
+          hint={<span>Free text the runtimes apply on top of the preset. Writing <Mono>dlp:require_approval</Mono> holds a call that breaks a rule in the Approvals inbox instead of hiding the sensitive part.</span>}
         />
       </Block>
     </>
@@ -436,8 +445,7 @@ export function ApprovalsTab({ draft, canEdit }: TabProps) {
     <>
       <Block title="What waits for a person">
         <p className="b-notset">
-          One mechanism, four sources: a grant flagged <Mono>needsApproval</Mono> (here), an Environment with <Mono>protected: true</Mono>,{' '}
-          <Mono>dispatch: strict</Mono> in TEAM.md, and the DLP <Mono>require_approval</Mono> outcome. Everything pending appears in one Approvals inbox.
+          A person is asked in four cases: a tool marked as needing approval (set here), a protected environment, a team that requires approval before work is handed on, and a safety rule that holds a call. Everything waiting appears in one Approvals inbox.
         </p>
       </Block>
       <Block title="Tools flagged needs-approval" count="a person confirms each call">
@@ -460,7 +468,7 @@ export function ApprovalsTab({ draft, canEdit }: TabProps) {
           placeholder="role:on-call"
           valid={(v) => PRINCIPAL_RE.test(v)}
           onChange={(approvers) => setApprovals({ approvers: approvers.length > 0 ? approvers : undefined })}
-          hint={<span>A role tag from TEAM.md (<Mono>role:on-call</Mono>) or one person (<Mono>person:&lt;id&gt;</Mono>). The requester can never approve their own call.</span>}
+          hint={<span>A role from the team's settings (<Mono>role:on-call</Mono>) or one person (<Mono>person:&lt;id&gt;</Mono>). The requester can never approve their own call.</span>}
         />
       </Block>
     </>
@@ -482,7 +490,7 @@ export function HandoverTab({ draft, canEdit, bot }: TabProps) {
           placeholder="reviewer"
           valid={(v) => SLUG_RE.test(v)}
           onChange={(mayTag) => setHandover({ mayTag: mayTag.length > 0 ? mayTag : undefined })}
-          hint="The loader compiles handover.mayTag into the allowlist: the broker refuses a tag that is not here."
+          hint="Only the bots and people listed here can be handed work by this bot."
         />
         {bot.mayTag.length > 0 ? <div className="b-hint">Compiled now: {bot.mayTag.join(', ')}</div> : null}
       </Block>
@@ -594,7 +602,7 @@ export function EvalsTab({ draft, canEdit, slug, bot }: TabProps) {
       {!e ? <NotSet>No scenario set: this bot's prompt is not replayed against recorded cases yet.</NotSet> : null}
       {e ? (
         <>
-          <Row label="Scenario set" hint="Recorded scenarios run against this BOT.md whenever a change to it is applied, every night, and when a lead asks."><Mono>{e.set}</Mono></Row>
+          <Row label="Scenario set" hint="Recorded scenarios run against this bot whenever a change to it is applied, every night, and when a lead asks."><Mono>{e.set}</Mono></Row>
           <div className="b-rowline">
             <div className="b-lab">Minimum score<div className="d">Below this, the run is flagged on this page.</div></div>
             <div className="b-val">
@@ -620,7 +628,7 @@ export function EvalsTab({ draft, canEdit, slug, bot }: TabProps) {
       ) : null}
       {canEdit && !e ? (
         <div className="b-add-row">
-          <input aria-label="Eval set slug" placeholder="coder-20" value={set} onChange={(ev) => setSet(ev.target.value)} />
+          <input aria-label="Scenario set name" placeholder="coder-20" value={set} onChange={(ev) => setSet(ev.target.value)} />
           <button type="button" className="btn s" disabled={!canAdd} onClick={() => { draft.patch((d) => ({ ...d, evals: { set: set.trim(), minScore: 0.9 } })); setSet(''); }}>Add a scenario set</button>
         </div>
       ) : null}
@@ -662,8 +670,8 @@ export function AuditTab({ bot, runs, slug }: TabProps) {
         )}
       </Block>
       <Block title="Definition">
-        <Row label="File" hint="Every change to the definition is a commit in the team repo, with its own history and diff.">
-          <Link className="btn s" to={`/t/${slug}/files?open=bots/${bot.slug}/BOT.md`} data-testid="bot-open-file">Open bots/{bot.slug}/BOT.md in Files</Link>
+        <Row label="File" hint="Every change to the bot is saved with its own history, so you can see what changed.">
+          <Link className="btn s" to={`/t/${slug}/files?open=bots/${bot.slug}/BOT.md`} data-testid="bot-open-file">Open the bot's file</Link>
         </Row>
         <Row label="Loaded from"><Mono>{bot.definitionSha.slice(0, 12)}</Mono></Row>
         <Row label="Last loaded"><Time iso={bot.updatedAt} /></Row>

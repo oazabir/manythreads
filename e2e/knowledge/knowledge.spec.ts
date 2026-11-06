@@ -28,7 +28,7 @@ test.describe('desktop', () => {
     const { page, close } = await openBot(browser, playwright, stack, 'omar', 'coder', '?tab=knowledge');
     try {
       await expect(page.getByText('No knowledge bases')).toBeVisible();
-      await page.getByLabel('Knowledge base slug').fill('runbooks');
+      await page.getByLabel('Knowledge base name').fill('runbooks');
       await page.getByRole('button', { name: 'Add base' }).click();
       await page.getByTestId('save-bot').click();
       await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible();

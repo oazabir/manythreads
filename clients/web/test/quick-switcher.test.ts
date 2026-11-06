@@ -182,7 +182,7 @@ describe('item builders', () => {
     expect(cardItems([{ id: 'k1', title: 'Fix login', state: 'in_progress', boardId: 'bd1' }], 'eng')[0]).toMatchObject({ to: '/t/eng/boards?board=bd1&card=k1', hint: 'Card · in progress' });
     expect(cardItems([{ id: 'k2', title: 'No board', state: 'todo', boardId: null }], 'eng')[0]?.to).toBe('/t/eng/boards?card=k2');
     expect(pageItems([{ name: 'runbook.md', path: 'pages/runbook.md', kind: 'file' }, { name: 'sub', path: 'pages/sub', kind: 'dir' }], 'eng')).toEqual([
-      expect.objectContaining({ label: 'runbook', to: '/t/eng/files?open=pages%2Frunbook.md' }),
+      expect.objectContaining({ label: 'runbook', hint: 'Page', to: '/t/eng/files?open=pages%2Frunbook.md' }),
     ]);
     const hit = (teamId: string | null) =>
       ({ id: 'f1', name: 'spec.pdf', folderPath: 'channels/dev/', channel: teamId === null ? null : { id: 'c', name: 'dev', kind: 'channel', teamId } }) as never;

@@ -3,6 +3,7 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { confirmConceptRoute, deprecateConceptRoute, ConfirmConceptResponse, DeprecateConceptResponse, type MemoryConceptSummary } from '@manythreads/shared';
 import { call } from '../../api/client';
+import { ago } from '../../channels/format';
 import { fetchConcepts } from './inboxApi';
 import { InboxTab } from './InboxTab';
 import { TABS, nextTab, tabFromParams, type TabId } from './memoryTabs';
@@ -98,7 +99,9 @@ function ConceptsTab({ slug, wanted }: { slug: string; wanted: string | null }) 
         <ul className="mm-tree" data-testid="concept-list">
           {concepts.map((c) => (
             <li key={c.path} className={`mm-concept ${selected?.path === c.path ? 'mm-concept-selected' : ''}`} onClick={() => setPicked(c)} data-testid="concept-row" data-path={c.path}>
-              <span className="mm-concept-path">{c.path}</span>
+              <span className="mm-concept-path" title={c.path}>{c.title}</span>
+              {c.description ? <span className="mm-concept-desc">{c.description}</span> : null}
+              {c.generatedAt ? <span className="mm-concept-ago">{ago(c.generatedAt)}</span> : null}
               <span className="mm-chip mm-chip-type">{c.type}</span>
               <span className={`mm-chip mm-chip-trust mm-trust-${c.trustTier}`}>{c.trustTier}</span>
               {isStale(c) && <span className="mm-chip mm-chip-stale">stale</span>}

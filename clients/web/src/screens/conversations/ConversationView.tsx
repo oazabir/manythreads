@@ -344,7 +344,7 @@ export function ConversationView() {
                     autoFocus={!narrow && viaTabs !== pageKey}
                   />
                 </div>
-                <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>
+                <p className="cv-hint">Sending starts a thread.</p>
               </>
             ) : null}
           </div>

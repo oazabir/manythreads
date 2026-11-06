@@ -58,7 +58,7 @@ export function HowToConnect({ agent, origin, listen }: { agent: HermesConnectio
           </li>
         </ol>
         <CopyBlock id="hermes-yaml" text={hermesProfileYaml(origin)} />
-        <p className="fld-hint">The bot&apos;s BOT.md file is sent with every run as extra instructions, so the profile needs no copy of it.</p>
+        <p className="fld-hint">The bot&apos;s description is sent with every run as extra instructions, so the profile needs no copy of it.</p>
       </div>
     );
   }
@@ -78,7 +78,7 @@ export function HowToConnect({ agent, origin, listen }: { agent: HermesConnectio
         <li>Give a workspace admin the bridge&apos;s address and the key you gave it. An admin adds it under Runners.</li>
       </ol>
       <p className="fld-hint">
-        Each run gets the bot&apos;s BOT.md as an added system prompt and a token that works for that one run, for <span className="mono">{mcpAddress(origin)}</span>.
+        Each run gets the bot&apos;s description as added instructions and a token that works for that one run, for <span className="mono">{mcpAddress(origin)}</span>.
         The tools the agent may use (files, shell, web) come from the bot&apos;s <span className="mono">capabilities.runtime</span> setting.
         If you sign the CLI in with a personal subscription, check that subscription&apos;s terms allow running team bots on it.
       </p>
@@ -110,7 +110,7 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
     <div className="ag-row" data-testid="agents-row" data-connection={c.name} data-status={c.status}>
       <div className="ag-main">
         <div className="ag-name"><span className="mono">{c.name}</span> <span className="kind ag">{agentLabel(c.agent)}</span> <span className="ag-kind">{kindLabel(c.kind)}</span></div>
-        <div className="ag-addr mono" data-vt-mask>{c.baseUrl ?? (c.kind === 'managed' ? 'Inside this cluster' : 'Set by an admin')}</div>
+        <div className="ag-addr mono" data-vt-mask>{canManage ? (c.baseUrl ?? (c.kind === 'managed' ? 'Inside this cluster' : 'Set by an admin')) : 'Set by an admin'}</div>
         <div className="ag-state">
           <span className={`ag-st ${c.status}`}>{statusLine(c)}</span>
           {c.lastCheckedAt ? <span className="d"> · last checked <Time iso={c.lastCheckedAt} /></span> : null}

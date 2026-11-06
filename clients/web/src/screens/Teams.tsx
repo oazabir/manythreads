@@ -184,7 +184,7 @@ function PickFields({ label, pick, onPatch }: { label: string; pick: Pick; onPat
         <span aria-hidden="true"><PencilIcon size={12} /></span>
       </span>
       <span className="slug">
-        /<input aria-label={`${label} team slug`} value={pick.slug} onChange={(e) => onPatch({ slug: e.target.value, slugTouched: true })} />
+        /<input aria-label={`${label} team address`} value={pick.slug} onChange={(e) => onPatch({ slug: e.target.value, slugTouched: true })} />
       </span>
     </div>
   );

@@ -208,9 +208,9 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
         <div className="b-banner" role="alert" data-testid="bot-invalid-banner">
           <span className="bang" aria-hidden="true">!</span>
           <div>
-            <b>BOT.md invalid{invalid.fieldPath ? `: ${invalid.fieldPath}` : ''}</b>
+            <b title={invalid.fieldPath ?? undefined}>This bot&apos;s file has a mistake</b>
             <div className="d">{invalid.message}</div>
-            <div className="d">The previous version is still running. Fix the file and the loader picks it up on the next commit.</div>
+            <div className="d">The previous version is still running. Fix the file and the bot updates as soon as the fix is saved.</div>
           </div>
         </div>
       ) : null}

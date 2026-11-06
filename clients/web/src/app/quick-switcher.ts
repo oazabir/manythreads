@@ -112,11 +112,17 @@ export const cardItems = (tasks: readonly { id: string; title: string; state: st
     return item({ key: `card:${t.id}`, kind: 'card', label: t.title, hint: `Card · ${t.state.replace(/_/g, ' ')}`, to: `${teamPath(slug, 'boards')}?${q.toString()}` });
   });
 
+/** Where a page sits, in words: its folder under `pages/`, or just "Page" at the top (the file path is not shown). */
+const pageHint = (path: string): string => {
+  const folders = path.split('/').slice(1, -1);
+  return folders.length === 0 ? 'Page' : `Page · ${folders.join(' / ')}`;
+};
+
 /** The team's pages: the files directly under `pages/`. */
 export const pageItems = (entries: readonly { name: string; path: string; kind: string }[], slug: string): SwitcherItem[] =>
   entries
     .filter((e) => e.kind === 'file')
-    .map((e) => item({ key: `page:${e.path}`, kind: 'page', label: e.name.replace(/\.md$/i, ''), hint: e.path, to: `${teamPath(slug, 'files')}?open=${encodeURIComponent(e.path)}` }));
+    .map((e) => item({ key: `page:${e.path}`, kind: 'page', label: e.name.replace(/\.md$/i, ''), hint: pageHint(e.path), to: `${teamPath(slug, 'files')}?open=${encodeURIComponent(e.path)}` }));
 
 /** Attachments found by the search; a file of another team is left out (its address would not open here). */
 export const fileItems = (hits: readonly SearchFileHit[], slug: string, teamId: string | null): SwitcherItem[] =>

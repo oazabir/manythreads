@@ -16,7 +16,7 @@ const POLL_MS = 2000;
 
 const WHY: Record<EvalRun['trigger'], string> = {
   on_demand: 'started by hand',
-  on_commit: 'after a change to BOT.md or its scenarios',
+  on_commit: 'after a change to the bot or its scenarios',
   nightly: 'the nightly check',
 };
 

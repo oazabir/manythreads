@@ -77,7 +77,7 @@ export function BriefForm({ slug, busy, error, onStart, examples = [] }: { slug:
             <li>It lists what this team has: tools, notes to read, places a bot can run and ways to start one.</li>
             <li>It checks each thing you asked for: covered, needs approval, missing, not allowed, or unclear.</li>
             <li>It asks you one question for each gap, all at once.</li>
-            <li>It drafts the bot (its description file, BOT.md, and its settings). A person approves it.</li>
+            <li>It drafts the bot (its description file and its settings). A person approves it.</li>
           </ol>
         </section>
         <section className="su-card">

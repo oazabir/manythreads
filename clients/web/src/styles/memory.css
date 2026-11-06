@@ -61,7 +61,20 @@
 .mm-concept-path {
   font-size: var(--fs-small);
   color: var(--ink);
-  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.mm-concept-desc,
+.mm-concept-ago {
+  font-size: var(--fs-caption);
+  color: var(--mute);
+}
+
+.mm-concept-desc {
+  flex-basis: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mm-chip {

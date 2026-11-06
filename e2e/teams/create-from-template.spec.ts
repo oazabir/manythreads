@@ -11,7 +11,7 @@ test('Omar creates Engineering from the template, invites Nadia and Rafi, and ta
   await page.goto('/teams');
   await page.getByRole('checkbox', { name: 'Create a Engineering team' }).click();
   await page.getByLabel('Engineering team name').fill('Platform');
-  await expect(page.getByLabel('Engineering team slug')).toHaveValue('platform');
+  await expect(page.getByLabel('Engineering team address')).toHaveValue('platform');
   await page.getByLabel('Engineering invite emails').fill(`${personaEmail('nadia')}, ${personaEmail('rafi')}`);
   await page.getByRole('button', { name: 'Create 1 team' }).click();
 

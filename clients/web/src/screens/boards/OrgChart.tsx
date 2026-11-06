@@ -64,7 +64,7 @@ export function OrgChart({ slug }: { slug: string }) {
 
       <section className="bd-org-band" data-testid="org-bots" aria-label="Bots">
         <h3>Bots</h3>
-        {chart.bots.length === 0 ? <p className="bd-muted">No bots loaded yet: a bot appears when its BOT.md is committed.</p> : null}
+        {chart.bots.length === 0 ? <p className="bd-muted">No bots on this team yet.</p> : null}
         <div className="bd-org-bots">
           {chart.bots.map((b) => (
             <div key={b.slug} className="bd-org-bot" data-testid="org-bot" data-bot={b.slug}>
@@ -75,7 +75,7 @@ export function OrgChart({ slug }: { slug: string }) {
               </div>
               <div className="bd-edges">
                 {b.mayTag.length === 0 ? (
-                  <span className="bd-muted">May hand a card to nobody: `handover.mayTag` is empty.</span>
+                  <span className="bd-muted">Cannot hand work to other bots yet.</span>
                 ) : (
                   <>
                     <span className="bd-edges-label">may hand to</span>

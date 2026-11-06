@@ -141,7 +141,7 @@ export function Roles() {
   return (
     <>
       <PageHeader title="Roles" />
-      <p className="lede">Role tags come from each team's <span className="mono">TEAM.md</span>. Workspace roles are owner, admin, member and guest.</p>
+      <p className="lede">Role tags are set in each team's own settings. Workspace roles are owner, admin, member and guest.</p>
       <QueryView q={q}>
         {(roles) => (
           <div className="block table-wrap" data-landmark="roles-table">

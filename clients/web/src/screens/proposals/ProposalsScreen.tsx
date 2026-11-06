@@ -48,7 +48,7 @@ export function ProposalsList() {
         title="Proposals"
         description={(
           <>
-            A change to <span className="mono">bots/</span>, <span className="mono">TEAM.md</span>, <span className="mono">skills/</span> or <span className="mono">routines/</span> is
+            A change to a bot, the team file, a skill or a routine is
             proposed first. A team lead or workspace admin looks at the lines that change and applies them.
           </>
         )}
