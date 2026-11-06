@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./process": "./src/process.ts",
     "./hermes-outbound": "./src/hermes-outbound.ts",
+    "./pods": "./src/pods.ts",
     "./safe-fetch": "./src/safe-fetch/index.ts",
     "./extract": "./src/extract/index.ts",
     "./extract/core": "./src/extract/core.ts"

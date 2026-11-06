@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { GatewayProfileSpec } from '@manythreads/sdk';
-import { isRepoOriginAllowed, RunnerNodeName } from '@manythreads/shared';
+import { isRepoOriginAllowed } from '@manythreads/shared';
 import type { K8sObject } from './k8s.ts';
 
 // Pure builders: the Kubernetes objects of one team's pod, from plain values. No network, no clock, no randomness (the one
@@ -331,26 +331,9 @@ export function buildDeployerSecretFor(cfg: PodConfig, team: Team, names: Names,
   return buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig(login), host !== '' ? buildDeployerKubeconfig({ ...login, server: host }) : undefined);
 }
 
-/** The label a node carries with its own name; a pod's `nodeSelector` on it pins the pod to that machine (P19-08). */
-export const HOSTNAME_LABEL = 'kubernetes.io/hostname';
-/** On a volume claim: the machine this controller asked the volume to live on. Read back to tell a move from a first start. */
-export const NODE_ANNOTATION = 'manythreads.io/node';
-/** On the Deployment while the controller is recreating the pod's volumes on another machine; its value is the machine moved to. */
-export const MOVING_ANNOTATION = 'manythreads.io/moving';
-/**
- * On both volume claims of a team, written by the admin's "confirm the move" (bot-runners, through the `runner.nodes` provider): `<machine>@<epoch milliseconds>`. The
- * controller deletes a team's volumes only when this mark names the machine it is moving to and is not older than the confirmation window (src/move.ts).
- */
-export const MOVE_CONFIRMED_ANNOTATION = 'manythreads.io/move-confirmed';
-/** On the Deployment while the wanted machine differs from the one the volumes are tied to and the move is not confirmed; its value is the machine wanted. Nothing else is changed. */
-export const MOVE_HELD_ANNOTATION = 'manythreads.io/move-held';
-/** Set by the scheduler on a volume claim bound to a machine (storage classes that wait for the first pod, such as local-path). */
-export const SELECTED_NODE_ANNOTATION = 'volume.kubernetes.io/selected-node';
-
-/** A node name that may be a `nodeSelector` value (a Kubernetes label value). Anything else is ignored, never sent. */
-export function isNodeLabelValue(node: string | null | undefined): node is string {
-  return typeof node === 'string' && RunnerNodeName.safeParse(node).success;
-}
+// The machine-choice marks and `isNodeLabelValue` moved to the SDK (`@manythreads/sdk/pods`); re-exported so the old imports hold.
+export { HOSTNAME_LABEL, NODE_ANNOTATION, MOVING_ANNOTATION, MOVE_CONFIRMED_ANNOTATION, MOVE_HELD_ANNOTATION, SELECTED_NODE_ANNOTATION, isNodeLabelValue } from '@manythreads/sdk/pods';
+import { HOSTNAME_LABEL, isNodeLabelValue, NODE_ANNOTATION, MOVING_ANNOTATION, MOVE_HELD_ANNOTATION } from '@manythreads/sdk/pods';
 
 export function buildPvc(cfg: PodConfig, team: Team, name: string, size: string, node: string | null = null): K8sObject {
   return {
