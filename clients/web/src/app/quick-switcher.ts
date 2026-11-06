@@ -200,7 +200,7 @@ export const openConversationOf = (pathname: string): { kind: 'channel'; name: s
 export const withRecent = (items: readonly SwitcherItem[], recentKeys: readonly string[], query: string): SwitcherItem[] => {
   if (query.trim() !== '') return [...items];
   const byKey = new Map(items.map((it) => [it.key, it]));
-  const recent = recentKeys.flatMap((k) => {
+  const recent = [...new Set(recentKeys)].flatMap((k) => {
     const it = byKey.get(k);
     return it ? [it] : [];
   });

@@ -16,3 +16,15 @@ describe('bell model', () => {
     expect(groupByDay([], now)).toEqual([]);
   });
 });
+
+describe('bell model boundaries', () => {
+  it('Unread is empty when everything is read, All keeps order', () => {
+    const all = [n('1', new Date(2026, 10, 6, 9).toISOString(), 'r'), n('2', new Date(2026, 10, 6, 8).toISOString(), 'r')];
+    expect(forTab(all, 'unread')).toEqual([]);
+    expect(forTab(all, 'all').map((i) => i.id)).toEqual(['1', '2']);
+  });
+  it('starts a new group when the day returns, and cuts at midnight and 7 days', () => {
+    const items = [n('a', new Date(2026, 10, 6, 0, 0).toISOString(), null), n('b', new Date(2026, 10, 5, 23, 59).toISOString(), null), n('c', new Date(2026, 10, 6, 1).toISOString(), null), n('d', new Date(2026, 9, 30, 12).toISOString(), null)];
+    expect(groupByDay(items, now).map((g) => [g.day, g.items.map((i) => i.id)])).toEqual([['Today', ['a']], ['Yesterday', ['b']], ['Today', ['c']], ['Earlier', ['d']]]);
+  });
+});

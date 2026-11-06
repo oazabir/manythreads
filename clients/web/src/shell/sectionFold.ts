@@ -21,7 +21,7 @@ export function readFold(personId: string, slug: string): FoldState {
   }
 }
 
-function writeFold(personId: string, slug: string, state: FoldState): void {
+export function writeFold(personId: string, slug: string, state: FoldState): void {
   try {
     localStorage.setItem(KEY(personId, slug), JSON.stringify(state));
   } catch {

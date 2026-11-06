@@ -45,3 +45,10 @@ export function faviconState(count: number, dnd: boolean): FaviconState {
   const dot = count > 0 && !dnd;
   return { dot, text: dot ? countText(count) : null };
 }
+
+/** The count the tab shows: unmuted DM unread plus the bell's unread beyond those DMs (a DM also rings the bell, so it is not counted twice). */
+export function combineAttention({ dms, bellUnread, dnd }: { dms: ReadonlyArray<{ unread: number; muted: boolean }>; bellUnread: number; dnd: boolean }): number {
+  const dmUnread = dms.filter((d) => !d.muted).map((d) => d.unread);
+  const dmTotal = dmUnread.reduce((a, b) => a + b, 0);
+  return attentionCount({ dmUnread, mentionCount: Math.max(0, bellUnread - dmTotal), dnd });
+}

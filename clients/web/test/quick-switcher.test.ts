@@ -274,3 +274,32 @@ describe('recent, dedupe and tabs', () => {
     expect(pushRecent(list, 'z')[0]).toBe('z');
   });
 });
+
+describe('switcher edge cases', () => {
+  const mk = (key: string, kind: 'channel' | 'person', personId: string | null) => ({ key, kind, label: key, hint: '', to: null, personId, isPrivate: false }) as const;
+  const dm = (others: string[]) =>
+    ({
+      channel: { id: '11111111-1111-4111-8111-111111111111', name: null, isPrivate: true },
+      participants: ['me', ...others].map((personId) => ({ personId, displayName: personId })),
+      unreadCount: 0,
+    }) as unknown as DirectMessageSummary;
+  it('keeps people who only share a group conversation with you', () => {
+    const items = [mk('person:a', 'person', 'a'), mk('person:b', 'person', 'b')];
+    expect(dedupePeople(items, [dm(['a', 'b'])], 'me').map((i) => i.key)).toEqual(['person:a', 'person:b']);
+    expect(dedupePeople(items, [dm(['a'])], 'me').map((i) => i.key)).toEqual(['person:b']);
+  });
+  it('a self-only conversation hides nobody', () => {
+    const items = [mk('person:a', 'person', 'a')];
+    expect(dedupePeople(items, [dm([])], 'me')).toEqual(items);
+  });
+  it('recent keys that repeat do not repeat rows; a blank query counts as nothing typed', () => {
+    const items = [mk('channel:1', 'channel', null), mk('channel:2', 'channel', null)];
+    expect(withRecent(items, ['channel:2', 'channel:2'], '  ').map((i) => i.key)).toEqual(['channel:2', 'channel:1']);
+    expect(withRecent(items, [], '')).toEqual(items);
+  });
+  it('Tab wraps from the last tab to the first and Shift+Tab the other way', () => {
+    expect(nextTab('files', 1)).toBe('all');
+    expect(nextTab('all', -1)).toBe('files');
+    expect(nextTab('channels', 1)).toBe('people');
+  });
+});

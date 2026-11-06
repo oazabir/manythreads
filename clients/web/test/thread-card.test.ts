@@ -62,3 +62,20 @@ describe('day groups of the Threads list', () => {
     expect(replySnippet({ lastReply: null })).toBeNull();
   });
 });
+
+describe('day boundaries', () => {
+  const now = new Date(2026, 10, 6, 0, 30, 0);
+  it('puts just after midnight in Today and just before in Yesterday', () => {
+    expect(dayOf(new Date(2026, 10, 6, 0, 0, 0).toISOString(), now)).toBe('Today');
+    expect(dayOf(new Date(2026, 10, 5, 23, 59, 59).toISOString(), now)).toBe('Yesterday');
+  });
+  it('This week lasts through 6 days back; 7 days back is Earlier', () => {
+    expect(dayOf(new Date(2026, 10, 2, 12).toISOString(), now)).toBe('This week');
+    expect(dayOf(new Date(2026, 10, 0, 12).toISOString(), now)).toBe('This week');
+    expect(dayOf(new Date(2026, 9, 30, 12).toISOString(), now)).toBe('Earlier');
+  });
+  it('treats a future time as Today and groups nothing as nothing', () => {
+    expect(dayOf(new Date(2026, 10, 9).toISOString(), now)).toBe('Today');
+    expect(groupThreads([], now)).toEqual([]);
+  });
+});

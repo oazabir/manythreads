@@ -7,7 +7,7 @@ import { notificationStore } from '../notifications/store';
 import { levelOf } from '../notifications/settingsModel';
 import { useMyDnd } from '../presence/hooks';
 import { drawFavicon } from './favicon';
-import { attentionCount, documentTitle, faviconState } from './tabState';
+import { combineAttention, documentTitle, faviconState } from './tabState';
 
 /**
  * Keeps the browser tab honest (P21-09): the title and the icon say what waits. Unread, unmuted DMs come from the read state; channel
@@ -24,11 +24,11 @@ export function useTabState({ place, team, enabled }: { place: string; team: str
     if (enabled) void levelsStore.load();
   }, [enabled]);
   const dnd = useMyDnd().banner !== null;
-  const dmUnread = dms.items
-    .filter((d) => levelOf(levels, d.channel.id, 'dm').effective !== 'nothing')
-    .map((d) => unread[d.channel.id] ?? d.unreadCount);
-  const dmTotal = dmUnread.reduce((a, b) => a + b, 0);
-  const count = attentionCount({ dmUnread, mentionCount: Math.max(0, bell.unread - dmTotal), dnd });
+  const count = combineAttention({
+    dms: dms.items.map((d) => ({ unread: unread[d.channel.id] ?? d.unreadCount, muted: levelOf(levels, d.channel.id, 'dm').effective === 'nothing' })),
+    bellUnread: bell.unread,
+    dnd,
+  });
   const title = documentTitle({ count, place, team, workspace: session.workspace.name });
   const fav = faviconState(count, dnd);
   useEffect(() => {

@@ -1,3 +1,6 @@
+import { afterEach, beforeEach, vi } from 'vitest';
+import { isEditableTarget } from '../src/shell/TeamSwitch';
+import { readFold, writeFold } from '../src/shell/sectionFold';
 import { describe, expect, it } from 'vitest';
 import { isFolded, toggleFold } from '../src/shell/sectionFold';
 import { teamIndexForKey } from '../src/shell/TeamSwitch';
@@ -36,5 +39,47 @@ describe('teamIndexForKey', () => {
     expect(teamIndexForKey({ ...k, code: 'Digit1' })).toBe(0);
     expect(teamIndexForKey({ ...k, code: 'Digit0' })).toBeNull();
     expect(teamIndexForKey({ ...k, altKey: false, code: 'Digit1' })).toBeNull();
+  });
+});
+
+describe('fold saved per person and team', () => {
+  const store = new Map<string, string>();
+  beforeEach(() => {
+    store.clear();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  it('keeps one team fold apart from another and one person from another', () => {
+    writeFold('p1', 'eng', ['dm']);
+    expect(readFold('p1', 'eng')).toEqual(['dm']);
+    expect(readFold('p1', 'ops')).toEqual([]);
+    expect(readFold('p2', 'eng')).toEqual([]);
+  });
+  it('reads junk and a broken store as nothing folded', () => {
+    store.set('mt.sidebar.fold:p1:eng', '{not json');
+    expect(readFold('p1', 'eng')).toEqual([]);
+    store.set('mt.sidebar.fold:p1:eng', '["dm",3,null]');
+    expect(readFold('p1', 'eng')).toEqual(['dm']);
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } });
+    expect(readFold('p1', 'eng')).toEqual([]);
+    expect(() => writeFold('p1', 'eng', ['dm'])).not.toThrow();
+  });
+});
+
+describe('team keys and the editable guard', () => {
+  it('rejects Ctrl, Meta and Shift combinations and non-digit keys', () => {
+    const k = { altKey: true, ctrlKey: false, metaKey: false, shiftKey: false };
+    expect(teamIndexForKey({ ...k, code: 'Digit9' })).toBe(8);
+    expect(teamIndexForKey({ ...k, ctrlKey: true, code: 'Digit1' })).toBeNull();
+    expect(teamIndexForKey({ ...k, metaKey: true, code: 'Digit1' })).toBeNull();
+    expect(teamIndexForKey({ ...k, shiftKey: true, code: 'Digit1' })).toBeNull();
+    expect(teamIndexForKey({ ...k, code: 'KeyA' })).toBeNull();
+    expect(teamIndexForKey({ ...k, code: 'Numpad1' })).toBeNull();
+  });
+  it('treats inputs and editors as typing, anything else not', () => {
+    expect(isEditableTarget({ closest: () => ({}) })).toBe(true);
+    expect(isEditableTarget({ closest: () => null })).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
+    expect(isEditableTarget({})).toBe(false);
   });
 });

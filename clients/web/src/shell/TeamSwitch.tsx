@@ -16,6 +16,14 @@ export function teamIndexForKey(e: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'm
   return m?.[1] ? Number(m[1]) - 1 : null;
 }
 
+const EDITABLE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+
+/** True when the key press happened in something the person types into. */
+export function isEditableTarget(target: unknown): boolean {
+  const el = target as { closest?: (s: string) => unknown } | null;
+  return typeof el?.closest === 'function' && Boolean(el.closest(EDITABLE));
+}
+
 /** Team switcher: shows the current team; the menu lists the person's teams and keeps the section they are in. */
 export function TeamSwitch() {
   const session = useSession();
@@ -30,8 +38,7 @@ export function TeamSwitch() {
     const onKey = (e: KeyboardEvent): void => {
       const i = teamIndexForKey(e);
       const t = i === null ? undefined : teams[i];
-      const el = e.target instanceof HTMLElement ? e.target : null;
-      if (!t || e.repeat || el?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+      if (!t || e.repeat || isEditableTarget(e.target)) return;
       e.preventDefault();
       void navigate(teamSwitchPath(loc.pathname, t.slug));
     };
