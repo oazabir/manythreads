@@ -1364,6 +1364,7 @@ a.btn.primary {
   .mem-wrap .table td.mem-act {
     display: flex;
     justify-content: flex-end;
+    width: auto; /* the desktop 1% width would leave the menu button at the card's left edge, where its menu opens off screen */
     padding-top: 6px;
   }
 

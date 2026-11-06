@@ -121,12 +121,16 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
   // the picture shows at once after a lead or admin chooses it; `bot.avatar` is the roster's copy from the last load
   const [picture, setPicture] = useState<string | null>(bot.avatar);
 
+  // What was filed as a proposal is kept on record, so leaving with exactly that text open (to read the proposal, say) loses nothing and asks nothing.
+  const [proposedText, setProposedText] = useState<string | null>(null);
   const doSave = async (applyNow: boolean): Promise<void> => {
     if (!draft.frontmatter || busy || draft.issues.length > 0) return;
     setBusy(true);
     onSave(null);
     try {
-      const res = await proposeDefinition(slug, path, draft.text(), draft.baseBlobSha, saveMessage(bot.slug, bot.name), applyNow);
+      const text = draft.text();
+      const res = await proposeDefinition(slug, path, text, draft.baseBlobSha, saveMessage(bot.slug, bot.name), applyNow);
+      if (!res.applied) setProposedText(text);
       onSave({
         kind: 'ok',
         proposalId: res.proposalId,
@@ -299,7 +303,7 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
         {draft.frontmatter ? <GroupPanel group={group} bot={bot} draft={draft} slug={slug} canEdit={canEdit} runs={runs} /> : null}
       </div>
 
-      {draft.frontmatter && canEdit ? <LeaveGuard dirty={draft.dirty} /> : null}
+      {draft.frontmatter && canEdit ? <LeaveGuard dirty={draft.dirty && draft.text() !== proposedText} /> : null}
       {draft.frontmatter && canEdit && showSaveBar(draft) ? <SaveBar busy={busy} issues={draft.issues} onSave={(applyNow) => void doSave(applyNow)} onDiscard={draft.reset} /> : null}
       {draft.frontmatter && !canEdit && group !== 'history' ? (
         <footer className="b-foot" data-testid="bot-foot">

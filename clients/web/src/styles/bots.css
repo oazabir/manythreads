@@ -8,6 +8,12 @@
   overflow: auto;
 }
 
+/* The bot page does not scroll on its own: the shell's content area does, and the sticky save bar (savebar.css) holds to the bottom edge of that one.
+ * A scroll container here would make the bar stick to a box that never scrolls, so it would sit at the end of the page. */
+.bot-screen {
+  overflow: clip visible;
+}
+
 /* ---- roster ---- */
 .b-head {
   display: flex;
