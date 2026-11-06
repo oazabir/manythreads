@@ -15,5 +15,6 @@
   { "file": "clients/web/src/webhooks/OutgoingPanel.tsx", "text": "trigger_word", "why": "Developer help listing the exact field names of the JSON message sent to an outgoing webhook." },
   { "file": "clients/web/src/webhooks/TokensPanel.tsx", "text": "chat.postMessage", "why": "Developer help naming the Slack-compatible call a token can make." },
   { "file": "clients/web/src/webhooks/TokensPanel.tsx", "text": "thread_ts", "why": "Developer help naming the exact field of the Slack-compatible call." },
-  { "file": "clients/web/src/screens/boards/CardPanel.tsx", "text": "{task.branch}", "why": "The card's work branch in its fact list: a coding concept the people who open a code card know by name." }
+  { "file": "clients/web/src/screens/boards/CardPanel.tsx", "text": "{task.branch}", "why": "The card's work branch in its fact list: a coding concept the people who open a code card know by name." },
+  { "file": "clients/web/src/screens/admin/runners/CredentialsCard.tsx", "text": "credentials.json", "why": "The name of the file Claude Code saves after a login; the admin has to find that file on their own computer to upload it." }
 ]

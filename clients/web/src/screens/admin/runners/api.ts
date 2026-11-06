@@ -1,5 +1,11 @@
 import {
   AdoptConnectionRequest,
+  CheckClaudeSigninResponse,
+  ClaudeRunnerUsageResponse,
+  CREDENTIALS_SIGNINS_HEADER,
+  CREDENTIALS_TERMS_HEADER,
+  PutClaudeCredentialsResponse,
+  RemoveClaudeCredentialsResponse,
   AdoptConnectionResponse,
   CreateBotRunnerRequest,
   CreateBotRunnerResponse,
@@ -19,6 +25,10 @@ import {
   UpdateBotRunnerRequest,
   UpdateBotRunnerResponse,
   adoptConnectionRoute,
+  checkClaudeSigninRoute,
+  claudeRunnerUsageRoute,
+  putClaudeCredentialsRoute,
+  removeClaudeCredentialsRoute,
   createBotRunnerRoute,
   deleteBotRunnerRoute,
   listBotRunnersRoute,
@@ -70,3 +80,14 @@ export const setRunnerNode = (id: string, node: string | null) =>
 
 export const adoptOldConnection = (connectionId: string, body: AdoptConnectionRequest = {}) =>
   call(adoptConnectionRoute, { request: AdoptConnectionRequest, response: AdoptConnectionResponse }, body, { connectionId });
+
+// The Claude Code runner's sign-in (P19-06). The file goes up as the text the admin chose, unchanged; the server stores it byte for byte and answers with the
+// runner (plan, expiry), never the file. Both boxes must be ticked: the plan's terms, and the other sign-ins the file holds.
+export const uploadClaudeCredentials = (id: string, text: string) =>
+  call(putClaudeCredentialsRoute, { response: PutClaudeCredentialsResponse }, undefined, { id }, { rawBody: text, headers: { [CREDENTIALS_TERMS_HEADER]: '1', [CREDENTIALS_SIGNINS_HEADER]: '1' } });
+
+export const removeClaudeCredentials = (id: string) => call(removeClaudeCredentialsRoute, { response: RemoveClaudeCredentialsResponse }, undefined, { id });
+
+export const checkClaudeSignin = (id: string) => call(checkClaudeSigninRoute, { response: CheckClaudeSigninResponse }, undefined, { id });
+
+export const fetchClaudeUsage = () => call(claudeRunnerUsageRoute, { response: ClaudeRunnerUsageResponse });

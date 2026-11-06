@@ -354,3 +354,26 @@ p.rn-place {
     margin-bottom: 14px;
   }
 }
+
+/* ---- Claude sign-in dialog ---- */
+.rn-sub {
+  margin: 14px 0 4px;
+  font-size: var(--fs-small);
+}
+
+.rn-usage {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.rn-usage th,
+.rn-usage td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+
+.rn-usage td {
+  font-variant-numeric: tabular-nums;
+}

@@ -113,6 +113,10 @@ export function emitSessionExpired(): void {
 export type CallOptions = {
   /** Do not treat a 401 as "session expired" (sign-in and session probes). */
   noSessionExpiry?: boolean;
+  /** Send this text as the body exactly as it is (no re-serialising) with `application/json`; used for a file the server reads byte for byte. */
+  rawBody?: string;
+  /** Extra headers (never the CSRF or content-type ones). */
+  headers?: Record<string, string>;
 };
 
 export type ApiClientConfig = {
@@ -170,6 +174,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         reqBody = JSON.stringify(payload);
       }
     }
+    if (options.rawBody !== undefined) {
+      headers['content-type'] = 'application/json';
+      reqBody = options.rawBody;
+    }
+    if (options.headers) Object.assign(headers, options.headers);
     if (!SAFE_METHODS.has(method)) {
       const csrf = readCsrfCookie(cookies());
       if (csrf) headers[CSRF_HEADER] = csrf;

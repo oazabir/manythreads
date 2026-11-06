@@ -29,6 +29,7 @@ import {
   testWords,
 } from './commands';
 import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
+import { CredentialsDialog } from './CredentialsCard';
 import { StarIcon } from '../../../shell/icons';
 
 /*
@@ -46,6 +47,7 @@ type Dialogs =
   | { kind: 'edit'; runner: BotRunner }
   | { kind: 'teams'; runner: BotRunner }
   | { kind: 'node'; runner: BotRunner }
+  | { kind: 'signin'; runner: BotRunner }
   | { kind: 'test'; runner: BotRunner }
   | { kind: 'delete'; runner: BotRunner }
   | { kind: 'adopt'; connection: OldConnection }
@@ -176,6 +178,7 @@ export function RunnersScreen() {
                       onEdit={() => setDialog({ kind: 'edit', runner: r })}
                       onTeams={() => setDialog({ kind: 'teams', runner: r })}
                       onNode={() => setDialog({ kind: 'node', runner: r })}
+                      onSignin={() => setDialog({ kind: 'signin', runner: r })}
                       onDelete={() => setDialog({ kind: 'delete', runner: r })}
                       onSwitch={(on) => void act(r.id, async () => switchWords((await updateBotRunner(r.id, { enabled: on })).runner, on))}
                       onDefault={() =>
@@ -236,6 +239,16 @@ export function RunnersScreen() {
                 onClose={close}
                 onDone={(_r, text) => {
                   close();
+                  say(text);
+                  q.reload();
+                }}
+              />
+            ) : null}
+            {dialog?.kind === 'signin' ? (
+              <CredentialsDialog
+                runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
+                onClose={close}
+                onChanged={(_r, text) => {
                   say(text);
                   q.reload();
                 }}
@@ -316,6 +329,7 @@ function RunnerRow({
   onEdit,
   onTeams,
   onNode,
+  onSignin,
   onDelete,
   onSwitch,
   onDefault,
@@ -327,6 +341,7 @@ function RunnerRow({
   onEdit: () => void;
   onTeams: () => void;
   onNode: () => void;
+  onSignin: () => void;
   onDelete: () => void;
   onSwitch: (on: boolean) => void;
   onDefault: () => void;
@@ -377,6 +392,9 @@ function RunnerRow({
         </span>
         <button type="button" className="btn sm" onClick={onTest} disabled={busy} data-testid="runner-test" aria-label={`Test ${r.label}`}>Test</button>
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
+        {r.kind === 'claude_cli' ? (
+          <button type="button" className="btn sm" onClick={onSignin} disabled={busy} data-testid="runner-signin-open" aria-label={`Sign-in for ${r.label}`}>Sign-in</button>
+        ) : null}
         {hasNodeChoice(r) ? (
           <button type="button" className="btn sm" onClick={onNode} disabled={busy} data-testid="runner-node-open" aria-label={`Machine for ${r.label}`}>Machine</button>
         ) : null}

@@ -24,6 +24,13 @@ import {
   createBotRunnerRoute,
   deleteBotRunnerRoute,
   listBotRunnersRoute,
+  putClaudeCredentialsRoute,
+  removeClaudeCredentialsRoute,
+  checkClaudeSigninRoute,
+  claudeRunnerUsageRoute,
+  inspectClaudeCredentials,
+  CREDENTIALS_TERMS_HEADER,
+  CREDENTIALS_SIGNINS_HEADER,
   listLlmAliasesRoute,
   listOldConnectionsRoute,
   listRunnerNodesRoute,
@@ -216,7 +223,7 @@ class MockHttpError extends Error {
 
 export type MockOptions = { as?: string; anon?: boolean; providers?: string[]; noTeams?: boolean; latencyMs?: number };
 
-type Ctx = { params: Record<string, string>; query: URLSearchParams; body: Record<string, unknown> };
+type Ctx = { params: Record<string, string>; query: URLSearchParams; body: Record<string, unknown>; raw: string; headers: Record<string, string> };
 type Reply = { status: number; body: unknown };
 const created = (body: unknown): Reply => ({ status: 201, body });
 
@@ -803,6 +810,53 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     Object.assign(r, teamIdsFrom(body));
     return { runner: runnerBody(r) };
   });
+  // The Claude sign-in (P19-06): the same file rules and sentences as the server (shared reader, signin.ts of the bot-runners plugin). The file is read and dropped; only the plan and expiry stay.
+  const claudeRunnerOf = (id: string | undefined): MockRunner => {
+    const r = runnerOf(id);
+    if (r['kind'] !== 'claude_cli') throw new MockHttpError(400, 'validation_failed', 'A sign-in file belongs to a Claude Code runner only.');
+    return r;
+  };
+  const mockLogins = new Map<string, string>();
+  on(putClaudeCredentialsRoute, ({ params, raw, headers }) => {
+    requireAdmin();
+    const r = claudeRunnerOf(params.id);
+    if (headers[CREDENTIALS_TERMS_HEADER] !== '1') throw new MockHttpError(400, 'validation_failed', "Confirm that the Claude plan's terms allow sharing this runner.");
+    if (headers[CREDENTIALS_SIGNINS_HEADER] !== '1') throw new MockHttpError(400, 'validation_failed', 'Confirm that the other sign-ins in the file may be stored as they are.');
+    const looked = inspectClaudeCredentials(raw);
+    if (!looked.ok) throw new MockHttpError(400, 'validation_failed', looked.message);
+    for (const [other, login] of mockLogins) {
+      if (other !== r.id && login === looked.refreshToken) {
+        const label = String(runners.find((x) => x.id === other)?.['label'] ?? 'another runner');
+        throw new MockHttpError(409, 'conflict', `This Claude login is already used by "${label}". A shared login can sign the other copy out, so every Claude runner needs its own sign-in file. Log in again and upload that one.`);
+      }
+    }
+    mockLogins.set(r.id, looked.refreshToken);
+    const replaced = r['uploadedAt'] !== null;
+    Object.assign(r, { planLabel: looked.summary.planLabel, credentialsExpiresAt: new Date(looked.summary.expiresAt).toISOString(), uploadedAt: NOW, ownerActorId: me().id, ownerName: me().name, termsAcceptedBy: me().id, termsAcceptedAt: NOW, status: 'ready', statusDetail: null });
+    return { runner: runnerBody(r), replaced };
+  });
+  on(removeClaudeCredentialsRoute, ({ params }) => {
+    requireAdmin();
+    const r = claudeRunnerOf(params.id);
+    mockLogins.delete(r.id);
+    Object.assign(r, { planLabel: null, credentialsExpiresAt: null, uploadedAt: null, ownerActorId: null, ownerName: null, status: 'waiting_for_sign_in', statusDetail: 'Waiting for a sign-in file. Upload one to start this runner.' });
+    return { runner: runnerBody(r) };
+  });
+  on(checkClaudeSigninRoute, ({ params }) => {
+    requireAdmin();
+    const r = claudeRunnerOf(params.id);
+    if (r['uploadedAt'] === null) throw new MockHttpError(409, 'conflict', 'This runner has no sign-in file yet.');
+    r['lastCheckedAt'] = NOW;
+    return { result: 'ok', message: 'The sign-in works.', runner: runnerBody(r) };
+  });
+  on(claudeRunnerUsageRoute, () => {
+    requireAdmin();
+    seedRunners();
+    const claude = runners.find((r) => r['kind'] === 'claude_cli');
+    const eng = teams.find((t) => t.slug === 'engineering');
+    if (!claude || !eng || claude['uploadedAt'] === null) return { items: [] };
+    return { items: [{ runnerId: claude.id, teamId: eng.id, teamName: eng.name, day: '2026-10-06', runs: 4, seconds: 540, cliCost: 0.31 }] };
+  });
   on(setDefaultBotRunnerRoute, ({ body }) => {
     requireAdmin();
     seedRunners();
@@ -1131,8 +1185,14 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       if (!hit) throw new MockHttpError(404, 'not_found', `No mock for ${req.method} ${path}`);
       const m = hit.re.exec(path)!;
       const params = Object.fromEntries(hit.keys.map((k, i) => [k, decodeURIComponent(m[i + 1]!)]));
-      const body = req.body ? (JSON.parse(req.body) as Record<string, unknown>) : {};
-      const out = hit.handler({ params, query: new URLSearchParams(qs), body });
+      // A sign-in file goes up as it is (`rawBody`), so a body that is not JSON is the handler's to refuse; it reads `raw`.
+      let body: Record<string, unknown> = {};
+      try {
+        body = req.body ? (JSON.parse(req.body) as Record<string, unknown>) : {};
+      } catch {
+        if (!hit.method.startsWith('P') || !/\/credentials$/.test(path)) throw new MockHttpError(400, 'validation_failed', 'The request body is not valid JSON.');
+      }
+      const out = hit.handler({ params, query: new URLSearchParams(qs), body, raw: req.body ?? '', headers: req.headers });
       if (out && typeof out === 'object' && 'status' in out && 'body' in out) return out as Reply;
       return { status: 200, body: out };
     } catch (e) {

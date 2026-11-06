@@ -4,7 +4,9 @@ import {
   BotRunnerProfileRule,
   CreateBotRunnerRequest,
   UpdateBotRunnerRequest,
+  inspectClaudeCredentials,
   type BotRunner,
+  type ClaudeRunnerUsageRow,
   type BotRunnerKind,
   type BotRunnerStatus,
   type OldConnection,
@@ -442,4 +444,69 @@ export function moveWarning(label: string, from: readonly string[], to: string):
 export function nodeSavedWords(label: string, node: string | null, recreates: boolean): string {
   if (node === null) return `${label} can now run on any machine. Pods already placed stay where they are.`;
   return recreates ? `${label} will run on ${node}. Its work volumes are being made again there.` : `${label} will run on ${node}.`;
+}
+
+// ---- the Claude Code sign-in (P19-06) -------------------------------------------------------------------------
+
+/** What the page shows of a chosen sign-in file before it goes up. Read here in the browser only; no token is ever in it. */
+export type SigninPreview =
+  | { ok: true; plan: string; expiresWords: string; others: { count: number; names: string[] }; needsAck: boolean }
+  | { ok: false; message: string };
+
+const dateWords = (ms: number): string => new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+
+/** The summary of a chosen file's text. Reads the shape with the shared reader; the text is then sent unchanged. */
+export function previewSignin(text: string, now: number = Date.now()): SigninPreview {
+  const looked = inspectClaudeCredentials(text, now);
+  if (!looked.ok) return { ok: false, message: looked.message };
+  const s = looked.summary;
+  return {
+    ok: true,
+    plan: s.planLabel,
+    expiresWords: s.expiresAt <= now ? `The access part ran out on ${dateWords(s.expiresAt)}. Claude Code renews it by itself.` : `The access part runs out on ${dateWords(s.expiresAt)}. Claude Code renews it by itself.`,
+    others: { count: s.otherSignins, names: s.otherNames },
+    needsAck: s.otherSignins > 0,
+  };
+}
+
+export function othersSentence(p: { count: number; names: string[] }): string {
+  if (p.count === 0) return 'The file holds no other sign-ins.';
+  const names = p.names.length > 0 ? ` (${p.names.join(', ')}${p.count > p.names.length ? ', …' : ''})` : '';
+  return `The file also holds ${p.count === 1 ? '1 other sign-in' : `${p.count} other sign-ins`}${names}. They are stored with it, as they are, in this runner's pod.`;
+}
+
+export type UploadChecks = { termsTicked: boolean; signinsTicked: boolean };
+
+/** Why Upload cannot go yet, in one sentence; null when it can. */
+export function uploadProblem(preview: SigninPreview | null, c: UploadChecks): string | null {
+  if (preview === null) return 'Choose the .credentials.json file of a Claude login.';
+  if (!preview.ok) return preview.message;
+  if (!c.termsTicked) return "Confirm that the Claude plan's terms allow sharing this runner.";
+  if (preview.needsAck && !c.signinsTicked) return 'Confirm that the other sign-ins in the file may be stored as they are.';
+  return null;
+}
+
+export function signedInWords(r: Pick<BotRunner, 'planLabel' | 'credentialsExpiresAt' | 'uploadedAt'>): string | null {
+  if (!r.uploadedAt) return null;
+  return `Signed in: ${r.planLabel ?? 'Claude plan'}. Uploaded ${r.uploadedAt.slice(0, 10)}.`;
+}
+
+export const needsSigninBanner = (r: Pick<BotRunner, 'kind' | 'status'>): boolean => r.kind === 'claude_cli' && r.status === 'needs_sign_in';
+
+export type UsageLine = { team: string; runs: number; minutes: number; cost: string | null };
+
+/** The usage rows of one runner, added up per team over the days the server sent. The cost is the CLI's own figure, shown as it is. */
+export function usageLines(rows: ReadonlyArray<ClaudeRunnerUsageRow>, runnerId: string): UsageLine[] {
+  const by = new Map<string, { team: string; runs: number; seconds: number; cost: number }>();
+  for (const r of rows) {
+    if (r.runnerId !== runnerId) continue;
+    const e = by.get(r.teamId) ?? { team: r.teamName, runs: 0, seconds: 0, cost: 0 };
+    e.runs += r.runs;
+    e.seconds += r.seconds;
+    e.cost += r.cliCost;
+    by.set(r.teamId, e);
+  }
+  return [...by.values()]
+    .sort((a, b) => b.runs - a.runs || a.team.localeCompare(b.team))
+    .map((e) => ({ team: e.team, runs: e.runs, minutes: Math.round(e.seconds / 60), cost: e.cost > 0 ? e.cost.toFixed(2) : null }));
 }
