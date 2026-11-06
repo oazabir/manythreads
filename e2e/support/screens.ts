@@ -74,7 +74,7 @@ await shot(omar, '/settings/team/platform/roster', 'roster-desktop', async (page
 });
 await shot(omar, '/settings/workspace/members', 'members-desktop', async (page) => void (await page.getByRole('table').waitFor()));
 await shot(omar, '/settings/workspace/sign-in', 'settings-signin-desktop', async (page) => void (await page.getByText('Username and password').first().waitFor()));
-await shot(omar, '/account', 'account-desktop', async (page) => void (await page.getByRole('button', { name: 'Sign out everywhere' }).waitFor()));
+await shot(omar, '/account/security', 'account-desktop', async (page) => void (await page.getByRole('button', { name: 'Sign out everywhere' }).waitFor()));
 await omar.close();
 const omarMobile = await signedIn(browser, 'omar', MOBILE);
 await shot(omarMobile, '/settings/workspace/members', 'members-mobile', async (page) => void (await page.getByRole('table').waitFor()));

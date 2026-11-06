@@ -70,7 +70,7 @@ test.describe('stage ui', () => {
   test.skip(STAGE !== 'ui', 'only in the ui stage');
   test('dg-01 Account -> Notifications: the digest block, default, delay, persistence, keyboard', async ({ browser }) => {
     const { page, context } = await signIn(browser, who('OMAR'), { width: 1280, height: 900 });
-    await page.goto('/account');
+    await page.goto('/account/notifications');
     await expect(block(page)).toBeVisible(T);
     await expect(block(page).getByRole('heading', { name: 'Email me what I missed' })).toBeVisible();
     await expect(sw(page)).toBeVisible(T);
@@ -125,7 +125,7 @@ test.describe('stage ui', () => {
 
   test('dg-02 phone width 390: no sideways scroll, the block is usable', async ({ browser }) => {
     const { page, context } = await signIn(browser, who('OMAR'), { width: 390, height: 844 }, true);
-    await page.goto('/account');
+    await page.goto('/account/notifications');
     await expect(block(page)).toBeVisible(T);
     await block(page).scrollIntoViewIfNeeded();
     await noSideScroll(page);
@@ -217,7 +217,7 @@ test.describe('stage unsub', () => {
     await anon.close();
 
     const o2 = await signIn(browser, who('OMAR'), { width: 1280, height: 900 });
-    await o2.page.goto('/account');
+    await o2.page.goto('/account/notifications');
     await expect(block(o2.page)).toBeVisible(T);
     await expect(sw(o2.page)).toHaveAttribute('aria-checked', 'false', T);
     log(`Account help: "${(await o2.page.getByTestId('digest-help').innerText()).trim()}"`);
@@ -243,7 +243,7 @@ test.describe('stage clean', () => {
     }
     await nadia.context.close();
     const omar = await signIn(browser, who('OMAR'), { width: 1280, height: 900 });
-    await omar.page.goto('/account');
+    await omar.page.goto('/account/notifications');
     await expect(block(omar.page)).toBeVisible(T);
     if ((await sw(omar.page).getAttribute('aria-checked')) !== 'true') await sw(omar.page).click();
     await expect(sw(omar.page)).toHaveAttribute('aria-checked', 'true', T);

@@ -6,7 +6,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsFrame } from './components/frames';
 import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/states';
 import { DevTokens } from './pages/DevTokens';
-import { Account } from './screens/Account';
+import { AccountIndex } from './screens/account/AccountIndex';
+import { Notifications as AccountNotifications } from './screens/account/Notifications';
+import { Profile as AccountProfile } from './screens/account/Profile';
+import { Security as AccountSecurity } from './screens/account/Security';
 import { AccountConnections } from './screens/connections/AccountConnections';
 import { OAuthApps } from './screens/connections/OAuthApps';
 import { PersonConnections } from './screens/connections/PersonConnections';
@@ -111,13 +114,16 @@ function AppRoutes() {
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
           </Route>
-          <Route path="/account" element={<Account />} />
-          <Route path="/account/connections" element={<AccountConnections />} />
           <Route path="/settings/connections" element={<PersonConnections />} />
           <Route element={<AdminOnly />}>
             <Route path="/settings/connections/apps" element={<OAuthApps />} />
           </Route>
           <Route element={<SettingsFrame />}>
+            <Route path="/account" element={<AccountIndex />} />
+            <Route path="/account/profile" element={<AccountProfile />} />
+            <Route path="/account/notifications" element={<AccountNotifications />} />
+            <Route path="/account/connections" element={<AccountConnections />} />
+            <Route path="/account/security" element={<AccountSecurity />} />
             <Route element={<AdminOnly />}>
               <Route path="/onboarding" element={<Onboarding />} />
             </Route>

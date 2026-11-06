@@ -168,7 +168,7 @@ const SCREENS: Screen[] = [
   { name: 'teams', persona: 'omar', path: '/teams' },
   { name: 'roster', persona: 'omar', path: '/settings/team/engineering/roster' },
   { name: 'members', persona: 'omar', path: '/settings/workspace/members' },
-  { name: 'account', persona: 'nadia', path: '/account' },
+  { name: 'account', persona: 'nadia', path: '/account/profile' },
   { name: 'settings-sign-in', persona: 'omar', path: '/settings/workspace/sign-in' },
   { name: 'teams-guest', persona: 'lena', path: '/teams' },
   // phase 3: conversations

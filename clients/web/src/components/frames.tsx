@@ -76,7 +76,17 @@ export function SettingsFrame() {
   const activeTeam = teams.find((t) => t.slug === activeSlug);
   const admin = isAdmin(session);
 
-  const groups: NavGroup[] = [];
+  const groups: NavGroup[] = [
+    {
+      heading: 'Account',
+      items: [
+        { to: '/account/profile', label: 'Profile' },
+        { to: '/account/notifications', label: 'Notifications' },
+        { to: '/account/connections', label: 'Connections' },
+        { to: '/account/security', label: 'Security' },
+      ],
+    },
+  ];
   if (admin) {
     groups.push({
       heading: 'Workspace',
@@ -151,7 +161,6 @@ export function SettingsFrame() {
               </div>
             ))}
           </nav>
-          <Link to="/account" className="tab account-link">Account · {session.person.name}</Link>
         </aside>
         <div className="settings-main">
           <div className="settings-select" data-landmark="nav-select">

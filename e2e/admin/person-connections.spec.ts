@@ -144,9 +144,6 @@ test('the page and the account Connections screen link to each other', async ({ 
     await page.getByTestId('account-connected-link').getByRole('link').click();
     await expect(page).toHaveURL(/\/settings\/connections$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Connected accounts' })).toBeVisible();
-    await page.goto('/account');
-    await page.getByTestId('account-connected-accounts-link').click();
-    await expect(page).toHaveURL(/\/settings\/connections$/);
   } finally {
     await context.close();
   }

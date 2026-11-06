@@ -215,7 +215,7 @@ test('4 revoke in UI; token refused', async ({ browser }) => {
 
 test('5 digest settings announce status and busy', async ({ browser }) => {
   const { page, context } = await signIn(browser, who('OMAR'));
-  await page.goto('/account');
+  await page.goto('/account/notifications');
   const block = page.getByTestId('notification-digest');
   await expect(block).toBeVisible(T);
   const sw = block.getByRole('switch', { name: 'Send me an email about what I missed' });

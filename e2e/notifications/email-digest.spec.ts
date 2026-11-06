@@ -103,7 +103,7 @@ test.afterAll(async () => {
 });
 
 test('Account shows "Email me what I missed", on by default, and keeps a change', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/account');
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/account/notifications');
   try {
     const block = page.getByTestId('notification-digest');
     await expect(block).toBeVisible(T);

@@ -31,7 +31,7 @@ async function signIn(browser: Browser, email: string, password: string): Promis
 
 test('a person edits their own name', async ({ browser }) => {
   const page = await signIn(browser, SEED_EMAILS.rafi, PERSONA_PASSWORD);
-  await page.goto('/account');
+  await page.goto('/account/profile');
   const save = page.getByRole('button', { name: 'Save name' });
   await expect(save).toBeDisabled();
   await page.getByLabel('Name', { exact: true }).fill('Rafi Khan');
@@ -47,7 +47,7 @@ test('changing the password needs the current one, ends the other sessions and k
   const here = await signIn(browser, SEED_EMAILS.nadia, PERSONA_PASSWORD);
   const elsewhere = await signIn(browser, SEED_EMAILS.nadia, PERSONA_PASSWORD);
 
-  await here.goto('/account');
+  await here.goto('/account/security');
   await here.getByRole('button', { name: 'Change password' }).click();
   const form = here.getByRole('form', { name: 'Change password' });
   const update = form.getByRole('button', { name: 'Update password' });
@@ -62,7 +62,7 @@ test('changing the password needs the current one, ends the other sessions and k
   await form.getByLabel('New password').fill(NEW_PASSWORD);
   await update.click();
   await expect(form.getByRole('alert')).toContainText('Your current password is incorrect.');
-  await expect(here).toHaveURL(/\/account$/);
+  await expect(here).toHaveURL(/\/account\/security$/);
 
   await form.getByLabel('Current password').fill(PERSONA_PASSWORD);
   await update.click();
@@ -70,8 +70,8 @@ test('changing the password needs the current one, ends the other sessions and k
 
   // this browser stays signed in; the other one is signed out on its next request
   await here.reload();
-  await expect(here.getByRole('heading', { name: /Account/ })).toBeVisible();
-  await elsewhere.goto('/account');
+  await expect(here.getByRole('heading', { level: 1, name: 'Security' })).toBeVisible();
+  await elsewhere.goto('/account/security');
   await expect(elsewhere).toHaveURL(/\/sign-in/);
 
   // the old password no longer signs in, the new one does

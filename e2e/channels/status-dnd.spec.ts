@@ -143,7 +143,7 @@ test.describe('desktop', () => {
   });
 
   test('a custom end time is checked in words, and "until I turn it off" shows without a time', async ({ browser, playwright }) => {
-    const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account');
+    const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/notifications');
     try {
       const section = page.getByTestId('presence-settings');
       await expect(section).toBeVisible(T);
@@ -280,7 +280,7 @@ test.describe('desktop', () => {
       expect((await inbox(nadia)).items.length).toBe(before);
 
       // switching the schedule off ends it (the settings keep the period)
-      await page.goto('/account');
+      await page.goto('/account/notifications');
       const again = page.getByTestId('schedule-editor');
       await again.getByTestId('schedule-switch').click();
       await again.getByTestId('schedule-save').click();
@@ -339,7 +339,7 @@ test.describe('phone', () => {
   });
 
   test('the account section fits the screen and every control is large enough', async ({ browser, playwright }) => {
-    const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account', { viewport: PHONE, mobile: true });
+    const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/notifications', { viewport: PHONE, mobile: true });
     try {
       const section = page.getByTestId('presence-settings');
       await expect(section).toBeVisible(T);

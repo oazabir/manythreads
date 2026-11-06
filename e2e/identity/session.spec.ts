@@ -6,14 +6,14 @@ import { IDLE_SECONDS, PERSONA_PASSWORD, WEB, WEB_IDLE, authState, personaEmail 
  * (WEB_IDLE) ends sessions after IDLE_SECONDS without a request, so no fake clock is needed in the browser.
  */
 test('an idle session sends the browser to sign-in and back to where it was', async ({ page }) => {
-  await page.goto(`${WEB_IDLE}/account`);
+  await page.goto(`${WEB_IDLE}/account/profile`);
   // not signed in: sign-in keeps the path
-  await expect(page).toHaveURL(`${WEB_IDLE}/sign-in?return=%2Faccount`);
+  await expect(page).toHaveURL(`${WEB_IDLE}/sign-in?return=%2Faccount%2Fprofile`);
   await page.getByLabel('Email').fill(personaEmail('nadia'));
   await page.getByLabel('Password', { exact: true }).fill(PERSONA_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(`${WEB_IDLE}/account`);
-  await expect(page.getByRole('heading', { name: /Account/ })).toBeVisible();
+  await expect(page).toHaveURL(`${WEB_IDLE}/account/profile`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
 
   // idle past the limit, then use the app: the 401 sends us to sign-in with the page we were on
   await page.waitForTimeout((IDLE_SECONDS + 2) * 1000);
@@ -47,10 +47,10 @@ test('sign out everywhere ends every session of the person, in every browser, an
   const a = await signIn();
   const b = await signIn();
 
-  await b.page.goto('/account');
+  await b.page.goto('/account/security');
   await expect(b.page.getByText('(this browser)')).toBeVisible();
 
-  await a.page.goto('/account');
+  await a.page.goto('/account/security');
   await a.page.getByRole('button', { name: 'Sign out everywhere' }).click();
   await expect(a.page).toHaveURL(`${WEB}/sign-in`);
 

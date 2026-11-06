@@ -307,7 +307,7 @@ function DigestBlock() {
 export function NotificationSettings() {
   return (
     <section className="block" aria-labelledby="acc-notifications" data-landmark="notifications" data-testid="notification-settings">
-      <h2 className="bh" id="acc-notifications">Notifications</h2>
+      <h2 className="bh" id="acc-notifications">What can interrupt you</h2>
       <div className="block-body nset">
         <KindsBlock />
         <ChannelsBlock />

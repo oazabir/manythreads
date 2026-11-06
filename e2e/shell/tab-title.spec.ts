@@ -91,9 +91,9 @@ test('a muted direct message does not count', async ({ browser, playwright }) =>
 });
 
 test('a page outside the shell names itself, and leaving the shell takes the count away', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/account');
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/account/profile');
   try {
-    await expect(page).toHaveTitle(/^Account · .+/);
+    await expect(page).toHaveTitle(/^Profile · .+/);
     await page.goto('/settings/workspace/general');
     await expect(page).toHaveTitle(/ · .+/);
     await expect(page).not.toHaveTitle(/^\(\d/);

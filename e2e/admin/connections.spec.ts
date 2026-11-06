@@ -134,9 +134,9 @@ test('a team member who is not an admin reads the page and is told, in plain wor
 });
 
 test('the account page lists a person’s own connections and says the mail option waits for the mail transport', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account');
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/security');
   try {
-    await page.getByTestId('account-connections-link').click();
+    await page.getByRole('navigation', { name: 'Settings' }).getByRole('link', { name: 'Connections', exact: true }).click();
     await expect(page).toHaveURL(/\/account\/connections$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible();
     await expect(page.getByTestId('my-connections-empty')).toBeVisible();

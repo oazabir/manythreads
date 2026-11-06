@@ -65,7 +65,7 @@ export function AccountMenu() {
       </button>
       {open ? (
         <div className="menu menu-up" role="menu" aria-label="Account">
-          <Link role="menuitem" className="menu-item" to="/account" onClick={() => setOpen(false)}>Account</Link>
+          <Link role="menuitem" className="menu-item" to="/account/profile" onClick={() => setOpen(false)}>Account</Link>
           <button type="button" role="menuitem" className="menu-item" data-testid="menu-picture" onClick={() => { setOpen(false); setDialog('picture'); }}>Profile picture…</button>
           {dnd.supported ? (
             <>
@@ -73,7 +73,7 @@ export function AccountMenu() {
               <button type="button" role="menuitem" className="menu-item" data-testid="menu-pause" onClick={() => { setOpen(false); setDialog('pause'); }}>
                 {dnd.banner ? 'Notifications are paused…' : 'Pause notifications…'}
               </button>
-              <Link role="menuitem" className="menu-item" to="/account#status-and-dnd" onClick={() => setOpen(false)}>Do not disturb settings</Link>
+              <Link role="menuitem" className="menu-item" to="/account/notifications#status-and-dnd" onClick={() => setOpen(false)}>Do not disturb settings</Link>
             </>
           ) : null}
           {guest ? null : <Link role="menuitem" className="menu-item" to="/teams" onClick={() => setOpen(false)}>Teams</Link>}

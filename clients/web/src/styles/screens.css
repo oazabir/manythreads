@@ -406,12 +406,6 @@ a.btn.primary {
   text-decoration: none;
 }
 
-.account-link {
-  margin-top: auto;
-  border-top: 1px solid var(--rule);
-  border-radius: 0;
-}
-
 .settings-main {
   min-width: 0;
 }

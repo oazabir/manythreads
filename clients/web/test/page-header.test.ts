@@ -65,6 +65,7 @@ const PENDING_ROUTE_FILES: Record<string, string> = {
   'screens/conversations/ConversationView.tsx': 'owns its h1 and registers it with OwnsPageTitle',
   'screens/ChannelView.tsx': 'the shell h1 carries the channel name',
   'screens/AdminOnly.tsx': 'a route guard, draws no heading',
+  'screens/account/AccountIndex.tsx': 'a redirect to the right Account page, draws no heading',
 };
 /** Files whose heading comes from a shared module they import instead of PageHeader. */
 const HEADING_MODULES = ['components/PageHeader', 'components/frames', './UsageReport'];

@@ -49,7 +49,7 @@ const TEAM_ROUTES = [
 const SETTINGS_ROUTES = [
   '/settings/workspace/general', '/settings/workspace/members', '/settings/workspace/roles', '/settings/workspace/llm', '/settings/workspace/runners',
   '/settings/workspace/guardrails', '/settings/workspace/audit', '/settings/workspace/import', '/settings/team/engineering/roster', '/settings/team/engineering/connections',
-  '/teams', '/account',
+  '/teams', '/account', '/account/profile', '/account/notifications', '/account/connections', '/account/security',
 ];
 
 test('team routes have exactly one h1', async ({ browser, playwright, isMobile }) => {

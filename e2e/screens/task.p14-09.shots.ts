@@ -23,7 +23,7 @@ test('notification settings and the channel bell', async ({ browser }) => {
   await expect(page).not.toHaveURL(/\/sign-in/);
   mkdirSync(OUT, { recursive: true });
 
-  await page.goto('/account');
+  await page.goto('/account/notifications');
   const settings = page.getByTestId('notification-settings');
   await expect(settings).toBeVisible(T);
   await settings.scrollIntoViewIfNeeded();

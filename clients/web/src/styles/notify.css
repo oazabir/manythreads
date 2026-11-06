@@ -147,6 +147,10 @@
   font-size: var(--fs-caption);
 }
 
+.nset-select {
+  min-width: 27ch; /* "Mentions and keywords only" must not be cut */
+}
+
 .nset-add {
   display: flex;
   gap: 8px;
