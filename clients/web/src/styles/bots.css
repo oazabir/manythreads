@@ -1135,6 +1135,7 @@
   }
 
   .bot-screen .b-head-act .btn {
+    min-height: 44px; /* a touch target: Talk, Deploy and the "…" */
     white-space: nowrap;
   }
 
@@ -1146,5 +1147,7 @@
 
   .bot-screen .b-head-act .b-more-btn {
     align-self: stretch; /* as tall as Talk and Deploy, so the three share one row to the pixel */
+    min-width: 44px;
+    justify-content: center;
   }
 }

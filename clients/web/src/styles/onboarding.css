@@ -313,6 +313,21 @@
     min-height: 36px;
   }
 
+  /* the fold button stays on the title's line: a long title wraps inside its own box instead of pushing the button down */
+  .ob-head {
+    flex-wrap: nowrap;
+  }
+
+  .ob-head > span:first-child {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .ob-head .chip,
+  .ob-toggle {
+    flex: none;
+  }
+
   .ob-toggle {
     width: 44px;
     height: 44px;

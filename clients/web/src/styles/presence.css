@@ -314,6 +314,12 @@
   inset: -9px -6px;
 }
 
+@media (width <= 640px) {
+  .pr .tog::before {
+    inset: -13px -6px;
+  }
+}
+
 .pr-days {
   display: flex;
   flex-direction: column;

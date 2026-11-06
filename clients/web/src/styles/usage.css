@@ -63,9 +63,10 @@
   margin-top: 4px;
 }
 
-/* a day chart: one column per day, the bar grows from the foot; the failed part is drawn at the foot of the bar */
+/* a day chart: one column per day, the bar grows from the foot; the failed part is drawn at the foot of the bar; the top band is where the tooltip of the tallest bar sits, so it never covers the chart's title */
 .usage-plot {
   display: grid;
+  padding-top: 34px;
   grid-template-columns: auto 1fr;
   gap: 8px;
 }
@@ -177,6 +178,10 @@
 .usage-col:hover .usage-tip,
 .usage-col:focus-visible .usage-tip {
   display: block;
+}
+
+.box[data-tip='off'] .usage-col .usage-tip {
+  display: none;
 }
 
 /* nothing to draw yet: a dotted baseline with a word on it */

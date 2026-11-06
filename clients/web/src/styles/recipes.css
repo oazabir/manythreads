@@ -113,8 +113,9 @@
 
 .rg-card-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   width: 100%;
   min-width: 0;
 }
@@ -155,12 +156,13 @@
   }
 }
 
+/* the title keeps room for about twelve letters: a long state pill drops under it instead of squeezing it, and a title breaks between words */
 .rg-name {
-  flex: 1;
+  flex: 1 1 12ch;
   min-width: 0;
   font-size: var(--fs-body);
   font-weight: 600;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .rg-summary {
@@ -188,6 +190,7 @@
 
 .rg-state {
   flex: none;
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;

@@ -76,6 +76,17 @@ test('Usage: the chart draws every day of the range, one bar is in the Tab order
   await page.keyboard.press('ArrowRight'); // past the end: stays
   await expect(bars.last()).toBeFocused();
 
+  // the tooltip shows on focus, sits below the chart title (never over it), and Esc puts it away until another bar is focused
+  const tip = chart.locator('.usage-tip').last();
+  await expect(tip).toBeVisible();
+  const title = await chart.locator('.box-h').boundingBox();
+  const tipBox = await tip.boundingBox();
+  expect(tipBox!.y).toBeGreaterThanOrEqual(title!.y + title!.height - 1);
+  await page.keyboard.press('Escape');
+  await expect(tip).toBeHidden();
+  await page.keyboard.press('ArrowLeft');
+  await expect(chart.locator('.usage-tip').nth(28)).toBeVisible();
+
   // a shorter range while the chart stays on screen: still 1 bar in the Tab order (the last bar was the active one)
   await page.getByTestId('usage-range').getByRole('button', { name: '7 days' }).click();
   await expect(page.getByTestId('usage-range').getByRole('button', { name: '7 days' })).toHaveAttribute('aria-pressed', 'true');

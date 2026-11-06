@@ -104,4 +104,13 @@
   .auth-card.hero .form-actions .btn.primary {
     min-height: 44px;
   }
+
+  /* "Forgot password?" keeps its look as a link but has a 44 px tall hit area */
+  .auth-card.hero .form-actions .linkish {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding-inline: 12px;
+  }
 }

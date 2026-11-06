@@ -899,6 +899,15 @@ a.btn.primary {
   left: 17px;
 }
 
+/* on a phone the 34 x 19 switch keeps its size but its tap area grows to about 46 x 45 (an invisible layer around it) */
+@media (width <= 640px) {
+  .tog::before {
+    content: "";
+    position: absolute;
+    inset: -13px -6px;
+  }
+}
+
 .tog:disabled,
 .tog[aria-disabled="true"] {
   opacity: 0.5;
@@ -1370,5 +1379,12 @@ a.btn.primary {
 
   .mem-wrap .table td.mem-act::before {
     content: none;
+  }
+
+  /* the row's "…" button: a 44 px touch target */
+  .mem-wrap .table td.mem-act .btn {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
   }
 }

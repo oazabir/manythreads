@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { UsageDay } from '@manythreads/shared';
 import { barHeight, barLabel, chartSummary, dayMonth, failedShare, fillDays } from './format';
 
@@ -6,6 +6,7 @@ import { barHeight, barLabel, chartSummary, dayMonth, failedShare, fillDays } fr
  * A bar chart in plain HTML and CSS: one column per day of the range (a day with nothing is a 0, never a gap in the axis), tallest day = full
  * height, a baseline and two light grid lines. The failed part of a bar is drawn at its foot. Every column can be focused (arrow keys move
  * between them, Tab leaves the chart) and shows its day and number as a tooltip on hover and on focus; a screen reader reads the same text.
+ * Esc puts the tooltip away until the pointer or the focus moves to a bar again (WCAG 1.4.13); the tooltip sits in a band above the plot, so it never covers the title.
  * A chart with nothing in it is a dotted line saying "No data yet".
  */
 export function DayChart({ title, id, days, rangeDays, pick, failed, unit, barUnit, format }: {
@@ -29,6 +30,15 @@ export function DayChart({ title, id, days, rangeDays, pick, failed, unit, barUn
   // the range can shrink while the chart stays mounted (7 days after 30): a stale index must not leave every bar out of the tab order
   const active = Math.min(Math.max(picked, 0), Math.max(all.length - 1, 0));
 
+  // Esc dismisses the tooltip; a new bar (pointer or focus) brings it back
+  const [tipOff, setTipOff] = useState(false);
+  useEffect(() => {
+    if (tipOff) return undefined;
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setTipOff(true); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [tipOff]);
+
   const move = (e: KeyboardEvent<HTMLElement>, i: number) => {
     const to = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : null;
     if (to === null || to < 0 || to >= all.length) return;
@@ -38,7 +48,7 @@ export function DayChart({ title, id, days, rangeDays, pick, failed, unit, barUn
   };
 
   return (
-    <section className="box" aria-labelledby={id} data-testid={`usage-chart-${id}`}>
+    <section className="box" aria-labelledby={id} data-testid={`usage-chart-${id}`} data-tip={tipOff ? 'off' : undefined}>
       <h2 className="box-h" id={id}>{title}</h2>
       <p className="sr-only">{chartSummary(all, pick, unit)}</p>
       {max > 0 ? (
@@ -59,7 +69,8 @@ export function DayChart({ title, id, days, rangeDays, pick, failed, unit, barUn
                     aria-label={text}
                     tabIndex={i === active ? 0 : -1}
                     data-edge={i < all.length / 6 ? 'start' : i >= all.length - all.length / 6 ? 'end' : undefined}
-                    onFocus={() => setActive(i)}
+                    onFocus={() => { setActive(i); setTipOff(false); }}
+                    onMouseEnter={() => setTipOff(false)}
                     onKeyDown={(e) => move(e, i)}
                   >
                     <div className="usage-bar" style={{ height: `${barHeight(v, max)}%` }}>

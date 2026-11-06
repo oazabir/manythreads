@@ -353,18 +353,18 @@ export function ModelTab({ draft, canEdit }: TabProps) {
   const patchModelConfig = (patch: Partial<NonNullable<BotFrontmatter['model']>>): void => draft.patch((d) => ({ ...d, model: { ...d.model, ...patch } as BotFrontmatter['model'] }));
   return (
     <>
-      <Block title="Gateway aliases" count="never a hard-coded model name">
+      <Block title="Models this bot may use" count="chosen from the names your workspace sets up">
         <ChipsField
-          label="Aliases"
+          label="Model names"
           values={aliases}
           readOnly={locked}
           placeholder="code"
           valid={(v) => SLUG_RE.test(v)}
           testId="model-aliases"
           onChange={(next) => patchModelConfig({ aliases: next.length > 0 ? next : undefined, subscription: undefined })}
-          hint="Resolved at Workspace → LLM. A literal model name is refused by the schema."
+          hint="Short names such as fast or code. An admin links each name to a real model in Settings, under LLM. The real model's own name is not accepted here."
         />
-        <ChipsField label="Fallbacks" values={m?.fallbacks ?? []} readOnly={locked} valid={(v) => SLUG_RE.test(v)} onChange={(next) => patchModelConfig({ fallbacks: next.length > 0 ? next : undefined })} />
+        <ChipsField label="Backup models" values={m?.fallbacks ?? []} readOnly={locked} valid={(v) => SLUG_RE.test(v)} onChange={(next) => patchModelConfig({ fallbacks: next.length > 0 ? next : undefined })} />
         <SelectField
           label="Effort"
           value={m?.effort}
@@ -424,7 +424,7 @@ export function GuardTab({ draft, canEdit }: TabProps) {
           testId="guard-gate"
           placeholder="credential rotation"
           onChange={(gate) => setGuard({ gate: gate.length > 0 ? gate : undefined })}
-          hint="Stage 1 matches these exactly or as patterns; stage 2 is a small classifier on the local alias that sees only the message."
+          hint="First, the message is checked against these words and patterns. Then a small model that runs on your own server reads the message, and only the message, to catch topics that are worded differently."
         />
       </Block>
       <Block title="Bot rules">
