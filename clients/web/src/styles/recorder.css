@@ -146,6 +146,49 @@
   color: var(--alert-ink);
 }
 
+.vr-writing,
+.vr-text,
+.vr-adding {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vr-adding {
+  align-items: flex-start;
+  margin: 4px 0;
+}
+
+.vr-progress {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--hairline);
+}
+
+.vr-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--human);
+  transform-origin: left center;
+  transition: transform 200ms linear;
+}
+
+.vr-text textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--human-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .vr-actions {
   display: flex;
   flex-basis: 100%;
@@ -174,7 +217,8 @@
     animation: none;
   }
 
-  .vr-fill {
+  .vr-fill,
+  .vr-progress-fill {
     transition: none;
   }
 }
@@ -202,4 +246,66 @@
   .vr-b:nth-child(even) {
     display: none;
   }
+}
+
+/* ---- the speech bench page (/dev/speech) ---- */
+.dev-speech {
+  max-width: 960px;
+}
+
+.ds-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: var(--fs-small);
+}
+
+.ds-field input,
+.ds-field textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.ds-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ds-scroll {
+  overflow-x: auto;
+}
+
+.ds-table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-table th,
+.ds-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--hairline);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ds-table th:first-child,
+.ds-table td:first-child {
+  text-align: left;
+}
+
+.ds-text {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.ds-json {
+  max-height: 240px;
+  overflow: auto;
+  font-size: var(--fs-caption);
 }

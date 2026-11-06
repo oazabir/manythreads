@@ -4,11 +4,11 @@ import { VOICE_MIN_MS } from './clock';
 /**
  * Builds what a voice message posts (P14-17): the body and the `voice` meta that goes with the uploaded clip.
  *
- * SEAM for the transcript (F9-7): the preview will pass the words the device wrote (and the language) as `transcript`; until then every
- * message is sent without one, so the body is the stand-in line ("Voice message (0:42)") and the meta says `transcript: 'none'`.
+ * The preview passes the words (and the language the device found) as `transcript`; `edited` is true when the sender changed them, so the meta
+ * says `edited` instead of `device`. Without words the body is the stand-in line ("Voice message (0:42)") and the meta says `transcript: 'none'`.
  */
 
-export type VoiceTranscript = { text: string; language: string | null };
+export type VoiceTranscript = { text: string; language: string | null; edited?: boolean };
 
 export type VoiceSendInput = {
   fileId: VoiceMeta['fileId'];
@@ -27,7 +27,7 @@ export function buildVoiceSend(input: VoiceSendInput): { body: string; voice: Vo
     fileId: input.fileId,
     durationMs,
     language: text !== '' && language !== null && LANGUAGE.test(language) ? language : null,
-    transcript: text !== '' ? 'device' : 'none',
+    transcript: text === '' ? 'none' : input.transcript?.edited ? 'edited' : 'device',
     peaks: input.peaks.slice(0, 64).map((p) => Math.min(255, Math.max(0, Math.round(p)))),
   };
   return { body: text !== '' ? text : voiceFallbackBody(durationMs), voice };

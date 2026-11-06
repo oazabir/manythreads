@@ -52,6 +52,7 @@ import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 // the Files screen carries the viewers' host: it loads when Files is opened
 const FilesScreen = lazy(() => import('./screens/files/FilesScreen').then((m) => ({ default: m.FilesScreen })));
 const MemoryScreen = lazy(() => import('./screens/memory/MemoryScreen').then((m) => ({ default: m.MemoryScreen })));
+const DevSpeech = lazy(() => import('./pages/DevSpeech').then((m) => ({ default: m.DevSpeech })));
 const DevViewers = lazy(() => import('./pages/DevViewers').then((m) => ({ default: m.DevViewers })));
 
 function ExpiredRoute() {
@@ -79,6 +80,7 @@ function AppRoutes() {
         <Route path="/expired" element={<ExpiredRoute />} />
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/dev/tokens" element={<DevTokens />} />
+        <Route path="/dev/speech" element={<Suspense fallback={null}><DevSpeech /></Suspense>} />
         <Route path="/dev/viewers" element={<Suspense fallback={null}><DevViewers /></Suspense>} />
 
         <Route element={<RequireSession />}>

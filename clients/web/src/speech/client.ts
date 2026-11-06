@@ -193,13 +193,16 @@ export function registerModelCache(nav: { serviceWorker?: { register(url: string
   }
 }
 
+/** A new module worker running `worker.ts`; the real app and the bench page both make theirs here. */
+export const spawnWhisperWorker = (): WorkerLike => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike;
+
 let installed: WhisperWorkerBackend | null = null;
 
 /** The backend the app uses: a real module worker, started on first use. Installing twice does nothing. */
 export function installWhisperWorker(): WhisperWorkerBackend {
   if (installed) return installed;
   const backend = createWorkerBackend({
-    spawn: () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike,
+    spawn: spawnWhisperWorker,
     onFirstUse: () => registerModelCache(),
   });
   installed = backend;

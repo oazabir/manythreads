@@ -37,6 +37,7 @@ import {
   withdrawVote,
 } from '../api/endpoints';
 import { withServerPoll, withTotals, withVote } from './polls';
+import { lateTranscripts } from './voice/late';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import {
   applyReaction,
@@ -251,7 +252,7 @@ export class ChannelStore {
       }
     }
     const next = message;
-    this.mapMessage(next.channelId, next.threadRootId, next.id, (m) => ({ ...m, body: next.body, bodyPlain: next.bodyPlain, editedAt: next.editedAt }));
+    this.mapMessage(next.channelId, next.threadRootId, next.id, (m) => withEdit(m, next));
   }
 
   private onDeleted(channelId: string, messageId: string, rootId: string | null): void {
@@ -536,6 +537,7 @@ export class ChannelStore {
     try {
       const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true, item.confirmBroadcast === true, item.voice);
       this.applyPosted(asChannelMessage(m, item.attachments), item.localId);
+      if (item.voice) lateTranscripts.posted(item.voice.fileId, { channelId, rootId, messageId: m.id });
       // the push may have come first and already removed the pending copy; either way it is gone now
       this.put(key, (t) => ({ ...t, pending: t.pending.filter((p) => p.localId !== item.localId) }));
     } catch (err) {
@@ -556,7 +558,17 @@ export class ChannelStore {
 
   async edit(channelId: string, rootId: string | null, id: string, body: string, confirmBroadcast = false): Promise<void> {
     const m = await editMessage(channelId, id, body, confirmBroadcast);
-    this.mapMessage(channelId, rootId, id, (x) => ({ ...x, body: m.body, bodyPlain: m.bodyPlain, editedAt: m.editedAt }));
+    this.mapMessage(channelId, rootId, id, (x) => withEdit(x, m));
+  }
+
+  /**
+   * The words of a voice message written out after it was sent ("Send without waiting"): saved as an edit, but only while the message still has no
+   * transcript, so a correction the author made by hand in the meantime is never overwritten.
+   */
+  async addLateTranscript(channelId: string, rootId: string | null, id: string, text: string): Promise<void> {
+    const have = this.findMessage(channelId, rootId, id);
+    if (have && have.meta.voice?.transcript !== 'none') return;
+    await this.edit(channelId, rootId, id, text);
   }
 
   async remove(channelId: string, rootId: string | null, id: string): Promise<void> {
@@ -633,10 +645,17 @@ export class ChannelStore {
   }
 }
 
+/** A message after an edit: the new text and time, and the voice record (an edited voice message says its transcript is `edited`). */
+function withEdit(m: ChannelMessage, next: ChannelMessage): ChannelMessage {
+  const voice = next.meta.voice;
+  return { ...m, body: next.body, bodyPlain: next.bodyPlain, editedAt: next.editedAt, ...(voice && m.meta.voice ? { meta: { ...m.meta, voice } } : {}) };
+}
+
 function errorOf(e: unknown): { status: number; message: string } {
   return isApiError(e) ? { status: e.status, message: e.message } : { status: 0, message: e instanceof Error ? e.message : 'Something went wrong' };
 }
 
 /** The app's store. */
 export const channelStore = new ChannelStore();
+lateTranscripts.setApplier((t, text) => channelStore.addLateTranscript(t.channelId, t.rootId, t.messageId, text));
 onPersonChange(() => channelStore.reset());

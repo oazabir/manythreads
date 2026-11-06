@@ -19,11 +19,12 @@ import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
-import { NO_THREAD_CLICK, copyText, rowShortcut, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
+import { NO_THREAD_CLICK, canAddTranscript, copyText, rowShortcut, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
 import { VoiceNoTranscript, VoicePlayer, VoiceTranscriptNote } from './voice/VoicePlayer';
+import { WritingOut } from './voice/WritingOut';
 import { voiceClip, withoutClip } from './voice/playerFormat';
 import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
@@ -147,6 +148,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [forwarding, setForwarding] = useState(false);
   const [sendingToMemory, setSendingToMemory] = useState(false);
   const [reminding, setReminding] = useState(false);
+  // "Add a transcript": this device is writing a voice message of mine out
+  const [adding, setAdding] = useState(false);
   // a short line in the header of the row after an action that has no other sign ("Link copied")
   const [done, setDone] = useState<string | null>(null);
   useEffect(() => {
@@ -326,6 +329,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
               ) : null}
               <LaterMenuItems messageId={m.id} say={setDone} close={() => setMenu(null)} onRemind={() => setMenu('remind')} />
+              {canEdit && canAddTranscript({ own, deleted, voice: clip?.voice }) ? (
+                <button type="button" role="menuitem" className="menu-item" data-testid="add-transcript" onClick={() => { setMenu(null); setAdding(true); }}>Add a transcript</button>
+              ) : null}
               {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit<kbd>E</kbd></button> : null}
               {canDelete ? (
                 confirm ? (
@@ -351,6 +357,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           {done ? <span className="row-done" role="status">{done}</span> : null}
         </AuthorLine>
         {clip ? <VoicePlayer voice={clip.voice} who={name} /> : null}
+        {adding && clip ? <WritingOut fileId={clip.voice.fileId} onText={(t) => setEditing(t)} onClose={() => setAdding(false)} /> : null}
         {deleted ? (
           <div className="txt tomb">This message was deleted.</div>
         ) : editing !== null ? (

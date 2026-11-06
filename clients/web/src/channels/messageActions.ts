@@ -1,4 +1,4 @@
-import type { DirectMessageSummary, NavChannelGroup } from '@manythreads/shared';
+import type { DirectMessageSummary, NavChannelGroup, VoiceMeta } from '@manythreads/shared';
 import { clock, dayLabel } from './format';
 
 /*
@@ -142,4 +142,9 @@ export function rowShortcut(e: { key: string; ctrlKey: boolean; metaKey: boolean
  */
 export function escMarksRead(a: { openCount: number; focusInList: boolean; typing: boolean; panelOpen: boolean }): boolean {
   return a.openCount === 0 && a.focusInList && !a.typing && !a.panelOpen;
+}
+
+/** The message menu's "Add a transcript" (P14-17): the author's own voice message that was sent without words, and not a deleted one. */
+export function canAddTranscript(a: { own: boolean; deleted: boolean; voice: VoiceMeta | null | undefined }): boolean {
+  return a.own && !a.deleted && a.voice?.transcript === 'none';
 }

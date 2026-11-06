@@ -1,18 +1,22 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
 import type { FileSummary, VoiceMeta } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { uploadChannelFile } from '../../api/endpoints';
 import { CloseIcon, MicIcon, PauseIcon, PlayIcon, StopIcon, TrashIcon } from '../../shell/icons';
 import type { RecordedClip } from './capture';
 import { LIMIT_NOTE, clockOfMax, formatClock } from './clock';
+import { lateTranscripts } from '../voice/late';
+import { languageName } from './playerFormat';
 import { buildVoiceSend } from './send';
 import { clipFileName } from './support';
+import { CHECK_NOTE, FIRST_USE_NOTE, NOTHING_HEARD, TranscriptRun, WRITING_TEXT, progressLine, showsFirstUseNote, transcriptToSend } from './transcribe';
 import { useMeter, type Recorder as RecorderState } from './useRecorder';
 
 /**
  * The voice message recorder in the composer (P14-17): the mic button (hold to record, or tap to start and tap to stop), the recording bar
- * (timer, level meter, how to cancel) and the preview (play it, Discard, Send). The words of the message (the transcript) come later
- * (F9-7); this sends the clip with the stand-in line, see `send.ts`.
+ * (timer, level meter, how to cancel) and the preview (play it, read and correct the words the device wrote, Discard, Send). The words are the
+ * message's text; "Send without waiting" posts the clip at once and the words follow (see `late.ts`). A device that cannot write them out sends the
+ * clip with the stand-in line, see `send.ts` and `transcribe.ts`.
  */
 
 /** A hold shorter than this is a tap: the recording goes on until the next tap. */
@@ -49,6 +53,8 @@ export function Recorder({ rec, channelId, showMic, onSend, returnFocus }: Recor
     if (phase !== 'recording' && phase !== 'preview') return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
+      // in the transcript box Esc only leaves the box (the box handles it), it does not throw the clip away
+      if (phase === 'preview' && e.target instanceof Element && e.target.closest('.vr-text')) return;
       e.preventDefault();
       e.stopPropagation();
       if (phase === 'recording') {
@@ -175,16 +181,27 @@ function Preview({ clip, channelId, onSend, onDiscard, onSent }: { clip: Recorde
   const audio = useRef<HTMLAudioElement>(null);
   const playButton = useRef<HTMLButtonElement>(null);
   const abort = useRef<AbortController | null>(null);
+  const handedOff = useRef(false);
+  const [run] = useState(() => new TranscriptRun(clip.blob));
+  const tr = useSyncExternalStore(run.subscribe, run.getState);
   const [playing, setPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // the words in the box: what the device wrote, until the sender types
+  const [typed, setTyped] = useState<string | null>(null);
+  const text = typed ?? (tr.phase === 'ready' ? tr.text : '');
 
   useEffect(() => {
     playButton.current?.focus();
-    return () => abort.current?.abort();
-  }, []);
+    run.start();
+    return () => {
+      abort.current?.abort();
+      // "Send without waiting" hands the run on to the message; anything else stops the work
+      if (!handedOff.current) run.cancel();
+    };
+  }, [run]);
 
   const toggle = (): void => {
     const a = audio.current;
@@ -193,6 +210,7 @@ function Preview({ clip, channelId, onSend, onDiscard, onSent }: { clip: Recorde
     else void a.play().catch(() => setPlaying(false));
   };
 
+  /** Uploads the clip and posts it with the words if there are any; while the device is still writing, the words follow ("Send without waiting"). */
   const send = async (): Promise<void> => {
     if (busy) return;
     audio.current?.pause();
@@ -205,7 +223,14 @@ function Preview({ clip, channelId, onSend, onDiscard, onSent }: { clip: Recorde
       const file = new File([clip.blob], clipFileName(clip.mime), { type: clip.mime });
       const meta = await uploadChannelFile(channelId, file, setProgress, ctl.signal);
       if (ctl.signal.aborted) return;
-      const built = buildVoiceSend({ fileId: meta.id, durationMs: clip.durationMs, peaks: clip.peaks });
+      // the words as they are now: if the device finished while the clip was uploading, they go with it even for "without waiting"
+      const now = run.getState();
+      const words = transcriptToSend(now, typed ?? (now.phase === 'ready' ? now.text : ''));
+      const built = buildVoiceSend({ fileId: meta.id, durationMs: clip.durationMs, peaks: clip.peaks, transcript: words });
+      if (built.voice.transcript === 'none' && now.phase === 'working') {
+        handedOff.current = true;
+        lateTranscripts.watch(meta.id, run.done);
+      }
       onSend(built.body, { attachments: [{ id: meta.id, name: meta.name, size: meta.size, mime: meta.mime }], voice: built.voice });
       onSent();
     } catch (e) {
@@ -215,8 +240,11 @@ function Preview({ clip, channelId, onSend, onDiscard, onSent }: { clip: Recorde
     }
   };
 
+  const working = tr.phase === 'working';
   const total = clip.durationMs;
   const played = total > 0 ? Math.min(1, positionMs / total) : 0;
+  const language = tr.phase === 'ready' ? languageName(tr.language) : null;
+  const live = tr.phase === 'working' ? WRITING_TEXT : tr.phase === 'ready' ? (tr.text === '' ? NOTHING_HEARD : 'Transcript ready') : tr.notice;
   return (
     <div className="vr-preview" role="group" aria-label="Voice message ready to send" data-testid="voice-preview">
       <audio
@@ -238,12 +266,47 @@ function Preview({ clip, channelId, onSend, onDiscard, onSent }: { clip: Recorde
       </span>
       <span className="vr-time" data-testid="voice-length">{`${formatClock(positionMs)} / ${formatClock(total)}`}</span>
       {clip.limited ? <p className="vr-note">{LIMIT_NOTE}</p> : null}
+      <span className="sr-only" role="status" aria-live="polite" data-testid="voice-transcript-live">{live}</span>
+      {tr.phase === 'working' ? (
+        <div className="vr-writing" data-testid="voice-transcript-working">
+          <p className="vr-note" aria-hidden="true" data-testid="voice-transcript-progress">{progressLine(tr.stage, tr.fraction)}</p>
+          <span className="vr-progress" aria-hidden="true"><span className="vr-progress-fill" style={{ transform: `scaleX(${Math.max(0.03, tr.fraction).toFixed(2)})` }} /></span>
+          {showsFirstUseNote(tr) ? <p className="vr-note" data-testid="voice-transcript-first-use">{FIRST_USE_NOTE}</p> : null}
+        </div>
+      ) : null}
+      {tr.phase === 'ready' ? (
+        <div className="vr-text" data-testid="voice-transcript">
+          {tr.text === '' ? <p className="vr-note" data-testid="voice-transcript-empty">{NOTHING_HEARD}</p> : <p className="vr-note">{CHECK_NOTE}</p>}
+          <textarea
+            aria-label="Words of the voice message"
+            value={text}
+            rows={Math.min(8, Math.max(2, text.split('\n').length + 1))}
+            disabled={busy}
+            data-testid="voice-transcript-text"
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void send();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                playButton.current?.focus();
+              }
+            }}
+          />
+          {language ? <p className="vr-note" data-testid="voice-transcript-language">{`Language: ${language}`}</p> : null}
+        </div>
+      ) : null}
+      {tr.phase === 'none' ? <p className="vr-note" role="note" data-testid="voice-transcript-none">{tr.notice}</p> : null}
       {busy ? <p className="vr-note" role="status">{`Sending… ${Math.round(progress * 100)}%`}</p> : null}
       {error ? <p className="vr-note bad" role="alert" data-testid="voice-send-error">{error}</p> : null}
-      {/* F9-7: the transcript (written on this device, editable) goes here, above the buttons */}
       <span className="vr-actions">
         <button type="button" className="btn s" onClick={onDiscard} data-testid="voice-discard"><TrashIcon /><span>Discard</span></button>
-        <button type="button" className="btn primary s" onClick={() => void send()} disabled={busy} data-testid="voice-send">Send</button>
+        {working ? (
+          <button type="button" className="btn s" onClick={() => void send()} disabled={busy} data-testid="voice-send-now">Send without waiting</button>
+        ) : null}
+        <button type="button" className="btn primary s" onClick={() => void send()} disabled={busy || working} data-testid="voice-send">Send</button>
       </span>
     </div>
   );
