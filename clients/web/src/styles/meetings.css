@@ -68,7 +68,7 @@
   height: 16px;
   margin-left: -4px;
   border: 1.5px solid var(--surface);
-  font-size: var(--fs-tiny);
+  font-size: 0.55em; /* initials in a 16px face; the tiny token would overflow it */
 }
 
 .live-faces .av:first-child {
