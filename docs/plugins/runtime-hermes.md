@@ -633,3 +633,9 @@ One platform detail the trigger needed: the `messages.post` capability stamps `m
 * **`producer`** (`generated.by`) is `<bot slug>/<first model alias>` (`archivist/smart`), made from the definition and never from the model's text.
 * **Failures** are fixed sentences by cause (`failureSentence`): the error text goes to the server log only. A budget or rate limit (`llm.preflight`, or a run that ends with `limit`) is `budget`: the item stays queued and tries again in 15 minutes. A pod run is metered and a refused runner is recorded as for any run.
 * Not done for a drop run: the gate (`guard.gate` checks a person's message; the prompt carries none), approval waits (a call that needs approval fails the item with a sentence; a dropped item cannot wait for a person).
+
+## A shared Claude Code runner (P19-07)
+A bot placed on a `claude_cli` runner is sent to the pod's bridge as an external gateway with agent `claude-code`; the profile is `{team}--{bot}`. When the
+bridge's terminal frame says the account refused (`plan_limit` or `needs_sign_in`), `gateway.ts` ends the run as `runner_refused` with one plain line for the
+person and tells `run-job.ts`, which records the usage and pauses the runner through the `bot.runners` provider. A busy runner answers 429 in words that say
+the shared Claude runner is busy.

@@ -197,3 +197,10 @@ A plugin that extends `job.register` gets queues named `<plugin>.<name>` and a w
 system actor** (`app.is_system()` is true: no RLS), scoped to `payload.workspaceId` when the payload has one. That is the same trust as `provider.identity`,
 so it is declared in the manifest, and a reviewer should read every handler of such a plugin like a migration: validate the payload (it is whatever any caller of `ctx.jobs.enqueue`
 put there), re-check access to every row it touches, never trust ids from the payload for another workspace. The statement filter (`guardPluginTx`) still applies to handler SQL.
+
+## The Claude sign-in file
+The file an admin uploads for a Claude Code runner is a live login. It is read once in the upload route, handed to the pod provider and dropped; it lives only in
+the runner's Secret and the pod's state volume. Never in the database, an event, an audit row, a log or an answer (tests plant a canary string in a made-up file
+and search for it everywhere). The file may hold other services' sign-ins (`mcpOAuth`); it is stored as it is and the page says so and asks for a tick. A login
+another runner holds is refused, because two copies sign each other out. The keeper may only get and patch its own Secret. k3s Secrets encryption on the devbox
+is still off (owner decision O7 pending), so the Secret sits unencrypted in the datastore until it is turned on.

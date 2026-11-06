@@ -277,6 +277,8 @@ Each profile's `OPENAI_BASE_URL` points at the gateway with the bot's virtual ke
 
 A person signs in to Claude Code or Codex at Workspace → LLM → Subscriptions or on their profile, **behind a workspace flag that is off by default**, presented as interactive coding help for one person. Hermes on a runner with the `claude-code` or `codex` capability drives that CLI for bots bound to that person. Rules: bound to one person, that person's bot only; **never bound to anything the platform triggers** — routines, heartbeats, inbox watches and `task_assigned` always use the gateway; the gateway's pre-call guard is bypassed and the bot is labelled "subscription · bypasses gateway guard"; spend is read from the CLI's usage output and shown separately; the workspace owner accepts the provider's terms when they turn the flag on.
 
+> **Note, 2026-11-06 (owner decision D9, PLAN Phase 19).** A Claude Code runner an admin sets up (Workspace → Runners) may be shared: the admin uploads one Claude login for the runner and ticks the teams that may use it, and a bot of those teams runs on it for any trigger, routines and inbox watches included. This replaces "bound to one person" for such a runner only; the personal subscription above is unchanged. The runner's team list is the permission, usage is counted per team and day, a plan limit or a refused sign-in pauses the runner with a plain line, and the admin accepts the plan's terms when uploading. Codex is not covered yet.
+
 ---
 
 ## 11. Connections and the MCP gateway `[proto §10]`

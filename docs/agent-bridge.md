@@ -177,3 +177,13 @@ expansion in the MCP config headers, the exact stream-json record shapes (writte
 **The Codex driver has not been tested against a real Codex install.** Its flags and config keys (`exec --json --skip-git-repo-check -C`,
 `exec resume`, `sandbox_mode`, `approval_policy`, `developer_instructions`, `mcp_servers.<id>.url`, `bearer_token_env_var`) and its JSON line shapes
 come from OpenAI's published documentation, and the tests use a fake `codex`. Expect to adjust it on first real use.
+
+## The sign-in gate (Claude Code in a pod, P19-06)
+Used when the bridge runs in a Claude pod (`CLAUDE_CONFIG_DIR` is set). `SigninGate` (`src/signin.ts`) wraps the Claude driver.
+- Within 20 minutes before the access token's expiry (read from the file), one run goes at a time, so one process asks for a renewal and the others do not
+  race it with the same refresh token.
+- A run that ends with a refused sign-in or the plan's limit is classified by the table `FAILURE_PATTERNS` (the one place where error texts are matched). The
+  failed frame carries `reason` (`needs_sign_in` or `plan_limit`) and, for a limit, `resets_at`. While the failure stands, later runs fail at once without a
+  process: a refused sign-in until the file changes, a limit until `resets_at`.
+- `GET /health` includes the sign-in state; `POST /v1/signin/check` answers `ok|rejected|expired|no_scope|limit` from the file's shape and the remembered failure.
+The patterns hold the stand-in's words and a guess at the real ones; the real texts are not measured yet.

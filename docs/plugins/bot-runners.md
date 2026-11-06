@@ -125,7 +125,7 @@ connections still works for the team, but the address is shown only to workspace
 
 `bot_runner.runner.created|updated|deleted|tested`, `bot_runner.node.changed` (the machine was set or cleared; it holds ids, the runner name, whether a machine was set before and is set now, and whether the change recreates a work volume, **never the machine's name**; audited as `bot_runner.node_changed`), `bot_runner.availability.changed`, `bot_runner.default.changed`, `bot_runner.terms.accepted`, and `bot_runner.run.refused` (emitted by runtime-hermes, not by this plugin: a run was turned away at its start; it holds ids, the runner name and one reason word from `unknown|disabled|not_available_to_team|not_runnable|not_set_up|not_ready`) and `bot_runner.run.unmetered` (also runtime-hermes: a run on a Hermes pod ended well and left no line in the spend ledger, so a model call may have gone around the gateway; it holds ids and the runner name, audited as a failed `bot_runner.run_unmetered` row). Event names have three parts, so they differ from the shorter names in the plan. They say that something happened and to
 which runner (id and name); never an address, key, node or sign-in, and `updated` lists the names of the settings that changed from a fixed list. The audit plugin records each as a `settings` row with the actor and the runner name
-(see [audit](./audit.md)). `bot_runner.terms.accepted` is registered and audited but nothing emits it yet; it waits for the Claude and Codex runners.
+(see [audit](./audit.md)). `bot_runner.terms.accepted` is emitted by the Claude sign-in upload. The Claude events are `claude_pod.credentials.uploaded|replaced|removed` (ids, runner name, actor, time; never the file) and `claude_pod.runner.paused` (reason `plan_limit` or `needs_sign_in`, and until when).
 
 ## Rules this plugin keeps
 
@@ -141,3 +141,15 @@ which runner (id and name); never an address, key, node or sign-in, and `updated
 
 ## Claude Code runners
 With the `claude.pods` provider present (see [claude-pods](claude-pods.md)), a runner of kind `claude_cli` can be made; it starts as `waiting_for_sign_in`, with a number of runs at once (1 to 4, default 2). The list answer carries `claudePodsAvailable`. Without the provider, making one answers 409 "not turned on in this install". Codex stays 409.
+
+### The sign-in routes (P19-06, admin only)
+- `PUT /api/admin/bot-runners/:id/credentials`: the body is the file as it is (`application/json`, at most 256 KB, read as a stream). Both `x-terms-ack: 1` and `x-signins-ack: 1` are required. The file must be a Claude login with the `user:inference` permission. A login another runner holds (keyed hash) or a file with the same SHA-256 is refused with the sentence "every Claude runner needs its own sign-in file". The runner moves to `starting`; the pod provider writes the Secret last, so a refusal by the cluster rolls the rows back.
+- `DELETE /api/admin/bot-runners/:id/credentials`, `POST /api/admin/bot-runners/:id/check` (words in `CHECK_MESSAGES`; a refused or expired sign-in sets `needs_sign_in`), `GET /api/admin/bot-runners/usage`.
+- Migration `0003_claude_runner.sql`: `credentials_sha256`, `signins_ack_by/at`, a unique login per workspace, and `app.bot_runner_usage` (runner, team, day: runs, seconds, the CLI's own cost figure; admins read, the system writes).
+
+### Using a Claude runner (P19-07)
+`resolveRunner` answers a ready `claude_cli` runner as agent `claude-code` with the pod's address and bridge key (from the `claude.pods` provider), no guard, and the
+profile rule `{team}--{bot}`. The runner's team list is the permission: a team that is not on it is refused like any other runner. After a run runtime-hermes calls
+`recordUsage` (one row per runner, team and day) and, when the run ended because the plan's limit was reached or the sign-in was refused, `pauseRunner`, which
+sets the status (`paused` with a time, or `needs_sign_in`) and emits `claude_pod.runner.paused` once. A pause clears itself when its time has passed. The bot's
+person sees one plain line; the asker never sees the account's details.
