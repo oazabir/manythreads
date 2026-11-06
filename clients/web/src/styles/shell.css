@@ -172,6 +172,17 @@ button.team {
   border-color: var(--human);
 }
 
+/* One ring, on the box (P21-20): the input inside gives its own up, so a keyboard user sees a single blue outline, not two. */
+.search-box:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.search-box input:focus-visible {
+  outline-color: transparent;
+  outline-offset: 0;
+}
+
 .rail .sidebar {
   flex: 1;
   padding: 6px 8px 12px;
