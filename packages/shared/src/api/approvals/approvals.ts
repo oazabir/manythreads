@@ -28,10 +28,14 @@ export const ListApprovalsResponse = z.object({
 export type ListApprovalsResponse = z.infer<typeof ListApprovalsResponse>;
 export const listApprovalsRoute = { method: 'GET', path: '/api/teams/:slug/approvals' } as const;
 
-/** The sidebar badge: how many approvals wait in the team, and how many of those the caller may decide. */
+/**
+ * The sidebar badge: how many approvals wait in the team, how many of those the caller may decide, and how many have waited longer than
+ * `APPROVAL_OVERDUE_HOURS` (the badge turns amber while that is above zero).
+ */
 export const GetApprovalsSummaryResponse = z.object({
   waiting: z.number().int().nonnegative(),
   mine: z.number().int().nonnegative(),
+  overdue: z.number().int().nonnegative(),
 });
 export type GetApprovalsSummaryResponse = z.infer<typeof GetApprovalsSummaryResponse>;
 export const getApprovalsSummaryRoute = { method: 'GET', path: '/api/teams/:slug/approvals/summary' } as const;

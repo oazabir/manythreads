@@ -55,6 +55,7 @@
 
 .apr-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: var(--fs-caption);
@@ -201,4 +202,164 @@
 
 .apr-truncated .apr-blocked {
   color: var(--warn-ink);
+}
+
+/* ---- P21-16: a list row you can act on, the asker's picture, the sentence, the risk tag and the age pill ---- */
+
+.apr-row {
+  position: relative;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.apr-row > .apr-trow {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  border-bottom: 0;
+}
+
+.apr-sentence {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.apr-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.apr-tags .chip,
+.apr-head .chip {
+  flex: none;
+  padding: 1px 8px;
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+}
+
+.apr-done {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-transform: none;
+}
+
+/* the age: plain until the request is a day old, then amber with the words "Waiting 2 days" (the words say it, the colour only agrees) */
+.apr-age {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  color: var(--mute);
+  font-size: var(--fs-tiny);
+}
+
+.apr-age.overdue {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+/* Approve and Deny on the row: hidden until the pointer is on the row or focus is inside it; always shown where there is no hover */
+.apr-row-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  display: flex;
+  gap: 6px;
+  padding-left: 18px;
+  background: linear-gradient(to right, transparent, var(--surface) 18px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.apr-row:hover .apr-row-actions,
+.apr-row:focus-within .apr-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.apr-row:hover > .apr-trow.on ~ .apr-row-actions,
+.apr-row:focus-within > .apr-trow.on ~ .apr-row-actions {
+  background: linear-gradient(to right, transparent, var(--human-wash) 18px);
+}
+
+.apr-row-error {
+  margin: 0;
+  padding: 0 16px 8px 52px;
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+@media (hover: none), (width <= 760px) {
+  .apr-row-actions {
+    position: static;
+    padding: 0 16px 10px 52px;
+    background: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* the detail: the header holds the tag, the age and the two buttons; the sentence under it is the title */
+.apr-head-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.apr-askline {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.apr-askline .apr-sentence {
+  display: block;
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.apr-raw {
+  margin: 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: var(--fs-tiny);
+  overflow-wrap: anywhere;
+}
+
+/* nothing chosen yet: one quiet hint in the middle of the pane */
+.apr-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+@media (width <= 760px) {
+  .apr-head-actions {
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
+
+  .apr-head-actions .btn {
+    flex: 1;
+    padding: 9px 12px;
+  }
+
+  .apr-detail {
+    padding: 14px 14px 24px;
+  }
 }

@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import type { Approval, ApprovalSource } from '@manythreads/shared';
+import type { Approval } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { ago } from '../../channels/format';
 import { decideApproval, fetchApprovalArgs } from './api';
 import { announceApprovalsChanged } from './live';
+import { AgePill } from './AgePill';
+import { AskerAvatar } from './Asker';
+import { riskClass, riskOf } from './risk';
+import { approvalSentence } from './sentence';
 import { ShareApprovalPreview } from './ShareApprovalPreview';
 import { isShareApproval, shareKind, shareOutcomeLine } from './shareApproval';
 import { callOverdue } from './state';
@@ -13,13 +17,6 @@ import { callOverdue } from './state';
  * what is waiting and why, shows the clipped preview of the call (never the raw arguments), and — for the people who may decide — offers
  * Approve and Deny. The person who asked sees a plain sentence instead of the buttons: they cannot decide their own request.
  */
-
-const SOURCE_LABEL: Record<ApprovalSource, string> = {
-  grant: 'needs approval',
-  dlp: 'held by the guard',
-  environment: 'protected environment',
-  dispatch: 'strict dispatch',
-};
 
 /** Who decides, in words: the named role tags and people, or the team's leads. */
 export function approversLabel(approvers: Approval['approvers']): string {
@@ -103,7 +100,20 @@ export function ApprovalCard({
 
   const pending = approval.status === 'pending';
   const share = isShareApproval(approval);
-  const who = share ? 'Memory sharing' : (approval.botName ?? 'A bot');
+  const risk = riskOf(approval);
+  const needsFull = approval.argsTruncated && full === undefined;
+  const buttons = (
+    <>
+      <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
+        {busy === 'approve' ? 'Approving…' : 'Approve'}
+      </button>
+      <button type="button" className="btn" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-deny">
+        {busy === 'deny' ? 'Denying…' : 'Deny'}
+      </button>
+    </>
+  );
+  // In the inbox the two buttons sit in the header of the detail, where the eye lands; under a thread's replies they stay at the foot of the card.
+  const inHeader = variant === 'detail' && pending && approval.canDecide;
   return (
     <article
       className={`apr-card ${variant === 'thread' ? 'apr-card-thread' : ''}`}
@@ -114,16 +124,25 @@ export function ApprovalCard({
       aria-label={`Approval: ${approval.summary}`}
     >
       <header className="apr-head">
-        <span className={`chip ${approval.status === 'denied' || approval.status === 'expired' ? 'alert' : approval.status === 'approved' ? 'ok' : 'warn'}`} data-testid="approval-source">
-          {pending ? SOURCE_LABEL[approval.source] : approval.status}
-        </span>
-        <b className="apr-who">{who}</b>
-        <span className="apr-when" data-vt-mask>{ago(approval.createdAt)}</span>
+        {pending ? (
+          <span className={riskClass(risk)} title={risk.hint} data-testid="approval-source">{risk.label}</span>
+        ) : (
+          <span className={`chip ${approval.status === 'denied' || approval.status === 'expired' ? 'alert' : approval.status === 'approved' ? 'ok' : 'warn'}`} data-testid="approval-source">
+            {approval.status}
+          </span>
+        )}
+        {pending ? <AgePill approval={approval} /> : <span className="apr-when" data-vt-mask>{ago(approval.createdAt)}</span>}
+        {inHeader ? <div className="apr-head-actions" data-testid="approval-header-actions">{buttons}</div> : null}
       </header>
-      <h3 className="apr-summary" data-testid="approval-summary">{approval.summary}</h3>
+      <div className="apr-askline">
+        <AskerAvatar approval={approval} />
+        <h3 className="apr-sentence" data-testid="approval-sentence">{approvalSentence(approval)}</h3>
+      </div>
       <p className="apr-meta">
-        Asked by <b data-testid="approval-requester">{approval.requesterName}</b> · <span className="apr-mono">{share ? shareKind(approval.tool) : approval.tool}</span>
+        Asked by <b data-testid="approval-requester">{approval.requesterName}</b>
+        {share ? ` · ${shareKind(approval.tool)}` : null}
       </p>
+      <p className="apr-raw" data-testid="approval-summary">{approval.summary}</p>
       {share ? <ShareApprovalPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
       {approval.argsTruncated ? (
         <div className="apr-truncated" data-testid="approval-truncated">
@@ -142,13 +161,9 @@ export function ApprovalCard({
           <div className="apr-actions">
             {variant === 'detail' ? (
               <input className="apr-note" type="text" placeholder="Add a note (optional)" aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" />
-            ) : null}
-            <button type="button" className="btn primary" disabled={busy !== null || (approval.argsTruncated && full === undefined)} title={approval.argsTruncated && full === undefined ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
-              {busy === 'approve' ? 'Approving…' : 'Approve'}
-            </button>
-            <button type="button" className="btn" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-deny">
-              {busy === 'deny' ? 'Denying…' : 'Deny'}
-            </button>
+            ) : (
+              buttons
+            )}
           </div>
         ) : (
           <p className="apr-blocked" data-testid="approval-blocked" data-reason={approval.blockReason ?? ''}>

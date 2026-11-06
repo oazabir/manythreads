@@ -7,7 +7,7 @@ import { useShell } from './context';
 import { DirectMessages } from './DirectMessages';
 import { NAV_ICONS } from './icons';
 import { GUEST_SLUG } from './messageLink';
-import { CORE_NAV, navCount, navHref, visibleNav } from './nav';
+import { CORE_NAV, navCount, navHref, navTone, visibleNav } from './nav';
 import { Pill } from './Pill';
 
 /** A row of the contract: opens its page, shows its count, or its empty state while there is nothing to count. */
@@ -16,16 +16,17 @@ function NavItem({ item, slug }: { item: NavContribution; slug: string }) {
   const atHome = useLocation().pathname === '/';
   const href = navHref(item, slug);
   const count = navCount(item, counts);
+  const tone = navTone(item, counts);
   const Icon = item.icon ? NAV_ICONS[item.icon] : null;
   const body = (
     <>
       <span className="ic">{Icon ? <Icon /> : null}</span>
       <span className="it-label">{item.label}</span>
-      {count !== null ? <Pill n={count} tone={item.badge?.tone ?? 'unread'} /> : item.emptyState ? <span className="hint">{item.emptyState}</span> : null}
+      {count !== null ? <Pill n={count} tone={tone} {...(tone === 'attention' ? { note: 'some have waited over a day' } : {})} /> : item.emptyState ? <span className="hint">{item.emptyState}</span> : null}
     </>
   );
   return href ? (
-    <NavLink to={href} className={({ isActive }) => `it ${isActive || (atHome && item.id === 'threads') ? 'on' : ''} ${count !== null && item.badge?.tone !== 'quiet' && item.badge?.tone !== 'attention' ? 'unread' : ''}`}>
+    <NavLink to={href} className={({ isActive }) => `it ${isActive || (atHome && item.id === 'threads') ? 'on' : ''} ${count !== null && tone !== 'quiet' && tone !== 'attention' ? 'unread' : ''}`}>
       {body}
     </NavLink>
   ) : (

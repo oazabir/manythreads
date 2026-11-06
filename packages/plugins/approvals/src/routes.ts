@@ -6,6 +6,7 @@ import {
   DecideApprovalResponse,
   GetApprovalArgsResponse,
   GetApprovalsSummaryResponse,
+  APPROVAL_OVERDUE_HOURS,
   ListApprovalsPathParams,
   ListApprovalsQuery,
   ListApprovalsResponse,
@@ -66,14 +67,15 @@ export function registerRoutes(ctx: PluginContext): void {
       const { slug } = ListApprovalsPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       const row = (
-        await tx.query<{ waiting: number; mine: number }>(
-          `SELECT count(*)::int AS waiting, count(*) FILTER (WHERE r.o_reason IS NULL)::int AS mine
+        await tx.query<{ waiting: number; mine: number; overdue: number }>(
+          `SELECT count(*)::int AS waiting, count(*) FILTER (WHERE r.o_reason IS NULL)::int AS mine,
+                  count(*) FILTER (WHERE a.created_at < now() - make_interval(hours => $2::int))::int AS overdue
              FROM app.approvals a
              JOIN app.approvals_block_reasons(ARRAY(SELECT p.id FROM app.approvals p WHERE p.team_id = $1::uuid AND p.status = 'pending')) r ON r.o_id = a.id`,
-          [team.id],
+          [team.id, APPROVAL_OVERDUE_HOURS],
         )
       ).rows[0];
-      return json({ waiting: row?.waiting ?? 0, mine: row?.mine ?? 0 });
+      return json({ waiting: row?.waiting ?? 0, mine: row?.mine ?? 0, overdue: row?.overdue ?? 0 });
     }),
   });
 

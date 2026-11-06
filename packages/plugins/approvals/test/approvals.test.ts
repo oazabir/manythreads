@@ -297,6 +297,24 @@ describe('who may decide', () => {
     expect(asNadia.mine).toBeLessThan(asRafi.mine);
   });
 
+  it('the summary counts what has waited longer than a day, for the sidebar badge to turn amber', async () => {
+    const before = GetApprovalsSummaryResponse.parse((await w.call(rafi, 'GET', '/api/teams/engineering/approvals/summary')).body);
+    const fresh = (await request(await openRun(scoped, nadia), 'pages/overdue-fresh.md')).approvalId;
+    const old = (await request(await openRun(scoped, nadia), 'pages/overdue-old.md')).approvalId;
+    const justUnder = (await request(await openRun(scoped, nadia), 'pages/overdue-23h.md')).approvalId;
+    await w.system(async (tx) => {
+      await tx.query("UPDATE app.approvals SET created_at = now() - interval '30 hours' WHERE id = $1", [old]);
+      await tx.query("UPDATE app.approvals SET created_at = now() - interval '23 hours' WHERE id = $1", [justUnder]);
+    });
+    const after = GetApprovalsSummaryResponse.parse((await w.call(rafi, 'GET', '/api/teams/engineering/approvals/summary')).body);
+    expect(after.waiting).toBe(before.waiting + 3);
+    expect(after.overdue).toBe(before.overdue + 1);
+    // settling the old one takes it out of the overdue count
+    expect((await decide(rafi, old, 'deny')).status).toBe(200);
+    expect(GetApprovalsSummaryResponse.parse((await w.call(rafi, 'GET', '/api/teams/engineering/approvals/summary')).body).overdue).toBe(before.overdue);
+    for (const id of [fresh, justUnder]) expect((await decide(rafi, id, 'deny')).status).toBe(200);
+  });
+
   it('with no approver named, the team\'s leads and workspace admins decide, and others do not', async () => {
     const id = (await request(await openRun(leadsOnly, nadia), 'pages/leads.md')).approvalId;
     expect((await rowOf(id))?.approver_scope).toEqual({ roles: [], people: [], leads: true });

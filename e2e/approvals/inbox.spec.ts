@@ -51,11 +51,38 @@ test('the sidebar counts what waits and the Approvals entry opens the inbox with
     await expect(page.getByTestId('approvals-inbox')).toBeVisible();
     await expect(page.getByTestId('approvals-count')).toHaveText('4 waiting');
     await expect(page.getByTestId('approval-row')).toHaveCount(4);
-    // oldest first, each row says who asked
-    await expect(page.getByTestId('approval-row').first()).toContainText('pages.write · pages/e2e-approved.md');
-    await expect(page.getByTestId('approval-row').first()).toContainText('asked by Nadia · you can decide');
-    await expect(page.getByTestId('approval-row').nth(3)).toContainText('asked by Rafi');
-    await expect(page.getByTestId('approval-row').nth(3)).not.toContainText('you can decide');
+    // oldest first, each row says in one sentence who asked and what for
+    await expect(page.getByTestId('approval-row').first()).toContainText(/Nadia asked .+ to create the page pages\/e2e-approved\.md/);
+    await expect(page.getByTestId('approval-row').first().getByTestId('approval-row-approve')).toHaveCount(1);
+    await expect(page.getByTestId('approval-row').nth(3)).toContainText(/Rafi asked .+ to create the page pages\/e2e-own\.md/);
+    // Rafi asked for the last one, so no buttons on it
+    await expect(page.getByTestId('approval-row').nth(3).getByTestId('approval-row-approve')).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a waiting row shows the asker's picture, one sentence and a risk tag", async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals');
+  try {
+    const row = page.locator(`[data-testid="approval-row"][data-approval="${approve.id}"]`);
+    await expect(row).toBeVisible();
+    // the picture of the person who asked (initials here: the seeded personas have no photo) is the first thing in the row
+    await expect(row.locator('.av').first()).toBeVisible();
+    await expect(row.getByTestId('approval-row-sentence')).toContainText('Nadia asked');
+    // a tool flagged needs-approval is amber and says so in words
+    await expect(row.getByTestId('approval-row-risk')).toHaveText('Needs approval');
+    await expect(row.getByTestId('approval-row-risk')).toHaveClass(/warn/);
+    // a request under a day old has a plain, not amber, age pill
+    await expect(row.getByTestId('approval-age')).toContainText('Waiting');
+    await expect(row.getByTestId('approval-age')).toHaveAttribute('data-overdue', 'false');
+    // the detail says the same in its header
+    await row.getByRole('button').first().click();
+    const c = card(page, approve.id);
+    await expect(c.getByTestId('approval-sentence')).toContainText('Nadia asked');
+    await expect(c.getByTestId('approval-source')).toHaveText('Needs approval');
+    await expect(c.locator('.apr-head').getByTestId('approval-approve')).toBeVisible();
+    await expect(c.locator('.apr-head').getByTestId('approval-deny')).toBeVisible();
   } finally {
     await context.close();
   }
@@ -208,6 +235,82 @@ test('a call too long for its preview says so, and cannot be approved before the
     await nadia.ctx.dispose();
     await c.getByTestId('approval-deny').click();
     await expect(c.getByTestId('approval-state')).toContainText('Denied by Rafi');
+  } finally {
+    await context.close();
+  }
+});
+
+const rowOf = (page: import('@playwright/test').Page, id: string) => page.locator(`[data-testid="approval-row"][data-approval="${id}"]`);
+
+test('approve from the row without opening it', async ({ browser, playwright }) => {
+  const [fresh] = await arrangeApprovals(stack, [{ path: 'pages/e2e-from-row.md', requester: 'nadia' }]);
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals');
+  try {
+    const row = rowOf(page, fresh!.id);
+    await row.hover();
+    await expect(row.getByTestId('approval-row-approve')).toBeVisible();
+    await expect(row.getByTestId('approval-row-deny')).toBeVisible();
+    await row.getByTestId('approval-row-approve').click();
+    // it leaves Waiting and the stopped call is made, once, as the bot
+    await expect(rowOf(page, fresh!.id)).toHaveCount(0);
+    await expect.poll(async () => (await rowOfApproval(stack, fresh!.id))?.status).toBe('approved');
+    await expect.poll(async () => (await rowOfApproval(stack, fresh!.id))?.outcome, { timeout: 30_000 }).toBe('ran');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a request older than a day has an amber age pill and the sidebar badge turns amber', async ({ browser, playwright }) => {
+  const [old] = await arrangeApprovals(stack, [{ path: 'pages/e2e-old.md', requester: 'nadia' }]);
+  const [young] = await arrangeApprovals(stack, [{ path: 'pages/e2e-young.md', requester: 'nadia' }]);
+  const sidebarBadge = (page: import('@playwright/test').Page) => page.locator('[data-landmark="sidebar"]').getByRole('link', { name: /Approvals/ }).locator('.pill');
+  // before anything is old, the badge is the quiet grey one
+  const before = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals');
+  try {
+    await expect(rowOf(before.page, young!.id)).toBeVisible();
+    await expect(sidebarBadge(before.page)).not.toHaveClass(/attention/);
+  } finally {
+    await before.context.close();
+  }
+  await stack.sql(`UPDATE app.approvals SET created_at = now() - interval '30 hours' WHERE id = $1`, [old!.id]);
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals');
+  try {
+    const pill = rowOf(page, old!.id).getByTestId('approval-age');
+    await expect(pill).toHaveText('Waiting 1 day');
+    await expect(pill).toHaveAttribute('data-overdue', 'true');
+    await expect(pill).toHaveClass(/overdue/);
+    await expect(rowOf(page, young!.id).getByTestId('approval-age')).toHaveAttribute('data-overdue', 'false');
+    // the oldest waits at the top
+    await expect(page.getByTestId('approval-row').first()).toHaveAttribute('data-approval', old!.id);
+    // the badge keeps its number, turns amber and says why in words for a screen reader
+    await expect(sidebarBadge(page)).toHaveClass(/attention/);
+    await expect(sidebarBadge(page)).toContainText('some have waited over a day');
+    // deciding the old one turns the badge back
+    await rowOf(page, old!.id).hover();
+    await rowOf(page, old!.id).getByTestId('approval-row-deny').click();
+    await expect(sidebarBadge(page)).not.toHaveClass(/attention/);
+  } finally {
+    await context.close();
+  }
+  const api = await apiOn(playwright, stack, 'rafi');
+  expect(await api.status('POST', `/api/teams/engineering/approvals/${young!.id}/deny`, { note: '' })).toBe(200);
+  await api.ctx.dispose();
+});
+
+test('a cut-short request offers Open instead of Approve on the row', async ({ browser, playwright }) => {
+  const [long] = await arrangeApprovals(stack, [{ path: 'pages/e2e-long-row.md', requester: 'nadia', longContent: true }]);
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals');
+  try {
+    const row = rowOf(page, long!.id);
+    await row.hover();
+    await expect(row.getByTestId('approval-row-open')).toBeVisible();
+    await expect(row.getByTestId('approval-row-approve')).toHaveCount(0);
+    await expect(row.getByTestId('approval-row-deny')).toHaveCount(0);
+    await row.getByTestId('approval-row-open').click();
+    await expect(card(page, long!.id)).toBeVisible();
+    await expect(card(page, long!.id).getByTestId('approval-approve')).toBeDisabled();
+    await card(page, long!.id).getByTestId('approval-deny').click();
+    await expect(card(page, long!.id).getByTestId('approval-state')).toContainText('Denied by Rafi');
   } finally {
     await context.close();
   }

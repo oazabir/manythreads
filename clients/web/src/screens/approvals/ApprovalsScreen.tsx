@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
-import { ago } from '../../channels/format';
 import { SelectAnItem } from '../../components/states';
 import { useShell } from '../../shell/context';
 import { BackIcon } from '../../shell/icons';
@@ -11,8 +10,8 @@ import { useNarrow } from '../../shell/useNarrow';
 import { ApprovalCard } from './ApprovalCard';
 import { fetchApprovals } from './api';
 import { useApprovalsChanged, usePollWhileQueued } from './live';
-import { approvalRowLabel } from './shareApproval';
-import { callInFlight } from './state';
+import { ApprovalRow } from './ApprovalRow';
+import { callInFlight, oldestFirst, waitAge } from './state';
 
 /*
  * The Approvals inbox (SPEC §7.3, `[proto §11 plate 5]`): everything that waits for a person, in one place — a tool call flagged
@@ -38,7 +37,8 @@ export function ApprovalsScreen() {
   const tab: Tab = params.get('tab') === 'decided' ? 'decided' : 'waiting';
   const selected = params.get('approval');
   const q = useQuery(`approvals:${slug}:${tab}`, () => fetchApprovals(slug, tab === 'waiting' ? 'pending' : 'decided'));
-  const items = q.status === 'ok' ? q.data.items : [];
+  // Waiting is oldest first (the server sends it so; the sort keeps it so); Decided is newest first as the server sends it
+  const items = q.status === 'ok' ? (tab === 'waiting' ? oldestFirst(q.data.items) : q.data.items) : [];
   // The one being read may have just been settled and so left the Waiting list: it is then found in the decided history, so the card
   // goes on showing what happened to it (approved by whom, and whether the call ran).
   const gone = q.status === 'ok' && selected !== null && !items.some((a) => a.id === selected);
@@ -113,23 +113,8 @@ export function ApprovalsScreen() {
             ) : (
               <ul className="inlist" role="listbox" aria-label={`${tab === 'waiting' ? 'Waiting' : 'Decided'} approvals`}>
                 {items.map((a) => (
-                  <li key={a.id} role="option" aria-selected={a.id === selected} data-testid="approval-row" data-approval={a.id} data-status={a.status}>
-                    <button type="button" className={`trow ${a.id === selected ? 'on' : ''}`} onClick={() => open(a.id)}>
-                      <span className="trow-main">
-                        <span className="ch">{approvalRowLabel(a)}</span>
-                        <span className="ttl">{a.summary}</span>
-                        <span className="last">
-                          {a.status === 'pending'
-                            ? a.canDecide
-                              ? `asked by ${a.requesterName} · you can decide`
-                              : `asked by ${a.requesterName}`
-                            : `${a.status} by ${a.decision?.deciderName ?? 'someone'}`}
-                        </span>
-                      </span>
-                      <span className="meta">
-                        <span data-vt-mask>{ago(a.status === 'pending' ? a.createdAt : (a.decision?.decidedAt ?? a.createdAt))}</span>
-                      </span>
-                    </button>
+                  <li key={a.id} role="option" aria-selected={a.id === selected} data-testid="approval-row" data-approval={a.id} data-status={a.status} data-overdue={a.status === 'pending' && waitAge(a.createdAt).overdue ? 'true' : 'false'}>
+                    <ApprovalRow approval={a} slug={slug} selected={a.id === selected} onOpen={() => open(a.id)} onDecided={() => { q.reload(); settled.reload(); }} />
                   </li>
                 ))}
               </ul>
@@ -149,8 +134,8 @@ export function ApprovalsScreen() {
                 <ApprovalCard key={`${current.id}:${current.status}:${current.outcome}`} approval={current} slug={slug} onDecided={q.reload} />
               </div>
             ) : (
-              <div className="inr-empty">
-                <SelectAnItem>Select a request to see what it is, who asked and who can decide.</SelectAnItem>
+              <div className="apr-pick" data-testid="approval-pick">
+                <SelectAnItem>{items.length > 0 ? 'Pick a request on the left to see what it is, who asked and who can decide.' : 'Nothing is waiting for you.'}</SelectAnItem>
               </div>
             )}
           </div>

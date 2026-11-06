@@ -147,7 +147,7 @@ readable only by themselves, so a list cannot join them).
 | | |
 |---|---|
 | `GET /api/teams/:slug/approvals?status=pending\|decided&limit=` | the inbox: items (each with `canDecide` / `blockReason`) and `waiting` |
-| `GET /api/teams/:slug/approvals/summary` | `{ waiting, mine }` — the sidebar badge |
+| `GET /api/teams/:slug/approvals/summary` | `{ waiting, mine, overdue }` — the sidebar badge; `overdue` counts the pending ones older than `APPROVAL_OVERDUE_HOURS` (24), and the badge turns amber while it is above zero |
 | `POST /api/teams/:slug/approvals/:id/approve` and `/deny` | body `{ note? }` → `{ approval }`; 403 for the requester or a non-approver, 409 once decided |
 | `GET /api/teams/:slug/approvals/:id/args` | the whole stored call (secret-named keys still `[hidden]`), for the people who may decide it; 403 for anyone else |
 | `GET /api/threads/:rootId/approvals` | the approvals raised in that thread, for the card under its replies |
@@ -165,6 +165,13 @@ only — never the arguments.
 The sidebar's Approvals entry (order 35) shows the team's pending count and opens the inbox (`/t/:team/approvals`): Waiting (oldest first) and
 Decided on the left, the selected card on the right. The same card sits under a thread's replies (`thread-approvals`). Classes are prefixed
 `apr-`; the layout reuses the Threads inbox's shared classes.
+
+A waiting row shows the asker's picture, the request as one sentence ("Nadia asked Support responder to send an email to m.okafor", built in
+`sentence.ts` from the clipped preview), a coloured risk tag chosen by *why* it waits (`risk.ts`: protected environment is red "Production", a guard hold
+is amber "Sensitive data", a strict hand-off is grey, a flagged tool is amber "Needs approval") and an age pill. The pill is plain until the request is
+`APPROVAL_OVERDUE_HOURS` (24) old, then amber with the words ("Waiting 2 days"); the sidebar badge turns amber with it. Whoever may decide gets Approve
+and Deny on the row (on hover or keyboard focus; always on touch) and in the header of the detail; a request whose preview was cut short offers Open on the
+row instead, because nobody approves a call they have not read.
 
 ## Not here
 

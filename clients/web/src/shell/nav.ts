@@ -36,6 +36,12 @@ export function navCount(item: NavContribution, counts: Readonly<Record<string, 
   return typeof n === 'number' && n > 0 ? n : null;
 }
 
+/** The tone of an entry's badge: its own, except that Approvals turns `attention` (amber) while anything has waited over a day. */
+export function navTone(item: NavContribution, counts: Readonly<Record<string, number>>): 'unread' | 'quiet' | 'attention' | 'mention' {
+  if (item.badge?.source === 'approvals.waiting' && (counts['approvals.overdue'] ?? 0) > 0) return 'attention';
+  return item.badge?.tone ?? 'unread';
+}
+
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
 const SECTIONS = ['threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'recipes'] as const;

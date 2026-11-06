@@ -39,6 +39,9 @@ export const APPROVAL_TTL_DAYS = 7;
 /** How long an approved call may stay `queued` or `running` before the sweep calls it `failed` (and the card stops waiting for it). */
 export const APPROVAL_RUN_TIMEOUT_MINUTES = 15;
 
+/** How long a pending approval may wait before the inbox calls it overdue: the age pill turns amber and the sidebar badge with it. One number for every team. */
+export const APPROVAL_OVERDUE_HOURS = 24;
+
 /** The default order the four sources are tried in (see `approvalSourceFor`). */
 export const APPROVAL_SOURCES_BY_PRECEDENCE: readonly ApprovalSource[] = ['environment', 'dispatch', 'dlp', 'grant'];
 
