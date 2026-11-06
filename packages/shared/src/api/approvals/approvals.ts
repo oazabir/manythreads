@@ -35,7 +35,7 @@ export const listApprovalsRoute = { method: 'GET', path: '/api/teams/:slug/appro
 export const GetApprovalsSummaryResponse = z.object({
   waiting: z.number().int().nonnegative(),
   mine: z.number().int().nonnegative(),
-  overdue: z.number().int().nonnegative(),
+  overdue: z.number().int().nonnegative().default(0),
 });
 export type GetApprovalsSummaryResponse = z.infer<typeof GetApprovalsSummaryResponse>;
 export const getApprovalsSummaryRoute = { method: 'GET', path: '/api/teams/:slug/approvals/summary' } as const;
