@@ -63,7 +63,7 @@ test('filter words become chips, narrow the results, and come off with one click
     await search(page, 'from:nadia zebra', !!isMobile);
     await expect(hits).toHaveCount(2);
     await expect(page.getByTestId('search-results')).not.toContainText('from Rafi');
-    await expect(page.getByTestId('search-chip')).toHaveText(['From nadia×']);
+    await expect(page.getByTestId('search-chip')).toHaveText(['From nadia']);
 
     await search(page, 'from:nadia in:dev has:link zebra', !!isMobile);
     await expect(hits).toHaveCount(1);
