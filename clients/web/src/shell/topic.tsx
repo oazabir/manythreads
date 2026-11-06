@@ -50,3 +50,9 @@ export function useOwnsPageTitle(): void {
     return () => register(-1);
   }, [register]);
 }
+
+/** The same, as an element: render it next to the h1 so ownership starts and ends with the heading (not with a screen's early returns). */
+export function OwnsPageTitle(): null {
+  useOwnsPageTitle();
+  return null;
+}

@@ -13,7 +13,7 @@ import { Alert, Avatar } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
 import { useShell } from '../../shell/context';
 import { BackIcon } from '../../shell/icons';
-import { useCrumbTail, useOwnsPageTitle } from '../../shell/topic';
+import { OwnsPageTitle, useCrumbTail } from '../../shell/topic';
 import { useNarrow } from '../../shell/useNarrow';
 import { fetchBots } from '../bots/api';
 import { fetchConversations, openConversation } from './api';
@@ -84,7 +84,6 @@ export function ConversationView() {
   const botRole = bot?.botRole ?? known?.role ?? '';
   const [tick, setTick] = useState(0);
   const lists = useQuery(`conversations:${team}:${botSlug}:${scope}:${String(tick)}`, () => fetchConversations(team, botSlug, scope));
-  useOwnsPageTitle();
   useCrumbTail(bot || known ? botName : null);
 
   // "Show older": the list answers its newest page and a cursor; each press asks for one more page after it. The pages are fetched again from
@@ -229,6 +228,7 @@ export function ConversationView() {
       {showList ? (
         <div className="inl" data-landmark="conversation-list">
           <header className="inh cv-head">
+            <OwnsPageTitle />
             <h1 className="inh-title cv-title">
               <Link to={{ pathname: path, search: scope === 'mine' ? '' : `?tab=${scope}` }} data-testid="conversation-home">{botName}</Link>
               <span className="cv-sub"> · conversations with you</span>
