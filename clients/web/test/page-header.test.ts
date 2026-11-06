@@ -55,3 +55,42 @@ describe('one h1 per page', () => {
 });
 
 const PENDING: string[] = ['screens/ThreadsInbox.tsx', 'screens/conversations/ConversationView.tsx'];
+
+/**
+ * Route screens that do not import PageHeader themselves, and why. The list must only shrink.
+ * ThreadsInbox and ConversationView draw their own h1 inside a list pane (ConversationView registers it with OwnsPageTitle); the rest
+ * have no heading of their own (a redirect, a guard, or the shell's fallback h1 names a channel or DM).
+ */
+const PENDING_ROUTE_FILES: Record<string, string> = {
+  'screens/ThreadsInbox.tsx': 'owns its h1 (list pane title)',
+  'screens/conversations/ConversationView.tsx': 'owns its h1 and registers it with OwnsPageTitle',
+  'screens/ChannelView.tsx': 'the shell h1 carries the channel name',
+  'screens/AdminOnly.tsx': 'a route guard, draws no heading',
+};
+/** Files whose heading comes from a shared module they import instead of PageHeader. */
+const HEADING_MODULES = ['components/PageHeader', 'components/frames', './UsageReport'];
+
+/** Every screen module that App.tsx routes to (its `./screens/...` imports). */
+const ROUTE_FILES: string[] = [...new Set([...readFileSync(join(__dirname, '../src/App.tsx'), 'utf8').matchAll(/'\.\/(screens\/[^']+)'/g)].map((m) => `${m[1]}.tsx`))].sort();
+
+describe('every routed screen has a page header', () => {
+  it('finds the routed screens', () => {
+    expect(ROUTE_FILES.length).toBeGreaterThan(30);
+    for (const f of ROUTE_FILES) expect(() => statSync(join(__dirname, '../src', f)), f).not.toThrow();
+  });
+  it('each ROUTE_FILES entry imports PageHeader (or a frame / report that draws it) or is on the documented PENDING list', () => {
+    const missing = ROUTE_FILES.filter((f) => {
+      if (f in PENDING_ROUTE_FILES) return false;
+      const src = readFileSync(join(__dirname, '../src', f), 'utf8');
+      return !HEADING_MODULES.some((m) => src.includes(`${m}'`));
+    });
+    expect(missing).toEqual([]);
+  });
+  it('the PENDING list only names routed files that really lack a header import', () => {
+    for (const f of Object.keys(PENDING_ROUTE_FILES)) {
+      expect(ROUTE_FILES, f).toContain(f);
+      const src = readFileSync(join(__dirname, '../src', f), 'utf8');
+      expect(HEADING_MODULES.some((m) => src.includes(`${m}'`)), `${f} now has a header: remove it from the list`).toBe(false);
+    }
+  });
+});
