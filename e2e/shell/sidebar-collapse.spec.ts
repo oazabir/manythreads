@@ -85,7 +85,7 @@ test('the row menu of a direct message mutes, reads and has no Leave', async ({ 
     const row = dmRow(page, dm);
     await expect(row.locator('.pill')).toBeVisible();
     await expect(row.locator('.pill')).toHaveClass(/\bmention\b/);
-    const more = sidebar(page).locator('.sb-row', { has: row }).getByTestId('dm-row-menu');
+    const more = sidebar(page).locator(`[data-sb-row="${dm}"]`).getByTestId('dm-row-menu');
     await more.click();
     const menu = page.getByRole('menu', { name: /^Options for / });
     await expect(menu.getByRole('menuitem')).toHaveText(['Mute', 'Mark read']);
@@ -114,7 +114,7 @@ test('a channel row menu lists Star, Mute, Mark read and Leave channel', async (
   try {
     const row = sidebar(page).locator('a.it[href$="/c/row-menu-room"]');
     await expect(row).toBeVisible();
-    await sidebar(page).locator('.sb-row', { has: row }).getByTestId('channel-row-menu').click();
+    await sidebar(page).locator(`[data-sb-row="${made.channel.id}"]`).getByTestId('channel-row-menu').click();
     const menu = page.getByRole('menu', { name: 'Options for #row-menu-room' });
     await expect(menu.getByRole('menuitem')).toHaveText(['Star channel', 'Mute', 'Mark read', 'Leave channel']);
   } finally {

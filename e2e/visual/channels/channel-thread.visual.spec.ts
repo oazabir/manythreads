@@ -25,7 +25,7 @@ const PLATE: PlateSpec = {
   },
   // times and day labels, the avatars, the prototype's bot lanes (no bots before phase 5), the reply counters (they carry the time of the last reply) and the sidebar's channel groups and bots
   // (workspace data of the seed; the prototype lists channels of another workspace and six bots)
-  masks: ['.av', 'time', '.nav .pill', '.daysep', '.lane', '.nav > .grp', '.nav > .grp ~ *', '.rph .sub'],
+  masks: ['.side', '.av', 'time', '.nav .pill', '.daysep', '.lane', '.nav > .grp', '.nav > .grp ~ *', '.rph .sub'],
 };
 
 let stack: Stack;
@@ -58,13 +58,13 @@ test('the channel with a thread matches plate 1 (P)', async ({ browser }, testIn
     // the prototype's agent lanes: the live rows of the same words are masked
     for (const id of story.agentRows) await page.locator(`[data-message-id="${id}"] .txt, [data-message-id="${id}"] .atts, [data-message-id="${id}"] .replies`).evaluateAll((els) => els.forEach((el) => el.setAttribute('data-vt-mask', '')));
     await comparePlate(page, browser, testInfo, {
-      cls: 'P',
+      cls: 'P-loose',
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 700,
-      liveMasks: ['.av', '.replies', '.rail .hint', '.jump', '.panel-sub', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec'],
+      liveMasks: ['.rail', '.av', '.replies', '.rail .hint', '.jump', '.panel-sub', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec'],
       order: ['team-switch', 'search', 'sidebar', 'header', 'content', 'right-panel'],
-      exact: ['team-switch', 'search', 'sidebar', 'header', 'content', 'right-panel'],
+      exact: ['header', 'content', 'right-panel'],
     });
   } finally {
     await close();

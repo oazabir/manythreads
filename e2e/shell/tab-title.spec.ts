@@ -61,6 +61,11 @@ test('an unread direct message puts the count in the title and a dot on the icon
     await expect(page).toHaveTitle(/^\(2\) Threads — Engineering · /);
 
     await page.locator(`[data-landmark="sidebar"] a.it[href$="/dm/${dm}"]`).click();
+    // reading the conversation does not read the bell's items: the larger of the two counts stays until the bell is read too
+    await expect(page).toHaveTitle(/^\(2\) Nadia — Engineering · /);
+    await page.getByTestId('bell').click();
+    await page.getByRole('button', { name: 'Mark all read' }).click();
+    await page.keyboard.press('Escape');
     await expect(page).toHaveTitle(/^Nadia — Engineering · |^Nadia · /);
     await expect.poll(() => icon(page)).toBe('/favicon.svg');
   } finally {

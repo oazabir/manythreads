@@ -90,7 +90,7 @@ test.describe('Priya, a member of two teams', () => {
   test('switching teams keeps the section and the /t/<slug> URL', async ({ page, isMobile }) => {
     await page.goto('/t/engineering/files');
     if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('button', { name: /Team/ }).click();
+    await page.locator('.team-wrap > button.team').click();
     const menu = page.getByRole('menu', { name: 'Teams' });
     await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
     await menu.getByRole('menuitemradio', { name: 'Marketing' }).click();
