@@ -89,9 +89,9 @@ describe('resolveRunner', () => {
   });
 
   it('the kinds that cannot run a bot yet are refused as such; a gateway without a key is "not set up"', async () => {
-    await insertRunner('later-claude', { kind: 'claude_cli', allTeams: true });
+    await insertRunner('later-codex', { kind: 'codex_cli', allTeams: true });
     await insertRunner('half-made', { kind: 'hermes_gateway', allTeams: true, baseUrl: 'http://x.example.test' });
-    expect(await resolve('later-claude')).toMatchObject({ ok: false, reason: 'not_runnable' });
+    expect(await resolve('later-codex')).toMatchObject({ ok: false, reason: 'not_runnable' });
     expect(await resolve('half-made')).toMatchObject({ ok: false, reason: 'not_set_up' });
   });
 
