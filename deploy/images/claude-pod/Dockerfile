@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
  && npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}" && npm cache clean --force
 COPY bridge /opt/bridge
 COPY repo-sync.sh /opt/claude-pod/repo-sync.sh
+COPY keeper.mjs /opt/claude-pod/keeper.mjs
 # uid 1000 is the image's `node` user; the pod runs as it with a read-only root (only /state, /work and /tmp are writable)
 USER 1000:1000
 ENV HOME=/state/home CLAUDE_CONFIG_DIR=/state/claude DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1

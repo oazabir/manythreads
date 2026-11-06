@@ -35,10 +35,16 @@ describe.skipIf(!haveHelm)('the chart (P19-05)', () => {
     expect(docsOf(r.out, 'NetworkPolicy').find((d) => d.includes('name: manythreads-hermes-pods'))).toContain('app.kubernetes.io/component: hermes-pod');
   });
 
-  it('adds no Role, ClusterRole or binding', () => {
+  it('adds one namespaced Role for the keeper identity, and nothing cluster-wide', () => {
     const base = render([]);
     const on = render(['--set', 'claudePod.enabled=true']);
-    for (const kind of ['Role', 'RoleBinding', 'ClusterRole', 'ClusterRoleBinding', 'ServiceAccount']) expect(docsOf(on.out, kind).length, kind).toBe(docsOf(base.out, kind).length);
+    for (const kind of ['ClusterRole', 'ClusterRoleBinding', 'ServiceAccount']) expect(docsOf(on.out, kind).length, kind).toBe(docsOf(base.out, kind).length);
+    expect(docsOf(on.out, 'Role').length).toBe(docsOf(base.out, 'Role').length + 1);
+    expect(docsOf(on.out, 'RoleBinding').length).toBe(docsOf(base.out, 'RoleBinding').length + 1);
+    const role = docsOf(on.out, 'Role').find((d) => d.includes('name: manythreads-claude-pods-controller'))!;
+    expect(role).toContain('serviceaccounts');
+    expect(role).toContain('rolebindings');
+    expect(role).not.toMatch(/resources: \[[^\]]*(secrets|pods)|verbs: \[[^\]]*delete/);
   });
 
   it('gives the server the settings, and the stand-in image only when useFake is on', () => {

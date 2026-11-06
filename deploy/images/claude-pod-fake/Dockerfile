@@ -6,6 +6,7 @@ FROM node:22-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini procps && rm -rf /var/lib/apt/lists/*
 COPY bridge /opt/bridge
 COPY repo-sync.sh /opt/claude-pod/repo-sync.sh
+COPY keeper.mjs /opt/claude-pod/keeper.mjs
 COPY fake-claude.mjs /usr/local/bin/claude
 RUN chmod 0755 /usr/local/bin/claude
 USER 1000:1000

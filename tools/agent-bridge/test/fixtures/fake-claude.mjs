@@ -35,6 +35,37 @@ if (flag('--session-id')) writeFileSync(marker, '1');
 
 out({ type: 'system', subtype: 'init', session_id: sid, tools: [] });
 
+// Sign-in behaviour of the stand-in (P19-06). Words in the prompt: FAKE401 answers a refused sign-in, FAKELIMIT the plan limit. Always: if the sign-in file in CLAUDE_CONFIG_DIR is
+// close to its expiry, it is renewed like the real CLI does it: a new refresh token is written and the old one is remembered; presenting a remembered one is a 401.
+const cfg = process.env.CLAUDE_CONFIG_DIR;
+if (cfg && existsSync(join(cfg, '.credentials.json'))) {
+  const file = join(cfg, '.credentials.json');
+  const doc = JSON.parse(readFileSync(file, 'utf8'));
+  const oauth = doc.claudeAiOauth ?? {};
+  const usedPath = join(cfg, '.used-refresh');
+  if (oauth.expiresAt - Date.now() < 20 * 60_000) {
+    await new Promise((r) => setTimeout(r, 150)); // a refresh takes a moment
+    const used = existsSync(usedPath) ? readFileSync(usedPath, 'utf8').split('\n') : [];
+    if (used.includes(oauth.refreshToken)) {
+      out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'API Error: 401 refresh token already used', session_id: sid });
+      process.exit(0);
+    }
+    appendFileSync(usedPath, oauth.refreshToken + '\n');
+    oauth.refreshToken = 'fake-refresh-' + Math.random().toString(36).slice(2);
+    oauth.accessToken = 'fake-access-' + Math.random().toString(36).slice(2);
+    oauth.expiresAt = Date.now() + 8 * 3600_000;
+    writeFileSync(file, JSON.stringify({ ...doc, claudeAiOauth: oauth }));
+  }
+}
+if (stdin.includes('FAKE401')) {
+  out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'API Error: 401 FAKE401', session_id: sid });
+  process.exit(0);
+}
+if (stdin.includes('FAKELIMIT')) {
+  out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'Claude AI usage limit reached|1900000000 FAKELIMIT', session_id: sid });
+  process.exit(0);
+}
+
 if (stdin.includes('CRASH')) {
   process.stderr.write(`boom with token ${process.env.MANYTHREADS_RUN_TOKEN}\n`);
   process.exit(2);

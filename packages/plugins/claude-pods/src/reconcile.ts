@@ -15,7 +15,7 @@ import {
   type RepoConfig,
 } from '@manythreads/sdk/pods';
 import type { ClaudePodConfig } from './config.ts';
-import { buildConfigMap, buildDeployment, buildKeySecret, buildPvc, buildService, COMPONENT, MANAGED_BY, namesFor, type Names, type RepoToSync } from './render.ts';
+import { buildConfigMap, buildDeployment, buildKeeperRbac, buildKeySecret, buildPvc, buildService, COMPONENT, MANAGED_BY, namesFor, type Names, type RepoToSync } from './render.ts';
 
 /** What the controller needs from the platform besides the runner list: the repositories the runner's teams ask for. Absent in a test that needs none. */
 export interface RunnerSource {
@@ -76,7 +76,9 @@ export class Reconciler {
 
     const prevKey = await k8s.get('Secret', cfg.namespace, names.key);
     const apiKey = b64((prevKey?.data as Record<string, string> | undefined)?.['api-key']) || this.newKey();
-    const hasCredentials = (await k8s.get('Secret', cfg.namespace, names.credentials)) !== null;
+    const credentials = await k8s.get('Secret', cfg.namespace, names.credentials);
+    const hasCredentials = credentials !== null;
+    const uploadId = b64((credentials?.data as Record<string, string> | undefined)?.['upload-id']) || null;
 
     const repoRows = runner.teams.length > 0 && this.source.reposForTeams ? await this.source.reposForTeams(runner.teams.map((t) => t.id)) : [];
     const repos: RepoToSync[] = [];
@@ -93,10 +95,11 @@ export class Reconciler {
     const objects: K8sObject[] = [
       // While a move is under way the claims are left alone (a claim that is being deleted must not be applied again).
       ...(moving ? [] : [buildPvc(cfg, runner, names.state, cfg.stateSize, stampOf(names.state)), buildPvc(cfg, runner, names.work, cfg.workSize, stampOf(names.work))]),
+      ...buildKeeperRbac(cfg, runner, names),
       buildKeySecret(cfg, runner, names, apiKey),
       buildConfigMap(cfg, runner, names, repos),
       buildService(cfg, runner, names),
-      buildDeployment(cfg, runner, names, { replicas, node, moving, held: plan.held }),
+      buildDeployment(cfg, runner, names, { replicas, node, moving, held: plan.held, uploadId }),
     ];
     for (const obj of objects) await k8s.apply(obj);
     if (moving && plan.stale.length > 0) await this.finishMove(runner, names, plan.stale);

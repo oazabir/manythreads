@@ -9,6 +9,7 @@ import type { Driver, DriverJob } from './drivers/types.ts';
 import { startChild, type ChildHandle } from './process.ts';
 import type { RunRequest } from './request.ts';
 import { KeyedQueue, type SessionStore } from './sessions.ts';
+import { classifyFailure, limitResetsAt, type SigninGate } from './signin.ts';
 
 export type RunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -72,6 +73,8 @@ export interface RunManagerOptions {
   sessions: SessionStore;
   /** Where per-run folders are made. Default: the OS temp dir. */
   tmpRoot?: string;
+  /** The Claude sign-in gate (claude-code profiles only): one renewing process, and the account failures remembered. */
+  gate?: SigninGate;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: Record<string, Driver>;
   log: (line: string) => void;
@@ -230,7 +233,16 @@ export class RunManager {
         abort: (reason) => this.stop(run, reason),
         baseEnv: () => childEnv(profile),
       };
-      const result = await (this.opts.drivers ?? drivers)[profile.agent]!.run(job);
+      const gate = profile.agent === 'claude-code' ? this.opts.gate : undefined;
+      const standing = gate?.standing() ?? null;
+      if (standing !== null) {
+        // A refused sign-in or a plan limit is already known: no process is started and nothing is retried.
+        const error = standing.kind === 'needs_sign_in' ? 'The Claude sign-in was refused. An admin has to upload a new sign-in file.' : "The Claude plan's limit was reached.";
+        this.finish(run, 'failed', 'run.failed', { error, reason: standing.kind, ...(standing.until !== null ? { resets_at: standing.until } : {}) });
+        return;
+      }
+      const driver = (this.opts.drivers ?? drivers)[profile.agent]!;
+      const result = gate ? await gate.run(() => driver.run(job)) : await driver.run(job);
       if (run.stopRequested) {
         if (run.failReason !== null) {
           run.error = run.failReason;
@@ -242,7 +254,10 @@ export class RunManager {
         this.finish(run, 'completed', 'run.completed', { output: result.output, usage: result.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 } });
       } else {
         run.error = result.error;
-        this.finish(run, 'failed', 'run.failed', { error: result.error });
+        const account = gate ? classifyFailure(result.error) : null;
+        if (account !== null) gate!.noteFailure(account, result.error);
+        const resets = account === 'plan_limit' ? limitResetsAt(result.error) : null;
+        this.finish(run, 'failed', 'run.failed', { error: result.error, ...(account !== null ? { reason: account } : {}), ...(resets !== null ? { resets_at: resets } : {}) });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

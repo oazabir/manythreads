@@ -81,17 +81,45 @@ describe('claude-pods objects', () => {
     await r.reconcileAll();
     const first = k8s.snapshot();
     const kinds = [...k8s.store.keys()].map((k) => k.split('/')[0]).sort();
-    expect(kinds).toEqual(['ConfigMap', 'Deployment', 'PersistentVolumeClaim', 'PersistentVolumeClaim', 'Secret', 'Secret', 'Service']);
+    expect(kinds).toEqual(['ConfigMap', 'Deployment', 'PersistentVolumeClaim', 'PersistentVolumeClaim', 'Role', 'RoleBinding', 'Secret', 'Secret', 'Service', 'ServiceAccount']);
     await r.reconcileAll();
     expect(k8s.snapshot()).toBe(first);
     const d = dep(k8s, 'claude-test') as any;
     expect(d.metadata.name).toBe('claude-claude-test');
     expect(d.spec.strategy).toEqual({ type: 'Recreate' });
     expect(d.spec.template.spec.automountServiceAccountToken).toBe(false);
-    expect(d.spec.template.spec.containers.map((c: { name: string }) => c.name)).toEqual(['bridge', 'repo-sync']);
+    expect(d.spec.template.spec.containers.map((c: { name: string }) => c.name)).toEqual(['bridge', 'keeper', 'repo-sync']);
     for (const c of [...d.spec.template.spec.containers, ...d.spec.template.spec.initContainers]) expect(c.resources.limits.memory).toBeTruthy();
     const claims = [...k8s.store.values()].filter((o) => o.kind === 'PersistentVolumeClaim').map((o) => [o.metadata.name, (o.spec as any).resources.requests.storage]);
     expect(claims.sort()).toEqual([['claude-claude-test-state', '256Mi'], ['claude-claude-test-work', '10Gi']]);
+  });
+
+  it('gives the keeper its own identity: a Role for its one Secret, and a token only the keeper container mounts', async () => {
+    const { k8s, r } = setup([runner('claude-test')]);
+    signIn(k8s, 'claude-test');
+    await r.reconcileAll();
+    const names = namesFor('claude-test');
+    const role = k8s.store.get(`Role/bots/${names.keeper}`) as any;
+    expect(role.rules).toEqual([{ apiGroups: [''], resources: ['secrets'], resourceNames: [names.credentials], verbs: ['get', 'patch'] }]);
+    const d = dep(k8s, 'claude-test') as any;
+    expect(d.spec.template.spec.serviceAccountName).toBe(names.keeper);
+    expect(d.spec.template.spec.automountServiceAccountToken).toBe(false);
+    const mounting = d.spec.template.spec.containers.filter((c: any) => c.volumeMounts.some((m: any) => m.name === 'keeper-token')).map((c: any) => c.name);
+    expect(mounting).toEqual(['keeper']);
+    const keeper = d.spec.template.spec.containers.find((c: any) => c.name === 'keeper');
+    expect(keeper.volumeMounts.find((m: any) => m.name === 'state')).toMatchObject({ readOnly: true, subPath: 'claude' });
+  });
+
+  it('rolls the pod when a new sign-in file is uploaded (the upload id is on the pod template) and never writes the sign-in Secret itself', async () => {
+    const { k8s, r } = setup([runner('claude-test')]);
+    const name = namesFor('claude-test').credentials;
+    k8s.store.set(`Secret/bots/${name}`, { apiVersion: 'v1', kind: 'Secret', metadata: { name, namespace: 'bots' }, data: { '.credentials.json': 'eA==', 'upload-id': Buffer.from('up-1').toString('base64') } });
+    await r.reconcileAll();
+    expect((dep(k8s, 'claude-test') as any).spec.template.metadata.annotations['manythreads.io/upload-id']).toBe('up-1');
+    // the keeper's later write is not undone by a pass
+    k8s.store.set(`Secret/bots/${name}`, { ...(k8s.store.get(`Secret/bots/${name}`) as any), data: { '.credentials.json': 'bmV3', 'upload-id': Buffer.from('up-1').toString('base64') } });
+    await r.reconcileAll();
+    expect((k8s.store.get(`Secret/bots/${name}`) as any).data['.credentials.json']).toBe('bmV3');
   });
 
   it('keeps the bridge key it drew once', async () => {

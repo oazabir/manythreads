@@ -21,6 +21,8 @@ export interface Names {
   /** The sign-in Secret (written by the upload route, P19-06; the controller only reads whether it exists). */
   credentials: string;
   config: string;
+  /** The keeper's ServiceAccount, Role and RoleBinding (P19-06). */
+  keeper: string;
 }
 
 /**
@@ -36,7 +38,7 @@ export function slugForRunner(name: string): string {
 
 export function namesFor(runnerName: string): Names {
   const base = `claude-${slugForRunner(runnerName)}`;
-  return { base, state: `${base}-state`, work: `${base}-work`, key: `${base}-key`, credentials: `${base}-credentials`, config: `${base}-config` };
+  return { base, state: `${base}-state`, work: `${base}-work`, key: `${base}-key`, credentials: `${base}-credentials`, config: `${base}-config`, keeper: `${base}-keeper` };
 }
 
 export function labelsFor(runner: Pick<PodRunnerInfo, 'id' | 'name'>, extra: Record<string, string> = {}): Record<string, string> {
@@ -120,11 +122,32 @@ export function buildService(cfg: ClaudePodConfig, runner: PodRunnerInfo, names:
   };
 }
 
+/**
+ * The keeper's identity (P19-06): a ServiceAccount, and a Role that can get and patch this runner's one sign-in Secret and nothing else. Only the keeper container mounts its token.
+ * Plain `Role`/`RoleBinding` in the pods namespace; the controller needs `create`, `get` and `patch` on those kinds there (chart: claude-pods.yaml).
+ */
+export function buildKeeperRbac(cfg: ClaudePodConfig, runner: PodRunnerInfo, names: Names): K8sObject[] {
+  const meta = (name: string): K8sObject['metadata'] => ({ name, namespace: cfg.namespace, labels: labelsFor(runner) });
+  return [
+    { apiVersion: 'v1', kind: 'ServiceAccount', metadata: meta(names.keeper), automountServiceAccountToken: false },
+    { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role', metadata: meta(names.keeper), rules: [{ apiGroups: [''], resources: ['secrets'], resourceNames: [names.credentials], verbs: ['get', 'patch'] }] },
+    {
+      apiVersion: 'rbac.authorization.k8s.io/v1',
+      kind: 'RoleBinding',
+      metadata: meta(names.keeper),
+      roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: names.keeper },
+      subjects: [{ kind: 'ServiceAccount', name: names.keeper, namespace: cfg.namespace }],
+    },
+  ];
+}
+
 export interface DeploymentOptions {
   replicas: number;
   node?: string | null;
   moving?: boolean;
   held?: string | null;
+  /** The id of the stored sign-in upload; a new one rolls the pod so it starts from the new file. */
+  uploadId?: string | null;
 }
 
 const NO_PRIVILEGE = { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] }, seccompProfile: { type: 'RuntimeDefault' } } as const;
@@ -145,10 +168,12 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
       strategy: { type: 'Recreate' },
       selector: { matchLabels: { 'manythreads.io/pod': names.base } },
       template: {
-        metadata: { labels: podLabels },
+        metadata: { labels: podLabels, ...(opts.uploadId ? { annotations: { 'manythreads.io/upload-id': opts.uploadId } } : {}) },
         spec: {
           // no ServiceAccount token in the pod: neither the bridge nor a bot can talk to the Kubernetes API with the pod's identity
+          // The pod's own token stays off. Only the keeper container mounts one (a projected volume below), for the ServiceAccount that can patch the sign-in Secret.
           automountServiceAccountToken: false,
+          serviceAccountName: names.keeper,
           ...(node !== null ? { nodeSelector: { [HOSTNAME_LABEL]: node } } : {}),
           enableServiceLinks: false,
           terminationGracePeriodSeconds: 30,
@@ -164,7 +189,9 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
                 'sh',
                 '-c',
                 'install -d -o 1000 -g 1000 -m 0700 /state/claude /state/home /state/bridge && install -d -o 1000 -g 1000 -m 0755 /work' +
-                  ' && if [ -f /creds/.credentials.json ] && [ ! -f /state/claude/.credentials.json ]; then install -o 1000 -g 1000 -m 0600 /creds/.credentials.json /state/claude/.credentials.json; fi',
+                  // the file is copied when the volume has none, or when the Secret holds a newer upload (its upload-id differs from the one the volume last took)
+                  ' && if [ -f /creds/.credentials.json ] && { [ ! -f /state/claude/.credentials.json ] || [ "$(cat /creds/upload-id 2>/dev/null)" != "$(cat /state/claude/.upload-id 2>/dev/null)" ]; }; then' +
+                  ' install -o 1000 -g 1000 -m 0600 /creds/.credentials.json /state/claude/.credentials.json && install -o 1000 -g 1000 -m 0600 /creds/upload-id /state/claude/.upload-id; fi',
               ],
               securityContext: { runAsNonRoot: false, runAsUser: 0, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'], add: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER'] }, seccompProfile: { type: 'RuntimeDefault' } },
               resources: { limits: { memory: '64Mi' } },
@@ -200,6 +227,23 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
               ],
             },
             {
+              // Copies a renewed sign-in file back into its Secret (keeper.mjs). Reads the sign-in folder read-only; has the one Kubernetes token in the pod.
+              name: 'keeper',
+              image: cfg.image,
+              imagePullPolicy: 'IfNotPresent',
+              command: ['node', '/opt/claude-pod/keeper.mjs'],
+              env: [
+                { name: 'KEEPER_NAMESPACE', value: cfg.namespace },
+                { name: 'KEEPER_SECRET', value: names.credentials },
+              ],
+              securityContext: { ...NO_PRIVILEGE, readOnlyRootFilesystem: true },
+              resources: { requests: { cpu: '5m', memory: '24Mi' }, limits: { memory: '96Mi' } },
+              volumeMounts: [
+                { name: 'state', mountPath: '/state/claude', subPath: 'claude', readOnly: true },
+                { name: 'keeper-token', mountPath: '/var/run/secrets/keeper', readOnly: true },
+              ],
+            },
+            {
               // Clones and fetches the projects of the teams on the list into /work. It has no Kubernetes token and no access to the sign-in folder.
               name: 'repo-sync',
               image: cfg.image,
@@ -220,6 +264,15 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
             { name: 'work', persistentVolumeClaim: { claimName: names.work } },
             { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
             { name: 'config', configMap: { name: names.config } },
+            {
+              name: 'keeper-token',
+              projected: {
+                sources: [
+                  { serviceAccountToken: { path: 'token', expirationSeconds: 3600 } },
+                  { configMap: { name: 'kube-root-ca.crt', items: [{ key: 'ca.crt', path: 'ca.crt' }] } },
+                ],
+              },
+            },
             // optional: the Secret exists only once an admin has uploaded a sign-in file
             { name: 'creds', secret: { secretName: names.credentials, defaultMode: 0o444, optional: true } },
           ],
