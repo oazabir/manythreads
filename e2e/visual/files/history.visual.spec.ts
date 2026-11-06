@@ -26,7 +26,7 @@ const PLATE: PlateSpec = {
     list: '.flist',
     'right-panel': '.rp',
   },
-  masks: ['.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.ftree', '.fvb', '.fvh .m', '.t2', '.rph .sub', '.chead .topic', '.commit .who2 b'],
+  masks: ['.side', '.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.ftree', '.fvb', '.fvh .m', '.t2', '.rph .sub', '.chead .topic', '.commit .who2 b'],
 };
 
 // what happened to the bot, oldest first: the plate's five commits (all Omar's here: a team lead applies each change to bots/)
@@ -72,10 +72,11 @@ test('the team repo with History matches plate 1 (P)', async ({ browser }, testI
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 700,
-      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.rail .dm-empty', '.rail .dm-new', '.fhead-actions', '.ftree', '.fvb', '.fvh .m', '.t2', '.panel-sub', '.chead .topic', '.bell', '.commit .who2 b'],
+      liveMasks: ['.rail', '.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.rail .dm-empty', '.rail .dm-new', '.fhead-actions', '.ftree', '.fvb', '.fvh .m', '.t2', '.panel-sub', '.chead .topic', '.bell', '.commit .who2 b'],
       order: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
+      // the sidebar is its own design now (team menu in the header band, Add channel, New message; P21-08), so it is masked on both sides and leaves the exact landmarks, like the channel plates
       // tree and list sit 77 px lower than the plate's: the screen now has its page header (title and count, P21-12) between the band and the columns
-      exact: ['team-switch', 'search', 'sidebar', 'header', 'right-panel'],
+      exact: ['header', 'right-panel'],
     });
   } finally {
     await close();
