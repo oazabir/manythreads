@@ -48,6 +48,8 @@ test('Direct messages folds to the rows that need the person; the fold is kept p
     // read one of them, go back to the list, then fold: the read one goes, the unread one stays
     await dmRow(page, a).click();
     await expect(page).toHaveURL(new RegExp(`/dm/${a}$`));
+    // wait until it is read for real (the badge goes) before the reload, or the page would come back with it still unread
+    await expect(dmRow(page, a).locator('.pill')).toHaveCount(0);
     await page.goto('/t/engineering/threads');
     await expect(dmRow(page, a)).toBeVisible();
     await toggle.click();
@@ -125,14 +127,22 @@ test('Alt+1 and Alt+2 jump to the first and second team, but not while typing', 
   try {
     await expect(page.getByTestId('app-frame')).toBeVisible();
     await sidebar(page).getByRole('link', { name: /Threads/ }).first().waitFor();
+    // the team menu says which team each key reaches (Priya is on two teams in the content seed)
+    await page.locator('.team-wrap .team').click();
+    const items = page.getByRole('menu', { name: 'Teams' }).getByRole('menuitemradio');
+    await expect(items.nth(1)).toBeVisible();
+    const slugs = await items.evaluateAll((els) => els.map((e) => (e.getAttribute('href') ?? '').split('/')[2] ?? ''));
+    await expect(items.nth(0).locator('kbd')).toHaveText('Alt+1');
+    await expect(items.nth(1).locator('kbd')).toHaveText('Alt+2');
+    await page.keyboard.press('Escape');
     await page.locator('body').click({ position: { x: 5, y: 5 } });
+    const [first, second] = slugs as [string, string];
+    expect(first).not.toBe(second);
+
     await page.keyboard.press('Alt+Digit1');
-    await expect(page).toHaveURL(/\/t\/[^/]+\/threads/);
-    const first = new URL(page.url()).pathname.split('/')[2];
+    await expect(page).toHaveURL(new RegExp(`/t/${first}/threads`));
     await page.keyboard.press('Alt+Digit2');
-    await expect(page).not.toHaveURL(new RegExp(`/t/${first}/`));
-    const second = new URL(page.url()).pathname.split('/')[2];
-    expect(second).not.toBe(first);
+    await expect(page).toHaveURL(new RegExp(`/t/${second}/threads`));
 
     // typing in the search box: the key is the person's, not the shortcut's
     await page.locator('[data-landmark="search"]').getByRole('searchbox').focus();
@@ -142,6 +152,9 @@ test('Alt+1 and Alt+2 jump to the first and second team, but not while typing', 
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Alt+Digit9');
     await expect(page).toHaveURL(new RegExp(`/t/${second}/`));
+    // and the shortcut is still alive once the focus is out of the box
+    await page.keyboard.press('Alt+Digit1');
+    await expect(page).toHaveURL(new RegExp(`/t/${first}/`));
   } finally {
     await context.close();
   }
