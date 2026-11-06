@@ -180,6 +180,38 @@ if grep -q '^hermesPods:' deploy/helm/manythreads/values-live.yaml 2>/dev/null; 
   PODS_ARGS=(--set "hermesPods.images.hermes=manythreads/hermes-pod:$HP_TAG" --set "hermesPods.images.workbench=manythreads/workbench:$WB_TAG")
 fi
 
+# Claude Code runner pods (values-live.yaml claudePod, docs/plugins/claude-pods.md). Nothing happens unless values-live.yaml turns `claudePod.enabled` on, so a plain
+# deploy of today's cluster is unchanged. The build folder is staged (the pod image holds the agent bridge's source, which lives in tools/agent-bridge) and tagged by its
+# content; only the image in use is built (the stand-in when claudePod.useFake is on, the real one otherwise), so an idle image adds no disk. Stops when under 10 GB is free.
+CP_ARGS=()
+CP_TAG=""
+claude_pod_value() { sed -n '/^claudePod:/,/^[^ #]/p' deploy/helm/manythreads/values-live.yaml | grep -E "^  $1:" | head -n 1 | sed -E "s/^  $1:[[:space:]]*//; s/[[:space:]]*#.*$//"; }
+if [ "$(claude_pod_value enabled)" = "true" ]; then
+  FREE_GB=$(df -BG --output=avail / | tail -n 1 | tr -dc '0-9')
+  if [ "${FREE_GB:-0}" -lt 10 ]; then
+    echo "ERROR: only ${FREE_GB}G free on /; the Claude pod image is not built (free some space first, see devbox.md)"
+    exit 1
+  fi
+  CP_STAGE=$(mktemp -d)
+  cp -r deploy/images/claude-pod/. "$CP_STAGE/"
+  mkdir -p "$CP_STAGE/bridge"
+  cp -r tools/agent-bridge/src "$CP_STAGE/bridge/src"
+  if [ "$(claude_pod_value useFake)" = "true" ]; then
+    CP_NAME=claude-pod-fake
+    cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs "$CP_STAGE/"
+  else
+    CP_NAME=claude-pod
+  fi
+  CP_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$CP_STAGE" -cf - . | sha256sum | cut -c1-10)
+  if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/$CP_NAME:$CP_TAG\$"; then
+    echo "--- build manythreads/$CP_NAME:$CP_TAG"
+    docker build -f "$CP_STAGE/Dockerfile" -t "manythreads/$CP_NAME:$CP_TAG" "$CP_STAGE"
+    IMAGES+=("manythreads/$CP_NAME:$CP_TAG")
+  fi
+  rm -rf "$CP_STAGE"
+  if [ "$CP_NAME" = claude-pod-fake ]; then CP_ARGS=(--set "claudePod.fakeImage=manythreads/$CP_NAME:$CP_TAG"); else CP_ARGS=(--set "claudePod.image=manythreads/$CP_NAME:$CP_TAG"); fi
+fi
+
 echo "--- import into k3s"
 # k3s keeps its own copy of every image, so once one is in k3s Docker's copy is only weight: on a 77 GB disk the duplicates of the
 # server, web and pod images pushed the node into disk pressure on 2026-10-27, which evicted the live database and the team pods
@@ -210,14 +242,14 @@ docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(ser
   docker rmi "$ref" >/dev/null 2>&1 || true
 done
 # pod images: keep the current content tags and whatever a pod still uses
-docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(hermes-pod|workbench):' || true; } | while read -r ref; do
-  case "$ref" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}") continue ;; esac
+docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(hermes-pod|workbench|claude-pod|claude-pod-fake):' || true; } | while read -r ref; do
+  case "$ref" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}"|*":${CP_TAG:-none}") continue ;; esac
   echo "$USED" | grep -qx "$ref" && continue
   docker rmi "$ref" >/dev/null 2>&1 || true
 done
-k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench):' || true; } | while read -r ref; do
+k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench|claude-pod|claude-pod-fake):' || true; } | while read -r ref; do
   short=${ref#docker.io/}
-  case "$short" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}") continue ;; esac
+  case "$short" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}"|*":${CP_TAG:-none}") continue ;; esac
   echo "$USED" | grep -qx "$short" && continue
   k3s ctr -n k8s.io images rm "$ref" || true
 done
@@ -351,7 +383,7 @@ helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespac
   --set resources.requests.memory=64Mi --set resources.limits.memory=256Mi --wait --timeout 5m
 
 # The live install runs a real LiteLLM gateway and Hindsight memory engine (values-live.yaml); --demo overrides that with stand-ins.
-HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${TLS_ARGS[@]}")
+HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${CP_ARGS[@]}" "${TLS_ARGS[@]}")
 [ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
 echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
 # `--wait` also waits for every claim to be Bound, and the backups claim (a WaitForFirstConsumer volume) is not until the first nightly job runs, so on a

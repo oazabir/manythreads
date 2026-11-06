@@ -180,7 +180,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
               name: 'bridge',
               image: cfg.image,
               imagePullPolicy: 'IfNotPresent',
-              command: ['node', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', '/state/bridge'],
+              command: ['/usr/bin/tini', '--', 'node', '--experimental-transform-types', '--disable-warning=ExperimentalWarning', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', '/state/bridge'],
               ports: [{ name: 'bridge', containerPort: BRIDGE_PORT }],
               env: [
                 { name: 'AGENT_BRIDGE_API_KEY', valueFrom: { secretKeyRef: { name: names.key, key: 'api-key' } } },
@@ -188,8 +188,9 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
                 { name: 'CLAUDE_CONFIG_DIR', value: CLAUDE_CONFIG_DIR },
               ],
               securityContext: { ...NO_PRIVILEGE, readOnlyRootFilesystem: true },
-              readinessProbe: { httpGet: { path: '/health', port: BRIDGE_PORT }, initialDelaySeconds: 3, periodSeconds: 5, failureThreshold: 12 },
-              livenessProbe: { httpGet: { path: '/health', port: BRIDGE_PORT }, initialDelaySeconds: 30, periodSeconds: 20, failureThreshold: 6 },
+              // /health wants the key, which a probe cannot carry: the port answering is the signal
+              readinessProbe: { tcpSocket: { port: BRIDGE_PORT }, initialDelaySeconds: 3, periodSeconds: 5, failureThreshold: 12 },
+              livenessProbe: { tcpSocket: { port: BRIDGE_PORT }, initialDelaySeconds: 30, periodSeconds: 20, failureThreshold: 6 },
               resources: cfg.resources,
               volumeMounts: [
                 { name: 'state', mountPath: '/state' },

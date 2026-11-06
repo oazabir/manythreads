@@ -153,6 +153,20 @@ spec:
             - { name: MANYTHREADS_INCLUSTER_LLM_URL, value: {{ printf "http://manythreads-litellm.%s.svc.cluster.local:4000/v1" $.Release.Namespace | quote }} }
             {{- end }}
             {{- end }}
+            {{- /* Claude Code runner pods (docs/plugins/claude-pods.md): the controller needs the Hermes pods' namespace and Role, so it is on only with hermesPods. */}}
+            {{- with .Values.claudePod }}
+            {{- if and .enabled $.Values.hermesPods.enabled }}
+            - { name: MANYTHREADS_CLAUDE_PODS, value: "1" }
+            - { name: MANYTHREADS_CLAUDE_PODS_NAMESPACE, value: {{ $.Values.hermesPods.namespace | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_IMAGE, value: {{ (ternary .fakeImage .image .useFake) | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_STORAGE_CLASS, value: {{ $.Values.hermesPods.storageClass | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_WORK_SIZE, value: {{ .workSize | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_STATE_SIZE, value: {{ .stateSize | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_DEFAULT_CONCURRENCY, value: {{ .defaultConcurrency | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_RESOURCES, value: {{ .resources | toJson | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW, value: {{ join "," $.Values.hermesPods.repoOriginAllow | quote }} }
+            {{- end }}
+            {{- end }}
             {{- range $k, $v := .Values.server.env }}
             - { name: {{ $k }}, value: {{ $v | quote }} }
             {{- end }}

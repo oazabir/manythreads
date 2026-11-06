@@ -290,6 +290,26 @@ demo:
 botRunners:
   allowedNodes: []
 
+# Claude Code runner pods (docs/plugins/claude-pods.md): one pod per Claude Code runner an admin makes on the Runners page, signed in with a file the admin uploads.
+# OFF here and in values-live.yaml until the owner decides (PLAN P19-05). Needs hermesPods.enabled (the same namespace and Role). The image is built by tools/devbox/deploy.sh
+# (deploy/images/claude-pod) and imported into k3s. `useFake` swaps in the stand-in image (a script that prints a canned reply) for a check without a real sign-in: turn it on for
+# a short window only.
+#   egress.mode  public443   the pod reaches the public internet on port 443 (the Claude service and git hosts), like the Hermes pods; no private address
+#                serverOnly  the pod reaches only DNS and the platform's server (the stand-in image needs nothing else)
+claudePod:
+  enabled: false
+  image: manythreads/claude-pod:1
+  fakeImage: manythreads/claude-pod-fake:1
+  useFake: false
+  workSize: 10Gi
+  stateSize: 256Mi
+  defaultConcurrency: 2
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 2Gi }
+  egress:
+    mode: public443
+
 # Managed Hermes pods ("mode B", docs/plugins/hermes-pods.md): the platform runs one pod per team (`hermes-<team>`) holding the team's bots.
 # The server's hermes-pods plugin creates and updates them through the Kubernetes API (a ServiceAccount of its own with a Role in THIS
 # namespace only). Off in the base values; values-live.yaml turns it on. The two images are built by tools/devbox/deploy.sh

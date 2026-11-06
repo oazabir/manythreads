@@ -1,0 +1,45 @@
+{{- if .Values.claudePod.enabled }}
+{{- if not .Values.hermesPods.enabled }}{{ fail "claudePod.enabled needs hermesPods.enabled: the Claude pods live in the same namespace and use the same controller Role" }}{{ end }}
+{{- if not (has .Values.claudePod.egress.mode (list "public443" "serverOnly")) }}{{ fail "claudePod.egress.mode must be public443 or serverOnly" }}{{ end }}
+{{- $bots := .Values.hermesPods.namespace }}
+{{- $rel := .Release.Namespace }}
+# Claude Code runner pods (docs/plugins/claude-pods.md). The namespace, ServiceAccount and the controller's Role are the Hermes pods' (templates/hermes-pods.yaml): the Role already
+# covers deployments, services, secrets, configmaps, volume claims and pods in that namespace, and nothing else is added here. The policy selects only `claude-pod`, so a Hermes pod keeps its own.
+#   ingress  only the server pod, on the bridge port (8650)
+#   egress   DNS, the server (the MCP address and the API), and, with egress.mode=public443, the public internet on port 443 with no private, link-local or CGNAT address
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-claude-pods
+  namespace: {{ $bots }}
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: claude-pod }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $rel }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: server } }
+      ports:
+        - { port: 8650, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $rel }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: server } }
+      ports:
+        - { port: {{ .Values.server.port }}, protocol: TCP }
+    {{- if eq .Values.claudePod.egress.mode "public443" }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+      ports:
+        - { port: 443, protocol: TCP }
+    {{- end }}
+{{- end }}
