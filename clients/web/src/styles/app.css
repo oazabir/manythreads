@@ -72,6 +72,18 @@ textarea {
   padding: 0 0 12px;
 }
 
+/* A screen that pads itself lines the header up with its toolbars and cards: the header adds no inset of its own (P21-12). */
+.bd-screen > .ph,
+.projects-screen > .ph,
+.mm-screen > .ph,
+.pp-screen > .ph,
+.agents-screen > .ph,
+.rg-screen > .ph,
+.bots-screen > .ph,
+.bot-screen > .ph {
+  padding: 0 0 12px;
+}
+
 .inh .ph,
 .b-head-who .ph {
   padding: 0;
