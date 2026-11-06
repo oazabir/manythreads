@@ -11,7 +11,6 @@ import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon } from '@proicons/react';
-import { EyeIcon, EyeOffIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -138,10 +137,6 @@ export const SettingsTeamsIcon = proIcon(BuildingMultipleIcon, 16);
 export const SettingsTemplateIcon = proIcon(LayersIcon, 16);
 export const SettingsProfileIcon = proIcon(PersonIcon, 16);
 export const SettingsSecurityIcon = proIcon(ShieldIcon, 16);
-
-// the Show password button: the eye is open while the password is hidden, crossed out while it is shown
-export const ShowPasswordIcon = proIcon(EyeIcon, 18);
-export const HidePasswordIcon = proIcon(EyeOffIcon, 18);
 
 // the Show password button: the eye is open while the password is hidden, crossed out while it is shown
 export const ShowPasswordIcon = proIcon(EyeIcon, 18);

@@ -131,16 +131,19 @@ export function SettingsFrame() {
     },
   ];
   if (admin) groups.push(...WORKSPACE_NAV.map((g) => ({ heading: g.heading, items: [...g.items] })));
-  groups.push({
-    heading: 'Teams',
-    to: '/teams',
-    items: [
-      ...teams.map((t) => ({ to: `/settings/team/${t.slug}/roster`, label: t.name })),
-      ...(admin ? [{ to: '/teams', label: 'New team', icon: AddIcon, quiet: true }] : []),
-    ],
-    empty: q.status === 'loading' ? undefined : 'No teams yet',
-  });
-  if (activeTeam) {
+  // a guest has no teams to manage: only their Account pages are drawn
+  if (session.role !== 'guest') {
+    groups.push({
+      heading: 'Teams',
+      to: '/teams',
+      items: [
+        ...teams.map((t) => ({ to: `/settings/team/${t.slug}/roster`, label: t.name })),
+        ...(admin ? [{ to: '/teams', label: 'New team', icon: AddIcon, quiet: true }] : []),
+      ],
+      empty: q.status === 'loading' ? undefined : 'No teams yet',
+    });
+  }
+  if (activeTeam && session.role !== 'guest') {
     groups.push({
       heading: activeTeam.name,
       items: [

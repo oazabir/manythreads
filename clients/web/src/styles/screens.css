@@ -1347,6 +1347,7 @@ a.btn.primary {
 
 .mem-wrap .mem-c {
   vertical-align: middle;
+  overflow-wrap: anywhere; /* a long address wraps instead of widening the page (this block does not scroll sideways) */
 }
 
 .table td.mem-act {

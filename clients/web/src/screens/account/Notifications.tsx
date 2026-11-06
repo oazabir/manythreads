@@ -9,7 +9,12 @@ export function Notifications() {
   const { hash } = useLocation();
   // a link such as /account#acc-notifications arrives here after a redirect, which the browser does not scroll for; the status section scrolls itself once it is drawn
   useEffect(() => {
-    const id = decodeURIComponent(hash.slice(1));
+    let id = '';
+    try {
+      id = decodeURIComponent(hash.slice(1));
+    } catch {
+      return; // a malformed %-sequence in a hand-typed link: nothing to scroll to (decodeURIComponent would throw)
+    }
     if (id !== '' && id !== 'status-and-dnd') document.getElementById(id)?.scrollIntoView({ block: 'start' });
   }, [hash]);
   return (
