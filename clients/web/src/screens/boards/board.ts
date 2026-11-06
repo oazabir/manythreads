@@ -36,39 +36,89 @@ export type LoadedColumn = { state: TaskState; items: Task[]; total: number };
 
 export type ColumnCards = { column: BoardColumn; cards: Task[]; total: number };
 
+/** Where cards sit on a board: the place of each card kept in a later column of its state, and the number of cards per column. */
+export type Placement = { places: ReadonlyMap<string, string>; counts: ReadonlyMap<string, number> };
+export const noPlacement: Placement = { places: new Map(), counts: new Map() };
+
+/** The first column of a state: where a card with no place of its own sits. */
+export const firstColumnOf = (board: Board, state: TaskState): BoardColumn | undefined => board.columns.find((c) => c.state === state);
+
 /**
- * The board's columns in their saved order, each with the cards of that state. A column with no read yet (or a failed one) draws empty
- * rather than hiding — a board that silently lost a column would look like the work was gone.
+ * The column a card is drawn in: its place when that column is still on the board and counts as the card's state, otherwise the first
+ * column of its state. Undefined when the board has no column for the state.
  */
-export function columnsWithCards(board: Board, loaded: readonly LoadedColumn[]): ColumnCards[] {
+export function columnOf(board: Board, task: Task, places: ReadonlyMap<string, string>): BoardColumn | undefined {
+  const placed = places.get(task.id);
+  const own = placed === undefined ? undefined : board.columns.find((c) => c.id === placed && c.state === task.state);
+  return own ?? firstColumnOf(board, task.state);
+}
+
+/**
+ * The board's columns in their saved order, each with its cards. A column with no read yet (or a failed one) draws empty rather than
+ * hiding — a board that silently lost a column would look like the work was gone. The count of a column that is not the first of its state
+ * comes from the server (`counts`); the first column's is what is left of the state's total.
+ */
+export function placeCards(board: Board, loaded: readonly LoadedColumn[], placement: Placement = noPlacement): ColumnCards[] {
   const byState = new Map(loaded.map((l) => [l.state, l]));
   return board.columns.map((column) => {
     const l = byState.get(column.state);
-    return { column, cards: l?.items ?? [], total: l?.total ?? 0 };
+    const cards = (l?.items ?? []).filter((t) => columnOf(board, t, placement.places)?.id === column.id);
+    const first = firstColumnOf(board, column.state)?.id === column.id;
+    let total: number;
+    if (first) {
+      const others = board.columns.filter((c) => c.state === column.state && c.id !== column.id).reduce((n, c) => n + (placement.counts.get(c.id) ?? 0), 0);
+      total = Math.max(cards.length, (l?.total ?? 0) - others);
+    } else {
+      total = Math.max(cards.length, placement.counts.get(column.id) ?? 0);
+    }
+    return { column, cards, total };
   });
 }
 
-/** The states this card may be dragged to on this board: a transition the rules allow and a column the board draws. */
-export function dropTargets(task: Task, board: Board): TaskState[] {
-  const states = new Set(board.columns.map((c) => c.state));
-  return TASK_TRANSITIONS[task.state].filter((to) => states.has(to));
+/** The columns this card may be dragged to: another column of its own state, or a state the transition rules allow. */
+export function dropTargets(task: Task, board: Board, currentColumnId?: string): BoardColumn[] {
+  const allowed = new Set<TaskState>(TASK_TRANSITIONS[task.state]);
+  return board.columns.filter((c) => c.id !== currentColumnId && (c.state === task.state || allowed.has(c.state)));
 }
 
 /**
- * Why the screen will not send this move, or null to send it. The last two checks repeat rules the server enforces (a board's column
- * set, the transition table, a code card's tested sha): keeping them here lets a drag onto an impossible column say why instead of
- * making a request that can only be refused, and the server still has the last word on every move that is sent.
+ * Why the screen will not send this move, or null to send it. The checks after the first repeat rules the server enforces (the transition
+ * table, a code card's tested sha): keeping them here lets a drag onto an impossible column say why instead of making a request that can only
+ * be refused, and the server still has the last word on every move that is sent.
  */
-export function moveProblem(task: Task, board: Board, to: TaskState): string | null {
-  if (to === task.state) return `“${task.title}” is already in ${STATE_LABEL[to]}.`;
-  if (!board.columns.some((c) => c.state === to)) return `This board has no ${STATE_LABEL[to]} column.`;
-  if (!TASK_TRANSITIONS[task.state].includes(to)) {
-    return `A card in ${STATE_LABEL[task.state]} cannot move to ${STATE_LABEL[to]}.`;
+export function moveProblem(task: Task, board: Board, to: BoardColumn, currentColumnId?: string): string | null {
+  if (to.id === currentColumnId) return `“${task.title}” is already in ${to.name}.`;
+  if (!board.columns.some((c) => c.id === to.id)) return 'This board has no such column.';
+  if (to.state === task.state) return null;
+  if (!TASK_TRANSITIONS[task.state].includes(to.state)) {
+    return `A card in ${STATE_LABEL[task.state]} cannot move to ${STATE_LABEL[to.state]}.`;
   }
-  if (task.kind === 'code' && to === 'done' && !task.testedSha) {
+  if (task.kind === 'code' && to.state === 'done' && !task.testedSha) {
     return 'A code card needs its tested commit before Done: complete the card with the sha that was tested rather than dragging it.';
   }
   return null;
+}
+
+/** The ids with `id` moved `delta` places (clamped to the ends); the same list when it cannot move. */
+export function reorder(ids: readonly string[], id: string, delta: number): string[] {
+  const from = ids.indexOf(id);
+  if (from < 0) return [...ids];
+  const to = Math.min(ids.length - 1, Math.max(0, from + delta));
+  const out = ids.filter((x) => x !== id);
+  out.splice(to, 0, id);
+  return out;
+}
+
+/** What the polite live region says after a column moved (1-based). */
+export const columnMovedText = (name: string, ids: readonly string[], id: string): string => `${name} is now column ${ids.indexOf(id) + 1} of ${ids.length}`;
+
+/** "Coder is working on this", "Coder and Tester are working on this", "3 bots are working on this"; queued bots say "about to". */
+export function activityLabel(names: readonly string[], phase: 'running' | 'queued' = 'running'): string {
+  const tail = phase === 'running' ? 'working on this' : 'about to work on this';
+  if (names.length === 0) return `A bot is ${tail}`;
+  if (names.length === 1) return `${names[0]} is ${tail}`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are ${tail}`;
+  return `${names.length} bots are ${tail}`;
 }
 
 /** The sentence a refused call is shown as: the server's own reason when it sent one (409, 403), otherwise a plain fallback. */

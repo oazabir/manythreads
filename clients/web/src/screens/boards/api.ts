@@ -1,4 +1,16 @@
 import {
+  AddBoardColumnRequest,
+  BoardColumnsResponse,
+  BoardPlacesResponse,
+  CardActivityResponse,
+  RenameBoardColumnRequest,
+  ReorderBoardColumnsRequest,
+  addBoardColumnRoute,
+  boardPlacesRoute,
+  cardActivityRoute,
+  deleteBoardColumnRoute,
+  renameBoardColumnRoute,
+  reorderBoardColumnsRoute,
   ClaimTaskResponse,
   CompleteTaskRequest,
   CompleteTaskResponse,
@@ -90,9 +102,25 @@ export const fetchTaskEvents = (slug: string, taskId: string) =>
 export const createTask = (slug: string, body: CreateTaskRequest) =>
   call(createTaskRoute, { request: CreateTaskRequest, response: CreateTaskResponse }, body, { slug });
 
-/** The drag: the board decides which states it has, the task rules decide whether the card may go there. */
-export const moveTask = (slug: string, boardId: string, taskId: string, to: MoveTaskRequest['to']) =>
-  call(moveTaskRoute, { request: MoveTaskRequest, response: MoveTaskResponse }, { taskId, to }, { slug, boardId });
+/** The drag: a column id puts the card in that column (its state decides the move); the task rules decide whether the card may go there. */
+export const moveTask = (slug: string, boardId: string, taskId: string, columnId: string) =>
+  call(moveTaskRoute, { request: MoveTaskRequest, response: MoveTaskResponse }, { taskId: taskId as MoveTaskRequest['taskId'], columnId }, { slug, boardId });
+
+/** Where the cards sit among a board's columns, and how many cards each column holds. */
+export const fetchPlaces = (slug: string, boardId: string) => call(boardPlacesRoute, { response: BoardPlacesResponse }, undefined, { slug, boardId });
+
+/** The column edits (a team lead or a workspace admin). Each answers the whole board. */
+export const addColumn = (slug: string, boardId: string, body: AddBoardColumnRequest) =>
+  call(addBoardColumnRoute, { request: AddBoardColumnRequest, response: BoardColumnsResponse }, body, { slug, boardId });
+export const renameColumn = (slug: string, boardId: string, columnId: string, body: RenameBoardColumnRequest) =>
+  call(renameBoardColumnRoute, { request: RenameBoardColumnRequest, response: BoardColumnsResponse }, body, { slug, boardId, columnId });
+export const deleteColumn = (slug: string, boardId: string, columnId: string) =>
+  call(deleteBoardColumnRoute, { response: BoardColumnsResponse }, undefined, { slug, boardId, columnId });
+export const reorderColumns = (slug: string, boardId: string, columnIds: string[]) =>
+  call(reorderBoardColumnsRoute, { request: ReorderBoardColumnsRequest, response: BoardColumnsResponse }, { columnIds }, { slug, boardId });
+
+/** Which bots work on which cards of the team (the bot icon on a card). */
+export const fetchCardActivity = (slug: string) => call(cardActivityRoute, { response: CardActivityResponse }, undefined, { slug });
 
 export const claimTask = (slug: string, taskId: string) =>
   call(claimTaskRoute, { response: ClaimTaskResponse }, undefined, { slug, taskId });

@@ -8,7 +8,11 @@ import {
   boardPath,
   botBoardOf,
   cardRequest,
-  columnsWithCards,
+  activityLabel,
+  columnOf,
+  columnMovedText,
+  placeCards,
+  reorder,
   dropTargets,
   emptyCard,
   eventLine,
@@ -20,6 +24,12 @@ import {
 } from '../src/screens/boards/board';
 import { cronNote, emptyScheduledJob, scheduledJobRequest } from '../src/screens/boards/scheduled-job';
 import {
+  addColumn,
+  deleteColumn,
+  fetchCardActivity,
+  fetchPlaces,
+  renameColumn,
+  reorderColumns,
   claimTask,
   completeTask,
   createBoard,
@@ -54,6 +64,9 @@ const BOT = '00000000-0000-7000-8000-0000000000b1';
 const BOT_ACTOR = '00000000-0000-7000-8000-0000000000a9';
 const BOARD = '00000000-0000-7000-8000-0000000000bb';
 
+/** A column in the stored shape; the id is the state's name unless given. */
+const col = (state: string, name: string, id: string = state) => ({ id, name, state, title: name });
+
 const board = (over: Record<string, unknown> = {}): Board =>
   Board.parse({
     id: BOARD,
@@ -61,11 +74,11 @@ const board = (over: Record<string, unknown> = {}): Board =>
     teamId: TEAM,
     name: 'Engineering',
     columns: [
-      { state: 'open', title: 'Open' },
-      { state: 'in_progress', title: 'In progress' },
-      { state: 'verify', title: 'Verify' },
-      { state: 'waiting_on_person', title: 'Waiting on a person' },
-      { state: 'done', title: 'Done' },
+      col('open', 'Open'),
+      col('in_progress', 'In progress'),
+      col('verify', 'Verify'),
+      col('waiting_on_person', 'Waiting on a person'),
+      col('done', 'Done'),
     ],
     filter: {},
     channelId: null,
@@ -141,46 +154,94 @@ const bot = (over: Record<string, unknown> = {}): BotSummary =>
 
 describe('a board draws its own columns in their saved order', () => {
   it('keeps the saved order and pairs each column with its cards and total', () => {
-    const b = board({ columns: [{ state: 'verify', title: 'Checking' }, { state: 'open', title: 'Todo' }] });
-    const drawn = columnsWithCards(b, [
+    const b = board({ columns: [col('verify', 'Checking'), col('open', 'Todo')] });
+    const drawn = placeCards(b, [
       { state: 'open', items: [task()], total: 3 },
       { state: 'verify', items: [], total: 0 },
     ]);
-    expect(drawn.map((c) => c.column.title)).toEqual(['Checking', 'Todo']);
+    expect(drawn.map((c) => c.column.name)).toEqual(['Checking', 'Todo']);
     expect(drawn[0]).toMatchObject({ cards: [], total: 0 });
     expect(drawn[1]?.cards).toHaveLength(1);
     expect(drawn[1]?.total).toBe(3);
   });
 
   it('draws a column empty rather than dropping it when its read is missing', () => {
-    const drawn = columnsWithCards(board(), []);
+    const drawn = placeCards(board(), []);
     expect(drawn).toHaveLength(5);
     expect(drawn.every((c) => c.cards.length === 0 && c.total === 0)).toBe(true);
+  });
+
+  it('puts a card in its own place when that column still counts as its state, and in the first column of the state otherwise', () => {
+    const b = board({ columns: [col('open', 'Open'), col('verify', 'Code review'), col('verify', 'QA', 'c_qa')] });
+    const t = task({ state: 'verify' });
+    const loaded = [{ state: 'verify' as const, items: [t], total: 4 }];
+    const inQa = placeCards(b, loaded, { places: new Map([[t.id, 'c_qa']]), counts: new Map([['c_qa', 3]]) });
+    expect(inQa.map((c) => [c.column.name, c.cards.length, c.total])).toEqual([['Open', 0, 0], ['Code review', 0, 1], ['QA', 1, 3]]);
+    // a place in a column that is gone, or one of another state, falls back to the first column of the state
+    for (const stale of ['c_gone', 'open']) {
+      const drawn = placeCards(b, loaded, { places: new Map([[t.id, stale]]), counts: new Map() });
+      expect(drawn.find((c) => c.cards.length > 0)?.column.name).toBe('Code review');
+    }
+    expect(columnOf(b, t, new Map([[t.id, 'c_qa']]))?.name).toBe('QA');
+    expect(columnOf(b, task({ state: 'done' }), new Map())).toBeUndefined();
   });
 });
 
 describe('the moves the board offers follow the task rules', () => {
-  it('offers only transitions the table allows and the board draws', () => {
-    const b = board({ columns: [{ state: 'open', title: 'Open' }, { state: 'done', title: 'Done' }] });
-    expect(dropTargets(task(), b)).toEqual(['done']);
-    expect(dropTargets(task({ state: 'in_progress' }), b)).toEqual(['open', 'done']);
+  it('offers only transitions the table allows and the board draws, and the other columns of the card\u2019s own state', () => {
+    const b = board({ columns: [col('open', 'Open'), col('done', 'Done'), col('open', 'Backlog', 'c_backlog')] });
+    expect(dropTargets(task(), b, 'open').map((c) => c.name)).toEqual(['Done', 'Backlog']);
+    expect(dropTargets(task({ state: 'in_progress' }), b).map((c) => c.name)).toEqual(['Open', 'Done', 'Backlog']);
   });
 
   it('names the reason a drop is not sent, and sends the ones that are', () => {
     const b = board();
     const t = task();
-    expect(moveProblem(t, b, 'open')).toMatch(/already in Open/);
-    expect(moveProblem(t, b, 'verify')).toMatch(/cannot move to Verify/);
-    expect(moveProblem(t, board({ columns: [{ state: 'open', title: 'Open' }] }), 'done')).toMatch(/no Done column/);
-    expect(moveProblem(t, b, 'in_progress')).toBeNull();
+    const to = (id: string) => b.columns.find((c) => c.id === id)!;
+    expect(moveProblem(t, b, to('open'), 'open')).toMatch(/already in Open/);
+    expect(moveProblem(t, b, to('verify'), 'open')).toMatch(/cannot move to Verify/);
+    expect(moveProblem(t, b, to('in_progress'), 'open')).toBeNull();
+    const other = { id: 'c_x', name: 'Elsewhere', state: 'done', title: 'Elsewhere' } as const;
+    expect(moveProblem(t, b, other, 'open')).toMatch(/no such column/);
+  });
+
+  it('lets a card move to another column of its own state', () => {
+    const b = board({ columns: [col('open', 'Open'), col('open', 'Backlog', 'c_backlog')] });
+    expect(moveProblem(task(), b, b.columns[1]!, 'open')).toBeNull();
   });
 
   it('refuses a code card into Done without the sha that was tested, and allows one with it', () => {
     const b = board();
-    expect(moveProblem(task({ state: 'verify' }), b, 'done')).toMatch(/tested commit/);
-    expect(moveProblem(task({ state: 'verify', testedSha: 'abcdef1' }), b, 'done')).toBeNull();
+    const done = b.columns.find((c) => c.id === 'done')!;
+    expect(moveProblem(task({ state: 'verify' }), b, done, 'verify')).toMatch(/tested commit/);
+    expect(moveProblem(task({ state: 'verify', testedSha: 'abcdef1' }), b, done, 'verify')).toBeNull();
     // a content card has nothing to test, so the rule does not apply to it
-    expect(moveProblem(task({ state: 'verify', kind: 'content' }), b, 'done')).toBeNull();
+    expect(moveProblem(task({ state: 'verify', kind: 'content' }), b, done, 'verify')).toBeNull();
+  });
+});
+
+describe('reordering columns', () => {
+  it('moves one id by a step and stops at the ends', () => {
+    expect(reorder(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c']);
+    expect(reorder(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b']);
+    expect(reorder(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c']);
+    expect(reorder(['a', 'b', 'c'], 'c', 5)).toEqual(['a', 'b', 'c']);
+    expect(reorder(['a', 'b', 'c'], 'a', 2)).toEqual(['b', 'c', 'a']);
+    expect(reorder(['a', 'b'], 'zz', 1)).toEqual(['a', 'b']);
+  });
+
+  it('says where the column went in plain words', () => {
+    expect(columnMovedText('Code review', ['a', 'code', 'b'], 'code')).toBe('Code review is now column 2 of 3');
+  });
+});
+
+describe('the bot icon\u2019s words', () => {
+  it('names one or two bots, counts more, and says about to for a queued run', () => {
+    expect(activityLabel(['Coder'])).toBe('Coder is working on this');
+    expect(activityLabel(['Coder', 'Tester'])).toBe('Coder and Tester are working on this');
+    expect(activityLabel(['a', 'b', 'c'])).toBe('3 bots are working on this');
+    expect(activityLabel(['Coder'], 'queued')).toBe('Coder is about to work on this');
+    expect(activityLabel([])).toBe('A bot is working on this');
   });
 });
 
@@ -308,6 +369,12 @@ const REPLIES: Record<string, unknown> = {
   [`GET /api/teams/engineering/boards/${BOARD}`]: { board: board() },
   [`POST /api/teams/engineering/boards`]: { board: board({ name: 'Ops' }) },
   [`POST /api/teams/engineering/boards/${BOARD}/move`]: { task: task({ state: 'in_progress' }) },
+  [`POST /api/teams/engineering/boards/${BOARD}/columns`]: { board: board() },
+  [`PATCH /api/teams/engineering/boards/${BOARD}/columns/c_qa`]: { board: board() },
+  [`DELETE /api/teams/engineering/boards/${BOARD}/columns/c_qa`]: { board: board() },
+  [`PUT /api/teams/engineering/boards/${BOARD}/columns/order`]: { board: board() },
+  [`GET /api/teams/engineering/boards/${BOARD}/places`]: { places: [], counts: [{ columnId: 'open', total: 1 }] },
+  [`GET /api/teams/engineering/tasks/activity`]: { items: [{ taskId: task().id, bots: [{ actorId: BOT_ACTOR, phase: 'running' }] }] },
   [`GET /api/teams/engineering/tasks`]: { items: [task()], total: 1 },
   [`POST /api/teams/engineering/tasks`]: { task: task() },
   [`GET /api/teams/engineering/tasks/${task().id}`]: { task: task() },
@@ -419,8 +486,14 @@ describe('the board endpoints reach the routes the plugins mount', () => {
       run: () => moveTask('engineering', BOARD, task().id, 'in_progress'),
       method: 'POST',
       path: `/api/teams/engineering/boards/${BOARD}/move`,
-      body: { taskId: task().id, to: 'in_progress' },
+      body: { taskId: task().id, columnId: 'in_progress' },
     },
+    { name: 'adds a column', run: () => addColumn('engineering', BOARD, { name: 'QA', state: 'verify' }), method: 'POST', path: `/api/teams/engineering/boards/${BOARD}/columns`, body: { name: 'QA', state: 'verify' } },
+    { name: 'renames a column', run: () => renameColumn('engineering', BOARD, 'c_qa', { name: 'Tests' }), method: 'PATCH', path: `/api/teams/engineering/boards/${BOARD}/columns/c_qa`, body: { name: 'Tests' } },
+    { name: 'deletes a column', run: () => deleteColumn('engineering', BOARD, 'c_qa'), method: 'DELETE', path: `/api/teams/engineering/boards/${BOARD}/columns/c_qa` },
+    { name: 'reorders the columns', run: () => reorderColumns('engineering', BOARD, ['done', 'open']), method: 'PUT', path: `/api/teams/engineering/boards/${BOARD}/columns/order`, body: { columnIds: ['done', 'open'] } },
+    { name: 'reads where cards sit', run: () => fetchPlaces('engineering', BOARD), method: 'GET', path: `/api/teams/engineering/boards/${BOARD}/places` },
+    { name: 'reads which bots work on cards', run: () => fetchCardActivity('engineering'), method: 'GET', path: '/api/teams/engineering/tasks/activity' },
     {
       name: 'creates a card',
       run: () => createTask('engineering', { title: 'Do', description: '', kind: 'code', priority: 'normal', branch: 'task/do' }),

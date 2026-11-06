@@ -93,6 +93,9 @@
 }
 
 .bd-col-head h3 {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: var(--fs-caption);
   font-weight: 600;
@@ -114,6 +117,7 @@
 
 /* ---- a card ---- */
 .bd-card {
+  position: relative;
   display: block;
   padding: 9px 10px;
   border: 1px solid var(--rule);
@@ -648,5 +652,138 @@
 
   .bd-panel {
     max-height: 360px;
+  }
+}
+
+/* ---- column controls (P6-14): the grip, the options menu, the add-column box ---- */
+.bd-col-grip,
+.bd-col-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.bd-col-grip {
+  cursor: grab;
+}
+
+.bd-col-grip:hover,
+.bd-col-more:hover {
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.bd-col-menu-wrap {
+  position: relative;
+}
+
+.bd-col-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.bd-col-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+.bd-addcol {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.bd-addcol.open {
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-md);
+}
+
+/* Phone width: the strip snaps column by column. */
+@media (width <= 640px) {
+  .bd-cols {
+    scroll-snap-type: x mandatory;
+  }
+
+  .bd-col {
+    scroll-snap-align: start;
+  }
+}
+
+/* ---- a bot is working on this card (P6-13) ---- */
+.bd-bot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: var(--radius-pill);
+  background: var(--agent-wash);
+  color: var(--agent);
+  animation: bd-bot-pulse 1.6s ease-in-out infinite;
+}
+
+.bd-bot.queued {
+  opacity: 0.55;
+  animation: none;
+}
+
+.bd-bot-n {
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+  color: var(--agent-ink);
+}
+
+/* In the card panel's header the mark sits in the row, not in a corner. */
+.bd-bot.bd-panel-bot {
+  position: static;
+  margin-left: auto;
+}
+
+/* The title leaves room for the mark in the corner. */
+.bd-card .bd-bot ~ .bd-card-title {
+  padding-right: 34px;
+}
+
+@keyframes bd-bot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.14);
+    opacity: 0.7;
+  }
+}
+
+/* Less motion: a still icon with a ring. */
+@media (prefers-reduced-motion: reduce) {
+  .bd-bot {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--agent);
   }
 }

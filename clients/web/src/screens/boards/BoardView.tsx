@@ -1,11 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import type { Board, Task, TaskState } from '@manythreads/shared';
+import type { Board, BoardColumn, Task } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { isApiError } from '../../api/client';
 import { Alert } from '../../components/ui';
-import { STATE_LABEL, boardFilter, boardLabel, branchFor, cardRequest, columnsWithCards, emptyCard, moveProblem, ownerLabel, refusalText, type CardDraft, type LoadedColumn } from './board';
-import { createBoard, createTask, fetchColumnTasks, moveTask } from './api';
+import { STATE_LABEL, boardFilter, boardLabel, branchFor, cardRequest, columnMovedText, columnOf, emptyCard, moveProblem, noPlacement, ownerLabel, placeCards, refusalText, reorder, type CardDraft, type LoadedColumn, type Placement } from './board';
+import { addColumn, createBoard, createTask, deleteColumn, fetchColumnTasks, fetchPlaces, moveTask, renameColumn, reorderColumns } from './api';
+import { useCardActivity } from './activity';
+import { AddColumn } from './AddColumn';
+import { BotActivity } from './BotActivity';
+import { ColumnHeader } from './ColumnHeader';
 import { useTeamPeople } from './people';
 import { CardPanel } from './CardPanel';
 import { useChannelFeed } from '../../shell/channelFeed';
@@ -32,7 +36,11 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
   const feed = useChannelFeed(slug);
   const channelNames = useMemo(() => new Map(feed.groups.flatMap((g) => g.channels.map((c): [string, string] => [c.id, c.name]))), [feed.groups]);
   const [drag, setDrag] = useState<Task | null>(null);
-  const [over, setOver] = useState<TaskState | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const [colDrag, setColDrag] = useState<string | null>(null);
+  const [live, setLive] = useState('');
+  /** The order the columns are drawn in while a reorder is on its way to the server (and after it, until the board is read again). */
+  const [order, setOrder] = useState<string[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -47,13 +55,37 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
 
   const filter = board ? boardFilter(board) : {};
   const filterKey = JSON.stringify(filter);
-  const q = useQuery(`board-cards:${slug}:${board?.id ?? 'none'}:${filterKey}:${revision}`, async (): Promise<LoadedColumn[]> => {
-    if (!board) return [];
-    const reads = await Promise.all(board.columns.map((c) => fetchColumnTasks(slug, { state: c.state, ...filter })));
-    return board.columns.map((c, i) => ({ state: c.state, items: reads[i]?.items ?? [], total: reads[i]?.total ?? 0 }));
+  const states = board ? [...new Set(board.columns.map((c) => c.state))] : [];
+  const q = useQuery(`board-cards:${slug}:${board?.id ?? 'none'}:${filterKey}:${states.join(',')}:${revision}`, async (): Promise<{ loaded: LoadedColumn[]; placement: Placement }> => {
+    if (!board) return { loaded: [], placement: noPlacement };
+    // One read per distinct state (two columns of one state share it), and one read of where cards sit among the columns.
+    const [reads, placed] = await Promise.all([
+      Promise.all(states.map((state) => fetchColumnTasks(slug, { state, ...filter }))),
+      fetchPlaces(slug, board.id),
+    ]);
+    return {
+      loaded: states.map((state, i) => ({ state, items: reads[i]?.items ?? [], total: reads[i]?.total ?? 0 })),
+      placement: { places: new Map(placed.places.map((p) => [p.taskId as string, p.columnId])), counts: new Map(placed.counts.map((c) => [c.columnId, c.total])) },
+    };
   });
 
-  const columns = board && q.status === 'ok' ? columnsWithCards(board, q.data) : [];
+  const activity = useCardActivity(slug, board?.teamId ?? '');
+
+  // The columns in the order being shown: the saved order, or the one a reorder just asked for.
+  const shownBoard = useMemo((): Board | null => {
+    if (!board) return null;
+    if (!order || order.length !== board.columns.length) return board;
+    const byId = new Map(board.columns.map((c) => [c.id as string, c]));
+    if (!order.every((id) => byId.has(id))) return board;
+    return { ...board, columns: order.map((id) => byId.get(id)!) };
+  }, [board, order]);
+
+  // Once the boards are read again the saved order is the truth: the optimistic one is dropped.
+  const savedOrder = board?.columns.map((c) => c.id).join() ?? '';
+  useEffect(() => setOrder(null), [savedOrder, board?.id]);
+
+  const columns = shownBoard && q.status === 'ok' ? placeCards(shownBoard, q.data.loaded, q.data.placement) : [];
+  const places = q.status === 'ok' ? q.data.placement.places : noPlacement.places;
   const allCards = columns.flatMap((c) => c.cards);
   const current = allCards.find((c) => c.id === selectedCard) ?? null;
 
@@ -77,9 +109,9 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
     setParams(next);
   };
 
-  const move = async (task: Task, to: TaskState): Promise<void> => {
+  const move = async (task: Task, to: BoardColumn): Promise<void> => {
     if (!board) return;
-    const problem = moveProblem(task, board, to);
+    const problem = moveProblem(task, board, to, columnOf(board, task, places)?.id);
     if (problem) {
       setNotice(problem);
       return;
@@ -87,7 +119,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
     setBusy(true);
     setNotice(null);
     try {
-      await moveTask(slug, board.id, task.id, to);
+      await moveTask(slug, board.id, task.id, to.id);
       changed();
     } catch (err) {
       setNotice(refusalText(err));
@@ -96,6 +128,35 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
       setOver(null);
       setDrag(null);
     }
+  };
+
+  /** A column edit: runs it, and reads the boards and cards again either way (a refusal says why; a stale tab catches up). */
+  const editColumns = async (run: () => Promise<unknown>): Promise<boolean> => {
+    setNotice(null);
+    try {
+      await run();
+      return true;
+    } catch (err) {
+      setOrder(null);
+      setNotice(isApiError(err) && err.status === 403 ? 'Only a team lead or a workspace admin can change a board\u2019s columns.' : refusalText(err));
+      return false;
+    } finally {
+      onBoardsChanged();
+      changed();
+    }
+  };
+
+  const moveColumn = async (id: string, to: number): Promise<void> => {
+    if (!shownBoard || !board) return;
+    const ids = shownBoard.columns.map((c) => c.id as string);
+    const delta = to - ids.indexOf(id);
+    const next = reorder(ids, id, delta);
+    if (next.join() === ids.join()) return;
+    setOrder(next);
+    const name = shownBoard.columns.find((c) => c.id === id)?.name ?? 'The column';
+    setLive(columnMovedText(name, next, id));
+    // The ids sent are exactly the board's current ones, so a tab that missed another tab's change is refused (409) and reads again.
+    await editColumns(() => reorderColumns(slug, board.id, next));
   };
 
   const addBoard = async (): Promise<void> => {
@@ -268,31 +329,52 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
           </div>
         ) : (
           <div className="bd-cols" data-landmark="board">
-            {columns.map(({ column, cards, total }) => (
+            {columns.map(({ column, cards, total }, index) => (
               <section
-                key={column.state}
-                className={`bd-col ${over === column.state ? 'over' : ''}`}
+                key={column.id}
+                className={`bd-col ${over === column.id ? 'over' : ''}`}
                 data-testid="board-column"
                 data-state={column.state}
-                aria-label={column.title}
+                data-column={column.id}
+                aria-label={column.name}
                 onDragOver={(e) => {
-                  if (drag && moveProblem(drag, board, column.state) === null) {
+                  if (colDrag) {
                     e.preventDefault();
-                    setOver(column.state);
+                    return;
+                  }
+                  if (drag && moveProblem(drag, board, column, columnOf(board, drag, places)?.id) === null) {
+                    e.preventDefault();
+                    setOver(column.id);
                   }
                 }}
-                onDragLeave={() => setOver((s) => (s === column.state ? null : s))}
+                onDragLeave={() => setOver((s) => (s === column.id ? null : s))}
                 onDrop={(e) => {
                   e.preventDefault();
-                  if (drag) void move(drag, column.state);
+                  if (colDrag) {
+                    const id = colDrag;
+                    setColDrag(null);
+                    void moveColumn(id, index);
+                    return;
+                  }
+                  if (drag) void move(drag, column);
                 }}
               >
-                <header className="bd-col-head">
-                  <h3>{column.title}</h3>
-                  <span className="bd-col-count" data-testid="column-total" data-vt-mask>
-                    {cardCount(total)}
-                  </span>
-                </header>
+                <ColumnHeader
+                  column={column}
+                  index={index}
+                  last={index === columns.length - 1}
+                  total={cardCount(total)}
+                  canManage={canManage}
+                  onRename={(name) => editColumns(() => renameColumn(slug, board.id, column.id, { name })).then(() => undefined)}
+                  onMove={(delta) => void moveColumn(column.id, index + delta)}
+                  onDelete={() => editColumns(() => deleteColumn(slug, board.id, column.id)).then(() => undefined)}
+                  onGripDragStart={(e) => {
+                    e.dataTransfer.setData('application/x-mt-column', column.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setColDrag(column.id);
+                  }}
+                  onGripDragEnd={() => setColDrag(null)}
+                />
                 {total > cards.length ? <p className="bd-muted">Newest {cards.length} shown.</p> : null}
                 {cards.length === 0 ? <p className="bd-col-empty">Nothing here.</p> : null}
                 {cards.map((card) => (
@@ -329,6 +411,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
                       {card.priority !== 'normal' ? <span className={`bd-prio ${card.priority}`}>{card.priority}</span> : null}
                       <span className="bd-card-state">{STATE_LABEL[card.state]}</span>
                     </div>
+                    <BotActivity bots={activity.get(card.id) ?? []} roster={people.bots} className="bd-card-bot" />
                     <p className="bd-card-title">{card.title}</p>
                     <p className="bd-card-meta" title={`Work branch: ${card.branch}`}>
                       <span data-testid="card-owner-label">{ownerLabel(card.ownerId, people.roster, people.bots)}</span>
@@ -345,8 +428,10 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
                 ))}
               </section>
             ))}
+            {canManage ? <AddColumn onAdd={(name, state) => editColumns(() => addColumn(slug, board.id, { name, state })).then(() => undefined)} /> : null}
           </div>
         )}
+        <p className="sr-only bd-live" role="status" aria-live="polite" data-testid="board-live">{live}</p>
         {busy ? <p className="bd-muted" role="status">Moving…</p> : null}
       </div>
 
@@ -358,6 +443,8 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
           board={board}
           roster={people.roster}
           bots={people.bots}
+          botsAtWork={activity.get(current.id) ?? []}
+          placeId={columnOf(board, current, places)?.id}
           revision={revision}
           onMove={move}
           onChanged={changed}

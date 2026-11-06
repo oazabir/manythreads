@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { Board, BotSummary, RosterMember, Task, TaskEvent, TaskState } from '@manythreads/shared';
+import type { Board, BoardColumn, BotSummary, RosterMember, Task, TaskEvent } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { Markdown } from '../../channels/MessageMarkdown';
 import { Alert, Time } from '../../components/ui';
 import { STATE_LABEL, dropTargets, eventLine, ownerLabel, refusalText } from './board';
+import { BotActivity } from './BotActivity';
+import type { CardBot } from './activity';
 import { claimTask, completeTask, fetchTask, fetchTaskEvents, handoffTask, releaseTask, reworkTask, tickTask } from './api';
 import { taskItemAt } from '../../channels/markdown';
 
@@ -22,7 +24,10 @@ type Props = {
   /** Bumped when anything on the board changed, so the history is re-read with the card. */
   revision: number;
   /** The board's own move, so the drag and the select take the identical path. */
-  onMove: (task: Task, to: TaskState) => Promise<void>;
+  onMove: (task: Task, to: BoardColumn) => Promise<void>;
+  /** The bots working on this card now, and the column the card sits in. */
+  botsAtWork: readonly CardBot[];
+  placeId: string | undefined;
   /** Tell the board this card (and the columns) changed. */
   onChanged: () => void;
   /** Re-read the board's cards without remounting this panel (a tick keeps its place and its message). */
@@ -31,7 +36,7 @@ type Props = {
 
 const SHA_RE = /^[0-9a-f]{7,64}$/;
 
-export function CardPanel({ slug, task, board, roster, bots, revision, onMove, onChanged, onRefresh }: Props) {
+export function CardPanel({ slug, task, board, roster, bots, botsAtWork, placeId, revision, onMove, onChanged, onRefresh }: Props) {
   const [ticks, setTicks] = useState(0);
   const eventsQ = useQuery(`task-events:${slug}:${task.id}:${revision}:${ticks}`, () => fetchTaskEvents(slug, task.id));
   const [busy, setBusy] = useState<string | null>(null);
@@ -41,7 +46,7 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
   const [note, setNote] = useState('');
   const [botSlug, setBotSlug] = useState(bots[0]?.slug ?? '');
   const [strict, setStrict] = useState(false);
-  const [to, setTo] = useState<TaskState | ''>(dropTargets(task, board)[0] ?? '');
+  const [to, setTo] = useState<string>(dropTargets(task, board, placeId)[0]?.id ?? '');
   // The description as the server last said it: a tick shows at once, from the server's answer, and a refused tick brings the card back as it is.
   const [description, setDescription] = useState(task.description);
   const [ticking, setTicking] = useState(false);
@@ -49,7 +54,7 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
   useEffect(() => setDescription(task.description), [task.description]);
 
   const nameOf = (id: string | null): string => ownerLabel(id, roster, bots);
-  const targets = dropTargets(task, board);
+  const targets = dropTargets(task, board, placeId);
   const events: TaskEvent[] = eventsQ.status === 'ok' ? eventsQ.data.items : [];
 
   const run = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
@@ -116,6 +121,7 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
         <span className={`bd-kind ${task.kind}`}>{task.kind}</span>
         <span className={`bd-prio ${task.priority}`}>{task.priority}</span>
         <span className="bd-state-pill">{STATE_LABEL[task.state]}</span>
+        <BotActivity bots={botsAtWork} roster={bots} className="bd-panel-bot" />
       </div>
       <h3 className="bd-panel-title" data-testid="card-title">{task.title}</h3>
       {description ? (
@@ -201,15 +207,15 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
         <div className="bd-move">
           <label className="bd-field">
             <span>Move to</span>
-            <select value={to} onChange={(e) => setTo(e.target.value as TaskState)} data-testid="card-move-target">
-              {targets.map((s) => (
-                <option key={s} value={s}>
-                  {STATE_LABEL[s]}
+            <select value={to} onChange={(e) => setTo(e.target.value)} data-testid="card-move-target">
+              {targets.map((c) => (
+                <option key={c.id} value={c.id} data-state={c.state}>
+                  {c.name === STATE_LABEL[c.state] ? c.name : `${c.name} (${STATE_LABEL[c.state]})`}
                 </option>
               ))}
             </select>
           </label>
-          <button type="button" className="btn s" disabled={busy !== null || to === ''} onClick={() => (to === '' ? undefined : void onMove(task, to))} data-testid="card-move">
+          <button type="button" className="btn s" disabled={busy !== null || to === ''} onClick={() => { const col = targets.find((c) => c.id === to); if (col) void onMove(task, col); }} data-testid="card-move">
             Move
           </button>
         </div>
