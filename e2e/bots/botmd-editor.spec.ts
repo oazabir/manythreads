@@ -160,6 +160,12 @@ test('five groups; an old ?tab= link opens the right group and section', async (
     await expect(page.getByTestId('tab-basics')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('pane-identity')).toBeVisible();
 
+    // a link to the FIRST section of a group opens the group without scrolling the head and the tabs out of sight
+    await page.goto(page.url().replace('tab=nonsense', 'tab=identity'));
+    await expect(page.getByTestId('pane-identity')).toBeVisible();
+    await expect(page.locator('[data-landmark="bot-head"]')).toBeInViewport();
+    await expect(tabs).toBeInViewport();
+
     // arrow keys move along the strip
     await page.getByTestId('tab-basics').focus();
     await page.keyboard.press('ArrowRight');
@@ -171,9 +177,9 @@ test('five groups; an old ?tab= link opens the right group and section', async (
 
     // at 390 px the strip stays one row that scrolls sideways
     await page.setViewportSize({ width: 390, height: 844 });
-    const tops = await tabs.getByRole('tab').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
-    expect(new Set(tops).size).toBe(1);
-    expect(await tabs.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect
+      .poll(async () => (await tabs.evaluate((el) => el.scrollWidth > el.clientWidth)) && new Set(await tabs.getByRole('tab').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)))).size === 1)
+      .toBe(true);
   } finally {
     await close();
   }
@@ -198,12 +204,14 @@ test('the save bar appears only after a change, sticks to the bottom and never t
     await expect(role).toBeFocused();
     expect(await bar.evaluate((el) => getComputedStyle(el).position)).toBe('sticky');
 
-    // a short window: the bar still sits inside the viewport, at its bottom edge
+    // a short window: the bar still sits inside the viewport, stuck to its bottom edge
     await page.setViewportSize({ width: 1280, height: 420 });
-    const box = await bar.boundingBox();
-    expect(box).not.toBeNull();
-    expect(Math.round(box!.y + box!.height)).toBeLessThanOrEqual(420);
-    expect(box!.y).toBeGreaterThan(0);
+    await expect
+      .poll(async () => {
+        const box = await bar.boundingBox();
+        return box !== null && box.y > 0 && Math.round(box.y + box.height) <= 420 && Math.round(box.y + box.height) >= 380;
+      })
+      .toBe(true);
 
     // putting the saved value back removes it again
     await role.fill(original);

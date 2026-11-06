@@ -85,6 +85,7 @@ async function expectedExamples(api: Awaited<ReturnType<typeof apiOn>>): Promise
 test('the box comes first and six cards fit the team', async ({ browser, playwright, isMobile }) => {
   const api = await apiOn(playwright, stack, 'omar');
   const { teamOwn, available } = await expectedExamples(api);
+  await api.ctx.dispose();
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     const box = page.getByTestId('setup-brief');
@@ -131,6 +132,7 @@ test('the box comes first and six cards fit the team', async ({ browser, playwri
 test('See all lists every example', async ({ browser, playwright, isMobile }) => {
   const api = await apiOn(playwright, stack, 'omar');
   const { available } = await expectedExamples(api);
+  await api.ctx.dispose();
   test.skip(available.length <= 6, 'the stack offers six examples or fewer, so there is no "See all"');
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {

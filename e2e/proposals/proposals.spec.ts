@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { BOTS_STACK_ENV, BOT_MD, definitionOf } from '../bots/support.ts';
 import { actorOf, commitsOf } from '../files/support.ts';
-import { apiOn, noSidewaysScroll, openOn } from '../support/stack-browser.ts';
+import { PHONE, apiOn, noSidewaysScroll, openOn } from '../support/stack-browser.ts';
 
 /*
  * Proposals (PLAN P7-01) end to end: a member proposes a change to a bot definition from the bot page's file, the lead sees the lines that change and applies
@@ -121,7 +121,8 @@ test('the bot page: Save as proposal leaves it waiting; the list shows it; the l
 });
 
 test('at 390 px the list, a proposal and the dialog do not scroll sideways', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'priya', '/t/engineering/proposals');
+  // a context from `browser.newContext` has the desktop size whatever the project says, so the phone is asked for
+  const { page, context } = await openOn(browser, playwright, stack, 'priya', '/t/engineering/proposals', { viewport: PHONE, mobile: true });
   try {
     await page.getByTestId('proposals-filter-all').click();
     await expect(page.getByTestId('proposal-row').first()).toBeVisible();

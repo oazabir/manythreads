@@ -26,10 +26,38 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-const leave = async (who: 'omar' | 'priya'): Promise<void> => {
+/*
+ * The membership edits below are SQL as the owner of THIS file's own stack (a private origin and a database made for the file and dropped with it), never a shared server or
+ * the live site; the guard makes that a fact the file checks. Each test starts by taking the person off Engineering, so each puts the row back as it found it.
+ */
+type Who = 'omar' | 'priya';
+const WHO: Who[] = ['omar', 'priya'];
+const ENGINEERING = "(SELECT id FROM app.teams WHERE slug = 'engineering')";
+let saved: Array<{ actor_id: string; role: string }> = [];
+
+test.beforeAll(async () => {
+  const host = new URL(stack.origin).hostname;
+  expect(['127.0.0.1', 'localhost'], `the membership arrangement runs only against a local stack, not ${host}`).toContain(host);
+  saved = await stack.sql<{ actor_id: string; role: string }>(`SELECT actor_id, role FROM app.team_members WHERE team_id = ${ENGINEERING} AND actor_id = ANY ($1::uuid[])`, [WHO.map(actorOf)]);
+});
+
+test.afterEach(async () => {
+  for (const who of WHO) {
+    const was = saved.find((r) => r.actor_id === actorOf(who));
+    await leave(who);
+    if (was) {
+      await stack.sql(
+        `INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) SELECT t.id, $1, t.workspace_id, $2 FROM app.teams t WHERE t.slug = 'engineering' ON CONFLICT DO NOTHING`,
+        [was.actor_id, was.role],
+      );
+    }
+  }
+});
+
+const leave = async (who: Who): Promise<void> => {
   await stack.sql("DELETE FROM app.team_members WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf(who)]);
 };
-const roleOf = async (who: 'omar' | 'priya'): Promise<string | undefined> =>
+const roleOf = async (who: Who): Promise<string | undefined> =>
   (await stack.sql<{ role: string }>("SELECT role FROM app.team_members WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf(who)]))[0]?.role;
 
 test('an admin not on the team joins and can talk', async ({ browser, playwright, isMobile }) => {

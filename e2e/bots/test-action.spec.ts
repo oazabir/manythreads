@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { addBot, answerStackEnv, answeringBrainMd } from '../conversations/support.ts';
-import { apiOn, channelsOf, noSidewaysScroll } from '../support/stack-browser.ts';
+import { PHONE, apiOn, channelsOf, noSidewaysScroll } from '../support/stack-browser.ts';
 import { openBot } from './support.ts';
 
 /*
@@ -33,7 +33,7 @@ test.afterAll(async () => {
 });
 
 test('a lead presses Test, asks one question, reads the answer, and every write the bot tried is listed as not done', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'brain');
+  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'brain', '', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     await page.getByTestId('bot-more').click();
     await page.getByTestId('open-test').click();
@@ -82,8 +82,8 @@ test('a lead presses Test, asks one question, reads the answer, and every write 
   expect(lines.map((l) => l.capability)).toEqual(['messages.post', 'pages.write']);
 });
 
-test('a plain member is not offered Test, and the API refuses them', async ({ browser, playwright }) => {
-  const { page, close } = await openBot(browser, playwright, stack, 'nadia', 'brain');
+test('a plain member is not offered Test, and the API refuses them', async ({ browser, playwright, isMobile }) => {
+  const { page, close } = await openBot(browser, playwright, stack, 'nadia', 'brain', '', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     await expect(page.getByTestId('bot-title')).toContainText('Brain');
     await page.getByTestId('bot-more').click();

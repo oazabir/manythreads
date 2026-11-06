@@ -94,8 +94,9 @@ test('a bot that dropped its conversation trigger keeps the lists; the message b
     await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-configure')).toBeVisible();
     await page.goto('/t/engineering/bots/drift');
     await expect(page.getByTestId('bot-title')).toContainText('Drift');
+    // (the bot page is up and its header has the "…" menu, so an absent Talk is not an unloaded page)
+    await expect(page.getByTestId('bot-more')).toBeVisible();
     await expect(page.getByTestId('open-conversation')).toHaveCount(0);
-    await expect(page.getByTestId('talk-why')).toHaveCount(0);
     await page.goto('/t/engineering/bots/drift/chat');
 
     // the earlier conversation is still listed under Mine

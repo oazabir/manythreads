@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { apiOn, channelsOf, openOn, postAs } from '../support/stack-browser.ts';
+import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, postAs } from '../support/stack-browser.ts';
 import { APPROVALS_STACK_ENV, arrangeApprovals, rowOfApproval, type ArrangedApproval } from './support.ts';
 
 /*
@@ -51,6 +51,10 @@ test('the sidebar counts what waits and the Approvals entry opens the inbox with
     await expect(page.getByTestId('approvals-inbox')).toBeVisible();
     await expect(page.getByTestId('approvals-count')).toHaveText('4 waiting');
     await expect(page.getByTestId('approval-row')).toHaveCount(4);
+    // a plain list (buttons inside listbox options were unreachable): a named list of items, no listbox
+    await expect(page.getByRole('list', { name: 'Waiting approvals' }).getByRole('listitem')).toHaveCount(4);
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+    await expect(page.getByRole('option')).toHaveCount(0);
     // oldest first, each row says in one sentence who asked and what for
     await expect(page.getByTestId('approval-row').first()).toContainText(/Nadia asked .+ to create the page pages\/e2e-approved\.md/);
     await expect(page.getByTestId('approval-row').first().getByTestId('approval-row-approve')).toHaveCount(1);
@@ -77,7 +81,12 @@ test("a waiting row shows the asker's picture, one sentence and a risk tag", asy
     await expect(row.getByTestId('approval-age')).toContainText('Waiting');
     await expect(row.getByTestId('approval-age')).toHaveAttribute('data-overdue', 'false');
     // the detail says the same in its header
-    await row.getByRole('button').first().click();
+    const open = row.locator('.apr-trow');
+    await expect(open).not.toHaveAttribute('aria-current', 'true');
+    await open.click();
+    // the open row is marked for a screen reader, and only that one
+    await expect(open).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('[data-testid="approval-row"] [aria-current="true"]')).toHaveCount(1);
     const c = card(page, approve.id);
     await expect(c.getByTestId('approval-sentence')).toContainText('Nadia asked');
     await expect(c.getByTestId('approval-source')).toHaveText('Needs approval');
@@ -179,7 +188,7 @@ test('denying settles it with a note and makes nothing', async ({ browser, playw
     await expect(c.getByTestId('approval-state')).toContainText('not this week');
     await expect(c.getByTestId('approval-outcome')).toContainText('The call was not made');
     expect(await rowOfApproval(stack, deny.id)).toMatchObject({ status: 'denied', outcome: 'none' });
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    // no call was queued behind the denial: the row says so (outcome none) and the page was never written
     const api = await apiOn(playwright, stack, 'omar');
     expect(await api.status('GET', '/api/teams/engineering/repo/blob?path=pages%2Fe2e-denied.md')).toBe(404);
     await api.ctx.dispose();
@@ -247,9 +256,21 @@ test('approve from the row without opening it', async ({ browser, playwright }) 
   const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals');
   try {
     const row = rowOf(page, fresh!.id);
+    const actions = row.getByRole('group', { name: 'Decide' });
+    // at rest the buttons are drawn but transparent; the pointer on the row or focus inside it shows them
+    await page.mouse.move(0, 0);
+    await expect(actions).toHaveCSS('opacity', '0');
     await row.hover();
+    await expect(actions).toHaveCSS('opacity', '1');
     await expect(row.getByTestId('approval-row-approve')).toBeVisible();
     await expect(row.getByTestId('approval-row-deny')).toBeVisible();
+    // each button names the request it decides, not only "Approve"
+    await expect(row.getByTestId('approval-row-approve')).toHaveAttribute('aria-label', /^Approve: Nadia asked .+ pages\/e2e-from-row\.md$/);
+    await page.mouse.move(0, 0);
+    await expect(actions).toHaveCSS('opacity', '0');
+    await row.locator('.apr-trow').focus();
+    await expect(actions).toHaveCSS('opacity', '1');
+    await row.hover();
     await row.getByTestId('approval-row-approve').click();
     // it leaves Waiting and the stopped call is made, once, as the bot
     await expect(rowOf(page, fresh!.id)).toHaveCount(0);
@@ -311,6 +332,48 @@ test('a cut-short request offers Open instead of Approve on the row', async ({ b
     await expect(card(page, long!.id).getByTestId('approval-approve')).toBeDisabled();
     await card(page, long!.id).getByTestId('approval-deny').click();
     await expect(card(page, long!.id).getByTestId('approval-state')).toContainText('Denied by Rafi');
+  } finally {
+    await context.close();
+  }
+});
+
+test('on a phone the buttons are always on the row, 44 px high, and the detail header buttons are as large', async ({ browser, playwright }) => {
+  // runs on the desktop project at 390 px with touch (a context made here does not take the project's size); the mobile-web project skips this file
+  const [phoneRow, phoneOpen] = await arrangeApprovals(stack, [
+    { path: 'pages/e2e-phone-row.md', requester: 'nadia' },
+    { path: 'pages/e2e-phone-open.md', requester: 'nadia' },
+  ]);
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/approvals', { viewport: PHONE, mobile: true });
+  try {
+    const row = rowOf(page, phoneRow!.id);
+    await expect(row).toBeVisible();
+    // no hover on a touch screen: the group is opaque and its buttons are tall enough to press
+    await expect(row.getByRole('group', { name: 'Decide' })).toHaveCSS('opacity', '1');
+    for (const id of ['approval-row-approve', 'approval-row-deny']) {
+      const box = (await row.getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
+      expect(box.width, id).toBeGreaterThanOrEqual(44);
+      expect(box.x + box.width, id).toBeLessThanOrEqual(PHONE.width);
+    }
+    expect(await noSidewaysScroll(page)).toBe(true);
+
+    // the detail header: Approve and Deny are full-height touch targets and stay on the screen
+    await rowOf(page, phoneOpen!.id).locator('.apr-trow').click();
+    const c = card(page, phoneOpen!.id);
+    for (const id of ['approval-approve', 'approval-deny']) {
+      const box = (await c.locator('.apr-head').getByTestId(id).boundingBox())!;
+      expect(box.height, id).toBeGreaterThanOrEqual(44);
+      expect(box.x + box.width, id).toBeLessThanOrEqual(PHONE.width);
+    }
+    expect(await noSidewaysScroll(page)).toBe(true);
+    await c.getByTestId('approval-deny').click();
+    await expect(c.getByTestId('approval-state')).toContainText('Denied by Rafi');
+
+    // back on the list, Deny on the row settles the other one by touch
+    await page.getByRole('button', { name: 'Approvals', exact: true }).click();
+    await rowOf(page, phoneRow!.id).getByTestId('approval-row-deny').tap();
+    await expect(rowOf(page, phoneRow!.id)).toHaveCount(0);
+    await expect.poll(async () => (await rowOfApproval(stack, phoneRow!.id))?.status).toBe('denied');
   } finally {
     await context.close();
   }

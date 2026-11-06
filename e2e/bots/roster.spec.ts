@@ -89,6 +89,19 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     await expect(coder.getByTestId('bot-state')).not.toContainText(/idle|ready/);
     await expect(coder.getByTestId('bot-open')).toHaveAttribute('href', '/t/engineering/bots/coder');
     await expect(coder.getByTestId('bot-configure')).toHaveAttribute('href', '/t/engineering/bots/coder?tab=identity');
+
+    // the other side of "only what differs": a fixed place and a bot shared with the workspace DO draw a chip (so the zero counts above can fail)
+    const [before] = await stack.sql<{ placement: unknown; visibility: string }>("SELECT placement, visibility FROM app.bots WHERE slug = 'coder'");
+    await stack.sql("UPDATE app.bots SET placement = '{\"node\":\"build-01\"}'::jsonb, visibility = 'workspace' WHERE slug = 'coder'");
+    try {
+      await page.reload();
+      const changed = rosterRow(page, 'coder');
+      await expect(changed.getByTestId('bot-chip-place')).toHaveText('build-01');
+      await expect(changed.getByTestId('bot-chip-scope')).toHaveText('Shared with the workspace');
+      await expect(changed.getByTestId('bot-chip-kind')).toHaveCount(0);
+    } finally {
+      await stack.sql('UPDATE app.bots SET placement = $1::jsonb, visibility = $2 WHERE slug = \'coder\'', [before?.placement === null ? null : JSON.stringify(before?.placement), before?.visibility ?? 'team']);
+    }
   } finally {
     await context.close();
   }

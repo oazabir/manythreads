@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EXAMPLE_CARDS, examplesFrom, filterExamples, rankExamples } from '../src/screens/setup/model';
+import { EXAMPLE_CARDS, briefFromExample, briefReady, examplesFrom, filterExamples, rankExamples } from '../src/screens/setup/model';
 
 /* The example cards of "Add a bot": which bots a team is offered, and in what order. */
 
@@ -65,5 +65,22 @@ describe('filterExamples', () => {
     expect(keys(filterExamples(examples, 'drafts marketing'))).toEqual(['content-drafter']);
     expect(keys(filterExamples(examples, 'manuals'))).toEqual(['support-responder']);
     expect(filterExamples(examples, 'zzz')).toEqual([]);
+  });
+});
+
+describe('briefFromExample', () => {
+  it('starts the box with the bot and its one line, for the person to change', () => {
+    expect(briefFromExample({ name: 'Coder', role: 'Writes the change.' })).toBe('Like the Coder bot. Writes the change.');
+  });
+
+  it('ends a line that has no full stop with one, and keeps ! and ? as they are', () => {
+    expect(briefFromExample({ name: 'Archivist', role: 'Files notes' })).toBe('Like the Archivist bot. Files notes.');
+    expect(briefFromExample({ name: 'Helper', role: 'Who is on call?' })).toBe('Like the Helper bot. Who is on call?');
+    expect(briefFromExample({ name: 'Helper', role: 'Ship it!' })).toBe('Like the Helper bot. Ship it!');
+  });
+
+  it('is what the screen\'s own start check accepts', () => {
+    // a picked example must leave "Let it explore" enabled (the e2e clicks a card and expects Start on)
+    expect(briefReady(briefFromExample({ name: 'Coder', role: 'Writes the change.' }))).toBe(true);
   });
 });

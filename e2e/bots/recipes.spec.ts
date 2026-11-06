@@ -70,7 +70,7 @@ test('desktop: Add appears on hover and on keyboard focus, and opens the details
   await page.locator(`[data-recipe="${first}"]`).focus();
   await page.keyboard.press('Tab');
   await expect(page.locator(`li:has([data-recipe="${first}"]) [data-testid="recipe-add"]`)).toBeFocused();
-  expect(await opacityOf(page, first)).toBe('1');
+  await expect.poll(() => opacityOf(page, first)).toBe('1');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('recipe-dialog')).toBeVisible();
   await expect(page.getByTestId('recipe-install')).toBeEnabled();
@@ -82,9 +82,10 @@ test('phone: Add is always visible, large enough to press, and nothing overflows
   const page = await gallery(browser, playwright, true);
   const adds = page.getByTestId('recipe-add');
   expect(await adds.count()).toBeGreaterThan(8);
-  expect(await opacityOf(page, POPULAR[0]!)).toBe('1');
+  await expect.poll(() => opacityOf(page, POPULAR[0]!)).toBe('1');
   const box = await adds.first().boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(36);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
   expect(await noSidewaysScroll(page)).toBe(true);
   await adds.first().tap();
   await expect(page.getByTestId('recipe-dialog')).toBeVisible();
