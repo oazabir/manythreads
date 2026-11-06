@@ -849,6 +849,12 @@ a.sec:hover {
     gap: 2px;
   }
 
+  /* the name keeps its width (up to 45%); the topic gives way first, as it did before the larger title token */
+  .chead-title {
+    flex-shrink: 0;
+    max-width: 45%;
+  }
+
   .chd-stack {
     padding: 2px 3px;
   }
