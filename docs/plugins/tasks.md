@@ -15,7 +15,8 @@ system role, and both the HTTP route and the `tasks.*` tool call the same door â
 | `handoffs` | who sent a card to whom, with the note; `approval_id` and `applied_at` for a `dispatch: strict` handover that waits |
 | `environments` | deploy targets: `protected` / `needs_approval` (a deploy waits for a person other than the requester), `windows`, `deploy_cap`, `auto_rollback`, `credential_ref` |
 | `deploys` | one row per deploy, and the approval it waited on |
-| `boards` | a named view of the five columns; a team has one default board |
+| `boards` | a named view; `columns` (jsonb, array order is display order) holds `{id, name, state, title}` for up to 12 columns, where two columns may count as the same state. A column stored before ids existed holds `{state, title}` and reads as id = state, name = title (never rewritten) |
+| `board_card_places` | where a card sits on a board when it is not in the first column of its state (a sparse table: no row means the first column). Written only by `app.tasks_board_place`; a trigger drops a card's rows when its state changes, so a tool or bot that changes the state sends the card to the first column of the new state |
 | `runners` | a team's runner processes: `name`, `capabilities`, `status`, `last_seen_at` |
 
 Every table carries `team_id` and a hoisted read policy (`team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])`); a route is
@@ -108,7 +109,10 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 | GET/POST | `/goals`, PATCH `/goals/:goalId` | reader / writer |
 | GET/POST | `/environments`, PATCH `/environments/:environmentId` | reader / **lead** (manage) |
 | POST | `/environments/:environmentId/deploy` | team writer; protected environments ask a person |
-| GET/POST | `/boards`, GET `/boards/:boardId`, POST `/boards/:boardId/move` | reader / writer |
+| GET/POST | `/boards`, GET `/boards/:boardId`, POST `/boards/:boardId/move` (`{taskId, columnId}`, or the older `{taskId, to}` = first column of that state) | reader / writer |
+| POST / PATCH / DELETE / PUT | `/boards/:boardId/columns`, `/columns/:columnId`, `/columns/order` | **lead or workspace admin** (add, rename, delete, reorder). Delete is refused (409) while the column holds cards, and for a board's last column; reorder must list exactly the board's current ids or it is refused (409), so two tabs never overwrite each other. Each change emits `tasks.board.updated` |
+| GET | `/boards/:boardId/places` | reader: where cards sit and how many each column holds |
+| GET | `/tasks/activity` | reader: which bots have a run in progress (`running`) or waiting to start (`queued`) on which cards, for the bot icon on a card (`app.tasks_card_activity`; only cards the caller can read). The plugin listens to `bots.run.opened` and `bots.run.closed` and pushes `tasks.activity.changed {teamId}` to the team's people as a hint to read again |
 | GET/POST | `/runners`, PATCH `/runners/:runnerId` | reader / manager |
 
 Claim, handoff and deploy are rate limited (120, 120 and 30 per minute per actor). Every route validates its body and its response with the
