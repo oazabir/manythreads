@@ -14,7 +14,7 @@ import { channelStore, threadKey } from '../channels/store';
 import { useShell } from '../shell/context';
 import { useNarrow } from '../shell/useNarrow';
 import { Bell } from '../notifications/Bell';
-import { BackIcon } from '../shell/icons';
+import { BackIcon, ReplyIcon } from '../shell/icons';
 import { WelcomeCard } from '../welcome/WelcomeCard';
 import { PageHeader } from '../components/PageHeader';
 import { ThreadCard } from './ThreadCard';
@@ -173,6 +173,7 @@ export function ThreadsInbox() {
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
             {t.label}
             {t.id === 'unread' && threadsUnread > 0 ? <span data-vt-mask>{` · ${threadsUnread}`}</span> : null}
+            {(t.id === 'followed' || t.id === 'mine') && tab === t.id && q.status === 'ok' && items.length > 0 ? <span data-vt-mask data-testid={`${t.id}-count`}>{` · ${items.length}`}</span> : null}
             {t.id === 'later' && later.dueCount > 0 ? <span data-vt-mask data-testid="later-due-count">{` · ${later.dueCount}`}</span> : null}
           </button>
         ))}
@@ -211,6 +212,7 @@ export function ThreadsInbox() {
             <p className="loading" aria-busy="true">Loading…</p>
           ) : absent || (q.status === 'ok' && items.length === 0) ? (
             <div className="inl-empty" data-testid="threads-empty">
+              <span className="inl-empty-ic" aria-hidden="true"><ReplyIcon size={48} /></span>
               <p className="view-empty-title">{EMPTY[tab].title}</p>
               <p className="view-empty-body">{EMPTY[tab].body}</p>
               <p className="view-empty-body">{SUGGEST[tab]}</p>

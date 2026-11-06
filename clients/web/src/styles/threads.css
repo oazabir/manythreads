@@ -301,3 +301,27 @@
     margin-right: 32px;
   }
 }
+
+/* Soft pill tabs and the plain empty-state icon (P21-11). */
+.inh .tabs2 {
+  gap: 4px;
+  padding: 0;
+  border: 0;
+}
+
+.inh .tabs2 button {
+  border-radius: var(--radius-pill);
+  color: var(--mute);
+}
+
+.inh .tabs2 button.on {
+  background: var(--you-wash);
+  color: var(--ink);
+}
+
+.inl-empty-ic {
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  color: var(--faint);
+}
