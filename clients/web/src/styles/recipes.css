@@ -17,7 +17,7 @@
 
 .rg-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
@@ -25,7 +25,7 @@
   max-width: 62ch;
   margin: 3px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .rg-head-act {
@@ -44,10 +44,10 @@
   min-height: 28px;
   padding: 4px 10px;
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
 
@@ -68,12 +68,12 @@
 
 .rg-count {
   opacity: 0.7;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .rg-found {
   margin: 10px 0 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .rg-grid {
@@ -99,7 +99,7 @@
   min-width: 0;
   padding: 12px 14px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -126,20 +126,20 @@
 }
 
 .rg-name {
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .rg-summary {
-  font-size: 13px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
 .rg-needs,
 .rg-meta {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -154,9 +154,9 @@
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   white-space: nowrap;
 }
 
@@ -180,9 +180,9 @@
 .rg-gone {
   padding: 14px;
   border: 1px dashed var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .rg-empty-title {
@@ -202,12 +202,12 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .rg-lede {
   margin: 0 0 4px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .rg-fact {
@@ -216,13 +216,13 @@
 
 .rg-fact-title {
   margin: 0 0 4px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
 .rg-p {
   margin: 0 0 4px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
@@ -230,7 +230,7 @@
 .rg-files {
   margin: 0 0 4px;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .rg-files {
@@ -250,25 +250,25 @@
 .rg-path,
 .rg-cron {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .rg-why {
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .rg-filed {
   padding: 10px 12px;
   border: 1px solid var(--ok-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--ok-wash);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .rg-filed-title {

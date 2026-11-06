@@ -107,7 +107,7 @@
   padding: 0;
   transform: translateY(-50%);
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--nav-on);
   color: var(--mute);
   cursor: pointer;
@@ -153,7 +153,7 @@
   max-width: calc(100% - 8px);
   padding: 4px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
 }
@@ -167,14 +167,14 @@
 .sb-menu-h {
   margin: 4px 8px 2px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 500;
 }
 
 .sb-menu-hint {
   margin: 4px 8px 2px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   line-height: 1.35;
 }
 
@@ -191,11 +191,11 @@
   gap: 8px;
   padding: 7px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -224,7 +224,7 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -236,7 +236,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--mute);
   cursor: pointer;
@@ -259,7 +259,7 @@
   border: 0;
   background: none;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -271,7 +271,7 @@
 .sb-problem {
   margin: 6px 8px 0;
   color: var(--alert-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1.35;
 }
 
@@ -295,11 +295,11 @@
   max-width: calc(100vw - 24px);
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
   color: var(--alert-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 @media (width <= 640px) {

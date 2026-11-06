@@ -38,7 +38,7 @@
 .avp-now .av {
   width: 56px;
   height: 56px;
-  font-size: 18px;
+  font-size: var(--fs-h2);
 }
 
 .avp-now-text {
@@ -52,7 +52,7 @@
 
 .avp-sub {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .avp-now-act {
@@ -64,7 +64,7 @@
 .avp-h {
   margin: 0 0 6px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -86,7 +86,7 @@
 }
 
 .avp-cell.bot {
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 
 .avp-cell:disabled {
@@ -111,7 +111,7 @@
 .avp-credit {
   margin: 0;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .pcard-pic {

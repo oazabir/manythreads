@@ -50,10 +50,10 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--human);
   color: var(--surface);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
   line-height: 1;
 }
@@ -77,7 +77,7 @@
   max-width: 45%;
   overflow: hidden;
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -87,10 +87,10 @@
   min-width: 0;
   padding: 1px 7px;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--nav-on);
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -99,14 +99,14 @@
   flex: none;
   margin-left: auto;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .thc-text {
   display: -webkit-box;
   overflow: hidden;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.4;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -148,7 +148,7 @@
 .thc-face .av {
   width: 22px;
   height: 22px;
-  font-size: 9px;
+  font-size: var(--fs-tiny);
 }
 
 .thc.on .thc-face {
@@ -158,12 +158,12 @@
 .thc-more {
   margin-left: 4px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .thc-replies {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .thc-replies.new {
@@ -174,7 +174,7 @@
 .thc-note {
   margin-left: auto;
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 /* the Actions button takes the place of the time while the card is hovered, focused or has its menu open */
@@ -191,7 +191,7 @@
   width: 26px;
   height: 26px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--mute);
   cursor: pointer;
@@ -222,7 +222,7 @@
   z-index: 40;
   padding: 4px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
 }
@@ -234,11 +234,11 @@
   width: 100%;
   padding: 7px 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -252,13 +252,12 @@
   display: block;
   margin-top: 1px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .thc-item:hover,
 .thc-item:focus-visible {
   background: var(--nav-on);
-  outline: none;
 }
 
 /* no hover on a touch screen: the button is always there, at the foot of the card, and the time keeps its place */

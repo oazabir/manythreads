@@ -5,7 +5,7 @@
 .apr-count {
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-detail {
@@ -20,7 +20,7 @@
   max-width: 640px;
   padding: 14px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -44,7 +44,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-who {
@@ -55,12 +55,12 @@
   margin-left: auto;
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .apr-summary {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -68,12 +68,12 @@
 .apr-meta {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-mono {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-preview {
@@ -82,9 +82,9 @@
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--table-head);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .apr-kv {
@@ -96,7 +96,7 @@
 .apr-kv dt {
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .apr-kv dd {
@@ -114,12 +114,12 @@
 .apr-share-note {
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
 .apr-share-more {
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .apr-share-more summary {
@@ -147,18 +147,18 @@
   min-width: 0;
   padding: 6px 9px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-blocked,
 .apr-state {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-state b {
@@ -172,7 +172,7 @@
 .apr-error {
   margin: 0;
   color: var(--alert-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .apr-thread {

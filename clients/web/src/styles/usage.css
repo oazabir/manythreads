@@ -40,14 +40,14 @@
 .usage-kpi {
   padding: 12px 14px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   min-width: 0;
 }
 
 .usage-kpi-n {
   font-family: var(--mono);
-  font-size: 22px;
+  font-size: var(--fs-h1);
   line-height: 1.2;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -55,7 +55,7 @@
 
 .usage-kpi-l {
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -87,7 +87,7 @@
   justify-content: flex-end;
   width: 100%;
   min-height: 0;
-  border-radius: 2px 2px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: var(--human);
 }
 
@@ -106,14 +106,14 @@
 /* the budget meter */
 .usage-meter {
   height: 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--hairline);
   overflow: hidden;
 }
 
 .usage-meter-fill {
   height: 100%;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--ok);
 }
 

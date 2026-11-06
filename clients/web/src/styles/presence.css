@@ -36,7 +36,7 @@
   border-top: 1px solid var(--rule);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .dnd-strip-ic {
@@ -61,7 +61,7 @@
 
 .foot-status {
   flex: none;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1;
 }
 
@@ -69,7 +69,7 @@
 .pr-help {
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1.4;
 }
 
@@ -79,10 +79,10 @@
   gap: 4px;
   padding: 8px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .pr-paused-row {
@@ -128,7 +128,7 @@
 
 .pr-h {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -142,21 +142,21 @@
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--alert-border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--alert-wash);
   color: var(--alert-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pr-ok {
   margin: 0;
   color: var(--ok-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pr-label {
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 500;
 }
 
@@ -164,11 +164,11 @@
   min-width: 0;
   padding: 6px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .pr-input:focus-visible {
@@ -210,7 +210,7 @@
 
 .pr-now {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .pr-now small {
@@ -229,9 +229,9 @@
   height: 32px;
   padding: 0;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
-  font-size: 16px;
+  font-size: var(--fs-h2);
   line-height: 1;
   cursor: pointer;
 }
@@ -245,7 +245,7 @@
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
 
@@ -266,18 +266,18 @@
   gap: 2px;
   padding: 8px 12px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
 
 .pr-choice small {
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .pr-choice:disabled {
@@ -359,12 +359,12 @@
 
 .pr-time-l {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .pr-day-hint {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .pr-fieldset {
@@ -388,9 +388,9 @@
   min-height: 32px;
   padding: 0 10px;
   border: 1px solid var(--rule);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
 
@@ -433,7 +433,7 @@
   display: inline-block;
   max-width: 1.6em;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1;
   white-space: nowrap;
 }
@@ -452,7 +452,7 @@
 .pcard-open:focus-visible {
   outline: 2px solid var(--human);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .pcard-open:hover {
@@ -512,7 +512,7 @@
 .pcard-line {
   margin: 2px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -531,7 +531,7 @@
 
 .pcard-k {
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pcard-v {
@@ -539,7 +539,7 @@
   flex-direction: column;
   gap: 2px;
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
@@ -552,13 +552,13 @@
 .pcard-sub {
   display: block;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .pcard-empty {
   margin: 0;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 /* ---- phone: touch targets of at least 36 px ---- */

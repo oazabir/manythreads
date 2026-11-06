@@ -19,14 +19,14 @@
 
 .bd-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
 .bd-sub {
   margin: 3px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .bd-body {
@@ -66,13 +66,13 @@
 .bd-hint {
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .bd-muted {
   margin: 2px 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- the columns ---- */
@@ -95,7 +95,7 @@
   gap: 8px;
   padding: 8px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--shell);
   min-height: 140px;
 }
@@ -114,7 +114,7 @@
 
 .bd-col-head h3 {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -123,13 +123,13 @@
 
 .bd-col-count {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .bd-col-empty {
   margin: 4px 2px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- a card ---- */
@@ -137,7 +137,7 @@
   display: block;
   padding: 9px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   cursor: grab;
   text-align: left;
@@ -166,14 +166,14 @@
 .bd-card-state {
   margin-left: auto;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .bd-card-title {
   /* a long address or branch name in a title wraps inside the card instead of running past its edge */
   overflow-wrap: anywhere;
   margin: 0 0 4px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 500;
   color: var(--ink);
 }
@@ -184,7 +184,7 @@
   gap: 8px;
   margin: 0;
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .bd-card-meta .mono {
@@ -197,16 +197,16 @@
 .bd-card-blocker {
   margin: 6px 0 0;
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .bd-card-bounds {
   margin: 5px 0 0;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .bd-kind,
@@ -214,8 +214,8 @@
 .bd-state-pill {
   display: inline-block;
   padding: 1px 6px;
-  border-radius: 999px;
-  font-size: 10.5px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-tiny);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -255,7 +255,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--mute);
 }
 
@@ -269,7 +269,7 @@
 .bd-field select,
 .bd-field textarea {
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 5px 7px;
   font: inherit;
   color: var(--ink);
@@ -280,7 +280,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--mute);
 }
 
@@ -299,7 +299,7 @@
   margin-bottom: 10px;
   padding: 10px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -310,7 +310,7 @@
 
 .bd-new-board input {
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 5px 7px;
   font: inherit;
 }
@@ -322,7 +322,7 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   overflow: auto;
   min-height: 0;
@@ -336,14 +336,14 @@
 
 .bd-panel-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
 .bd-panel-body {
   margin: 0;
   color: var(--txt);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   white-space: normal;
 }
 
@@ -352,7 +352,7 @@
   grid-template-columns: 104px 1fr;
   gap: 4px 10px;
   margin: 4px 0;
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .bd-facts dt {
@@ -368,19 +368,19 @@
   margin: 0;
   padding: 6px 8px;
   border: 1px solid var(--warn-border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .bd-filed {
   margin: 0;
   padding: 6px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--ok-wash);
   color: var(--ok-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .bd-panel-actions {
@@ -406,7 +406,7 @@
 
 .bd-history-title {
   margin: 8px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--mute);
@@ -420,7 +420,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .bd-history li,
@@ -456,7 +456,7 @@
   max-width: 460px;
   margin: 0 auto 12px;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 /* ---- the org chart ---- */
@@ -471,7 +471,7 @@
 
 .bd-org-band h3 {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--mute);
@@ -490,7 +490,7 @@
   gap: 2px;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   min-width: 170px;
 }
@@ -501,13 +501,13 @@
 }
 
 .bd-person-name {
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 500;
 }
 
 .bd-person-role {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .bd-tags,
@@ -521,10 +521,10 @@
 
 .bd-tag {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--hairline);
   color: var(--mute);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .bd-tag.missing {
@@ -552,7 +552,7 @@
 
 .bd-org-bot-role {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .bd-edges {
@@ -562,7 +562,7 @@
 
 .bd-edges-label {
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 /* ---- scheduled jobs ---- */
@@ -573,7 +573,7 @@
 
 .bd-scheduled-job-list {
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
 }
@@ -611,11 +611,11 @@
 
 .bd-scheduled-job-name {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .bd-scheduled-job-schedule {
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--mute);
 }
 
@@ -628,18 +628,18 @@
   margin-top: 14px;
   padding: 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .bd-runs h3 {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .bd-run-status {
   font-weight: 500;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   text-transform: uppercase;
 }
 

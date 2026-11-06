@@ -12,7 +12,7 @@
 
 .gr-h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
 }
@@ -26,11 +26,11 @@
   max-width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .gr-rule-main {
@@ -49,14 +49,14 @@
 
 .gr-pattern {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--mute);
   overflow-wrap: anywhere;
 }
 
 .gr-off {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .gr-new {
@@ -69,7 +69,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .gr-actions {
@@ -81,7 +81,7 @@
   margin-top: 10px;
   padding: 10px 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -92,10 +92,10 @@
 .gr-preview {
   margin: 8px 0 0;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

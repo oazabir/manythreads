@@ -16,7 +16,7 @@
 
 .ag-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
@@ -24,13 +24,13 @@
   max-width: 70ch;
   margin: 3px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.5;
 }
 
 .ag-sub {
   margin: 16px 0 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -52,25 +52,25 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .ag-kind {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ag-addr {
   margin-top: 3px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
 .ag-state,
 .ag-bots {
   margin-top: 5px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ag-st.ok {
@@ -88,12 +88,12 @@
 .ag-err {
   margin-top: 2px;
   color: var(--alert-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ag-result {
   margin-top: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ag-result.ok {
@@ -116,14 +116,14 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ag-edit {
   margin-top: 10px;
   padding: 12px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .ag-pick {
@@ -140,7 +140,7 @@
   align-items: flex-start;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -150,7 +150,7 @@
 
 .ag-opt .d {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ag-tabs {
@@ -163,7 +163,7 @@
 .ag-how ol {
   margin: 0 0 8px;
   padding-left: 20px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -176,10 +176,10 @@
   margin: 0;
   padding: 10px 70px 10px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ok-wash);
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-x: auto;
   white-space: pre;
 }

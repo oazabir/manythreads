@@ -13,7 +13,7 @@
 
 .cn-back {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .cn-status {
@@ -55,7 +55,7 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   align-items: center;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .cn-name {
@@ -69,13 +69,13 @@
   align-items: center;
   margin-top: 4px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .cn-detail {
   margin-top: 4px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -86,10 +86,10 @@
   align-items: center;
   padding: 0 8px;
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--shell);
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -129,7 +129,7 @@
   align-items: center;
   margin-right: 4px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- dialogs ---- */
@@ -142,16 +142,16 @@
   width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .cn-form .fld.mono input {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .cn-check {
@@ -159,7 +159,7 @@
   gap: 8px;
   align-items: center;
   margin: 4px 0 8px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .cn-kinds {
@@ -176,7 +176,7 @@
   width: 100%;
   padding: 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -195,13 +195,13 @@
 }
 
 .cn-kind-title {
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .cn-kind-text {
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
@@ -210,10 +210,10 @@
   margin: 4px 0 8px;
   padding: 8px 12px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
@@ -237,13 +237,13 @@
 
 .cn-manage {
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 /* The connected-accounts page (PLAN P8-02, `/settings/connections`): one card per provider. Classes are prefixed `cp-`. */
 .cp-list {
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -261,7 +261,7 @@
   margin-bottom: 4px;
   padding: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -269,7 +269,7 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .cp-box {
@@ -279,13 +279,13 @@
 .cp-desc {
   display: block;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
 .cp-granted {
   color: var(--ok-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .cp-confirm {
@@ -294,13 +294,13 @@
   gap: 6px 8px;
   align-items: center;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .cp-error {
   margin: 8px 0 0;
   color: var(--alert);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- the Add connection gallery: search, shelves and cards ---- */
@@ -318,10 +318,10 @@
 .cg-chip {
   padding: 4px 10px;
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
 
@@ -337,21 +337,21 @@
 
 .cg-count {
   opacity: 0.7;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .cg-found {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .cg-empty {
   margin: 0;
   padding: 12px;
   border: 1px dashed var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .cg-list {
@@ -369,7 +369,7 @@
   gap: 6px;
   padding: 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -387,17 +387,17 @@
 }
 
 .cg-name {
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .cg-shelf {
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .cg-text,
 .cg-meta {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
@@ -418,5 +418,5 @@
 
 .cg-soon {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }

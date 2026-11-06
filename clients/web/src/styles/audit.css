@@ -13,7 +13,7 @@
   display: grid;
   gap: 4px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--mute);
 }
 
@@ -23,11 +23,11 @@
   min-width: 0;
   padding: 7px 9px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .audit-filter-actions {
@@ -64,7 +64,7 @@
 
 .audit-verify summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   color: var(--human);
 }
 
@@ -73,10 +73,10 @@
   padding: 8px 10px;
   overflow-x: auto;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--table-head);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   white-space: pre;
 }
 
@@ -88,7 +88,7 @@
 .audit-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .audit-table th {
@@ -96,7 +96,7 @@
   border-bottom: 1px solid var(--hairline);
   background: var(--table-head);
   color: var(--mute);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 500;
   text-align: left;
   text-transform: uppercase;
@@ -113,7 +113,7 @@
 .audit-table td:first-child {
   white-space: nowrap;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   color: var(--mute);
 }
 
@@ -143,9 +143,9 @@
   white-space: nowrap;
   padding: 1px 6px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--mute);
-  font-size: 10px;
+  font-size: var(--fs-tiny);
 }
 
 .audit-what {
@@ -156,12 +156,12 @@
   display: block;
   margin-top: 2px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .audit-out {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .audit-out.ok {
@@ -183,10 +183,10 @@
   margin-left: 6px;
   padding: 1px 7px;
   border: 1px solid var(--warn-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 10px;
+  font-size: var(--fs-tiny);
 }
 
 .audit-row[data-outcome='withheld'] {
@@ -273,7 +273,7 @@
   .audit-table td::before {
     content: attr(data-label);
     color: var(--faint);
-    font-size: 11px;
+    font-size: var(--fs-tiny);
   }
 
   .audit-table td:first-child {

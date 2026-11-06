@@ -31,7 +31,7 @@
   max-width: calc(100vw - 24px);
   padding: 4px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
 }
@@ -42,7 +42,7 @@
   gap: 2px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -56,26 +56,26 @@
 }
 
 .chn-name {
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 500;
 }
 
 .chn-help {
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   line-height: 1.35;
 }
 
 .chn-reset {
   margin-top: 2px;
   border-top: 1px solid var(--rule);
-  border-radius: 0 0 6px 6px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
 
 .chn-error {
   margin: 6px 10px 4px;
   color: var(--alert-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .nset {
@@ -92,14 +92,14 @@
 
 .nset-h {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .nset-help {
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1.4;
 }
 
@@ -140,11 +140,11 @@
   min-width: 0;
   padding: 5px 8px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .nset-add {
@@ -160,7 +160,7 @@
 .nset-error {
   margin: 0;
   color: var(--alert-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 @media (width <= 600px) {

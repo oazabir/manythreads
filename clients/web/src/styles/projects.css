@@ -16,7 +16,7 @@
 
 .pj-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
@@ -24,7 +24,7 @@
   max-width: 70ch;
   margin: 3px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.5;
 }
 
@@ -46,24 +46,24 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .pj-branch {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .pj-addr {
   margin-top: 3px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
 .pj-meta {
   margin-top: 5px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pj-act {
@@ -78,7 +78,7 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pj-edit {
@@ -89,7 +89,7 @@
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--rule);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pj-publish-h {
@@ -127,7 +127,7 @@
   max-width: 360px;
   padding: 7px 9px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;

@@ -25,13 +25,13 @@ a.btn.primary {
 
 .mono {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   color: var(--mute);
 }
 
 .loading {
   color: var(--faint);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 /* ---- brand ---- */
@@ -46,15 +46,15 @@ a.btn.primary {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--ink);
   color: var(--surface);
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .brand b {
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 
 /* ---- auth card (sign-in, bootstrap, invite, error pages) ---- */
@@ -71,13 +71,13 @@ a.btn.primary {
   max-width: 400px;
   padding: 28px;
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .auth-title {
   margin: 22px 0 4px;
-  font-size: 20px;
+  font-size: var(--fs-h1);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -89,7 +89,7 @@ a.btn.primary {
 .auth-lede {
   margin: 0 0 18px;
   color: var(--mute);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .auth-title + div,
@@ -100,7 +100,7 @@ a.btn.primary {
 .auth-foot {
   margin: 18px 0 0;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .auth-actions {
@@ -122,7 +122,7 @@ a.btn.primary {
   justify-content: center;
   gap: 10px;
   padding: 9px 12px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   color: var(--ink);
 }
 
@@ -132,11 +132,11 @@ a.btn.primary {
   min-width: 22px;
   height: 22px;
   padding: 0 4px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--ink);
   color: var(--surface);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
 }
 
@@ -146,7 +146,7 @@ a.btn.primary {
   gap: 12px;
   margin: 16px 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .or::before,
@@ -167,7 +167,7 @@ a.btn.primary {
   display: block;
   margin-bottom: 4px;
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .fld-row {
@@ -178,11 +178,11 @@ a.btn.primary {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .fld input[readonly] {
@@ -199,7 +199,7 @@ a.btn.primary {
   top: 50%;
   right: 10px;
   transform: translateY(-50%);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .rule-ok {
@@ -210,13 +210,13 @@ a.btn.primary {
 .fld-hint {
   margin-top: 4px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .fld-err {
   margin-top: 4px;
   color: var(--alert-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .rule.ok {
@@ -230,9 +230,9 @@ a.btn.primary {
 .inp-static {
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .form-actions {
@@ -249,7 +249,7 @@ a.btn.primary {
   background: none;
   color: var(--human);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -261,10 +261,10 @@ a.btn.primary {
   margin-top: 12px;
   padding: 8px 12px;
   border: 1px solid var(--alert-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--alert-wash);
   color: var(--alert-ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .alert .bang {
@@ -277,7 +277,7 @@ a.btn.primary {
   border-radius: 50%;
   background: var(--alert);
   color: var(--surface);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 700;
 }
 
@@ -285,10 +285,10 @@ a.btn.primary {
   margin-top: 12px;
   padding: 8px 12px;
   border: 1px solid var(--ok-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ok-wash);
   color: var(--ok-ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .notice.warn {
@@ -299,7 +299,7 @@ a.btn.primary {
 
 .saved {
   color: var(--ok);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .inline-state {
@@ -335,7 +335,7 @@ a.btn.primary {
 .plain-links {
   display: flex;
   gap: 16px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .plain-links a {
@@ -351,7 +351,7 @@ a.btn.primary {
 
 .page-title {
   margin: 0 0 20px;
-  font-size: 22px;
+  font-size: var(--fs-h1);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -381,9 +381,9 @@ a.btn.primary {
 .tab {
   display: block;
   padding: 7px 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--mute);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   text-decoration: none;
 }
 
@@ -402,14 +402,14 @@ a.btn.primary {
 }
 
 .tab.back {
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .tgrp {
   display: block;
   padding: 12px 10px 5px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   text-decoration: none;
 }
 
@@ -434,18 +434,18 @@ a.btn.primary {
   display: block;
   margin-bottom: 4px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .settings-select select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .pane {
@@ -455,7 +455,7 @@ a.btn.primary {
 
 .pane-title {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
@@ -463,14 +463,14 @@ a.btn.primary {
   max-width: 700px;
   margin: 0 0 22px;
   color: var(--mute);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 /* ---- blocks and rows ---- */
 .block {
   margin-bottom: 20px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -483,14 +483,14 @@ a.btn.primary {
   padding: 11px 15px;
   border-bottom: 1px solid var(--rule);
   background: var(--table-head);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .bh .cnt {
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 400;
 }
 
@@ -524,7 +524,7 @@ a.btn.primary {
   align-items: center;
   padding: 11px 15px;
   border-bottom: 1px solid var(--hairline);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .mrow:last-child {
@@ -536,7 +536,7 @@ a.btn.primary {
 .trow2 .d {
   margin-top: 1px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .mrow.person-row {
@@ -562,21 +562,21 @@ a.btn.primary {
 .tpl-row .k,
 .kv .k {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .mono-list span {
   margin-right: 10px;
   color: var(--mute);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .note-row {
   margin: 0;
   padding: 10px 15px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .invite-form {
@@ -600,7 +600,7 @@ a.btn.primary {
   gap: 14px;
   padding: 11px 15px;
   border-bottom: 1px solid var(--hairline);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .srow:last-child {
@@ -613,7 +613,7 @@ a.btn.primary {
   align-items: center;
   gap: 14px;
   margin-top: 12px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .inline-form {
@@ -649,17 +649,17 @@ a.btn.primary {
   border-radius: 50%;
   background: var(--human);
   color: var(--surface);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
 }
 
 .av.a {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--agent);
 }
 
 .av.r {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--bot-grey);
 }
 
@@ -667,8 +667,8 @@ a.btn.primary {
   display: inline-block;
   padding: 1px 7px;
   border: 1px solid;
-  border-radius: 3px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-tiny);
   font-weight: 600;
 }
 
@@ -695,11 +695,11 @@ a.btn.primary {
   margin: 0 6px 2px 0;
   padding: 1px 6px;
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
   color: var(--mute);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-tiny);
   white-space: nowrap;
 }
 
@@ -753,7 +753,7 @@ a.btn.primary {
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .table th {
@@ -761,7 +761,7 @@ a.btn.primary {
   border-bottom: 1px solid var(--rule);
   background: var(--table-head);
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   text-align: left;
 }
@@ -785,20 +785,20 @@ a.btn.primary {
   margin-bottom: 20px;
   padding: 28px 20px;
   border: 1px dashed var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--shell);
   text-align: center;
 }
 
 .empty-title {
   margin: 0 0 4px;
-  font-size: 16px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
 .empty-body {
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 /* ---- sign-in methods (proto §01 plate 1) and template picker (plate 4) ---- */
@@ -817,7 +817,7 @@ a.btn.primary {
 .box {
   padding: 14px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .box-h {
@@ -825,7 +825,7 @@ a.btn.primary {
   align-items: center;
   gap: 8px;
   margin: 0 0 10px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -835,7 +835,7 @@ a.btn.primary {
 
 .status {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 400;
 }
 
@@ -866,7 +866,7 @@ a.btn.primary {
   height: 19px;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--toggle-off);
   cursor: pointer;
 }
@@ -903,7 +903,7 @@ a.btn.primary {
   gap: 14px;
   padding: 9px 0;
   border-bottom: 1px solid var(--hairline);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .trow2:last-of-type {
@@ -914,16 +914,16 @@ a.btn.primary {
   margin-top: 12px;
   padding: 9px 12px;
   border: 1px solid var(--ok-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ok-wash);
   color: var(--ok-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .foot-note {
   margin: 12px 0 0;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .tpls {
@@ -938,7 +938,7 @@ a.btn.primary {
   align-items: start;
   padding: 13px 15px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .tpl.on {
@@ -952,7 +952,7 @@ a.btn.primary {
 
 .tpl b {
   display: block;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .cb {
@@ -962,7 +962,7 @@ a.btn.primary {
   margin-top: 2px;
   padding: 0;
   border: 1.5px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   cursor: pointer;
 }
@@ -982,7 +982,7 @@ a.btn.primary {
   top: -1px;
   left: 3px;
   color: var(--surface);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .tpl .nm-row {
@@ -999,10 +999,10 @@ a.btn.primary {
   gap: 3px;
   padding: 2px 7px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .tpl .nm input {
@@ -1021,7 +1021,7 @@ a.btn.primary {
   align-items: center;
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .tpl .slug input {
@@ -1029,7 +1029,7 @@ a.btn.primary {
   min-width: 3ch;
   padding: 1px 3px;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--mute);
   font: inherit;
@@ -1049,12 +1049,12 @@ a.btn.primary {
   margin-right: 8px;
   color: var(--mute);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .tpl .bots {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .tpl .needs {
@@ -1080,26 +1080,26 @@ a.btn.primary {
   box-sizing: border-box;
   padding: 7px 10px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .tpl .fld.inv label {
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 /* the create-teams screen reads like the plate's pane: larger title, 14px lede */
 .teams .pane-title {
   margin-bottom: 4px;
-  font-size: 22px;
+  font-size: var(--fs-h1);
   letter-spacing: -0.01em;
 }
 
 .teams .lede {
   max-width: 640px;
   margin-bottom: 24px;
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .actions {
@@ -1114,7 +1114,7 @@ a.btn.primary {
 .actions .skip {
   margin-left: auto;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- narrow screens: settings nav becomes a top select (<= 600px) ---- */
@@ -1222,7 +1222,7 @@ a.btn.primary {
   .table td::before {
     content: attr(data-label);
     color: var(--faint);
-    font-size: 11.5px;
+    font-size: var(--fs-caption);
   }
 
   .actions {
@@ -1272,8 +1272,8 @@ a.btn.primary {
 .person-row .roster-cell .tag-add input {
   width: 130px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   padding: 3px 6px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
 }

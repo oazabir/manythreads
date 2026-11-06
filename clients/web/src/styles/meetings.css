@@ -24,10 +24,10 @@
   gap: 6px;
   padding: 3px 9px;
   border: 1px solid var(--ok-border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--ok-wash);
   color: var(--ok-ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -68,7 +68,7 @@
   height: 16px;
   margin-left: -4px;
   border: 1.5px solid var(--surface);
-  font-size: 7px;
+  font-size: var(--fs-tiny);
 }
 
 .live-faces .av:first-child {
@@ -78,7 +78,7 @@
 .live-more {
   margin-left: 3px;
   color: var(--mute);
-  font-size: 10px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
 }
 
@@ -135,7 +135,7 @@
   max-width: 220px;
   overflow: hidden;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -144,7 +144,7 @@
 .call-clock {
   min-width: 56px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -165,7 +165,7 @@
   align-items: center;
   gap: 6px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* the speaking ring: a box-shadow, so nothing around it moves */
@@ -187,10 +187,10 @@
 .call-chip {
   padding: 2px 9px;
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -222,7 +222,7 @@
   height: 32px;
   padding: 0;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -275,10 +275,10 @@
 .call-unread {
   min-width: 16px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--human);
   color: var(--surface);
-  font-size: 10px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
   line-height: 16px;
   text-align: center;
@@ -288,19 +288,19 @@
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .call-captions {
   margin: 0;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 /* ---- settings popover ---- */
@@ -319,7 +319,7 @@
   max-width: calc(100vw - 32px);
   padding: 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
 }
@@ -328,14 +328,14 @@
   display: grid;
   gap: 4px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .call-field select {
   min-width: 0;
   padding: 5px 6px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -346,13 +346,13 @@
   align-items: flex-start;
   gap: 8px;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .call-hint {
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .call-sec {
@@ -373,20 +373,20 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--warn-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .call-consent-title {
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .call-consent-body {
   max-width: 62ch;
   margin: 0;
   color: var(--txt);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.45;
 }
 
@@ -395,13 +395,13 @@
   align-items: center;
   gap: 8px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .call-consent-error {
   margin: 0;
   color: var(--alert-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .call-consent-actions {
@@ -412,7 +412,7 @@
 
 .call-consent-wait {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- the card: not set up / could not open ---- */
@@ -429,12 +429,12 @@
 
 .call-card-title {
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .call-card-body {
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- the bottom sheet at phone width ---- */
@@ -457,7 +457,7 @@
     overflow: auto;
     border: 1px solid var(--rule);
     border-bottom: 0;
-    border-radius: 14px 14px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: var(--menu-shadow);
   }
 
@@ -478,7 +478,7 @@
     width: 36px;
     height: 4px;
     margin: 8px auto;
-    border-radius: 2px;
+    border-radius: var(--radius-sm);
     background: var(--rule);
   }
 
@@ -534,7 +534,7 @@
   min-width: 280px;
   padding: 12px 14px;
   border: 1px solid var(--ok-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
 }
@@ -546,12 +546,12 @@
 
 .ring-title {
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--fs-body);
 }
 
 .ring-sub {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ring-actions {

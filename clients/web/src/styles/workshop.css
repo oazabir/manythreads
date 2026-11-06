@@ -21,13 +21,13 @@
 .ws-back {
   flex-basis: 100%;
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-title {
   margin: 0;
   min-width: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -44,8 +44,8 @@
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
-  font-size: 12.5px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-caption);
 }
 
 .ws-views {
@@ -57,7 +57,7 @@
   min-height: 32px;
   padding: 4px 14px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--mute);
   font: inherit;
@@ -102,13 +102,13 @@
 .ws-lead {
   max-width: 70ch;
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .ws-hint {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -130,13 +130,13 @@
 .ws-main {
   padding: 14px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .ws-h {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -163,7 +163,7 @@
   min-height: 44px;
   padding: 6px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -186,7 +186,7 @@
 }
 
 .ws-earlier-title {
-  font-size: 13px;
+  font-size: var(--fs-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -194,7 +194,7 @@
 
 .ws-earlier-meta {
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 /* the conversation */
@@ -214,7 +214,7 @@
   min-width: 0;
   padding: 8px 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .ws-person {
@@ -248,21 +248,21 @@
   gap: 4px 8px;
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ws-tag {
   padding: 1px 8px;
   border: 1px solid var(--warn-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-text {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -272,7 +272,7 @@
   padding-left: 10px;
   border-left: 3px solid var(--rule);
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -284,7 +284,7 @@
   margin-left: 12px;
   padding: 4px 10px;
   border-left: 3px solid var(--rule);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-step-what {
@@ -308,17 +308,17 @@
 .ws-badge {
   padding: 1px 8px;
   border: 1px solid var(--warn-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .ws-notice {
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   text-align: center;
 }
 
@@ -338,7 +338,7 @@
 .ws-usage {
   margin: 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* the message box */
@@ -349,7 +349,7 @@
 }
 
 .ws-label {
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -358,11 +358,11 @@
   min-height: 72px;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-body);
   resize: vertical;
 }
 
@@ -379,9 +379,9 @@
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--msg-hover);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -395,7 +395,7 @@
   align-items: center;
   gap: 10px;
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .ws-spin {
@@ -465,7 +465,7 @@
   min-width: 0;
   padding: 12px 14px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -476,7 +476,7 @@
 
 .ws-h2 {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -500,14 +500,14 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-days select {
   min-height: 32px;
   padding: 2px 8px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -515,7 +515,7 @@
 
 .ws-summary {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
@@ -532,12 +532,12 @@
 
 .ws-kind dt {
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-kind dd {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -561,9 +561,9 @@
   padding: 8px 10px;
   border: 1px solid var(--rule);
   border-left-width: 3px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-v-tighter {
@@ -593,7 +593,7 @@
 
 .ws-when {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-change-why {
@@ -605,7 +605,7 @@
   margin: 0;
   padding-left: 18px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ws-checks {
@@ -623,7 +623,7 @@
 .ws-estimate {
   padding: 8px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
 }
 
@@ -633,12 +633,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ws-reassess-reason {
   color: var(--warn-ink);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -650,10 +650,10 @@
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 @media (width <= 760px) {

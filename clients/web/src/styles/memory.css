@@ -21,7 +21,7 @@
 
 .mm-title {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--fs-h1);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -29,7 +29,7 @@
 .mm-subtitle {
   margin: 0;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mm-body {
@@ -44,7 +44,7 @@
   margin: 0;
   padding: 0;
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   overflow: hidden;
 }
@@ -72,7 +72,7 @@
 }
 
 .mm-concept-path {
-  font-size: 13px;
+  font-size: var(--fs-small);
   color: var(--ink);
   word-break: break-all;
 }
@@ -83,9 +83,9 @@
   gap: 4px;
   border: 1px solid var(--rule);
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   color: var(--mute);
   white-space: nowrap;
 }
@@ -136,21 +136,21 @@
   flex-direction: column;
   gap: 10px;
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   padding: 16px;
 }
 
 .mm-detail-title {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
 .mm-detail-desc {
   margin: 0;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -162,7 +162,7 @@
 
 .mm-tags {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .mm-actions {
@@ -174,10 +174,10 @@
 .mm-actions button {
   border: 1px solid var(--rule);
   background: var(--surface);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 6px 12px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   color: var(--ink);
   cursor: pointer;
 }
@@ -201,7 +201,7 @@
   padding: 8px 14px;
   margin-bottom: -1px;
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   color: var(--mute);
   cursor: pointer;
 }
@@ -231,7 +231,7 @@
   justify-content: space-between;
   padding: 16px;
   border: 1px dashed var(--rule);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -246,7 +246,7 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-drop-text span {
@@ -258,7 +258,7 @@
   gap: 8px;
   align-items: center;
   margin-top: 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-drop-actions {
@@ -279,7 +279,7 @@
   gap: 6px 8px;
   align-items: center;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-email p {
@@ -302,7 +302,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-upload {
@@ -323,7 +323,7 @@
 .mi-status {
   min-height: 18px;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-filters {
@@ -344,7 +344,7 @@
   margin: 0;
   padding: 0;
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   list-style: none;
   overflow: hidden;
@@ -374,7 +374,7 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   align-items: center;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .mi-name {
@@ -387,13 +387,13 @@
   gap: 2px 12px;
   margin-top: 2px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .mi-sentence {
   margin: 6px 0 0;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -404,10 +404,10 @@
   align-items: center;
   padding: 0 8px;
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--shell);
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   white-space: nowrap;
 }
 
@@ -434,12 +434,12 @@
   flex-direction: column;
   gap: 4px;
   margin-top: 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-became-head {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -455,7 +455,7 @@
 .mi-ref {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .mi-actions-list {
@@ -463,7 +463,7 @@
   flex-direction: column;
   gap: 4px;
   margin-top: 4px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-actions-list .mi-links {
@@ -490,7 +490,7 @@
 
 .mi-action-added {
   color: var(--ok-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .mi-actions {
@@ -506,25 +506,25 @@
   gap: 6px 8px;
   align-items: center;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .mi-error {
   margin: 6px 0 0;
   color: var(--alert);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .mi-empty {
   margin: 0;
   padding: 16px 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-help {
   margin: 0 0 8px;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -532,7 +532,7 @@
   display: block;
   margin: 8px 0 4px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -540,11 +540,11 @@
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .mi-text {
@@ -570,11 +570,11 @@
   align-items: center;
   padding: 10px 12px;
   border: 1px solid var(--ok-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--ok-wash);
   color: var(--ok-ink);
   box-shadow: var(--menu-shadow);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .mi-notice.warn {
@@ -604,10 +604,10 @@
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--warn-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -627,7 +627,7 @@
 
 .ms-h {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 650;
 }
 
@@ -655,7 +655,7 @@
   flex-wrap: wrap;
   gap: 4px 8px;
   align-items: center;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .ms-name {
@@ -665,14 +665,14 @@
 .ms-share-name {
   margin: 2px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ms-facts {
   display: grid;
   gap: 4px;
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .ms-facts > div {
@@ -683,7 +683,7 @@
 
 .ms-facts dt {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ms-facts dd {
@@ -695,7 +695,7 @@
   display: block;
   margin-top: 2px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ms-dests {
@@ -704,7 +704,7 @@
 
 .ms-dests-head {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -722,13 +722,13 @@
   flex-wrap: wrap;
   gap: 2px 8px;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .ms-dest-note {
   flex: 1 1 100%;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
@@ -736,9 +736,9 @@
   margin-top: 10px;
   padding: 8px 10px;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--table-head);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .ms-preview p {
@@ -752,12 +752,12 @@
 .ms-diff {
   margin-top: 2px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ms-more {
   margin-top: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ms-more summary {
@@ -777,7 +777,7 @@
 .ms-paths {
   margin: 2px 0 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .ms-digests {
@@ -797,7 +797,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 2px 12px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .ms-actions {
@@ -812,7 +812,7 @@
 .ms-hint {
   margin: 6px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 1.45;
 }
 
@@ -828,16 +828,16 @@
   gap: 8px;
   align-items: center;
   margin-top: 6px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .ms-yaml {
   margin: 4px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--table-head);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-x: auto;
 }
 

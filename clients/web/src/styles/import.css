@@ -26,7 +26,7 @@
 .imp-status {
   margin-left: 8px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 400;
   color: var(--faint);
 }
@@ -47,7 +47,7 @@
 .imp-bar {
   height: 8px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
   overflow: hidden;
 }
@@ -64,7 +64,7 @@
 
 .imp-h {
   margin: 12px 0 4px;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   color: var(--ink);
 }
@@ -74,7 +74,7 @@
   padding-left: 18px;
   display: grid;
   gap: 3px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -82,7 +82,7 @@
 .imp-table {
   display: grid;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .imp-row {
@@ -92,7 +92,7 @@
   align-items: baseline;
   padding: 6px 10px;
   border-bottom: 1px solid var(--hairline);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .imp-row:last-child {
@@ -107,11 +107,11 @@
 .imp-count,
 .imp-out {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .imp-confirm {
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 @media (width <= 640px) {

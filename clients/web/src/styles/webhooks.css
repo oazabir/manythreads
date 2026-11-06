@@ -36,13 +36,13 @@
 .wh-lead {
   margin: 0 0 12px;
   color: var(--mute);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
 .wh-h {
   margin: 18px 0 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
   color: var(--ink);
 }
@@ -50,22 +50,22 @@
 .wh-hint {
   margin: 6px 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .wh-note {
   margin: 8px 0;
   padding: 8px 10px;
   border: 1px solid var(--ok-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ok-wash);
   color: var(--ok-ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .wh-mono {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .wh-reveal {
@@ -76,14 +76,14 @@
   margin: 0 0 12px;
   padding: 12px;
   border: 1px solid var(--warn-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--warn-wash);
 }
 
 .wh-reveal-title {
   margin: 0;
   color: var(--warn-ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
@@ -99,10 +99,10 @@
   min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
   user-select: all;
 }
@@ -112,10 +112,10 @@
   margin: 4px 0;
   padding: 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--table-head);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1.5;
   overflow-x: auto;
   white-space: pre;
@@ -133,7 +133,7 @@
 .wh-row {
   padding: 10px 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -145,7 +145,7 @@
 }
 
 .wh-name {
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
@@ -153,7 +153,7 @@
 .wh-addr {
   margin: 4px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .wh-actions {
@@ -169,7 +169,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .wh-danger {
@@ -205,7 +205,7 @@
 .wh-help {
   margin-top: 16px;
   color: var(--txt);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .wh-help summary {
@@ -233,10 +233,10 @@
 .wh-mark {
   padding: 0 5px;
   border: 1px solid var(--agent-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--agent-wash);
   color: var(--agent-ink);
-  font-size: 10.5px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
   line-height: 16px;
   letter-spacing: 0.02em;
@@ -277,7 +277,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 @media (width <= 640px) {

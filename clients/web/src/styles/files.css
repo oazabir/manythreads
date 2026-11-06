@@ -61,7 +61,7 @@
 .ftree .tit {
   padding: 4px 10px 8px;
   color: var(--faint);
-  font-size: 10.5px;
+  font-size: var(--fs-tiny);
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -71,9 +71,9 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   white-space: nowrap;
   cursor: default;
 }
@@ -147,7 +147,7 @@
   gap: 8px;
   padding: 10px 20px 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .crumb-trail {
@@ -186,12 +186,12 @@
   gap: 8px;
   padding: 9px 20px;
   border-bottom: 1px solid var(--rule);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .filt .chip {
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   color: var(--ink);
   cursor: pointer;
 }
@@ -235,7 +235,7 @@
   align-items: center;
   padding: 9px 20px;
   border-bottom: 1px solid var(--hairline);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .frow:not(.hd) {
@@ -256,7 +256,7 @@
   border-bottom: 1px solid var(--rule);
   background: var(--table-head);
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .frow.on {
@@ -268,11 +268,11 @@
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bot-grey);
   color: var(--surface);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
 }
 
@@ -295,7 +295,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -308,7 +308,7 @@
 .frow .sz {
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .fname {
@@ -372,10 +372,10 @@
   margin: 10px 20px 0;
   padding: 8px 12px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .fnote > b {
@@ -420,7 +420,7 @@
   margin: 10px 20px 0;
   padding: 0;
   list-style: none;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .fup-row {
@@ -484,14 +484,14 @@
   min-width: 0;
   overflow: hidden;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .fvh .m {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   white-space: nowrap;
 }
 
@@ -554,7 +554,7 @@
   gap: 5px 10px;
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .fp-kv dt {
@@ -569,7 +569,7 @@
 }
 
 .fp-kv .mono {
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- history ---- */
@@ -589,7 +589,7 @@
 .commit {
   padding: 9px 0;
   border-bottom: 1px solid var(--hairline);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .commit:last-child {
@@ -621,21 +621,21 @@
 }
 
 .commit .who2 b {
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
 .who2 .av {
   width: 22px;
   height: 22px;
-  font-size: 9px;
+  font-size: var(--fs-tiny);
 }
 
 .t2 {
   margin-left: auto;
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .msg2 {
@@ -649,7 +649,7 @@
   display: block;
   margin: 2px 0 0 38px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .cdetail {
@@ -661,13 +661,13 @@
   align-items: center;
   gap: 12px;
   margin-top: 6px;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .seg {
   display: inline-flex;
   border: 1px solid var(--rule);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -677,7 +677,7 @@
   background: var(--surface);
   color: var(--mute);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
 
@@ -690,10 +690,10 @@
   margin-top: 2px;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   overflow: auto;
 }
 
@@ -714,7 +714,7 @@
 .diff .ctx {
   display: block;
   padding: 1px 5px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -736,7 +736,7 @@
 .rdiff .rd {
   margin: 4px 0;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .rdiff .rd.add {
@@ -783,7 +783,7 @@
   max-height: 100%;
   padding: 18px 20px;
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
   overflow: auto;
@@ -795,27 +795,22 @@
 
 .dlg-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   overflow-wrap: anywhere;
-}
-
-/* a dialog that starts at the top holds focus on its heading: it is not something to press, so no ring */
-.dlg-title:focus {
-  outline: none;
 }
 
 .dlg-text {
   margin: 0;
   color: var(--mute);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
 .dlg-text code {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .dlg-form {
@@ -825,18 +820,18 @@
 
 .dlg-label {
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 500;
 }
 
 .dlg-input {
   padding: 7px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .dlg-input:focus-visible {
@@ -847,17 +842,17 @@
 .dlg-hint {
   margin: 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .dlg-error {
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--alert-border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--alert-wash);
   color: var(--alert-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .dlg-foot {
@@ -949,7 +944,7 @@
   .dlg.sheet {
     width: 100%;
     max-height: 80dvh;
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }
 
   .dlg.sheet .ftree {

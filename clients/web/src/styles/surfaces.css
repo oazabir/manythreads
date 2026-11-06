@@ -9,7 +9,7 @@
   margin-top: 4px;
   padding: 10px 12px;
   border: 1px solid var(--agent-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--agent-wash);
 }
 
@@ -73,7 +73,7 @@
   display: block;
   width: 100%;
   min-height: 14px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--hairline);
 }
 
@@ -82,7 +82,7 @@
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--alert-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--alert-wash);
   color: var(--alert-ink);
   font-size: 0.9em;
@@ -263,7 +263,7 @@
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -291,7 +291,7 @@
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -329,7 +329,7 @@
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -350,7 +350,7 @@
 .sf-chart-label,
 .sf-chart-value {
   fill: var(--txt);
-  font-size: 9px;
+  font-size: var(--fs-tiny);
   text-anchor: middle;
 }
 
@@ -421,7 +421,7 @@ ol.sf-list {
   max-width: 100%;
   padding: 1px 8px;
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.8em;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -432,7 +432,7 @@ ol.sf-list {
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .sf-callout-title {
@@ -451,7 +451,7 @@ ol.sf-list {
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   font-family: var(--mono);
   font-size: 0.85em;
@@ -473,7 +473,7 @@ ol.sf-list {
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -500,7 +500,7 @@ ol.sf-list {
   max-width: 100%;
   padding: 1px 8px;
   border: 1px solid var(--human-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--human-wash);
   color: var(--ink);
   font: inherit;
@@ -517,7 +517,7 @@ ol.sf-list {
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
 }
 
@@ -550,7 +550,7 @@ ol.sf-list {
   min-width: 0;
   margin: 0;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   overflow: hidden;
 }

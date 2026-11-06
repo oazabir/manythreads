@@ -16,26 +16,26 @@
 
 .pp-title {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
 .pp-sub {
   margin: 3px 0 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
 .pp-back {
   margin: 0 0 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pp-list {
   margin-top: 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -72,7 +72,7 @@
 
 .pp-row-meta {
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -85,7 +85,7 @@
 
 .pp-delta {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .pp-delta .add {
@@ -99,8 +99,8 @@
 .pp-pill {
   padding: 2px 8px;
   border: 1px solid var(--rule);
-  border-radius: 999px;
-  font-size: 11.5px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-caption);
   white-space: nowrap;
 }
 
@@ -127,14 +127,14 @@
 
 .pp-h {
   margin: 16px 0 6px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 
 .pp-note,
 .pp-outcome {
   margin: 8px 0;
-  font-size: 13px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
@@ -144,7 +144,7 @@
   margin: 8px 0;
   padding: 0;
   list-style: none;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pp-checks li {
@@ -152,7 +152,7 @@
   gap: 8px;
   padding: 6px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow-wrap: anywhere;
 }
 
@@ -186,7 +186,7 @@
 .pp-why {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pp-why.bad {
@@ -201,13 +201,13 @@
 .pp-text {
   min-height: 160px;
   resize: vertical;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .pp-count {
   margin: 0 0 4px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .pp-diff {

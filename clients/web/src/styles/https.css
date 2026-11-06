@@ -2,7 +2,7 @@
 .https-mode {
   margin: 0 0 12px;
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   line-height: 1.5;
 }
 
@@ -22,7 +22,7 @@
 
 .https-st {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
 }
 
 .https-st.ok {
@@ -50,10 +50,10 @@
   margin: 6px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ok-wash);
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   overflow-x: auto;
   white-space: pre;
 }

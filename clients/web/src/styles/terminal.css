@@ -8,13 +8,13 @@
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .wt-h {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -27,7 +27,7 @@
 .wt-lead {
   max-width: 70ch;
   margin: 0 0 6px;
-  font-size: 13.5px;
+  font-size: var(--fs-small);
 }
 
 .wt-list {
@@ -37,14 +37,14 @@
   margin: 0;
   padding-left: 18px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
 .wt-hint {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -61,7 +61,7 @@
   max-height: 22rem;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ink);
   color: var(--surface);
   overflow: auto;
@@ -75,7 +75,7 @@
 .wt-text {
   margin: 0;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   line-height: 18px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -88,7 +88,7 @@
 }
 
 .wt-label {
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
@@ -103,11 +103,11 @@
   min-height: 44px;
   padding: 6px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: var(--fs-h2);
 }
 
 .wt-input:focus-visible {
@@ -124,10 +124,10 @@
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--warn-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--warn-wash);
   color: var(--warn-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .wt-working {
@@ -136,7 +136,7 @@
   gap: 8px;
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .wt-spin {
@@ -185,18 +185,18 @@
   gap: 4px 10px;
   padding: 6px 8px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .wt-etitle {
-  font-size: 13px;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
 .wt-emeta {
   flex: 1 1 12rem;
   color: var(--mute);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -210,7 +210,7 @@
   max-height: 18rem;
   padding: 8px 10px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--shell);
   color: var(--ink);
   overflow: auto;

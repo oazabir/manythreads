@@ -9,7 +9,7 @@
 .cv-title {
   min-width: 0;
   overflow: hidden;
-  font-size: 14.5px;
+  font-size: var(--fs-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -69,14 +69,14 @@
 
 .cv-name {
   margin: 0;
-  font-size: 17px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
 .cv-role {
   margin: 2px 0 0;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .cv-chips {
@@ -88,11 +88,11 @@
 .cv-chip {
   padding: 6px 12px;
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--txt);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   text-align: left;
   cursor: pointer;
 }
@@ -110,14 +110,14 @@
 .cv-compose {
   width: 100%;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .cv-hint {
   margin: 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .cv-failed {
@@ -138,7 +138,7 @@
 
 .cv-more-failed {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 /* a bot that cannot answer right now: the reason stands where the message box would be */

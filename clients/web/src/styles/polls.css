@@ -11,7 +11,7 @@
   margin-top: 2px;
   padding: 10px 12px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -32,7 +32,7 @@
   margin: 0 0 6px;
   padding: 0;
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -64,10 +64,10 @@
   padding: 6px 10px;
   overflow: hidden;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   line-height: 1.3;
   cursor: pointer;
 }
@@ -143,7 +143,7 @@
   gap: 8px;
   min-width: 12.5em;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -163,7 +163,7 @@
 .poll-you {
   min-width: 4.6em;
   color: var(--human);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
   text-align: right;
   visibility: hidden;
@@ -180,7 +180,7 @@
   min-height: 18px;
   margin: 2px 0 0;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .poll-voters {
@@ -196,29 +196,29 @@
   align-items: center;
   gap: 4px 14px;
   min-height: 22px;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .poll-closed {
   margin: 0;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .poll-error {
   margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--alert-border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--alert-wash);
   color: var(--alert-ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .poll-who {
   padding-top: 6px;
   border-top: 1px solid var(--hairline);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .poll-who ul {
@@ -264,7 +264,7 @@
 .poll-f > legend,
 .poll-f > label {
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 500;
 }
 
@@ -293,7 +293,7 @@
   align-items: flex-start;
   gap: 8px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .poll-check input {

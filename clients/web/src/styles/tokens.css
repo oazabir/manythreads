@@ -1,7 +1,7 @@
 /* stylelint-disable color-hex-length -- values copied verbatim from the prototype */
 
 /*
- * manythreads design tokens. Copied from the prototype `:root` in docs/spec/mockups-all.html.
+ * manythreads design tokens (look tokens at the end of :root: type, radius, colour meanings, focus). Copied from the prototype `:root` in docs/spec/mockups-all.html.
  * This is the only file where raw hex colours are allowed (stylelint color-no-hex).
  *
  * not yet tokens (prototype CSS values seen in section #app, kept out until a screen needs them):
@@ -80,6 +80,33 @@
   --av-9-ink: #8E5A2E;
   --av-10-bg: #DDE0E6;
   --av-10-ink: #3B4452;
+
+  /* P21-20 look tokens: screens use these names, not raw sizes, radii or colours (stylelint enforces it) */
+  --fs-h1: 22px;
+  --fs-h2: 16px;
+  --fs-body: 14.5px;
+  --lh-body: 1.5;
+  --fs-small: 13px;
+  --fs-caption: 12px;
+  --fs-tiny: 11px; /* count pills only */
+  --fw-title: 600;
+  --fw-caption: 500;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* colour meanings: blue is you, purple is a bot, amber needs you, red is a danger or a mention */
+  --you: var(--human);
+  --you-wash: var(--human-wash);
+  --bot: var(--agent);
+  --bot-wash: var(--agent-wash);
+  --attention: var(--warn);
+  --attention-wash: var(--warn-wash);
+  --danger: var(--alert);
+  --mention: var(--alert);
+  --focus: var(--human);
+  --card-shadow: 0 1px 2px rgb(27 36 48 / 6%);
   --sans: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", monospace;
 }

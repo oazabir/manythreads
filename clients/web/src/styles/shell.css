@@ -34,7 +34,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--mute);
   cursor: pointer;
@@ -70,17 +70,17 @@
   flex: none;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ink);
   color: var(--surface);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 600;
 }
 
 .rail .ws-name {
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -115,14 +115,14 @@ button.team {
 .rail .team small {
   display: block;
   color: var(--faint);
-  font-size: 10.5px;
+  font-size: var(--fs-tiny);
   line-height: 1.2;
 }
 
 .rail .team b {
   display: block;
   overflow: hidden;
-  font-size: 14.5px;
+  font-size: var(--fs-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -147,7 +147,7 @@ button.team {
   gap: 7px;
   padding: 5px 9px;
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--faint);
 }
@@ -157,11 +157,10 @@ button.team {
   min-width: 0;
   padding: 0;
   border: 0;
-  outline: 0;
   background: none;
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .search-box input::placeholder {
@@ -184,9 +183,9 @@ button.team {
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--mute);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   text-decoration: none;
 }
 
@@ -232,10 +231,10 @@ a.it:hover {
 .pill {
   margin-left: auto;
   padding: 1px 6px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--human);
   color: var(--surface);
-  font-size: 10px;
+  font-size: var(--fs-tiny);
   font-weight: 600;
 }
 
@@ -246,7 +245,7 @@ a.it:hover {
 .hint {
   margin-left: auto;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 400;
   white-space: nowrap;
 }
@@ -261,7 +260,7 @@ a.it:hover {
   background: none;
   color: var(--faint);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -272,7 +271,7 @@ a.it:hover {
   align-items: baseline;
   padding: 14px 8px 4px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-tiny);
   letter-spacing: 0.01em;
   text-decoration: none;
 }
@@ -285,7 +284,7 @@ a.sec:hover {
   margin: 0;
   padding: 10px 8px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .side-note p {
@@ -301,7 +300,7 @@ a.sec:hover {
   padding: 8px 14px;
   border-top: 1px solid var(--rule);
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 .foot-name {
@@ -314,13 +313,13 @@ a.sec:hover {
 .chd-stack .av {
   width: 24px;
   height: 24px;
-  font-size: 10px;
+  font-size: var(--fs-tiny);
 }
 
 .rail .foot .av {
   width: 22px;
   height: 22px;
-  font-size: 9px;
+  font-size: var(--fs-tiny);
 }
 
 .foot-gear {
@@ -345,7 +344,7 @@ a.sec:hover {
   z-index: 15;
   padding: 4px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--menu-shadow);
 }
@@ -360,11 +359,11 @@ a.sec:hover {
   width: 100%;
   padding: 6px 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -388,7 +387,7 @@ a.sec:hover {
   margin: 0;
   padding: 6px 10px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 /* ---- centre ---- */
@@ -413,7 +412,7 @@ a.sec:hover {
   min-width: min(40%, 16ch);
   max-width: 100%;
   margin: 0;
-  font-size: 15.5px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
@@ -426,7 +425,7 @@ a.sec:hover {
   min-width: 0;
   overflow: hidden;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -468,19 +467,19 @@ a.sec:hover {
 .view-empty-title {
   margin: 0;
   color: var(--ink);
-  font-size: 14.5px;
+  font-size: var(--fs-body);
   font-weight: 500;
 }
 
 .view-empty-body {
   margin: 0 0 8px;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .view-empty .auth-title {
   margin-top: 0;
-  font-size: 18px;
+  font-size: var(--fs-h2);
 }
 
 .view-empty .auth-lede {
@@ -555,14 +554,14 @@ a.sec:hover {
 
 .panel-title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
 .panel-sub {
   margin: 0;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
 }
 
 .panel-close {
@@ -577,21 +576,21 @@ a.sec:hover {
 
 .panel-empty-title {
   margin: 0 0 4px;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 500;
 }
 
 .panel-empty-body {
   margin: 0;
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .panel-empty-id {
   margin: 10px 0 0;
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
 
@@ -605,13 +604,13 @@ a.sec:hover {
 }
 
 .panel-member-name {
-  font-size: 14.5px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
 .panel-member-line {
   color: var(--mute);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 
 .panel-member-tags {
@@ -666,7 +665,7 @@ a.sec:hover {
 
   .rail .it {
     padding: 8px 14px;
-    font-size: 14px;
+    font-size: var(--fs-body);
   }
 
   .rail .grp {
@@ -712,7 +711,7 @@ a.sec:hover {
   gap: 4px;
   padding: 2px 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -741,7 +740,7 @@ a.sec:hover {
   max-width: calc(100vw - 24px);
   padding: 4px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
@@ -752,7 +751,7 @@ a.sec:hover {
   gap: 2px;
   padding: 2px 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
 }
@@ -760,7 +759,7 @@ a.sec:hover {
 .chd-count {
   margin-left: 4px;
   color: var(--mute);
-  font-size: 12px;
+  font-size: var(--fs-caption);
 }
 
 .chd-members {
@@ -781,7 +780,7 @@ a.sec:hover {
 .chd-note {
   margin: 6px 8px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
 }
 
 /* the DM header: the other person's face, status and local time (P21-06) */
@@ -792,7 +791,7 @@ a.sec:hover {
 .chd .chd-btn > .av-wrap > .av {
   width: 24px;
   height: 24px;
-  font-size: 10px;
+  font-size: var(--fs-tiny);
 }
 
 .dmh-trail {
@@ -802,7 +801,7 @@ a.sec:hover {
   min-width: 0;
   margin-left: 4px;
   color: var(--mute);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   font-weight: 400;
   white-space: nowrap;
 }
