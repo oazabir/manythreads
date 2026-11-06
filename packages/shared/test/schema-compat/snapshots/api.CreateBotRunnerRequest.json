@@ -41,6 +41,11 @@
       "minLength": 1,
       "maxLength": 40
     },
+    "maxConcurrent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    },
     "enabled": {
       "type": "boolean"
     },

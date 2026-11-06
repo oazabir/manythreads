@@ -257,7 +257,7 @@ export class Reconciler {
       const pods = await k8s.list('Pod', cfg.namespace, `manythreads.io/pod=${base}`);
       const live = pods.find((p) => String((p.status as { phase?: string } | undefined)?.phase) === 'Running') ?? pods[0];
       const phase = pods.length === 0 ? 'absent' : String((live?.status as { phase?: string } | undefined)?.phase) === 'Running' ? 'running' : 'pending';
-      const work = await k8s.get('PersistentVolumeClaim', cfg.namespace, `${base}-work`);
+      const work = (await k8s.list('PersistentVolumeClaim', cfg.namespace, `manythreads.io/runner-id=${id}`)).find((c) => c.metadata.name === `${base}-work`) ?? null;
       const site = work ? volumeSite(work, needsNodeLookup(work) ? ((await k8s.listNodes?.().catch(() => null)) ?? null) : null) : { node: null, unknown: false };
       out.push({
         runnerId: id,

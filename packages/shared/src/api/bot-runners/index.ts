@@ -34,12 +34,16 @@ export const BotRunnerProfileRule = z
 /** A key for a Hermes gateway (the `API_SERVER_KEY` of its profile). */
 export const BotRunnerApiKey = z.string().min(8).max(500);
 
-export const ListBotRunnersResponse = z.object({ items: z.array(BotRunner) });
+export const ListBotRunnersResponse = z.object({
+  items: z.array(BotRunner),
+  /** The server runs Claude Code pods (the chart turned them on), so a Claude Code runner can be made. False: the Claude Code card on the add form stays shut. */
+  claudePodsAvailable: z.boolean().default(false),
+});
 export type ListBotRunnersResponse = z.infer<typeof ListBotRunnersResponse>;
 export const listBotRunnersRoute = { method: 'GET', path: '/api/admin/bot-runners' } as const;
 
 /**
- * Make a runner. The kinds `claude_cli` and `codex_cli` are accepted by the shape and answered with 409 "not available yet" until their tasks are built.
+ * Make a runner. `claude_cli` is accepted where the server runs Claude Code pods (else 409); `codex_cli` is accepted by the shape and answered with 409 "not available yet" until its task is built.
  * `teams` omitted means no team yet (the admin ticks them); a runner nobody may use is safe, a runner everybody may use is a decision.
  */
 export const CreateBotRunnerRequest = z.strictObject({
@@ -53,6 +57,8 @@ export const CreateBotRunnerRequest = z.strictObject({
   profileRule: BotRunnerProfileRule.optional(),
   /** LLM gateway: the alias from the LLM page. */
   modelAlias: z.string().min(1).max(40).optional(),
+  /** Claude Code: runs at once on this runner (1 to 4); left out means the install's default. */
+  maxConcurrent: z.number().int().min(1).max(4).optional(),
   enabled: z.boolean().optional(),
   teams: BotRunnerTeams.optional(),
 });

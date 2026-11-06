@@ -133,12 +133,15 @@ describe('an admin makes, changes, tests and removes a Hermes gateway runner', (
 });
 
 describe('the other kinds', () => {
-  it('Claude Code and Codex answer "not available yet"; the pod and the LLM gateway can be made', async () => {
-    for (const kind of ['claude_cli', 'codex_cli']) {
-      const res = await adminCreate({ name: `x-${kind.replace('_', '-')}`, label: 'Later', kind });
-      expect(res.status, kind).toBe(409);
-      expect(JSON.stringify(res.body)).toContain('not available yet');
-    }
+  it('Codex answers "not available yet", Claude Code says the install has no Claude pods; the pod and the LLM gateway can be made', async () => {
+    const codex = await adminCreate({ name: 'x-codex-cli', label: 'Later', kind: 'codex_cli' });
+    expect(codex.status).toBe(409);
+    expect(JSON.stringify(codex.body)).toContain('not available yet');
+    const claude = await adminCreate({ name: 'x-claude-cli', label: 'Later', kind: 'claude_cli' });
+    expect(claude.status).toBe(409);
+    expect(JSON.stringify(claude.body)).toContain('not turned on in this install');
+    expect((await w.call<any>(omar, 'GET', '/api/admin/bot-runners')).body.claudePodsAvailable).toBe(false);
+    expect((await adminCreate({ name: 'conc-pod', label: 'Pod', kind: 'hermes_pod', maxConcurrent: 2 })).status).toBe(400);
     const pod = await adminCreate({ name: 'pod', label: 'Team Hermes pod', kind: 'hermes_pod' });
     expect(pod.status, JSON.stringify(pod.body)).toBe(201);
     expect(pod.body.runner).toMatchObject({ kind: 'hermes_pod', status: 'ready', baseUrl: null, hasKey: false });

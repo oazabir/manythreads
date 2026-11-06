@@ -1,4 +1,4 @@
-import { conflict, invalid, json, route, type ClusterNode, type PluginContext, type PluginTx, type PodPlacement, type RunnerNodesProvider } from '@manythreads/sdk';
+import { conflict, invalid, json, route, type ClaudePodsProvider, type ClusterNode, type PluginContext, type PluginTx, type PodPlacement, type RunnerNodesProvider } from '@manythreads/sdk';
 import {
   BotRunnerPathParams,
   ListRunnerNodesQuery,
@@ -66,6 +66,20 @@ async function placementsOf(provider: RunnerNodesProvider | null, teamIds: strin
   }
 }
 
+/**
+ * A Claude Code runner is one pod (not one per team), so it decides its own machine: the pods it stands on are the claude-pods controller's answer for this runner, shaped like a
+ * Hermes pod's so that the same state line and the same move rule apply. `teamId` carries the runner's id.
+ */
+async function claudePlacements(ctx: PluginContext, runnerId: string): Promise<PodPlacement[]> {
+  const p = ctx.providers.get<ClaudePodsProvider>('claude.pods');
+  if (!p) return [];
+  try {
+    return (await p.podPlacements({ runnerIds: [runnerId] })).map((x) => ({ ...x, teamId: x.runnerId }));
+  } catch {
+    return [];
+  }
+}
+
 /** Marks "any machine chosen" when asking which teams a runner would govern. */
 const ANY_NODE = '*';
 
@@ -110,11 +124,11 @@ export function registerNodeRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       const { runnerId } = ListRunnerNodesQuery.parse(req.query ?? {});
       const runner = runnerId === undefined ? null : await loadRunner(tx, runnerId);
-      if (runner !== null && runner.kind !== 'hermes_pod') throw invalid('A machine can be chosen for a pod runner only.');
+      if (runner !== null && runner.kind !== 'hermes_pod' && runner.kind !== 'claude_cli') throw invalid('A machine can be chosen for a pod runner only.');
       const { provider, nodes } = await listing(ctx);
       if (!nodes.ok) return json(ListRunnerNodesResponse.parse({ available: false, nodes: [], singleNode: false, placement: null, note: nodes.note }));
       // only the pods of the teams this runner decides the machine of (another runner may outrank it for the others)
-      const pods = runner === null ? [] : await placementsOf(provider, await governedTeams(tx, runner, ANY_NODE));
+      const pods = runner === null ? [] : runner.kind === 'claude_cli' ? await claudePlacements(ctx, runner.id) : await placementsOf(provider, await governedTeams(tx, runner, ANY_NODE));
       const out: RunnerNode[] = nodes.allowed.map((n) => {
         const here = pods.filter((p) => p.volumeNode === n.name).length;
         return { ...n, hasWorkVolume: here > 0, workVolumes: here };
@@ -135,7 +149,8 @@ export function registerNodeRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       // Locked: two admins changing the machine of one runner take turns, and the second sees what the first did.
       const current = await loadRunner(tx, id, true);
-      if (current.kind !== 'hermes_pod') throw invalid('A machine can be chosen for a pod runner only.');
+      if (current.kind !== 'hermes_pod' && current.kind !== 'claude_cli') throw invalid('A machine can be chosen for a pod runner only.');
+      const isClaude = current.kind === 'claude_cli';
       const changed = body.node !== current.node;
       let recreates = false;
       let moveTeams: string[] = [];
@@ -149,11 +164,14 @@ export function registerNodeRoutes(ctx: PluginContext): void {
         if (!chosen) throw invalid('That machine is not one this install may use. Pick one from the list.');
         if (!chosen.ready) throw conflict('That machine is not Ready, so a pod could not start on it. Pick a machine that is Ready.');
         // Only the teams whose pod this runner decides the machine of (it is enabled, they may use it, and no other pod runner outranks it) are moved by this change.
-        const governed = await governedTeams(tx, current, body.node);
+        // A Claude Code runner is one pod that it alone places; a Hermes pod runner governs the teams it outranks the others for.
+        const governed = isClaude ? [current.id] : await governedTeams(tx, current, body.node);
         if (governed.length > 0) {
           let pods: PodPlacement[];
           try {
-            pods = await provider!.podPlacements({ teamIds: governed });
+            const claude = isClaude ? ctx.providers.get<ClaudePodsProvider>('claude.pods') : undefined;
+            if (isClaude && !claude) throw new Error('no claude pods');
+            pods = isClaude ? (await claude!.podPlacements({ runnerIds: [current.id] })).map((x) => ({ ...x, teamId: x.runnerId })) : await provider!.podPlacements({ teamIds: governed });
           } catch {
             throw conflict(NO_ANSWER);
           }
@@ -165,18 +183,19 @@ export function registerNodeRoutes(ctx: PluginContext): void {
       // Nothing to change and no move waiting for the admin's word: nothing is written, nothing is said.
       if (!changed && !recreates) return json(SetRunnerNodeResponse.parse({ runner: await presentOne(ctx, tx, id), recreatesWorkVolume: false }));
       if (changed) await tx.query('UPDATE app.bot_runners SET node = $2, updated_at = now() WHERE id = $1::uuid', [id, body.node]);
-      if (recreates && provider !== null && body.node !== null) {
+      if (recreates && (isClaude || provider !== null) && body.node !== null) {
         // The admin's confirmation, written where the controller reads it: the controller deletes volumes only for a move marked this way. A failure here fails the request
         // and rolls the change back, so a move is never half confirmed.
         try {
-          await provider.confirmMove({ teamIds: moveTeams, node: body.node });
+          if (isClaude) await ctx.providers.get<ClaudePodsProvider>('claude.pods')!.confirmMove({ runnerId: id, node: body.node });
+          else await provider!.confirmMove({ teamIds: moveTeams, node: body.node });
         } catch {
           throw conflict('The cluster did not take the move. Nothing was changed; try again in a moment.');
         }
       } else if (body.node === null) {
         // The machine is cleared: any waiting confirmation is taken off (best effort; it runs out by itself).
-        const lister = ctx.providers.get<RunnerNodesProvider>('runner.nodes');
-        await lister?.confirmMove({ teamIds: await teamIdsOf(tx, current), node: null }).catch(() => 0);
+        if (isClaude) await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.confirmMove({ runnerId: id, node: null }).catch(() => 0);
+        else await ctx.providers.get<RunnerNodesProvider>('runner.nodes')?.confirmMove({ teamIds: await teamIdsOf(tx, current), node: null }).catch(() => 0);
       }
       await ctx.audit.emit(tx, {
         type: 'bot_runner.node.changed',

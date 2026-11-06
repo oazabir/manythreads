@@ -14,7 +14,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 let w: World;
 let k8s: FakeK8s;
 const saved: Record<string, string | undefined> = {};
-const ENV = ['MANYTHREADS_HERMES_PODS_TEST_K8S_URL', 'MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'];
+const ENV = ['MANYTHREADS_HERMES_PODS_TEST_K8S_URL', 'MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL', 'MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'];
 
 const node = (name: string, over: { ready?: boolean; cordoned?: boolean } = {}): Record<string, unknown> => ({
   apiVersion: 'v1',
@@ -34,6 +34,7 @@ beforeAll(async () => {
   for (const k of ENV) saved[k] = process.env[k];
   k8s = await startFakeK8s();
   process.env['MANYTHREADS_HERMES_PODS_TEST_K8S_URL'] = k8s.url;
+  process.env['MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL'] = k8s.url;
   w = await createWorld();
 }, 120_000);
 
@@ -364,5 +365,41 @@ describe('migration 0002 on rows written before it (P19-08)', () => {
     // an unrelated edit of the cleared runners goes through (a NOT VALID check judges the row again on any update)
     expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${pod}`, { label: 'Old pod 2' })).status).toBe(200);
     expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${llm}`, { label: 'Old model 2' })).status).toBe(200);
+  });
+});
+
+describe('a Claude Code runner (P19-05, P19-08)', () => {
+  it('is made waiting for a sign-in, with its concurrency, and the list says Claude pods are available', async () => {
+    expect((await w.call<any>(omar, 'GET', '/api/admin/bot-runners')).body.claudePodsAvailable).toBe(true);
+    expect((await adminCreate({ name: 'claude-bad', label: 'Bad', kind: 'claude_cli', maxConcurrent: 9 })).status).toBe(400);
+    const res = await adminCreate({ name: 'claude-test', label: 'Claude Code', kind: 'claude_cli', maxConcurrent: 3, teams: { all: true } });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(res.body.runner).toMatchObject({ kind: 'claude_cli', status: 'waiting_for_sign_in', maxConcurrent: 3, node: null, hasKey: false });
+    expect(res.body.runner.statusDetail).toContain('sign-in file');
+    expect((await adminCreate({ name: 'claude-test', label: 'Again', kind: 'claude_cli' })).status).toBe(409);
+  });
+
+  it('can be put on a machine; a machine its volumes are not on needs the admin to confirm the move', async () => {
+    const made = await adminCreate({ name: 'claude-node', label: 'Claude node', kind: 'claude_cli' });
+    const id = made.body.runner.id;
+    const first = await w.call<any>(omar, 'PUT', `/api/admin/bot-runners/${id}/node`, { node: 'ubuntu-vm' });
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body).toMatchObject({ recreatesWorkVolume: false, runner: { node: 'ubuntu-vm' } });
+
+    // the pod stands on ubuntu-vm with its work volume there; choosing worker-2 would make the volume again, so it says so and marks the claims
+    k8s.deployments.push({ metadata: { name: 'claude-claude-node', labels: { 'app.kubernetes.io/component': 'claude-pod', 'app.kubernetes.io/managed-by': 'manythreads-claude-pods', 'manythreads.io/runner-id': id } } });
+    k8s.pods.push({ metadata: { name: 'claude-claude-node-1' }, spec: { nodeName: 'ubuntu-vm' }, status: { phase: 'Running' } });
+    for (const part of ['state', 'work']) {
+      k8s.claims.push({ metadata: { name: `claude-claude-node-${part}`, labels: { 'manythreads.io/runner-id': id }, annotations: { 'manythreads.io/node': 'ubuntu-vm' } } });
+    }
+    const listed = await w.call<any>(omar, 'GET', `/api/admin/bot-runners/nodes?runnerId=${id}`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.nodes.find((n: any) => n.name === 'ubuntu-vm')).toMatchObject({ hasWorkVolume: true });
+    const move = await w.call<any>(omar, 'PUT', `/api/admin/bot-runners/${id}/node`, { node: 'worker-2' });
+    expect(move.status, JSON.stringify(move.body)).toBe(200);
+    expect(move.body.recreatesWorkVolume).toBe(true);
+    for (const c of k8s.claims) expect(((c as any).metadata.annotations['manythreads.io/move-confirmed'] as string).startsWith('worker-2@')).toBe(true);
+    // a machine that is not Ready is refused as for a Hermes pod runner
+    expect((await w.call<any>(omar, 'PUT', `/api/admin/bot-runners/${id}/node`, { node: 'worker-3' })).status).toBe(409);
   });
 });

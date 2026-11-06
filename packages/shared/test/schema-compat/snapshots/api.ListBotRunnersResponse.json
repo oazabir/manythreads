@@ -270,6 +270,10 @@
           "updatedAt"
         ]
       }
+    },
+    "claudePodsAvailable": {
+      "default": false,
+      "type": "boolean"
     }
   },
   "required": [

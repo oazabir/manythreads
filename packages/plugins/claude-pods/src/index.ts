@@ -91,6 +91,8 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
   // The provider exists only where the controller does, so the Runners page can tell "Claude pods are not turned on here" from a working install.
   ctx.providers.register('claude.pods', providerFor(ensure, client, cfg));
 
+  // The test seam registers the provider only; the loop runs where the chart turned the controller on.
+  if (env['MANYTHREADS_CLAUDE_PODS'] !== '1') return;
   const tick = (): void => {
     serialized(async () => {
       for (const r of await ensure().reconcileAll()) log.info(`claude-pods: ${r.pod} ok (${r.state}, replicas ${r.replicas})`);
@@ -99,7 +101,7 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
   setTimeout(() => {
     tick();
     setInterval(tick, intervalMs).unref();
-  }, testUrl !== '' ? 1_000 : FIRST_PASS_DELAY_MS).unref();
+  }, FIRST_PASS_DELAY_MS).unref();
 }
 
 export { namesFor as claudePodNames };
