@@ -413,7 +413,7 @@ export function GuardTab({ draft, canEdit }: TabProps) {
             { value: 'customer-facing', label: 'customer-facing' },
           ]}
           onChange={(preset) => setGuard({ preset })}
-          hint="Set in Workspace → LLM. Its rules are checked before anything leaves for the model."
+          hint="An admin sets this in Settings, under LLM. Its rules are checked before anything leaves for the model."
         />
       </Block>
       <Block title="Gate list" count="hand to a person before any model call">

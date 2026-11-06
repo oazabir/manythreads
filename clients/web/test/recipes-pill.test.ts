@@ -55,6 +55,12 @@ describe('which recipes carry a pill', () => {
       expect(tile(c)).toContain(`aria-label="Bug triage: ${label}. Open the details."`);
     }
   });
+
+  it('puts no stray mark before the words of a waiting recipe', () => {
+    const html = tile(card({ state: 'waiting', openProposals: 1 }));
+    expect(html).not.toContain('…');
+    expect(html).not.toContain('rg-glyph');
+  });
 });
 
 describe('the Add button', () => {

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { PASSWORD_MIN_LENGTH } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { changePassword, fetchSessions, requestPasswordReset, revokeSession, signOut, signOutEverywhere } from '../../api/endpoints';
@@ -7,7 +7,7 @@ import { useSession, useSessionState } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { PageHeader } from '../../components/PageHeader';
 import { QueryView } from '../../components/states';
-import { Alert, Field, Notice, PasswordField, Time } from '../../components/ui';
+import { Alert, Field, Notice, PasswordField, PasswordToggle, Time } from '../../components/ui';
 import { disablePush } from '../../notifications/push';
 
 /** Account → Security: the password, the browsers you are signed in on, and the ways you can sign in. */
@@ -15,11 +15,23 @@ export function Security() {
   const session = useSession();
   const { setSession } = useSessionState();
   const navigate = useNavigate();
+  const { hash } = useLocation();
+  // an old link such as /account#acc-sessions arrives here after a redirect, which the browser does not scroll for; the three headings are drawn at once
+  useEffect(() => {
+    let id = '';
+    try {
+      id = decodeURIComponent(hash.slice(1));
+    } catch {
+      return; // a malformed %-sequence in a hand-typed link: nothing to scroll to
+    }
+    if (id === 'acc-password' || id === 'acc-sessions' || id === 'acc-methods') document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, [hash]);
   const sessions = useQuery('account-sessions', fetchSessions);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
   const [changing, setChanging] = useState(false);
   const [current, setCurrent] = useState('');
+  const [currentShown, setCurrentShown] = useState(false);
   const [next, setNext] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
   const [pwError, setPwError] = useState<string | null>(null);
@@ -87,7 +99,15 @@ export function Security() {
             </div>
             {changing ? (
               <form className="sub-form" onSubmit={savePassword} noValidate aria-label="Change password">
-                <Field label="Current password" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+                <Field
+                  label="Current password"
+                  type={currentShown ? 'text' : 'password'}
+                  className="has-toggle"
+                  autoComplete="current-password"
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  suffix={<PasswordToggle shown={currentShown} onToggle={() => setCurrentShown((v) => !v)} />}
+                />
                 <PasswordField label="New password" value={next} onChange={setNext} />
                 <p className="note-row">Your other sessions are signed out when the password changes. Use at least {PASSWORD_MIN_LENGTH} characters.</p>
                 {pwError ? <Alert>{pwError}</Alert> : null}

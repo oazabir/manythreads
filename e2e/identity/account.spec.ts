@@ -58,18 +58,24 @@ test('changing the password needs the current one, ends the other sessions and k
   await form.getByLabel('New password').fill('short');
   await expect(update).toBeDisabled();
 
-  // the new password has a Show password button (the name stays the same, aria-pressed tells the state); the current one is typed blind
+  // both password boxes have a Show password button (the name stays the same, aria-pressed tells the state); the current one comes first
   const newBox = form.getByLabel('New password');
-  const reveal = form.getByRole('button', { name: 'Show password' });
-  await expect(reveal).toHaveCount(1);
+  const currentBox = form.getByLabel('Current password');
+  const toggles = form.getByRole('button', { name: 'Show password' });
+  await expect(toggles).toHaveCount(2);
+  const [currentReveal, reveal] = [toggles.nth(0), toggles.nth(1)];
   await expect(newBox).toHaveAttribute('type', 'password');
   await expect(reveal).toHaveAttribute('aria-pressed', 'false');
   await reveal.click();
   await expect(newBox).toHaveAttribute('type', 'text');
   await expect(reveal).toHaveAttribute('aria-pressed', 'true');
+  await expect(currentBox).toHaveAttribute('type', 'password');
   await reveal.click();
   await expect(newBox).toHaveAttribute('type', 'password');
-  await expect(form.getByLabel('Current password')).toHaveAttribute('type', 'password');
+  await currentReveal.click();
+  await expect(currentBox).toHaveAttribute('type', 'text');
+  await currentReveal.click();
+  await expect(currentBox).toHaveAttribute('type', 'password');
 
   // a wrong current password is a sentence on the form, and the session survives it
   await form.getByLabel('Current password').fill('not-the-password-at-all');

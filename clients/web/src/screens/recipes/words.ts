@@ -14,7 +14,7 @@ export type StateLook = { tone: 'ok' | 'warn' | 'idle'; glyph: string; label: st
 export function stateLook(c: Pick<RecipeCard, 'state' | 'scheduled' | 'openProposals'>): StateLook {
   if (c.state === 'waiting') {
     const n = c.openProposals;
-    return { tone: 'warn', glyph: '…', label: 'Waiting for approval', hint: `${String(n)} ${n === 1 ? 'proposal waits' : 'proposals wait'} for a team lead or a workspace admin.` };
+    return { tone: 'warn', glyph: '', label: 'Waiting for approval', hint: `${String(n)} ${n === 1 ? 'proposal waits' : 'proposals wait'} for a team lead or a workspace admin.` };
   }
   if (c.state === 'installed') {
     return c.scheduled

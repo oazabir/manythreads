@@ -16,7 +16,7 @@ export function StatePill({ card }: { card: Pick<RecipeCard, 'state' | 'schedule
   const s = stateLook(card);
   return (
     <span className={`rg-state ${s.tone}`} title={s.hint} data-testid="recipe-state" data-state={card.state}>
-      <span className="rg-glyph" aria-hidden="true">{s.glyph}</span>{s.label}
+      {s.glyph === '' ? null : <span className="rg-glyph" aria-hidden="true">{s.glyph}</span>}{s.label}
     </span>
   );
 }
