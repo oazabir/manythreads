@@ -25,6 +25,7 @@ import { Alert, Avatar, Field, Notice, Time } from '../components/ui';
 import { PresenceDot } from '../presence/PresenceDot';
 import { PersonLink } from '../presence/ProfileCard';
 import { CloseIcon } from '../shell/icons';
+import { PageHeader } from '../components/PageHeader';
 
 /** /teams/:slug is the roster. */
 export function TeamRedirect() {
@@ -175,7 +176,7 @@ export function Roster() {
         const tagNames = tags.status === 'ok' ? tags.data.tags.map((x) => x.name) : [];
         return (
           <div className="roster" data-landmark="roster">
-            <h1 className="pane-title" data-landmark="title">{t.name}{t.archivedAt ? ' (archived)' : ''}</h1>
+            <PageHeader title={<>{t.name}{t.archivedAt ? ' (archived)' : ''}</>} />
             <p className="lede" data-landmark="lede">
               {members.length} {members.length === 1 ? 'person' : 'people'}{def ? `, ${def.bots.length} bots, ${def.channels.length} channels` : ''}. This team's memory is stored in the <span className="mono">team:{t.slug}</span> bank and is not readable from other teams.
             </p>
@@ -283,7 +284,7 @@ export function TeamTemplate() {
         const def = definitionOf(team);
         return (
           <>
-            <h1 className="pane-title">Template</h1>
+            <PageHeader title="Template" />
             <p className="lede">{def ? def.description : 'This team was created blank, so there is no template definition.'}</p>
             {def ? <TemplatePanel team={team} t={def} /> : null}
             {team.archivedAt && (team.myRole === 'lead' || isAdmin(session)) ? <UnarchiveButton slug={slug} /> : null}
@@ -312,7 +313,7 @@ export function TeamChannels() {
         const def = definitionOf(team);
         return (
           <>
-            <h1 className="pane-title">Channels</h1>
+            <PageHeader title="Channels" />
             <p className="lede">Channel names stored in the template definition for {team.name}. They become real channels when the template is applied.</p>
             <section className="block" aria-label="Channels" data-landmark="channels">
               {def ? def.channels.map((c) => (

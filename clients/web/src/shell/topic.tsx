@@ -25,3 +25,19 @@ export function useHeaderTitle(node: ReactNode): void {
 /** The element in the centre header where a screen puts its own buttons (Files: New page, New folder, Upload); null before the header has mounted. */
 export const HeaderActionsContext = createContext<HTMLElement | null>(null);
 export const useHeaderActionsSlot = (): HTMLElement | null => useContext(HeaderActionsContext);
+
+/** The last crumb of the shell band's trail (a bot's name under Bots): a screen names the item it shows while it is mounted. */
+export const CrumbTailContext = createContext<(label: string | null) => void>(() => undefined);
+export function useCrumbTail(label: string | null | undefined): void {
+  const set = useContext(CrumbTailContext);
+  useEffect(() => {
+    set(label && label.trim() !== '' ? label : null);
+    return () => set(null);
+  }, [set, label]);
+}
+
+/**
+ * How many page headers are mounted. The shell draws a fallback title only while none is, so a screen that has not moved to `PageHeader`
+ * still has exactly one h1 and a migrated one never makes two.
+ */
+export const PageHeaderRegistry = createContext<(delta: 1 | -1) => void>(() => undefined);

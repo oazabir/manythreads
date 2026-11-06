@@ -6,6 +6,7 @@ import { useQuery } from '../app/useQuery';
 import { QueryView } from '../components/states';
 import { Alert, Field, Notice, Time, Toggle } from '../components/ui';
 import type { UpdateWorkspaceRequest, WorkspaceSettings } from '@manythreads/shared';
+import { PageHeader } from '../components/PageHeader';
 
 export function WorkspaceGeneral() {
   const session = useSession();
@@ -40,7 +41,7 @@ export function WorkspaceGeneral() {
 
   return (
     <>
-      <h1 className="pane-title">General</h1>
+      <PageHeader title="General" />
       <p className="lede">The workspace name appears in the header and in invitations.</p>
       <QueryView q={q}>
         {(summary) => {
@@ -97,7 +98,7 @@ export function Members() {
   const q = useQuery('members', fetchWorkspaceMembers);
   return (
     <>
-      <h1 className="pane-title">Members</h1>
+      <PageHeader title="Members" />
       <QueryView q={q}>
         {({ members }) => (
           <>
@@ -139,7 +140,7 @@ export function Roles() {
   });
   return (
     <>
-      <h1 className="pane-title">Roles</h1>
+      <PageHeader title="Roles" />
       <p className="lede">Role tags come from each team's <span className="mono">TEAM.md</span>. Workspace roles are owner, admin, member and guest.</p>
       <QueryView q={q}>
         {(roles) => (

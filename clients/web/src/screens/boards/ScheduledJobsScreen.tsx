@@ -1,6 +1,6 @@
+import { PageHeader } from '../../components/PageHeader';
 import { isAdmin, useSession } from '../../app/session';
 import { useShell } from '../../shell/context';
-import { useHeaderTopic } from '../../shell/topic';
 import { ScheduledJobsView } from './ScheduledJobsView';
 
 /*
@@ -12,16 +12,10 @@ export function ScheduledJobsScreen() {
   const session = useSession();
   const slug = team?.slug ?? teamSlug ?? '';
   const canManage = isAdmin(session) || team?.myRole === 'lead';
-  useHeaderTopic('Bot work on a schedule');
 
   return (
     <div className="bd-screen" data-testid="scheduled-jobs-screen">
-      <header className="bd-head">
-        <div>
-          <h2 className="bd-title">Jobs</h2>
-          <p className="bd-sub">Bot work on a schedule: heartbeats, routines and cards that open themselves.</p>
-        </div>
-      </header>
+      <PageHeader title="Jobs" description="Bot work on a schedule: heartbeats, routines and cards that open themselves." />
       <ScheduledJobsView slug={slug} canManage={canManage} />
     </div>
   );

@@ -1,10 +1,10 @@
+import { PageHeader } from '../../components/PageHeader';
 import type { Proposal, ProposalDetail } from '@manythreads/shared';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useQuery } from '../../app/useQuery';
 import { QueryView, EmptyState } from '../../components/states';
 import { Alert, Time } from '../../components/ui';
-import { useHeaderTopic } from '../../shell/topic';
 import { approveProposal, fetchProposal, fetchProposals, rejectProposal, withdrawProposal } from './api';
 import { opWords, ProposalChecks, ProposalDiff, StatusPill } from './parts';
 import { placeOf, useProposalPerms } from './store';
@@ -40,21 +40,20 @@ function Row({ p, slug }: { p: Proposal; slug: string }) {
 
 export function ProposalsList() {
   const { slug } = useProposalPerms();
-  useHeaderTopic('Proposals');
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['id']>('open');
   const q = useQuery(`proposals:${slug}`, () => fetchProposals(slug));
   return (
     <div className="pp-screen" data-testid="proposals-list">
-      <div className="pp-head">
-        <div>
-          <h2 className="pp-title">Proposals</h2>
-          <p className="pp-sub">
+      <PageHeader
+        title="Proposals"
+        description={(
+          <>
             A change to <span className="mono">bots/</span>, <span className="mono">TEAM.md</span>, <span className="mono">skills/</span> or <span className="mono">routines/</span> is
             proposed first. A team lead or workspace admin looks at the lines that change and applies them.
-          </p>
-        </div>
-        <Link className="btn s" to={`/t/${slug}/bots`}>Bots</Link>
-      </div>
+          </>
+        )}
+        actions={<Link className="btn s" to={`/t/${slug}/bots`}>Bots</Link>}
+      />
       <QueryView q={q}>
         {({ proposals, openCount }) => {
           const shown = filter === 'open' ? proposals.filter((p) => p.status === 'open') : proposals;
@@ -134,7 +133,6 @@ function Decision({ d, slug, onChanged }: { d: ProposalDetail; slug: string; onC
 export function ProposalPage() {
   const { slug } = useProposalPerms();
   const { proposalId = '' } = useParams();
-  useHeaderTopic('Proposals');
   const q = useQuery(`proposal:${slug}:${proposalId}`, () => fetchProposal(slug, proposalId));
   return (
     <div className="pp-screen" data-testid="proposal-page">
@@ -144,15 +142,16 @@ export function ProposalPage() {
           const p = d.proposal;
           return (
             <>
-              <div className="pp-head">
-                <div>
-                  <h2 className="pp-title" data-testid="proposal-title">{p.title}</h2>
-                  <p className="pp-sub">
+              <PageHeader
+                title={p.title}
+                testIds={{ title: 'proposal-title' }}
+                description={(
+                  <>
                     {opWords(p)} <span className="mono">{p.path}</span> ({placeOf(p.path).toLowerCase()}) · proposed by {p.authorName}{p.authorKind === 'bot' ? ' (a bot)' : ''} · <Time iso={p.createdAt} />
-                  </p>
-                </div>
-                <StatusPill status={p.status} />
-              </div>
+                  </>
+                )}
+                actions={<StatusPill status={p.status} />}
+              />
               {p.note ? <p className="pp-note" data-testid="proposal-note-text">{p.note}</p> : null}
               <ProposalChecks checks={p.checks} />
               <h3 className="pp-h">What would change <span className="pp-delta"><span className="add">+{p.added}</span> <span className="del">−{p.removed}</span></span></h3>

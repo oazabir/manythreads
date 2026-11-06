@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { StepPanel } from './panels';
 import type { OnboardingStep } from './steps';
 import { announceOnboardingChange, useOnboarding } from './useOnboarding';
+import { PageHeader } from '../../components/PageHeader';
 
 /*
  * Setup (PLAN P10-01, SPEC §16): the nine steps from a fresh install to a first answer from Brain. Admin-only (the route sits under AdminOnly and
@@ -27,7 +28,7 @@ export function Onboarding() {
 
   return (
     <div className="onboarding ob" data-landmark="onboarding">
-      <h1 className="pane-title" data-landmark="title" data-copy="title">Finish setting up</h1>
+      <PageHeader title="Finish setting up" copyId="title" />
       <p className="lede" data-landmark="lede" data-copy="lede">
         Nine steps from a new install to your first answer from Brain, the bot that reads your team's memory. Each step is ticked by what is
         really true: a model that answered a test, a team that exists, Brain on it. Steps marked optional never hold you up.

@@ -68,6 +68,10 @@ textarea {
   padding: 12px 16px 8px;
 }
 
+.pane .ph {
+  padding: 0 0 12px;
+}
+
 .ph-text {
   display: flex;
   flex-direction: column;

@@ -6,6 +6,7 @@ import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Alert, Notice } from '../../components/ui';
 import { SOURCE_ACCEPT, SOURCE_HELP, SOURCE_NAMES, STATUS_WORDS, actionsFor, channelOutcomeWords, formatSize, isActive, progressFraction, progressWords, skippedLine, tooBigWarning } from './format';
+import { PageHeader } from '../../components/PageHeader';
 
 const failure = (e: unknown): string => (isApiError(e) ? e.message : 'Something went wrong. Try again.');
 
@@ -27,7 +28,7 @@ export function ImportScreen() {
 
   return (
     <div className="imp-page" data-landmark="import">
-      <h1 className="pane-title" data-landmark="title">Import</h1>
+      <PageHeader title="Import" />
       <p className="lede" data-landmark="lede">
         Bring the history of Slack or Mattermost here: channels, messages, threads and reactions, each with the time it was written. People are matched by
         email address. Someone who has no account here yet keeps their messages under their name with "(imported)", and takes them over the day they

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Outlet, useLocation, useMatch } from 'react-router';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Link, Outlet, useLocation, useMatch } from 'react-router';
 import { dmLabel, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
 import { InboxNotices } from '../screens/memory/InboxNotices';
@@ -15,6 +15,7 @@ import { PeopleContext, useLoadPeople } from '../channels/hooks';
 import { RightPanel } from '../kernel/panel';
 import { useRealtime } from '../realtime';
 import { AccountMenu } from './AccountMenu';
+import { crumbsFor } from './breadcrumb';
 import { ShellContext, type ShellValue } from './context';
 import { useNavCounts } from './counts';
 import { MenuIcon, SearchIcon } from './icons';
@@ -22,7 +23,7 @@ import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { SetupCard } from './SetupCard';
 import { Sidebar } from './Sidebar';
-import { HeaderActionsContext, HeaderTitleContext, HeaderTopicContext } from './topic';
+import { CrumbTailContext, HeaderActionsContext, HeaderTitleContext, HeaderTopicContext, PageHeaderRegistry } from './topic';
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
@@ -46,6 +47,10 @@ export function Shell() {
   const [topic, setTopic] = useState<string | null>(null);
   const [titleNode, setTitleNode] = useState<ReactNode>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  const [crumbTail, setCrumbTail] = useState<string | null>(null);
+  // how many PageHeaders are on screen: while one is, the band shows the trail and the page's own h1 is the title
+  const [headers, setHeaders] = useState(0);
+  const registerHeader = useCallback((delta: 1 | -1) => setHeaders((n) => Math.max(0, n + delta)), []);
 
   useRealtime();
   useWatchMyPresence(session.person.id);
@@ -79,6 +84,9 @@ export function Shell() {
   // shell's band is left out there; the bell then sits in the thread's band.
   const inboxOwnsHeader = onThreads && !narrow && !guest && team !== null;
   const title = dmId ? (dm ? dmLabel(dm, session.person.id) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
+  const onChat = dmId !== null || /^\/t\/[^/]+\/c\//.test(loc.pathname);
+  const trail = crumbsFor(loc.pathname, team?.name ?? null, crumbTail);
+  const pageOwnsTitle = !onChat && headers > 0;
   const searchLabel = guest ? 'Search' : team ? `Search ${team.name}` : 'Search';
   const railSearch = useRef<HTMLDivElement>(null);
   const openSearch = (): void => {
@@ -92,7 +100,10 @@ export function Shell() {
       <HeaderTopicContext.Provider value={setTopic}>
       <HeaderTitleContext.Provider value={setTitleNode}>
       <HeaderActionsContext.Provider value={actionsSlot}>
+      <CrumbTailContext.Provider value={setCrumbTail}>
+      <PageHeaderRegistry.Provider value={registerHeader}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
+        <a className="skip-link" href="#content" onClick={(e) => { e.preventDefault(); document.getElementById('content')?.focus(); }}>{onChat ? 'Skip to messages' : 'Skip to content'}</a>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
           <div className="ws">
             <span className="mark" aria-hidden="true">{session.workspace.name.slice(0, 1).toUpperCase()}</span>
@@ -118,11 +129,25 @@ export function Shell() {
             <button type="button" className="icon-btn menu-btn" aria-label="Open menu" aria-controls="shell-rail" aria-expanded={drawerOpen} onClick={() => setOpenedAt(loc.pathname + loc.search)}>
               <MenuIcon />
             </button>
-            <h1 className="chead-title">
-              <span className="sr-only">{`${session.workspace.name}: `}</span>
-              {titleNode ?? title}
-            </h1>
-            {topic ? <span className="topic" data-testid="channel-topic" title={topic}>{topic}</span> : null}
+            {pageOwnsTitle ? (
+              <nav className="crumbs" aria-label="Breadcrumb">
+                <ol>
+                  {trail.map((c, i) => (
+                    <li key={`${i}-${c.label}`} className={i === trail.length - 1 ? 'crumb-last' : undefined} aria-current={i === trail.length - 1 ? 'page' : undefined}>
+                      {c.to ? <Link to={c.to}>{c.label}</Link> : c.label}
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            ) : (
+              <>
+                <h1 className="chead-title">
+                  <span className="sr-only">{`${session.workspace.name}: `}</span>
+                  {titleNode ?? title}
+                </h1>
+                {topic ? <span className="topic" data-testid="channel-topic" title={topic}>{topic}</span> : null}
+              </>
+            )}
             <div className="right chead-tools">
               <div className="chead-actions" ref={setActionsSlot} />
               <button type="button" className="icon-btn find-btn" aria-label="Find" onClick={openSearch}>
@@ -132,7 +157,7 @@ export function Shell() {
             </div>
           </header>
           )}
-          <section className="region content" data-landmark="content" aria-busy={teamsLoading || undefined}>
+          <section className="region content" id="content" tabIndex={-1} data-landmark="content" aria-busy={teamsLoading || undefined}>
             <PushBridge />
             <InboxNotices />
             <Outlet />
@@ -141,6 +166,8 @@ export function Shell() {
         </main>
         <RightPanel />
       </div>
+      </PageHeaderRegistry.Provider>
+      </CrumbTailContext.Provider>
       </HeaderActionsContext.Provider>
       </HeaderTitleContext.Provider>
       </HeaderTopicContext.Provider>

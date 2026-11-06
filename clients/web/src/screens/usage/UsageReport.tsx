@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { AnswerQuality, UsageAliasRow, UsageBudget, UsageDay, UsageRange, UsageTotals } from '@manythreads/shared';
 import { RANGES, barHeight, budgetView, chartSummary, count, dayLabel, failedShare, percent, perAnswer, usd, usdOrHidden, waitText } from './format';
+import { PageHeader } from '../../components/PageHeader';
 
 /** What every usage page shares: the answer's common part. */
 export interface UsageBody {
@@ -168,7 +169,7 @@ export function Updated({ at, onRefresh }: { at: string; onRefresh: () => void }
 export function Page({ title, lede, children, testId }: { title: string; lede: string; children: ReactNode; testId: string }) {
   return (
     <div className="usage-page" data-landmark="usage" data-testid={testId}>
-      <h1 className="pane-title" data-landmark="title">{title}</h1>
+      <PageHeader title={title} />
       <p className="lede" data-landmark="lede">{lede}</p>
       {children}
     </div>

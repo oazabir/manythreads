@@ -15,6 +15,7 @@ import {
 import { useQuery } from '../app/useQuery';
 import { QueryView } from '../components/states';
 import { Alert, Field, Time, Toggle } from '../components/ui';
+import { PageHeader } from '../components/PageHeader';
 
 const TITLES: Record<OidcProviderKind, string> = { google: 'Google Workspace', microsoft: 'Microsoft 365 / Teams', oidc: 'Any other OIDC provider' };
 
@@ -194,7 +195,7 @@ export function SignInMethods() {
   const q = useQuery('oidc-providers', fetchOidcProviders);
   return (
     <div className="signin-methods" data-landmark="signin-methods">
-      <h1 className="pane-title" data-landmark="title">How will people sign in?</h1>
+      <PageHeader title="How will people sign in?" />
       <p className="lede" data-landmark="lede">Add a preset for Google or Microsoft, and decide whether username and password stays on alongside it.</p>
       <QueryView q={q}>
         {({ providers }) => {

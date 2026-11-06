@@ -2,6 +2,7 @@ import { fetchOpsHealth } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds, volumeTitle } from './format';
+import { PageHeader } from '../../components/PageHeader';
 
 /**
  * Settings, System health. Read-only: the numbers the server also hands to a monitoring system at `/metrics`, and the verdict of each check
@@ -12,7 +13,7 @@ export function SystemHealth() {
   const q = useQuery('ops-health', fetchOpsHealth);
   return (
     <div className="health-page" data-landmark="health">
-      <h1 className="pane-title" data-landmark="title">System health</h1>
+      <PageHeader title="System health" />
       <p className="lede" data-landmark="lede">
         How the server is doing right now: whether work is piling up, whether the bots have room to run, and whether the disks are filling.
         When a number passes its limit, workspace admins get one mail, and one more when it is back to normal.

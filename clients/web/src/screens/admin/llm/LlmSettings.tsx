@@ -6,6 +6,7 @@ import { GuardSection } from './Guard';
 import { LimitsSection } from './Limits';
 import { ProvidersSection } from './Providers';
 import { SpendSection } from './Spend';
+import { PageHeader } from '../../../components/PageHeader';
 
 /*
  * Workspace → LLM (SPEC §10.1, PLAN P5-08 — `[proto §01 plate 7 · After onboarding · Workspace → LLM]`). The page an
@@ -42,7 +43,7 @@ export function LlmSettings() {
 
   return (
     <>
-      <h1 className="pane-title">LLM</h1>
+      <PageHeader title="LLM" />
       <p className="lede">
         Which models this workspace may call, what a bot asks for by name, and the limits the gateway enforces before a
         call leaves it. Every change here is pushed to the gateway for this workspace only.

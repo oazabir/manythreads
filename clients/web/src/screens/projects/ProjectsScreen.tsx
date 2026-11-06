@@ -1,3 +1,4 @@
+import { PageHeader } from '../../components/PageHeader';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import type { NavChannel, Project } from '@manythreads/shared';
@@ -6,7 +7,6 @@ import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Alert, Field, Notice } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
-import { useHeaderTopic } from '../../shell/topic';
 import { useBotPerms } from '../bots/store';
 import { createProject, deleteProject, fetchProjects, removePushCredential, setPushCredential, testPushCredential, updateProject } from './api';
 import { describeShare, describeToken, ownerOfRepo, podPath, validateEdit, validateNew, type FormErrors } from './commands';
@@ -259,7 +259,6 @@ function ProjectRow({ slug, p, channels, canManage, onChanged }: { slug: string;
 
 export function ProjectsScreen() {
   const { slug, canEdit } = useBotPerms();
-  useHeaderTopic('Projects');
   const projects = useQuery(`projects:${slug}`, () => fetchProjects(slug));
   const feed = useChannelFeed(slug);
   const channels = feed.groups.flatMap((g) => g.channels);
@@ -268,16 +267,11 @@ export function ProjectsScreen() {
 
   return (
     <div className="projects-screen" data-landmark="projects">
-      <div className="pj-head">
-        <div>
-          <h2 className="pj-title">Projects</h2>
-          <p className="pj-lede">
-            A project is a git repository this team works on, tied to one of its channels. A bot asked in that channel is told which repository and
-            branch it is working on, and the team&apos;s agent pod keeps a copy of the repository for the bots to work in.
-          </p>
-        </div>
-        {canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="projects-add-open">Add project</button> : null}
-      </div>
+      <PageHeader
+        title="Projects"
+        description="A project is a git repository this team works on, tied to one of its channels. A bot asked in that channel is told which repository and branch it is working on, and the team's agent pod keeps a copy of the repository for the bots to work in."
+        actions={canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="projects-add-open">Add project</button> : null}
+      />
       {!canEdit ? <Notice tone="warn">Only a team lead or a workspace admin can change these. You can see what is set.</Notice> : null}
       {adding ? <AddForm slug={slug} channels={channels} onDone={() => { setAdding(false); reload(); }} /> : null}
       <QueryView q={projects}>

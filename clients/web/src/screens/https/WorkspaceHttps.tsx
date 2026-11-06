@@ -2,6 +2,7 @@ import { fetchWorkspaceHttps } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { appHostPattern, CHECK_TITLES, describeMode, statusWord, switchOptions } from './commands';
+import { PageHeader } from '../../components/PageHeader';
 
 /**
  * Settings, Domain & HTTPS (onboarding step 4). Read-only: the HTTPS mode is chosen when the cluster is deployed, so this
@@ -11,7 +12,7 @@ export function WorkspaceHttps() {
   const q = useQuery('workspace-https', fetchWorkspaceHttps);
   return (
     <div className="https-page" data-landmark="https">
-      <h1 className="pane-title" data-landmark="title">Domain &amp; HTTPS</h1>
+      <PageHeader title="Domain & HTTPS" />
       <p className="lede" data-landmark="lede">
         How people reach this workspace, and whether the secure padlock works. With a Cloudflare proxy, Cloudflare serves visitors and
         this cluster only talks to Cloudflare. With Let&apos;s Encrypt, this cluster gets its own certificate and serves visitors directly.

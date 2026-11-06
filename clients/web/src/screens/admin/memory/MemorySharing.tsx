@@ -6,6 +6,7 @@ import { QueryView } from '../../../components/states';
 import { Alert, Notice, Time, Toggle } from '../../../components/ui';
 import { fetchMemorySharing, setMemorySharing } from '../../memory/shareApi';
 import { switchWords } from './words';
+import { PageHeader } from '../../../components/PageHeader';
 
 /*
  * Workspace → Memory sharing (SPEC §12.3, PLAN P8-26): the one switch that lets teams pass memory to each other. It is on until an owner or admin turns it off. Off,
@@ -16,7 +17,7 @@ export function MemorySharing() {
   const q = useQuery('memory-sharing-setting', fetchMemorySharing);
   return (
     <>
-      <h1 className="pane-title">Memory sharing</h1>
+      <PageHeader title="Memory sharing" />
       <p className="lede">Whether teams in this workspace may pass what they know to each other. Each team still chooses what leaves it and whether it wants to receive anything.</p>
       <QueryView q={q}>{(setting) => <Switch initial={setting} />}</QueryView>
     </>

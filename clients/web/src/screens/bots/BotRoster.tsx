@@ -1,8 +1,8 @@
+import { PageHeader } from '../../components/PageHeader';
 import { Link } from 'react-router';
 import type { BotSummary, HermesConnection } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
-import { useHeaderTopic } from '../../shell/topic';
 import { useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { fetchProposals } from '../proposals/api';
@@ -79,31 +79,30 @@ export function BotRoster() {
   const connections = useAgentConnections();
   // a guest has no team to set a bot up for: no way in for them
   const guest = useSession().role === 'guest';
-  useHeaderTopic('Bots');
+  const count = q.status === 'ok' ? q.data.bots : null;
+  const agentCount = count?.filter((b) => b.kind === 'agent').length ?? 0;
+  const autoCount = (count?.length ?? 0) - agentCount;
   return (
     <div className="bots-screen" data-testid="bots-roster">
+      <PageHeader
+        title="Bots"
+        testIds={{ description: 'roster-count' }}
+        description={count === null ? undefined : count.length === 0
+          ? 'No bots yet.'
+          : `${count.length} ${count.length === 1 ? 'bot' : 'bots'} · ${agentCount} ${agentCount === 1 ? 'agent' : 'agents'}, ${autoCount} ${autoCount === 1 ? 'automation' : 'automations'}`}
+        actions={(
+          <>
+            {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-add-bot">Add a bot</Link>}
+            <Link className="btn s ag-roster-link" to={`/t/${slug}/recipes`} data-testid="roster-recipes">Browse recipes</Link>
+            <ProposalsLink slug={slug} />
+            <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
+          </>
+        )}
+      />
       <QueryView q={q}>
         {({ bots }) => {
-          const agents = bots.filter((b) => b.kind === 'agent').length;
-          const automations = bots.length - agents;
           return (
             <>
-              <div className="b-head">
-                <div>
-                  <h2 className="b-title">Bots</h2>
-                  <p className="b-sub" data-testid="roster-count">
-                    {bots.length === 0
-                      ? 'No bots yet.'
-                      : `${bots.length} ${bots.length === 1 ? 'bot' : 'bots'} · ${agents} ${agents === 1 ? 'agent' : 'agents'}, ${automations} ${automations === 1 ? 'automation' : 'automations'}`}
-                  </p>
-                </div>
-                <div className="b-head-act">
-                  {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-add-bot">Add a bot</Link>}
-                  <Link className="btn s ag-roster-link" to={`/t/${slug}/recipes`} data-testid="roster-recipes">Browse recipes</Link>
-                  <ProposalsLink slug={slug} />
-                  <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
-                </div>
-              </div>
               {bots.length === 0 ? (
                 <div className="b-empty" data-testid="roster-empty">
                   <p className="b-empty-title">No bots yet</p>

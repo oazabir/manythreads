@@ -9,6 +9,7 @@ import { useTeams } from '../components/frames';
 import { EmptyState, QueryView } from '../components/states';
 import { Alert, Notice } from '../components/ui';
 import { PencilIcon } from '../shell/icons';
+import { PageHeader } from '../components/PageHeader';
 
 const BLANK = '__blank__';
 /** The order the picker lists templates in (proto §01 plate 4); any other template follows alphabetically. */
@@ -96,7 +97,7 @@ export function Teams() {
 
   return (
     <div className="teams" data-landmark="teams">
-      <h1 className="pane-title" data-landmark="title" data-copy="title">{admin ? 'Which teams do you want?' : 'Teams'}</h1>
+      <PageHeader title={admin ? 'Which teams do you want?' : 'Teams'} copyId="title" />
       <p className="lede" data-landmark="lede" data-copy="lede">
         {admin ? 'Pick templates, rename them, invite people. You can add a blank team too.' : 'The teams you belong to.'}
       </p>

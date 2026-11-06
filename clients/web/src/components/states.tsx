@@ -121,3 +121,8 @@ export function QueryView<T>({ q, children }: { q: QueryState<T> & { reload: () 
   }
   return <>{children(q.data)}</>;
 }
+
+/** The empty right pane of a list-and-detail screen. */
+export function SelectAnItem({ children }: { children?: ReactNode }) {
+  return <p className="select-item muted">{children ?? 'Select an item'}</p>;
+}

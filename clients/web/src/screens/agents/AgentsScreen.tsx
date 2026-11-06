@@ -1,3 +1,4 @@
+import { PageHeader } from '../../components/PageHeader';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import type { BotSummary, HermesConnection, HermesConnectionAgent } from '@manythreads/shared';
@@ -5,7 +6,6 @@ import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Alert, Notice, Time } from '../../components/ui';
-import { useHeaderTopic } from '../../shell/topic';
 import { fetchBots } from '../bots/api';
 import { useBotPerms } from '../bots/store';
 import { fetchConnections, testConnection } from './api';
@@ -137,7 +137,6 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
 
 export function AgentsScreen() {
   const { slug, canEdit } = useBotPerms();
-  useHeaderTopic('Agents');
   const conns = useQuery(`agents:${slug}`, () => fetchConnections(slug));
   const bots = useQuery(`agents-bots:${slug}`, () => fetchBots(slug));
   const [how, setHow] = useState<HermesConnectionAgent>('hermes');
@@ -146,18 +145,11 @@ export function AgentsScreen() {
 
   return (
     <div className="agents-screen" data-landmark="agents">
-      <div className="ag-head">
-        <div>
-          <h2 className="ag-title">Agents</h2>
-          <p className="ag-lede">
-            The agent that runs this team&apos;s bots. Connect a Hermes server, or the Claude Code or Codex command-line tool on your own machine.
-            A bot picks one of these connections in its Placement settings. A workspace admin sets them up under Runners.
-          </p>
-        </div>
-        <div className="ag-head-links">
-          <Link className="btn s" to={`/t/${slug}/projects`} data-testid="agents-projects-link">Projects</Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Agents"
+        description="The agent that runs this team's bots. Connect a Hermes server, or the Claude Code or Codex command-line tool on your own machine. A bot picks one of these connections in its Placement settings. A workspace admin sets them up under Runners."
+        actions={<Link className="btn s" to={`/t/${slug}/projects`} data-testid="agents-projects-link">Projects</Link>}
+      />
       <Notice tone="warn">An admin sets this up. Ask a workspace admin to add or change a connection under Runners. You can see what is set and run a check.</Notice>
       <QueryView q={conns}>
         {({ items }) => (

@@ -6,6 +6,7 @@ import { useQuery } from '../../app/useQuery';
 import { Alert, Notice, Time } from '../../components/ui';
 import { ForbiddenBody } from '../../components/states';
 import { CATEGORY_LABELS, NO_FILTERS, OUTCOME_LABELS, actionWords, actionsIn, exportFileName, outcomeWord, targetWords, toExportRequest, toQuery, verifyCommands, type AuditFilters } from './format';
+import { PageHeader } from '../../components/PageHeader';
 
 const PAGE = 50;
 
@@ -98,7 +99,7 @@ export function Audit() {
 
   return (
     <div className="audit-page" data-landmark="audit">
-      <h1 className="pane-title" data-landmark="title">Audit</h1>
+      <PageHeader title="Audit" />
       <p className="lede" data-landmark="lede">
         Who did what, when, and to what, across the workspace, including what the platform held back on purpose. Only workspace admins can see this page.
         Rows hold names and short reasons, never message text, file contents, secrets or memory text.

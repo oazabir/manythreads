@@ -1,3 +1,4 @@
+import { PageHeader } from '../../components/PageHeader';
 import type { InstallRecipeResponse, RecipeCard } from '@manythreads/shared';
 import { useId, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -6,11 +7,10 @@ import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
 import { QueryView } from '../../components/states';
 import { Alert } from '../../components/ui';
-import { useHeaderTopic } from '../../shell/topic';
 import { useProposalPerms } from '../proposals/store';
 import { fetchRecipes, installRecipe } from './api';
 import { Filed, GateNote, RecipeFacts, RecipeTile, StatePill } from './parts';
-import { RECIPES_TOPIC, installGate, onShelf, shelfFrom, shelves } from './words';
+import { installGate, onShelf, shelfFrom, shelves } from './words';
 
 /*
  * The recipe gallery (PLAN P18-01, docs/plugins/workshop.md "The recipe gallery"): ready-made automations a team can ask for. A card says what a recipe does, what it needs and where it
@@ -89,7 +89,6 @@ function RecipeDialog({ card, slug, canInstall, canApply, guest, onClose, onFile
 export function RecipesScreen() {
   const { slug, canApply } = useProposalPerms();
   const guest = useSession().role === 'guest';
-  useHeaderTopic(RECIPES_TOPIC);
   const [params, setParams] = useSearchParams();
   const q = useQuery(`recipes:${slug}`, () => fetchRecipes(slug));
   const shelf = shelfFrom(params.get('shelf'));
@@ -104,16 +103,16 @@ export function RecipesScreen() {
 
   return (
     <div className="rg-screen" data-testid="recipes-screen">
-      <div className="rg-head">
-        <div>
-          <h2 className="rg-title">Recipes</h2>
-          <p className="rg-sub">Ready-made automations. Pick one, read what it does, and ask for it. A team lead or workspace admin approves it before anything is added.</p>
-        </div>
-        <div className="rg-head-act">
-          <Link className="btn s" to={`/t/${slug}/bots/new`} data-testid="recipes-describe">Describe your own</Link>
-          <Link className="btn s" to={`/t/${slug}/bots`} data-testid="recipes-bots">Back to Bots</Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Recipes"
+        description="Ready-made automations. Pick one, read what it does, and ask for it. A team lead or workspace admin approves it before anything is added."
+        actions={(
+          <>
+            <Link className="btn s" to={`/t/${slug}/bots/new`} data-testid="recipes-describe">Describe your own</Link>
+            <Link className="btn s" to={`/t/${slug}/bots`} data-testid="recipes-bots">Back to Bots</Link>
+          </>
+        )}
+      />
       <QueryView q={q}>
         {({ recipes, canInstall }) => {
           const chips = shelves(recipes);
