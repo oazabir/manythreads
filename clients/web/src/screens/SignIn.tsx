@@ -7,13 +7,16 @@ import { safeReturnPath } from '../app/paths';
 import { useSessionState } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { AuthFrame } from '../components/frames';
-import { Alert, Field, Notice } from '../components/ui';
+import { Alert, Field, Notice, PasswordToggle } from '../components/ui';
 
 const MARKS: Record<OidcProviderKind, { text: string; cls: string }> = {
   google: { text: 'G', cls: 'g' },
   microsoft: { text: 'MS', cls: 'ms' },
   oidc: { text: 'ID', cls: '' },
 };
+
+/** The line under the product name on the sign-in card. */
+export const TAGLINE = 'Where your team and its bots work together.';
 
 /** The sentence for `/sign-in?error=<code>` (an OIDC refusal), or null. */
 export function oidcErrorMessage(code: string | null): string | null {
@@ -32,6 +35,7 @@ export function SignIn() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordShown, setPasswordShown] = useState(false);
   const [error, setError] = useState<string | null>(oidcErrorMessage(params.get('error')));
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -66,7 +70,7 @@ export function SignIn() {
   }
 
   return (
-    <AuthFrame title={mode === 'forgot' ? 'Reset your password' : 'Sign in'}>
+    <AuthFrame title={mode === 'forgot' ? 'Reset your password' : 'Sign in'} tagline={TAGLINE}>
       {loading ? <p className="loading" aria-busy="true">Loading…</p> : null}
       {!loading && mode === 'sign-in' && hasProviders ? (
         <div className="providers" data-landmark="providers">
@@ -88,7 +92,16 @@ export function SignIn() {
         <form onSubmit={onSubmit} noValidate data-landmark="form">
           <Field label="Email" type="email" name="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
           {mode === 'sign-in' ? (
-            <Field label="Password" type="password" name="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Field
+              label="Password"
+              type={passwordShown ? 'text' : 'password'}
+              name="password"
+              autoComplete="current-password"
+              className="has-toggle"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              suffix={<PasswordToggle shown={passwordShown} onToggle={() => setPasswordShown((v) => !v)} />}
+            />
           ) : null}
           {resetSent ? <Notice>If that address has an account, a reset link is on its way.</Notice> : null}
           <div className="form-actions">

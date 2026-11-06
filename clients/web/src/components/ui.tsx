@@ -1,6 +1,6 @@
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { PresenceDot } from '../presence/PresenceDot';
-import { BotBadgeIcon } from '../shell/icons';
+import { BotBadgeIcon, HidePasswordIcon, ShowPasswordIcon } from '../shell/icons';
 import { toneOf } from './tone';
 import { PASSWORD_MIN_LENGTH as PASSWORD_MIN, avatarSrc } from '@manythreads/shared';
 
@@ -71,23 +71,42 @@ export function passwordRule(value: string): { ok: boolean; started: boolean; te
   return { ok, started: n > 0, text: ok ? `${n} characters` : `At least ${PASSWORD_MIN} characters (${n}/${PASSWORD_MIN})` };
 }
 
+/**
+ * The Show password button for a password box. A real button; its name stays "Show password" and `aria-pressed` tells whether the
+ * password is on screen, so a screen reader hears "Show password, toggle button, pressed" rather than a name that changes under it.
+ */
+export function PasswordToggle({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="pw-toggle" aria-label="Show password" title="Show password" aria-pressed={shown} data-testid="password-toggle" onClick={onToggle}>
+      {shown ? <HidePasswordIcon /> : <ShowPasswordIcon />}
+    </button>
+  );
+}
+
 export function PasswordField({ label = 'Password', value, onChange, autoComplete = 'new-password' }: {
   label?: string;
   value: string;
   onChange: (v: string) => void;
   autoComplete?: string;
 }) {
+  const [shown, setShown] = useState(false);
   const rule = passwordRule(value);
   const tone = rule.ok ? 'ok' : rule.started ? 'bad' : '';
   return (
     <Field
       label={label}
-      type="password"
+      type={shown ? 'text' : 'password'}
+      className="has-toggle"
       autoComplete={autoComplete}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={`${PASSWORD_MIN}+ characters`}
-      suffix={rule.ok ? <span className="rule-ok">ok</span> : null}
+      suffix={
+        <>
+          {rule.ok ? <span className="rule-ok">ok</span> : null}
+          <PasswordToggle shown={shown} onToggle={() => setShown((v) => !v)} />
+        </>
+      }
       hint={
         <span className={`rule ${tone}`} aria-live="polite">
           {rule.text}

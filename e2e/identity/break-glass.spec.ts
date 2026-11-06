@@ -76,7 +76,7 @@ test('Nadia (member) is refused with the right password', async ({ page }) => {
   await page.goto(`${stack.origin}/sign-in`);
   await page.getByRole('button', { name: 'sign in with a password' }).click();
   await page.getByLabel('Email').fill(SEED_EMAILS.nadia);
-  await page.getByLabel('Password').fill(PERSONA_PASSWORD);
+  await page.getByLabel('Password', { exact: true }).fill(PERSONA_PASSWORD);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
   await expect(page.getByRole('alert')).toContainText('Password sign-in is turned off for members');
@@ -88,7 +88,7 @@ test('Omar (admin) gets in with his password: break-glass', async ({ page }) => 
   await page.goto(`${stack.origin}/sign-in`);
   await page.getByRole('button', { name: 'sign in with a password' }).click();
   await page.getByLabel('Email').fill(SEED_EMAILS.omar);
-  await page.getByLabel('Password').fill(PERSONA_PASSWORD);
+  await page.getByLabel('Password', { exact: true }).fill(PERSONA_PASSWORD);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
   await expectInApp(page);

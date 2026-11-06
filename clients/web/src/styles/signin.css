@@ -1,0 +1,107 @@
+/* ---- sign-in card and the Show password button ---- */
+
+/* The sign-in card: the product name large with its tagline under it, a wider card on a desktop. */
+.auth-card.hero {
+  max-width: 460px;
+  padding: 36px 36px 32px;
+}
+
+.auth-card.hero .brand {
+  gap: 14px;
+}
+
+.auth-card.hero .brand .mark {
+  width: 44px;
+  height: 44px;
+  font-size: var(--fs-h1);
+}
+
+.auth-card.hero .brand b {
+  font-size: var(--fs-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.auth-tagline {
+  margin: 10px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-body);
+}
+
+.auth-card.hero .auth-title {
+  margin-top: 26px;
+  font-size: var(--fs-h2);
+}
+
+/* The Sign in button fills the card; "Forgot password?" sits under it. */
+.auth-card.hero .form-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.auth-card.hero .form-actions .btn.primary {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: var(--fs-body);
+}
+
+.auth-card.hero .form-actions .linkish {
+  align-self: center;
+}
+
+/* The Show password button sits inside the password box, on its right edge. */
+.fld.has-toggle input {
+  padding-right: 44px;
+}
+
+.fld.has-toggle .fld-suffix {
+  right: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pw-toggle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.pw-toggle:hover {
+  color: var(--ink);
+}
+
+.pw-toggle[aria-pressed='true'] {
+  color: var(--ink);
+}
+
+@media (pointer: coarse), (width <= 640px) {
+  .pw-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  .fld.has-toggle input {
+    min-height: 44px;
+    padding-right: 52px;
+  }
+}
+
+@media (width <= 640px) {
+  .auth-card.hero {
+    padding: 26px 16px 22px;
+  }
+
+  .auth-card.hero .form-actions .btn.primary {
+    min-height: 44px;
+  }
+}

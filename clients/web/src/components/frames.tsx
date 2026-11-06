@@ -14,7 +14,6 @@ import {
 } from '../shell/icons';
 import { useDocumentTitle } from '../shell/usePageTitle';
 
-/** Centred card for sign-in, bootstrap and invite screens. */
 /** The card for sign-in, bootstrap, invite and error pages. A `tagline` makes it the sign-in card: the product name large with the line under it, and a wider card on a desktop. */
 export function AuthFrame({ title, lede, children, footer, tagline }: { title: string; lede?: ReactNode; children: ReactNode; footer?: ReactNode; tagline?: string }) {
   useDocumentTitle(title);

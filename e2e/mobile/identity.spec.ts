@@ -26,6 +26,24 @@ test('sign-in fits the phone: a wrong password is an alert, the right one lands 
   await noSideScroll(page);
 });
 
+test('sign-in on the phone: the card has 16 px gutters, the Show password button is 44 px and the Sign in button fills the card', async ({ page }) => {
+  await page.goto('/sign-in');
+  const card = await page.locator('[data-landmark="auth-card"]').boundingBox();
+  expect(card).not.toBeNull();
+  expect(card!.x).toBeGreaterThanOrEqual(15);
+  expect(card!.x).toBeLessThanOrEqual(17);
+  const toggle = await page.getByRole('button', { name: 'Show password' }).boundingBox();
+  expect(toggle!.width).toBeGreaterThanOrEqual(44);
+  expect(toggle!.height).toBeGreaterThanOrEqual(44);
+  const form = await page.locator('[data-landmark="form"]').boundingBox();
+  const submit = await page.getByRole('button', { name: 'Sign in', exact: true }).boundingBox();
+  expect(submit!.width).toBeGreaterThanOrEqual(form!.width - 1);
+  await page.getByLabel('Password', { exact: true }).fill('typed-on-a-phone');
+  await page.getByRole('button', { name: 'Show password' }).tap();
+  await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('type', 'text');
+  await noSideScroll(page);
+});
+
 test.describe('Omar on settings', () => {
   test.use({ storageState: authState('omar') });
 

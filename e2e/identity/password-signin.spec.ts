@@ -53,3 +53,56 @@ test('an OIDC refusal comes back as a sentence on the sign-in screen', async ({ 
   await page.goto('/sign-in?error=no_such_code');
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+test('the sign-in card shows the product name large, the tagline and a full-width Sign in button', async ({ page }) => {
+  await page.goto('/sign-in');
+  const card = page.getByTestId('app-frame').locator('[data-landmark="auth-card"]');
+  await expect(card.locator('.brand b')).toHaveText('manythreads');
+  expect(await card.locator('.brand b').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(26);
+  await expect(page.getByTestId('auth-tagline')).toHaveText('Where your team and its bots work together.');
+  const form = await page.locator('[data-landmark="form"]').boundingBox();
+  const button = await page.getByRole('button', { name: 'Sign in', exact: true }).boundingBox();
+  expect(form && button && button.width >= form.width - 1).toBe(true);
+  // there is no "Remember this device": a session's length is the workspace's decision, not the person's
+  await expect(page.getByText('Remember this device')).toHaveCount(0);
+});
+
+test('Show password reveals what was typed, hides it again, and keeps the browser hints for password managers', async ({ page }) => {
+  await page.goto('/sign-in');
+  const password = page.getByLabel('Password', { exact: true });
+  const toggle = page.getByRole('button', { name: 'Show password' });
+  await expect(password).toHaveAttribute('type', 'password');
+  await expect(password).toHaveAttribute('autocomplete', 'current-password');
+  await expect(password).toHaveAttribute('name', 'password');
+  await expect(page.getByLabel('Email')).toHaveAttribute('autocomplete', 'username');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await toggle.evaluate((el) => el.tagName)).toBe('BUTTON');
+
+  await password.fill('a-typed-secret');
+  await toggle.click();
+  await expect(password).toHaveAttribute('type', 'text');
+  await expect(password).toHaveValue('a-typed-secret');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(password).toHaveAttribute('autocomplete', 'current-password');
+  // the button did not submit the form
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  await toggle.click();
+  await expect(password).toHaveAttribute('type', 'password');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('Show password works from the keyboard and Sign in still works with the password showing', async ({ page }) => {
+  await page.goto('/sign-in');
+  await page.getByLabel('Email').fill(personaEmail('nadia'));
+  const password = page.getByLabel('Password', { exact: true });
+  await password.fill(PERSONA_PASSWORD);
+  await page.keyboard.press('Tab');
+  const toggle = page.getByRole('button', { name: 'Show password' });
+  await expect(toggle).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(password).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+});

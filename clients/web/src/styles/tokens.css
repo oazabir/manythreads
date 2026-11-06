@@ -82,6 +82,7 @@
   --av-10-ink: #3B4452;
 
   /* P21-20 look tokens: screens use these names, not raw sizes, radii or colours (stylelint enforces it) */
+  --fs-display: 28px; /* the product name on the sign-in card */
   --fs-h1: 22px;
   --fs-h2: 16px;
   --fs-body: 14.5px;
