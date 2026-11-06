@@ -244,6 +244,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'memory_concepts.trust_tier': OkfTrustTier,
   'goals.status': GoalStatus,
   'tasks.state': TaskState,
+  'board_card_places.state': TaskState,
   'tasks.kind': TaskKind,
   'tasks.priority': TaskPriority,
   'task_events.type': TaskEventType,
