@@ -67,7 +67,8 @@ test('Files matches plate 3 (P)', async ({ browser }, testInfo) => {
       height: 700,
       liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.rail .dm-empty', '.rail .dm-new', '.fhead-actions', '.ftree', '.frow .src', '.panel-body', '.panel-sub', '.chead .topic', '.bell'],
       order: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
-      exact: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
+      // tree and list sit 77 px lower than the plate's: the screen now has its page header (title and count, P21-12) between the band and the columns
+      exact: ['team-switch', 'search', 'sidebar', 'header', 'right-panel'],
     });
   } finally {
     await close();
