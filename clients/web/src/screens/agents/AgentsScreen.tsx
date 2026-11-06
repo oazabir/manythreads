@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import type { BotSummary, HermesConnection, HermesConnectionAgent } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
+import { isAdmin, useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
-import { Alert, Notice, Time } from '../../components/ui';
+import { StatusStrip } from '../../components/StatusStrip';
+import { Alert } from '../../components/ui';
 import { fetchBots } from '../bots/api';
 import { useBotPerms } from '../bots/store';
 import { fetchConnections, testConnection } from './api';
@@ -18,7 +20,7 @@ import {
   hermesProfileYaml,
   kindLabel,
   mcpAddress,
-  statusLine,
+  stripItem,
 } from './commands';
 
 /*
@@ -111,11 +113,7 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
       <div className="ag-main">
         <div className="ag-name"><span className="mono">{c.name}</span> <span className="kind ag">{agentLabel(c.agent)}</span> <span className="ag-kind">{kindLabel(c.kind)}</span></div>
         <div className="ag-addr mono" data-vt-mask>{canManage ? (c.baseUrl ?? (c.kind === 'managed' ? 'Inside this cluster' : 'Set by an admin')) : 'Set by an admin'}</div>
-        <div className="ag-state">
-          <span className={`ag-st ${c.status}`}>{statusLine(c)}</span>
-          {c.lastCheckedAt ? <span className="d"> · last checked <Time iso={c.lastCheckedAt} /></span> : null}
-          {c.lastError ? <div className="ag-err" data-vt-mask>{c.lastError}</div> : null}
-        </div>
+        {c.lastError ? <div className="ag-state"><div className="ag-err" data-vt-mask>{c.lastError}</div></div> : null}
         <div className="ag-bots d" data-testid="agents-bots">
           {used.length === 0 ? 'No bot is placed on this connection yet.' : (
             <>Used by {used.map((b, i) => (
@@ -137,6 +135,7 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
 
 export function AgentsScreen() {
   const { slug, canEdit } = useBotPerms();
+  const admin = isAdmin(useSession());
   const conns = useQuery(`agents:${slug}`, () => fetchConnections(slug));
   const bots = useQuery(`agents-bots:${slug}`, () => fetchBots(slug));
   const [how, setHow] = useState<HermesConnectionAgent>('hermes');
@@ -147,30 +146,37 @@ export function AgentsScreen() {
     <div className="agents-screen" data-landmark="agents">
       <PageHeader
         title="Agents"
-        description="The agent that runs this team's bots. Connect a Hermes server, or the Claude Code or Codex command-line tool on your own machine. A bot picks one of these connections in its Placement settings. A workspace admin sets them up under Runners."
+        description="The agents that run this team's bots. A bot picks one of these connections in its Placement settings."
         actions={<Link className="btn s" to={`/t/${slug}/projects`} data-testid="agents-projects-link">Projects</Link>}
       />
-      <Notice tone="warn">An admin sets this up. Ask a workspace admin to add or change a connection under Runners. You can see what is set and run a check.</Notice>
       <QueryView q={conns}>
         {({ items }) => (
-          <section className="box ag-list" aria-labelledby="ag-list-h" data-landmark="agents-list">
-            <h2 className="box-h" id="ag-list-h">Connections</h2>
-            {items.length === 0 ? <p className="d" data-testid="agents-empty">No connections yet. An admin sets this up under Runners.</p> : null}
-            {items.map((c) => (
-              <ConnectionRow key={c.id} slug={slug} c={c} bots={bots.status === 'ok' ? bots.data.bots : []} canManage={canEdit} onChanged={reload} />
-            ))}
-          </section>
+          <>
+            <StatusStrip label="Agent connections" testId="agents-strip" items={items.map((c) => stripItem(c, admin))} empty="No agent is connected yet." />
+            {!admin ? (
+              <p className="d ag-note" data-testid="agents-admin-note">
+                An admin sets this up. Ask a workspace admin to add or change a connection under Runners. You can see what is set{canEdit ? ' and run a check' : ''}.
+              </p>
+            ) : null}
+            <section className="box ag-list" aria-labelledby="ag-list-h" data-landmark="agents-list">
+              <h2 className="box-h" id="ag-list-h">Connections</h2>
+              {items.length === 0 ? <p className="d" data-testid="agents-empty">No connections yet. An admin sets this up under Runners.</p> : null}
+              {items.map((c) => (
+                <ConnectionRow key={c.id} slug={slug} c={c} bots={bots.status === 'ok' ? bots.data.bots : []} canManage={canEdit} onChanged={reload} />
+              ))}
+            </section>
+          </>
         )}
       </QueryView>
-      <section className="box" aria-labelledby="ag-how-h" data-landmark="agents-how">
-        <h2 className="box-h" id="ag-how-h">How to connect</h2>
+      <details className="box ag-fold" data-landmark="agents-how" data-testid="agents-how-fold">
+        <summary className="ag-fold-h" id="ag-how-h">How to connect</summary>
         <div className="ag-tabs" role="tablist" aria-label="Agent">
           {AGENT_CHOICES.map((c) => (
             <button key={c.id} type="button" role="tab" aria-selected={how === c.id} className={`btn s ${how === c.id ? 'primary' : ''}`} onClick={() => setHow(c.id)}>{c.label}</button>
           ))}
         </div>
         <HowToConnect agent={how} origin={origin} listen="127.0.0.1:8650" />
-      </section>
+      </details>
     </div>
   );
 }

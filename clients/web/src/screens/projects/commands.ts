@@ -1,3 +1,4 @@
+import type { StripItem } from '../../components/StatusStrip';
 import { CreateProjectRequest, UpdateProjectRequest, parseGithubRepo, type Project, type SetPushCredentialResponse } from '@manythreads/shared';
 
 export type FormValues = { name: string; repoUrl: string; defaultBranch: string; channelId: string };
@@ -72,6 +73,19 @@ export function describeToken(p: Pick<Project, 'pushUsername' | 'pushCredentialE
   return { line: `${who} · expires ${date}`, tone: days <= EXPIRY_WARN_DAYS ? 'warn' : 'ok' };
 }
 
+/**
+ * One line of the status strip for a project: its name, whether the bots can send finished work to GitHub, and when the token was saved.
+ * GitHub is asked about a token only when it is saved or tested, so the page says "token saved", not "last checked".
+ */
+export function stripItem(p: Pick<Project, 'id' | 'name' | 'repoUrl' | 'pushUsername' | 'pushCredentialSetAt' | 'pushCredentialExpiresAt' | 'pushCredentialStatus'>, now = Date.now()): StripItem {
+  const when = p.pushCredentialSetAt ? { label: 'token saved', iso: p.pushCredentialSetAt } : null;
+  const base = { id: p.id, host: p.name, detail: null, when };
+  if (p.pushCredentialSetAt === null) return { ...base, tone: 'idle', word: 'No token yet' };
+  const t = describeToken(p, now);
+  if (t.tone === 'bad') return { ...base, tone: 'bad', word: p.pushCredentialStatus === 'needs_replacing' ? 'Token needs replacing' : 'Token expired' };
+  if (t.tone === 'warn') return { ...base, tone: 'warn', word: 'Token expires soon' };
+  return { ...base, tone: 'ok', word: 'Can send pull requests' };
+}
 
 /** The GitHub account a project's repository lives under (the first part of its path), or null when the address is not a GitHub repository. */
 export const ownerOfRepo = (repoUrl: string): string | null => parseGithubRepo(repoUrl)?.owner ?? null;

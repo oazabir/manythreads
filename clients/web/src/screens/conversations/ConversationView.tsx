@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { ConversationListItem, ConversationScope, FileSummary } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
-import { fetchChannel, postMessage } from '../../api/endpoints';
+import { addTeamMember, fetchChannel, postMessage } from '../../api/endpoints';
+import { isAdmin, useSession, useSessionState } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { Composer } from '../../channels/Composer';
 import { ago } from '../../channels/format';
@@ -218,7 +219,7 @@ export function ConversationView() {
 
   if (view === 'workshop') return <WorkshopTab slug={team} botSlug={botSlug} botName={botName} onView={changeView} />;
   if (opened.status === 'loading') return <div className="view-empty" aria-busy="true" data-testid="conversation-loading" />;
-  if (opened.status === 'error' && blocked === null) return <CannotTalk error={opened.error} slug={team} />;
+  if (opened.status === 'error' && blocked === null) return <CannotTalk error={opened.error} slug={team} onJoined={opened.reload} />;
   // On a phone an open thread has the screen to itself; with none open the message box comes first and the list sits under it (conversations.css).
   const showList = !narrow || thread === null;
   const empty = EMPTY[scope](botName, botSlug);
@@ -389,13 +390,36 @@ function ConversationRow({ item, who, on, onOpen }: { item: ConversationListItem
 }
 
 /** Why the conversation did not open, in words: the bot is not the person's to talk to, is not there, or is not running. */
-function CannotTalk({ error, slug }: { error: Error; slug: string }) {
+function CannotTalk({ error, slug, onJoined }: { error: Error; slug: string; onJoined: () => void }) {
   const status = isApiError(error) ? error.status : 0;
+  const session = useSession();
+  const { refresh } = useSessionState();
+  const { team } = useShell();
+  const teamName = team?.name ?? slug;
+  // A workspace admin may join any team. That is the roster's ordinary "add a member" route (a plain member, audited like any addition), not a door of its own.
+  const canJoin = status === 403 && isAdmin(session);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const join = async (): Promise<void> => {
+    setJoining(true);
+    setJoinError(null);
+    try {
+      await addTeamMember(slug, { personId: session.person.id, role: 'member' });
+      refresh();
+      onJoined();
+    } catch (err) {
+      setJoinError(isApiError(err) ? err.message : 'Could not join the team. Try again.');
+    } finally {
+      setJoining(false);
+    }
+  };
   const title =
     status === 403 ? 'You cannot talk to this bot' : status === 404 ? 'There is no such bot' : status === 409 ? 'This bot cannot answer right now' : 'The conversation did not open';
   const body =
     status === 403
-      ? 'Only people on the bot’s team can talk to it. A team lead can add you.'
+      ? canJoin
+        ? `You are not on the ${teamName} team, and only people on a bot’s team can talk to it. As a workspace admin you can join it.`
+        : `Ask a lead of ${teamName} to add you.`
       : status === 404
         ? 'It may have been removed from the team.'
         : error.message;
@@ -403,6 +427,10 @@ function CannotTalk({ error, slug }: { error: Error; slug: string }) {
     <div className="view-empty" role="alert" data-testid="conversation-unavailable">
       <p className="view-empty-title">{title}</p>
       <p className="view-empty-body">{body}</p>
+      {joinError ? <Alert>{joinError}</Alert> : null}
+      {canJoin ? (
+        <button type="button" className="btn primary" data-testid="join-as-admin" disabled={joining} onClick={() => void join()}>{joining ? 'Joining…' : 'Join as admin'}</button>
+      ) : null}
       <Link className="btn" to={`/t/${slug}/bots`}>Back to the bots</Link>
     </div>
   );

@@ -1,0 +1,104 @@
+/* The status strip (components/StatusStrip.tsx). Classes are prefixed `ss-`; colours come from tokens only, and the state is always also a word. */
+.ss {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.ss-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ss-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: var(--fs-small);
+}
+
+.ss-item + .ss-item {
+  border-top: 1px solid var(--hairline);
+}
+
+.ss-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.ss-item[data-tone='ok'] .ss-dot {
+  background: var(--ok);
+}
+
+.ss-item[data-tone='warn'] .ss-dot {
+  background: var(--warn);
+}
+
+.ss-item[data-tone='bad'] .ss-dot {
+  background: var(--alert);
+}
+
+.ss-host {
+  display: grid;
+  min-width: 0;
+}
+
+.ss-name {
+  overflow-wrap: anywhere;
+}
+
+.ss-detail {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+.ss-word {
+  font-weight: 600;
+}
+
+.ss-item[data-tone='ok'] .ss-word {
+  color: var(--ok-ink);
+}
+
+.ss-item[data-tone='warn'] .ss-word {
+  color: var(--warn-ink);
+}
+
+.ss-item[data-tone='bad'] .ss-word {
+  color: var(--alert-ink);
+}
+
+.ss-item[data-tone='idle'] .ss-word {
+  color: var(--mute);
+}
+
+.ss-when {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ss-empty {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+/* A phone: the dot and the host share the first line, the word and the time wrap under the host. */
+@media (width <= 640px) {
+  .ss-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ss-word,
+  .ss-when {
+    grid-column: 2;
+  }
+}

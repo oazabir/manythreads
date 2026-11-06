@@ -67,16 +67,25 @@
   font-size: var(--fs-caption);
 }
 
-.ag-st.ok {
-  color: var(--ok);
+.ag-note {
+  margin: 0;
+  font-size: var(--fs-caption);
 }
 
-.ag-st.error {
-  color: var(--alert-ink);
+/* "How to connect" is folded: the summary is the heading, and the panel below it keeps the old box look. */
+.ag-fold-h {
+  cursor: pointer;
+  font-size: var(--fs-small);
+  font-weight: 600;
 }
 
-.ag-st.unknown {
-  color: var(--faint);
+.ag-fold-h:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.ag-fold[open] .ag-fold-h {
+  margin-bottom: 10px;
 }
 
 .ag-err {

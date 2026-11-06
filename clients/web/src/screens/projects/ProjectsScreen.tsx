@@ -5,11 +5,12 @@ import type { NavChannel, Project } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
+import { StatusStrip } from '../../components/StatusStrip';
 import { Alert, Field, Notice } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
 import { useBotPerms } from '../bots/store';
 import { createProject, deleteProject, fetchProjects, removePushCredential, setPushCredential, testPushCredential, updateProject } from './api';
-import { describeShare, describeToken, ownerOfRepo, podPath, validateEdit, validateNew, type FormErrors } from './commands';
+import { describeShare, describeToken, ownerOfRepo, podPath, stripItem, validateEdit, validateNew, type FormErrors } from './commands';
 
 /*
  * Projects: the git repositories a team works on. Each one is tied to a channel; a bot asked in that channel is told which repository it
@@ -269,22 +270,33 @@ export function ProjectsScreen() {
     <div className="projects-screen" data-landmark="projects">
       <PageHeader
         title="Projects"
-        description="A project is a git repository this team works on, tied to one of its channels. A bot asked in that channel is told which repository and branch it is working on, and the team's agent pod keeps a copy of the repository for the bots to work in."
+        description="The git repositories this team works on, each tied to one of its channels."
         actions={canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="projects-add-open">Add project</button> : null}
       />
-      {!canEdit ? <Notice tone="warn">Only a team lead or a workspace admin can change these. You can see what is set.</Notice> : null}
-      {adding ? <AddForm slug={slug} channels={channels} onDone={() => { setAdding(false); reload(); }} /> : null}
       <QueryView q={projects}>
         {({ items }) => (
-          <section className="box pj-list" aria-labelledby="pj-list-h" data-landmark="projects-list">
-            <h2 className="box-h" id="pj-list-h">Repositories</h2>
-            {items.length === 0 ? <p className="d" data-testid="projects-empty">No projects yet. Add one to tell the team&apos;s bots what code they work on.</p> : null}
-            {items.map((p) => (
-              <ProjectRow key={p.id} slug={slug} p={p} channels={channels} canManage={canEdit} onChanged={reload} />
-            ))}
-          </section>
+          <>
+            <StatusStrip label="Project status" testId="projects-strip" items={items.map((p) => stripItem(p))} empty="No repository is connected yet." />
+            {!canEdit ? <p className="d pj-note" data-testid="projects-note">Only a team lead or a workspace admin can change these. You can see what is set.</p> : null}
+            {adding ? <AddForm slug={slug} channels={channels} onDone={() => { setAdding(false); reload(); }} /> : null}
+            <section className="box pj-list" aria-labelledby="pj-list-h" data-landmark="projects-list">
+              <h2 className="box-h" id="pj-list-h">Repositories</h2>
+              {items.length === 0 ? <p className="d" data-testid="projects-empty">No projects yet. Add one to tell the team&apos;s bots what code they work on.</p> : null}
+              {items.map((p) => (
+                <ProjectRow key={p.id} slug={slug} p={p} channels={channels} canManage={canEdit} onChanged={reload} />
+              ))}
+            </section>
+          </>
         )}
       </QueryView>
+      <details className="box pj-fold" data-landmark="projects-how" data-testid="projects-how-fold">
+        <summary className="pj-fold-h">How to connect</summary>
+        <ol className="pj-how">
+          <li>Press <strong>Add project</strong>. Give it a name, the https address of the repository and the branch the work starts from.</li>
+          <li>Pick the channel the team works on it in. A bot asked in that channel is told which repository and branch it works on, and the team&apos;s agent pod keeps a copy for the bots to work in.</li>
+          <li>To let a bot send tested work to GitHub as a pull request, save a GitHub token on the project. A person still merges it on GitHub.</li>
+        </ol>
+      </details>
     </div>
   );
 }

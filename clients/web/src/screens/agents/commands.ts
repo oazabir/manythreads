@@ -1,3 +1,4 @@
+import type { StripItem } from '../../components/StatusStrip';
 import {
   CreateHermesConnectionRequest,
   UpdateHermesConnectionRequest,
@@ -25,6 +26,21 @@ export function botsOnConnection(bots: ReadonlyArray<BotSummary>, name: string):
 export function statusLine(c: Pick<HermesConnection, 'status' | 'lastCheckedAt' | 'lastError'>): string {
   if (c.status === 'unknown') return 'Not checked yet';
   return c.status === 'ok' ? 'Working' : 'Not working';
+}
+
+/**
+ * One line of the status strip for a connection: its name, the state in words and when it was last checked. The address is passed on only
+ * for a workspace admin (it is an internal one, such as a cluster address); everyone else sees the name alone.
+ */
+export function stripItem(c: Pick<HermesConnection, 'id' | 'name' | 'baseUrl' | 'status' | 'lastCheckedAt' | 'lastError' | 'agent'>, admin: boolean): StripItem {
+  return {
+    id: c.id,
+    host: c.name,
+    detail: admin ? c.baseUrl : null,
+    tone: c.status === 'ok' ? 'ok' : c.status === 'error' ? 'bad' : 'idle',
+    word: statusLine(c),
+    when: c.lastCheckedAt ? { label: 'last checked', iso: c.lastCheckedAt } : null,
+  };
 }
 
 export type FormValues = { name: string; agent: HermesConnectionAgent; baseUrl: string; apiKey: string };

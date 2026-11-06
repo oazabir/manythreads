@@ -78,7 +78,7 @@ test('the bot page offers "Open the bot\'s file" and its trigger options are pla
     await expect(open).toHaveText("Open the bot's file");
     await expect(open).toHaveAttribute('href', /bots(%2F|\/)coder(%2F|\/)BOT\.md/);
 
-    await page.getByTestId('tab-triggers').click();
+    await page.getByTestId('tab-basics').click();
     const select = page.getByLabel('Trigger type to add');
     await expect(select).toBeVisible();
     const labels = await select.locator('option').allTextContents();
@@ -106,6 +106,7 @@ test('the Agents screen shows a connection address to a workspace admin and hide
     const row = admin.page.locator('[data-testid="agents-row"][data-connection="pod-one"]');
     await expect(row).toContainText(POD);
     await expect(row.getByRole('button', { name: 'Test' })).toBeVisible();
+    await expect(admin.page.getByTestId('agents-strip').getByTestId('status-strip-detail')).toHaveText(POD);
   } finally {
     await admin.context.close();
   }
@@ -118,6 +119,9 @@ test('the Agents screen shows a connection address to a workspace admin and hide
     await expect(row).toContainText('Set by an admin');
     await expect(row).not.toContainText('pod.internal');
     await expect(row).not.toContainText(POD);
+    // the status strip above the list names the connection but not the address either (P21-18)
+    await expect(lead.page.getByTestId('agents-strip').locator('[data-item="pod-one"]')).toBeVisible();
+    await expect(lead.page.locator('body')).not.toContainText(POD);
   } finally {
     await lead.context.close();
   }
