@@ -55,7 +55,7 @@ test('the UI: pick a person, one conversation opens; picking again opens the sam
     await expect(dmList(rafiPage.page).locator('a.it')).toContainText('Nadia');
 
     // "+ New" with Rafi picked is that same conversation: no second row
-    await nadiaPage.page.getByRole('button', { name: 'New', exact: true }).click();
+    await nadiaPage.page.getByRole('button', { name: 'New message', exact: true }).click();
     const picker = nadiaPage.page.getByRole('dialog', { name: 'New message' });
     await picker.getByRole('checkbox', { name: /Rafi/ }).check();
     await picker.getByRole('button', { name: 'Message' }).click();
@@ -79,7 +79,7 @@ test('the UI: pick a person, one conversation opens; picking again opens the sam
     await expect(row.locator('.pill')).toHaveCount(0);
 
     // Rafi picks Nadia from his side: the same conversation again, still one row, one channel
-    await rafiPage.page.getByRole('button', { name: 'New', exact: true }).click();
+    await rafiPage.page.getByRole('button', { name: 'New message', exact: true }).click();
     await rafiPage.page.getByRole('dialog', { name: 'New message' }).getByRole('checkbox', { name: /Nadia/ }).check();
     await rafiPage.page.getByRole('dialog', { name: 'New message' }).getByRole('button', { name: 'Message' }).click();
     await expect(dmList(rafiPage.page).locator('a.it')).toHaveCount(1);
