@@ -49,7 +49,7 @@
   min-width: 96px;
   height: 32px;
   cursor: pointer;
-  touch-action: none;
+  touch-action: pan-y; /* up or down scrolls the list, sideways seeks */
 }
 
 .vp-bar {

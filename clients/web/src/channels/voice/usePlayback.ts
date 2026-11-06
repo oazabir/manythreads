@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { fileContentUrl } from '../../api/endpoints';
+import { onPersonChange } from '../../app/caches';
 import { clampPosition, nextSpeed } from './playerFormat';
 import { clearPosition, loadPosition, loadSpeed, savePosition, saveSpeed } from './resume';
 
@@ -80,7 +81,7 @@ function startTicking(): void {
   frame = requestAnimationFrame(tick);
 }
 function stopTicking(): void {
-  cancelAnimationFrame(frame);
+  if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
 }
 
 function keepBlob(fileId: string, url: string): void {
@@ -200,6 +201,18 @@ export function stopAllPlayback(): void {
   pauseNow();
   set({ fileId: null, status: 'idle', positionMs: 0 });
 }
+
+/** Sign-out or another person in the same tab: stop the sound, let go of the clips held in memory and forget the loaded one. */
+export function resetPlayback(): void {
+  stopAllPlayback();
+  for (const url of blobs.values()) URL.revokeObjectURL(url);
+  blobs.clear();
+  if (audio) {
+    audio.removeAttribute('src');
+    audio.load();
+  }
+}
+onPersonChange(resetPlayback);
 
 function cycleSpeed(): void {
   const speed = nextSpeed(state.speed);

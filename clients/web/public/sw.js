@@ -79,6 +79,8 @@
           return fetch(request).then(function (response) {
             // only a whole, successful answer is worth keeping (a 404, a redirect or a partial answer is not)
             if (response.status !== 200) return response;
+            // a page of the app standing in for a missing file (a dev server's fallback) must never be kept as a model file
+            if (response.headers && /text\/html/i.test(response.headers.get('content-type') || '')) return response;
             var copy = response.clone();
             event.waitUntil(cache.put(request, copy).then(function () { return dropOldRevisions(cache, model); }, function () { return undefined; }));
             return response;
