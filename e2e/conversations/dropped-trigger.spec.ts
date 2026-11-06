@@ -89,6 +89,8 @@ test('a bot that dropped its conversation trigger keeps the lists; the message b
     await page.goto('/t/engineering/bots');
     await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]')).toBeVisible();
     await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-talk')).toHaveCount(0);
+    // in its place a quiet label says why, in visible text and not only on hover
+    await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-background')).toContainText('Runs in the background');
     await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-configure')).toBeVisible();
     await page.goto('/t/engineering/bots/drift');
     await expect(page.getByTestId('bot-title')).toContainText('Drift');

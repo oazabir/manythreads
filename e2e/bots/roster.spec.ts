@@ -71,9 +71,18 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     await expect(page.getByTestId('roster-count')).toContainText('1 bot');
     await expect(coder).toContainText('Coder');
     await expect(coder).toContainText('Writes and reviews code changes for the Engineering team');
-    await expect(coder).toContainText('agent');
     await expect(coder).toContainText('Hermes');
-    await expect(coder).toContainText('this team');
+    // a chip only says what differs from the default: this agent runs anywhere and belongs to this team, so it has no kind, place or scope chip
+    await expect(coder.getByTestId('bot-chip-kind')).toHaveCount(0);
+    await expect(coder.getByTestId('bot-chip-place')).toHaveCount(0);
+    await expect(coder.getByTestId('bot-chip-scope')).toHaveCount(0);
+    await expect(coder).not.toContainText('this team');
+    // the columns are named once above the list
+    await expect(page.locator('.b-heads')).toContainText('State');
+    // Talk is the filled button; Configure is a quiet icon button that still names the bot
+    await expect(coder.getByTestId('bot-talk')).toHaveClass(/primary/);
+    await expect(coder.getByTestId('bot-configure')).toHaveAttribute('aria-label', 'Configure Coder');
+    await expect(coder.getByTestId('bot-configure')).not.toContainText('Configure');
     // nothing here checks that an agent can run the bot, so the state never claims it: "active" with an open ring, not "idle" or "ready"
     await expect(coder.getByTestId('bot-state')).toHaveAttribute('data-state', 'unchecked');
     await expect(coder.getByTestId('bot-state')).toContainText('active');
@@ -218,7 +227,6 @@ test('a team made from a template starts with its bots: Brain in every template,
     const brain = rosterRow(page, 'brain');
     await expect(brain).toBeVisible({ timeout: 45_000 });
     await expect(brain).toContainText('Brain');
-    await expect(brain).toContainText('agent');
     await expect(brain).toContainText('Hermes');
     await expect(rosterRow(page, 'support-responder')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('roster-count')).toContainText(/^\d+ bots/);

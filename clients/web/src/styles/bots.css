@@ -48,14 +48,31 @@
   background: var(--surface);
 }
 
-.b-row {
+.b-row,
+.b-heads {
   display: grid;
-  grid-template-columns: 34px minmax(160px, 1.6fr) 96px 200px 150px 110px 110px;
+  grid-template-columns: 34px minmax(0, 1fr) 150px 190px;
   gap: 12px;
   align-items: center;
+}
+
+.b-row {
   padding: 11px 15px;
   border-bottom: 1px solid var(--hairline);
   font-size: var(--fs-small);
+}
+
+.b-heads {
+  padding: 7px 15px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--shell);
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+
+.b-h-bot {
+  grid-column: 1 / 3;
 }
 
 .b-row:last-child {
@@ -82,16 +99,60 @@
   font-size: var(--fs-caption);
 }
 
-.b-where,
-.b-vis {
+.b-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 4px;
+}
+
+.b-rt {
   color: var(--mute);
   font-size: var(--fs-caption);
 }
 
+.b-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--shell);
+  color: var(--mute);
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+}
+
 .b-act {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.b-bg {
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  text-align: right;
+}
+
+/* the header's "More" menu on a phone */
+.b-more {
+  position: relative;
+}
+
+.b-more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.menu.b-more-pop {
+  top: calc(100% + 2px);
+  right: 0;
+  left: auto;
+  min-width: 190px;
+  max-width: calc(100vw - 24px);
 }
 
 .b-state {
@@ -464,13 +525,30 @@
 /* ---- phone ---- */
 @media (width <= 720px) {
   .b-row {
-    grid-template-columns: 34px 1fr auto;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: start;
   }
 
-  .b-where,
-  .b-vis,
-  .b-row > .kind {
+  .b-heads {
     display: none;
+  }
+
+  .b-row > .b-statecell {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .b-row > .b-act {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    flex-wrap: wrap;
+    max-width: 130px;
+  }
+
+  /* the count line stacks under the title instead of wrapping beside the buttons (POLISH 8.6) */
+  .bots-screen > .ph {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .b-rowline,

@@ -4,14 +4,18 @@ import type { BotSummary, HermesConnection } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useSession } from '../../app/session';
+import { GearIcon } from '../../shell/icons';
+import { useNarrow } from '../../shell/useNarrow';
 import { useQuery } from '../../app/useQuery';
 import { fetchProposals } from '../proposals/api';
 import { botAvailability, useAgentConnections } from './availability';
 import { useBots } from './store';
+import { MoreMenu } from './MoreMenu';
 
 /*
  * The team's bot roster (SPEC §7.5, `[proto §02 plate 5 · Bots — the roster]`): the Bots header in the sidebar opens it. Every bot
- * with its kind, runtime and placement, its state, and the two things a person does from here — open its conversation (phase 5's
+ * with its runtime, its state (and, only when they differ from the default, a chip for an automation, a fixed place or a bot shared with the
+ * workspace), and the two things a person does from here — open its conversation (phase 5's
  * conversations plugin) and configure it. A bot whose definition failed to load says so on its own row, so the roster is also where
  * the alert is noticed without opening the page.
  *
@@ -38,7 +42,13 @@ function State({ bot, connections }: { bot: BotSummary; connections: ReadonlyArr
   );
 }
 
+/** The quiet words of a bot with no 1:1 chat: visible text, and the same reason in `title` for a longer read. */
+const NO_TALK = 'This bot has no one-to-one chat; it works when something triggers it.';
+
 function Row({ bot, slug, connections }: { bot: BotSummary; slug: string; connections: ReadonlyArray<HermesConnection> | null }) {
+  const place = placeOf(bot);
+  // a bot with no conversation trigger has no 1:1 chat: the Talk button is not drawn at all (the API refuses it too)
+  const canTalk = bot.status === 'active' && bot.conversational;
   return (
     <div className="b-row" data-testid="bot-row" data-bot={bot.slug}>
       <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} avatar={bot.avatar} />
@@ -47,30 +57,60 @@ function Row({ bot, slug, connections }: { bot: BotSummary; slug: string; connec
           <Link to={`/t/${slug}/bots/${bot.slug}`} data-testid="bot-open">{bot.name}</Link>
         </div>
         <div className="d">{bot.role || 'No role written yet.'}</div>
+        {/* a chip says what is not the default: an automation, a fixed place, a bot shared across teams */}
+        <div className="b-meta">
+          <span className="b-rt">{bot.runtime === 'hermes' ? 'Hermes' : 'Rules'}</span>
+          {bot.kind === 'automation' ? <span className="kind ru" data-testid="bot-chip-kind">automation</span> : null}
+          {place !== 'any node' ? <span className="b-tag mono" title="Where this bot runs" data-testid="bot-chip-place">{place}</span> : null}
+          {bot.visibility === 'workspace' ? <span className="b-tag" title="Every team in the workspace can use this bot" data-testid="bot-chip-scope">Shared with the workspace</span> : null}
+        </div>
       </div>
-      <div><span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span></div>
-      <div className="mono b-where">{bot.runtime === 'hermes' ? `Hermes · ${placeOf(bot)}` : `Rules · ${placeOf(bot)}`}</div>
-      <div className="b-vis">{bot.visibility === 'workspace' ? 'shared with the workspace' : 'this team'}</div>
-      <div><State bot={bot} connections={connections} /></div>
+      <div className="b-statecell"><State bot={bot} connections={connections} /></div>
       <div className="b-act">
-        {/* a bot with no conversation trigger has no 1:1 chat: the button is not drawn at all (the API refuses it too) */}
-        {bot.status === 'active' && bot.conversational ? (
-          <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="bot-talk">Talk</Link>
+        {canTalk ? (
+          <Link className="btn primary s" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="bot-talk">Talk</Link>
+        ) : bot.status === 'active' ? (
+          <span className="b-bg" title={NO_TALK} data-testid="bot-background">Runs in the background</span>
         ) : null}
-        <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}?tab=identity`} data-testid="bot-configure">Configure</Link>
+        <Link className="icon-btn" to={`/t/${slug}/bots/${bot.slug}?tab=identity`} aria-label={`Configure ${bot.name}`} title={`Configure ${bot.name}`} data-testid="bot-configure">
+          <GearIcon />
+        </Link>
       </div>
     </div>
   );
 }
 
-/** The way into the team's proposals, with how many wait: changes to bots/ and the other guarded places go through them. */
-function ProposalsLink({ slug }: { slug: string }) {
+/** How many proposals wait: changes to bots/ and the other guarded places go through them. */
+function useWaitingProposals(slug: string): number | null {
   const q = useQuery(`proposals-count:${slug}`, () => fetchProposals(slug, 'open'));
-  const n = q.status === 'ok' ? q.data.openCount : null;
+  return q.status === 'ok' ? q.data.openCount : null;
+}
+
+const proposalsLabel = (n: number | null): string => `Proposals${n !== null && n > 0 ? ` (${n} waiting)` : ''}`;
+
+/** The header's way to the other bot screens: three links on a desktop, one "More" menu on a phone. */
+function HeaderLinks({ slug }: { slug: string }) {
+  const narrow = useNarrow();
+  const waiting = useWaitingProposals(slug);
+  if (narrow) {
+    return (
+      <MoreMenu
+        label="More"
+        testId="roster-more"
+        items={[
+          { to: `/t/${slug}/recipes`, label: 'Browse recipes', testId: 'roster-recipes' },
+          { to: `/t/${slug}/proposals`, label: proposalsLabel(waiting), testId: 'roster-proposals' },
+          { to: `/t/${slug}/agents`, label: 'Agents', testId: 'roster-agents' },
+        ]}
+      />
+    );
+  }
   return (
-    <Link className="btn s ag-roster-link" to={`/t/${slug}/proposals`} data-testid="roster-proposals">
-      Proposals{n !== null && n > 0 ? ` (${n} waiting)` : ''}
-    </Link>
+    <>
+      <Link className="btn s ag-roster-link" to={`/t/${slug}/recipes`} data-testid="roster-recipes">Browse recipes</Link>
+      <Link className="btn s ag-roster-link" to={`/t/${slug}/proposals`} data-testid="roster-proposals">{proposalsLabel(waiting)}</Link>
+      <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
+    </>
   );
 }
 
@@ -93,9 +133,7 @@ export function BotRoster() {
         actions={(
           <>
             {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-add-bot">Add a bot</Link>}
-            <Link className="btn s ag-roster-link" to={`/t/${slug}/recipes`} data-testid="roster-recipes">Browse recipes</Link>
-            <ProposalsLink slug={slug} />
-            <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
+            <HeaderLinks slug={slug} />
           </>
         )}
       />
@@ -116,6 +154,11 @@ export function BotRoster() {
                 </div>
               ) : (
                 <div className="b-list" data-landmark="bot-roster">
+                  <div className="b-heads" aria-hidden="true">
+                    <span className="b-h-bot">Bot</span>
+                    <span>State</span>
+                    <span />
+                  </div>
                   {bots.map((b) => <Row key={b.id} bot={b} slug={slug} connections={connections} />)}
                 </div>
               )}
