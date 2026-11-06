@@ -46,7 +46,8 @@ test('New share says what is missing before it creates anything, and closes with
     await page.getByTestId('share-new').click();
     const dialog = page.getByTestId('share-dialog');
     await expect(dialog).toBeVisible();
-    await page.getByTestId('share-submit').click();
+    // the button is aria-disabled while a problem stands (Playwright waits for such a button), and pressing it is how the problem is shown
+    await page.getByTestId('share-submit').click({ force: true });
     await expect(page.getByTestId('share-problem')).toHaveText('Give the share a name.');
     await page.getByTestId('share-name-input').fill('Release notes');
     await expect(dialog).toContainText('routines/shares/release-notes.yaml');
