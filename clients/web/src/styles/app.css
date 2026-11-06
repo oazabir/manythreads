@@ -72,6 +72,11 @@ textarea {
   padding: 0 0 12px;
 }
 
+.inh .ph,
+.b-head-who .ph {
+  padding: 0;
+}
+
 .ph-text {
   display: flex;
   flex-direction: column;

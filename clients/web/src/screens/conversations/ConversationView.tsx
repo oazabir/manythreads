@@ -13,7 +13,7 @@ import { Alert, Avatar } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
 import { useShell } from '../../shell/context';
 import { BackIcon } from '../../shell/icons';
-import { useHeaderTopic } from '../../shell/topic';
+import { useCrumbTail, useOwnsPageTitle } from '../../shell/topic';
 import { useNarrow } from '../../shell/useNarrow';
 import { fetchBots } from '../bots/api';
 import { fetchConversations, openConversation } from './api';
@@ -84,7 +84,8 @@ export function ConversationView() {
   const botRole = bot?.botRole ?? known?.role ?? '';
   const [tick, setTick] = useState(0);
   const lists = useQuery(`conversations:${team}:${botSlug}:${scope}:${String(tick)}`, () => fetchConversations(team, botSlug, scope));
-  useHeaderTopic(bot || known ? botRole : null);
+  useOwnsPageTitle();
+  useCrumbTail(bot || known ? botName : null);
 
   // "Show older": the list answers its newest page and a cursor; each press asks for one more page after it. The pages are fetched again from
   // the first page's cursor whenever that moves (a new conversation pushes the last of the first page past it), so the list never skips a row.
@@ -228,10 +229,10 @@ export function ConversationView() {
       {showList ? (
         <div className="inl" data-landmark="conversation-list">
           <header className="inh cv-head">
-            <h2 className="inh-title cv-title">
+            <h1 className="inh-title cv-title">
               <Link to={{ pathname: path, search: scope === 'mine' ? '' : `?tab=${scope}` }} data-testid="conversation-home">{botName}</Link>
               <span className="cv-sub"> · conversations with you</span>
-            </h2>
+            </h1>
             <ViewTabs view="chat" onChange={changeView} />
             <div className="tabs2" role="tablist" aria-label={`${botName} conversations`}>
               {TABS.map((t) => (

@@ -41,3 +41,12 @@ export function useCrumbTail(label: string | null | undefined): void {
  * still has exactly one h1 and a migrated one never makes two.
  */
 export const PageHeaderRegistry = createContext<(delta: 1 | -1) => void>(() => undefined);
+
+/** For a screen that draws its own h1 inside a list pane (the conversation list): tells the shell not to add a title of its own. */
+export function useOwnsPageTitle(): void {
+  const register = useContext(PageHeaderRegistry);
+  useEffect(() => {
+    register(1);
+    return () => register(-1);
+  }, [register]);
+}

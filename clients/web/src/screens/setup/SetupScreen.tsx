@@ -6,7 +6,7 @@ import { isApiError } from '../../api/client';
 import { fetchTemplates } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { Alert } from '../../components/ui';
-import { useHeaderTopic } from '../../shell/topic';
+import { PageHeader } from '../../components/PageHeader';
 import { useProposalPerms } from '../proposals/store';
 import { answerSetup, cancelSetup, fetchSetup, retrySetup, startSetup } from './api';
 import { announcement, answersFrom, examplesFrom, FOCUS_ID, pollDelay, stepOf, stopsPolling, workingLine, type Draft } from './model';
@@ -95,7 +95,6 @@ export function SetupScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>({});
-  useHeaderTopic('Add a bot');
   // the bots of the team templates, offered as starting points for the brief; if they cannot be loaded the box simply has no examples
   const templates = useQuery('setup-examples', fetchTemplates);
   const templateList = templates.status === 'ok' ? templates.data.templates : null;
@@ -192,7 +191,7 @@ export function SetupScreen() {
     return (
       <div className="su-screen" data-testid="setup-screen">
         <p className="su-back"><Link to={`/t/${slug}/bots`}><BackIcon size={12} /> All bots</Link></p>
-        <h2 className="su-title">Add a bot</h2>
+        <PageHeader title="Add a bot" />
         <p className="su-summary" data-testid="setup-guest">Guests can't add bots. Ask a member of the team to add one.</p>
       </div>
     );
@@ -201,10 +200,7 @@ export function SetupScreen() {
   return (
     <div className="su-screen" data-testid="setup-screen">
       <p className="su-back"><Link to={`/t/${slug}/bots`}><BackIcon size={12} /> All bots</Link></p>
-      <div className="su-head">
-        <h2 className="su-title">Add a bot</h2>
-        <p className="su-sub">Describe what a bot should do. It finds out what this team has, checks the brief can be done, asks for what is missing and drafts the configuration. A person approves it.</p>
-      </div>
+      <PageHeader title="Add a bot" description="Describe what a bot should do. It finds out what this team has, checks the brief can be done, asks for what is missing and drafts the configuration. A person approves it." />
 
       <p className="su-sr" role="status" aria-live="polite" data-testid="setup-announce">{said}</p>
 

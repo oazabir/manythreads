@@ -1,3 +1,4 @@
+import { PageHeader } from '../../../components/PageHeader';
 import { useEffect, useRef, useState } from 'react';
 import type { BotRunner, OldConnection, RunnerPlacement } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
@@ -141,13 +142,12 @@ export function RunnersScreen() {
   return (
     <>
       <div className="rn-head">
-        <div>
-          <h1 className="pane-title" tabIndex={-1} ref={heading}>Runners</h1>
-          <p className="lede">
-            A runner is a place where bots run. You set each one up here once, choose which teams may use it, and a team lead picks it by name when editing a bot.
-          </p>
-        </div>
-        <button type="button" className="btn primary" onClick={() => setDialog({ kind: 'add' })} data-testid="runner-add">Add runner</button>
+        <PageHeader
+          title="Runners"
+          headingRef={heading}
+          description="A runner is a place where bots run. You set each one up here once, choose which teams may use it, and a team lead picks it by name when editing a bot."
+          actions={<button type="button" className="btn primary" onClick={() => setDialog({ kind: 'add' })} data-testid="runner-add">Add runner</button>}
+        />
       </div>
 
       {error ? <Alert>{error}</Alert> : null}

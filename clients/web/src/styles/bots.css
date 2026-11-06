@@ -20,15 +20,6 @@
   align-items: center;
 }
 
-.b-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: var(--fs-h2);
-  font-weight: 600;
-}
-
 .b-head-who {
   min-width: 0;
   flex: 1;

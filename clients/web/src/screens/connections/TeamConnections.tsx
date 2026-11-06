@@ -1,3 +1,4 @@
+import { PageHeader } from '../../components/PageHeader';
 import { useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import { CONNECTION_ADMIN_ONLY, type Connection } from '@manythreads/shared';
@@ -65,14 +66,12 @@ export function TeamConnections() {
   return (
     <>
       <div className="cn-head">
-        <div>
-          <h1 className="pane-title" tabIndex={-1} ref={heading}>Connections</h1>
-          <p className="lede">
-            A connection links this team to an outside service, such as a mailbox. A bot is given tools that work through it by naming it in its definition (see the
-            Capabilities tab of the bot). The password or key is stored sealed and cannot be shown again.
-          </p>
-        </div>
-        {admin ? <button type="button" className="btn primary" onClick={() => setDialog({ kind: 'add' })} data-testid="connection-add">Add connection</button> : null}
+        <PageHeader
+          title="Connections"
+          headingRef={heading}
+          description="A connection links this team to an outside service, such as a mailbox. A bot is given tools that work through it by naming it in its definition (see the Capabilities tab of the bot). The password or key is stored sealed and cannot be shown again."
+          actions={admin ? <button type="button" className="btn primary" onClick={() => setDialog({ kind: 'add' })} data-testid="connection-add">Add connection</button> : null}
+        />
       </div>
 
       {!admin ? <p className="notice" data-testid="connection-admin-only">{CONNECTION_ADMIN_ONLY}</p> : null}

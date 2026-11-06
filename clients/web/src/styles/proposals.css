@@ -14,12 +14,6 @@
   margin-bottom: 14px;
 }
 
-.pp-title {
-  margin: 0;
-  font-size: var(--fs-h2);
-  font-weight: 600;
-}
-
 .pp-sub {
   margin: 3px 0 0;
   color: var(--mute);

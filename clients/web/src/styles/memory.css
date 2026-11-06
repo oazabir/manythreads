@@ -19,19 +19,6 @@
   gap: 4px;
 }
 
-.mm-title {
-  margin: 0;
-  font-size: var(--fs-h1);
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.mm-subtitle {
-  margin: 0;
-  color: var(--mute);
-  font-size: var(--fs-small);
-}
-
 .mm-body {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(280px, 420px);

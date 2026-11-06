@@ -9,26 +9,6 @@
   overflow: hidden;
 }
 
-.bd-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.bd-title {
-  margin: 0;
-  font-size: var(--fs-h2);
-  font-weight: 600;
-}
-
-.bd-sub {
-  margin: 3px 0 0;
-  color: var(--mute);
-  font-size: var(--fs-caption);
-}
-
 .bd-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

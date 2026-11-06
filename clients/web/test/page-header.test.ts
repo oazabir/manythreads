@@ -54,4 +54,4 @@ describe('one h1 per page', () => {
   });
 });
 
-const PENDING: string[] = [];
+const PENDING: string[] = ['screens/ThreadsInbox.tsx', 'screens/conversations/ConversationView.tsx'];

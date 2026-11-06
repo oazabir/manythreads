@@ -1,3 +1,4 @@
+import { PageHeader } from './PageHeader';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router';
 import { fetchTeams } from '../api/endpoints';
@@ -39,7 +40,7 @@ export function PlainFrame({ title, children }: { title: ReactNode; children: Re
         </nav>
       </header>
       <main className="plain-body" data-landmark="content">
-        <h1 className="page-title">{title}</h1>
+        <PageHeader title={title} />
         {children}
       </main>
     </div>

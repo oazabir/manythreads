@@ -1,3 +1,4 @@
+import { PageHeader } from '../../components/PageHeader';
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { BRAIN_BOT_SLUG, type BotDeployResponse, type BotRun, type BotSummary } from '@manythreads/shared';
@@ -6,7 +7,7 @@ import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { AvatarPicker } from '../../avatars/AvatarPicker';
 import { Alert, Avatar, Notice } from '../../components/ui';
-import { useHeaderTopic } from '../../shell/topic';
+import { useCrumbTail } from '../../shell/topic';
 import { botMdPath, deployBot, fetchMcpTools } from './api';
 import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { TabPanel } from './tabs';
@@ -64,7 +65,7 @@ export function BotPage() {
   const { slug, canEdit, q } = useBot(botSlug);
   const [revision, setRevision] = useState(0);
   const [save, setSave] = useState<SaveState>(null);
-  useHeaderTopic(q.status === 'ok' ? q.data.bot.role || null : null);
+  useCrumbTail(q.status === 'ok' ? q.data.bot.name : null);
 
   const goTab = (id: string): void => {
     const next = new URLSearchParams(params);
@@ -171,14 +172,11 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
       <header className="b-head" data-landmark="bot-head">
         <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} avatar={picture} />
         <div className="b-head-who">
-          <h1 className="b-title" data-testid="bot-title">
-            {bot.name}
-            <span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span>
-          </h1>
-          <p className="b-sub">
-            {bot.runtime === 'hermes' ? 'Hermes' : 'Rules'} · <span className="mono">{path}</span>
-            {bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}
-          </p>
+          <PageHeader
+            title={<>{bot.name}<span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span></>}
+            testIds={{ title: 'bot-title' }}
+            description={<>{bot.runtime === 'hermes' ? 'Hermes' : 'Rules'} · <span className="mono">{path}</span>{bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}</>}
+          />
           {bot.runtime === 'hermes' && bot.status === 'active' && bot.placement?.gateway !== undefined ? <HermesTools slug={slug} botSlug={bot.slug} /> : null}
         </div>
         <div className="b-head-act">

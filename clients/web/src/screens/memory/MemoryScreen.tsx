@@ -1,3 +1,4 @@
+import { PageHeader } from '../../components/PageHeader';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { confirmConceptRoute, deprecateConceptRoute, ConfirmConceptResponse, DeprecateConceptResponse, type MemoryConceptSummary } from '@manythreads/shared';
@@ -39,10 +40,7 @@ export function MemoryScreen() {
 
   return (
     <section className="mm-screen">
-      <header className="mm-header">
-        <h1 className="mm-title">Memory</h1>
-        <p className="mm-subtitle">The team's OKF memory bundle — concepts, trust tiers, and provenance.</p>
-      </header>
+      <PageHeader title="Memory" description="What the team's bots remember, and how sure they are" />
       <div className="mm-tabs" role="tablist" aria-label="Memory" data-testid="memory-tabs" onKeyDown={onTabKey}>
         {TABS.map((t) => (
           <button key={t.id} type="button" role="tab" id={`mm-tab-${t.id}`} aria-selected={tab === t.id} aria-controls="mm-panel" tabIndex={tab === t.id ? 0 : -1} className={`mm-tab ${tab === t.id ? 'on' : ''}`} onClick={() => go(t.id)} data-testid={`memory-tab-${t.id}`}>{t.label}</button>

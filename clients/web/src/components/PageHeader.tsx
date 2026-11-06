@@ -1,5 +1,5 @@
-import { useContext, useEffect, type ReactNode, type Ref } from 'react';
-import { PageHeaderRegistry } from '../shell/topic';
+import type { ReactNode, Ref } from 'react';
+import { useOwnsPageTitle } from '../shell/topic';
 
 /**
  * The one page header (P21-12): a single h1, an optional one-line description, and the page's actions (at most one primary button).
@@ -16,11 +16,7 @@ export function PageHeader({ title, description, actions, compact, headingRef, c
   /** test ids for the title and description, so a screen's existing specs keep their hooks */
   testIds?: { title?: string; description?: string };
 }) {
-  const register = useContext(PageHeaderRegistry);
-  useEffect(() => {
-    register(1);
-    return () => register(-1);
-  }, [register]);
+  useOwnsPageTitle();
   return (
     <header className={compact ? 'ph compact' : 'ph'} data-landmark="page-header">
       <div className="ph-text">

@@ -1,9 +1,10 @@
+import { PageHeader } from '../../components/PageHeader';
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { ago } from '../../channels/format';
-import { Bell } from '../../notifications/Bell';
+import { SelectAnItem } from '../../components/states';
 import { useShell } from '../../shell/context';
 import { BackIcon } from '../../shell/icons';
 import { useNarrow } from '../../shell/useNarrow';
@@ -87,7 +88,7 @@ export function ApprovalsScreen() {
       {showList ? (
         <div className="inl" data-landmark="approval-list">
           <header className="inh" data-landmark={narrow ? undefined : 'header'}>
-            <h1 className="inh-title">Approvals</h1>
+            <PageHeader compact title="Approvals" />
             {waiting !== null ? <span className="apr-count" data-testid="approvals-count" data-vt-mask>{waiting} waiting</span> : null}
             <div className="tabs2" role="tablist" aria-label="Approvals">
               {TABS.map((t) => (
@@ -142,17 +143,14 @@ export function ApprovalsScreen() {
               <BackIcon />
               <span>Approvals</span>
             </button>
-          ) : (
-            <div className="inr-bell"><Bell /></div>
-          )}
+          ) : null}
           {current ? (
             <div className="apr-detail">
               <ApprovalCard key={`${current.id}:${current.status}:${current.outcome}`} approval={current} slug={slug} onDecided={q.reload} />
             </div>
           ) : items.length > 0 ? (
             <div className="inr-empty">
-              <p className="view-empty-title">Pick a request</p>
-              <p className="view-empty-body">What it is, who asked and who can decide show here.</p>
+              <SelectAnItem>Select a request to see what it is, who asked and who can decide.</SelectAnItem>
             </div>
           ) : null}
         </div>

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Dialog } from '../../components/Dialog';
 import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
-import { useHeaderTopic, useHeaderActionsSlot } from '../../shell/topic';
+import { PageHeader } from '../../components/PageHeader';
 import { useNarrow } from '../../shell/useNarrow';
 import { useRowActions, type RowAction } from './actions';
 import { FilesError } from './backend';
@@ -31,7 +30,6 @@ export function FilesScreen() {
   const [params] = useSearchParams();
   const narrow = useNarrow();
   const panel = usePanel();
-  const slot = useHeaderActionsSlot();
 
   const open = params.get('open');
   const folder = open ? parentOf(open) : (params.get('path') ?? ROOT);
@@ -76,7 +74,6 @@ export function FilesScreen() {
   const rootState = folders.get(ROOT);
   const rows = state?.listing?.rows ?? [];
   const fileCount = rows.filter((r) => r.kind === 'file').length;
-  useHeaderTopic(files ? (open ? `${files.teamName} · ${open}` : folder === ROOT ? `${files.teamName} · team repo` : `${files.teamName} · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`) : null);
 
   const go = useCallback(
     (next: { folder?: string; open?: string | null }): void => {
@@ -253,7 +250,7 @@ export function FilesScreen() {
         else setTextOnly((n) => [...n, ...[...e.dataTransfer.files].map((f) => f.name)]);
       }}
     >
-      {!narrow && slot ? createPortal(actions, slot) : null}
+      <PageHeader title="Files" description={open ? open : `${fileCount} ${fileCount === 1 ? 'file' : 'files'}`} actions={narrow ? undefined : actions} />
       <div className="fbody">
         {narrow ? null : tree}
         {open ? (
