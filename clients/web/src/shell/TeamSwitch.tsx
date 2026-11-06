@@ -31,7 +31,7 @@ export function TeamSwitch() {
       const i = teamIndexForKey(e);
       const t = i === null ? undefined : teams[i];
       const el = e.target instanceof HTMLElement ? e.target : null;
-      if (!t || el?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (!t || e.repeat || el?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       e.preventDefault();
       void navigate(teamSwitchPath(loc.pathname, t.slug));
     };

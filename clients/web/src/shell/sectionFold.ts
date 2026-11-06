@@ -43,13 +43,14 @@ export function toggleFold(state: FoldState, id: FoldId, startFolded = false): F
 }
 
 export function useFold(personId: string, slug: string, id: FoldId, startFolded = false): [boolean, () => void] {
-  const [state, setState] = useState<FoldState>(() => readFold(personId, slug));
+  // the saved state belongs to one person and team: when the team changes the other team's fold is read, never written over
+  const scope = `${personId}:${slug}`;
+  const [held, setHeld] = useState<{ scope: string; state: FoldState }>(() => ({ scope, state: readFold(personId, slug) }));
+  const state = held.scope === scope ? held.state : readFold(personId, slug);
   const toggle = useCallback(() => {
-    setState((prev) => {
-      const next = toggleFold(prev, id, startFolded);
-      writeFold(personId, slug, next);
-      return next;
-    });
+    const next = toggleFold(readFold(personId, slug), id, startFolded);
+    writeFold(personId, slug, next);
+    setHeld({ scope: `${personId}:${slug}`, state: next });
   }, [personId, slug, id, startFolded]);
   return [isFolded(state, id, startFolded), toggle];
 }

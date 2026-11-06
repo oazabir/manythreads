@@ -129,7 +129,7 @@ export function Bell() {
           ) : snap.itemsStatus === 'error' ? (
             <p className="ntf-note" role="alert">Could not load notifications. <button type="button" className="link-btn" onClick={() => void notificationStore.loadItems()}>Try again</button></p>
           ) : shown.length === 0 ? (
-            <p className="ntf-note" data-testid="notifications-empty">{tab === 'unread' && snap.items.length > 0 ? 'You are all caught up. Switch to All to see earlier ones.' : 'You are all caught up.'}</p>
+            <p className="ntf-note" data-testid="notifications-empty">{tab === 'unread' && snap.items.length > 0 ? (snap.unread > 0 ? 'Nothing unread in the latest ones. Switch to All to see them.' : 'You are all caught up. Switch to All to see earlier ones.') : 'You are all caught up.'}</p>
           ) : (
             <div className="ntf-list">
               {groupByDay(shown, new Date()).map((g) => (

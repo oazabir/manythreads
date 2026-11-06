@@ -37,5 +37,13 @@ export function useTabState({ place, team, enabled }: { place: string; team: str
   useEffect(() => {
     if (enabled) void drawFavicon({ dot: fav.dot, text: fav.text });
   }, [fav.dot, fav.text, enabled]);
+  // leaving the shell (sign-out, a page with its own frame): the plain icon and title come back, so no stale dot or count is left behind
+  useEffect(() => {
+    const before = document.title;
+    return () => {
+      void drawFavicon({ dot: false, text: null });
+      document.title = before;
+    };
+  }, []);
 }
 
