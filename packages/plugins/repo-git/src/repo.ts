@@ -29,6 +29,7 @@ import {
   memoryIndexFiles,
   memoryLogFile,
   parseConcept,
+  validateOkfWrite,
   parseRepoPath,
   serializeConcept,
   type BundleConcept,
@@ -493,7 +494,8 @@ export function createRepoService(deps: RepoServiceDeps) {
     // `e2e/api/memory/okf-writer.spec.ts` pins). `index.md`/`log.md` are platform-generated and are regenerated in the same commit.
     for (const c of prepared) {
       if (c.content === null || !isConceptPath(c.path)) continue;
-      const verdict = parseConcept(c.content.toString('utf8'));
+      // the one check every OKF store runs (a person's Memory is kept by the memory plugin with the same function); the path is bundle-relative there
+      const verdict = validateOkfWrite(c.path.slice('memory/'.length), c.content.toString('utf8'));
       if (!verdict.ok) throw okfInvalid(c.path, verdict.reason);
     }
     for (const c of prepared) {

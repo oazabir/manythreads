@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { TeamId } from '../ids.ts';
+import { SpaceRef } from './space.ts';
 
 // A team's knowledge (SPEC §12.4, PLAN P8-07): a knowledge base is a named folder of documents (manuals, runbooks, policies) that bots search and
 // cite. Each document is uploaded as a file, converted to text, cut into passages (chunks) and indexed. The original file stays in blob storage; the
@@ -128,5 +129,7 @@ export const KnowledgeHit = z.object({
   score: z.number().min(0).max(1),
   /** The converted file in the team repo, which a citation can link to. */
   repoPath: z.string().nullable(),
+  /** The space the passage was found in (`team:<id>` or `person:<id>`); absent from a team-only search. */
+  space: SpaceRef.optional(),
 });
 export type KnowledgeHit = z.infer<typeof KnowledgeHit>;

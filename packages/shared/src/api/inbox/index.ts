@@ -71,6 +71,8 @@ export const SendToMemoryRequest = z.strictObject({
   teamOnly: z.boolean().default(false),
   /** Send the whole thread this message starts or belongs to instead of the one message. */
   thread: z.boolean().default(false),
+  /** Where it goes: the message's team inbox (default) or the person's own Personal inbox (P20-04). `confirmPrivate` and `teamOnly` only apply to `team`. */
+  target: z.enum(['team', 'personal']).default('team'),
 });
 export type SendToMemoryRequest = z.infer<typeof SendToMemoryRequest>;
 export const sendToMemoryRoute = { method: 'POST', path: '/api/channels/:channelId/messages/:messageId/send-to-memory' } as const satisfies ApiRoute;
@@ -86,3 +88,4 @@ export const retryInboxItemRoute = { method: 'POST', path: '/api/teams/:slug/inb
 export const WS_INBOX_ITEM_CHANGED = 'inbox.item.changed';
 export const InboxItemChangedPush = z.object({ teamId: z.uuid(), itemId: InboxItemId, state: InboxState });
 export type InboxItemChangedPush = z.infer<typeof InboxItemChangedPush>;
+export * from './personal.ts';

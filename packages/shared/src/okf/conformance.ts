@@ -1,5 +1,5 @@
 import { parseDocument } from 'yaml';
-import { OKF_VERSION, parseConcept, splitConcept } from './concept.ts';
+import { OKF_VERSION, parseConcept, splitConcept, type OkfFrontmatter } from './concept.ts';
 import { parseLog } from './bundle.ts';
 
 // Does a set of files conform to OKF v0.2? (SPEC §12.1, §12.3; PLAN P5-24, P8-23.) One pure check made of the parts P5-24 built: `splitConcept` and `parseConcept` for every concept,
@@ -327,4 +327,26 @@ export function checkOkfBundle(files: Readonly<Record<string, string>>, options:
   }
   if (options.digest === true && !digest) add('digest.md', 'the bundle has no digest.md');
   return { ok: problems.length === 0, problems };
+}
+
+// ---- the one check for a single write ------------------------------------------------------------------------------------------------------------
+
+/** What `validateOkfWrite` answers: the parsed concept, or one sentence saying why the file may not be stored. */
+export type OkfWriteVerdict = { ok: true; frontmatter: OkfFrontmatter; body: string } | { ok: false; reason: string };
+
+/**
+ * The single check every store of an OKF bundle runs before it keeps a concept file, so a team's `memory/` (committed to git by the repo writer) and a
+ * person's Memory (kept as rows by the memory plugin, no git) cannot drift: the path must be a Markdown file inside the bundle (relative, no `.` or `..`
+ * part, no control character), it may not be one of the platform's own generated files (`index.md`, `log.md`), it may not carry a NUL, it may not exceed the
+ * bundle's file size, and its text must parse as a concept (`parseConcept`: a frontmatter with a `type`). `path` is relative to the bundle's root
+ * (`people/nadia.md`, not `memory/people/nadia.md`). Pure and linear. Never throws.
+ */
+export function validateOkfWrite(path: string, text: string): OkfWriteVerdict {
+  const problem = bundlePathProblem(path);
+  if (problem !== null) return { ok: false, reason: problem };
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  if (name === 'index.md' || name === 'log.md') return { ok: false, reason: 'index.md and log.md are written by the platform, not by hand' };
+  if (Buffer.byteLength(text) > OKF_BUNDLE_MAX_FILE_BYTES) return { ok: false, reason: `the file is larger than ${OKF_BUNDLE_MAX_FILE_BYTES} bytes` };
+  if (text.includes('\0')) return { ok: false, reason: 'the file has a NUL character' };
+  return parseConcept(text);
 }

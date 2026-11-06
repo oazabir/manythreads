@@ -13,6 +13,14 @@
     "thread": {
       "default": false,
       "type": "boolean"
+    },
+    "target": {
+      "default": "team",
+      "type": "string",
+      "enum": [
+        "team",
+        "personal"
+      ]
     }
   },
   "additionalProperties": false

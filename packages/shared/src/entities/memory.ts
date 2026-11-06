@@ -165,6 +165,8 @@ export const MemoryRecallFact = z.object({
   stale: z.boolean().optional(),
   deprecated: z.boolean().optional(),
   origin: z.string().max(64).optional(),
+  /** The space the fact came from (`team:<id>` or `person:<id>`); absent on a fact from a team-only bank. */
+  space: SpaceRef.optional(),
 });
 export type MemoryRecallFact = z.infer<typeof MemoryRecallFact>;
 

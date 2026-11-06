@@ -110,7 +110,7 @@ describe('inbox shapes', () => {
   });
 
   it('Send to memory defaults to one message, public, not team-only; and refuses an unknown field', () => {
-    expect(SendToMemoryRequest.parse({})).toEqual({ confirmPrivate: false, teamOnly: false, thread: false });
+    expect(SendToMemoryRequest.parse({})).toEqual({ confirmPrivate: false, teamOnly: false, thread: false, target: 'team' });
     expect(SendToMemoryRequest.safeParse({ everyone: true }).success).toBe(false);
   });
 

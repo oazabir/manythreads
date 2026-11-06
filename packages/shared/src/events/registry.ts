@@ -88,6 +88,10 @@ import { ClaudePodRunnerPausedEvent } from './claude_pod.runner.paused.ts';
 import { BotRunnerRunRefusedEvent } from './bot_runner.run.refused.ts';
 import { BotRunnerRunUnmeteredEvent } from './bot_runner.run.unmetered.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
+import { BotsPersonalConsentChangedEvent } from './bots.personal_consent.changed.ts';
+import { MemoryPersonalWrittenEvent } from './memory.personal.written.ts';
+import { MemoryPersonalItemChangedEvent } from './memory.personal_item.changed.ts';
+import { KnowledgePersonalBaseChangedEvent } from './knowledge.personal_base.changed.ts';
 import { BotsEvalRunFinishedEvent } from './bots.eval.run.finished.ts';
 import { WorkshopReassessmentCreatedEvent } from './workshop.reassessment.created.ts';
 import { WorkshopReassessmentClosedEvent } from './workshop.reassessment.closed.ts';
@@ -350,6 +354,10 @@ export const eventRegistry = {
   'bot_runner.run.refused': { 1: BotRunnerRunRefusedEvent },
   'bot_runner.run.unmetered': { 1: BotRunnerRunUnmeteredEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
+  'bots.personal_consent.changed': { 1: BotsPersonalConsentChangedEvent },
+  'memory.personal.written': { 1: MemoryPersonalWrittenEvent },
+  'memory.personal_item.changed': { 1: MemoryPersonalItemChangedEvent },
+  'knowledge.personal_base.changed': { 1: KnowledgePersonalBaseChangedEvent },
   'bots.eval.run.finished': { 1: BotsEvalRunFinishedEvent },
   'workshop.reassessment.created': { 1: WorkshopReassessmentCreatedEvent },
   'workshop.reassessment.closed': { 1: WorkshopReassessmentClosedEvent },
