@@ -27,6 +27,7 @@ import { CrumbTailContext, HeaderActionsContext, HeaderTitleContext, HeaderTopic
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
+import { useTabState } from './useTabState';
 import { recalledTeam, rememberTeam } from './views';
 
 /**
@@ -86,6 +87,9 @@ export function Shell() {
   const title = dmId ? (dm ? dmLabel(dm, session.person.id) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
   const onChat = dmId !== null || /^\/t\/[^/]+\/c\//.test(loc.pathname);
   const trail = crumbsFor(loc.pathname, team?.name ?? null, crumbTail);
+  // the tab says where the person is and how much waits (a guest has no team); a page title set by a PageHeader h1 wins over the generic one
+  const place = dmId ? title : crumbTail ?? title;
+  useTabState({ place, team: team?.name ?? null, enabled: !teamsLoading });
   const pageOwnsTitle = !onChat && headers > 0;
   const searchLabel = guest ? 'Search' : team ? `Search ${team.name}` : 'Search';
   const railSearch = useRef<HTMLDivElement>(null);
