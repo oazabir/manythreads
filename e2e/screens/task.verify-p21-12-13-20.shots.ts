@@ -15,7 +15,8 @@ const log = (s: string): void => console.log(`[v] ${s}`);
 mkdirSync(OUT, { recursive: true });
 test.describe.configure({ mode: 'serial' });
 const fivexx: string[] = [];
-const JARGON = ['BOT.md', 'TEAM.md', 'bots/', 'routines/', 'slug', 'frontmatter'];
+const JARGON = ['BOT.md', 'TEAM.md', 'bots/', 'routines/', 'slug', 'frontmatter', 'uuid', 'YAML', 'markdown'];
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 const T = '/t/engineering';
 const pages: Array<[string, string, boolean]> = [
   ['boards', `${T}/boards`, true], ['org', `${T}/org`, true], ['jobs', `${T}/jobs`, true], ['recipes', `${T}/recipes`, true],
@@ -39,6 +40,7 @@ const audit = async (name: string, w: number, team: boolean): Promise<void> => {
     const crumbs = Array.from(document.querySelectorAll('nav.crumbs li')).filter(vis).map((e) => (e.textContent ?? '').trim());
     const text = (document.querySelector('main') as HTMLElement | null)?.innerText ?? '';
     const hits = jargon.filter((j) => text.includes(j));
+    if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text)) hits.push('raw-id');
     const small: Record<string, number> = {};
     document.querySelectorAll('main *').forEach((e) => { if (e.children.length === 0 && (e.textContent ?? '').trim() && vis(e)) { const f = parseFloat(getComputedStyle(e).fontSize); if (f < 12) small[f + ''] = (small[f + ''] ?? 0) + 1; } });
     const bells = Array.from(document.querySelectorAll('[aria-label*="otification" i]')).filter(vis).length;
@@ -46,6 +48,7 @@ const audit = async (name: string, w: number, team: boolean): Promise<void> => {
     return { h1, crumbs, hits, small, bells, clipped, ph: document.querySelectorAll('[data-landmark="page-header"]').length, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth };
   }, JARGON);
   const pass = r.h1.length === 1;
+  if (team) log(`${r.hits.length ? 'FAIL' : 'PASS'} jargon ${name}@${w}: ${JSON.stringify(r.hits)}`);
   log(`${pass ? 'PASS' : 'FAIL'} h1 ${name}@${w}: h1=${JSON.stringify(r.h1)} crumbs=${JSON.stringify(r.crumbs)} pageHeaders=${r.ph} bells=${r.bells} scrollW=${r.sw}/${r.cw} clippedCtl=${r.clipped} small<12px=${JSON.stringify(r.small)}${team ? ` jargon=${JSON.stringify(r.hits)}` : ''}`);
 };
 
@@ -110,6 +113,11 @@ test('skip link and focus rings', async () => {
     log(`ring ${n}: ${JSON.stringify(s)}`);
     await loc.screenshot({ path: join(OUT, `ring-${n}.png`) }).catch(() => undefined);
     await page.screenshot({ path: join(OUT, `ring-${n}-full.png`) });
+    if (n === 'rail-search') {
+      const rr = await loc.evaluate((e) => { const d = (x: Element | null) => { if (!x) return null; const c = getComputedStyle(x); return { outline: c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0 && !/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\)|transparent/.test(c.outlineColor), shadow: c.boxShadow !== 'none', tag: x.tagName, cls: x.className.toString().slice(0, 40) }; }; return { input: d(e), parent: d(e.parentElement), grand: d(e.parentElement?.parentElement ?? null) }; });
+      const rings = [rr.input, rr.parent, rr.grand].filter((x) => x && (x.outline || x.shadow)).length;
+      log(`${rings === 1 ? 'PASS' : 'FAIL'} rail search ring count=${rings} ${JSON.stringify(rr)}`);
+    }
   };
   await ring(page.locator('[data-landmark="sidebar"] a').nth(2), 'sidebar-link');
   await ring(page.locator('[data-landmark="search"] input').first(), 'rail-search');
@@ -123,6 +131,8 @@ test('approvals pane text, files header, inbox', async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${T}/approvals`);
   await page.waitForTimeout(800);
+  const apTxt = await page.locator('main').innerText();
+  log(`${apTxt.includes('Select a request') ? 'PASS' : 'FAIL'} approvals empty pane shows 'Select a request'`);
   log(`approvals text: ${JSON.stringify(((await page.locator('main').innerText()) ?? '').slice(0, 400))}`);
   await page.goto(`${T}/files`);
   await page.waitForTimeout(800);

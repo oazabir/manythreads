@@ -920,7 +920,7 @@ a.btn.primary {
 
 .tpl {
   display: grid;
-  grid-template-columns: 22px 1fr;
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   padding: 13px 15px;
@@ -1029,11 +1029,14 @@ a.btn.primary {
 }
 
 .tpl .ch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   margin: 6px 0 4px;
 }
 
 .tpl .ch span {
-  margin-right: 8px;
+  margin-right: 0;
   color: var(--mute);
   font-family: var(--mono);
   font-size: var(--fs-tiny);
