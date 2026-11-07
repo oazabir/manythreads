@@ -75,8 +75,17 @@ await shot(omar, '/settings/team/platform/roster', 'roster-desktop', async (page
 await shot(omar, '/settings/workspace/members', 'members-desktop', async (page) => void (await page.getByRole('table').waitFor()));
 await shot(omar, '/settings/workspace/sign-in', 'settings-signin-desktop', async (page) => void (await page.getByText('Username and password').first().waitFor()));
 await shot(omar, '/account/security', 'account-desktop', async (page) => void (await page.getByRole('button', { name: 'Sign out everywhere' }).waitFor()));
+// Personal (P20-04): memory, knowledge, the team's knowledge page and the page of the bots that may read Personal
+await shot(omar, '/memory', 'personal-memory-desktop', async (page) => void (await page.getByTestId('space-switch').waitFor()));
+await shot(omar, '/memory?tab=inbox', 'personal-inbox-desktop', async (page) => void (await page.getByTestId('personal-inbox-tab').waitFor()));
+await shot(omar, '/knowledge', 'personal-knowledge-desktop', async (page) => void (await page.getByTestId('personal-knowledge').waitFor()));
+await shot(omar, '/t/platform/knowledge', 'team-knowledge-desktop', async (page) => void (await page.getByTestId('space-switch').waitFor()));
+await shot(omar, '/account/bots', 'account-bots-desktop', async (page) => void (await page.getByTestId('bot-consents').waitFor()));
 await omar.close();
 const omarMobile = await signedIn(browser, 'omar', MOBILE);
 await shot(omarMobile, '/settings/workspace/members', 'members-mobile', async (page) => void (await page.getByRole('table').waitFor()));
+await shot(omarMobile, '/memory', 'personal-memory-mobile', async (page) => void (await page.getByTestId('space-switch').waitFor()));
+await shot(omarMobile, '/knowledge', 'personal-knowledge-mobile', async (page) => void (await page.getByTestId('personal-knowledge').waitFor()));
+await shot(omarMobile, '/account/bots', 'account-bots-mobile', async (page) => void (await page.getByTestId('bot-consents').waitFor()));
 await omarMobile.close();
 await browser.close();

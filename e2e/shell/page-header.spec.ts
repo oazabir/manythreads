@@ -44,19 +44,33 @@ async function expectOneH1(page: Page, label: string): Promise<void> {
 }
 
 const TEAM_ROUTES = [
-  'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'agents', 'projects', 'recipes', 'memory', 'proposals', 'chat', 'chat?bot=helper', 'bots/helper', 'bots/new', 'bots/helper/usage',
+  'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'agents', 'projects', 'recipes', 'memory', 'proposals', 'chat', 'chat?bot=helper', 'bots/helper', 'bots/new', 'bots/helper/usage', 'knowledge',
 ];
 const SETTINGS_ROUTES = [
   '/settings/workspace/general', '/settings/workspace/members', '/settings/workspace/roles', '/settings/workspace/llm', '/settings/workspace/runners',
   '/settings/workspace/guardrails', '/settings/workspace/audit', '/settings/workspace/import', '/settings/team/engineering/roster', '/settings/team/engineering/connections',
-  '/teams', '/account', '/account/profile', '/account/notifications', '/account/connections', '/account/security',
+  '/teams', '/account', '/account/profile', '/account/notifications', '/account/connections', '/account/security', '/account/bots',
 ];
+// Personal (P20-04) lives outside `/t/:team`: its screens are the first thing the Personal side of the switch shows
+const PERSONAL_ROUTES = ['/memory', '/memory?tab=inbox', '/knowledge'];
 
 test('team routes have exactly one h1', async ({ browser, playwright, isMobile }) => {
   const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/threads');
   try {
     for (const r of [...TEAM_ROUTES, `c/${channel}`]) {
       await page.goto(`/t/engineering/${r}`);
+      await expectOneH1(page, r);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('Personal routes (/memory, /memory?tab=inbox, /knowledge) have exactly one h1', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await open(browser, playwright, isMobile, 'nadia', '/memory');
+  try {
+    for (const r of PERSONAL_ROUTES) {
+      await page.goto(r);
       await expectOneH1(page, r);
     }
   } finally {

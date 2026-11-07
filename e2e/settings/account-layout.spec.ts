@@ -25,7 +25,7 @@ test('the account row opens Profile in the settings layout', async ({ browser, p
     await expect(page).toHaveURL(/\/account\/profile$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
     const nav = page.getByRole('navigation', { name: 'Settings' });
-    for (const label of ['Profile', 'Notifications', 'Connections', 'Security']) await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
+    for (const label of ['Profile', 'Notifications', 'Connections', 'Security', 'Bots and Personal']) await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
     // the page you are on is the one marked current (a screen reader hears "current page")
     await expect(nav.getByRole('link', { name: 'Profile', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(nav.getByRole('link', { name: 'Security', exact: true })).not.toHaveAttribute('aria-current', 'page');
@@ -84,7 +84,7 @@ test('a guest sees only the Account pages in the settings layout', async ({ brow
   const { page, context } = await openOn(browser, playwright, stack, 'lena', '/account/profile');
   try {
     await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
-    // the section select (the phone's navigation) holds the same: one group, the four pages, no workspace and no Teams
+    // the section select (the phone's navigation) holds the same: one group, the four pages, no workspace and no Teams, and no Bots and Personal (a guest has no Personal space)
     const groups = await page.locator('#settings-section optgroup').evaluateAll((os) => os.map((o) => (o as HTMLOptGroupElement).label));
     expect(groups).toEqual(['Account']);
     const options = await page.locator('#settings-section option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).label));
@@ -118,7 +118,7 @@ test('on a phone the account pages use the section select and fit the width', as
     const select = page.getByLabel('Settings section');
     await expect(select).toHaveValue('/account/profile');
     // every Account page fits 390 px (the Security page holds the sessions list, Notifications the widest forms)
-    for (const to of ['/account/security', '/account/notifications', '/account/connections', '/account/profile']) {
+    for (const to of ['/account/security', '/account/notifications', '/account/connections', '/account/bots', '/account/profile']) {
       await select.selectOption(to);
       await expect(page).toHaveURL(new RegExp(`${to}$`));
       await expect(select).toHaveValue(to);
