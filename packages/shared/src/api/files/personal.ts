@@ -28,8 +28,13 @@ export const PERSONAL_OPEN_MINUTES = 60;
 /** The leaver's Personal space is deleted this many days after the person was deactivated (`retention_settings.personal_keep_days`). */
 export const PERSONAL_KEEP_DAYS_DEFAULT = 30;
 
-/** A folder of a Personal space: not empty, at most 511 characters. */
-export const PersonalFolderPath = RepoFolderPath.refine((v) => v !== '' && v.length <= 500, { message: 'Name a folder.' });
+/**
+ * A folder of a Personal space: not empty, at most 500 characters, and none of the characters that make one name look like another (the right-to-left
+ * and other direction overrides, zero-width marks, the line and paragraph separators, the byte-order mark) or that a terminal or an unzip tool would act
+ * on (the C1 control characters). A file name loses the same characters (`sanitizeFileName`), so a zip of the space never lists a spoofed name.
+ */
+const SPOOFING_CHARACTER = /[\u0080-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069\u200b-\u200f\ufeff]/u;
+export const PersonalFolderPath = RepoFolderPath.refine((v) => v !== '' && v.length <= 500 && !SPOOFING_CHARACTER.test(v), { message: 'Name a folder.' });
 export type PersonalFolderPath = z.infer<typeof PersonalFolderPath>;
 
 export const PersonalFile = z.object({

@@ -26,6 +26,11 @@ describe('Personal files contract', () => {
     expect(UploadPersonalFileQuery.parse({ folderPath: 'Notes/' })).toEqual({ folderPath: 'Notes', conflict: 'rename' });
     expect(UploadPersonalFileQuery.parse({ folderPath: 'Notes/2026', name: 'a.md', conflict: 'version' }).conflict).toBe('version');
     for (const folderPath of ['', '/', '../x', 'a/../b', '.git/x']) expect(UploadPersonalFileQuery.safeParse({ folderPath }).success).toBe(false);
+    // Direction overrides, zero-width marks and C1 controls would let a folder name pose as another in a listing or an unzipped tree.
+    for (const folderPath of ['Notes\u202egpj.exe', 'a\u200bb', 'x\u2066y', 'bom\ufeff', 'c1\u0085', 'line\u2028sep']) {
+      expect(UploadPersonalFileQuery.safeParse({ folderPath }).success, JSON.stringify(folderPath)).toBe(false);
+    }
+    expect(UploadPersonalFileQuery.safeParse({ folderPath: 'Notes/2026 \u00e9t\u00e9/\u4f1a\u8b70' }).success).toBe(true);
   });
 
   it('a change names something and refuses extra fields', () => {
