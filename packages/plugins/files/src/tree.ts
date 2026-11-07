@@ -34,7 +34,7 @@ const byKindThenName = (a: Entry, b: Entry): number =>
 const isMemoryPath = (path: string): boolean => path === FILES_MEMORY_DIR || path.startsWith(`${FILES_MEMORY_DIR}/`);
 
 /** The team as the caller sees it. A team they cannot see is 403 (an admin sees every team, so for them a missing slug is 404). */
-async function requireTeam(tx: PluginTx, slug: string): Promise<TeamRow> {
+export async function requireTeam(tx: PluginTx, slug: string): Promise<TeamRow> {
   const res = await tx.query<TeamRow>(
     "SELECT t.id, t.slug, app.can('team', t.id, 'post') AS can_post, app.can('team', t.id, 'manage') AS can_manage, app.is_workspace_admin() AS can_admin FROM app.teams t WHERE t.slug = $1",
     [slug],
@@ -46,7 +46,7 @@ async function requireTeam(tx: PluginTx, slug: string): Promise<TeamRow> {
 }
 
 /** What a refusal of the repo service (it carries `status` and `code`) means over HTTP. */
-function mapRepoError(err: unknown): never {
+export function mapRepoError(err: unknown): never {
   const e = err as { status?: number; code?: string; message?: string; name?: string };
   if (e?.name === 'RepoError' && typeof e.status === 'number' && e.status >= 400 && e.status < 500) {
     throw new HttpError(e.status, (e.code ?? 'validation_failed') as never, e.message ?? 'Refused');
