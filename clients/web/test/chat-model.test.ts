@@ -15,11 +15,14 @@ import {
   buildRows,
   exportFileName,
   exportMarkdown,
+  EARLY_FRAMES,
   frameOf,
+  holdEarly,
   neighbourVariant,
   previewLive,
   railGroups,
   railTitle,
+  takeEarly,
   variantPosition,
   type ChatRow,
 } from '../src/screens/chat/model';
@@ -134,6 +137,17 @@ describe('the live preview', () => {
     expect(answerStatus(false, 'done', 'Brain')).toBe('Brain answered.');
     expect(answerStatus(false, 'stopped', 'Brain')).toBe('');
     expect(answerStatus(false, null, 'Brain')).toBe('');
+  });
+  it('keeps the frames that come before a new chat has its thread, and gives them to that thread only', () => {
+    let held: ReturnType<typeof holdEarly> = [];
+    held = holdEarly(held, { type: 'delta', push: { runId: run, channelId: id(50), threadRootId: thread, offset: 0, text: 'Hi' } } as never);
+    held = holdEarly(held, { type: 'delta', push: { runId: id(92), channelId: id(50), threadRootId: id(2), offset: 0, text: 'other' } } as never);
+    held = holdEarly(held, { type: 'delta', push: { runId: run, channelId: id(50), threadRootId: thread, offset: 2, text: ' there' } } as never);
+    const mine = takeEarly(held, thread);
+    expect(mine).toHaveLength(2);
+    expect(mine.reduce((p, f) => applyFrame(p, f, thread), NO_PREVIEW).text).toBe('Hi there');
+    for (let i = 0; i < EARLY_FRAMES * 2; i += 1) held = holdEarly(held, { type: 'looking', push: { runId: run, channelId: id(50), threadRootId: thread, label: 'x', tool: 'x' } } as never);
+    expect(held).toHaveLength(EARLY_FRAMES);
   });
   it('ignores another conversation, and starts again for another run', () => {
     const p = applyFrame(NO_PREVIEW, delta(0, 'abc'), thread);

@@ -149,6 +149,18 @@ export function answerStatus(writing: boolean, ended: Preview['ended'], botName:
   return ended === 'done' ? `${botName} answered.` : '';
 }
 
+/** How many frames are kept for a conversation that has no address yet. */
+export const EARLY_FRAMES = 100;
+
+/**
+ * A new chat has no thread until the server answers the first message, and the first words of the answer can reach the page before that answer is handled.
+ * Frames that come while no conversation is open are kept (the newest `EARLY_FRAMES`) and given to the conversation that opens.
+ */
+export const holdEarly = (held: readonly Frame[], frame: Frame): Frame[] => [...held.slice(-(EARLY_FRAMES - 1)), frame];
+
+/** The held frames that belong to this conversation, oldest first. */
+export const takeEarly = (held: readonly Frame[], thread: string): Frame[] => held.filter((f) => f.push.threadRootId === thread);
+
 /** Whether the preview is for an answer still being written. */
 export const previewLive = (p: Preview): boolean => p.runId !== null && p.ended === null;
 
