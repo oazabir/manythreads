@@ -196,12 +196,12 @@ textarea {
 
 .chip.ok {
   border-color: var(--ok);
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .chip.warn {
   border-color: var(--warn);
-  color: var(--warn);
+  color: var(--warn-ink);
 }
 
 .chip.alert {

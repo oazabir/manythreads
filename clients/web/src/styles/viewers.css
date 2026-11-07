@@ -740,7 +740,7 @@
 .hljs-string,
 .hljs-regexp,
 .hljs-addition {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .hljs-number,

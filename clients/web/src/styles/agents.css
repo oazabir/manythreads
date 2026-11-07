@@ -100,7 +100,7 @@
 }
 
 .ag-result.ok {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .ag-result.bad {

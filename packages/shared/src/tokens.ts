@@ -5,7 +5,7 @@ export const tokens = {
   shell: '#F3F4F6',
   ink: '#1B2430',
   mute: '#5A6472',
-  faint: '#8A929C',
+  faint: '#757D88',
   rule: '#D4D8DE',
   human: '#2E5C8A',
   agent: '#7B5EA7',

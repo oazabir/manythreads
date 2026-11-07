@@ -628,7 +628,7 @@
 }
 
 .bd-run-status.done {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .bd-run-status.failed {

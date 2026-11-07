@@ -9,6 +9,9 @@ const COLOUR_TOKENS = [
   'human', 'agent', 'agent-wash', 'ok', 'warn', 'alert', 'alert-wash',
 ].map((n) => `--${n}`);
 
+// Where the app deliberately differs from the prototype: --faint is darker so grey icons and times stay visible (P21-21, 3.3:1 on the page grey instead of 2.7:1).
+const DELIBERATE: Record<string, string> = { '--faint': '#' + '757D88' };
+
 function protoRoot(): Record<string, string> {
   const html = readFileSync(MOCKUPS_PATH, 'utf8');
   const m = /:root\s*\{([^}]*)\}/.exec(html);
@@ -31,6 +34,6 @@ test('/dev/tokens :root colour tokens equal the prototype', async ({ page }) => 
   const norm = (v: string | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, '');
   for (const n of COLOUR_TOKENS) {
     expect(proto[n], `prototype defines ${n}`).toBeTruthy();
-    expect(norm(live[n]), n).toBe(norm(proto[n]));
+    expect(norm(live[n]), n).toBe(norm(DELIBERATE[n] ?? proto[n]));
   }
 });

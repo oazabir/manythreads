@@ -219,7 +219,7 @@ a.btn.primary {
 }
 
 .rule-ok {
-  color: var(--ok);
+  color: var(--ok-ink);
   font-family: var(--mono);
 }
 
@@ -236,7 +236,7 @@ a.btn.primary {
 }
 
 .rule.ok {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .rule.bad {
@@ -314,7 +314,7 @@ a.btn.primary {
 }
 
 .saved {
-  color: var(--ok);
+  color: var(--ok-ink);
   font-size: var(--fs-caption);
 }
 
@@ -876,7 +876,7 @@ a.btn.primary {
 }
 
 .status.ok {
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .status.bad {

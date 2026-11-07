@@ -99,7 +99,7 @@
 .mm-trust-human-reviewed,
 .mm-chip-trust.mm-trust-human-reviewed {
   border-color: var(--ok);
-  color: var(--ok);
+  color: var(--ok-ink);
 }
 
 .mm-trust-machine-confirmed,
@@ -111,12 +111,12 @@
 .mm-trust-unverified,
 .mm-chip-trust.mm-trust-unverified {
   border-color: var(--warn);
-  color: var(--warn);
+  color: var(--warn-ink);
 }
 
 .mm-chip-stale {
   border-color: var(--warn);
-  color: var(--warn);
+  color: var(--warn-ink);
 }
 
 .mm-chip-deprecated {
