@@ -355,6 +355,21 @@ describe('the Personal shelf', () => {
     expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Into memory', { outputPath: 'Memory/notes.md' }))).status).toBe(400);
     // nor over a routine file: the output of a run would rewrite the instruction of a routine
     expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Over a routine', { outputPath: 'Routines/other/routine.yaml' }))).status).toBe(400);
+    // the spelling of the folder or the file does not get round it
+    for (const outputPath of ['routines/other/routine.yaml', 'Routines/other/Routine.YAML']) {
+      const res = await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Over a routine, spelt otherwise', { outputPath }));
+      expect(res.status, outputPath).toBe(400);
+      expect(messageOf(res.body) + JSON.stringify(res.body)).toMatch(/routine file/);
+    }
+    // a change of an existing routine is held to the same rule, and the routine keeps the output it had
+    const mine = await make(omar, 'Output kept');
+    const before = String((await routineRow(mine.id))['output_path']);
+    expect((await call(omar, 'PATCH', `/api/me/scheduled-jobs/${mine.id}`, { outputPath: mine.contractPath })).status).toBe(400);
+    expect((await call(omar, 'PATCH', `/api/me/scheduled-jobs/${mine.id}`, { outputPath: 'Memory/notes.md' })).status).toBe(400);
+    expect(String((await routineRow(mine.id))['output_path'])).toBe(before);
+    // a path next to the routine file, under the same folder, is an ordinary output
+    const fine = await call(omar, 'PATCH', `/api/me/scheduled-jobs/${mine.id}`, { outputPath: `${mine.contractPath.replace(/routine\.yaml$/, '')}notes.md` });
+    expect(fine.status, JSON.stringify(fine.body)).toBe(200);
   });
 });
 
