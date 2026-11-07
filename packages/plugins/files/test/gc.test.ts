@@ -439,6 +439,28 @@ describe('the original of a team memory inbox item is not an orphan (P8-14)', ()
   });
 });
 
+describe('the original of a personal inbox item is not an orphan (P20-04)', () => {
+  it('a blob only a personal inbox item points at survives the collection; once the original is removed it is collected', async () => {
+    await upload(nadia, 'gc-personal-inbox-anchor.txt');
+    const key = await putStray('the original of a note dropped into a personal inbox', 3 * DAY);
+    const id = await sys(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.memory_personal_inbox_items (workspace_id, owner_person_id, origin, state, stage, kind, name, size, sha256, blob_key) VALUES ($1, $2, 'person', 'queued', 'hold', 'markdown', 'gc-personal-note.md', 52, repeat('e', 64), $3) RETURNING id`,
+          [nadia.workspaceId, nadia.personId, key],
+        )
+      ).rows[0]!.id,
+    );
+    const first = await gc();
+    expect(first.refused ?? null).toBeNull();
+    expect(await store.head(key)).not.toBeNull();
+    await sys((tx) => tx.query('UPDATE app.memory_personal_inbox_items SET blob_key = NULL WHERE id = $1', [id]));
+    await gc();
+    expect(await store.head(key)).toBeNull();
+    await sys((tx) => tx.query('DELETE FROM app.memory_personal_inbox_items WHERE id = $1', [id]));
+  });
+});
+
 describe('an uploaded export archive of the import plugin is not an orphan (P14-13)', () => {
   it('a blob only an import run points at survives the collection; once the run keeps no archive it is collected', async () => {
     await upload(nadia, 'gc-import-anchor.txt');
