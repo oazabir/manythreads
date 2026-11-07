@@ -256,20 +256,20 @@ export function eventLine(e: TaskEvent, nameOf: (id: string | null) => string): 
 
 // ---- the org chart (P6-07: leads above specialists, mayTag edges) --------------------------------------------
 
-export type OrgPerson = { actorId: string; name: string; role: string; tags: string[]; lead: boolean };
-export type OrgBot = { slug: string; name: string; role: string; mayTag: string[] };
+export type OrgPerson = { actorId: string; name: string; role: string; tags: string[]; lead: boolean; personId?: string; avatar?: string | null };
+export type OrgBot = { slug: string; name: string; role: string; mayTag: string[]; avatar?: string | null };
 export type OrgChartData = { leads: OrgPerson[]; members: OrgPerson[]; bots: OrgBot[] };
 
 /** The team as a chart: the leads first, then everyone else, with the bots and the hands each one may tag. */
 export function orgChart(roster: readonly RosterMember[], bots: readonly BotSummary[]): OrgChartData {
   const people: OrgPerson[] = roster
-    .map((m) => ({ actorId: m.actorId, name: m.displayName, role: m.role, tags: m.tags, lead: m.role === 'lead' }))
+    .map((m) => ({ actorId: m.actorId, name: m.displayName, role: m.role, tags: m.tags, lead: m.role === 'lead', personId: m.personId, avatar: m.avatar }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return {
     leads: people.filter((p) => p.lead),
     members: people.filter((p) => !p.lead),
     bots: bots
-      .map((b) => ({ slug: b.slug, name: b.name, role: b.role, mayTag: b.mayTag }))
+      .map((b) => ({ slug: b.slug, name: b.name, role: b.role, mayTag: b.mayTag, avatar: b.avatar }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
 }

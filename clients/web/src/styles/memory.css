@@ -841,6 +841,194 @@
   overflow-x: auto;
 }
 
+/* ---- the team's Concepts tab (P21-15): a list of title + trust icon, the concept in a preview pane on the right ---- */
+.mc-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.mc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.mc-item {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.mc-item:last-child {
+  border-bottom: 0;
+}
+
+.mc-item.on {
+  background: var(--nav-on);
+}
+
+.mc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mc-row:hover {
+  background: var(--table-head);
+}
+
+.mc-item.on .mc-row:hover {
+  background: none;
+}
+
+.mc-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mc-row-title {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-item.deprecated .mc-row-title {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.mc-row-desc {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One icon says how far a concept is trusted; its colour follows the meaning, never the only cue (the icon differs too). */
+.mc-trust {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+}
+
+.mc-trust.human-reviewed {
+  color: var(--ok-ink);
+}
+
+.mc-trust.machine-confirmed {
+  color: var(--human);
+}
+
+.mc-trust.unverified {
+  color: var(--warn-ink);
+}
+
+.mc-trust span {
+  font-size: var(--fs-tiny);
+}
+
+.mc-preview {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.mc-preview-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 24px 0;
+  color: var(--faint);
+  font-size: var(--fs-small);
+}
+
+.mc-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mc-detail-title {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.mc-detail-desc {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.mc-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-detail-when {
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.mc-say {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.mc-say.bad {
+  color: var(--alert-ink);
+}
+
+/* From 1024 px the pane sits beside the list and stays in view while a long list scrolls; below that it follows the list and only a picked concept shows. */
+@media (width >= 1024px) {
+  .mc-body {
+    grid-template-columns: minmax(280px, 1fr) minmax(320px, 440px);
+  }
+
+  .mc-preview {
+    position: sticky;
+    top: 0;
+  }
+}
+
+@media (width < 1024px) {
+  .mc-preview.none {
+    display: none;
+  }
+}
+
 /* Phone: the concept and its detail are one column, and the detail follows the list. */
 @media (width <= 720px) {
   .mm-screen {

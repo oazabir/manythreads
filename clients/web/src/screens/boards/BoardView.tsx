@@ -4,6 +4,7 @@ import { MAX_BOARD_COLUMNS, type Board, type BoardColumn, type Task } from '@man
 import { useQuery } from '../../app/useQuery';
 import { isApiError } from '../../api/client';
 import { Alert } from '../../components/ui';
+import { SkeletonRows } from '../../components/Skeleton';
 import { STATE_LABEL, boardFilter, boardLabel, branchFor, cardRequest, columnMovedText, columnOf, emptyCard, moveProblem, noPlacement, ownerLabel, placeCards, refusalText, reorder, type CardDraft, type LoadedColumn, type Placement } from './board';
 import { addColumn, createBoard, createTask, deleteColumn, fetchColumnTasks, fetchPlaces, moveTask, renameColumn, reorderColumns } from './api';
 import { useCardActivity } from './activity';
@@ -12,6 +13,8 @@ import { BotActivity } from './BotActivity';
 import { ColumnHeader } from './ColumnHeader';
 import { useTeamPeople } from './people';
 import { CardPanel } from './CardPanel';
+import { BoardTemplates } from './BoardTemplates';
+import { templateRequest, type BoardTemplate, type BoardTemplateId } from './templates';
 import { useChannelFeed } from '../../shell/channelFeed';
 
 /*
@@ -48,6 +51,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
   const [newBoard, setNewBoard] = useState(false);
   const [draft, setDraft] = useState<CardDraft | null>(null);
   const [formProblem, setFormProblem] = useState<string | null>(null);
+  const [starting, setStarting] = useState<BoardTemplateId | null>(null);
 
   const selectedBoard = params.get('board');
   const board = boards.find((b) => b.id === selectedBoard) ?? boards[0] ?? null;
@@ -159,16 +163,19 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
     await editColumns(() => reorderColumns(slug, board.id, next));
   };
 
-  const addBoard = async (): Promise<void> => {
+  const addBoard = async (template?: BoardTemplate): Promise<void> => {
     setFormProblem(null);
+    setStarting(template?.id ?? null);
     try {
-      const res = await createBoard(slug, { name: boardName.trim() });
+      const res = await createBoard(slug, template ? templateRequest(template) : { name: boardName.trim() });
       setBoardName('');
       setNewBoard(false);
       onBoardsChanged();
       selectBoard(res.board.id);
     } catch (err) {
       setFormProblem(isApiError(err) && err.status === 403 ? 'Only a team lead or a workspace admin can create a board.' : refusalText(err));
+    } finally {
+      setStarting(null);
     }
   };
 
@@ -192,22 +199,20 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
 
   if (boards.length === 0) {
     return (
-      <div className="bd-empty" data-testid="boards-empty">
-        <p className="bd-empty-title">No boards yet</p>
-        <p className="bd-empty-body">
-          A board is a saved view over the team&apos;s cards: Open · In progress · Verify · Waiting on a person · Done. A team lead or a
-          workspace admin creates the first one.
-        </p>
+      <BoardTemplates canManage={canManage} busy={starting} onStart={(t) => void addBoard(t)}>
         {canManage ? (
-          <div className="bd-new-board">
-            <input value={boardName} onChange={(e) => setBoardName(e.target.value)} placeholder="Board name" aria-label="Board name" data-testid="new-board-name" />
-            <button type="button" className="btn primary" disabled={boardName.trim() === ''} onClick={() => void addBoard()} data-testid="create-board">
-              Create board
-            </button>
+          <div className="bd-start-blank">
+            <p className="bd-start-or">Or start with an empty board of the usual five columns.</p>
+            <div className="bd-new-board">
+              <input value={boardName} onChange={(e) => setBoardName(e.target.value)} placeholder="Board name" aria-label="Board name" data-testid="new-board-name" />
+              <button type="button" className="btn" disabled={boardName.trim() === ''} onClick={() => void addBoard()} data-testid="create-board">
+                Create board
+              </button>
+            </div>
+            {formProblem ? <Alert>{formProblem}</Alert> : null}
           </div>
         ) : null}
-        {formProblem ? <Alert>{formProblem}</Alert> : null}
-      </div>
+      </BoardTemplates>
     );
   }
 
@@ -321,7 +326,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
         ) : null}
 
         {q.status === 'loading' ? (
-          <p className="loading" aria-busy="true">Loading…</p>
+          <SkeletonRows rows={4} label="Loading the board" />
         ) : q.status === 'error' ? (
           <div>
             <Alert>{q.error.message}</Alert>

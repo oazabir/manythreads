@@ -3,9 +3,11 @@ import type { ScheduledJob, ScheduledJobEffort, ScheduledJobKind } from '@manyth
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { Alert, Time } from '../../components/ui';
+import { SkeletonRows } from '../../components/Skeleton';
 import { refusalText } from './board';
 import { useTeamPeople } from './people';
-import { SCHEDULED_JOB_KIND_BLURB, SCHEDULED_JOB_KIND_LABEL, RUN_STATUS_LABEL, cronNote, emptyScheduledJob, scheduledJobRequest, type ScheduledJobDraft } from './scheduled-job';
+import { SCHEDULED_JOB_KIND_BLURB, SCHEDULED_JOB_KIND_LABEL, RUN_STATUS_LABEL, cronNote, emptyScheduledJob, scheduledJobRequest, tileDraft, type JobTile, type ScheduledJobDraft } from './scheduled-job';
+import { JobTiles } from './JobTiles';
 import { createScheduledJob, fetchScheduledJobRuns, fetchScheduledJobs, runScheduledJob, updateScheduledJob } from './api';
 
 /*
@@ -67,6 +69,11 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
     }
   };
 
+  const fromTile = (tile: JobTile): void => {
+    setDraft(tileDraft(tile, people.bots[0]?.slug ?? ''));
+    setProblem(null);
+  };
+
   const save = async (): Promise<void> => {
     if (!draft) return;
     const built = scheduledJobRequest(draft);
@@ -86,7 +93,7 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
     }
   };
 
-  if (listQ.status === 'loading') return <p className="loading" aria-busy="true">Loading…</p>;
+  if (listQ.status === 'loading') return <SkeletonRows rows={4} label="Loading jobs" />;
   if (listQ.status === 'error') {
     return (
       <div>
@@ -187,10 +194,7 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
       ) : null}
 
       {scheduledJobs.length === 0 ? (
-        <div className="bd-empty" data-testid="scheduled-jobs-empty">
-          <p className="bd-empty-title">No jobs yet</p>
-          <p className="bd-empty-body">A heartbeat nudges a bot on a schedule; a routine runs a contract and writes a page; a task opens a card. None is running right now.</p>
-        </div>
+        <JobTiles canManage={canManage} onCreate={fromTile} />
       ) : (
         <div className="bd-scheduled-job-list" data-landmark="scheduled-jobs">
           {scheduledJobs.map((r) => (
@@ -235,7 +239,7 @@ export function ScheduledJobsView({ slug, canManage }: { slug: string; canManage
             <dd>{current.effort ?? 'the runtime’s default'}</dd>
           </dl>
           {runsQ.status === 'loading' ? (
-            <p className="loading" aria-busy="true">Loading…</p>
+            <SkeletonRows rows={2} label="Loading the runs" />
           ) : runsQ.status === 'error' ? (
             <p className="bd-muted">The ledger could not be loaded.</p>
           ) : runsQ.data.items.length === 0 ? (

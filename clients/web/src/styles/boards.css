@@ -425,25 +425,105 @@
   color: var(--faint);
 }
 
-/* ---- empty states ---- */
-.bd-empty {
-  padding: 28px 0;
+/* ---- start pages: the board templates and the job kinds of an empty Boards or Jobs page (P21-15) ---- */
+.bd-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 0 8px;
   text-align: center;
 }
 
-.bd-empty-title {
+.bd-start-title {
   margin: 0 0 6px;
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
-.bd-empty-body {
-  max-width: 460px;
-  margin: 0 auto 12px;
+.bd-start-body {
+  max-width: 54ch;
+  margin: 0 auto 20px;
   color: var(--mute);
   font-size: var(--fs-small);
 }
 
-/* ---- the org chart ---- */
+.bd-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  text-align: left;
+}
+
+.bd-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.bd-tile-pic {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-md);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.bd-tile-title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.bd-tile-line {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.bd-tile-cols,
+.bd-tile-example {
+  flex: 1;
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.bd-tile-example {
+  color: var(--txt);
+  font-style: italic;
+}
+
+/* The action sits at the foot of its tile, so the three buttons line up whatever the text above them takes. */
+.bd-tile-act {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+.bd-start-blank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.bd-start-or {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* ---- the org chart: bands of equal columns, so the cards of a row line up ---- */
 .bd-org {
   overflow: auto;
   min-height: 0;
@@ -461,22 +541,32 @@
   color: var(--mute);
 }
 
-.bd-org-people {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.bd-org-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bd-org-grid.bots {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
 }
 
 .bd-person,
 .bd-org-bot {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
+  min-width: 0;
+  padding: 10px 12px;
   border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--surface);
-  min-width: 170px;
+}
+
+.bd-person {
+  align-items: center;
+  gap: 10px;
 }
 
 .bd-person.lead {
@@ -484,13 +574,21 @@
   background: var(--human-wash);
 }
 
+.bd-person-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .bd-person-name {
   font-size: var(--fs-small);
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .bd-person-role {
-  color: var(--faint);
+  color: var(--mute);
   font-size: var(--fs-caption);
 }
 
@@ -511,27 +609,19 @@
   font-size: var(--fs-tiny);
 }
 
-.bd-tag.missing {
-  background: var(--alert-wash);
-  color: var(--alert-ink);
-}
-
-.bd-org-bots {
-  display: flex;
+/* A bot is a small purple card: who it is on top, the hands it may hand work to under it, each with an arrow. */
+.bd-org-bot {
   flex-direction: column;
   gap: 8px;
-}
-
-.bd-org-bot {
-  flex-flow: row wrap;
-  align-items: flex-start;
-  gap: 16px;
+  border-color: var(--agent-border);
+  background: var(--agent-wash);
 }
 
 .bd-org-bot-who {
   display: flex;
-  flex-direction: column;
-  min-width: 170px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .bd-org-bot-role {
@@ -540,13 +630,31 @@
 }
 
 .bd-edges {
-  margin-top: 0;
-  max-width: 520px;
+  margin-top: auto;
 }
 
 .bd-edges-label {
-  color: var(--faint);
+  flex-basis: 100%;
+  color: var(--mute);
   font-size: var(--fs-tiny);
+}
+
+.bd-edge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--agent-ink);
+  font-size: var(--fs-caption);
+}
+
+.bd-edge.missing {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
 }
 
 /* ---- scheduled jobs ---- */
@@ -642,6 +750,12 @@
 
 .bd-run-when {
   color: var(--faint);
+}
+
+@media (width <= 760px) {
+  .bd-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (width <= 1100px) {

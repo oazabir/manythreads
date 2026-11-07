@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Board, BoardColumn, BotSummary, RosterMember, Task, TaskEvent } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
+import { SkeletonRows } from '../../components/Skeleton';
 import { Markdown } from '../../channels/MessageMarkdown';
 import { Alert, Time } from '../../components/ui';
 import { STATE_LABEL, dropTargets, eventLine, ownerLabel, refusalText } from './board';
@@ -245,7 +246,7 @@ export function CardPanel({ slug, task, board, roster, bots, botsAtWork, placeId
 
       <h4 className="bd-history-title">History</h4>
       {eventsQ.status === 'loading' ? (
-        <p className="loading" aria-busy="true">Loading…</p>
+        <SkeletonRows rows={3} label="Loading the history" />
       ) : eventsQ.status === 'error' ? (
         <p className="bd-muted">The history could not be loaded.</p>
       ) : events.length === 0 ? (

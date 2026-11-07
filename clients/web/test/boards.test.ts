@@ -319,6 +319,17 @@ describe('the org chart', () => {
     expect(chart.bots.map((b) => b.slug)).toEqual(['reviewer']);
   });
 
+  it('carries each person\u2019s and bot\u2019s picture to the chart, and sorts every band by name', () => {
+    const chart = orgChart(
+      [member({ avatar: 'preset:fox' }), member({ personId: '00000000-0000-7000-8000-0000000000d3', actorId: '00000000-0000-7000-8000-0000000000a3', displayName: 'Aisha Khan' })],
+      [bot({ slug: 'writer', name: 'Writer', avatar: 'preset:owl' }), bot({ avatar: null })],
+    );
+    expect(chart.members.map((p) => p.name)).toEqual(['Aisha Khan', 'Nadia Rahman']);
+    expect(chart.members[1]).toMatchObject({ personId: '00000000-0000-7000-8000-0000000000d1', avatar: 'preset:fox' });
+    expect(chart.members[0]?.avatar).toBeNull();
+    expect(chart.bots.map((b) => [b.name, b.avatar])).toEqual([['Reviewer', null], ['Writer', 'preset:owl']]);
+  });
+
   it('reads a mayTag entry as a bot, a person, a role, or something nobody on the team holds', () => {
     const people = [
       { actorId: ACTOR, name: 'Nadia Rahman', role: 'member', tags: ['role:on-call'], lead: false },

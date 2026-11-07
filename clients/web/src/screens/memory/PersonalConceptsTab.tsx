@@ -3,6 +3,7 @@ import type { MemoryConceptSummary, PersonalMemoryFile } from '@manythreads/shar
 import { useQuery } from '../../app/useQuery';
 import { friendlyPath } from '../../components/friendlyPath';
 import { Dialog } from '../../components/Dialog';
+import { SkeletonRows } from '../../components/Skeleton';
 import { Time } from '../../components/ui';
 import { fetchPersonalConcepts, fetchPersonalFile, fetchPersonalVersions, removePersonalFile, restorePersonalVersion, savePersonalFile } from './personalApi';
 import { authorLabel, findConcept, isChangedSince, saveFailureWords, versionLine } from './personalWords';
@@ -276,7 +277,7 @@ function History({ path, currentVersion, onClose, onRestored }: { path: string; 
         <strong>Earlier versions</strong>
         <button type="button" className="btn s" onClick={onClose} data-testid="personal-file-history-close">Close</button>
       </div>
-      {q.status === 'loading' ? <p className="faint" aria-busy="true">Loading…</p> : null}
+      {q.status === 'loading' ? <SkeletonRows rows={2} label="Loading earlier versions" /> : null}
       {q.status === 'error' ? <p className="mi-error" role="alert">The versions could not be loaded: {q.error.message}</p> : null}
       {q.status === 'ok' ? (
         <ul className="mp-versions">
