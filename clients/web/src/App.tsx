@@ -32,6 +32,7 @@ import { Guardrails } from './screens/guardrails/Guardrails';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
 import { MemorySharing } from './screens/admin/memory/MemorySharing';
 import { RunnersScreen } from './screens/admin/runners/RunnersScreen';
+import { BrainSettings } from './screens/admin/brain/BrainSettings';
 import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
@@ -164,6 +165,7 @@ function AppRoutes() {
               <Route path="roles" element={<Roles />} />
               <Route path="llm" element={<LlmSettings />} />
               <Route path="runners" element={<RunnersScreen />} />
+              <Route path="brain" element={<BrainSettings />} />
               <Route path="memory-sharing" element={<MemorySharing />} />
               <Route path="https" element={<WorkspaceHttps />} />
               <Route path="health" element={<SystemHealth />} />

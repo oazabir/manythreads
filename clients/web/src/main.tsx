@@ -48,6 +48,7 @@ import './styles/recorder.css';
 import './styles/onboarding.css';
 import './styles/import.css';
 import './styles/runners.css';
+import './styles/brain.css';
 import './styles/connections.css';
 import './styles/meetings.css';
 import './styles/recipes.css';

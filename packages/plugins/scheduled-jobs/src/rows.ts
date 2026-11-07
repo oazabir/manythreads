@@ -45,7 +45,8 @@ export function toScheduledJob(r: ScheduledJobRow): ScheduledJob {
 export interface ScheduledJobRunRow extends Record<string, unknown> {
   id: string;
   scheduled_job_id: string;
-  team_id: string;
+  /** Null for a personal routine's firing (it has an owner instead). */
+  team_id: string | null;
   run_id: string | null;
   task_id: string | null;
   status: string;

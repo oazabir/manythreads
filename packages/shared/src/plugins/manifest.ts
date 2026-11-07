@@ -50,6 +50,8 @@ export const EXTENSION_POINTS = [
   'provider.deploy.step',
   // The media server that carries a voice room's audio (P15-02): registered by media-livekit (or the test-only media-fake), read by meetings.
   'provider.media',
+  // A person's own text files in their Personal space (P20-10): registered by files, read by scheduled-jobs for a routine's contract and output and for the action-items list.
+  'provider.personal.files',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

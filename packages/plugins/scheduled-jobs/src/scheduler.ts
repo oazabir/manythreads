@@ -117,7 +117,7 @@ export function nextRunFor(schedule: string, from: Date): Date | null {
  */
 export async function tickScheduledJobs(ctx: PluginContext, tx: PluginTx, now: Date = new Date()): Promise<number> {
   const due = (
-    await tx.query<ScheduledJobRow>('SELECT * FROM app.scheduled_jobs WHERE enabled AND next_run_at IS NOT NULL AND next_run_at <= $1 FOR UPDATE SKIP LOCKED', [now])
+    await tx.query<ScheduledJobRow>('SELECT * FROM app.scheduled_jobs WHERE enabled AND team_id IS NOT NULL AND next_run_at IS NOT NULL AND next_run_at <= $1 FOR UPDATE SKIP LOCKED', [now])
   ).rows;
   for (const scheduledJob of due) {
     await startScheduledJobRun(ctx, tx, scheduledJob, now);

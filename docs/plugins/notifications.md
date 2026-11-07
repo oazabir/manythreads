@@ -203,7 +203,7 @@ own rules. See [reminders.md](./reminders.md).
 
 `notifications` / `0.1.0` / `server`, `dependsOn: ['channels', 'presence']`, `extends: ['event.emit', 'event.subscribe', 'job.register']` (the jobs `notifications.release_held`, `notifications.push` and `notifications.digest`), emits
 `notifications.notification.created`, `notifications.digest.sent`, `notifications.digest.unsubscribed`, consumes `channel.mention.created`,
-`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`.
+`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`, `connections.sign_in.expired`, `scheduled_jobs.scheduled_job.stopped` (a person's routine was switched off by the platform: the notice sits in their Reminders conversation and reaches the bell as a `reminder`).
 
 ## Tests
 

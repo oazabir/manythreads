@@ -12,6 +12,7 @@ import type { ScheduledJobRunRow } from './rows.ts';
 // routine's page was written. Every update names the states it may leave, so a repeated or late event changes nothing.
 
 interface Settled extends ScheduledJobRunRow {
+  owner_person_id: string | null;
   workspace_id: string;
   bot_id: string;
   kind: string;
@@ -35,7 +36,11 @@ async function advance(
               run_id = coalesce($4::uuid, r.run_id),
               reason = CASE WHEN $3 = 'running' THEN r.reason ELSE left($5, 500) END,
               output_path = coalesce($6, r.output_path),
-              ended_at = CASE WHEN $3 = 'running' THEN NULL ELSE now() END
+              ended_at = CASE WHEN $3 = 'running' THEN NULL ELSE now() END,
+              -- a personal routine's firing keeps what the run read (the platform's own log of its tool calls: a type and a reference, never text)
+              sources_used = CASE WHEN $3 = 'running' OR r.owner_person_id IS NULL THEN r.sources_used ELSE coalesce((
+                SELECT jsonb_agg(jsonb_build_object('type', left(l.source_type, 40), 'ref', left(l.source_ref, 200), 'scope', l.scope) ORDER BY l.seq)
+                  FROM (SELECT * FROM app.run_source_log s WHERE s.run_id = coalesce($4::uuid, r.run_id) ORDER BY s.seq LIMIT 50) l), '[]'::jsonb) END
          FROM app.scheduled_jobs h
         WHERE h.id = r.scheduled_job_id AND r.status = ANY ($7::text[])
           AND ($1::uuid IS NULL OR r.id = $1::uuid)
@@ -46,12 +51,14 @@ async function advance(
           -- bounded to this workspace, this type and the firing's own lifetime, so it reads a handful of recent events, not the table
           AND NOT ($8::boolean AND EXISTS (SELECT 1 FROM app.events ev WHERE ev.workspace_id = h.workspace_id AND ev.type = 'runtime.scheduled_job.finished'
                                               AND ev.occurred_at >= r.started_at AND ev.payload ->> 'scheduledJobRunId' = r.id::text))
-      RETURNING r.id, r.scheduled_job_id, r.team_id, r.run_id, r.task_id, r.status, r.output_path, r.reason, r.started_at, r.ended_at,
+      RETURNING r.id, r.scheduled_job_id, r.team_id, r.owner_person_id, r.run_id, r.task_id, r.status, r.output_path, r.reason, r.started_at, r.ended_at,
                 h.workspace_id, h.bot_id, h.kind, h.name`,
       [match.id ?? null, match.runId ?? null, to.status, to.runId ?? null, to.reason ?? '', to.outputPath ?? null, [...from], unlessRuntimeSettled],
     )
   ).rows[0];
   if (!row) return false;
+  // a routine whose bot was removed meanwhile has nothing to announce a bot for; the ledger row itself is settled
+  if (row.bot_id === null) return true;
   await ctx.audit.emit(
     tx,
     ScheduledJobsScheduledJobRanEvent.parse({
@@ -59,6 +66,7 @@ async function advance(
       schemaVersion: 1,
       workspaceId: row.workspace_id,
       teamId: row.team_id,
+      ...(row.owner_person_id ? { ownerPersonId: row.owner_person_id } : {}),
       scheduledJobId: row.scheduled_job_id,
       scheduledJobRunId: row.id,
       botId: row.bot_id,

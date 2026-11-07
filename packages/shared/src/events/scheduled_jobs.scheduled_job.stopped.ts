@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { PersonalRoutineStopReason } from '../entities/scheduled-job.ts';
-import { BotId, PersonId, ScheduledJobId, WorkspaceId } from '../ids.ts';
+import { BotId, ChannelId, MessageId, PersonId, ScheduledJobId, WorkspaceId } from '../ids.ts';
 
 /**
  * The platform switched a personal routine off (its bot is off, the person's consent or connection is gone, they were deactivated, or it used up the month's
@@ -12,7 +12,11 @@ export const ScheduledJobsScheduledJobStoppedEvent = z.object({
   workspaceId: WorkspaceId,
   scheduledJobId: ScheduledJobId,
   ownerPersonId: PersonId,
-  botId: BotId,
+  /** Null when the bot is gone. */
+  botId: BotId.nullable(),
   reason: PersonalRoutineStopReason,
+  /** The direct message that told the owner (their Reminders conversation), so the notifications plugin can put it in the bell. */
+  messageId: MessageId.nullable().optional(),
+  channelId: ChannelId.nullable().optional(),
 });
 export type ScheduledJobsScheduledJobStoppedEvent = z.infer<typeof ScheduledJobsScheduledJobStoppedEvent>;

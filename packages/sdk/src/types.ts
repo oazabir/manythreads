@@ -87,6 +87,8 @@ export const PROVIDER_KINDS = [
   'deploy.step',
   /** The media server that carries a voice room's audio (media-livekit): `MediaProvider` in ./media.ts. */
   'media',
+  /** A person's own text files (files plugin): `PersonalFilesProvider` in ./personal-files.ts. */
+  'personal.files',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

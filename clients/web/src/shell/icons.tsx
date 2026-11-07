@@ -129,6 +129,7 @@ export const SettingsSignInIcon = proIcon(LockOpenIcon, 16);
 export const SettingsLlmIcon = proIcon(SparkleIcon, 16);
 export const SettingsRunnersIcon = proIcon(ComputerIcon, 16);
 export const SettingsMemoryIcon = proIcon(BrainIcon, 16);
+export const SettingsBrainIcon = proIcon(AndroidIcon, 16);
 export const SettingsDataIcon = proIcon(ShieldCheckmarkIcon, 16);
 export const SettingsDomainIcon = proIcon(GlobeIcon, 16);
 export const SettingsAuditIcon = proIcon(TaskListIcon, 16);

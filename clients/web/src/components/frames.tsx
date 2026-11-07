@@ -9,7 +9,7 @@ import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { Brand } from './ui';
 import {
   AddIcon, BackIcon, BellIcon, HashIcon, HookIcon, SettingsAuditIcon, SettingsDataIcon, SettingsDomainIcon, SettingsGeneralIcon, SettingsHealthIcon,
-  SettingsImportIcon, SettingsLlmIcon, SettingsMemoryIcon, SettingsMembersIcon, SettingsProfileIcon, SettingsRolesIcon, SettingsRunnersIcon,
+  SettingsImportIcon, SettingsBrainIcon, SettingsLlmIcon, SettingsMemoryIcon, SettingsMembersIcon, SettingsProfileIcon, SettingsRolesIcon, SettingsRunnersIcon,
   SettingsSecurityIcon, SettingsSetupIcon, SettingsSignInIcon, SettingsTemplateIcon, SettingsUsageIcon,
 } from '../shell/icons';
 import { useDocumentTitle } from '../shell/usePageTitle';
@@ -79,6 +79,7 @@ export const WORKSPACE_NAV: ReadonlyArray<{ heading: string; items: ReadonlyArra
     items: [
       { to: '/settings/workspace/llm', label: 'LLM', icon: SettingsLlmIcon },
       { to: '/settings/workspace/runners', label: 'Runners', icon: SettingsRunnersIcon },
+      { to: '/settings/workspace/brain', label: 'Brain', icon: SettingsBrainIcon },
       { to: '/settings/workspace/memory-sharing', label: 'Memory sharing', icon: SettingsMemoryIcon },
     ],
   },

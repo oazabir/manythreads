@@ -26,6 +26,7 @@ export * from './media.ts';
 export * from './http.ts';
 export * from './lockout.ts';
 export * from './tool-sources.ts';
+export * from './personal-files.ts';
 
 /**
  * Declare a plugin. The manifest is validated immediately (a bad field throws a ZodError naming it), so a

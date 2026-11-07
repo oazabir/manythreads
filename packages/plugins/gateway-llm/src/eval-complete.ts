@@ -25,8 +25,8 @@ export interface LlmEvalRequest {
   user: string;
   maxTokens: number;
   timeoutMs?: number;
-  /** What the call is for, as the spend ledger records it: `eval` (the default) or `title` (the name of a chat conversation, P20-16). */
-  purpose?: 'eval' | 'title';
+  /** What the call is for, as the spend ledger records it: `eval` (the default), `title` (the name of a chat conversation, P20-16) or `routine_draft` (a routine proposed from a sentence, P20-11). */
+  purpose?: 'eval' | 'title' | 'routine_draft';
 }
 
 export type LlmEvalResult =

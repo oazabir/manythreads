@@ -1,0 +1,29 @@
+/* Settings → Workspace → Brain (bn- prefix). The page reuses the shared .block, .rows, .srow and .chip; only the row's text column and the footer are its own. */
+.bn-row {
+  align-items: flex-start;
+}
+
+.bn-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bn-main .d {
+  margin-top: 2px;
+}
+
+.bn-foot {
+  margin: 16px 0 0;
+}
+
+/* Phone: the row's button drops under the text and is a 44 px target. */
+@media (width <= 760px) {
+  .bn-row {
+    flex-wrap: wrap;
+  }
+
+  .bn-row .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

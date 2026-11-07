@@ -79,6 +79,7 @@ export class ExtensionRegistries {
     'inbox.importer': new ExtensionRegistry(),
     'deploy.step': new ExtensionRegistry(),
     media: new ExtensionRegistry(),
+    'personal.files': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

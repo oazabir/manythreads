@@ -8,6 +8,7 @@ import {
   PresenceDndChangedEvent,
   REMINDERS_DM_KEY_PREFIX,
   RemindersReminderDueEvent,
+  ScheduledJobsScheduledJobStoppedEvent,
 } from '@manythreads/shared';
 import { releaseHeld } from './hold.ts';
 import { keywordMatches, membersHearingAll, workspaceDefaultLevel } from './levels.ts';
@@ -81,6 +82,15 @@ export function registerConsumers(ctx: PluginContext): void {
     const message = await loadMessage(tx, event.messageId);
     if (!message || message.deleted) return;
     await deliverReminder(ctx, tx, message, event.personId);
+  });
+
+  // The platform switched off a person's routine (P20-10, P20-14): the scheduled-jobs plugin wrote a notice into their Reminders conversation and announces it here.
+  ctx.events.subscribe('scheduled_jobs.scheduled_job.stopped', async (raw: PluginEvent, tx) => {
+    const event = ScheduledJobsScheduledJobStoppedEvent.parse(raw);
+    if (!event.messageId) return;
+    const message = await loadMessage(tx, event.messageId);
+    if (!message || message.deleted) return;
+    await deliverReminder(ctx, tx, message, event.ownerPersonId);
   });
 
   ctx.events.subscribe('channel.message.deleted', async (raw: PluginEvent, tx) => {

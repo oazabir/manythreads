@@ -74,6 +74,43 @@ The bot runtime (`runtime-hermes`, `src/router-scheduled-jobs.ts`) hears the que
 A `botId` or `botSlug` names the bot and must be one of the team's own. `contractPath` must start with `routines/`; `outputPath` must start with
 `pages/`. Only a routine needs a contract path; only a bot can own a scheduled job.
 
+## A person's own routines (P20-10 to P20-14)
+
+A routine can also belong to one **person** instead of a team: `scheduled_jobs.owner_person_id` is set and `team_id` is null (exactly one of the two, a CHECK). It runs as a bot the
+person can ask, with the **person as the asker** (`asker_person_id` is generated from the owner, so it can never be set to someone else), in the person's own conversation with that
+bot (`bot_conversation` channel). What a bot can read is therefore what that person may read, through the same run space rules as a chat. The routine writes only to the owner's
+Personal files.
+
+- **The file.** `Routines/<slug>/routine.yaml` in the owner's Personal files holds the name, the person's words, the prompt, the places to look (`sources`), the schedule and the output.
+  The platform reads the prompt from it at every firing, so an edit is live at the next run. The schedule, time zone, sources and output are also columns, so the tick never has to
+  parse a file to know when to fire. The output goes to `output_path` (default `Routines/<slug>/output.md`, never under `Memory/`) through the `personal.files` provider (files plugin)
+  in `replace`, `create` or `append` mode.
+- **Setting up in words** (`POST /api/me/scheduled-jobs/draft`): the sentence and the person's time zone give a *proposal* (name, schedule in words and cron, prompt, sources, output).
+  The schedule always comes from the deterministic parser (`wordsToSchedule`); the model (`fast` alias, through the model gateway, purpose `routine_draft`) only words the prompt, and plain
+  rules take over when it is unavailable (`by: 'rules'`). Nothing is saved. Creating needs `confirmed: true`, so a routine is never enabled by a script that skipped the preview.
+- **Guards** (all enforced by the platform, never by the prompt): at most 20 routines per person; no schedule faster than every 15 minutes and at most 96 firings a day; a monthly cost
+  allowance per person (workspace setting, default 5 US dollars, read through the model gateway ledger); the person's quiet hours (a firing due inside them is held until they end);
+  one firing at a time per routine; a routine uses the scopes of its owner and cannot widen them (it is the owner's own asker). Only the platform may stop a routine, and it records why
+  (`stopped_reason`: `bot_off`, `bot_gone`, `not_a_member`, `consent_withdrawn`, `connection_gone`, `owner_deactivated`, `spend_cap`) before telling the owner **once** with a message in their
+  Reminders conversation and the event `scheduled_jobs.scheduled_job.stopped` (the notifications plugin turns it into a bell notification). A person turns it back on from the routine;
+  that re-checks the same conditions. Removing a bot sets `bot_id` to null and stops its routines (`bot_gone`); they stay in the list.
+- **Tick.** `tickPersonalRoutines` (same once-a-minute job as the team tick) and `tellStops` (its own job `scheduled-jobs.tell-stops`, because each notice is its own transaction and must
+  not wait on rows the tick holds). "Run now" skips quiet hours and the gap but not the blockers or the allowance.
+- **Action items** (`GET/PATCH /api/me/action-items`): the list is one file, `Action items/action-items.md`, in the person's Personal files; every change is a new version, and a change
+  made on a stale copy (the `revision` token) is a 409. The "keep my action items" routine is a personal routine with `recipe_id = 'action-items'`.
+
+| method | path | what |
+|---|---|---|
+| GET | `/api/me/scheduled-jobs` | my routines, my limits and my settings |
+| POST | `/api/me/scheduled-jobs` | make one (needs `confirmed: true`); 409 with a plain sentence when the bot, consent or a connection is missing |
+| PATCH / DELETE | `/api/me/scheduled-jobs/:id` | change (rewrites the file; turning on clears a stop) / remove (the files stay) |
+| POST | `/api/me/scheduled-jobs/:id/run` | run now (202) — rate limited 10/min |
+| GET | `/api/me/scheduled-jobs/:id/runs` | the last 50 firings |
+| POST | `/api/me/scheduled-jobs/draft` | a proposal from a sentence — rate limited 20/min |
+| PUT | `/api/me/routine-settings` | my time zone and quiet hours |
+| GET / PUT | `/api/workspace/routine-settings` | the monthly allowance per person (any member reads; owner or admin changes) |
+| GET / PATCH | `/api/me/action-items` | the action-items list |
+
 ## Open points
 
 A scheduled run that is held for a person's approval ends its firing as failed; approving the call later resumes the run but not the firing.

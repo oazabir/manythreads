@@ -90,8 +90,8 @@ export const ROUTINE_SOURCE_LABELS: Record<RoutineSource, string> = {
   action_items: 'My action items',
 };
 
-/** The kind of the person's own connection a source needs before it can be read; a source not listed needs none. */
-export const ROUTINE_SOURCE_CONNECTION: Partial<Record<RoutineSource, string>> = { mail: 'email', calendar: 'calendar' };
+/** The kinds of the person's own connection that can serve a source (any one of them is enough); a source not listed needs none. */
+export const ROUTINE_SOURCE_CONNECTION: Partial<Record<RoutineSource, readonly string[]>> = { mail: ['email', 'google', 'microsoft'], calendar: ['google', 'microsoft', 'calendar'] };
 
 /** Limits every personal routine lives under (the guards of P20-14). The monthly spend cap is a workspace setting; the default is here. */
 export const PERSONAL_ROUTINE_LIMITS = {
@@ -137,9 +137,10 @@ export const PersonalRoutine = z.object({
   ownerPersonId: PersonId,
   /** The asker of every run: always the owner (the column is generated from it, so they cannot differ). */
   askerPersonId: PersonId,
-  botId: BotId,
-  botSlug: z.string(),
-  botName: z.string(),
+  /** Null once the bot is gone (the routine is then stopped with the reason `bot_gone`). */
+  botId: BotId.nullable(),
+  botSlug: z.string().nullable(),
+  botName: z.string().nullable(),
   name: z.string().min(1).max(80),
   /** The slug of the routine's folder: `Routines/<slug>/`. */
   slug: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
