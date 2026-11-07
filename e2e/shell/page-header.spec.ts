@@ -19,7 +19,7 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack(conversationStackEnv());
   const omar = await apiOn(playwright, stack, 'omar');
   try {
-    await addBot(stack, omar, 'brain', brainMd(['What is blocking the release?']));
+    await addBot(stack, omar, 'helper', brainMd(['What is blocking the release?']));
     channel = Object.keys(await channelsOf(omar))[0] ?? 'dev';
   } finally {
     await omar.ctx.dispose();
@@ -44,7 +44,7 @@ async function expectOneH1(page: Page, label: string): Promise<void> {
 }
 
 const TEAM_ROUTES = [
-  'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'agents', 'projects', 'recipes', 'memory', 'proposals', 'bots/brain', 'bots/new', 'bots/brain/usage',
+  'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'agents', 'projects', 'recipes', 'memory', 'proposals', 'bots/helper', 'bots/new', 'bots/helper/usage',
 ];
 const SETTINGS_ROUTES = [
   '/settings/workspace/general', '/settings/workspace/members', '/settings/workspace/roles', '/settings/workspace/llm', '/settings/workspace/runners',
@@ -77,29 +77,29 @@ test('settings routes have exactly one h1', async ({ browser, playwright, isMobi
 });
 
 test('ConversationView: list, workshop and loading each have one h1; a phone thread view has one too', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await open(browser, playwright, isMobile, 'nadia', '/t/engineering/bots/brain/chat');
+  const { page, context } = await open(browser, playwright, isMobile, 'nadia', '/t/engineering/bots/helper/chat');
   try {
     await expect(page.getByTestId('conversation-view')).toBeVisible();
     await expectOneH1(page, 'conversation list');
     await expect(h1s(page)).toContainText('Brain');
 
-    await page.goto('/t/engineering/bots/brain/chat?view=workshop');
+    await page.goto('/t/engineering/bots/helper/chat?view=workshop');
     await expect(page.getByTestId('workshop-tab')).toBeVisible();
     await expectOneH1(page, 'workshop');
 
     // loading: hold the open call back and look while the screen waits for it
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => { release = resolve; });
-    await page.route(/\/api\/teams\/engineering\/bots\/brain\/conversation$/, async (route) => {
+    await page.route(/\/api\/teams\/engineering\/bots\/helper\/conversation$/, async (route) => {
       await held;
       await route.continue();
     });
-    await page.goto('/t/engineering/bots/brain/chat');
+    await page.goto('/t/engineering/bots/helper/chat');
     await expect(page.getByTestId('conversation-loading')).toBeVisible();
     await expectOneH1(page, 'loading');
     release();
     await expect(page.getByTestId('conversation-view')).toBeVisible();
-    await page.unroute(/\/api\/teams\/engineering\/bots\/brain\/conversation$/);
+    await page.unroute(/\/api\/teams\/engineering\/bots\/helper\/conversation$/);
     await expectOneH1(page, 'loaded');
 
     // a message opens a thread; on a phone it has the screen to itself, with no list heading
@@ -154,7 +154,7 @@ test('exactly one bell and one Find in the band on Approvals, Threads and Files'
 });
 
 test('the trail: the phone shows only the last crumb, a desktop shows the whole path', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/brain');
+  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper');
   try {
     const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(crumbs).toBeVisible();
@@ -173,7 +173,7 @@ test('the trail: the phone shows only the last crumb, a desktop shows the whole 
 });
 
 test('the bot crumb tail clears when you leave the bot page', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/brain');
+  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper');
   try {
     const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
     await expect(crumbs).toContainText('Brain');

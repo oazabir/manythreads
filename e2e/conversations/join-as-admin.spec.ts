@@ -17,7 +17,7 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack(conversationStackEnv());
   const omar = await apiOn(playwright, stack, 'omar');
   try {
-    await addBot(stack, omar, 'brain', brainMd(['What is blocking the release?']));
+    await addBot(stack, omar, 'helper', brainMd(['What is blocking the release?']));
   } finally {
     await omar.ctx.dispose();
   }
@@ -69,7 +69,7 @@ const roleOf = async (who: Who): Promise<string | undefined> =>
 test('an admin not on the team joins and can talk', async ({ browser, playwright, isMobile }) => {
   await leave('omar');
   expect(await roleOf('omar')).toBeUndefined();
-  const { page, close } = await openChat(browser, playwright, stack, 'omar', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'omar', '/t/engineering/bots/helper/chat', isMobile);
   try {
     const refusal = page.getByTestId('conversation-unavailable');
     await expect(refusal).toBeVisible();
@@ -95,7 +95,7 @@ test('an admin not on the team joins and can talk', async ({ browser, playwright
 
 test('a member who is off the team is told whom to ask and has no way in', async ({ browser, playwright, isMobile }) => {
   await leave('priya');
-  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/helper/chat', isMobile);
   try {
     // a person who is not an admin does not see the team at all once off it: the shell answers with its own "no access" page (who to ask), and no way in
     const refusal = page.getByRole('alert').filter({ hasText: 'You do not have access' });

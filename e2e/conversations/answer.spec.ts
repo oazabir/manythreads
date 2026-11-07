@@ -21,7 +21,7 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack(answerStackEnv());
   const omar = await apiOn(playwright, stack, 'omar');
   try {
-    await addBot(stack, omar, 'brain', answeringBrainMd());
+    await addBot(stack, omar, 'helper', answeringBrainMd());
     // a message in #dev, and one in a private channel that only Omar is in
     const dev = (await channelsOf(omar))['dev']!;
     devMessage = (await postAs(omar, dev, PUBLIC_TEXT)).id;
@@ -36,7 +36,7 @@ test.afterAll(async () => {
 });
 
 test('a bot finishes with an Answer: the sources the person may open, what was out of scope, and whom it was for', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     const box = page.getByRole('textbox', { name: 'Message Brain' });
     await box.fill(`ANSWER-WITH-SOURCES ${devMessage} ${leadsMessage}`);
@@ -85,7 +85,7 @@ test('a bot finishes with an Answer: the sources the person may open, what was o
 });
 
 test('the answer is the person’s own: nobody else reads the thread, and the Answer is not in the sidebar or anybody’s lists', async ({ browser, playwright, isMobile }) => {
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat', isMobile);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await expect(rafi.page.getByTestId('conversation-list-empty')).toBeVisible();
     await expect(rafi.page.getByTestId('answer')).toHaveCount(0);
@@ -96,7 +96,7 @@ test('the answer is the person’s own: nobody else reads the thread, and the An
 });
 
 test('one answer per run: a second call is refused and the thread has the first', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/helper/chat', isMobile);
   try {
     const box = page.getByRole('textbox', { name: 'Message Brain' });
     await box.fill('ANSWER-TWICE please');

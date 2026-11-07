@@ -21,7 +21,7 @@ let brainId = '';
 test.beforeAll(async ({ playwright }) => {
   stack = await startStack(conversationStackEnv());
   const omar = await apiOn(playwright, stack, 'omar');
-  brainId = (await addBot(stack, omar, 'brain', brainMd(PROMPTS))).botId;
+  brainId = (await addBot(stack, omar, 'helper', brainMd(PROMPTS))).botId;
   await omar.ctx.dispose();
 });
 test.afterAll(async () => {
@@ -41,7 +41,7 @@ async function waitForReply(who: Parameters<typeof apiOn>[2], playwright: Parame
 }
 
 test('the empty state is the bot, its example questions and the message box; there is no "new conversation" button', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await expect(page.getByTestId('app-frame')).toBeVisible();
     const start = page.getByTestId('conversation-start');
@@ -75,7 +75,7 @@ test('the empty state is the bot, its example questions and the message box; the
 test('the conversation is not in the sidebar: not as a channel, not as a direct message', async ({ playwright }) => {
   const api = await apiOn(playwright, stack, 'priya');
   try {
-    const opened = await api.post<{ channelId: string }>('/api/teams/engineering/bots/brain/conversation');
+    const opened = await api.post<{ channelId: string }>('/api/teams/engineering/bots/helper/conversation');
     const directory = JSON.stringify(await api.get('/api/teams/engineering/channels'));
     expect(directory).not.toContain(opened.channelId);
     expect(JSON.stringify(await api.get('/api/dms'))).not.toContain(opened.channelId);
@@ -85,7 +85,7 @@ test('the conversation is not in the sidebar: not as a channel, not as a direct 
 });
 
 test('sending starts a thread: the message is its root, the view switches to it and the bot answers in it', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     const box = page.getByRole('textbox', { name: 'Message Brain' });
     await box.fill('What is blocking the schedule migration?');
@@ -126,7 +126,7 @@ test('sending starts a thread: the message is its root, the view switches to it 
 
 test('an example question is sent as written, and starts its own thread', async ({ browser, playwright, isMobile }) => {
   test.skip(isMobile, 'desktop layout');
-  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/brain/chat', false);
+  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/helper/chat', false);
   try {
     await page.getByTestId('prompt-chip').first().click();
     await expect(page).toHaveURL(/[?&]thread=/);
@@ -141,13 +141,13 @@ test('an example question is sent as written, and starts its own thread', async 
 });
 
 test('"Show older" that fails offers "Try again", keeps the rows it had, and goes away once the page arrives', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     // the list is one page long; make it say there is another after a cursor, and make that page fail once before it answers
     let failures = 1;
     const fakeCursor = `1:${randomUUID()}`;
     const asked: string[] = [];
-    await page.route('**/api/teams/engineering/bots/brain/conversations*', async (route) => {
+    await page.route('**/api/teams/engineering/bots/helper/conversations*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (cursor === null) {
         const res = await route.fetch();
@@ -197,7 +197,7 @@ test('private by default: a second member sees an empty list and cannot open it,
     )
   )[0]!.thread_root_id;
 
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat', isMobile);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/helper/chat', isMobile);
   try {
     // Rafi talked to nobody: his own list is empty, whatever Nadia and Priya asked
     await expect(rafi.page.getByTestId('conversation-list-empty')).toBeVisible();
@@ -236,7 +236,7 @@ test('Shared lists what the team may open; somebody else’s opens through the s
     [brainId, dev, copy.id],
   );
 
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat?tab=shared', isMobile);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/helper/chat?tab=shared', isMobile);
   try {
     const row = rafi.page.getByTestId('conversation-row');
     await expect(row).toHaveCount(1);
@@ -256,7 +256,7 @@ test('Shared lists what the team may open; somebody else’s opens through the s
     await rafi.close();
   }
 
-  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat?tab=shared', isMobile);
+  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat?tab=shared', isMobile);
   try {
     await expect(mine.page.getByTestId('conversation-row').getByTestId('conversation-label')).toHaveText('Shared with the team');
   } finally {
@@ -264,7 +264,7 @@ test('Shared lists what the team may open; somebody else’s opens through the s
   }
 
   // Sameera is on another team: the bot is not hers to talk to, and its conversations are not hers to list
-  const sameera = await openChat(browser, playwright, stack, 'sameera', '/t/engineering/bots/brain/chat?tab=shared', isMobile);
+  const sameera = await openChat(browser, playwright, stack, 'sameera', '/t/engineering/bots/helper/chat?tab=shared', isMobile);
   try {
     await expect(sameera.page.getByText('You do not have access')).toBeVisible();
     await expect(sameera.page.getByTestId('conversation-row')).toHaveCount(0);
@@ -276,12 +276,12 @@ test('Shared lists what the team may open; somebody else’s opens through the s
 test('Channel mentions lists the threads where the person named the bot — theirs only', async ({ browser, playwright, isMobile }) => {
   const nadia = await apiOn(playwright, stack, 'nadia');
   const dev = (await channelsOf(nadia))['dev']!;
-  const text = '@brain do we have the QA batch 7 numbers?';
+  const text = '@helper do we have the QA batch 7 numbers?';
   const mention = await postAs(nadia, dev, text);
   await nadia.ctx.dispose();
   await waitForReply('nadia', playwright, dev, mention.id);
 
-  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat?tab=mentions', isMobile);
+  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat?tab=mentions', isMobile);
   try {
     const row = mine.page.getByTestId('conversation-row');
     await expect(row).toHaveCount(1);
@@ -295,7 +295,7 @@ test('Channel mentions lists the threads where the person named the bot — thei
     await mine.close();
   }
 
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat?tab=mentions', isMobile);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/helper/chat?tab=mentions', isMobile);
   try {
     await expect(rafi.page.getByTestId('conversation-list-empty')).toContainText('No mentions yet');
   } finally {

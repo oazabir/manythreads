@@ -193,22 +193,47 @@ test('the reaction menu opens the same picker', async ({ browser }) => {
   }
 });
 
-test('on a phone the toolbar scrolls inside the composer and the picker stays on screen', async ({ browser }) => {
+test('on a phone the bar is one "Aa" button with Mention and Emoji; opened, the tools scroll inside the composer and the picker stays on screen', async ({ browser }) => {
   const omar = await apiAs('omar');
   const { name } = await createChannel(omar, 'phone');
   const { page, context } = await openAs(browser, 'rafi', `/t/engineering/c/${name}`, { width: 390, height: 844 }, true);
   try {
     const box = boxOf(page, name);
     await expect(box).toBeVisible();
-    await box.click();
     const bar = page.getByRole('toolbar', { name: 'Formatting' });
+    // the bar is drawn before the box has focus (P21-04): the list above never moves when the box gets it
     await expect(bar).toBeVisible();
+    await expect(bar).toHaveAttribute('data-layout', 'aa');
+    const before = await bar.boundingBox();
+    await box.click();
+    expect((await bar.boundingBox())?.height).toBe(before?.height);
     const noSideScroll = (): Promise<boolean> => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(await noSideScroll()).toBe(true);
+
+    // closed: "Aa", Mention and Emoji, each a 44 px target; the rarer tools are not drawn yet
+    const toggle = page.getByTestId('composer-format-toggle');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(bar.getByRole('button')).toHaveCount(3);
+    await expect(bar.getByRole('button', { name: 'Bold' })).toHaveCount(0);
+    for (const b of await bar.getByRole('button').all()) {
+      const r = await b.boundingBox();
+      expect(r?.width ?? 0).toBeGreaterThanOrEqual(43.5);
+      expect(r?.height ?? 0).toBeGreaterThanOrEqual(43.5);
+    }
+
+    // opened: every tool, in one row that scrolls inside the composer instead of wrapping or widening the page
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(bar.getByRole('button', { name: 'Bold' })).toBeVisible();
+    await expect(bar.getByRole('button', { name: 'Ask a poll' })).toHaveCount(1);
+    expect(await noSideScroll()).toBe(true);
+    expect(await bar.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
     const barBox = await bar.boundingBox();
     const composerBox = await page.getByTestId('composer').boundingBox();
     expect(barBox && composerBox && barBox.x >= composerBox.x - 1 && barBox.x + barBox.width <= composerBox.x + composerBox.width + 1).toBe(true);
-    expect(barBox?.height ?? 99).toBeLessThan(40); // one row, not wrapped into a second
+    // one row: a thumb-sized bar (44 px and the padding around it), not two rows
+    expect(barBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(barBox?.height ?? 99).toBeLessThan(60);
 
     await page.getByRole('button', { name: 'Emoji', exact: true }).click();
     const picker = page.getByTestId('emoji-picker');

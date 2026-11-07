@@ -24,7 +24,7 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack(answerStackEnv());
   const omar = await apiOn(playwright, stack, 'omar');
   try {
-    await addBot(stack, omar, 'brain', answeringBrainMd());
+    await addBot(stack, omar, 'helper', answeringBrainMd());
     devId = (await channelsOf(omar))['dev']!;
     devMessage = (await postAs(omar, devId, PUBLIC_TEXT)).id;
     const room = await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'release-room', private: true });
@@ -49,7 +49,7 @@ async function askedAndAnswered(page: import('@playwright/test').Page): Promise<
 }
 
 test('share to a channel: the preview says which sources are kept and which are not shared, a claim can be removed, and the copy hides the private source', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await askedAndAnswered(page);
     // the answer is hers: she is offered to share it, and the chips act
@@ -120,7 +120,7 @@ test('share to a channel: the preview says which sources are kept and which are 
 });
 
 test('share with a claim removed: the copy has the answer with that claim taken out, and only that', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await page.getByTestId('conversation-row').first().click();
     await expect(page.getByTestId('answer')).toBeVisible({ timeout: 30_000 });
@@ -146,7 +146,7 @@ test('share with a claim removed: the copy has the answer with that claim taken 
 });
 
 test('save as page: the team’s page holds the masked copy', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   let path = '';
   try {
     await page.getByTestId('conversation-row').first().click();
@@ -175,7 +175,7 @@ test('save as page: the team’s page holds the masked copy', async ({ browser, 
 });
 
 test('hand to a bot: the chip opens a thread with that bot, in the asker’s own conversation, carrying the answer', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await page.getByTestId('conversation-row').first().click();
     await expect(page.getByTestId('answer-chips')).toContainText('@Coder');
@@ -191,7 +191,7 @@ test('hand to a bot: the chip opens a thread with that bot, in the asker’s own
 });
 
 test('a follow-up chip asks the question in the same thread', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await page.getByTestId('conversation-row').first().click();
     await page.getByTestId('answer-followups').getByRole('button', { name: 'When does it open?' }).click();

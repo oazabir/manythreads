@@ -255,7 +255,8 @@ test('at 390 px the card and the dialog fit, a count changing moves nothing, and
     expect(await noSidewaysScroll(phone.page)).toBe(true);
 
     // the dialog
-    await phone.page.getByRole('textbox', { name: 'Message #dev' }).click(); // the toolbar opens with the caret
+    await phone.page.getByRole('textbox', { name: 'Message #dev' }).click();
+    await phone.page.getByRole('button', { name: 'Formatting options' }).click(); // on a phone the rarer tools sit behind "Aa"
     await phone.page.getByTestId('poll-tool').click();
     const dlg = phone.page.getByTestId('poll-dialog');
     await expect(dlg).toBeVisible();

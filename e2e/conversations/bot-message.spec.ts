@@ -18,7 +18,7 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack(answerStackEnv());
   const omar = await apiOn(playwright, stack, 'omar');
   try {
-    await addBot(stack, omar, 'brain', answeringBrainMd());
+    await addBot(stack, omar, 'helper', answeringBrainMd());
     devMessage = (await postAs(omar, (await channelsOf(omar))['dev']!, PUBLIC_TEXT)).id;
   } finally {
     await omar.ctx.dispose();
@@ -39,7 +39,7 @@ const send = async (page: Page, text: string): Promise<void> => {
 const botRow = (page: Page) => page.getByTestId('message').filter({ has: page.getByTestId('answer') });
 
 test('a reply without sources is plain text with a Bot tag: no card, no Sources line', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await send(page, 'ANSWER-TWICE please');
     const answer = page.getByTestId('answer');
@@ -67,7 +67,7 @@ test('a reply without sources is plain text with a Bot tag: no card, no Sources 
 });
 
 test('a reply with sources is a bordered card, the citations stay in view and the Sources line is closed until opened', async ({ browser, playwright, isMobile }) => {
-  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/helper/chat', isMobile);
   try {
     await send(page, `ANSWER-WITH-SOURCES ${devMessage}`);
     const answer = page.getByTestId('answer');
