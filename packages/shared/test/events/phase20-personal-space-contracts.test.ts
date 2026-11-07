@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
-import { eventRegistry, parseEvent } from '../../src/index.ts';
+import { UpdateWorkspaceMemberRequest, eventRegistry, parseEvent } from '../../src/index.ts';
 import { uuid } from '../fixtures.ts';
 
 // Contracts of P20-02 and P20-13 (`pnpm test:events`): the events of a Personal space. None carries a file name, a path, bytes or the reason an admin gave.
@@ -59,5 +59,20 @@ describe('files.file.restored and the space field of uploads and deletes', () =>
     const deleted = { type: 'files.file.deleted', schemaVersion: 1, workspaceId: uuid(1), channelId: null, teamId: null, fileId: uuid(2), deletedBy: uuid(3) };
     expect(parseEvent(deleted)).toEqual(deleted);
     expect(failsAt({ ...deleted, space: 'nope' })).toContain('space');
+  });
+});
+
+describe('workspace.member.status_changed and the deactivate request', () => {
+  const valid = { type: 'workspace.member.status_changed', schemaVersion: 1, workspaceId: uuid(1), personId: uuid(2), previousStatus: 'active', status: 'suspended', changedBy: uuid(3) };
+  it('parses and refuses an unknown status', () => {
+    expect(parseEvent(valid)).toEqual(valid);
+    expect(failsAt({ ...valid, status: 'deleted' })).toContain('status');
+  });
+
+  it('deactivating is a status on the member route; the body must change something', () => {
+    expect(UpdateWorkspaceMemberRequest.parse({ status: 'suspended' })).toEqual({ status: 'suspended' });
+    expect(UpdateWorkspaceMemberRequest.parse({ role: 'member', status: 'active' }).role).toBe('member');
+    expect(UpdateWorkspaceMemberRequest.safeParse({}).success).toBe(false);
+    expect(UpdateWorkspaceMemberRequest.safeParse({ status: 'gone' }).success).toBe(false);
   });
 });

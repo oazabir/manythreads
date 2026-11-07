@@ -13,7 +13,7 @@ import {
   type WorkspaceSettings,
 } from '@manythreads/shared';
 import { z } from 'zod';
-import { conflict, forbidden, json, notFound, route } from './http.ts';
+import { HttpError, conflict, forbidden, json, notFound, route } from './http.ts';
 import { isWorkspaceAdmin, type Deps } from './teams.ts';
 
 interface WorkspaceRow extends Record<string, unknown> {
@@ -43,6 +43,7 @@ interface MemberRow extends Record<string, unknown> {
   display_name: string;
   primary_email: string;
   status: string;
+  suspended_at: Date | null;
   role: string;
   tags: string[];
   created_at: Date;
@@ -57,7 +58,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
     handler: route(async (_req, tx) => {
       if (!(await isWorkspaceAdmin(tx))) throw notFound('Not found');
       const res = await tx.query<MemberRow>(
-        `SELECT p.id AS person_id, p.display_name, p.primary_email, p.status, wm.role, wm.created_at,
+        `SELECT p.id AS person_id, p.display_name, p.primary_email, p.status, p.suspended_at, wm.role, wm.created_at,
                 (SELECT max(s.last_seen_at) FROM app.sessions s WHERE s.person_id = p.id AND s.workspace_id = wm.workspace_id) AS last_active_at,
                 coalesce((SELECT array_agg(r.name ORDER BY r.name) FROM app.role_members rm JOIN app.roles r ON r.id = rm.role_id
                           WHERE rm.person_id = p.id), '{}'::text[]) AS tags
@@ -72,6 +73,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
             displayName: r.display_name,
             email: r.primary_email,
             status: r.status,
+            suspendedAt: r.suspended_at ? r.suspended_at.toISOString() : null,
             role: r.role,
             tags: r.tags,
             joinedAt: r.created_at.toISOString(),
@@ -136,31 +138,68 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
     }),
   });
 
-  // Role changes: admins manage member/guest/admin, only an owner grants or touches owner (row level security), and the
+  // Role and status changes. Role: admins manage member/guest/admin, only an owner grants or touches owner (row level security), and the
   // workspace_owner_guard trigger refuses to demote the last owner (a 409 with the trigger's message).
+  // Status (P20-13): `suspended` deactivates a member, `active` reactivates. A deactivated person cannot sign in and their sessions end on the
+  // next request (the session service treats a non-active person as signed out); their Personal space is deleted by the retention sweep 30 days
+  // after `people.suspended_at` (which the database sets from the status, never this route). Refused: your own account (400), the last active
+  // owner (409), an owner by a non-owner admin (403, the people guard).
   ctx.http.route({
     ...updateWorkspaceMemberRoute,
     schema: { body: UpdateWorkspaceMemberRequest, response: UpdateWorkspaceMemberResponse },
     handler: route(async (req, tx) => {
       if (!(await isWorkspaceAdmin(tx))) throw notFound('Not found');
       const { personId } = MemberParams.parse(req.params);
-      const { role } = UpdateWorkspaceMemberRequest.parse(req.body);
-      const current = await tx.query<{ role: string }>(
-        'SELECT role FROM app.workspace_members WHERE workspace_id = app.workspace_id() AND person_id = $1',
+      const { role, status } = UpdateWorkspaceMemberRequest.parse(req.body);
+      const current = await tx.query<{ role: string; status: string }>(
+        `SELECT wm.role, p.status FROM app.workspace_members wm JOIN app.people p ON p.id = wm.person_id
+          WHERE wm.workspace_id = app.workspace_id() AND wm.person_id = $1`,
         [personId],
       );
       const previousRole = current.rows[0]?.role;
-      if (!previousRole) throw notFound('No such member');
-      if (previousRole === role) return json(UpdateWorkspaceMemberResponse.parse({ personId, role }));
-      // `SET (role) = ...`: the plugin SQL guard rejects the text `SET role` (it cannot tell a column from SET ROLE).
-      const res = await tx.query(
-        'UPDATE app.workspace_members SET (role) = ROW($2) WHERE workspace_id = app.workspace_id() AND person_id = $1 RETURNING person_id',
-        [personId, role],
-      );
-      // Row level security hides an owner row from a non-owner admin: nothing was updated.
-      if (res.rows.length === 0) throw forbidden('Only an owner can change an owner');
-      await emit(tx, { type: 'workspace.member.role_changed', personId, previousRole, role, changedBy: await currentPersonId(tx) });
-      return json(UpdateWorkspaceMemberResponse.parse({ personId, role }));
+      const previousStatus = current.rows[0]?.status;
+      if (!previousRole || !previousStatus) throw notFound('No such member');
+      const me = await currentPersonId(tx);
+      let nowRole = previousRole;
+      let nowStatus = previousStatus;
+
+      if (status !== undefined && status !== previousStatus) {
+        if (personId === me) throw new HttpError(400, 'You cannot deactivate your own account');
+        if (previousRole === 'owner' && (await tx.query<{ r: string | null }>('SELECT app.workspace_role() AS r')).rows[0]?.r !== 'owner') {
+          throw forbidden('Only an owner can change an owner');
+        }
+        if (status === 'suspended' && previousRole === 'owner') {
+          // Deactivating the last active owner would leave the workspace with nobody who can run it. Two owners deactivating each other at the
+          // same moment would both pass the count, so deactivations of owners take turns (the count below is a fresh statement after the lock).
+          await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 13))', ['workspace-owners']);
+          const others = await tx.query<{ n: number }>(
+            `SELECT count(*)::int AS n FROM app.workspace_members wm JOIN app.people p ON p.id = wm.person_id
+              WHERE wm.workspace_id = app.workspace_id() AND wm.role = 'owner' AND p.status = 'active' AND wm.person_id <> $1`,
+            [personId],
+          );
+          if ((others.rows[0]?.n ?? 0) === 0) throw conflict('A workspace needs at least one active owner');
+        }
+        const res = await tx.query(
+          'UPDATE app.people SET (status) = ROW($2) WHERE id = $1 AND workspace_id = app.workspace_id() RETURNING id',
+          [personId, status],
+        );
+        if (res.rows.length === 0) throw forbidden('You cannot change this account');
+        nowStatus = status;
+        await emit(tx, { type: 'workspace.member.status_changed', personId, previousStatus, status, changedBy: me });
+      }
+
+      if (role !== undefined && role !== previousRole) {
+        // `SET (role) = ...`: the plugin SQL guard rejects the text `SET role` (it cannot tell a column from SET ROLE).
+        const res = await tx.query(
+          'UPDATE app.workspace_members SET (role) = ROW($2) WHERE workspace_id = app.workspace_id() AND person_id = $1 RETURNING person_id',
+          [personId, role],
+        );
+        // Row level security hides an owner row from a non-owner admin: nothing was updated.
+        if (res.rows.length === 0) throw forbidden('Only an owner can change an owner');
+        nowRole = role;
+        await emit(tx, { type: 'workspace.member.role_changed', personId, previousRole, role, changedBy: me });
+      }
+      return json(UpdateWorkspaceMemberResponse.parse({ personId, role: nowRole, status: nowStatus }));
     }),
   });
 }

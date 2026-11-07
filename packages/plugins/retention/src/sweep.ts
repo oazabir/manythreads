@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NEVER_APPROVAL_GATED, type PluginTx } from '@manythreads/sdk';
 import {
+  PERSONAL_KEEP_DAYS_DEFAULT,
   RETENTION_MEMORY_LOG_DAYS,
   RETENTION_RUN_LOG_DAYS,
   type RetentionCounts,
@@ -30,6 +31,9 @@ const DAY_MS = 24 * 3_600_000;
 //   log    superseded retained/forgotten lines and attempt notes of `memory_retain_log` older than the workspace's memory-log window, a page at a
 //          time through `app.memory_retain_log_prune`; never a `withheld` line, never the newest state of a source.
 //   memos  the memos of bots that no longer exist (every verdict about a removed bot is `bot_removed`, the memo says nothing more).
+//   personal  the Personal files, versions and folders of people deactivated more than 30 days ago (P20-13), a batch of people at a time, keyset-paged on
+//          the person's id. Only people whose `suspended_at` is older than the cutoff and who still hold something; a person reactivated since has no
+//          `suspended_at` and is never touched. The bytes stay in the blob store until the blob collector finds no row naming them.
 // A dry run does all of it except the memo and the deletions, and counts what it would have done.
 
 export const PRUNE_QUEUE = 'retention.prune';
@@ -43,6 +47,7 @@ const Counts = z.object({
   runMemos: z.number().int().nonnegative(),
   memoryLogLines: z.number().int().nonnegative(),
   memosRemoved: z.number().int().nonnegative(),
+  personalSpaces: z.number().int().nonnegative().optional(),
 });
 
 /** What a job step is given. Parsed on every step: a payload is whatever was enqueued, by anyone who could call `ctx.jobs.enqueue`. */
@@ -54,7 +59,9 @@ export const SweepState = z.object({
   /** Fixed when the sweep starts, so every step of it judges against the same instants. */
   runLogCutoff: z.iso.datetime({ offset: true }),
   memoryLogCutoff: z.iso.datetime({ offset: true }),
-  phase: z.enum(['runs', 'log', 'memos']),
+  /** Personal spaces of people deactivated before this are emptied. Absent in a sweep queued before P20-13 (then it is derived when the phase is reached). */
+  personalCutoff: z.iso.datetime({ offset: true }).optional(),
+  phase: z.enum(['runs', 'log', 'memos', 'personal']),
   /** `runs`: `<ended_at as text>|<run id>` of the last run looked at; `log`: the last log line id. */
   cursor: z.string().max(100).nullable(),
   step: z.number().int().nonnegative().max(1_000_000),
@@ -62,7 +69,7 @@ export const SweepState = z.object({
 });
 export type SweepState = z.infer<typeof SweepState>;
 
-export const emptyCounts = (): RetentionCounts => ({ runs: 0, runsSkipped: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0 });
+export const emptyCounts = (): RetentionCounts => ({ runs: 0, runsSkipped: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0, personalSpaces: 0 });
 
 export type { WorkspaceWindows };
 
@@ -85,6 +92,7 @@ export async function startSweep(tx: PluginTx, workspaceId: string, now: Date, d
     startedAt: now.toISOString(),
     runLogCutoff: new Date(now.getTime() - w.runLogDays * day).toISOString(),
     memoryLogCutoff: new Date(now.getTime() - w.memoryLogDays * day).toISOString(),
+    personalCutoff: new Date(now.getTime() - PERSONAL_KEEP_DAYS_DEFAULT * day).toISOString(),
     phase: 'runs',
     cursor: null,
     step: 0,
@@ -244,7 +252,7 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
     } else {
       cursor = res.last_id;
     }
-  } else {
+  } else if (phase === 'memos') {
     // Memos of bots that are gone. Counted, and removed in batches (a dry run counts all of them in one go).
     if (state.dryRun) {
       counts.memosRemoved += (
@@ -253,7 +261,7 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
           [state.workspaceId],
         )
       ).rows[0]!.n;
-      return finish(state, counts);
+      return { done: false, state: { ...state, phase: 'personal', cursor: null, counts, step: state.step + 1 } };
     }
     const removed = (
       await tx.query<{ n: number }>(
@@ -267,7 +275,32 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
       )
     ).rows[0]?.n ?? 0;
     counts.memosRemoved += removed;
-    if (removed < batch.runs) return finish(state, counts);
+    if (removed < batch.runs) return { done: false, state: { ...state, phase: 'personal', cursor: null, counts, step: state.step + 1 } };
+  }
+  else {
+    // Personal spaces of people deactivated for longer than the keep window. The cutoff is never later than the window gives now.
+    const cutoff = new Date(Math.min(Date.parse(state.personalCutoff ?? state.startedAt), Date.now() - PERSONAL_KEEP_DAYS_DEFAULT * DAY_MS)).toISOString();
+    const people = (
+      await tx.query<{ id: string }>(
+        `SELECT p.id FROM app.people p
+          WHERE p.workspace_id = $1::uuid AND p.status = 'suspended' AND p.suspended_at IS NOT NULL AND p.suspended_at < $2::timestamptz
+            AND ($3::uuid IS NULL OR p.id > $3::uuid)
+            AND (EXISTS (SELECT 1 FROM app.files f WHERE f.owner_person_id = p.id) OR EXISTS (SELECT 1 FROM app.personal_folders d WHERE d.owner_person_id = p.id))
+          ORDER BY p.id LIMIT $4`,
+        [state.workspaceId, cutoff, cursor, batch.runs],
+      )
+    ).rows;
+    if (people.length > 0) {
+      const ids = people.map((r) => r.id);
+      if (!state.dryRun) {
+        // The versions go with their files (foreign key cascade).
+        await tx.query('DELETE FROM app.files WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
+        await tx.query('DELETE FROM app.personal_folders WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
+      }
+      counts.personalSpaces = (counts.personalSpaces ?? 0) + ids.length;
+      cursor = ids[ids.length - 1]!;
+    }
+    if (people.length < batch.runs) return finish(state, counts);
   }
   return { done: false, state: { ...state, phase, cursor, counts, step: state.step + 1 } };
 }

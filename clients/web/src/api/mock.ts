@@ -541,7 +541,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     requireAdmin();
     return {
       members: people.map((p) => ({
-        personId: p.id, displayName: p.name, email: p.email, status: 'active', role: p.role, joinedAt: p.joinedAt, lastActiveAt: p.id === uuid('c', 1) ? NOW : null,
+        personId: p.id, displayName: p.name, email: p.email, status: 'active', suspendedAt: null, role: p.role, joinedAt: p.joinedAt, lastActiveAt: p.id === uuid('c', 1) ? NOW : null,
         tags: [...new Set(teams.flatMap((t) => [...t.tags].filter(([, h]) => h.has(p.id)).map(([tag]) => tag)))],
       })),
     };

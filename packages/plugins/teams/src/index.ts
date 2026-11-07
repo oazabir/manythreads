@@ -37,6 +37,7 @@ export default definePlugin({
         'workspace.invitation.accepted',
         'workspace.settings.updated',
         'workspace.member.role_changed',
+        'workspace.member.status_changed',
       ],
       consumes: [],
     },

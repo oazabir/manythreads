@@ -184,6 +184,7 @@ import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
 import { IdentityOidcSignedInEvent } from './identity.oidc.signed_in.ts';
 import { IdentityOidcRefusedEvent } from './identity.oidc.refused.ts';
 import { WorkspaceMemberRoleChangedEvent } from './workspace.member.role_changed.ts';
+import { WorkspaceMemberStatusChangedEvent } from './workspace.member.status_changed.ts';
 import { WorkspaceSettingsUpdatedEvent } from './workspace.settings.updated.ts';
 import { KernelCapabilityDeniedEvent } from './kernel.capability.denied.ts';
 import { ReadingStateChangedEvent } from './reading.state.changed.ts';
@@ -312,6 +313,7 @@ export const eventRegistry = {
   'identity.oidc.refused': { 1: IdentityOidcRefusedEvent },
   'workspace.settings.updated': { 1: WorkspaceSettingsUpdatedEvent },
   'workspace.member.role_changed': { 1: WorkspaceMemberRoleChangedEvent },
+  'workspace.member.status_changed': { 1: WorkspaceMemberStatusChangedEvent },
   'reading.state.changed': { 1: ReadingStateChangedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'tasks.board.created': { 1: TasksBoardCreatedEvent },
@@ -418,6 +420,7 @@ export type AnyEvent =
   | z.infer<typeof IdentityOidcRefusedEvent>
   | z.infer<typeof WorkspaceSettingsUpdatedEvent>
   | z.infer<typeof WorkspaceMemberRoleChangedEvent>
+  | z.infer<typeof WorkspaceMemberStatusChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof ChannelMessageEditedEvent>
   | z.infer<typeof ChannelMarkdownRepairedEvent>
@@ -519,6 +522,7 @@ export type LatestEvent =
   | z.infer<typeof IdentityOidcRefusedEvent>
   | z.infer<typeof WorkspaceSettingsUpdatedEvent>
   | z.infer<typeof WorkspaceMemberRoleChangedEvent>
+  | z.infer<typeof WorkspaceMemberStatusChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof ChannelMessageEditedEvent>
   | z.infer<typeof ChannelMarkdownRepairedEvent>

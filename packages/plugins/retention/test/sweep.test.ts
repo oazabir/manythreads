@@ -629,3 +629,76 @@ describe('the empty sweep', () => {
     expect((await sweep()).counts).toEqual(emptyCounts());
   });
 });
+
+describe('Personal spaces of deactivated people (P20-13)', () => {
+  const { sameera, lena } = personas;
+  const give = (person: { personId: string; actorId: string }, name: string): Promise<string> =>
+    sys(async (tx) => {
+      const file = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.files (workspace_id, owner_person_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+           VALUES ($1, $2, 'Notes/', $3, md5($3), 5, 'text/plain', repeat('a', 64), $4) RETURNING id`,
+          [omar.workspaceId, person.personId, name, person.actorId],
+        )
+      ).rows[0]!.id;
+      await tx.query(
+        `INSERT INTO app.file_versions (workspace_id, file_id, blob_key, size, mime, sha256, author_actor_id, stored_at) VALUES ($1, $2, md5($3 || 'v'), 3, 'text/plain', repeat('b', 64), $4, now())`,
+        [omar.workspaceId, file, name, person.actorId],
+      );
+      await tx.query('INSERT INTO app.personal_folders (workspace_id, owner_person_id, path) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [omar.workspaceId, person.personId, 'Notes']);
+      return file;
+    });
+  /** Deactivates a person `days` days ago. The database stamps `suspended_at` itself, so the test steps around the trigger as the table owner. */
+  const restamp = async (personId: string, sql: string, values: unknown[] = []): Promise<void> => {
+    await owner.query('ALTER TABLE app.people DISABLE TRIGGER USER');
+    try {
+      await owner.query(`UPDATE app.people SET ${sql} WHERE id = $1`, [personId, ...values]);
+    } finally {
+      await owner.query('ALTER TABLE app.people ENABLE TRIGGER USER');
+    }
+  };
+  const deactivate = (personId: string, days: number): Promise<void> => restamp(personId, "status = 'suspended', suspended_at = now() - make_interval(days => $2)", [days]);
+  const holds = (personId: string): Promise<{ files: number; versions: number; folders: number }> =>
+    sys(async (tx) => ({
+      files: Number((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.files WHERE owner_person_id = $1', [personId])).rows[0]!.n),
+      versions: Number((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.file_versions WHERE owner_person_id = $1', [personId])).rows[0]!.n),
+      folders: Number((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.personal_folders WHERE owner_person_id = $1', [personId])).rows[0]!.n),
+    }));
+
+  it('empties the space of someone deactivated 31 days ago; keeps a person deactivated 29 days ago, an active person and a reactivated one', async () => {
+    await give(nadia, 'old.md');
+    await give(sameera, 'recent.md');
+    await give(omar, 'active.md');
+    await give(lena, 'reactivated.md');
+    await deactivate(nadia.personId, 31);
+    await deactivate(sameera.personId, 29);
+    await deactivate(lena.personId, 40);
+    await restamp(lena.personId, "status = 'active', suspended_at = NULL");
+
+    const dry = await sweep({ dryRun: true });
+    expect(dry.counts.personalSpaces).toBe(1);
+    expect(await holds(nadia.personId)).toEqual({ files: 1, versions: 1, folders: 1 });
+
+    const real = await sweep();
+    expect(real.counts.personalSpaces).toBe(1);
+    expect(await holds(nadia.personId)).toEqual({ files: 0, versions: 0, folders: 0 });
+    for (const p of [sameera, omar, lena]) expect(await holds(p.personId), p.key).toEqual({ files: 1, versions: 1, folders: 1 });
+
+    // Once emptied there is nothing left to do; the next sweep counts none.
+    expect((await sweep()).counts.personalSpaces).toBe(0);
+  });
+
+  it('the person deactivated 29 days ago loses the space on the day that makes 30; a workspace sweep never reaches another workspace', async () => {
+    await restamp(sameera.personId, "suspended_at = now() - interval '30 days 1 minute'");
+    expect((await sweep()).counts.personalSpaces).toBe(1);
+    expect(await holds(sameera.personId)).toEqual({ files: 0, versions: 0, folders: 0 });
+  });
+
+  it('a payload that forges a recent cutoff deletes exactly what an honest sweep would', async () => {
+    await give(nadia, 'again.md');
+    await deactivate(nadia.personId, 5);
+    const { counts } = await sweep({ forge: (s) => ({ ...s, personalCutoff: new Date(Date.now() + DAY).toISOString() }) });
+    expect(counts.personalSpaces).toBe(0);
+    expect(await holds(nadia.personId)).toMatchObject({ files: 1 });
+  });
+});

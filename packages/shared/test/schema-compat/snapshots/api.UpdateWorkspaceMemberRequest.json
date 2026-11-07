@@ -10,10 +10,14 @@
         "member",
         "guest"
       ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "suspended"
+      ]
     }
   },
-  "required": [
-    "role"
-  ],
   "additionalProperties": false
 }

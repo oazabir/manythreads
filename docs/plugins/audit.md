@@ -78,6 +78,10 @@ The five import events become `import.uploaded`, `import.analysed`, `import.star
 
 `knowledge.base.created`, `.base.deleted`, `.document.added`, `.document.removed` and `.base.resynced` become `knowledge.base_created`, `knowledge.base_deleted`, `knowledge.document_added`, `knowledge.document_removed` and `knowledge.base_resynced`. The target is the base (with its slug as the label) or the document (id only: a document name is not in the event); the reason is a fixed phrase with counts ("New version 2, 4 passages", "3 documents checked, 1 updated, ..."). A document that could not be read shows as a failed outcome.
 
+## Personal spaces and deactivation (P20-13)
+
+`personal.space.opened` (an admin opened a person's Personal space: who, whose, "Read-only for 60 minutes"; the reason the admin typed is **not** in the event or the row: it lives in the access table, which only the admin and the person read), `personal.space.exported` (a zip was downloaded: counts of files and size, never a name) and `workspace.member.status_changed` (shown as "Deactivated a member" or "Reactivated a member"). Events of Personal files themselves (`files.file.uploaded`, `deleted`, `restored` with a `space`) are **not** audited: what a person keeps privately is not in the console.
+
 ## Left out on purpose
 
 Message posted and edited, reactions, reading state, presence, notifications (except the two email digest events below), tasks and boards, scheduled jobs, run starts and ends, conversations starting, `ops.health.changed`, and `repo.committed` (the guarded paths are covered by proposals) are not audited: they are volume or content, not decisions. Also not built: a CSV export, a bot filter in the screen (the Who list holds people; the API takes a bot id), team-lead access, and rows for the inbox withheld items (that feature does not exist yet).

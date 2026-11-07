@@ -38,6 +38,9 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'proposals.proposal.applied': { teamId: id(20), proposalId: id(30), path: 'TEAM.md', op: 'put', authorId: id(13), actorId: id(13), selfApplied: true, commitSha: 'a'.repeat(40), at: AT },
   'proposals.proposal.rejected': { teamId: id(20), proposalId: id(30), path: 'TEAM.md', authorId: id(13), actorId: id(15), reason: 'rejected', at: AT },
   'files.file.uploaded': { channelId: id(40), teamId: id(20), fileId: id(41), uploaderId: id(13), name: `${C}.pdf`, size: 2048, mime: 'application/pdf' },
+  'workspace.member.status_changed': { personId: id(10), previousStatus: 'active', status: 'suspended', changedBy: id(13) },
+  'personal.space.opened': { personId: id(10), adminActorId: id(13), accessId: id(60), validUntil: '2026-10-30T09:00:00.000Z' },
+  'personal.space.exported': { personId: id(10), adminActorId: id(13), accessId: id(60), fileCount: 3, bytes: 4096 },
   'files.file.deleted': { channelId: id(40), teamId: id(20), fileId: id(41), deletedBy: id(13) },
   'channel.channel.created': { channelId: id(40), teamId: id(20), name: 'dev', kind: 'channel', private: false },
   'channel.channel.archived': { channelId: id(40), teamId: id(20), archived: true },
@@ -163,6 +166,21 @@ describe('the audited event types', () => {
     expect(MAPPERS['llm.guard.decided']!({ outcome: 'allow', botId: id(60) })).toBeNull();
     expect(MAPPERS['answer.answer.posted']!({ ...FIXTURES['answer.answer.posted'], droppedCount: 0 })).toBeNull();
     expect(MAPPERS['channel.channel.created']!({ ...FIXTURES['channel.channel.created'], kind: 'dm' })).toBeNull();
+  });
+
+  it('leaves out every Personal file event, which carries the space and no one else may know about (P20-02)', () => {
+    const space = `person:${id(10)}`;
+    expect(MAPPERS['files.file.uploaded']!({ ...FIXTURES['files.file.uploaded'], space })).toBeNull();
+    expect(MAPPERS['files.file.deleted']!({ ...FIXTURES['files.file.deleted'], space })).toBeNull();
+    expect(MAPPERS['files.file.restored']).toBeUndefined();
+  });
+
+  it('shows who opened or downloaded whose Personal space and for how long, and no reason the admin typed (P20-13)', () => {
+    const opened = MAPPERS['personal.space.opened']!({ ...FIXTURES['personal.space.opened'], reason: `${C} reason` });
+    expect(opened).toMatchObject({ action: 'personal_space.opened', who: { actor: id(13) }, target: { kind: 'person', id: id(10), named: 'person' }, reason: 'Read-only for 60 minutes' });
+    expect(JSON.stringify(opened)).not.toContain('CANARY');
+    expect(MAPPERS['personal.space.exported']!({ ...FIXTURES['personal.space.exported'] })).toMatchObject({ action: 'personal_space.exported', reason: '3 files, 4 KB' });
+    expect(MAPPERS['workspace.member.status_changed']!({ ...FIXTURES['workspace.member.status_changed'], status: 'active' })).toMatchObject({ action: 'member.reactivated' });
   });
 });
 

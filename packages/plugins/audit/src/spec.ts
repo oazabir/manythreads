@@ -188,6 +188,12 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('person', uuid(e['personId']), null, 'person'),
     reason: `From ${words(e['previousRole']) ?? 'unknown'} to ${words(e['role']) ?? 'unknown'}`,
   }),
+  'workspace.member.status_changed': (e) => ({
+    action: e['status'] === 'suspended' ? 'member.deactivated' : 'member.reactivated',
+    who: person(e['changedBy']),
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: e['status'] === 'suspended' ? 'Cannot sign in; Personal space deleted after 30 days' : null,
+  }),
   'workspace.invitation.created': (e) => ({
     action: 'invitation.created',
     teamId: team(e['teamId']),
@@ -274,12 +280,27 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('bot', uuid(e['botId']), null, 'bot'),
     reason: typeof e['reason'] === 'string' && Object.hasOwn(TERMINAL_END_WORDS, e['reason']) ? (TERMINAL_END_WORDS as Record<string, string>)[e['reason']]! : null,
   }),
+  // A Personal file (the event carries `space`) is private to its person: it is not audited, so the console never shows that a file was made or removed.
   'files.file.uploaded': (e) => {
+    if (e['space'] !== undefined) return null;
     const mime = typeof e['mime'] === 'string' && /^[a-z0-9][\w.+-]{0,60}\/[\w.+-]{1,80}$/i.test(e['mime']) ? e['mime'] : null;
     const kb = Math.max(1, Math.round(num(e['size']) / 1024));
     return { action: 'file.uploaded', who: actor(e['uploaderId']), teamId: team(e['teamId']), target: of('file', uuid(e['fileId'])), reason: `${mime ?? 'File'}, ${kb} KB` };
   },
-  'files.file.deleted': (e) => ({ action: 'file.deleted', who: actor(e['deletedBy']), teamId: team(e['teamId']), target: of('file', uuid(e['fileId'])) }),
+  'personal.space.opened': (e) => ({
+    action: 'personal_space.opened',
+    who: actor(e['adminActorId']),
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: 'Read-only for 60 minutes',
+  }),
+  'personal.space.exported': (e) => ({
+    action: 'personal_space.exported',
+    who: actor(e['adminActorId']),
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: `${plural(num(e['fileCount']), 'file')}, ${Math.max(1, Math.round(num(e['bytes']) / 1024))} KB`,
+  }),
+  'files.file.deleted': (e) =>
+    e['space'] !== undefined ? null : { action: 'file.deleted', who: actor(e['deletedBy']), teamId: team(e['teamId']), target: of('file', uuid(e['fileId'])) },
   'channel.channel.created': (e) =>
     e['kind'] === 'channel'
       ? { action: 'channel.created', teamId: team(e['teamId']), target: of('channel', uuid(e['channelId']), null, 'channel'), reason: e['private'] === true ? 'Private channel' : 'Open channel' }

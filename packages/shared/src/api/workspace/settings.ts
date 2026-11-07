@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { WorkspaceId, PersonId } from '../../ids.ts';
+import { PersonStatus } from '../../entities/person.ts';
 import { WorkspaceRole } from '../../entities/workspace.ts';
 import type { ApiRoute } from '../client/route.ts';
 
@@ -34,9 +35,15 @@ export const updateWorkspaceRoute = { method: 'PATCH', path: '/api/workspace' } 
 /**
  * Change a member's workspace role. The workspace always keeps at least one owner: demoting the last owner is 409.
  * Only an owner grants or changes `owner`.
+ *
+ * `status: 'suspended'` deactivates the member (P20-13): they cannot sign in, their sessions end, and their Personal space is deleted 30 days later;
+ * `status: 'active'` reactivates them and stops that clock. 409 when it would leave the workspace without an active owner, 400 for your own account.
+ * Send `role`, `status` or both; the answer carries both as they are now.
  */
-export const UpdateWorkspaceMemberRequest = z.strictObject({ role: WorkspaceRole });
+export const UpdateWorkspaceMemberRequest = z
+  .strictObject({ role: WorkspaceRole.optional(), status: PersonStatus.optional() })
+  .refine((v) => v.role !== undefined || v.status !== undefined, { message: 'Change the role or the status.' });
 export type UpdateWorkspaceMemberRequest = z.infer<typeof UpdateWorkspaceMemberRequest>;
-export const UpdateWorkspaceMemberResponse = z.object({ personId: PersonId, role: WorkspaceRole });
+export const UpdateWorkspaceMemberResponse = z.object({ personId: PersonId, role: WorkspaceRole, status: PersonStatus });
 export type UpdateWorkspaceMemberResponse = z.infer<typeof UpdateWorkspaceMemberResponse>;
 export const updateWorkspaceMemberRoute = { method: 'PATCH', path: '/api/workspace/members/:personId' } as const satisfies ApiRoute;

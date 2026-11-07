@@ -33,6 +33,8 @@ export const RetentionCounts = z.object({
   memoryLogLines: z.number().int().nonnegative(),
   /** Memos of bots that no longer exist (their verdicts are `bot_removed` now). */
   memosRemoved: z.number().int().nonnegative(),
+  /** Personal spaces of people deactivated for longer than the keep window (P20-13), emptied. Absent in sweeps from before that. */
+  personalSpaces: z.number().int().nonnegative().optional(),
 });
 export type RetentionCounts = z.infer<typeof RetentionCounts>;
 

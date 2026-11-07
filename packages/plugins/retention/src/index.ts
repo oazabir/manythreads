@@ -20,8 +20,9 @@ export default definePlugin({
     kind: 'server',
     extends: ['event.emit', 'job.register'],
     events: { emits: ['retention.sweep.completed', 'retention.settings.changed'], consumes: [] },
-    // bot_runs and run_source_log (bots), the memo and the log's pruning door (memory), the approvals a run may still be needed by.
-    dependsOn: ['bots', 'memory', 'approvals'],
+    // bot_runs and run_source_log (bots), the memo and the log's pruning door (memory), the approvals a run may still be needed by, the Personal files of
+    // people deactivated for 30 days (files).
+    dependsOn: ['bots', 'memory', 'approvals', 'files'],
     migrations: 'migrations',
   },
   register(ctx: PluginContext) {

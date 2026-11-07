@@ -113,7 +113,7 @@ describe('workspace roles and the last owner', () => {
     expect((await w.call(nadia, 'PATCH', `/api/workspace/members/${priya.personId}`, { role: 'admin' })).status).toBe(404);
 
     const promoted = UpdateWorkspaceMemberResponse.parse(ok(await w.call(omar, 'PATCH', `/api/workspace/members/${priya.personId}`, { role: 'admin' })));
-    expect(promoted).toEqual({ personId: priya.personId, role: 'admin' });
+    expect(promoted).toEqual({ personId: priya.personId, role: 'admin', status: 'active' });
 
     // Priya (admin) reads and edits the settings, but only an owner grants owner or changes an owner.
     ok(await w.call(priya, 'PATCH', '/api/workspace', { name: 'Kahf Software' }));

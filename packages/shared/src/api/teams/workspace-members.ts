@@ -11,6 +11,8 @@ export const WorkspaceMemberSummary = z.object({
   displayName: z.string(),
   email: z.string(),
   status: PersonStatus,
+  /** When they were deactivated; null while active. Their Personal space is deleted 30 days after this (P20-13). */
+  suspendedAt: IsoDateTime.nullable(),
   role: WorkspaceRole,
   tags: z.array(RoleTagName),
   joinedAt: IsoDateTime,

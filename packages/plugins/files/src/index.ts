@@ -2,6 +2,7 @@ import { definePlugin } from '@manythreads/sdk';
 import { registerFileRoutes } from './routes.ts';
 import { registerFileLinks } from './links.ts';
 import { registerTreeRoute } from './tree.ts';
+import { registerPersonalAdminRoutes } from './personal-admin.ts';
 import { registerPersonalRoutes } from './personal-routes.ts';
 import { BLOB_GC_CRON, BLOB_GC_QUEUE, blobGcHandler } from './gc.ts';
 
@@ -19,7 +20,7 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     extends: ['event.emit', 'job.register'],
-    events: { emits: ['files.file.uploaded', 'files.file.deleted', 'files.file.restored'], consumes: [] },
+    events: { emits: ['files.file.uploaded', 'files.file.deleted', 'files.file.restored', 'personal.space.opened', 'personal.space.exported'], consumes: [] },
     dependsOn: ['channels'],
     migrations: 'migrations',
   },
@@ -28,6 +29,7 @@ export default definePlugin({
     registerFileLinks(ctx);
     registerTreeRoute(ctx);
     registerPersonalRoutes(ctx);
+    registerPersonalAdminRoutes(ctx);
     // Daily: delete the rows of long-hidden deleted-message files, then the blobs nothing references (docs/plugins/files.md, "Blob garbage collection").
     ctx.jobs.register(BLOB_GC_QUEUE, blobGcHandler(ctx), { cron: BLOB_GC_CRON, maxAttempts: 3 });
   },
