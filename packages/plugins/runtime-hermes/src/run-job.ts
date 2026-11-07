@@ -97,6 +97,8 @@ export const RunPayload = z.strictObject({
       outputMode: z.enum(['create', 'replace', 'append']).nullable(),
       modelAlias: z.string().min(1).max(40).nullable(),
       effort: z.enum(['low', 'medium', 'high']).nullable(),
+      /** Set for a person's own routine (P20-10): whose Personal space the output is written to (the asker is the same person). Absent for a team's schedule. */
+      personal: z.strictObject({ ownerPersonId: z.uuid() }).optional(),
     })
     .optional(),
   /**

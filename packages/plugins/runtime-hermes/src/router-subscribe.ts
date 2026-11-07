@@ -15,6 +15,7 @@ import {
 } from '@manythreads/shared';
 import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView, type ProjectNote } from './match.ts';
 import { registerInboxRouter } from './router-inbox.ts';
+import { registerPersonalRoutineRouter } from './router-personal-routines.ts';
 import { registerScheduledJobRouter } from './router-scheduled-jobs.ts';
 import { registerTaskRouter } from './router-tasks.ts';
 import { RUN_QUEUE, RunPayload } from './run-job.ts';
@@ -124,6 +125,7 @@ async function pickedModel(tx: PluginTx, messageId: string): Promise<string | nu
 export function registerRouter(ctx: PluginContext): void {
   registerTaskRouter(ctx);
   registerScheduledJobRouter(ctx);
+  registerPersonalRoutineRouter(ctx);
   registerInboxRouter(ctx);
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ChannelMessagePostedEvent.parse(raw);

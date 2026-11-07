@@ -19,6 +19,7 @@ import { authorizeContext, definitionOf, interceptTarget, type ToolDefinition } 
 import { confineRunWrite, spacesFor, withRunSpaces } from './spaces.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
+import { personalRoutineHoldsWrite, toolBudgetSentence, toolBudgetUsed } from './personal-routine.ts';
 import { json } from './http.ts';
 import type { McpSessions } from './session.ts';
 
@@ -158,6 +159,8 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   // the workspace Brain sits in every team: a write it makes names a place of the run's own team or is refused (spaces.ts)
   const writeRefused = await confineRunWrite(ctx, run, params.name, fitted.input);
   if (writeRefused) return refusal(run, params.name, { ok: false, code: writeRefused.code, message: writeRefused.message });
+  // a personal routine has a budget of tool calls (personal-routine.ts)
+  if (await toolBudgetUsed(ctx, run)) return refusal(run, params.name, { ok: false, code: 'forbidden', message: toolBudgetSentence() });
   let input = fitted.input;
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
@@ -234,7 +237,8 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
       }
     }
   }
-  const waitsForPerson = decision.needsApproval || holdForPerson || sourceCard !== null;
+  // a person's own routine: every write but its notes waits for the owner (personal-routine.ts)
+  const waitsForPerson = decision.needsApproval || holdForPerson || sourceCard !== null || personalRoutineHoldsWrite(run, params.name, definition.kind);
 
   if (
     run.rehearsal === true &&

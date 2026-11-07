@@ -45,14 +45,14 @@ const mintRun = (body: Record<string, unknown> = {}): Promise<{ status: number; 
  * A conversation run for a person, opened the only way that is allowed to name an asker: in-process, through the run service
  * (what the router does with `ctx.runs.open`). Its endpoint is the real server's, because the token's hash is in the database.
  */
-async function openRunFor(askerActorId: string | null, botId: string = bot.botId): Promise<McpRunMintResponse> {
+async function openRunFor(askerActorId: string | null, botId: string = bot.botId, trigger?: string): Promise<McpRunMintResponse> {
   const appPool = createAppPool(world.server.db.appUrl);
   const systemPool = createSystemPool(world.server.db.systemUrl, 2);
   try {
     const registry = new CapabilityRegistry();
     const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
     const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
-    const { run, token } = await service.open({ botId, teamId, workspaceId: omar.workspaceId, trigger: askerActorId === null ? 'webhook' : 'conversation', ...(askerActorId === null ? {} : { askerActorId }) });
+    const { run, token } = await service.open({ botId, teamId, workspaceId: omar.workspaceId, trigger: trigger ?? (askerActorId === null ? 'webhook' : 'conversation'), ...(askerActorId === null ? {} : { askerActorId }) });
     return McpRunMintResponse.parse({
       runId: run.runId,
       botId: run.botId,
@@ -202,6 +202,39 @@ describe('gateway-mcp endpoint', () => {
     );
     expect(logged.length).toBe(answer.hits.length);
     expect(logged[0]).toMatchObject({ source_type: 'message', source_ref: answer.hits[0]!.id, scope: 'channel' });
+  });
+
+  // P20-14: a person's own routine (the routine trigger with a person asking) may not write, apart from its notes, without its owner's yes, and has a budget of tool calls.
+  describe('a personal routine run', () => {
+    const toolCall = async (target: McpRunMintResponse, name: string, args: Record<string, unknown>, id = 1) => {
+      const res = await callRunUrl(target, { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+      const result = (res.body as { result: { content: Array<{ text: string }> } }).result;
+      return JSON.parse(result.content[0]!.text) as { ok?: boolean; code?: string; message?: string };
+    };
+
+    it('holds a write for the owner, where a team schedule\'s run writes on its own grant', async () => {
+      const mine = await openRunFor(nadia.actorId, bot.botId, 'routine');
+      const held = await toolCall(mine, 'tasks.create', { title: 'From a routine', description: 'x' });
+      expect(held).toMatchObject({ ok: false, code: 'approval_pending' });
+      // a read goes through
+      const read = await toolCall(mine, 'messages.search', { query: 'cache TTL decision' }, 2);
+      expect(read.code).toBeUndefined();
+      // the same tool in a team's own schedule (no person asking) is not held
+      const team = await openRunFor(null, bot.botId, 'routine');
+      const free = await toolCall(team, 'tasks.create', { title: 'From a team schedule', description: 'x' });
+      expect(free.code).not.toBe('approval_pending');
+    });
+
+    it('refuses the call past the budget of forty tool calls', async () => {
+      const mine = await openRunFor(nadia.actorId, bot.botId, 'routine');
+      for (let i = 0; i < 40; i += 1) {
+        const answer = await toolCall(mine, 'messages.search', { query: `cache ${i}` }, i + 1);
+        expect(answer.code, `call ${i + 1}`).toBeUndefined();
+      }
+      const over = await toolCall(mine, 'messages.search', { query: 'one more' }, 99);
+      expect(over).toMatchObject({ ok: false, code: 'forbidden' });
+      expect(over.message).toMatch(/40 tool calls/);
+    });
   });
 
   it('a card created by a tool is the board’s own card: the bot writes it in its team, with the route’s row, history and event', async () => {

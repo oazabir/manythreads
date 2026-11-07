@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { ListMessagesResponse } from '@manythreads/shared';
 import { applyScheduledJobOverrides } from '../src/scheduled-job-run.ts';
 import { buildScheduledJobPrompt } from '../src/router-scheduled-jobs.ts';
+import { buildPersonalRoutinePrompt } from '../src/router-personal-routines.ts';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from '../../repo-git/test/world.ts';
 
@@ -542,6 +543,92 @@ describe('the ledger and the guards', () => {
     expect((await untilStatus(oldQueued, 'failed')).reason).toBe('The bot was never started for this firing (nothing picked it up in time).');
     expect((await untilStatus(oldRunning, 'failed')).reason).toBe('The run did not report an end in time, so the firing was closed.');
     expect((await firingRow(freshQueued)).status).toBe('queued');
+  });
+});
+
+describe('a person\'s own routine (P20-10)', () => {
+  /** A bot of the team that asks to read a Personal space, whose reading omar has agreed to. */
+  async function personalBot(slug: string, name: string): Promise<LoadedBot> {
+    const bot = await loadBot(slug, botMd({ name, model: 'smart', capabilities: 'messages.post', triggers: ['  - type: mention'] }));
+    await ownerSql(`INSERT INTO app.capability_grants (team_id, actor_id, capability) VALUES ($1, $2, 'personal.read') ON CONFLICT DO NOTHING`, [TEAM_IDS.Engineering, bot.actorId]);
+    const said = await w.call(omar, 'PUT', `/api/me/bot-consents/${bot.botId}`, { allowed: true });
+    expect(said.status, JSON.stringify(said.body)).toBe(200);
+    return bot;
+  }
+  const makeRoutine = async (botSlug: string, name: string, extra: Record<string, unknown> = {}): Promise<string> => {
+    const res = await w.call<{ routine: { id: string } }>(omar, 'POST', '/api/me/scheduled-jobs', {
+      confirmed: true,
+      name,
+      words: name,
+      botSlug,
+      schedule: '0 5 * * 1-5',
+      scheduleWords: 'Weekdays at 9:00 AM',
+      timeZone: 'Asia/Dubai',
+      prompt: `Write the ${name} now.`,
+      sources: [],
+      outputMode: 'replace',
+      ...extra,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return res.body.routine.id;
+  };
+  const fileAt = async (path: string): Promise<{ uploader: string } | null> => {
+    const rows = await ownerSql(`SELECT uploader_id FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2`, [omar.personId, path]);
+    return rows[0] ? { uploader: String(rows[0]['uploader_id']) } : null;
+  };
+
+  it('runs as the bot with the owner asking, in the owner\'s own conversation, and saves its output in the owner\'s files', async () => {
+    const bot = await personalBot('rh-mine', 'RhMine');
+    const routineId = await makeRoutine('rh-mine', 'Daily note');
+    expect((await w.call(omar, 'POST', `/api/me/scheduled-jobs/${routineId}/run`)).status).toBe(202);
+    const firing = await settled(routineId);
+    expect(firing, JSON.stringify(firing)).toMatchObject({ status: 'done', output_path: 'Routines/daily-note/output.md' });
+
+    const runs = await botRunsFor(bot.botId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ id: firing.run_id, trigger_type: 'routine', asker_id: omar.actorId });
+    const channel = await ownerSql(`SELECT c.kind FROM app.bot_runs r JOIN app.channels c ON c.id = r.channel_id WHERE r.id = $1`, [firing.run_id]);
+    expect(channel[0]!['kind']).toBe('bot_conversation');
+
+    const calls = callsOf('rh-mine', firing.run_id as string);
+    expect(calls[0]!['prompt']).toContain('Write the Daily note now.');
+    expect(calls[0]!['prompt']).toContain('saved as the file Routines/daily-note/output.md in their own files');
+
+    // the output is a file of the owner, written by the bot, and nothing was announced in a team channel
+    const written = await fileAt('Routines/daily-note/output.md');
+    expect(written, 'the output file').not.toBeNull();
+    expect(written!.uploader).toBe(bot.actorId);
+    expect((await ownerSql(`SELECT 1 FROM app.messages WHERE author_id = $1`, [bot.actorId])).length).toBe(0);
+  });
+
+  it('fails the firing with the reason when the run produces nothing, and writes no file', async () => {
+    await personalBot('rh-mine-empty', 'RhMineEmpty');
+    const routineId = await makeRoutine('rh-mine-empty', 'Empty note', { prompt: 'NOOUTPUT please' });
+    await w.call(omar, 'POST', `/api/me/scheduled-jobs/${routineId}/run`);
+    const firing = await settled(routineId);
+    expect(firing.status).toBe('failed');
+    expect(firing.reason).toBe('The run produced no output, so nothing was written to Routines/empty-note/output.md.');
+    expect(await fileAt('Routines/empty-note/output.md')).toBeNull();
+  });
+
+  it('keeps the action items: a rewrite that drops an action is refused and the list stays as it was', async () => {
+    await personalBot('rh-mine-items', 'RhMineItems');
+    const add = await w.call<{ list: { revision: string | null } }>(omar, 'PATCH', '/api/me/action-items', { revision: null, change: { op: 'add', what: 'Send the report to Priya' } });
+    expect(add.status, JSON.stringify(add.body)).toBe(200);
+    const routineId = await makeRoutine('rh-mine-items', 'Keep items', { outputPath: 'Action items/action-items.md', prompt: 'Rewrite the list. Keep it short.' });
+    await w.call(omar, 'POST', `/api/me/scheduled-jobs/${routineId}/run`);
+    const firing = await settled(routineId);
+    // the stand-in answers with "# Report ..." which has no actions at all, so the one action would disappear
+    expect(firing.status).toBe('failed');
+    expect(firing.reason).toMatch(/would have been removed/);
+    const list = await w.call<{ items: { what: string }[] }>(omar, 'GET', '/api/me/action-items');
+    expect(list.body.items.map((i) => i.what)).toEqual(['Send the report to Priya']);
+  });
+
+  it('says what the run is for', () => {
+    const prompt = buildPersonalRoutinePrompt({ name: 'N', firedAt: '2026-01-01T09:00:00.000Z', prompt: 'Do X.', outputPath: 'Routines/n/output.md', outputMode: 'append' });
+    expect(prompt).toContain('saved as the file Routines/n/output.md in their own files and will be added to the end of the file');
+    expect(prompt).toContain('waits for the person to say yes');
   });
 });
 

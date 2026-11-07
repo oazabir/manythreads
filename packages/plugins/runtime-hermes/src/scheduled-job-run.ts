@@ -1,5 +1,5 @@
-import type { ApprovalProvider, BotRunHandle, BotRuntimeScope, PluginContext, PluginLogger, PluginTx } from '@manythreads/sdk';
-import { RuntimeScheduledJobFinishedEvent, RuntimeScheduledJobStartedEvent, clip } from '@manythreads/shared';
+import type { ApprovalProvider, BotRunHandle, BotRuntimeScope, PersonalFilesProvider, PluginContext, PluginLogger, PluginTx } from '@manythreads/sdk';
+import { ACTION_ITEMS_PATH, RuntimeScheduledJobFinishedEvent, RuntimeScheduledJobStartedEvent, clip, reviewActionItemsRewrite } from '@manythreads/shared';
 import { ApprovalPending, type LoadedDefinition, type RunPayload } from './run-job.ts';
 
 // What a run does differently when a schedule started it (PLAN P6-08; SPEC §6.4, §6.5). The ledger of firings belongs to the `scheduled-jobs` plugin; a
@@ -112,7 +112,19 @@ export async function finishScheduledJobRun(input: {
   let commitSha: string | null = null;
   const text = reply.trim();
 
-  if (ok && scheduledJob.kind === 'routine' && scheduledJob.outputPath !== null) {
+  if (ok && scheduledJob.kind === 'routine' && scheduledJob.outputPath !== null && scheduledJob.personal) {
+    // a person's own routine: the output goes to the owner's Personal files, written as the bot, never to a team page and never announced in a channel
+    if (text === '') {
+      status = 'failed';
+      reason = `The run produced no output, so nothing was written to ${scheduledJob.outputPath}.`;
+    } else {
+      const wrote = await writePersonalOutput(ctx, tx, run, scheduledJob.personal.ownerPersonId, scheduledJob.outputPath, scheduledJob.outputMode ?? 'replace', reply);
+      if (!wrote.ok) {
+        status = 'failed';
+        reason = wrote.reason;
+      }
+    }
+  } else if (ok && scheduledJob.kind === 'routine' && scheduledJob.outputPath !== null) {
     if (text === '') {
       status = 'failed';
       reason = `The run produced no output, so nothing was written to ${scheduledJob.outputPath}.`;
@@ -160,5 +172,35 @@ async function postWrote(tx: PluginTx, log: PluginLogger, scope: BotRuntimeScope
   } catch (err) {
     if (err instanceof ApprovalPending) throw err;
     log.warn(`runtime-hermes: the “wrote ${path}” line could not be posted: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Write a personal routine's output into its owner's Personal files (the files plugin's `personal.files` provider), authored by the bot. Memory is written only through the memory
+ * tool, so a path under `Memory/` is refused here too. A rewrite of the action-items list is checked first: an action never disappears or reopens (`reviewActionItemsRewrite`).
+ */
+export async function writePersonalOutput(
+  ctx: PluginContext,
+  tx: PluginTx,
+  run: BotRunHandle,
+  ownerPersonId: string,
+  path: string,
+  mode: 'create' | 'replace' | 'append',
+  reply: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const files = ctx.providers.get<PersonalFilesProvider>('personal.files');
+  if (!files) return { ok: false, reason: 'Personal files are not available, so the output could not be saved.' };
+  if (path.split('/')[0] === 'Memory') return { ok: false, reason: 'A routine does not write to Memory; the memory tool does.' };
+  const content = reply.endsWith('\n') ? reply : `${reply}\n`;
+  try {
+    if (path === ACTION_ITEMS_PATH) {
+      const current = await files.read(tx, ownerPersonId, path);
+      const problems = reviewActionItemsRewrite(current?.text ?? '', mode === 'append' ? `${current?.text ?? ''}${content}` : content);
+      if (problems.length > 0) return { ok: false, reason: clip(`The action items were not changed. ${problems[0]}`, 400) };
+    }
+    await files.write(tx, ownerPersonId, path, content, { mode, authorActorId: run.botActorId });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: clip(err instanceof Error ? `The output could not be saved: ${err.message}` : 'The output could not be saved.', 400) };
   }
 }
