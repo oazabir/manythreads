@@ -72,3 +72,42 @@ export function withRunSpaces(name: string, rawInput: Record<string, unknown>, s
   }
   return { ok: true, input };
 }
+
+// The writes of the workspace Brain (P20-07). The Brain has a seat in EVERY team (so it can post where it is mentioned), which means its own database rights reach
+// every team's public channels and pages. A read is safe because it is made as the asker and fitted to `spacesFor`; a write is made as the bot, so the place the model
+// names must be the run's own, checked here, one door for every write tool that takes a place from its arguments. A team bot has a seat in its own team only, so the
+// database already bounds it and nothing is asked of it.
+
+const CHANNEL_WRITES: ReadonlySet<string> = new Set(['messages.post', 'messages.update']);
+const TEAM_WRITES: ReadonlySet<string> = new Set(['pages.write', 'proposals.propose']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface WriteRefusal {
+  code: 'other_space';
+  message: string;
+}
+
+/** `null` when the call may go on; a refusal when a workspace bot names a channel or a team that is not the run's own. */
+export async function confineRunWrite(ctx: PluginContext, run: BotRunHandle, name: string, input: Record<string, unknown>): Promise<WriteRefusal | null> {
+  const isChannel = CHANNEL_WRITES.has(name);
+  if (!isChannel && !TEAM_WRITES.has(name)) return null;
+  const named = isChannel ? input['channelId'] : input['team'];
+  if (typeof named !== 'string' || named === '') return null; // nothing named: the run's own place is the default
+  return ctx.runs.asBot(run, async (tx) => {
+    const scope = (await tx.query<{ scope: string }>('SELECT scope FROM app.bots WHERE id = $1::uuid', [run.botId])).rows[0]?.scope;
+    if (scope !== 'workspace') return null;
+    if (isChannel) {
+      // not a uuid: it names nothing, and the tool's own parser says so
+      if (!UUID.test(named)) return null;
+      const ok = await tx.query(
+        `SELECT 1 FROM app.channels c
+          WHERE c.id = $1::uuid
+            AND (c.team_id = $2::uuid OR c.id = (SELECT r.channel_id FROM app.bot_runs r WHERE r.id = app.run_id()))`,
+        [named, run.teamId],
+      );
+      return ok.rows.length > 0 ? null : { code: 'other_space', message: 'You can write only in the team this conversation belongs to. That channel is not in it.' };
+    }
+    const ok = await tx.query('SELECT 1 FROM app.teams t WHERE t.id = $1::uuid AND (t.id::text = $2 OR t.slug = $2)', [run.teamId, named]);
+    return ok.rows.length > 0 ? null : { code: 'other_space', message: 'You can write only in the team this conversation belongs to. That team is not it.' };
+  });
+}

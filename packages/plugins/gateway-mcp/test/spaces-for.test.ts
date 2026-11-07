@@ -1,7 +1,7 @@
 import type { BotRunHandle, PluginContext } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
 import { TOOLS } from '../src/catalog.ts';
-import { spacesFor, withRunSpaces, type RunSpaces } from '../src/spaces.ts';
+import { confineRunWrite, spacesFor, withRunSpaces, type RunSpaces } from '../src/spaces.ts';
 
 // P20-08 (D10): what a run may read, and how a tool call is fitted to it. The database half (the audience, the consent, the team list) is in
 // bots/test/rls/personal-consents.test.ts; this file is the gateway's half, without a database.
@@ -83,5 +83,50 @@ describe('every read tool that takes a team goes through withRunSpaces', () => {
     for (const name of withTeam) {
       expect(withRunSpaces(name, { query: 'xx', teamId: FOREIGN }, channel, TEAM)).toMatchObject({ ok: false, code: 'other_space' });
     }
+  });
+});
+
+// P20-R6: the workspace Brain has a seat in every team, so a write made as the bot must name a place of the run's own team. The database half is the same query a team
+// would run; here the answers of the database are faked to prove which question is asked and what is done with the answer.
+describe('confineRunWrite (the workspace Brain sits in every team)', () => {
+  const CHANNEL = '00000000-0000-7000-8000-0000000c0001';
+  const asked: Array<{ sql: string; params: unknown[] }> = [];
+  const ctxFor = (scope: string | undefined, place: boolean): PluginContext =>
+    ({
+      runs: {
+        asBot: (_run: unknown, fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            query: (sql: string, params: unknown[]) => {
+              asked.push({ sql, params });
+              if (sql.includes('SELECT scope')) return Promise.resolve({ rows: scope === undefined ? [] : [{ scope }] });
+              return Promise.resolve({ rows: place ? [{ '?column?': 1 }] : [] });
+            },
+          }),
+      },
+    }) as unknown as PluginContext;
+
+  it('lets the workspace Brain post in a channel of the run\'s team, and refuses a channel of another team', async () => {
+    expect(await confineRunWrite(ctxFor('workspace', true), RUN, 'messages.post', { channelId: CHANNEL, body: 'x' })).toBeNull();
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'messages.post', { channelId: CHANNEL, body: 'x' })).toMatchObject({ code: 'other_space' });
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'messages.update', { channelId: CHANNEL, messageId: 'm', body: 'x' })).toMatchObject({ code: 'other_space' });
+    // the question is about the run's own team
+    expect(asked.some((q) => q.sql.includes('FROM app.channels') && q.params[1] === TEAM)).toBe(true);
+  });
+
+  it('lets the workspace Brain write a page or a proposal in the run\'s team only, by id or by slug', async () => {
+    expect(await confineRunWrite(ctxFor('workspace', true), RUN, 'pages.write', { team: 'engineering', path: 'pages/a.md' })).toBeNull();
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'pages.write', { team: 'marketing', path: 'pages/a.md' })).toMatchObject({ code: 'other_space' });
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'proposals.propose', { team: OTHER, path: 'TEAM.md' })).toMatchObject({ code: 'other_space' });
+  });
+
+  it('asks nothing when no place is named (the run\'s own place is the default) and nothing of a team bot or another tool', async () => {
+    asked.length = 0;
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'messages.post', { body: 'x' })).toBeNull();
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'pages.write', { path: 'pages/a.md' })).toBeNull();
+    expect(await confineRunWrite(ctxFor('workspace', false), RUN, 'tasks.create', { team: 'marketing' })).toBeNull();
+    expect(asked).toEqual([]);
+    // a team bot is bounded by its one seat in the database already
+    expect(await confineRunWrite(ctxFor('team', false), RUN, 'messages.post', { channelId: CHANNEL, body: 'x' })).toBeNull();
+    expect(await confineRunWrite(ctxFor(undefined, false), RUN, 'pages.write', { team: 'marketing' })).toBeNull();
   });
 });

@@ -16,7 +16,7 @@ import {
 import { z } from 'zod';
 import { askForApproval } from './approval.ts';
 import { authorizeContext, definitionOf, interceptTarget, type ToolDefinition } from './catalog.ts';
-import { spacesFor, withRunSpaces } from './spaces.ts';
+import { confineRunWrite, spacesFor, withRunSpaces } from './spaces.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
 import { json } from './http.ts';
@@ -155,6 +155,9 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   const spaces = await spacesFor(ctx, run);
   const fitted = withRunSpaces(params.name, params.arguments ?? {}, spaces, run.teamId);
   if (!fitted.ok) return refusal(run, params.name, { ok: false, code: fitted.code, message: fitted.message });
+  // the workspace Brain sits in every team: a write it makes names a place of the run's own team or is refused (spaces.ts)
+  const writeRefused = await confineRunWrite(ctx, run, params.name, fitted.input);
+  if (writeRefused) return refusal(run, params.name, { ok: false, code: writeRefused.code, message: writeRefused.message });
   let input = fitted.input;
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
