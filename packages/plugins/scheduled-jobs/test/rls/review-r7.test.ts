@@ -68,5 +68,35 @@ describe('the firing door', () => {
     expect(await code(as(omar, (tx) => tx.query('SELECT * FROM app.scheduled_jobs_fire($1, now(), NULL, NULL)', [job])))).toBe('42501');
     // the owner can
     expect(await code(as(nadia, (tx) => tx.query('SELECT * FROM app.scheduled_jobs_fire($1, now(), NULL, NULL)', [job])))).toBeUndefined();
+    // and the refused calls left no firing behind: only the owner's one is there
+    const runs = await sys(async (tx) => (await tx.query('SELECT 1 FROM app.scheduled_job_runs WHERE scheduled_job_id = $1', [job])).rowCount);
+    expect(runs).toBe(1);
+  });
+
+  it('lets the system (the tick job logs in as the system role) fire a routine of anybody, which is how the schedule runs', async () => {
+    const job = await as(nadia, async (tx) => (await tx.query<{ id: string }>(insertSql, [omar.workspaceId, nadia.personId, botId, 'Routines/sys/routine.yaml', 'Routines/sys/output.md', nadia.actorId, 'sys-fire'])).rows[0]!.id);
+    const fired = await sys((tx) => tx.query<{ owner_person_id: string; status: string }>('SELECT * FROM app.scheduled_jobs_fire($1, now(), NULL, NULL)', [job]));
+    expect(fired.rows).toHaveLength(1);
+    expect(fired.rows[0]).toMatchObject({ owner_person_id: nadia.personId, status: 'queued' });
+  });
+
+  it('keeps the team check for a team job: a lead of the team fires it, a plain member does not', async () => {
+    // a team heartbeat has no owner; who may fire it is decided by the "manage" right on the team (Omar leads Engineering, Nadia and Rafi are members)
+    const job = await sys(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.scheduled_jobs (workspace_id, team_id, bot_id, name, kind, schedule, enabled, next_run_at, created_by)
+           VALUES ($1, $2, $3, 'Team pulse', 'heartbeat', '0 5 * * 1-5', true, now() + interval '1 hour', $4) RETURNING id`,
+          [omar.workspaceId, TEAM_IDS.Engineering, botId, omar.actorId],
+        )
+      ).rows[0]!.id,
+    );
+    expect(await code(as(nadia, (tx) => tx.query('SELECT * FROM app.scheduled_jobs_fire($1, now(), NULL, NULL)', [job])))).toBe('42501');
+    expect(await code(as(rafi, (tx) => tx.query('SELECT * FROM app.scheduled_jobs_fire($1, now(), NULL, NULL)', [job])))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('SELECT * FROM app.scheduled_jobs_fire($1, now(), NULL, NULL)', [job])))).toBeUndefined();
+  });
+
+  it('says there is no such job for an id that is not one, before any check of the caller', async () => {
+    expect(await code(as(nadia, (tx) => tx.query("SELECT * FROM app.scheduled_jobs_fire('00000000-0000-4000-8000-000000000000', now(), NULL, NULL)")))).toBe('P0002');
   });
 });
