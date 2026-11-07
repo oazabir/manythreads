@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { confirmConceptRoute, deprecateConceptRoute, ConfirmConceptResponse, DeprecateConceptResponse, type MemoryConceptSummary } from '@manythreads/shared';
 import { call } from '../../api/client';
 import { ago } from '../../channels/format';
@@ -26,6 +26,10 @@ export function ConceptsTab({ slug, wanted, onOpenInbox }: { slug: string; wante
   const [picked, setPicked] = useState<string | null>(wanted);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<Say>(null);
+  // The index follows a commit a moment after the call returns (the outbox), so one read right after it can still show the old row: the list is read
+  // again a few times, and the timers are dropped when the tab goes away.
+  const later = useRef<number[]>([]);
+  useEffect(() => () => later.current.forEach((t) => window.clearTimeout(t)), []);
 
   // a link to another concept replaces the person's pick
   useEffect(() => {
@@ -50,6 +54,8 @@ export function ConceptsTab({ slug, wanted, onOpenInbox }: { slug: string; wante
       else await call(deprecateConceptRoute, { response: DeprecateConceptResponse }, undefined, { slug, path: selected.path });
       // the list is read again, so a change the server made shows in the icon; nothing is claimed here that the list does not show
       q.reload();
+      later.current.forEach((t) => window.clearTimeout(t));
+      later.current = [800, 2000, 4500].map((ms) => window.setTimeout(q.reload, ms));
     } catch {
       setSaid({ tone: 'bad', text: kind === 'confirm' ? 'It could not be marked as reviewed. Try again.' : 'It could not be marked as deprecated. Try again.' });
     } finally {
