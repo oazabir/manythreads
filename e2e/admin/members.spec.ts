@@ -42,10 +42,10 @@ test('search, row menu change role, invite people', async ({ browser, playwright
     await search.fill('');
     await expect(rows).toHaveCount(7);
 
-    // the row menu: two items, Escape closes it and gives focus back; there is no way to remove a person here
+    // the row menu: four items, Escape closes it and gives focus back; there is no way to remove a person here
     const rafiMenu = page.getByRole('button', { name: 'Options for Rafi' });
     await rafiMenu.click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Deactivate']);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(rafiMenu).toBeFocused();
