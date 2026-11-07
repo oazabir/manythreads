@@ -479,6 +479,29 @@ describe('classify: the one completion the platform makes for itself (the gate\'
     expect(ledger).toEqual([{ alias: 'local', prompt_tokens: 12, completion_tokens: 7, cost: 0, run_id: RUN, session_id: RUN }]);
   });
 
+  it('evalComplete answers for a bot with no team (the workspace Brain): the call goes out and the ledger line carries no team and the caller\'s session', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-teamless'));
+    const session = `person:${omar.personId}`;
+    const result = await sys((tx) =>
+      gateway.evalComplete(tx as unknown as PluginTx, {
+        workspaceId: omar.workspaceId,
+        botId,
+        teamId: null,
+        runId: session,
+        alias: 'local',
+        system: 'Reply with JSON.',
+        user: 'every weekday at 7, list what needs a reply',
+        maxTokens: 50,
+        purpose: 'routine_draft',
+      }),
+    );
+    expect(result).toMatchObject({ ok: true, text: 'NO' });
+    const ledger = await sys(async (tx) =>
+      (await tx.query<Record<string, unknown>>(`SELECT team_id, session_id, purpose FROM app.llm_spend WHERE bot_id = $1`, [botId])).rows,
+    );
+    expect(ledger).toEqual([{ team_id: null, session_id: session, purpose: 'routine_draft' }]);
+  });
+
   it('sends the redacted text under standard, and refuses outright under customer-facing (nothing is sent either way unredacted)', async () => {
     const botId = await sys((tx) => makeBot(tx, 'complete-dlp'));
     const key = `sk-${'q'.repeat(24)}`;

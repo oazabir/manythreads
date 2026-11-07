@@ -25,7 +25,7 @@ export interface DraftOutcome {
 interface DraftDoor extends ProviderImpl {
   evalComplete(
     tx: PluginTx,
-    request: { workspaceId: string; botId: string; teamId: string; runId: string; alias: string; system: string; user: string; maxTokens: number; timeoutMs?: number; purpose: 'routine_draft' },
+    request: { workspaceId: string; botId: string; teamId: string | null; runId: string; alias: string; system: string; user: string; maxTokens: number; timeoutMs?: number; purpose: 'routine_draft' },
   ): Promise<{ ok: true; text: string } | { ok: false; reason: string; detail: string }>;
 }
 
@@ -102,7 +102,7 @@ function jsonOf(text: string): unknown {
 
 export async function draftRoutine(
   ctx: PluginContext,
-  input: { sentence: string; timeZone: string; botSlug: string; botId: string | null; teamId: string | null; workspaceId: string; takenSlugs: ReadonlySet<string>; now: Date },
+  input: { sentence: string; timeZone: string; botSlug: string; botId: string | null; teamId: string | null; personId: string; workspaceId: string; takenSlugs: ReadonlySet<string>; now: Date },
 ): Promise<DraftOutcome> {
   const notes: string[] = [];
   const sentence = input.sentence.trim().replace(/\s+/g, ' ');
@@ -133,15 +133,16 @@ export async function draftRoutine(
   let by: 'brain' | 'rules' = 'rules';
 
   const door = ctx.providers.get<DraftDoor>('llm');
-  if (door && input.botId !== null && input.teamId !== null) {
+  // A bot with no team (the workspace Brain) is asked all the same: its call is metered on the person (no team, the person's own session key), not skipped.
+  if (door && input.botId !== null) {
     try {
       const answer = await ctx.db.system(
         (sys) =>
           door.evalComplete(sys, {
             workspaceId: input.workspaceId,
             botId: input.botId as string,
-            teamId: input.teamId as string,
-            runId: input.botId as string,
+            teamId: input.teamId,
+            runId: `person:${input.personId}`,
             alias: 'fast',
             system: SYSTEM,
             user: `Sentence: ${sentence}`,

@@ -359,6 +359,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
         botSlug: bot?.slug ?? 'brain',
         botId: bot?.id ?? null,
         teamId: bot?.team_id ?? null,
+        personId: member.personId,
         workspaceId: member.workspaceId,
         takenSlugs: taken,
         now: now(),

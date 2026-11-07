@@ -16,8 +16,9 @@ import { loadEgress, preflight, recordSpend, type LlmCallDecision, type RateHit 
 export interface LlmEvalRequest {
   workspaceId: string;
   botId: string;
-  teamId: string;
-  /** The eval run this is for: the ledger attributes the call to it. */
+  /** Null for a bot that belongs to no team (the workspace Brain): the team budgets then do not apply and the ledger line carries no team. */
+  teamId: string | null;
+  /** The eval run this is for: the ledger attributes the call to it (as its session). A call made for a person with no run uses `person:<person id>`, so a session budget meters that person's calls together. */
   runId: string;
   /** The alias the bot's definition asks for first. */
   alias: string;
