@@ -7,6 +7,7 @@ import { SettingsFrame } from './components/frames';
 import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/states';
 import { DevTokens } from './pages/DevTokens';
 import { AccountIndex } from './screens/account/AccountIndex';
+import { BotConsents as AccountBotConsents } from './screens/account/BotConsents';
 import { Notifications as AccountNotifications } from './screens/account/Notifications';
 import { Profile as AccountProfile } from './screens/account/Profile';
 import { Security as AccountSecurity } from './screens/account/Security';
@@ -55,6 +56,7 @@ import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 // developer page: its viewers load on demand, not with the app
 // the Files screen carries the viewers' host: it loads when Files is opened
 const FilesScreen = lazy(() => import('./screens/files/FilesScreen').then((m) => ({ default: m.FilesScreen })));
+const KnowledgeScreen = lazy(() => import('./screens/knowledge/KnowledgeScreen').then((m) => ({ default: m.KnowledgeScreen })));
 const MemoryScreen = lazy(() => import('./screens/memory/MemoryScreen').then((m) => ({ default: m.MemoryScreen })));
 const DevSpeech = lazy(() => import('./pages/DevSpeech').then((m) => ({ default: m.DevSpeech })));
 const DevViewers = lazy(() => import('./pages/DevViewers').then((m) => ({ default: m.DevViewers })));
@@ -113,6 +115,9 @@ function AppRoutes() {
               <Route path="/files/person/:personId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense>} />
             </Route>
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
+            <Route path="/memory" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense>} />
+            <Route path="/knowledge" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><KnowledgeScreen /></Suspense>} />
+            <Route path="/t/:team/knowledge" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><KnowledgeScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/memory" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/boards" element={<RequireTeam><BoardsScreen /></RequireTeam>} />
             <Route path="/t/:team/org" element={<RequireTeam><OrgScreen /></RequireTeam>} />
@@ -144,6 +149,7 @@ function AppRoutes() {
             <Route path="/account/notifications" element={<AccountNotifications />} />
             <Route path="/account/connections" element={<AccountConnections />} />
             <Route path="/account/security" element={<AccountSecurity />} />
+            <Route path="/account/bots" element={<AccountBotConsents />} />
             <Route element={<AdminOnly />}>
               <Route path="/onboarding" element={<Onboarding />} />
             </Route>

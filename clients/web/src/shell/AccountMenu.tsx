@@ -76,6 +76,8 @@ export function AccountMenu() {
               <Link role="menuitem" className="menu-item" to="/account/notifications#status-and-dnd" onClick={() => setOpen(false)}>Do not disturb settings</Link>
             </>
           ) : null}
+          {guest ? null : <Link role="menuitem" className="menu-item" to="/memory" data-testid="menu-my-memory" onClick={() => setOpen(false)}>Your memory</Link>}
+          {guest ? null : <Link role="menuitem" className="menu-item" to="/knowledge" data-testid="menu-my-knowledge" onClick={() => setOpen(false)}>Your knowledge</Link>}
           {guest ? null : <Link role="menuitem" className="menu-item" to="/teams" onClick={() => setOpen(false)}>Teams</Link>}
           {isAdmin(session) ? <Link role="menuitem" className="menu-item" to="/settings/workspace/general" onClick={() => setOpen(false)}>Settings</Link> : null}
           <div className="menu-sep" role="separator" />

@@ -127,6 +127,7 @@ export function SettingsFrame() {
         { to: '/account/notifications', label: 'Notifications', icon: BellIcon },
         { to: '/account/connections', label: 'Connections', icon: HookIcon },
         { to: '/account/security', label: 'Security', icon: SettingsSecurityIcon },
+        ...(session.role === 'guest' ? [] : [{ to: '/account/bots', label: 'Bots and Personal', icon: SettingsMemoryIcon }]),
       ],
     },
   ];
