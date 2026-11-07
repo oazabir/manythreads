@@ -285,8 +285,12 @@ test('at 390 px the details menu shows every item fully, and a 44-character name
     expect(labels.join('|')).toMatch(/Members/i);
     expect(labels.join('|')).toMatch(/hdr-x/);
     const name = page.locator('[data-landmark="header"] .chd-name');
-    const cut = await name.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
-    expect(cut.scroll, 'the long name is cut with an ellipsis').toBeGreaterThan(cut.client);
+    // P21-23 (B13): on a phone the name wraps (at most two lines) and is never cut with an ellipsis
+    const shape = await name.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight) }));
+    expect(shape.scroll, 'the long name is not cut').toBeLessThanOrEqual(shape.client + 1);
+    // (a 44-character name with no space in it may take a third line: the bottom-bar spec holds the two-line rule for a 38-character name)
+    expect(shape.height, 'the long name takes three lines at the most').toBeLessThanOrEqual(shape.line * 3 + 2);
+    await expect(name).toHaveText(`#${longName}`);
     expect(await noSidewaysScroll(page)).toBe(true);
     await button(page).click();
     await expect(details(page)).toBeVisible();

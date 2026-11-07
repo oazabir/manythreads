@@ -233,7 +233,12 @@ test('at 390 px the picker with its groups stays inside the screen and no row is
         const pb = (await el.first().boundingBox())!;
         expect(pb.x, `${label} ${part}`).toBeGreaterThanOrEqual(rb.x - 1);
         expect(pb.x + pb.width, `${label} ${part}`).toBeLessThanOrEqual(Math.min(rb.x + rb.width, PHONE.width) + 1);
-        expect(await el.first().evaluate((n) => n.scrollWidth <= n.clientWidth + 1), `${label} ${part}: text cut`).toBe(true);
+        // P21-04: a long name ends with an ellipsis on its own line; the handle, the badge and the count are never cut
+        if (part === '.pk-name') {
+          expect(await el.first().evaluate((n) => n.scrollWidth <= n.clientWidth + 1 || getComputedStyle(n).textOverflow === 'ellipsis'), `${label} ${part}: cut without an ellipsis`).toBe(true);
+        } else {
+          expect(await el.first().evaluate((n) => n.scrollWidth <= n.clientWidth + 1), `${label} ${part}: text cut`).toBe(true);
+        }
       }
     }
     // the group row says what it is and how many

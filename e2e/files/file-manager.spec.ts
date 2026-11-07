@@ -182,6 +182,8 @@ test('the bar moves several files at once and then deletes them, each step askin
     expect((await treeOf(api, 'Meetings')).map((e) => e.name).sort()).toEqual(['alpha.md', 'gamma.txt']);
 
     await page.goto(`${stack.origin}/files?path=Meetings`);
+    // the head row is drawn (and its box disabled) while the list loads: tick it once the rows are there
+    await expect(page.getByTestId('file-row')).toHaveCount(2);
     await page.getByTestId('select-all').check();
     await page.getByTestId('selection-delete').click();
     const del = page.getByTestId('dialog-delete');
