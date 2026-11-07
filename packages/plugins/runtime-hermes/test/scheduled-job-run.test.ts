@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ListMessagesResponse } from '@manythreads/shared';
-import { applyScheduledJobOverrides } from '../src/scheduled-job-run.ts';
+import { applyScheduledJobOverrides, writePersonalOutput } from '../src/scheduled-job-run.ts';
 import { buildScheduledJobPrompt } from '../src/router-scheduled-jobs.ts';
 import { buildPersonalRoutinePrompt } from '../src/router-personal-routines.ts';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -661,6 +661,34 @@ describe('the pieces', () => {
     const same = { frontmatter: { model: { aliases: ['smart'] } }, alias: 'smart' } as unknown as Parameters<typeof applyScheduledJobOverrides>[0];
     applyScheduledJobOverrides(same, { scheduledJobRunId: randomUuid(), kind: 'heartbeat', outputPath: null, outputMode: null, modelAlias: null, effort: null });
     expect(same.alias).toBe('smart');
+  });
+
+  it('a rewrite of the action items names the revision it checked, so a change made in between is not overwritten', async () => {
+    const seen: unknown[] = [];
+    const text = '# Action items\n\n- [ ] Send the report\n';
+    const provider = (current: { text: string; revision: string } | null, failWith?: Error) => ({
+      read: async () => current,
+      write: async (_tx: unknown, _person: string, _path: string, _text: string, options: unknown) => {
+        seen.push(options);
+        if (failWith) throw failWith;
+        return { file: {}, created: false, changed: true };
+      },
+    });
+    const ctxOf = (files: unknown) => ({ providers: { get: () => files } }) as unknown as Parameters<typeof writePersonalOutput>[0];
+    const run = { botActorId: 'bot-1' } as unknown as Parameters<typeof writePersonalOutput>[2];
+    const tx = {} as Parameters<typeof writePersonalOutput>[1];
+    expect(await writePersonalOutput(ctxOf(provider({ text, revision: 'r1' })), tx, run, 'p1', 'Action items/action-items.md', 'replace', text)).toEqual({ ok: true });
+    expect(seen[0]).toMatchObject({ expectedRevision: 'r1', authorActorId: 'bot-1' });
+    // a list that does not exist yet is expected not to exist
+    await writePersonalOutput(ctxOf(provider(null)), tx, run, 'p1', 'Action items/action-items.md', 'replace', text);
+    expect(seen[1]).toMatchObject({ expectedRevision: null });
+    // another file is not checked this way
+    await writePersonalOutput(ctxOf(provider(null)), tx, run, 'p1', 'Routines/a/output.md', 'replace', 'x');
+    expect(seen[2]).not.toHaveProperty('expectedRevision');
+    // a stale save is a failed firing with a sentence, not an overwrite
+    const stale = Object.assign(new Error('The file changed since you read it'), { status: 409 });
+    const refused = await writePersonalOutput(ctxOf(provider({ text, revision: 'r1' }, stale)), tx, run, 'p1', 'Action items/action-items.md', 'replace', text);
+    expect(refused).toMatchObject({ ok: false });
   });
 
   it('the prompts: a routine says where its output goes, a task names its card, a heartbeat may stay quiet', () => {

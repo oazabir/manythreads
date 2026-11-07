@@ -193,12 +193,15 @@ export async function writePersonalOutput(
   if (path.split('/')[0] === 'Memory') return { ok: false, reason: 'A routine does not write to Memory; the memory tool does.' };
   const content = reply.endsWith('\n') ? reply : `${reply}\n`;
   try {
+    // the list that was checked is the list that is replaced: a person's edit between the read and the save makes the save refuse (409) instead of being overwritten
+    let expectedRevision: string | null | undefined;
     if (path === ACTION_ITEMS_PATH) {
       const current = await files.read(tx, ownerPersonId, path);
       const problems = reviewActionItemsRewrite(current?.text ?? '', mode === 'append' ? `${current?.text ?? ''}${content}` : content);
       if (problems.length > 0) return { ok: false, reason: clip(`The action items were not changed. ${problems[0]}`, 400) };
+      expectedRevision = current?.revision ?? null;
     }
-    await files.write(tx, ownerPersonId, path, content, { mode, authorActorId: run.botActorId });
+    await files.write(tx, ownerPersonId, path, content, { mode, authorActorId: run.botActorId, ...(expectedRevision !== undefined ? { expectedRevision } : {}) });
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: clip(err instanceof Error ? `The output could not be saved: ${err.message}` : 'The output could not be saved.', 400) };
