@@ -1355,12 +1355,27 @@
   cursor: pointer;
 }
 
+  flex: none;
 .picker li.on,
 .picker li:hover {
   background: var(--nav-on);
 }
 
 .picker small {
+/* a long name is cut with an ellipsis on its own line and never pushes the handle, the badge or the dot out of the row (P21-04) */
+.picker li > * {
+  flex-shrink: 0;
+}
+
+.picker li .pk-name {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
   margin-left: auto;
   color: var(--faint);
   font-family: var(--mono);
