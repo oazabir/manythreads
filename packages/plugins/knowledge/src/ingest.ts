@@ -12,10 +12,16 @@ import { DOC_COLUMNS, DOC_FROM, repoFolderOf, type DocRow } from './rows.ts';
 
 export interface BaseRef {
   id: string;
-  teamId: string;
+  /** The team the base belongs to; null for a person's own base (then `ownerPersonId` is set). */
+  teamId: string | null;
+  /** The person a Personal base belongs to; null for a team's base. */
+  ownerPersonId?: string | null;
   workspaceId: string;
   slug: string;
 }
+
+/** A base that belongs to a team: the only kind that has a repo folder and a reading rhythm. */
+export type TeamBaseRef = BaseRef & { teamId: string };
 
 /** What a document's kind column holds: the kinds of file a person can upload. A web page is read as `html` and stored as `markdown`. */
 export type DocumentKind = 'markdown' | 'text' | 'csv' | 'pdf';
@@ -117,15 +123,15 @@ export async function findDocument(tx: PluginTx, baseId: string, by: { name: str
   return res.rows[0];
 }
 
-async function insertChunks(tx: PluginTx, doc: { id: string; base_id: string; team_id: string }, version: number, chunks: ReturnType<typeof chunkText>['chunks']): Promise<void> {
+async function insertChunks(tx: PluginTx, doc: { id: string; base_id: string; team_id: string | null; owner_person_id: string | null }, version: number, chunks: ReturnType<typeof chunkText>['chunks']): Promise<void> {
   const BATCH = 200;
   for (let i = 0; i < chunks.length; i += BATCH) {
     const part = chunks.slice(i, i + BATCH);
     await tx.query(
-      `INSERT INTO app.knowledge_chunks (document_id, base_id, team_id, ordinal, version, text, section, char_start, char_end)
-       SELECT $1, $2, $3, u.o, $4, u.t, u.s, u.a, u.b
+      `INSERT INTO app.knowledge_chunks (document_id, base_id, team_id, owner_person_id, ordinal, version, text, section, char_start, char_end)
+       SELECT $1, $2, $3, $10, u.o, $4, u.t, u.s, u.a, u.b
          FROM unnest($5::int[], $6::text[], $7::text[], $8::int[], $9::int[]) AS u(o, t, s, a, b)`,
-      [doc.id, doc.base_id, doc.team_id, version, part.map((c) => c.ordinal), part.map((c) => c.text), part.map((c) => c.section), part.map((c) => c.start), part.map((c) => c.end)],
+      [doc.id, doc.base_id, doc.team_id, version, part.map((c) => c.ordinal), part.map((c) => c.text), part.map((c) => c.section), part.map((c) => c.start), part.map((c) => c.end), doc.owner_person_id],
     );
   }
 }
@@ -174,8 +180,9 @@ async function writeRepo(
   message: string,
 ): Promise<{ blobShas: Map<string, string | null> } | null> {
   const repo = ctx.providers.get<RepoProvider>('repo');
-  if (!repo) return null;
-  const written = await attempt(tx, () => repo.write(tx, base.teamId, { id: tx.actor.id, kind: tx.actor.kind }, changes, message));
+  const teamId = base.teamId;
+  if (!repo || teamId === null) return null;
+  const written = await attempt(tx, () => repo.write(tx, teamId, { id: tx.actor.id, kind: tx.actor.kind }, changes, message));
   if (!written.ok) return null;
   return { blobShas: new Map(written.value.paths.map((p) => [p.path, p.blobSha])) };
 }
@@ -187,7 +194,7 @@ async function writeRepo(
 async function freeRepoPath(ctx: PluginContext, tx: PluginTx, base: BaseRef, slug: string): Promise<string> {
   const folder = repoFolderOf(base.slug);
   const repo = ctx.providers.get<RepoProvider>('repo');
-  if (!repo) return `${folder}/${slug}.md`;
+  if (!repo || base.teamId === null) return `${folder}/${slug}.md`;
   let taken: Set<string>;
   try {
     taken = new Set((await repo.list(tx, base.teamId, folder)).map((e) => e.path));
@@ -203,6 +210,7 @@ async function freeRepoPath(ctx: PluginContext, tx: PluginTx, base: BaseRef, slu
 
 /** Rebuilds `sources.yaml` and deletes a document's converted file (a removed document). Failures are ignored: the index is the truth. */
 export async function removeFromRepo(ctx: PluginContext, tx: PluginTx, base: BaseRef, repoPath: string | null): Promise<void> {
+  if (base.teamId === null) return;
   const changes: Array<{ path: string; op: 'put'; content: string } | { path: string; op: 'delete' }> = [
     { path: `${repoFolderOf(base.slug)}/sources.yaml`, op: 'put', content: await sourcesYaml(tx, base.id) },
   ];
@@ -211,6 +219,20 @@ export async function removeFromRepo(ctx: PluginContext, tx: PluginTx, base: Bas
 }
 
 async function emitAdded(ctx: PluginContext, tx: PluginTx, base: BaseRef, doc: DocRow, replaced: boolean): Promise<void> {
+  if (base.teamId === null) {
+    // a person's own base has its own event: ids and counts only
+    const count = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.knowledge_documents WHERE base_id = $1', [base.id])).rows[0]?.n ?? 0;
+    await ctx.audit.emit(tx, {
+      type: 'knowledge.personal_base.changed',
+      workspaceId: base.workspaceId,
+      personId: base.ownerPersonId,
+      baseId: base.id,
+      change: 'document_added',
+      documents: count,
+      at: ctx.runtime.now().toISOString(),
+    });
+    return;
+  }
   await ctx.audit.emit(tx, {
     type: 'knowledge.document.added',
     workspaceId: base.workspaceId,
@@ -288,9 +310,9 @@ export async function ingest(ctx: PluginContext, tx: PluginTx, base: BaseRef, fi
     const slug = await slugFor(tx, base.id, file.name, null);
     const inserted = (
       await tx.query<{ id: string }>(
-        `INSERT INTO app.knowledge_documents (base_id, team_id, source_id, name, slug, kind, size, sha256, status, reason, blob_key, repo_path, repo_sha, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'failed', $9, $10, $11, $12, $13) RETURNING id`,
-        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, reason.slice(0, 400), file.blobKey, file.repoPath ?? null, file.repoSha ?? null, actorOrNull(tx)],
+        `INSERT INTO app.knowledge_documents (base_id, team_id, owner_person_id, source_id, name, slug, kind, size, sha256, status, reason, blob_key, repo_path, repo_sha, created_by)
+         VALUES ($1, $2, $14, $3, $4, $5, $6, $7, $8, 'failed', $9, $10, $11, $12, $13) RETURNING id`,
+        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, reason.slice(0, 400), file.blobKey, file.repoPath ?? null, file.repoSha ?? null, actorOrNull(tx), base.ownerPersonId ?? null],
       )
     ).rows[0] as { id: string };
     const row = (await findDocument(tx, base.id, { id: inserted.id })) as DocRow;
@@ -317,18 +339,20 @@ export async function ingest(ctx: PluginContext, tx: PluginTx, base: BaseRef, fi
     const slug = await slugFor(tx, base.id, file.name, null);
     docId = (
       await tx.query<{ id: string }>(
-        `INSERT INTO app.knowledge_documents (base_id, team_id, source_id, name, slug, kind, size, sha256, version, status, blob_key, repo_path, repo_sha, chunk_count, indexed_at, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, 'indexed', $9, $10, $11, $12, now(), $13) RETURNING id`,
-        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, file.blobKey, file.repoPath ?? null, file.repoSha ?? null, chunked.chunks.length, actorOrNull(tx)],
+        `INSERT INTO app.knowledge_documents (base_id, team_id, owner_person_id, source_id, name, slug, kind, size, sha256, version, status, blob_key, repo_path, repo_sha, chunk_count, indexed_at, created_by)
+         VALUES ($1, $2, $14, $3, $4, $5, $6, $7, $8, 1, 'indexed', $9, $10, $11, $12, now(), $13) RETURNING id`,
+        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, file.blobKey, file.repoPath ?? null, file.repoSha ?? null, chunked.chunks.length, actorOrNull(tx), base.ownerPersonId ?? null],
       )
     ).rows[0]!.id;
   }
-  await insertChunks(tx, { id: docId, base_id: base.id, team_id: base.teamId }, version, chunked.chunks);
+  await insertChunks(tx, { id: docId, base_id: base.id, team_id: base.teamId, owner_person_id: base.ownerPersonId ?? null }, version, chunked.chunks);
   await tx.query('DELETE FROM app.knowledge_chunks WHERE document_id = $1 AND version <= $2', [docId, version - KEEP_VERSIONS]);
 
   // The converted copy in the team repo (an uploaded file; a repo file already is one). It is a convenience: a refusal is noted, not fatal.
   let doc = (await findDocument(tx, base.id, { id: docId })) as DocRow;
-  if (file.source !== 'repo') {
+  if (base.teamId === null) {
+    // a person's base keeps no copy in any repo: the original is in blob storage and the passages are in the index
+  } else if (file.source !== 'repo') {
     const path = doc.repo_path ?? (await freeRepoPath(ctx, tx, base, doc.slug));
     const content = convertedFile(file.name, file.source, file.sha256, version, extracted.text);
     if (Buffer.byteLength(content) > REPO_COPY_MAX_BYTES) {

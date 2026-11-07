@@ -2,7 +2,7 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { backfillEmbeddings, embedderOf } from './embed.ts';
 import { GAPS_QUEUE, postGaps } from './gaps.ts';
 import { maxExtractBytes } from './extract/index.ts';
-import type { BaseRef } from './ingest.ts';
+import type { TeamBaseRef } from './ingest.ts';
 import { SOURCE_COLUMNS, type SourceRow } from './rows.ts';
 import { resyncBase } from './sync.ts';
 import { syncUrlSource } from './web.ts';
@@ -30,7 +30,7 @@ export async function syncDueSources(ctx: PluginContext, tx: PluginTx, workspace
     await tx.query<DueRow>(
       `SELECT ${SOURCE_COLUMNS}, s.team_id, b.workspace_id, b.slug AS base_slug
          FROM app.knowledge_sources s JOIN app.knowledge_bases b ON b.id = s.base_id
-        WHERE s.sync_minutes IS NOT NULL AND b.workspace_id = $2
+        WHERE s.sync_minutes IS NOT NULL AND s.team_id IS NOT NULL AND b.workspace_id = $2
           AND (s.last_synced_at IS NULL OR s.last_synced_at + make_interval(mins => s.sync_minutes) <= now())
         ORDER BY s.last_synced_at NULLS FIRST, s.id
         LIMIT $1 FOR UPDATE OF s SKIP LOCKED`,
@@ -41,7 +41,7 @@ export async function syncDueSources(ctx: PluginContext, tx: PluginTx, workspace
   const readBases = new Set<string>();
   let read = 0;
   for (const source of due) {
-    const base: BaseRef = { id: source.base_id, teamId: source.team_id, workspaceId: source.workspace_id, slug: source.base_slug };
+    const base: TeamBaseRef = { id: source.base_id, teamId: source.team_id, workspaceId: source.workspace_id, slug: source.base_slug };
     if (source.kind === 'url') {
       await syncUrlSource(ctx, tx, base, source);
     } else {

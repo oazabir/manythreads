@@ -1,6 +1,6 @@
 import type { BlobStorage, PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
 import type { KnowledgeResyncResult } from '@manythreads/shared';
-import { bodyOfConverted, findDocument, ingest, kindOfName, lockBase, removeFromRepo, sha256Hex, type BaseRef } from './ingest.ts';
+import { bodyOfConverted, findDocument, ingest, kindOfName, lockBase, removeFromRepo, sha256Hex, type TeamBaseRef } from './ingest.ts';
 import { DOC_COLUMNS, DOC_FROM, repoFolderOf, SOURCE_COLUMNS, type DocRow, type SourceRow } from './rows.ts';
 import { syncUrlSource } from './web.ts';
 
@@ -37,7 +37,7 @@ export interface ResyncOptions {
   urls: boolean;
 }
 
-export async function resyncBase(ctx: PluginContext, tx: PluginTx, base: BaseRef, maxBytes: number, options: ResyncOptions = { urls: true }): Promise<KnowledgeResyncResult> {
+export async function resyncBase(ctx: PluginContext, tx: PluginTx, base: TeamBaseRef, maxBytes: number, options: ResyncOptions = { urls: true }): Promise<KnowledgeResyncResult> {
   await lockBase(tx, base.id);
   const counts = { checked: 0, unchanged: 0, updated: 0, added: 0, removed: 0, failed: 0 };
   const repo = ctx.providers.get<RepoProvider>('repo');

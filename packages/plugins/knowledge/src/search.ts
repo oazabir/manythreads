@@ -43,6 +43,8 @@ type HitRow = {
   current_version: number;
   repo_path: string | null;
   base_slug: string;
+  team_id: string | null;
+  owner_person_id: string | null;
   rank: number;
 }
 
@@ -51,7 +53,7 @@ const HIT_FROM = `
   JOIN app.knowledge_documents d ON d.id = c.document_id
   JOIN app.knowledge_bases b ON b.id = c.base_id`;
 const HIT_COLUMNS = `c.id, c.version, c.section, c.char_start, c.char_end, c.text, d.id AS document_id, d.name AS document_name, d.kind AS document_kind,
-  d.version AS current_version, d.repo_path, b.slug AS base_slug`;
+  d.version AS current_version, d.repo_path, b.slug AS base_slug, c.team_id, c.owner_person_id`;
 
 function toHit(row: HitRow, score: number): KnowledgeHit {
   return KnowledgeHit.parse({
@@ -69,12 +71,16 @@ function toHit(row: HitRow, score: number): KnowledgeHit {
     text: row.text,
     score: Math.round(Math.min(1, Math.max(0, score)) * 1000) / 1000,
     repoPath: row.repo_path,
+    space: row.owner_person_id ? `person:${row.owner_person_id}` : row.team_id ? `team:${row.team_id}` : undefined,
   });
 }
 
 export interface SearchOptions {
-  teamId: string;
-  /** Only these bases (by slug); null for every base of the team. */
+  /** The teams to look in. */
+  teamIds: readonly string[];
+  /** A person whose own bases to look in as well (the asker, when their Personal space is open to the caller); null for none. */
+  personId?: string | null;
+  /** Only these bases (by slug); null for every base. */
   baseSlugs: readonly string[] | null;
   query: string;
   limit: number;
@@ -86,11 +92,11 @@ async function vectorSearch(tx: PluginTx, options: SearchOptions, queryVector: s
   if (slugs !== null && slugs.length === 0) return [];
   const res = await tx.query<HitRow & { sim: number }>(
     `SELECT ${HIT_COLUMNS}, 0::float8 AS rank, (1 - (c.embedding <=> $1::vector))::float8 AS sim ${HIT_FROM}
-      WHERE c.team_id = $2 AND d.status = 'indexed' AND c.version = d.version AND c.embedding IS NOT NULL
+      WHERE (c.team_id = ANY ($2::uuid[]) OR ($5::uuid IS NOT NULL AND c.owner_person_id = $5::uuid)) AND d.status = 'indexed' AND c.version = d.version AND c.embedding IS NOT NULL
         AND ($3::text[] IS NULL OR b.slug = ANY ($3))
       ORDER BY c.embedding <=> $1::vector, c.id
       LIMIT $4`,
-    [queryVector, options.teamId, slugs, options.limit],
+    [queryVector, [...options.teamIds], slugs, options.limit, options.personId ?? null],
   );
   return res.rows.filter((row) => row.sim >= MIN_SIMILARITY).map((row) => toHit(row, row.sim));
 }
@@ -132,11 +138,11 @@ async function searchByWords(tx: PluginTx, options: SearchOptions): Promise<Know
     const res = await tx.query<HitRow>(
       `SELECT ${HIT_COLUMNS}, ts_rank_cd(c.tsv, q.tsq)::float8 AS rank ${HIT_FROM}
          CROSS JOIN (SELECT to_tsquery('simple', $1) AS tsq) q
-        WHERE c.team_id = $2 AND d.status = 'indexed' AND c.version = d.version AND c.tsv @@ q.tsq
+        WHERE (c.team_id = ANY ($2::uuid[]) OR ($5::uuid IS NOT NULL AND c.owner_person_id = $5::uuid)) AND d.status = 'indexed' AND c.version = d.version AND c.tsv @@ q.tsq
           AND ($3::text[] IS NULL OR b.slug = ANY ($3))
         ORDER BY rank DESC, c.id
         LIMIT $4`,
-      [tsquery, options.teamId, slugs, Math.max(options.limit * 5, 20)],
+      [tsquery, [...options.teamIds], slugs, Math.max(options.limit * 5, 20), options.personId ?? null],
     );
     const scored = res.rows
       .map((row) => {
@@ -157,11 +163,11 @@ async function searchByWords(tx: PluginTx, options: SearchOptions): Promise<Know
   const query = options.query.trim().slice(0, 200);
   const tolerant = await tx.query<HitRow & { sim: number }>(
     `SELECT ${HIT_COLUMNS}, 0::float8 AS rank, word_similarity($1, c.text)::float8 AS sim ${HIT_FROM}
-      WHERE c.team_id = $2 AND d.status = 'indexed' AND c.version = d.version AND $1 <% c.text
+      WHERE (c.team_id = ANY ($2::uuid[]) OR ($5::uuid IS NOT NULL AND c.owner_person_id = $5::uuid)) AND d.status = 'indexed' AND c.version = d.version AND $1 <% c.text
         AND ($3::text[] IS NULL OR b.slug = ANY ($3))
       ORDER BY sim DESC, c.id
       LIMIT $4`,
-    [query, options.teamId, slugs, options.limit],
+    [query, [...options.teamIds], slugs, options.limit, options.personId ?? null],
   );
   return tolerant.rows.map((row) => toHit(row, row.sim * 0.8));
 }

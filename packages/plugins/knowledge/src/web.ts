@@ -1,6 +1,6 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { safeFetch, SafeFetchError, type SafeFetchDeps, type SafeFetchErrorCode } from '@manythreads/sdk/safe-fetch';
-import { findDocument, ingest, sha256Hex, type BaseRef, type DocumentKind, type IngestResult } from './ingest.ts';
+import { findDocument, ingest, sha256Hex, type TeamBaseRef, type DocumentKind, type IngestResult } from './ingest.ts';
 import { extractText, ExtractError, maxExtractBytes } from './extract/index.ts';
 import { DOC_COLUMNS, DOC_FROM, type DocRow, type SourceRow } from './rows.ts';
 
@@ -128,7 +128,7 @@ export type UrlSyncOutcome = IngestResult['outcome'] | 'error';
  * Reads a `url` source once and moves its document: unchanged text changes nothing, new text is the next version (the old passages stay for citations),
  * a page that cannot be read leaves the last good version in use and puts the reason on the source (which makes the base ask for attention).
  */
-export async function syncUrlSource(ctx: PluginContext, tx: PluginTx, base: BaseRef, source: SourceRow): Promise<{ outcome: UrlSyncOutcome; blobsToDelete: string[] }> {
+export async function syncUrlSource(ctx: PluginContext, tx: PluginTx, base: TeamBaseRef, source: SourceRow): Promise<{ outcome: UrlSyncOutcome; blobsToDelete: string[] }> {
   const at = ctx.runtime.now();
   const fail = async (reason: string): Promise<{ outcome: UrlSyncOutcome; blobsToDelete: string[] }> => {
     await tx.query('UPDATE app.knowledge_sources SET last_synced_at = $2, error = $3 WHERE id = $1', [source.id, at, reason.slice(0, 400)]);

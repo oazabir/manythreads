@@ -46,6 +46,17 @@ export async function runScope(tx: PluginTx): Promise<RunScope | null> {
 const citationOf = (h: KnowledgeHit): string =>
   `${h.documentName}, version ${h.version}${h.section ? `, ${h.section}` : ''}${h.sourceChanged ? ' (the source has changed since)' : ''}`;
 
+/** What the calling run may read, from the database (`app.run_space_context()`); null when the transaction carries no live run. */
+export async function spacesOfRun(tx: PluginTx): Promise<{ audience: 'personal' | 'team'; personId: string | null; teamIds: string[] } | null> {
+  const row = (
+    await tx.query<{ audience: string; asker_person_id: string | null; personal_allowed: boolean; team_ids: string[] }>(
+      'SELECT audience, asker_person_id, personal_allowed, team_ids FROM app.run_space_context()',
+    )
+  ).rows[0];
+  if (!row) return null;
+  return { audience: row.audience === 'personal' ? 'personal' : 'team', personId: row.personal_allowed ? row.asker_person_id : null, teamIds: row.team_ids };
+}
+
 /** The question as a vector, when the workspace has an embedding model and it answers; null otherwise (the search is then by words). */
 export async function queryVector(ctx: PluginContext, tx: PluginTx, query: string): Promise<string | null> {
   const embed = embedderOf(ctx);
@@ -68,15 +79,29 @@ export async function knowledgeSearch(input: unknown, tx: PluginTx, ctx?: Plugin
   if (!parsed.success) return { ok: false, code: 'invalid_arguments', message: parsed.error.issues.map((i) => `${i.path.join('.') || 'query'}: ${i.message}`).join('; ') };
   const args = parsed.data;
   const scope = await runScope(tx);
-  const teamId = scope?.teamId ?? args.teamId;
-  if (!teamId) return { ok: false, code: 'needs_team', message: 'Say which team to look in.' };
-  if (scope && args.teamId && args.teamId !== scope.teamId) {
-    return { ok: false, code: 'other_team', message: 'A bot looks only in its own team’s knowledge.' };
+  // What the run may read comes from the database (bots 0026), never from the arguments: a private context reads the asker's Personal bases (when the
+  // asker and the bot allow it) and every team the asker can read; any other context reads its own team's bases.
+  // A run the database does not recognise as the caller's (no space answer) is confined to its bot's own team, as before spaces existed.
+  const spaces = scope ? ((await spacesOfRun(tx)) ?? { audience: 'team' as const, personId: null, teamIds: [scope.teamId] }) : null;
+  let teamIds: string[];
+  let personId: string | null = null;
+  if (!scope || !spaces) {
+    if (!args.teamId) return { ok: false, code: 'needs_team', message: 'Say which team to look in.' };
+    teamIds = [args.teamId];
+  } else if (args.teamId) {
+    if (!spaces.teamIds.includes(args.teamId)) return { ok: false, code: 'other_space', message: 'You can look only in the places this conversation may read. That team is not one of them.' };
+    teamIds = [args.teamId];
+  } else if (scope.baseSlugs !== null) {
+    // a bot with a list of bases looks in those bases of its own team and nowhere else: the list is its authority
+    teamIds = [scope.teamId];
+  } else {
+    teamIds = spaces.audience === 'personal' ? spaces.teamIds : [scope.teamId];
+    personId = spaces.personId;
   }
   let baseSlugs = scope?.baseSlugs ?? null;
   if (args.base) baseSlugs = baseSlugs === null ? [args.base] : baseSlugs.filter((b) => b === args.base);
   const vector = ctx ? await queryVector(ctx, tx, args.query) : null;
-  const hits = await searchKnowledge(tx, { teamId, baseSlugs, query: args.query, limit: args.limit }, vector);
+  const hits = await searchKnowledge(tx, { teamIds, personId, baseSlugs, query: args.query, limit: args.limit }, vector);
   const strict = scope?.answerOnlyFrom === true;
   // a bot that answers only from its bases and found nothing: the question goes to #kb-updates (PLAN P8-08)
   if (strict && hits.length === 0 && scope) await recordGap(tx, { teamId: scope.teamId, botId: scope.botId, query: args.query });
@@ -105,6 +130,7 @@ export async function knowledgeSearch(input: unknown, tx: PluginTx, ctx?: Plugin
       offsetEnd: h.offsetEnd,
       score: h.score,
       file: h.repoPath,
+      space: h.space,
       text: h.text,
     })),
   };

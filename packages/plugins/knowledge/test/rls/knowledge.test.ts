@@ -265,7 +265,7 @@ describe('knowledge tables keep their own rules', () => {
 
     it('finds a passage by meaning when the words do not match, only in the asker\'s team, and merges with the word search', async () => {
       await sys((tx) => tx.query("UPDATE app.knowledge_chunks SET embedding = CASE WHEN text LIKE 'Refunds%' THEN $1::vector ELSE $2::vector END", [literal(0), literal(1)]));
-      const opts = { teamId: ENG, baseSlugs: null, query: 'zzzz qqqq', limit: 3 } as const;
+      const opts = { teamIds: [ENG], baseSlugs: null, query: 'zzzz qqqq', limit: 3 } as const;
       const byWords = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, opts));
       expect(byWords).toEqual([]);
       const byMeaning = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, opts, literal(0)));
@@ -274,7 +274,7 @@ describe('knowledge tables keep their own rules', () => {
       const orthogonal = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, opts, literal(5)));
       expect(orthogonal).toEqual([]);
       // the other team's passages never appear for this reader, whatever the vector
-      expect((await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, { ...opts, teamId: MKT }, literal(0)))).length).toBe(0);
+      expect((await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, { ...opts, teamIds: [MKT] }, literal(0)))).length).toBe(0);
       // words and meaning together: the passage both lists hold comes first
       const both = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, { ...opts, query: 'shipping days' }, literal(0)));
       expect(both.map((h) => h.text)).toEqual(expect.arrayContaining(['Shipping takes two days.', 'Refunds are paid within 14 days.']));

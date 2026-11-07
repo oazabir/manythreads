@@ -1,10 +1,11 @@
-import { KnowledgeBase, KnowledgeDocument, KnowledgeSource, type KnowledgeDocumentKind } from '@manythreads/shared';
+import { KnowledgeBase, KnowledgeDocument, KnowledgeSource, PersonalKnowledgeBase, type KnowledgeDocumentKind } from '@manythreads/shared';
 
 // Database rows and how they become the API's shapes.
 
 export type BaseRow = {
   id: string;
-  team_id: string;
+  team_id: string | null;
+  owner_person_id: string | null;
   slug: string;
   name: string;
   status: 'empty' | 'ready' | 'attention';
@@ -18,7 +19,7 @@ export type BaseRow = {
 
 /** A base with its counts; `WHERE` and ordering are the caller's. Counts run under the caller's own row-level security. */
 export const BASE_SELECT = `
-  SELECT b.id, b.team_id, b.slug, b.name, b.status, b.created_at,
+  SELECT b.id, b.team_id, b.owner_person_id, b.slug, b.name, b.status, b.created_at,
          (SELECT count(*) FROM app.knowledge_documents d WHERE d.base_id = b.id)::int AS document_count,
          (SELECT count(*) FROM app.knowledge_documents d WHERE d.base_id = b.id AND d.status = 'indexed')::int AS indexed_count,
          (SELECT count(*) FROM app.knowledge_documents d WHERE d.base_id = b.id AND d.status = 'failed')::int AS failed_count,
@@ -29,6 +30,7 @@ export const BASE_SELECT = `
 export const repoFolderOf = (slug: string): string => `knowledge/${slug}`;
 
 export function toBase(row: BaseRow): KnowledgeBase {
+  if (row.team_id === null) throw new Error('toBase was given a base of a person; use toPersonalBase');
   return KnowledgeBase.parse({
     id: row.id,
     teamId: row.team_id,
@@ -45,10 +47,29 @@ export function toBase(row: BaseRow): KnowledgeBase {
   });
 }
 
+/** A base of a person, as the API shapes it: no team, no repo folder, and the space it lives in. */
+export function toPersonalBase(row: BaseRow): PersonalKnowledgeBase {
+  if (row.owner_person_id === null) throw new Error('toPersonalBase was given a base of a team');
+  return PersonalKnowledgeBase.parse({
+    id: row.id,
+    personId: row.owner_person_id,
+    space: `person:${row.owner_person_id}`,
+    slug: row.slug,
+    name: row.name,
+    state: row.status,
+    documentCount: row.document_count,
+    indexedCount: row.indexed_count,
+    failedCount: row.failed_count,
+    chunkCount: row.chunk_count,
+    lastIndexedAt: row.last_indexed_at ? row.last_indexed_at.toISOString() : null,
+    createdAt: row.created_at.toISOString(),
+  });
+}
+
 export type DocRow = {
   id: string;
   base_id: string;
-  team_id: string;
+  team_id: string | null;
   source_id: string;
   source_kind: 'upload' | 'repo' | 'url';
   name: string;

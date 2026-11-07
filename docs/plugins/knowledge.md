@@ -79,6 +79,24 @@ All under `/api/teams/:slug`, team members read, lead or admin writes:
 
 Uploads take a slot (two per person, four in the process) and have an idle and a total deadline. Rate limits are in the routes (30 uploads, 10 re-syncs, 60 searches a minute).
 
+## A person's own bases (Personal space)
+
+A person can keep knowledge bases of their own: documents only they (and the bots they allow) can search. A Personal base is one row set owned by a person instead of a team (migration `0004_personal_bases.sql`: `owner_person_id` beside `team_id` on the four tables, exactly one of the two set). The original stays in blob storage like a team's, but nothing is written to a team repo: `repo_path` stays empty, and there is no repo source. Row-level security (the database rule that decides which rows a caller sees) follows the shared space rule: the owner reads and writes; a workspace admin who holds a live, audited "open" of that person's space reads but never writes; nobody else sees a row, and a guest has no Personal space.
+
+Routes, all under `/api/me/knowledge` and acting as the signed-in person:
+
+| method | path | what |
+|---|---|---|
+| GET / POST | `/api/me/knowledge` | my bases / `{ slug, name? }` make one (`409` for a repeat or the cap) |
+| GET / DELETE | `/api/me/knowledge/:base` | one base with its documents / remove it with its documents and stored originals |
+| POST | `/api/me/knowledge/:base/documents?name=` | raw upload, same outcomes and limits as a team base |
+| DELETE | `/api/me/knowledge/:base/documents/:documentId` | remove one document |
+| GET | `/api/me/knowledge/:base/search?q=&limit=` | search my own base |
+
+Not built yet: web page sources and source removal for Personal bases (the contract names `POST /api/me/knowledge/:base/sources` and `DELETE .../sources/:sourceId`); a Personal base has no reading rhythm of its own.
+
+**What a bot may read.** The `knowledge.search` tool no longer takes a team from the model. It asks the database for the run's space list (`app.run_space_context()`, see `docs/plugins/gateway-mcp.md`, "What a run may read: spaces") and searches exactly those: the run's teams, plus the asker's Personal space when that person has allowed this bot (`personal_allowed`). A bot whose definition lists a `knowledge:` allowlist searches only those named bases of its own team, never Personal and never another team. Each hit carries `space` (`person:<id>` or `team:<id>`) so a citation says where a passage came from, and the gateway's source line for a Personal hit has scope `person`.
+
 ## Sources, rhythm and state
 
 Each source has an optional rhythm (`sync_minutes`: every 15 minutes up to every week; null means only when someone presses Read again). Three detached jobs, each run for one workspace at a time as the system role (a message, a repo write and an event belong to one workspace), safe to run twice and bounded:

@@ -1,4 +1,4 @@
-import { BlobTooLargeError, HttpError, conflict, invalid, json, notFound, requireManage, requireTeam, route, type BlobStorage, type PluginContext, type PluginTx, type TeamRow } from '@manythreads/sdk';
+import { BlobTooLargeError, HttpError, conflict, invalid, json, notFound, requireManage, requireTeam, route, type BlobStorage, type HttpRequest, type PluginContext, type PluginTx, type TeamRow } from '@manythreads/sdk';
 import {
   AddKnowledgeUrlSourceRequest,
   CreateKnowledgeBaseRequest,
@@ -34,7 +34,7 @@ import {
   updateKnowledgeSourceRoute,
   uploadKnowledgeDocumentRoute,
 } from '@manythreads/shared';
-import { findDocument, ingest, kindOfName, removeFromRepo, sha256Hex, type BaseRef } from './ingest.ts';
+import { findDocument, ingest, kindOfName, removeFromRepo, sha256Hex, type BaseRef, type TeamBaseRef } from './ingest.ts';
 import { ExtractError, maxExtractBytes } from './extract/index.ts';
 import { embedderOf } from './embed.ts';
 import { queryVector } from './capability.ts';
@@ -142,7 +142,7 @@ async function requireBase(tx: PluginTx, team: TeamRow, slug: string): Promise<B
   return base;
 }
 
-const refOf = (team: TeamRow, base: BaseRow): BaseRef => ({ id: base.id, teamId: team.id, workspaceId: team.workspace_id, slug: base.slug });
+const refOf = (team: TeamRow, base: BaseRow): TeamBaseRef => ({ id: base.id, teamId: team.id, workspaceId: team.workspace_id, slug: base.slug });
 
 async function canWrite(tx: PluginTx, team: TeamRow): Promise<boolean> {
   return (await tx.query<{ ok: boolean }>("SELECT app.can('team', $1, 'manage') AS ok", [team.id])).rows[0]?.ok === true;
@@ -163,6 +163,70 @@ async function sourcesOf(tx: PluginTx, baseId: string): Promise<SourceRow[]> {
 
 function requireWritable(team: TeamRow): void {
   if (team.archived_at) throw conflict('This team is archived, so its knowledge cannot be changed.');
+}
+
+/**
+ * Takes the file in the body of an upload request into a base: the size and idle limits, the blob store, then the same ingest for a team's base and a
+ * person's own. The caller has already checked who may write to the base.
+ */
+export async function receiveUpload(ctx: PluginContext, tx: PluginTx, req: HttpRequest, ref: BaseRef, query: { name?: string | undefined }): Promise<ReturnType<typeof json>> {
+  const storage = ctx.providers.get<BlobStorage>('storage');
+  if (!storage) throw new HttpError(503, 'internal', 'File storage is not available');
+  const source = req.stream;
+  if (!source) throw invalid('The body must be the file');
+  const drain = (): void => void (source as ReadableLike).resume?.();
+  const name = cleanName(req.headers['x-file-name']) ?? cleanName(query.name);
+  if (!name) {
+    drain();
+    throw invalid('Say what the file is called (the name= part of the address).');
+  }
+  const kind = kindOfName(name);
+  if (!kind) {
+    drain();
+    throw new HttpError(415, 'validation_failed', 'Only Markdown, text, CSV and PDF files can be added so far.');
+  }
+  const limit = maxExtractBytes();
+  const declared = Number(req.headers['content-length']);
+  if (Number.isFinite(declared) && declared > limit) {
+    drain();
+    throw tooLarge(`That file is larger than the ${Math.floor(limit / 1024 / 1024)} MB limit.`);
+  }
+  const release = takeUploadSlot(tx.actor.id);
+  if (!release) {
+    drain();
+    throw new HttpError(429, 'rate_limited', 'Too many uploads at once: wait for one to finish.');
+  }
+  const body = tapped(source);
+  let stored;
+  try {
+    stored = await storage.put(body.stream, { maxBytes: limit });
+  } catch (err) {
+    body.drain();
+    if (err instanceof BlobTooLargeError) throw tooLarge(`That file is larger than the ${Math.floor(limit / 1024 / 1024)} MB limit.`);
+    throw invalid('The upload was interrupted.');
+  } finally {
+    release();
+  }
+  try {
+    if (stored.size === 0) throw invalid('That file is empty.');
+    const bytes = await readBlob(storage, stored.blobKey, limit);
+    if (!bytes) throw invalid('The upload could not be read back. Try again.');
+    const result = await ingest(ctx, tx, ref, {
+      name,
+      kind,
+      bytes,
+      sha256: stored.sha256,
+      size: stored.size,
+      blobKey: stored.blobKey,
+      source: 'upload',
+    });
+    for (const key of result.blobsToDelete) await storage.delete(key).catch(() => false);
+    return json({ outcome: result.outcome, document: toDocument(result.document) });
+  } catch (err) {
+    // The row never committed (the transaction rolls back): do not leave bytes nobody can reach.
+    await storage.delete(stored.blobKey).catch(() => false);
+    throw err;
+  }
 }
 
 export function registerRoutes(ctx: PluginContext): void {
@@ -279,62 +343,7 @@ export function registerRoutes(ctx: PluginContext): void {
       await requireManage(tx, team);
       requireWritable(team);
       const base = await requireBase(tx, team, params.base);
-      const source = req.stream;
-      if (!source) throw invalid('The body must be the file');
-      const drain = (): void => void (source as ReadableLike).resume?.();
-      const name = cleanName(req.headers['x-file-name']) ?? cleanName(query.name);
-      if (!name) {
-        drain();
-        throw invalid('Say what the file is called (the name= part of the address).');
-      }
-      const kind = kindOfName(name);
-      if (!kind) {
-        drain();
-        throw new HttpError(415, 'validation_failed', 'Only Markdown, text, CSV and PDF files can be added so far.');
-      }
-      const limit = maxExtractBytes();
-      const declared = Number(req.headers['content-length']);
-      if (Number.isFinite(declared) && declared > limit) {
-        drain();
-        throw tooLarge(`That file is larger than the ${Math.floor(limit / 1024 / 1024)} MB limit.`);
-      }
-      const storage = storageOf();
-      const release = takeUploadSlot(tx.actor.id);
-      if (!release) {
-        drain();
-        throw new HttpError(429, 'rate_limited', 'Too many uploads at once: wait for one to finish.');
-      }
-      const body = tapped(source);
-      let stored;
-      try {
-        stored = await storage.put(body.stream, { maxBytes: limit });
-      } catch (err) {
-        body.drain();
-        if (err instanceof BlobTooLargeError) throw tooLarge(`That file is larger than the ${Math.floor(limit / 1024 / 1024)} MB limit.`);
-        throw invalid('The upload was interrupted.');
-      } finally {
-        release();
-      }
-      try {
-        if (stored.size === 0) throw invalid('That file is empty.');
-        const bytes = await readBlob(storage, stored.blobKey, limit);
-        if (!bytes) throw invalid('The upload could not be read back. Try again.');
-        const result = await ingest(ctx, tx, refOf(team, base), {
-          name,
-          kind,
-          bytes,
-          sha256: stored.sha256,
-          size: stored.size,
-          blobKey: stored.blobKey,
-          source: 'upload',
-        });
-        for (const key of result.blobsToDelete) await storage.delete(key).catch(() => false);
-        return json({ outcome: result.outcome, document: toDocument(result.document) });
-      } catch (err) {
-        // The row never committed (the transaction rolls back): do not leave bytes nobody can reach.
-        await storage.delete(stored.blobKey).catch(() => false);
-        throw err;
-      }
+      return await receiveUpload(ctx, tx, req, refOf(team, base), query);
     }),
   });
 
@@ -492,7 +501,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, params.slug);
       const base = await requireBase(tx, team, params.base);
       const vector = await queryVector(ctx, tx, q.q);
-      const hits = await searchKnowledge(tx, { teamId: team.id, baseSlugs: [base.slug], query: q.q, limit: q.limit }, vector);
+      const hits = await searchKnowledge(tx, { teamIds: [team.id], baseSlugs: [base.slug], query: q.q, limit: q.limit }, vector);
       return json({ mode: vector === null ? 'lexical' : 'hybrid', hits });
     }),
   });

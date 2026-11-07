@@ -316,11 +316,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
       const answer = result as { ok?: unknown; hits?: unknown } | null;
       if (answer?.ok !== true || !Array.isArray(answer.hits)) return [];
       const out: RunSourceLine[] = [];
-      for (const h of answer.hits as Array<{ base?: unknown; document?: unknown; version?: unknown; file?: unknown }>) {
+      for (const h of answer.hits as Array<{ base?: unknown; document?: unknown; version?: unknown; file?: unknown; space?: unknown }>) {
+        // a passage of a person's own base is read at person scope: nothing this run then writes may go into a team's memory (the retention rule)
+        const scope = typeof h.space === 'string' && h.space.startsWith('person:') ? 'person' : 'team';
         if (typeof h.base === 'string' && typeof h.document === 'string' && typeof h.version === 'number') {
-          out.push({ sourceType: 'knowledge', sourceRef: `${h.base}/${h.document} v${h.version}`.slice(0, 1000), scope: 'team' });
+          out.push({ sourceType: 'knowledge', sourceRef: `${h.base}/${h.document} v${h.version}`.slice(0, 1000), scope });
         }
-        if (typeof h.file === 'string') out.push({ sourceType: 'page', sourceRef: h.file, scope: 'team' });
+        if (typeof h.file === 'string') out.push({ sourceType: 'page', sourceRef: h.file, scope });
       }
       return out;
     },
