@@ -217,6 +217,20 @@ describe('running', () => {
     expect((await call(nadia, 'GET', `/api/me/scheduled-jobs/${routine.id}/runs`)).status).toBe(404);
   });
 
+  it('"Run now" is held to the day\'s count of firings, like the schedule', async () => {
+    const routine = await make(omar, 'Run now many');
+    await sql(
+      `INSERT INTO app.scheduled_job_runs (scheduled_job_id, owner_person_id, status, started_at, ended_at, reason)
+       SELECT $1, $2, 'done', now() - (g || ' minutes')::interval, now() - (g || ' minutes')::interval, '' FROM generate_series(20, 20 + 95) g`,
+      [routine.id, omar.personId],
+    );
+    // 96 firings in the last day: the 97th is refused
+    const over = await call(omar, 'POST', `/api/me/scheduled-jobs/${routine.id}/run`);
+    expect(over.status, JSON.stringify(over.body)).toBe(409);
+    expect(JSON.stringify(over.body)).toMatch(/96 times/);
+    expect(await runsOf(routine.id)).toHaveLength(96);
+  });
+
   it('fails a firing, with the reason, when the routine file was removed', async () => {
     const routine = await make(omar, 'File gone');
     await sql(`DELETE FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2`, [omar.personId, routine.contractPath]);

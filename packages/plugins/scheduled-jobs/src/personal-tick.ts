@@ -94,6 +94,14 @@ export async function stopRoutine(tx: PluginTx, jobId: string, reason: PersonalR
   );
 }
 
+/** True when the routine already had its day's count of firings (`runsPerDay`) in the last 24 hours. "Run now" is held to this too. */
+export async function pastDaysCount(tx: PluginTx, jobId: string, now: Date): Promise<boolean> {
+  const n = Number(
+    (await tx.query<{ n: string }>(`SELECT count(*) AS n FROM app.scheduled_job_runs WHERE scheduled_job_id = $1::uuid AND started_at > $2::timestamptz - interval '24 hours'`, [jobId, now])).rows[0]?.n ?? 0,
+  );
+  return n >= PERSONAL_ROUTINE_LIMITS.runsPerDay;
+}
+
 /** Why a routine may not start another firing right now (it is skipped, not stopped), or null. */
 async function holdReason(tx: PluginTx, job: PersonalDueRow, now: Date): Promise<'running' | 'gap' | 'per_day' | null> {
   if (await firingInFlight(tx, job.id)) return 'running';

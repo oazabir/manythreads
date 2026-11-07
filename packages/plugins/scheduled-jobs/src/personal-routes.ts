@@ -48,7 +48,7 @@ import {
   type Member,
 } from './personal-limits.ts';
 import { PERSONAL_JOB_SELECT, toPersonalRoutine, toPersonalRun, type PersonalJobRow, type PersonalRunRow } from './personal-rows.ts';
-import { firingInFlight, startPersonalRun, type PersonalDueRow } from './personal-tick.ts';
+import { firingInFlight, pastDaysCount, startPersonalRun, type PersonalDueRow } from './personal-tick.ts';
 import { nextRunFor } from './scheduler.ts';
 
 // A person's own routines: /api/me/scheduled-jobs (PLAN P20-10 to P20-14). Every route starts with the member check (a guest has no Personal space and so no routines) and
@@ -319,6 +319,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
       if (blocker !== null) throw conflict(blockerSentence(blocker, row.bot_name ?? 'The bot', await missingConnections(tx, member.personId, row.sources as RoutineSource[])));
       if ((await spentAsPerson(tx, member.personId, at)) >= (await monthlyCapUsd(tx, member.workspaceId))) throw conflict(blockerSentence('spend_cap', row.bot_name ?? 'The bot', []));
       if (await firingInFlight(tx, row.id)) throw conflict('This routine is already running; wait for it to finish.');
+      if (await pastDaysCount(tx, row.id, at)) throw conflict(`This routine has already run ${PERSONAL_ROUTINE_LIMITS.runsPerDay} times in the last day; try again later.`);
       const started = await startPersonalRun(ctx, tx, row as unknown as PersonalDueRow, at);
       return json(RunPersonalRoutineResponse.parse({ run: toPersonalRun(started as PersonalRunRow) }), 202);
     }),
