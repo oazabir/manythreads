@@ -591,26 +591,26 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P19-12 | Security proof and the live run with the owner's own file: visibility, egress, canary, DLP shapes, Role scope, refresh under load, a non-admin lead places bots on each runner, screenshots … | Not built | - | no spec |
 | P19-13 | Codex runner: `auth.json` upload (stored as it is, an API-key file refused whole), refresh and keeper, the bridge's Codex driver proven on the real CLI, host test with the owner's go-ahead … | Not built | tools/agent-bridge/src/drivers/codex.ts (a driver whose own header says it was never run against a real Codex install); tools/agent-bridge/src/runs.ts (`CODEX_HOME` already passes the env allowlist) | no `codex_cli` kind, no `auth.json` upload, no pod, driver flags unchecked against codex-cli 0.166.0 |
 
-### Phase 20 · Personal and Team spaces, one Brain, personal routines — 0 built, 0 partly, 16 not built
+### Phase 20 · Personal and Team spaces, one Brain, personal routines — 15 built, 0 partly, 1 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
-| P20-01 | The space model | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-02 | Personal Files storage | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-03 | The Files screen with two top levels | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-04 | The personal inbox | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-05 | Personal memory | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-06 | Personal knowledge bases | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-07 | One Brain for the workspace | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-08 | Reads across spaces in the gateway | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-09 | Which bots may read Personal | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-10 | Personal routines | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-11 | Setting up a routine in words | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-12 | Action items, kept up to date | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-13 | Admin access and leaving | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-14 | Guards | Not built | - | added 2026-11-04 (D10); nothing built yet |
+| P20-01 | The space model | Built | packages/shared/src/entities/space.ts; kernel migration 0016_spaces.sql; plugins/*/test/rls | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-02 | Personal Files storage | Built | plugins/files personal routes, quota, versions, sweep; e2e/files | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-03 | The Files screen with two top levels | Built | clients/web/src/screens/files; e2e/files; e2e/visual/files | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-04 | The personal inbox | Built | plugins/memory-inbox /api/me/inbox; e2e/knowledge/personal-inbox.spec.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-05 | Personal memory | Built | plugins/memory /api/me/memory; e2e/knowledge/personal-memory.spec.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-06 | Personal knowledge bases | Built | plugins/knowledge /api/me/knowledge; e2e/knowledge/personal-knowledge.spec.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-07 | One Brain for the workspace | Built | templates/_workspace/bots/brain; bots migrations 0027-0029; screens/admin/brain; live: host-workspace runner + mt-brain profile | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-08 | Reads across spaces in the gateway | Built | plugins/gateway-mcp spaces.ts; spaces-every-read-tool.test.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-09 | Which bots may read Personal | Built | plugins/bots /api/me/bot-consents; e2e/settings/bot-consents.spec.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-10 | Personal routines | Built | plugins/scheduled-jobs /api/me/scheduled-jobs; e2e/settings/routines.spec.ts; live run 2026-11-07 | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-11 | Setting up a routine in words | Built | screens/account/routines (create in words); routines.spec.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-12 | Action items, kept up to date | Built | screens/account/action-items; action-items.spec.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-13 | Admin access and leaving | Built | files personal-admin.ts, teams deactivate, 30-day sweep; PersonalSpaceAdmin | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
+| P20-14 | Guards | Built | scheduled-jobs guards, personal-stops.test.ts, personal-routine-budget.test.ts | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
 | P20-15 | Seed v20, event contracts, docs and retro | Not built | - | added 2026-11-04 (D10); nothing built yet |
-| P20-16 | Chat: the first sidebar entry opens a full ChatGPT-style chat with Brain | Not built | - | added 2026-11-05 at the owner's request; nothing built yet. What exists to build on: conversations (P5-16: `/t/:team/bots/:botSlug/chat`, Mine · Shared · Channel mentions, prompt chips, `ThreadBody`), the Answer card with citations (P5-17, P5-27), the Composer (P14-02) |
+| P20-16 | Chat: the first sidebar entry opens a full ChatGPT-style chat with Brain | Built | plugins/conversations chat, screens/chat; e2e/conversations/chat.spec.ts; live 2026-11-07 | live on ee525fc7..fe89324d (2026-11-07); Bundle A |
 
 ### Phase 21 · Polish: a message view, navigation and look people expect — 1 built, 2 partly, 25 not built
 

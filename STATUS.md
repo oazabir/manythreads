@@ -1214,3 +1214,10 @@ placeholder cards on the Bot Board from before `tasks.describe` worked; `isQuick
 - **Open:** archiving a team does not stop its runs in progress (they hold run slots until they time out); a card sent back by a closed pull
   request does not wake its bot; the Deployer is not in the pull-request flow; the Engineering coder came from an older template.
 
+
+## 2026-11-07 · Bundle A live (Personal and Team spaces, one Brain, Chat, personal routines)
+- **Built and live (fe89324d5410-e8b7052b):** P20-01..14 and P20-16 (Personal and Team Files, personal memory/inbox/knowledge, bot consents, one workspace Brain, reads across spaces, personal routines and action items, admin open/deactivate, guards, Chat). Not built: P20-15 (seed v20, event contracts, `docs/spaces.md`, retro).
+- **Live checks:** Files, Personal screens, routines, action items, guest and cross-user refusals, Brain answers in Chat (streamed, Stop, Regenerate, Personal note cited), a routine's Run now writes a clean `output.md`.
+- **Live setup done by hand (owner approved):** runner `host-workspace` (hermes_gateway, `mt-{bot}`) is the workspace default; `mt-brain` host profile and token written with `provision-host-bots.mjs --workspace-brain`. Undo: clear the default in Admin > Bot runners and delete `host-workspace`.
+- **Found and fixed on the way:** the Brain had no runner and no token (team-less bot), a retired team Brain shadowed the workspace Brain's slug, a routine run's output carried an `answer.post` apology, plus the Chat/Files/Brain-settings polish items.
+- **Open:** a routine's held write cannot become an approval card for its owner (AP001; spec `test.fixme`); deleting a routine leaves `Routines/<slug>/routine.yaml`; a routine drafted in words falls back to rules when no model alias answers; dark mode is not built (P21-21).
