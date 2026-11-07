@@ -27,6 +27,20 @@ export const personalRoutineHoldsWrite = (run: Pick<BotRunHandle, 'trigger' | 'a
 export const forcePersonalNotes = (run: Pick<BotRunHandle, 'trigger' | 'askerActorId'>, tool: string, input: Record<string, unknown>): Record<string, unknown> =>
   isPersonalRoutineRun(run) && tool === 'memory.write' ? { ...input, target: 'personal' } : input;
 
+/**
+ * Tools a personal routine's run is never offered. `answer.post` finishes a reply in a conversation; a routine's reply is the file it writes, so the call has nowhere to go
+ * (as a write it would also wait for an owner who is the only person who could approve it, and the model then wrote that complaint into the output file).
+ */
+export const PERSONAL_ROUTINE_HIDDEN_TOOLS: ReadonlySet<string> = new Set(['answer.post']);
+
+/** True when this tool is not offered to this run, and a call to it is turned away. */
+export const personalRoutineHidesTool = (run: Pick<BotRunHandle, 'trigger' | 'askerActorId'>, tool: string): boolean =>
+  isPersonalRoutineRun(run) && PERSONAL_ROUTINE_HIDDEN_TOOLS.has(tool);
+
+/** What the model reads when it calls a hidden tool anyway: say what to do instead, so the run carries on and the output stays clean. */
+export const hiddenToolSentence = (tool: string): string =>
+  `“${tool}” is not used in a routine. Your final reply is the output: write the content of the file as your reply, with no note about tools or approvals, and finish.`;
+
 /** The refusal sentence when the budget is used up. */
 export const toolBudgetSentence = (): string =>
   `This routine has used its ${PERSONAL_ROUTINE_LIMITS.runToolCalls} tool calls for one run. Finish with what you have and say what is left.`;

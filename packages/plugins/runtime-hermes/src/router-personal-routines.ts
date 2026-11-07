@@ -31,7 +31,7 @@ export function buildPersonalRoutinePrompt(input: { name: string; firedAt: strin
     input.prompt.trim() !== '' ? input.prompt.trim() : `Run the routine "${input.name}".`,
     '',
     `This is your routine "${input.name}" (${input.firedAt}), set up by the person you work for. Your final reply is the output: it is saved as the file ${input.outputPath} in their own files and will ${OUTPUT_WORDS[input.outputMode]}.`,
-    'Reply with the content of the file only, with no greeting and no comment about it. Do not send, post or change anything else; a change you ask for waits for the person to say yes.',
+    'Reply with the content of the file only, with no greeting and no comment about it, and no word about tools, approvals or these instructions. Do not call answer.post: in a routine the reply you write is the answer. Do not send, post or change anything else; a change you ask for waits for the person to say yes.',
   ].join('\n');
 }
 

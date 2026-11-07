@@ -86,7 +86,9 @@ function fakeContext(options: {
     const t = options.sourceTools?.[name];
     return t ? { source: { id: 'fake', tools: [], offered: () => Promise.resolve([name]) }, tool: { name, description: `${name} does something`, inputSchema: { type: 'object' }, ...t } } : undefined;
   };
-  const ctx = { manifest: { version: '0.1.0' }, runs, providers, toolSources: { register: () => undefined, list: () => [], find: sourceFind }, hooks, audit, runtime: { now: () => new Date('2026-10-30T09:00:00.000Z') } } as unknown as PluginContext;
+  // confineRunWrite reads the bot's scope as the system (P20-LV); these bots are team bots
+  const db = { system: (fn: (sys: { query: () => Promise<{ rows: Array<{ scope: string }> }> }) => Promise<unknown>) => fn({ query: () => Promise.resolve({ rows: [{ scope: 'team' }] }) }) };
+  const ctx = { manifest: { version: '0.1.0' }, runs, providers, db, toolSources: { register: () => undefined, list: () => [], find: sourceFind }, hooks, audit, runtime: { now: () => new Date('2026-10-30T09:00:00.000Z') } } as unknown as PluginContext;
   return { ctx, invoked, logged, authorized, warned, emitted };
 }
 
@@ -126,6 +128,40 @@ describe('gateway-mcp protocol', () => {
     // the approval flag reaches the model as copy, so it can prefer a path that does not wait for a person
     expect(result.tools[1]!.description).toContain('approval');
     expect(result.tools[0]!.description).not.toContain('approval');
+  });
+
+  // P20-LV: a personal routine's reply is its output file, so the conversation's reply tool is neither offered nor taken (it would wait for an owner who is the only approver)
+  it('a personal routine run is not offered answer.post and a call to it is turned away without a card, without being counted', async () => {
+    const answerTool = { name: 'answer.post', destructive: false };
+    const granted = { 'messages.search': ALLOWED, 'answer.post': ALLOWED };
+    const mine: BotRunHandle = { ...RUN, trigger: 'routine', askerActorId: UUIDS.actor };
+    const list = async (run: BotRunHandle) => {
+      const { ctx } = fakeContext({ tools: [SEARCH_TOOL, answerTool], decisions: granted });
+      const res = await handleRpc(ctx, run, { jsonrpc: '2.0', id: 'l', method: 'tools/list' });
+      return ((await body(res)) as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
+    };
+    expect(await list(mine)).toEqual(['messages.search']);
+    // a conversation, and a team's own schedule (no person asking), keep the tool
+    expect(await list(RUN)).toEqual(['messages.search', 'answer.post']);
+    expect(await list({ ...RUN, trigger: 'routine', askerActorId: null })).toEqual(['messages.search', 'answer.post']);
+
+    const filed: Array<Record<string, unknown>> = [];
+    const { ctx, invoked, warned } = fakeContext({
+      tools: [answerTool],
+      decisions: granted,
+      approvals: { request: (_tx, input) => (filed.push(input), Promise.resolve({ approvalId: 'x', created: true })) },
+    });
+    const res = await handleRpc(ctx, mine, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'answer.post', arguments: { body: 'Hello [1]', citations: [] } } });
+    const { result } = (await body(res)) as { result: { isError: boolean; content: Array<{ text: string }> } };
+    const answer = JSON.parse(result.content[0]!.text) as { ok: boolean; code: string; message: string };
+    expect(result.isError).toBe(true);
+    expect(answer).toMatchObject({ ok: false, code: 'not_available' });
+    // it says what to do instead (not "it is waiting for an approval"), so the model writes its reply and the output file stays clean
+    expect(answer.message).toContain('Your final reply is the output');
+    expect(answer.message).not.toContain('waiting');
+    expect(filed).toEqual([]);
+    expect(invoked).toEqual([]);
+    expect(warned.join(' ')).toContain('answer.post refused (not_available)');
   });
 
   it('a successful read of a source tool always writes a run source line, beside what sourcesFrom answers', async () => {

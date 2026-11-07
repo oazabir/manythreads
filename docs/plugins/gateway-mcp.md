@@ -95,6 +95,8 @@ A space is a person's own Personal space or a team's. Before every tool call the
 
 A run that belongs to a person's own routine (`trigger_type = 'routine'` with a non-null asker; a team schedule has no asker) is held to two more rules, kept in `src/personal-routine.ts` and checked in `protocol.ts`. **Writes wait for the owner.** Only `memory.write` and `memory.retain` go straight through (`PERSONAL_ROUTINE_FREE_WRITES`); any other tool that is not a read waits for the owner to approve it, the same way a `needsApproval` grant does, so a routine can fill the owner's files through the platform and nothing else without a person saying yes. **A budget of tool calls.** A firing makes at most forty calls (`PERSONAL_ROUTINE_LIMITS.runToolCalls`); the next one is turned away with a plain sentence (`toolBudgetSentence`). The count is read from the run's own rows in `app.run_decisions` (kind `tool`), not from anything the bot sends, and it is checked before the call's input is read. Tests: `test/gateway.test.ts` (a routine run's write waits, the forty-first call is refused, a team run is unaffected).
 
+**No reply tool.** `answer.post` finishes a reply in a conversation; a routine's reply is the output file the run writes from its final message. It is not offered to a personal routine run (`personalRoutineHidesTool`, `tools/list`), and a call to it is answered `not_available` with the sentence to write the reply as the file (it is not counted and files no approval card). Before this, the call was held for the owner, who is the only approver, so the model wrote an apology into the output file (P20-LV).
+
 ## The tools
 
 `tools/list` offers every capability with an implementation **that the broker would allow** — no grant, no tool. The

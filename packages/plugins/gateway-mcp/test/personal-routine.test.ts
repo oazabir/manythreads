@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forcePersonalNotes, isPersonalRoutineRun, personalRoutineHoldsWrite } from '../src/personal-routine.ts';
+import { forcePersonalNotes, hiddenToolSentence, isPersonalRoutineRun, personalRoutineHidesTool, personalRoutineHoldsWrite } from '../src/personal-routine.ts';
 
 const mine = { trigger: 'routine', askerActorId: 'a1' } as const;
 const teams = { trigger: 'routine', askerActorId: null } as const;
@@ -27,5 +27,13 @@ describe('the guards of a personal routine', () => {
     expect(forcePersonalNotes(mine, 'tasks.create', note)).toBe(note);
     expect(forcePersonalNotes(teams, 'memory.write', note)).toBe(note);
     expect(forcePersonalNotes(chat, 'memory.write', note)).toBe(note);
+  });
+
+  it('does not offer the conversation\'s reply tool to a personal routine, and says what to do instead', () => {
+    expect(personalRoutineHidesTool(mine, 'answer.post')).toBe(true);
+    expect(personalRoutineHidesTool(mine, 'messages.search')).toBe(false);
+    expect(personalRoutineHidesTool(teams, 'answer.post')).toBe(false);
+    expect(personalRoutineHidesTool(chat, 'answer.post')).toBe(false);
+    expect(hiddenToolSentence('answer.post')).toContain('Your final reply is the output');
   });
 });

@@ -649,6 +649,8 @@ describe('a person\'s own routine (P20-10)', () => {
     const prompt = buildPersonalRoutinePrompt({ name: 'N', firedAt: '2026-01-01T09:00:00.000Z', prompt: 'Do X.', outputPath: 'Routines/n/output.md', outputMode: 'append' });
     expect(prompt).toContain('saved as the file Routines/n/output.md in their own files and will be added to the end of the file');
     expect(prompt).toContain('waits for the person to say yes');
+    // the Brain's soul answers with answer.post in a conversation; a routine's reply is the file, and the model is told so in the prompt itself
+    expect(prompt).toContain('Do not call answer.post');
   });
 });
 

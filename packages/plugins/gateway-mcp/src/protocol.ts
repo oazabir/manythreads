@@ -19,7 +19,7 @@ import { authorizeContext, definitionOf, interceptTarget, type ToolDefinition } 
 import { confineRunWrite, spacesFor, withRunSpaces } from './spaces.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
-import { forcePersonalNotes, personalRoutineHoldsWrite, toolBudgetSentence, toolBudgetUsed } from './personal-routine.ts';
+import { forcePersonalNotes, hiddenToolSentence, personalRoutineHidesTool, personalRoutineHoldsWrite, toolBudgetSentence, toolBudgetUsed } from './personal-routine.ts';
 import { json } from './http.ts';
 import type { McpSessions } from './session.ts';
 
@@ -109,6 +109,8 @@ export async function offeredTools(ctx: PluginContext, run: BotRunHandle): Promi
     // a tool of a source needs the source's yes as well as the broker's: both must agree (a source is asked first, it is the cheaper "no")
     const owner = ctx.toolSources.find(tool.name);
     if (owner && !fromSources.get(owner.source.id)?.has(tool.name)) continue;
+    // a personal routine's reply is its output file: the reply tool of a conversation is not offered (personal-routine.ts)
+    if (personalRoutineHidesTool(run, tool.name)) continue;
     // the run's token was resolved (it is `running`) a moment ago, in this request: no liveness read per capability
     const decision = await ctx.runs.may(run, tool.name, {}, { alreadyLive: true });
     if (!decision.allowed) continue;
@@ -159,6 +161,8 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   // the workspace Brain sits in every team: a write it makes names a place of the run's own team or is refused (spaces.ts)
   const writeRefused = await confineRunWrite(ctx, run, params.name, fitted.input);
   if (writeRefused) return refusal(run, params.name, { ok: false, code: writeRefused.code, message: writeRefused.message });
+  // a personal routine is not offered the conversation's reply tool; a call to it is turned away before it is counted or filed as an approval (personal-routine.ts)
+  if (personalRoutineHidesTool(run, params.name)) return refusal(run, params.name, { ok: false, code: 'not_available', message: hiddenToolSentence(params.name) });
   // a personal routine has a budget of tool calls (personal-routine.ts)
   if (await toolBudgetUsed(ctx, run)) return refusal(run, params.name, { ok: false, code: 'forbidden', message: toolBudgetSentence() });
   let input = fitted.input;
