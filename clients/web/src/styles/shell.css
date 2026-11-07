@@ -919,9 +919,10 @@ a.sec:hover {
     gap: 2px;
   }
 
-  /* the name keeps its width (up to 45%); the topic gives way first, as it did before the larger title token */
+  /* the name keeps its width (up to 45%); the topic gives way first, and the name itself when the tools (search, voice room, members, bookmark, find, bell) would leave the screen */
   .chead-title {
-    flex-shrink: 0;
+    flex-shrink: 1;
+    min-width: 0;
     max-width: 45%;
   }
 

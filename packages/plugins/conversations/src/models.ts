@@ -18,7 +18,18 @@ const LABELS: Readonly<Record<string, { label: string; hint: string }>> = {
 const labelOf = (alias: string): { label: string; hint: string } => LABELS[alias] ?? { label: alias.slice(0, 1).toUpperCase() + alias.slice(1), hint: '' };
 
 /** The aliases of the definition the roster row was loaded from, in order; null when that file cannot be read as the loaded one (the caller asks again later). */
-export async function definitionAliases(ctx: PluginContext, tx: PluginTx, bot: { teamId: string; slug: string; definitionSha: string }): Promise<string[] | null> {
+export async function definitionAliases(ctx: PluginContext, tx: PluginTx, bot: { teamId: string; slug: string; definitionSha: string; scope?: string }): Promise<string[] | null> {
+  // the workspace Brain has no repo: its BOT.md is kept in app.workspace_bot_definitions, read at the sha the roster row was loaded from (as prompts.ts does)
+  if (bot.scope === 'workspace') {
+    const row = (
+      await tx.query<{ content: string }>(
+        'SELECT content FROM app.workspace_bot_definitions WHERE workspace_id = app.workspace_id() AND slug = $1 AND sha = $2 ORDER BY version DESC LIMIT 1',
+        [bot.slug, bot.definitionSha],
+      )
+    ).rows[0];
+    const parsed = row ? parseBotMd(row.content) : null;
+    return parsed?.ok ? [...(parsed.frontmatter.model?.aliases ?? [])] : null;
+  }
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) return null;
   // a savepoint: a repo read that fails must not take the caller's transaction with it

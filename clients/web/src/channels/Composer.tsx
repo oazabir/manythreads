@@ -226,7 +226,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   }, [text]);
   useEffect(() => () => writeDraft(draftFor.current, area.current?.value ?? ''), []);
   // the same draft on the server, for another device: read when the box opens, saved when typing pauses (serverDraft.ts)
-  useServerDraft({ channelId, threadRootId, draftKey }, text, (t) => {
+  const forgetDraft = useServerDraft({ channelId, threadRootId, draftKey }, text, (t) => {
     setText(t);
     setCaret(t.length);
   });
@@ -472,6 +472,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     uploads.forEach((u) => {
       if (u.preview) URL.revokeObjectURL(u.preview);
     });
+    forgetDraft();
     setText('');
     setUploads([]);
     setCaret(0);

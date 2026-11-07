@@ -405,7 +405,7 @@ export function FilesScreen() {
             {meta ? <> Your access ends at <span data-vt-mask>{new Date(meta.validUntil).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>.</> : null}
           </span>
           <span className="fnote-actions">
-            <button type="button" className="btn s" disabled={exporting} data-testid="admin-view-export" onClick={exportZip}>{exporting ? 'Preparing…' : 'Download as zip'}</button>
+            <button type="button" className="btn s" disabled={exporting || !meta} data-testid="admin-view-export" onClick={exportZip}>{exporting ? 'Preparing…' : 'Download as zip'}</button>
             <Link className="btn s" to="/settings/workspace/members" data-testid="admin-view-close">Close</Link>
           </span>
         </p>

@@ -68,7 +68,7 @@ async function requireOwn(tx: PluginTx, bot: BotRow, threadRootId: string, me: s
  */
 export async function checkedAlias(ctx: PluginContext, tx: PluginTx, bot: BotRow, team: { id: string; workspace_id: string }, picked: string | undefined): Promise<string | null> {
   if (picked === undefined) return null;
-  const aliases = await definitionAliases(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha });
+  const aliases = await definitionAliases(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha, scope: bot.scope });
   if (aliases === null) throw conflict('The bot\'s definition could not be read just now, so the model cannot be checked. Try again in a moment.');
   if (!aliases.includes(picked)) throw new HttpError(422, 'validation_failed', `${bot.name} cannot use that model. Pick one from the list.`);
   const bound = await boundAliases(ctx, team.workspace_id, [picked]);
@@ -87,7 +87,7 @@ export function registerChatRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = ChatPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       const bot = await requireBot(tx, team.id, botSlug);
-      const aliases = (await definitionAliases(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha })) ?? [];
+      const aliases = (await definitionAliases(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha, scope: bot.scope })) ?? [];
       const bound = await boundAliases(ctx, team.workspace_id, aliases);
       return json(ChatModelsResponse.parse({ models: menuOf(aliases, bound) }));
     }),

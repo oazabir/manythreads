@@ -137,6 +137,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   const live = previewLive(preview) || (state?.liveRunId ?? null) !== null;
   const busy = live || asked;
   const lastMine = rows.at(-1);
+  // (what is left of an answer that has ended — a stopped one, say — is not the next answer being written: only a preview that is still open is drawn as streaming)
   const waitingOnBot =
     busy || (awaitingAnswer(rows) && lastMine !== undefined && Date.now() - Date.parse(lastMine.message.createdAt) < AWAIT_MS) || pendingText !== null;
   const showPending = pendingText !== null && lastMine?.kind !== 'person';
@@ -299,8 +300,8 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
             <div className="ch-msg bot live" data-testid="chat-live">
               <span className="ch-avatar"><Avatar name={botName} kind="agent" avatar={botAvatar ?? null} /></span>
               <div className="ch-body">
-                <LookedAt labels={preview.looking} />
-                {preview.text !== '' ? (
+                <LookedAt labels={preview.ended === null ? preview.looking : []} />
+                {preview.text !== '' && preview.ended === null ? (
                   <div className="ch-text streaming" data-testid="chat-streaming"><Markdown source={preview.text} teamSlug={team} /></div>
                 ) : (
                   <p className="ch-thinking" data-testid="chat-thinking"><span className="ch-dots" aria-hidden="true" />{botName} is working on it…</p>

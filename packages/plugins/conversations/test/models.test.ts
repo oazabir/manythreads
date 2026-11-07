@@ -114,6 +114,23 @@ describe('definitionAliases', () => {
     expect(await definitionAliases(ctx, tx, bot(shaOf(text)))).toEqual([]);
   });
 
+  it('reads the workspace Brain from the stored definitions, not from a team repo', async () => {
+    const text = md('[smart, fast]');
+    const asked: Array<{ s: string; p: unknown }> = [];
+    const tx = { query: async (s: string, p?: unknown) => { asked.push({ s, p }); return { rows: [{ content: text }] }; } } as unknown as PluginTx;
+    const ctx = { providers: { get: () => { throw new Error('the repo is not asked'); } } } as unknown as PluginContext;
+    expect(await definitionAliases(ctx, tx, { ...bot(shaOf(text)), scope: 'workspace' })).toEqual(['smart', 'fast']);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.s).toContain('app.workspace_bot_definitions');
+    expect(asked[0]?.p).toEqual(['brain', shaOf(text)]);
+  });
+
+  it('answers null for a workspace bot whose stored definition at that sha is not there', async () => {
+    const tx = { query: async () => ({ rows: [] }) } as unknown as PluginTx;
+    const ctx = { providers: { get: () => undefined } } as unknown as PluginContext;
+    expect(await definitionAliases(ctx, tx, { ...bot('x'), scope: 'workspace' })).toBeNull();
+  });
+
   it('answers null without a repository provider', async () => {
     const { ctx, tx, sql } = rig(() => ({ content: Buffer.from('') }), false);
     expect(await definitionAliases(ctx, tx, bot('x'))).toBeNull();

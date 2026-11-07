@@ -34,6 +34,7 @@ interface BotRow {
   slug: string;
   runtime: string;
   status: string;
+  scope: string;
   definition_sha: string;
   conversational: boolean;
   knowledge: unknown;
@@ -43,8 +44,10 @@ interface BotRow {
 async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<BotRow> {
   const bot = (
     await tx.query<BotRow>(
-      `SELECT id, name, slug, runtime, status, definition_sha, knowledge, jsonb_path_exists(triggers, '$[*] ? (@.type == "conversation")') AS conversational
-         FROM app.bots WHERE team_id = $1 AND slug = $2`,
+      // a team's own bot, or the workspace Brain (no team) that sits in every team's roster
+      `SELECT id, name, slug, runtime, status, scope, definition_sha, knowledge, jsonb_path_exists(triggers, '$[*] ? (@.type == "conversation")') AS conversational
+         FROM app.bots WHERE slug = $2 AND (team_id = $1 OR (scope = 'workspace' AND team_id IS NULL))
+        ORDER BY (status = 'active') DESC, (team_id IS NULL) LIMIT 1`,
       [teamId, botSlug],
     )
   ).rows[0];
@@ -58,6 +61,17 @@ async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promis
  * Null when the definition could not be read as the loaded one: the caller then refuses too (it cannot say what the bot may do).
  */
 async function runtimeGrantsOf(ctx: PluginContext, tx: PluginTx, bot: BotRow, teamId: string): Promise<readonly string[] | null> {
+  // the workspace Brain has no repo: its BOT.md is kept in app.workspace_bot_definitions, read at the sha the roster row was loaded from
+  if (bot.scope === 'workspace') {
+    const row = (
+      await tx.query<{ content: string }>(
+        'SELECT content FROM app.workspace_bot_definitions WHERE workspace_id = app.workspace_id() AND slug = $1 AND sha = $2 ORDER BY version DESC LIMIT 1',
+        [bot.slug, bot.definition_sha],
+      )
+    ).rows[0];
+    const parsed = row ? parseBotMd(row.content) : null;
+    return parsed?.ok ? (parsed.frontmatter.capabilities?.runtime ?? []) : null;
+  }
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) return null;
   await tx.query('SAVEPOINT rehearsal_definition');

@@ -198,6 +198,10 @@ function AppRoutes() {
 /*
  * A data router (one splat route around the whole app) rather than `BrowserRouter`: only a data router can hold a screen back with `useBlocker`
  * (the bot page asks "Leave without saving?", P21-17). The routes themselves stay in `AppRoutes`.
+ *
+ * `useTransitions={false}`: React Router 8 applies every navigation inside `React.startTransition`, and the Chat screen's navigation (the new chat's `?c=`) never
+ * committed there: the address changed, the screen stayed on "New chat" with the sent text still in the box, because the screen keeps re-rendering on urgent updates
+ * (the history rail, the live answer) and the low-priority render of the new location was never finished. A navigation is applied at once instead.
  */
 const router = createBrowserRouter([
   {
@@ -211,5 +215,5 @@ const router = createBrowserRouter([
 ]);
 
 export function App() {
-  return <RouterProvider router={router} />;
+  return <RouterProvider router={router} useTransitions={false} />;
 }

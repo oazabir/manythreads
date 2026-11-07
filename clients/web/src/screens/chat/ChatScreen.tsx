@@ -401,8 +401,17 @@ export function ChatScreen() {
         setHelp(true);
       }
     };
+    // Ctrl/Cmd+K and ? are also the app's quick switcher and shortcut sheet, which listen on the document: on this screen they mean the chats' own search and the chats' own
+    // shortcuts, so those two are taken first (capture) and the app's listener finds them already handled. Every other key keeps its place in the order.
+    const early = (e: KeyboardEvent): void => {
+      if (e.key === '?' || ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k')) onKey(e);
+    };
+    window.addEventListener('keydown', early, true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', early, true);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [newChat, live, stopping, stop, flat, root, go]);
 
   // ---- drawing ----------------------------------------------------------------------------------------------------------------------------

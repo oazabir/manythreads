@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { DRAFT_MAX_CHARS, type SaveDraftRequest } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { deleteDraft, fetchDrafts, saveDraft } from '../api/endpoints';
@@ -97,7 +97,7 @@ type Box = { channelId: string; threadRootId: string | null; draftKey: string };
  * saves what was typed, but only what was typed since the box opened. A failure is silent: the browser's copy is always there. If the server says no (a guest,
  * a channel that cannot be posted in) the box stops asking.
  */
-export function useServerDraft(box: Box, text: string, apply: (text: string) => void): void {
+export function useServerDraft(box: Box, text: string, apply: (text: string) => void): () => void {
   const latest = useRef(text);
   latest.current = text;
   const applyRef = useRef(apply);
@@ -182,6 +182,12 @@ export function useServerDraft(box: Box, text: string, apply: (text: string) => 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, box.channelId, box.threadRootId, box.draftKey]);
+
+  // The text went out as a message. A screen that swaps the box for another the moment it is sent (Chat) unmounts this one before it renders the emptied
+  // text, so "what was typed" is forgotten here, or leaving the box would save the sent message as a draft.
+  return useCallback(() => {
+    latest.current = '';
+  }, []);
 }
 
 /** True when an error from a send says the writer must confirm `@channel` or `@here` for a big room. */
