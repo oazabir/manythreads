@@ -14,6 +14,11 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack({ MANYTHREADS_STACK_SEED: 'repo' });
   const omar = await apiOn(playwright, stack, 'omar');
   try {
+    // The workspace Brain is made by a job on a 15-minute cron that a fresh stack has not reached: make its slot due, so the scheduler's next tick (15 s) makes it.
+    const due = await stack.sql(
+      `UPDATE app.job_schedules SET last_slot = now() - interval '1 day', created_at = now() - interval '1 day' WHERE queue = 'bots.ensure-workspace-brain' RETURNING name`,
+    );
+    expect(due, 'the workspace Brain job has a schedule').toHaveLength(1);
     for (const [slug, name, native] of [
       ['consent-asker', 'Asker', 'messages.post, personal.read'],
       ['consent-quiet', 'Quiet', 'messages.post'],
@@ -38,8 +43,8 @@ interface ConsentJson {
   isDefault: boolean;
 }
 
-/** The consents of the persona, once the loader has read both new bots. */
-async function consentsOf(playwright: Parameters<typeof apiOn>[0], who: 'nadia' | 'rafi' | 'lena'): Promise<ConsentJson[]> {
+/** The consents of the persona, once the loader has read both new bots (and `also` slugs, such as the workspace `brain`). */
+async function consentsOf(playwright: Parameters<typeof apiOn>[0], who: 'nadia' | 'rafi', also: readonly string[] = []): Promise<ConsentJson[]> {
   const api = await apiOn(playwright, stack, who);
   try {
     let items: ConsentJson[] = [];
@@ -47,7 +52,7 @@ async function consentsOf(playwright: Parameters<typeof apiOn>[0], who: 'nadia' 
       .poll(
         async () => {
           items = (await api.get<{ items: ConsentJson[] }>('/api/me/bot-consents')).items;
-          return ['consent-asker', 'consent-quiet'].every((s) => items.some((i) => i.botSlug === s));
+          return ['consent-asker', 'consent-quiet', ...also].every((s) => items.some((i) => i.botSlug === s));
         },
         { timeout: 60_000 },
       )
@@ -134,9 +139,9 @@ test('one person’s answer is not another’s', async ({ playwright }) => {
 
 test('Brain is allowed until the person says no, and the answer survives a reload', async ({ browser, playwright, isMobile }) => {
   test.skip(isMobile, 'desktop layout');
-  const items = await consentsOf(playwright, 'nadia');
-  const brain = items.find((i) => i.botSlug === 'brain');
-  test.skip(!brain, 'the workspace Brain bot is not in this build yet (bots 0027), so there is no default-on row to test');
+  // the workspace Brain (bots 0027) is in every person's list, asking and allowed until they say no
+  const items = await consentsOf(playwright, 'nadia', ['brain']);
+  expect(items.find((i) => i.botSlug === 'brain')).toMatchObject({ canAsk: true, allowed: true, isDefault: true });
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/bots');
   try {
     const row = rowOf(page, 'brain');
@@ -160,9 +165,15 @@ test('Lena, a guest, has no list and the page says so once', async ({ browser, p
   const api = await apiOn(playwright, stack, 'lena');
   const { page, context } = await openOn(browser, playwright, stack, 'lena', '/account/bots');
   try {
-    expect(await api.status('GET', '/api/me/bot-consents')).toBe(403);
-    await expect(page.getByTestId('bot-consent')).toHaveCount(0);
+    // the list route does not refuse a guest, it answers with nothing to choose from
+    const list = await api.ctx.get('/api/me/bot-consents');
+    expect(list.status()).toBe(200);
+    expect(((await list.json()) as { items: unknown[] }).items).toEqual([]);
+    // the page draws its one refusal heading before anything is asserted absent
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'You do not have access' })).toBeVisible();
+    await expect(page.getByTestId('bot-consents')).toHaveCount(0);
+    await expect(page.getByTestId('bot-consent')).toHaveCount(0);
   } finally {
     await context.close();
     await api.ctx.dispose();
