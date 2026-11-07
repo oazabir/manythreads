@@ -5,7 +5,7 @@ import { friendlyPath } from '../../components/friendlyPath';
 import { Dialog } from '../../components/Dialog';
 import { Time } from '../../components/ui';
 import { fetchPersonalConcepts, fetchPersonalFile, fetchPersonalVersions, removePersonalFile, restorePersonalVersion, savePersonalFile } from './personalApi';
-import { authorLabel, findConcept, isChangedSince, versionLine } from './personalWords';
+import { authorLabel, findConcept, isChangedSince, saveFailureWords, versionLine } from './personalWords';
 import { message } from './inboxWords';
 
 const isStale = (c: Pick<MemoryConceptSummary, 'staleAfter'>): boolean => c.staleAfter !== null && Date.parse(c.staleAfter) < Date.now();
@@ -149,7 +149,7 @@ function PersonalFileDetail({ concept, panel, onChanged, onGone }: { concept: Me
       onChanged(`Saved ${saved.concept.title || f.path} as version ${String(saved.file.versionNo)}.`);
     } catch (e) {
       setStale(isChangedSince(e));
-      setError(message(e, 'The file could not be saved. Try again.'));
+      setError(saveFailureWords(e, 'The file could not be saved. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -264,7 +264,7 @@ function History({ path, currentVersion, onClose, onRestored }: { path: string; 
       const done = await restorePersonalVersion(path, versionNo);
       onRestored(done.file);
     } catch (e) {
-      setError(message(e, 'That version could not be brought back.'));
+      setError(saveFailureWords(e, 'That version could not be brought back.'));
     } finally {
       setBusy(null);
     }

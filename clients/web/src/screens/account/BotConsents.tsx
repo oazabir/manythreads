@@ -15,6 +15,15 @@ export function consentSentence(c: BotPersonalConsent): string {
   return c.isDefault ? 'Cannot read your Personal space until you allow it.' : 'Cannot read your Personal space. You turned it off.';
 }
 
+/** The server refused a yes because the bot's definition never asks to read Personal files (422 `bot_cannot_ask_personal`). */
+export const isCannotAsk = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'bot_cannot_ask_personal';
+
+/** The sentence under a row when a save failed: for a refused yes, the server's own sentence; otherwise the server's words or the fallback that says the choice is unchanged. */
+export function consentFailureWords(e: unknown): string {
+  if (isCannotAsk(e)) return message(e, 'This bot does not ask to read your Personal files, so there is nothing to allow.');
+  return message(e, 'That could not be saved. Your choice is unchanged.');
+}
+
 /**
  * Account → Bots that may read your Personal space. A bot reads your Personal memory, files and knowledge only in a conversation you start with it, and only
  * while you have said yes here. A change counts from the bot's next step. Brain is allowed until you say no; every other bot needs your yes, and only a bot
@@ -66,7 +75,9 @@ function ConsentRow({ consent }: { consent: BotPersonalConsent }) {
       const { item } = await setBotConsent(current.botId, next);
       setCurrent(item);
     } catch (e) {
-      setError(message(e, 'That could not be saved. Your choice is unchanged.'));
+      // the bot's definition no longer asks: the row now reads "not set up to ask" and the Allow button goes
+      if (isCannotAsk(e)) setCurrent((c) => ({ ...c, canAsk: false }));
+      setError(consentFailureWords(e));
     } finally {
       setBusy(false);
     }

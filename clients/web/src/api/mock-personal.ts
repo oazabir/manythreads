@@ -51,7 +51,7 @@ export type PersonalMockHooks = {
   workspaceId: string;
   nextId(): string;
   now: string;
-  fail(status: number, code: 'not_found' | 'conflict' | 'forbidden' | 'validation_failed', message: string): never;
+  fail(status: number, code: 'not_found' | 'conflict' | 'forbidden' | 'validation_failed' | 'personal_memory_full' | 'bot_cannot_ask_personal', message: string): never;
 };
 
 const created = (body: unknown): Reply => ({ status: 201, body });
@@ -178,6 +178,7 @@ export function installPersonalMock(on: On, h: PersonalMockHooks): { sendToPerso
       h.fail(409, 'conflict', `“${path}” changed since you opened it (it is at version ${String(existing.versions.at(-1)?.versionNo)}). Open it again and redo your edit.`);
     }
     if (!existing) {
+      if (m.files.length >= 2000) h.fail(409, 'personal_memory_full', 'Your Memory already holds the most files it can (2,000). Delete a file you no longer need, then save again.');
       const title = /^title:\s*(.+)$/m.exec(content)?.[1] ?? path;
       file(m, path, content, { type: /^type:\s*(.+)$/m.exec(content)?.[1] ?? 'Fact', title, description: /^description:\s*(.+)$/m.exec(content)?.[1] ?? null, tags: [], trustTier: 'human-reviewed', origin: 'person' });
     } else {
@@ -387,6 +388,7 @@ export function installPersonalMock(on: On, h: PersonalMockHooks): { sendToPerso
     const m = mineOf();
     const bot = BOTS.find((x) => x.botId === params['botId']);
     if (!bot) h.fail(404, 'not_found', 'No such bot');
+    if (b['allowed'] === true && !bot.canAsk) h.fail(422, 'bot_cannot_ask_personal', 'This bot does not ask to read your Personal files, so there is nothing to allow.');
     m.consents.set(bot.botId, b['allowed'] === true);
     changedAt.set(`${personId()}:${bot.botId}`, h.now);
     return { item: consentOf(m, bot) };

@@ -102,8 +102,17 @@ export function versionLine(file: { versionNo: number; sizeBytes: number }): str
   return `Version ${String(file.versionNo)} · ${size}`;
 }
 
-/** Whether a failed save was the "changed since you opened it" refusal (HTTP 409), so the screen offers to reload instead of only showing the sentence. */
-export const isChangedSince = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { status?: unknown }).status === 409;
+/** The sentence for the cap on Personal Memory (2,000 files), the server's own words; reloading the file does not help, deleting one does. */
+export const MEMORY_FULL_SENTENCE = 'Your Memory already holds the most files it can (2,000). Delete a file you no longer need, then save again.';
+
+/** Whether a failed save was the cap on files (HTTP 409 `personal_memory_full`). It is a 409 too, but it is not "changed since you opened it". */
+export const isMemoryFull = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'personal_memory_full';
+
+/** Whether a failed save was the "changed since you opened it" refusal (HTTP 409 `conflict`), so the screen offers to reload instead of only showing the sentence. The full-Memory 409 is checked first and is not this one. */
+export const isChangedSince = (e: unknown): boolean => !isMemoryFull(e) && typeof e === 'object' && e !== null && (e as { status?: unknown }).status === 409;
+
+/** The sentence under a failed save or restore: the full-Memory sentence first, else the server's own words (or the fallback). */
+export const saveFailureWords = (e: unknown, fallback: string): string => (isMemoryFull(e) ? MEMORY_FULL_SENTENCE : e instanceof Error && e.message !== '' ? e.message : fallback);
 
 /** What a team's name is called in the Send to team dialog: the team name, then the slug it is sent to. */
 export function teamChoiceLabel(team: { name: string; slug: string }): string {
