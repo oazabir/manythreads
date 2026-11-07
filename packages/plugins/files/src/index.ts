@@ -5,6 +5,7 @@ import { registerTreeRoute } from './tree.ts';
 import { registerPersonalAdminRoutes } from './personal-admin.ts';
 import { registerPersonalRoutes } from './personal-routes.ts';
 import { registerPersonalShareRoutes } from './personal-share.ts';
+import { filesReadFor } from './read.ts';
 import { BLOB_GC_CRON, BLOB_GC_QUEUE, blobGcHandler } from './gc.ts';
 
 export { sanitizeFileName, numberedName } from './names.ts';
@@ -22,7 +23,9 @@ export default definePlugin({
     kind: 'server',
     extends: ['event.emit', 'job.register', 'hook.pre_egress'],
     events: { emits: ['files.file.uploaded', 'files.file.deleted', 'files.file.restored', 'personal.space.opened', 'personal.space.exported'], consumes: [] },
-    dependsOn: ['channels'],
+    capabilities: [{ name: 'files.read', destructive: false }],
+    // app.run_space_context() (bots) says which Personal space and which teams a run may read
+    dependsOn: ['channels', 'bots'],
     migrations: 'migrations',
   },
   register(ctx) {
@@ -32,6 +35,8 @@ export default definePlugin({
     registerPersonalRoutes(ctx);
     registerPersonalShareRoutes(ctx);
     registerPersonalAdminRoutes(ctx);
+    // `files.read`: a bot reads a Personal file of the asker, or a team file, inside the spaces its run may read (P20-08).
+    ctx.capabilities.register('files.read', filesReadFor(ctx));
     // Daily: delete the rows of long-hidden deleted-message files, then the blobs nothing references (docs/plugins/files.md, "Blob garbage collection").
     ctx.jobs.register(BLOB_GC_QUEUE, blobGcHandler(ctx), { cron: BLOB_GC_CRON, maxAttempts: 3 });
   },

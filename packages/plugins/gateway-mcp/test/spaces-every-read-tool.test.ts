@@ -15,6 +15,7 @@ import { withRunSpaces, type RunSpaces } from '../src/spaces.ts';
 const CLASS = {
   'messages.search': 'team_argument',
   'files.search': 'team_argument',
+  'files.read': 'asker_policies',
   'knowledge.search': 'team_argument',
   'memory.recall': 'run_scoped',
   'inbox.read': 'run_scoped',

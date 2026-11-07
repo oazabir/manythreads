@@ -101,6 +101,7 @@ what a call does beyond asking the broker:
 |---|---|---|
 | `messages.search` | read | searches the run's team; each hit is one `run_source_log` line |
 | `files.search` | read | the same over file names |
+| `files.read` | read | reads one text file or lists one folder: the asker's Personal files by path (only when the run may use them), or a file of a team the run may read by id; the `files` plugin decides ([files.md](./files.md)). Logged as a source, scope `person` for a Personal file |
 | `messages.post` | write | posts a message (or a thread reply) into a channel of the run's team, as the bot — the same call the post route and a runtime's own reply go through (channels plugin, PLAN P5-10) |
 | `pages.write` | write | creates, replaces or appends a page through the repo writer, as the bot |
 | `memory.recall`, `memory.retain` | read / write | the `memory` plugin's bank tools ([memory-hindsight.md](./memory-hindsight.md)): the description is here, the handler is there. When the run may use the asker's Personal space, recall also reads their own bank (each fact names its `space`; the run files a `person` source) and retain writes there instead of to the team |
