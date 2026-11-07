@@ -139,6 +139,14 @@ export function ChatScreen() {
   const selectedItem = items.find((i) => i.threadRootId === root);
   const railStatus: 'loading' | 'ok' | 'error' = rest.status === 'error' || pinned.status === 'error' ? 'error' : rest.status === 'loading' || pinned.status === 'loading' ? 'loading' : 'ok';
   const [railOpen, setRailOpen] = useState(false);
+  // a drawer that closes takes the focus with it (it is inert when shut): give it back to the button that opened it
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const here = document.activeElement;
+    const lost = here === null || here === document.body || document.querySelector('[data-testid="chat-rail"]')?.contains(here) === true;
+    if (wasOpen.current && !railOpen && lost) document.querySelector<HTMLElement>('[data-testid="chat-rail-toggle"]')?.focus();
+    wasOpen.current = railOpen;
+  }, [railOpen]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // ---- the open conversation ----------------------------------------------------------------------------------------------------------

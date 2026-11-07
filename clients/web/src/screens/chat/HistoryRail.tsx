@@ -106,6 +106,11 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
   actions: RailActions;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
+  const newButton = useRef<HTMLButtonElement>(null);
+  // the drawer comes before the chat in the page, so a keyboard or screen-reader user who opens it would otherwise stay on the button behind it
+  useEffect(() => {
+    if (drawer === true) newButton.current?.focus();
+  }, [drawer]);
   const empty = groups.length === 0;
   const searching = query.trim() !== '';
   return (
@@ -117,7 +122,7 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
       {...(drawer === false ? { inert: true } : {})}
     >
       <div className="ch-rail-head">
-        <button type="button" className="btn primary ch-new" onClick={onNew} data-testid="chat-new" title="New chat (Ctrl+Shift+O)">
+        <button ref={newButton} type="button" className="btn primary ch-new" onClick={onNew} data-testid="chat-new" title="New chat (Ctrl+Shift+O)">
           <AddIcon /> <span>New chat</span>
         </button>
         {drawer !== null ? <button type="button" className="icon-btn" aria-label="Close the history" onClick={onClose} data-testid="chat-rail-close"><CloseIcon /></button> : null}
