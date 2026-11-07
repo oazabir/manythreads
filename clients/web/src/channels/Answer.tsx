@@ -173,6 +173,18 @@ export function sourcesLabel(cited: number, read: number): string {
   return n > 0 ? `Sources (${String(n)})` : 'Sources';
 }
 
+/** What a citation says of the space it was read from: only the reader's own Personal space is named ("From your Personal space"). A masked citation carries no space, so it never says it. */
+export const PERSONAL_SPACE_LABEL = 'From your Personal space';
+export function citationSpaceLabel(c: AnswerCitation | AnswerUnsupportedCitation | undefined): string | null {
+  if (!c || !isSupportedCitation(c) || c.kind !== 'memory') return null;
+  return typeof c.space === 'string' && c.space.startsWith('person:') ? PERSONAL_SPACE_LABEL : null;
+}
+
+/** The text label of a Personal-space citation: words, not only colour. */
+function PersonalChip({ label, where }: { label: string; where: 'list' | 'lineage' }): ReactNode {
+  return <span className="an-personal" data-testid="citation-personal" data-in={where} aria-label={label}>{label}</span>;
+}
+
 function CiteBody({ n, label }: { n: number; label: string }): ReactNode {
   return (
     <>
@@ -203,10 +215,12 @@ function Citation({ c, teamSlug, teamSlugOf, who }: { c: AnswerCitation | Answer
   }
   const target = citationTarget(c, teamSlug, teamSlugOf);
   const common = { className: `an-cite an-scope-${c.scope}`, 'data-testid': 'answer-citation', 'data-kind': c.kind, 'data-n': c.n } as const;
-  const label = `Source ${c.n}: ${c.label}`;
+  const space = citationSpaceLabel(c);
+  const label = space ? `Source ${c.n}: ${c.label} · ${space}` : `Source ${c.n}: ${c.label}`;
   const memoryBadges = c.kind === 'memory'
     ? (
       <span className="an-memory-badges" data-testid="answer-memory-badges">
+        {space && <PersonalChip label={space} where="list" />}
         <span className="an-memory-badge an-memory-badge-type">{c.type}</span>
         <span className={`an-memory-badge an-memory-badge-trust an-memory-trust-${c.trustTier}`}>{c.trustTier}</span>
         {c.stale && <span className="an-memory-badge an-memory-badge-stale">stale</span>}
@@ -361,6 +375,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip, reade
                 {l.at ? <span className="an-age" data-vt-mask>{ago(l.at)}</span> : null}
                 {l.masked ? <span className="an-sn an-sn-removed">snippet removed</span> : null}
                 {l.snippet ? <span className="an-sn" data-vt-mask>{`“${l.snippet}”`}</span> : null}
+                {!l.masked && citationSpaceLabel(byNumber.get(l.n)) ? <PersonalChip label={PERSONAL_SPACE_LABEL} where="lineage" /> : null}
               </li>
             ))}
           </ol>

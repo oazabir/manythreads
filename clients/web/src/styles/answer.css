@@ -274,6 +274,26 @@ button.an-chip:hover {
   background: var(--human-wash);
 }
 
+/* ---- a citation read from the reader's own Personal space (P20-08): a text label, never colour alone ---- */
+.an-personal {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--human-border);
+  border-radius: var(--radius-pill);
+  background: var(--human-wash);
+  color: var(--human);
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.an-lin .an-personal {
+  grid-column: 2 / -1;
+  justify-self: start;
+}
+
 /* ---- a shared copy: a source its readers may not open (P5-17, SPEC §6.3) ---- */
 .an-cite-masked {
   border-style: dashed;

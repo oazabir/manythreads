@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { AnswerPayloadView, type AnswerCitation } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { Answer, answeredForLine, citationTarget, kindCount } from '../src/channels/Answer';
+import { Answer, answeredForLine, citationSpaceLabel, citationTarget, kindCount, PERSONAL_SPACE_LABEL } from '../src/channels/Answer';
 
 // The Answer component (PLAN P5-18, `[proto §12]` plate 2): what is drawn for a payload, and what a link from it opens.
 
@@ -239,5 +239,63 @@ describe('the words', () => {
     expect(answeredForLine(base)).toBe('Used Nadia’s own access');
     expect(answeredForLine({ ...base, alias: 'fast' }, 'p1')).toBe('Used your private notes · fast model');
     expect(answeredForLine({ ...base, alias: 'opus' })).toBe('Used Nadia’s own access · opus model');
+  });
+});
+
+describe('a citation from the reader’s own Personal space (P20-08)', () => {
+  const memory = (over: Record<string, unknown> = {}) => ({
+    kind: 'memory',
+    n: 1,
+    label: 'Preferences/Editor',
+    scope: 'person',
+    conceptPath: 'Preferences/Editor.md',
+    type: 'preference',
+    trustTier: 'human-reviewed',
+    stale: false,
+    deprecated: false,
+    fromTeam: null,
+    ...over,
+  });
+  const cite = (c: Record<string, unknown>): AnswerCitation => payload({ citations: [c], lineage: [] }).citations[0] as AnswerCitation;
+  const one = (c: Record<string, unknown>, lineage: Record<string, unknown>[] = []): string =>
+    html(payload({ body: 'Yes [1].', citations: [c], lineage, sourcesReached: [], outsideScope: { count: 0, items: [] }, chips: [] }));
+
+  it('names the space only for a memory citation read from a person:<id> space', () => {
+    expect(citationSpaceLabel(cite(memory({ space: `person:${uuid(20)}` })))).toBe('From your Personal space');
+    expect(PERSONAL_SPACE_LABEL).toBe('From your Personal space');
+    expect(citationSpaceLabel(cite(memory({ space: `team:${uuid(12)}` })))).toBeNull();
+    expect(citationSpaceLabel(cite(memory()))).toBeNull();
+    expect(citationSpaceLabel(cite(message()))).toBeNull();
+    expect(citationSpaceLabel(cite({ kind: 'masked', n: 1, source: 'memory' }))).toBeNull();
+    expect(citationSpaceLabel({ kind: 'futurekind', n: 1, space: 'person:x' } as never)).toBeNull();
+    expect(citationSpaceLabel(undefined)).toBeNull();
+  });
+
+  it('says it in words on the numbered citation, with an accessible name on the chip and the link', () => {
+    const out = one(memory({ space: `person:${uuid(20)}` }));
+    expect(out).toMatch(/data-testid="citation-personal"[^>]*aria-label="From your Personal space"[^>]*>From your Personal space<\/span>/);
+    expect(out).toContain('data-in="list"');
+    expect(out).toContain('aria-label="Source 1: Preferences/Editor · From your Personal space"');
+  });
+
+  it('says it in the lineage too', () => {
+    const out = one(memory({ space: `person:${uuid(20)}` }), [{ n: 1, kind: 'memory', label: 'Preferences/Editor', at: null, snippet: 'Dark theme.' }]);
+    expect(out.match(/data-testid="citation-personal"/g)).toHaveLength(2);
+    expect(out).toContain('data-in="lineage"');
+  });
+
+  it('says nothing for a team concept, a digest marker stays, and a plain memory citation has no chip', () => {
+    const team = one(memory({ scope: 'team', space: `team:${uuid(12)}`, fromTeam: uuid(31) }));
+    expect(team).not.toContain('citation-personal');
+    expect(team).toContain('from ' + uuid(31) + '&#x27;s digest');
+    expect(one(memory())).not.toContain('citation-personal');
+  });
+
+  it('keeps the masked rendering of a Personal citation in a shared copy, and never says "your"', () => {
+    const out = one({ kind: 'masked', n: 1, source: 'memory' }, [{ n: 1, kind: 'memory', label: '', at: null, snippet: null, masked: true }]);
+    expect(out).toContain('from Omar’s memory item · not shared');
+    expect(out).toContain('an-cite-masked');
+    expect(out).not.toContain('citation-personal');
+    expect(out).not.toContain('Personal space');
   });
 });
