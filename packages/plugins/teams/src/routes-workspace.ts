@@ -50,6 +50,20 @@ interface MemberRow extends Record<string, unknown> {
   last_active_at: Date | null;
 }
 
+/**
+ * 409 unless some other owner is active. Deactivating or demoting the last active owner would leave the workspace with nobody who can run it. Two owners
+ * doing it to each other at the same moment would both pass the count, so these checks take turns (the count is a fresh statement after the lock).
+ */
+async function requireAnotherActiveOwner(tx: PluginTx, personId: string): Promise<void> {
+  await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 13))', ['workspace-owners']);
+  const others = await tx.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM app.workspace_members wm JOIN app.people p ON p.id = wm.person_id
+      WHERE wm.workspace_id = app.workspace_id() AND wm.role = 'owner' AND p.status = 'active' AND wm.person_id <> $1`,
+    [personId],
+  );
+  if ((others.rows[0]?.n ?? 0) === 0) throw conflict('A workspace must keep at least one owner who is active; make someone else an owner first');
+}
+
 export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): void {
   // Workspace settings do not exist for anyone below admin: 404, not 403.
   ctx.http.route({
@@ -168,17 +182,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
         if (previousRole === 'owner' && (await tx.query<{ r: string | null }>('SELECT app.workspace_role() AS r')).rows[0]?.r !== 'owner') {
           throw forbidden('Only an owner can change an owner');
         }
-        if (status === 'suspended' && previousRole === 'owner') {
-          // Deactivating the last active owner would leave the workspace with nobody who can run it. Two owners deactivating each other at the
-          // same moment would both pass the count, so deactivations of owners take turns (the count below is a fresh statement after the lock).
-          await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 13))', ['workspace-owners']);
-          const others = await tx.query<{ n: number }>(
-            `SELECT count(*)::int AS n FROM app.workspace_members wm JOIN app.people p ON p.id = wm.person_id
-              WHERE wm.workspace_id = app.workspace_id() AND wm.role = 'owner' AND p.status = 'active' AND wm.person_id <> $1`,
-            [personId],
-          );
-          if ((others.rows[0]?.n ?? 0) === 0) throw conflict('A workspace needs at least one active owner');
-        }
+        if (status === 'suspended' && previousRole === 'owner') await requireAnotherActiveOwner(tx, personId);
         const res = await tx.query(
           'UPDATE app.people SET (status) = ROW($2) WHERE id = $1 AND workspace_id = app.workspace_id() RETURNING id',
           [personId, status],
@@ -196,6 +200,10 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
         );
         // Row level security hides an owner row from a non-owner admin: nothing was updated.
         if (res.rows.length === 0) throw forbidden('Only an owner can change an owner');
+        // The same rule as for deactivating, after the update has passed the row guard (a refusal rolls it back): the database guard counts owners of
+        // any status, so with one owner deactivated the only active owner could otherwise step down and leave nobody who can run, or reactivate anyone
+        // in, the workspace.
+        if (previousRole === 'owner' && nowStatus === 'active' && role !== 'owner') await requireAnotherActiveOwner(tx, personId);
         nowRole = role;
         await emit(tx, { type: 'workspace.member.role_changed', personId, previousRole, role, changedBy: me });
       }

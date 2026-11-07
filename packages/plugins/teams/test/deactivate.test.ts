@@ -94,4 +94,19 @@ describe('deactivating a member (P20-13)', () => {
     const active = await w.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.workspace_members wm JOIN app.people p ON p.id = wm.person_id WHERE wm.role = 'owner' AND p.status = 'active'")).rows[0]?.n);
     expect(active).toBe(1);
   });
+
+  it('the only active owner cannot step down while the other owner is deactivated (the database guard counts owners of any status)', async () => {
+    await w.system(async (tx) => {
+      await tx.query("UPDATE app.people SET status = 'active' WHERE id = ANY ($1::uuid[])", [[omar.personId, tariq.personId]]);
+      await tx.query("UPDATE app.workspace_members SET role = 'owner' WHERE person_id = ANY ($1::uuid[])", [[omar.personId, tariq.personId]]);
+      await tx.query("UPDATE app.people SET status = 'suspended' WHERE id = $1", [tariq.personId]);
+    });
+    const res = await patch(omar, omar.personId, { role: 'admin' });
+    expect(res.status, JSON.stringify(res.body)).toBe(409);
+    const role = await w.system(async (tx) => (await tx.query<{ role: string }>('SELECT role FROM app.workspace_members WHERE person_id = $1', [omar.personId])).rows[0]?.role);
+    expect(role).toBe('owner');
+    // With the other owner active again, stepping down is fine.
+    await w.system((tx) => tx.query("UPDATE app.people SET status = 'active' WHERE id = $1", [tariq.personId]));
+    expect(UpdateWorkspaceMemberResponse.parse(ok(await patch(omar, omar.personId, { role: 'admin' }))).role).toBe('admin');
+  });
 });
