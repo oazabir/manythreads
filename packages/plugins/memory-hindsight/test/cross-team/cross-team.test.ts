@@ -298,6 +298,62 @@ describe('the platform’s door', () => {
 
 // SPEC 12.1: private channels, DMs and person runs are never retained to the team bank. Until P5-13's narrowest-source rule, a run may retain only if
 // every line of its source log is provably team-visible and it was not started in a private context; recalling is always allowed.
+describe('the workspace Brain sits in every team, and a run of it still reads only the team it was opened for (P20-R6)', () => {
+  /** The workspace Brain: no team of its own, a seat in both teams, its grants kept under the workspace id. A run of it is opened for ONE team. */
+  async function openBrainRun(team: string): Promise<{ runId: string; url: string; token: string }> {
+    const teamIds = await world.system(async (tx) => (await tx.query<{ id: string; slug: string }>('SELECT id, slug FROM app.teams WHERE slug = ANY ($1::text[])', [[A, B]])).rows);
+    const brain = await world.system(async (tx) => {
+      const existing = await tx.query<{ id: string }>("SELECT id FROM app.bots WHERE scope = 'workspace' AND slug = 'brain-mem' AND workspace_id = $1", [omar.workspaceId]);
+      if (existing.rows[0]) {
+        const actor = await tx.query<{ id: string }>("SELECT id FROM app.actors WHERE kind = 'bot' AND ref_id = $1", [existing.rows[0].id]);
+        return { botId: existing.rows[0].id, actorId: actor.rows[0]!.id };
+      }
+      const row = await tx.query<{ id: string }>(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status, scope)
+         VALUES ($1, NULL, 'brain-mem', 'agent', 'rules', 'workspace', repeat('d', 64), 'active', 'workspace') RETURNING id`,
+        [omar.workspaceId],
+      );
+      const botId = row.rows[0]!.id;
+      const actor = await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, botId]);
+      for (const t of teamIds) {
+        await tx.query("INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')", [t.id, actor.rows[0]!.id, omar.workspaceId]);
+      }
+      for (const capability of ['memory.recall', 'memory.retain']) {
+        await tx.query(`INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, $3, false, '{}')`, [omar.workspaceId, actor.rows[0]!.id, capability]);
+      }
+      return { botId, actorId: actor.rows[0]!.id };
+    });
+    const appPool = createAppPool(world.server.db.appUrl);
+    const systemPool = createSystemPool(world.server.db.systemUrl, 2);
+    try {
+      const registry = new CapabilityRegistry();
+      const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
+      const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
+      const { run, token } = await service.open({
+        botId: brain.botId,
+        teamId: teamIds.find((t) => t.slug === team)!.id,
+        workspaceId: omar.workspaceId,
+        trigger: 'conversation',
+        askerActorId: nadia.actorId,
+      });
+      return { runId: run.runId, url: `${world.server.url}/api/mcp/runs/${run.runId}`, token };
+    } finally {
+      await appPool.end();
+      await systemPool.end();
+    }
+  }
+
+  it('a Brain run opened for A recalls A’s bank and gets nothing of B’s, though the Brain also sits in B', async () => {
+    const target = await openBrainRun(A);
+    const out = await call(target, 'memory.recall', { query: 'Falconwing launch codename Nightjar' });
+    expect(out.answer).toMatchObject({ ok: true, bank: BANK_A });
+    expect(JSON.stringify(out.answer)).not.toMatch(/Falconwing|Nightjar/);
+    const other = await call(target, 'memory.recall', { query: 'Basilisk migration' });
+    expect(other.answer).toMatchObject({ ok: true, bank: BANK_A });
+    expect(hitsOf(other.answer).length).toBeGreaterThan(0);
+  });
+});
+
 describe('what a run may retain', () => {
   let publicMessageId = '';
   let privateMessageId = '';
