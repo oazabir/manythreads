@@ -14,6 +14,7 @@ import {
   startChatStack,
   stateOf,
   typeAndSend,
+  type ThreadState,
   waitAnswered,
 } from './chat-support.ts';
 
@@ -45,7 +46,10 @@ test('a new chat shows the greeting, the bot\'s own example questions and the bo
     await expect(page.getByTestId('chat-greeting')).toHaveText(/^(Hello|Good (morning|afternoon|evening)), Nadia$/);
     await expect(page.getByTestId('chat-prompt')).toHaveText([...CHAT_PROMPTS]);
     await expect(page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' })).toBeVisible();
-    await expect(page.getByTestId('chat-bot-name')).toContainText('Brain');
+    // the seed's Coder also takes conversations, so the header offers a picker; a team with only Brain would show its name alone
+    const botSpot = page.locator('[data-testid="chat-bot"], [data-testid="chat-bot-name"]');
+    await expect(botSpot).toContainText('Brain');
+    await expect(page.getByTestId('chat-screen')).toHaveAttribute('data-bot', 'brain');
     await expect(page.getByTestId('chat-history-empty')).toContainText('Your chats show here.');
     // the send control is an icon with a name, not the word
     const send = page.getByTestId('chat-main').getByRole('button', { name: 'Send', exact: true });
@@ -122,7 +126,8 @@ test('Stop ends a run that is writing, keeps what was written and says so; Esc d
 
     if (!isMobile) {
       await typeAndSend(page, 'SLOW again');
-      await expect(page.getByTestId('chat-stop')).toBeVisible({ timeout: 45_000 });
+      // Esc stops a run the screen knows is live (frames or the state's live run), not one that is only about to start: wait for its first words
+      await expect(page.getByTestId('chat-streaming')).toContainText('Working on it', { timeout: 45_000 });
       await page.keyboard.press('Escape');
       await expect(page.getByTestId('chat-stopped')).toHaveCount(2, { timeout: 30_000 });
     }
@@ -382,25 +387,33 @@ test('the model menu lists the bot\'s models, greys the one with no model behind
     const run = await stack.sql<{ model_alias: string | null }>('SELECT model_alias FROM app.bot_runs WHERE turn_message_id = $1', [root]);
     expect(run[0]?.model_alias).toBe('fast');
 
-    // the chat remembers it; changing it in the chat is kept too
+    // the chat remembers it, and a message that names no model uses the one the chat was last given (after a reload nothing is picked in the screen, only the
+    // chat has it). Fast is not the bot's first model, so the run can only have it from the chat.
     await page.reload();
     await expect(page.getByTestId('chat-model')).toContainText('Fast');
+    await typeAndSend(page, 'And now?');
+    await expect(bubbles(page, 'bot')).toHaveCount(2, { timeout: 45_000 });
+    await expect(bubbles(page, 'bot').last()).toContainText('And now?');
+    await expect
+      .poll(async () => (await stack.sql<{ model_alias: string | null }>(`SELECT model_alias FROM app.bot_runs WHERE reply_root_id = $1 ORDER BY started_at`, [root])).map((r) => r.model_alias))
+      .toEqual(['fast', 'fast']);
+
+    // changing it in the chat is kept too
     await page.getByTestId('chat-model').click();
     await page.getByTestId('chat-model-item').nth(0).click();
     await expect(page.getByTestId('chat-model')).toContainText('Smart');
     const again = await apiOn(playwright, stack, 'rafi');
     try {
       await expect.poll(async () => (await stateOf(again, root)).modelAlias).toBe('smart');
+      // a model the bot's definition does not list, and one with no model behind it, are refused with a sentence (422), and nothing changes
+      const other = await call(again, 'PATCH', `${BOT}/conversations/${root}`, { modelAlias: 'vision' });
+      expect(other.status, other.text).toBe(422);
+      const unbound = await call(again, 'PATCH', `${BOT}/conversations/${root}`, { modelAlias: 'code' });
+      expect(unbound.status, unbound.text).toBe(422);
+      expect((await stateOf(again, root)).modelAlias).toBe('smart');
     } finally {
       await again.ctx.dispose();
     }
-    // a message that names no model uses the one the chat was last given (after a reload nothing is picked in the screen, only the chat has it)
-    await page.reload();
-    await expect(page.getByTestId('chat-model')).toContainText('Smart');
-    await typeAndSend(page, 'And now?');
-    await expect(bubbles(page, 'bot')).toHaveCount(2, { timeout: 45_000 });
-    const runs = await stack.sql<{ model_alias: string | null }>(`SELECT model_alias FROM app.bot_runs WHERE reply_root_id = $1 ORDER BY started_at DESC LIMIT 1`, [root]);
-    expect(runs[0]?.model_alias).toBe('smart');
   } finally {
     await close();
   }
@@ -485,7 +498,7 @@ test('keyboard: ? lists the shortcuts, Ctrl+K searches, Ctrl+Shift+O starts a ne
     await expect(page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' })).toBeFocused();
     // letters typed in the box are letters, not shortcuts
     await page.keyboard.type('jk?');
-    await expect(page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' })).toContainText('jk?');
+    await expect(page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' })).toHaveValue('jk?');
     await expect(page.getByTestId('chat-shortcuts-dialog')).toHaveCount(0);
   } finally {
     await close();
@@ -503,12 +516,20 @@ test('another person cannot open, rename, stop, delete, restore or write into th
   const root = sent.messageId;
   const refused = (status: number): boolean => status === 403 || status === 404;
   try {
+    // a run is bound to the bot that made it
+    expect((await stack.sql<{ bot_id: string }>('SELECT bot_id FROM app.bot_runs WHERE id = $1', [runId]))[0]?.bot_id).toBe(botId);
+
     expect(refused((await call(priya, 'GET', `${BOT}/conversations/${root}/state`)).status)).toBe(true);
     expect(refused((await call(priya, 'PATCH', `${BOT}/conversations/${root}`, { title: 'Mine now' })).status)).toBe(true);
+    expect(refused((await call(priya, 'PATCH', `${BOT}/conversations/${root}`, { pinned: true })).status)).toBe(true);
     expect(refused((await call(priya, 'DELETE', `${BOT}/conversations/${root}`)).status)).toBe(true);
-    expect(refused((await call(priya, 'POST', `${BOT}/conversations/${root}/restore`)).status)).toBe(true);
     expect(refused((await call(priya, 'POST', `/api/runs/${runId}/stop`)).status)).toBe(true);
     expect(refused((await call(priya, 'POST', `${BOT}/conversations/send`, { body: 'let me in', threadRootId: root, attachments: [] })).status)).toBe(true);
+    const turn = state.turns[0]?.turnMessageId ?? '';
+    const answer = state.turns[0]?.variants[0]?.messageId ?? '';
+    expect(refused((await call(priya, 'POST', `${BOT}/conversations/${root}/turns/${turn}/regenerate`, {})).status)).toBe(true);
+    expect(refused((await call(priya, 'PUT', `${BOT}/conversations/${root}/turns/${turn}/variant`, { messageId: answer })).status)).toBe(true);
+    expect(refused((await call(priya, 'PUT', `${BOT}/conversations/messages/${answer}/feedback`, { vote: 'up' })).status)).toBe(true);
     expect(refused((await call(priya, 'GET', `/api/channels/${sent.channelId}/messages?threadRootId=${root}&limit=20`)).status)).toBe(true);
     expect((await listChats(priya)).some((c) => c.threadRootId === root)).toBe(false);
 
@@ -517,22 +538,94 @@ test('another person cannot open, rename, stop, delete, restore or write into th
     try {
       await expect(page.getByTestId('chat-screen')).toBeVisible();
       await expect(page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' })).toBeVisible({ timeout: 20_000 });
-      await page.waitForTimeout(1_000);
+      await page.waitForLoadState('networkidle');
       await expect(page.getByText('SECRET-PLANS')).toHaveCount(0);
+      await expect(page.getByTestId('chat-message')).toHaveCount(0);
     } finally {
       await close();
     }
 
-    // and nothing of it changed
+    // nothing of it changed
     const still = await stateOf(nadia, root);
     expect(still.title).not.toBe('Mine now');
+    expect(still.pinned).toBe(false);
     expect((await listChats(nadia)).some((c) => c.threadRootId === root)).toBe(true);
     expect(still.turns[0]?.variants[0]?.stopped).toBe(false);
+    expect(((await stateOf(nadia, root)) as unknown as { feedback: unknown[] }).feedback).toHaveLength(0);
+
+    // Undo is the owner's alone: after Nadia deletes her chat, Priya's restore is refused (410, the same answer a late one gets) and the chat stays deleted
+    expect((await call(nadia, 'DELETE', `${BOT}/conversations/${root}`)).status).toBe(200);
+    const stolen = await call(priya, 'POST', `${BOT}/conversations/${root}/restore`);
+    expect(stolen.status, stolen.text).toBeGreaterThanOrEqual(400);
+    expect((await listChats(nadia)).some((c) => c.threadRootId === root)).toBe(false);
+    expect((await call(nadia, 'POST', `${BOT}/conversations/${root}/restore`)).status).toBe(200);
+    expect((await listChats(nadia)).some((c) => c.threadRootId === root)).toBe(true);
   } finally {
     await Promise.all([nadia.ctx.dispose(), priya.ctx.dispose()]);
   }
-  // a run is bound to the bot that made it
-  expect(botId).not.toBe('');
+});
+
+test('Stop is the asker\'s alone: another person cannot end a run that is writing, and the asker still can', async ({ playwright }) => {
+  const nadia = await apiOn(playwright, stack, 'nadia');
+  const priya = await apiOn(playwright, stack, 'priya');
+  try {
+    const sent = await sendChat(nadia, 'SLOW and private');
+    let runId: string | null = null;
+    await expect
+      .poll(async () => {
+        const res = await nadia.ctx.get(`${BOT}/conversations/${sent.messageId}/state`);
+        runId = res.status() === 200 ? ((await res.json()) as ThreadState).liveRunId : null;
+        return runId;
+      }, { timeout: 45_000, message: 'the run to be live' })
+      .not.toBeNull();
+    const live = runId as unknown as string;
+
+    const denied = await call(priya, 'POST', `/api/runs/${live}/stop`);
+    expect(denied.status, denied.text).toBe(404);
+    // it is still running after the refusal
+    expect((await stateOf(nadia, sent.messageId)).liveRunId).toBe(live);
+
+    // a run that is still starting answers { stopped: false } until the process holds it, so ask until it says it stopped it
+    await expect
+      .poll(async () => {
+        const own = await call(nadia, 'POST', `/api/runs/${live}/stop`);
+        return own.status === 200 ? (JSON.parse(own.text) as { stopped: boolean }).stopped : null;
+      }, { timeout: 30_000, message: 'the asker\'s Stop to take hold' })
+      .toBe(true);
+    const done = await waitAnswered(nadia, sent.messageId);
+    expect(done.turns[0]?.variants[0]?.stopped).toBe(true);
+  } finally {
+    await Promise.all([nadia.ctx.dispose(), priya.ctx.dispose()]);
+  }
+});
+
+test('Brain\'s old address lands in Chat: /bots/brain/chat keeps a thread, other bots keep their own conversation view', async ({ browser, playwright, isMobile }) => {
+  const api = await apiOn(playwright, stack, 'rafi');
+  const sent = await sendChat(api, 'Old link');
+  await waitAnswered(api, sent.messageId);
+  const { page, close } = await openChatScreen(browser, playwright, stack, 'rafi', isMobile, '/t/engineering/bots/brain/chat');
+  try {
+    await expect(page).toHaveURL(/\/t\/engineering\/chat\?bot=brain$/);
+    await expect(page.getByTestId('chat-screen')).toBeVisible();
+    await expect(page.getByTestId('conversation-view')).toHaveCount(0);
+
+    await page.goto(`/t/engineering/bots/brain/chat?thread=${sent.messageId}`);
+    await expect(page).toHaveURL(new RegExp(`/t/engineering/chat\\?bot=brain&c=${sent.messageId}$`));
+    await expect(bubbles(page, 'person').first()).toContainText('Old link');
+
+    // the Workshop tab of Brain and any other bot stay on the bot's own page
+    await page.goto('/t/engineering/bots/brain/chat?view=workshop');
+    await expect(page).toHaveURL(/\/bots\/brain\/chat\?view=workshop/);
+    await expect(page.getByTestId('workshop-tab')).toBeVisible();
+    await expect(page.getByTestId('chat-screen')).toHaveCount(0);
+    await page.goto('/t/engineering/bots/coder/chat');
+    await expect(page.getByTestId('conversation-view').or(page.getByTestId('conversation-blocked')).or(page.getByTestId('conversation-unavailable')).first()).toBeVisible();
+    await expect(page).toHaveURL(/\/bots\/coder\/chat/);
+    await expect(page.getByTestId('chat-screen')).toHaveCount(0);
+  } finally {
+    await close();
+    await api.ctx.dispose();
+  }
 });
 
 test('the history: a drawer on a phone (toggle, scrim, close, choosing a chat or New chat shuts it), a column on a desktop', async ({ browser, playwright, isMobile }) => {
