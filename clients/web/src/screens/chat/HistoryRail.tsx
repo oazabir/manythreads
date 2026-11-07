@@ -36,7 +36,7 @@ function RailRow({ item, on, renaming, setRenaming, actions }: { item: Conversat
     if (title !== '' && title !== railTitle(item)) actions.onRename(item.threadRootId, title);
   };
   return (
-    <li role="option" aria-selected={on} className={`ch-row ${on ? 'on' : ''} ${unread ? 'unread' : ''}`} data-testid="chat-row" data-root-id={item.threadRootId} data-pinned={item.pinned ? 'true' : 'false'}>
+    <li className={`ch-row ${on ? 'on' : ''} ${unread ? 'unread' : ''}`} data-testid="chat-row" data-root-id={item.threadRootId} data-pinned={item.pinned ? 'true' : 'false'}>
       {renaming ? (
         <input
           className="ch-rename"
@@ -59,7 +59,7 @@ function RailRow({ item, on, renaming, setRenaming, actions }: { item: Conversat
           }}
         />
       ) : (
-        <button type="button" className="ch-row-main" onClick={() => actions.onOpen(item.threadRootId)} data-testid="chat-row-open">
+        <button type="button" className="ch-row-main" aria-current={on ? 'true' : undefined} onClick={() => actions.onOpen(item.threadRootId)} data-testid="chat-row-open">
           <span className="ch-row-title">{railTitle(item)}</span>
           <span className="ch-row-meta" data-vt-mask>{ago(item.lastActivityAt)}</span>
           {unread ? <span className="ch-dot" role="img" aria-label="Unread" data-testid="chat-row-unread" /> : null}
@@ -154,7 +154,7 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
         {groups.map((g) => (
           <section key={g.id} className="ch-group" aria-label={g.label} data-testid={`chat-group-${g.id}`}>
             <h3 className="ch-group-title">{g.label}</h3>
-            <ul className="ch-rows" role="listbox" aria-label={g.label}>
+            <ul className="ch-rows" aria-label={g.label}>
               {g.items.map((item) => (
                 <RailRow key={item.threadRootId} item={item} on={item.threadRootId === selected} renaming={renaming === item.threadRootId} setRenaming={(v) => setRenaming(v ? item.threadRootId : null)} actions={actions} />
               ))}

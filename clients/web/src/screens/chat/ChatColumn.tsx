@@ -14,7 +14,7 @@ import { sayToast } from '../../kernel/toast';
 import { StopIcon } from '../../shell/icons';
 import { chooseVariant, giveFeedback, regenerateTurn } from './api';
 import { LookedAt } from './LookedAt';
-import { awaitingAnswer, buildRows, neighbourVariant, previewLive, variantPosition, type ChatRow, type Preview } from './model';
+import { answerStatus, awaitingAnswer, buildRows, neighbourVariant, previewLive, variantPosition, type ChatRow, type Preview } from './model';
 import { ReplyActions } from './ReplyActions';
 
 /** How long after the person's message the column says the bot is on it: a run that has not answered by then has failed, and says so in the thread. */
@@ -120,6 +120,13 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   const stuck = useRef(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [busyTurn, setBusyTurn] = useState<string | null>(null);
+  // Another answer was asked for and has not started yet (the run begins a moment after the request): Ask again stays off, so a second click does not start a second run.
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    if (!asked) return;
+    const t = setTimeout(() => setAsked(false), AWAIT_MS);
+    return () => clearTimeout(t);
+  }, [asked]);
 
   useEffect(() => {
     void channelStore.loadThread(root, channelId);
@@ -128,9 +135,10 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   const rows = useMemo(() => buildRows(tl.root, tl.items, state, selfActor), [tl.root, tl.items, state, selfActor]);
   const newest = tl.items.at(-1)?.id ?? tl.root?.id ?? null;
   const live = previewLive(preview) || (state?.liveRunId ?? null) !== null;
+  const busy = live || asked;
   const lastMine = rows.at(-1);
   const waitingOnBot =
-    live || (awaitingAnswer(rows) && lastMine !== undefined && Date.now() - Date.parse(lastMine.message.createdAt) < AWAIT_MS) || pendingText !== null;
+    busy || (awaitingAnswer(rows) && lastMine !== undefined && Date.now() - Date.parse(lastMine.message.createdAt) < AWAIT_MS) || pendingText !== null;
   const showPending = pendingText !== null && lastMine?.kind !== 'person';
 
   // a new message in the thread (the answer, a reply to another turn): the state is read again to know which answers it holds
@@ -138,6 +146,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   useEffect(() => {
     if (seen.current === newest) return;
     seen.current = newest;
+    setAsked(false);
     reloadState();
   }, [newest, reloadState]);
 
@@ -171,6 +180,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
     stuck.current = true;
     try {
       await regenerateTurn(address, turn, state?.modelAlias ? { modelAlias: state.modelAlias } : {});
+      setAsked(true);
       reloadState();
     } catch (e) {
       fail(e, 'Could not ask again. Try again.');
@@ -200,13 +210,14 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   const saveEdit = async (m: ChannelMessage, body: string): Promise<void> => {
     await channelStore.edit(channelId, m.id === root ? null : root, m.id, body);
     await regenerateTurn(address, m.id, state?.modelAlias ? { modelAlias: state.modelAlias } : {});
+    setAsked(true);
     setEditing(null);
     reloadState();
     onChanged();
   };
 
   const lastPerson = [...rows].reverse().find((r) => r.kind === 'person');
-  const editableNow = lastPerson !== undefined && !live && lastPerson.message.authorId === selfActor ? lastPerson.message.id : null;
+  const editableNow = lastPerson !== undefined && !busy && lastPerson.message.authorId === selfActor ? lastPerson.message.id : null;
   const lastSignal = useRef(editSignal);
   useEffect(() => {
     if (editSignal === lastSignal.current) return;
@@ -235,7 +246,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               position={position}
               vote={f?.vote ?? null}
               reason={f?.reason ?? ''}
-              canRegenerate={!live && busyTurn === null}
+              canRegenerate={!busy && busyTurn === null}
               onCopy={() => {
                 void copyText(m.body).then((ok) => void sayToast(ok ? 'Copied.' : 'Could not copy. Select the text and copy it.'));
               }}
@@ -252,6 +263,10 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
 
   return (
     <div className="ch-column" data-testid="chat-column" data-root-id={root} data-live={live ? 'true' : 'false'}>
+      {/* One short line for a screen reader, said when the answer starts and when it is in; the words themselves are not read out as they arrive. */}
+      <p className="sr-only" role="status" data-testid="chat-status">
+        {answerStatus(waitingOnBot, preview.ended, botName)}
+      </p>
       <div
         className="ch-scroll"
         ref={scroller}
@@ -271,7 +286,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               editing === row.message.id ? (
                 <EditBox key={row.message.id} initial={row.message.body} onSave={(body) => saveEdit(row.message, body)} onCancel={() => setEditing(null)} />
               ) : (
-                <PersonMessage key={row.message.id} message={row.message} editable={!live && lastPerson === row && row.message.authorId === selfActor} onEdit={() => setEditing(row.message.id)} />
+                <PersonMessage key={row.message.id} message={row.message} editable={!busy && lastPerson === row && row.message.authorId === selfActor} onEdit={() => setEditing(row.message.id)} />
               )
             ) : (
               renderBot(row)
@@ -281,7 +296,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
             <div className="ch-msg person pending" data-testid="chat-pending"><div className="ch-bubble"><Markdown source={pendingText} /></div></div>
           ) : null}
           {waitingOnBot ? (
-            <div className="ch-msg bot live" data-testid="chat-live" aria-live="polite">
+            <div className="ch-msg bot live" data-testid="chat-live">
               <span className="ch-avatar"><Avatar name={botName} kind="agent" avatar={botAvatar ?? null} /></span>
               <div className="ch-body">
                 <LookedAt labels={preview.looking} />

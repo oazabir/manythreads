@@ -101,22 +101,27 @@ export function neighbourVariant(row: Extract<ChatRow, { kind: 'bot' }>, step: -
 export type Preview = {
   runId: string | null;
   threadRootId: string | null;
-  /** The answer so far. */
+  /** The answer so far (only while it is whole: see `partial`). */
   text: string;
+  /**
+   * A piece went missing (the page was opened or the socket reconnected in the middle of the answer), so `text` would read wrongly. It stays empty and the screen
+   * shows the working line until the final message arrives.
+   */
+  partial: boolean;
   /** What the bot has been looking at, in order, without repeats. */
   looking: string[];
   /** Set when the run ended; the answer itself is then a message of the thread. */
   ended: RunEndedPush['status'] | null;
 };
 
-export const NO_PREVIEW: Preview = { runId: null, threadRootId: null, text: '', looking: [], ended: null };
+export const NO_PREVIEW: Preview = { runId: null, threadRootId: null, text: '', partial: false, looking: [], ended: null };
 
 export type Frame = { type: 'delta'; push: RunDeltaPush } | { type: 'looking'; push: RunLookingPush } | { type: 'ended'; push: RunEndedPush };
 
 /**
  * One frame into the preview. A frame of another run starts a new preview; a frame for another conversation is ignored. `offset` is how many
- * characters came before the piece: a repeat adds only what is new, and a gap (a missed frame) is closed by appending, because the preview is only a
- * preview and the final message replaces it.
+ * characters came before the piece: a repeat adds only what is new. A gap (a missed frame, or a page opened in the middle of the answer: the first piece it sees
+ * does not start at 0) would make the text read wrongly, so the preview gives up its words and waits for the final message, which replaces it.
  */
 export function applyFrame(prev: Preview, frame: Frame, thread: string): Preview {
   if (frame.push.threadRootId !== thread) return prev;
@@ -128,9 +133,20 @@ export function applyFrame(prev: Preview, frame: Frame, thread: string): Preview
     return base.looking.includes(label) ? base : { ...base, looking: [...base.looking, label] };
   }
   const { offset, text } = frame.push;
+  if (base.partial) return base;
+  if (offset > base.text.length) return { ...base, text: '', partial: true };
   if (offset + text.length <= base.text.length) return base;
   const fresh = offset < base.text.length ? text.slice(base.text.length - offset) : text;
   return { ...base, text: base.text + fresh };
+}
+
+/**
+ * The one line a screen reader is told about the answer: when it starts and when it is in. The words are never read out as they arrive (the live region holds
+ * this sentence only), so a long answer does not talk over the reader for its whole length.
+ */
+export function answerStatus(writing: boolean, ended: Preview['ended'], botName: string): string {
+  if (writing) return `${botName} is writing an answer.`;
+  return ended === 'done' ? `${botName} answered.` : '';
 }
 
 /** Whether the preview is for an answer still being written. */

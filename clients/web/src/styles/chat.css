@@ -774,7 +774,8 @@
   .ch .ch-chip,
   .ch .ch-menu-item,
   .ch .ch-pop-item,
-  .ch .ch-help {
+  .ch .ch-help,
+  .ch .ch-edit {
     min-width: 44px;
     min-height: 44px;
   }
@@ -787,7 +788,9 @@
     display: inline;
   }
 
-  .ch .ch-search-input {
+  .ch .ch-search-input,
+  .ch .ch-rename,
+  .ch .ch-reason-input {
     min-height: 44px;
   }
 }

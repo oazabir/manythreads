@@ -9,6 +9,7 @@ import { ReplyActions } from '../src/screens/chat/ReplyActions';
 import { optionFor, pickedAlias } from '../src/screens/chat/models';
 import {
   NO_PREVIEW,
+  answerStatus,
   applyFrame,
   awaitingAnswer,
   buildRows,
@@ -117,9 +118,22 @@ describe('the live preview', () => {
     expect(p.text).toBe('Hello wor');
     expect(previewLive(p)).toBe(true);
   });
-  it('closes a gap by appending, because the final message replaces the preview', () => {
-    const p = applyFrame(applyFrame(NO_PREVIEW, delta(0, 'ab'), thread), delta(10, 'cd'), thread);
-    expect(p.text).toBe('abcd');
+  it('gives up its words at a gap rather than show text with a hole in it, and keeps waiting for the end', () => {
+    let p = applyFrame(applyFrame(NO_PREVIEW, delta(0, 'ab'), thread), delta(10, 'cd'), thread);
+    expect(p).toMatchObject({ text: '', partial: true });
+    p = applyFrame(p, delta(12, 'ef'), thread);
+    expect(p.text).toBe('');
+    expect(previewLive(p)).toBe(true);
+  });
+  it('does the same for a page opened in the middle of an answer: the first piece it sees does not start at 0', () => {
+    const p = applyFrame(NO_PREVIEW, delta(240, 'and so on'), thread);
+    expect(p).toMatchObject({ text: '', partial: true, runId: run });
+  });
+  it('tells a screen reader one short sentence at the start and at the end, never the words', () => {
+    expect(answerStatus(true, null, 'Brain')).toBe('Brain is writing an answer.');
+    expect(answerStatus(false, 'done', 'Brain')).toBe('Brain answered.');
+    expect(answerStatus(false, 'stopped', 'Brain')).toBe('');
+    expect(answerStatus(false, null, 'Brain')).toBe('');
   });
   it('ignores another conversation, and starts again for another run', () => {
     const p = applyFrame(NO_PREVIEW, delta(0, 'abc'), thread);
@@ -186,7 +200,10 @@ describe('the pieces of the screen', () => {
     );
     expect(html).toContain('data-testid="chat-group-pinned"');
     expect(html).toContain('data-testid="chat-group-today"');
-    expect(html).toContain('aria-selected="true"');
+    // a row holds buttons, so it is a plain list item with the open chat marked "current" (an option may not contain a button)
+    expect(html).toContain('aria-current="true"');
+    expect(html).not.toContain('role="option"');
+    expect(html).not.toContain('role="listbox"');
     expect(html).toContain('data-testid="chat-row-unread"');
     expect(html).toContain('aria-label="Options for Chat 1"');
     expect(html).toContain('data-testid="chat-older"');
