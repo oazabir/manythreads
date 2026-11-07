@@ -123,6 +123,25 @@ describe('upload, download, rename, delete', () => {
   });
 });
 
+describe('the channel delete route and a Personal file', () => {
+  it('refuses a Personal file, so no version bytes are left behind and no team-style delete event is written', async () => {
+    const f = await put(nadia, 'Notes', 'v1', 'keep.md');
+    await put(nadia, 'Notes', 'v2', 'keep.md', 'version');
+    const before = blobs().length;
+    const deleted = async (): Promise<number> =>
+      w.system(async (tx) => Number((await tx.query<{ n: string }>("SELECT count(*) AS n FROM app.events WHERE type = 'files.file.deleted' AND payload->>'fileId' = $1", [f.id])).rows[0]!.n));
+    expect((await w.call(nadia, 'DELETE', `/api/files/${f.id}`)).status).toBe(409);
+    expect((await w.call(sameera, 'DELETE', `/api/files/${f.id}`)).status).toBe(403);
+    expect(blobs().length).toBe(before);
+    expect(await deleted()).toBe(0);
+    expect(await text(nadia, `/api/files/${f.id}/content`)).toBe('v2');
+    // The Personal route is the way, and it tags the event with the space.
+    expect(ok<{ deleted: boolean }>(await w.call(nadia, 'DELETE', `/api/me/files/${f.id}`)).deleted).toBe(true);
+    expect(await deleted()).toBe(1);
+    expect(blobs().length).toBe(before - 2);
+  });
+});
+
 describe('versions', () => {
   it('saving over a name keeps the old content; restore brings it back and keeps the replaced one', async () => {
     const f = await put(nadia, 'Notes', 'first', 'story.md');

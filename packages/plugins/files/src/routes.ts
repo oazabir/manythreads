@@ -300,6 +300,8 @@ export function registerFileRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { fileId } = FilePathParams.parse(req.params);
       const file = await requireFile(tx, fileId);
+      // A Personal file goes with its versions' bytes and without a team-style audit line: that is `DELETE /api/me/files/:fileId` (personal-routes.ts).
+      if (file.owner_person_id) throw conflict('Delete a Personal file from your Personal files');
       const manage =
         file.channel_id !== null &&
         (await tx.query<{ ok: boolean }>('SELECT app.channel_can($1, $2) AS ok', [file.channel_id, 'manage'])).rows[0]?.ok === true;
