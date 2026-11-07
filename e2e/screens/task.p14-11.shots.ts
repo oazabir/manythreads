@@ -44,11 +44,11 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(OUT, `p14-11-${name}.png`), animations: 'disabled' });
 }
 
-/** Types into the sidebar box (on a phone behind the Find button) and waits for the results of exactly that text. */
+/** Types into the sidebar box (on a phone behind the Search button of the bottom bar) and waits for the results of exactly that text. */
 async function search(page: Page, q: string, phone: boolean, keepScroll = false): Promise<void> {
   if (phone) {
     if (await page.getByTestId('search-results').count()) await page.goto(HOME);
-    await page.getByRole('button', { name: 'Find' }).click();
+    await page.getByTestId('bar-search').click();
   }
   const box = phone ? page.locator('#shell-rail').getByRole('searchbox') : page.locator('[data-landmark="search"]').getByRole('searchbox');
   await box.fill(q);

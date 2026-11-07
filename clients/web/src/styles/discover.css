@@ -20,10 +20,6 @@
   width: 220px;
 }
 
-.find-btn {
-  display: none;
-}
-
 .bell {
   position: relative;
   display: flex;
@@ -896,10 +892,6 @@
 @media (width <= 760px) {
   .head-search {
     display: none;
-  }
-
-  .find-btn {
-    display: inline-grid;
   }
 
   .ntf-pop {

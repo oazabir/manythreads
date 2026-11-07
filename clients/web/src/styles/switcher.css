@@ -155,7 +155,7 @@
 
 @media (width <= 760px) {
   .toasts {
-    bottom: 96px;
+    bottom: calc(96px + var(--bottom-bar-h));
     left: 12px;
   }
 }
