@@ -44,7 +44,7 @@ async function expectOneH1(page: Page, label: string): Promise<void> {
 }
 
 const TEAM_ROUTES = [
-  'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'agents', 'projects', 'recipes', 'memory', 'proposals', 'bots/helper', 'bots/new', 'bots/helper/usage',
+  'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'agents', 'projects', 'recipes', 'memory', 'proposals', 'chat', 'chat?bot=helper', 'bots/helper', 'bots/new', 'bots/helper/usage',
 ];
 const SETTINGS_ROUTES = [
   '/settings/workspace/general', '/settings/workspace/members', '/settings/workspace/roles', '/settings/workspace/llm', '/settings/workspace/runners',
