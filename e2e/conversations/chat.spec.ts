@@ -92,6 +92,74 @@ test('a new chat shows the greeting, the bot\'s own example questions and the bo
   }
 });
 
+/** Records, every 15 ms, what the Chat column shows about live state and the actions under answers; read back after the run with `samples()`. */
+async function sampleActions(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __samples: Array<{ t: number; live: string | null; liveBlock: boolean; actions: number; holds: number; bots: number }> };
+    w.__samples = [];
+    setInterval(() => {
+      const column = document.querySelector('[data-testid="chat-column"]');
+      w.__samples.push({
+        t: performance.now(),
+        live: column?.getAttribute('data-live') ?? null,
+        liveBlock: document.querySelector('[data-testid="chat-live"]') !== null,
+        actions: document.querySelectorAll('[data-testid="chat-reply-actions"]').length,
+        holds: document.querySelectorAll('[data-testid="chat-actions-hold"]').length,
+        bots: document.querySelectorAll('[data-testid="chat-message"][data-role="bot"]').length,
+      });
+    }, 15);
+  });
+}
+const samples = (page: import('@playwright/test').Page) =>
+  page.evaluate(() => (window as unknown as { __samples: Array<{ t: number; live: string | null; liveBlock: boolean; actions: number; holds: number; bots: number }> }).__samples);
+
+test('reply actions sit under a finished answer only: none while an answer is being written (not even on the older ones), the room is kept, and they are back within 300 ms of the end', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(150_000); // three answers, each written over several seconds
+  const { page, close } = await openChatScreen(browser, playwright, stack, 'rafi', isMobile);
+  try {
+    await page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' }).fill('STREAM first');
+    await page.getByTestId('chat-main').getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(bubbles(page, 'bot').last()).toContainText('The release is waiting for Monday.', { timeout: 45_000 });
+    await expect(page.getByTestId('chat-reply-actions')).toHaveCount(1);
+    await expect(page.getByTestId('chat-live')).toHaveCount(0);
+
+    // a second question: the first answer keeps no actions while the second is on its way, the room stays, and nothing jumps when they come back
+    await sampleActions(page);
+    await typeAndSend(page, 'STREAM second');
+    await expect(page.getByTestId('chat-streaming')).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByTestId('chat-reply-actions')).toHaveCount(0);
+    await expect(page.getByTestId('chat-actions-hold')).toHaveCount(1);
+    await expect(bubbles(page, 'bot')).toHaveCount(2, { timeout: 45_000 });
+    await expect(page.getByTestId('chat-live')).toHaveCount(0);
+    await expect(page.getByTestId('chat-reply-actions')).toHaveCount(2, { timeout: 5_000 });
+    await expect(page.getByTestId('chat-actions-hold')).toHaveCount(0);
+    const seen = await samples(page);
+
+    // while a run is on (live column or live block) no answer has actions, and each keeps its room
+    const during = seen.filter((s) => s.live === 'true' || s.liveBlock);
+    expect(during.length).toBeGreaterThan(10);
+    expect(during.filter((s) => s.actions > 0)).toEqual([]);
+    expect(during.filter((s) => s.bots >= 1 && s.holds !== s.bots)).toEqual([]);
+    // the answer is a message and the live block is gone: the actions are there in that same sample or the next few (300 ms)
+    const doneAt = seen.find((s) => s.bots === 2 && s.live === 'false' && !s.liveBlock);
+    expect(doneAt).toBeDefined();
+    const back = seen.find((s) => s.t >= (doneAt?.t ?? 0) && s.actions === 2);
+    expect(back).toBeDefined();
+    expect((back?.t ?? 0) - (doneAt?.t ?? 0)).toBeLessThan(300);
+    // no moment shows the live block and the finished answer's actions together, and none shows the live block with the finished answer and no room kept
+    expect(seen.filter((s) => s.liveBlock && s.actions > 0)).toEqual([]);
+
+    // Ask again on the newest answer: every answer gives up its actions until the new one is in
+    await page.getByTestId('chat-regenerate').last().click();
+    await expect(page.getByTestId('chat-reply-actions')).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.getByTestId('chat-actions-hold')).toHaveCount(2);
+    await expect(page.getByTestId('chat-reply-actions')).toHaveCount(2, { timeout: 60_000 });
+    await expect(page.getByTestId('chat-variant-pos')).toHaveText('2 / 2');
+  } finally {
+    await close();
+  }
+});
+
 test('an example question sends at once', async ({ browser, playwright, isMobile }) => {
   const { page, close } = await openChatScreen(browser, playwright, stack, 'rafi', isMobile);
   try {

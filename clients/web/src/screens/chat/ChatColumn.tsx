@@ -227,9 +227,16 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
     if (editableNow !== null) setEditing(editableNow);
   }, [editSignal, editableNow]);
 
+  // The actions belong to a finished answer. While an answer is on its way (the person's message went, a run is writing, or the answer is posted and its run has not closed) no answer
+  // has them - not the one being replaced, not an older one - and each keeps an empty slot of their height, so nothing jumps when they all come back in the render that drops the live block.
+  const lastRow = rows.at(-1);
+
   const renderBot = (row: Extract<ChatRow, { kind: 'bot' }>): ReactNode => {
     const m = row.message;
-    const turnId = row.turn?.turnMessageId ?? null;
+    // the index of variants trails a new message by a moment: until it has the answer, the turn is the person's message just before it, so the actions do not wait for that read
+    const justPosted = row.turn === null && row === lastRow && m.meta.runFailure === undefined;
+    const turnId = row.turn?.turnMessageId ?? (justPosted ? (lastPerson?.message.id ?? null) : null);
+    const settled = !waitingOnBot;
     const f = votes.get(m.id);
     const position = variantPosition(row);
     const own = m.meta.answer?.answeredFor.personId === people.me?.personId;
@@ -248,18 +255,19 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               <RegenerateIcon /> <span>Try again</span>
             </button>
           ) : null}
-          {turnId !== null ? (
+          {turnId !== null && !settled ? <div className="ch-actions hold" aria-hidden="true" data-testid="chat-actions-hold" /> : null}
+          {turnId !== null && settled ? (
             <ReplyActions
               position={position}
               vote={f?.vote ?? null}
               reason={f?.reason ?? ''}
-              canRegenerate={!busy && busyTurn === null}
+              canRegenerate={!waitingOnBot && busyTurn === null}
               onCopy={() => {
                 void copyText(m.body).then((ok) => void sayToast(ok ? 'Copied.' : 'Could not copy. Select the text and copy it.'));
               }}
               onRegenerate={() => void regenerate(turnId)}
-              onPrevious={neighbourVariant(row, -1) ? () => void pick(turnId, neighbourVariant(row, -1)) : null}
-              onNext={neighbourVariant(row, 1) ? () => void pick(turnId, neighbourVariant(row, 1)) : null}
+              onPrevious={!waitingOnBot && neighbourVariant(row, -1) ? () => void pick(turnId, neighbourVariant(row, -1)) : null}
+              onNext={!waitingOnBot && neighbourVariant(row, 1) ? () => void pick(turnId, neighbourVariant(row, 1)) : null}
               onVote={(v, reason) => void vote(m.id, v, reason)}
             />
           ) : null}
