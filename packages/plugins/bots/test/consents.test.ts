@@ -73,4 +73,16 @@ describe('GET/PUT /api/me/bot-consents', () => {
     expect([403, 404]).toContain((await set(lena, '00000000-0000-7000-8000-000000000999', true)).status);
     expect((await set(nadia, '00000000-0000-7000-8000-000000000999', true)).status).toBe(404);
   });
+
+  it('refuses a yes for a bot that never asks for Personal files (422), and still accepts a no', async () => {
+    const quiet = await until(async () => (await list(nadia)).body.items.find((i) => i.botSlug === 'consent-quiet'), 10_000);
+    expect(quiet.canAsk).toBe(false);
+    const yes = await set(nadia, quiet.botId, true);
+    expect(yes.status).toBe(422);
+    expect(yes.body).toMatchObject({ error: { code: 'bot_cannot_ask_personal', message: expect.stringContaining('does not ask') } });
+    // nothing was recorded
+    expect((await list(nadia)).body.items.find((i) => i.botSlug === 'consent-quiet')).toMatchObject({ allowed: false, isDefault: true });
+    // a no is always fine
+    expect((await set(nadia, quiet.botId, false)).status).toBe(200);
+  });
 });

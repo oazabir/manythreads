@@ -1,4 +1,4 @@
-import type { PluginContext } from '@manythreads/sdk';
+import { HttpError, type PluginContext } from '@manythreads/sdk';
 import {
   ListBotConsentsResponse,
   SetBotConsentParams,
@@ -56,6 +56,10 @@ export function registerConsentRoutes(ctx: PluginContext): void {
       // the person must be able to see the bot (and not be a guest: the list is empty for them)
       const listed = await tx.query<ConsentRow>('SELECT bot_id, bot_slug, bot_name, can_ask, allowed, is_default, changed_at FROM app.bot_consent_rows() WHERE bot_id = $1', [botId]);
       if (listed.rows.length === 0) throw notFound('No such bot');
+      // a yes for a bot that never asks would look like an allowance that does nothing (and could outlive a later BOT.md change without the person knowing): a no is always fine
+      if (allowed && !listed.rows[0]!.can_ask) {
+        throw new HttpError(422, 'bot_cannot_ask_personal', 'This bot does not ask to read your Personal files, so there is nothing to allow.');
+      }
       await tx.query(
         `INSERT INTO app.bot_personal_consents (person_id, bot_id, workspace_id, allowed) VALUES ($1, $2, app.workspace_id(), $3)
          ON CONFLICT (person_id, bot_id) DO UPDATE SET allowed = EXCLUDED.allowed, changed_at = now()`,

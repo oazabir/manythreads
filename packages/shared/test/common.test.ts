@@ -53,6 +53,8 @@ describe('ErrorEnvelope', () => {
       'bot_has_no_conversation_trigger',
       'okf_invalid',
       'broadcast_needs_confirmation',
+      'bot_cannot_ask_personal',
+      'personal_memory_full',
     ]);
   });
 });

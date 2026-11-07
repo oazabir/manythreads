@@ -20,6 +20,10 @@ export const ErrorCode = z.enum([
   'okf_invalid',
   /** 409: a message that names `@here` or `@channel` in a room with more people than the confirmation limit must be sent with `confirmBroadcast: true`; the message says how many people it would notify (channels plugin, P14-02). */
   'broadcast_needs_confirmation',
+  /** 422: a person's yes (`allowed: true`) for a bot that never asks to read Personal files (its BOT.md has no `personal.read`); nothing is recorded, a no is still accepted (bots plugin, P20-09). */
+  'bot_cannot_ask_personal',
+  /** 409: the person's Personal Memory already holds the most files it can (2,000). Unlike `conflict` (the file moved since it was opened), reloading does not help: delete a file first (memory plugin, P20-05). */
+  'personal_memory_full',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
