@@ -7,6 +7,8 @@ import {
   ListPersonalRoutineRunsResponse,
   ListPersonalRoutinesResponse,
   RoutineWorkspaceSettings,
+  personalRecipeById,
+  recipeToDraft,
   RunPersonalRoutineResponse,
   UpdatePersonalRoutineResponse,
   type PersonalRoutine,
@@ -294,6 +296,33 @@ describe('the guards', () => {
     expect(listed.stoppedReason).toBe('bot_gone');
     expect(listed.botSlug).toBeNull();
     expect((await call(omar, 'POST', `/api/me/scheduled-jobs/${routine.id}/run`)).status).toBe(409);
+  });
+});
+
+describe('the Personal shelf', () => {
+  it('makes a routine from a recipe and the action-items list then shows its keeper', async () => {
+    const recipe = personalRecipeById('action-items')!;
+    const draft = recipeToDraft(recipe, 'Asia/Dubai');
+    const before = ListActionItemsResponse.parse((await call(omar, 'GET', '/api/me/action-items')).body);
+    expect(before.keeperRoutineId).toBeNull();
+    const routine = await make(omar, draft.name, {
+      words: recipe.sentence,
+      schedule: draft.schedule,
+      scheduleWords: draft.scheduleWords,
+      prompt: draft.prompt,
+      sources: [],
+      outputPath: draft.outputPath,
+      outputMode: draft.outputMode,
+      recipeId: recipe.id,
+    });
+    expect(routine.outputPath).toBe('Action items/action-items.md');
+    const after = ListActionItemsResponse.parse((await call(omar, 'GET', '/api/me/action-items')).body);
+    expect(after.keeperRoutineId).toBe(routine.id);
+  });
+
+  it('refuses a recipe that is not on the shelf and an output inside Memory', async () => {
+    expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Odd recipe', { recipeId: 'not-a-recipe' }))).status).toBe(400);
+    expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Into memory', { outputPath: 'Memory/notes.md' }))).status).toBe(400);
   });
 });
 

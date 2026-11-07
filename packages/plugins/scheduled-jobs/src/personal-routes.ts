@@ -22,6 +22,7 @@ import {
   getRoutineWorkspaceSettingsRoute,
   isTimeZone,
   listPersonalRoutineRunsRoute,
+  personalRecipeById,
   listPersonalRoutinesRoute,
   minGapMinutes,
   parseCron,
@@ -161,6 +162,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
       const member = await needMember(tx);
       const body = CreatePersonalRoutineRequest.parse(req.body);
       const at = now();
+      if (body.recipeId !== undefined && !personalRecipeById(body.recipeId)) throw invalid('That recipe is not one I know');
       await checkSchedule(body.schedule, body.timeZone, at);
       const bot = await resolveBotFor(tx, member.personId, body.botSlug);
       if (!bot) throw notFound('No such bot');
