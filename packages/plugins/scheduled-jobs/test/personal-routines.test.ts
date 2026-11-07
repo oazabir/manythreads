@@ -217,6 +217,23 @@ describe('running', () => {
     expect((await call(nadia, 'GET', `/api/me/scheduled-jobs/${routine.id}/runs`)).status).toBe(404);
   });
 
+  it('"Run now" of somebody else\'s routine is refused to a member, an admin and a guest, files no firing, and works for the owner', async () => {
+    const routine = await make(nadia, 'Not yours to run');
+    // omar is an admin of the workspace; sameera a member of another team; lena a guest
+    for (const [who, wanted] of [[omar, 404], [sameera, 404], [lena, 403]] as const) {
+      const res = await call(who, 'POST', `/api/me/scheduled-jobs/${routine.id}/run`);
+      expect(res.status, who.key).toBe(wanted);
+    }
+    expect(await runsOf(routine.id)).toHaveLength(0);
+    const own = await call(nadia, 'POST', `/api/me/scheduled-jobs/${routine.id}/run`);
+    expect(own.status, JSON.stringify(own.body)).toBe(202);
+    expect(await runsOf(routine.id)).toHaveLength(1);
+    // the definer function behind it is held too (the rls test of the firing door), and a stranger's change or removal finds nothing
+    expect((await call(omar, 'PATCH', `/api/me/scheduled-jobs/${routine.id}`, { enabled: false })).status).toBe(404);
+    expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${routine.id}`)).status).toBe(404);
+    expect((await routineRow(routine.id))['enabled']).toBe(true);
+  });
+
   it('"Run now" is held to the day\'s count of firings, like the schedule', async () => {
     const routine = await make(omar, 'Run now many');
     await sql(
