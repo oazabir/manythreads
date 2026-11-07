@@ -31,6 +31,13 @@ const concept = (meta: Record<string, string>, over: Partial<MemoryHit> = {}): M
 
 const NOW = new Date('2026-10-18T00:00:00.000Z');
 
+describe('recallFact and a person\'s own memory', () => {
+  it('carries the space a fact came from, and leaves it out when only one bank was read', () => {
+    expect(recallFact(hit({ space: 'person:0192b3a4-1111-7222-8333-444455556666' }), NOW)).toMatchObject({ space: 'person:0192b3a4-1111-7222-8333-444455556666' });
+    expect(recallFact(hit(), NOW)).not.toHaveProperty('space');
+  });
+});
+
 describe('recallFact', () => {
   it('adds the OKF provenance of a concept to the engine’s own fields', () => {
     expect(recallFact(concept({}), NOW)).toEqual({

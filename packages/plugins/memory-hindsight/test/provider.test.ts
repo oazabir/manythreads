@@ -1,7 +1,7 @@
 import type { PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
 import { createHindsightClient, type HindsightTransport } from '../src/hindsight.ts';
-import { bankIdFor, createMemoryProvider } from '../src/provider.ts';
+import { bankIdFor, bankIdForPerson, createMemoryProvider } from '../src/provider.ts';
 import { refuseBankFields } from '../src/schemas.ts';
 
 // The provider with a stub transaction (what `app.memory_run_scope()` and `app.teams` answer) and a recording transport. The forged-bank
@@ -9,10 +9,11 @@ import { refuseBankFields } from '../src/schemas.ts';
 
 const scopeRow = { run_id: 'run-1', team_id: 'team-a-id', team_slug: 'alpha', workspace_slug: 'acme', bot_id: 'bot-1', retain_refusal: null };
 
-function txOf(options: { kind?: 'bot' | 'person' | 'system'; scope?: Record<string, unknown> | null; slug?: string | null } = {}): PluginTx {
+function txOf(options: { kind?: 'bot' | 'person' | 'system'; scope?: Record<string, unknown> | null; slug?: string | null; person?: Record<string, unknown> | null } = {}): PluginTx {
   return {
     actor: { kind: options.kind ?? 'bot', id: 'actor-1', workspaceId: 'ws' },
     async query(text: string) {
+      if (text.includes('memory_run_person')) return { rows: options.person ? [options.person] : [] } as never;
       if (text.includes('memory_run_scope')) return { rows: options.scope === null ? [] : [options.scope ?? scopeRow] } as never;
       if (text.includes('FROM app.teams')) return { rows: options.slug === null ? [] : [{ slug: options.slug ?? 'alpha', workspace_slug: 'acme' }] } as never;
       throw new Error(`unexpected query: ${text}`);
@@ -88,6 +89,58 @@ describe('forRun', () => {
       await expect(bank.retain([{ content: 'x', documentId: reserved }])).rejects.toMatchObject({ code: 'invalid_request' });
     }
     await expect(bank.retain([{ content: 'x', documentId: 'concept:memory/facts/a.md' }])).resolves.toMatchObject({ items: 1 });
+  });
+});
+
+const PERSON = '0192b3a4-1111-7222-8333-444455556666';
+const personRow = { workspace_slug: 'acme', person_id: PERSON };
+
+describe('a person\'s own bank (P20-05)', () => {
+  it('is person:<workspace slug>:<person id>, and only for a real uuid', () => {
+    expect(bankIdForPerson('acme', PERSON)).toBe(`person:acme:${PERSON}`);
+    expect(bankIdForPerson('acme', PERSON.toUpperCase())).toBe(`person:acme:${PERSON}`);
+    for (const bad of ['', 'nadia', '../x', `${PERSON}/x`]) expect(() => bankIdForPerson('acme', bad), bad).toThrow();
+    expect(() => bankIdForPerson('A c', PERSON)).toThrow(/slug|name/);
+  });
+
+  it('is not read when the database names no person (a team context, a declined bot): only the team bank is', async () => {
+    const { provider, requests } = setup();
+    const bank = await provider.forRun(txOf({ person: null }));
+    expect(bank.id).toBe('team:acme:alpha');
+    expect(bank.personBankId).toBeUndefined();
+    await bank.recall({ query: 'q' });
+    expect(requests.every((r) => r.path.includes('team%3Aacme%3Aalpha'))).toBe(true);
+  });
+
+  it('is read beside the team\'s when the database names the asker, every hit tagged with its space', async () => {
+    const { provider, requests } = setup();
+    const bank = await provider.forRun(txOf({ person: personRow }));
+    expect(bank.personBankId).toBe(`person:acme:${PERSON}`);
+    const out = await bank.recall({ query: 'what do we know', limit: 4 });
+    expect(out.bank).toBe('team:acme:alpha');
+    expect(out.personBank).toBe(`person:acme:${PERSON}`);
+    expect(out.hits.map((h) => h.space)).toEqual(['team:team-a-id', `person:${PERSON}`, 'team:team-a-id', `person:${PERSON}`]);
+    const asked = new Set(requests.filter((r) => r.path.endsWith('/recall')).map((r) => decodeURIComponent(r.path.split('/')[4]!)));
+    expect(asked).toEqual(new Set(['team:acme:alpha', `person:acme:${PERSON}`]));
+  });
+
+  it('takes a retain into the person\'s bank alone, even when the team bank would have refused, and stamps the person and not the team', async () => {
+    const { provider, requests } = setup();
+    const bank = await provider.forRun(txOf({ scope: { ...scopeRow, retain_refusal: 'conversation' }, person: personRow }));
+    const out = await bank.retain([{ content: 'I prefer tea.' }]);
+    expect(out.bank).toBe(`person:acme:${PERSON}`);
+    const sent = requests.filter((r) => r.path.endsWith('/memories'));
+    expect(sent).toHaveLength(1);
+    expect(decodeURIComponent(sent[0]!.path.split('/')[4]!)).toBe(`person:acme:${PERSON}`);
+    const item = (sent[0]!.body as { items: Array<{ metadata: Record<string, string> }> }).items[0]!;
+    expect(item.metadata).toMatchObject({ source: 'run', person: PERSON, workspace: 'acme' });
+    expect(item.metadata).not.toHaveProperty('team');
+  });
+
+  it('cannot be named by the caller', async () => {
+    const { provider } = setup();
+    const bank = await provider.forRun(txOf({ person: personRow }));
+    await expect(bank.recall({ query: 'q', personId: PERSON } as never)).rejects.toMatchObject({ code: 'invalid_request' });
   });
 });
 

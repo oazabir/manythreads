@@ -26,6 +26,8 @@ export interface MemoryHit {
    * hand-written fact, leaves it out.
    */
   metadata?: Record<string, string>;
+  /** The space the fact came from (`team:<id>` or `person:<id>`); set only when a run reads more than one bank (a person's own memory beside the team's). */
+  space?: string;
 }
 
 export interface MemoryRecallRequest {
@@ -39,6 +41,8 @@ export interface MemoryRecallRequest {
 export interface MemoryRecallResult {
   /** The bank that was read, for the source log (`bank:<id>`); informational — a caller cannot pass it back. */
   bank: string;
+  /** The bank of the person's own memory, when this recall also read it (their Personal space was open to the run); absent otherwise. */
+  personBank?: string;
   hits: MemoryHit[];
 }
 
@@ -78,6 +82,8 @@ export interface MemoryRetainResult {
 export interface MemoryBank {
   /** The bank's name (`team:<workspace slug>:<team slug>`), for logs and the source log. */
   readonly id: string;
+  /** Present when the bank is a team's AND the run may also use the asking person's own bank (recall reads both, retain writes the person's). */
+  readonly personBankId?: string;
   recall(request: MemoryRecallRequest): Promise<MemoryRecallResult>;
   retain(items: readonly MemoryRetainItem[], options?: MemoryRetainOptions): Promise<MemoryRetainResult>;
   /** Removes everything retained under these document ids. Ids that are not in the bank are fine. Platform use; no bot tool reaches it. */

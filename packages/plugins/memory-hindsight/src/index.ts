@@ -5,7 +5,7 @@ import { registerMemoryTools } from './tools.ts';
 
 export { createHindsightClient, hindsightFromEnv, HindsightError } from './hindsight.ts';
 export type { HindsightClient, HindsightFact, HindsightRetainItem, HindsightTransport } from './hindsight.ts';
-export { bankIdFor, createMemoryProvider } from './provider.ts';
+export { bankIdFor, bankIdForPerson, createMemoryProvider } from './provider.ts';
 export { refuseBankFields, RecallArgs, RetainArgs } from './schemas.ts';
 export { registerMemoryTools } from './tools.ts';
 

@@ -492,8 +492,11 @@ describe('gateway-mcp endpoint', () => {
     const none = await search(scoped, { query: 'weather in Lisbon' });
     expect(none.hits).toEqual([]);
     expect(none.note).toContain('say plainly that you cannot answer');
-    const wrongTeam = await search(scoped, { query: 'refunds', teamId: '00000000-0000-7000-8000-000000000001' });
-    expect(wrongTeam).toMatchObject({ ok: false, code: 'other_space' });
+    // naming a team is refused by the gateway itself (it is an error answer, so not through the helper above)
+    const wrongTeam = await callRunUrl(scoped, { jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'knowledge.search', arguments: { query: 'refunds', teamId: '00000000-0000-7000-8000-000000000001' } } });
+    const refused = (wrongTeam.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+    expect(refused.isError).toBe(true);
+    expect(JSON.parse(refused.content[0]!.text)).toMatchObject({ ok: false, code: 'other_space' });
 
     // the run's log names the document and version, and the converted page a citation can open
     const logged = await world.system(async (tx) =>

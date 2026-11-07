@@ -10,6 +10,7 @@ import {
 import { CONSUMED_EVENTS, markRetainedOfChannels, registerConsumers } from './consumers.ts';
 import { rebuildConcepts } from './concepts.ts';
 import { drainFeed } from './feed.ts';
+import { registerPersonalRoutes } from './personal-routes.ts';
 import { registerRoutes } from './routes.ts';
 import { registerWriteTool } from './write.ts';
 import { SlidingWindow } from './window.ts';
@@ -19,6 +20,8 @@ export type { Decision } from './decide.ts';
 export { rebuildConcepts, syncConcepts, toMemoryConceptSummary } from './concepts.ts';
 export { appendLesson, appendPersonNote, lessonPath, personNotePath, PLATFORM_ENTRY_MAX_CHARS } from './platform.ts';
 export { bundleAbsoluteLinks, conceptText, draftPathFor, isPersonOwned, splitPlatformKeys, PLATFORM_OWNED_KEYS } from './write.ts';
+export { PersonalStore } from './personal-store.ts';
+export type { PersonalPutOptions, PersonalPutResult, PersonalPutStatus } from './personal-store.ts';
 export { drainFeed } from './feed.ts';
 export type { DrainStats, FeedRuntime } from './feed.ts';
 export { SlidingWindow } from './window.ts';
@@ -37,8 +40,8 @@ export default definePlugin({
     name: 'memory',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.subscribe', 'job.register'],
-    events: { emits: [], consumes: [...CONSUMED_EVENTS] },
+    extends: ['event.emit', 'event.subscribe', 'job.register'],
+    events: { emits: ['memory.personal.written'], consumes: [...CONSUMED_EVENTS] },
     // `memory.write` (P5-26): the one tool a bot writes the team's OKF bundle through. Not destructive: it commits a file like `pages.write`,
     // through the one writer, as the bot, and the broker's path guard is what confines it to `memory/**` outside `memory/shared/`.
     capabilities: [{ name: 'memory.write', destructive: false }],
@@ -48,6 +51,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerRoutes(ctx);
+    registerPersonalRoutes(ctx);
     registerConsumers(ctx);
     registerWriteTool(ctx);
 

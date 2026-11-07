@@ -2,7 +2,7 @@
 
 Feeds a team's memory bank from what the team did (SPEC §12.1, §15; PLAN P5-13). Team-visible messages and threads, run summaries, decided approvals and pages are retained to the bank of **their own team**, each with source, actor, time and link; nothing from a private channel, a DM or a bot conversation is ever read, and a run that touched a `person` source (or anything narrower than the team) retains nothing, with the log saying why. `memory_retain_log` is the record of what was retained, replaced, forgotten and withheld. It also implements `memory.write`, the one tool through which a bot writes a concept into the team's OKF bundle (P5-26, below).
 
-Package: `packages/plugins/memory` (PLAN writes `plugins/memory`; same `discoverPlugins` deviation as the other plugins). Schemas: `packages/shared/src/{entities/memory,api/memory,events/bots.run.closed}.ts`. Manifest: `extends: ['event.subscribe', 'job.register']`, `capabilities: ['memory.write']`, `dependsOn: ['channels', 'bots', 'files', 'approvals', 'repo-git']`; `memory-hindsight` depends on it (the rule and the log are the platform's; the engine is the adapter's).
+Package: `packages/plugins/memory` (PLAN writes `plugins/memory`; same `discoverPlugins` deviation as the other plugins). Schemas: `packages/shared/src/{entities/memory,api/memory,events/bots.run.closed}.ts`. Manifest: `extends: ['event.emit', 'event.subscribe', 'job.register']`, `capabilities: ['memory.write']`, `dependsOn: ['channels', 'bots', 'files', 'approvals', 'repo-git']`; `memory-hindsight` depends on it (the rule and the log are the platform's; the engine is the adapter's).
 
 It writes to the engine only through the memory provider (`ctx.providers.get<MemoryProvider>('memory')`, today memory-hindsight): `provider.forTeam(tx, teamId)` in a system transaction, so the bank is derived from the team the **database** says the source belongs to — never from an event field, an argument or a bot. An event that names the wrong team changes nothing (`test:memory-cross-team` forges one).
 
@@ -149,6 +149,36 @@ The ONE door a bot writes the team's OKF bundle through (SPEC §12.1; `packages/
 
 The answer is `{ ok: true, path, draft, of?, trustTier, committed, sha, dropped }` or `{ ok: false, code, message, status? }`: `forbidden` (403, no grant or a refused path), `okf_invalid` (422), `invalid_arguments`, `bank_not_allowed`, `no_run`. The text is never written to the engine by this tool: the commit emits `repo.repo.committed`, and the git mirror retains the concept like any other ([memory-git-mirror.md](./memory-git-mirror.md)).
 
+## A person's own Memory (Personal space)
+
+Each person has a memory of their own, separate from every team's: an OKF bundle (the open knowledge format a team's `memory/` folder uses — Markdown files with a front block that says what each is) that belongs to one person and is **never shared**. It is kept as rows, not as a git repo (`migrations/0005_personal_memory.sql`):
+
+| table | what it is |
+|---|---|
+| `app.memory_personal_files` | the current text of each file, with its front-block index (type, title, tags, status, trust tier, origin), `version_no`, and `person_owned` (a person wrote or verified it) |
+| `app.memory_personal_versions` | every saved version, the newest 50 per file, with who made it (`person`, `bot` or `system`) |
+
+A file path is relative to the bundle's root (`people/nadia.md`). The same shared check as a team's write (`validateOkfWrite`: a Markdown path inside the bundle, not the platform's own `index.md`/`log.md`, at most 1,000,000 bytes, parses as a concept with a `type`) runs before anything is stored. Caps are the database's: 2,000 files per person, 50 versions per file.
+
+**Who reads.** The owner; a workspace admin only during a live, audited "open" of that person's space (read-only); the system role. Nobody else, a team lead included. **Who writes:** nobody directly — the request role has only `SELECT`. Every write goes through two database doors, `app.memory_personal_put` and `app.memory_personal_delete`, which decide from `app.actor()` who is asking: the owner (never a guest); the bot of a live run whose asker is the owner **and** whom the owner has allowed to read their Personal space right now (`app.run_space_context()`, see [bots.md](./bots.md) and [gateway-mcp.md](./gateway-mcp.md)); or the system role (a job). A bot cannot replace a file a person wrote or verified (`person_owned`), and a bot cannot delete. Each door answers a status (`ok`, `unchanged`, `conflict`, `forbidden`, `person_owned`, `too_many_files`, `too_large`), never an exception. `src/personal-store.ts` (`PersonalStore`) is the only code that touches the tables.
+
+**Routes** (`src/personal-routes.ts`, all acting as the signed-in person on their own bundle; the owner is never a parameter; a guest gets 403):
+
+| method | path | what |
+|---|---|---|
+| GET | `/api/me/memory/concepts` | the front-block index of every file |
+| GET / PUT / DELETE | `/api/me/memory/file?path=` | read one file / save `{ path, content, baseVersion? }` (409 when the file moved since `baseVersion`; `null` means "must not exist yet") / delete it with its versions |
+| GET | `/api/me/memory/versions?path=` | the saved versions, newest first |
+| POST | `/api/me/memory/restore` | `{ path, versionNo }`: an older version comes back as a new version |
+
+Each change emits `memory.personal.written` (ids, op, version and author kind only; never the path or text).
+
+**`memory.write` with `target: 'personal'`.** A bot sends `target: 'personal'` to put the concept into the Memory of the person who asked. It never says whose: the owner is the run's asker, and the call is refused `personal_not_open` (403) with the reason unless the database says this run may use that Personal space now (a private conversation, the bot asks for `personal.read` or is the workspace Brain, the person said yes). A `memory/` prefix on the path is accepted and removed. The platform stamps `generated.by` and the version's author kind (`bot`); a person's own file is answered with a draft sibling (`<name>-draft-<bot>.md`), as for a team. The answer is `{ ok: true, space: 'person:<id>', path, draft, of?, trustTier, committed, version, dropped }`. The default target is still the team's repo.
+
+**Never shared.** `memory-share` builds a digest only from a team's `memory_concepts` and repo; `packages/plugins/memory-share/test/personal-never.test.ts` fails if any of its sources names the person's tables or asks for a person's space.
+
+Not built here: the Files `Memory/` folder view of this bundle and the mirror of a person's bundle into their person bank (the person bank is fed by what the person says in a private conversation, `memory.retain`; see [memory-hindsight.md](./memory-hindsight.md)); the retention sweep of a suspended person's rows belongs to the Files work package (it deletes `memory_personal_files` and `memory_personal_versions` rows with the rest of that person's Personal data).
+
 ## Tests
 
 * `test/render.test.ts`, `test/decide.test.ts`, `test/window.test.ts` — pure: bounded and linear text work (a megabyte of blank lines in well under a second), document ids, the reconcile table (idempotent, replace, forget, withhold once per reason, defer then give up), the sliding window.
@@ -157,6 +187,7 @@ The answer is `{ ok: true, path, draft, of?, trustTier, committed, sha, dropped 
 * `test/feed.test.ts` — through the real server: events from real API calls, the outbox consumer, the job worker, the real provider and `tools/fake-hindsight`: message / edit / delete / repeat delivery, private channel and DM, a channel made private (by event and by sweep), thread, run closed (clean, person, conversation, closed twice), bot message deferred then withheld, approval, page create / replace / delete, a burst, engine down then back, the retain-log API.
 * `test/feed-unconfigured.test.ts` — no engine: one `not_configured` line, nothing queued, nothing dead-lettered.
 * `packages/plugins/memory-hindsight/test/cross-team/feeding.test.ts` (in `pnpm test:memory-cross-team`) — team A's feed never reaches team B's bank, whatever an event says; private channel and person-scoped run in no bank; a team B bot recalling team A's words gets none.
+* `test/rls/personal-memory.test.ts` — a person's own Memory tables: the RLS audit, the doors (owner, allowed bot, system, refusals for everyone else, an admin's open is read-only), versions and the 50 cap, conflicts, person-owned files, a withdrawn yes ending a bot's access, the size and file caps. `test/write-personal.test.ts` — `/api/me/memory/*` and `memory.write` `target: 'personal'` through a real server and run. `memory-share/test/personal-never.test.ts` — the share plugin never reads it.
 * `test/write.test.ts` — pure: the platform-key split (order kept, non-objects ignored), the draft sibling's path, `isPersonOwned`, `bundleAbsoluteLinks` (a relative link inside the bundle made absolute, `#frag`/URLs/percent-encoded targets untouched), and the built text through `parseConcept` (idempotent; no `type` → the parser's sentence).
 * `test/write-run.test.ts` — the handler against a real database and git: a bot's commit with its asker as co-author, the dropped keys, the bundle-absolute link; a person-owned concept filed as a stable draft sibling; six refused paths (403 and one audit event each, in order); no `type` → 422 `okf_invalid` and nothing committed; `invalid_arguments`; a person's transaction refused.
 * `e2e/api/memory/okf-writer.spec.ts` — the writer over HTTP: no `type` and unreadable YAML → 422 `okf_invalid` with nothing committed, a bot's `files.write` into `memory/` or `inbox/` → 403 with an audit event each (and `inbox/`/`channels/` refused 400 for a person too), the concept's folder index, root index and log in its own commit, and a hand edit of a generated file replaced by byte-identical regeneration (no commit at all). `e2e/api/memory/memory-write.spec.ts` — the tool over MCP: a stored concept with the bot's `generated.by` and no `verified`, the dropped keys, the commit's author and (no asker here) no co-author, six refused paths with audit events, a bot with no grant never offered the tool, a human concept → draft sibling, no `type` → `okf_invalid`, a forged bank key → `bank_not_allowed`.

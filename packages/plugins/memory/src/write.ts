@@ -1,5 +1,7 @@
 import { MemoryError, refuseBankFields, type PluginContext, type PluginTx, type RepoProvider } from '@manythreads/sdk';
 import { OkfProposal, bundleAbsoluteLinks, conceptText, parseConcept, trustTier } from '@manythreads/shared';
+import { isPersonOwned } from './ownership.ts';
+import { PersonalStore } from './personal-store.ts';
 
 // `memory.write`: the ONE door a bot writes the team's OKF bundle through (SPEC §12.1, PLAN P5-26). It is a capability of this plugin (the MCP
 // gateway describes it — `gateway-mcp`'s catalog — and the broker's grant decides who has it), and the write itself goes through the ONE repo
@@ -84,19 +86,6 @@ export function draftPathFor(path: string, botSlug: string): string {
   return `${dir}${base}-draft-${slug}.md`;
 }
 
-/**
- * True when the concept's latest author or its last verifier is a person (`human:<id>`): the writer stamps a person's own edit that way, and only
- * a person's verification puts a `human:` entry in `verified` (SPEC §12.1). A bot may never overwrite such a concept — it files a draft sibling.
- */
-export function isPersonOwned(text: string): boolean {
-  const parsed = parseConcept(text);
-  if (!parsed.ok) return false;
-  if ((parsed.frontmatter.generated?.by ?? '').startsWith('human:')) return true;
-  const verified = parsed.frontmatter.verified ?? [];
-  const last = verified[verified.length - 1];
-  return last !== undefined && last.by.startsWith('human:');
-}
-
 /** A frontmatter object in the order the platform writes it; `parseConcept`/`serializeConcept` normalise it again, so the reader sees the same. */
 function frontmatterFor(proposal: OkfProposal, generated: { by: string; at: string }, status?: 'draft'): Record<string, unknown> {
   const frontmatter: Record<string, unknown> = {};
@@ -114,7 +103,7 @@ function frontmatterFor(proposal: OkfProposal, generated: { by: string; at: stri
 }
 
 // `conceptText` and `bundleAbsoluteLinks` live in @manythreads/shared (okf/links.ts) so the memory inbox's commit step uses the same two.
-export { bundleAbsoluteLinks, conceptText };
+export { bundleAbsoluteLinks, conceptText, isPersonOwned };
 
 // ---- the run, and reading the file the proposal is about ------------------------------------------------------------------------------
 
@@ -178,6 +167,86 @@ function draftBody(proposal: OkfProposal, body: string): string {
   ].join('\n');
 }
 
+// ---- the asking person's own Memory (P20-05) ---------------------------------------------------------------------------------------------
+
+/** Why a run may not write a person's Memory, in words for the model (`app.run_space_context().personal_reason`). */
+const PERSONAL_REFUSAL: Record<string, string> = {
+  team_audience: 'This run answers in a team context, so it has no access to anyone’s Personal memory.',
+  no_asker: 'This run has no asking person, so it has no Personal memory to write.',
+  no_personal_space: 'The person who asked has no Personal space.',
+  not_requested: 'This bot’s definition does not ask for Personal access (personal.read), so it may not write Personal memory.',
+  declined: 'The person who asked has not allowed this bot to use their Personal space.',
+};
+
+/**
+ * `memory.write` with `target: 'personal'`: the concept goes into the OKF bundle of the person who asked, kept as rows. Whose bundle is never an
+ * argument: it is the run's asker, and only when the database says this run may use their Personal space right now. The same shared check
+ * (`validateOkfWrite`) as a team's write is run by the store; the database door refuses a bot that tries to replace a file a person wrote or
+ * verified, and then the concept is filed as a draft beside it, as in a team.
+ */
+async function writePersonal(ctx: PluginContext, tx: PluginTx, proposal: OkfProposal, run: RunContext, dropped: string[]): Promise<ToolAnswer> {
+  const space = (
+    await tx.query<{ asker_person_id: string | null; personal_allowed: boolean; personal_reason: string | null }>(
+      'SELECT asker_person_id, personal_allowed, personal_reason FROM app.run_space_context()',
+    )
+  ).rows[0];
+  if (space === undefined) return refuse('no_run', NO_RUN_TEXT);
+  if (!space.personal_allowed || space.asker_person_id === null) {
+    return { ok: false, status: 403, code: 'personal_not_open', message: PERSONAL_REFUSAL[space.personal_reason ?? ''] ?? 'Personal memory is not open to this run.' };
+  }
+  const owner = space.asker_person_id;
+  const decision = await ctx.capabilities.authorize(tx, 'memory.write', { path: proposal.path.startsWith('memory/') ? proposal.path : `memory/${proposal.path}` });
+  if (!decision.allowed) return { ok: false, status: 403, code: 'forbidden', message: decision.reason };
+  if (decision.needsApproval) return { ok: false, status: 403, code: 'forbidden', message: `Writing “${proposal.path}” needs a person's approval` };
+
+  // The bundle's paths are relative to its root; a model that copied the team form (`memory/…`) is understood.
+  const path = proposal.path.replace(/^memory\//, '');
+  const at = ctx.runtime.now().toISOString();
+  const store = new PersonalStore(tx, owner);
+  const attempt = async (target: string, draft: boolean) => {
+    const rel: OkfProposal = { ...proposal, path: target };
+    const body = bundleAbsoluteLinks(rel.body ?? '', `memory/${target}`);
+    const text = conceptText(frontmatterFor(rel, { by: run.botProducer, at }, draft ? 'draft' : undefined), draft ? draftBody({ ...rel, path: `memory/${path}` }, body) : body);
+    return { text, result: await store.put(target, text) };
+  };
+  let target = path;
+  let draft = false;
+  let { text, result } = await attempt(target, false);
+  if (result.status === 'person_owned') {
+    target = draftPathFor(path, run.botSlug);
+    draft = true;
+    ({ text, result } = await attempt(target, true));
+  }
+  if (result.status === 'invalid') return { ok: false, status: 422, code: 'okf_invalid', message: `“${target}”: ${result.reason ?? 'not a valid concept'}` };
+  if (result.status === 'forbidden') return { ok: false, status: 403, code: 'forbidden', message: 'This run may not write that Personal memory.' };
+  if (result.status === 'too_many_files') return { ok: false, status: 409, code: 'too_many_files', message: 'The person’s Memory already holds the most files it can (2,000).' };
+  if (result.status === 'too_large') return { ok: false, status: 422, code: 'too_large', message: 'That concept is larger than a memory file may be (1,000,000 bytes).' };
+  if (result.status !== 'ok' && result.status !== 'unchanged') return { ok: false, status: 409, code: result.status, message: 'The concept could not be saved.' };
+  if (result.status === 'ok') {
+    await ctx.audit.emit(tx, {
+      type: 'memory.personal.written',
+      workspaceId: tx.actor.workspaceId,
+      personId: owner,
+      op: 'put',
+      versionNo: result.versionNo,
+      authorKind: 'bot',
+      at,
+    });
+  }
+  const parsedBack = parseConcept(text);
+  return {
+    ok: true,
+    space: `person:${owner}`,
+    path: target,
+    draft,
+    ...(draft ? { of: path } : {}),
+    trustTier: parsedBack.ok ? trustTier(parsedBack.frontmatter) : 'unverified',
+    committed: result.status === 'ok',
+    version: result.versionNo,
+    dropped,
+  };
+}
+
 /**
  * The `memory.write` capability (PLAN P5-26). Registered here, implemented here; the MCP gateway describes it. A refusal is an answer: the model reads
  * `{ ok: false, code, message, status }` and can try again. A fault (a database error, a bug) is thrown, so the gateway can word it generically.
@@ -186,7 +255,11 @@ export function registerWriteTool(ctx: PluginContext): void {
   ctx.capabilities.register('memory.write', async (input, tx): Promise<ToolAnswer> => {
     try {
       refuseBankFields(input);
-      const { values, dropped } = splitPlatformKeys(input);
+      const { values: allValues, dropped } = splitPlatformKeys(input);
+      // `target` says WHERE the concept goes: the team's bundle (the default) or the asking person's own Memory. It chooses between the two spaces
+      // the run may already use; it never widens them, because a personal write is refused unless the database says this run may use that space.
+      const { target, ...values } = allValues;
+      if (target !== undefined && target !== 'team' && target !== 'personal') return refuse('invalid_arguments', 'target: must be “team” or “personal”');
       const parsed = OkfProposal.safeParse(values);
       if (!parsed.success) return refuse('invalid_arguments', issuesText(parsed.error));
       const proposal = parsed.data;
@@ -195,6 +268,7 @@ export function registerWriteTool(ctx: PluginContext): void {
       }
       const run = await runContext(tx);
       if (run === null) return refuse('no_run', NO_RUN_TEXT);
+      if (target === 'personal') return await writePersonal(ctx, tx, proposal, run, dropped);
       const repo = ctx.providers.get<RepoProvider>('repo');
       if (repo === undefined) return { ok: false, status: 503, code: 'unavailable', message: 'This deployment has no repository module loaded.' };
 

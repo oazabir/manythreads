@@ -36,6 +36,15 @@ export function bankIdFor(workspaceSlug: string, teamSlug: string): string {
   return `team:${workspaceSlug}:${teamSlug}`;
 }
 
+/**
+ * The bank of a person's own memory: `person:<workspace slug>:<person id>`. Like a team's, it is named from what the DATABASE returned
+ * (`app.memory_run_person()`), never from an input, and only for the person who asked a run that may use their Personal space.
+ */
+export function bankIdForPerson(workspaceSlug: string, personId: string): string {
+  if (!SLUG.test(workspaceSlug) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(personId)) throw new MemoryError('unknown_team', 'The person has no usable bank name.');
+  return `person:${workspaceSlug}:${personId.toLowerCase()}`;
+}
+
 interface RunScopeRow extends Record<string, unknown> {
   run_id: string;
   team_id: string;
@@ -57,7 +66,10 @@ const REFUSAL_TEXT: Record<NonNullable<RunScopeRow['retain_refusal']>, string> =
 /** What the platform stamps on everything a bank takes in, after the caller's own metadata so it cannot be overridden. */
 interface Stamp {
   source: 'run' | 'platform';
-  team: string;
+  /** A team bank's slug; absent on a person's bank. */
+  team?: string;
+  /** A person bank's owner; absent on a team's bank. */
+  person?: string;
   workspace: string;
   runId?: string;
   botId?: string;
@@ -143,7 +155,8 @@ function makeBank(client: HindsightClient, id: string, stamp: Stamp, options: { 
             metadata: {
               ...item.metadata,
               source: stamp.source,
-              team: stamp.team,
+              ...(stamp.team ? { team: stamp.team } : {}),
+              ...(stamp.person ? { person: stamp.person } : {}),
               workspace: stamp.workspace,
               ...(stamp.runId ? { run_id: stamp.runId } : {}),
               ...(stamp.botId ? { bot_id: stamp.botId } : {}),
@@ -166,6 +179,33 @@ function makeBank(client: HindsightClient, id: string, stamp: Stamp, options: { 
   };
 }
 
+/**
+ * A run in its asker's private context reads two banks and writes one. Recall asks both and tags every hit with the space it came from (the team's
+ * hits first, then the person's, each in the engine's own order); retain goes to the PERSON's bank only (what was said in a private conversation is
+ * not the team's to recall); forget addresses the person's bank. The team bank's refusal rules do not apply to the person's own bank.
+ */
+function twoBanks(team: MemoryBank, person: MemoryBank, teamSpace: string, personSpace: string): MemoryBank {
+  return {
+    id: team.id,
+    personBankId: person.id,
+    async recall(request: MemoryRecallRequest): Promise<MemoryRecallResult> {
+      const [t, p] = await Promise.all([team.recall(request), person.recall(request)]);
+      const limit = request.limit ?? 10;
+      // Alternate the two lists so neither starves the other when the caller keeps only the first few.
+      const hits: MemoryHit[] = [];
+      for (let i = 0; i < Math.max(t.hits.length, p.hits.length) && hits.length < Math.max(limit, 1) * 2; i += 1) {
+        const a = t.hits[i];
+        const b = p.hits[i];
+        if (a) hits.push({ ...a, space: teamSpace });
+        if (b) hits.push({ ...b, space: personSpace });
+      }
+      return { bank: t.bank, personBank: p.bank, hits };
+    },
+    retain: (items, options) => person.retain(items, options),
+    forget: (ids) => person.forget(ids),
+  };
+}
+
 export interface MemoryProviderDeps {
   /** The engine client, looked up per call (the URL comes from the environment and a test sets it late). */
   client(): HindsightClient;
@@ -183,12 +223,22 @@ export function createMemoryProvider(deps: MemoryProviderDeps): MemoryProvider {
         await tx.query<RunScopeRow>('SELECT run_id, team_id, team_slug, workspace_slug, bot_id, retain_refusal FROM app.memory_run_scope()')
       ).rows[0];
       if (!row) throw new MemoryError('no_run', 'Memory is available inside a live run only.');
-      return makeBank(
+      const team = makeBank(
         deps.client(),
         bankIdFor(row.workspace_slug, row.team_slug),
         { source: 'run', team: row.team_slug, workspace: row.workspace_slug, runId: row.run_id, botId: row.bot_id },
         row.retain_refusal ? { retainRefusal: REFUSAL_TEXT[row.retain_refusal] ?? REFUSAL_TEXT.private_source } : {},
       );
+      // The asking person's own bank, only when the database says their Personal space is open to this run right now (asked on every call).
+      const mine = (await tx.query<{ workspace_slug: string; person_id: string }>('SELECT workspace_slug, person_id FROM app.memory_run_person()')).rows[0];
+      if (!mine) return team;
+      const person = makeBank(
+        deps.client(),
+        bankIdForPerson(mine.workspace_slug, mine.person_id),
+        { source: 'run', person: mine.person_id, workspace: mine.workspace_slug, runId: row.run_id, botId: row.bot_id },
+        {},
+      );
+      return twoBanks(team, person, `team:${row.team_id}`, `person:${mine.person_id}`);
     },
 
     async forTeam(tx: PluginTx, teamId: string): Promise<MemoryBank> {

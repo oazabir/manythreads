@@ -46,6 +46,7 @@ export function recallFact(hit: MemoryHit, now: Date): MemoryRecallFact {
     context: hit.context,
     tags: hit.tags,
     documentId: hit.documentId,
+    ...(hit.space !== undefined ? { space: hit.space } : {}),
   };
   const meta = hit.metadata ?? {};
   const path = meta['concept_path'];
@@ -223,7 +224,8 @@ export function registerMemoryTools(ctx: PluginContext, provider: MemoryProvider
       // The engine's nearest facts come first; a deprecated concept the mirror has forgotten follows, and only when the caller asked for it.
       if (args.includeDeprecated === true) facts.push(...(await deprecatedFacts(ctx, tx, args, limit - facts.length)));
       // Recalled text is what people and bots wrote earlier: it is data for the model to weigh, never an instruction to follow, and it is labelled so.
-      return { ok: true, bank: recalled.bank, note: RECALL_NOTE, data: { facts } };
+      // `personBank` is present when the run also read the asking person's own memory; the gateway files it as a `person`-scoped source.
+      return { ok: true, bank: recalled.bank, ...(recalled.personBank === undefined ? {} : { personBank: recalled.personBank }), note: RECALL_NOTE, data: { facts } };
     } catch (err) {
       return answerFor(err);
     }
@@ -245,7 +247,8 @@ export function registerMemoryTools(ctx: PluginContext, provider: MemoryProvider
         if (err instanceof MemoryError && err.code === 'retain_refused') await logRun(tx, 'withheld', bank.id, []);
         throw err;
       }
-      await logRun(tx, 'retained', result.bank, result.documentIds);
+      // The retain log is the TEAM's record (its leads read it): a retain into a person's own bank is never written there.
+      if (!result.bank.startsWith('person:')) await logRun(tx, 'retained', result.bank, result.documentIds);
       return { ok: true, bank: result.bank, retained: result.items };
     } catch (err) {
       return answerFor(err);
