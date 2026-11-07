@@ -884,6 +884,14 @@
   gap: 8px;
 }
 
+/* "Close" is a link: as a flex item it was as tall as its neighbour with its word at the top */
+.fnote-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .fnote.alert {
   justify-content: space-between;
   border-color: var(--alert-border);
@@ -1426,11 +1434,14 @@
 
   /* the chips scroll sideways and fade out at the edge, so the last one is seen to continue */
   .filt {
+    flex-wrap: wrap;
     gap: 8px;
     padding: 4px 0 4px 14px;
   }
 
+  /* the chips keep a line of their own (sort, Select and the view toggle go under them): beside the tools they had 70 px and only "All" showed */
   .filt-chips {
+    flex: 1 1 100%;
     overflow-x: auto;
     padding: 4px 24px 4px 0;
     white-space: nowrap;

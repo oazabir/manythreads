@@ -15,6 +15,8 @@ export default {
   overrides: [
     // channels.css is migrated by the message-view batch; exempt until then (see STATUS)
     { files: ['clients/web/src/styles/channels.css'], rules: { 'declaration-property-value-allowed-list': null, 'declaration-property-value-disallowed-list': null } },
+    // the desktop app's first-run server picker is a page of its own (system colours and sizes), it does not load the web tokens
+    { files: ['clients/desktop/ui/picker.css'], rules: { 'declaration-property-value-allowed-list': null } },
     { files: ['clients/web/src/styles/tokens.css'], rules: { 'declaration-property-value-allowed-list': null } },
     { files: ['clients/web/src/styles/tokens.css'], rules: { 'color-no-hex': null } },
   ],

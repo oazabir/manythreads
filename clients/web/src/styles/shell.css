@@ -919,11 +919,16 @@ a.sec:hover {
     gap: 2px;
   }
 
-  /* the name keeps its width (up to 45%); the topic gives way first, and the name itself when the tools (search, voice room, members, bookmark, find, bell) would leave the screen */
+  /* the name keeps its width (up to 45%) and gives way, with its ellipsis, only when the tools (search, voice room, members, bookmark, find, bell) would leave the screen */
   .chead-title {
     flex-shrink: 1;
-    min-width: 0;
+    min-width: 6ch;
     max-width: 45%;
+  }
+
+  /* the topic is a fragment at this width ("D…") and took the room of the name: the channel details menu shows it whole */
+  .chead > .topic {
+    display: none;
   }
 
   .chd-stack {

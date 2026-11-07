@@ -741,11 +741,13 @@
     width: min(320px, 86vw);
     transform: translateX(-100%);
     transition: transform 0.15s ease;
-    box-shadow: var(--menu-shadow);
   }
 
   .ch-rail.drawer.open {
     transform: none;
+
+    /* the shadow only when it is open: shut, it would leak a grey edge onto the screen */
+    box-shadow: var(--menu-shadow);
   }
 
   .ch-chips {

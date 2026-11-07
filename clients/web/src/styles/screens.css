@@ -185,6 +185,22 @@ a.btn.primary {
   font-size: var(--fs-body);
 }
 
+.fld textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-body);
+  resize: vertical;
+}
+
+.fld textarea::placeholder {
+  color: var(--faint);
+}
+
 .fld input[readonly] {
   background: var(--shell);
   color: var(--mute);
