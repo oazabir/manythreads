@@ -127,6 +127,20 @@ async function currentContract(files: PersonalFilesProvider, tx: PluginTx, row: 
   };
 }
 
+/**
+ * The folder names already in use for a person's routines: the routines they have, and the folders of routines they deleted (deleting keeps the person's files, so a
+ * deleted routine's file is still there). A new routine with a taken name gets the next free folder instead of colliding with the old file.
+ */
+async function takenSlugsOf(files: PersonalFilesProvider, tx: PluginTx, personId: string, name: string): Promise<Set<string>> {
+  const taken = new Set((await tx.query<{ slug: string }>('SELECT slug FROM app.scheduled_jobs WHERE owner_person_id = $1::uuid', [personId])).rows.map((r) => r.slug));
+  for (let tries = 0; tries < 50; tries += 1) {
+    const slug = slugFor(name, taken);
+    if ((await files.read(tx, personId, contractPathOf(slug))) === null) break;
+    taken.add(slug);
+  }
+  return taken;
+}
+
 export function registerPersonalRoutes(ctx: PluginContext): void {
   const now = (): Date => ctx.runtime.now();
 
@@ -168,9 +182,9 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
       if (!bot) throw notFound('No such bot');
       const blocker = await runBlocker(tx, { personId: member.personId, botId: bot.id, sources: body.sources });
       if (blocker !== null) throw conflict(blockerSentence(blocker, bot.name, await missingConnections(tx, member.personId, body.sources)));
-      const taken = new Set((await tx.query<{ slug: string }>('SELECT slug FROM app.scheduled_jobs WHERE owner_person_id = $1::uuid', [member.personId])).rows.map((r) => r.slug));
-      if (taken.size >= PERSONAL_ROUTINE_LIMITS.maxPerPerson) throw conflict(`You already have ${PERSONAL_ROUTINE_LIMITS.maxPerPerson} routines; remove one to make room for another.`);
-      const slug = slugFor(body.name, taken);
+      const count = Number((await tx.query<{ n: string }>('SELECT count(*) AS n FROM app.scheduled_jobs WHERE owner_person_id = $1::uuid', [member.personId])).rows[0]?.n ?? 0);
+      if (count >= PERSONAL_ROUTINE_LIMITS.maxPerPerson) throw conflict(`You already have ${PERSONAL_ROUTINE_LIMITS.maxPerPerson} routines; remove one to make room for another.`);
+      const slug = slugFor(body.name, await takenSlugsOf(filesOf(ctx), tx, member.personId, body.name));
       const outputPath = body.outputPath ?? defaultOutputPathOf(slug);
       // the conversation channel of this person with this bot is what makes the bot's run a private one (it reads what its asker may read)
       await tx.query('SELECT * FROM app.conversations_open($1::uuid)', [bot.id]);
@@ -348,6 +362,11 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
         takenSlugs: taken,
         now: now(),
       });
+      // the folder the plan names must be one the save will use: a deleted routine's folder is still in the person's files
+      const wanted = defaultOutputPathOf(slugFor(outcome.draft.name, taken));
+      if (outcome.draft.outputPath === wanted) {
+        outcome.draft.outputPath = defaultOutputPathOf(slugFor(outcome.draft.name, await takenSlugsOf(filesOf(ctx), tx, member.personId, outcome.draft.name)));
+      }
       const missing = await missingConnections(tx, member.personId, outcome.draft.sources);
       const notes = [...outcome.notes];
       if (missing.length > 0) notes.push(`You have not connected ${missing.map((s) => sourceLabel(s).replace(/^My /, '')).join(' or ')} yet; connect it (Account, then Connections) before you save, or take it out.`);

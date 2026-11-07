@@ -186,6 +186,22 @@ describe('making, changing and removing a routine', () => {
   });
 });
 
+describe('a name that was used before', () => {
+  it('makes a routine with the name of a deleted one in a folder of its own, and leaves the old files alone', async () => {
+    const first = await make(omar, 'Come back');
+    expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${first.id}`)).status).toBe(200);
+    const again = await make(omar, 'Come back');
+    expect(again.contractPath).not.toBe(first.contractPath);
+    expect(again.contractPath).toBe('Routines/come-back-2/routine.yaml');
+    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [omar.personId, first.contractPath])).toHaveLength(1);
+    // the plan for the same sentence names the folder the save will use
+    const draft = DraftPersonalRoutineResponse.parse((await call(omar, 'POST', '/api/me/scheduled-jobs/draft', { sentence: 'Every weekday at 8am summarise my unread mail', timeZone: 'Asia/Dubai' })).body).draft;
+    const slugOfPlan = /^Routines\/([^/]+)\//.exec(draft.outputPath)?.[1] ?? '';
+    const taken = await sql(`SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2`, [omar.personId, `Routines/${slugOfPlan}/routine.yaml`]);
+    expect(taken).toHaveLength(0);
+  });
+});
+
 describe('running', () => {
   it('"Run now" files one firing with the owner as asker; a second one while it runs is refused', async () => {
     const routine = await make(omar, 'Run now one');
