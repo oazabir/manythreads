@@ -31,8 +31,8 @@ const DAY_MS = 24 * 3_600_000;
 //   log    superseded retained/forgotten lines and attempt notes of `memory_retain_log` older than the workspace's memory-log window, a page at a
 //          time through `app.memory_retain_log_prune`; never a `withheld` line, never the newest state of a source.
 //   memos  the memos of bots that no longer exist (every verdict about a removed bot is `bot_removed`, the memo says nothing more).
-//   personal  the Personal files, versions and folders of people deactivated more than 30 days ago (P20-13), a batch of people at a time, keyset-paged on
-//          the person's id. Only people whose `suspended_at` is older than the cutoff and who still hold something; a person reactivated since has no
+//   personal  the Personal files, versions and folders, Memory files and versions, inbox items and knowledge bases of people deactivated more than 30 days ago
+//          (P20-13, P20-04..06), a batch of people at a time, keyset-paged on the person's id. Only people whose `suspended_at` is older than the cutoff and who still hold something; a person reactivated since has no
 //          `suspended_at` and is never touched. The bytes stay in the blob store until the blob collector finds no row naming them.
 // A dry run does all of it except the memo and the deletions, and counts what it would have done.
 
@@ -287,7 +287,11 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
         `SELECT p.id FROM app.people p
           WHERE p.workspace_id = $1::uuid AND p.status = 'suspended' AND p.suspended_at IS NOT NULL AND p.suspended_at < $2::timestamptz
             AND ($3::uuid IS NULL OR p.id > $3::uuid)
-            AND (EXISTS (SELECT 1 FROM app.files f WHERE f.owner_person_id = p.id) OR EXISTS (SELECT 1 FROM app.personal_folders d WHERE d.owner_person_id = p.id))
+            AND (EXISTS (SELECT 1 FROM app.files f WHERE f.owner_person_id = p.id)
+              OR EXISTS (SELECT 1 FROM app.personal_folders d WHERE d.owner_person_id = p.id)
+              OR EXISTS (SELECT 1 FROM app.memory_personal_files m WHERE m.owner_person_id = p.id)
+              OR EXISTS (SELECT 1 FROM app.memory_personal_inbox_items i WHERE i.owner_person_id = p.id)
+              OR EXISTS (SELECT 1 FROM app.knowledge_bases k WHERE k.owner_person_id = p.id))
           ORDER BY p.id LIMIT $4${state.dryRun ? '' : ' FOR UPDATE OF p SKIP LOCKED'}`,
         [state.workspaceId, cutoff, cursor, batch.runs],
       )
@@ -298,6 +302,11 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
         // The versions go with their files (foreign key cascade).
         await tx.query('DELETE FROM app.files WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
         await tx.query('DELETE FROM app.personal_folders WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
+        // The rest of the space (P20-05, P20-04, P20-06): Memory files (their versions go with them), inbox items, and knowledge bases (their sources, documents and
+        // passages go with them). The originals' bytes stay in the blob store until the blob collector finds no row naming them.
+        await tx.query('DELETE FROM app.memory_personal_files WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
+        await tx.query('DELETE FROM app.memory_personal_inbox_items WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
+        await tx.query('DELETE FROM app.knowledge_bases WHERE owner_person_id = ANY($1::uuid[]) AND workspace_id = $2::uuid', [ids, state.workspaceId]);
       }
       counts.personalSpaces = (counts.personalSpaces ?? 0) + ids.length;
       cursor = ids[ids.length - 1]!;

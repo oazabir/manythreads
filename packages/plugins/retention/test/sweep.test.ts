@@ -8,7 +8,9 @@ import {
   dropTestDatabase,
   filesMigrationSource,
   gatewayMcpMigrationSource,
+  knowledgeMigrationSource,
   memoryHindsightMigrationSource,
+  memoryInboxMigrationSource,
   memoryMigrationSource,
   personas,
   repoGitMigrationSource,
@@ -171,6 +173,8 @@ beforeAll(async () => {
       repoGitMigrationSource,
       memoryMigrationSource,
       memoryHindsightMigrationSource,
+      knowledgeMigrationSource,
+      memoryInboxMigrationSource,
       retentionMigrationSource,
     ],
   });
@@ -720,5 +724,57 @@ describe('Personal spaces of deactivated people (P20-13)', () => {
     // Once the reactivation is committed the person is simply active, and stays so.
     expect((await sweep()).counts.personalSpaces).toBe(0);
     expect(await holds(sameera.personId)).toMatchObject({ files: 1, versions: 1 });
+  });
+
+  it('also empties the Memory files and versions, the inbox items and the knowledge bases of a person deactivated 31 days ago, and no one else\'s', async () => {
+    const { sameera } = personas;
+    const fill = (who: { personId: string; actorId: string }, tag: string): Promise<void> =>
+      sys(async (tx) => {
+        await tx.query(
+          `INSERT INTO app.memory_personal_files (owner_person_id, workspace_id, path, content, size_bytes, type, blob_sha) VALUES ($1, $2, $3, 'x', 1, 'note', repeat('a', 40))`,
+          [who.personId, omar.workspaceId, `notes/${tag}.md`],
+        );
+        await tx.query(
+          `INSERT INTO app.memory_personal_versions (owner_person_id, path, version_no, content, sha256, size_bytes, author_kind) VALUES ($1, $2, 1, 'x', repeat('b', 64), 1, 'person')`,
+          [who.personId, `notes/${tag}.md`],
+        );
+        await tx.query(
+          `INSERT INTO app.memory_personal_inbox_items (workspace_id, owner_person_id, origin, kind, name, size, sha256, blob_key, dropper_id) VALUES ($1, $2, 'person', 'markdown', $3, 5, repeat('c', 64), md5($3), $4)`,
+          [omar.workspaceId, who.personId, `${tag}.md`, who.actorId],
+        );
+        const base = (await tx.query<{ id: string }>('INSERT INTO app.knowledge_bases (workspace_id, owner_person_id, slug, name) VALUES ($1, $2, $3, $3) RETURNING id', [omar.workspaceId, who.personId, tag])).rows[0]!.id;
+        await tx.query(`INSERT INTO app.knowledge_sources (base_id, owner_person_id, kind) VALUES ($1, $2, 'upload')`, [base, who.personId]);
+      });
+    const held = (personId: string): Promise<number[]> =>
+      sys(async (tx) =>
+        Promise.all(
+          ['memory_personal_files', 'memory_personal_versions', 'memory_personal_inbox_items', 'knowledge_bases', 'knowledge_sources'].map(
+            async (t) => Number((await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.${t} WHERE owner_person_id = $1`, [personId])).rows[0]!.n),
+          ),
+        ),
+      );
+    // nothing else of these two people is left from the tests before
+    await sys(async (tx) => {
+      await tx.query('DELETE FROM app.files WHERE owner_person_id = ANY($1::uuid[])', [[nadia.personId, sameera.personId]]);
+      await tx.query('DELETE FROM app.personal_folders WHERE owner_person_id = ANY($1::uuid[])', [[nadia.personId, sameera.personId]]);
+    });
+    await fill(nadia, 'old');
+    await fill(sameera, 'recent');
+    await deactivate(nadia.personId, 31);
+    await deactivate(sameera.personId, 29);
+    expect(await held(nadia.personId)).toEqual([1, 1, 1, 1, 1]);
+
+    const dry = await sweep({ dryRun: true });
+    expect(dry.counts.personalSpaces).toBe(1);
+    expect(await held(nadia.personId)).toEqual([1, 1, 1, 1, 1]);
+
+    expect((await sweep()).counts.personalSpaces).toBe(1);
+    expect(await held(nadia.personId)).toEqual([0, 0, 0, 0, 0]);
+    expect(await held(sameera.personId)).toEqual([1, 1, 1, 1, 1]);
+    expect((await sweep()).counts.personalSpaces).toBe(0);
+    // leave the board as it was found
+    await restamp(sameera.personId, "status = 'active', suspended_at = NULL");
+    await restamp(nadia.personId, "status = 'active', suspended_at = NULL");
+    await sys((tx) => tx.query('DELETE FROM app.memory_personal_files WHERE owner_person_id = $1', [sameera.personId]).then(() => tx.query('DELETE FROM app.memory_personal_inbox_items WHERE owner_person_id = $1', [sameera.personId])).then(() => tx.query('DELETE FROM app.knowledge_bases WHERE owner_person_id = $1', [sameera.personId])));
   });
 });
