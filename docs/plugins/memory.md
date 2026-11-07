@@ -167,7 +167,7 @@ A file path is relative to the bundle's root (`people/nadia.md`). The same share
 | method | path | what |
 |---|---|---|
 | GET | `/api/me/memory/concepts` | the front-block index of every file |
-| GET / PUT / DELETE | `/api/me/memory/file?path=` | read one file / save `{ path, content, baseVersion? }` (409 when the file moved since `baseVersion`; `null` means "must not exist yet") / delete it with its versions |
+| GET / PUT / DELETE | `/api/me/memory/file?path=` | read one file / save `{ path, content, baseVersion? }` (409 `conflict` when the file moved since `baseVersion`; `null` means "must not exist yet"; 409 `personal_memory_full` when a new file would be the 2,001st — reloading does not help, delete a file first) / delete it with its versions |
 | GET | `/api/me/memory/versions?path=` | the saved versions, newest first |
 | POST | `/api/me/memory/restore` | `{ path, versionNo }`: an older version comes back as a new version |
 

@@ -155,3 +155,28 @@ describe('memory.write with target personal', () => {
     expect(await write(run, { ...personalWrite, path: 'facts/after.md' })).toMatchObject({ ok: false, code: 'personal_not_open' });
   });
 });
+
+describe('the two kinds of 409 on a save', () => {
+  it('a stale baseVersion is `conflict`; the 2,000-file cap is `personal_memory_full`, so a reader can tell "reload" from "delete something"', async () => {
+    const mine = await mePut('cap/mine.md', FACT, null);
+    expect(mine.status).toBe(200);
+    const stale = await mePut('cap/mine.md', FACT.replace('tea', 'juice'), 5);
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({ error: { code: 'conflict' } });
+
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.memory_personal_files (owner_person_id, workspace_id, path, content, size_bytes, type, blob_sha)
+         SELECT $1, $2, 'bulk/' || g || '.md', 'x', 1, 'Fact', repeat('b', 40)
+           FROM generate_series(1, 2000 - (SELECT count(*) FROM app.memory_personal_files WHERE owner_person_id = $1)::int) g`,
+        [nadia.personId, omar.workspaceId],
+      ),
+    );
+    const full = await mePut('cap/one-more.md', FACT, null);
+    expect(full.status).toBe(409);
+    expect(full.body).toMatchObject({ error: { code: 'personal_memory_full', message: expect.stringContaining('2,000') } });
+    // a save to a file that already exists is not a new file: it still goes through at the cap
+    expect((await mePut('cap/mine.md', FACT.replace('tea', 'juice'), 1)).status).toBe(200);
+    await w.system((tx) => tx.query(`DELETE FROM app.memory_personal_files WHERE owner_person_id = $1 AND path LIKE 'bulk/%'`, [nadia.personId]));
+  });
+});

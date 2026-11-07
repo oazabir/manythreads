@@ -1,4 +1,4 @@
-import { invalid, conflict, forbidden, json, notFound, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { invalid, conflict, forbidden, json, notFound, route, HttpError, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
   DeletePersonalMemoryResponse,
   GetPersonalMemoryFileResponse,
@@ -41,7 +41,7 @@ export function refusePersonalPut(result: PersonalPutResult, path: string): neve
     case 'invalid':
       throw invalid(`“${path}”: ${result.reason ?? 'not a valid memory file'}`);
     case 'too_many_files':
-      throw conflict('Your Memory already holds the most files it can (2,000).');
+      throw new HttpError(409, 'personal_memory_full', 'Your Memory already holds the most files it can (2,000). Delete a file you no longer need, then save again.');
     case 'too_large':
       throw invalid('That file is larger than a memory file may be (1,000,000 bytes).');
     case 'person_owned':
