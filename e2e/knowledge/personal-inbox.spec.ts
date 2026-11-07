@@ -96,16 +96,16 @@ test('a memory bundle from elsewhere is held; "Let it through" ends in a plain "
     const card = page.getByTestId('personal-inbox-item').filter({ hasText: 'someones-memory.zip' });
     await expect(card).toHaveAttribute('data-state', 'held');
     await expect(page.getByTestId('personal-inbox-count-held')).toHaveText('1');
-    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText('bundle');
-    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText('cannot be imported');
+    // the server's own sentence for the hold (the card shows it before its generic wording)
+    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText('memory bundle from somewhere else');
+    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText('Release it only if you trust where it came from');
     await expect(card.getByTestId('personal-inbox-release')).toBeVisible();
     await expect(card.getByTestId('personal-inbox-discard')).toBeVisible();
     await expect(card.getByTestId('personal-inbox-retry')).toHaveCount(0);
 
     await card.getByTestId('personal-inbox-release').click();
     await expect(card).toHaveAttribute('data-state', 'failed', { timeout: 60_000 });
-    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText(/bundle/i);
-    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText(/not available|cannot be imported/i);
+    await expect(card.getByTestId('personal-inbox-item-sentence')).toContainText('Importing a bundle is not available yet');
     // nothing was filed in the memory
     expect((await inboxOf(api, 'failed'))[0]?.filedPaths ?? []).toEqual([]);
 

@@ -85,7 +85,7 @@ export async function openMemory(
   return { page, close: () => context.close() };
 }
 
-/** Every route that reads or writes a person's own Personal space, as `[method, path]`. A guest has none of them. */
+/** Every route that reads or writes a person's own Personal space, as `[method, path]`. A guest is refused (403) on each of them. */
 export const PERSONAL_ROUTES: ReadonlyArray<readonly ['GET' | 'POST', string]> = [
   ['GET', '/api/me/memory/concepts'],
   ['GET', '/api/me/memory/file?path=memory/facts/x.md'],
@@ -94,5 +94,5 @@ export const PERSONAL_ROUTES: ReadonlyArray<readonly ['GET' | 'POST', string]> =
   ['GET', '/api/me/knowledge'],
   ['GET', '/api/me/knowledge/notes/search?q=anything'],
   ['GET', '/api/me/files/tree?path='],
-  ['GET', '/api/me/bot-consents'],
 ];
+// `/api/me/bot-consents` is not here on purpose: it answers a guest 200 with an empty list (the database function returns no rows), not 403; bot-consents.spec.ts says so.

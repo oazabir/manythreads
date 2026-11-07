@@ -51,6 +51,8 @@ test('Nadia saves a file and sees it; Rafi does not, on screen or through the AP
     expect(await rafiApi.status('GET', `/api/me/memory/versions?path=${encodeURIComponent(TEA)}`)).toBe(404);
     // a link to her file shows him nothing of it
     await rafiView.page.goto(`/memory?concept=${encodeURIComponent(TEA)}`);
+    // the page has drawn his (empty) memory before anything is asserted absent
+    await expect(rafiView.page.getByTestId('personal-memory-empty')).toBeVisible();
     await expect(rafiView.page.getByTestId('personal-concept-detail')).toHaveCount(0);
     await expect(rafiView.page.getByText('green tea')).toHaveCount(0);
   } finally {
@@ -173,22 +175,25 @@ test('edit, earlier versions and Bring back: every change, a restore too, is a n
 test('a file that breaks the memory format is refused with its reason, and Delete asks first', async ({ browser, playwright, isMobile }) => {
   test.skip(isMobile, 'desktop layout');
   const api = await apiOn(playwright, stack, 'nadia');
+  const keep = 'memory/facts/old-note.md';
   const { page, close } = await openMemory(browser, playwright, stack, 'nadia');
   try {
-    // no front matter: not a memory file
+    // no front matter: not a memory file. 400 with the path and the validator's reason; nothing was saved
     const bad = await api.ctx.put('/api/me/memory/file', { data: { path: 'memory/facts/bad.md', content: 'just words, no front matter' }, headers: await api.headers() });
-    expect(bad.status()).toBeGreaterThanOrEqual(400);
-    expect(bad.status()).toBeLessThan(500);
+    expect(bad.status()).toBe(400);
+    expect(await bad.text()).toContain('bad.md');
     expect(await memoryPaths(api)).not.toContain('memory/facts/bad.md');
 
+    // a file of its own, so this test does not lean on an earlier one
+    await putMemory(api, keep, fact('Old note', 'Nothing to see here.'));
     await page.reload();
-    await page.getByTestId('personal-concept-row').filter({ hasText: 'Coffee' }).click();
+    await page.getByTestId('personal-concept-row').filter({ hasText: 'Old note' }).click();
     await page.getByTestId('personal-file-delete').click();
     await expect(page.getByTestId('personal-file-delete-confirm')).toBeVisible();
-    expect(await memoryPaths(api)).toContain('memory/facts/coffee.md');
+    expect(await memoryPaths(api)).toContain(keep);
     await page.getByTestId('personal-file-delete-confirm').click();
-    await expect(page.getByTestId('personal-concept-row').filter({ hasText: 'Coffee' })).toHaveCount(0);
-    expect(await memoryPaths(api)).not.toContain('memory/facts/coffee.md');
+    await expect(page.getByTestId('personal-concept-row').filter({ hasText: 'Old note' })).toHaveCount(0);
+    expect(await memoryPaths(api)).not.toContain(keep);
   } finally {
     await close();
     await api.ctx.dispose();
