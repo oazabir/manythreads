@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
+import { Appearance, DEFAULT_APPEARANCE } from '../../entities/appearance.ts';
 import { Avatar } from '../../entities/avatar.ts';
 import { AuthProviderKind } from '../../entities/auth.ts';
 import { TeamRole } from '../../entities/team.ts';
@@ -14,7 +15,14 @@ export const SignInMethod = z.object({
 });
 export type SignInMethod = z.infer<typeof SignInMethod>;
 
-export const SessionPerson = z.object({ id: PersonId, name: z.string(), email: z.string(), avatar: Avatar.nullable().default(null) });
+export const SessionPerson = z.object({
+  id: PersonId,
+  name: z.string(),
+  email: z.string(),
+  avatar: Avatar.nullable().default(null),
+  /** The person's theme and message density (P21-21). Defaulted so a client still parses an older server's answer. */
+  appearance: Appearance.default(DEFAULT_APPEARANCE),
+});
 export type SessionPerson = z.infer<typeof SessionPerson>;
 
 export const SessionWorkspace = z.object({ id: WorkspaceId, name: z.string() });

@@ -48,13 +48,22 @@ so a new photo has a new address and an old one is never shown from a cache), or
 The photo bytes are one row per person in `person_photos` (at most 256 KiB, PNG, JPEG or WebP, enforced by a `CHECK` too). Row-level security: a person writes and deletes only their own row;
 every non-guest member of the workspace may read every row, a guest only their own. Choosing a built-in picture or *Use initials* deletes the person's photo.
 
+## The person's look
+
+Beside the picture, the plugin keeps two more settings of the person's own row (kernel migration `0017`): `people.theme` (`system`, `light` or `dark`; `system` follows the device) and `people.density` (`comfortable` or `compact`).
+Both start as `system` and `comfortable`. `GET /api/session` carries them as `person.appearance`, so a new browser or device draws the same way as the last one; the web client draws them as
+attributes on `<html>` and keeps a copy in the browser so the next first frame is right (Account → Appearance; `clients/web/src/shell/appearance.ts`). The shared shape is `Appearance` in `packages/shared/src/entities/appearance.ts`.
+A person writes only their own row (the existing `people_update` policy).
+
 ## Routes
+
 
 | Route | Who | What |
 |---|---|---|
 | `PUT /api/me/avatar` `{ preset }` | the signed-in person | Choose a built-in picture from the three people groups (a bot picture, a picture of the first library or an unknown id is `400`). Removes a photo. |
 | `PUT /api/me/avatar/photo` `{ contentType, data }` | the signed-in person | Upload a photo (base64). See the rules below. |
 | `DELETE /api/me/avatar` | the signed-in person | Back to the initials. |
+| `PUT /api/me/appearance` `{ theme?, density? }` | the signed-in person, a guest too | The person's look (see below). A field left out keeps its value; an unknown value, field or an empty body is `400`. Answers `{ theme, density }` as stored. No event and no audit row: it is a preference. |
 | `GET /api/people/:personId/avatar` | any member who can see the person | The photo's bytes. `404` when there is none or the reader may not see it; `304` for a repeat with the `etag`. |
 | `PUT /api/teams/:slug/bots/:botSlug/avatar` `{ preset \| null }` | lead of the team or workspace admin; for Brain, workspace admin only (bots plugin) | Choose one of the 25 bot pictures, or `null` for the initials. Done through the function `app.bots_set_avatar`, which checks the caller. |
 

@@ -1415,3 +1415,159 @@ a.btn.primary {
     justify-content: center;
   }
 }
+
+/* ---- Account → Appearance (P21-21): theme and density cards. Previews read tokens only; each theme sample sits in its own scope box ---- */
+.ap-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ap-legend {
+  padding: 0;
+  margin-bottom: 10px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.ap-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.ap-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.ap-card:hover {
+  background: var(--hover);
+}
+
+.ap-card.on {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+}
+
+.ap-card:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ap-label {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.ap-hint {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ap-note {
+  margin: 12px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ap-prev {
+  display: flex;
+  overflow: hidden;
+  min-height: 76px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+}
+
+.ap-sample {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.ap-split .ap-sample {
+  flex: 1 1 50%;
+}
+
+.ap-bar {
+  height: 6px;
+  width: 40%;
+  border-radius: var(--radius-pill);
+  background: var(--rule);
+}
+
+.ap-row,
+.ap-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ap-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--human);
+}
+
+.ap-dot.bot {
+  background: var(--agent);
+}
+
+.ap-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ap-line {
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--mute);
+}
+
+.ap-line.short {
+  width: 55%;
+}
+
+/* the density cards keep their own numbers, so Comfortable and Compact are both visible whichever one is on */
+.ap-msgs {
+  flex-direction: column;
+  padding: 8px;
+  background: var(--paper);
+}
+
+.ap-msgs.comfortable {
+  gap: 9px;
+}
+
+.ap-msgs.compact {
+  gap: 3px;
+}
+
+.ap-msgs.compact .ap-dot {
+  width: 11px;
+  height: 11px;
+}
+
+.ap-msg.cont {
+  padding-left: 20px;
+}
+
+.ap-msgs.compact .ap-msg.cont {
+  padding-left: 17px;
+}

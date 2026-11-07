@@ -3,12 +3,15 @@ import { Readable } from 'node:stream';
 import { HttpError, forbidden, json, notFound, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
   AVATAR_PHOTO_MAX_BYTES,
+  MyAppearanceResponse,
   MyAvatarResponse,
   PersonIdParams,
+  SetMyAppearanceRequest,
   SetMyAvatarRequest,
   UploadMyPhotoRequest,
   personAvatarRoute,
   removeMyAvatarRoute,
+  setMyAppearanceRoute,
   setMyAvatarRoute,
   uploadMyPhotoRoute,
 } from '@manythreads/shared';
@@ -77,6 +80,25 @@ export function registerAvatarRoutes(ctx: PluginContext): void {
       await setOwn(tx, null);
       await tx.query('DELETE FROM app.person_photos WHERE person_id = app.person_id()');
       return json(MyAvatarResponse.parse({ avatar: null }));
+    }),
+  });
+
+  // How the app looks for the caller (P21-21): the theme and the message density, two columns of the caller's own row. A look preference: no event, no audit row.
+  // A guest may set it too. A field left out keeps its value.
+  ctx.http.route({
+    ...setMyAppearanceRoute,
+    schema: { body: SetMyAppearanceRequest, response: MyAppearanceResponse },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const body = SetMyAppearanceRequest.parse(req.body);
+      const res = await tx.query<{ theme: string; density: string }>(
+        `UPDATE app.people SET theme = coalesce($1::text, theme), density = coalesce($2::text, density), updated_at = now()
+         WHERE id = app.person_id() RETURNING theme, density`,
+        [body.theme ?? null, body.density ?? null],
+      );
+      const row = res.rows[0];
+      if (!row) throw forbidden('Only a person has an appearance setting');
+      return json(MyAppearanceResponse.parse(row));
     }),
   });
 

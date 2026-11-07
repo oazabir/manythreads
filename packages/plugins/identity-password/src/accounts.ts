@@ -1,6 +1,6 @@
 import type { HttpRequest, PluginContext, PluginTx } from '@manythreads/sdk';
 import { HttpError } from '@manythreads/sdk';
-import type { AuthenticatedSession, SignInMethod } from '@manythreads/shared';
+import type { Appearance, AuthenticatedSession, SignInMethod } from '@manythreads/shared';
 
 /** The email as stored for lookups: trimmed and lower-cased (people.primary_email is unique per lower(email)). */
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
@@ -120,11 +120,13 @@ export async function loadAuthenticated(
     display_name: string;
     primary_email: string;
     avatar: string | null;
+    theme: Appearance['theme'];
+    density: Appearance['density'];
     workspace_id: string;
     workspace_name: string;
     role: AuthenticatedSession['role'];
   }>(
-    `SELECT p.id, p.display_name, p.primary_email, p.avatar, w.id AS workspace_id, w.name AS workspace_name, wm.role
+    `SELECT p.id, p.display_name, p.primary_email, p.avatar, p.theme, p.density, w.id AS workspace_id, w.name AS workspace_name, wm.role
      FROM app.people p
      JOIN app.workspaces w ON w.id = p.workspace_id
      JOIN app.workspace_members wm ON wm.person_id = p.id AND wm.workspace_id = p.workspace_id
@@ -144,7 +146,7 @@ export async function loadAuthenticated(
   );
   return {
     authenticated: true,
-    person: { id: row.id as never, name: row.display_name, email: row.primary_email, avatar: (row.avatar ?? null) as never },
+    person: { id: row.id as never, name: row.display_name, email: row.primary_email, avatar: (row.avatar ?? null) as never, appearance: { theme: row.theme, density: row.density } },
     workspace: { id: row.workspace_id as never, name: row.workspace_name },
     role: row.role,
     teams: teams.rows,

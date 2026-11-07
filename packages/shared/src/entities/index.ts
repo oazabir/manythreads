@@ -47,6 +47,7 @@ export * from './inbox.ts';
 export * from './share.ts';
 export * from './knowledge.ts';
 export * from './avatar.ts';
+export * from './appearance.ts';
 export * from './setup.ts';
 export * from './terminal.ts';
 export * from './workshop.ts';

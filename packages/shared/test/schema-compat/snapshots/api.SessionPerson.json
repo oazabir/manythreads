@@ -24,6 +24,34 @@
           "type": "null"
         }
       ]
+    },
+    "appearance": {
+      "default": {
+        "theme": "system",
+        "density": "comfortable"
+      },
+      "type": "object",
+      "properties": {
+        "theme": {
+          "type": "string",
+          "enum": [
+            "system",
+            "light",
+            "dark"
+          ]
+        },
+        "density": {
+          "type": "string",
+          "enum": [
+            "comfortable",
+            "compact"
+          ]
+        }
+      },
+      "required": [
+        "theme",
+        "density"
+      ]
     }
   },
   "required": [

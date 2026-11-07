@@ -7,17 +7,15 @@
  * and change with data-theme; no screen reads the theme itself.
  */
 
-export type ThemeChoice = 'system' | 'light' | 'dark';
-export type Density = 'comfortable' | 'compact';
-export interface Appearance {
-  theme: ThemeChoice;
-  density: Density;
-}
+import { DEFAULT_APPEARANCE, type Appearance, type ThemeChoice } from '@manythreads/shared';
+
+// The type and its default live in @manythreads/shared (entities/appearance.ts): the server stores and serves the same shape.
+export { DEFAULT_APPEARANCE };
+export type { Appearance, Density, ThemeChoice } from '@manythreads/shared';
 
 export const APPEARANCE_KEY = 'mt.appearance';
 /** Fired on `window` after the drawn theme changed (a new choice, or the device switched while the choice is System). */
 export const THEME_EVENT = 'mt-theme';
-export const DEFAULT_APPEARANCE: Appearance = { theme: 'system', density: 'comfortable' };
 
 /** What is drawn for a choice: Light and Dark are themselves, System follows the device. */
 export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): 'light' | 'dark' {
