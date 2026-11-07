@@ -35,36 +35,39 @@ test('sorting: a click sorts, a second click turns it round, folders stay first,
     // the first look is newest first
     await expect(header(page, 'modified')).toHaveAttribute('aria-sort', 'descending');
     await expect(header(page, 'name')).toHaveAttribute('aria-sort', 'none');
-    expect(await rowPaths(page)).toEqual(['Notes/beta.csv', 'Notes/gamma.txt', 'Notes/alpha.md']);
+    await expect.poll(() => rowPaths(page)).toEqual(['Notes/beta.csv', 'Notes/gamma.txt', 'Notes/alpha.md']);
 
     await page.getByTestId('sort-name').click();
     await expect(header(page, 'name')).toHaveAttribute('aria-sort', 'ascending');
-    expect(await rowPaths(page)).toEqual([...NOTES]);
+    await expect.poll(() => rowPaths(page)).toEqual([...NOTES]);
     await page.getByTestId('sort-name').click();
     await expect(header(page, 'name')).toHaveAttribute('aria-sort', 'descending');
-    expect(await rowPaths(page)).toEqual([...NOTES].reverse());
+    await expect.poll(() => rowPaths(page)).toEqual([...NOTES].reverse());
 
     // size starts with the largest
     await page.getByTestId('sort-size').click();
     await expect(header(page, 'size')).toHaveAttribute('aria-sort', 'descending');
-    expect(await rowPaths(page)).toEqual(['Notes/gamma.txt', 'Notes/beta.csv', 'Notes/alpha.md']);
+    await expect.poll(() => rowPaths(page)).toEqual(['Notes/gamma.txt', 'Notes/beta.csv', 'Notes/alpha.md']);
 
     // the same choice from the selector the phone uses
     await expect(page.getByTestId('sort-select')).toHaveValue('size:desc');
     await page.getByTestId('sort-select').selectOption('name:asc');
-    expect(await rowPaths(page)).toEqual([...NOTES]);
+    await expect.poll(() => rowPaths(page)).toEqual([...NOTES]);
 
-    // folders stay on top whatever the column: at the top level the seven folders come before any file
+    // the top level holds only the seven folders: they are all listed, sorted by size too
     await page.goto(`${stack.origin}/files`);
+    await expect(page.getByTestId('file-row')).toHaveCount(7);
     await page.getByTestId('sort-size').click();
+    await expect(header(page, 'size')).toHaveAttribute('aria-sort', 'descending');
     const kinds = await page.getByTestId('file-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-kind')));
     expect(new Set(kinds)).toEqual(new Set(['folder']));
 
     // kept: another visit opens sorted the same way
     await page.getByTestId('sort-name').click();
+    await expect(header(page, 'name')).toHaveAttribute('aria-sort', 'ascending');
     await page.goto(`${stack.origin}/files?path=Notes`);
     await expect(header(page, 'name')).toHaveAttribute('aria-sort', 'ascending');
-    expect(await rowPaths(page)).toEqual([...NOTES]);
+    await expect.poll(() => rowPaths(page)).toEqual([...NOTES]);
     expect(await page.evaluate(() => window.localStorage.getItem('mt.files.prefs'))).toContain('"key":"name"');
   } finally {
     await close();
@@ -79,6 +82,8 @@ test('list and grid: the choice is kept, a grid card is the same row, and the ar
     await page.getByTestId('view-grid').click();
     await expect(page.getByTestId('view-grid')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.fgrid')).toBeVisible();
+    // the first look is newest first; the walk below goes by name
+    await page.getByTestId('sort-select').selectOption('name:asc');
     // a grid has no column heads, the cards carry the same row data
     await expect(page.getByTestId('sort-name')).toHaveCount(0);
     await expect(page.locator('.fgrid [data-testid="file-row"]')).toHaveCount(3);
@@ -113,7 +118,7 @@ test('ticking: checkboxes, Ctrl-click, Shift-click, Select all and Clear; the ba
   const { page, close } = await openPersonal(browser, playwright, stack, 'nadia', '?path=Notes');
   try {
     await page.getByTestId('sort-name').click();
-    if ((await header(page, 'name').getAttribute('aria-sort')) !== 'ascending') await page.getByTestId('sort-name').click();
+    await expect(header(page, 'name')).toHaveAttribute('aria-sort', 'ascending');
     await expect(page.getByTestId('selection-bar')).toHaveCount(0);
     const selected = () => page.locator('[data-testid="file-row"][data-selected="true"]');
 
@@ -282,11 +287,14 @@ test('dropping files from the computer: the overlay names the folder, a drop upl
   const { page, close } = await openPersonal(browser, playwright, stack, 'nadia', '?path=Notes');
   try {
     const overlay = page.getByTestId('drop-overlay');
-    const dataTransfer = await page.evaluateHandle(() => {
-      const dt = new DataTransfer();
-      dt.items.add(new File(['dropped text\n'], 'dropped.txt', { type: 'text/plain' }));
-      return dt;
-    });
+    // a handle dies with the page it was made in, so each visit makes its own
+    const files = () =>
+      page.evaluateHandle(() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File(['dropped text\n'], 'dropped.txt', { type: 'text/plain' }));
+        return dt;
+      });
+    let dataTransfer = await files();
     await expect(overlay).toHaveCount(0);
     await page.getByTestId('file-list').dispatchEvent('dragenter', { dataTransfer });
     await expect(overlay).toBeVisible();
@@ -303,6 +311,8 @@ test('dropping files from the computer: the overlay names the folder, a drop upl
 
     // the top level cannot hold a file: the overlay says so and a drop adds nothing
     await page.goto(`${stack.origin}/files`);
+    await expect(page.getByTestId('file-row')).toHaveCount(7);
+    dataTransfer = await files();
     await page.getByTestId('file-list').dispatchEvent('dragenter', { dataTransfer });
     await expect(overlay).toContainText('Open a folder first to drop files');
     await page.getByTestId('file-list').dispatchEvent('drop', { dataTransfer });
