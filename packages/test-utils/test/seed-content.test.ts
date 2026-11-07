@@ -51,10 +51,11 @@ describe('seedWorld with content (seed v3)', () => {
     const channels = await sql<{ id: string; slug: string; name: string; private: boolean }>(
       `SELECT c.id, t.slug, c.name, c.private FROM app.channels c JOIN app.teams t ON t.id = c.team_id WHERE c.kind = 'channel' ORDER BY t.slug, c.name`,
     );
-    expect(channels).toHaveLength(17);
-    for (const c of channels) expect(c.id).toBe((SEED_IDS.channels as Record<string, string>)[`${c.slug}/${c.name}`]);
+    // 17 channels have words and fixed ids; #support-inbox (the email door's channel, P8-35) is made by the template sync with an id of its own and holds no messages.
+    expect(channels).toHaveLength(18);
+    for (const c of channels.filter((x) => `${x.slug}/${x.name}` !== 'customer-support/support-inbox')) expect(c.id).toBe((SEED_IDS.channels as Record<string, string>)[`${c.slug}/${c.name}`]);
     expect(channels.filter((c) => c.private).map((c) => c.name)).toEqual(['eng-leads']);
-    expect(channels.filter((c) => c.slug === 'customer-support').map((c) => c.name).sort()).toEqual(['enquiries', 'escalations', 'kb-updates', 'support']);
+    expect(channels.filter((c) => c.slug === 'customer-support').map((c) => c.name).sort()).toEqual(['enquiries', 'escalations', 'kb-updates', 'support', 'support-inbox']);
 
     // About 40 messages per channel (the 5,000-message channel apart).
     const counts = await sql<{ name: string; n: number }>(
@@ -173,7 +174,7 @@ describe('seedWorld with content (seed v3)', () => {
       const result = await seedWorld(early.db, { content: true });
       expect(result.content).toMatchObject({ skipped: null, channels: 17 });
       const rows = await ownerSql<{ n: number; c: number }>(early.db.ownerUrl, `SELECT (SELECT count(*) FROM app.channels WHERE kind = 'channel')::int AS n, (SELECT count(DISTINCT channel_id) FROM app.messages)::int AS c`);
-      expect(rows[0]).toEqual({ n: 17, c: 18 }); // 17 channels (every one has words) and the DM
+      expect(rows[0]).toEqual({ n: 18, c: 18 }); // 18 channels (17 have words; #support-inbox is empty) and the DM
       expect((await ownerSql(early.db.ownerUrl, `SELECT 1 FROM app.channels WHERE name = 'dev' AND id = $1`, [SEED_IDS.channels['engineering/dev']])).length).toBe(0);
     } finally {
       await early.close();
