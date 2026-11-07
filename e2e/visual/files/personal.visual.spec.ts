@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { startStack, type Stack } from '../../fixtures/stack.ts';
 import { apiOn, uploadAs } from '../../files/personal-support.ts';
 import { noSidewaysScroll } from '../../support/stack-browser.ts';
@@ -30,12 +30,12 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-/** Sorted by name, ascending, whatever the browser remembers. */
-async function sortByName(page: import('@playwright/test').Page, phone = false): Promise<void> {
+/** Sorted by name, ascending (the browser is new, so the first look is newest first). */
+async function sortByName(page: Page, phone = false): Promise<void> {
   if (phone) await page.getByTestId('sort-select').selectOption('name:asc');
   else {
     await page.getByTestId('sort-name').click();
-    if ((await page.getByTestId('sort-name').locator('xpath=ancestor::*[@role="columnheader"]').getAttribute('aria-sort')) !== 'ascending') await page.getByTestId('sort-name').click();
+    await expect(page.getByTestId('sort-name').locator('xpath=ancestor::*[@role="columnheader"]')).toHaveAttribute('aria-sort', 'ascending');
   }
 }
 

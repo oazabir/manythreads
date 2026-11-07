@@ -402,7 +402,7 @@ export function FilesScreen() {
         <p className="fnote admin" role="status" data-testid="admin-view-note">
           <span>
             <b>You are reading {personName}’s Personal space.</b> It is read-only, and {personName} can see that you opened it.
-            {meta ? ` Your access ends at ${new Date(meta.validUntil).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}.` : ''}
+            {meta ? <> Your access ends at <span data-vt-mask>{new Date(meta.validUntil).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>.</> : null}
           </span>
           <span className="fnote-actions">
             <button type="button" className="btn s" disabled={exporting} data-testid="admin-view-export" onClick={exportZip}>{exporting ? 'Preparing…' : 'Download as zip'}</button>
