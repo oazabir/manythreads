@@ -23,6 +23,20 @@ import {
 
 export const FRAME_MS = 80;
 export const FRAME_CHARS = 3000;
+/**
+ * The most a frame's text may weigh once written as JSON. The socket layer refuses a push over 7000 bytes (REALTIME_MAX_BYTES) and the frame also carries ids, so
+ * 3000 characters of Chinese or Arabic (2 to 3 bytes each) or of quotes and line breaks (2 bytes each) would be dropped and leave a hole in the preview.
+ */
+export const FRAME_BYTES = 4500;
+
+/** The first piece of `pending` to send: at most FRAME_CHARS characters and FRAME_BYTES bytes as JSON, never ending between the two halves of one emoji. */
+export function takePiece(pending: string): string {
+  let n = Math.min(pending.length, FRAME_CHARS);
+  while (n > 1 && Buffer.byteLength(JSON.stringify(pending.slice(0, n))) > FRAME_BYTES) n = Math.max(1, Math.floor(n * 0.75));
+  const last = pending.charCodeAt(n - 1);
+  if (n > 1 && n < pending.length && last >= 0xd800 && last <= 0xdbff) n -= 1;
+  return pending.slice(0, n);
+}
 
 interface LiveEntry {
   askerActorId: string;
@@ -107,7 +121,7 @@ export class LiveFrames {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     while (this.pending !== '') {
-      const piece = this.pending.slice(0, FRAME_CHARS);
+      const piece = takePiece(this.pending);
       this.pending = this.pending.slice(piece.length);
       const offset = this.sentChars;
       this.sentChars += piece.length;
@@ -152,17 +166,26 @@ export function registerStopRoute(ctx: PluginContext): void {
       // the asker reads their own runs (`bot_runs_select`); anybody else's run, a run that does not exist and a run of nobody are all one 404
       const mine = await tx.query<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1::uuid AND asker_id = app.actor()', [runId]);
       if (mine.rows.length === 0) throw notFound('No such run');
-      const entry = live.get(runId);
-      if (mine.rows[0]?.status !== 'running' || !entry?.handle) return json(RunStopResponse.parse({ stopped: false }));
-      entry.stopped = true;
+      if (mine.rows[0]?.status !== 'running') return json(RunStopResponse.parse({ stopped: false }));
       try {
-        await entry.handle.stop();
+        return json(RunStopResponse.parse({ stopped: await stopTracked(runId) }));
       } catch (err) {
         throw new HttpError(500, 'internal', `The run could not be stopped: ${err instanceof Error ? err.message : 'unknown error'}`);
       }
-      return json(RunStopResponse.parse({ stopped: true }));
     }),
   });
+}
+
+/**
+ * The asker's Stop for a run this process holds: marks it stopped and stops its process if it has one yet (a run that is still starting stops the moment it has one).
+ * False when this process does not hold the run.
+ */
+export async function stopTracked(runId: string): Promise<boolean> {
+  const entry = live.get(runId);
+  if (!entry) return false;
+  entry.stopped = true;
+  await entry.handle?.stop();
+  return true;
 }
 
 /** Did the asker stop this run? */

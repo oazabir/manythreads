@@ -711,8 +711,9 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
       let handle: BotRuntimeHandle | undefined;
       let approvers: readonly string[] = [];
       let scheduledJobSettled = false;
-      // Ends the live frames of a run that streams (after its answer is posted, so the screen never sees "ended" before the answer).
-      let endFrames: ((status: 'done' | 'failed' | 'stopped') => Promise<void>) | undefined;
+      // The live frames of a run that streams; ended after its answer is posted (so the screen never sees "ended" before the answer), and on any failure (so it
+      // never waits for an end that will not come).
+      let frames: LiveFrames | undefined;
       try {
         // 1. Read, open the run, gate, pre-call check (one short transaction).
         const result = await job.transaction(async (tx): Promise<PreparedRun | null> => {
@@ -832,18 +833,22 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         }
         prepared = result;
         const { bot, provider, run, input, scope, alias: runAlias } = prepared;
+        // A person's conversation streams: the asker gets the words as they are written, and can stop the run (live.ts). Anyone else's run does neither.
+        // Tracked from here, not from the moment the process exists, so a Stop pressed while the run is starting is kept and applied the moment it has one.
+        const liveEntry = streamsLive(payload) ? trackRun(run.runId, payload.askerActorId) : undefined;
+        frames = streamsLive(payload)
+          ? new LiveFrames(ctx, job, { runId: run.runId, channelId: payload.channelId, threadRootId: payload.replyRootId, askerActorId: payload.askerActorId }, job.log)
+          : undefined;
         // Not in the transaction that opened the run: a hold or a close in that transaction goes through the run's own door on another connection, which would wait for this row's lock.
         await job.transaction((tx) => recordRunFacts(tx, run.runId, payload, runAlias));
 
         // 2. The model turn: no transaction held.
         let toolCalls = 0;
         handle = await provider.run(input, scope);
-        // A person's conversation streams: the asker gets the words as they are written, and can stop the run (live.ts). Anyone else's run does neither.
-        const liveEntry = streamsLive(payload) ? trackRun(run.runId, payload.askerActorId) : undefined;
-        if (liveEntry) liveEntry.handle = handle;
-        const frames = streamsLive(payload)
-          ? new LiveFrames(ctx, job, { runId: run.runId, channelId: payload.channelId, threadRootId: payload.replyRootId, askerActorId: payload.askerActorId }, job.log)
-          : undefined;
+        if (liveEntry) {
+          liveEntry.handle = handle;
+          if (liveEntry.stopped) await handle.stop();
+        }
         let reply = '';
         let ok = false;
         let error: string | undefined;
@@ -884,7 +889,6 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           reply = frames !== undefined && frames.full.trim() !== '' ? frames.full : STOPPED_BEFORE_ANSWER;
         }
         if (liveEntry) untrackRun(run.runId);
-        if (frames) endFrames = (status) => frames.end(status);
 
         // 2b. A run the team's pod served is counted at the model gateway: one spend line under the bot, or the `bot_runner.run.unmetered` event (P19-10).
         if (viaPod) {
@@ -918,10 +922,10 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         // committed first: the reply is posted through the run's own door, and the conversations plugin reads this fact when that message's event arrives
         if (stoppedByAsker) await job.transaction((tx) => recordStopped(tx, run.runId));
         await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure, refusal } }));
-        await endFrames?.(stoppedByAsker ? 'stopped' : ok ? 'done' : 'failed');
+        await frames?.end(stoppedByAsker ? 'stopped' : ok ? 'done' : 'failed');
       } catch (err) {
         untrackRun(opened?.runId ?? '');
-        await endFrames?.('failed').catch(() => undefined);
+        await frames?.end('failed').catch(() => undefined);
         if (!opened) {
           // Nothing started: let the queue retry. A scheduled run that keeps failing before it opens (a missing BOT.md, no repo) settles its firing
           // on the third attempt, with the reason, instead of leaving it queued.

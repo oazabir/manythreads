@@ -1,7 +1,7 @@
 import type { JobInfo, PluginContext, PluginLogger } from '@manythreads/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyChatAlias, streamsLive } from '../src/chat-run.ts';
-import { FRAME_CHARS, FRAME_MS, LiveFrames, lookingLabel, trackRun, untrackRun, wasStopped } from '../src/live.ts';
+import { FRAME_BYTES, FRAME_CHARS, FRAME_MS, LiveFrames, lookingLabel, stopTracked, takePiece, trackRun, untrackRun, wasStopped } from '../src/live.ts';
 import { RunPayload, type LoadedDefinition } from '../src/run-job.ts';
 
 // The live side of a conversation run (PLAN P20-16): the frames are throttled, ordered and small, and the picked model is used only when the bot lists it.
@@ -107,7 +107,52 @@ describe('LiveFrames', () => {
   });
 });
 
+describe('the size of a frame', () => {
+  const REALTIME_MAX_BYTES = 7_000;
+
+  it('keeps every frame under the socket layer’s cap even for text that weighs 3 bytes a character or needs escaping', async () => {
+    for (const unit of ['汉', 'ع', '"', '\n', '😀']) {
+      const rigged = rig();
+      const { frames } = rigged;
+      frames.text(unit.repeat(FRAME_CHARS * 2));
+      await frames.end('done');
+      const pushed = rigged.pushed.filter((p) => p.type === 'run.delta');
+      expect(pushed.length).toBeGreaterThan(1);
+      for (const p of pushed) {
+        expect(Buffer.byteLength(JSON.stringify({ workspaceId: 'w'.repeat(36), personId: 'p'.repeat(36), type: p.type, payload: p.payload }))).toBeLessThan(REALTIME_MAX_BYTES);
+        expect(Buffer.byteLength(JSON.stringify(p.payload['text']))).toBeLessThanOrEqual(FRAME_BYTES);
+      }
+      // nothing is lost or repeated: the offsets chain up and the pieces make the whole text
+      let at = 0;
+      for (const p of pushed) {
+        expect(p.payload['offset']).toBe(at);
+        at += (p.payload['text'] as string).length;
+      }
+      expect(pushed.map((p) => p.payload['text']).join('')).toBe(unit.repeat(FRAME_CHARS * 2));
+    }
+  });
+
+  it('never cuts between the two halves of one emoji', () => {
+    const piece = takePiece('x'.repeat(FRAME_CHARS - 1) + '😀' + 'tail');
+    expect(piece.length).toBe(FRAME_CHARS - 1);
+    expect(takePiece('ab')).toBe('ab');
+  });
+});
+
 describe('the live registry', () => {
+  it('keeps a Stop pressed before the run has a process and hands it over when it has one', async () => {
+    const entry = trackRun(RUN, ASKER);
+    expect(await stopTracked(RUN)).toBe(true);
+    expect(entry.stopped).toBe(true);
+    const stop = vi.fn(async () => undefined);
+    await stopTracked(RUN);
+    entry.handle = { stop, events: (async function* () {})() } as never;
+    expect(await stopTracked(RUN)).toBe(true);
+    expect(stop).toHaveBeenCalledTimes(1);
+    untrackRun(RUN);
+    expect(await stopTracked(RUN)).toBe(false);
+  });
+
   it('knows a run that was told to stop, and forgets a run that ended', () => {
     const entry = trackRun(RUN, ASKER);
     expect(wasStopped(RUN)).toBe(false);
