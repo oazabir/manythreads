@@ -110,11 +110,16 @@ export function registerChatRoutes(ctx: PluginContext): void {
       if (opened.created) {
         await ctx.audit.emit(tx, { type: 'channel.channel.created', channelId: opened.channel_id, teamId: null, name: '', kind: 'bot_conversation', private: true });
       }
+      let saved: string | null = null;
       if (body.threadRootId !== null) {
         const own = await requireOwn(tx, bot, body.threadRootId, me);
         if (own.channel_id !== opened.channel_id) throw notFound('No such conversation');
+        saved = own.model_alias;
       }
-      const alias = await checkedAlias(ctx, tx, bot, team, body.modelAlias);
+      let alias = await checkedAlias(ctx, tx, bot, team, body.modelAlias);
+      // The menu shows the model the conversation was last given, so a message that names none uses it (a reload forgets the client's pick). A saved pick the
+      // definition has dropped since, or one with no model behind it any more, is not an error for the person: the bot answers with its first.
+      if (alias === null && saved !== null) alias = await checkedAlias(ctx, tx, bot, team, saved).catch((e: unknown) => (e instanceof HttpError ? null : Promise.reject(e)));
       const messages = ctx.providers.get<MessageProvider>('messages');
       if (!messages) throw new HttpError(503, 'internal', 'Messages are not available in this deployment');
       const posted = await messages.post(tx, {

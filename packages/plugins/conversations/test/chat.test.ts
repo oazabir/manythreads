@@ -248,6 +248,21 @@ describe('sending', () => {
     expect((await list(nadia)).items.find((i) => i.threadRootId === secondRoot)).toMatchObject({ modelAlias: 'fast' });
   });
 
+  it('answers the next message of a conversation with the model it was last given, though the message names none (a reloaded page forgets its pick)', async () => {
+    const res = await send(nadia, { body: 'Same again, please', threadRootId: secondRoot });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const next = ChatSendResponse.parse(res.body).messageId;
+    const run = await until(
+      async () => {
+        const rows = (await w.system(async (tx) => (await tx.query<{ status: string; model_alias: string | null }>('SELECT status, model_alias FROM app.bot_runs WHERE bot_id = $1 AND turn_message_id = $2', [brain.botId, next])).rows));
+        return rows.length === 1 && rows[0]!.status === 'done' ? rows[0]! : null;
+      },
+      40_000,
+      'the run to close',
+    );
+    expect(run.model_alias).toBe('fast');
+  });
+
   it('continues a conversation: the next turn is another turn of the same thread, and another person’s thread is not found', async () => {
     const res = await send(nadia, { body: 'And the week before?', threadRootId: root });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
