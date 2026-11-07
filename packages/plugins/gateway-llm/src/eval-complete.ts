@@ -25,6 +25,8 @@ export interface LlmEvalRequest {
   user: string;
   maxTokens: number;
   timeoutMs?: number;
+  /** What the call is for, as the spend ledger records it: `eval` (the default) or `title` (the name of a chat conversation, P20-16). */
+  purpose?: 'eval' | 'title';
 }
 
 export type LlmEvalResult =
@@ -65,7 +67,7 @@ export async function evalComplete(ctx: PluginContext, tx: PluginTx, request: Ll
       system: request.system,
       user: decision.text,
       maxTokens: request.maxTokens,
-      metadata: { manythreads_workspace: request.workspaceId, manythreads_bot: request.botId, purpose: 'eval' },
+      metadata: { manythreads_workspace: request.workspaceId, manythreads_bot: request.botId, purpose: request.purpose ?? 'eval' },
       ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
     });
     await recordSpend(tx, {
@@ -79,7 +81,7 @@ export async function evalComplete(ctx: PluginContext, tx: PluginTx, request: Ll
       promptTokens: answer.promptTokens,
       completionTokens: answer.completionTokens,
       costUsd: 0,
-      purpose: 'eval',
+      purpose: request.purpose ?? 'eval',
     });
     return { ok: true, text: answer.text, tokens: answer.promptTokens + answer.completionTokens, decision };
   } catch (err) {

@@ -358,7 +358,8 @@ describe('app.conversations: the index and its visibility', () => {
     for (const who of [sameera, tariq, lena]) expect(await listed(who), who.key).toEqual([]);
     // the index holds no text: a reader of the row learns nothing of the private thread
     const columns = (await sys(async (tx) => (await tx.query<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'conversations' AND table_schema = 'app'")).rows)).map((r) => r.column_name);
-    expect(columns.filter((c) => /body|text|title|preview/.test(c))).toEqual([]);
+    // (the title and where it came from are the one exception, P20-16: a short name the person or the `fast` model gave, read by the same people as the row)
+    expect(columns.filter((c) => /body|text|title|preview/.test(c) && !['title', 'title_source'].includes(c))).toEqual([]);
     // and the private thread itself stays the asker's: Rafi reads the row, not the messages
     expect(await as(rafi, async (tx) => (await tx.query('SELECT id FROM app.messages WHERE id = $1', [root])).rows.length)).toBe(0);
     await sys((tx) => tx.query(`UPDATE app.conversations SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL WHERE thread_root_id = $1`, [root]));

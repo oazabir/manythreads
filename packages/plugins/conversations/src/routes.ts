@@ -21,7 +21,7 @@ import { toListItem, type AuthorKinds, type ListRow } from './rows.ts';
  */
 const CURSOR = /^(\d{1,16}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
-interface BotRow {
+export interface BotRow {
   id: string;
   slug: string;
   name: string;
@@ -34,7 +34,7 @@ interface BotRow {
 }
 
 /** The bot of the team, or 404: an unknown slug and one of another team answer alike. */
-async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<BotRow> {
+export async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<BotRow> {
   const res = await tx.query<BotRow>(
     `SELECT id, slug, name, role, status, definition_sha, jsonb_path_exists(triggers, '$[*] ? (@.type == "conversation")') AS conversational
        FROM app.bots WHERE team_id = $1 AND slug = $2`,
@@ -45,7 +45,7 @@ async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promis
   return bot;
 }
 
-async function callerPersonId(tx: PluginTx): Promise<string> {
+export async function callerPersonId(tx: PluginTx): Promise<string> {
   const row = (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0];
   if (!row?.id) throw forbidden('Conversations belong to people');
   return row.id;
@@ -64,29 +64,33 @@ const BASE: Record<ConversationScope, string> = {
   mine: `
     SELECT c.thread_root_id AS thread_id, c.channel_id, 'conversation'::text AS source, NULL::text AS channel_name,
            c.person_id, c.visibility, sc.id AS shared_to, CASE WHEN sc.kind = 'channel' THEN sc.name END AS shared_name,
-           c.shared_root_id AS shared_root, left(m.body_plain, 120) AS title, m.created_at
+           c.shared_root_id AS shared_root, coalesce(c.title, left(m.body_plain, 120)) AS title, c.title_source, c.pinned_at, c.model_alias, m.created_at
       FROM app.conversations c
       JOIN app.messages m ON m.id = c.thread_root_id AND m.deleted_at IS NULL
       LEFT JOIN app.channels sc ON sc.id = c.shared_to
-     WHERE c.bot_id = $2 AND c.person_id = $1`,
+     WHERE c.bot_id = $2 AND c.person_id = $1 AND c.deleted_at IS NULL
+       AND ($7::text IS NULL OR ($7::text = 'only') = (c.pinned_at IS NOT NULL))
+       AND ($6::text IS NULL OR c.title ILIKE $6::text OR m.body_plain ILIKE $6::text OR EXISTS (
+             SELECT 1 FROM app.messages r WHERE r.thread_root_id = c.thread_root_id AND r.deleted_at IS NULL AND r.body_plain ILIKE $6::text))`,
   shared: `
     SELECT CASE WHEN c.person_id = $1 THEN c.thread_root_id ELSE coalesce(sm.id, c.thread_root_id) END AS thread_id,
            CASE WHEN c.person_id = $1 OR sm.id IS NULL THEN c.channel_id ELSE sm.channel_id END AS channel_id,
            'conversation'::text AS source, NULL::text AS channel_name,
            c.person_id, c.visibility, sc.id AS shared_to, CASE WHEN sc.kind = 'channel' THEN sc.name END AS shared_name,
            c.shared_root_id AS shared_root,
-           left(CASE WHEN c.person_id = $1 THEN m.body_plain ELSE sm.body_plain END, 120) AS title,
+           CASE WHEN c.person_id = $1 THEN coalesce(c.title, left(m.body_plain, 120)) ELSE left(sm.body_plain, 120) END AS title,
+           CASE WHEN c.person_id = $1 THEN c.title_source END AS title_source, NULL::timestamptz AS pinned_at, NULL::text AS model_alias,
            coalesce(m.created_at, sm.created_at, c.shared_at) AS created_at
       FROM app.conversations c
       LEFT JOIN app.messages m ON m.id = c.thread_root_id AND m.deleted_at IS NULL
       LEFT JOIN app.messages sm ON sm.id = c.shared_root_id AND sm.deleted_at IS NULL
       LEFT JOIN app.channels sc ON sc.id = c.shared_to
-     WHERE c.bot_id = $2 AND c.visibility = 'shared'
+     WHERE c.bot_id = $2 AND c.visibility = 'shared' AND c.deleted_at IS NULL
        AND ((c.person_id = $1 AND m.id IS NOT NULL) OR (c.person_id <> $1 AND sm.id IS NOT NULL))`,
   mentions: `
     SELECT r.reply_root_id AS thread_id, r.channel_id, 'mention'::text AS source, ch.name AS channel_name,
            $1::uuid AS person_id, NULL::text AS visibility, NULL::uuid AS shared_to, NULL::text AS shared_name,
-           NULL::uuid AS shared_root, left(m.body_plain, 120) AS title, m.created_at
+           NULL::uuid AS shared_root, left(m.body_plain, 120) AS title, NULL::text AS title_source, NULL::timestamptz AS pinned_at, NULL::text AS model_alias, m.created_at
       FROM (SELECT DISTINCT ON (reply_root_id) reply_root_id, channel_id
               FROM app.bot_runs
              WHERE bot_id = $2 AND trigger_type = 'mention' AND asker_id = app.actor()
@@ -104,7 +108,7 @@ function listSql(scope: ConversationScope): string {
              (extract(epoch FROM coalesce(t.last_reply_at, b.created_at)) * 1000000)::bigint AS act_n
         FROM base b LEFT JOIN app.threads t ON t.root_message_id = b.thread_id)
     SELECT a.thread_id, a.channel_id, a.source, a.channel_name, a.person_id, a.visibility, a.shared_to, a.shared_name, a.shared_root,
-           a.title, a.created_at, a.reply_count, a.last_reply_at, a.act_n::text AS act_us,
+           a.title, a.title_source, a.pinned_at, a.model_alias, a.created_at, a.reply_count, a.last_reply_at, a.act_n::text AS act_us,
            lm.id AS lm_id, lm.author_id AS lm_author, left(lm.body_plain, 140) AS lm_preview,
            coalesce(rs.unread_count, 0)::int AS unread
       FROM act a
@@ -117,6 +121,12 @@ function listSql(scope: ConversationScope): string {
      LIMIT $5`;
 }
 
+/** `%text%` with the pattern characters of the text escaped, so a search for `100%` finds that and not everything. Null when there is nothing to search for. */
+export function likePattern(text: string | undefined): string | null {
+  if (text === undefined) return null;
+  return `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
 async function authorKinds(tx: PluginTx, messageIds: readonly string[]): Promise<AuthorKinds> {
   if (messageIds.length === 0) return new Map();
   const res = await tx.query<{ actor_id: string; kind: 'person' | 'bot' | 'system' }>(
@@ -124,6 +134,24 @@ async function authorKinds(tx: PluginTx, messageIds: readonly string[]): Promise
     [messageIds],
   );
   return new Map(res.rows.map((r) => [r.actor_id, r.kind]));
+}
+
+/** The two reasons a bot cannot answer right now, in words; shared by every route that starts or continues a conversation. */
+export function assertBotCanTalk(bot: BotRow): void {
+  if (bot.status !== 'active') {
+    throw conflict(
+      bot.status === 'disabled' ? 'This bot is turned off, so it cannot answer.' : "This bot's BOT.md is invalid, so it cannot answer until it is fixed.",
+    );
+  }
+  // The router fires a message in a conversation channel only for the bot's `conversation` trigger (runtime-hermes' matchTrigger): without
+  // one nothing would ever answer, so there is no conversation to open (the roster says so, and the clients offer no Talk button).
+  if (!bot.conversational) {
+    throw new HttpError(
+      409,
+      'bot_has_no_conversation_trigger',
+      `${bot.name} does not take part in conversations: its definition has no conversation trigger.`,
+    );
+  }
 }
 
 export function registerRoutes(ctx: PluginContext): void {
@@ -135,20 +163,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = ConversationPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       const bot = await requireBot(tx, team.id, botSlug);
-      if (bot.status !== 'active') {
-        throw conflict(
-          bot.status === 'disabled' ? 'This bot is turned off, so it cannot answer.' : "This bot's BOT.md is invalid, so it cannot answer until it is fixed.",
-        );
-      }
-      // The router fires a message in a conversation channel only for the bot's `conversation` trigger (runtime-hermes' matchTrigger): without
-      // one nothing would ever answer, so there is no conversation to open (the roster says so, and the clients offer no Talk button).
-      if (!bot.conversational) {
-        throw new HttpError(
-          409,
-          'bot_has_no_conversation_trigger',
-          `${bot.name} does not take part in conversations: its definition has no conversation trigger.`,
-        );
-      }
+      assertBotCanTalk(bot);
       // One statement makes (or finds) the channel and its one member; a person who is not on the bot's team is refused there (403).
       const made = (await tx.query<{ channel_id: string; created: boolean }>('SELECT channel_id, created FROM app.conversations_open($1::uuid)', [bot.id])).rows[0]!;
       if (made.created) {
@@ -182,8 +197,10 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       const bot = await requireBot(tx, team.id, botSlug);
       const me = await callerPersonId(tx);
+      // Only the person's own list has text to search and pins to filter by: the other two lists do not reference those two parameters.
+      const own = q.scope === 'mine' ? [likePattern(q.q), q.pinned ?? null] : [];
       const rows = (
-        await tx.query<ListRow>(listSql(q.scope), [me, bot.id, cursor?.[1] ?? null, cursor?.[2] ?? null, q.limit + 1])
+        await tx.query<ListRow>(listSql(q.scope), [me, bot.id, cursor?.[1] ?? null, cursor?.[2] ?? null, q.limit + 1, ...own])
       ).rows;
       const more = rows.length > q.limit;
       const page = more ? rows.slice(0, q.limit) : rows;

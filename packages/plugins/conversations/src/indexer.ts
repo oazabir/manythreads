@@ -1,5 +1,6 @@
 import type { PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
 import { ChannelMessagePostedEvent } from '@manythreads/shared';
+import { recordReply } from './replies.ts';
 import { CONVERSATION_COLUMNS, toConversation, type ConversationRow } from './rows.ts';
 
 // The index of conversations (PLAN P5-16): the first message a person sends into their conversation channel with a bot is the root of a new
@@ -20,8 +21,11 @@ interface Opening {
 export function registerIndexer(ctx: PluginContext): void {
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ChannelMessagePostedEvent.parse(raw);
-    // a reply is part of a conversation already; only a root opens one
-    if (event.threadRootId !== null) return;
+    // a reply is part of a conversation already (and a bot's answer is one more variant of its turn); only a root opens one
+    if (event.threadRootId !== null) {
+      await recordReply(ctx, event, tx);
+      return;
+    }
     const opening = (
       await tx.query<Opening>(
         `SELECT m.workspace_id, c.team_id, c.bot_id, c.id AS channel_id, a.ref_id AS person_id
@@ -35,8 +39,8 @@ export function registerIndexer(ctx: PluginContext): void {
     ).rows[0];
     if (!opening) return;
     const written = await tx.query<ConversationRow>(
-      `INSERT INTO app.conversations (thread_root_id, workspace_id, team_id, bot_id, person_id, channel_id)
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (thread_root_id) DO NOTHING RETURNING ${CONVERSATION_COLUMNS}`,
+      `INSERT INTO app.conversations (thread_root_id, workspace_id, team_id, bot_id, person_id, channel_id, model_alias)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT model_alias FROM app.message_model_picks WHERE message_id = $1)) ON CONFLICT (thread_root_id) DO NOTHING RETURNING ${CONVERSATION_COLUMNS}`,
       [event.messageId, opening.workspace_id, opening.team_id, opening.bot_id, opening.person_id, opening.channel_id],
     );
     const row = written.rows[0];

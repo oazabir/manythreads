@@ -35,6 +35,11 @@ export interface MessagePostInput {
    * writes from something a person typed that must not ping anyone (a reminder's text). Plugin code only: the provider is not reachable by a bot.
    */
   skipRefs?: boolean;
+  /**
+   * Files already uploaded to this channel by the transaction's actor (`POST /api/channels/:channelId/files`), attached as `meta.attachments`, exactly as the
+   * post route attaches them. Plugin code only; refused with 400 for a file that is not the actor's own upload to this channel.
+   */
+  attachmentIds?: readonly string[];
   /** The message is imported history (see `ImportedMessage`); cannot be combined with `meta` or `copyOf`. */
   imported?: ImportedMessage;
 }

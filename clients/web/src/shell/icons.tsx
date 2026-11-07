@@ -11,6 +11,7 @@ import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon } from '@proicons/react';
+import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -23,6 +24,7 @@ export const ScheduledJobsIcon = proIcon(ArrowSyncIcon);
 export const ThreadsIcon = proIcon(CommentMultipleIcon);
 export const ApprovalsIcon = proIcon(CheckmarkCircleIcon);
 export const DmIcon = proIcon(CommentIcon);
+export const ChatNavIcon = proIcon(ChatIcon);
 
 const Chevron = proIcon(ChevronDownIcon, 10, 2.4);
 export const CaretIcon = ({ open = false }: { open?: boolean }) => (
@@ -39,7 +41,7 @@ export const BackIcon = proIcon(ChevronLeftIcon, 14);
 export const GearIcon = proIcon(SettingsIcon);
 export const LockIcon = proIcon(ProLock, 12);
 
-export const NAV_ICONS = { files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
+export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
 
 export const ReplyIcon = proIcon(ArrowReplyIcon, 14);
 export const SmileIcon = proIcon(EmojiIcon, 14);
@@ -141,3 +143,13 @@ export const SettingsSecurityIcon = proIcon(ShieldIcon, 16);
 // the Show password button: the eye is open while the password is hidden, crossed out while it is shown
 export const ShowPasswordIcon = proIcon(EyeIcon, 18);
 export const HidePasswordIcon = proIcon(EyeOffIcon, 18);
+
+/* The chat screen's icons (PLAN P20-16). */
+export const CopyTextIcon = proIcon(CopyIcon, 14);
+export const PinChatIcon = proIcon(PinIcon, 14);
+export const UnpinChatIcon = proIcon(PinOffIcon, 14);
+export const ShareChatIcon = proIcon(ShareIcon, 14);
+export const ThumbUpIcon = proIcon(ThumbsUpIcon, 14);
+export const ThumbDownIcon = proIcon(ThumbsDownIcon, 14);
+export const RailIcon = proIcon(PanelLeftIcon, 16);
+export const SavePageIcon = proIcon(SaveIcon, 14);

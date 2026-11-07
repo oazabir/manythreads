@@ -36,6 +36,9 @@ import { BotsRunOpenedEvent } from './bots.run.opened.ts';
 import { AnswerAnswerPostedEvent } from './answer.answer.posted.ts';
 import { AnswerAnswerSharedEvent } from './answer.answer.shared.ts';
 import { ConversationsConversationStartedEvent } from './conversations.conversation.started.ts';
+import { ConversationsConversationRenamedEvent } from './conversations.conversation.renamed.ts';
+import { ConversationsFeedbackGivenEvent } from './conversations.feedback.given.ts';
+import { ConversationsTurnRegeneratedEvent } from './conversations.turn.regenerated.ts';
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
 import { LinkPreviewSettingsUpdatedEvent } from './linkpreview.settings.updated.ts';
@@ -224,6 +227,9 @@ export const eventRegistry = {
   'bots.run.closed': { 1: BotsRunClosedEvent },
   'bots.run.opened': { 1: BotsRunOpenedEvent },
   'conversations.conversation.started': { 1: ConversationsConversationStartedEvent },
+  'conversations.conversation.renamed': { 1: ConversationsConversationRenamedEvent },
+  'conversations.feedback.given': { 1: ConversationsFeedbackGivenEvent },
+  'conversations.turn.regenerated': { 1: ConversationsTurnRegeneratedEvent },
   'answer.answer.posted': { 1: AnswerAnswerPostedEvent },
   'answer.answer.shared': { 1: AnswerAnswerSharedEvent },
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
@@ -440,6 +446,9 @@ export type AnyEvent =
   | z.infer<typeof BotsRunClosedEvent>
   | z.infer<typeof BotsRunOpenedEvent>
   | z.infer<typeof ConversationsConversationStartedEvent>
+  | z.infer<typeof ConversationsConversationRenamedEvent>
+  | z.infer<typeof ConversationsFeedbackGivenEvent>
+  | z.infer<typeof ConversationsTurnRegeneratedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
   | z.infer<typeof LinkPreviewSettingsUpdatedEvent>
@@ -539,6 +548,9 @@ export type LatestEvent =
   | z.infer<typeof BotsRunClosedEvent>
   | z.infer<typeof BotsRunOpenedEvent>
   | z.infer<typeof ConversationsConversationStartedEvent>
+  | z.infer<typeof ConversationsConversationRenamedEvent>
+  | z.infer<typeof ConversationsFeedbackGivenEvent>
+  | z.infer<typeof ConversationsTurnRegeneratedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
   | z.infer<typeof LinkPreviewSettingsUpdatedEvent>

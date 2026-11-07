@@ -6,13 +6,13 @@ const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Files, Boards, Org chart, Jobs, Threads, Approvals, channel groups, Direct messages, Bots in orders 10 20 23 26 30 35 40 45 50', () => {
+  it('is exactly Chat, Files, Boards, Org chart, Jobs, Threads, Approvals, channel groups, Direct messages, Bots in orders 5 10 20 23 26 30 35 40 45 50', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
-      [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [30, 'Threads'], [35, 'Approvals'], [40, 'Channels'],
+      [5, 'Chat'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [30, 'Threads'], [35, 'Approvals'], [40, 'Channels'],
       [45, 'Direct messages'], [50, 'Bots'],
     ]);
-    expect(sorted.map((i) => i.kind)).toEqual(['item', 'item', 'item', 'item', 'item', 'item', 'group-list', 'header', 'header']);
+    expect(sorted.map((i) => i.kind)).toEqual(['item', 'item', 'item', 'item', 'item', 'item', 'item', 'group-list', 'header', 'header']);
   });
 
   it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
@@ -25,8 +25,8 @@ describe('sidebar contract', () => {
 
   it('sorts a plugin contribution into place by order and keeps ties in the order given', () => {
     const plugin = contribution({ id: 'wiki', order: 25 });
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(0, 4)).toEqual(['files', 'boards', 'org', 'wiki']);
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(4, 6)).toEqual(['jobs', 'threads']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(1, 5)).toEqual(['files', 'boards', 'org', 'wiki']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(5, 7)).toEqual(['jobs', 'threads']);
     const a = contribution({ id: 'a', order: 5 });
     const b = contribution({ id: 'b', order: 5 });
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);
@@ -52,7 +52,7 @@ describe('sidebar contract', () => {
 
   it('the guest shell keeps only the channel groups', () => {
     expect(visibleNav(CORE_NAV, { guest: true }).map((i) => i.id)).toEqual(['channels']);
-    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(9);
+    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(10);
   });
 });
 
@@ -78,6 +78,7 @@ describe('sidebar links and counts', () => {
 describe('team switching and titles', () => {
   it('keeps the section when switching teams and falls back to Threads for a channel or DM', () => {
     expect(teamSwitchPath('/t/engineering/files', 'support')).toBe('/t/support/files');
+    expect(teamSwitchPath('/t/engineering/chat', 'support')).toBe('/t/support/chat');
     expect(teamSwitchPath('/t/engineering/approvals', 'support')).toBe('/t/support/approvals');
     expect(teamSwitchPath('/t/engineering/jobs', 'support')).toBe('/t/support/jobs');
     expect(teamSwitchPath('/t/engineering/org', 'support')).toBe('/t/support/org');
@@ -90,6 +91,7 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/c/dev')).toBe('# dev');
     expect(viewTitle('/t/engineering/threads')).toBe('Threads');
     expect(viewTitle('/t/engineering/files')).toBe('Files');
+    expect(viewTitle('/t/engineering/chat')).toBe('Chat');
     expect(viewTitle('/t/engineering/dm/abc')).toBe('Direct message');
     expect(viewTitle('/t/engineering/bots/brain/chat')).toBe('Conversation');
     expect(viewTitle('/t/engineering/bots/brain')).toBe('Bots');

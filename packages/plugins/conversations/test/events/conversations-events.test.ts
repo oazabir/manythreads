@@ -71,7 +71,15 @@ describe('conversations events', () => {
     expect(Object.keys(eventRegistry['conversations.conversation.started'])).toEqual(['1']);
     const plugin = (await import('../../src/index.ts')).default;
     // the third is the access event of sharing an answer (P5-17): its own contract is in answer's test/events
-    expect([...plugin.manifest.events.emits].sort()).toEqual(['answer.answer.shared', 'channel.channel.created', 'conversations.conversation.started']);
+    // and the three of the Chat screen (P20-16): a title was set, a thumb was given, Regenerate was pressed
+    expect([...plugin.manifest.events.emits].sort()).toEqual([
+      'answer.answer.shared',
+      'channel.channel.created',
+      'conversations.conversation.renamed',
+      'conversations.conversation.started',
+      'conversations.feedback.given',
+      'conversations.turn.regenerated',
+    ]);
     expect([...plugin.manifest.events.consumes]).toEqual(['channel.message.posted']);
   });
 

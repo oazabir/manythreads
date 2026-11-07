@@ -362,6 +362,7 @@ export function registerMessageProvider(deps: Deps): void {
         threadRootId: input.threadRootId ?? null,
         ...(meta?.success ? { meta: meta.data as Record<string, unknown> } : {}),
         ...(input.skipRefs === true ? { skipRefs: true } : {}),
+        ...(input.attachmentIds !== undefined && input.attachmentIds.length > 0 ? { attachmentIds: input.attachmentIds } : {}),
       });
       return { id: posted.id, channelId: posted.channelId, threadRootId: posted.threadRootId, createdAt: posted.row.created_at.toISOString() };
     },

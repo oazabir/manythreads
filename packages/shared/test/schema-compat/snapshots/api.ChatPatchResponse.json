@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "titleSource": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pinned": {
+      "type": "boolean"
+    },
+    "modelAlias": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "title",
+    "titleSource",
+    "pinned",
+    "modelAlias"
+  ]
+}

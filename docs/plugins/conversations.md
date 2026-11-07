@@ -91,11 +91,38 @@ characters; the JSON Schema and the schema-compat snapshot carry it; the bot pag
 same sha); anything else — no repo plugin, an unreadable or invalid file, a newer commit, no list — is the platform's defaults
 (`DEFAULT_CONVERSATION_PROMPTS`) with `promptSource: 'default'`. A chip is sent as written when chosen.
 
+## The Chat screen (P20-16)
+
+The first sidebar entry, **Chat** (`/t/:team/chat`), is a full chat with a bot (Brain by default) over the same conversations. Migration `0003_chat.sql`
+adds the part the conversation view did not have; routes are in `src/chat-routes.ts`, all the caller's own (404 for anything else, a deleted conversation
+included):
+
+| Method and path | What it does |
+|---|---|
+| `GET .../bots/:botSlug/conversations/models` | The model menu: the aliases the bot's definition lists (`model.aliases`, read at the sha the roster row was loaded from), each with a plain label and whether the workspace has a model behind it (`available`, `reason`). |
+| `POST .../conversations/send` | `{ body, threadRootId \| null, attachments?, modelAlias? }`: posts into the caller's conversation channel through the `messages` provider (with the files) and files the pick (`app.message_model_picks`, bots migration 0025) in the same transaction; 422 with one plain sentence for an alias the definition does not name or that has no model behind it. |
+| `GET .../conversations/:threadRootId/state` | Turns with their variants, the caller's own thumbs, the title, pin, the conversation's model, and `liveRunId` for a screen opened while a run is answering. |
+| `PATCH .../conversations/:threadRootId` | `{ title?, pinned?, modelAlias? }` (a title is `manual` from then on and the model never replaces it; emits `conversations.conversation.renamed`). |
+| `DELETE` / `POST .../:threadRootId/restore` | Soft delete; restore works for 30 seconds (the trigger `app.conversations_restore_window` enforces it for the app role; 410 after). A deleted conversation is in no list. |
+| `POST .../:threadRootId/turns/:turnMessageId/regenerate` | `{ modelAlias? }`: emits `conversations.turn.regenerated`; the Hermes runtime starts a run for that message and its reply becomes the next variant. 409 while a run is live. Edit-then-resend is the channels edit route on the last message followed by this call. |
+| `PUT .../:threadRootId/turns/:turnMessageId/variant` | `{ messageId }`: the answer shown and continued from (`app.conversations_choose_variant`, a definer function that checks the caller owns the turn). |
+| `PUT .../conversations/messages/:messageId/feedback` | `{ vote: 'up'\|'down'\|null, reason? }` on one of the caller's own answers; `conversations.feedback.given` carries the vote and ids, never the reason. |
+
+The list route takes `q` (title and message text, own list only) and `pinned=only|without`. **Variants.** A bot reply in a conversation thread (message `meta.runId`,
+not a failure notice) is recorded by `src/replies.ts` as variant *n* of the turn the run answered (`bot_runs.turn_message_id`); the newest is chosen. The first
+answer of a conversation enqueues job `conversations.title` (`src/title.ts`): the `fast` alias names it in at most six words through the gateway's `evalComplete`
+(`purpose: 'title'`); with no model behind `fast` the title stays empty and lists show the first words of the first message. **Stop and streaming** are the Hermes
+runtime's (`POST /api/runs/:runId/stop`, pushes `run.delta`, `run.looking`, `run.ended` to the asker; see [runtime-hermes](./runtime-hermes.md)).
+New tables: `app.conversation_variants` (person own, system writes) and `app.conversation_feedback` (person only, in both directions).
+
 ## Events
 
 | Type | Payload | When |
 |---|---|---|
 | `conversations.conversation.started` (v1) | `workspaceId, botId, personId, channelId, threadRootId` | once per conversation, when its root is indexed. Ids only, never text. **No `teamId`**: the stored `team_id` is what `events_select` lets every member of the team read, so a team-scoped event would tell a teammate that, and when, somebody talked to a bot in private. Without it the row is workspace-scoped (`team_id` null), as a DM's events are: only a workspace admin's policy reaches it. |
+| `conversations.conversation.renamed` (v1) | `workspaceId, botId, personId, channelId, threadRootId, source: auto\|manual` | a title was set. Ids only, never the title; no `teamId`. |
+| `conversations.feedback.given` (v1) | `workspaceId, botId, personId, channelId, messageId, vote: up\|down\|none` | a thumb was given, changed or taken back. The reason is never in the event. |
+| `conversations.turn.regenerated` (v1) | `workspaceId, botId, personId, channelId, threadRootId, turnMessageId, modelAlias` | Regenerate: the Hermes runtime starts a run for that message. |
 | `channel.channel.created` (existing) | `kind: 'bot_conversation'`, `private: true`, `name: ''`, `teamId: null` | when `open` makes the channel (as the person); no team, for the same reason. |
 
 ## Privacy
@@ -157,9 +184,9 @@ thread shows "<bot> is working on it…" for three minutes after the person's me
 
 ## Manifest
 
-`conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit']`, emits `conversations.conversation.started`,
+`conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit', 'job.register']`, emits `conversations.conversation.started`, `conversations.conversation.renamed`, `conversations.feedback.given`, `conversations.turn.regenerated`,
 `channel.channel.created` and `answer.answer.shared`, consumes `channel.message.posted`, `dependsOn: ['channels', 'bots', 'answer']`, migrations
-`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared` and the trigger that clears the mark with the copy).
+`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared` and the trigger that clears the mark with the copy, `0003` the Chat screen: title, pin, soft delete, model, variants, feedback).
 
 ## Tests
 

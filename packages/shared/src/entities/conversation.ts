@@ -13,6 +13,10 @@ import { ActorId, BotId, ChannelId, MessageId, PersonId, TeamId, WorkspaceId } f
 export const ConversationVisibility = z.enum(['private', 'shared']);
 export type ConversationVisibility = z.infer<typeof ConversationVisibility>;
 
+/** Who made a conversation's title: the `fast` model from the first exchange (`auto`), or the person (`manual`; a later auto title never replaces it). */
+export const ConversationTitleSource = z.enum(['auto', 'manual']);
+export type ConversationTitleSource = z.infer<typeof ConversationTitleSource>;
+
 /** One conversation of a bot with a person: the index row of a thread in the bot's conversation channel. */
 export const Conversation = z.object({
   /** The person's first message; the id of the thread. */
@@ -29,6 +33,15 @@ export const Conversation = z.object({
   sharedRootId: MessageId.nullable(),
   sharedBy: ActorId.nullable(),
   sharedAt: IsoDateTime.nullable(),
+  /** The name the person sees in the history (P20-16). Null until one is made; `titleSource` says who made it. */
+  title: z.string().nullable(),
+  titleSource: ConversationTitleSource.nullable(),
+  /** Set while the person has pinned the conversation to the top of the history. */
+  pinnedAt: IsoDateTime.nullable(),
+  /** Set for 30 seconds of undo and then for good: a deleted conversation is in no list. */
+  deletedAt: IsoDateTime.nullable(),
+  /** The model alias the person last chose for it (`smart`, `fast`, ...); null means the bot's first alias. */
+  modelAlias: z.string().nullable(),
   createdAt: IsoDateTime,
 });
 export type Conversation = z.infer<typeof Conversation>;

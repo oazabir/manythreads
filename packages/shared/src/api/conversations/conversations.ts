@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Page } from '../../common/page.ts';
 import { IsoDateTime } from '../../common/time.ts';
-import { ConversationVisibility } from '../../entities/conversation.ts';
+import { ConversationTitleSource, ConversationVisibility } from '../../entities/conversation.ts';
 import { BotId, ChannelId, MessageId, PersonId } from '../../ids.ts';
 import { BotSlug } from '../bots/pairing.ts';
 import { TeamSlug } from '../teams/common.ts';
@@ -50,6 +50,10 @@ export const ListConversationsQuery = z.object({
   scope: ConversationScope.default('mine'),
   limit: z.coerce.number().int().min(1).max(100).default(30),
   cursor: z.string().min(1).max(256).optional(),
+  /** Search over the caller's own conversations: the title and the text of the messages the caller may read (P20-16). Only `mine` has text to search. */
+  q: z.string().trim().min(1).max(100).optional(),
+  /** `only` lists the pinned conversations (the rail's Pinned group), `without` the rest, so a pinned one never falls off the end of a page. */
+  pinned: z.enum(['only', 'without']).optional(),
 });
 export type ListConversationsQuery = z.infer<typeof ListConversationsQuery>;
 
@@ -76,6 +80,12 @@ export const ConversationListItem = z.object({
   /** Null for a mention: that thread is in a channel and is as visible as the channel is. */
   visibility: ConversationVisibility.nullable(),
   title: z.string(),
+  /** `manual` once the person renamed it; `auto` or null while the title is still the first words of the first message. */
+  titleSource: ConversationTitleSource.nullable().default(null),
+  /** The person pinned it to the top of the history (own conversations only). */
+  pinned: z.boolean().default(false),
+  /** The model alias last chosen for the conversation, or null (the bot's first alias). */
+  modelAlias: z.string().nullable().default(null),
   preview: z.string(),
   /** Who wrote the newest message; null for a thread nobody has answered yet and a message the caller cannot read. */
   lastAuthor: z.enum(['person', 'bot']).nullable(),

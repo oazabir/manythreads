@@ -21,6 +21,18 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256
+    },
+    "q": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "pinned": {
+      "type": "string",
+      "enum": [
+        "only",
+        "without"
+      ]
     }
   }
 }

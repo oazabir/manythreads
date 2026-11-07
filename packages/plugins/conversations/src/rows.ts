@@ -20,10 +20,15 @@ export type ConversationRow = {
   shared_root_id: string | null;
   shared_by: string | null;
   shared_at: Date | null;
+  title: string | null;
+  title_source: string | null;
+  pinned_at: Date | null;
+  deleted_at: Date | null;
+  model_alias: string | null;
   created_at: Date;
 };
 export const CONVERSATION_COLUMNS =
-  'thread_root_id, workspace_id, team_id, bot_id, person_id, channel_id, visibility, shared_to, shared_root_id, shared_by, shared_at, created_at';
+  'thread_root_id, workspace_id, team_id, bot_id, person_id, channel_id, visibility, shared_to, shared_root_id, shared_by, shared_at, title, title_source, pinned_at, deleted_at, model_alias, created_at';
 export const toConversation = (r: ConversationRow): Conversation =>
   Conversation.parse({
     threadRootId: r.thread_root_id,
@@ -37,6 +42,11 @@ export const toConversation = (r: ConversationRow): Conversation =>
     sharedRootId: r.shared_root_id,
     sharedBy: r.shared_by,
     sharedAt: isoOrNull(r.shared_at),
+    title: r.title,
+    titleSource: r.title_source,
+    pinnedAt: isoOrNull(r.pinned_at),
+    deletedAt: isoOrNull(r.deleted_at),
+    modelAlias: r.model_alias,
     createdAt: iso(r.created_at),
   });
 
@@ -52,6 +62,9 @@ export type ListRow = {
   shared_name: string | null;
   shared_root: string | null;
   title: string | null;
+  title_source: string | null;
+  pinned_at: Date | null;
+  model_alias: string | null;
   created_at: Date;
   reply_count: number | null;
   last_reply_at: Date | null;
@@ -76,6 +89,9 @@ export function toListItem(r: ListRow, myPersonId: string, kinds: AuthorKinds): 
     mine: r.person_id === myPersonId,
     visibility: r.visibility,
     title: r.title ?? '',
+    titleSource: r.title_source,
+    pinned: r.pinned_at !== null,
+    modelAlias: r.model_alias,
     preview: r.lm_preview ?? '',
     lastAuthor: kind === 'person' || kind === 'bot' ? kind : null,
     lastActivityAt: iso(r.last_reply_at ?? r.created_at),

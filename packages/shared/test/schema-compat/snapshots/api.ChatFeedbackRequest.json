@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "vote": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "up",
+            "down"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 140
+    }
+  },
+  "required": [
+    "vote"
+  ],
+  "additionalProperties": false
+}
