@@ -14,6 +14,7 @@ const SECTION_LABEL: Record<string, string> = {
   bots: 'Bots',
   recipes: 'Recipes',
   memory: 'Memory',
+  knowledge: 'Knowledge',
   agents: 'Agents',
   projects: 'Projects',
   proposals: 'Proposals',

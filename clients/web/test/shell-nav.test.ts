@@ -99,6 +99,11 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/jobs')).toBe('Jobs');
     expect(viewTitle('/')).toBe('Home');
     expect(viewTitle('/t/engineering/memory')).toBe('Memory');
+    // a person's own Memory and Knowledge are outside any team; neither is called Home
+    expect(viewTitle('/memory')).toBe('Memory');
+    expect(viewTitle('/knowledge')).toBe('Knowledge');
+    expect(viewTitle('/t/engineering/knowledge')).toBe('Knowledge');
+    expect(teamSwitchPath('/t/engineering/knowledge', 'support')).toBe('/t/support/knowledge');
   });
 
   it('keeps the section when switching teams from a conversation with a bot', () => {

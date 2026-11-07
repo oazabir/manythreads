@@ -45,7 +45,7 @@ export function navTone(item: NavContribution, counts: Readonly<Record<string, n
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['chat', 'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'recipes'] as const;
+const SECTIONS = ['chat', 'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'recipes', 'memory', 'knowledge'] as const;
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {
@@ -54,11 +54,14 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search' };
+const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {
   if (pathname === '/files' || pathname.startsWith('/files/')) return 'Files';
+  // a person's own Memory and Knowledge sit outside any team
+  if (pathname === '/memory') return 'Memory';
+  if (pathname === '/knowledge') return 'Knowledge';
   const m = /^\/t\/[^/]+\/([^/]+)(?:\/([^/]+))?/.exec(pathname);
   if (!m) return 'Home';
   const [, section = '', rest] = m;
