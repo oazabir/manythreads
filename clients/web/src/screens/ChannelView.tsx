@@ -13,6 +13,7 @@ import { channelKey, channelStore } from '../channels/store';
 import { firstUnreadIndex } from '../channels/timeline';
 import { isApiError } from '../api/client';
 import { VirtualList, type VirtualListApi } from '../channels/VirtualList';
+import { SkeletonMessages } from '../components/Skeleton';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { DmLead, DmTrail } from '../dms/DmHeadTitle';
@@ -105,6 +106,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const [seenUpTo, setSeenUpTo] = useState<string | null>(null);
   // the day pill that floats at the top of the list while its day is in view (the rows above the window are not drawn, so a divider cannot stick by itself)
   const [floatDay, setFloatDay] = useState<string | null>(null);
+  // whether the rows are more than the view holds: a short conversation (three messages in a DM) has nothing to scroll, so no day floats over it (P21-23)
+  const [scrolls, setScrolls] = useState(false);
   const itemsRef = useRef<ListItem[]>([]);
   const scrolledToUnread = useRef(false);
   // "Jump to first unread" was used (or the reader came to the line on their own): the button goes until another channel opens.
@@ -318,9 +321,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
       <BookmarksBar channelId={channelId} teamSlug={teamSlug} dm={dm !== undefined} canEdit={canPost} slot={headerSlot} />
       <div className="chview-list">
         {tl.status === 'loading' || deciding ? (
-          <div className="loading-rows" aria-hidden="true">
-            {[0, 1, 2, 3].map((n) => <div key={n} className="skel" />)}
-          </div>
+          <SkeletonMessages count={5} label={dm ? `Loading messages with ${dm.label}` : `Loading messages in #${name}`} />
         ) : tl.status === 'error' ? (
           <div className="view-empty" role="alert">
             <p className="view-empty-title">Could not load this channel.</p>
@@ -338,16 +339,17 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             onNearTop={onNearTop}
             onBottomChange={setAtBottom}
             onTopRow={onTopRow}
+            onOverflow={setScrolls}
             header={header}
             footer={typing ? <p className="typing" aria-live="polite">{typing}</p> : null}
             apiRef={api}
           />
         )}
-        {floatDay ? <div className="day-float daysep" aria-hidden="true" data-vt-mask><span>{floatDay}</span></div> : null}
+        {floatDay && scrolls ? <div className="day-float daysep" aria-hidden="true" data-vt-mask><span>{floatDay}</span></div> : null}
         {unreadShown && hadUnread && !unreadSeen && tl.status === 'ready' ? (
           <button
             type="button"
-            className="jump jump-top"
+            className={`jump jump-top ${scrolls ? '' : 'still'}`}
             data-testid="jump-first-unread"
             onClick={() => {
               api.current?.scrollToKey(UNREAD_KEY);

@@ -26,6 +26,7 @@ import { splitAttachments } from './images';
 import { VoiceNoTranscript, VoicePlayer, VoiceTranscriptNote } from './voice/VoicePlayer';
 import { WritingOut } from './voice/WritingOut';
 import { voiceClip, withoutClip } from './voice/playerFormat';
+import { useRowGestures } from './gestures';
 import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
@@ -189,7 +190,16 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   useEffect(() => {
     if (hot) setQuick(loadReactions());
   }, [hot, menu]);
+  // touch (P21-23): a finger dragged right across the row opens its thread to reply; a finger held on it opens the reaction picker (or the actions, for a reader
+  // who cannot react). The click and the mouse press the browser makes out of the same tap are ignored for a moment (`justFired`).
+  const { handlers: touch, justFired } = useRowGestures({
+    swipe: !inThread && actions.openThread !== undefined && !deleted && (canPost || m.replyCount > 0),
+    hold: !deleted && editing === null,
+    onSwipeReply: () => actions.openThread?.(m.id),
+    onHold: () => setMenu(canPost ? 'react' : 'more'),
+  });
   useDismiss(menu !== null, () => {
+    if (justFired()) return;
     setMenu(null);
     setConfirm(false);
   }, box);
@@ -247,6 +257,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       data-has-thread={hasThread ? '' : undefined}
       aria-keyshortcuts={hasThread ? 'Enter' : undefined}
       tabIndex={0}
+      {...touch}
       onMouseEnter={() => setHot(true)}
       onMouseLeave={() => setHot(false)}
       onFocus={() => setHot(true)}
@@ -254,6 +265,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         if (!e.currentTarget.contains(e.relatedTarget)) setHot(false);
       }}
       onClick={(e) => {
+        if (justFired()) return;
         const target = e.target as HTMLElement;
         const sel = window.getSelection();
         const selectionText = sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode) ? sel.toString() : '';

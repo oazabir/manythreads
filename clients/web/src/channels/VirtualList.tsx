@@ -22,6 +22,8 @@ type Props<T> = {
   onBottomChange?: (atBottom: boolean) => void;
   /** Called when the row at the top of the view changes, or comes within reach of the next one: the row's index and the pixels left before the next row starts (day pills). */
   onTopRow?: (index: number, untilNext: number) => void;
+  /** Called when the rows stop fitting the view or start to (the list can scroll): the day pill that floats over the top is drawn only while it can. */
+  onOverflow?: (overflows: boolean) => void;
   /** Slots in the scroll area before and after the rows (the "start of channel" header, the typing line). */
   header?: ReactNode;
   footer?: ReactNode;
@@ -39,7 +41,7 @@ const AT_BOTTOM = 24;
  * stays glued to the bottom while the reader is there, older rows can be added in front without the view jumping, and a row
  * growing above the viewport does not push the reader's text down (WebKit has no `overflow-anchor`, so this is done by hand).
  */
-export function VirtualList<T>({ items, getKey, estimate, render, anchorable, className, onNearTop, onBottomChange, onTopRow, header, footer, apiRef, label }: Props<T>) {
+export function VirtualList<T>({ items, getKey, estimate, render, anchorable, className, onNearTop, onBottomChange, onTopRow, onOverflow, header, footer, apiRef, label }: Props<T>) {
   const scroller = useRef<HTMLDivElement>(null);
   const topSpacer = useRef<HTMLDivElement>(null);
   const headerBox = useRef<HTMLDivElement>(null);
@@ -85,9 +87,12 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
   const nearTop = useRef(onNearTop);
   const bottomCb = useRef(onBottomChange);
   const topCb = useRef(onTopRow);
+  const overflowCb = useRef(onOverflow);
+  const overflows = useRef<boolean | null>(null);
   const lastTop = useRef('');
   useEffect(() => {
     topCb.current = onTopRow;
+    overflowCb.current = onOverflow;
     nearTop.current = onNearTop;
     bottomCb.current = onBottomChange;
   });
@@ -171,6 +176,12 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
         if (old !== undefined && !stuck.current && target.getBoundingClientRect().top < viewTop) shift += h - old;
       }
       if (!changed) return;
+      // measured here, where the browser has just laid the rows out: a render that moved nothing reads no layout
+      const over = box.scrollHeight > box.clientHeight + 1;
+      if (over !== overflows.current) {
+        overflows.current = over;
+        overflowCb.current?.(over);
+      }
       if (shift !== 0) box.scrollTop += shift;
       if (stuck.current) {
         box.scrollTop = box.scrollHeight;

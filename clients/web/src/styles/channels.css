@@ -1101,8 +1101,14 @@
 }
 
 .jump.jump-top {
-  top: 40px; /* below the floating day pill (top 6px) */
-  bottom: auto;
+  /* below the floating day pill (top 6px) and at the side, so it never covers the day divider, which sits in the middle (a short DM draws that divider at the same height) */
+  inset: 40px 24px auto auto;
+  transform: none;
+}
+
+/* a conversation that does not scroll has its day divider just under the start line, wherever the pill would go at the top: the pill rests at the bottom corner, where nothing is drawn */
+.jump.jump-top.still {
+  inset: auto 24px 12px auto;
 }
 
 .net-banner,
@@ -1123,18 +1129,6 @@
   border-bottom: 0;
   background: var(--table-head);
   color: var(--mute);
-}
-
-.loading-rows {
-  display: grid;
-  gap: 18px;
-  padding: 20px;
-}
-
-.skel {
-  height: 38px;
-  border-radius: 6px;
-  background: var(--hairline);
 }
 
 /* ---- composer ---- */
@@ -1355,13 +1349,19 @@
   cursor: pointer;
 }
 
-  flex: none;
 .picker li.on,
 .picker li:hover {
   background: var(--nav-on);
 }
 
 .picker small {
+  flex: none;
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
 /* a long name is cut with an ellipsis on its own line and never pushes the handle, the badge or the dot out of the row (P21-04) */
 .picker li > * {
   flex-shrink: 0;
@@ -1374,12 +1374,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-  margin-left: auto;
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 11px;
 }
 
 /* the headings of the @ list (Everyone, People, Bots, Groups) and of the # list; they are not choices */
@@ -1758,7 +1752,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
   margin-right: 10px;
+  overflow-wrap: anywhere;
   color: inherit;
   text-decoration: none;
 }
@@ -1770,6 +1766,21 @@
 .thread .linked svg {
   width: 12px;
   height: 12px;
+}
+
+/* a long source chip is not cut at the panel's edge: it keeps two lines and then ends with an ellipsis */
+.thread .an-cite {
+  align-items: flex-start;
+  border-radius: var(--radius-lg);
+}
+
+.thread .an-cite-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .thread-empty {
@@ -2006,6 +2017,40 @@
   margin: 8px 12px 0;
 }
 
+/*
+ * Compact density (P21-21, B8): the number tokens of tokens.css cut the gaps; these rows cut the line itself, so a long run of short messages takes at most
+ * 70% of the height it has in Comfortable. A message that continues the run above has no avatar and no name (the column stays empty so its text lines up
+ * with the first line, and its time shows there on hover). Chat and the Threads inbox use their own classes and are not touched.
+ */
+:root[data-density="compact"] .msg .who {
+  margin-bottom: 0;
+  line-height: 18px;
+}
+
+:root[data-density="compact"] .msg .txt {
+  --lh: 19px;
+
+  line-height: var(--lh);
+}
+
+:root[data-density="compact"] .msg .run-time {
+  padding-top: 0;
+  line-height: 19px;
+  white-space: nowrap;
+}
+
+:root[data-density="compact"] .msg {
+  padding-bottom: 2px;
+}
+
+:root[data-density="compact"] .msg:not(.run) {
+  padding-top: 2px;
+}
+
+:root[data-density="compact"] .vrow {
+  padding-bottom: 1px;
+}
+
 /* ---- phone ---- */
 @media (width <= 760px) {
   .vlist {
@@ -2070,6 +2115,38 @@
 
   .acts .menu {
     right: 0;
+  }
+}
+
+/*
+ * Touch (P21-23, B10): a finger dragged right across a message opens its thread, a finger held on it opens the reaction picker (channels/gestures.ts).
+ * The list still scrolls up and down; the row follows the finger while it swipes and tints once the swipe is long enough to count. A held message does
+ * not start the browser's own text selection or menu: the message's text is copied from its "Copy text" action.
+ */
+@media (pointer: coarse) {
+  .msg {
+    touch-action: pan-y;
+    -webkit-touch-callout: none;
+    /* stylelint-disable-next-line property-no-vendor-prefix -- Safari on iPhone has only the prefixed name */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .msg .md pre,
+  .msg .md code,
+  .msg .edit-box,
+  .msg textarea {
+    /* stylelint-disable-next-line property-no-vendor-prefix -- Safari on iPhone has only the prefixed name */
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .msg[data-swiping] {
+    transform: translateX(var(--swipe-x, 0));
+  }
+
+  .msg[data-swipe-ready] {
+    background: var(--human-wash);
   }
 }
 

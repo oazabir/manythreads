@@ -227,16 +227,19 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
           {bot.runtime === 'hermes' && bot.status === 'active' && bot.placement?.gateway !== undefined ? <HermesTools slug={slug} botSlug={bot.slug} /> : null}
         </div>
         <div className="b-head-act">
-          {/* no conversation trigger, no 1:1 chat: nothing is drawn (the API answers 409 as well) */}
-          {bot.status === 'active' && bot.conversational ? (
-            <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} aria-label={`Talk to ${bot.name}`} data-testid="open-conversation">Talk</Link>
-          ) : null}
-          {/* the Deploy action (P8-34): commits the definition, makes the knowledge ready, switches the connection on; the server checks every part and reports each */}
-          {canEdit && draft.frontmatter ? (
-            <button type="button" className="btn s" disabled={deployWait !== null} title={deployWait ?? 'Commit the definition, make its knowledge ready and switch on its connection'} onClick={() => void doDeploy()} data-testid="deploy-bot">
-              {deploying ? 'Deploying…' : 'Deploy'}
-            </button>
-          ) : null}
+          {/* Talk and Deploy sit in a row of their own that scrolls sideways on a phone when it is full; the "…" menu stays outside it, so its panel is not cut off */}
+          <div className="b-head-main" data-testid="bot-head-actions">
+            {/* no conversation trigger, no 1:1 chat: nothing is drawn (the API answers 409 as well) */}
+            {bot.status === 'active' && bot.conversational ? (
+              <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} aria-label={`Talk to ${bot.name}`} data-testid="open-conversation">Talk</Link>
+            ) : null}
+            {/* the Deploy action (P8-34): commits the definition, makes the knowledge ready, switches the connection on; the server checks every part and reports each */}
+            {canEdit && draft.frontmatter ? (
+              <button type="button" className="btn s" disabled={deployWait !== null} title={deployWait ?? 'Commit the definition, make its knowledge ready and switch on its connection'} onClick={() => void doDeploy()} data-testid="deploy-bot">
+                {deploying ? 'Deploying…' : 'Deploy'}
+              </button>
+            ) : null}
+          </div>
           <MoreMenu label="More actions" testId="bot-more" compact items={moreItems} />
         </div>
       </header>

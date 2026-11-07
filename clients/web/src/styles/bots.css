@@ -48,6 +48,19 @@
   gap: 8px;
 }
 
+.b-head-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* the kind chip (agent, automation) keeps a gap from the last word of a long name that wraps */
+.b-head .ph-title .kind {
+  margin-inline-start: 8px;
+  vertical-align: middle;
+}
+
 .b-list {
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
@@ -1132,6 +1145,19 @@
 @media (width <= 720px) {
   .bot-screen .b-head-act {
     flex-wrap: nowrap;
+  }
+
+  /* one row of actions: it scrolls sideways when Talk, Deploy and what comes next are more than the width holds, and never wraps or overlaps the "…" */
+  .bot-screen .b-head-main {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .bot-screen .b-head-main .btn {
+    flex: none;
   }
 
   .bot-screen .b-head-act .btn {
