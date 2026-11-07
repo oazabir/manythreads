@@ -29,6 +29,8 @@ afterAll(async () => {
 const ENGINEERING_BOT_FILES = [
   'bots/alert-triage/BOT.md',
   'bots/alert-triage/evals/alert-triage.yaml',
+  'bots/archivist/BOT.md',
+  'bots/archivist/evals/archivist.yaml',
   'bots/brain/BOT.md',
   'bots/brain/evals/brain.yaml',
   'bots/code-reviewer/BOT.md',
