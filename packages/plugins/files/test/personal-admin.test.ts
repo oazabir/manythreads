@@ -180,3 +180,21 @@ describe('when the open ends', () => {
     await w.system((tx) => tx.query("UPDATE app.people SET status = 'active' WHERE id = $1", [nadia.personId]));
   });
 });
+
+describe('names in the export', () => {
+  it('a folder called C: or a name with a colon cannot become a drive or a stream, and names that differ only in case do not overwrite each other', async () => {
+    await w.uploadPersonal(sameera, 'C:/Windows', 'one', { name: 'evil.bat', type: 'text/plain' });
+    await w.uploadPersonal(sameera, 'Notes', 'upper', { name: 'Plan.md', type: 'text/markdown' });
+    await w.uploadPersonal(sameera, 'Notes', 'lower', { name: 'plan.md', type: 'text/markdown' });
+    ok(await open(omar, sameera, 'checking the export names'));
+    const res = await w.raw(omar, 'POST', `/api/people/${sameera.personId}/personal-space/export`);
+    expect(res.status).toBe(200);
+    const entries = readZip(res.bytes);
+    const names = entries.map((e) => e.name);
+    expect(names.filter((n) => n.includes(':'))).toEqual([]);
+    expect(names).toEqual(expect.arrayContaining(['C_/', 'C_/Windows/', 'C_/Windows/evil.bat']));
+    expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(names.length);
+    const notes = entries.filter((e) => e.name.startsWith('Notes/') && !e.name.endsWith('/')).map((e) => e.data.toString()).sort();
+    expect(notes).toEqual(['lower', 'upper']);
+  });
+});

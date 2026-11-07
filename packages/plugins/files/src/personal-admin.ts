@@ -17,6 +17,7 @@ import {
   type Cursor,
 } from '@manythreads/shared';
 import { forbidden, invalid, json, notFound, route } from './http.ts';
+import { numberedName } from './names.ts';
 import { listTree, requireMember } from './personal.ts';
 import { wireFolder } from './rows.ts';
 import { storageOf } from './routes.ts';
@@ -31,6 +32,35 @@ interface LiveOpen {
   accessId: string;
   validUntil: Date;
   displayName: string;
+}
+
+/**
+ * Names for the entries of an export. The archive is built from names a person chose, and an admin unpacks it on their own machine: a folder called
+ * `C:` must not become a drive, nor `a:b` a stream, so the characters Windows refuses become `_` (a file name has lost them already), and two paths that
+ * differ only in case, which Windows treats as one, get ` (2)` so the second does not overwrite the first when unpacked.
+ */
+const ARCHIVE_UNSAFE = /[<>:"|?*]/g;
+function archiveNames(): { folder: (path: string) => string | null; file: (path: string) => string } {
+  const used = new Set<string>();
+  const clean = (path: string): string => path.split('/').map((segment) => segment.replace(ARCHIVE_UNSAFE, '_')).join('/');
+  return {
+    folder: (path) => {
+      const name = `${clean(path)}/`;
+      if (used.has(name.toLowerCase())) return null;
+      used.add(name.toLowerCase());
+      return name;
+    },
+    file: (path) => {
+      const base = clean(path);
+      const cut = base.lastIndexOf('/');
+      const dir = cut < 0 ? '' : base.slice(0, cut + 1);
+      const leaf = base.slice(cut + 1);
+      let name = base;
+      for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${dir}${numberedName(leaf, n)}`;
+      used.add(name.toLowerCase());
+      return name;
+    },
+  };
 }
 
 /** The caller's newest unexpired open of this person's space, or 403 with the one sentence a screen needs. */
@@ -111,7 +141,11 @@ export function registerPersonalAdminRoutes(ctx: PluginContext): void {
       const safe = (path: string): boolean => path.length > 0 && !path.startsWith('/') && !path.split('/').some((p) => p === '' || p === '.' || p === '..');
       const entries: ZipEntry[] = [];
       const missing: string[] = [];
-      for (const f of folders) if (safe(f.path)) entries.push({ name: `${f.path}/`, size: 0 });
+      const names = archiveNames();
+      for (const f of folders) {
+        const name = safe(f.path) ? names.folder(f.path) : null;
+        if (name) entries.push({ name, size: 0 });
+      }
       let bytes = 0;
       let count = 0;
       for (const f of files) {
@@ -125,7 +159,7 @@ export function registerPersonalAdminRoutes(ctx: PluginContext): void {
         count += 1;
         bytes += size;
         entries.push({
-          name,
+          name: names.file(name),
           size,
           modified: f.updated_at ?? f.created_at,
           open: async () => {
