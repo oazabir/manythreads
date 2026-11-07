@@ -38,8 +38,8 @@ const tag = /TAG-\w+/.exec(prompt)?.[0] ?? 'TAG-none';
 const bare = prompt.replace(/TAG-\w+/g, '').trim();
 const file = /PERSONAL-FILE (\S+)/.exec(bare);
 const search = /PERSONAL-SEARCH (.+)/.exec(bare);
-if (file) reply = `RESULT-FILE ${tag} ${(await call('files.read', { path: file[1] })).replace(/\s+/g, ' ').slice(0, 1500)}`;
-else if (search) reply = `RESULT-SEARCH ${tag} ${(await call('knowledge.search', { query: search[1].trim().slice(0, 200) })).replace(/\s+/g, ' ').slice(0, 1500)}`;
+if (file) reply = `RESULT-FILE ${tag} ${(await call('files.read', { path: file[1] })).replace(/\s+/g, ' ').slice(0, 4000)}`;
+else if (search) reply = `RESULT-SEARCH ${tag} ${(await call('knowledge.search', { query: search[1].trim().slice(0, 200) })).replace(/\s+/g, ' ').slice(0, 4000)}`;
 
 process.stdout.write(`${JSON.stringify({ type: 'text', text: 'Answering: ' })}\n`);
 process.stdout.write(`${JSON.stringify({ type: 'result', exit_code: 0, text: reply, tokens: { input: 5, output: 5, total: 10 } })}\n`);

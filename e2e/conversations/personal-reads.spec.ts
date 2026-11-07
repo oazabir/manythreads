@@ -29,6 +29,9 @@ const KEEPER_MD = [
   'role: Reads what you let it read',
   'kind: agent',
   'runtime: hermes',
+  // a Hermes run needs a model alias in its definition (the profile render refuses without one); the stand-in never calls the model
+  'model:',
+  '  aliases: [smart]',
   'triggers:',
   '  - { type: conversation }',
   '  - { type: mention }',
@@ -134,7 +137,7 @@ test('with her yes the bot reads both in her own conversation, and a hit says it
   expect(file).toContain(SECRET);
   const found = await ask(playwright, 'PERSONAL-SEARCH espresso beans roasted', 'RESULT-SEARCH');
   expect(found).toContain(SECRET);
-  expect(found).toMatch(/person/);
+  expect(found).toContain('"space":"person:');
 });
 
 test('in a team channel the same bot, asked by the same person who said yes, reads none of it', async ({ playwright }) => {
