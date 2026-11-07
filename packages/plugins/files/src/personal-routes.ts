@@ -133,6 +133,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
         await lockAllowance(tx, member.personId);
         const usage = await personalUsage(tx, member.personId);
         if (usage.usedBytes + stored.size > usage.quotaBytes) throw outOfSpace(usage);
+        await seedFolders(ctx, tx, member); // a person whose first act is an upload still gets the seven starting folders
         await ensureFolder(ctx, tx, member, query.folderPath);
         const folder = dbFolder(query.folderPath);
         let row: PersonalFileRow | undefined;
@@ -208,7 +209,10 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
       const name = body.name !== undefined ? sanitizeFileName(body.name) : file.name;
       const folder = body.folderPath !== undefined ? dbFolder(body.folderPath) : file.folder_path;
       if (name === file.name && folder === file.folder_path) return json(UpdatePersonalFileResponse.parse(toPersonalFile(file)));
-      if (body.folderPath !== undefined) await ensureFolder(ctx, tx, member, body.folderPath);
+      if (body.folderPath !== undefined) {
+        await seedFolders(ctx, tx, member);
+        await ensureFolder(ctx, tx, member, body.folderPath);
+      }
       const clash = await tx.query('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path = $2 AND name = $3 AND id <> $4', [member.personId, folder, name, fileId]);
       if (clash.rows.length > 0) throw nameTaken();
       await tx.query('UPDATE app.files SET name = $2, folder_path = $3, updated_at = now(), updated_by = app.actor() WHERE id = $1', [fileId, name, folder]);
@@ -240,6 +244,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const member = await requireMember(tx);
       const { path } = CreatePersonalFolderRequest.parse(req.body);
+      await seedFolders(ctx, tx, member);
       await ensureFolder(ctx, tx, member, path);
       return json(CreatePersonalFolderResponse.parse({ path }));
     }),

@@ -6,7 +6,7 @@ import { createWorld, personas, type ApiResult, type FilesWorld } from './world.
 // nothing changes or the target is new, the tree's limit and the Memory marker, how the bytes are served (never as a page), parallel uploads of one
 // name, a restore that does not fit the allowance, and a deactivated person.
 
-const { nadia, sameera, tariq } = personas;
+const { nadia, sameera, tariq, rafi } = personas;
 
 let w: FilesWorld;
 beforeAll(async () => {
@@ -90,6 +90,19 @@ describe('rename and move', () => {
     expect((await w.call(nadia, 'PATCH', `/api/me/files/${f.id}`, { name: 'back.md' })).status).toBe(403);
     expect((await w.call(nadia, 'DELETE', `/api/me/files/${f.id}`)).status).toBe(403);
     expect((await w.call(nadia, 'GET', `/api/me/files/${f.id}/versions`)).status).toBe(403);
+  });
+});
+
+describe('the starting folders', () => {
+  it('a person whose first act is an upload (or a new folder, or a move) still gets the seven folders when they first look', async () => {
+    // nobody has read Rafi's tree yet: the seven folders are made on the first act of any kind, not only on the first read
+    await put(rafi, 'Notes', 'first', 'first-act.md');
+    const names = (await tree(rafi, '')).entries.map((e) => e.name);
+    expect(names).toEqual(['Action items', 'Inbox', 'Knowledge', 'Meetings', 'Memory', 'Notes', 'Routines']);
+    // a second person whose first act is a folder
+    const folderFirst = await w.call(tariq, 'POST', '/api/me/files/folders', { path: 'Trips' });
+    expect(folderFirst.status, JSON.stringify(folderFirst.body)).toBe(200);
+    expect((await tree(tariq, '')).entries.map((e) => e.name)).toEqual(['Action items', 'Inbox', 'Knowledge', 'Meetings', 'Memory', 'Notes', 'Routines', 'Trips']);
   });
 });
 
