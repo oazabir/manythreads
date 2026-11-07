@@ -16,7 +16,8 @@ import { RUN_QUEUE, type RunPayload } from './run-job.ts';
 
 interface BotRow {
   id: string;
-  team_id: string;
+  /** NULL for the workspace Brain (it belongs to no team): the run is made in the team its conversation with the owner lives in. */
+  team_id: string | null;
   name: string;
   status: string;
   [key: string]: unknown;
@@ -58,14 +59,15 @@ export function registerPersonalRoutineRouter(ctx: PluginContext): void {
     ).rows[0];
     // a bot that is gone has no team to report with: the firing is failed by the scheduler's own sweep of stuck firings
     if (!bot) return;
-    const fail = (reason: string): Promise<unknown> =>
+    // the team the run and its events are reported in: the bot's own, or (the workspace Brain) the one the owner's conversation with it lives in
+    const failIn = (teamId: string, reason: string): Promise<unknown> =>
       ctx.audit.emit(
         tx,
         RuntimeScheduledJobFinishedEvent.parse({
           type: 'runtime.scheduled_job.finished',
           schemaVersion: 1,
           workspaceId: event.workspaceId,
-          teamId: bot.team_id,
+          teamId,
           botId: event.botId,
           scheduledJobRunId: event.scheduledJobRunId,
           runId: null,
@@ -75,14 +77,20 @@ export function registerPersonalRoutineRouter(ctx: PluginContext): void {
           commitSha: null,
         }),
       );
+    let fail = async (reason: string): Promise<unknown> => {
+      const teamId = bot.team_id ?? (await tx.query<{ team_id: string | null }>(`SELECT app.workspace_bot_context_team($1::uuid) AS team_id`, [ownerPersonId])).rows[0]?.team_id ?? null;
+      // an owner with no team has nowhere to report; the scheduler's sweep of stuck firings settles it
+      return teamId === null ? undefined : failIn(teamId, reason);
+    };
     if (bot.status !== 'active') return void (await fail(`The bot ${bot.name} is not active, so it cannot run.`));
 
     const asker = (await tx.query<{ id: string }>(`SELECT id FROM app.actors WHERE kind = 'person' AND ref_id = $1::uuid AND workspace_id = $2::uuid`, [ownerPersonId, event.workspaceId])).rows[0];
     if (!asker) return void (await fail('The owner of this routine is no longer in the workspace.'));
     // the owner's own conversation with the bot: what makes the run a private one (the bot reads as the owner, in the owner's Personal space)
     const channel = (
-      await tx.query<{ id: string }>(`SELECT id FROM app.channels WHERE kind = 'bot_conversation' AND bot_id = $1::uuid AND created_by = $2::uuid ORDER BY created_at LIMIT 1`, [bot.id, asker.id])
+      await tx.query<{ id: string; team_id: string }>(`SELECT id, team_id FROM app.channels WHERE kind = 'bot_conversation' AND bot_id = $1::uuid AND created_by = $2::uuid ORDER BY created_at LIMIT 1`, [bot.id, asker.id])
     ).rows[0];
+    if (channel) fail = (reason: string): Promise<unknown> => failIn(channel.team_id, reason);
     if (!channel) return void (await fail(`There is no conversation of yours with ${bot.name}. Open a chat with it once, then run the routine again.`));
 
     const outputPath = event.outputPath ?? '';
@@ -91,7 +99,7 @@ export function registerPersonalRoutineRouter(ctx: PluginContext): void {
     const payload: RunPayload = {
       workspaceId: event.workspaceId,
       botId: bot.id,
-      teamId: bot.team_id,
+      teamId: channel.team_id,
       channelId: channel.id,
       trigger: 'routine',
       askerActorId: asker.id,

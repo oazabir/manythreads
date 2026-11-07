@@ -625,6 +625,26 @@ describe('a person\'s own routine (P20-10)', () => {
     expect(list.body.items.map((i) => i.what)).toEqual(['Send the report to Priya']);
   });
 
+  it('runs a routine of the workspace Brain, which has no team of its own: the run is made in the owner\'s context team', async () => {
+    // the workspace Brain is made by the bots plugin's job (a fresh world has none until it runs)
+    await ownerSql(`INSERT INTO app.jobs (queue, payload, run_at) VALUES ('bots.ensure-workspace-brain', '{}'::jsonb, now())`);
+    const brain = await until(async () => {
+      const rows = await ownerSql(`SELECT id, team_id FROM app.bots WHERE scope = 'workspace' AND slug = 'brain' AND status = 'active'`);
+      return rows.length === 1 ? rows : null;
+    }, 30_000, 'the workspace Brain to be loaded');
+    await until(async () => (await ownerSql(`SELECT 1 FROM app.actors WHERE kind = 'bot' AND ref_id = $1`, [brain[0]!['id']])).length === 1, 10_000, 'the Brain actor');
+    expect(brain[0]!['team_id']).toBeNull();
+    const routineId = await makeRoutine('brain', 'Brain note');
+    expect((await w.call(omar, 'POST', `/api/me/scheduled-jobs/${routineId}/run`)).status).toBe(202);
+    const firing = await settled(routineId);
+    expect(firing, JSON.stringify(firing)).toMatchObject({ status: 'done', output_path: 'Routines/brain-note/output.md' });
+    const runs = await botRunsFor(String(brain[0]!['id']));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ trigger_type: 'routine', asker_id: omar.actorId });
+    const team = await ownerSql(`SELECT r.team_id, c.team_id AS channel_team FROM app.bot_runs r JOIN app.channels c ON c.id = r.channel_id WHERE r.id = $1`, [firing.run_id]);
+    expect(team[0]!['team_id']).toBe(team[0]!['channel_team']);
+  });
+
   it('says what the run is for', () => {
     const prompt = buildPersonalRoutinePrompt({ name: 'N', firedAt: '2026-01-01T09:00:00.000Z', prompt: 'Do X.', outputPath: 'Routines/n/output.md', outputMode: 'append' });
     expect(prompt).toContain('saved as the file Routines/n/output.md in their own files and will be added to the end of the file');
