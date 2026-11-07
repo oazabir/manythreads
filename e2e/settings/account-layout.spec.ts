@@ -111,6 +111,11 @@ test('Security keeps password and sessions', async ({ browser, playwright }) => 
     await expect(page.getByText('(this browser)')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign out everywhere' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Sign-in methods' })).toBeVisible();
+    // a method is its name and a check mark, never "ok"
+    const method = page.getByTestId('signin-method').first();
+    await expect(method).toHaveText('Email and password');
+    await expect(method).toHaveAccessibleName('Email and password is set up');
+    await expect(method.locator('svg')).toHaveCount(1);
   } finally {
     await context.close();
   }

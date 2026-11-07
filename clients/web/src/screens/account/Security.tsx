@@ -9,7 +9,9 @@ import { PageHeader } from '../../components/PageHeader';
 import { QueryView } from '../../components/states';
 import { Alert, Field, Notice, PasswordField, PasswordToggle, Time } from '../../components/ui';
 import { disablePush } from '../../notifications/push';
+import { CheckIcon } from '../../shell/icons';
 import { PersonalSpaceOpens } from './PersonalSpaceOpens';
+import { signInMethodSentence } from './signInMethod';
 
 /** Account → Security: the password, the browsers you are signed in on, and the ways you can sign in. */
 export function Security() {
@@ -167,7 +169,10 @@ export function Security() {
         <h2 className="bh" id="acc-methods">Sign-in methods</h2>
         <div className="block-body chips">
           {session.methods.map((m) => (
-            <span key={`${m.kind}-${m.label}`} className="chip ok">{m.label} ok</span>
+            <span key={`${m.kind}-${m.label}`} className="chip ok" role="img" aria-label={signInMethodSentence(m.label)} data-testid="signin-method">
+              {m.label}
+              <CheckIcon />
+            </span>
           ))}
         </div>
       </section>
