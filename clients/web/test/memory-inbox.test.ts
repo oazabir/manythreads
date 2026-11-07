@@ -77,10 +77,24 @@ describe('the inbox calls reach the routes the plugin mounts', () => {
     { name: 'retries', run: () => retryInboxItem('engineering', ITEM), method: 'POST', url: `/api/teams/engineering/inbox/items/${ITEM}/retry` },
     {
       name: 'sends a message to memory',
-      run: () => sendToMemory(CHANNEL, MESSAGE, { confirmPrivate: true, teamOnly: false, thread: true }),
+      run: () => sendToMemory(CHANNEL, MESSAGE, { confirmPrivate: true, teamOnly: false, thread: true, target: 'team' }),
       method: 'POST',
       url: `/api/channels/${CHANNEL}/messages/${MESSAGE}/send-to-memory`,
-      body: { confirmPrivate: true, teamOnly: false, thread: true },
+      body: { confirmPrivate: true, teamOnly: false, thread: true, target: 'team' },
+    },
+    {
+      name: 'sends a message to the team by default',
+      run: () => sendToMemory(CHANNEL, MESSAGE, { thread: false }),
+      method: 'POST',
+      url: `/api/channels/${CHANNEL}/messages/${MESSAGE}/send-to-memory`,
+      body: { confirmPrivate: false, teamOnly: false, thread: false, target: 'team' },
+    },
+    {
+      name: 'sends a message to the person’s own memory inbox',
+      run: () => sendToMemory(CHANNEL, MESSAGE, { thread: false, target: 'personal' }),
+      method: 'POST',
+      url: `/api/channels/${CHANNEL}/messages/${MESSAGE}/send-to-memory`,
+      body: { confirmPrivate: false, teamOnly: false, thread: false, target: 'personal' },
     },
     { name: 'reads the team’s email address', run: () => fetchInboxEmail('engineering'), method: 'GET', url: '/api/teams/engineering/inbox/email' },
     { name: 'switches the workspace mailbox on', run: () => setUpInboxMail(), method: 'POST', url: '/api/workspace/inbox-mail' },
@@ -208,7 +222,7 @@ describe('the mock answers as the plugin does', () => {
 
   it('a message sent to memory is a drop from a message', async () => {
     as('nadia');
-    const sent = await sendToMemory(CHANNEL, MESSAGE, { confirmPrivate: false, teamOnly: false, thread: true });
+    const sent = await sendToMemory(CHANNEL, MESSAGE, { confirmPrivate: false, teamOnly: false, thread: true, target: 'team' });
     expect(sent.item).toMatchObject({ origin: 'message', name: 'Thread in #general' });
   });
 

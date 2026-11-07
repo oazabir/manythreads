@@ -48,6 +48,8 @@ export type InboxMockHooks = {
   nextId(): string;
   now: string;
   fail(status: number, code: 'not_found' | 'conflict' | 'forbidden' | 'validation_failed', message: string): never;
+  /** Send to memory with `target: 'personal'`: the answer the signed-in person's own inbox gives (mock-personal.ts). */
+  sendToPersonal(messageId: string, thread: boolean): unknown;
 };
 
 const ACTION_CONCEPT = 'memory/action-items/release-2-4-follow-ups.md';
@@ -240,6 +242,7 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
   });
 
   on(sendToMemoryRoute, ({ params, body }) => {
+    if (body['target'] === 'personal') return h.sendToPersonal(params['messageId'] ?? 'message', body['thread'] === true);
     const team = h.team('engineering');
     seed(team);
     const channel = params['channelId'] ?? 'channel';

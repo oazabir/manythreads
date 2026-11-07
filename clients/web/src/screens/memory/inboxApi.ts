@@ -12,6 +12,7 @@ import {
   RecordInboxActionRequest,
   RecordInboxActionResponse,
   SendToMemoryRequest,
+  SendToMemoryResponse,
   SetUpInboxMailResponse,
   createInboxNoteRoute,
   discardInboxItemRoute,
@@ -77,8 +78,12 @@ export const retryInboxItem = (slug: string, itemId: string) => call(retryInboxI
 export const createInboxNote = (slug: string, body: CreateInboxNoteRequest) =>
   call(createInboxNoteRoute, { request: CreateInboxNoteRequest, response: InboxItemResponse }, body, { slug });
 
-export const sendToMemory = (channelId: string, messageId: string, body: SendToMemoryRequest) =>
-  call(sendToMemoryRoute, { request: SendToMemoryRequest, response: InboxItemResponse }, body, { channelId, messageId });
+/**
+ * `target` says where the message goes: the message's team inbox (the default), or the signed-in person's own (P20-04). The answer is the team's item or the
+ * person's own, so a caller that cares which reads `target` it sent. A body that leaves `target` out is a team send.
+ */
+export const sendToMemory = (channelId: string, messageId: string, body: z.input<typeof SendToMemoryRequest>): Promise<SendToMemoryResponse> =>
+  call(sendToMemoryRoute, { request: SendToMemoryRequest, response: SendToMemoryResponse }, SendToMemoryRequest.parse(body), { channelId, messageId });
 
 /** The mock has no byte stream: it is told the name and the choice as JSON instead. */
 const MockDrop = z.object({ name: z.string(), teamOnly: z.boolean(), size: z.number() });

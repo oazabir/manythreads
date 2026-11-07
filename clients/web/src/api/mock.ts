@@ -99,6 +99,7 @@ import {
 import type { Transport } from './client';
 import { installConnectionsMock } from './mock-connections';
 import { installInboxMock } from './mock-inbox';
+import { installPersonalMock } from './mock-personal';
 import { installSharesMock } from './mock-shares';
 import { installPersonConnectionsMock } from './mock-person-connections';
 import { installSetupMock } from './mock-setup';
@@ -1093,8 +1094,24 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     },
   });
 
+  // A person's own memory, inbox, knowledge bases and bot answers (P20-04/05/06/09), in mock-personal.ts
+  const personal = installPersonalMock(on, {
+    me: () => ({ id: me().id, name: me().name, role: me().role }),
+    team: (slug) => {
+      const t = teamOf(slug);
+      return { id: t.id, slug: t.slug, name: t.name };
+    },
+    workspaceId: WORKSPACE_ID,
+    nextId: () => nextId('7'),
+    now: NOW,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+  });
+
   // The Memory screen's Inbox tab (P8-21): a team's drops and the concepts they became, in mock-inbox.ts
   installInboxMock(on, {
+    sendToPersonal: personal.sendToPersonal,
     team: (slug) => {
       const t = teamOf(slug);
       return { id: t.id, slug: t.slug };

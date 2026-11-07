@@ -1,0 +1,521 @@
+/*
+ * The Personal side of Memory, Knowledge and the Account consents page (P20-04, P20-05, P20-06, P20-09). Classes are prefixed by part: `sp-` the Personal / Teams
+ * switch, `mp-` the Personal memory files, `kn-` the Knowledge screen, `bc-` the bots-and-Personal page. Shared classes (.btn, .chip, .check, .faint, .mono, the
+ * Memory screen's `mm-` and `mi-`) are used, never redefined. Colours come from tokens.css only.
+ */
+
+/* The Personal / Teams switch, in the page header's actions. */
+.sp-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--shell);
+}
+
+.sp-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  color: var(--mute);
+  font-size: var(--fs-small);
+  text-decoration: none;
+}
+
+a.sp-opt:hover {
+  color: var(--ink);
+}
+
+.sp-opt.on {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--rule);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sp-opt.off {
+  color: var(--faint);
+}
+
+/* Personal memory files: the list is made of buttons so the keyboard can reach every row. */
+.mp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mp-find {
+  max-width: 420px;
+}
+
+.mp-status {
+  min-height: 18px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.mp-tree {
+  list-style: none;
+}
+
+.mp-item {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.mp-item:last-child {
+  border-bottom: 0;
+}
+
+.mp-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mp-row:hover {
+  background: var(--table-head);
+}
+
+.mp-row.on {
+  background: var(--nav-on);
+}
+
+.mp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mp-detail {
+  min-width: 0;
+}
+
+.mp-version {
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.mp-text {
+  max-height: 420px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--table-head);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mp-textarea {
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  line-height: 1.55;
+}
+
+.mp-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mp-actions {
+  flex-wrap: wrap;
+}
+
+.mp-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--table-head);
+}
+
+.mp-history-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-small);
+}
+
+.mp-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mp-version-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-small);
+}
+
+.mp-version-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mp-hint,
+.mp-tip {
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.mp-tip {
+  flex: 1 1 100%;
+}
+
+/* Send to memory: the choice of whose inbox. */
+.mi-targets {
+  min-width: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+}
+
+/* The Knowledge screen. */
+.kn-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 20px 24px;
+  overflow: auto;
+}
+
+.kn-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+}
+
+.kn-new {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: flex-end;
+}
+
+.kn-new .mi-input {
+  width: min(280px, 100%);
+}
+
+.kn-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.kn-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.kn-bases {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  list-style: none;
+  overflow: hidden;
+}
+
+.kn-base-item {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.kn-base-item:last-child {
+  border-bottom: 0;
+}
+
+.kn-base-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kn-base-row:hover {
+  background: var(--table-head);
+}
+
+.kn-base-row.on {
+  background: var(--nav-on);
+}
+
+.kn-base-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.kn-base-meta {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.kn-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.kn-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kn-title {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.kn-state {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.kn-docs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  list-style: none;
+  overflow: hidden;
+}
+
+.kn-doc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--fs-small);
+}
+
+.kn-doc:last-child {
+  border-bottom: 0;
+}
+
+.kn-doc-main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.kn-doc-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.kn-doc-meta {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.kn-doc-meta.bad {
+  color: var(--alert-ink);
+}
+
+.kn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.kn-ask {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.kn-ask .mi-input {
+  flex: 1 1 260px;
+  width: auto;
+}
+
+.kn-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kn-hit {
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--table-head);
+  font-size: var(--fs-small);
+}
+
+.kn-hit-name {
+  font-weight: 600;
+}
+
+.kn-hit-text {
+  margin: 4px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.kn-note {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.kn-note.bad {
+  color: var(--alert-ink);
+}
+
+/* Account: which bots may read your Personal space. */
+.bc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bc-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.bc-row:last-child {
+  border-bottom: 0;
+}
+
+.bc-main {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.bc-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.bc-why {
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+
+.bc-answer {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bc-state {
+  min-width: 64px;
+  font-size: var(--fs-caption);
+}
+
+.bc-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+/* Phone: one column, and every control is a 44 px target. */
+@media (width <= 760px) {
+  .kn-screen {
+    padding: 14px 16px;
+  }
+
+  .kn-body {
+    grid-template-columns: 1fr;
+  }
+
+  .sp-opt,
+  .mp-row,
+  .kn-base-row {
+    min-height: 44px;
+  }
+
+  .mp-actions .btn,
+  .mp-history .btn,
+  .mp-version-row .btn,
+  .kn-actions .btn,
+  .kn-doc .btn,
+  .kn-ask .btn,
+  .kn-new .btn,
+  .bc-row .btn,
+  .mi-actions .btn,
+  .mi-drop-actions .btn,
+  .mi-filters .chip,
+  .mi-confirm .btn,
+  .mm-tab {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .mp-text {
+    max-height: 320px;
+  }
+}
