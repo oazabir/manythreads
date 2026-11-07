@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { BlobStorage, JobHandler, PluginContext, PluginTx } from '@manythreads/sdk';
+import { PERSONAL_VERSIONS_KEEP, PERSONAL_VERSIONS_KEEP_DAYS } from '@manythreads/shared';
 
 /** The job queue, and its schedule: every day at 03:17 UTC (an odd minute, so replicas of many deployments do not all wake on the hour). */
 export const BLOB_GC_QUEUE = 'files.blob-gc';
@@ -70,6 +71,8 @@ export interface BlobGcReport {
   dryRun: boolean;
   /** Rows of deleted-message files older than the orphan period: deleted (or, in a dry run, that would be). */
   purgedFiles: number;
+  /** Old versions of Personal files dropped (beyond the newest PERSONAL_VERSIONS_KEEP, and older than PERSONAL_VERSIONS_KEEP_DAYS); their bytes follow as unreferenced blobs. */
+  prunedVersions: number;
   /** Blobs listed in this run. */
   scanned: number;
   /** Listed blobs that a `files` row points at. */
@@ -137,6 +140,7 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
   const report: BlobGcReport = {
     dryRun: options.dryRun,
     purgedFiles: 0,
+    prunedVersions: 0,
     scanned: 0,
     referenced: 0,
     withinGrace: 0,
@@ -155,6 +159,13 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
       ? await tx.query('SELECT count(*)::int AS n FROM app.files WHERE orphaned_at < $1', [cutoff])
       : await tx.query('WITH gone AS (DELETE FROM app.files WHERE orphaned_at < $1 RETURNING 1) SELECT count(*)::int AS n FROM gone', [cutoff]);
     report.purgedFiles = Number((res.rows[0] as { n: number }).n);
+    // A Personal file keeps its newest PERSONAL_VERSIONS_KEEP versions for good; older ones go once they are PERSONAL_VERSIONS_KEEP_DAYS old.
+    const versionCutoff = new Date(now.getTime() - PERSONAL_VERSIONS_KEEP_DAYS * 86_400_000);
+    const doomedVersions = `SELECT id FROM (SELECT id, stored_at, row_number() OVER (PARTITION BY file_id ORDER BY stored_at DESC, id DESC) AS rank FROM app.file_versions) v WHERE v.rank > $1 AND v.stored_at < $2`;
+    const pruned = options.dryRun
+      ? await tx.query(`SELECT count(*)::int AS n FROM (${doomedVersions}) d`, [PERSONAL_VERSIONS_KEEP, versionCutoff])
+      : await tx.query(`WITH gone AS (DELETE FROM app.file_versions WHERE id IN (${doomedVersions}) RETURNING 1) SELECT count(*)::int AS n FROM gone`, [PERSONAL_VERSIONS_KEEP, versionCutoff]);
+    report.prunedVersions = Number((pruned.rows[0] as { n: number }).n);
   }
 
   const graceCutoff = now.getTime() - options.graceMs;
@@ -171,6 +182,9 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
     if (items.length > 0) {
       const known = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.files WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
       const referenced = new Set(known.rows.map((r) => r.blob_key));
+      // Earlier versions of a Personal file keep their own blobs (MISTAKES P8-07: every table that holds a blob key is checked here).
+      const kept = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.file_versions WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
+      for (const r of kept.rows) referenced.add(r.blob_key);
       // The originals of knowledge documents (the knowledge plugin) are stored in the same blob store: they are referenced too.
       if ((hasKnowledge ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.knowledge_documents') IS NOT NULL AS found")).rows[0]?.found === true)) {
         const docs = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.knowledge_documents WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);

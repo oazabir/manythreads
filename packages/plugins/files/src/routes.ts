@@ -3,6 +3,7 @@ import {
   BlobTooLargeError,
   HttpError,
   type BlobStorage,
+  type HttpResponse,
   type PluginContext,
   type PluginTx,
 } from '@manythreads/sdk';
@@ -52,7 +53,7 @@ export const uploadMaxMs = (): number => intEnv('MANYTHREADS_UPLOAD_MAX_MS', 600
 const uploadsByActor = new Map<string, number>();
 let uploadsInFlight = 0;
 /** Takes an upload slot for `actorId`, or null when this person or this process has too many bodies in flight. Call the result when done. */
-function takeUploadSlot(actorId: string): (() => void) | null {
+export function takeUploadSlot(actorId: string): (() => void) | null {
   const mine = uploadsByActor.get(actorId) ?? 0;
   if (uploadsInFlight >= maxConcurrentUploads() || mine >= MAX_UPLOADS_PER_ACTOR) return null;
   uploadsInFlight += 1;
@@ -97,7 +98,7 @@ async function requireFile(tx: PluginTx, fileId: string): Promise<FileRow> {
 
 const folderOf = (c: ChannelInfo): string => (c.kind === 'channel' ? `channels/${c.name}/` : `dms/${c.id}/`);
 
-type ReadableLike = AsyncIterable<Uint8Array> & {
+export type ReadableLike = AsyncIterable<Uint8Array> & {
   iterator?: (options: { destroyOnReturn: boolean }) => AsyncIterator<Uint8Array>;
   resume?: () => unknown;
 };
@@ -106,7 +107,7 @@ type ReadableLike = AsyncIterable<Uint8Array> & {
  * The request body for the blob store: remembers the first bytes (for the type sniff) and, unlike iterating a Node stream directly, does
  * not destroy the socket when the reader stops early, so a refusal (413) can still be sent. `drain` then discards what is left.
  */
-function tapped(
+export function tapped(
   source: AsyncIterable<Uint8Array>,
   limits: { idleMs: number; maxMs: number } = { idleMs: uploadIdleMs(), maxMs: uploadMaxMs() },
 ): { stream: AsyncIterable<Uint8Array>; head: () => Uint8Array; drain: () => void } {
@@ -147,10 +148,29 @@ function tapped(
   return { stream, head: () => head, drain: () => void src.resume?.() };
 }
 
-function storageOf(ctx: PluginContext): BlobStorage {
+export function storageOf(ctx: PluginContext): BlobStorage {
   const storage = ctx.providers.get<BlobStorage>('storage');
   if (!storage) throw new HttpError(503, 'internal', 'File storage is not available');
   return storage;
+}
+
+/** The bytes of a stored file with the headers every download carries (type, disposition, nosniff, a sandbox CSP, no shared cache). */
+export function fileContentResponse(file: { mime: string; name: string; size: string | number }, stream: AsyncIterable<Uint8Array>, forceDownload: boolean): HttpResponse {
+  const disposition = forceDownload ? 'attachment' : dispositionFor(file.mime);
+  return {
+    status: 200,
+    body: stream,
+    headers: {
+      'content-type': servedMime(file.mime),
+      'content-length': String(file.size),
+      'content-disposition': `${disposition}; filename="${asciiFallback(file.name)}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; sandbox",
+      'cross-origin-resource-policy': 'same-origin',
+      // Access is re-decided on every read, so nothing may serve the bytes from a cache without asking.
+      'cache-control': 'private, no-cache',
+    },
+  };
 }
 
 export function registerFileRoutes(ctx: PluginContext): void {
@@ -270,22 +290,7 @@ export function registerFileRoutes(ctx: PluginContext): void {
         if (err instanceof BlobNotFoundError) throw notFound('The file is no longer in storage');
         throw err;
       }
-      const forceDownload = req.query['download'] === '1';
-      const disposition = forceDownload ? 'attachment' : dispositionFor(file.mime);
-      return {
-        status: 200,
-        body: stream,
-        headers: {
-          'content-type': servedMime(file.mime),
-          'content-length': String(file.size),
-          'content-disposition': `${disposition}; filename="${asciiFallback(file.name)}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
-          'x-content-type-options': 'nosniff',
-          'content-security-policy': "default-src 'none'; sandbox",
-          'cross-origin-resource-policy': 'same-origin',
-          // Access is re-decided on every read, so nothing may serve the bytes from a cache without asking.
-          'cache-control': 'private, no-cache',
-        },
-      };
+      return fileContentResponse(file, stream, req.query['download'] === '1');
     }),
   });
 

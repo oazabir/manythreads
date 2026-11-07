@@ -207,8 +207,11 @@ describe('writing', () => {
     expect(await bad('ok.txt', 'no-trailing-slash')).toBe('23514');
   });
 
-  it('a stored file does not change for a caller (no UPDATE), and one name is held once per folder', async () => {
-    expect(await code(as(nadia, (tx) => tx.query("UPDATE app.files SET name = 'renamed' WHERE id = $1", [file['general']])))).toBe('42501');
+  it('a stored channel file does not change for a caller (no update policy matches), and one name is held once per folder', async () => {
+    // Since P20-02 a few columns can be updated, but only on a Personal file of one's own: a channel file matches no update policy, so nothing changes.
+    expect((await as(nadia, (tx) => tx.query("UPDATE app.files SET name = 'renamed' WHERE id = $1", [file['general']]))).rowCount).toBe(0);
+    expect(await code(as(nadia, (tx) => tx.query("UPDATE app.files SET uploader_id = uploader_id WHERE id = $1", [file['general']])))).toBe('42501');
+    expect(await seen(nadia)).toContain('general.txt');
     expect(await code(sys((tx) => tx.query('SELECT 1')))).toBeUndefined();
     expect(await code(insertFile(ch['eng-general']!, null, nadia, 'general.txt'))).toBe('23505');
   });

@@ -2,7 +2,7 @@ import { mkdtempSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { ChannelMessage, FileMeta, ListChannelFilesResponse } from '@manythreads/shared';
+import { ChannelMessage, FileMeta, ListChannelFilesResponse, PersonalFile } from '@manythreads/shared';
 import type { BlobStorage, PluginTx } from '@manythreads/sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, withActor } from '@manythreads/kernel';
@@ -459,5 +459,38 @@ describe('an uploaded export archive of the import plugin is not an orphan (P14-
     await sys((tx) => tx.query('UPDATE app.import_runs SET blob_key = NULL WHERE id = $1', [run]));
     await gc();
     expect(await store.head(key)).toBeNull();
+  });
+});
+
+describe('earlier versions of a Personal file are not orphans (P20-02)', () => {
+  it('a blob only a version row points at survives; versions beyond the newest 50 and older than 90 days are dropped, then their bytes', async () => {
+    await upload(nadia, 'gc-version-anchor.txt');
+    const f = PersonalFile.parse(ok(await w.uploadPersonal(nadia, 'Notes', 'current', { name: 'gc-v.md', type: 'text/markdown' }), 201));
+    const old = await putStray('an old version', 3 * DAY);
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.file_versions (workspace_id, file_id, blob_key, size, mime, sha256, author_actor_id, stored_at) VALUES ($1, $2, $3, 14, 'text/markdown', repeat('e', 64), $4, now() - interval '100 days')`,
+        [omar.workspaceId, f.id, old, nadia.actorId],
+      ),
+    );
+    const first = await gc();
+    expect(first.refused ?? null).toBeNull();
+    expect(first.prunedVersions).toBe(0); // only one version: within the newest 50
+    expect(await store.head(old)).not.toBeNull();
+    // 50 newer versions push the old one out of the kept range, and it is past 90 days.
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.file_versions (workspace_id, file_id, blob_key, size, mime, sha256, author_actor_id, stored_at)
+         SELECT $1, $2, md5(g::text), 1, 'text/markdown', repeat('f', 64), $3, now() - interval '1 day' FROM generate_series(1, 50) g`,
+        [omar.workspaceId, f.id, nadia.actorId],
+      ),
+    );
+    const dry = await gc({ dryRun: true });
+    expect(dry.prunedVersions).toBe(1);
+    expect((await sys((tx) => tx.query('SELECT 1 FROM app.file_versions WHERE file_id = $1', [f.id]))).rows).toHaveLength(51);
+    expect((await gc()).prunedVersions).toBe(1);
+    await gc();
+    expect(await store.head(old)).toBeNull();
+    await sys((tx) => tx.query('DELETE FROM app.files WHERE id = $1', [f.id]));
   });
 });

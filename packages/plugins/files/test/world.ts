@@ -17,6 +17,15 @@ export interface FilesWorld extends World {
     body: Uint8Array | AsyncIterable<Uint8Array> | string,
     opts?: { name?: string; type?: string; headers?: Record<string, string> },
   ): Promise<ApiResult>;
+  /** Uploads raw bytes into a folder of `who`'s Personal files (`POST /api/me/files`). */
+  uploadPersonal(
+    who: Persona | null,
+    folderPath: string,
+    body: Uint8Array | string,
+    opts?: { name?: string; type?: string; conflict?: 'rename' | 'version'; headers?: Record<string, string> },
+  ): Promise<ApiResult>;
+  /** Any request that answers bytes (a download of a version, a zip): status, headers and the whole body. */
+  raw(who: Persona | null, method: string, path: string, body?: unknown): Promise<{ status: number; headers: Headers; bytes: Buffer }>;
   /** Downloads the bytes of a file as `who`. */
   download(who: Persona | null, fileId: string, query?: string): Promise<{ status: number; headers: Headers; bytes: Buffer }>;
   /** A read or post grant on a channel for a person (Lena is a guest: grants are her only access). */
@@ -65,6 +74,21 @@ export async function createWorld(options: { storage?: 'local' | 's3' } = {}): P
           }
         })();
       });
+    },
+    async uploadPersonal(who, folderPath, body, opts = {}) {
+      const headers: Record<string, string> = { ...headersFor(who), ...opts.headers };
+      if (opts.type) headers['content-type'] = opts.type;
+      if (opts.name !== undefined) headers['x-file-name'] = encodeURIComponent(opts.name);
+      const qs = new URLSearchParams({ folderPath, ...(opts.conflict ? { conflict: opts.conflict } : {}) });
+      const res = await fetch(`${w.server.url}/api/me/files?${qs}`, { method: 'POST', headers, body: (typeof body === 'string' ? Buffer.from(body) : body) as unknown as RequestInit['body'] });
+      const text = await res.text();
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    },
+    async raw(who, method, path, body) {
+      const headers: Record<string, string> = { ...headersFor(who) };
+      if (body !== undefined) headers['content-type'] = 'application/json';
+      const res = await fetch(`${w.server.url}${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+      return { status: res.status, headers: res.headers, bytes: Buffer.from(await res.arrayBuffer()) };
     },
     async download(who, fileId, query = '') {
       const res = await fetch(`${w.server.url}/api/files/${fileId}/content${query}`, { headers: headersFor(who) });

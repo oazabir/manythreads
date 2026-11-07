@@ -135,7 +135,7 @@ The shipped default is `dry-run`: read the metrics line first, then set `on`.
 "referenced":12031,"withinGrace":4,"orphans":9,"deleted":9,"bytes":1843022,"failed":0,"refused":null,"next":null,"ms":812}`. A failed deletion is counted and retried by the next sweep. To try it on
 production data first: set `MANYTHREADS_BLOB_GC=dry-run`, read the line, then `on`. To run it now: `SELECT app.enqueue_job('files.blob-gc', '{}', NULL, NULL)` as the system role.
 
-The GC knows only the `files` table. A plugin that stores blob keys elsewhere (none does: pages and the repo are git, attachments never go to git) must add its table to the reference
+The GC also keeps the blob of every earlier version of a Personal file (`app.file_versions`), and at the start of a sweep it drops versions beyond a file's newest 50 that are older than 90 days (`prunedVersions` in the metrics line); their bytes then go as ordinary unreferenced blobs. Other than the tables named above it knows only the `files` table. A plugin that stores blob keys elsewhere (none does: pages and the repo are git, attachments never go to git) must add its table to the reference
 check before it ships, or its blobs would be collected. `.tmp/*.part` files of crashed uploads (storage-local) are not blobs and are not listed; delete `.part` files older than a few
 minutes by hand or with a cron job.
 
@@ -162,6 +162,17 @@ minutes by hand or with a cron job.
 - The repo part is optional: without a `repo` provider the root lists `channels` alone and any repo folder is 503. `channels/` in the repo is refused by the writer, so the two never collide. A channel renamed after an upload keeps
   the old `folder_path`; two files of one name under the old and the new folder would show as the same path (distinct `fileId`s): rare, not handled.
 
+## Personal files (migration 0005, `src/personal.ts`, `src/personal-routes.ts`)
+
+Every member has a Personal space: files only that person reads. A Personal file is an `app.files` row with `owner_person_id` set (no channel, no team), so the same download route, blob store, hidden-file rules and blob collection apply. The seven starting folders (Notes, Meetings, Inbox, Memory, Knowledge, Routines, Action items) are made on the first read of the tree; Memory, Knowledge and Routines are filled by other parts of the product and marked `managedBy: personal_memory`.
+
+- **Who.** The owner reads and changes the file (policy: `owner_person_id` in `app.readable_space_ids('read')` to read, the own person id to write). An admin reads it only inside a recorded, 60-minute, read-only open (`app.open_personal_space`), and never writes. A guest or a bot has no Personal space: every `/api/me/files/*` route answers 403.
+- **Versions.** Saving over an existing name with `conflict=version` keeps the old content in `app.file_versions` (id, size, who stored it, when it became current) and keeps its blob. The same bytes saved again add nothing. Restoring copies the old bytes to a new blob, so a restore itself can be undone. Up to 50 recent versions are kept; older ones are pruned after 90 days by the blob collection.
+- **Allowance.** 5 GiB per person (`MANYTHREADS_PERSONAL_QUOTA_BYTES` overrides it). Files and versions both count. An upload that does not fit is refused with 413 and a plain message, and leaves no bytes behind. The check runs under a per-person advisory lock, so two uploads cannot both slip under it.
+- **Folders.** `app.personal_folders` holds folders so an empty one exists. Paths have no leading or trailing slash, no `..`, no control characters, at most 500 characters. A starting folder cannot be deleted; a folder with files in it cannot either (409).
+- **Not in search.** The search function `app.search_files` skips Personal files (search migration 0006), so not even a recorded admin open finds them by searching.
+- **Events.** `files.file.uploaded`, `files.file.deleted` and `files.file.restored` carry `space: "person:<id>"`, and never a name or a path (the event log is not private to the person). Uploaded carries an empty `name`.
+
 ## Entity link
 
 `ctx.links.registerResolver('file', ...)`: title is the name, subtitle `#channel · 2.1 MB`, href `/t/<team>/c/<name>?panel=file:<id>` (null for a DM). It runs as the caller, so a file in a
@@ -169,7 +180,7 @@ channel they cannot read resolves to nothing.
 
 ## Events
 
-`files.file.uploaded` (`channelId, teamId, fileId, uploaderId, name, size, mime`) and `files.file.deleted` (`channelId, teamId, fileId, deletedBy`), schema version 1, as the acting
+`files.file.uploaded` (`channelId, teamId, fileId, uploaderId, name, size, mime`) `files.file.deleted` (`channelId, teamId, fileId, deletedBy`) and `files.file.restored` (`fileId, versionId, space, restoredBy`, Personal files only), schema version 1, as the acting
 person, in the transaction of the change; a refused request emits nothing.
 
 ## Manifest
@@ -179,16 +190,16 @@ person, in the transaction of the change; a refused request emits nothing.
 | name / version / kind | `files` / `0.1.0` / `server` |
 | extends | `event.emit`, `job.register` (the blob GC queue) |
 | dependsOn | `channels` (tables and `visible_channel_ids`; loaded and migrated after it) |
-| events | emits `files.file.uploaded`, `files.file.deleted` |
+| events | emits `files.file.uploaded`, `files.file.deleted`, `files.file.restored` |
 | job | `files.blob-gc`, cron `17 3 * * *` |
 | provider used | `ctx.providers.get('storage')`, looked up per request (and per GC run) |
 
 ## Not here
 
-Rename and move, team files without a channel (the `files.team_id`-only rows have no upload route yet). Virus scanning and thumbnails. A cleanup of `.tmp/*.part` files of crashed uploads (see storage-local). Range requests for video seeking. Quotas per person or team.
+Rename and move, team files without a channel (the `files.team_id`-only rows have no upload route yet). Virus scanning and thumbnails. A cleanup of `.tmp/*.part` files of crashed uploads (see storage-local). Range requests for video seeking. A quota for team files (Personal files have an allowance).
 
 ## Tests
 
 `test/files-api.test.ts` (upload and download, 413 mid-stream and by `content-length`, ACL for Sameera, Lena (grant, read-only, revoke), a private channel, a DM, archived, traversal and
 control characters in names, delete, attachments on messages), `test/rls/files-rls.test.ts` (`pnpm test:rls`: visibility per persona equals the channel set, writes, triggers, checks),
-`test/mime.test.ts` (the type decision, including browser recordings), `test/bot-audio.test.ts` (a bot gets 403 for audio and still reads other files), `test/gc.test.ts` (hidden deleted-message files, the GC: grace, dry run, cascades, purge after 30 days, paging, the empty-database guard, the job through the worker and its log line), `test/events/files-events.test.ts` (`pnpm test:events`), `test/files-tree.test.ts` (the merged tree, rows, read-only reasons, ACL per folder), `e2e/api/files/attach-acl.spec.ts` (`pnpm e2e --project=api`, including a real 51 MB upload), `e2e/api/files/tree.spec.ts`.
+`test/mime.test.ts` (the type decision, including browser recordings), `test/bot-audio.test.ts` (a bot gets 403 for audio and still reads other files), `test/gc.test.ts` (hidden deleted-message files, the GC: grace, dry run, cascades, purge after 30 days, paging, the empty-database guard, the job through the worker and its log line), `test/events/files-events.test.ts` (`pnpm test:events`), `test/personal.test.ts` (Personal files through the API), `test/rls/personal-files-rls.test.ts` (who reads, writes and opens), `test/files-tree.test.ts` (the merged tree, rows, read-only reasons, ACL per folder), `e2e/api/files/attach-acl.spec.ts` (`pnpm e2e --project=api`, including a real 51 MB upload), `e2e/api/files/tree.spec.ts`.

@@ -75,3 +75,39 @@ describe('files events', () => {
     expect(Object.keys(eventRegistry['files.file.deleted'])).toEqual(['1']);
   });
 });
+
+describe('Personal files events (P20-02)', () => {
+  it('upload, restore and delete are stored as the owner with the space and without a name, a channel or a team', async () => {
+    const mark = await w.system(async (tx) => (await tx.query<{ id: string | null }>('SELECT max(id::text)::text AS id FROM app.events')).rows[0]?.id ?? null);
+    const since = async (): Promise<EventRow[]> =>
+      w.system(async (tx) => (await tx.query<EventRow>(
+        `SELECT id, occurred_at, workspace_id, team_id, actor_id, type, schema_version, payload FROM app.events WHERE ($1::uuid IS NULL OR id > $1::uuid) AND type LIKE 'files.%' ORDER BY id`,
+        [mark],
+      )).rows);
+    const up = await w.uploadPersonal(nadia, 'Notes', 'first', { name: 'ev.md', type: 'text/markdown' });
+    expect(up.status).toBe(201);
+    const id = (up.body as { id: string }).id;
+    expect((await w.uploadPersonal(nadia, 'Notes', 'first', { name: 'ev.md', conflict: 'version' })).status).toBe(200); // same bytes: no event
+    expect((await w.uploadPersonal(nadia, 'Notes', 'second', { name: 'ev.md', conflict: 'version' })).status).toBe(200);
+    const versions = (await w.call(nadia, 'GET', `/api/me/files/${id}/versions`)).body as { items: Array<{ id: string | null }> };
+    expect((await w.call(nadia, 'POST', `/api/me/files/${id}/versions/${versions.items[1]!.id}/restore`)).status).toBe(200);
+    expect((await w.call(nadia, 'DELETE', `/api/me/files/${id}`)).status).toBe(200);
+    const rows = await since();
+    expect(rows.map((r) => r.type)).toEqual(['files.file.uploaded', 'files.file.uploaded', 'files.file.restored', 'files.file.deleted']);
+    for (const row of rows) {
+      expect(row.actor_id).toBe(nadia.actorId);
+      expect(row.team_id).toBeNull();
+      const parsed = parseEvent(eventToRaw(row)) as Record<string, unknown>;
+      expect(parsed['space'], row.type).toBe(`person:${nadia.personId}`);
+      expect(JSON.stringify(row.payload), row.type).not.toMatch(/ev\.md|Notes/);
+    }
+    expect(parseEvent(eventToRaw(rows[0]!))).toMatchObject({ channelId: null, teamId: null, name: '', size: 5 });
+  });
+
+  it('refused requests emit nothing', async () => {
+    const count = (await stored()).length;
+    expect((await w.uploadPersonal(sameera, 'Nowhere/../x', 'x', { name: 'a.md' })).status).toBe(400);
+    expect((await w.call(sameera, 'DELETE', `/api/me/files/${fileId}`)).status).toBeGreaterThanOrEqual(400);
+    expect(await stored()).toHaveLength(count);
+  });
+});
