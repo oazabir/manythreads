@@ -72,7 +72,7 @@ test('edit twice, read the diff, restore the first version: a new commit, the ol
     const dialog = page.getByTestId('dialog-restore');
     await expect(dialog.getByTestId('restore-question')).toHaveText(/^Restore runbook\.md to [A-Z][a-z]{2} \d{2}:\d{2}\? A new commit will be made\.$/);
     await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
-    await expect(history.getByRole('status')).toContainText('Restored. A new commit was made.');
+    await expect(history.getByRole('status').filter({ hasText: 'Restored' })).toContainText('Restored. A new commit was made.');
 
     // one more commit by Nadia, every old one still there, the page as it was at the first commit
     await expect(commits).toHaveCount(5);

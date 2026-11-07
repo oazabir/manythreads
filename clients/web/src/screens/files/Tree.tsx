@@ -111,7 +111,7 @@ export function Tree({ personal, teams, folders, space, folder, open: opened, ex
       return st?.status === 'error' ? (
         <div className={`tnode lvl${depth}`} role="presentation"><span className="car" />{st.code === 'forbidden' ? 'No access' : 'Could not load'}</div>
       ) : (
-        <div className={`tnode lvl${depth} loading`} role="presentation" aria-busy="true"><span className="car" />Loading…</div>
+        <div className={`tnode lvl${depth} loading`} role="presentation" aria-busy="true"><span className="car" /><span className="sk-bar" style={{ width: '5em' }} aria-hidden="true" /></div>
       );
     }
     return sortRows(listing.rows.filter(treeShows), 'name').map((row) => {

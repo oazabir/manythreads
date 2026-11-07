@@ -12,6 +12,9 @@ import { fetchApprovals } from './api';
 import { useApprovalsChanged, usePollWhileQueued } from './live';
 import { ApprovalRow } from './ApprovalRow';
 import { callInFlight, oldestFirst, waitAge } from './state';
+import { EmptyState } from '../../components/EmptyState';
+import { SkeletonRows } from '../../components/Skeleton';
+import { ApprovalsIcon } from '../../shell/icons';
 
 /*
  * The Approvals inbox (SPEC §7.3, `[proto §11 plate 5]`): everything that waits for a person, in one place — a tool call flagged
@@ -99,11 +102,17 @@ export function ApprovalsScreen() {
               </div>
             </header>
             {q.status === 'loading' ? (
-              <p className="loading" aria-busy="true">Loading…</p>
+              <SkeletonRows rows={4} label="Loading approvals" />
             ) : absent || (q.status === 'ok' && items.length === 0) ? (
-              <div className="inl-empty" data-testid="approvals-empty">
-                <p className="view-empty-title">{EMPTY[tab].title}</p>
-                <p className="view-empty-body">{EMPTY[tab].body}</p>
+              <div className="inl-empty">
+                <EmptyState
+                  icon={ApprovalsIcon}
+                  testId="approvals-empty"
+                  title={EMPTY[tab].title}
+                  action={{ label: tab === 'waiting' ? 'See what was decided' : 'See what is waiting', onClick: () => setTab(tab === 'waiting' ? 'decided' : 'waiting') }}
+                >
+                  {EMPTY[tab].body}
+                </EmptyState>
               </div>
             ) : q.status === 'error' ? (
               <div className="inl-empty" role="alert">

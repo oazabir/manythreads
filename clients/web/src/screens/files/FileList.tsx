@@ -29,6 +29,8 @@ import { NONE, all as selectAll, only, prune, range, toggle, type Selection } fr
 import { personalPanelId } from './spaces';
 import type { TeamFiles } from './store';
 import type { FolderState } from './useFolders';
+import { EmptyState } from '../../components/EmptyState';
+import { SkeletonRows } from '../../components/Skeleton';
 
 export { whenLabel } from './when';
 
@@ -125,6 +127,8 @@ export function FileList(p: Props) {
   const menuFrom = useRef<HTMLElement | null>(null);
 
   const parts = segments(folder);
+  // the first thing the right-click menu of an empty folder offers is the one action under "Nothing here yet."
+  const firstEntry = p.emptyEntries[0];
   const listed = state?.listing?.rows;
   const everything = useMemo(() => listed ?? [], [listed]);
   const rows = useMemo(
@@ -467,17 +471,21 @@ export function FileList(p: Props) {
         ) : null}
         <div className="frows" role={view === 'list' ? 'rowgroup' : undefined} onContextMenu={emptyContext} onClick={(e) => { if (e.target === e.currentTarget && sel.keys.size > 0) onSel(NONE); }}>
           {loading ? (
-            <p className="loading" aria-busy="true">Loading…</p>
+            <SkeletonRows rows={6} label="Loading files" />
           ) : state?.status === 'error' && !state.listing ? (
             <div className="fempty" role="alert" data-testid="files-error">
               <p className="view-empty-title">{state.code === 'forbidden' ? 'You do not have access to this folder.' : state.code === 'missing' ? 'This folder does not exist.' : 'The folder could not be loaded.'}</p>
               <p className="view-empty-body">{state.code === 'forbidden' ? 'Ask a team lead if you need it.' : state.message}</p>
             </div>
           ) : everything.length === 0 ? (
-            <div className="fempty" data-testid="files-empty">
-              <p className="view-empty-title">Nothing here yet.</p>
-              <p className="view-empty-body">{p.emptyHint}</p>
-            </div>
+            <EmptyState
+              icon={FolderIcon}
+              testId="files-empty"
+              title="Nothing here yet."
+              {...(firstEntry?.run ? { action: { label: firstEntry.label, onClick: firstEntry.run } } : {})}
+            >
+              {p.emptyHint}
+            </EmptyState>
           ) : rows.length === 0 ? (
             <div className="fempty" data-testid="files-no-match">
               <p className="view-empty-title">No files match.</p>

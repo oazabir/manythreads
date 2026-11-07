@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import { isApiError } from '../api/client';
 import type { QueryState } from '../app/useQuery';
 import { useCrumbTail, useOwnsPageTitle } from '../shell/topic';
+import { SkeletonRows } from './Skeleton';
 import { Alert, Brand } from './ui';
 
 /** A centred message page (loading, errors, expired links). */
@@ -111,7 +112,7 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
 
 /** Render a useQuery result: loading, 403/404/other errors with retry, or the data. */
 export function QueryView<T>({ q, children }: { q: QueryState<T> & { reload: () => void }; children: (data: T) => ReactNode }) {
-  if (q.status === 'loading') return <p className="loading" aria-busy="true">Loading…</p>;
+  if (q.status === 'loading') return <SkeletonRows />;
   if (q.status === 'error') {
     const status = isApiError(q.error) ? q.error.status : 0;
     if (status === 403) return <div className="inline-state"><ForbiddenBody /></div>;

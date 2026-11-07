@@ -2,7 +2,10 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { personalRecipeById, recipeToDraft, type ActionItemView, type ChangeActionItemRequest, type ListActionItemsResponse, type TeamSummary } from '@manythreads/shared';
 import { fetchTeams } from '../../../api/endpoints';
+import { TaskListIcon } from '@proicons/react';
+import { EmptyState } from '../../../components/EmptyState';
 import { PageHeader } from '../../../components/PageHeader';
+import { proIcon } from '../../../components/proicon';
 import { ForbiddenBody, QueryView } from '../../../components/states';
 import { Time } from '../../../components/ui';
 import { useSession } from '../../../app/session';
@@ -12,6 +15,8 @@ import { createRoutine } from '../routines/routinesApi';
 import { localTimeZone, sourcesSentence } from '../routines/routinesWords';
 import { addItemToBoard, changeActionItem, fetchActionItems } from './actionItemsApi';
 import { CHANGED_UNDER_YOU, countLine, dueLabel, dueProblem, isConflict, splitItems, todayIso } from './actionItemsWords';
+
+const ActionItemsIcon = proIcon(TaskListIcon);
 
 /**
  * Account → Action items (PLAN P20-12): the person's own list, the file "Action items/action-items.md" in their Personal space. The list can be ticked, edited, added to
@@ -115,6 +120,13 @@ function ListBody({ initial, onConflict, onKeeper }: { initial: ListActionItemsR
           <p className="rt-line" data-testid="action-items-count">{countLine(list.items)}{list.updatedAt ? <> Last saved <Time iso={list.updatedAt} />.</> : null}</p>
           {error ? <p className="rt-error" role="alert" data-testid="action-items-error">{error}</p> : null}
         </div>
+        {list.items.length === 0 ? (
+          <div className="block-body">
+            <EmptyState icon={ActionItemsIcon} testId="action-items-none" title="Nothing on your list yet" action={{ label: 'Add the first one', onClick: () => document.getElementById('ai-what')?.focus() }}>
+              Things you have to do show up here, from you or from a routine.
+            </EmptyState>
+          </div>
+        ) : null}
         {open.length === 0 && list.items.length > 0 ? <p className="rt-quiet-line" data-testid="action-items-allclear">Everything on your list is done.</p> : null}
         <ul className="ai-list" data-testid="action-items-open">
           {open.map((i) => <Row key={i.id} item={i} today={today} busy={busy} teams={teams} onChange={change} onBoard={board} />)}

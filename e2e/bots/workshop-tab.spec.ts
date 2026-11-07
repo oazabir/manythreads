@@ -127,14 +127,14 @@ test('an admin rehearses the bot (every write is held back and badged), carries 
     await expect(page).toHaveURL(/mode=rehearse/);
     await expect(page.getByTestId('ws-lead')).toContainText('held back');
 
-    // ---- the list of earlier conversations never goes back to "Loading…" while it is read again
+    // ---- the list of earlier conversations never goes back to its loading bars while it is read again
     await expect(page.getByTestId('ws-earlier-empty')).toBeVisible();
     await page.evaluate(() => {
       const w = window as unknown as { __sawLoading: boolean };
       w.__sawLoading = false;
       const side = document.querySelector('aside[aria-label="Earlier conversations"]');
       new MutationObserver(() => {
-        if (side?.textContent?.includes('Loading…')) w.__sawLoading = true;
+        if (side?.querySelector('[aria-busy="true"]')) w.__sawLoading = true;
       }).observe(side as Node, { childList: true, subtree: true, characterData: true });
     });
 

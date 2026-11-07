@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { PERSONAL_ROUTINE_RECIPES, type ListPersonalRoutinesResponse, type PersonalRoutine, type RoutineQuietHours } from '@manythreads/shared';
+import { EmptyState } from '../../../components/EmptyState';
 import { PageHeader } from '../../../components/PageHeader';
 import { proIcon } from '../../../components/proicon';
 import { ForbiddenBody, QueryView } from '../../../components/states';
@@ -11,6 +12,7 @@ import { message } from '../../memory/inboxWords';
 import { AddIcon, AlarmClockIcon, DeleteIcon, PlayIcon, TaskListIcon } from '@proicons/react';
 import { NewRoutineDialog } from './NewRoutineDialog';
 import { RoutineRuns } from './RoutineRuns';
+import { ScheduledJobsIcon as RoutinesIcon } from '../../../shell/icons';
 import { deleteRoutine, fetchRoutines, runRoutineNow, saveRoutineSettings, updateRoutine } from './routinesApi';
 import {
   allowancePercent,
@@ -75,7 +77,9 @@ function RoutinesBody() {
               <h2 className="bh" id="rt-list">Routines</h2>
               {data.items.length === 0 ? (
                 <div className="block-body">
-                  <p className="d" data-testid="routines-none">You have no routines yet. Start from a ready one below, or write what you want in a sentence.</p>
+                  <EmptyState icon={RoutinesIcon} testId="routines-none" title="No routines yet" action={{ label: 'Set up a routine', onClick: () => setDialog({ startWith: null }) }}>
+                    You have no routines yet. Start from a ready one below, or write what you want in a sentence.
+                  </EmptyState>
                 </div>
               ) : (
                 <ul className="rt-list">

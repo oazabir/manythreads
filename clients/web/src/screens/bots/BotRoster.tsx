@@ -1,10 +1,11 @@
+import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import { Link } from 'react-router';
 import type { BotSummary, HermesConnection } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useSession } from '../../app/session';
-import { GearIcon } from '../../shell/icons';
+import { BotWorkingIcon, GearIcon } from '../../shell/icons';
 import { useNarrow } from '../../shell/useNarrow';
 import { useQuery } from '../../app/useQuery';
 import { fetchProposals } from '../proposals/api';
@@ -142,16 +143,17 @@ export function BotRoster() {
           return (
             <>
               {bots.length === 0 ? (
-                <div className="b-empty" data-testid="roster-empty">
-                  <p className="b-empty-title">No bots yet</p>
-                  <p className="b-empty-body">
-                    Each bot is described in a file the team can review. Describe what you want and a helper drafts it for
-                    you to approve, or propose the file yourself in Files. Once a workspace admin applies it, the bot appears here within seconds.
-                  </p>
-                  {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-empty-add">Add a bot</Link>}
-                  <Link className="btn" to={`/t/${slug}/recipes`} data-testid="roster-empty-recipes">Browse recipes</Link>
-                  <Link className="btn" to={`/t/${slug}/files?path=bots`}>Open the bots in Files</Link>
-                </div>
+                <EmptyState
+                  icon={BotWorkingIcon}
+                  testId="roster-empty"
+                  title="No bots yet"
+                  {...(guest ? {} : { action: { label: 'Add a bot', to: `/t/${slug}/bots/new` } })}
+                >
+                  Each bot is described in a file the team can review. Describe what you want and a helper drafts it for
+                  you to approve, or propose the file yourself in Files. Once a workspace admin applies it, the bot appears here within seconds.
+                  <br />
+                  <Link to={`/t/${slug}/recipes`} data-testid="roster-empty-recipes">Browse recipes</Link> or <Link to={`/t/${slug}/files?path=bots`}>open the bots in Files</Link>.
+                </EmptyState>
               ) : (
                 <div className="b-list" data-landmark="bot-roster">
                   <div className="b-heads" aria-hidden="true">

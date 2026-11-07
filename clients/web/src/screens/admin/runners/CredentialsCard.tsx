@@ -5,6 +5,7 @@ import { useQuery } from '../../../app/useQuery';
 import { Dialog } from '../../../components/Dialog';
 import { checkClaudeSignin, fetchClaudeUsage, removeClaudeCredentials, uploadClaudeCredentials } from './api';
 import { othersSentence, previewSignin, signedInWords, uploadProblem, usageLines, type SigninPreview } from './commands';
+import { SkeletonRows } from '../../../components/Skeleton';
 
 /*
  * The sign-in of one Claude Code runner (PLAN P19-06). The admin chooses the `.credentials.json` of a Claude login. The browser reads it only to show a
@@ -176,7 +177,7 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
 
         <h3 className="rn-sub">Use by team</h3>
         {usage.status === 'loading' ? (
-          <p className="loading" aria-busy="true">Loading…</p>
+          <SkeletonRows rows={2} label="Loading use by team" />
         ) : usage.status === 'error' ? (
           <p className="dlg-error" role="alert">{usage.error.message}</p>
         ) : lines.length === 0 ? (

@@ -19,6 +19,8 @@ import { WelcomeCard } from '../welcome/WelcomeCard';
 import { PageHeader } from '../components/PageHeader';
 import { ThreadCard } from './ThreadCard';
 import { groupThreads } from './threadCard';
+import { EmptyState, type EmptyStateAction } from '../components/EmptyState';
+import { SkeletonRows } from '../components/Skeleton';
 
 type Tab = 'followed' | 'unread' | 'mine' | 'later';
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -35,6 +37,13 @@ const EMPTY: Record<Tab, { title: string; body: string }> = {
 };
 /** One suggestion under each empty state. */
 const SUGGEST: Record<Tab, string> = { followed: 'Press Ctrl K to find a channel and join in.', unread: 'Press Ctrl K to find a channel and join in.', mine: 'Reply in a channel to start a thread.', later: 'Save a message from its menu.' };
+/** The one thing to do next under each empty tab: find somewhere to talk, or go back to the tab that has the threads. */
+const ACTION = (slug: string): Record<Tab, EmptyStateAction> => ({
+  followed: { label: 'Find a channel', to: `/t/${slug}/search` },
+  unread: { label: 'See followed threads', to: `/t/${slug}/threads` },
+  mine: { label: 'Find a channel', to: `/t/${slug}/search` },
+  later: { label: 'See followed threads', to: `/t/${slug}/threads` },
+});
 const NO_THREADS = { items: [] as ThreadInboxItem[], nextCursor: null };
 
 const tabOf = (raw: string | null): Tab => (raw === 'unread' || raw === 'mine' || raw === 'later' ? raw : 'followed');
@@ -209,13 +218,13 @@ export function ThreadsInbox() {
         <div className="inl" data-landmark="thread-list">
           {header}
           {q.status === 'loading' ? (
-            <p className="loading" aria-busy="true">Loading…</p>
+            <SkeletonRows rows={5} avatar label="Loading threads" />
           ) : absent || (q.status === 'ok' && items.length === 0) ? (
-            <div className="inl-empty" data-testid="threads-empty">
-              <span className="inl-empty-ic" aria-hidden="true"><ReplyIcon size={48} /></span>
-              <p className="view-empty-title">{EMPTY[tab].title}</p>
-              <p className="view-empty-body">{EMPTY[tab].body}</p>
-              <p className="view-empty-body">{SUGGEST[tab]}</p>
+            <div className="inl-empty">
+              <EmptyState icon={ReplyIcon} testId="threads-empty" title={EMPTY[tab].title} action={ACTION(slug)[tab]}>
+                <p>{EMPTY[tab].body}</p>
+                <p>{SUGGEST[tab]}</p>
+              </EmptyState>
               {tab === 'followed' ? <WelcomeCard slug={slug} /> : null}
             </div>
           ) : q.status === 'error' ? (

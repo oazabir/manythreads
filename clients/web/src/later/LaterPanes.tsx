@@ -5,11 +5,13 @@ import { NotSentList } from '../channels/ScheduledStrip';
 import { useQuery } from '../app/useQuery';
 import { Avatar } from '../components/ui';
 import { ago, clock, dayLabel } from '../channels/format';
-import { BackIcon } from '../shell/icons';
+import { BackIcon, SaveForLaterIcon } from '../shell/icons';
 import { useOpenMessage } from '../shell/messageLink';
 import { laterErrorText, remindAt, RemindDialog } from './RemindMenu';
 import { laterStore } from './store';
 import { presetTime, remindWhen, REMIND_PRESETS } from './times';
+import { EmptyState } from '../components/EmptyState';
+import { SkeletonRows } from '../components/Skeleton';
 
 /*
  * The Later tab of the Threads inbox (PLAN P14-04): on the left the person's saved messages (reminders that are due on top), on the right the
@@ -79,16 +81,22 @@ export function LaterListBody({
         <button type="button" className={`lt-view ${view === 'done' ? 'on' : ''}`} aria-pressed={view === 'done'} onClick={() => setView('done')} data-testid="later-view-done">Done</button>
       </div>
       {q.status === 'loading' ? (
-        <p className="loading" aria-busy="true">Loading…</p>
+        <SkeletonRows rows={4} label="Loading Later" />
       ) : q.status === 'error' ? (
         <div className="inl-empty" role="alert">
           <p className="view-empty-title">Could not load Later.</p>
           <button type="button" className="btn s" onClick={q.reload}>Try again</button>
         </div>
       ) : items.length === 0 ? (
-        <div className="inl-empty" data-testid="later-empty">
-          <p className="view-empty-title">{view === 'open' ? 'Nothing saved for later' : 'Nothing finished yet'}</p>
-          <p className="view-empty-body">{view === 'open' ? 'Open a message’s More menu and choose Mark for later, or Remind me, to find it here.' : 'Items you mark done show up here.'}</p>
+        <div className="inl-empty">
+          <EmptyState
+            icon={SaveForLaterIcon}
+            testId="later-empty"
+            title={view === 'open' ? 'Nothing saved for later' : 'Nothing finished yet'}
+            action={{ label: view === 'open' ? 'See what is done' : 'Back to to do', onClick: () => setView(view === 'open' ? 'done' : 'open') }}
+          >
+            {view === 'open' ? 'Open a message’s More menu and choose Mark for later, or Remind me, to find it here.' : 'Items you mark done show up here.'}
+          </EmptyState>
         </div>
       ) : (
         <ul className="inlist" role="listbox" aria-label={view === 'open' ? 'Saved for later' : 'Done'}>

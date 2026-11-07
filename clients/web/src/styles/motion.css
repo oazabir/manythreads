@@ -1,0 +1,59 @@
+/*
+ * Motion (P21-22). Loaded after states.css and the screen files, and it only adds animation properties: no colour, size or position is set
+ * here. Everything sits in `no-preference`, so a person who asked for reduced motion (and every visual spec, which does) sees the plain
+ * end state at once. `translate` is used instead of `transform` so a menu that centres itself with a transform keeps doing so.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* menus and pop-overs: fade in and rise 4 px */
+  .menu,
+  .emp-pop,
+  .ntf-pop,
+  .chd-menu,
+  .sb-menu,
+  .thc-menu,
+  .ch-menu,
+  .fwhy-pop,
+  .chn-menu {
+    animation: mt-pop-in var(--dur-menu) var(--ease-out);
+  }
+
+  /* the thread panel slides in from the right */
+  .right-panel:not([hidden]) {
+    animation: mt-panel-in var(--dur-panel) var(--ease-out);
+  }
+
+  /* the message a link or a search result jumped to glows once; its steady highlight (channels.css) is the end of the glow */
+  .msg.hl {
+    animation: mt-msg-glow 1.6s ease-out;
+  }
+}
+
+@keyframes mt-pop-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes mt-panel-in {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes mt-msg-glow {
+  from {
+    background-color: var(--attention-wash);
+  }
+}

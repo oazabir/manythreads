@@ -26,6 +26,7 @@ import { PresenceDot } from '../presence/PresenceDot';
 import { PersonLink } from '../presence/ProfileCard';
 import { CloseIcon } from '../shell/icons';
 import { PageHeader } from '../components/PageHeader';
+import { SkeletonRows } from '../components/Skeleton';
 
 /** /teams/:slug is the roster. */
 export function TeamRedirect() {
@@ -217,7 +218,7 @@ export function Roster() {
                   <button type="submit" className="btn primary" disabled={!addId}>Add to team</button>
                 </form>
               ) : null}
-              {roster.status === 'loading' ? <p className="loading" aria-busy="true">Loading…</p> : null}
+              {roster.status === 'loading' ? <SkeletonRows rows={4} avatar label="Loading people" /> : null}
               {members.map((m) => (
                 <PersonRow key={m.personId} m={m} slug={slug} canManage={canManage} tagNames={tagNames} act={act} />
               ))}

@@ -13,6 +13,7 @@ import { Compose, EarlierList, ModeTabs, Transcript, ViewTabs, viewPanelProps } 
 import { ReassessmentNotices, ReplayPanel } from './Replay';
 import { TerminalView } from './terminal/TerminalView';
 import { BackIcon } from '../../shell/icons';
+import { SkeletonRows } from '../../components/Skeleton';
 
 /*
  * The Workshop tab of a bot (PLAN P7-05, P7-06; mockup sections `workshop` and `setup`), at `/t/:team/bots/:botSlug/chat?view=workshop`.
@@ -250,7 +251,7 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
         <div className="ws-grid">
           <aside className="ws-side" aria-label="Earlier conversations">
             <h3 className="ws-h">Earlier</h3>
-            {list.status === 'loading' ? <p className="ws-hint" aria-busy="true">Loading…</p> : null}
+            {list.status === 'loading' ? <SkeletonRows rows={3} label="Loading your conversations" /> : null}
             {list.status === 'error' ? <Alert>{list.error.message || 'Could not load your conversations.'}</Alert> : null}
             {list.status === 'ok' ? <EarlierList items={sessions} current={id} onOpen={(sid) => go({ ws: sid })} /> : null}
             <button type="button" className="btn s" data-testid="ws-new" disabled={id === null && !session} onClick={() => { setAbout(null); setError(null); go({ ws: null }); }}>
@@ -270,7 +271,7 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
               ) : readError ? (
                 <Alert>{readError}</Alert>
               ) : (
-                <p className="ws-working" role="status"><span className="ws-spin" aria-hidden="true" />Loading…</p>
+                <SkeletonRows rows={4} label="Loading the conversation" />
               )
             ) : (
               <>

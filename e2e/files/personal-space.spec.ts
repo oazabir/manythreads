@@ -234,7 +234,7 @@ test('a note: edit it twice, read its versions and restore the first; the replac
     const dialog = page.getByTestId('dialog-restore');
     await expect(dialog.getByTestId('restore-question')).toContainText('The version you have now is kept, so you can go back to it.');
     await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
-    await expect(history.getByRole('status')).toContainText('Restored. The version you had before is kept.');
+    await expect(history.getByRole('status').filter({ hasText: 'Restored' })).toContainText('Restored. The version you had before is kept.');
     // nothing was lost: four entries now (the restored text, the one it replaced, and the two older ones)
     await expect(rows).toHaveCount(4);
     expect(await textOf(api, id)).toBe('# Retro\n\n');

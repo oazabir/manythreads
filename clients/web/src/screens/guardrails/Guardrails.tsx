@@ -5,6 +5,7 @@ import { ForbiddenBody } from '../../components/states';
 import { DlpSection } from './DlpSection';
 import { EgressSection } from './EgressSection';
 import { PageHeader } from '../../components/PageHeader';
+import { SkeletonRows } from '../../components/Skeleton';
 
 /**
  * Settings, Data protection. What happens to text that is about to leave the workspace when it holds a secret or personal data, and which hosts each
@@ -31,7 +32,7 @@ export function Guardrails() {
         Choose what happens when a bot is about to send out a password, a key or personal data, and which web hosts each team&rsquo;s bots may reach.
         It applies to what bots write through their tools and to what they read back. The Audit page records each time it acts, naming the kind of thing found and never the text itself.
       </p>
-      {policy.status === 'loading' ? <p className="loading" aria-busy="true">Loading…</p> : null}
+      {policy.status === 'loading' ? <SkeletonRows rows={3} label="Loading data-loss settings" /> : null}
       {policy.status === 'error' ? (
         <div className="inline-state">
           <p>The data-loss settings could not be loaded.</p>
@@ -39,7 +40,7 @@ export function Guardrails() {
         </div>
       ) : null}
       {policy.status === 'ok' ? <DlpSection policy={policy.data} reload={policy.reload} /> : null}
-      {egress.status === 'loading' ? <p className="loading" aria-busy="true">Loading…</p> : null}
+      {egress.status === 'loading' ? <SkeletonRows rows={3} label="Loading web hosts" /> : null}
       {egress.status === 'error' ? (
         <div className="inline-state">
           <p>The team host lists could not be loaded.</p>

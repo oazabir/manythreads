@@ -14,6 +14,7 @@ import { announcement, answersFrom, examplesFrom, FOCUS_ID, pollDelay, rankExamp
 import { BriefForm, Feasibility, InventoryPanel, Questions } from './parts';
 import { ProposalStep } from './Proposal';
 import { BackIcon } from '../../shell/icons';
+import { SkeletonRows } from '../../components/Skeleton';
 
 /*
  * "Add a bot" (PLAN P7-04, mockup section `setup`): a person writes what the bot should do, a helper looks at what the team has and grades each need, asks every open question in one
@@ -288,7 +289,7 @@ export function SetupScreen() {
         ) : readError ? (
           <Alert>{readError}</Alert>
         ) : (
-          <p className="su-working" role="status"><span className="su-spin" aria-hidden="true" />Loading…</p>
+          <SkeletonRows rows={4} label="Loading the setup" />
         )
       ) : null}
     </div>

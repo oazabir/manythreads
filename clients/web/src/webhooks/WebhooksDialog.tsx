@@ -8,6 +8,7 @@ import { CopyBox } from './CopyBox';
 import { OutgoingPanel } from './OutgoingPanel';
 import { TokensPanel } from './TokensPanel';
 import { PLACEHOLDER_URL, curlExample, messageOf, useLine } from './model';
+import { SkeletonRows } from '../components/Skeleton';
 
 /*
  * The webhooks of one channel (PLAN P14-14): a lead makes a secret web address, copies it once, and points a build server, GitHub or a script at it.
@@ -193,7 +194,7 @@ function IncomingPanel({ channelId }: { channelId: string }) {
       {note ? <p className={note.ok ? 'wh-note' : 'dlg-error'} role={note.ok ? 'status' : 'alert'} data-testid="webhook-note">{note.text}</p> : null}
 
       <h3 className="wh-h">Webhooks in this channel</h3>
-      {list.status === 'loading' ? <p className="wh-hint" aria-busy="true">Loading…</p> : null}
+      {list.status === 'loading' ? <SkeletonRows rows={2} label="Loading" /> : null}
       {list.status === 'error' ? <p className="dlg-error" role="alert">{list.error.message}</p> : null}
       {list.status === 'ok' && hooks.length === 0 ? <p className="wh-hint" data-testid="webhooks-empty">None yet. Make one below.</p> : null}
       {hooks.length > 0 ? (

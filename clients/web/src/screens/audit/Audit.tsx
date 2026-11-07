@@ -7,6 +7,9 @@ import { Alert, Notice, Time } from '../../components/ui';
 import { ForbiddenBody } from '../../components/states';
 import { CATEGORY_LABELS, NO_FILTERS, OUTCOME_LABELS, actionWords, actionsIn, exportFileName, foldAudit, foldLabel, foldTarget, outcomeWord, targetWords, toExportRequest, toQuery, topActors, verifyCommands, type ActorChip, type AuditFilters, type AuditGroup } from './format';
 import { PageHeader } from '../../components/PageHeader';
+import { EmptyState } from '../../components/EmptyState';
+import { SkeletonRows } from '../../components/Skeleton';
+import { SettingsAuditIcon } from '../../shell/icons';
 
 const PAGE = 50;
 const WHO_CHIPS = 5;
@@ -166,7 +169,7 @@ export function Audit() {
       </section>
 
       <section className="box audit-results" aria-label="Audit log" aria-busy={state === 'loading'} data-landmark="audit-results">
-        {state === 'loading' && rows.length === 0 ? <p className="loading" aria-busy="true">Loading…</p> : null}
+        {state === 'loading' && rows.length === 0 ? <SkeletonRows rows={6} label="Loading the audit log" /> : null}
         {state === 'error' ? (
           <div className="inline-state">
             <Alert>{error?.message ?? 'The audit log could not be loaded.'}</Alert>
@@ -174,12 +177,14 @@ export function Audit() {
           </div>
         ) : null}
         {state === 'ok' && rows.length === 0 ? (
-          <div className="audit-empty" data-testid="audit-empty">
-            <p className="audit-empty-h">{filtered ? 'Nothing matches these filters' : 'Nothing has been recorded yet'}</p>
-            <p className="fld-hint">
-              {filtered ? 'Widen the dates or clear a filter to see more.' : 'Sign-ins, approvals, changes to people and teams, and anything the platform held back will show up here as they happen.'}
-            </p>
-          </div>
+          <EmptyState
+            icon={SettingsAuditIcon}
+            testId="audit-empty"
+            title={filtered ? 'Nothing matches these filters' : 'Nothing has been recorded yet'}
+            {...(filtered ? { action: { label: 'Clear the filters', onClick: () => setFilters(NO_FILTERS) } } : {})}
+          >
+            {filtered ? 'Widen the dates or clear a filter to see more.' : 'Sign-ins, approvals, changes to people and teams, and anything the platform held back will show up here as they happen.'}
+          </EmptyState>
         ) : null}
         {rows.length > 0 ? (
           <table className="audit-table" data-testid="audit-table">

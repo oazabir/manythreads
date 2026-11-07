@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { CHAT_TITLE_MAX, type ConversationListItem } from '@manythreads/shared';
 import { ago } from '../../channels/format';
 import { useMenuKeys } from '../../shell/RowMenu';
-import { AddIcon, CloseIcon, ExportChatIcon, MoreIcon, PencilIcon, PinChatIcon, SearchIcon, TrashIcon, UnpinChatIcon } from '../../shell/icons';
+import { AddIcon, ChatNavIcon, CloseIcon, ExportChatIcon, MoreIcon, PencilIcon, PinChatIcon, SearchIcon, TrashIcon, UnpinChatIcon } from '../../shell/icons';
 import { useDismiss } from '../../shell/useDismiss';
 import { railTitle, shortTitle, type RailGroup } from './model';
+import { EmptyState } from '../../components/EmptyState';
+import { SkeletonRows } from '../../components/Skeleton';
 
 export type RailActions = {
   onOpen: (root: string) => void;
@@ -148,14 +150,22 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
         />
       </div>
       <div className="ch-rail-list" data-testid="chat-history">
-        {status === 'loading' && empty ? <p className="ch-note" aria-busy="true">Loading…</p> : null}
+        {status === 'loading' && empty ? <SkeletonRows rows={6} label="Loading your chats" /> : null}
         {status === 'error' ? (
           <div className="ch-note" role="alert">
             <p>Could not load your chats.</p>
             <button type="button" className="btn s" onClick={onRetry}>Try again</button>
           </div>
         ) : null}
-        {status === 'ok' && empty ? <p className="ch-note" data-testid="chat-history-empty">{searching ? 'No chat matches that.' : 'Your chats show here.'}</p> : null}
+        {status === 'ok' && empty ? (
+          searching ? (
+            <EmptyState icon={SearchIcon} testId="chat-history-empty" title="No chat matches that." action={{ label: 'Clear the search', onClick: () => onQuery('') }} />
+          ) : (
+            <EmptyState icon={ChatNavIcon} testId="chat-history-empty" title="No chats yet" action={{ label: 'Start a chat', onClick: onNew }}>
+              Your chats show here.
+            </EmptyState>
+          )
+        ) : null}
         {groups.map((g) => (
           <section key={g.id} className="ch-group" aria-label={g.label} data-testid={`chat-group-${g.id}`}>
             <h3 className="ch-group-title">{g.label}</h3>

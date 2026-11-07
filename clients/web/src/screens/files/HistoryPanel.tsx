@@ -10,6 +10,7 @@ import { ProposeChangeDialog } from './dialogs';
 import { baseName, isPage, type Commit, type FileDiff } from './model';
 import { bumpFiles, useFilesVersion, usePanelFiles, type TeamFiles } from './store';
 import { useFileRow } from './useFileRow';
+import { SkeletonRows } from '../../components/Skeleton';
 
 const RenderedDiff = lazy(() => import('./RenderedDiff').then((m) => ({ default: m.RenderedDiff })));
 
@@ -74,20 +75,20 @@ function CommitDetail({ files, path, commit, markdown }: { files: TeamFiles; pat
     <div className="cdetail" data-testid="commit-detail">
       {mode === 'rendered' ? (
         versions.status === 'ok' ? (
-          <Suspense fallback={<p className="loading" aria-busy="true">Loading…</p>}>
+          <Suspense fallback={<SkeletonRows rows={3} label="Loading the changes" />}>
             <RenderedDiff before={versions.value.before} after={versions.value.after} />
           </Suspense>
         ) : versions.status === 'error' ? (
           <p className="vw-error" role="alert">{versions.message}</p>
         ) : (
-          <p className="loading" aria-busy="true">Loading…</p>
+          <SkeletonRows rows={3} label="Loading the changes" />
         )
       ) : diff.status === 'ok' ? (
         <DiffBlock diff={diff.value} context={context} />
       ) : diff.status === 'error' ? (
         <p className="vw-error" role="alert">{diff.message}</p>
       ) : (
-        <p className="loading" aria-busy="true">Loading…</p>
+        <SkeletonRows rows={3} label="Loading the changes" />
       )}
       <div className="cdetail-tools">
         {markdown ? (
@@ -158,7 +159,7 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
   const [pr, setPr] = useState<{ text?: string; title?: string } | null>(null);
   const [done, setDone] = useState(false);
 
-  if (!files || list.status === 'loading') return <div className="vw-loading" role="status" aria-busy="true">Loading…</div>;
+  if (!files || list.status === 'loading') return <SkeletonRows rows={5} label="Loading the history" />;
   if (list.status === 'error') return list.status403 ? <div className="panel-empty"><ForbiddenBody /></div> : <p className="vw-error" role="alert">{list.message}</p>;
   const commits = list.value;
   if (commits.length === 0) {

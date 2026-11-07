@@ -4,6 +4,7 @@ import { createApiToken, fetchApiTokens, revokeApiToken, rotateApiToken, sendApi
 import { useQuery } from '../app/useQuery';
 import { CopyBox } from './CopyBox';
 import { METHOD_LABELS, messageOf, tokenCurlExample, tokenUseLine } from './model';
+import { SkeletonRows } from '../components/Skeleton';
 
 /*
  * API tokens of one channel (PLAN P14-14). A token lets a script use a small part of Slack's Web API (post, edit its own messages, react) against this
@@ -150,7 +151,7 @@ export function TokensPanel({ channelId }: { channelId: string }) {
       {note ? <p className={note.ok ? 'wh-note' : 'dlg-error'} role={note.ok ? 'status' : 'alert'} data-testid="token-note">{note.text}</p> : null}
 
       <h3 className="wh-h">API tokens for this channel</h3>
-      {list.status === 'loading' ? <p className="wh-hint" aria-busy="true">Loading…</p> : null}
+      {list.status === 'loading' ? <SkeletonRows rows={2} label="Loading" /> : null}
       {list.status === 'error' ? <p className="dlg-error" role="alert">{list.error.message}</p> : null}
       {list.status === 'ok' && tokens.length === 0 ? <p className="wh-hint" data-testid="tokens-empty">None yet. Make one below.</p> : null}
       {tokens.length > 0 ? (
