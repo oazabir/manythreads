@@ -70,6 +70,7 @@ export * from './bots.bot.removed.ts';
 export * from './bots.run.closed.ts';
 export * from './bots.run.opened.ts';
 export * from './conversations.conversation.started.ts';
+export * from './conversations.conversation.moved.ts';
 export * from './conversations.conversation.renamed.ts';
 export * from './conversations.feedback.given.ts';
 export * from './conversations.turn.regenerated.ts';
