@@ -102,7 +102,8 @@ test('tick moves an item to the done group, and unticking brings it back', async
   const nadia = await apiOn(playwright, stack, 'nadia');
   const { page, context } = await open(browser, playwright, isMobile, 'nadia');
   try {
-    await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').check();
+    // click, not check(): the box is controlled (it follows the server's answer), and check() fails when the state has not changed by the time it looks
+    await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').click();
     await expect(page.getByTestId('action-items-count')).toHaveText('1 to do, 1 done.');
     await expect(page.getByTestId('action-items-open').getByTestId('action-item')).toHaveCount(1);
     await expect(page.getByTestId('action-items-done-group').locator('summary')).toHaveText('1 done');
@@ -112,7 +113,7 @@ test('tick moves an item to the done group, and unticking brings it back', async
     const done = page.getByTestId('action-items-done').getByTestId('action-item');
     await expect(done).toHaveCount(1);
     await expect(done).toHaveAttribute('data-done', 'true');
-    await done.getByTestId('action-item-tick').uncheck();
+    await done.getByTestId('action-item-tick').click();
     await expect(page.getByTestId('action-items-count')).toHaveText('2 to do, 0 done.');
     await expect(page.getByTestId('action-items-done-group')).toHaveCount(0);
     expect((await listOf(nadia)).items.every((i) => !i.done)).toBe(true);
@@ -126,7 +127,10 @@ test('edit changes the words, the person and the day, and keeps the rest', async
   const nadia = await apiOn(playwright, stack, 'nadia');
   const { page, context } = await open(browser, playwright, isMobile, 'nadia');
   try {
-    const quote = itemNamed(page, QUOTE);
+    // the row is found by its id: while it is being edited its words are an input, so a locator that looks for the words would lose it
+    const id = await itemNamed(page, QUOTE).getAttribute('data-id');
+    expect(id).toBeTruthy();
+    const quote = page.locator(`[data-testid="action-item"][data-id="${id}"]`);
     await quote.getByTestId('action-item-edit').click();
     await expect(quote.getByTestId('action-item-edit-form')).toBeVisible();
     await expect(quote.getByTestId('action-item-edit-what')).toHaveValue(QUOTE);
@@ -187,14 +191,14 @@ test('a save made since the list was read is a 409, and the screen reloads inste
 
     // on the page: it was opened before that other save, so its next change is not saved; it says so and shows the list as it is now
     await expect(itemNamed(page, 'Written by a second tab')).toHaveCount(0);
-    await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').check();
+    await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').click();
     await expect(page.getByTestId('action-items-notice')).toHaveText('Your list changed while you were looking at it, so I reloaded it. Your change was not saved; please do it again.');
     await expect(itemNamed(page, 'Written by a second tab')).toHaveCount(1);
     // the tick was not saved
     expect((await listOf(nadia)).items.find((i) => i.what === 'Book the venue')?.done).toBe(false);
     await expect(itemNamed(page, 'Book the venue').getByTestId('action-item-tick')).not.toBeChecked();
     // doing it again works
-    await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').check();
+    await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').click();
     await expect.poll(async () => (await listOf(nadia)).items.find((i) => i.what === 'Book the venue')?.done).toBe(true);
   } finally {
     await context.close();
