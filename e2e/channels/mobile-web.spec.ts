@@ -123,8 +123,8 @@ test('the message box rests two lines tall and never grows past a third of the s
 test('search and the bell from the header, and a direct message, fit the phone', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/c/dev', { viewport: PHONE, mobile: true });
   try {
-    // find: opens the drawer on the search box; results are a full sheet and a hit lands on the message
-    await page.getByRole('button', { name: 'Find' }).click();
+    // Search in the bottom bar: opens the drawer on the search box; results are a full sheet and a hit lands on the message
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Search', exact: true }).click();
     const box = page.locator('#shell-rail').getByRole('searchbox');
     await expect(box).toBeFocused();
     await box.fill('rollback');

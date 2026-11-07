@@ -34,12 +34,12 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-/** Types into the sidebar box (on a phone, behind the Find button) and waits for the results of exactly that text. */
+/** Types into the sidebar box (on a phone, behind Search in the bottom bar) and waits for the results of exactly that text. */
 async function search(page: Page, q: string, phone: boolean): Promise<void> {
   // on a phone the results are a full sheet over the page: start from the plain page, then open the drawer on the box
   if (phone) {
-    if (await page.getByTestId('search-results').count()) await page.goto('/t/engineering/threads');
-    await page.getByRole('button', { name: 'Find' }).click();
+    if (await page.getByTestId('search-results').count()) await page.goto(`/t/${new URL(page.url()).pathname.split('/')[2] ?? 'engineering'}/threads`);
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Search', exact: true }).click();
   }
   const box = phone ? page.locator('#shell-rail').getByRole('searchbox') : page.locator('[data-landmark="search"]').getByRole('searchbox');
   await box.fill(q);

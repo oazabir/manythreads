@@ -20,7 +20,7 @@ import { LiveBadge } from '../meetings/LiveBadge';
 const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
 
 /** The "+ New" picker: choose one or more people on the team, and open the conversation with them (one row per set of people). */
-function NewConversation({ slug, onDone }: { slug: string; onDone: () => void }) {
+export function NewConversation({ slug, onDone }: { slug: string; onDone: () => void }) {
   const session = useSession();
   const people = usePeople();
   const navigate = useNavigate();
@@ -77,8 +77,11 @@ function NewConversation({ slug, onDone }: { slug: string; onDone: () => void })
   );
 }
 
-/** The "Direct messages" section of the sidebar contract: the heading, one row per conversation (unread count), "+ New". */
-export function DirectMessages({ item, slug }: { item: NavContribution; slug: string }) {
+/**
+ * The rows of the person's conversations: one link per direct message with its unread count and presence dot. The sidebar section and the phone's
+ * Messages page draw the same rows; `folded` (the sidebar's collapsed state) keeps only the ones with something unread and the open one.
+ */
+export function DmRows({ slug, folded = false }: { slug: string; folded?: boolean }) {
   const session = useSession();
   const feed = useDms();
   const { unread } = useUnread();
@@ -87,19 +90,8 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
     void levelsStore.load();
   }, []);
   const activeId = useMatch('/t/:team/dm/:id')?.params.id ?? null;
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useDismiss(open, () => setOpen(false), box);
-  const [folded, toggleFolded] = useFold(session.person.id, slug, 'dm');
-  const href = navHref(item, slug);
-  const heading = href ? <Link className="sec sec-link" to={href}>{item.label}</Link> : <div className="sec"><span>{item.label}</span></div>;
   return (
-    <>
-      <div className="sec-row">
-        <FoldButton folded={folded} label={item.label} onToggle={toggleFolded} />
-        {heading}
-      </div>
-      <div className="dm-list" data-slot="direct-messages">
+    <div className="dm-list" data-slot="direct-messages">
       {feed.items.filter((d) => !folded || (unread[d.channel.id] ?? d.unreadCount) > 0 || d.channel.id === activeId).map((d) => {
         const n = unread[d.channel.id] ?? d.unreadCount;
         const label = dmLabel(d, session.person.id);
@@ -119,15 +111,42 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
           </RowMenu>
         );
       })}
+    </div>
+  );
+}
+
+/** The "+ New message" button with its picker, under the rows (sidebar) or above them (phone page). */
+export function NewMessageButton({ slug }: { slug: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useDismiss(open, () => setOpen(false), box);
+  return (
+    <div className="dm-new" ref={box}>
+      <button type="button" className="it dm-new-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className="h" aria-hidden="true"><AddIcon size={14} /></span>
+        <span className="it-label">New message</span>
+      </button>
+      {open ? <NewConversation slug={slug} onDone={() => setOpen(false)} /> : null}
+    </div>
+  );
+}
+
+/** The "Direct messages" section of the sidebar contract: the heading, one row per conversation (unread count), "+ New". */
+export function DirectMessages({ item, slug }: { item: NavContribution; slug: string }) {
+  const session = useSession();
+  const feed = useDms();
+  const [folded, toggleFolded] = useFold(session.person.id, slug, 'dm');
+  const href = navHref(item, slug);
+  const heading = href ? <Link className="sec sec-link" to={href}>{item.label}</Link> : <div className="sec"><span>{item.label}</span></div>;
+  return (
+    <>
+      <div className="sec-row">
+        <FoldButton folded={folded} label={item.label} onToggle={toggleFolded} />
+        {heading}
       </div>
+      <DmRows slug={slug} folded={folded} />
       {feed.status === 'ok' && feed.items.length === 0 ? <p className="side-note dm-empty">{item.emptyState ?? 'No conversations yet'}</p> : null}
-      <div className="dm-new" ref={box}>
-        <button type="button" className="it dm-new-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          <span className="h" aria-hidden="true"><AddIcon size={14} /></span>
-          <span className="it-label">New message</span>
-        </button>
-        {open ? <NewConversation slug={slug} onDone={() => setOpen(false)} /> : null}
-      </div>
+      <NewMessageButton slug={slug} />
     </>
   );
 }

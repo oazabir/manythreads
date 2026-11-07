@@ -12,13 +12,14 @@ import { fetchTeams } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { useSession } from '../app/session';
 import { PeopleContext, useLoadPeople } from '../channels/hooks';
-import { RightPanel } from '../kernel/panel';
+import { RightPanel, usePanel } from '../kernel/panel';
 import { useRealtime } from '../realtime';
 import { AccountMenu } from './AccountMenu';
+import { BottomBar } from './BottomBar';
 import { crumbsFor } from './breadcrumb';
 import { ShellContext, type ShellValue } from './context';
 import { useNavCounts } from './counts';
-import { MenuIcon, SearchIcon } from './icons';
+import { MenuIcon } from './icons';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { SetupCard } from './SetupCard';
@@ -27,6 +28,7 @@ import { CrumbTailContext, HeaderActionsContext, HeaderTitleContext, HeaderTopic
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
+import { useEdgeSwipe } from './useEdgeSwipe';
 import { useTabState } from './useTabState';
 import { recalledTeam, rememberTeam } from './views';
 
@@ -80,6 +82,10 @@ export function Shell() {
   const drawerOpen = narrow && openedAt === loc.pathname + loc.search;
   const rail = useRef<HTMLElement>(null);
   useDismiss(drawerOpen, () => setOpenedAt(null), rail);
+  // a swipe in from the left edge opens the drawer (not while a thread covers the screen, and never on a wide screen)
+  const panel = usePanel();
+  const edgeSwipe = narrow && !drawerOpen && !panel.open;
+  useEdgeSwipe(edgeSwipe, () => setOpenedAt(loc.pathname + loc.search));
 
   // On a wide screen the Threads inbox draws its own two header bands (list: title and tabs; thread: its name and actions, as in the prototype), so the
   // shell's band is left out there; the bell then sits in the thread's band.
@@ -112,7 +118,7 @@ export function Shell() {
           <div className="region team-switch" data-landmark="team-switch">
             <TeamSwitch />
           </div>
-          <div className="region search" data-landmark="search" ref={railSearch}>
+          <div className="region search" data-landmark="search" ref={railSearch} title={searchLabel}>
             <SearchBox placeholder={searchLabel} label="Search" />
           </div>
           <nav className="region sidebar" data-landmark="sidebar" aria-label="Sidebar">
@@ -121,6 +127,7 @@ export function Shell() {
           <SetupCard />
           <AccountMenu />
         </aside>
+        {edgeSwipe ? <div className="edge-zone" aria-hidden="true" data-testid="edge-zone" /> : null}
         {drawerOpen ? <button type="button" className="scrim" aria-label="Close menu" onClick={() => setOpenedAt(null)} /> : null}
         <DndLive />
         <main className="center">
@@ -150,9 +157,6 @@ export function Shell() {
             )}
             <div className="right chead-tools">
               <div className="chead-actions" ref={setActionsSlot} />
-              <button type="button" className="icon-btn find-btn" aria-label="Find" onClick={openSearch}>
-                <SearchIcon />
-              </button>
               <Bell />
             </div>
           </header>
@@ -165,6 +169,7 @@ export function Shell() {
           <MeetingHost />
         </main>
         <RightPanel />
+        {narrow && !guest && team ? <BottomBar slug={team.slug} onSearch={openSearch} /> : null}
       </div>
       </PageHeaderRegistry.Provider>
       </CrumbTailContext.Provider>

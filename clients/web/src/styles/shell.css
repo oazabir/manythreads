@@ -178,6 +178,7 @@ button.team {
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-caption);
+  text-overflow: ellipsis;
 }
 
 .search-box input::placeholder {
@@ -730,7 +731,7 @@ a.sec:hover {
   }
 
   .chead {
-    padding: 9px 14px;
+    padding: 6px 12px;
   }
 
   .rail .it {
@@ -992,4 +993,190 @@ a.sec:hover {
   color: var(--mute);
   font-size: var(--fs-small);
   text-align: center;
+}
+
+/* ---- phone: the bottom bar, 40 px header targets and the channel title (P21-23) ---- */
+
+/* how much room the bottom bar takes; BottomBar.tsx sets data-bottom-bar on the root while the bar is drawn. Toasts and floating buttons use it too. */
+:root {
+  --bottom-bar-h: 0px;
+}
+
+:root[data-bottom-bar="on"] {
+  --bottom-bar-h: calc(56px + env(safe-area-inset-bottom));
+}
+
+.bb {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 10;
+  display: flex;
+  height: var(--bottom-bar-h);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.bb-item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bb-item[data-active="true"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.bb-ic {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 24px;
+}
+
+.bb-badge {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 4px);
+}
+
+.bb-badge .pill {
+  margin-left: 0;
+}
+
+.bb-dot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--attention);
+}
+
+.bb-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  border: 0;
+  background: var(--scrim);
+}
+
+.bb-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 51;
+  max-height: 80dvh;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  overflow: auto;
+  border-top: 1px solid var(--rule);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.bb-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 10px;
+  font-weight: 600;
+}
+
+.bb-sheet-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.bb-sheet .menu-item {
+  min-height: 44px;
+  font-size: var(--fs-body);
+}
+
+/* the Messages page (screens/phone/MessagesScreen.tsx) */
+.phone-page {
+  padding-bottom: 16px;
+}
+
+.phone-page .dm-new,
+.phone-page .dm-list {
+  margin: 0 8px;
+}
+
+@media (width <= 760px) {
+  /* the frame is as tall as the screen; the bar's room is taken off it so the composer sits above the bar, not under it */
+  .frame {
+    padding-bottom: var(--bottom-bar-h);
+  }
+
+  /* every control of the header is at least a finger wide and tall */
+  .chead button,
+  .chead .icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .chead .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .chead .menu-btn {
+    margin-left: 0;
+  }
+
+  /* the strip the edge swipe starts on (shell/useEdgeSwipe.ts): narrower than the page's side padding, under the bar, the drawer and every sheet */
+  .edge-zone {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    width: 12px;
+    touch-action: pan-y;
+  }
+
+  /*
+   * The channel name gets its own line when it does not fit beside the tools: the header wraps, the name is as wide as the header less the menu
+   * button and breaks onto a second line (long names break at hyphens, or anywhere), and the tools drop to the next row on the right.
+   */
+  .chead {
+    flex-wrap: wrap;
+  }
+
+  .chead .chead-title {
+    flex: 0 1 auto;
+    min-width: 6ch;
+    max-width: calc(100% - 46px);
+    white-space: normal;
+  }
+
+  .chead .chd,
+  .chead .chd-btn {
+    max-width: 100%;
+  }
+
+  .chead .chd-btn {
+    text-align: left;
+  }
+
+  .chead .chd-name {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
 }

@@ -6,7 +6,7 @@ import type { PersonaKey } from '../support/env.ts';
 
 /*
  * The one page header (P21-12) and the look tokens (P21-20): every route has exactly one h1 (the page's own; the shell draws a fallback h1 only while no
- * page header is mounted, so the two can coexist for one render and the checks poll), the skip link, one bell and one Find in the band, the phone trail,
+ * page header is mounted, so the two can coexist for one render and the checks poll), the skip link, one bell in the band, the phone trail,
  * the bot crumb tail, and the focus ring. Runs on desktop and mobile-web.
  */
 test.use({ actionTimeout: 10_000 });
@@ -151,17 +151,16 @@ test('the skip link moves focus to the content: "Skip to messages" in a channel 
   }
 });
 
-test('exactly one bell and one Find in the band on Approvals, Threads and Files', async ({ browser, playwright, isMobile }) => {
+test('exactly one bell in the band on Approvals, Threads and Files, and no second search button beside the bottom bar', async ({ browser, playwright, isMobile }) => {
   const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/approvals');
   try {
     for (const r of ['approvals', 'threads', 'files']) {
       await page.goto(`/t/engineering/${r}`);
       await expectOneH1(page, r);
       await expect(page.getByTestId('bell'), `${r}: bell`).toHaveCount(1);
-      // Find is the phone's search button (a wide screen has the sidebar search); the wide Threads inbox draws its own two bands and no shell band
-      const find = page.locator('button[aria-label="Find"]');
-      await expect(find, `${r}: Find`).toHaveCount(!isMobile && r === 'threads' ? 0 : 1);
-      if (isMobile) await expect(page.getByRole('button', { name: 'Find', exact: true })).toBeVisible();
+      // the band has no search button of its own any more: a wide screen has the sidebar search, a phone has Search in the bottom bar (P21-23)
+      await expect(page.locator('.chead button[aria-label="Find"]'), `${r}: Find`).toHaveCount(0);
+      if (isMobile) await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Search', exact: true }), `${r}: Search in the bar`).toBeVisible();
     }
   } finally {
     await context.close();
@@ -182,6 +181,40 @@ test('the trail: the phone shows only the last crumb, a desktop shows the whole 
     await expect(crumbs.locator('li:visible').last()).toHaveText('Boards');
     if (isMobile) await expect(crumbs.locator('li:visible')).toHaveCount(1);
     else await expect(crumbs.locator('li:visible')).toHaveText(['Engineering', 'Boards']);
+  } finally {
+    await context.close();
+  }
+});
+
+test('every pair of crumbs has a visible "/" between them on a desktop, and a phone shows only the last crumb', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper');
+  try {
+    for (const path of ['/t/engineering/bots/helper', '/t/engineering/boards', '/t/engineering/files']) {
+      await page.goto(path);
+      await expectOneH1(page, path);
+      const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' }).locator('li');
+      await expect(crumbs.first()).toBeAttached();
+      await expect.poll(() => crumbs.count(), { message: `crumbs of ${path}` }).toBeGreaterThan(1);
+      const parts = await crumbs.evaluateAll((els) => els.map((li) => {
+        const before = getComputedStyle(li, '::before');
+        const r = li.getBoundingClientRect();
+        // the words only (a range leaves the "/" out), whether the crumb is a link or plain text
+        const range = document.createRange();
+        range.selectNodeContents(li);
+        const t = range.getBoundingClientRect();
+        return { text: (li.textContent ?? '').trim(), content: before.content, display: before.display, width: r.width, textLeft: t.left, liLeft: r.left };
+      }));
+      expect(parts.length, path).toBeGreaterThan(1);
+      parts.forEach((p, i) => {
+        if (isMobile) return;
+        expect(p.width, `${path}: crumb "${p.text}" has width`).toBeGreaterThan(0);
+        if (i === 0) return;
+        expect(p.content, `${path}: "/" before "${p.text}"`).toBe('"/"');
+        expect(p.display, `${path}: "/" before "${p.text}" is drawn`).not.toBe('none');
+        // room for the slash ahead of the words, inside the crumb's own box
+        expect(p.textLeft - p.liLeft, `${path}: the "/" has room before "${p.text}"`).toBeGreaterThan(6);
+      });
+    }
   } finally {
     await context.close();
   }
