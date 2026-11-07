@@ -20,13 +20,19 @@ import { mintPairingToken, revokePairingTokens } from './pairing.ts';
  * through any team of its workspace; only a workspace owner or admin may pair it (there is no team lead to ask), anyone else is told no.
  */
 async function requireBot(tx: PluginTx, team: { id: string; workspace_id: string }, botSlug: string): Promise<{ id: string; status: string }> {
-  const res = await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bots WHERE team_id = $1 AND slug = $2', [team.id, botSlug]);
+  // A retired team Brain (the one the workspace Brain replaced, `retired_at` set, disabled) keeps its slug in the team: it must not hide the workspace bot of the same
+  // slug, or the mint answers "this bot is disabled" for the Brain. A retired row answers only when no current bot of that name exists.
+  const res = await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bots WHERE team_id = $1 AND slug = $2 AND retired_at IS NULL', [team.id, botSlug]);
   const bot = res.rows[0];
   if (bot) return bot;
   const shared = (
     await tx.query<{ id: string; status: string }>(`SELECT id, status FROM app.bots WHERE scope = 'workspace' AND team_id IS NULL AND workspace_id = $1 AND slug = $2`, [team.workspace_id, botSlug])
   ).rows[0];
-  if (!shared) throw notFound(`No bot "${botSlug}"`);
+  if (!shared) {
+    const retired = (await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bots WHERE team_id = $1 AND slug = $2', [team.id, botSlug])).rows[0];
+    if (retired) return retired;
+    throw notFound(`No bot "${botSlug}"`);
+  }
   const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
   if (role !== 'owner' && role !== 'admin') throw forbidden('Only a workspace admin can pair the workspace bot');
   return shared;

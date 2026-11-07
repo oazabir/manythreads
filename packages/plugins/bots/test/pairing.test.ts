@@ -151,3 +151,31 @@ describe('pairing tokens', () => {
     expect((await w.call(omar, 'POST', MINT(), {})).status).toBe(201);
   });
 });
+
+// Its own world: the mint route allows 10 a minute for a person and the describe above spends them.
+describe('the workspace bot', () => {
+  let w2: RepoWorld;
+  beforeAll(async () => {
+    w2 = await createRepoWorld();
+  }, 180_000);
+  afterAll(async () => {
+    await w2?.close();
+  });
+  it('the workspace bot is found past a retired team bot of the same slug (the retired team Brain must not hide the Brain)', async () => {
+    await w2.system(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, retired_at)
+         VALUES ($1, $2, 'wsbrain', 'Brain', 'Remembers', 'agent', 'rules', 'team', repeat('b', 64), 'disabled', now())`,
+        [personas.omar.workspaceId, TEAM_IDS.Engineering],
+      );
+      await tx.query(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, scope)
+         VALUES ($1, NULL, 'wsbrain', 'Brain', 'Remembers', 'agent', 'rules', 'workspace', repeat('c', 64), 'active', 'workspace')`,
+        [personas.omar.workspaceId],
+      );
+    });
+    const res = await w2.call(omar, 'POST', MINT('wsbrain'), {});
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect((await w2.call(sameera, 'POST', MINT('wsbrain'), {})).status).toBe(403);
+  });
+});
