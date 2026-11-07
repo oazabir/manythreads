@@ -196,6 +196,11 @@ test('Jobs has its own page, and only a lead may add one', async ({ browser }) =
     await expect(nadia.page.getByTestId('scheduled-jobs')).toBeVisible();
     await expect(nadia.page.getByTestId('new-scheduled-job')).toHaveCount(0);
     await expect(nadia.page.getByTestId('scheduled-jobs')).toContainText('A lead saves a new one');
+    // the routines that work for one person alone are not here: the page says where they are, and the link opens them
+    await expect(nadia.page.getByTestId('jobs-personal-link')).toContainText('under Account, Routines');
+    await nadia.page.getByTestId('jobs-personal-link').getByRole('link', { name: 'Account, Routines' }).click();
+    await expect(nadia.page).toHaveURL(/\/account\/routines$/);
+    await expect(nadia.page.getByRole('heading', { level: 1, name: 'Your routines' })).toBeVisible();
   } finally {
     await nadia.context.close();
   }

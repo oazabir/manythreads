@@ -50,6 +50,7 @@ const SETTINGS_ROUTES = [
   '/settings/workspace/general', '/settings/workspace/members', '/settings/workspace/roles', '/settings/workspace/llm', '/settings/workspace/runners',
   '/settings/workspace/guardrails', '/settings/workspace/audit', '/settings/workspace/import', '/settings/team/engineering/roster', '/settings/team/engineering/connections',
   '/teams', '/account', '/account/profile', '/account/notifications', '/account/connections', '/account/security', '/account/bots',
+  '/account/routines', '/account/action-items',
 ];
 // Personal (P20-04) lives outside `/t/:team`: its screens are the first thing the Personal side of the switch shows
 const PERSONAL_ROUTES = ['/memory', '/memory?tab=inbox', '/knowledge'];
