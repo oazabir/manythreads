@@ -8,7 +8,9 @@ import { createStreamHub, type StreamHub } from './streams.ts';
 import { readForViewer } from './viewer.ts';
 import { currentToolsDigest, readVersions, refreshPushedDigest, stillValidTokens } from './tools-state.ts';
 
-export { TOOLS, STUB_CAPABILITIES, definitionOf, withRunTeam } from './catalog.ts';
+export { TOOLS, STUB_CAPABILITIES, definitionOf } from './catalog.ts';
+export { spacesFor, withRunSpaces } from './spaces.ts';
+export type { RunSpaces, SpacesInput } from './spaces.ts';
 export type { ToolDefinition, ToolKind, RunSourceLine } from './catalog.ts';
 export { handleRpc, toolResult } from './protocol.ts';
 export { registerMcpRoutes } from './routes.ts';

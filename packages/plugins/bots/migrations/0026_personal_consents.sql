@@ -12,7 +12,9 @@
 --      asker_person_id the person who asked, when the asker is an active non-guest member (only they have a Personal space);
 --      personal_allowed true when audience is 'personal', the asker has a Personal space, the bot is the workspace Brain or lists `personal.read` in its
 --                      BOT.md, and the person's answer (or the default) is yes. Checked again on every call, so a withdrawn yes ends the next call;
---      personal_reason null when allowed, else one of: team_audience, no_asker, no_personal_space, not_requested, declined.
+--      personal_reason null when allowed, else one of: team_audience, no_asker, no_personal_space, not_requested, declined;
+--      team_ids        the teams the run may read: in a private context every team the CALLER can read (the asker when the asker asks, so the gateway asks as
+--                      the asker), the run's own team in every other context.
 --    It answers only while the run is live and only when app.actor() is the run's bot or the person who asked (the pair the run service sets), like
 --    app.memory_run_scope(). It is SECURITY DEFINER because the bot may not read the other tables it joins; inside, app.is_system() is TRUE, so the caller is
 --    checked with app.actor() and never with is_system().
@@ -47,7 +49,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON app.bot_personal_consents TO manythreads
 -- run_space_context -----------------------------------------------------------------------------------------------------
 CREATE FUNCTION app.run_space_context()
   RETURNS TABLE (run_id uuid, workspace_id uuid, team_id uuid, bot_id uuid, trigger_type text, audience text,
-                 asker_person_id uuid, personal_allowed boolean, personal_reason text)
+                 asker_person_id uuid, personal_allowed boolean, personal_reason text, team_ids uuid[])
   LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path = pg_catalog, app, pg_temp
 AS $$
@@ -61,6 +63,7 @@ DECLARE
   v_allowed      boolean := false;
   v_reason       text;
   v_answer       boolean;
+  v_teams        uuid[];
 BEGIN
   SELECT r.* INTO v_run FROM app.bot_runs r WHERE r.id = app.run_id() AND r.status = 'running' AND r.ended_at IS NULL;
   IF NOT FOUND THEN RETURN; END IF;
@@ -108,7 +111,14 @@ BEGIN
     END IF;
   END IF;
 
-  RETURN QUERY SELECT v_run.id, v_run.workspace_id, v_run.team_id, v_run.bot_id, v_run.trigger_type, v_audience, v_person, v_allowed, v_reason;
+  -- the teams: a private context reads every team the caller can read (the asker, when the asker is the caller), anything else its own team only
+  IF v_audience = 'personal' THEN
+    v_teams := ARRAY(SELECT DISTINCT t FROM unnest(app.readable_team_ids('read') || v_run.team_id) t);
+  ELSE
+    v_teams := ARRAY[v_run.team_id];
+  END IF;
+
+  RETURN QUERY SELECT v_run.id, v_run.workspace_id, v_run.team_id, v_run.bot_id, v_run.trigger_type, v_audience, v_person, v_allowed, v_reason, v_teams;
 END
 $$;
 

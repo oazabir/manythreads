@@ -493,7 +493,7 @@ describe('gateway-mcp endpoint', () => {
     expect(none.hits).toEqual([]);
     expect(none.note).toContain('say plainly that you cannot answer');
     const wrongTeam = await search(scoped, { query: 'refunds', teamId: '00000000-0000-7000-8000-000000000001' });
-    expect(wrongTeam).toMatchObject({ ok: false, code: 'other_team' });
+    expect(wrongTeam).toMatchObject({ ok: false, code: 'other_space' });
 
     // the run's log names the document and version, and the converted page a citation can open
     const logged = await world.system(async (tx) =>

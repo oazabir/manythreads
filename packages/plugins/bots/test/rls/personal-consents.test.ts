@@ -39,6 +39,7 @@ interface Context {
   asker_person_id: string | null;
   personal_allowed: boolean;
   personal_reason: string | null;
+  team_ids: string[];
 }
 const sha = (n: number): string => String(n).repeat(64).slice(0, 64);
 let brainId = '';
@@ -71,7 +72,7 @@ async function makeRun(tx: Tx, key: string, botId: string, trigger: string, aske
 const contextOf = async (runKey: string, actorId: string, workspaceId = omar.workspaceId): Promise<Context | undefined> =>
   withActor(
     { kind: actorId === nadia.actorId || actorId === lena.actorId || actorId === rafi.actorId ? 'person' : 'bot', id: actorId as ActorId, workspaceId, runId: runs[runKey] as RunId },
-    async (tx) => (await tx.query<Context>('SELECT audience, asker_person_id, personal_allowed, personal_reason FROM app.run_space_context()')).rows[0],
+    async (tx) => (await tx.query<Context>('SELECT audience, asker_person_id, personal_allowed, personal_reason, team_ids FROM app.run_space_context()')).rows[0],
     { pool: appPool },
   );
 
@@ -151,12 +152,14 @@ describe('app.run_space_context() (P20-09)', () => {
   it('gives the workspace Brain the asker\'s Personal space in a conversation, with no answer given', async () => {
     const c = await contextOf('brainConv', brainActor);
     expect(c).toMatchObject({ audience: 'personal', asker_person_id: nadia.personId, personal_allowed: true, personal_reason: null });
+    // asked as the asker, a private context reads every team the asker can read (Nadia sits in Engineering only)
+    expect((await contextOf('brainConv', nadia.actorId))?.team_ids).toEqual([ENG]);
     // the asker gets the same answer as the bot (the run is theirs too)
     expect(await contextOf('brainConv', nadia.actorId)).toMatchObject({ personal_allowed: true });
   });
 
   it('never opens Personal in a team context, whoever asked', async () => {
-    expect(await contextOf('brainTeam', brainActor)).toMatchObject({ audience: 'team', personal_allowed: false, personal_reason: 'team_audience' });
+    expect(await contextOf('brainTeam', brainActor)).toMatchObject({ audience: 'team', personal_allowed: false, personal_reason: 'team_audience', team_ids: [ENG] });
     expect(await contextOf('helperNoAsker', helperActor)).toMatchObject({ audience: 'team', personal_allowed: false });
   });
 

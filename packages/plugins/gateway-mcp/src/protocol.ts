@@ -15,7 +15,8 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { askForApproval } from './approval.ts';
-import { authorizeContext, definitionOf, interceptTarget, withRunTeam, type ToolDefinition } from './catalog.ts';
+import { authorizeContext, definitionOf, interceptTarget, type ToolDefinition } from './catalog.ts';
+import { spacesFor, withRunSpaces } from './spaces.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
 import { json } from './http.ts';
@@ -150,7 +151,11 @@ export const wasHeld = (result: McpToolResult): boolean => heldResults.has(resul
  */
 export async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams, options: { sandbox?: boolean } = {}): Promise<McpToolResult> {
   const definition = describeTool(ctx, params.name);
-  let input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
+  // What the run may read, from its own row; whatever the model sent can only narrow it (spaces.ts).
+  const spaces = await spacesFor(ctx, run);
+  const fitted = withRunSpaces(params.name, params.arguments ?? {}, spaces, run.teamId);
+  if (!fitted.ok) return refusal(run, params.name, { ok: false, code: fitted.code, message: fitted.message });
+  let input = fitted.input;
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
   const authContext = authorizeContext(input);

@@ -549,15 +549,3 @@ export function authorizeContext(input: Record<string, unknown>): CapabilityAuth
     ...(Array.isArray(paths) && paths.every((p): p is string => typeof p === 'string') ? { paths } : {}),
   };
 }
-
-/**
- * The team a tool call is confined to, filled in when the caller did not name one: a run belongs to exactly one
- * team, so a tool never reaches across teams even when the model asks for it by omission.
- */
-export function withRunTeam(name: string, input: Record<string, unknown>, teamId: string): Record<string, unknown> {
-  if ((name === 'pages.write' || name === 'proposals.propose') && typeof input['team'] !== 'string') return { ...input, team: teamId };
-  if ((name === 'messages.search' || name === 'files.search' || name === 'knowledge.search') && typeof input['teamId'] !== 'string') {
-    return { ...input, teamId };
-  }
-  return input;
-}
