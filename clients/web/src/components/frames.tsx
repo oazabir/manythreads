@@ -10,7 +10,7 @@ import { Brand } from './ui';
 import {
   AddIcon, BackIcon, BellIcon, HashIcon, HookIcon, SettingsAuditIcon, SettingsDataIcon, SettingsDomainIcon, SettingsGeneralIcon, SettingsHealthIcon,
   SettingsImportIcon, SettingsBrainIcon, SettingsLlmIcon, SettingsMemoryIcon, SettingsMembersIcon, SettingsProfileIcon, SettingsRolesIcon, SettingsRunnersIcon,
-  SettingsSecurityIcon, SettingsSetupIcon, SettingsSignInIcon, SettingsTemplateIcon, SettingsUsageIcon,
+  SettingsSecurityIcon, SettingsSetupIcon, SettingsSignInIcon, SettingsTemplateIcon, SettingsUsageIcon, ScheduledJobsIcon, ApprovalsIcon,
 } from '../shell/icons';
 import { useDocumentTitle } from '../shell/usePageTitle';
 
@@ -129,6 +129,7 @@ export function SettingsFrame() {
         { to: '/account/connections', label: 'Connections', icon: HookIcon },
         { to: '/account/security', label: 'Security', icon: SettingsSecurityIcon },
         ...(session.role === 'guest' ? [] : [{ to: '/account/bots', label: 'Bots and Personal', icon: SettingsMemoryIcon }]),
+        ...(session.role === 'guest' ? [] : [{ to: '/account/routines', label: 'Routines', icon: ScheduledJobsIcon }, { to: '/account/action-items', label: 'Action items', icon: ApprovalsIcon }]),
       ],
     },
   ];

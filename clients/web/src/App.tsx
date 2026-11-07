@@ -8,6 +8,8 @@ import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/state
 import { DevTokens } from './pages/DevTokens';
 import { AccountIndex } from './screens/account/AccountIndex';
 import { BotConsents as AccountBotConsents } from './screens/account/BotConsents';
+import { ActionItemsView as AccountActionItems } from './screens/files/actionItems/ActionItemsView';
+import { RoutinesTab as AccountRoutines } from './screens/files/routines/RoutinesTab';
 import { Notifications as AccountNotifications } from './screens/account/Notifications';
 import { Profile as AccountProfile } from './screens/account/Profile';
 import { Security as AccountSecurity } from './screens/account/Security';
@@ -151,6 +153,8 @@ function AppRoutes() {
             <Route path="/account/connections" element={<AccountConnections />} />
             <Route path="/account/security" element={<AccountSecurity />} />
             <Route path="/account/bots" element={<AccountBotConsents />} />
+            <Route path="/account/routines" element={<AccountRoutines />} />
+            <Route path="/account/action-items" element={<AccountActionItems />} />
             <Route element={<AdminOnly />}>
               <Route path="/onboarding" element={<Onboarding />} />
             </Route>

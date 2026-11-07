@@ -100,6 +100,7 @@ import type { Transport } from './client';
 import { installConnectionsMock } from './mock-connections';
 import { installInboxMock } from './mock-inbox';
 import { installPersonalMock } from './mock-personal';
+import { installRoutinesMock } from './mock-routines';
 import { installSharesMock } from './mock-shares';
 import { installPersonConnectionsMock } from './mock-person-connections';
 import { installSetupMock } from './mock-setup';
@@ -1101,6 +1102,17 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       const t = teamOf(slug);
       return { id: t.id, slug: t.slug, name: t.name };
     },
+    workspaceId: WORKSPACE_ID,
+    nextId: () => nextId('7'),
+    now: NOW,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+  });
+
+  // A person's own routines and action items (P20-10 to P20-12), in mock-routines.ts
+  installRoutinesMock(on, {
+    me: () => ({ id: me().id, role: me().role }),
     workspaceId: WORKSPACE_ID,
     nextId: () => nextId('7'),
     now: NOW,

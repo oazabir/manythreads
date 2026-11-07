@@ -25,6 +25,7 @@ import './styles/answer.css';
 import './styles/surfaces.css';
 import './styles/memory.css';
 import './styles/personal.css';
+import './styles/routines.css';
 import './styles/boards.css';
 import './styles/https.css';
 import './styles/health.css';

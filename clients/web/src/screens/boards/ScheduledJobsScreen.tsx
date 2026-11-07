@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { PageHeader } from '../../components/PageHeader';
 import { isAdmin, useSession } from '../../app/session';
 import { useShell } from '../../shell/context';
@@ -16,6 +17,9 @@ export function ScheduledJobsScreen() {
   return (
     <div className="bd-screen" data-testid="scheduled-jobs-screen">
       <PageHeader title="Jobs" description="Bot work on a schedule: heartbeats, routines and cards that open themselves." />
+      {session.role === 'guest' ? null : (
+        <p className="d" data-testid="jobs-personal-link">These are the team's jobs. Routines that work for you alone, and write into your own files, are under <Link to="/account/routines">Account, Routines</Link>.</p>
+      )}
       <ScheduledJobsView slug={slug} canManage={canManage} />
     </div>
   );

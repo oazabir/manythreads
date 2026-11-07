@@ -1,0 +1,494 @@
+/* Account → Routines and Action items (PLAN P20-10 to P20-12). Classes are prefixed `rt-` (routines) and `ai-` (action items). Shared classes (.block, .bh,
+   .block-body, .btn, .chip, .d, .mono, .dlg-input, .dlg-label, .dlg-hint, .dlg-error, .tog) are used, never redefined. Colours come from tokens.css only. */
+
+.rt-notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--radius-sm);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  font-size: var(--fs-small);
+}
+
+.rt-list,
+.ai-list,
+.rt-shelf,
+.rt-picks,
+.rt-run-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- a routine's row ---- */
+.rt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rt-row:last-child {
+  border-bottom: 0;
+}
+
+.rt-main {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.rt-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.rt-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.rt-line {
+  margin: 3px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.rt-faint {
+  color: var(--faint);
+}
+
+.rt-stop {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+}
+
+.rt-error {
+  margin: 6px 0 0;
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+.rt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.rt-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.rt-confirm-q {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* ---- runs ---- */
+.rt-runs {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--table-head);
+}
+
+.rt-runs-none {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rt-run {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rt-run:last-child {
+  border-bottom: 0;
+}
+
+.rt-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--fs-caption);
+}
+
+.rt-run-line {
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the shelf of ready routines ---- */
+.rt-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rt-card:last-child {
+  border-bottom: 0;
+}
+
+.rt-card-main {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.rt-card-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.rt-card-why {
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+
+.rt-more {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--hairline);
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* ---- the New routine dialog ---- */
+.rt-text {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.rt-sub {
+  margin: 14px 0 6px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.rt-picks {
+  display: grid;
+  gap: 6px;
+}
+
+.rt-pick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rt-pick:hover {
+  background: var(--msg-hover);
+}
+
+.rt-pick:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.rt-pick-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.rt-pick-why {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rt-said {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--human-wash);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.rt-notes {
+  margin: 0;
+  padding: 8px 10px 8px 26px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+}
+
+.rt-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.rt-when-label {
+  color: var(--ink);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+}
+
+.rt-when-words {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.rt-sources {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rt-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 2px 12px;
+}
+
+.rt-source,
+.rt-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  font-size: var(--fs-small);
+}
+
+/* ---- time and limits ---- */
+.rt-settings {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.rt-quiet {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.rt-save {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.rt-saved {
+  color: var(--ok-ink);
+  font-size: var(--fs-caption);
+}
+
+.rt-meter {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--human);
+}
+
+.rt-quiet-line {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* ---- action items ---- */
+.ai-add {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ai-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.ai-field {
+  display: grid;
+  flex: 1 1 140px;
+  gap: 4px;
+}
+
+.ai-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ai-row:last-child {
+  border-bottom: 0;
+}
+
+.ai-tick {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.ai-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-what {
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.ai-what.done {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.ai-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ai-due.late {
+  color: var(--alert-ink);
+  font-weight: 500;
+}
+
+.ai-why {
+  margin-top: 2px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ai-why ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.ai-edit,
+.ai-board,
+.ai-plan {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-board {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--table-head);
+}
+
+.ai-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.ai-done {
+  border-top: 1px solid var(--hairline);
+}
+
+.ai-done > summary {
+  padding: 10px 16px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.ai-plan {
+  margin-top: 8px;
+}
+
+/* Phone: one column, and every control is a 44 px target. */
+@media (width <= 760px) {
+  .rt-row .btn,
+  .rt-card .btn,
+  .rt-pick,
+  .rt-runs .btn,
+  .ai-row .btn,
+  .ai-add .btn,
+  .ai-plan .btn,
+  .rt-save .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .rt-source,
+  .rt-check {
+    min-height: 44px;
+  }
+
+  .ai-tick {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ai-done > summary {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  .rt-quiet {
+    grid-template-columns: auto 1fr;
+  }
+
+  .ai-row {
+    flex-wrap: wrap;
+  }
+
+  .ai-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+}
