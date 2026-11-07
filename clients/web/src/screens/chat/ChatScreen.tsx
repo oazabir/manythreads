@@ -24,6 +24,7 @@ import { EmptyChat } from './EmptyChat';
 import { HistoryRail, type RailActions } from './HistoryRail';
 import { exportFileName, exportMarkdown, buildRows, railGroups, railTitle, previewLive } from './model';
 import { PopMenu } from './PopMenu';
+import type { LocalCommand } from '../../channels/composerTools';
 import { useChatState } from './useChatState';
 import { useChatStream } from './useChatStream';
 
@@ -180,21 +181,25 @@ export function ChatScreen() {
 
   // ---- the model ---------------------------------------------------------------------------------------------------------------------
   const models = useQuery(`chat-models:${team}:${botSlug}`, () => fetchChatModels(who));
-  const options = models.status === 'ok' ? models.data.models : [];
+  const modelList = models.status === 'ok' ? models.data.models : null;
+  const options = useMemo(() => modelList ?? [], [modelList]);
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => setPicked(null), [root, botSlug]);
   const effective = pickedAlias(options, picked, state?.modelAlias ?? selectedItem?.modelAlias ?? null);
-  const pickAlias = async (alias: string): Promise<void> => {
-    setPicked(alias);
-    if (root === null) return;
-    try {
-      await patchChat({ ...who, root }, { modelAlias: alias });
-      patchState((s) => ({ ...s, modelAlias: alias }));
-    } catch (e) {
-      setPicked(null);
-      sayToast(isApiError(e) ? e.message : 'Could not change the model. Try again.');
-    }
-  };
+  const pickAlias = useCallback(
+    async (alias: string): Promise<void> => {
+      setPicked(alias);
+      if (root === null) return;
+      try {
+        await patchChat({ ...who, root }, { modelAlias: alias });
+        patchState((s) => ({ ...s, modelAlias: alias }));
+      } catch (e) {
+        setPicked(null);
+        sayToast(isApiError(e) ? e.message : 'Could not change the model. Try again.');
+      }
+    },
+    [root, who, patchState],
+  );
   const modelMenu =
     options.length > 1 ? (
       <PopMenu
@@ -240,22 +245,6 @@ export function ChatScreen() {
     },
     [submit, root, picked],
   );
-  const composer =
-    bot && blocked === null ? (
-      <Composer
-        draftKey={`chat:${botSlug}:${root ?? 'new'}`}
-        placeholder={`Message ${botName}`}
-        label={`Message ${botName}`}
-        channelId={bot.channelId}
-        threadRootId={root}
-        people={people}
-        channelNames={[]}
-        voice={false}
-        autoFocus={!narrow}
-        onSend={(body, o) => onSend(body, o)}
-      />
-    ) : null;
-
   // ---- the rail's actions ------------------------------------------------------------------------------------------------------------------
   const exportOne = useCallback(
     async (rootId: string): Promise<void> => {
@@ -333,6 +322,51 @@ export function ChatScreen() {
     setRailOpen(false);
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-main"] textarea')?.focus());
   }, [go]);
+
+  // ---- the message box: its own commands, and the Up arrow to edit the last message -------------------------------------------------------------
+  const [editTick, setEditTick] = useState(0);
+  const commands = useMemo<LocalCommand[]>(
+    () => [
+      { name: 'new', summary: 'Start a new chat', run: () => newChat() },
+      { name: 'clear', summary: 'Start a new chat; this one stays in your history', run: () => newChat() },
+      {
+        name: 'model',
+        usage: '/model name',
+        summary: 'Choose the model for this chat',
+        run: (arg) => {
+          const names = options.map((o) => o.label).join(', ');
+          if (options.length < 2) return 'This bot has one model only.';
+          if (arg === '') return `Now using ${optionFor(options, effective)?.label ?? 'the default'}. You can choose: ${names}.`;
+          const hit = options.find((o) => o.alias.toLowerCase() === arg.toLowerCase() || o.label.toLowerCase() === arg.toLowerCase());
+          if (!hit) return `There is no model called "${arg}". You can choose: ${names}.`;
+          if (!hit.available) return hit.reason ?? `${hit.label} is not available yet.`;
+          void pickAlias(hit.alias);
+          return `Now using ${hit.label}.`;
+        },
+      },
+      { name: 'export', summary: 'Download this chat as a Markdown file', run: () => (root === null ? 'There is nothing to download yet.' : void exportOne(root)) },
+    ],
+    [newChat, options, effective, pickAlias, root, exportOne],
+  );
+
+  const composer =
+    bot && blocked === null ? (
+      <Composer
+        draftKey={`chat:${botSlug}:${root ?? 'new'}`}
+        placeholder={`Message ${botName}`}
+        label={`Message ${botName}`}
+        channelId={bot.channelId}
+        threadRootId={root}
+        people={people}
+        channelNames={[]}
+        voice={false}
+        autoFocus={!narrow}
+        onSend={(body, o) => onSend(body, o)}
+        commands={commands}
+        {...(root !== null ? { onEditLast: () => setEditTick((t) => t + 1) } : {})}
+      />
+    ) : null;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.isComposing) return;
@@ -450,6 +484,7 @@ export function ChatScreen() {
             selfActor={people.me?.actorId ?? null}
             pendingText={pending}
             onChanged={refreshRail}
+            editSignal={editTick}
             composer={
               <>
                 {failed ? (

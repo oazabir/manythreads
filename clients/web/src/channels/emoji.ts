@@ -378,7 +378,7 @@ export function searchEmoji(query: string, limit = 60): EmojiEntry[] {
 }
 
 /** Shortcodes people know from other chat apps that are not a word of the emoji's name here. */
-const SHORTCODE_ALIASES: Record<string, string> = { '+1': '👍', '-1': '👎', thumbsup: '👍', thumbsdown: '👎', lgtm: '👍' };
+export const SHORTCODE_ALIASES: Record<string, string> = { '+1': '👍', '-1': '👎', thumbsup: '👍', thumbsdown: '👎', lgtm: '👍' };
 
 /**
  * The built-in emoji a `:shortcode:` means, or null. The code is matched against the names in the table (underscores stand for spaces): the whole name

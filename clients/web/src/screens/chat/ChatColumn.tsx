@@ -92,7 +92,7 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (body
  * One conversation: the person's messages as bubbles on the right, the bot's answers as plain text with the actions under them, the answer being written
  * (from the live frames) at the end, and the message box. The column is at most 760 px wide. Only the chosen answer of a turn is drawn.
  */
-export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, state, reloadState, patchState, preview, stopping, onStop, composer, selfActor, pendingText, onChanged }: {
+export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, state, reloadState, patchState, preview, stopping, onStop, composer, selfActor, pendingText, onChanged, editSignal }: {
   team: string;
   bot: string;
   botName: string;
@@ -111,6 +111,8 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   pendingText: string | null;
   /** The title, pin or the answers changed: the history reads again. */
   onChanged: () => void;
+  /** Counts up each time the person presses Up in an empty message box: the last message of theirs opens for editing. */
+  editSignal: number;
 }) {
   const people = usePeople();
   const tl = useTimeline(threadKey(root));
@@ -204,6 +206,13 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   };
 
   const lastPerson = [...rows].reverse().find((r) => r.kind === 'person');
+  const editableNow = lastPerson !== undefined && !live && lastPerson.message.authorId === selfActor ? lastPerson.message.id : null;
+  const lastSignal = useRef(editSignal);
+  useEffect(() => {
+    if (editSignal === lastSignal.current) return;
+    lastSignal.current = editSignal;
+    if (editableNow !== null) setEditing(editableNow);
+  }, [editSignal, editableNow]);
 
   const renderBot = (row: Extract<ChatRow, { kind: 'bot' }>): ReactNode => {
     const m = row.message;

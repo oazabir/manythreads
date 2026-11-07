@@ -1,10 +1,11 @@
-import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary, type VoiceMeta } from '@manythreads/shared';
+import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type CustomEmoji, type FileSummary, type VoiceMeta } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchBroadcastReach, sendTyping, uploadChannelFile } from '../api/endpoints';
 import { createTask, fetchChannelBoards } from '../screens/boards/api';
 import { botBoardOf, branchFor } from '../screens/boards/board';
+import { Avatar } from '../components/ui';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
 import { ShellContext } from '../shell/context';
 import { useDismiss } from '../shell/useDismiss';
@@ -21,7 +22,12 @@ import { availability, isActionPlan, planSlash, taskFailureText, type ActionPlan
 import { announceChannelChanged, slashDeps } from './slashDeps';
 import { runSlashAction } from './slashRun';
 import { useSlashEnv, useSlashWho } from './useSlash';
-import { CODE_LANGUAGES, COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
+import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
+import { ComposerToolbar } from './ComposerToolbar';
+import { TOOL_ORDER, isMac, matchBroadcast, matchLocalCommands, parseLocalCommand, toolForKey, type LocalCommand, type ToolId, type ToolLayout } from './composerTools';
+import { CustomEmojiImg } from './EmojiGlyph';
+import { useCustomEmoji } from './customEmoji';
+import { detectEmojiTrigger, suggestEmoji } from './emojiSuggest';
 import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
 import { MAX_UPLOAD_BYTES, TOO_LARGE, filesOf, useFilesSupport } from './files';
@@ -101,6 +107,10 @@ export type ComposerProps = {
   slash?: { teamSlug: string; origin: string };
   /** Offer "Send later" beside Send (P14-05): the text is scheduled for this channel (or thread) and posted by a job at the chosen time. Text only. */
   sendLater?: boolean;
+  /** A narrow box (the thread panel): the rarer formatting tools sit under "…". */
+  compact?: boolean;
+  /** Commands the screen answers itself (the Chat screen's `/new`, `/model`): offered in a menu while the first word is typed, run instead of sent. Not with `slash`. */
+  commands?: readonly LocalCommand[];
 };
 
 /** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
@@ -118,11 +128,27 @@ type PickItem = {
   group?: true;
   /** A bot offered by the @ picker: drawn with a "Bot" badge. */
   bot?: true;
+  /** The heading this line sits under; a new heading is drawn when it changes from the line above. */
+  section?: string;
+  /** The picture drawn before the name (a person or a bot). */
+  face?: { name: string; kind: 'person' | 'agent'; avatar: string | null; personId?: string };
+  /** An emoji offered by `:`: the character, or a custom one drawn as its picture. */
+  emoji?: { char: string | null; custom: CustomEmoji | null };
 };
+
+/** A phone-sized box: the toolbar is one "Aa" button (and Mention, Emoji) until it is opened. */
+const PHONE_BAR = '(width <= 480px)';
+const subscribePhone = (cb: () => void): (() => void) => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined;
+  const mq = window.matchMedia(PHONE_BAR);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+};
+const phoneNow = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(PHONE_BAR).matches;
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
-export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, voice = true, autoFocus = false, onEditLast, slash, sendLater = false }: ComposerProps) {
+export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, compact = false, commands }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const guest = useContext(ShellContext)?.guest ?? false;
   const rec = useRecorder();
@@ -156,9 +182,11 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const asking = useRef(false);
   const makingCard = useRef(false);
   const listId = useId();
-  // the toolbar is one stop of the Tab key; the arrows move inside it (roving focus)
-  const [toolAt, setToolAt] = useState(0);
-  const tools = useRef<HTMLDivElement>(null);
+  // the toolbar (ComposerToolbar.tsx) is always there; a phone shows one "Aa" button, the thread panel puts the rarer tools under "…"
+  const phone = useSyncExternalStore(subscribePhone, phoneNow, () => false);
+  const layout: ToolLayout = phone ? 'aa' : compact ? 'more' : 'full';
+  const mac = useMemo(() => isMac(), []);
+  const customEmoji = useCustomEmoji();
   const emojiButton = useRef<HTMLButtonElement>(null);
   const emojiPop = useRef<HTMLDivElement>(null);
   // a press on the Emoji button or inside the picker is "inside" for dismissing; anywhere else closes it
@@ -168,9 +196,6 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   );
   const area = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
-  // A press elsewhere (a poll option, a button in the feed) blurs the box and folds the resting toolbar; the feed above then grows by the toolbar's height
-  // before the button is released, the click lands on a moved element and is lost. So the toolbar stays open from the press until just after the release.
-  const [holdTools, setHoldTools] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const nextId = useRef(1);
   const selection = useRef<[number, number] | null>(null);
@@ -248,9 +273,15 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const slashContext = useMemo(() => (slashOn ? slashMenuContext(text, caret) : null), [slashOn, text, caret]);
 
   const trigger = useMemo(() => (slashContext ? null : detectTrigger(text, caret)), [slashContext, text, caret]);
+  // `:` and two letters: the emoji list (not while a command or an @ or # word is being typed)
+  const emojiTrigger = useMemo(() => (slashContext || trigger ? null : detectEmojiTrigger(text, caret)), [slashContext, trigger, text, caret]);
+  // the commands a screen brings (the Chat screen), while the first word is still being typed
+  const localMenu = useMemo(() => (slashOn || !commands || trigger || emojiTrigger ? [] : matchLocalCommands(commands, text)), [slashOn, commands, trigger, emojiTrigger, text]);
   // what Esc closed is remembered by where the word starts, so the menu stays shut until that word changes
-  const anchor = slashContext ? (slashContext.stage === 'command' ? 0 : slashContext.from) : (trigger?.start ?? null);
+  const anchor = slashContext ? (slashContext.stage === 'command' ? 0 : slashContext.from) : (trigger?.start ?? emojiTrigger?.start ?? (localMenu.length > 0 ? 0 : null));
   const groups = useMentionGroups(channelId, trigger?.char === '@');
+  // `@channel` and `@here` are offered where they mean something: a channel or a thread, and not to a guest (for a guest they are plain words)
+  const broadcastOk = slashOn && !guest;
   const items = useMemo<PickItem[]>(() => {
     if (anchor === null || dismissed === anchor) return [];
     if (slashContext?.stage === 'command') {
@@ -276,37 +307,66 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         .slice(0, 6)
         .map((b) => ({ key: b.slug, label: b.name, hint: b.slug, insert: `${b.slug}${next}`, from: slashContext.from, to: slashContext.to }));
     }
-    if (!trigger) return [];
+    if (!trigger) {
+      if (emojiTrigger) {
+        return suggestEmoji(emojiTrigger.query, customEmoji.items).map((e) => ({
+          key: `emoji:${e.custom ? `c:${e.custom.name}` : e.char}`,
+          label: `:${e.code}:`,
+          hint: '',
+          // a custom emoji is written `:name:` and a space keeps the next word from running into it; a built-in one is the character itself
+          insert: e.custom ? `:${e.custom.name}: ` : (e.char ?? ''),
+          from: emojiTrigger.start,
+          to: caret,
+          emoji: { char: e.char, custom: e.custom },
+        }));
+      }
+      return localMenu.map((c) => ({ key: c.name, label: c.usage ?? `/${c.name}`, hint: c.summary, insert: `/${c.name} `, from: 0, to: text.length }));
+    }
     const q = trigger.query.toLowerCase();
     if (trigger.char === '@') {
+      // everyone, then people, bots and role groups, each under its own heading
+      const everyone: PickItem[] = broadcastOk
+        ? matchBroadcast(q).map((o) => ({ key: `broadcast:${o.word}`, label: `@${o.word}`, hint: o.hint, insert: `@${o.word} `, from: trigger.start, to: caret, section: 'Everyone' }))
+        : [];
       const persons: PickItem[] = people.list
         .filter((p) => q === '' || p.name.toLowerCase().includes(q) || handleFor(p, people.list).startsWith(q))
         .slice(0, 6)
-        .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} `, from: trigger.start, to: caret, personId: p.personId }));
+        .map((p) => ({
+          key: p.personId,
+          label: p.name,
+          hint: `@${handleFor(p, people.list)}`,
+          insert: `@${handleFor(p, people.list)} `,
+          from: trigger.start,
+          to: caret,
+          personId: p.personId,
+          section: 'People',
+          face: { name: p.name, kind: 'person' as const, avatar: p.avatar, personId: p.personId },
+        }));
       // the team's bots (`@slug` wakes one that listens for mentions), after the people
       const bots: PickItem[] = people.bots
         .filter((b) => q === '' || b.slug.toLowerCase().startsWith(q) || b.name.toLowerCase().includes(q))
         .slice(0, 4)
-        .map((b) => ({ key: `bot:${b.slug}`, label: b.name, hint: `@${b.slug}`, insert: `@${b.slug} `, from: trigger.start, to: caret, bot: true as const }));
+        .map((b) => ({ key: `bot:${b.slug}`, label: b.name, hint: `@${b.slug}`, insert: `@${b.slug} `, from: trigger.start, to: caret, bot: true as const, section: 'Bots', face: { name: b.name, kind: 'agent' as const, avatar: b.avatar } }));
       // role groups after the people and bots: a person's own handle always wins, so a group is offered only when its word is not one of theirs
-      const shown = new Set([...persons, ...bots].map((p) => p.insert.trim().toLowerCase()));
+      const shown = new Set([...persons, ...bots, ...everyone].map((p) => p.insert.trim().toLowerCase()));
       const roles: PickItem[] = matchGroups(groups, q)
         .filter((g) => !shown.has(`@${g.handle}`))
-        .map((g) => ({ key: `group:${g.handle}`, label: `@${g.handle}`, hint: groupCountText(g.memberCount), insert: `@${g.handle} `, from: trigger.start, to: caret, group: true as const }));
-      return [...persons, ...bots, ...roles];
+        .map((g) => ({ key: `group:${g.handle}`, label: `@${g.handle}`, hint: groupCountText(g.memberCount), insert: `@${g.handle} `, from: trigger.start, to: caret, group: true as const, section: 'Groups' }));
+      return [...everyone, ...persons, ...bots, ...roles];
     }
     return channelNames
       .filter((n) => q === '' || n.toLowerCase().includes(q))
       .slice(0, 6)
-      .map((n) => ({ key: n, label: `#${n}`, hint: '', insert: `#${n} `, from: trigger.start, to: caret }));
-  }, [anchor, slashContext, trigger, dismissed, people, groups, channelNames, who, text, caret]);
+      .map((n) => ({ key: n, label: `#${n}`, hint: '', insert: `#${n} `, from: trigger.start, to: caret, section: 'Channels' }));
+  }, [anchor, slashContext, trigger, emojiTrigger, localMenu, customEmoji.items, dismissed, people, groups, channelNames, who, text, caret, broadcastOk]);
   const open = items.length > 0;
   const active = Math.min(pick, Math.max(0, items.length - 1));
   // the menu is a scrolling list when it is long (the commands are many): keep the highlighted row in view
   useEffect(() => {
     if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' });
   }, [open, active, listId]);
-  const menuLabel = slashContext?.stage === 'command' ? 'Commands' : slashContext?.stage === 'bot' ? 'Bots' : trigger?.char === '@' ? 'People' : 'Channels';
+  const menuLabel =
+    slashContext?.stage === 'command' || localMenu.length > 0 ? 'Commands' : slashContext?.stage === 'bot' ? 'Bots' : emojiTrigger ? 'Emoji' : trigger?.char === '@' ? 'People' : 'Channels';
 
   const edit = useCallback((next: string, from: number, to = from): void => {
     setText(next);
@@ -349,6 +409,28 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     edit(next, it.from + it.insert.length);
     setPick(0);
   };
+
+  /** One toolbar tool (a button, or its shortcut) acting on the text and selection. */
+  const runTool = (id: ToolId): void => {
+    switch (id) {
+      case 'bold': return wrap('**', '**', 'bold');
+      case 'italic': return wrap('*', '*', 'italic');
+      case 'strike': return wrap('~~', '~~', 'strike');
+      case 'code': return apply((t, a, b) => codeSpan(t, a, b));
+      case 'codeblock': return block('');
+      case 'quote': return lines('quote');
+      case 'bullet': return lines('bullet');
+      case 'number': return lines('number');
+      case 'link': return apply(linkSelection);
+      case 'mention': return mark('@');
+      case 'channel': return mark('#');
+      case 'emoji': return setEmojiOpen((o) => !o);
+      case 'poll':
+        setPollInitial(undefined);
+        setPollOpen(true);
+    }
+  };
+  const tools = useMemo<ToolId[]>(() => TOOL_ORDER.filter((t) => t !== 'poll' || slashOn), [slashOn]);
 
   // ---- attachments --------------------------------------------------------------------------------------------
   const addFiles = (files: File[]): void => {
@@ -493,6 +575,14 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     if (!canSend || makingCard.current || scheduling.current || asking.current || bcast) return;
     // a message of only files has no text of its own: the server wants one character, so it carries the file names
     let body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
+    // a command the screen answers itself (/new, /model): it runs, and nothing is sent
+    const own = commands && !slash && ready.length === 0 ? parseLocalCommand(commands, text) : null;
+    if (own) {
+      const said = own.command.run(own.arg);
+      clearBox();
+      setNotice(typeof said === 'string' && said !== '' ? { tone: 'ok', text: said } : null);
+      return;
+    }
     if (slash && text.trim() !== '') {
       const plan = planSlash(text, who, ready.length > 0, slashEnv());
       if (plan.do === 'say') {
@@ -678,7 +768,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         picked !== undefined &&
         !picked.disabled &&
         ((slashContext?.stage === 'command' && text.trim() === `/${picked.key}` && findSlashCommand(picked.key)?.args !== 'required') ||
-          (slashContext?.stage === 'bot' && atEnd && slashContext.query.toLowerCase() === picked.key.toLowerCase()));
+          (slashContext?.stage === 'bot' && atEnd && slashContext.query.toLowerCase() === picked.key.toLowerCase()) ||
+          (localMenu.length > 0 && text.trim() === `/${picked.key}`));
       if ((e.key === 'Enter' || e.key === 'Tab') && !complete) {
         e.preventDefault();
         choose(active);
@@ -694,57 +785,21 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       send();
-    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
+    } else if (toolForKey(e) !== null) {
+      // Ctrl or Cmd with B, I or K, and Ctrl+Shift+X
       e.preventDefault();
-      if (e.key.toLowerCase() === 'b') wrap('**', '**', 'bold');
-      else wrap('*', '*', 'italic');
-    } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'x') {
-      e.preventDefault();
-      wrap('~~', '~~', 'strike');
+      runTool(toolForKey(e) as ToolId);
     } else if (e.key === 'ArrowUp' && onEditLast && text === '' && uploads.length === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       onEditLast();
     }
   };
 
-  // ---- the toolbar: one tab stop, the arrows move along it ---------------------------------------------------
-  const toolControls = (): HTMLElement[] => [...(tools.current?.querySelectorAll<HTMLElement>('button.ctool, select.ctool') ?? [])];
-  const onToolsKey = (e: KeyboardEvent<HTMLDivElement>): void => {
-    const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
-    if (!keys.includes(e.key) || e.target instanceof HTMLSelectElement) return;
-    const list = toolControls();
-    const at = list.indexOf(document.activeElement as HTMLElement);
-    if (at < 0 || list.length === 0) return;
-    e.preventDefault();
-    const to = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : (at + (e.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length;
-    setToolAt(to);
-    list[to]?.focus();
-  };
-  const tab = (i: number): { tabIndex: number; onFocus: () => void } => ({ tabIndex: i === toolAt ? 0 : -1, onFocus: () => setToolAt(i) });
+  // ---- the emoji picker: a press on its button or inside it is "inside" ---------------------------------------------------
   useDismiss(emojiOpen, () => {
     setEmojiOpen(false);
     area.current?.focus();
   }, emojiInside);
-
-  useEffect(() => {
-    let release: ReturnType<typeof setTimeout> | undefined;
-    const press = (): void => {
-      if (root.current?.contains(document.activeElement)) setHoldTools(true);
-    };
-    const letGo = (): void => {
-      clearTimeout(release);
-      release = setTimeout(() => setHoldTools(false), 0);
-    };
-    document.addEventListener('pointerdown', press, true);
-    document.addEventListener('pointerup', letGo, true);
-    document.addEventListener('pointercancel', letGo, true);
-    return () => {
-      clearTimeout(release);
-      document.removeEventListener('pointerdown', press, true);
-      document.removeEventListener('pointerup', letGo, true);
-      document.removeEventListener('pointercancel', letGo, true);
-    };
-  }, []);
 
   const onChange = (value: string, at: number): void => {
     setText(value);
@@ -782,7 +837,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   return (
     <div
       ref={root}
-      className={`composer ${drag ? 'dragging' : ''} ${text === '' && uploads.length === 0 ? 'resting' : ''} ${holdTools ? 'holding' : ''}`}
+      className={`composer ${drag ? 'dragging' : ''}`}
       data-testid="composer"
       data-landmark={threadRootId ? 'reply-composer' : 'composer'}
       onDragOver={(e) => {
@@ -795,52 +850,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       onDrop={onDrop}
     >
       <div className="cbox">
-        <div className="ctools" role="toolbar" aria-label="Formatting" ref={tools} onKeyDown={onToolsKey}>
-          <button type="button" className="ctool" aria-label="Bold" title="Bold (Ctrl+B)" onClick={() => wrap('**', '**', 'bold')} {...tab(0)}><b>B</b></button>
-          <button type="button" className="ctool" aria-label="Italic" title="Italic (Ctrl+I)" onClick={() => wrap('*', '*', 'italic')} {...tab(1)}><i>I</i></button>
-          <button type="button" className="ctool" aria-label="Strikethrough" title="Strikethrough (Ctrl+Shift+X)" onClick={() => wrap('~~', '~~', 'strike')} {...tab(2)}><s>S</s></button>
-          <button type="button" className="ctool mono" aria-label="Code" title="Code" onClick={() => apply((t, a, b) => codeSpan(t, a, b))} {...tab(3)}>{'</>'}</button>
-          <select
-            className="ctool ctool-select"
-            aria-label="Insert a code block"
-            title="Code block"
-            value=""
-            onChange={(e) => {
-              block(e.target.value === '-' ? '' : e.target.value);
-              e.target.value = '';
-            }}
-            {...tab(4)}
-          >
-            <option value="" disabled>Code block</option>
-            {CODE_LANGUAGES.map((l) => (
-              <option key={l.label} value={l.lang === '' ? '-' : l.lang}>{l.label}</option>
-            ))}
-          </select>
-          <button type="button" className="ctool" aria-label="Quote" title="Quote" onClick={() => lines('quote')} {...tab(5)}>&gt;</button>
-          <button type="button" className="ctool" aria-label="Bulleted list" title="Bulleted list" onClick={() => lines('bullet')} {...tab(6)}>≡</button>
-          <button type="button" className="ctool" aria-label="Numbered list" title="Numbered list" onClick={() => lines('number')} {...tab(7)}>1.</button>
-          <button type="button" className="ctool" aria-label="Link" title="Link" onClick={() => apply(linkSelection)} {...tab(8)}>↗</button>
-          <button type="button" className="ctool" aria-label="Mention a person" title="Mention" onClick={() => mark('@')} {...tab(9)}>@</button>
-          <button type="button" className="ctool" aria-label="Link a channel" title="Channel" onClick={() => mark('#')} {...tab(10)}>#</button>
-          <button
-            ref={emojiButton}
-            type="button"
-            className="ctool"
-            aria-label="Emoji"
-            title="Emoji"
-            aria-haspopup="dialog"
-            aria-expanded={emojiOpen}
-            onClick={() => setEmojiOpen((o) => !o)}
-            {...tab(11)}
-          >
-            <span aria-hidden="true">☺</span>
-          </button>
-          {slashOn ? (
-            <button type="button" className="ctool" aria-label="Ask a poll" title="Poll" aria-haspopup="dialog" onClick={() => { setPollInitial(undefined); setPollOpen(true); }} data-testid="poll-tool" {...tab(12)}>
-              <span aria-hidden="true">▤</span>
-            </button>
-          ) : null}
-        </div>
+        <ComposerToolbar layout={layout} tools={tools} mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />
         {emojiOpen ? (
           <div ref={emojiPop} className="emp-pop">
             <EmojiPicker onPick={putEmoji} onClose={() => { setEmojiOpen(false); area.current?.focus(); }} />
@@ -894,23 +904,28 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
           {open ? (
             <ul className={`picker ${slashContext ? 'slash' : ''}`} id={listId} role="listbox" aria-label={menuLabel} data-testid={slashContext ? 'slash-menu' : undefined}>
               {items.map((it, i) => (
-                <li
-                  key={it.key}
-                  id={`${listId}-${i}`}
-                  role="option"
-                  aria-selected={i === active}
-                  aria-disabled={it.disabled ? true : undefined}
-                  className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''} ${it.group ? 'pk-group' : ''}`}
-                  data-group={it.group ? it.key.slice(6) : undefined}
-                  data-command={slashContext?.stage === 'command' ? it.key : undefined}
-                  onMouseDown={(e) => { e.preventDefault(); choose(i); }}
-                >
-                  <span className="pk-name">{it.label}</span>
-                  {it.group ? <span className="pk-badge">Group</span> : null}
-                  {it.bot ? <span className="pk-badge bot">Bot</span> : null}
-                  {it.personId ? <PresenceDot personId={it.personId} status /> : null}
-                  {it.hint ? <small className="pk-hint">{it.hint}</small> : null}
-                </li>
+                <Fragment key={it.key}>
+                  {it.section && it.section !== items[i - 1]?.section ? <li role="presentation" className="pk-head" data-testid="picker-heading">{it.section}</li> : null}
+                  <li
+                    id={`${listId}-${i}`}
+                    role="option"
+                    aria-selected={i === active}
+                    aria-disabled={it.disabled ? true : undefined}
+                    className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''} ${it.group ? 'pk-group' : ''}`}
+                    data-group={it.group ? it.key.slice(6) : undefined}
+                    data-command={slashContext?.stage === 'command' ? it.key : undefined}
+                    data-emoji={it.emoji ? (it.emoji.custom ? `:${it.emoji.custom.name}:` : it.emoji.char) : undefined}
+                    onMouseDown={(e) => { e.preventDefault(); choose(i); }}
+                  >
+                    {it.face ? <Avatar name={it.face.name} kind={it.face.kind} avatar={it.face.avatar} personId={it.face.personId} /> : null}
+                    {it.emoji ? <span className="pk-emoji" aria-hidden="true">{it.emoji.custom ? <CustomEmojiImg id={it.emoji.custom.id} name={it.emoji.custom.name} /> : it.emoji.char}</span> : null}
+                    <span className="pk-name">{it.label}</span>
+                    {it.group ? <span className="pk-badge">Group</span> : null}
+                    {it.bot ? <span className="pk-badge bot">Bot</span> : null}
+                    {it.personId ? <PresenceDot personId={it.personId} status /> : null}
+                    {it.hint ? <small className="pk-hint">{it.hint}</small> : null}
+                  </li>
+                </Fragment>
               ))}
             </ul>
           ) : null}
@@ -938,7 +953,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
           ) : null}
           {voiceOn ? <Recorder rec={rec} channelId={channelId} showMic={text === '' && uploads.length === 0} onSend={onSend} returnFocus={focusBox} /> : null}
           <span className="sch-split" hidden={voiceActive}>
-            <button type="button" className="btn primary send" aria-label="Send" disabled={!canSend || schedulingNow} onClick={send}><SendIcon /><span>Send</span></button>
+            <button type="button" className={`btn send ${canSend ? 'primary ready' : ''}`} aria-label="Send" title="Send (Enter)" disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
             {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}
           </span>
         </div>

@@ -1154,33 +1154,35 @@
   background: var(--human-wash);
 }
 
+/* the bar is always there (P21-04): its height is reserved, so the list above never moves when the box gets or loses focus */
 .ctools {
   display: flex;
+  align-items: center;
   gap: 2px;
+  min-height: 36px;
   padding: 3px 6px;
   border-bottom: 1px solid var(--hairline);
 }
 
-/*
- * at rest (nothing typed, nothing attached, no focus) the box is one line, as in the prototype; the toolbar opens with the caret.
- * .holding: a press began while the box had focus and is not released yet; the toolbar stays so the feed above does not move under the pointer
- */
-.composer.resting:not(:focus-within, .holding) .ctools {
-  display: none;
-}
-
 .ctool {
+  display: inline-grid;
   flex: none;
-  min-width: 26px;
-  height: 24px;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--mute);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-small);
   cursor: pointer;
+}
+
+.ctool[aria-pressed="true"] {
+  background: var(--nav-on);
+  color: var(--ink);
 }
 
 .ctool:focus-visible {
@@ -1188,23 +1190,92 @@
   outline-offset: -2px;
 }
 
-/* the code-block chooser is a native list, so it is the same on a phone; it looks like the buttons beside it */
-.ctool-select {
-  width: auto;
-  max-width: 108px;
+/* the code-block chooser is a native list, so it is the same on a phone; its icon is drawn under it and the list itself is see-through */
+.ctool-sel {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--mute);
+}
+
+.ctool-sel:focus-within {
+  outline: 2px solid var(--human);
+  outline-offset: -2px;
+}
+
+.ctool-sel .ctool-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  padding: 0;
   appearance: none;
-  padding: 0 8px;
-  text-overflow: ellipsis;
+  opacity: 0;
 }
 
-.ctool.mono {
-  font-family: var(--mono);
-  font-size: 11.5px;
+.ctool-sel .ctool-select:focus-visible {
+  outline: none;
 }
 
-.ctool:hover {
+.ctool-sel-icon {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.ctool:hover,
+.ctool-sel:hover {
   background: var(--nav-on);
   color: var(--ink);
+}
+
+/* the rarer tools of a narrow box, under "…" */
+.ctools-more {
+  position: absolute;
+  top: 40px;
+  right: 6px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.ctools-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ctools-more-item:hover,
+.ctools-more-item:focus-visible {
+  background: var(--nav-on);
+}
+
+.ctools-more-item kbd {
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
 }
 
 .cinput {
@@ -1236,10 +1307,19 @@
 }
 
 .cinput .send {
-  display: inline-flex;
+  display: inline-grid;
   flex: none;
-  align-items: center;
-  gap: 5px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+/* nothing to send yet: a quiet icon; once there is something it becomes the primary button */
+.cinput .send:not(.ready) {
+  border-color: transparent;
+  background: none;
+  color: var(--faint);
 }
 
 .picker {
@@ -1277,6 +1357,42 @@
   color: var(--faint);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+/* the headings of the @ list (Everyone, People, Bots, Groups) and of the # list; they are not choices */
+.picker li.pk-head {
+  padding: 6px 8px 2px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: default;
+  pointer-events: none;
+}
+
+.picker li.pk-head:hover {
+  background: none;
+}
+
+/* a person or a bot in the @ list: their picture, then the name and the handle */
+.composer .cinput .picker li .av {
+  width: 22px;
+  height: 22px;
+  font-size: var(--fs-tiny);
+  align-self: center;
+}
+
+.picker li .pk-emoji {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  align-self: center;
+  font-size: var(--fs-body);
+}
+
+.picker li .pk-emoji .cemoji {
+  width: 18px;
+  height: 18px;
 }
 
 /* a role group in the @ picker (P14-03): a quiet badge and a left rule, so it is not mistaken for a person */
@@ -1877,18 +1993,42 @@
     padding: 8px 12px 10px;
   }
 
-  .cinput .send span {
-    display: none;
-  }
-
   .cinput textarea {
     max-height: min(376px, calc(33dvh - 60px));
   }
 
-  /* twelve controls do not fit 390 px: the bar scrolls sideways instead of growing a second row */
+  /* thirteen controls do not fit a phone: the bar scrolls sideways instead of growing a second row (a box under 480 px keeps three: Aa, @ and emoji) */
   .ctools {
     overflow-x: auto;
     scrollbar-width: none;
+  }
+
+  /* a thumb needs 44 px */
+  .ctool,
+  .ctool-sel,
+  .cinput .send,
+  .ctools-more-item {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .ctools-more-item {
+    min-width: 0;
+  }
+
+  .cinput .send {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ctool,
+  .ctool-sel {
+    height: 44px;
+  }
+
+  .picker li {
+    min-height: 44px;
+    align-items: center;
   }
 
   .net-banner,

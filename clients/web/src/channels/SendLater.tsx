@@ -54,7 +54,7 @@ export function SendLaterMenu({ disabled, onPick }: { disabled: boolean; onPick:
           type="button"
           className="icon-btn sch-more"
           aria-label="Send later"
-          title="Send later"
+          title="Send later: pick a time"
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}

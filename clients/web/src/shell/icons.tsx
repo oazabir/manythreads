@@ -11,6 +11,7 @@ import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon } from '@proicons/react';
+import { BarChartIcon, CodeSquareIcon, MoreHorizontalIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
 import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -157,3 +158,20 @@ export const RegenerateIcon = proIcon(ArrowSyncIcon, 14);
 export const NextIcon = proIcon(ChevronRightIcon, 14);
 export const ExportChatIcon = proIcon(ArrowDownloadIcon, 14);
 export const DownIcon = proIcon(ChevronDownIcon, 12);
+
+// the composer's toolbar (P21-04): 16 px, one look for all of them
+export const ToolBoldIcon = proIcon(TextBoldIcon, 16);
+export const ToolItalicIcon = proIcon(TextItalicIcon, 16);
+export const ToolStrikeIcon = proIcon(TextStrikethroughIcon, 16);
+export const ToolCodeIcon = proIcon(CodeIcon, 16);
+export const ToolCodeBlockIcon = proIcon(CodeSquareIcon, 16);
+export const ToolQuoteIcon = proIcon(QuoteIcon, 16);
+export const ToolBulletIcon = proIcon(TextBulletListIcon, 16);
+export const ToolNumberIcon = proIcon(TextNumberListIcon, 16);
+export const ToolLinkIcon = proIcon(LinkIcon, 16);
+export const ToolMentionIcon = proIcon(ProMention, 16);
+export const ToolChannelIcon = proIcon(ProHash, 16);
+export const ToolEmojiIcon = proIcon(EmojiIcon, 16);
+export const ToolPollIcon = proIcon(BarChartIcon, 16);
+export const ToolFormatIcon = proIcon(TextFontIcon, 16);
+export const ToolMoreIcon = proIcon(MoreHorizontalIcon, 16);
