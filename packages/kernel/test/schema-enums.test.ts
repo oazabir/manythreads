@@ -118,6 +118,8 @@ import {
   SurfaceEventKind,
   ScopedKvScopeType,
   TeamRole,
+  ThemeChoice,
+  Density,
   WorkspaceRole,
 } from '@manythreads/shared';
 import {
@@ -168,6 +170,8 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'scoped_kv.scope_type': ScopedKvScopeType,
   'workspace_members.role': WorkspaceRole,
   'people.status': PersonStatus,
+  'people.theme': ThemeChoice,
+  'people.density': Density,
   'person_photos.content_type': AvatarPhotoType,
   'auth_providers.kind': AuthProviderKind,
   'invitations.role': InvitationRole,

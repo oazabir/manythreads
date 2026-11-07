@@ -29,6 +29,8 @@ export const SEED_POLISH = {
   /** The bot whose Answer is posted (a seed v4 placeholder). */
   bot: 'coder',
   runId: '00000000-0000-7000-8000-0000000f0061',
+  /** Two direct messages of Omar, so the Messages tab shows real rows. */
+  dms: { nadia: '00000000-0000-7000-8000-0000000f0052', rafi: '00000000-0000-7000-8000-0000000f0053' },
 } as const;
 
 const MIN = 60_000;
@@ -222,6 +224,43 @@ export async function seedPolish(db: Pick<TestDatabase, 'systemUrl'>, options: S
         );
         result.messages = inserted.rowCount ?? 0;
         result.answer = answerRow !== null;
+
+        // Two direct messages for Omar (the Messages tab of the phone and the sidebar show real rows): with Nadia and with Rafi, both read.
+        const dms: Array<{ id: string; with: Persona; no: number; lines: Array<{ me: boolean; text: string }> }> = [
+          { id: SEED_POLISH.dms.nadia, with: personas.nadia, no: 52, lines: [
+            { me: false, text: 'Did you see the release notes draft in the polish channel?' },
+            { me: true, text: 'Yes, I will read it after lunch.' },
+            { me: false, text: 'Thanks, the cache section is the one that changed.' },
+          ] },
+          { id: SEED_POLISH.dms.rafi, with: personas.rafi, no: 53, lines: [
+            { me: true, text: 'Is the second staging run done?' },
+            { me: false, text: 'Not yet, it should finish around four.' },
+          ] },
+        ];
+        for (const d of dms) {
+          const dmKey = [personas.omar.personId, d.with.personId].sort().join(',');
+          await tx.query(
+            `INSERT INTO app.channels (id, workspace_id, team_id, name, kind, private, dm_key, created_by)
+             VALUES ($1, $2, NULL, '', 'dm', true, $3, $4) ON CONFLICT (workspace_id, dm_key) WHERE kind = 'dm' DO NOTHING`,
+            [d.id, ws, dmKey, actor(personas.omar)],
+          );
+          const dmId = (await tx.query<{ id: string }>(`SELECT id FROM app.channels WHERE workspace_id = $1 AND kind = 'dm' AND dm_key = $2`, [ws, dmKey])).rows[0]!.id;
+          for (const p of [personas.omar, d.with]) await tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [dmId, p.personId]);
+          let lastId = '';
+          for (const [i, line] of d.lines.entries()) {
+            const at = start + 40 * MIN + d.no * MIN + i * MIN;
+            lastId = seedUuid(at, 800 + i, d.no);
+            await tx.query(
+              `INSERT INTO app.messages (id, workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NULL, '{}'::jsonb, $7) ON CONFLICT (id) DO NOTHING`,
+              [lastId, ws, dmId, actor(line.me ? personas.omar : d.with), line.text, toPlainText(line.text), new Date(at).toISOString()],
+            );
+            result.messages += 1;
+          }
+          for (const p of [personas.omar, d.with]) {
+            await tx.query(`INSERT INTO app.read_state (person_id, target_type, target_id, last_read_id, unread_count) VALUES ($1, 'channel', $2, $3, 0) ON CONFLICT DO NOTHING`, [p.personId, dmId, lastId]);
+          }
+        }
 
         // Read state: everybody who joined has read the channel to its last top-level message, and the thread's people follow it to its last reply.
         const lastTop = ordered.filter((r) => r.root === null).at(-1)!;

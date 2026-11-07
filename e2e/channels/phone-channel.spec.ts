@@ -53,7 +53,7 @@ const rowOf = (page: Page, id: string): Locator => page.locator(`[data-message-i
 
 /** Touch events from a real finger (CDP), so the page sees pointer events of type touch, which is what its gestures listen to. */
 function finger(cdp: CDPSession) {
-  const send = (type: string, x: number, y: number): Promise<unknown> => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const send = (type: 'touchStart' | 'touchEnd' | 'touchMove' | 'touchCancel', x: number, y: number): Promise<unknown> => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
   return {
     down: (x: number, y: number) => send('touchStart', x, y),
     move: (x: number, y: number) => send('touchMove', x, y),

@@ -66,9 +66,15 @@
   list-style: none;
 }
 
+.an-cites > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* a long source title wraps inside its chip (P21-RUN): it is never cut at the card's edge */
 .an-cite {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   max-width: 100%;
   padding: 3px 9px 3px 4px;
@@ -87,9 +93,8 @@ a.an-cite:hover {
 
 .an-cite-label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .an-cite-unsupported {

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BOT_ANIMAL_AVATAR_PRESETS } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ownerSql, seedPolish, seedWorld, SEED_POLISH, startTestServer, type TestServer } from '../src/index.ts';
+import { ownerSql, personas, seedPolish, seedWorld, SEED_POLISH, startTestServer, type TestServer } from '../src/index.ts';
 
 // Seed v21 (PLAN P21-24, B17): `#polish`, the channel for the look checks, written on top of seeds v3 and v4 and only when asked for. The database comes
 // from a started test server (its plugin migrations create the channel tables and load the coder bot from the v4 placeholder).
@@ -64,4 +64,14 @@ describe('seedPolish (seed v21)', () => {
     expect(second.skipped).toBeNull();
     expect(await count()).toBe(total);
   }, 120_000);
+
+  it('gives Omar two direct messages with real lines, so the Messages tab has rows', async () => {
+    const rows = await sql<{ id: string; n: number }>(
+      `SELECT c.id, (SELECT count(*)::int FROM app.messages m WHERE m.channel_id = c.id) AS n
+         FROM app.channels c JOIN app.channel_members cm ON cm.channel_id = c.id AND cm.person_id = $1
+        WHERE c.kind = 'dm' AND c.id = ANY($2::uuid[]) ORDER BY c.id`,
+      [personas.omar.personId, Object.values(SEED_POLISH.dms)],
+    );
+    expect(rows.map((r) => r.n)).toEqual([3, 2]);
+  });
 });

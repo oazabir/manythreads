@@ -11,7 +11,7 @@ import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
 let stack: Stack;
 test.skip(({ isMobile }) => isMobile, 'the spec sets its own viewports');
 test.beforeAll(async () => {
-  stack = await startStack({ MANYTHREADS_STACK_SEED: 'content' });
+  stack = await startStack({ MANYTHREADS_STACK_SEED: 'content', MANYTHREADS_CLOCK: 'fixed' });
 });
 test.afterAll(async () => {
   await stack?.stop();

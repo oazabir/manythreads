@@ -92,7 +92,8 @@ test('notifications: the bell open over a channel, with the sender and the quote
   await plate(browser, stack, 'notifications', {
     who: 'rafi',
     go: async (page) => {
-      await page.goto('/t/engineering/threads');
+      // the Followed tab opens (and reads) its first thread on a wide screen; the bell plate sits over the Unread tab, which the person chooses from
+      await page.goto('/t/engineering/threads?tab=unread');
       await expect(page.getByTestId('bell')).toBeVisible();
       await page.getByTestId('bell').click();
       await expect(page.getByTestId('notifications-popover')).toBeVisible();
