@@ -74,4 +74,21 @@ describe('a person\'s knowledge bases', () => {
     // the events carry ids and counts, never a name or a text
     expect(JSON.stringify(await events('knowledge.personal_base.changed'))).not.toMatch(/notes|Tax|binder/);
   });
+
+  it('refuses the eleventh base with a plain client error, keeps the ten, and makes room when one is deleted', async () => {
+    for (let n = 1; n <= 10; n += 1) {
+      const made = await world.call(omar, 'POST', '/api/me/knowledge', { slug: `cap-${n}`, name: `Cap ${n}` });
+      expect(made.status, `base ${n}: ${JSON.stringify(made.body)}`).toBe(201);
+    }
+    const eleventh = await world.call<{ error?: { message?: string } }>(omar, 'POST', '/api/me/knowledge', { slug: 'cap-11', name: 'Cap 11' });
+    expect(eleventh.status).toBeGreaterThanOrEqual(400);
+    expect(eleventh.status).toBeLessThan(500);
+    const list = (await world.call<{ bases: Array<{ slug: string }> }>(omar, 'GET', '/api/me/knowledge')).body.bases.map((b) => b.slug);
+    expect(list).toHaveLength(10);
+    expect(list).not.toContain('cap-11');
+    // the cap is per person: Rafi still makes his own
+    expect((await world.call(rafi, 'POST', '/api/me/knowledge', { slug: 'cap-1', name: 'Rafi cap' })).status).toBe(201);
+    expect((await world.call(omar, 'DELETE', '/api/me/knowledge/cap-10')).status).toBeLessThan(300);
+    expect((await world.call(omar, 'POST', '/api/me/knowledge', { slug: 'cap-11', name: 'Cap 11' })).status).toBe(201);
+  });
 });
