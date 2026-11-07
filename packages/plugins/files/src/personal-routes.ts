@@ -36,13 +36,14 @@ import { decodeHeaderName, numberedName, sanitizeFileName } from './names.ts';
 import { ensureFolder, isSeedFolder, listTree, lockAllowance, nameTaken, personalUsage, requireMember, requireOwnFile, seedFolders, type Member } from './personal.ts';
 import { PERSONAL_FILE_COLUMNS, dbFolder, toPersonalFile, type PersonalFileRow } from './rows.ts';
 import { fileContentResponse, maxUploadBytes, storageOf, takeUploadSlot, tapped, type ReadableLike } from './routes.ts';
+import { sizeInWords } from './units.ts';
 
 // The caller's own Personal files: /api/me/files/*. Every route starts with `requireMember` (a guest has no Personal space) and reads or writes
 // through row level security, which is the real rule; the checks here only give the answers a screen needs (409, 413, plain sentences).
 
 const space = (personId: string) => spaceRefOf({ kind: 'person', personId: personId as PersonId });
 const outOfSpace = (usage: PersonalFilesUsage): HttpError =>
-  tooLarge(`That would take you over your ${Math.round(usage.quotaBytes / 1024 ** 3)} GB of Personal space. Delete something or an older version first.`);
+  tooLarge(`That would take you over your ${sizeInWords(usage.quotaBytes)} of Personal space. Delete something or an older version first.`);
 
 type VersionRow = { id: string; file_id: string; blob_key: string; size: string | number; mime: string; sha256: string; author_actor_id: string | null; stored_at: Date };
 

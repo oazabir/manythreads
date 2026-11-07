@@ -39,7 +39,7 @@ test('under the allowance the text says how much is used; a file that does not f
     // 600 more do not fit: the upload row says why, the list and the allowance stay as they were
     await page.getByTestId('upload-input').setInputFiles({ name: 'b.txt', mimeType: 'text/plain', buffer: bytes(600, 'b') });
     const failed = page.getByTestId('upload-list').getByRole('alert');
-    await expect(failed).toContainText(/That would take you over your \d+ GB of Personal space\. Delete something or an older version first\./);
+    await expect(failed).toContainText('That would take you over your 1000 bytes of Personal space. Delete something or an older version first.');
     await expect(rowAt(page, 'Notes/b.txt')).toHaveCount(0);
     await expect(page.getByTestId('quota-text')).toHaveText('600 B of 1000 B used');
     expect(await usageOf(api)).toMatchObject({ usedBytes: 600, fileCount: 1 });
