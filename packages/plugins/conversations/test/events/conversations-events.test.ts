@@ -75,12 +75,14 @@ describe('conversations events', () => {
     expect([...plugin.manifest.events.emits].sort()).toEqual([
       'answer.answer.shared',
       'channel.channel.created',
+      'conversations.conversation.moved',
       'conversations.conversation.renamed',
       'conversations.conversation.started',
       'conversations.feedback.given',
       'conversations.turn.regenerated',
     ]);
-    expect([...plugin.manifest.events.consumes]).toEqual(['channel.message.posted']);
+    // (P20-07) the two team events move a person's Brain conversation to their current team when they leave the one it was made in
+    expect([...plugin.manifest.events.consumes]).toEqual(['channel.message.posted', 'team.member.removed', 'team.member.added']);
   });
 
   it('one started event per conversation, parsing against its schema, with the ids and no text and no team', async () => {

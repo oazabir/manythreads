@@ -25,6 +25,17 @@ run that answers is opened for a person of the team; `ctx.runs.open` refuses any
 bot. The channel keeps the bot's team on `team_id`, so a person who leaves the team stops reading their conversations (channels 0004's rule) and
 the router finds the bot's team from the channel.
 
+**The workspace Brain follows the person** (migration `0005`, P20-07). A conversation with the workspace Brain is made in the person's oldest team of that
+moment, and a channel's team does not change on its own. When the person leaves that team, `src/rehome.ts` (a subscriber to `team.member.removed` and
+`team.member.added`, and a sweep job `conversations.rehome-sweep` every ten minutes for a notice that never came) calls `app.conversations_rehome(person)` in
+the system transaction. That function (callable by the real system role only, because the channels guard refuses a team change from any other connection) moves
+the channel to the person's oldest non-archived team, together with the conversation index rows, the files uploaded into the channel and the person's scheduled
+messages in it. Messages, threads, ids and the single member are untouched, so every thread reads as before; the runs already made keep the team they ran in. A
+conversation that had been shared with the old team becomes private again (its copy stays in the old team's channel). A person with no team left keeps the
+channel exactly as it was: no one else can read it, nothing is deleted, retention owns it, and `app.conversations_open` answers "join a team first" instead of
+returning a channel they cannot use; the first team they join later brings the conversation back. Between the leaving and the move (a few seconds) `open` answers
+409 "your conversation is moving to your current team; try again in a moment". Each move emits `conversations.conversation.moved`, once.
+
 What the **bot** may do in it is channels migration `0006` ([channels.md](./channels.md#bot-conversations-migration-0006_bot_conversationssql-plan-p5-16)):
 read and post in the one conversation channel its own live run answers in, and nowhere else.
 
@@ -120,6 +131,7 @@ New tables: `app.conversation_variants` (person own, system writes) and `app.con
 | Type | Payload | When |
 |---|---|---|
 | `conversations.conversation.started` (v1) | `workspaceId, botId, personId, channelId, threadRootId` | once per conversation, when its root is indexed. Ids only, never text. **No `teamId`**: the stored `team_id` is what `events_select` lets every member of the team read, so a team-scoped event would tell a teammate that, and when, somebody talked to a bot in private. Without it the row is workspace-scoped (`team_id` null), as a DM's events are: only a workspace admin's policy reaches it. |
+| `conversations.conversation.moved` (v1) | `workspaceId, botId, personId, channelId, fromTeamId, toTeamId` | a person's conversation with the workspace Brain moved to another team because they left the first one. Ids only. **No `teamId`** (the two teams are `fromTeamId` and `toTeamId`), so the row stays workspace-scoped like `started`. |
 | `conversations.conversation.renamed` (v1) | `workspaceId, botId, personId, channelId, threadRootId, source: auto\|manual` | a title was set. Ids only, never the title; no `teamId`. |
 | `conversations.feedback.given` (v1) | `workspaceId, botId, personId, channelId, messageId, vote: up\|down\|none` | a thumb was given, changed or taken back. The reason is never in the event. |
 | `conversations.turn.regenerated` (v1) | `workspaceId, botId, personId, channelId, threadRootId, turnMessageId, modelAlias` | Regenerate: the Hermes runtime starts a run for that message. |
@@ -184,13 +196,13 @@ thread shows "<bot> is working on it…" for three minutes after the person's me
 
 ## Manifest
 
-`conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit', 'job.register']`, emits `conversations.conversation.started`, `conversations.conversation.renamed`, `conversations.feedback.given`, `conversations.turn.regenerated`,
-`channel.channel.created` and `answer.answer.shared`, consumes `channel.message.posted`, `dependsOn: ['channels', 'bots', 'answer']`, migrations
-`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared` and the trigger that clears the mark with the copy, `0003` the Chat screen: title, pin, soft delete, model, variants, feedback).
+`conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit', 'job.register']`, emits `conversations.conversation.started`, `conversations.conversation.renamed`, `conversations.conversation.moved`, `conversations.feedback.given`, `conversations.turn.regenerated`,
+`channel.channel.created` and `answer.answer.shared`, consumes `channel.message.posted`, `team.member.removed` and `team.member.added`, `dependsOn: ['channels', 'bots', 'answer']`, migrations
+`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared` and the trigger that clears the mark with the copy, `0003` the Chat screen: title, pin, soft delete, model, variants, feedback, `0004` the workspace Brain's conversation, `0005` `app.conversations_rehome` and the stranded-conversation answer of `conversations_open`).
 
 ## Tests
 
-`test/rls/conversations.test.ts` (`pnpm test:rls`: the door and its refusals, one channel per bot and person, the admin reads nothing, what a bot
+`test/rls/rehome.test.ts` and `test/rehome.test.ts` (the move when a person leaves the team: RLS and the real routes, nobody else gains access, no team left, the sweep, the event), `test/rls/conversations.test.ts` (`pnpm test:rls`: the door and its refusals, one channel per bot and person, the admin reads nothing, what a bot
 sees in a run, the index policies and constraints), `test/conversation.test.ts` (the whole path through the real server with a stand-in Hermes:
 open, send, the run's trigger and asker, the reply, the three lists, privacy, paging), `test/events/conversations-events.test.ts`
 (`pnpm test:events`: no `team_id` on either event), `packages/plugins/runtime-hermes/test/router.test.ts` (the trigger rule), `packages/plugins/memory/test/feed.test.ts`
