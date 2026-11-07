@@ -18,7 +18,7 @@ let stack: Stack;
 let rootId = '';
 
 test.beforeAll(async ({ playwright }) => {
-  ({ stack } = await startChatStack(playwright));
+  ({ stack } = await startChatStack());
   const nadia = await apiOn(playwright, stack, 'nadia');
   try {
     // one chat with two answers (the second is the chosen one) and a thumb, pinned; one plain chat beside it

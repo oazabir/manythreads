@@ -67,7 +67,7 @@ for (const [suffix, viewport, mobile] of [
     const { page, close } = await openPage(browser, stack, 'nadia', viewport, mobile);
     try {
       await page.goto('/account/action-items');
-      await page.getByTestId('action-items-done-group').locator('summary').click();
+      await page.getByTestId('action-items-done-group').locator(':scope > summary').click();
       await expect(page.getByTestId('action-items-done').getByTestId('action-item')).toHaveCount(1);
       await page.getByTestId('action-items-done').scrollIntoViewIfNeeded();
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

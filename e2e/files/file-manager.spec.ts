@@ -28,7 +28,7 @@ test.afterAll(async () => {
 const NOTES = ['Notes/alpha.md', 'Notes/beta.csv', 'Notes/gamma.txt'] as const;
 const header = (page: Page, name: 'name' | 'size' | 'modified') => page.getByTestId(`sort-${name}`).locator('xpath=ancestor::*[@role="columnheader"]');
 
-test('sorting: a click sorts, a second click turns it round, folders stay first, and the choice is kept for the next visit', async ({ browser, playwright }) => {
+test('sorting: a click sorts, a second click turns it round, folders stay first, and the choice is kept for the next visit', async ({ browser, playwright, isMobile }) => {
   const { page, close } = await openPersonal(browser, playwright, stack, 'nadia', '?path=Notes');
   try {
     await expect(page.getByTestId('file-row')).toHaveCount(3);
@@ -49,9 +49,13 @@ test('sorting: a click sorts, a second click turns it round, folders stay first,
     await expect(header(page, 'size')).toHaveAttribute('aria-sort', 'descending');
     await expect.poll(() => rowPaths(page)).toEqual(['Notes/gamma.txt', 'Notes/beta.csv', 'Notes/alpha.md']);
 
-    // the same choice from the selector the phone uses
+    // the same choice from the selector the phone uses (the column headers do the work on a desktop list, and the selector is not drawn there)
     await expect(page.getByTestId('sort-select')).toHaveValue('size:desc');
-    await page.getByTestId('sort-select').selectOption('name:asc');
+    if (isMobile) await page.getByTestId('sort-select').selectOption('name:asc');
+    else {
+      await expect(page.getByTestId('sort-select')).toBeHidden();
+      await page.getByTestId('sort-name').click();
+    }
     await expect.poll(() => rowPaths(page)).toEqual([...NOTES]);
 
     // the top level holds only the seven folders: they are all listed, sorted by size too

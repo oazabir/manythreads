@@ -103,6 +103,9 @@ test('/ask picks a bot from the menu and posts a message that mentions it; a wro
     await input.pressSequentially('/ask ');
     const list = menu(page);
     await expect(list).toBeVisible();
+    // the team's own bot and the workspace Brain, which sits in every team; typing narrows to the one asked
+    await expect(list.getByRole('option')).toHaveCount(2);
+    await input.pressSequentially('cod');
     await expect(list.getByRole('option')).toHaveCount(1);
     await expect(list.getByRole('option').first()).toContainText('coder');
     await page.keyboard.press('Enter');
@@ -117,7 +120,7 @@ test('/ask picks a bot from the menu and posts a message that mentions it; a wro
     // a bot the team does not have: one plain sentence, the text stays, nothing is posted
     await input.pressSequentially('/ask nobody hello there');
     await page.keyboard.press('Enter');
-    await expect(page.getByTestId('slash-notice')).toContainText('There is no bot called “nobody” in this team. Bots here: coder.');
+    await expect(page.getByTestId('slash-notice')).toContainText(/There is no bot called “nobody” in this team\. Bots here: (brain, coder|coder, brain)\./);
     await expect(input).toHaveValue('/ask nobody hello there');
     expect(await bodies(dev)).not.toContain('@nobody hello there');
 

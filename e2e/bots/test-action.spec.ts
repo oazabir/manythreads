@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { addBot, answerStackEnv, answeringBrainMd } from '../conversations/support.ts';
+import { answerStackEnv, answeringBrainMd, useWorkspaceBrain } from '../conversations/support.ts';
 import { PHONE, apiOn, channelsOf, noSidewaysScroll } from '../support/stack-browser.ts';
 import { openBot } from './support.ts';
 
@@ -22,7 +22,7 @@ test.beforeAll(async ({ playwright }) => {
   const omar = await apiOn(playwright, stack, 'omar');
   try {
     // Brain may read, post, write pages and finish with an Answer: everything the stand-in tries is something it is allowed to do on a normal run
-    await addBot(stack, omar, 'brain', answeringBrainMd().replace('answer.post]', 'answer.post, pages.write]'));
+    await useWorkspaceBrain(stack, answeringBrainMd().replace('answer.post]', 'answer.post, pages.write]'));
     dev = (await channelsOf(omar))['dev']!;
   } finally {
     await omar.ctx.dispose();
@@ -33,6 +33,7 @@ test.afterAll(async () => {
 });
 
 test('a lead presses Test, asks one question, reads the answer, and every write the bot tried is listed as not done', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(150_000); // the answer is waited for up to 90 s
   const { page, close } = await openBot(browser, playwright, stack, 'omar', 'brain', '', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     await page.getByTestId('bot-more').click();
@@ -69,7 +70,8 @@ test('a lead presses Test, asks one question, reads the answer, and every write 
 
     // the question stays in the lead's own conversation, which the link opens
     await page.getByTestId('test-open-conversation').click();
-    await expect(page).toHaveURL(/\/t\/engineering\/bots\/brain\/chat/);
+    // Brain's conversations live in Chat: the old address lands there
+    await expect(page).toHaveURL(/\/t\/engineering\/chat\?bot=brain/);
   } finally {
     await close();
   }

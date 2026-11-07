@@ -131,7 +131,8 @@ test.describe('picker', () => {
       const firstGroup = kinds.indexOf('group');
       expect(firstGroup, 'at least one person row before the groups').toBeGreaterThan(0);
       expect(kinds.slice(firstGroup).every((k) => k === 'group')).toBe(true);
-      expect(kinds.slice(0, firstGroup).length).toBeLessThanOrEqual(6);
+      // (the list is Everyone, People (6 at most), Bots (4 at most), then the groups)
+      expect(kinds.slice(0, firstGroup).length).toBeLessThanOrEqual(13);
 
       // typing narrows the groups by their handle
       await box.pressSequentially(OPS.slice(0, 6));

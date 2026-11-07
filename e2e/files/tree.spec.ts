@@ -55,7 +55,7 @@ test('one tree over the repo and the attachments of #dev', async ({ browser, pla
     await expect(gitRow).toHaveAttribute('data-kind', 'file');
     await expect(gitRow).toHaveAttribute('data-store', 'git');
     const cells = await gitRow.getByRole('cell').count();
-    expect(cells).toBe(7);
+    expect(cells).toBe(8); // check, icon, name, where, by, when, size, actions
     await tree(page, 'channels/dev').click();
     const attRow = row(page, 'channels/dev/latency-before-after.png');
     await expect(attRow.getByRole('cell')).toHaveCount(cells);
@@ -75,12 +75,12 @@ test('the list opens a folder and a file; the breadcrumb walks back', async ({ b
     await row(page, 'pages/reports').click();
     await expect(page).toHaveURL(/path=pages%2Freports/);
     await expect(row(page, 'pages/reports/signups.csv')).toBeVisible();
-    // a file row opens its preview in the right panel, and the row is the selected one
+    // a file row opens its preview in the right panel, and the row is the open one (aria-current; aria-selected is the tick box)
     await row(page, 'pages/reports/signups.csv').click();
     const panel = page.locator('[data-landmark="right-panel"]');
     await expect(panel.getByTestId('panel-title')).toHaveText('signups.csv');
     await expect(panel.getByTestId('viewer-csv')).toBeVisible();
-    await expect(row(page, 'pages/reports/signups.csv')).toHaveAttribute('aria-selected', 'true');
+    await expect(row(page, 'pages/reports/signups.csv')).toHaveAttribute('aria-current', 'true');
     // the breadcrumb goes back up
     await page.getByTestId('breadcrumb').getByRole('button', { name: 'Pages', exact: true }).click();
     await expect(page).toHaveURL(/path=pages(&|$)/);

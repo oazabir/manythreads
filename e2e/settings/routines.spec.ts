@@ -216,6 +216,7 @@ test('pause, turn on, run now and delete (after a confirm)', async ({ browser, p
 
 test('a routine the platform stopped shows why, says so once in Reminders, and turns back on only when the reason is gone', async ({ browser, playwright, isMobile }) => {
   test.skip(isMobile, 'the stop is made by the scheduler; the row is the same on a phone as on the desktop (the visual spec has its plate)');
+  test.setTimeout(150_000); // five ticks (each a job and the job that tells owners, picked up within the worker's 5 s poll) and a reload
   const nadia = await apiOn(playwright, stack, 'nadia');
   const made = await makeRoutine(nadia, 'Watcher', { botSlug: 'keeper', prompt: 'Write me a short note.' });
   const { page, context } = await open(browser, playwright, false, 'nadia');

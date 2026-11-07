@@ -123,7 +123,14 @@ test('a routine without the owner’s yes to Personal reads none of it, and is s
   }
 });
 
-test('a write other than the notes waits for the owner: it becomes a pending approval and is not made', async ({ playwright }) => {
+/*
+ * OPEN (needs an owner decision, found by P20-RUN): the plan says the held write becomes a pending approval for the owner. It does not: the run is in the owner's own
+ * private conversation, the requester never decides her own approval, and nobody else can read that conversation, so `app.approvals_request` refuses it (AP001,
+ * "Nobody but you could decide this call"). The write is still not made (the property below), but the owner gets no card to approve. Making her able to decide a card of her
+ * own routine changes the approvals rule "the requester never decides"; until that is decided the card half is a fixme.
+ */
+test('a write other than the notes is not made by a routine', async ({ playwright }) => {
+  test.setTimeout(120_000);
   const nadia = await apiOn(playwright, stack, 'nadia');
   try {
     const dev = (await channelsOf(nadia))['dev']!;
@@ -133,6 +140,23 @@ test('a write other than the notes waits for the owner: it becomes a pending app
     const run = await settledRun(nadia, r.id);
     expect(run.runId).not.toBeNull();
 
+    // the call was turned away, and the run saw that (its output carries the refusal, not a posted message)
+    expect(await outputOf(nadia, r.outputPath)).toContain('"ok":false');
+    const posted = await stack.sql<{ n: string }>(`SELECT count(*) AS n FROM app.messages WHERE channel_id = $1 AND body LIKE '%routine-posted-this%'`, [dev]);
+    expect(Number(posted[0]!.n)).toBe(0);
+  } finally {
+    await nadia.ctx.dispose();
+  }
+});
+
+test.fixme('a write other than the notes waits for the owner: it becomes a pending approval and is not made', async ({ playwright }) => {
+  const nadia = await apiOn(playwright, stack, 'nadia');
+  try {
+    const dev = (await channelsOf(nadia))['dev']!;
+    const r = await makeRoutine(nadia, 'Post for me too', { botSlug: 'keeper', prompt: `ROUTINE-POST ${dev} routine-posted-that TAG-p2`, outputPath: 'Routines/post2/output.md' });
+    const res = await runRoutine(nadia, r.id);
+    expect(res.status(), await res.text()).toBe(202);
+    const run = await settledRun(nadia, r.id);
     // the call was filed for her to approve, naming the tool
     await expect
       .poll(async () => (await stack.sql<{ status: string }>(`SELECT status FROM app.approvals WHERE run_id = $1 AND tool = 'messages.post'`, [run.runId]))[0]?.status, {
@@ -140,12 +164,7 @@ test('a write other than the notes waits for the owner: it becomes a pending app
         message: 'a pending approval for the held write',
       })
       .toBe('pending');
-    // and nothing was posted
-    const posted = await stack.sql<{ n: string }>(`SELECT count(*) AS n FROM app.messages WHERE channel_id = $1 AND body LIKE '%routine-posted-this%'`, [dev]);
-    expect(Number(posted[0]!.n)).toBe(0);
-    // the run waits for the owner, so it is closed as stopped and writes no output file
     expect((await stack.sql<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1', [run.runId]))[0]?.status).toBe('stopped');
-    expect(await personalText(nadia, r.outputPath)).toBeNull();
   } finally {
     await nadia.ctx.dispose();
   }

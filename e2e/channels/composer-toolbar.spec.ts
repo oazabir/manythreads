@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { addBot, brainMd, conversationStackEnv } from '../conversations/support.ts';
+import { conversationStackEnv, useWorkspaceBrain } from '../conversations/support.ts';
 import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, type StackApi } from '../support/stack-browser.ts';
 
 /*
@@ -21,7 +21,7 @@ test.beforeAll(async ({ playwright }) => {
   stack = await startStack(conversationStackEnv());
   omar = await apiOn(playwright, stack, 'omar');
   channels = await channelsOf(omar);
-  await addBot(stack, omar, 'brain', brainMd(['What is blocking the release?']));
+  await useWorkspaceBrain(stack);
   // Lena is a guest with a read grant on #releases (seed); this spec gives her the right to post there, which is what puts a message box in front of her
   await stack.sql(
     `UPDATE app.acl_entries SET permission = 'post'
@@ -134,14 +134,15 @@ test('":" and two letters offers emoji; a time or an address does not', async ({
     await expect(box).toHaveValue('so happy :smi');
 
     // Enter takes the first one: the colon word becomes the character
-    await box.fill('so happy :smi');
+    // (a word that starts somewhere else: Escape closes the list for that word, however its letters change, and it opens again for another one)
+    await box.fill('so very happy :smil');
     await expect(list).toBeVisible();
     const first = await list.getByRole('option').first().getAttribute('data-emoji');
     await box.press('Enter');
-    await expect(box).toHaveValue(new RegExp(`^so happy ${first ?? ''}`));
+    await expect(box).toHaveValue(new RegExp(`^so very happy ${first ?? ''}`));
     await expect(box).not.toHaveValue(/:smi/);
     // and nothing was sent by that Enter
-    await expect(page.locator('[data-testid="message"]').filter({ hasText: 'so happy' })).toHaveCount(0);
+    await expect(page.locator('[data-testid="message"]').filter({ hasText: 'so very happy' })).toHaveCount(0);
   } finally {
     await context.close();
   }

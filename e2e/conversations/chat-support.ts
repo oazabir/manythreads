@@ -2,9 +2,9 @@ import { fileURLToPath } from 'node:url';
 import { expect, type Browser, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
 import { startStack } from '../fixtures/stack.ts';
-import { PHONE, apiOn, openOn, type StackApi } from '../support/stack-browser.ts';
+import { PHONE, openOn, type StackApi } from '../support/stack-browser.ts';
 import type { PersonaKey } from '../support/env.ts';
-import { addBot, brainMd, conversationStackEnv } from './support.ts';
+import { brainMd, conversationStackEnv, useWorkspaceBrain } from './support.ts';
 
 /*
  * Helpers of the Chat screen specs (PLAN P20-16, P20-T4): /t/:team/chat?bot=<slug>&c=<threadRootId>. The stack is the one of the conversation specs
@@ -24,18 +24,13 @@ export const chatStackEnv = (): Record<string, string> => ({ ...conversationStac
 /** Brain with three models on its menu (the first is the default). */
 export const chatBrainMd = (): string => brainMd(CHAT_PROMPTS).replace('aliases: [smart]', 'aliases: [smart, fast, code]');
 
-/** A stack with the chat stand-in, Brain added (slug `brain`) and Smart and Fast bound to a model; Code is left unbound on purpose. */
-export async function startChatStack(playwright: PlaywrightWorkerArgs['playwright']): Promise<{ stack: Stack; botId: string }> {
+/** A stack with the chat stand-in, the workspace Brain given the spec's definition (slug `brain`) and Smart and Fast bound to a model; Code is left unbound on purpose. */
+export async function startChatStack(): Promise<{ stack: Stack; botId: string }> {
   const stack = await startStack(chatStackEnv());
-  const omar = await apiOn(playwright, stack, 'omar');
-  try {
-    const { botId } = await addBot(stack, omar, 'brain', chatBrainMd());
-    await stack.sql(`INSERT INTO app.llm_aliases (workspace_id, alias, model) SELECT id, a, 'test-model' FROM app.workspaces, unnest(ARRAY['smart', 'fast']) AS a ON CONFLICT DO NOTHING`);
-    await stack.sql(`DELETE FROM app.llm_aliases WHERE alias = 'code'`);
-    return { stack, botId };
-  } finally {
-    await omar.ctx.dispose();
-  }
+  const { botId } = await useWorkspaceBrain(stack, chatBrainMd());
+  await stack.sql(`INSERT INTO app.llm_aliases (workspace_id, alias, model) SELECT id, a, 'test-model' FROM app.workspaces, unnest(ARRAY['smart', 'fast']) AS a ON CONFLICT DO NOTHING`);
+  await stack.sql(`DELETE FROM app.llm_aliases WHERE alias = 'code'`);
+  return { stack, botId };
 }
 
 export async function openChatScreen(

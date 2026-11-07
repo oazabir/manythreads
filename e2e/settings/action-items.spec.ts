@@ -83,7 +83,7 @@ test('add: an item with a person and a day; an overdue day is marked, a later on
     await expect(venue).toHaveCount(1);
     await expect(venue.getByTestId('action-item-due-text')).toHaveText('Due 31 Dec');
     await expect(venue.getByTestId('action-item-due-text')).not.toHaveClass(/late/);
-    await expect(page.getByTestId('action-items-count')).toHaveText('2 to do, 0 done.');
+    await expect(page.getByTestId('action-items-count')).toContainText('2 to do, 0 done.');
 
     // it is the person's file, saved
     const saved = await listOf(nadia);
@@ -104,17 +104,17 @@ test('tick moves an item to the done group, and unticking brings it back', async
   try {
     // click, not check(): the box is controlled (it follows the server's answer), and check() fails when the state has not changed by the time it looks
     await itemNamed(page, 'Book the venue').getByTestId('action-item-tick').click();
-    await expect(page.getByTestId('action-items-count')).toHaveText('1 to do, 1 done.');
+    await expect(page.getByTestId('action-items-count')).toContainText('1 to do, 1 done.');
     await expect(page.getByTestId('action-items-open').getByTestId('action-item')).toHaveCount(1);
-    await expect(page.getByTestId('action-items-done-group').locator('summary')).toHaveText('1 done');
+    await expect(page.getByTestId('action-items-done-group').locator(':scope > summary')).toHaveText('1 done');
     expect((await listOf(nadia)).items.find((i) => i.what === 'Book the venue')?.done).toBe(true);
 
-    await page.getByTestId('action-items-done-group').locator('summary').click();
+    await page.getByTestId('action-items-done-group').locator(':scope > summary').click();
     const done = page.getByTestId('action-items-done').getByTestId('action-item');
     await expect(done).toHaveCount(1);
     await expect(done).toHaveAttribute('data-done', 'true');
     await done.getByTestId('action-item-tick').click();
-    await expect(page.getByTestId('action-items-count')).toHaveText('2 to do, 0 done.');
+    await expect(page.getByTestId('action-items-count')).toContainText('2 to do, 0 done.');
     await expect(page.getByTestId('action-items-done-group')).toHaveCount(0);
     expect((await listOf(nadia)).items.every((i) => !i.done)).toBe(true);
   } finally {

@@ -27,11 +27,13 @@ test.describe('Nadia, a member', () => {
     const sidebar = page.locator('[data-landmark="sidebar"]');
     await expect(sidebar).toBeVisible();
     // the rows arrive once the team list has loaded
-    await expect.poll(() => sidebarRows(page)).toEqual(['Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
+    await expect.poll(() => sidebarRows(page)).toEqual(['Chat', 'Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
     await expect(sidebar).not.toContainText('No files yet');
     // Files and Boards are built screens: their sidebar rows carry no "nothing here" subtitle.
     await expect(sidebar).not.toContainText('No boards yet');
-    await expect(sidebar).toContainText('No bots yet');
+    // the workspace Brain sits in every team, so the Bots section is never empty
+    await expect(sidebar).not.toContainText('No bots yet');
+    await expect(sidebar.getByTestId('sidebar-bot')).toHaveText(['Brain']);
     await expect(sidebar).not.toContainText(/phase|later/i);
     // search placeholder names the team; the person is named at the bottom
     await expect(page.locator('[data-landmark="search"] input')).toHaveAttribute('placeholder', 'Search Engineering');

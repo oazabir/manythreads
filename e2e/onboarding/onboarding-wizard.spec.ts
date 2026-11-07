@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { startFakeLlm, type FakeLlm } from '../../tools/fake-llm/src/server.ts';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { addBot, brainMd, conversationStackEnv } from '../conversations/support.ts';
+import { conversationStackEnv } from '../conversations/support.ts';
 import { PHONE, apiOn, noSidewaysScroll, openOn } from '../support/stack-browser.ts';
 
 /*
@@ -45,11 +45,12 @@ test('a fresh install walks to the first answer from Brain; the card counts the 
     await expect(page.getByRole('heading', { name: 'Finish setting up', exact: true })).toBeVisible();
     await expect(step(page, 'bootstrap')).toHaveAttribute('data-done', 'true');
     await expect(step(page, 'teams')).toHaveAttribute('data-done', 'true');
-    for (const id of ['signin', 'models', 'bots', 'launch']) await expect(step(page, id)).toHaveAttribute('data-done', 'false');
-    await expect(count(page)).toHaveText(/^2 of 9/);
-    await expect(step(page, 'launch').locator('textarea')).toHaveCount(0); // no Brain yet: nothing to ask
+    for (const id of ['signin', 'models', 'launch']) await expect(step(page, id)).toHaveAttribute('data-done', 'false');
+    // the one Brain is made with the server and sits in every team, so "Brain on the team" is true from the start
+    await expect(step(page, 'bots')).toHaveAttribute('data-done', 'true');
+    await expect(count(page)).toHaveText(/^3 of 9/);
     // finished steps are one line each, the current one is open, and the bar stays at the top while the steps scroll
-    for (const id of ['bootstrap', 'teams']) {
+    for (const id of ['bootstrap', 'teams', 'bots']) {
       await expect(step(page, id)).toHaveAttribute('data-open', 'false');
       await expect(step(page, id).locator('.ob-body')).toHaveCount(0);
     }
@@ -67,10 +68,10 @@ test('a fresh install walks to the first answer from Brain; the card counts the 
     if (!isMobile) {
       // the card sits in the team sidebar and counts the same steps
       await page.goto('/t/engineering/threads');
-      await expect(page.getByTestId('setup-card-count')).toHaveText('2 of 9');
+      await expect(page.getByTestId('setup-card-count')).toHaveText('3 of 9');
       await expect(page.locator('[data-landmark="setup-checklist"]')).toContainText('Next: Sign-in methods');
       await page.goto('/onboarding');
-      await expect(count(page)).toHaveText(/^2 of 9/);
+      await expect(count(page)).toHaveText(/^3 of 9/);
     }
 
     // ---- the server refuses to put the checklist away before the first goal
@@ -80,7 +81,7 @@ test('a fresh install walks to the first answer from Brain; the card counts the 
     // ---- step 1: a password-only workspace can say so (a decision, recorded) and take it back
     await step(page, 'signin').getByRole('button', { name: 'Passwords only is what we want', exact: true }).click();
     await expect(step(page, 'signin')).toHaveAttribute('data-done', 'true');
-    await expect(count(page)).toHaveText(/^3 of 9/);
+    await expect(count(page)).toHaveText(/^4 of 9/);
     await step(page, 'signin').getByRole('button', { name: 'Undo, I will add single sign-on', exact: true }).click();
     await expect(step(page, 'signin')).toHaveAttribute('data-done', 'false');
     await step(page, 'signin').getByRole('button', { name: 'Passwords only is what we want', exact: true }).click();
@@ -116,11 +117,9 @@ test('a fresh install walks to the first answer from Brain; the card counts the 
     await expect(smart.locator('[data-test-state]')).toHaveAttribute('data-test-state', 'ok');
     await expect(step(page, 'models')).toHaveAttribute('data-done', 'true');
     expect(fake.state.calls.filter((c) => c.path === '/chat/completions').length).toBeGreaterThan(callsBefore);
-    await expect(count(page)).toHaveText(/^4 of 9/);
+    await expect(count(page)).toHaveText(/^5 of 9/);
 
-    // ---- step 6: Brain on the team (added the way a lead adds it: through the team's repo)
-    await addBot(stack, omarApi, 'brain', brainMd(['What is blocking the release?']));
-    await step(page, 'bots').getByRole('button', { name: 'Check again', exact: true }).click();
+    // ---- step 6: Brain on the team (nothing to add: it is the workspace's own)
     await expect(step(page, 'bots')).toHaveAttribute('data-done', 'true');
     await expect(count(page)).toHaveText(/^5 of 9/);
 
@@ -137,7 +136,7 @@ test('a fresh install walks to the first answer from Brain; the card counts the 
     await expect(box).toBeVisible();
     await box.fill(goal);
     await step(page, 'launch').getByRole('button', { name: 'Ask Brain', exact: true }).click();
-    await expect(page).toHaveURL(/\/t\/engineering\/bots\/brain\/chat\?thread=[0-9a-f-]{36}/, { timeout: 30_000 });
+    await expect(page).toHaveURL(/\/t\/[a-z-]+\/chat\?bot=brain&c=[0-9a-f-]{36}/, { timeout: 30_000 });
     await expect(page.getByText(goal).first()).toBeVisible({ timeout: 30_000 });
     const state = (await (await omarApi.ctx.get('/api/workspace/onboarding')).json()) as { state: { launch: { channelId: string } | null; dismissedAt: string | null } };
     expect(state.state.launch).not.toBeNull();

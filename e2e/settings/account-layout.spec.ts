@@ -25,7 +25,9 @@ test('the account row opens Profile in the settings layout', async ({ browser, p
     await expect(page).toHaveURL(/\/account\/profile$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
     const nav = page.getByRole('navigation', { name: 'Settings' });
-    for (const label of ['Profile', 'Notifications', 'Connections', 'Security', 'Bots and Personal', 'Routines', 'Action items']) await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
+    // (the team's own settings group has a Connections link too: the account group is the one read here)
+    const account = nav.getByLabel('Account', { exact: true });
+    for (const label of ['Profile', 'Notifications', 'Connections', 'Security', 'Bots and Personal', 'Routines', 'Action items']) await expect(account.getByRole('link', { name: label, exact: true })).toBeVisible();
     // the page you are on is the one marked current (a screen reader hears "current page")
     await expect(nav.getByRole('link', { name: 'Profile', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(nav.getByRole('link', { name: 'Security', exact: true })).not.toHaveAttribute('aria-current', 'page');

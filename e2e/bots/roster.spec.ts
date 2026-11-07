@@ -58,9 +58,12 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     // empty-state hint is gone because the team has one
     const sidebar = page.locator('[data-landmark="sidebar"]');
     const bots = sidebar.getByTestId('sidebar-bot');
-    await expect(bots).toHaveCount(1, { timeout: 15_000 });
-    await expect(bots.first()).toContainText('Coder');
-    await expect(bots.first()).toHaveAttribute('href', '/t/engineering/bots/coder');
+    // the team's own bot and the workspace Brain, which sits in every team
+    await expect(bots).toHaveCount(2, { timeout: 15_000 });
+    const coderRow = bots.filter({ hasText: 'Coder' });
+    await expect(coderRow).toHaveCount(1);
+    await expect(coderRow).toHaveAttribute('href', '/t/engineering/bots/coder');
+    await expect(bots.filter({ hasText: 'Brain' })).toHaveCount(1);
     await expect(sidebar.locator(':scope > .sec-row', { hasText: 'Bots' })).not.toContainText('No bots yet');
     await sidebar.getByRole('link', { name: /Bots/ }).first().click();
     await expect(page).toHaveURL(/\/t\/engineering\/bots$/);
@@ -68,7 +71,7 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     // the loader made the row from the seed's own commit
     const coder = rosterRow(page, 'coder');
     await expect(coder).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('roster-count')).toContainText('1 bot');
+    await expect(page.getByTestId('roster-count')).toContainText('2 bots');
     await expect(coder).toContainText('Coder');
     await expect(coder).toContainText('Writes and reviews code changes for the Engineering team');
     await expect(coder).toContainText('Hermes');

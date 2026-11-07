@@ -86,19 +86,25 @@ test('an admin sees the Add form in the picker, a member does not', async ({ bro
   }
 });
 
+/** The list of @ words stays open on a finished word and Enter would pick from it; Escape closes it for that word, then Enter sends. */
+const send = async (page: Page): Promise<void> => {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+};
+
 test('@channel in a small room is sent at once; in a big room the writer is asked first, and Cancel keeps the text', async ({ browser }) => {
   const { page, context } = await openAs(browser, 'rafi', `/t/engineering/c/${room.name}`);
   try {
     await box(page).click();
     await box(page).pressSequentially('Standup in five @channel');
-    await page.keyboard.press('Enter');
+    await send(page);
     await expect(messages(page).filter({ hasText: 'Standup in five' })).toHaveCount(1, T);
     await expect(page.getByTestId('broadcast-confirm')).toHaveCount(0);
 
     // the room "grows": the reach route now says 30 people
     await page.route(`**/api/channels/${room.id}/broadcast-reach`, (route) => route.fulfill({ json: { channel: 30, here: 4, confirmAbove: 20 } }));
     await box(page).pressSequentially('All hands now @channel');
-    await page.keyboard.press('Enter');
+    await send(page);
     const ask = page.getByTestId('broadcast-confirm');
     await expect(ask).toContainText('@channel will notify 30 people.', T);
     await expect(messages(page).filter({ hasText: 'All hands now' })).toHaveCount(0);
@@ -108,7 +114,7 @@ test('@channel in a small room is sent at once; in a big room the writer is aske
 
     // @here counts the people online: 4 is under the limit, so it goes at once
     await box(page).fill('A quick look @here');
-    await page.keyboard.press('Enter');
+    await send(page);
     await expect(messages(page).filter({ hasText: 'A quick look' })).toHaveCount(1, T);
 
     // confirmed: the message goes out and carries the confirmation
@@ -117,7 +123,7 @@ test('@channel in a small room is sent at once; in a big room the writer is aske
       if (r.method() === 'POST' && r.url().endsWith(`/api/channels/${room.id}/messages`)) sent = r.postDataJSON();
     });
     await box(page).fill('All hands now @channel');
-    await page.keyboard.press('Enter');
+    await send(page);
     await ask.getByRole('button', { name: 'Send anyway' }).click();
     await expect(messages(page).filter({ hasText: 'All hands now' })).toHaveCount(1, T);
     expect(sent).toMatchObject({ confirmBroadcast: true });
@@ -169,7 +175,7 @@ test('the room grew after the page counted: the refused send stays as Not sent w
     });
     await box(page).click();
     await box(page).fill('Late news @channel');
-    await page.keyboard.press('Enter');
+    await send(page);
     const pending = page.getByTestId('pending-message');
     await expect(pending).toContainText('@channel will notify 52 people.', T);
     await expect(pending.getByRole('button', { name: 'Send anyway' })).toBeVisible();
@@ -195,7 +201,7 @@ test('the count is taken again before "Send anyway": a room that grew shows the 
     await page.route(`**/api/channels/${room.id}/broadcast-reach`, (route) => route.fulfill({ json: { channel: people, here: 2, confirmAbove: 20 } }));
     await box(page).click();
     await box(page).fill('Recount please @channel');
-    await page.keyboard.press('Enter');
+    await send(page);
     const ask = page.getByTestId('broadcast-confirm');
     await expect(ask).toContainText('@channel will notify 30 people.', T);
     people = 44;

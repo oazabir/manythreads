@@ -184,6 +184,9 @@ test('the star in the channel header does the same as the row menu', async ({ br
     await expect(star).toBeVisible();
     await expect(star).toHaveAttribute('aria-pressed', 'false');
     await star.click();
+    // the menu closes once the save is in; opening it before that would be closed again under the test
+    await expect.poll(async () => (await prefsOf(nadia)).starred).toEqual([ids['standup']]);
+    await expect(star).toHaveCount(0);
     await openChannelDetails(page);
     await expect(star).toHaveAttribute('aria-pressed', 'true');
     await expect(star).toHaveText(/Unstar/);
@@ -201,11 +204,13 @@ test('the star in the channel header does the same as the row menu', async ({ br
     await expect(page.getByTestId('channel-star')).toHaveAttribute('aria-pressed', 'true');
 
     await page.getByTestId('channel-star').click();
+    // the menu closes once the save is in; opening it before that would be closed again under the test
+    await expect.poll(async () => (await prefsOf(nadia)).starred).toEqual([]);
+    await expect(page.getByTestId('channel-star')).toHaveCount(0);
     await openChannelDetails(page);
     await expect(page.getByTestId('channel-star')).toHaveAttribute('aria-pressed', 'false');
     await page.keyboard.press('Escape');
     await expect(group(page, 'starred')).toHaveCount(0);
-    await expect.poll(async () => (await prefsOf(nadia)).starred).toEqual([]);
   } finally {
     await context.close();
   }

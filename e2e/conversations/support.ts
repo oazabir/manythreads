@@ -1,5 +1,6 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Browser, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
@@ -84,6 +85,44 @@ export async function addBot(stack: Stack, admin: StackApi, slug: string, md: st
   }
   expect(botId, `the loader to make ${slug}`).not.toBe('');
   return { botId };
+}
+
+/**
+ * The workspace Brain (P20-07) is the one `brain`: a bot with no team, made when the server starts, and a team's own `bots/brain/BOT.md` is switched off as soon as it loads.
+ * A spec that needs its own Brain definition (prompts, models) stores it as the next version of the workspace definition and makes the ensure job's slot due, then waits
+ * until the bot row carries it. Without `md` it only waits until the shipped Brain exists.
+ */
+export async function useWorkspaceBrain(stack: Stack, md?: string): Promise<{ botId: string }> {
+  const find = async (): Promise<{ id: string; sha: string } | undefined> =>
+    (await stack.sql<{ id: string; sha: string }>(`SELECT id, definition_sha AS sha FROM app.bots WHERE scope = 'workspace' AND slug = 'brain' AND status = 'active'`))[0];
+  const due = (): Promise<unknown> =>
+    stack.sql(`UPDATE app.job_schedules SET last_slot = now() - interval '1 day', created_at = now() - interval '1 day' WHERE queue = 'bots.ensure-workspace-brain'`);
+  let found: { id: string; sha: string } | undefined;
+  for (let i = 0; i < 100 && !found; i += 1) {
+    found = await find();
+    if (!found) await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  if (!found) {
+    await due();
+    for (let i = 0; i < 300 && !found; i += 1) {
+      found = await find();
+      if (!found) await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  expect(found, 'the workspace Brain to be made').toBeTruthy();
+  if (md === undefined) return { botId: found!.id };
+  const content = md.replace('kind: agent\n', 'kind: agent\nvisibility: workspace\n');
+  const sha = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+  await stack.sql(
+    `INSERT INTO app.workspace_bot_definitions (workspace_id, slug, version, sha, content, author_id)
+     SELECT workspace_id, slug, max(version) + 1, $1, $2, NULL FROM app.workspace_bot_definitions WHERE slug = 'brain' GROUP BY workspace_id, slug`,
+    [sha, content],
+  );
+  await due();
+  await expect
+    .poll(async () => (await find())?.sha, { timeout: 90_000, message: 'the workspace Brain to carry the spec’s definition' })
+    .toBe(sha);
+  return { botId: (await find())!.id };
 }
 
 export async function openChat(

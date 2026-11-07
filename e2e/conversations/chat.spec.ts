@@ -29,8 +29,8 @@ test.describe.configure({ mode: 'serial' });
 let stack: Stack;
 let botId = '';
 
-test.beforeAll(async ({ playwright }) => {
-  ({ stack, botId } = await startChatStack(playwright));
+test.beforeAll(async () => {
+  ({ stack, botId } = await startChatStack());
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -81,6 +81,12 @@ test('a new chat shows the greeting, the bot\'s own example questions and the bo
     await typeAndSend(page, 'And after that?');
     await expect(bubbles(page, 'bot')).toHaveCount(2, { timeout: 45_000 });
     await expect(bubbles(page, 'bot').last()).toContainText('And after that?');
+
+    // what went out is not left behind as a draft: a new chat, on this device or another, opens with an empty box
+    const drafts = page.waitForResponse((r) => /\/channels\/[0-9a-f-]+\/drafts$/.test(r.url()));
+    await page.goto(CHAT_URL);
+    await drafts;
+    await expect(page.getByTestId('chat-main').getByRole('textbox', { name: 'Message Brain' })).toHaveValue('');
   } finally {
     await close();
   }
@@ -100,6 +106,7 @@ test('an example question sends at once', async ({ browser, playwright, isMobile
 });
 
 test('Stop ends a run that is writing, keeps what was written and says so; Esc does the same on a desktop', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(150_000); // two slow runs, each waited for up to 45 s
   const { page, close } = await openChatScreen(browser, playwright, stack, 'priya', isMobile);
   try {
     await typeAndSend(page, 'SLOW please');
@@ -220,7 +227,13 @@ test('the history rail groups chats, searches, renames, pins, exports, and delet
     await page.getByTestId('chat-menu-delete').click();
     await expect(page.getByTestId('chat-row')).toHaveCount(2);
     await expect.poll(async () => (await listChats(api)).some((c) => c.threadRootId === roots['Alpha'])).toBe(false);
-    await stack.sql(`UPDATE app.conversations SET deleted_at = now() - interval '31 seconds' WHERE thread_root_id = $1`, [roots['Alpha']]);
+    // (only the system role may move a deleted_at that is already set, so the trigger that holds the window is off for this one statement; the owner's connection is not the system role)
+    expect(roots['Alpha']).toMatch(/^[0-9a-f-]{36}$/);
+    await stack.sql(
+      `ALTER TABLE app.conversations DISABLE TRIGGER conversations_restore_window;
+       UPDATE app.conversations SET deleted_at = now() - interval '31 seconds' WHERE thread_root_id = '${roots['Alpha']}';
+       ALTER TABLE app.conversations ENABLE TRIGGER conversations_restore_window;`,
+    );
     const late = await call(api, 'POST', `${BOT}/conversations/${roots['Alpha']}/restore`);
     expect(late.status, late.text).toBe(410);
     expect((await listChats(api)).some((c) => c.threadRootId === roots['Alpha'])).toBe(false);
@@ -488,6 +501,8 @@ test('keyboard: ? lists the shortcuts, Ctrl+K searches, Ctrl+Shift+O starts a ne
     await page.getByTestId('chat-title').click();
     await page.keyboard.press('j');
     await expect(page).toHaveURL(new RegExp(`[?&]c=${older.messageId}`));
+    // opening a chat puts the focus in its box (letters typed there are letters), so the page is clicked again before the next key
+    await page.getByTestId('chat-title').click();
     await page.keyboard.press('k');
     await expect(page).toHaveURL(new RegExp(`[?&]c=${newer.messageId}`));
 

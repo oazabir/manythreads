@@ -69,7 +69,7 @@ test('Lena, a guest, is refused every Personal route and is not offered the Pers
   try {
     for (const [method, path] of PERSONAL_ROUTES) expect(await lena.status(method, path), `${method} ${path}`).toBe(403);
     expect(await lena.status('POST', '/api/me/inbox/notes', { text: 'a note' })).toBe(403);
-    expect(await lena.status('POST', '/api/me/knowledge', { name: 'notes' })).toBe(403);
+    expect(await lena.status('POST', '/api/me/knowledge', { slug: 'notes', name: 'Notes' })).toBe(403);
   } finally {
     await lena.ctx.dispose();
   }

@@ -42,14 +42,16 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-test('the Org chart of a team without bots says so in plain words', async ({ browser, playwright }) => {
+test('the Org chart of a team whose only bot is the workspace Brain says so in plain words', async ({ browser, playwright }) => {
   const slugs = await stack.sql<{ slug: string }>("SELECT slug FROM app.teams WHERE name = 'Quiet Team'");
   expect(slugs).toHaveLength(1);
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/${slugs[0]!.slug}/org`);
   try {
     await expect(page.getByTestId('org-chart')).toBeVisible();
-    await expect(page.getByTestId('org-count')).toContainText('0 bots');
-    await expect(page.getByTestId('org-chart')).toContainText('No bots on this team yet.');
+    // the one Brain sits in every team, so the team's own bots are none and the chart counts it alone
+    await expect(page.getByTestId('org-count')).toContainText('1 bot');
+    await expect(page.getByTestId('org-chart')).toContainText('Brain');
+    await expect(page.getByTestId('org-chart')).not.toContainText('No bots on this team yet.');
     await expect(page.getByTestId('org-chart')).not.toContainText('BOT.md');
   } finally {
     await context.close();
