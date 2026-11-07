@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type PlaywrightWorkerArgs } from '@playwright/test';
 import { personas } from '../fixtures/seed.ts';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { PERSONA_PASSWORD, personaEmail } from '../support/env.ts';
@@ -29,6 +29,15 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
+/** A password sign-in on a context of its own (no cookies): the real route, not the test-only session endpoint. */
+const passwordSignIn = async (playwright: PlaywrightWorkerArgs['playwright'], who: 'rafi'): Promise<number> => {
+  const fresh = await playwright.request.newContext({ baseURL: stack.origin });
+  try {
+    return (await fresh.post('/api/auth/password/sign-in', { data: { email: personaEmail(who), password: PERSONA_PASSWORD } })).status();
+  } finally {
+    await fresh.dispose();
+  }
+};
 const personRow = async (id: string) => (await stack.sql<{ status: string; suspended_at: Date | null }>('SELECT status, suspended_at FROM app.people WHERE id = $1', [id]))[0];
 const patch = async (api: StackApi, personId: string, body: unknown): Promise<{ status: number; message: string }> => {
   const res = await api.ctx.patch(`/api/workspace/members/${personId}`, { data: body, headers: await api.headers() });
@@ -39,6 +48,8 @@ const patch = async (api: StackApi, personId: string, body: unknown): Promise<{ 
 test('Deactivate says what it does first; Cancel changes nothing; confirming deactivates, signs them out and marks the row', async ({ browser, playwright }) => {
   const rafiOld = await apiOn(playwright, stack, 'rafi');
   expect(await statusOf(rafiOld, 'GET', '/api/me/files/tree')).toBe(200);
+  // the control for the refusal below: while he is active this password does sign him in
+  expect(await passwordSignIn(playwright, 'rafi')).toBe(200);
   const { page, context } = await openOn(browser, playwright, stack, 'omar', MEMBERS);
   try {
     await page.getByRole('button', { name: 'Options for Rafi' }).click();
@@ -71,13 +82,7 @@ test('Deactivate says what it does first; Cancel changes nothing; confirming dea
     expect([401, 403, 404]).toContain(await statusOf(rafiOld, 'GET', '/api/me/files/tree'));
     expect([401, 403, 404]).toContain(await statusOf(rafiOld, 'GET', '/api/me/files/usage'));
     // and a password does not let him back in
-    const fresh = await playwright.request.newContext({ baseURL: stack.origin });
-    try {
-      const res = await fresh.post('/api/auth/password/sign-in', { data: { email: personaEmail('rafi'), password: PERSONA_PASSWORD } });
-      expect(res.status()).toBeGreaterThanOrEqual(400);
-    } finally {
-      await fresh.dispose();
-    }
+    expect(await passwordSignIn(playwright, 'rafi')).toBeGreaterThanOrEqual(400);
   } finally {
     await context.close();
     await rafiOld.ctx.dispose();
@@ -118,6 +123,8 @@ test('Reactivate gives it all back: they can sign in, the files are there, the 3
   const after = await personRow(rafi.personId);
   expect(after?.status).toBe('active');
   expect(after?.suspended_at).toBeNull();
+  // he can sign in with his password again, and what he kept is there
+  expect(await passwordSignIn(playwright, 'rafi')).toBe(200);
   const api = await apiOn(playwright, stack, 'rafi');
   try {
     expect((await treeOf(api, 'Notes')).map((e) => e.name)).toEqual(['oncall.md']);

@@ -111,6 +111,15 @@ export const rowAt = (page: Page, path: string) => page.locator(`[data-testid="f
 /** The paths of the rows in the order the list shows them. */
 export const rowPaths = (page: Page): Promise<string[]> => page.locator('[data-testid="file-row"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-path') ?? ''));
 
+/**
+ * Chooses a file in the Upload input of the open folder. The screen ignores a file until the folder has been read (`Upload` is enabled then), so the
+ * helper waits for that; without it a fast run picks the file before the folder is known and nothing happens.
+ */
+export async function pickFile(page: Page, file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
+  await expect(page.getByTestId('upload')).toBeEnabled();
+  await page.getByTestId('upload-input').setInputFiles(file);
+}
+
 /** Opens a row's menu (the row is hovered first, as the quick buttons and the menu appear then). */
 export async function openRowMenu(page: Page, path: string): Promise<void> {
   const row = rowAt(page, path);

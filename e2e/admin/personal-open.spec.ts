@@ -137,8 +137,9 @@ test('the open space is a read-only look: a banner with the end of the hour, the
     await rowAt(page, 'Notes/handover.md').hover();
     await expect(rowAt(page, 'Notes/handover.md').getByTestId('hover-rename')).toHaveCount(0);
     await expect(rowAt(page, 'Notes/handover.md').getByTestId('hover-share')).toHaveCount(0);
-    // F2 and Delete do nothing
+    // F2 and Delete do nothing (the right click selected the row; Escape on the row clears that)
     await rowAt(page, 'Notes/handover.md').focus();
+    await page.keyboard.press('Escape');
     await page.keyboard.press('F2');
     await page.keyboard.press('Delete');
     await expect(page.getByTestId('dialog-rename')).toHaveCount(0);
@@ -150,14 +151,12 @@ test('the open space is a read-only look: a banner with the end of the hour, the
     await expect(page.getByTestId('selection-delete')).toHaveCount(0);
     await page.getByTestId('selection-clear').click();
 
-    // the text can be read, in the side panel and in the middle, and cannot be saved
+    // the text can be read, in the middle (an admin's look has no right panel), and cannot be saved or put through History
     await rowAt(page, 'Notes/handover.md').click();
-    await expect(page.getByTestId('file-preview')).toContainText('First text of the handover.');
-    await expect(page.getByTestId('file-preview').getByRole('button', { name: 'Save' })).toHaveCount(0);
-    await rowAt(page, 'Notes/handover.md').dblclick();
-    await expect(page.getByTestId('file-view')).toContainText('First text of the handover.');
-    await expect(page.getByTestId('file-view').getByRole('button', { name: 'Save' })).toHaveCount(0);
-    await expect(page.getByTestId('file-view').getByTestId('open-history')).toHaveCount(0);
+    const view = page.getByTestId('file-view');
+    await expect(view).toContainText('First text of the handover.');
+    await expect(view.getByRole('button', { name: 'Save' })).toHaveCount(0);
+    await expect(view.getByTestId('open-history')).toHaveCount(0);
   } finally {
     await close();
   }

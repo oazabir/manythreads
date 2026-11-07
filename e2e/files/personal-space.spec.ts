@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { personas } from '../fixtures/seed.ts';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { STACK_ENV } from './support.ts';
-import { ME, REFUSED, apiOn, meNode, openPersonal, openRowMenu, personalRoot, rowAt, statusOf, teamRoots, textOf, treeOf, uploadAs, usageOf, type PersonalFileJson } from './personal-support.ts';
+import { ME, type PersonalFileJson, REFUSED, apiOn, meNode, openPersonal, openRowMenu, personalRoot, pickFile, rowAt, statusOf, teamRoots, textOf, treeOf, uploadAs, usageOf } from './personal-support.ts';
 
 /*
  * P20-02 / P20-03 / P20-14 (Files side): the Files screen has two top levels, Personal (your own files) and Teams. A member has Personal; a guest does not.
@@ -71,7 +71,9 @@ test('Personal comes first with its seven starting folders, and the teams of the
   // a person in two teams has two team roots
   const priya = await openPersonal(browser, playwright, stack, 'priya');
   try {
-    await expect(teamRoots(priya.page)).toHaveText(['Engineering', 'Marketing']);
+    // the order is the session's; the set is what matters
+    await expect(teamRoots(priya.page)).toHaveCount(2);
+    await expect.poll(async () => (await teamRoots(priya.page).allTextContents()).map((t) => t.trim()).sort()).toEqual(['Engineering', 'Marketing']);
     await expect(personalRoot(priya.page)).toBeVisible();
   } finally {
     await priya.close();
@@ -110,7 +112,7 @@ test('upload, rename, move and delete: each one changes the list, the allowance 
     await expect(page.getByTestId('quota-text')).toHaveText('0 B of 5.0 GB used');
 
     // upload into Notes
-    await page.getByTestId('upload-input').setInputFiles({ name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('Plan v1\n') });
+    await pickFile(page, { name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('Plan v1\n') });
     const plan = rowAt(page, 'Notes/plan.md');
     await expect(plan).toBeVisible();
     await expect(plan).toHaveAttribute('data-store', 'personal');
@@ -123,7 +125,7 @@ test('upload, rename, move and delete: each one changes the list, the allowance 
     expect(await textOf(api, planId)).toBe('Plan v1\n');
 
     // a second file with the same name is kept, under a numbered name
-    await page.getByTestId('upload-input').setInputFiles({ name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('Another\n') });
+    await pickFile(page, { name: 'plan.md', mimeType: 'text/markdown', buffer: Buffer.from('Another\n') });
     await expect(rowAt(page, 'Notes/plan (2).md')).toBeVisible();
     await expect(plan).toBeVisible();
 
@@ -242,8 +244,11 @@ test('a note: edit it twice, read its versions and restore the first; the replac
     expect(await replaced.text()).toContain('Edit two');
     // the page open in the middle shows the restored text after a reload
     await page.reload();
-    await expect(page.getByTestId('file-view').getByTestId('viewer-markdown')).toBeVisible();
-    await expect(page.getByTestId('file-view').getByTestId('viewer-markdown')).not.toContainText('Edit two');
+    const viewer = page.getByTestId('file-view').getByTestId('viewer-markdown');
+    await expect(viewer).toBeVisible();
+    // the restored text has loaded (its title is there) before "the replaced line is gone" means anything
+    await expect(viewer).toContainText('Retro');
+    await expect(viewer).not.toContainText('Edit two');
   } finally {
     await close();
     await api.ctx.dispose();
@@ -292,9 +297,17 @@ test.describe('nobody else reads it', () => {
       // the same address with the file open: Sameera's Notes has no such file
       await page.goto(`${stack.origin}/files?open=Notes/reorg.md`);
       await expect(page.getByTestId('files-screen')).toBeVisible();
+      // wait for the end state (the screen has looked and found nothing), so the absence below is not just "not loaded yet"
+      await expect(page.getByText('This file no longer exists')).toBeVisible();
       await expect(page.locator('body')).not.toContainText(SECRET_TEXT);
       await expect(page.getByTestId('file-view')).toHaveCount(0);
-      // a link that names the file by id, as a channel attachment would
+      // the panel link of a Personal file names it by path: Sameera's Notes has no such file either
+      await page.goto(`${stack.origin}/files?panel=file:~me/Notes/reorg.md`);
+      await expect(page.getByTestId('files-screen')).toBeVisible();
+      await expect(page.getByText('This file no longer exists')).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(SECRET_TEXT);
+      await expect(page.getByTestId('file-preview')).toHaveCount(0);
+      // a link that names the file by id, as a channel attachment would: nothing of it shows
       await page.goto(`${stack.origin}/files?panel=file:${secret.id}`);
       await expect(page.getByTestId('files-screen')).toBeVisible();
       await expect(page.locator('body')).not.toContainText(SECRET_TEXT);

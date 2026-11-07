@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { STACK_ENV } from './support.ts';
-import { apiOn, openPersonal, openRowMenu, rowAt, treeOf, usageOf } from './personal-support.ts';
+import { apiOn, openPersonal, openRowMenu, pickFile, rowAt, treeOf, usageOf } from './personal-support.ts';
 
 /*
  * P20-02: the allowance of a Personal space. The default is 5 GB; this stack lowers it to 1000 bytes (MANYTHREADS_PERSONAL_QUOTA_BYTES, read on every call)
@@ -30,14 +30,14 @@ test('under the allowance the text says how much is used; a file that does not f
     await expect(page.getByTestId('quota-text')).toHaveText('0 B of 1000 B used');
     expect(await usageOf(api)).toMatchObject({ usedBytes: 0, quotaBytes: QUOTA });
 
-    await page.getByTestId('upload-input').setInputFiles({ name: 'a.txt', mimeType: 'text/plain', buffer: bytes(600) });
+    await pickFile(page, { name: 'a.txt', mimeType: 'text/plain', buffer: bytes(600) });
     await expect(rowAt(page, 'Notes/a.txt')).toBeVisible();
     await expect(page.getByTestId('quota-text')).toHaveText('600 B of 1000 B used');
     await expect(page.getByTestId('quota').getByRole('meter')).toHaveAttribute('aria-valuenow', '600');
     await expect(page.locator('.fquota.ok')).toBeVisible();
 
     // 600 more do not fit: the upload row says why, the list and the allowance stay as they were
-    await page.getByTestId('upload-input').setInputFiles({ name: 'b.txt', mimeType: 'text/plain', buffer: bytes(600, 'b') });
+    await pickFile(page, { name: 'b.txt', mimeType: 'text/plain', buffer: bytes(600, 'b') });
     const failed = page.getByTestId('upload-list').getByRole('alert');
     await expect(failed).toContainText('That would take you over your 1000 bytes of Personal space. Delete something or an older version first.');
     await expect(rowAt(page, 'Notes/b.txt')).toHaveCount(0);
@@ -61,13 +61,13 @@ test('at the allowance the bar is full and says so; deleting a file lifts the no
   const api = await apiOn(playwright, stack, 'priya');
   const { page, close } = await openPersonal(browser, playwright, stack, 'priya', '?path=Notes');
   try {
-    await page.getByTestId('upload-input').setInputFiles({ name: 'fill.txt', mimeType: 'text/plain', buffer: bytes(400, 'f') });
+    await pickFile(page, { name: 'fill.txt', mimeType: 'text/plain', buffer: bytes(400, 'f') });
     await expect(rowAt(page, 'Notes/fill.txt')).toBeVisible();
     await expect(page.getByTestId('quota-text')).toHaveText('1000 B of 1000 B used');
     await expect(page.locator('.fquota.full')).toBeVisible();
     await expect(page.getByTestId('quota').getByRole('alert')).toHaveText('Your Personal files are full. Delete something to add more.');
     // not even one more byte
-    await page.getByTestId('upload-input').setInputFiles({ name: 'one.txt', mimeType: 'text/plain', buffer: bytes(1, 'o') });
+    await pickFile(page, { name: 'one.txt', mimeType: 'text/plain', buffer: bytes(1, 'o') });
     await expect(page.getByTestId('upload-list').getByRole('alert')).toContainText('Personal space');
     expect(await usageOf(api)).toMatchObject({ usedBytes: QUOTA });
 

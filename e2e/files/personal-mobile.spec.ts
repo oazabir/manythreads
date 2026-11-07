@@ -3,7 +3,7 @@ import { personas } from '../fixtures/seed.ts';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { noSidewaysScroll } from '../support/stack-browser.ts';
 import { STACK_ENV } from './support.ts';
-import { apiOn, openPersonal, openSpaceOf, rowAt, treeOf, uploadAs } from './personal-support.ts';
+import { apiOn, openPersonal, openSpaceOf, pickFile, rowAt, treeOf, uploadAs } from './personal-support.ts';
 
 /*
  * P20-04 on the phone (the `mobile-web` project, 390x844): Personal is the first thing in the folder sheet, the list fits, the row menu does what the
@@ -44,7 +44,7 @@ test('Personal opens first; the folders are a sheet; upload, rename and delete w
 
     // upload from the button
     await expect(page.getByTestId('upload')).toBeEnabled();
-    await page.getByTestId('upload-input').setInputFiles({ name: 'phone.md', mimeType: 'text/markdown', buffer: Buffer.from('From the phone\n') });
+    await pickFile(page, { name: 'phone.md', mimeType: 'text/markdown', buffer: Buffer.from('From the phone\n') });
     await expect(rowAt(page, 'Notes/phone.md')).toBeVisible();
     await expect(page.getByTestId('quota-text')).toHaveText('15 B of 5.0 GB used');
     expect(await noSidewaysScroll(page)).toBe(true);

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { STACK_ENV, blobOf, commitsOf } from './support.ts';
-import { apiOn, openPersonal, openRowMenu, rowAt, statusOf, uploadAs, type StackApi } from './personal-support.ts';
+import { apiOn, openPersonal, openRowMenu, rowAt, statusOf, textOf, uploadAs, type StackApi } from './personal-support.ts';
 
 /*
  * P20-05: "Send to a team…" on a Personal file. The workspace's data rules (the egress chain, `app.llm_settings.preset`) are asked first and shown in
@@ -65,7 +65,7 @@ test('a file the data rules block: the dialog says so, Copy stays off, and the s
 test('a file with a key under the standard rules: the dialog warns, the copy goes, and the key is not in the team repo', async ({ browser, playwright }) => {
   await setPreset('standard');
   const api = await apiOn(playwright, stack, 'nadia');
-  await uploadAs(api, 'Notes', 'keys.md', `token ${KEY} end\n`);
+  const keys = await uploadAs(api, 'Notes', 'keys.md', `token ${KEY} end\n`);
   const { page, close } = await openPersonal(browser, playwright, stack, 'nadia', '?path=Notes');
   try {
     await openRowMenu(page, 'Notes/keys.md');
@@ -91,14 +91,14 @@ test('a file with a key under the standard rules: the dialog warns, the copy goe
     // the commit is the person's own, and the Personal original keeps its key
     const commit = (await commitsOf(stack)).find((c) => c.paths.includes('pages/from-personal/keys.md'));
     expect(commit?.message).toBe('Add pages/from-personal/keys.md from Personal files');
-    const original = await api.ctx.get(`/api/me/files/tree?path=Notes`);
-    expect(await original.text()).toContain('keys.md');
+    expect(await textOf(api, keys.id)).toContain(KEY);
     // a copy never overwrites a team file: the same path again is refused with words
     await openRowMenu(page, 'Notes/keys.md');
     await page.getByTestId('row-action-share').click();
     await page.getByTestId('share-path').fill('pages/from-personal/keys.md');
     await page.getByTestId('share-send').click();
-    await expect(page.getByTestId('dialog-share').getByRole('alert').last()).toBeVisible();
+    // two alerts: the data-rules verdict (a redact is an alert) and the refusal of the copy; without the refusal there would be one
+    await expect(page.getByTestId('dialog-share').getByRole('alert')).toHaveCount(2);
     await expect(page.getByTestId('share-done')).toHaveCount(0);
   } finally {
     await close();
