@@ -1,4 +1,4 @@
-import { AnswerScope, ChannelKind } from '@manythreads/shared';
+import { AnswerScope, ChannelKind, SpaceRef } from '@manythreads/shared';
 import { z } from 'zod';
 
 // What `app.answer_view` (migration 0001) answers: the run, one entry per cited source (same index as the citations the bot sent) and one per
@@ -31,6 +31,8 @@ const Resolved = z.object({
   stale: z.boolean().optional(),
   deprecated: z.boolean().optional(),
   fromTeam: z.uuid().nullable().optional(),
+  /** The space a memory concept was read from (`team:<id>` or `person:<id>`). */
+  space: SpaceRef.optional(),
 });
 export type Resolved = z.infer<typeof Resolved>;
 

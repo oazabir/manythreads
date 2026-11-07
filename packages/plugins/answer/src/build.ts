@@ -42,7 +42,9 @@ export function citationRef(c: AnswerCitationInput): { kind: string; ref: string
     case 'run':
       return { kind: 'run', ref: c.runId, team: null };
     case 'memory':
-      return { kind: 'memory', ref: c.conceptPath, team: null };
+      // a Personal concept is named `person:<id>:<path>`; one of a team's names the team (the view reads the run's own team when it is left out)
+      if (c.space?.startsWith('person:')) return { kind: 'memory', ref: `${c.space}:${c.conceptPath}`, team: null };
+      return { kind: 'memory', ref: c.conceptPath, team: c.space?.startsWith('team:') ? c.space.slice(5) : null };
   }
 }
 
@@ -120,7 +122,7 @@ export function buildAnswer(input: AnswerInput, view: AnswerView): BuiltAnswer {
         if (seen.botId) citation = { kind: 'run', ...base, runId: c.runId, botId: seen.botId, botSlug: seen.botSlug ?? null };
         break;
       case 'memory':
-        if (seen.conceptType && seen.trustTier) citation = { kind: 'memory', ...base, conceptPath: c.conceptPath, type: seen.conceptType, trustTier: seen.trustTier, stale: seen.stale ?? false, deprecated: seen.deprecated ?? false, fromTeam: seen.fromTeam ?? null };
+        if (seen.conceptType && seen.trustTier) citation = { kind: 'memory', ...base, conceptPath: c.conceptPath, type: seen.conceptType, trustTier: seen.trustTier, stale: seen.stale ?? false, deprecated: seen.deprecated ?? false, fromTeam: seen.fromTeam ?? null, ...(seen.space ? { space: seen.space } : {}) };
         break;
     }
     if (citation === null) {

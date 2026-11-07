@@ -250,6 +250,10 @@ seed (gate, DLP, egress) and has no such source; the tests build theirs.
   `citationTarget` and a trust-tier / stale / deprecated note in `Citation`. The payload `version` stays 1: the change is additive. The share
   door needs one more arm in `app.answer_share_view` (a memory citation is kept for the team reach when its concept is team-readable, never
   for `none`); until then it is masked, which is the safe answer.
+- **P20-08 (citations carry their space).** A memory citation may say `space: 'person:<id>' | 'team:<id>'`; the stored citation always carries the
+  space the platform read the concept from. A concept of a person's own Memory is named `person:<id>:<path>` to `app.answer_resolve` (migration 0007),
+  has scope `person`, and is shown only in the owner's own conversation (reach `asker`); a copy shared to a channel masks it, like every memory
+  citation. A team concept carries `team:<id>`: scope `team` for the run's own team, `channel` for another team the asker also reads.
 
 ## Tests
 

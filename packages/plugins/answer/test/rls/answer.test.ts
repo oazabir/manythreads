@@ -9,6 +9,7 @@ import {
   createTestDatabase,
   dropTestDatabase,
   filesMigrationSource,
+  memoryMigrationSource,
   personaActor,
   personas,
   repoGitMigrationSource,
@@ -198,6 +199,7 @@ beforeAll(async () => {
       repoGitMigrationSource,
       botsMigrationSource,
       conversationsMigrationSource,
+      memoryMigrationSource,
       answerMigrationSource,
     ],
   });
@@ -1025,6 +1027,16 @@ describe('sharing an answer of one’s own conversation (P5-17)', () => {
     expect(v!.citations.map((c) => [c.n, c.kept])).toEqual([[1, false], [2, false], [4, false]]);
   });
 
+  it('masks a Personal or team memory citation in a copy of the answer shared to a channel', async () => {
+    const id = await answerMessage(omarChat, omarConversationRoot, omar, [
+      { kind: 'memory', n: 1, label: 'x', scope: 'person', conceptPath: 'preferences/tea.md', type: 'preference', trustTier: 'unverified', stale: false, deprecated: false, fromTeam: null, space: `person:${omar.personId}` },
+      { kind: 'memory', n: 2, label: 'y', scope: 'team', conceptPath: 'guides/deploy.md', type: 'guide', trustTier: 'unverified', stale: false, deprecated: false, fromTeam: null, space: `team:${ENG}` },
+    ]);
+    const v = await viewAsPerson(omar, id, dev);
+    expect(v).not.toBeNull();
+    expect(keptNumbers(v)).toEqual([]);
+  });
+
   describe('app.answer_channel_reach', () => {
     const reach = (p: Persona, channelId: string, team: string | null, asker: string | null): Promise<string> =>
       as(p, async (tx) => (await tx.query<{ r: string }>('SELECT app.answer_channel_reach($1::uuid, $2::uuid, $3::uuid) AS r', [channelId, team, asker])).rows[0]!.r);
@@ -1140,5 +1152,72 @@ describe('hostile input', () => {
     const priyaRun = await inDev(priya.actorId, [['page', `${MKT}:pages/launch/plan.md`, 'team']]);
     const forPriya = await viewOf(botActor, priyaRun, [{ kind: 'page', ref: 'pages/launch/plan.md', team: MKT }]);
     expect(forPriya.citations[0]).toMatchObject({ found: true, scope: 'channel', audience: false, teamId: MKT });
+  });
+});
+
+describe('a memory citation carries its space (P20-08)', () => {
+  const personal = (owner: Persona, path: string, over: { status?: string; stale?: boolean } = {}): Promise<void> =>
+    sys(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.memory_personal_files (owner_person_id, workspace_id, path, content, size_bytes, type, title, status, stale_after, blob_sha)
+         VALUES ($1, $2, $3, 'x', 1, 'preference', $4, $5, CASE WHEN $6::boolean THEN now() - interval '1 day' END, repeat('b', 40))`,
+        [owner.personId, WS, path, `Title of ${path}`, over.status ?? 'stable', over.stale ?? false],
+      );
+    });
+  const team = (teamId: string, path: string): Promise<void> =>
+    sys(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.memory_concepts (team_id, path, type, title, blob_sha) VALUES ($1, $2, 'guide', $3, repeat('c', 40))`,
+        [teamId, path, `Title of ${path}`],
+      );
+    });
+  /** A fresh conversation run (a run answers once; the shared ones may already have). */
+  const conversation = (asker: Persona, chat: string, root: string): Promise<string> => run({ trigger: 'conversation', asker: asker.actorId, channel: chat, root });
+  const ref = (owner: Persona, path: string): string => `person:${owner.personId}:${path}`;
+
+  beforeAll(async () => {
+    await personal(nadia, 'preferences/tea.md');
+    await personal(nadia, 'preferences/old.md', { status: 'deprecated', stale: true });
+    await personal(rafi, 'notes/private.md');
+    await team(ENG, 'guides/deploy.md');
+    await team(MKT, 'guides/launch.md');
+  });
+
+  it('shows a person their own Personal concept, in their own conversation, with its space', async () => {
+    const v = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
+    expect(v.citations[0]).toMatchObject({ found: true, scope: 'person', audience: true, reached: true, label: 'Title of preferences/tea.md', space: `person:${nadia.personId}`, conceptType: 'preference', trustTier: 'unverified', stale: false, deprecated: false });
+    const old = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: ref(nadia, 'preferences/old.md') }]);
+    expect(old.citations[0]).toMatchObject({ found: true, stale: true, deprecated: true });
+  });
+
+  it('never shows one person’s Personal concept to another, in either conversation', async () => {
+    const theirs = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: ref(rafi, 'notes/private.md') }]);
+    expect(theirs.citations[0]).toMatchObject({ found: false });
+    const rafiViewOfNadia = await viewOf(botActor, await conversation(rafi, rafiChat, rafiChatMsg), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
+    expect(rafiViewOfNadia.citations[0]).toMatchObject({ found: false });
+    // an admin has no read without a live open, and a run is never an open
+    const omarView = await viewOf(botActor, await conversation(omar, omarChat, omarConversationRoot), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
+    expect(omarView.citations[0]).toMatchObject({ found: false });
+  });
+
+  it('keeps a Personal concept out of a run in a team channel, even the asker’s own', async () => {
+    // a run in #dev asked by Nadia: she can read her own file, but a reply in a team channel is read by the team, so it is not shown there
+    const root = await message(dev, nadia.actorId, '@brain what tea do I like?');
+    const r = await run({ trigger: 'mention', asker: nadia.actorId, channel: dev, root });
+    const v = await viewOf(botActor, r, [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
+    expect(v.citations[0]).toMatchObject({ found: true, scope: 'person', audience: false });
+  });
+
+  it('gives a team concept the team’s space, and names another team’s space only to a reader of it', async () => {
+    const own = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: 'guides/deploy.md' }]);
+    expect(own.citations[0]).toMatchObject({ found: true, scope: 'team', audience: true, space: `team:${ENG}` });
+    // Marketing's concept is read by an Engineering-only asker: no row, so not found
+    const other = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: 'guides/launch.md', team: MKT }]);
+    expect(other.citations[0]).toMatchObject({ found: false });
+    // Priya reads Marketing and Engineering: another team's concept is hers alone to see, not her reply's readers'
+    const root = await message(dev, priya.actorId, '@brain what is in the launch guide?');
+    const pr = await run({ trigger: 'mention', asker: priya.actorId, channel: dev, root });
+    const theirs = await viewOf(botActor, pr, [{ kind: 'memory', ref: 'guides/launch.md', team: MKT }]);
+    expect(theirs.citations[0]).toMatchObject({ found: true, scope: 'channel', audience: false, space: `team:${MKT}` });
   });
 });

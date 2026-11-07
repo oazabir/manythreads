@@ -64,8 +64,8 @@ export const AnswerCitationInput = z.discriminatedUnion('kind', [
   /** A file uploaded to a channel or to the team's Files. */
   z.strictObject({ kind: z.literal('file'), fileId: FileId, snippet: Snippet.optional() }),
   z.strictObject({ kind: z.literal('run'), runId: RunId, snippet: Snippet.optional() }),
-  /** A concept of the team's OKF memory bundle. */
-  z.strictObject({ kind: z.literal('memory'), conceptPath: z.string().min(1).max(500), snippet: Snippet.optional() }),
+  /** A concept of a Memory: the run's team's by default, or the asker's own Personal one when `space` says `person:<id>`. */
+  z.strictObject({ kind: z.literal('memory'), conceptPath: z.string().min(1).max(500), space: SpaceRef.optional(), snippet: Snippet.optional() }),
 ]);
 export type AnswerCitationInput = z.infer<typeof AnswerCitationInput>;
 

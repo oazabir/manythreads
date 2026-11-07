@@ -245,6 +245,30 @@ describe('who it was for, and the suggestions', () => {
   });
 });
 
+describe('a memory citation and its space', () => {
+  const me = uuid(5);
+  it('names a Personal concept by its owner and a team’s by its team, and leaves the run’s own team implied', () => {
+    expect(citationRef({ kind: 'memory', conceptPath: 'a/b.md', space: `person:${me}` } as never)).toEqual({ kind: 'memory', ref: `person:${me}:a/b.md`, team: null });
+    expect(citationRef({ kind: 'memory', conceptPath: 'a/b.md', space: `team:${uuid(3)}` } as never)).toEqual({ kind: 'memory', ref: 'a/b.md', team: uuid(3) });
+    expect(citationRef({ kind: 'memory', conceptPath: 'a/b.md' } as never)).toEqual({ kind: 'memory', ref: 'a/b.md', team: null });
+  });
+
+  it('keeps the space the platform read the concept from on the stored citation', () => {
+    const i = input({ citations: [{ kind: 'memory', conceptPath: 'a/b.md', space: `person:${me}` }] });
+    const v = view({ citations: [visible({ scope: 'person', conceptType: 'preference', trustTier: 'unverified', space: `person:${me}` })] });
+    const { payload } = buildAnswer(i, v);
+    expect(payload.citations[0]).toMatchObject({ kind: 'memory', scope: 'person', space: `person:${me}`, conceptPath: 'a/b.md' });
+  });
+
+  it('drops a Personal concept whose readers are not the person alone', () => {
+    const i = input({ citations: [{ kind: 'memory', conceptPath: 'a/b.md', space: `person:${me}` }] });
+    const v = view({ citations: [{ found: true, scope: 'person', audience: false }] });
+    const built = buildAnswer(i, v);
+    expect(built.payload.citations).toEqual([]);
+    expect(built.droppedCitations).toBe(1);
+  });
+});
+
 describe('the reference of a citation', () => {
   it('is the id it names, and for a page the path with its team', () => {
     expect(citationRef({ kind: 'message', messageId: uuid(1) } as never)).toEqual({ kind: 'message', ref: uuid(1), team: null });
