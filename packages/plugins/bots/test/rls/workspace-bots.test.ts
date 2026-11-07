@@ -106,6 +106,44 @@ describe('a bot with no team (P20-07)', () => {
   });
 });
 
+describe('a pairing token for the workspace bot (P20-LV)', () => {
+  const hash = (n: number): Buffer => Buffer.alloc(32, n);
+  const mint = (p: Persona | null, bot: string, n: number): Promise<unknown> =>
+    p === null ? sys((tx) => tx.query('SELECT * FROM app.bots_pairing_mint($1, $2)', [bot, hash(n)])) : as(p, (tx) => tx.query('SELECT * FROM app.bots_pairing_mint($1, $2)', [bot, hash(n)]));
+
+  it('is minted by the system role or a workspace admin, and by nobody else (there is no team lead to ask)', async () => {
+    expect(await code(mint(nadia, brainId, 21))).toBe('42501');
+    expect(await code(mint(sameera, brainId, 22))).toBe('42501');
+    expect(await code(mint(null, brainId, 23))).toBeUndefined();
+    expect(await code(mint(omar, brainId, 24))).toBeUndefined();
+  });
+
+  it('resolves to the bot with no team, only while the bot is active', async () => {
+    const resolve = (n: number): Promise<Array<{ bot_id: string; team_id: string | null }>> => sys(async (tx) => (await tx.query<{ bot_id: string; team_id: string | null }>('SELECT * FROM app.bots_pairing_resolve($1)', [hash(n)])).rows);
+    expect(await resolve(23)).toEqual([expect.objectContaining({ bot_id: brainId, team_id: null })]);
+    expect(await resolve(99)).toEqual([]);
+    await sys((tx) => tx.query(`UPDATE app.bots SET status = 'disabled' WHERE id = $1`, [brainId]));
+    expect(await resolve(23)).toEqual([]);
+    expect(await code(mint(omar, brainId, 25))).toBe('55000');
+    await sys((tx) => tx.query(`UPDATE app.bots SET status = 'active' WHERE id = $1`, [brainId]));
+    expect(await resolve(23)).toHaveLength(1);
+  });
+
+  it('is turned off by the system role or a workspace admin only', async () => {
+    const revoke = (p: Persona | null): Promise<unknown> => (p === null ? sys((tx) => tx.query('SELECT app.bots_pairing_revoke($1)', [brainId])) : as(p, (tx) => tx.query('SELECT app.bots_pairing_revoke($1)', [brainId])));
+    expect(await code(revoke(nadia))).toBe('42501');
+    expect(await code(revoke(omar))).toBeUndefined();
+    const live = await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.bot_pairing_tokens WHERE bot_id = $1 AND revoked_at IS NULL', [brainId])).rows[0]!.n);
+    expect(live).toBe(0);
+  });
+
+  it('still refuses a person who does not manage the team of a team bot, as before', async () => {
+    expect(await code(mint(sameera, teamBotId, 26))).toBe('42501');
+    expect(await code(mint(nadia, teamBotId, 27))).toBe('42501');
+    expect(await code(mint(omar, teamBotId, 28))).toBeUndefined();
+  });
+});
+
 describe('a run of the workspace bot keeps the context team (P20-07)', () => {
   const open = (botId: string, team: string): Promise<unknown> =>
     sys((tx) => tx.query(`INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, status) VALUES ($1, $2, $3, 'mention', 'running')`, [omar.workspaceId, botId, team]));

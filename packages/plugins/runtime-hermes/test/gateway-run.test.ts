@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- these tests read JSON documents of many shapes */
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -759,6 +760,49 @@ describe('which bots the team’s pod holds (P19-03)', () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.payload).toMatchObject({ runner: 'pp-pod', reason: 'not_set_up' });
     await w.system((tx) => tx.query(`UPDATE app.bot_runners SET is_default = false WHERE name = 'pp-pod'`));
+  });
+
+  // P20-LV: the workspace Brain belongs to no team and is answered in the team a question came from, so every pod that serves bots serves its profile. Before this its
+  // credentials could not be made at all (the pairing mint refused a bot with no team) and the pod runner said the bot "could not be found on this team".
+  it('the workspace Brain, with no team, is on every team pod that serves bots, with one token the MCP address accepts', async () => {
+    const definition = botMd('Brain', [], 'messages.post, memory.recall').replace('placement:\n', '');
+    const sha = createHash('sha256').update(definition, 'utf8').digest('hex');
+    const brain = await w.system(async (tx) => {
+      const id = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, scope)
+           VALUES ($1, NULL, 'brain', 'Brain', 'Remembers', 'agent', 'hermes', 'workspace', $2, 'active', 'workspace') RETURNING id`,
+          [omar.workspaceId, sha],
+        )
+      ).rows[0]!.id;
+      await tx.query(`INSERT INTO app.actors (workspace_id, kind, ref_id) VALUES ($1, 'bot', $2)`, [omar.workspaceId, id]);
+      await tx.query(`INSERT INTO app.workspace_bot_definitions (workspace_id, slug, version, sha, content) VALUES ($1, 'brain', 1, $2, $3)`, [omar.workspaceId, sha, definition]);
+      return id;
+    });
+    await giveKey(brain);
+    const marketing = (await w.system(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.teams WHERE slug = 'marketing'`)).rows[0]!.id));
+    const profilesOf = (teamId: string): Promise<Array<{ profile: string; botId: string; secrets: Record<string, string> }>> => provider().profilesForTeam(teamId) as never;
+
+    // nothing places it on a pod while the default runner is not a pod runner
+    expect((await profilesOf(await engineering())).map((p) => p.profile)).not.toContain('mt-brain');
+    await w.system((tx) => tx.query(`UPDATE app.bot_runners SET is_default = true WHERE name = 'pp-pod'`));
+    const inEngineering = (await profilesOf(await engineering())).find((p) => p.botId === brain);
+    const inMarketing = (await profilesOf(marketing)).find((p) => p.botId === brain);
+    expect(inEngineering?.profile).toBe('mt-brain');
+    expect(inMarketing?.profile).toBe('mt-brain');
+    // one credential for the bot, held by every pod; it is a live pairing token and is stored with no team
+    expect(inMarketing?.secrets['MCP_TOKEN']).toBe(inEngineering?.secrets['MCP_TOKEN']);
+    const live = await w.system(async (tx) =>
+      (await tx.query('SELECT 1 FROM app.bots_pairing_resolve($1)', [createHash('sha256').update(inEngineering!.secrets['MCP_TOKEN']!, 'utf8').digest()])).rows.length,
+    );
+    expect(live).toBe(1);
+    const stored = await w.system(async (tx) => (await tx.query<{ team_id: string | null }>('SELECT team_id FROM app.hermes_profile_secrets WHERE bot_id = $1', [brain])).rows);
+    expect(stored).toEqual([{ team_id: null }]);
+    // the pods controller now has a reason to serve Marketing too
+    expect((await provider().teamsWithPodBots()).map((t) => t.slug)).toContain('marketing');
+
+    await w.system((tx) => tx.query(`UPDATE app.bot_runners SET is_default = false WHERE name = 'pp-pod'`));
+    await w.system((tx) => tx.query(`UPDATE app.bots SET status = 'disabled' WHERE id = $1`, [brain]));
   });
 });
 

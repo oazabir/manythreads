@@ -25,6 +25,10 @@
 //     route can only turn off ALL live tokens of the bot) and the bot is reported FAILED.
 //
 //   DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/provision-host-bots.mjs engineering customer-support marketing [--dry] [--force]
+//   DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/provision-host-bots.mjs --workspace-brain [engineering] [--brain-profile mt-brain] [--dry]
+//      the workspace Brain (P20-LV): it belongs to no team, so it is not in any team's template; this writes its ONE host profile and mints its token
+//      (an admin signs in; the mint goes through any team's bots route, here the first team named or `engineering`). The profile name is the default runner's
+//      profile rule with {bot} = brain, or --brain-profile. Needs a default Hermes-gateway runner open to the teams (Admin > Bot runners), else no run is ever sent.
 //   node tools/devbox/provision-host-bots.mjs --reserve engineering [--dry]   serve the team's profiles again (no login; assumes a multiplexing host gateway; see below)
 // Env: DEMO_BASE (default https://manythreads.kahf.to), HERMES_HOME (/root/.hermes), HERMES_CONNECTION (host),
 //      HERMES_SHELL_CWD (/srv/hostdev, else /root/manythreads) for bots whose capabilities.runtime holds `shell`.
@@ -42,7 +46,10 @@ const CONNECTION = process.env['HERMES_CONNECTION'] ?? 'host';
 const args = process.argv.slice(2);
 const dry = args.includes('--dry');
 const force = args.includes('--force');
-const teams = args.filter((a) => !a.startsWith('--'));
+const brainProfileFlag = args.indexOf('--brain-profile');
+const brainProfileName = brainProfileFlag >= 0 ? (args[brainProfileFlag + 1] ?? '') : '';
+const workspaceBrain = args.includes('--workspace-brain');
+const teams = args.filter((a, i) => !a.startsWith('--') && !(brainProfileFlag >= 0 && i === brainProfileFlag + 1));
 
 // The host profile of a team's bot: one name, used by the provisioning below and by --reserve.
 const profileOf = (team, slug) => `mt-${team}-${slug}`;
@@ -101,8 +108,8 @@ if (args.includes('--reserve')) {
   process.exit(bad === 0 ? 0 : 1);
 }
 
-if (!EMAIL || !PASSWORD || teams.length === 0) {
-  console.error('usage: DEMO_EMAIL=... DEMO_PASSWORD=... node provision-host-bots.mjs <team>... [--dry] [--force]   |   node provision-host-bots.mjs --reserve <profile|team>... [--dry]');
+if (!EMAIL || !PASSWORD || (teams.length === 0 && !workspaceBrain)) {
+  console.error('usage: DEMO_EMAIL=... DEMO_PASSWORD=... node provision-host-bots.mjs <team>... [--dry] [--force]   |   ... --workspace-brain [team] [--brain-profile NAME] [--dry]   |   node provision-host-bots.mjs --reserve <profile|team>... [--dry]');
   process.exit(2);
 }
 
@@ -403,7 +410,8 @@ const fail = (info, why) => {
 async function doTeam(team) {
   const templateDir = join(repoRoot, 'templates', team, 'bots');
   if (!existsSync(templateDir)) throw new Error(`no template at ${templateDir}`);
-  const slugs = readdirSync(templateDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  // The team Brain is retired: the one workspace Brain answers in every team (`--workspace-brain`), so no team gets a `brain` bot or a `mt-<team>-brain` profile.
+  const slugs = readdirSync(templateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== 'brain').map((d) => d.name).sort();
   const conns = await api('GET', `/api/teams/${team}/hermes/connections`);
   let conn = conns.json?.items?.find((c) => c.name === CONNECTION);
   // Since the runner catalog (P19-02) the place may be a runner an admin made available to the team instead of a connection of the team.
@@ -536,7 +544,66 @@ async function doTeam(team) {
   rows.push(...infos);
 }
 
-for (const team of teams) {
+/**
+ * The workspace Brain: one host profile, one token. No BOT.md is committed (the Brain's definition is the platform's, not a team repo's) and no placement is set in it:
+ * the default runner decides where it runs, so the profile has to be named the way that runner's rule names it.
+ */
+async function doWorkspaceBrain() {
+  const via = teams[0] ?? 'engineering';
+  const runners = await api('GET', '/api/admin/bot-runners');
+  const items = runners.json?.items ?? [];
+  const def = items.find((r) => r.isDefault) ?? null;
+  const ruleProfile = def?.profileRule ? def.profileRule.replace('{bot}', 'brain') : null;
+  const profile = brainProfileName || ruleProfile || 'mt-brain';
+  console.log(`\n== workspace Brain: profile ${profile}, token minted through team ${via}`);
+  if (!def) console.error('  WARNING: no default runner is set (Admin > Bot runners): the Brain has no place to run until an admin makes a Hermes gateway runner the default.');
+  else if (def.kind !== 'hermes_gateway') console.error(`  WARNING: the default runner "${def.name}" is a ${def.kind}, not a Hermes gateway; this host profile is only used by a gateway runner.`);
+  else if (!def.enabled) console.error(`  WARNING: the default runner "${def.name}" is switched off.`);
+  if (def && ruleProfile && profile !== ruleProfile) console.error(`  WARNING: the default runner names a bot's profile "${ruleProfile}"; this writes "${profile}", so a run will not find it.`);
+  const info = { team: '(workspace)', slug: 'brain', profile, placement: 'by the default runner', token: '-', files: '-', test: '-', failed: null };
+  const md = readFileSync(join(repoRoot, 'templates', '_workspace', 'bots', 'brain', 'BOT.md'), 'utf8');
+  info.md = md;
+  if (dry) {
+    const v = await inspectProfile(profile);
+    console.log(`  ${profile}: ${v.exists ? 'profile exists' : 'would create profile'}, token ${v.state === 'kept' || v.state === 'kept-unverified' ? 'kept' : v.state === 'stale' ? 'refused/stale, would mint' : 'would mint'}`);
+    info.token = v.state === 'none' ? 'would mint' : v.state === 'stale' ? 'would re-mint' : 'kept';
+    info.test = 'skipped (dry)';
+    rows.push(info);
+    return;
+  }
+  try {
+    const r = await ensureProfile(via, 'brain', profile, md);
+    info.token = r.tokenWord;
+    info.files = r.files;
+    console.log(`  ${profile}: profile ${r.files}, token ${r.tokenWord}`);
+  } catch (e) {
+    fail(info, e.message);
+  }
+  if (!info.failed && def && def.kind === 'hermes_gateway') {
+    let t = { status: 0, json: null };
+    for (let i = 0; i < 8; i++) {
+      t = await api('POST', `/api/admin/bot-runners/${def.id}/test`, { profile });
+      if (t.status === 200 && t.json?.ok) break;
+      await sleep(t.status === 429 ? 15_000 : 3_000);
+    }
+    const ok = t.status === 200 && t.json?.ok;
+    info.test = ok ? 'ok' : `failed (HTTP ${t.status}${typeof t.json?.error === 'string' ? `: ${t.json.error.slice(0, 120)}` : ''})`;
+    if (!ok) problems += 1;
+    console.log(`  test ${profile}: ${info.test}`);
+  }
+  rows.push(info);
+}
+
+if (workspaceBrain) {
+  try {
+    await doWorkspaceBrain();
+  } catch (e) {
+    console.error(`workspace Brain: ${e.message}`);
+    problems += 1;
+  }
+}
+
+for (const team of workspaceBrain ? [] : teams) { // with --workspace-brain a named team only carries the token mint
   try {
     await doTeam(team);
   } catch (e) {

@@ -8,19 +8,28 @@ import {
   mintPairingTokenRoute,
   revokePairingTokensRoute,
 } from '@manythreads/shared';
-import { conflict, json, notFound, requireManage, requireTeam, route } from './http.ts';
+import { conflict, forbidden, json, notFound, requireManage, requireTeam, route } from './http.ts';
 import { mintPairingToken, revokePairingTokens } from './pairing.ts';
 
 // The pairing routes (PLAN P5-04): a lead of the team mints the token a bot's runtime presents, and turns every live token of that bot
 // off. The token is returned once; only its sha256 is stored. Resolving is not a route — the caller of a token hashes it and calls
 // `app.bots_pairing_resolve` in its own transaction (docs/plugins/bots.md).
 
-/** The bot of the team, or 404: an unknown slug and one from another team answer the same, so a probe learns nothing. */
-async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<{ id: string; status: string }> {
-  const res = await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bots WHERE team_id = $1 AND slug = $2', [teamId, botSlug]);
+/**
+ * The bot of the team, or 404: an unknown slug and one from another team answer the same, so a probe learns nothing. The workspace Brain belongs to no team and is found
+ * through any team of its workspace; only a workspace owner or admin may pair it (there is no team lead to ask), anyone else is told no.
+ */
+async function requireBot(tx: PluginTx, team: { id: string; workspace_id: string }, botSlug: string): Promise<{ id: string; status: string }> {
+  const res = await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bots WHERE team_id = $1 AND slug = $2', [team.id, botSlug]);
   const bot = res.rows[0];
-  if (!bot) throw notFound(`No bot "${botSlug}"`);
-  return bot;
+  if (bot) return bot;
+  const shared = (
+    await tx.query<{ id: string; status: string }>(`SELECT id, status FROM app.bots WHERE scope = 'workspace' AND team_id IS NULL AND workspace_id = $1 AND slug = $2`, [team.workspace_id, botSlug])
+  ).rows[0];
+  if (!shared) throw notFound(`No bot "${botSlug}"`);
+  const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
+  if (role !== 'owner' && role !== 'admin') throw forbidden('Only a workspace admin can pair the workspace bot');
+  return shared;
 }
 
 export function registerPairingRoutes(ctx: PluginContext): void {
@@ -31,7 +40,7 @@ export function registerPairingRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = BotPairingPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      const bot = await requireBot(tx, team.id, botSlug);
+      const bot = await requireBot(tx, team, botSlug);
       // the definer function refuses too (55000); this is the clear answer. A token for a bot that cannot resolve would do nothing.
       if (bot.status !== 'active') {
         throw conflict(
@@ -54,7 +63,7 @@ export function registerPairingRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = BotPairingPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      const bot = await requireBot(tx, team.id, botSlug);
+      const bot = await requireBot(tx, team, botSlug);
       if (bot.status !== 'active') throw conflict('This bot is not active. Turn it on and fix its definition before pairing it.');
       const revoked = await revokePairingTokens(tx, bot.id);
       const minted = await mintPairingToken(tx, bot.id);
@@ -70,7 +79,7 @@ export function registerPairingRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = BotPairingPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      const bot = await requireBot(tx, team.id, botSlug);
+      const bot = await requireBot(tx, team, botSlug);
       return json(RevokePairingTokensResponse.parse({ revoked: await revokePairingTokens(tx, bot.id) }));
     }),
   });

@@ -83,7 +83,7 @@ export function toHermesConnection(r: ConnectionRow, options: { showAddress?: bo
 export const CONNECTION_COLUMNS =
   'id, workspace_id, team_id, name, kind, agent, base_url, secret_id, status, last_checked_at, last_error, runner_name, created_by, created_at, updated_at';
 
-type BotRef = { id: string; workspace_id: string; team_id: string };
+type BotRef = { id: string; workspace_id: string; team_id: string | null };
 
 /**
  * Where a run goes, from what the runner catalog resolved (`bot-runners`, the `bot.runners` provider). A Hermes gateway has one key for the whole gateway;
@@ -125,8 +125,22 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
   return cannot('which cannot run bots yet.');
 }
 
+/**
+ * The bot of the team, for the credentials of its pod profile. The workspace Brain belongs to no team and runs in the team the question was asked in, so it is found
+ * through that team when both are in one workspace (its `team_id` stays null: its credentials are the workspace's, not a team's).
+ */
 const botOf = (ctx: PluginContext, teamId: string, botId: string): Promise<BotRef | null> =>
-  ctx.db.system(async (tx) => (await tx.query<BotRef>('SELECT id, workspace_id, team_id FROM app.bots WHERE id = $1::uuid AND team_id = $2::uuid', [botId, teamId])).rows[0] ?? null);
+  ctx.db.system(
+    async (tx) =>
+      (
+        await tx.query<BotRef>(
+          `SELECT b.id, b.workspace_id, b.team_id FROM app.bots b
+            WHERE b.id = $1::uuid
+              AND (b.team_id = $2::uuid OR (b.scope = 'workspace' AND b.team_id IS NULL AND b.workspace_id = (SELECT t.workspace_id FROM app.teams t WHERE t.id = $2::uuid)))`,
+          [botId, teamId],
+        )
+      ).rows[0] ?? null,
+  );
 
 /**
  * The address and key a run of `botId` should use for the team's connection `name`, or for the runner of that name when the team has no such connection. A connection an admin adopted into a runner is resolved through that

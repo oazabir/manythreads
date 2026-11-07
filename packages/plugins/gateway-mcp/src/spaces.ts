@@ -93,9 +93,11 @@ export async function confineRunWrite(ctx: PluginContext, run: BotRunHandle, nam
   if (!isChannel && !TEAM_WRITES.has(name)) return null;
   const named = isChannel ? input['channelId'] : input['team'];
   if (typeof named !== 'string' || named === '') return null; // nothing named: the run's own place is the default
+  // The scope is read as the system, not as the bot: a workspace bot has no team, so the bots policy hides its own row from it (a read as the bot answered nothing, and
+  // "nothing" used to mean "not a workspace bot", which left the Brain's writes unconfined). A bot whose row cannot be read is confined too.
+  const scope = (await ctx.db.system(async (sys) => (await sys.query<{ scope: string }>('SELECT scope FROM app.bots WHERE id = $1::uuid', [run.botId])).rows[0]?.scope));
+  if (scope === 'team') return null;
   return ctx.runs.asBot(run, async (tx) => {
-    const scope = (await tx.query<{ scope: string }>('SELECT scope FROM app.bots WHERE id = $1::uuid', [run.botId])).rows[0]?.scope;
-    if (scope !== 'workspace') return null;
     if (isChannel) {
       // not a uuid: it names nothing, and the tool's own parser says so
       if (!UUID.test(named)) return null;

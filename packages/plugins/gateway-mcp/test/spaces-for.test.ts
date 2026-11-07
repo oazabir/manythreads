@@ -91,19 +91,18 @@ describe('every read tool that takes a team goes through withRunSpaces', () => {
 describe('confineRunWrite (the workspace Brain sits in every team)', () => {
   const CHANNEL = '00000000-0000-7000-8000-0000000c0001';
   const asked: Array<{ sql: string; params: unknown[] }> = [];
-  const ctxFor = (scope: string | undefined, place: boolean): PluginContext =>
-    ({
-      runs: {
-        asBot: (_run: unknown, fn: (tx: unknown) => Promise<unknown>) =>
-          fn({
-            query: (sql: string, params: unknown[]) => {
-              asked.push({ sql, params });
-              if (sql.includes('SELECT scope')) return Promise.resolve({ rows: scope === undefined ? [] : [{ scope }] });
-              return Promise.resolve({ rows: place ? [{ '?column?': 1 }] : [] });
-            },
-          }),
-      },
-    }) as unknown as PluginContext;
+  // The scope is read as the system (`ctx.db.system`): read as the bot, the bots policy hides a workspace bot's own row and the answer was "nothing", which once meant "no confinement".
+  const ctxFor = (scope: string | undefined, place: boolean): PluginContext => {
+    const fake = (sql: string, params: unknown[]): Promise<{ rows: unknown[] }> => {
+      asked.push({ sql, params });
+      if (sql.includes('SELECT scope')) return Promise.resolve({ rows: scope === undefined ? [] : [{ scope }] });
+      return Promise.resolve({ rows: place ? [{ '?column?': 1 }] : [] });
+    };
+    return {
+      db: { system: (fn: (tx: unknown) => Promise<unknown>) => fn({ query: fake }) },
+      runs: { asBot: (_run: unknown, fn: (tx: unknown) => Promise<unknown>) => fn({ query: fake }) },
+    } as unknown as PluginContext;
+  };
 
   it('lets the workspace Brain post in a channel of the run\'s team, and refuses a channel of another team', async () => {
     expect(await confineRunWrite(ctxFor('workspace', true), RUN, 'messages.post', { channelId: CHANNEL, body: 'x' })).toBeNull();
@@ -127,6 +126,10 @@ describe('confineRunWrite (the workspace Brain sits in every team)', () => {
     expect(asked).toEqual([]);
     // a team bot is bounded by its one seat in the database already
     expect(await confineRunWrite(ctxFor('team', false), RUN, 'messages.post', { channelId: CHANNEL, body: 'x' })).toBeNull();
-    expect(await confineRunWrite(ctxFor(undefined, false), RUN, 'pages.write', { team: 'marketing' })).toBeNull();
+  });
+
+  it('confines a bot whose scope cannot be read, rather than letting its write through', async () => {
+    expect(await confineRunWrite(ctxFor(undefined, false), RUN, 'pages.write', { team: 'marketing' })).toMatchObject({ code: 'other_space' });
+    expect(await confineRunWrite(ctxFor(undefined, true), RUN, 'pages.write', { team: 'engineering' })).toBeNull();
   });
 });

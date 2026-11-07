@@ -37,6 +37,13 @@ export function managedEnvFrom(env: NodeJS.ProcessEnv): ManagedEnv {
 }
 
 /**
+ * The bots a team's pod can serve: the team's own, and the one Brain of the workspace. The Brain has no team and is answered in whichever team a question was asked in, so
+ * every pod that serves bots holds its profile. `$first` is the team id.
+ */
+export const podTeamWhere = (first: number): string =>
+  `(team_id = $${first}::uuid OR (scope = 'workspace' AND team_id IS NULL AND workspace_id = (SELECT t.workspace_id FROM app.teams t WHERE t.id = $${first}::uuid)))`;
+
+/**
  * Which of a team's bots live on the team's own pod: the ones placed on the reserved connection `managed`, the ones placed by `runs_on` on a pod runner the team may use, and (when
  * the workspace default runner is a pod runner) the Hermes bots with no place of their own (P19-03). The WHERE fragment takes three parameters from `$first`; `podPlacementParams` gives them.
  */
@@ -62,7 +69,7 @@ export async function teamsWithPodBots(ctx: PluginContext): Promise<Array<{ id: 
   for (const team of teams) {
     const placement = await podPlacementParams(ctx, team.id);
     const has = await ctx.db.system(async (tx) =>
-      (await tx.query(`SELECT 1 FROM app.bots WHERE team_id = $1::uuid AND status = 'active' AND ${podPlacementWhere(2)} LIMIT 1`, [team.id, ...placement])).rows.length > 0,
+      (await tx.query(`SELECT 1 FROM app.bots WHERE ${podTeamWhere(1)} AND status = 'active' AND ${podPlacementWhere(2)} LIMIT 1`, [team.id, ...placement])).rows.length > 0,
     );
     if (has) out.push(team);
   }
@@ -80,9 +87,10 @@ export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, en
       const placement = await podPlacementParams(ctx, teamId);
       return ctx.db.system(async (tx) => {
         const bots = await tx.query<RunBotRow>(
-          `SELECT id, slug, name, runtime, definition_sha, team_id, workspace_id, status
+          // the workspace Brain has no team: its profile is made in this team's pod, and `team_id` of the row stands for the pod's team (its credentials keep no team, below)
+          `SELECT id, slug, name, runtime, definition_sha, coalesce(team_id, $1::uuid) AS team_id, workspace_id, status, scope
              FROM app.bots
-            WHERE team_id = $1::uuid AND status = 'active' AND ${podPlacementWhere(2)}
+            WHERE ${podTeamWhere(1)} AND status = 'active' AND ${podPlacementWhere(2)}
             ORDER BY slug`,
           [teamId, ...placement],
         );
@@ -101,7 +109,7 @@ export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, en
             log.warn(`runtime-hermes: bot ${bot.slug} has no LLM gateway key yet; no profile`);
             continue;
           }
-          const secrets = await ensureProfileSecrets(ctx, bot);
+          const secrets = await ensureProfileSecrets(ctx, bot.scope === 'workspace' ? { ...bot, team_id: null } : bot);
           if ('revoked' in secrets) {
             log.warn(`runtime-hermes: the token of managed bot ${bot.slug} was turned off by a person; no profile until a lead re-enables it`);
             continue;

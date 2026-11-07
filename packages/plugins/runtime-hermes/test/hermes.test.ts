@@ -209,6 +209,17 @@ describe('the hermes provider: one process per run', () => {
     await handle.stop();
   });
 
+  it('a program that cannot be started at all says so, instead of "exit unknown" with nothing after it (the Brain, run where no Hermes is installed)', async () => {
+    const provider = createHermesProvider({ bin: '/nonexistent/hermes-not-installed', prefix: [], dataRoot: join(root, 'run-missing'), env: { PATH: '/usr/bin' }, killGraceSeconds: 1 });
+    const handle = await provider.run(input(), scope([]));
+    const events = await drain(handle.events);
+    const last = events[events.length - 1];
+    expect(last).toMatchObject({ type: 'result', ok: false });
+    const error = last?.type === 'result' ? (last.error ?? '') : '';
+    expect(error).toContain('could not start "/nonexistent/hermes-not-installed" (ENOENT)');
+    await handle.stop();
+  });
+
   it('a run that outlives its budget is stopped: SIGTERM, then SIGKILL after the grace', async () => {
     const h = harness({ killGraceSeconds: 0 });
     const logs: string[] = [];

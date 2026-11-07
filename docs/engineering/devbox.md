@@ -1,3 +1,5 @@
+- **The workspace Brain on the host gateway (mode A).** The Brain belongs to no team, so no team run writes its profile and a team run no longer adds a `brain` bot. As a workspace admin run `DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/provision-host-bots.mjs --workspace-brain [--brain-profile mt-brain] [--dry]`.
+  It writes one profile (named by the default runner's profile rule with `{bot}` = `brain`, else `--brain-profile`) and mints the Brain's token (pairing, P20-LV). The Brain only runs once an admin has made a Hermes gateway runner the default (Admin > Bot runners) and that runner's profile rule names the profile the script wrote; with no default runner a run would start the `hermes` binary inside the server container, which has none, and fail at once.
 # The devbox, the pipeline and the live site
 
 Where code is built, tested and deployed, and the machine facts that break a pipeline run when ignored.

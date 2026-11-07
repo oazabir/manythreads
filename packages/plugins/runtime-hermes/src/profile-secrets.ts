@@ -40,7 +40,8 @@ const mintPairing = async (tx: PluginTx, botId: string, token: string): Promise<
   await tx.query('SELECT minted_at FROM app.bots_pairing_mint($1::uuid, $2)', [botId, sha256(token)]);
 };
 
-type BotRef = { id: string; workspace_id: string; team_id: string };
+/** `team_id` is null for the workspace Brain, which belongs to no team. */
+type BotRef = { id: string; workspace_id: string; team_id: string | null };
 
 /**
  * The credentials of a bot's profile, created on first use. Runs in its own system transaction scoped to the bot's workspace, so the secrets

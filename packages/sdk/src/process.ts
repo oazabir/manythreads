@@ -217,11 +217,16 @@ export function startGroupProcess(options: GroupProcessOptions): GroupProcess {
   // The exit is listened for *here*, not when the stream is first read: a binary that fails immediately (a wrong argv, a
   // missing model) can be gone before the job takes its first event, and a listener attached afterwards would wait for a
   // `close` that already happened — a run that never ends holds its job worker forever.
+  let stderr = '';
   const exited = new Promise<ProcessExit>((resolveExit) => {
-    child.once('error', () => resolveExit({ code: null, signal: null }));
+    // A program that could not be started at all (not installed, not executable) never prints anything and has no exit code: say so, with the error's code, so a failed
+    // run does not end as "exit unknown" with an empty tail (live: the Brain, run in the server's own container where no Hermes is installed).
+    child.once('error', (err: NodeJS.ErrnoException) => {
+      stderr = `could not start "${options.bin}"${typeof err.code === 'string' ? ` (${err.code})` : ''}`;
+      resolveExit({ code: null, signal: null });
+    });
     child.once('close', (code, signal) => resolveExit({ code, signal }));
   });
-  let stderr = '';
   child.stderr?.on('data', (chunk: Buffer) => {
     stderr = (stderr + chunk.toString('utf8')).slice(-2000);
   });
