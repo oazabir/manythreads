@@ -7,11 +7,13 @@ import { registerBotLoader } from './loader.ts';
 import { registerReaperJob } from './reaper.ts';
 import { registerPairingRoutes } from './routes.ts';
 import { registerBotRoutes } from './roster.ts';
+import { registerWorkspaceBrain } from './workspace-brain.ts';
 
 export { BACKFILL_QUEUE, backfillModelAliases, backfillRunTimeouts, modelAliasesOf } from './backfill.ts';
 export { REAP_QUEUE, reapStaleRuns } from './reaper.ts';
 export { hashPairingToken, mintPairingToken, newPairingToken, resolvePairingToken, revokePairingTokens } from './pairing.ts';
 export type { PairedBot } from './pairing.ts';
+export { WORKSPACE_BRAIN_SLUG, ensureWorkspaceBrain } from './workspace-brain.ts';
 
 /**
  * bots: the identity of a team's bots — one row per `bots/<slug>/BOT.md` of the team repo (docs/plugins/bots.md). The loader (a
@@ -31,11 +33,12 @@ export default definePlugin({
     extends: ['event.subscribe', 'event.emit', 'job.register', 'run.close'],
     events: {
       emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed', 'bots.pairing.rotated', 'bots.eval.run.finished', 'bots.personal_consent.changed'],
-      consumes: ['repo.repo.committed', 'proposals.proposal.applied'],
+      consumes: ['repo.repo.committed', 'proposals.proposal.applied', 'workspace.team.created'],
     },
   },
   register(ctx) {
     registerBotLoader(ctx);
+    registerWorkspaceBrain(ctx);
     registerBackfillJob(ctx);
     registerReaperJob(ctx);
     registerPairingRoutes(ctx);

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ownerSql, seedRepo } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { GetBotResponse, ListBotsResponse, BotSummary } from '@manythreads/shared';
-import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
+import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from '../../repo-git/test/world.ts';
 
 // The roster and bot-page reads (PLAN P5-05, SPEC §7.5): `GET /api/teams/:slug/bots` and `GET /api/teams/:slug/bots/:botSlug`. Both are
 // reads over rows the loader wrote, and the `invalid` reason comes from the newest `bots.bot.invalid` event rather than a column. The
@@ -190,5 +190,30 @@ describe('the bot roster and bot page', () => {
     expect((await listRoster(sameera)).status).toBe(403);
     expect((await listRoster(lena)).status).toBe(403);
     expect((await getBot(sameera, 'p505-zed')).status).toBe(403);
+  });
+
+  it('lists the workspace Brain in every team it can read, with the team asked as its context, its actor and scope; a retired team Brain is left out', async () => {
+    const sql = (text: string, params: unknown[] = []) => ownerSql(w.server.db.ownerUrl, text, params);
+    const ws = omar.workspaceId;
+    // the old team Brain (when the seed made one) is retired, then the workspace Brain is made (as the loader would)
+    await sql(`UPDATE app.bots SET retired_at = now(), status = 'disabled' WHERE team_id = $1 AND slug = 'brain'`, [TEAM_IDS.Engineering]);
+    const made = await sql(
+      `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, scope, triggers)
+       VALUES ($1, NULL, 'brain', 'Brain', 'The workspace memory', 'agent', 'hermes', 'workspace', repeat('b', 64), 'active', 'workspace', '[{"type":"conversation"},{"type":"mention"}]'::jsonb) RETURNING id`,
+      [ws],
+    );
+    const brainId = (made[0] as { id: string }).id;
+    await sql(`INSERT INTO app.actors (workspace_id, kind, ref_id) VALUES ($1, 'bot', $2)`, [ws, brainId]);
+
+    const roster = (await listRoster(nadia)).body;
+    const brains = roster.bots.filter((b) => b.slug === 'brain');
+    expect(brains).toHaveLength(1);
+    expect(brains[0]).toMatchObject({ id: brainId, scope: 'workspace', name: 'Brain', conversational: true, mentionable: true });
+    expect(brains[0]!.teamId).toBe(TEAM_IDS.Engineering);
+    expect(brains[0]!.actorId).not.toBeNull();
+    // the bot page answers the workspace Brain (not the retired one) under the team asked
+    expect((await getBot(nadia, 'brain')).body.bot).toMatchObject({ id: brainId, scope: 'workspace' });
+    // a team the person cannot read still refuses
+    expect((await listRoster(sameera)).status).toBe(403);
   });
 });

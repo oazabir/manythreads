@@ -18,18 +18,27 @@ import { BOT_COLUMNS, BOT_RUN_COLUMNS, toBotRun, toBotSummary, type BotRow, type
 // page fetches through `repo/blob` and saves through `repo/commit` — so a member who is not a lead is refused by the repo writer's own
 // guarded-path rule (403) and the page offers a pull request instead of a Save button. Nothing here writes.
 
-/** bot id -> actor id for a team's bots (`app.team_bot_actor_ids`: a person cannot read a bot's actor row). */
+/** bot id -> actor id for a team's bots and the workspace bots (`app.team_bot_actor_ids`, `app.workspace_bot_actor_ids`: a person cannot read a bot's actor row). */
 async function botActorIds(tx: PluginTx, teamId: string): Promise<Map<string, string>> {
-  const res = await tx.query<{ bot_id: string; actor_id: string }>('SELECT bot_id, actor_id FROM app.team_bot_actor_ids($1)', [teamId]);
+  const res = await tx.query<{ bot_id: string; actor_id: string }>(
+    'SELECT bot_id, actor_id FROM app.team_bot_actor_ids($1) UNION SELECT bot_id, actor_id FROM app.workspace_bot_actor_ids()',
+    [teamId],
+  );
   return new Map(res.rows.map((r) => [r.bot_id, r.actor_id]));
 }
 
+/**
+ * The team's bots and the workspace Brain (it belongs to no team, so the row says the team asked: the context a run would keep). A team bot the workspace Brain replaced
+ * (`retired_at`) is left out of the list, and found by its slug only when no bot of that name is current.
+ */
 async function botRows(tx: PluginTx, teamId: string, slug?: string): Promise<BotRow[]> {
   const res = await tx.query<BotRow>(
-    `SELECT ${BOT_COLUMNS} FROM app.bots WHERE team_id = $1${slug === undefined ? '' : ' AND slug = $2'} ORDER BY name, slug`,
+    `SELECT ${BOT_COLUMNS} FROM app.bots
+      WHERE (team_id = $1 OR scope = 'workspace')${slug === undefined ? ' AND retired_at IS NULL' : ' AND slug = $2'}
+      ORDER BY ${slug === undefined ? 'name, slug' : "(scope = 'workspace') DESC, (retired_at IS NULL) DESC"}`,
     slug === undefined ? [teamId] : [teamId, slug],
   );
-  return res.rows;
+  return res.rows.map((r) => (r.team_id === null ? { ...r, team_id: teamId } : r));
 }
 
 /**

@@ -178,6 +178,8 @@ export interface RunBotRow {
   team_id: string;
   workspace_id: string;
   status: string;
+  /** 'workspace' for the one Brain of the workspace (it has no team of its own: `team_id` here is the CONTEXT team of the run); absent or 'team' for every other bot. */
+  scope?: string;
   [key: string]: unknown;
 }
 
@@ -288,11 +290,30 @@ export interface LoadedDefinition {
  * commit in flight) is refused rather than run on a definition the roster never showed. Null when there is nothing to run.
  */
 export async function loadDefinition(ctx: PluginContext, tx: PluginTx, bot: RunBotRow, log: PluginLogger): Promise<LoadedDefinition | null> {
-  const repo = ctx.providers.get<RepoDoor>('repo');
-  if (!repo) throw new Error('runtime-hermes: the repo provider is not registered');
-  const file = await repo.blob(tx, bot.team_id, botMdPath(bot.slug), 'main');
-  const contents = Buffer.from(file.content).toString('utf8');
-  if (createHash('sha256').update(file.content).digest('hex') !== bot.definition_sha) {
+  let contents: string;
+  let sha: string;
+  if (bot.scope === 'workspace') {
+    // the workspace Brain has no repo: its BOT.md is a row of app.workspace_bot_definitions, found by the sha the bot row carries (bots 0027)
+    const row = (
+      await tx.query<{ content: string }>(
+        'SELECT content FROM app.workspace_bot_definitions WHERE workspace_id = $1::uuid AND slug = $2 AND sha = $3 ORDER BY version DESC LIMIT 1',
+        [bot.workspace_id, bot.slug, bot.definition_sha],
+      )
+    ).rows[0];
+    if (!row) {
+      log.warn(`runtime-hermes: the workspace bot ${bot.slug} has no stored definition at the loaded sha; no run`);
+      return null;
+    }
+    contents = row.content;
+    sha = bot.definition_sha;
+  } else {
+    const repo = ctx.providers.get<RepoDoor>('repo');
+    if (!repo) throw new Error('runtime-hermes: the repo provider is not registered');
+    const file = await repo.blob(tx, bot.team_id, botMdPath(bot.slug), 'main');
+    contents = Buffer.from(file.content).toString('utf8');
+    sha = createHash('sha256').update(file.content).digest('hex');
+  }
+  if (sha !== bot.definition_sha) {
     log.warn(`runtime-hermes: bot ${bot.slug} has a newer BOT.md in the repo than the loaded definition; no run`);
     return null;
   }
@@ -717,14 +738,17 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
       try {
         // 1. Read, open the run, gate, pre-call check (one short transaction).
         const result = await job.transaction(async (tx): Promise<PreparedRun | null> => {
-          const bot = (
+          const found = (
             await tx.query<RunBotRow>(
-              `SELECT id, slug, name, runtime, definition_sha, team_id, workspace_id, status
+              `SELECT id, slug, name, runtime, definition_sha, team_id, workspace_id, status, scope
                  FROM app.bots WHERE id = $1 AND workspace_id = $2`,
               [payload.botId, payload.workspaceId],
             )
           ).rows[0];
-          if (!bot || bot.status !== 'active') return null; // a disabled, invalid or removed bot does not answer
+          if (!found || found.status !== 'active') return null; // a disabled, invalid or removed bot does not answer
+          // The workspace Brain has no team of its own: the run keeps the CONTEXT team (the team of the channel or conversation it answers in), and what it may read
+          // comes only from the run's own row (app.run_space_context). Every other bot must be asked in its own team.
+          const bot: RunBotRow = found.scope === 'workspace' ? { ...found, team_id: payload.teamId } : found;
           if (bot.team_id !== payload.teamId) return null;
 
           let provider = ctx.providers.get<BotRuntimeProvider>('bot_runtime', bot.runtime);

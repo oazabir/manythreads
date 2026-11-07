@@ -49,6 +49,11 @@ export const Bot = z.object({
   id: BotId,
   workspaceId: WorkspaceId,
   teamId: TeamId,
+  /**
+   * `team` (a bot of the team repo, the default) or `workspace` (the one Brain of the workspace, P20-07: it has no team of its own, `teamId` is then the team the roster
+   * was asked for, the context a run keeps).
+   */
+  scope: z.enum(['team', 'workspace']).optional(),
   /** The slug of `bots/<slug>/BOT.md`, unique in the team. */
   slug: Slug,
   /** The definition's `name`, copied onto the row by the loader so the roster needs no repo read (PLAN P5-05). */

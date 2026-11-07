@@ -163,7 +163,7 @@ export function registerRouter(ctx: PluginContext): void {
     const bots = (
       await tx.query<BotRow>(
         `SELECT id, slug, runtime, triggers FROM app.bots
-          WHERE team_id = $1 AND status = 'active' AND ($2::uuid IS NULL OR id = $2::uuid) ORDER BY slug`,
+          WHERE (team_id = $1 OR scope = 'workspace') AND status = 'active' AND ($2::uuid IS NULL OR id = $2::uuid) ORDER BY slug`,
         [message.channel_team, conversation ? message.channel_bot_id : null],
       )
     ).rows;
@@ -255,7 +255,7 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
   const depth = (deepest?.max ?? 0) + 1;
   const bots = (
     await tx.query<BotRow>(
-      `SELECT id, slug, runtime, triggers FROM app.bots WHERE team_id = $1 AND status = 'active' AND id <> $2 ORDER BY slug`,
+      `SELECT id, slug, runtime, triggers FROM app.bots WHERE (team_id = $1 OR scope = 'workspace') AND status = 'active' AND id <> $2 ORDER BY slug`,
       [message.channel_team, author.id],
     )
   ).rows;

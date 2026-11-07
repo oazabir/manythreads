@@ -132,10 +132,11 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
           await tx.query<{ id: string; actor_id: string }>(
             `SELECT b.id, a.id AS actor_id FROM app.bots b
                JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = b.id
-              WHERE b.id = $1 AND b.team_id = $2 AND b.workspace_id = $3`,
+              WHERE b.id = $1 AND (b.team_id = $2 OR b.scope = 'workspace') AND b.workspace_id = $3`,
             [input.botId, input.teamId, input.workspaceId],
           )
         ).rows[0];
+        // a workspace bot (the one Brain) has no team: it runs in the context team given, which must be a team of the same workspace (the table's trigger checks it again)
         if (!bot) throw new Error('the run has no bot on that team in that workspace');
         if (input.askerActorId !== undefined && input.askerActorId !== null) {
           const asker = (

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -522,5 +523,79 @@ describe('what the team can learn about a conversation run', () => {
     expect((await botPage(rafi, 'brain')).runs.filter((r) => r.trigger === 'conversation' && r.askerId === nadia.actorId)).toEqual([]);
     // the conversation runs exist: the page's silence is the privacy rule, not an empty table
     expect((await runsOf(brain.botId)).filter((r) => r.trigger_type === 'conversation').length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// P20-07: the workspace Brain has no team and no repo file. A person opens a conversation with it under a team they belong to, the channel lives in that team, the router
+// wakes it, and the run keeps that team as its context. Its BOT.md is read from the stored definition, not from a repo.
+describe('the workspace Brain (P20-07)', () => {
+  let atlas: LoadedBot;
+
+  beforeAll(async () => {
+    const md = botMd({ name: 'Atlas', triggers: ['{ type: conversation }', '{ type: mention }'], prompts: ['What do all our teams know about the launch?'] }).replace('Answers questions in the conversation test', 'The workspace memory');
+    const withVisibility = md.replace('triggers:', 'visibility: workspace\ntriggers:');
+    const sha = createHash('sha256').update(withVisibility, 'utf8').digest('hex');
+    atlas = await w.system(async (tx) => {
+      const ws = (await tx.query<{ workspace_id: string }>(`SELECT workspace_id FROM app.teams WHERE slug = 'engineering'`)).rows[0]!.workspace_id;
+      const botId = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, scope, triggers, native, model_aliases)
+           VALUES ($1, NULL, 'atlas', 'Atlas', 'The workspace memory', 'agent', 'hermes', 'workspace', $2, 'active', 'workspace',
+                   '[{"type":"conversation"},{"type":"mention"}]'::jsonb, '["messages.post"]'::jsonb, '{smart}') RETURNING id`,
+          [ws, sha],
+        )
+      ).rows[0]!.id;
+      const actorId = (await tx.query<{ id: string }>(`INSERT INTO app.actors (workspace_id, kind, ref_id) VALUES ($1, 'bot', $2) RETURNING id`, [ws, botId])).rows[0]!.id;
+      await tx.query(`INSERT INTO app.workspace_bot_definitions (workspace_id, slug, version, sha, content) VALUES ($1, 'atlas', 1, $2, $3)`, [ws, sha, withVisibility]);
+      await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) SELECT id, $2, $1, 'member' FROM app.teams WHERE workspace_id = $1`, [ws, actorId]);
+      await tx.query(`INSERT INTO app.capability_grants (team_id, actor_id, capability) VALUES ($1, $2, 'messages.post')`, [ws, actorId]);
+      return { botId, actorId };
+    });
+  });
+
+  it('opens under a team the person belongs to, with the prompts of its stored definition; the channel lives in that team', async () => {
+    const res = await open(nadia, 'atlas');
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const opened = OpenConversationResponse.parse(res.body);
+    expect(opened).toMatchObject({ botId: atlas.botId, created: true, promptSource: 'definition', prompts: ['What do all our teams know about the launch?'] });
+    const team = await w.system(async (tx) => (await tx.query<{ team_id: string }>('SELECT team_id FROM app.channels WHERE id = $1', [opened.channelId])).rows[0]!.team_id);
+    expect(team).toBe(await w.system(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.teams WHERE slug = 'engineering'`)).rows[0]!.id));
+    // the same door the second time finds the same channel
+    expect(OpenConversationResponse.parse((await open(nadia, 'atlas')).body)).toMatchObject({ channelId: opened.channelId, created: false });
+  });
+
+  it('is woken by a message in the conversation: the reply is the bot\'s, the run keeps the team of the channel and is the person\'s', async () => {
+    const opened = OpenConversationResponse.parse((await open(nadia, 'atlas')).body);
+    const root = await send(nadia, opened.channelId, 'What do all our teams know about the launch?');
+    const reply = await until(async () => (await repliesBy(nadia, opened.channelId, root, atlas.actorId))[0], 60_000, 'the workspace Brain to answer');
+    expect(reply.body).toContain('What do all our teams know about the launch?');
+    const run = await until(
+      async () => {
+        const rows = await runsOf(atlas.botId);
+        return rows.length === 1 && rows[0]!.status === 'done' ? rows[0]! : null;
+      },
+      40_000,
+      'the run of the workspace Brain to close',
+    );
+    expect(run).toMatchObject({ trigger_type: 'conversation', asker_id: nadia.actorId, channel_id: opened.channelId });
+    const team = await w.system(async (tx) => (await tx.query<{ team_id: string }>('SELECT team_id FROM app.bot_runs WHERE id = $1', [run.id])).rows[0]!.team_id);
+    const channelTeam = await w.system(async (tx) => (await tx.query<{ team_id: string }>('SELECT team_id FROM app.channels WHERE id = $1', [opened.channelId])).rows[0]!.team_id);
+    expect(team).toBe(channelTeam);
+  });
+
+  it('answers an @mention in a channel of any team it sits in, as the person who asked, in the thread', async () => {
+    const root = await send(nadia, devChannel, '@atlas what do we know about the launch?');
+    const reply = await until(async () => (await repliesBy(nadia, devChannel, root, atlas.actorId))[0], 60_000, 'the workspace Brain to answer the mention');
+    expect(reply.body).toContain('what do we know about the launch?');
+    const run = await until(
+      async () => (await runsOf(atlas.botId)).find((r) => r.trigger_type === 'mention' && r.status === 'done') ?? null,
+      40_000,
+      'the mention run to close',
+    );
+    expect(run).toMatchObject({ asker_id: nadia.actorId, channel_id: devChannel });
+  });
+
+  it('is refused to a guest, and to a person of no team', async () => {
+    expect((await open(personas.lena, 'atlas')).status).toBe(403);
   });
 });

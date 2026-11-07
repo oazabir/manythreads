@@ -24,6 +24,20 @@ interface Commit {
   sha: string;
 }
 
+/**
+ * Where a definition lands: a team's bot (`teamId` set, the row is unique by (team, slug)) or the workspace bot (`teamId` null, unique by (workspace, slug)
+ * among `scope = 'workspace'` rows; P20-07). The workspace bot has no team, so it emits none of the team-keyed bots events.
+ */
+interface Target {
+  workspaceId: string;
+  teamId: string | null;
+}
+
+const lookupBot = (target: Target, columns: string): { sql: string; params: string[] } =>
+  target.teamId === null
+    ? { sql: `SELECT ${columns} FROM app.bots WHERE workspace_id = $1 AND scope = 'workspace' AND slug = $2`, params: [target.workspaceId] }
+    : { sql: `SELECT ${columns} FROM app.bots WHERE team_id = $1 AND slug = $2`, params: [target.teamId] };
+
 interface InvalidInput {
   slug: string;
   path: string;
@@ -33,8 +47,9 @@ interface InvalidInput {
 }
 
 /** Alert on a definition that would not load; keep the previous row (as `invalid`) when there is one, make no row when there is not. */
-async function invalidate(ctx: PluginContext, tx: PluginTx, commit: Commit, input: InvalidInput): Promise<void> {
-  const existing = await tx.query<{ id: string }>('SELECT id FROM app.bots WHERE team_id = $1 AND slug = $2', [commit.teamId, input.slug]);
+async function invalidate(ctx: PluginContext, tx: PluginTx, commit: Target, input: InvalidInput): Promise<void> {
+  const q = lookupBot(commit, 'id');
+  const existing = await tx.query<{ id: string }>(q.sql, [...q.params, input.slug]);
   const botId = existing.rows[0]?.id ?? null;
   // A bot a lead turned off stays off while its file is broken (and after it is repaired): only `active` becomes `invalid`. The reason is
   // stored either way, so the page can say why the last load failed; the next good load clears it.
@@ -48,6 +63,7 @@ async function invalidate(ctx: PluginContext, tx: PluginTx, commit: Commit, inpu
       [botId, JSON.stringify({ fieldPath: input.fieldPath, message: input.message, at: new Date().toISOString(), definitionSha: input.definitionSha })],
     );
   }
+  if (commit.teamId === null) return; // the workspace bot: the reason is on the row; the team-keyed alert event has no team to name
   await ctx.audit.emit(tx, {
     type: 'bots.bot.invalid',
     workspaceId: commit.workspaceId,
@@ -96,7 +112,18 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) throw new Error('the repo provider is not registered');
   const blob = await repo.blob(tx, commit.teamId, path, commit.sha);
-  const definitionSha = createHash('sha256').update(blob.content).digest('hex');
+  await applyDefinition(ctx, tx, { workspaceId: commit.workspaceId, teamId: commit.teamId }, slug, path, blob.content);
+  // A team made from a template still ships a Brain of its own; once the workspace Brain is active it is switched off the moment it loads (it stays, with its history).
+  if (slug === WORKSPACE_BRAIN_SLUG) await retireTeamBrains(tx, commit.workspaceId);
+}
+
+/**
+ * Parse one definition and write the bot it describes (the row, its actor, its memberships, its grants). Shared by the team loader (the file read at a commit) and the
+ * workspace loader (the stored text): the steps are the same, only the lookup of the row, the memberships and the events differ with the target.
+ */
+async function applyDefinition(ctx: PluginContext, tx: PluginTx, target: Target, slug: string, path: string, content: Uint8Array): Promise<boolean> {
+  const commit = target;
+  const definitionSha = createHash('sha256').update(content).digest('hex');
 
   if (!SLUG.test(slug)) {
     await invalidate(ctx, tx, commit, {
@@ -106,20 +133,26 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       fieldPath: 'slug',
       message: botSlugProblem(slug),
     });
-    return;
+    return false;
   }
-  const parsed = parseBotMd(Buffer.from(blob.content).toString('utf8'));
+  const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
   if (!parsed.ok) {
     await invalidate(ctx, tx, commit, { slug, path, definitionSha, ...parsed.failure });
-    return;
+    return false;
   }
   const fm = parsed.frontmatter;
+  // the workspace bot is read by the whole workspace: the table says so (bots_scope_visibility), the definition must too
+  if (commit.teamId === null && fm.visibility !== 'workspace') {
+    await invalidate(ctx, tx, commit, { slug, path, definitionSha, fieldPath: 'visibility', message: 'The workspace bot must say `visibility: workspace`.' });
+    return false;
+  }
   // `placement.runs_on` names a runner an admin set up (P19-03): it must exist and the team must be allowed to use it. A miss is an invalid definition with the reason on the bot,
   // never a half row. The question is asked on this transaction (a subscriber must not read on a connection of its own). A runner that is switched off is not a miss: that is judged when a run starts.
-  const placementProblem = await botPlacementProblem(ctx.providers.get<BotRunnersProvider>('bot.runners'), tx, { teamId: commit.teamId, frontmatter: fm });
+  // (The workspace bot belongs to no team: its runner is judged against the context team when a run starts.)
+  const placementProblem = commit.teamId === null ? null : await botPlacementProblem(ctx.providers.get<BotRunnersProvider>('bot.runners'), tx, { teamId: commit.teamId, frontmatter: fm });
   if (placementProblem !== null) {
     await invalidate(ctx, tx, commit, { slug, path, definitionSha, fieldPath: 'placement.runs_on', message: placementProblem });
-    return;
+    return false;
   }
   const native = fm.capabilities?.native ?? [];
   const triggers = fm.triggers ?? [];
@@ -129,16 +162,17 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   // (`approvals.needsApproval` is applied here too: the tools of the entry that wait for a person)
   const connections = connectionEntries(fm);
   // What the previous load compiled: the grants this one has to resync. Read after the parse, so an invalid file changes nothing.
-  const previous = (await tx.query<{ native: string[] }>('SELECT native FROM app.bots WHERE team_id = $1 AND slug = $2', [commit.teamId, slug])).rows[0];
+  const previousQuery = lookupBot(commit, 'native');
+  const previous = (await tx.query<{ native: string[] }>(previousQuery.sql, [...previousQuery.params, slug])).rows[0];
   const previousNative = previous?.native ?? [];
   // The picture (P14-24) is chosen only for a row that does not exist yet and is not in the conflict's update list below: a reload never re-rolls it, and a
   // picture a person chose (or "use initials") stays as it is.
   const avatar = previous === undefined ? newBotAvatar(slug) : null;
 
   const row = await tx.query<{ id: string }>(
-    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds, run_timeout_known, knowledge, avatar, connections)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16, true, $17::jsonb, $18::text, $19::jsonb)
-     ON CONFLICT (team_id, slug) DO UPDATE SET
+    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds, run_timeout_known, knowledge, avatar, connections, scope)
+     VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16, true, $17::jsonb, $18::text, $19::jsonb, $20)
+     ON CONFLICT ${commit.teamId === null ? "(workspace_id, slug) WHERE scope = 'workspace'" : '(team_id, slug)'} DO UPDATE SET
        -- the display fields follow the definition (PLAN P5-05): the roster draws the row, never the file
        name           = EXCLUDED.name,
        role           = EXCLUDED.role,
@@ -184,6 +218,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       JSON.stringify(knowledge),
       avatar,
       JSON.stringify(connections),
+      commit.teamId === null ? 'workspace' : 'team',
     ],
   );
   const botId = row.rows[0]!.id;
@@ -200,15 +235,21 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   // The bot is a member of its team (`team_members` is the roster of people *and* bots, kernel 0006). That one row is what gives a bot its
   // team's public channels: `app.readable_team_ids` and `app.visible_channel_ids` speak of members, and a bot's reply lands in the thread
   // it was asked in because it may post where its team may. Never a private channel or a DM — those are membership rows per channel.
-  await ctx.db.getOneOrCreate<{ actor_id: string }>(tx, {
-    table: 'app.team_members',
-    values: { team_id: commit.teamId, actor_id: actorId, workspace_id: commit.workspaceId, role: 'member' },
-    conflict: ['team_id', 'actor_id'],
-    returning: ['actor_id'],
-  });
+  if (commit.teamId === null) {
+    await joinEveryTeam(tx, commit.workspaceId, actorId);
+  } else {
+    await ctx.db.getOneOrCreate<{ actor_id: string }>(tx, {
+      table: 'app.team_members',
+      values: { team_id: commit.teamId, actor_id: actorId, workspace_id: commit.workspaceId, role: 'member' },
+      conflict: ['team_id', 'actor_id'],
+      returning: ['actor_id'],
+    });
+  }
+  // `capability_grants.team_id` is required: the workspace bot's grants carry the WORKSPACE id there (every reader of grants looks them up by actor and capability, as the system).
+  const grantTeam = commit.teamId ?? commit.workspaceId;
 
   // The definition's own allowlist, then `handover.mayTag` — which owns `tasks.handoff` alone.
-  await compileNative(tx, actorId, commit.teamId, native, new Set(fm.approvals?.needsApproval ?? []), previousNative);
+  await compileNative(tx, actorId, grantTeam, native, new Set(fm.approvals?.needsApproval ?? []), previousNative);
 
   // `tasks.handoff` is compiled from `handover`: `mayTag` (bots, by slug) and `toPerson` (people: `person:<id>` or `role:<tag>`, resolved by the tasks plugin
   // through the teams plugin's role groups, P14-03). Neither listed: no grant.
@@ -219,12 +260,13 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       `INSERT INTO app.capability_grants (team_id, actor_id, capability, constraints)
        VALUES ($1, $2, 'tasks.handoff', jsonb_build_object('mayTag', $3::jsonb, 'toPerson', $4::jsonb))
        ON CONFLICT (actor_id, capability) DO UPDATE SET team_id = EXCLUDED.team_id, constraints = EXCLUDED.constraints`,
-      [commit.teamId, actorId, JSON.stringify(mayTag), JSON.stringify(toPerson)],
+      [grantTeam, actorId, JSON.stringify(mayTag), JSON.stringify(toPerson)],
     );
   } else {
     await tx.query(`DELETE FROM app.capability_grants WHERE actor_id = $1 AND capability = 'tasks.handoff'`, [actorId]);
   }
 
+  if (commit.teamId === null) return true; // no team to name in the team-keyed event (the row, the actor and the grants are the record)
   await ctx.audit.emit(tx, {
     type: 'bots.bot.loaded',
     workspaceId: commit.workspaceId,
@@ -235,6 +277,78 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
     definitionSha,
     mayTag,
   });
+  return true;
+}
+
+export const WORKSPACE_BRAIN_SLUG = 'brain';
+
+/**
+ * Switch off the team Brains the workspace Brain replaces. Only an `active` or `invalid` team bot named `brain` is touched, and only once the workspace Brain is active; the
+ * row, its runs, conversations and memory stay. Returns how many were retired.
+ */
+export async function retireTeamBrains(tx: PluginTx, workspaceId: string): Promise<number> {
+  const res = await tx.query(
+    `UPDATE app.bots t SET status = 'disabled', retired_at = now(), updated_at = now()
+      WHERE t.workspace_id = $1::uuid AND t.scope = 'team' AND t.slug = $2 AND t.retired_at IS NULL
+        AND EXISTS (SELECT 1 FROM app.bots w WHERE w.workspace_id = t.workspace_id AND w.scope = 'workspace' AND w.slug = $2 AND w.status = 'active')
+      RETURNING t.id`,
+    [workspaceId, WORKSPACE_BRAIN_SLUG],
+  );
+  return res.rows.length;
+}
+
+/** The workspace bot is a member of every live team of the workspace: that row is what lets it post where the team may (a bot's reply lands in the channel it was asked in). */
+async function joinEveryTeam(tx: PluginTx, workspaceId: string, actorId: string): Promise<void> {
+  await tx.query(
+    `INSERT INTO app.team_members (team_id, actor_id, workspace_id, role)
+     SELECT t.id, $2::uuid, $1::uuid, 'member' FROM app.teams t WHERE t.workspace_id = $1::uuid AND t.archived_at IS NULL
+     ON CONFLICT (team_id, actor_id) DO NOTHING`,
+    [workspaceId, actorId],
+  );
+}
+
+/**
+ * Load the workspace bot (P20-07, `scope = 'workspace'`): store BOT.md text as the next version of `app.workspace_bot_definitions` (when it differs from the newest) and rebuild
+ * the bot row, its actor, its membership in every team and its grants, exactly as the team loader does for a file. `slug` is the folder name a team would have used (`brain`).
+ * Returns the bot's id, or null when the definition is invalid (the previous row stays, as `invalid`, with the reason on it).
+ */
+export async function loadWorkspaceBot(
+  ctx: PluginContext,
+  tx: PluginTx,
+  input: { workspaceId: string; slug: string; content: string; authorActorId?: string | null },
+): Promise<string | null> {
+  const bytes = Buffer.from(input.content, 'utf8');
+  const sha = createHash('sha256').update(bytes).digest('hex');
+  const newest = (
+    await tx.query<{ version: number; sha: string }>(
+      'SELECT version, sha FROM app.workspace_bot_definitions WHERE workspace_id = $1 AND slug = $2 ORDER BY version DESC LIMIT 1',
+      [input.workspaceId, input.slug],
+    )
+  ).rows[0];
+  // A definition is kept as a version only once it has loaded (nothing runs from an invalid text); an invalid one leaves the previous bot as it was, with the reason on it.
+  const loaded = await applyDefinition(ctx, tx, { workspaceId: input.workspaceId, teamId: null }, input.slug, `workspace:${input.slug}`, bytes);
+  if (!loaded) return null;
+  if (newest?.sha !== sha) {
+    await tx.query(
+      'INSERT INTO app.workspace_bot_definitions (workspace_id, slug, version, sha, content, author_id) VALUES ($1, $2, $3, $4, $5, $6)',
+      [input.workspaceId, input.slug, (newest?.version ?? 0) + 1, sha, input.content, input.authorActorId ?? null],
+    );
+  }
+  const q = lookupBot({ workspaceId: input.workspaceId, teamId: null }, 'id');
+  const row = (await tx.query<{ id: string }>(q.sql, [...q.params, input.slug])).rows[0];
+  return row?.id ?? null;
+}
+
+/** A team was made (or a bot re-loaded): the workspace bots join it, so they can post in its channels. */
+export async function joinNewTeam(tx: PluginTx, workspaceId: string, teamId: string): Promise<void> {
+  await tx.query(
+    `INSERT INTO app.team_members (team_id, actor_id, workspace_id, role)
+     SELECT $2::uuid, a.id, $1::uuid, 'member'
+       FROM app.bots b JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = b.id AND a.workspace_id = b.workspace_id
+      WHERE b.workspace_id = $1::uuid AND b.scope = 'workspace' AND b.team_id IS NULL
+     ON CONFLICT (team_id, actor_id) DO NOTHING`,
+    [workspaceId, teamId],
+  );
 }
 
 /** The file is gone: the row goes too (pairing tokens, runs and the team membership cascade); the actor row stays, because messages reference it. */

@@ -17,8 +17,20 @@ const defaults = (): PromptSet => ({ prompts: [...DEFAULT_CONVERSATION_PROMPTS],
 export async function promptsOf(
   ctx: PluginContext,
   tx: PluginTx,
-  bot: { teamId: string; slug: string; definitionSha: string },
+  bot: { teamId: string; slug: string; definitionSha: string; scope?: string },
 ): Promise<PromptSet> {
+  // the workspace Brain has no repo: its BOT.md is kept in app.workspace_bot_definitions (bots 0027), read at the sha the roster row was loaded from
+  if (bot.scope === 'workspace') {
+    const row = (
+      await tx.query<{ content: string }>(
+        'SELECT content FROM app.workspace_bot_definitions WHERE workspace_id = app.workspace_id() AND slug = $1 AND sha = $2 ORDER BY version DESC LIMIT 1',
+        [bot.slug, bot.definitionSha],
+      )
+    ).rows[0];
+    const parsed = row ? parseBotMd(row.content) : null;
+    const named = parsed?.ok ? (parsed.frontmatter.conversation?.prompts ?? []) : [];
+    return named.length > 0 ? { prompts: [...named], source: 'definition' } : defaults();
+  }
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) return defaults();
   // a savepoint: a statement the repo provider runs that fails must not take the caller's transaction (the conversation it just opened) with it

@@ -28,16 +28,19 @@ export interface BotRow {
   role: string;
   status: string;
   definition_sha: string;
+  /** 'team' (a bot of the team's repo) or 'workspace' (the one Brain). */
+  scope: string;
   /** The BOT.md triggers include `conversation`: the only trigger a message in a conversation channel fires. */
   conversational: boolean;
   [key: string]: unknown;
 }
 
-/** The bot of the team, or 404: an unknown slug and one of another team answer alike. */
+/** The bot of the team, or the workspace bot of that name (the one Brain, P20-07), or 404: an unknown slug and one of another team answer alike. */
 export async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<BotRow> {
   const res = await tx.query<BotRow>(
-    `SELECT id, slug, name, role, status, definition_sha, jsonb_path_exists(triggers, '$[*] ? (@.type == "conversation")') AS conversational
-       FROM app.bots WHERE team_id = $1 AND slug = $2`,
+    `SELECT id, slug, name, role, status, definition_sha, scope, jsonb_path_exists(triggers, '$[*] ? (@.type == "conversation")') AS conversational
+       FROM app.bots WHERE (team_id = $1 OR scope = 'workspace') AND slug = $2
+      ORDER BY (scope = 'workspace') DESC LIMIT 1`,
     [teamId, botSlug],
   );
   const bot = res.rows[0];
@@ -169,7 +172,7 @@ export function registerRoutes(ctx: PluginContext): void {
       if (made.created) {
         await ctx.audit.emit(tx, { type: 'channel.channel.created', channelId: made.channel_id, teamId: null, name: '', kind: 'bot_conversation', private: true });
       }
-      const chips = await promptsOf(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha });
+      const chips = await promptsOf(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha, scope: bot.scope });
       return json(
         OpenConversationResponse.parse({
           botId: bot.id,

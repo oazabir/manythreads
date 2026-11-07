@@ -20,7 +20,7 @@ export function registerChatRouter(ctx: PluginContext): void {
     if (author?.ref_id !== event.personId) return;
     const bot = (
       await tx.query<{ id: string; slug: string; triggers: BotTrigger[] | null }>(
-        "SELECT id, slug, triggers FROM app.bots WHERE id = $1::uuid AND team_id = $2::uuid AND status = 'active'",
+        "SELECT id, slug, triggers FROM app.bots WHERE id = $1::uuid AND (team_id = $2::uuid OR scope = 'workspace') AND status = 'active'",
         [event.botId, message.channel_team],
       )
     ).rows[0];

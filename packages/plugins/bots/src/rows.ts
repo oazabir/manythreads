@@ -9,7 +9,9 @@ const iso = (d: Date | null): string | null => d?.toISOString() ?? null;
 export type BotRow = {
   id: string;
   workspace_id: string;
-  team_id: string;
+  /** NULL for the workspace bot (`scope = 'workspace'`); the roster fills in the context team before mapping. */
+  team_id: string | null;
+  scope?: string;
   slug: string;
   name: string;
   role: string;
@@ -28,12 +30,13 @@ export type BotRow = {
   updated_at: Date;
 };
 export const BOT_COLUMNS =
-  'id, workspace_id, team_id, slug, name, role, avatar, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, triggers, created_at, updated_at';
+  'id, workspace_id, team_id, scope, slug, name, role, avatar, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, triggers, created_at, updated_at';
 export const toBot = (r: BotRow): Bot =>
   Bot.parse({
     id: r.id,
     workspaceId: r.workspace_id,
     teamId: r.team_id,
+    ...(r.scope === 'workspace' || r.scope === 'team' ? { scope: r.scope } : {}),
     slug: r.slug,
     name: r.name,
     role: r.role,

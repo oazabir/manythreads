@@ -115,7 +115,7 @@ export function registerScheduledJobRouter(ctx: PluginContext): void {
       await tx.query<BotRow>(
         `SELECT b.id, b.slug, b.name, b.status, b.triggers, a.id AS actor_id
            FROM app.bots b JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = b.id
-          WHERE b.id = $1::uuid AND b.team_id = $2::uuid`,
+          WHERE b.id = $1::uuid AND (b.team_id = $2::uuid OR b.scope = 'workspace')`,
         [event.botId, teamId],
       )
     ).rows[0];
