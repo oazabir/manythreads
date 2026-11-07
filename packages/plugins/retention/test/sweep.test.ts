@@ -701,4 +701,24 @@ describe('Personal spaces of deactivated people (P20-13)', () => {
     expect(counts.personalSpaces).toBe(0);
     expect(await holds(nadia.personId)).toMatchObject({ files: 1 });
   });
+
+  it('a person being reactivated at that very moment keeps the space (the sweep skips a person whose row is locked)', async () => {
+    const { sameera } = personas;
+    await give(sameera, 'race.md');
+    await deactivate(sameera.personId, 40);
+    const reactivating = await sysPool.connect();
+    try {
+      await reactivating.query('BEGIN');
+      await reactivating.query("UPDATE app.people SET status = 'active' WHERE id = $1", [sameera.personId]);
+      // The reactivation has not committed, so the sweep still sees a person deactivated 40 days ago.
+      expect((await sweep()).counts.personalSpaces).toBe(0);
+      await reactivating.query('COMMIT');
+    } finally {
+      reactivating.release();
+    }
+    expect(await holds(sameera.personId)).toMatchObject({ files: 1, versions: 1 });
+    // Once the reactivation is committed the person is simply active, and stays so.
+    expect((await sweep()).counts.personalSpaces).toBe(0);
+    expect(await holds(sameera.personId)).toMatchObject({ files: 1, versions: 1 });
+  });
 });

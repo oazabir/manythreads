@@ -278,7 +278,9 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
     if (removed < batch.runs) return { done: false, state: { ...state, phase: 'personal', cursor: null, counts, step: state.step + 1 } };
   }
   else {
-    // Personal spaces of people deactivated for longer than the keep window. The cutoff is never later than the window gives now.
+    // Personal spaces of people deactivated for longer than the keep window. The cutoff is never later than the window gives now. The people rows are
+    // locked while their files go (a reactivation in flight holds its row, so that person is left for the next sweep; one that comes after waits until
+    // the files are gone, which is right because the window had passed).
     const cutoff = new Date(Math.min(Date.parse(state.personalCutoff ?? state.startedAt), Date.now() - PERSONAL_KEEP_DAYS_DEFAULT * DAY_MS)).toISOString();
     const people = (
       await tx.query<{ id: string }>(
@@ -286,7 +288,7 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
           WHERE p.workspace_id = $1::uuid AND p.status = 'suspended' AND p.suspended_at IS NOT NULL AND p.suspended_at < $2::timestamptz
             AND ($3::uuid IS NULL OR p.id > $3::uuid)
             AND (EXISTS (SELECT 1 FROM app.files f WHERE f.owner_person_id = p.id) OR EXISTS (SELECT 1 FROM app.personal_folders d WHERE d.owner_person_id = p.id))
-          ORDER BY p.id LIMIT $4`,
+          ORDER BY p.id LIMIT $4${state.dryRun ? '' : ' FOR UPDATE OF p SKIP LOCKED'}`,
         [state.workspaceId, cutoff, cursor, batch.runs],
       )
     ).rows;
