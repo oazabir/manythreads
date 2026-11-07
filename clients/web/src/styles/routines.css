@@ -345,6 +345,36 @@
   align-items: flex-end;
 }
 
+.ai-date {
+  position: relative;
+  display: block;
+}
+
+.ai-date .dlg-input {
+  width: 100%;
+}
+
+.ai-date-hint {
+  position: absolute;
+  inset-block: 1px;
+  inset-inline-start: 1px;
+  display: flex;
+  align-items: center;
+  padding-inline: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.ai-date.unset .dlg-input:focus ~ .ai-date-hint {
+  display: none;
+}
+
+.ai-date.unset .dlg-input:not(:focus)::-webkit-datetime-edit {
+  opacity: 0;
+}
+
 .ai-field {
   display: grid;
   flex: 1 1 140px;

@@ -43,7 +43,23 @@ export function railGroups(items: readonly ConversationListItem[], now: Date = n
 }
 
 /** The name a conversation shows: the title, else the first words of the question, else a plain placeholder. */
-export const railTitle = (item: { title: string }): string => (item.title.trim() !== '' ? item.title.trim() : 'New chat');
+export const railTitle = (item: { title: string }): string => {
+  const line = item.title.replace(/\s+/g, ' ').trim();
+  return line !== '' ? line : 'New chat';
+};
+
+/** How long a chat's name is when it is drawn: the header and the rail show one short line, the whole name is the tooltip. */
+export const TITLE_SHOWN = 60;
+
+/** The name cut at a word boundary within `max` characters, with an ellipsis; a short name is returned as it is. */
+export function shortTitle(title: string, max: number = TITLE_SHOWN): string {
+  const line = railTitle({ title });
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  const words = space >= max / 2 ? cut.slice(0, space) : cut;
+  return `${words.replace(/[\s.,;:!?\-–—]+$/u, '')}…`;
+}
 
 // ---- the rows of one conversation ------------------------------------------------------------------------------------------------
 
@@ -83,6 +99,17 @@ export function buildRows(root: ChannelMessage | null, replies: readonly Channel
 
 /** Whether the newest thing in the conversation is the person's own message: an answer is on its way. */
 export const awaitingAnswer = (rows: readonly ChatRow[]): boolean => rows.at(-1)?.kind === 'person';
+
+/**
+ * The failed answer that can be asked for again: the last row is a bot message that is not an answer to a turn (the notice a run that failed leaves in the thread, marked `meta.runFailure`) and a
+ * message of the person's comes before it. `turnId` is that message, the turn to ask again. Null when the newest thing is an answer, or the person's own message.
+ */
+export function retryOf(rows: readonly ChatRow[]): { messageId: string; turnId: string } | null {
+  const last = rows.at(-1);
+  if (!last || last.kind !== 'bot' || last.turn !== null || last.message.meta.runFailure === undefined) return null;
+  const person = [...rows].reverse().find((r) => r.kind === 'person');
+  return person ? { messageId: last.message.id, turnId: person.message.id } : null;
+}
 
 /** The variants of a turn in the order they were written, for the ‹ 2 / 3 › control: the position (1-based) and how many there are. */
 export function variantPosition(row: Extract<ChatRow, { kind: 'bot' }>): { at: number; of: number } | null {

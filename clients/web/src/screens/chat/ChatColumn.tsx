@@ -11,10 +11,10 @@ import { splitAttachments } from '../../channels/images';
 import { channelStore, threadKey } from '../../channels/store';
 import { Avatar } from '../../components/ui';
 import { sayToast } from '../../kernel/toast';
-import { StopIcon } from '../../shell/icons';
+import { RegenerateIcon, StopIcon } from '../../shell/icons';
 import { chooseVariant, giveFeedback, regenerateTurn } from './api';
 import { LookedAt } from './LookedAt';
-import { answerStatus, awaitingAnswer, buildRows, neighbourVariant, previewLive, variantPosition, type ChatRow, type Preview } from './model';
+import { answerStatus, awaitingAnswer, buildRows, neighbourVariant, previewLive, retryOf, variantPosition, type ChatRow, type Preview } from './model';
 import { ReplyActions } from './ReplyActions';
 
 /** How long after the person's message the column says the bot is on it: a run that has not answered by then has failed, and says so in the thread. */
@@ -137,6 +137,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   const live = previewLive(preview) || (state?.liveRunId ?? null) !== null;
   const busy = live || asked;
   const lastMine = rows.at(-1);
+  const retry = retryOf(rows);
   // (what is left of an answer that has ended — a stopped one, say — is not the next answer being written: only a preview that is still open is drawn as streaming)
   const waitingOnBot =
     busy || (awaitingAnswer(rows) && lastMine !== undefined && Date.now() - Date.parse(lastMine.message.createdAt) < AWAIT_MS) || pendingText !== null;
@@ -242,6 +243,11 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
             <div className="ch-text"><Markdown source={m.body} teamSlug={team} /></div>
           )}
           {row.variant?.stopped ? <p className="ch-stopped" data-testid="chat-stopped">You stopped this answer.</p> : null}
+          {retry?.messageId === m.id ? (
+            <button type="button" className="btn s ch-retry" disabled={busy || busyTurn !== null} onClick={() => void regenerate(retry.turnId)} data-testid="chat-retry">
+              <RegenerateIcon /> <span>Try again</span>
+            </button>
+          ) : null}
           {turnId !== null ? (
             <ReplyActions
               position={position}

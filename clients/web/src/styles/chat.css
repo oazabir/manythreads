@@ -133,6 +133,12 @@
   cursor: pointer;
 }
 
+.ch-main .ph-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ch-row-title {
   flex: 1;
   min-width: 0;
@@ -437,6 +443,13 @@
   margin: 4px 0 0;
   color: var(--faint);
   font-size: var(--fs-caption);
+}
+
+.ch-retry {
+  margin-top: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 .ch-thinking {

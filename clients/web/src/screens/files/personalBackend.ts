@@ -76,6 +76,12 @@ function refuse(err: unknown): never {
   throw err;
 }
 
+/**
+ * What tells one state of a Personal file from the next. The tree carries no blob sha for a Personal file (that is a git word), so the row holds the time of its
+ * last change and its size: a restore, an upload of a new version or a save from another page changes it, and the open viewer reads the file again.
+ */
+export const personalStamp = (updatedAt: string | null, size: number | null): string | null => (updatedAt === null ? null : `${updatedAt}|${String(size ?? 0)}`);
+
 export function toPersonalRow(e: FilesTreeEntry, perms: Perms): FileRow {
   return {
     path: e.path,
@@ -92,7 +98,7 @@ export function toPersonalRow(e: FilesTreeEntry, perms: Perms): FileRow {
     managedBy: e.managedBy,
     fileId: e.fileId,
     channelId: null,
-    blobSha: e.blobSha,
+    blobSha: e.kind === 'file' ? personalStamp(e.updatedAt, e.size) : e.blobSha,
     contentUrl: e.contentUrl,
   };
 }
@@ -119,7 +125,7 @@ export function createPersonalBackend(transport: PersonalTransport, perms: Perms
     statById: () => Promise.resolve(null),
     open(row): FileContent {
       let sha = row.blobSha;
-      const url = `${row.contentUrl ?? ''}${row.contentUrl && !row.contentUrl.startsWith('data:') ? `?v=${row.blobSha ?? ''}` : ''}`;
+      const url = `${row.contentUrl ?? ''}${row.contentUrl && !row.contentUrl.startsWith('data:') ? `?v=${encodeURIComponent(row.blobSha ?? '')}` : ''}`;
       const source = row.contentUrl ? httpSource(url) : httpSource('');
       return {
         source,
@@ -129,7 +135,7 @@ export function createPersonalBackend(transport: PersonalTransport, perms: Perms
             : async (text) => {
                 try {
                   const saved = await transport.upload(row.path.includes('/') ? parentOf(row.path) : '', new File([text], row.name, { type: row.mime || guess(row.name) }), 'version', () => undefined);
-                  sha = saved.sha256;
+                  sha = personalStamp(saved.updatedAt, saved.size);
                 } catch (err) {
                   refuse(err);
                 }

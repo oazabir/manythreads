@@ -5,6 +5,7 @@ import {
   allowanceSentence,
   canRunNow,
   lastRunSentence,
+  outputPlaceWords,
   quietHoursProblem,
   quietHoursSentence,
   routineLook,
@@ -23,6 +24,12 @@ describe('routine words', () => {
     expect(routineLook({ enabled: true, stoppedReason: null })).toEqual({ tone: 'ok', label: 'On' });
     expect(routineLook({ enabled: false, stoppedReason: null }).label).toBe('Paused');
     expect(routineLook({ enabled: false, stoppedReason: 'spend_cap' }).label).toBe('Stopped');
+  });
+  it('names where the answer goes in words, never as the default path', () => {
+    expect(outputPlaceWords('Routines/morning-brief/output.md')).toBe('Saved in your files, in the Routines folder, in a folder named after this routine.');
+    expect(outputPlaceWords('Notes/digest.md')).toBe('Saved in your files, in Notes.');
+    expect(outputPlaceWords('digest.md')).toBe('Saved in your files.');
+    expect(outputPlaceWords('Routines/morning-brief/output.md')).not.toMatch(/output\.md/);
   });
   it('says why a routine was stopped, and offers the right button', () => {
     expect(stopSentence({ stoppedReason: null })).toBeNull();

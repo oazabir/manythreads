@@ -183,6 +183,7 @@ export function SettingsFrame() {
         </aside>
         <div className="settings-main">
           <div className="settings-select" data-landmark="nav-select">
+            <Link to="/" className="settings-back" data-testid="settings-back"><BackIcon size={12} /> Back to the app</Link>
             <label htmlFor="settings-section">Settings section</label>
             <select id="settings-section" value={selectValue} onChange={(e) => navigate(e.target.value)}>
               {selectValue === '' ? <option value="" disabled>Choose…</option> : null}

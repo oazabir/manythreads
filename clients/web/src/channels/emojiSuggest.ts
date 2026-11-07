@@ -1,5 +1,5 @@
 import type { CustomEmoji } from '@manythreads/shared';
-import { EMOJI_GROUPS, SHORTCODE_ALIASES } from './emoji';
+import { EMOJI_GROUPS, SHORTCODE_ALIASES, emojiForShortcode } from './emoji';
 
 /*
  * The `:emoji:` list that opens while typing (PLAN P21-04): a colon that starts a word and two letters after it. Plain functions; the composer draws the list.
@@ -76,5 +76,11 @@ export function suggestEmoji(query: string, custom: readonly CustomEmoji[], limi
     if (hit) hits.push({ score: hit.score, kind: 1, order: b.order, item: { code: hit.word.replace(/[^a-z0-9_+-]/g, ''), char: b.char, custom: null } });
   }
   hits.sort((a, b) => a.score - b.score || a.kind - b.kind || a.order - b.order);
-  return hits.slice(0, limit).map((h) => h.item);
+  // One line per name: several emoji hold the word `smile`, but `:smile:` is one of them, so the list shows it once (the one the name stands for when it is sent).
+  const byName = new Map<string, EmojiSuggestion>();
+  for (const h of hits) {
+    const have = byName.get(h.item.code);
+    if (!have || (h.item.char !== null && have.char !== h.item.char && h.item.char === emojiForShortcode(h.item.code) && have.custom === null)) byName.set(h.item.code, h.item);
+  }
+  return [...byName.values()].slice(0, limit);
 }

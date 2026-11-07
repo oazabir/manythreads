@@ -4,7 +4,7 @@ import { ago } from '../../channels/format';
 import { useMenuKeys } from '../../shell/RowMenu';
 import { AddIcon, CloseIcon, ExportChatIcon, MoreIcon, PencilIcon, PinChatIcon, SearchIcon, TrashIcon, UnpinChatIcon } from '../../shell/icons';
 import { useDismiss } from '../../shell/useDismiss';
-import { railTitle, type RailGroup } from './model';
+import { railTitle, shortTitle, type RailGroup } from './model';
 
 export type RailActions = {
   onOpen: (root: string) => void;
@@ -60,17 +60,17 @@ function RailRow({ item, on, renaming, setRenaming, actions }: { item: Conversat
         />
       ) : (
         <button type="button" className="ch-row-main" aria-current={on ? 'true' : undefined} onClick={() => actions.onOpen(item.threadRootId)} data-testid="chat-row-open">
-          <span className="ch-row-title">{railTitle(item)}</span>
+          <span className="ch-row-title" title={railTitle(item)}>{shortTitle(railTitle(item))}</span>
           <span className="ch-row-meta" data-vt-mask>{ago(item.lastActivityAt)}</span>
           {unread ? <span className="ch-dot" role="img" aria-label="Unread" data-testid="chat-row-unread" /> : null}
         </button>
       )}
       <div className="ch-row-menu" ref={box}>
-        <button ref={button} type="button" className="ch-row-more" aria-label={`Options for ${railTitle(item)}`} aria-haspopup="menu" aria-expanded={open} data-testid="chat-row-menu" onClick={() => setOpen((o) => !o)}>
+        <button ref={button} type="button" className="ch-row-more" aria-label={`Options for ${shortTitle(railTitle(item))}`} aria-haspopup="menu" aria-expanded={open} data-testid="chat-row-menu" onClick={() => setOpen((o) => !o)}>
           <MoreIcon />
         </button>
         {open ? (
-          <div className="ch-menu" role="menu" aria-label={`Options for ${railTitle(item)}`} ref={panel as RefObject<HTMLDivElement>} onKeyDown={keys}>
+          <div className="ch-menu" role="menu" aria-label={`Options for ${shortTitle(railTitle(item))}`} ref={panel as RefObject<HTMLDivElement>} onKeyDown={keys}>
             <button type="button" role="menuitem" className="ch-menu-item" data-testid="chat-menu-rename" onClick={() => { close(); setRenaming(true); }}><PencilIcon /> Rename</button>
             <button type="button" role="menuitem" className="ch-menu-item" data-testid="chat-menu-pin" onClick={() => { close(); actions.onPin(item.threadRootId, !item.pinned); }}>
               {item.pinned ? <UnpinChatIcon /> : <PinChatIcon />} {item.pinned ? 'Unpin' : 'Pin'}

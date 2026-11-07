@@ -35,6 +35,10 @@ describe('slugFor', () => {
     expect(slugFor('   ', new Set())).toBe('routine');
     expect(slugFor('Résumé of the week', new Set()).startsWith('r')).toBe(true);
     expect(slugFor('x'.repeat(100), new Set()).length).toBeLessThanOrEqual(40);
+    // a long name is cut between words, never in the middle of one
+    const long = slugFor('Summarise my unread mail and tell me which needs a reply today', new Set());
+    expect(long).toBe('summarise-my-unread-mail-and-tell');
+    expect(slugFor('Summarise my unread mail and tell me what matters', new Set()).length).toBeLessThanOrEqual(34);
   });
 });
 
@@ -48,5 +52,9 @@ describe('the plain rules behind a draft', () => {
   it('makes a short name', () => {
     expect(nameFrom('Every weekday at 8am summarise my unread mail').length).toBeLessThanOrEqual(80);
     expect(nameFrom('x').length).toBeGreaterThan(0);
+    // whole words only, a sensible length
+    const name = nameFrom('Every weekday at 8am internationalisation-reconciliation documentation walkthroughs extraordinarily');
+    expect(name.length).toBeLessThanOrEqual(48);
+    expect(name).toBe('Internationalisation-reconciliation');
   });
 });

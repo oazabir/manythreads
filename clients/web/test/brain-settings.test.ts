@@ -15,7 +15,7 @@ import {
   modelLines,
   reachWords,
   runsOnWords,
-  shortSha,
+  modelTitle,
 } from '../src/screens/admin/brain/brainWords';
 
 /*
@@ -56,11 +56,10 @@ describe('the words of the Brain page', () => {
     expect(bad.sentence).toMatch(/last one that worked/);
   });
 
-  it('names the ways to ask it, and the short version of its definition', () => {
+  it('names the ways to ask it', () => {
     expect(reachWords({ conversational: true, mentionable: true })).toEqual(['A one-to-one conversation in Chat', '@Brain in any channel']);
     expect(reachWords({ conversational: false, mentionable: true })).toEqual(['@Brain in any channel']);
     expect(reachWords({ conversational: false, mentionable: false })).toEqual([]);
-    expect(shortSha(SHA)).toBe('ab12cd34');
   });
 
   it('says where it runs: a named runner, the default runner, or none', () => {
@@ -77,6 +76,8 @@ describe('the words of the Brain page', () => {
       { name: 'fast', bound: null },
     ]);
     expect(modelLines(null)).toBeNull();
+    // plain words, no model names or version hashes on the page
+    expect([modelTitle('smart'), modelTitle('fast')]).toEqual(['Careful answers', 'Quick jobs']);
   });
 
   it('states the reading rules as rules, not as switches', () => {

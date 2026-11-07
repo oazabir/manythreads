@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { isApiError } from '../api/client';
 import type { QueryState } from '../app/useQuery';
+import { useCrumbTail, useOwnsPageTitle } from '../shell/topic';
 import { Alert, Brand } from './ui';
 
 /** A centred message page (loading, errors, expired links). */
@@ -40,6 +41,9 @@ export function ForbiddenBody() {
 }
 
 export function NotFoundBody() {
+  // inside the shell the body is the page: it names the tab ("Page not found") and the shell adds no title of its own over it; outside the shell both are no-ops
+  useCrumbTail('Page not found');
+  useOwnsPageTitle();
   return (
     <>
       <h1 className="auth-title">Page not found</h1>

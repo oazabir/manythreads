@@ -35,9 +35,6 @@ export function brainState(bot: Pick<BotSummary, 'status' | 'invalid'>): BrainSt
   return { tone: 'ok', label: 'On', sentence: 'The Brain is loaded and switched on for every team.' };
 }
 
-/** The first eight characters of the definition's fingerprint, enough to tell two versions apart. */
-export const shortSha = (sha: string): string => sha.slice(0, 8);
-
 /** The ways a person can reach the Brain, from its definition's triggers. */
 export function reachWords(bot: Pick<BotSummary, 'conversational' | 'mentionable'>): string[] {
   const out: string[] = [];
@@ -57,6 +54,9 @@ export function runsOnWords(bot: Pick<BotSummary, 'placement'>, runners: readonl
 }
 
 export type ModelLine = { name: string; bound: string | null };
+
+/** The plain name of a model name the Brain asks for: `smart` is the careful one, `fast` the quick one. */
+export const modelTitle = (name: string): string => (name === 'smart' ? 'Careful answers' : name === 'fast' ? 'Quick jobs' : name);
 
 /** For each model name the Brain asks for, the model it is bound to now; null when the LLM page has no binding for it. */
 export function modelLines(aliases: readonly Pick<LlmAlias, 'alias' | 'model'>[] | null): ModelLine[] | null {
@@ -79,10 +79,10 @@ export const CONSENT_DEFAULT =
 
 /** What became of the old team Brains. The roster leaves a switched-off Brain out and no route lists it, so the page can say what happened but not name them. */
 export const RETIRED_TEAM_BRAINS =
-  'Each team used to have a Brain of its own. When the workspace Brain was set up, those were switched off. Their conversations, runs and memory stay readable, and they take no new questions. This page cannot list them: the server gives no list of switched-off bots.';
+  'Each team used to have a Brain of its own. When the workspace Brain was set up, those were switched off. Their chats, answers and memory stay readable, and they take no new questions. This page cannot list them: the server gives no list of switched-off bots.';
 
 export const NOT_EDITABLE =
-  'This page only shows the Brain. Its definition, its models and its runner cannot be changed from here yet. Models are bound on the LLM page, and runners on the Runners page.';
+  'This page only shows the Brain. What it does, which models it uses and where it runs cannot be changed from here yet. Models are chosen on the LLM page, and runners on the Runners page.';
 
 export const NOT_SET_UP =
   'The workspace Brain is not set up yet. The server creates it by itself, within fifteen minutes of starting. If this stays empty, ask whoever runs the server to look at the bots log.';

@@ -18,9 +18,9 @@ import {
   contextTeam,
   findWorkspaceBrain,
   modelLines,
+  modelTitle,
   reachWords,
   runsOnWords,
-  shortSha,
 } from './brainWords';
 
 /*
@@ -94,21 +94,15 @@ function BrainFacts({ brain, runners, aliases }: { brain: BotSummary; runners: B
             <div className="bn-main">
               <div>Where it runs</div>
               <div className="d" data-testid="brain-runs-on">{runsOnWords(brain, runners)}</div>
-              <div className="d">Each run happens in the team where the question was asked. Agent type: <span className="mono" data-testid="brain-runtime">{brain.runtime}</span>.</div>
+              <div className="d">Each answer is worked out in the team where the question was asked.</div>
             </div>
             <Link className="btn s" to="/settings/workspace/runners" data-testid="brain-runners-link">Runners</Link>
-          </li>
-          <li className="srow bn-row">
-            <div className="bn-main">
-              <div>Its definition</div>
-              <div className="d">Version <span className="mono" data-testid="brain-sha">{shortSha(brain.definitionSha)}</span>. Shared with every team in the workspace.</div>
-            </div>
           </li>
         </ul>
       </section>
 
       <section className="block" aria-labelledby="bn-model" data-testid="brain-model">
-        <h2 className="bh" id="bn-model">Its model</h2>
+        <h2 className="bh" id="bn-model">Which AI it uses</h2>
         {models === null ? (
           <div className="block-body"><p className="d" data-testid="brain-model-unknown">The model names could not be read just now.</p></div>
         ) : (
@@ -116,15 +110,15 @@ function BrainFacts({ brain, runners, aliases }: { brain: BotSummary; runners: B
             {models.map((m) => (
               <li className="srow bn-row" key={m.name} data-testid="brain-model-row" data-name={m.name}>
                 <div className="bn-main">
-                  <div><span className="mono">{m.name}</span></div>
-                  <div className="d" data-testid="brain-model-bound">{m.bound ? `Answers through ${m.bound}.` : 'Not bound to a model yet, so a question that asks for it fails.'}</div>
+                  <div>{modelTitle(m.name)}</div>
+                  <div className="d" data-testid="brain-model-bound">{m.bound ? `Uses ${m.bound}.` : 'No model is chosen for it yet, so a question that needs it fails.'}</div>
                 </div>
               </li>
             ))}
           </ul>
         )}
         <div className="block-body">
-          <p className="d">The Brain asks for these two names; the shipped definition lists them. Which model each one means is set on the <Link to="/settings/workspace/llm">LLM page</Link>.</p>
+          <p className="d">The Brain uses a careful model for questions and a quick one for small jobs. You choose the model behind each on the <Link to="/settings/workspace/llm">LLM page</Link>.</p>
         </div>
       </section>
     </>

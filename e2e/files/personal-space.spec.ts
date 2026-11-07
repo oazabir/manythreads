@@ -242,8 +242,7 @@ test('a note: edit it twice, read its versions and restore the first; the replac
     expect(after.items).toHaveLength(4);
     const replaced = await api.ctx.get(after.items[1]?.contentUrl ?? '');
     expect(await replaced.text()).toContain('Edit two');
-    // the page open in the middle shows the restored text after a reload
-    await page.reload();
+    // the page open in the middle shows the restored text without a reload
     const viewer = page.getByTestId('file-view').getByTestId('viewer-markdown');
     await expect(viewer).toBeVisible();
     // the restored text has loaded (its title is there) before "the replaced line is gone" means anything

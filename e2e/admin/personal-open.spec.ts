@@ -236,6 +236,14 @@ test('the person sees the open in Account: who, why and "open now"; nobody else 
   } finally {
     await rafiView.context.close();
   }
+  // a member who types the admin's address gets the standard not-found page, and the tab says so
+  const memberView = await openOn(browser, playwright, stack, 'nadia', `/files/person/${personas.rafi.personId}`);
+  try {
+    await expect(memberView.page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+    await expect(memberView.page).toHaveTitle(/Page not found/);
+  } finally {
+    await memberView.context.close();
+  }
   // a guest has no Personal space and so no card
   const lenaView = await openOn(browser, playwright, stack, 'lena', '/account/security');
   try {

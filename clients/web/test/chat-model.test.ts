@@ -22,6 +22,8 @@ import {
   previewLive,
   railGroups,
   railTitle,
+  retryOf,
+  shortTitle,
   takeEarly,
   variantPosition,
   type ChatRow,
@@ -66,6 +68,17 @@ describe('railGroups', () => {
     expect(railTitle({ title: '  ' })).toBe('New chat');
     expect(railTitle({ title: ' Plan ' })).toBe('Plan');
   });
+  it('shows one short line: whitespace folded, cut at a word with an ellipsis', () => {
+    expect(railTitle({ title: 'Plan\n\nthe   launch' })).toBe('Plan the launch');
+    expect(shortTitle('Plan the launch')).toBe('Plan the launch');
+    const long = 'Write a plan for moving the whole team to the new release process before the end of the quarter, with owners';
+    const cut = shortTitle(long);
+    expect(cut.length).toBeLessThanOrEqual(60);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(long.startsWith(cut.slice(0, -1))).toBe(true);
+    expect(long.charAt(cut.length - 1)).toBe(' ');
+    expect(shortTitle('x'.repeat(100))).toBe(`${'x'.repeat(59)}…`);
+  });
 });
 
 describe('buildRows', () => {
@@ -106,6 +119,16 @@ describe('buildRows', () => {
     expect(rows.map((r) => r.kind)).toEqual(['person', 'bot', 'person']);
     expect(awaitingAnswer(rows)).toBe(true);
     expect(awaitingAnswer(rows.slice(0, 2))).toBe(false);
+  });
+  it('offers Try again only on the notice a failed run left, for the turn of the message before it', () => {
+    const notice = msg(6, BOT, 'I could not answer this one. Try again in a moment.', { meta: { runFailure: 'runtime' } as never });
+    const failed = buildRows(root, [notice], null, ME);
+    expect(retryOf(failed)).toEqual({ messageId: notice.id, turnId: root.id });
+    // an answer the server has not recorded yet, a person's own message, and a notice that is not the last row are not offered
+    expect(retryOf(buildRows(root, [a1], null, ME))).toBeNull();
+    expect(retryOf(buildRows(root, [], null, ME))).toBeNull();
+    const later = buildRows(root, [notice, msg(7, ME, 'Again?')], null, ME);
+    expect(retryOf(later)).toBeNull();
   });
 });
 

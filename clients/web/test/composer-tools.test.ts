@@ -6,6 +6,7 @@ import { ComposerToolbar } from '../src/channels/ComposerToolbar';
 import {
   TOOL_ORDER, barTools, chordText, isMac, matchBroadcast, matchLocalCommands, moreTools, parseLocalCommand, toolForKey, toolTitle, type LocalCommand,
 } from '../src/channels/composerTools';
+import { emojiForShortcode } from '../src/channels/emoji';
 import { detectEmojiTrigger, suggestEmoji } from '../src/channels/emojiSuggest';
 
 const key = (k: string, o: { ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean } = {}) => ({ key: k, ctrlKey: o.ctrl ?? false, metaKey: o.meta ?? false, shiftKey: o.shift ?? false, altKey: o.alt ?? false });
@@ -110,6 +111,10 @@ describe('the :emoji: list', () => {
     expect(suggestEmoji('s', [])).toEqual([]);
     expect(suggestEmoji('smi', []).length).toBeGreaterThan(1);
     expect(suggestEmoji('smi', [], 3)).toHaveLength(3);
+    // a name is listed once: the emoji several share the word `smile` show as one line, and it is the one `:smile:` sends
+    const codes = suggestEmoji('smi', [], 30).map((h) => h.code);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(suggestEmoji('smi', [], 30).find((h) => h.code === 'smile')?.char).toBe(emojiForShortcode('smile'));
   });
   it('lists the workspace emoji with the built-in ones and before them on a tie', () => {
     const hits = suggestEmoji('party', [custom('party_parrot'), custom('unrelated')]);

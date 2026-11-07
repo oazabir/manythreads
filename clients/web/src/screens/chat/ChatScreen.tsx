@@ -22,7 +22,7 @@ import { deleteChat, fetchChatModels, fetchChatState, listChats, patchChat, rest
 import { ChatColumn } from './ChatColumn';
 import { EmptyChat } from './EmptyChat';
 import { HistoryRail, type RailActions } from './HistoryRail';
-import { exportFileName, exportMarkdown, buildRows, railGroups, railTitle, previewLive } from './model';
+import { exportFileName, exportMarkdown, buildRows, railGroups, railTitle, shortTitle, previewLive } from './model';
 import { PopMenu } from './PopMenu';
 import type { LocalCommand } from '../../channels/composerTools';
 import { useChatState } from './useChatState';
@@ -435,7 +435,8 @@ export function ChatScreen() {
     );
   }
 
-  const title = root === null ? 'New chat' : railTitle({ title: state?.title ?? selectedItem?.title ?? '' });
+  const fullTitle = root === null ? 'New chat' : railTitle({ title: state?.title ?? selectedItem?.title ?? '' });
+  const title = shortTitle(fullTitle);
   const botPicker =
     talkable.length > 1 || (talkable.length === 1 && talkable[0]?.slug !== botSlug) ? (
       <PopMenu
@@ -472,7 +473,7 @@ export function ChatScreen() {
       <section className="ch-main" data-testid="chat-main" data-landmark="chat-main" aria-label={`Chat with ${botName}`}>
         <PageHeader
           compact
-          title={title}
+          title={<span title={fullTitle}>{title}</span>}
           testIds={{ title: 'chat-title' }}
           actions={
             <div className="ch-head-tools">

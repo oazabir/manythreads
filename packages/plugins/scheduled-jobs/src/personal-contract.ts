@@ -48,9 +48,13 @@ export function slugFor(name: string, taken: ReadonlySet<string>): string {
     .normalize('NFKD')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 34)
-    .replace(/-+$/g, '');
+    .replace(/^-+|-+$/g, '');
+  // at most 34 characters, cut between words (a folder called `summarise-my-unread-mail-and-te` reads as a mistake)
+  if (base.length > 34) {
+    const whole = base.slice(0, 35).lastIndexOf('-');
+    base = base.slice(0, whole >= 8 ? whole : 34);
+  }
+  base = base.replace(/-+$/g, '');
   if (!/^[a-z]/.test(base)) base = `routine-${base}`.replace(/-+$/g, '');
   if (base === '' || base === 'routine') base = 'routine';
   let slug = base;

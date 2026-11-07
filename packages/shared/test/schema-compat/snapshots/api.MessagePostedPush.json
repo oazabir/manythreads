@@ -910,6 +910,10 @@
                 "peaks"
               ],
               "additionalProperties": false
+            },
+            "runFailure": {
+              "type": "string",
+              "maxLength": 40
             }
           }
         },

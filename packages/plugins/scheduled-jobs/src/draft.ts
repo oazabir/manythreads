@@ -49,7 +49,7 @@ export function guessSources(sentence: string): RoutineSource[] {
 
 const WORDS_FILLER = /\b(please|can you|could you|i want|i would like|i'd like|remind me|set up|make|create)\b/gi;
 
-/** A short name from the sentence: the first words after the schedule talk, capitalised. */
+/** A short name from the sentence: the first words after the schedule talk, capitalised, whole words, at most 48 characters. */
 export function nameFrom(sentence: string): string {
   const cleaned = sentence
     .replace(WORDS_FILLER, ' ')
@@ -57,11 +57,16 @@ export function nameFrom(sentence: string): string {
     .replace(/\b(at|on|by)\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b/gi, ' ')
     .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
     .split(/\s+/)
-    .filter((w) => w !== '')
-    .slice(0, 5)
-    .join(' ');
-  const name = cleaned === '' ? 'My routine' : cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  return name.slice(0, 80);
+    .filter((w) => w !== '');
+  // up to five words and 48 characters, whole words only
+  const kept: string[] = [];
+  for (const w of cleaned.slice(0, 5)) {
+    if ([...kept, w].join(' ').length > 48 && kept.length > 0) break;
+    kept.push(w);
+  }
+  const text = kept.join(' ').slice(0, 48);
+  const name = text === '' ? 'My routine' : text.charAt(0).toUpperCase() + text.slice(1);
+  return name;
 }
 
 function rulesPrompt(sentence: string, sources: RoutineSource[]): string {

@@ -67,6 +67,8 @@ export const Message = z.object({
     attachments: z.array(FileId).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),
     /** A voice message (P14-17): the clip (also `attachments[0]`), its length, language and where the text came from. A value that does not read (a newer shape) is dropped, never the message. */
     voice: VoiceMeta.optional().catch(undefined),
+    /** The run that failed and the category of why (`failure-notice.ts`): set on the notice a failed run leaves in its thread, by the platform alone. Chat offers Try again on it. */
+    runFailure: z.string().max(40).optional().catch(undefined),
   }),
   createdAt: IsoDateTime,
 });

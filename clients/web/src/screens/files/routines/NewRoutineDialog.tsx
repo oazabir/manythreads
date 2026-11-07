@@ -13,7 +13,7 @@ import {
 import { Dialog } from '../../../components/Dialog';
 import { message } from '../../memory/inboxWords';
 import { createRoutine, draftRoutine } from './routinesApi';
-import { OUTPUT_MODES, outputModeLabel, sourceLabel, timeZoneProblem } from './routinesWords';
+import { OUTPUT_MODES, outputModeLabel, outputPlaceWords, sourceLabel, timeZoneProblem } from './routinesWords';
 
 /**
  * New routine (PLAN P20-11): the person writes what they want in a sentence, the assistant proposes a routine, the person reads it, changes anything and confirms.
@@ -123,6 +123,7 @@ function Review({ proposal, onBack, onClose, onCreated }: { proposal: Proposal; 
   const [prompt, setPrompt] = useState(d.prompt);
   const [sources, setSources] = useState<RoutineSource[]>(d.sources);
   const [outputPath, setOutputPath] = useState(d.outputPath);
+  const [placeOpen, setPlaceOpen] = useState(false);
   const [mode, setMode] = useState<RoutineOutputMode>(d.outputMode);
   const [zone, setZone] = useState(d.timeZone);
   const [busy, setBusy] = useState(false);
@@ -211,8 +212,17 @@ function Review({ proposal, onBack, onClose, onCreated }: { proposal: Proposal; 
           <p className="dlg-hint">A routine only ever reads what you could read yourself, in your own conversation with the bot.</p>
         </fieldset>
 
-        <label className="dlg-label" htmlFor="rt-path">Where the answer goes (in your own files)</label>
-        <input id="rt-path" className="dlg-input" value={outputPath} maxLength={300} onChange={(e) => setOutputPath(e.target.value)} autoComplete="off" spellCheck={false} data-testid="routine-output-path" />
+        <span className="dlg-label" id="rt-path-label">Where the answer goes</span>
+        {placeOpen ? (
+          <>
+            <input id="rt-path" className="dlg-input" aria-labelledby="rt-path-label" value={outputPath} maxLength={300} onChange={(e) => setOutputPath(e.target.value)} autoComplete="off" spellCheck={false} data-testid="routine-output-path" />
+            <p className="dlg-hint">Write the name of a file inside one of your folders. It is kept in your own files.</p>
+          </>
+        ) : (
+          <p className="dlg-hint rt-place" data-testid="routine-output-words">
+            {outputPlaceWords(outputPath)} <button type="button" className="link-btn" onClick={() => setPlaceOpen(true)} data-testid="routine-output-change">Choose another place</button>
+          </p>
+        )}
         {pathProblem ? <p className="dlg-error" role="alert">{pathProblem}</p> : null}
         <label className="dlg-label" htmlFor="rt-mode">Each time it runs</label>
         <select id="rt-mode" className="dlg-input" value={mode} onChange={(e) => setMode(e.target.value as RoutineOutputMode)} data-testid="routine-output-mode">

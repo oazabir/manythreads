@@ -931,6 +931,10 @@
                 "peaks"
               ],
               "additionalProperties": false
+            },
+            "runFailure": {
+              "type": "string",
+              "maxLength": 40
             }
           }
         },
@@ -2323,6 +2327,10 @@
                       "peaks"
                     ],
                     "additionalProperties": false
+                  },
+                  "runFailure": {
+                    "type": "string",
+                    "maxLength": 40
                   }
                 }
               },

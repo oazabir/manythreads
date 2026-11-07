@@ -18,6 +18,19 @@ import { CHANGED_UNDER_YOU, countLine, dueLabel, dueProblem, isConflict, splitIt
  * and turned into cards on a board; every change is a new version of the file. A routine ("Keep my action items") can keep it up to date, but it never deletes an
  * item and it marks one done only with a line that says what showed it. A change made while someone else's save landed is refused and the list reloads.
  */
+/**
+ * A day that may be left empty. The browser draws an empty date box as "mm/dd/yyyy", which reads as an error to a person who has not chosen anything; while it is empty
+ * and not in use the box says "Optional" instead (the text of the box is hidden by `.ai-date.unset`).
+ */
+function OptionalDate({ id, value, onChange, label, testId }: { id?: string; value: string; onChange: (v: string) => void; label: string; testId: string }) {
+  return (
+    <span className={`ai-date ${value === '' ? 'unset' : ''}`}>
+      <input id={id} className="dlg-input" type="date" value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} data-testid={testId} />
+      {value === '' ? <span className="ai-date-hint" aria-hidden="true">Optional</span> : null}
+    </span>
+  );
+}
+
 export function ActionItemsView() {
   const guest = useSession().role === 'guest';
   if (guest) return <div className="inline-state"><ForbiddenBody /></div>;
@@ -144,7 +157,7 @@ function AddForm({ busy, onAdd }: { busy: boolean; onAdd: (what: string, owner: 
         </div>
         <div className="ai-field">
           <label className="dlg-label" htmlFor="ai-due">Due</label>
-          <input id="ai-due" className="dlg-input" type="date" value={due} onChange={(e) => setDue(e.target.value)} data-testid="action-item-due" />
+          <OptionalDate id="ai-due" value={due} onChange={setDue} label="Due date" testId="action-item-due" />
         </div>
         <button type="submit" className="btn primary" disabled={busy || what.trim() === '' || problem !== null} data-testid="action-item-add-button">Add</button>
       </div>
@@ -189,7 +202,7 @@ function Row({ item, today, busy, teams, onChange, onBoard }: {
             <input className="dlg-input" value={what} maxLength={500} onChange={(e) => setWhat(e.target.value)} aria-label="What to do" data-testid="action-item-edit-what" />
             <div className="ai-add-row">
               <input className="dlg-input" value={owner} maxLength={120} onChange={(e) => setOwner(e.target.value)} placeholder="Who" aria-label="Who" data-testid="action-item-edit-owner" />
-              <input className="dlg-input" type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Due date" data-testid="action-item-edit-due" />
+              <OptionalDate value={due} onChange={setDue} label="Due date" testId="action-item-edit-due" />
               <button type="submit" className="btn s primary" disabled={busy || what.trim() === '' || problem !== null} data-testid="action-item-edit-save">Save</button>
               <button type="button" className="btn s" onClick={() => setEditing(false)}>Cancel</button>
             </div>

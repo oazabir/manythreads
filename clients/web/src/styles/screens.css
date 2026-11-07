@@ -461,6 +461,17 @@ a.btn.primary {
   background: var(--shell);
 }
 
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-bottom: 4px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  text-decoration: none;
+}
+
 .settings-select label {
   display: block;
   margin-bottom: 4px;

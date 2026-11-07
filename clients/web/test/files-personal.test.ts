@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { rowEntries } from '../src/screens/files/actions';
 import type { Perms } from '../src/screens/files/backend';
 import { bytesLabel, DEFAULT_SORT, firstDir, rowKey, sortRowsBy, treeShows, type FileRow, type Sort } from '../src/screens/files/model';
@@ -193,6 +193,31 @@ describe('the Personal store over the in-memory transport', () => {
     const after = await s.history('Notes/standup-notes.md');
     expect(after.length).toBeGreaterThan(history.length - 1);
     await expect(s.restore('Notes/standup-notes.md', after[0] as never, 'x')).resolves.toBeUndefined();
+  });
+
+  it('tells the open viewer a restore changed the file (a Personal row has a stamp, not a git sha), but not its own save', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-07T10:00:00Z') });
+    try {
+      const s = store();
+      const find = async (): Promise<FileRow> => (await s.list('Notes')).rows.find((r) => r.name === 'standup-notes.md') as FileRow;
+      const before = await find();
+      expect(before.blobSha).toBeTruthy();
+      const opened = s.open(before);
+      expect(opened.sha?.()).toBe(before.blobSha);
+      vi.setSystemTime(new Date('2026-11-07T10:05:00Z'));
+      const history = await s.history('Notes/standup-notes.md');
+      await s.restore('Notes/standup-notes.md', history[1] as never, 'x');
+      const restored = await find();
+      // the row after the restore differs from the one the viewer opened, so the viewer reads the file again
+      expect(restored.blobSha).not.toBe(opened.sha?.());
+      // and a viewer's own save leaves it equal to the next row: no needless reload under the cursor
+      vi.setSystemTime(new Date('2026-11-07T10:10:00Z'));
+      const again = s.open(restored);
+      await again.save?.('# Standup\n\nSaved here.\n');
+      expect((await find()).blobSha).toBe(again.sha?.());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renames and moves a file in one call, and says when the name is taken', async () => {

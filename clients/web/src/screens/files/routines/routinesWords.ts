@@ -130,3 +130,12 @@ export function quietHoursSentence(q: RoutineQuietHours | null): string {
 
 /** Whether "Run now" is offered: the routine is on and was not stopped. */
 export const canRunNow = (r: Pick<PersonalRoutine, 'enabled' | 'stoppedReason'>): boolean => r.enabled && !r.stoppedReason;
+
+/** Where a routine writes, in words: the default (`Routines/<name>/output.md`) is "a folder of its own under Routines"; any other place is named by its folder. */
+export function outputPlaceWords(path: string): string {
+  const p = path.trim();
+  const own = /^Routines\/[^/]+\/output\.md$/.exec(p);
+  if (own) return 'Saved in your files, in the Routines folder, in a folder named after this routine.';
+  const folder = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+  return folder === '' ? 'Saved in your files.' : `Saved in your files, in ${folder}.`;
+}
