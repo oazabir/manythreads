@@ -62,8 +62,29 @@ export async function ensureEveryWorkspaceBrain(ctx: PluginContext, tx: PluginTx
   }
 }
 
+/**
+ * The same ensure, once, when the plugin starts (after every migration, which runs before any plugin registers): a fresh deploy has its Brain at once instead of at the
+ * next 15-minute slot. It never throws and never holds the start up: a failure is logged and the cron below stays the net. Two replicas starting together take a database
+ * lock, so one does the work and the other skips (the unique index `bots_workspace_slug` still guards a race that gets past it, and the per-workspace savepoint absorbs it).
+ */
+export async function ensureWorkspaceBrainAtStart(ctx: PluginContext, log: PluginLogger = console): Promise<boolean> {
+  try {
+    return await ctx.db.system(async (tx) => {
+      const got = (await tx.query<{ locked: boolean }>('SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS locked', [ENSURE_BRAIN_QUEUE])).rows[0]?.locked;
+      if (got !== true) return false;
+      await ensureEveryWorkspaceBrain(ctx, tx, log);
+      return true;
+    });
+  } catch (err) {
+    log.warn(`bots: the workspace Brain was not ensured at start (the 15-minute job tries again): ${err instanceof Error ? err.message.slice(0, 300) : 'unknown'}`);
+    return false;
+  }
+}
+
 export function registerWorkspaceBrain(ctx: PluginContext): void {
-  // A fallback for the first start (and for a workspace made later): every 15 minutes, a no-op once the Brain is there.
+  // At start: not awaited (the server need not wait for it), and tolerant of every failure.
+  void ensureWorkspaceBrainAtStart(ctx);
+  // A fallback for a workspace made later, and for a start that could not ensure it: every 15 minutes, a no-op once the Brain is there.
   ctx.jobs.register(
     ENSURE_BRAIN_QUEUE,
     async (_payload, tx, job) => {
