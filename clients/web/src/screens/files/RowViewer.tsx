@@ -28,7 +28,7 @@ function useFolderNames(files: TeamFiles, row: FileRow): string[] | null {
 export function RowViewer({ files, row, content, save, readOnly }: { files: TeamFiles; row: FileRow; content: FileContent; save: ((text: string) => Promise<void>) | undefined; readOnly: boolean }) {
   const session = useSession();
   const names = useFolderNames(files, row);
-  const context = { teamSlug: files.slug, teamName: files.teamName, authorName: session.person.name };
+  const context = { teamSlug: files.slug, teamName: files.teamName, authorName: session.person.name, ...(files.space === 'personal' ? { store: 'personal' as const } : {}) };
   if (row.kind === 'folder') {
     if (names === null) return <div className="vw-loading" role="status" aria-busy="true">Loading…</div>;
     if (!isAppFolder(names)) return <ViewerMessage title="This folder is not an app">Open a file from the tree or the list.</ViewerMessage>;

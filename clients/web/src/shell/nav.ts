@@ -58,6 +58,7 @@ const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {
+  if (pathname === '/files' || pathname.startsWith('/files/')) return 'Files';
   const m = /^\/t\/[^/]+\/([^/]+)(?:\/([^/]+))?/.exec(pathname);
   if (!m) return 'Home';
   const [, section = '', rest] = m;

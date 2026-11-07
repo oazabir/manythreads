@@ -6,6 +6,8 @@ export type ViewerContext = {
   teamName: string;
   /** The person who will be the commit's author. */
   authorName: string;
+  /** `personal` for a file in someone's own Personal space: saving keeps a version (not a commit) and there is no live editing. */
+  store?: 'personal';
 };
 
 /**

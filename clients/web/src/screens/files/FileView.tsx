@@ -2,10 +2,11 @@ import { friendlyPath } from '../../components/friendlyPath';
 import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { ViewerMessage } from '../../viewers/common';
-import { RowMenu, useRowActions } from './actions';
-import { whenLabel } from './FileList';
+import { RowMenu, historyId, useRowActions } from './actions';
 import { MEMORY_COPY, READ_ONLY_COPY, type FileRow } from './model';
-import { useTeamFiles, type TeamFiles } from './store';
+import { WhyReadOnly, lockReason } from './ReadOnlyWhy';
+import type { TeamFiles } from './store';
+import { whenLabel } from './when';
 import { RowViewer } from './RowViewer';
 import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
@@ -14,8 +15,7 @@ import { useFileRow } from './useFileRow';
  * A file opened in the middle column (as the prototype's history plate shows `bots/coder/BOT.md`): its path and who last changed it, History, and the
  * viewer taking the rest of the column. The right panel stays free for History.
  */
-export function FileView({ path, onClose, onMoved, onGone }: { path: string; onClose: () => void; onMoved: (to: string) => void; onGone: () => void }) {
-  const files = useTeamFiles();
+export function FileView({ files, path, onClose, onMoved, onGone }: { files: TeamFiles | null; path: string; onClose: () => void; onMoved: (to: string) => void; onGone: () => void }) {
   const state = useFileRow(files, path);
   if (!files || state.status === 'loading') return <div className="fview" data-landmark="file-view"><p className="loading" aria-busy="true">Loading…</p></div>;
   if (state.status === 'forbidden') return <div className="fview" data-landmark="file-view"><div className="fempty" role="alert"><ForbiddenBody /></div></div>;
@@ -27,17 +27,20 @@ export function FileView({ path, onClose, onMoved, onGone }: { path: string; onC
 function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFiles; row: FileRow; onClose: () => void; onMoved: (to: string) => void; onGone: () => void }) {
   const panel = usePanel();
   const { content, save } = useContent(files, row);
-  const actions = useRowActions(files, { onDone: (r) => (r.action === 'delete' ? onGone() : onMoved(r.to)) });
-  const git = row.store === 'git' && row.kind === 'file';
+  const actions = useRowActions(files, { onDone: (r) => (r.action === 'delete' || r.action === 'delete-many' || r.action === 'move-many' ? onGone() : onMoved(r.to)) });
+  // a repo file keeps commits, a Personal file keeps versions; an admin's read-only look keeps no panel
+  const history = row.kind === 'file' && (row.store === 'git' || row.store === 'personal') && row.readOnlyReason !== 'admin_view';
   const pr = row.readOnlyReason === 'change_by_pull_request';
+  const lock = lockReason(row);
   return (
     <div className="fview" data-landmark="file-view" data-testid="file-view" data-path={row.path}>
       <div className="fvh">
         <span className="p" data-testid="file-view-path" title={row.path}>{friendlyPath(row.path)}</span>
         <span className="m" data-vt-mask>{row.modifiedAt ? `updated ${whenLabel(row.modifiedAt)}` : ''}{row.by ? ` by ${row.by.name}` : ''}</span>
         <div className="r">
-          {git ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: row.path })}>History</button> : null}
-          <RowMenu row={row} start={actions.start} />
+          {lock ? <WhyReadOnly reason={lock} look="link" /> : null}
+          {history ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: historyId(row) })}>{row.store === 'personal' ? 'Versions' : 'History'}</button> : null}
+          <RowMenu row={row} files={files} start={actions.start} />
           <button type="button" className="btn s" data-testid="close-file" onClick={onClose}>Close</button>
         </div>
       </div>

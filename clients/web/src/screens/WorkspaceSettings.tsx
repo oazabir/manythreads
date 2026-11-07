@@ -13,6 +13,7 @@ import { InviteDialog } from './InviteDialog';
 import { MoreMenu, type MoreItem } from './bots/MoreMenu';
 import { filterMembers, lastActiveText } from './members';
 import { PageHeader } from '../components/PageHeader';
+import { DeactivateDialog, OpenSpaceDialog, reactivate } from './PersonalSpaceAdmin';
 
 export function WorkspaceGeneral() {
   const session = useSession();
@@ -114,6 +115,8 @@ export function Members() {
   const [search, setSearch] = useState('');
   const [inviting, setInviting] = useState(false);
   const [changing, setChanging] = useState<Member | null>(null);
+  const [opening, setOpening] = useState<Member | null>(null);
+  const [deactivating, setDeactivating] = useState<Member | null>(null);
   const searchId = useId();
 
   const sendReset = (m: Member): void => {
@@ -129,6 +132,18 @@ export function Members() {
       items.push({ label: 'Change role', testId: 'member-change-role', onSelect: () => setChanging(m) });
     }
     items.push({ label: 'Send a password reset', testId: 'member-reset', onSelect: () => sendReset(m) });
+    // a guest has no Personal space; nobody opens their own here (they have it open already)
+    if (m.personId !== session.person.id && m.role !== 'guest') {
+      items.push({ label: 'Open Personal space', testId: 'member-open-space', onSelect: () => setOpening(m) });
+    }
+    // you do not deactivate yourself, and only an owner touches an owner
+    if (m.personId !== session.person.id && (m.role !== 'owner' || session.role === 'owner')) {
+      items.push(
+        m.status === 'suspended'
+          ? { label: 'Reactivate', testId: 'member-reactivate', onSelect: () => void reactivate(m.personId, m.displayName, q.reload) }
+          : { label: 'Deactivate', testId: 'member-deactivate', onSelect: () => setDeactivating(m) },
+      );
+    }
     return items;
   };
 
@@ -160,7 +175,7 @@ export function Members() {
                   <tbody>
                     {shown.map((m) => (
                       <tr key={m.personId} data-testid="member-row">
-                        <td data-label="Name" className="mem-c"><span className="mem-name"><Avatar name={m.displayName} personId={m.personId} /><span>{m.displayName}</span></span></td>
+                        <td data-label="Name" className="mem-c"><span className="mem-name"><Avatar name={m.displayName} personId={m.personId} /><span>{m.displayName}</span>{m.status === 'suspended' ? <span className="kind ru" data-testid="member-deactivated">Deactivated</span> : null}</span></td>
                         <td data-label="Email" className="mem-c d-cell">{m.email}</td>
                         <td data-label="Role" className="mem-c"><span className={`kind ${m.role === 'guest' ? 'ru' : 'h'}`}>{m.role}</span></td>
                         <td data-label="Tags" className="mem-c">{m.tags.length ? m.tags.map((t) => <span key={t} className="tagx">{t}</span>) : <span className="faint">none</span>}</td>
@@ -178,6 +193,8 @@ export function Members() {
       </QueryView>
       {inviting ? <InviteDialog onClose={() => setInviting(false)} /> : null}
       {changing ? <ChangeRoleDialog member={changing} onClose={() => setChanging(null)} onChanged={q.reload} /> : null}
+      {opening ? <OpenSpaceDialog personId={opening.personId} name={opening.displayName} onClose={() => setOpening(null)} /> : null}
+      {deactivating ? <DeactivateDialog personId={deactivating.personId} name={deactivating.displayName} onClose={() => setDeactivating(null)} onDone={q.reload} /> : null}
     </>
   );
 }

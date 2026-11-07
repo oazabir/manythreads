@@ -93,6 +93,10 @@ function AppRoutes() {
             <Route path="/t/:team" element={<TeamHome />} />
             <Route path="/t/:team/search" element={<RequireTeam><SearchScreen /></RequireTeam>} />
             <Route path="/t/:team/threads" element={<RequireTeam><ThreadsInbox /></RequireTeam>} />
+            <Route path="/files" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense>} />
+            <Route element={<AdminOnly />}>
+              <Route path="/files/person/:personId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense>} />
+            </Route>
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/memory" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/boards" element={<RequireTeam><BoardsScreen /></RequireTeam>} />

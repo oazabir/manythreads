@@ -13,12 +13,12 @@ export function ViewerBar({ path, children }: { path: string; children?: ReactNo
 }
 
 /** What the person sees under an editor: the commit notice, and the outcome of the last save. */
-export function SaveFooter({ authorName, status, message, readOnly }: { authorName: string; status: SaveStatus; message?: string | undefined; readOnly: boolean }) {
+export function SaveFooter({ authorName, status, message, readOnly, personal = false }: { authorName: string; status: SaveStatus; message?: string | undefined; readOnly: boolean; personal?: boolean }) {
   return (
     <div className="vw-foot">
       {status === 'error' ? <p className="vw-error" role="alert">{message ?? 'Could not save.'}</p> : null}
-      {status === 'saved' ? <p className="vw-saved" role="status">Saved. A commit by {authorName} was made.</p> : null}
-      {readOnly ? <p className="vw-note">You can read this file but not change it.</p> : <p className="vw-note">Saving creates a commit by {authorName}</p>}
+      {status === 'saved' ? <p className="vw-saved" role="status">{personal ? 'Saved. The earlier version is kept in the version history.' : `Saved. A commit by ${authorName} was made.`}</p> : null}
+      {readOnly ? <p className="vw-note">You can read this file but not change it.</p> : <p className="vw-note">{personal ? 'Saving keeps the earlier version in the version history' : `Saving creates a commit by ${authorName}`}</p>}
     </div>
   );
 }

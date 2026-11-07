@@ -1,18 +1,22 @@
 /*
  * The Files screen's own vocabulary (SPEC section 5.2). A row is a file or a folder of one tree over two stores: the team repo (git, text only)
- * and attachments (Files storage, under `channels/<name>/`). Rows of both stores have one shape, so the tree, the breadcrumb, the list and the
- * preview never ask which store a row lives in; `store` only decides what an action may do (history and restore exist for git).
+ * and attachments (Files storage, under `channels/<name>/`); a person's Personal space is a third store, `personal` (Files storage too, but the rows can
+ * be renamed, moved and saved, and they keep versions). Rows of all stores have one shape, so the tree, the breadcrumb, the list and the preview never
+ * ask which store a row lives in; `store` only decides what an action may do (history and restore exist for git and for personal).
  */
 
-export type Actor = { id: string | null; name: string; kind: 'person' | 'bot' | 'system' };
+export type Actor = { id: string | null; name: string; kind: 'person' | 'bot' | 'system'; /** The picture they chose (`preset:<id>` or `photo:<hash>`). */ avatar?: string | null; personId?: string };
 
-export type ReadOnlyReason = 'change_by_pull_request' | 'attachment' | 'no_write_access';
+export type ReadOnlyReason = 'change_by_pull_request' | 'attachment' | 'no_write_access' | 'admin_view';
+
+/** Who keeps a folder's content besides people: the team's memory bank (`memory/`) or a person's own memory (the `Memory` folder of Personal). */
+export type ManagedBy = 'team_memory' | 'personal_memory';
 
 export type FileRow = {
   path: string;
   name: string;
   kind: 'file' | 'folder';
-  store: 'git' | 'attachments';
+  store: 'git' | 'attachments' | 'personal';
   size: number | null;
   mime: string | null;
   modifiedAt: string | null;
@@ -23,7 +27,7 @@ export type FileRow = {
   readOnly: boolean;
   readOnlyReason: ReadOnlyReason | null;
   /** Another part of the product owns the content (`memory/` mirrors the team's memory bank). */
-  managedBy: 'team_memory' | null;
+  managedBy: ManagedBy | null;
   fileId: string | null;
   channelId: string | null;
   /** Repo files: the blob that was listed, sent back as `baseBlobSha` when saving. */
@@ -35,10 +39,10 @@ export type FileRow = {
 /** What is true of the folder being listed. */
 export type FolderInfo = {
   path: string;
-  store: 'git' | 'attachments';
+  store: 'git' | 'attachments' | 'personal';
   readOnly: boolean;
   readOnlyReason: ReadOnlyReason | null;
-  managedBy: 'team_memory' | null;
+  managedBy: ManagedBy | null;
   /** The channel behind `channels/<name>`; null elsewhere. */
   channelId: string | null;
 };
@@ -97,6 +101,22 @@ const CODE_EXT = new Set(['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'yaml'
 
 export const extOf = (name: string): string => (/\.([A-Za-z0-9]{1,8})$/.exec(name)?.[1] ?? '').toLowerCase();
 
+/** Text a viewer can edit and a line diff can compare (by type, else by extension). */
+export function isTextual(row: Pick<FileRow, 'name' | 'mime'>): boolean {
+  const mime = row.mime ?? '';
+  if (mime.startsWith('text/') || /^application\/(json|xml|yaml|x-yaml|toml)/.test(mime)) return true;
+  const ext = extOf(row.name);
+  return ext === 'md' || ext === 'markdown' || ext === 'txt' || ext === 'csv' || ext === 'tsv' || CODE_EXT.has(ext);
+}
+
+/** Bytes in the unit a person reads: `4.2 GB`, `310 MB`, `12 KB`. */
+export function bytesLabel(bytes: number): string {
+  if (bytes < 1_024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${Math.max(1, Math.round(bytes / 1_024))} KB`;
+  if (bytes < 1_073_741_824) return `${(bytes / 1_048_576).toFixed(bytes < 10_485_760 ? 1 : 0)} MB`;
+  return `${(bytes / 1_073_741_824).toFixed(bytes < 10_737_418_240 ? 1 : 0)} GB`;
+}
+
 export function matchesType(row: FileRow, filter: TypeFilter): boolean {
   if (filter === 'all' || row.kind === 'folder') return true;
   const ext = extOf(row.name);
@@ -122,8 +142,49 @@ export function sortRows(rows: readonly FileRow[], order: 'recent' | 'name'): Fi
   });
 }
 
-/** Files of a folder as the tree shows them: git files yes, a channel's attachments no (they would drown the tree). */
-export const treeShows = (row: FileRow): boolean => row.kind === 'folder' || row.store === 'git';
+/** Files of a folder as the tree shows them: git files and Personal files yes, a channel's attachments no (they would drown the tree). */
+export const treeShows = (row: FileRow): boolean => row.kind === 'folder' || row.store !== 'attachments';
+
+// ---- sorting (the list's headers) ----
+
+export type SortKey = 'name' | 'where' | 'by' | 'modified' | 'size';
+export type SortDir = 'asc' | 'desc';
+export type Sort = { key: SortKey; dir: SortDir };
+export const DEFAULT_SORT: Sort = { key: 'modified', dir: 'desc' };
+export const SORT_LABELS: Readonly<Record<SortKey, string>> = { name: 'Name', where: 'Where', by: 'By', modified: 'When', size: 'Size' };
+/** What a column sorts first: text columns A to Z, "when" and "size" newest and largest first. */
+export const firstDir = (key: SortKey): SortDir => (key === 'modified' || key === 'size' ? 'desc' : 'asc');
+
+/** Folders stay first whatever the column; within each group the column decides (a missing value sorts last), then the name. */
+export function sortRowsBy(rows: readonly FileRow[], sort: Sort, whereOf: (row: FileRow) => string = (r) => r.where ?? ''): FileRow[] {
+  const byName = (a: FileRow, b: FileRow): number => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' });
+  const sign = sort.dir === 'asc' ? 1 : -1;
+  const text = (a: string | null, b: string | null): number => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+    return sign * a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' });
+  };
+  const num = (a: number | null, b: number | null): number => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return sign * (a - b);
+  };
+  return [...rows].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
+    let c = 0;
+    if (sort.key === 'name') c = sign * byName(a, b);
+    else if (sort.key === 'where') c = text(whereOf(a), whereOf(b));
+    else if (sort.key === 'by') c = text(a.by?.name ?? null, b.by?.name ?? null);
+    else if (sort.key === 'modified') c = a.modifiedAt && b.modifiedAt ? sign * (a.modifiedAt < b.modifiedAt ? -1 : a.modifiedAt > b.modifiedAt ? 1 : 0) : a.modifiedAt ? -1 : b.modifiedAt ? 1 : 0;
+    else c = num(a.size, b.size);
+    return c || byName(a, b);
+  });
+}
+
+/** The key of a row in the selection: the file id when it has one, else its path. */
+export const rowKey = (row: FileRow): string => row.fileId ?? row.path;
 
 /**
  * The team's inbox, drawn as a folder at the top of the tree (PLAN P8-21). It is not in the repo: its items wait in storage until the platform files them

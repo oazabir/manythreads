@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { QueryView } from '../../components/states';
 import { Alert, Field, Notice, PasswordField, PasswordToggle, Time } from '../../components/ui';
 import { disablePush } from '../../notifications/push';
+import { PersonalSpaceOpens } from './PersonalSpaceOpens';
 
 /** Account → Security: the password, the browsers you are signed in on, and the ways you can sign in. */
 export function Security() {
@@ -159,6 +160,8 @@ export function Security() {
           )}
         </QueryView>
       </section>
+
+      {session.role === 'guest' ? null : <PersonalSpaceOpens />}
 
       <section className="block" aria-labelledby="acc-methods" data-landmark="methods">
         <h2 className="bh" id="acc-methods">Sign-in methods</h2>

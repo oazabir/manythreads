@@ -11,6 +11,7 @@
 }
 
 .fbody {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -117,6 +118,24 @@
   color: var(--faint);
 }
 
+.tnode .tico {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--faint);
+}
+
+.tnode.troot {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tnode.drop {
+  outline: 2px dashed var(--human);
+  outline-offset: -2px;
+  background: var(--human-wash);
+}
+
 .tnode.lvl2 { padding-left: 22px; }
 .tnode.lvl3 { padding-left: 36px; }
 .tnode.lvl4 { padding-left: 50px; }
@@ -124,6 +143,10 @@
 .tnode.lvl6 { padding-left: 78px; }
 .tnode.lvl7 { padding-left: 92px; }
 .tnode.lvl8 { padding-left: 106px; }
+
+.ftree .tit + .troot {
+  margin-top: 0;
+}
 
 /* ---- list ---- */
 .flist {
@@ -135,10 +158,41 @@
   container-type: inline-size;
 }
 
-.flist.dropping {
-  outline: 2px dashed var(--human);
-  outline-offset: -6px;
+/* the whole pane takes a drop of files from the computer */
+.fdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--human);
   background: var(--human-wash);
+  opacity: 0.94;
+  pointer-events: none;
+}
+
+.fdrop.no {
+  border-color: var(--rule);
+  background: var(--shell);
+}
+
+.fdrop-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--human-border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  box-shadow: var(--menu-shadow);
+}
+
+.fdrop.no .fdrop-card {
+  border-color: var(--rule);
+  color: var(--mute);
 }
 
 .crumb {
@@ -176,20 +230,38 @@
   text-decoration: underline;
 }
 
+.crumb-link.drop {
+  border-radius: var(--radius-sm);
+  background: var(--human-wash);
+  color: var(--ink);
+  outline: 2px dashed var(--human);
+  outline-offset: 2px;
+}
+
 .crumb .browse {
   display: none;
 }
 
+/* ---- filters, view and sort ---- */
 .filt {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 9px 20px;
   border-bottom: 1px solid var(--rule);
   font-size: var(--fs-caption);
 }
 
+.filt-chips {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .filt .chip {
+  flex: none;
   font: inherit;
   font-size: var(--fs-caption);
   color: var(--ink);
@@ -203,19 +275,71 @@
 }
 
 .filt-gap {
+  flex: none;
   width: 12px;
 }
 
-.sortby {
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--faint);
-  font: inherit;
-  cursor: pointer;
+.ftools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
 }
 
+.fsortsel {
+  max-width: 150px;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+}
+
+/* column headers do the sorting in the list; the drop-down is for the grid and the phone */
+.flist.list .fsortsel {
+  display: none;
+}
+
+.fselect-toggle {
+  display: none;
+}
+
+.fview-toggle {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.fview-toggle .icon-btn {
+  border-radius: 0;
+}
+
+.fview-toggle .icon-btn.on {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* ---- the selection bar ---- */
+.fsel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  border-bottom: 1px solid var(--human-border);
+  background: var(--human-wash);
+  font-size: var(--fs-caption);
+}
+
+.fsel-count {
+  margin-right: auto;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---- the list ---- */
 .ftable {
   display: flex;
   flex: 1;
@@ -230,10 +354,11 @@
 
 .frow {
   display: grid;
-  grid-template-columns: 34px 1fr 180px 150px 120px 80px 28px;
-  gap: 14px;
+  grid-template-columns: 28px 30px minmax(0, 1fr) 150px 160px 100px 76px 116px;
+  gap: 12px;
   align-items: center;
-  padding: 9px 20px;
+  min-height: 40px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--hairline);
   font-size: var(--fs-small);
 }
@@ -252,22 +377,127 @@
 }
 
 .frow.hd {
-  padding: 7px 20px;
+  min-height: 32px;
   border-bottom: 1px solid var(--rule);
   background: var(--table-head);
   color: var(--faint);
   font-size: var(--fs-tiny);
 }
 
-.frow.on {
+.frow.chk {
   background: var(--human-wash);
 }
 
-.frow .fic {
+.frow.on {
+  background: var(--human-wash);
+  box-shadow: inset 3px 0 0 var(--human);
+}
+
+.frow.drop {
+  outline: 2px dashed var(--human);
+  outline-offset: -2px;
+  background: var(--human-wash);
+}
+
+.frow.drag,
+.fcard.drag {
+  opacity: 0.5;
+}
+
+.fsort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fsort:hover,
+.fsort.on {
+  color: var(--ink);
+}
+
+.fsort:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+/* the checkbox: drawn here so its tap area can reach 44 px without growing the box */
+.fchk {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+}
+
+.fcheck {
+  appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.fcheck::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+}
+
+.fcheck:hover {
+  border-color: var(--mute);
+}
+
+.fcheck:checked,
+.fcheck:indeterminate {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.fcheck:checked::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--surface);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.fcheck:indeterminate::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 2px;
+  width: 8px;
+  height: 2px;
+  background: var(--surface);
+}
+
+.fcheck:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.fcheck:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* the tile of a file's type */
+.fic {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-sm);
   background: var(--bot-grey);
   color: var(--surface);
@@ -276,19 +506,30 @@
   font-weight: 600;
 }
 
-.frow .fic.img { background: var(--ok); }
-.frow .fic.pdf { background: var(--alert); }
-.frow .fic.md { background: var(--human); }
-.frow .fic.zip { background: var(--zip); }
+.fic.img { background: var(--ok); }
+.fic.pdf { background: var(--alert); }
+.fic.md { background: var(--human); }
+.fic.zip { background: var(--zip); }
 
-.frow .fic.dir {
+.fic.dir {
   background: var(--shell);
   color: var(--mute);
 }
 
-.frow .fic svg {
+.fic.dir svg {
   width: 16px;
   height: 16px;
+}
+
+.fic.big {
+  width: 48px;
+  height: 48px;
+  font-size: var(--fs-small);
+}
+
+.fic.big.dir svg {
+  width: 24px;
+  height: 24px;
 }
 
 .frow .src {
@@ -300,9 +541,26 @@
   white-space: nowrap;
 }
 
-.frow .src .by {
+.by {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   color: var(--mute);
   font-weight: 500;
+}
+
+.by .av {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  font-size: var(--fs-tiny);
+}
+
+.by-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .frow .sz {
@@ -318,6 +576,12 @@
   min-width: 0;
 }
 
+.fname-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .fname-text {
   min-width: 0;
   overflow: hidden;
@@ -325,14 +589,76 @@
   white-space: nowrap;
 }
 
-.flock {
-  display: inline-flex;
+/* the date under the name is for the phone, where the When column is gone */
+.fdate {
+  display: none;
   color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.flock {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  cursor: help;
+}
+
+.flock:hover {
+  color: var(--ink);
+}
+
+.fwhy {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.fwhy-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  white-space: normal;
+  box-shadow: var(--menu-shadow);
+}
+
+.fwhy-pop b {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .fact {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 2px;
+}
+
+.fquick {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0;
+}
+
+.frow:hover .fquick,
+.frow.on .fquick,
+.frow:focus-within .fquick {
+  opacity: 1;
 }
 
 .frow .fmenu .icon-btn {
@@ -354,7 +680,159 @@
   top: calc(100% + 2px);
   right: 0;
   left: auto;
+  z-index: 40;
   min-width: 150px;
+}
+
+/* the right-click menu sits at the pointer */
+.fctx {
+  position: fixed;
+  z-index: 70;
+}
+
+.fctx .menu.fpop {
+  position: static;
+  min-width: 190px;
+}
+
+/* ---- the grid ---- */
+.fgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 14px 20px;
+}
+
+.fcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.fcard:hover {
+  background: var(--msg-hover);
+}
+
+.fcard:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.fcard.chk,
+.fcard.on {
+  border-color: var(--human);
+  background: var(--human-wash);
+}
+
+.fcard.drop {
+  outline: 2px dashed var(--human);
+  outline-offset: 2px;
+  background: var(--human-wash);
+}
+
+.fthumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  background: var(--table-head);
+  overflow: hidden;
+}
+
+.fthumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fcard-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fcard-check,
+.fcard-menu {
+  position: absolute;
+  top: 10px;
+  z-index: 1;
+  opacity: 0;
+}
+
+.fcard-check {
+  left: 10px;
+}
+
+.fcard-menu {
+  right: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.fcard:hover .fcard-check,
+.fcard:hover .fcard-menu,
+.fcard:focus-within .fcard-check,
+.fcard:focus-within .fcard-menu,
+.fcard.chk .fcard-check,
+.flist.selecting .fcard-check {
+  opacity: 1;
+}
+
+/* ---- the foot: the allowance of Personal ---- */
+.fstatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 36px;
+  padding: 6px 20px;
+  border-top: 1px solid var(--rule);
+  background: var(--table-head);
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.fquota {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fquota-bar {
+  display: block;
+  width: 140px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.fquota-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--human);
+}
+
+.fquota.high .fquota-fill {
+  background: var(--alert);
+}
+
+.fquota.full .fquota-fill {
+  background: var(--alert-ink);
+}
+
+.fquota-note {
+  color: var(--alert-ink);
+  font-weight: 500;
 }
 
 .fempty {
@@ -391,6 +869,19 @@
 
 .fnote.memory > b {
   color: var(--ok-ink);
+}
+
+.fnote.admin {
+  justify-content: space-between;
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--ink);
+}
+
+.fnote-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 8px;
 }
 
 .fnote.alert {
@@ -448,15 +939,42 @@
   height: 6px;
 }
 
-/* beside the preview panel the list is narrow: the "Where" column goes first */
-@container (width < 720px) {
+/* beside the preview panel the list is narrow: the "Where" column goes first, then "By" and "Size" */
+@container (width < 900px) {
   .frow {
-    grid-template-columns: 34px minmax(0, 1fr) 100px 64px 64px 28px;
-    gap: 10px;
+    grid-template-columns: 28px 30px minmax(0, 1fr) 160px 100px 76px 116px;
   }
 
-  .frow > :nth-child(3) {
+  .frow > :nth-child(4) {
     display: none;
+  }
+}
+
+@container (width < 640px) {
+  .frow {
+    grid-template-columns: 28px 30px minmax(0, 1fr) 90px 36px;
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .frow > :nth-child(5),
+  .frow > :nth-child(7),
+  .fquick {
+    display: none;
+  }
+
+  .filt {
+    padding: 9px 14px;
+  }
+
+  .fsel,
+  .fstatus {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .fgrid {
+    padding: 12px 14px;
   }
 }
 
@@ -537,6 +1055,16 @@
 
 .fp .fnote {
   margin: 0;
+}
+
+.fp-why {
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.fvh .fwhy {
+  flex: none;
+  font-size: var(--fs-caption);
 }
 
 .fp.reading .vw-bar,
@@ -882,6 +1410,9 @@
     display: inline-flex;
     align-items: center;
     flex: none;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
   }
 
   .crumb-team,
@@ -893,33 +1424,148 @@
     padding: 8px 14px 0;
   }
 
+  /* the chips scroll sideways and fade out at the edge, so the last one is seen to continue */
   .filt {
-    padding: 9px 14px;
-    overflow-x: auto;
-    white-space: nowrap;
+    gap: 8px;
+    padding: 4px 0 4px 14px;
   }
 
-  .filt .sortby {
-    margin-left: 0;
-    flex: none;
+  .filt-chips {
+    overflow-x: auto;
+    padding: 4px 24px 4px 0;
+    white-space: nowrap;
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  }
+
+  .filt-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filt .chip,
+  .fselect-toggle,
+  .fsortsel {
+    min-height: 44px;
+  }
+
+  .filt .chip {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .ftools {
+    padding-right: 14px;
+  }
+
+  .flist.list .fsortsel {
+    display: block;
+    max-width: 120px;
+  }
+
+  .fselect-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .fview-toggle .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .fsel {
+    flex-wrap: wrap;
+    padding: 6px 14px;
+  }
+
+  .fsel .btn {
+    min-height: 44px;
   }
 
   .frow,
   .flist .frow {
-    grid-template-columns: 34px minmax(0, 1fr) 28px;
+    grid-template-columns: 30px minmax(0, 1fr) 44px;
     gap: 10px;
-    padding: 9px 14px;
+    min-height: 56px;
+    padding: 6px 14px;
   }
 
-  .frow > :nth-child(3),
-  .frow > :nth-child(4),
-  .frow > :nth-child(5),
-  .frow > :nth-child(6) {
+  .frow.hd {
     display: none;
   }
 
-  .frow .fmenu .icon-btn {
+  /* the checkbox column shows only while picking */
+  .frow > .fchk {
+    display: none;
+  }
+
+  .flist.selecting .frow > .fchk {
+    display: grid;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .flist.selecting .frow,
+  .flist.selecting .frow:not(.hd) {
+    grid-template-columns: 44px 30px minmax(0, 1fr) 44px;
+  }
+
+  .frow > :nth-child(4),
+  .frow > :nth-child(5),
+  .frow > :nth-child(6),
+  .frow > :nth-child(7) {
+    display: none;
+  }
+
+  .fdate {
+    display: block;
+  }
+
+  .fquick {
+    display: none;
+  }
+
+  .frow .fmenu .icon-btn,
+  .fcard .fcard-menu .icon-btn {
+    width: 44px;
+    height: 44px;
     opacity: 1;
+  }
+
+  .fcard-check,
+  .fcard-menu {
+    opacity: 1;
+  }
+
+  .fcard-check {
+    display: none;
+  }
+
+  .flist.selecting .fcard-check {
+    display: grid;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+    top: 2px;
+    left: 2px;
+  }
+
+  .fcard-menu {
+    top: 2px;
+    right: 2px;
+  }
+
+  .fgrid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    padding: 12px 14px;
+  }
+
+  .fstatus {
+    padding: 8px 14px;
+  }
+
+  .flock {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .fnote {

@@ -109,7 +109,7 @@ export default function CsvViewer({ path, text = '', readOnly, onSave, context }
           {!readOnly ? <button type="button" className="csv-add" onClick={addRow}>+ Add row</button> : null}
         </div>
       )}
-      <SaveFooter authorName={context.authorName} status={saver.status} message={saver.message} readOnly={readOnly} />
+      <SaveFooter personal={context.store === 'personal'} authorName={context.authorName} status={saver.status} message={saver.message} readOnly={readOnly} />
     </div>
   );
 }

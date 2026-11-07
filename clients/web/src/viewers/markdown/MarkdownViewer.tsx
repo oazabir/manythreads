@@ -120,7 +120,7 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   return (
     <div className="vw md" data-testid="viewer-markdown" data-mode={mode}>
       <ViewerBar path={path}>
-        {!readOnly && !live ? (
+        {!readOnly && !live && context.store !== 'personal' ? (
           <button
             type="button"
             className="btn sm"
@@ -170,7 +170,7 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
           }}
         />
       ) : null}
-      <SaveFooter authorName={context.authorName} status={saver.status} message={saver.message} readOnly={readOnly} />
+      <SaveFooter personal={context.store === 'personal'} authorName={context.authorName} status={saver.status} message={saver.message} readOnly={readOnly} />
     </div>
   );
 }

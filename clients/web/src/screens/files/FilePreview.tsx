@@ -6,11 +6,12 @@ import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { usePanelSub, usePanelTitle } from '../../kernel/panel/sub';
 import { ViewerMessage } from '../../viewers/common';
-import { RowMenu, useRowActions } from './actions';
-import { whenLabel } from './FileList';
+import { RowMenu, historyId, useRowActions } from './actions';
 import { READ_ONLY_COPY, MEMORY_COPY, isPage, parentOf, type FileRow } from './model';
-import { filesHref } from './paths';
-import { useTeamFiles, type TeamFiles } from './store';
+import { WhyReadOnly, lockReason } from './ReadOnlyWhy';
+import { personalPanelId, spaceHref } from './spaces';
+import { usePanelFiles, type TeamFiles } from './store';
+import { whenLabel } from './when';
 import { RowViewer } from './RowViewer';
 import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
@@ -34,7 +35,7 @@ function Kv({ row, files }: { row: FileRow; files: TeamFiles }) {
       {row.by ? (<><dt>Posted by</dt><dd data-vt-mask>{row.by.name}</dd></>) : null}
       {channel ? (<><dt>In</dt><dd>{`# ${channel}`}</dd></>) : null}
       <dt>Visible to</dt>
-      <dd>{row.store === 'attachments' && channel ? `Everyone who can read # ${channel}` : `${files.teamName} team`}</dd>
+      <dd>{row.store === 'attachments' && channel ? `Everyone who can read # ${channel}` : files.space === 'personal' ? 'Only you' : `${files.teamName} team`}</dd>
     </dl>
   );
 }
@@ -44,8 +45,8 @@ function Kv({ row, files }: { row: FileRow; files: TeamFiles }) {
  * with it. A page under `pages/` opens as a read view with Edit; History is the next panel on the stack.
  */
 export function FilePreview({ entry }: { entry: { type: string; id: string } }) {
-  const files = useTeamFiles();
-  const state = useFileRow(files, entry.id);
+  const { files, id } = usePanelFiles(entry.id);
+  const state = useFileRow(files, id);
   const row = state.status === 'ok' ? state.row : null;
   usePanelTitle(row?.name ?? null);
   usePanelSub(row ? describe(row) : null);
@@ -61,30 +62,34 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
   const navigate = useNavigate();
   const panel = usePanel();
   const git = row.store === 'git' && row.kind === 'file';
+  const personal = row.store === 'personal' && row.kind === 'file';
+  const history = git || personal;
   const page = git && isPage(row.path);
   const [editing, setEditing] = useState(false);
   const { content, save } = useContent(files, row);
   const folder = parentOf(row.path);
   const actions = useRowActions(files, {
     onDone: (r) => {
-      if (r.action === 'delete') panel.close();
-      else panel.replace({ type: 'file', id: r.to });
+      if (r.action === 'delete' || r.action === 'delete-many' || r.action === 'move-many') panel.close();
+      else panel.replace({ type: 'file', id: personal ? personalPanelId(r.to) : r.to });
     },
   });
   const reading = page && !editing;
   const pr = row.readOnlyReason === 'change_by_pull_request';
   const canEdit = git && !row.readOnly && Boolean(save);
+  const lock = lockReason(row);
 
   return (
     <div className={`fp ${reading ? 'reading' : ''}`} data-testid="file-preview" data-store={row.store} data-path={row.path}>
       <div className="fp-bar" data-testid="file-actions">
-        {git ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: row.path })}>History</button> : null}
-        <button type="button" className="btn s" data-testid="open-in-files" onClick={() => void navigate(filesHref(files.slug, git ? { folder, open: row.path } : { folder, panel: `file:${row.fileId ?? row.path}` }))}>Open in Files</button>
+        {history && row.readOnlyReason !== 'admin_view' ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: historyId(row) })}>{personal ? 'Versions' : 'History'}</button> : null}
+        <button type="button" className="btn s" data-testid="open-in-files" onClick={() => void navigate(spaceHref(files.slug, history ? { folder, open: row.path } : { folder, panel: `file:${row.fileId ?? row.path}` }))}>Open in Files</button>
         {page && canEdit ? <button type="button" className="btn s" aria-pressed={editing} onClick={() => setEditing((e) => !e)}>{editing ? 'Done' : 'Edit'}</button> : null}
         {row.store === 'attachments' && row.where ? <Link className="btn s" to={`/t/${encodeURIComponent(files.slug)}/c/${encodeURIComponent(row.where.replace(/^#\s*/, ''))}`}>Open channel</Link> : null}
         <span className="fp-spacer" />
-        <RowMenu row={row} start={actions.start} />
+        <RowMenu row={row} files={files} start={actions.start} />
       </div>
+      {lock ? <p className="fp-why"><WhyReadOnly reason={lock} look="link" /></p> : null}
       {pr ? (
         <p className="fnote" data-testid="read-only-note" role="note">
           <b>{READ_ONLY_COPY}.</b> You can read this file; a change to it is proposed first, and a team lead or workspace admin applies it.{' '}

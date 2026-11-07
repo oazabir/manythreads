@@ -8,7 +8,7 @@ import { usePanelSub } from '../../kernel/panel/sub';
 import { FilesError } from './backend';
 import { ProposeChangeDialog } from './dialogs';
 import { baseName, isPage, type Commit, type FileDiff } from './model';
-import { bumpFiles, useFilesVersion, useTeamFiles, type TeamFiles } from './store';
+import { bumpFiles, useFilesVersion, usePanelFiles, type TeamFiles } from './store';
 import { useFileRow } from './useFileRow';
 
 const RenderedDiff = lazy(() => import('./RenderedDiff').then((m) => ({ default: m.RenderedDiff })));
@@ -134,7 +134,11 @@ function RestoreDialog({ files, path, commit, onClose, onDone }: { files: TeamFi
       }
     >
       <p className="dlg-text" data-testid="restore-question">
-        Restore <code>{name}</code> to {when}? A new commit will be made.
+        {files.space === 'personal' ? (
+          <>Restore <code>{name}</code> to {when}? The version you have now is kept, so you can go back to it.</>
+        ) : (
+          <>Restore <code>{name}</code> to {when}? A new commit will be made.</>
+        )}
       </p>
       {error ? <p className="dlg-error" role="alert">{error}</p> : null}
     </Dialog>
@@ -143,8 +147,8 @@ function RestoreDialog({ files, path, commit, onClose, onDone }: { files: TeamFi
 
 /** The right-panel entry `history:<path>`: the commits that touched a file, what each changed, and Restore. */
 export function HistoryPanel({ entry }: { entry: { type: string; id: string } }) {
-  const files = useTeamFiles();
-  const path = entry.id;
+  const { files, id: path } = usePanelFiles(entry.id);
+  const personal = files?.space === 'personal';
   const version = useFilesVersion();
   const rowState = useFileRow(files, path);
   usePanelSub(path);
@@ -160,8 +164,8 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
   if (commits.length === 0) {
     return (
       <div className="hist" data-testid="history">
-        <p className="panel-empty-title">No history yet</p>
-        <p className="panel-empty-body">This file has no commits.</p>
+        <p className="panel-empty-title">{personal ? 'No earlier versions yet' : 'No history yet'}</p>
+        <p className="panel-empty-body">{personal ? 'When you save a change, the earlier version is kept here.' : 'This file has no commits.'}</p>
       </div>
     );
   }
@@ -173,7 +177,7 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
 
   return (
     <div className="hist" data-testid="history" data-path={path}>
-      <div className="hist-list" role="list" aria-label="Commits">
+      <div className="hist-list" role="list" aria-label={personal ? 'Versions' : 'Commits'}>
         {commits.map((c) => {
           const on = c.sha === selected.sha;
           const author = c.author;
@@ -194,7 +198,7 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
         })}
       </div>
       <div className="hist-foot">
-        {done ? <p className="vw-saved" role="status">Restored. A new commit was made.</p> : null}
+        {done ? <p className="vw-saved" role="status">{personal ? 'Restored. The version you had before is kept.' : 'Restored. A new commit was made.'}</p> : null}
         {readOnly ? (
           <>
             <button type="button" className="btn s" data-testid="change-by-pr" onClick={() => setPr({})}>Propose a change</button>
