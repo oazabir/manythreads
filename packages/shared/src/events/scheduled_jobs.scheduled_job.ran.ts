@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ScheduledJobKind, ScheduledJobRunStatus } from '../entities/scheduled-job.ts';
-import { BotId, ScheduledJobId, ScheduledJobRunId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
+import { BotId, PersonId, ScheduledJobId, ScheduledJobRunId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
 
 /**
  * A scheduled job's run changed state (PLAN P6-08): filed as `queued` (the runtime then starts the bot), `running` when the bot's run opened, and
@@ -10,7 +10,8 @@ export const ScheduledJobsScheduledJobRanEvent = z.object({
   type: z.literal('scheduled_jobs.scheduled_job.ran'),
   schemaVersion: z.literal(1),
   workspaceId: WorkspaceId,
-  teamId: TeamId,
+  /** Null for a personal routine (it belongs to a person, not a team). */
+  teamId: TeamId.nullable(),
   scheduledJobId: ScheduledJobId,
   scheduledJobRunId: ScheduledJobRunId,
   botId: BotId,
@@ -29,5 +30,7 @@ export const ScheduledJobsScheduledJobRanEvent = z.object({
   outputMode: z.enum(['create', 'replace', 'append']).nullable().default(null),
   modelAlias: z.string().max(40).nullable().default(null),
   effort: z.enum(['low', 'medium', 'high']).nullable().default(null),
+  /** The person a personal routine belongs to, and so the asker of its run. Set by the platform from the routine's own row; absent for a team job. */
+  ownerPersonId: PersonId.optional(),
 });
 export type ScheduledJobsScheduledJobRanEvent = z.infer<typeof ScheduledJobsScheduledJobRanEvent>;

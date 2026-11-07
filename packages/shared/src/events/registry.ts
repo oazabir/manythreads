@@ -60,6 +60,7 @@ import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
 import { TasksTaskCompletedEvent } from './tasks.task.completed.ts';
 import { TasksTaskHandedOffEvent } from './tasks.task.handed_off.ts';
 import { ScheduledJobsScheduledJobRanEvent } from './scheduled_jobs.scheduled_job.ran.ts';
+import { ScheduledJobsScheduledJobStoppedEvent } from './scheduled_jobs.scheduled_job.stopped.ts';
 import { HermesConnectionCreatedEvent } from './hermes.connection.created.ts';
 import { HermesConnectionUpdatedEvent } from './hermes.connection.updated.ts';
 import { HermesConnectionDeletedEvent } from './hermes.connection.deleted.ts';
@@ -324,6 +325,7 @@ export const eventRegistry = {
   'tasks.task.completed': { 1: TasksTaskCompletedEvent },
   'tasks.task.handed_off': { 1: TasksTaskHandedOffEvent },
   'scheduled_jobs.scheduled_job.ran': { 1: ScheduledJobsScheduledJobRanEvent },
+  'scheduled_jobs.scheduled_job.stopped': { 1: ScheduledJobsScheduledJobStoppedEvent },
   'runners.runner.connected': { 1: RunnersRunnerConnectedEvent },
   'runners.runner.disconnected': { 1: RunnersRunnerDisconnectedEvent },
   'runners.job.refused': { 1: RunnersJobRefusedEvent },
@@ -476,6 +478,7 @@ export type AnyEvent =
   | z.infer<typeof TasksTaskCompletedEvent>
   | z.infer<typeof TasksTaskHandedOffEvent>
   | z.infer<typeof ScheduledJobsScheduledJobRanEvent>
+  | z.infer<typeof ScheduledJobsScheduledJobStoppedEvent>
   | z.infer<typeof WorkshopTerminalOpenedEvent>
   | z.infer<typeof WorkshopTerminalClosedEvent>
   | z.infer<typeof MeetingsMeetingStartedEvent>
@@ -575,6 +578,7 @@ export type LatestEvent =
   | z.infer<typeof TasksTaskCompletedEvent>
   | z.infer<typeof TasksTaskHandedOffEvent>
   | z.infer<typeof ScheduledJobsScheduledJobRanEvent>
+  | z.infer<typeof ScheduledJobsScheduledJobStoppedEvent>
   | z.infer<typeof WorkshopTerminalOpenedEvent>
   | z.infer<typeof WorkshopTerminalClosedEvent>
   | z.infer<typeof MeetingsMeetingStartedEvent>

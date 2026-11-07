@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "monthlyCapUsd": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10000
+    }
+  },
+  "required": [
+    "monthlyCapUsd"
+  ],
+  "additionalProperties": false
+}

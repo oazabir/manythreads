@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "schedule": {
+      "type": "string",
+      "pattern": "^\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$"
+    },
+    "scheduleWords": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "timeZone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z_]+(?:[/+-][A-Za-z0-9_+-]+)*$"
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "sources": {
+      "maxItems": 11,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "mail",
+          "calendar",
+          "mentions",
+          "threads",
+          "approvals",
+          "cards",
+          "meetings",
+          "notes",
+          "memory",
+          "knowledge",
+          "action_items"
+        ]
+      }
+    },
+    "outputPath": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 300
+    },
+    "outputMode": {
+      "type": "string",
+      "enum": [
+        "create",
+        "replace",
+        "append"
+      ]
+    },
+    "botSlug": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "schedule",
+    "scheduleWords",
+    "timeZone",
+    "prompt",
+    "sources",
+    "outputPath",
+    "outputMode",
+    "botSlug"
+  ]
+}

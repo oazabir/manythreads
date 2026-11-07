@@ -24,6 +24,8 @@ export * from './memory/index.ts';
 export * from './retention/index.ts';
 export * from './ops/index.ts';
 export * from './tasks/index.ts';
+export * from './scheduled-jobs/index.ts';
+export * from './action-items/index.ts';
 export * from './runners/index.ts';
 export * from './hermes/index.ts';
 export * from './bot-runners/index.ts';

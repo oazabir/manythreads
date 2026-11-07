@@ -128,6 +128,7 @@ export * from './tasks.task.claimed.ts';
 export * from './tasks.task.completed.ts';
 export * from './tasks.task.handed_off.ts';
 export * from './scheduled_jobs.scheduled_job.ran.ts';
+export * from './scheduled_jobs.scheduled_job.stopped.ts';
 export * from './runners.runner.connected.ts';
 export * from './runners.runner.disconnected.ts';
 export * from './runners.job.refused.ts';

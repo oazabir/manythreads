@@ -88,6 +88,9 @@ export function registerScheduledJobRouter(ctx: PluginContext): void {
   ctx.events.subscribe('scheduled_jobs.scheduled_job.ran', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ScheduledJobsScheduledJobRanEvent.parse(raw);
     if (event.status !== 'queued') return;
+    // A personal routine (no team) is started by its own router (router-personal-routines.ts).
+    if (event.teamId === null) return;
+    const teamId: string = event.teamId;
     if (!(await firstDelivery(tx, event.scheduledJobRunId))) return;
 
     const fail = (reason: string): Promise<unknown> =>
@@ -97,7 +100,7 @@ export function registerScheduledJobRouter(ctx: PluginContext): void {
           type: 'runtime.scheduled_job.finished',
           schemaVersion: 1,
           workspaceId: event.workspaceId,
-          teamId: event.teamId,
+          teamId,
           botId: event.botId,
           scheduledJobRunId: event.scheduledJobRunId,
           runId: null,
@@ -113,7 +116,7 @@ export function registerScheduledJobRouter(ctx: PluginContext): void {
         `SELECT b.id, b.slug, b.name, b.status, b.triggers, a.id AS actor_id
            FROM app.bots b JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = b.id
           WHERE b.id = $1::uuid AND b.team_id = $2::uuid`,
-        [event.botId, event.teamId],
+        [event.botId, teamId],
       )
     ).rows[0];
     if (!bot) return void (await fail('The scheduled job’s bot no longer exists on this team.'));
@@ -129,13 +132,13 @@ export function registerScheduledJobRouter(ctx: PluginContext): void {
       return void (await fail(`The bot ${bot.name} has no routine trigger in its BOT.md${routineSlug ? ` for "${routineSlug}"` : ''}, so a schedule cannot start it.`));
     }
 
-    const channelId = await homeChannel(tx, event.teamId, bot.actor_id);
+    const channelId = await homeChannel(tx, teamId, bot.actor_id);
     if (!channelId) return void (await fail(`The bot ${bot.name} cannot post in any public channel of the team, so there is nowhere to put its output.`));
 
     const card =
       event.taskId === null
         ? null
-        : (await tx.query<{ id: string; title: string; description: string }>('SELECT id, title, description FROM app.tasks WHERE id = $1::uuid AND team_id = $2::uuid', [event.taskId, event.teamId])).rows[0] ?? null;
+        : (await tx.query<{ id: string; title: string; description: string }>('SELECT id, title, description FROM app.tasks WHERE id = $1::uuid AND team_id = $2::uuid', [event.taskId, teamId])).rows[0] ?? null;
     const prompt = buildScheduledJobPrompt({
       kind: event.kind,
       name: event.scheduledJobName || 'scheduled',
@@ -148,7 +151,7 @@ export function registerScheduledJobRouter(ctx: PluginContext): void {
     const payload: RunPayload = {
       workspaceId: event.workspaceId,
       botId: bot.id,
-      teamId: event.teamId,
+      teamId,
       channelId,
       trigger: 'routine',
       askerActorId: null,

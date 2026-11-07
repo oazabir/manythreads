@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "sentence": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 1000
+    },
+    "timeZone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z_]+(?:[/+-][A-Za-z0-9_+-]+)*$"
+    }
+  },
+  "required": [
+    "sentence",
+    "timeZone"
+  ],
+  "additionalProperties": false
+}

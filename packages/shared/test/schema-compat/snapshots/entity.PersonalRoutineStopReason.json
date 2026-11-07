@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "bot_off",
+    "bot_gone",
+    "consent_withdrawn",
+    "connection_gone",
+    "owner_deactivated",
+    "spend_cap",
+    "not_a_member"
+  ]
+}
