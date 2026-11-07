@@ -45,14 +45,14 @@ const mintRun = (body: Record<string, unknown> = {}): Promise<{ status: number; 
  * A conversation run for a person, opened the only way that is allowed to name an asker: in-process, through the run service
  * (what the router does with `ctx.runs.open`). Its endpoint is the real server's, because the token's hash is in the database.
  */
-async function openRunFor(askerActorId: string | null, botId: string = bot.botId, trigger?: string): Promise<McpRunMintResponse> {
+async function openRunFor(askerActorId: string | null, botId: string = bot.botId, trigger?: string, channelId?: string): Promise<McpRunMintResponse> {
   const appPool = createAppPool(world.server.db.appUrl);
   const systemPool = createSystemPool(world.server.db.systemUrl, 2);
   try {
     const registry = new CapabilityRegistry();
     const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
     const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
-    const { run, token } = await service.open({ botId, teamId, workspaceId: omar.workspaceId, trigger: trigger ?? (askerActorId === null ? 'webhook' : 'conversation'), ...(askerActorId === null ? {} : { askerActorId }) });
+    const { run, token } = await service.open({ botId, teamId, workspaceId: omar.workspaceId, trigger: trigger ?? (askerActorId === null ? 'webhook' : 'conversation'), ...(askerActorId === null ? {} : { askerActorId }), ...(channelId ? { channelId } : {}) });
     return McpRunMintResponse.parse({
       runId: run.runId,
       botId: run.botId,
@@ -234,6 +234,66 @@ describe('gateway-mcp endpoint', () => {
       const over = await toolCall(mine, 'messages.search', { query: 'one more' }, 99);
       expect(over).toMatchObject({ ok: false, code: 'forbidden' });
       expect(over.message).toMatch(/40 tool calls/);
+    });
+
+    // P20-R7: the default target of memory.write is the team's bundle, which every member reads, and a personal routine run has read its owner's private space. The
+    // door forces the target to personal for such a run, whatever the model sends; this drives it through the real endpoint and the real memory.write handler.
+    describe('taking notes', () => {
+      let noter: { botId: string; actorId: string };
+      // the owner's own conversation with the bot: what the routine's router opens the run in, and what makes it a private context where Personal can be written
+      let conversationId: string;
+      beforeAll(async () => {
+        noter = await world.system(async (tx) => {
+          const row = await tx.query<{ id: string }>(
+            `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
+             VALUES ($1, $2, 'routine-noter', 'Routine noter', 'Takes notes', 'agent', 'rules', 'team', repeat('e', 64), 'active') RETURNING id`,
+            [omar.workspaceId, teamId],
+          );
+          const botId = row.rows[0]!.id;
+          const actor = await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, botId]);
+          await tx.query('INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, $4)', [teamId, actor.rows[0]!.id, omar.workspaceId, 'member']);
+          for (const capability of ['memory.write', 'personal.read']) {
+            await tx.query("INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, $3, false, '{}')", [teamId, actor.rows[0]!.id, capability]);
+          }
+          return { botId, actorId: actor.rows[0]!.id };
+        });
+        const consent = await world.call(nadia, 'PUT', `/api/me/bot-consents/${noter.botId}`, { allowed: true });
+        expect(consent.status, JSON.stringify(consent.body)).toBe(200);
+        conversationId = await world.system(async (tx) =>
+          (
+            await tx.query<{ id: string }>(
+              `INSERT INTO app.channels (workspace_id, team_id, name, kind, private, bot_id, created_by) VALUES ($1, $2, '', 'bot_conversation', true, $3, $4) RETURNING id`,
+              [omar.workspaceId, teamId, noter.botId, nadia.actorId],
+            )
+          ).rows[0]!.id,
+        );
+      });
+
+      const note = (slug: string, extra: Record<string, unknown> = {}) => ({ path: `memory/facts/${slug}.md`, type: 'fact', title: slug, body: `A note ${slug}.\n`, ...extra });
+      const inPersonal = async (slug: string): Promise<number> => (await world.call(nadia, 'GET', `/api/me/memory/file?path=${encodeURIComponent(`facts/${slug}.md`)}`)).status;
+
+      it('lands in the owner\'s Personal memory when the model names no target, and when it names the team', async () => {
+        const mine = await openRunFor(nadia.actorId, noter.botId, 'routine', conversationId);
+        const bare = await toolCall(mine, 'memory.write', note('routine-bare'), 1);
+        expect(bare, JSON.stringify(bare)).toMatchObject({ ok: true, space: expect.stringMatching(/^person:/) });
+        expect(await inPersonal('routine-bare')).toBe(200);
+
+        const team = await toolCall(mine, 'memory.write', note('routine-team', { target: 'team' }), 2);
+        expect(team, JSON.stringify(team)).toMatchObject({ ok: true, space: expect.stringMatching(/^person:/) });
+        expect(await inPersonal('routine-team')).toBe(200);
+        // it is the owner's own file: another member of the team cannot read it
+        expect((await world.call(sameera, 'GET', '/api/me/memory/file?path=facts%2Froutine-bare.md')).status).not.toBe(200);
+      });
+
+      it('is not forced for a run that is not a personal routine (the control: a conversation with the same bot and the same input does not land in Personal)', async () => {
+        const chat = await openRunFor(nadia.actorId, noter.botId, 'conversation', conversationId);
+        await toolCall(chat, 'memory.write', note('chat-bare'), 1);
+        expect(await inPersonal('chat-bare')).toBe(404);
+        // a team's own schedule (no person asking) likewise
+        const schedule = await openRunFor(null, noter.botId, 'routine');
+        await toolCall(schedule, 'memory.write', note('schedule-bare'), 1);
+        expect(await inPersonal('schedule-bare')).toBe(404);
+      });
     });
   });
 
