@@ -6,6 +6,8 @@ import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
 import { registerConnectionRoutes, resolveRunnerTarget, resolveTarget } from './connections.ts';
 import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
 import { registerProfileChanges } from './profile-changes.ts';
+import { registerStopRoute } from './live.ts';
+import { registerChatRouter } from './router-chat.ts';
 import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
 
 export { renderGatewayProfile, GATEWAY_ENV, type GatewayProfileInput, type GatewayProfileFiles } from './gateway-profile.ts';
@@ -56,7 +58,7 @@ export default definePlugin({
         'bot_runner.run.refused',
         'bot_runner.run.unmetered',
       ],
-      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed'],
+      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed', 'conversations.turn.regenerated'],
     },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
@@ -100,6 +102,8 @@ export default definePlugin({
     registerProfileChanges(ctx, profiles.notify);
     registerConnectionRoutes(ctx, {}, profiles.notify);
     registerRouter(ctx);
+    registerChatRouter(ctx);
+    registerStopRoute(ctx);
     registerApprovalResume(ctx);
     registerRunJob(ctx);
   },

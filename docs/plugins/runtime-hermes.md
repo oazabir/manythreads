@@ -198,6 +198,24 @@ A run that posted nothing has its final text posted as above.
 The model is told this in the `messages.post` tool description: posting is optional for an answer, the final reply is posted for it, and a
 post to the channel it was asked in with no thread lands in the thread it was asked in (see [channels.md](./channels.md)).
 
+## Streaming, Stop and the model pick in Chat (P20-16)
+
+A run in a person's conversation with a bot (trigger `conversation`, a person asked, a thread to answer in) also streams to that person. The answer is still
+**one** message, posted once at the end; the stream is a preview and is never stored.
+
+- **Frames.** `live.ts` sends `run.delta` (the text so far in pieces, each with the `offset` of its first character), `run.looking` (a fixed label for
+  the tool the bot is using, such as "Searching memory", never a document's text) and `run.ended` (`done`, `failed` or `stopped`, sent after the answer is
+  posted) through `realtime.pushToPerson` to the asker only. Frames are batched about every 80 ms and at most 3000 characters each. A missed frame costs the preview a word,
+  never the answer. The shapes are in `packages/shared/src/api/conversations/chat.ts`.
+- **Stop.** `POST /api/runs/:runId/stop` is the asker's alone (anyone else gets 404). The live runs of this server are kept in memory, so a run on another
+  replica answers `{ stopped: false }`. A stopped run ends with what had been written as its reply, or "Stopped before an answer was written."; the run's
+  `stopped_by_asker` flag is committed before the reply is posted, so the conversations plugin sees it when the reply's event arrives and marks the variant.
+- **The model pick.** The send route files the person's pick in `app.message_model_picks` in the same transaction as the post. The router puts it in the
+  payload as `modelAlias`; the run uses it only when the bot's definition lists it as an alias or a fallback, otherwise the bot's first alias answers.
+  `bot_runs.model_alias` records the alias that answered and `bot_runs.turn_message_id` the person's message the run answered.
+- **Regenerate.** `router-chat.ts` consumes `conversations.turn.regenerated` and starts one more run for the turn's message, as its first run was started,
+  with the picked alias. The new answer becomes the next variant of the turn.
+
 ## What a run is allowed to do
 
 * The tools the model sees are the ones the broker grants (`gateway-mcp`'s `tools/list`), against the **run's** bot actor, and

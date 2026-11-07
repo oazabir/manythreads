@@ -41,7 +41,7 @@ import { RUN_QUEUE, RunPayload } from './run-job.ts';
 // author may tag (its `tasks.handoff` grant names the target), a few hops deep per thread. Everything else a bot wrote — its
 // own conversation channel, a DM, a private or archived channel, a message carrying an Answer — answers nothing.
 
-interface MessageRow {
+export interface MessageRow {
   id: string;
   body: string;
   channel_id: string;
@@ -74,7 +74,7 @@ interface BotRow {
 }
 
 /** The project the channel is tied to, if any (the projects plugin's table; read in the outbox's system transaction). */
-async function projectOfChannel(tx: PluginTx, channelId: string): Promise<ProjectNote | null> {
+export async function projectOfChannel(tx: PluginTx, channelId: string): Promise<ProjectNote | null> {
   const row = (
     await tx.query<{ name: string; repo_url: string; default_branch: string }>(
       'SELECT name, repo_url, default_branch FROM app.projects WHERE channel_id = $1::uuid',
@@ -93,16 +93,11 @@ async function isRehearsalQuestion(tx: PluginTx, messageId: string): Promise<boo
   return res.rows.length > 0;
 }
 
-/** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
-export function registerRouter(ctx: PluginContext): void {
-  registerTaskRouter(ctx);
-  registerScheduledJobRouter(ctx);
-  registerInboxRouter(ctx);
-  ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
-    const event = ChannelMessagePostedEvent.parse(raw);
-    const message = (
-      await tx.query<MessageRow>(
-        `SELECT m.id, m.body, m.channel_id, m.thread_root_id, m.author_id,
+/** The message a trigger is decided on, with its channel and author. Read in the outbox's system transaction. */
+export async function loadMessage(tx: PluginTx, messageId: string): Promise<MessageRow | undefined> {
+  return (
+    await tx.query<MessageRow>(
+      `SELECT m.id, m.body, m.channel_id, m.thread_root_id, m.author_id,
                 c.name AS channel_name, c.team_id AS channel_team, c.private AS channel_private,
                 c.archived_at AS channel_archived, c.bot_id AS channel_bot_id, c.kind AS channel_kind,
                 a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name,
@@ -114,9 +109,25 @@ export function registerRouter(ctx: PluginContext): void {
            LEFT JOIN app.people p ON p.id = a.ref_id AND a.kind = 'person'
            LEFT JOIN app.bots b ON b.id = a.ref_id AND a.kind = 'bot'
           WHERE m.id = $1`,
-        [event.messageId],
-      )
-    ).rows[0];
+      [messageId],
+    )
+  ).rows[0];
+}
+
+/** The model alias a person picked for this message (`app.message_model_picks`, bots migration 0025), if any. */
+async function pickedModel(tx: PluginTx, messageId: string): Promise<string | null> {
+  const res = await tx.query<{ model_alias: string }>('SELECT model_alias FROM app.message_model_picks WHERE message_id = $1::uuid', [messageId]);
+  return res.rows[0]?.model_alias ?? null;
+}
+
+/** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
+export function registerRouter(ctx: PluginContext): void {
+  registerTaskRouter(ctx);
+  registerScheduledJobRouter(ctx);
+  registerInboxRouter(ctx);
+  ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
+    const event = ChannelMessagePostedEvent.parse(raw);
+    const message = await loadMessage(tx, event.messageId);
     if (!message) return;
     // The announcement a handover posts ("Orchestrator → @coder: ...") carries `meta.handoff`, set only by the tasks plugin through the message
     // door. It is not a request of its own: the assignment's event (router-tasks.ts) wakes the new owner, so this message starts nothing,
@@ -160,6 +171,8 @@ export function registerRouter(ctx: PluginContext): void {
     // A question the bot page's Test action filed is a rehearsal (the row is written by the Test route in the transaction that posted the message,
     // so it is there before this event is delivered). Only a bot conversation has one.
     const rehearsal = conversation && (await isRehearsalQuestion(tx, message.id));
+    // The model the person picked for this message in Chat (filed by the conversations send route in the transaction that posted it).
+    const modelAlias = conversation ? await pickedModel(tx, message.id) : null;
     for (const bot of bots) {
       const trigger = matchTrigger(bot.triggers ?? [], bot.slug, {
         ...view,
@@ -179,6 +192,7 @@ export function registerRouter(ctx: PluginContext): void {
         text: message.body.slice(0, 40_000),
         messageId: message.id,
         ...(rehearsal && trigger === 'conversation' ? { rehearsal: true as const } : {}),
+        ...(modelAlias !== null && trigger === 'conversation' ? { modelAlias } : {}),
       };
       await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
     }

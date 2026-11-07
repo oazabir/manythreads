@@ -34,10 +34,15 @@ import { z } from 'zod';
 import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
+import { applyChatAlias, recordRunFacts, recordStopped, streamsLive } from './chat-run.ts';
+import { LiveFrames, trackRun, untrackRun } from './live.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
 import { meterPodRun } from './metering.ts';
 import { rehearsalBlocker, withRehearsalNote } from './rehearsal.ts';
 import { scheduledJobOverrideProblem, applyScheduledJobOverrides, emitScheduledJobFinished, emitScheduledJobStarted, finishScheduledJobRun } from './scheduled-job-run.ts';
+
+/** The answer of a run the asker stopped before it had written a word. */
+const STOPPED_BEFORE_ANSWER = 'Stopped before an answer was written.';
 
 /** The job queue one run executes in. */
 export const RUN_QUEUE = 'runtime-hermes.run';
@@ -109,6 +114,11 @@ export const RunPayload = z.strictObject({
    * the gateway holds back every write it tries and lists it as "not done" (PLAN P7-11, docs/plugins/gateway-mcp.md). Only a conversation run has it.
    */
   rehearsal: z.literal(true).optional(),
+  /**
+   * The model a person picked for the message that started this run (Chat, PLAN P20-16), read by the router from `app.message_model_picks` (or carried by Regenerate), never from
+   * anything a caller sent to a queue. The run uses it only when the bot's definition lists it; otherwise the bot's first alias answers.
+   */
+  modelAlias: z.string().min(1).max(40).optional(),
 });
 export type RunPayload = z.infer<typeof RunPayload>;
 
@@ -701,6 +711,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
       let handle: BotRuntimeHandle | undefined;
       let approvers: readonly string[] = [];
       let scheduledJobSettled = false;
+      // Ends the live frames of a run that streams (after its answer is posted, so the screen never sees "ended" before the answer).
+      let endFrames: ((status: 'done' | 'failed' | 'stopped') => Promise<void>) | undefined;
       try {
         // 1. Read, open the run, gate, pre-call check (one short transaction).
         const result = await job.transaction(async (tx): Promise<PreparedRun | null> => {
@@ -730,6 +742,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             }
             applyScheduledJobOverrides(definition, payload.scheduledJob);
           }
+          if (payload.trigger === 'conversation') applyChatAlias(definition, payload.modelAlias, job.log);
           const { frontmatter, alias, holdOnDetection } = definition;
           approvers = definition.approvers;
 
@@ -819,10 +832,18 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         }
         prepared = result;
         const { bot, provider, run, input, scope, alias: runAlias } = prepared;
+        // Not in the transaction that opened the run: a hold or a close in that transaction goes through the run's own door on another connection, which would wait for this row's lock.
+        await job.transaction((tx) => recordRunFacts(tx, run.runId, payload, runAlias));
 
         // 2. The model turn: no transaction held.
         let toolCalls = 0;
         handle = await provider.run(input, scope);
+        // A person's conversation streams: the asker gets the words as they are written, and can stop the run (live.ts). Anyone else's run does neither.
+        const liveEntry = streamsLive(payload) ? trackRun(run.runId, payload.askerActorId) : undefined;
+        if (liveEntry) liveEntry.handle = handle;
+        const frames = streamsLive(payload)
+          ? new LiveFrames(ctx, job, { runId: run.runId, channelId: payload.channelId, threadRootId: payload.replyRootId, askerActorId: payload.askerActorId }, job.log)
+          : undefined;
         let reply = '';
         let ok = false;
         let error: string | undefined;
@@ -832,10 +853,12 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let viaClaude: Extract<BotRuntimeEvent, { type: 'result' }>['viaClaude'];
         let tokens: { input: number; output: number; total: number } | null | undefined;
         for await (const event of handle.events) {
+          if (event.type === 'text') frames?.text(event.text);
           // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
           // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
           if (event.type === 'tool') {
             toolCalls += 1;
+            frames?.looking(event.name);
             job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
           }
           if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
@@ -852,6 +875,16 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
         }
         await handle.stop();
+        // The asker pressed Stop: what had been written is the answer (a killed process ends with an error that is not the asker's to read).
+        const stoppedByAsker = liveEntry?.stopped === true;
+        if (stoppedByAsker) {
+          ok = true;
+          error = undefined;
+          failure = undefined;
+          reply = frames !== undefined && frames.full.trim() !== '' ? frames.full : STOPPED_BEFORE_ANSWER;
+        }
+        if (liveEntry) untrackRun(run.runId);
+        if (frames) endFrames = (status) => frames.end(status);
 
         // 2b. A run the team's pod served is counted at the model gateway: one spend line under the bot, or the `bot_runner.run.unmetered` event (P19-10).
         if (viaPod) {
@@ -882,8 +915,13 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           });
           return;
         }
+        // committed first: the reply is posted through the run's own door, and the conversations plugin reads this fact when that message's event arrives
+        if (stoppedByAsker) await job.transaction((tx) => recordStopped(tx, run.runId));
         await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure, refusal } }));
+        await endFrames?.(stoppedByAsker ? 'stopped' : ok ? 'done' : 'failed');
       } catch (err) {
+        untrackRun(opened?.runId ?? '');
+        await endFrames?.('failed').catch(() => undefined);
         if (!opened) {
           // Nothing started: let the queue retry. A scheduled run that keeps failing before it opens (a missing BOT.md, no repo) settles its firing
           // on the third attempt, with the reason, instead of leaving it queued.
