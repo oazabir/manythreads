@@ -20,6 +20,13 @@ export const isPersonalRoutineRun = (run: Pick<BotRunHandle, 'trigger' | 'askerA
 export const personalRoutineHoldsWrite = (run: Pick<BotRunHandle, 'trigger' | 'askerActorId'>, tool: string, kind: string): boolean =>
   isPersonalRoutineRun(run) && kind === 'write' && !PERSONAL_ROUTINE_FREE_WRITES.has(tool);
 
+/**
+ * A personal routine's `memory.write` goes into its owner's own Memory whatever the model asks for: the default target is the team's bundle, which every member reads,
+ * and the run has read the owner's private space. Any other call is returned as it came.
+ */
+export const forcePersonalNotes = (run: Pick<BotRunHandle, 'trigger' | 'askerActorId'>, tool: string, input: Record<string, unknown>): Record<string, unknown> =>
+  isPersonalRoutineRun(run) && tool === 'memory.write' ? { ...input, target: 'personal' } : input;
+
 /** The refusal sentence when the budget is used up. */
 export const toolBudgetSentence = (): string =>
   `This routine has used its ${PERSONAL_ROUTINE_LIMITS.runToolCalls} tool calls for one run. Finish with what you have and say what is left.`;

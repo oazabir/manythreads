@@ -19,7 +19,7 @@ import { authorizeContext, definitionOf, interceptTarget, type ToolDefinition } 
 import { confineRunWrite, spacesFor, withRunSpaces } from './spaces.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
-import { personalRoutineHoldsWrite, toolBudgetSentence, toolBudgetUsed } from './personal-routine.ts';
+import { forcePersonalNotes, personalRoutineHoldsWrite, toolBudgetSentence, toolBudgetUsed } from './personal-routine.ts';
 import { json } from './http.ts';
 import type { McpSessions } from './session.ts';
 
@@ -237,7 +237,8 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
       }
     }
   }
-  // a person's own routine: every write but its notes waits for the owner (personal-routine.ts)
+  // a person's own routine: its notes are the owner's own memory, never the team's (the run reads the owner's private space), and every other write waits for the owner
+  input = forcePersonalNotes(run, params.name, input);
   const waitsForPerson = decision.needsApproval || holdForPerson || sourceCard !== null || personalRoutineHoldsWrite(run, params.name, definition.kind);
 
   if (
