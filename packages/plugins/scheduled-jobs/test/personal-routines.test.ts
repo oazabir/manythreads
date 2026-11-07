@@ -353,6 +353,8 @@ describe('the Personal shelf', () => {
   it('refuses a recipe that is not on the shelf and an output inside Memory', async () => {
     expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Odd recipe', { recipeId: 'not-a-recipe' }))).status).toBe(400);
     expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Into memory', { outputPath: 'Memory/notes.md' }))).status).toBe(400);
+    // nor over a routine file: the output of a run would rewrite the instruction of a routine
+    expect((await call(omar, 'POST', '/api/me/scheduled-jobs', goodBody('Over a routine', { outputPath: 'Routines/other/routine.yaml' }))).status).toBe(400);
   });
 });
 

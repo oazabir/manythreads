@@ -44,7 +44,10 @@ export const listPersonalRoutinesRoute = { method: 'GET', path: '/api/me/schedul
 const Prompt = z.string().trim().min(1).max(8000);
 const Sources = z.array(RoutineSource).max(ROUTINE_SOURCES.length).refine((s) => new Set(s).size === s.length, 'each source once');
 /** A routine's output goes into the owner's own files, never into `Memory/` (memory is written only through the memory tool). */
-const OutputPath = PersonalRoutinePath.refine((p) => p.split('/')[0] !== 'Memory', 'Memory is written by the memory tool, not by a routine');
+const OutputPath = PersonalRoutinePath.refine((p) => p.split('/')[0] !== 'Memory', 'Memory is written by the memory tool, not by a routine').refine(
+  (p) => !/^Routines\/[^/]+\/routine\.yaml$/i.test(p),
+  'A routine file is the routine itself; an output cannot be written over it',
+);
 
 /**
  * The confirmed routine. `confirmed: true` is the person's own yes to the proposal (`draft`); a request without it is refused, so a routine can never be
