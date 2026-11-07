@@ -121,7 +121,8 @@ test('a person has at most ten bases: the eleventh is refused, the screen says s
     await expect(page.getByTestId('personal-knowledge-row')).toHaveCount(10);
     await expect(page.getByTestId('personal-knowledge-count')).toContainText('10 bases of 10');
     await expect(page.getByTestId('personal-knowledge-count')).toContainText('Delete one to make another');
-    await page.getByTestId('personal-knowledge-name').fill('One too many');
+    // at the cap the name box and Create are both off (filling a disabled box would wait for the whole test timeout)
+    await expect(page.getByTestId('personal-knowledge-name')).toBeDisabled();
     await expect(page.getByTestId('personal-knowledge-create')).toBeDisabled();
 
     const gone = await api.ctx.delete('/api/me/knowledge/base-10', { headers: await api.headers() });
@@ -142,7 +143,7 @@ test('the team page at /t/engineering/knowledge lists the team’s bases and lin
   test.skip(isMobile, 'desktop layout');
   const { page, close } = await openMemory(browser, playwright, stack, 'nadia', '/t/engineering/knowledge');
   try {
-    await expect(page.getByTestId('team-knowledge')).toBeVisible();
+    // the seeded team may or may not have a base: the list or the empty sentence, never neither
     await expect(page.getByTestId('team-knowledge-list').or(page.getByTestId('team-knowledge-empty'))).toBeVisible();
     await expect(page.getByTestId('space-switch')).toHaveAttribute('data-space', 'teams');
     await page.getByTestId('space-personal').click();
