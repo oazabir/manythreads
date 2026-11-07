@@ -37,7 +37,7 @@ test('a PNG refused by a git folder matches its baseline (W)', async ({ browser 
     await page.goto('/t/engineering/files?path=pages');
     await expect(page.getByTestId('file-row').first()).toBeVisible();
     // the files of a seeded repo were made within the same second: by name, the order is the same every run
-    await page.getByRole('button', { name: 'Sort by name' }).click();
+    await page.getByTestId('sort-name').click();
     await page.getByTestId('upload-input').setInputFiles({ name: 'latency-chart.png', mimeType: 'image/png', buffer: PNG });
     await expect(page.getByTestId('upload-text-only')).toContainText('This folder is stored in git, which holds text only. Upload attachments to a channel folder.');
     await expectWireframe(page, 'binary-rejected', ORDER);

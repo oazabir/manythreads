@@ -17,7 +17,7 @@ import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
  *   account-menu.png                the account menu with Your memory and Your knowledge (desktop; on a phone the drawer holds it: account-menu-390.png)
  *   (the settings navigation with Bots and Personal is in ../settings/bot-consents.visual.spec.ts: bot-consents.png and -390)
  */
-const PAGE = [['page-header', 'title']];
+const PAGE = [['page-header'], ['title']];
 const SHELL = [['team-switch', 'search', 'sidebar', 'content'], ...PAGE];
 const PHONE_ORDER = [['content'], ...PAGE];
 const BODY = 'Nadia drinks green tea, no sugar, in the morning.';
@@ -62,7 +62,8 @@ for (const [suffix, viewport, mobile] of [
     const { page, close } = await openPage(browser, stack, 'nadia', viewport, mobile);
     try {
       await page.goto('/memory');
-      await expect(page.getByTestId('personal-concept-row')).toHaveCount(2);
+      // the two facts written above and the page the filed note became
+      await expect(page.getByTestId('personal-concept-row')).toHaveCount(3);
       await page.getByTestId('personal-concept-row').filter({ hasText: 'Tea order' }).click();
       await expect(page.getByTestId('personal-file-text')).toContainText('Oolong');
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

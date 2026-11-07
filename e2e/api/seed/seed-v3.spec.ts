@@ -26,17 +26,17 @@ interface Directory {
 const names = async (ctx: APIRequestContext, team: string): Promise<string[]> =>
   ((await (await ctx.get(`/api/teams/${team}/channels`)).json()) as Directory).groups.flatMap((g) => g.channels.map((c) => c.name));
 
-test('each team has its template channels exactly once, with the seed ids; Customer support has four', async ({ playwright }) => {
+test('each team has its template channels exactly once, with the seed ids; Customer support has five', async ({ playwright }) => {
   const omar = await as(playwright, personas.omar);
   const eng = await names(omar, 'engineering');
   expect([...eng].sort()).toEqual(['alerts', 'dev', 'eng-leads', 'general', 'incidents', 'load-test', 'releases', 'standup']);
   const support = await names(await as(playwright, personas.sameera), 'customer-support');
-  expect([...support].sort()).toEqual(['enquiries', 'escalations', 'kb-updates', 'support']);
+  expect([...support].sort()).toEqual(['enquiries', 'escalations', 'kb-updates', 'support', 'support-inbox']);
   const marketing = await names(await as(playwright, personas.tariq), 'marketing');
   expect([...marketing].sort()).toEqual(['analytics', 'brand', 'campaigns', 'content', 'social']);
   // the directory request is also what applies a template: asking again, or five at once, creates nothing new
   await Promise.all(Array.from({ length: 5 }, () => (as(playwright, personas.sameera).then((c) => c.get('/api/teams/customer-support/channels')))));
-  expect([...(await names(await as(playwright, personas.sameera), 'customer-support'))].sort()).toEqual(['enquiries', 'escalations', 'kb-updates', 'support']);
+  expect([...(await names(await as(playwright, personas.sameera), 'customer-support'))].sort()).toEqual(['enquiries', 'escalations', 'kb-updates', 'support', 'support-inbox']);
   const stack = await iso.start();
   const rows = await stack.sql<{ name: string; n: number }>("SELECT name, count(*)::int AS n FROM app.channels WHERE kind = 'channel' GROUP BY name HAVING count(*) > 1");
   expect(rows).toEqual([]);

@@ -110,7 +110,46 @@ export async function expectWireframe(page: Page, name: string, order: string[] 
   const found = await landmarks(page);
   const groups = Array.isArray(order[0]) ? (order as string[][]) : [order as string[]];
   for (const g of groups) expect(checkOrder(found, g), `landmark order and presence of ${g.join(', ')}`).toEqual([]);
-  await expect(frame).toHaveScreenshot(`${name}.png`, { ...W_OPTIONS, mask: [page.locator('[data-vt-mask]')] });
+  await markCoveredMasks(page);
+  await expect(frame).toHaveScreenshot(`${name}.png`, { ...W_OPTIONS, mask: [page.locator('[data-vt-mask]:not([data-vt-covered])')] });
+}
+
+/**
+ * Playwright paints a mask over its element whatever lies on top of it, so a time behind a sheet, a menu or a pop-up was drawn
+ * as a magenta block over the sheet's own words (the folders sheet lost the name of a folder). A masked element whose middle
+ * point is under an opaque layer of another part of the page shows nothing of its own: it is left out of the mask. A scrim
+ * (a see-through layer) does not count, the element still shows through it.
+ */
+async function markCoveredMasks(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const opaqueAround = (start: Element): boolean => {
+      for (let n: Element | null = start; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+        const m = /rgba?\(([^)]+)\)/.exec(getComputedStyle(n).backgroundColor);
+        if (!m) continue;
+        const a = (m[1] ?? '').split(',').map((v) => Number.parseFloat(v));
+        const alpha = a.length > 3 ? (a[3] ?? 1) : 1;
+        if (alpha >= 0.99) return true;
+        if (alpha > 0) return false;
+      }
+      return false;
+    };
+    // a masked element that does not take the pointer (the floating day label) would be looked through
+    const style = document.createElement('style');
+    style.textContent = '[data-vt-mask], [data-vt-mask] * { pointer-events: auto !important; }';
+    document.head.append(style);
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-vt-mask]'))) {
+      el.removeAttribute('data-vt-covered');
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+      const top = document.elementFromPoint(x, y);
+      if (!top || el.contains(top) || top.contains(el)) continue;
+      if (opaqueAround(top)) el.setAttribute('data-vt-covered', '');
+    }
+    style.remove();
+  });
 }
 
 // ---- plate comparison ---------------------------------------------------------------------------------------------

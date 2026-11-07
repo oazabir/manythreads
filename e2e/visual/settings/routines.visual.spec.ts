@@ -8,12 +8,12 @@ import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
  * Account > Routines (PLAN P20-11; own baselines, class W, 1440x900 and 390x844). Baselines are made by the runner on first run and are not committed with this spec.
  *   routines-empty.png / -390          no routines yet: the page, the ready routines to start from (Rafi)
  *   routines-rows.png / -390           three routines: On, Paused and Stopped (consent withdrawn), with the reason under the stopped one (Nadia)
- *   routines-time-limits.png / -390    the Time and limits block scrolled into view: time zone, quiet hours, count and allowance (Nadia)
+ *   routines-time-limits.png / -390    the page with the Time and limits block (the sidebar stays at the top: the page is not scrolled for the plate): time zone, quiet hours, count and allowance (Nadia)
  *   routine-new-sentence.png / -390    New routine, step one: the sentence and the ready ones
  *   routine-new-plan.png / -390        New routine, step two: the plan the person reads before the yes
  * Times of runs (<time>) carry data-vt-mask. The clock is the real one: the schedule words and the zone are fixed, the date text is masked.
  */
-const PAGE = [['page-header', 'title']];
+const PAGE = [['page-header'], ['title']];
 const DESK = [['nav', 'content'], ...PAGE];
 const PHONE_ORDER = [['nav-select', 'content'], ...PAGE];
 
@@ -94,7 +94,6 @@ for (const [suffix, viewport, mobile] of [
       await expect(page.getByTestId('routine-settings')).toBeVisible();
       await expect(page.getByTestId('routine-quiet-from')).toHaveValue('22:00');
       await expect(page.getByTestId('routine-count')).toHaveText('3 of 20 routines.');
-      await page.getByTestId('routine-settings').scrollIntoViewIfNeeded();
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await expectWireframe(page, `routines-time-limits${suffix}`, order);
     } finally {

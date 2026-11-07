@@ -26,8 +26,8 @@ const PARAM_VALUES: Record<string, string> = {
 const fillPath = (template: string): string =>
   template.replace(/\{([^}]+)\}/g, (_m, name: string) => PARAM_VALUES[name] ?? '00000000-0000-7000-8000-000000000001');
 
-/** A numeric count named `...Tokens` (LLM spend: promptTokens, completionTokens) is a quantity, not a credential. A string value is still flagged. */
-const isTokenCount = (key: string, value: unknown): boolean => /tokens$/i.test(key) && typeof value === 'number';
+/** A numeric count named `...Tokens` (LLM spend: promptTokens, completionTokens) is a quantity, not a credential, and so is the null the usage route gives a member in its place (money figures are for admins). A string value is still flagged. */
+const isTokenCount = (key: string, value: unknown): boolean => /tokens$/i.test(key) && (typeof value === 'number' || value === null);
 
 function offendingKeys(value: unknown, path = '$'): string[] {
   if (Array.isArray(value)) return value.flatMap((v, i) => offendingKeys(v, `${path}[${i}]`));

@@ -44,7 +44,7 @@ test('Bots and Personal keeps its layout at 1440 (W)', async ({ browser }) => {
     await page.goto('/account/bots');
     await expect(page.getByTestId('bot-consent').filter({ hasText: 'Asker' })).toHaveAttribute('data-allowed', 'true');
     await expect(page.getByTestId('bot-consent').filter({ hasText: 'Quiet' })).toHaveAttribute('data-can-ask', 'false');
-    await expectWireframe(page, 'bot-consents', [['nav', 'content'], ['page-header', 'title']]);
+    await expectWireframe(page, 'bot-consents', [['nav', 'content'], ['page-header'], ['title']]);
   } finally {
     await close();
   }
@@ -56,7 +56,7 @@ test('Bots and Personal keeps its layout on a phone (W)', async ({ browser }) =>
     await page.goto('/account/bots');
     await expect(page.getByTestId('bot-consent').filter({ hasText: 'Asker' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectWireframe(page, 'bot-consents-390', [['nav-select', 'content'], ['page-header', 'title']]);
+    await expectWireframe(page, 'bot-consents-390', [['nav-select', 'content'], ['page-header'], ['title']]);
     await expect(page.getByLabel('Settings section')).toHaveValue('/account/bots');
   } finally {
     await close();

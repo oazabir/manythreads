@@ -105,7 +105,7 @@ test('Account: "Who opened your Personal space" keeps its layout (W)', async ({ 
     await expect(opens.first()).toContainText(REASON);
     // the sessions card holds the browser and times of this run: out of the plate
     await page.locator('[data-landmark="sessions"]').evaluate((el) => el.setAttribute('data-vt-mask', ''));
-    await expectWireframe(page, 'personal-opens-card', [['header', 'content'], ['personal-opens']]);
+    await expectWireframe(page, 'personal-opens-card', [['nav', 'content'], ['page-header'], ['personal-opens']]);
   } finally {
     await close();
   }

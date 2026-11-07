@@ -64,7 +64,7 @@ test('the grid view keeps its layout (W)', async ({ browser }) => {
   try {
     await page.goto('/files?path=Notes');
     await expect(page.getByTestId('file-row')).toHaveCount(3);
-    await page.getByTestId('sort-select').selectOption('name:asc');
+    await sortByName(page);
     await page.getByTestId('view-grid').click();
     await expect(page.locator('.fgrid')).toBeVisible();
     // the picture is the card's thumbnail: wait for it, so the plate does not catch it half drawn

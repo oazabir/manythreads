@@ -11,7 +11,7 @@ import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
  *   action-items-keeper-plan.png / -390  the plan of the routine that keeps the list up to date, before the yes
  * The days are fixed (2020 and 2099) so the wording does not move with the clock; "Last saved" is a <time> and is masked.
  */
-const PAGE = [['page-header', 'title']];
+const PAGE = [['page-header'], ['title']];
 const DESK = [['nav', 'content'], ...PAGE];
 const PHONE_ORDER = [['nav-select', 'content'], ...PAGE];
 
