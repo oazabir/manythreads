@@ -54,6 +54,29 @@ const iso = (value: string | null | undefined): string | null => {
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 };
 
+const SOURCE_LINE_WORDS = ['citation:', 'citations:', 'sources:'];
+const MARKUP_BEFORE_WORD = new Set(['*', '_', '>', '-', '#', ' ', '\t']);
+
+/** Whether a line only lists the answer's sources in words (`Citation: [1]`, `**Sources:** ...`): its first word is one of ours, with at most some markdown in front of it. */
+function isSourceLine(line: string): boolean {
+  let start = 0;
+  while (start < line.length && start < 12 && MARKUP_BEFORE_WORD.has(line.charAt(start))) start += 1;
+  const head = line.slice(start, start + 10).toLowerCase();
+  return SOURCE_LINE_WORDS.some((w) => head.startsWith(w));
+}
+
+/**
+ * The body without the lines in which a model wrote its own list of sources (`Citation: ...`). The citations are drawn from the payload, so such a line is a second, unchecked list of
+ * them. One pass over the lines, so it is linear in the body. Left as it was when every line would go (the body is never empty).
+ */
+export function withoutSourceLines(body: string): string {
+  const lines = body.split('\n');
+  const kept = lines.filter((line) => !isSourceLine(line));
+  if (kept.length === lines.length) return body;
+  const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return text === '' ? body : text;
+}
+
 export interface BuiltAnswer {
   payload: AnswerPayload;
   /** Citations the bot sent that are not in the payload. */
@@ -191,7 +214,8 @@ export function buildAnswer(input: AnswerInput, view: AnswerView): BuiltAnswer {
   const run = view.run;
   const payload = AnswerPayload.parse({
     version: 1,
-    body: input.body,
+    // the model's own `Citation:` list is dropped when the answer carries real citations: they are drawn from the payload
+    body: citations.length > 0 ? withoutSourceLines(input.body) : input.body,
     citations,
     lineage,
     sourcesReached,

@@ -88,7 +88,7 @@ connection, or their own conversation run).
    (or `asker` reach) is shown; an unknown scope fails closed.
 4. **The payload.** `buildAnswer` (pure, `src/build.ts`) keeps the readable citations, drops the rest into `outsideScope`, takes every label,
    scope and date from the view, builds `lineage` and `sourcesReached`, resolves hand-off chips to bots of the team that exist and are active
-   (an unknown slug, or the answering bot itself, is dropped), and stamps `answeredFor` from the run. The payload is parsed with
+   (an unknown slug, or the answering bot itself, is dropped), stamps `answeredFor` from the run, and, when at least one citation is kept, removes the lines of the body that start with `Citation:`, `Citations:` or `Sources:` (a model's own, unchecked list of sources; `withoutSourceLines`, one pass over the lines; a body that would become empty is left alone). The payload is parsed with
    `AnswerPayload` before it is stored; a payload over 96 KB is refused (`too_large`).
 5. **The message.** It is posted through the **`messages` provider** (`ctx.providers.get<MessageProvider>('messages')`, registered by the
    channels plugin, extension point `provider.messages`) — the one `postChannelMessage` every message takes, as the run's bot — into the
