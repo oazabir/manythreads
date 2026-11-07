@@ -29,14 +29,17 @@ function useTextFocus(): boolean {
   const [typing, setTyping] = useState(() => takesText(document.activeElement));
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const on = (e: FocusEvent): void => {
-      clearTimeout(timer);
-      setTyping(takesText(e.target as Element | null));
-    };
-    const off = (): void => {
+    const later = (): void => {
       clearTimeout(timer);
       timer = setTimeout(() => setTyping(takesText(document.activeElement)), BAR_RETURN_DELAY);
     };
+    const on = (e: FocusEvent): void => {
+      if (takesText(e.target as Element | null)) {
+        clearTimeout(timer);
+        setTyping(true);
+      } else later(); // the focus went to a button (Send): same wait as when it leaves
+    };
+    const off = later;
     document.addEventListener('focusin', on);
     document.addEventListener('focusout', off);
     return () => {
