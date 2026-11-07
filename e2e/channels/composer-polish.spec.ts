@@ -111,7 +111,8 @@ test('"@" lists people with a picture and a handle; a long bot name is cut on on
     const cut = await name.evaluate((el) => ({ over: el.scrollWidth > el.clientWidth, style: getComputedStyle(el).textOverflow, wrap: getComputedStyle(el).whiteSpace }));
     expect(cut).toEqual({ over: true, style: 'ellipsis', wrap: 'nowrap' });
     const [r, h, l, n] = await Promise.all([row.boundingBox(), hint.boundingBox(), list.boundingBox(), name.boundingBox()]);
-    expect(r!.height, 'one line, not a wrapped name').toBeLessThan(40);
+    expect(n!.height, 'one line, not a wrapped name').toBeLessThan(30);
+    expect(r!.height, 'a row is one touch target tall').toBeLessThan(48);
     expect(h!.x + h!.width, 'the handle ends inside the row').toBeLessThanOrEqual(r!.x + r!.width + 0.5);
     expect(await hint.evaluate((el) => el.scrollWidth <= el.clientWidth), 'the handle is not cut').toBe(true);
     expect(n!.x + n!.width, 'the name stops before the handle').toBeLessThanOrEqual(h!.x + 0.5);
