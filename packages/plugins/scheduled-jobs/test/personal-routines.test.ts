@@ -178,27 +178,86 @@ describe('making, changing and removing a routine', () => {
     expect(after.stoppedReason).toBeNull();
   });
 
-  it('removes a routine and keeps its file', async () => {
+  it('removes a routine and its folder in Personal files', async () => {
     const routine = await make(omar, 'Short lived');
     expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${routine.id}`)).status).toBe(200);
     expect(await sql('SELECT 1 FROM app.scheduled_jobs WHERE id = $1', [routine.id])).toHaveLength(0);
-    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [omar.personId, routine.contractPath])).toHaveLength(1);
+    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [omar.personId, routine.contractPath])).toHaveLength(0);
+    expect(await sql(`SELECT 1 FROM app.personal_folders WHERE owner_person_id = $1 AND path = 'Routines/short-lived'`, [omar.personId])).toHaveLength(0);
+    // the folder every space starts with stays
+    expect(await sql(`SELECT 1 FROM app.personal_folders WHERE owner_person_id = $1 AND path = 'Routines'`, [omar.personId])).toHaveLength(1);
+  });
+
+  it('removes only Routines/<slug>/: the reports and older versions inside it go, a sibling folder, an output written elsewhere and another person\'s folder of the same name stay', async () => {
+    const mine = await make(omar, 'Tidy up');
+    const sibling = await make(omar, 'Tidy up later'); // Routines/tidy-up-later: its name starts like Routines/tidy-up
+    const theirs = await make(nadia, 'Tidy up'); // the same slug in another person's space
+    expect(mine.contractPath).toBe('Routines/tidy-up/routine.yaml');
+    // a report next to the routine file, a report in a folder under it with an older version, a report elsewhere
+    const copyOf = async (person: string, folder: string, name: string, from: string): Promise<string> =>
+      String(
+        (
+          await sql(
+            `INSERT INTO app.files (workspace_id, owner_person_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+             SELECT workspace_id, owner_person_id, $3, $4, md5(random()::text), size, mime, sha256, uploader_id FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2
+             RETURNING id`,
+            [person, from, folder, name],
+          )
+        )[0]!['id'],
+      );
+    await sql(`INSERT INTO app.personal_folders (workspace_id, owner_person_id, path) VALUES ($1, $2, 'Routines/tidy-up/old'), ($1, $2, 'Notes') ON CONFLICT DO NOTHING`, [KAHF_WORKSPACE_ID, omar.personId]);
+    await copyOf(omar.personId, 'Routines/tidy-up/', 'output.md', mine.contractPath);
+    const deep = await copyOf(omar.personId, 'Routines/tidy-up/old/', 'last-week.md', mine.contractPath);
+    await sql(
+      `INSERT INTO app.file_versions (workspace_id, file_id, blob_key, size, mime, sha256, author_actor_id, stored_at)
+       SELECT workspace_id, id, md5(random()::text), size, mime, sha256, uploader_id, now() FROM app.files WHERE id = $1`,
+      [deep],
+    );
+    await copyOf(omar.personId, 'Notes/', 'kept-report.md', mine.contractPath);
+
+    expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${mine.id}`)).status).toBe(200);
+
+    const left = (await sql(`SELECT folder_path || name AS p FROM app.files WHERE owner_person_id = $1 ORDER BY 1`, [omar.personId])).map((r) => String(r['p']));
+    expect(left.filter((p) => p.startsWith('Routines/tidy-up/'))).toEqual([]);
+    expect(left).toContain('Notes/kept-report.md');
+    expect(left).toContain(sibling.contractPath);
+    expect(await sql(`SELECT 1 FROM app.file_versions WHERE file_id = $1`, [deep])).toHaveLength(0);
+    expect((await sql(`SELECT path FROM app.personal_folders WHERE owner_person_id = $1 AND (path = 'Routines/tidy-up' OR path LIKE 'Routines/tidy-up/%')`, [omar.personId]))).toHaveLength(0);
+    expect(await sql(`SELECT 1 FROM app.personal_folders WHERE owner_person_id = $1 AND path IN ('Routines', 'Routines/tidy-up-later', 'Notes')`, [omar.personId])).toHaveLength(3);
+    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [nadia.personId, theirs.contractPath])).toHaveLength(1);
+    // the removal is in the audit trail as one deleted-file event per file
+    const events = await sql(`SELECT 1 FROM app.events WHERE type = 'files.file.deleted' AND payload->>'fileId' = $1`, [deep]);
+    expect(events).toHaveLength(1);
+  });
+
+  it('a routine whose file path is not Routines/<its slug>/ removes no folder', async () => {
+    const routine = await make(omar, 'Odd path');
+    await sql(`UPDATE app.scheduled_jobs SET contract_path = 'Notes/routine.yaml' WHERE id = $1`, [routine.id]);
+    expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${routine.id}`)).status).toBe(200);
+    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [omar.personId, 'Routines/odd-path/routine.yaml'])).toHaveLength(1);
   });
 });
 
 describe('a name that was used before', () => {
-  it('makes a routine with the name of a deleted one in a folder of its own, and leaves the old files alone', async () => {
+  it('makes a routine with the name of a deleted one in the same, now empty, folder', async () => {
     const first = await make(omar, 'Come back');
     expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${first.id}`)).status).toBe(200);
     const again = await make(omar, 'Come back');
-    expect(again.contractPath).not.toBe(first.contractPath);
-    expect(again.contractPath).toBe('Routines/come-back-2/routine.yaml');
-    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [omar.personId, first.contractPath])).toHaveLength(1);
+    expect(again.contractPath).toBe(first.contractPath);
+    expect(await sql('SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2', [omar.personId, again.contractPath])).toHaveLength(1);
     // the plan for the same sentence names the folder the save will use
     const draft = DraftPersonalRoutineResponse.parse((await call(omar, 'POST', '/api/me/scheduled-jobs/draft', { sentence: 'Every weekday at 8am summarise my unread mail', timeZone: 'Asia/Dubai' })).body).draft;
     const slugOfPlan = /^Routines\/([^/]+)\//.exec(draft.outputPath)?.[1] ?? '';
     const taken = await sql(`SELECT 1 FROM app.files WHERE owner_person_id = $1 AND folder_path || name = $2`, [omar.personId, `Routines/${slugOfPlan}/routine.yaml`]);
     expect(taken).toHaveLength(0);
+  });
+
+  it('picks a free folder when a file of that name is left in it (a report put there by hand outlives its routine only if it was moved out first)', async () => {
+    const first = await make(omar, 'Stay put');
+    await sql(`UPDATE app.scheduled_jobs SET contract_path = 'Notes/stay-put.yaml' WHERE id = $1`, [first.id]);
+    expect((await call(omar, 'DELETE', `/api/me/scheduled-jobs/${first.id}`)).status).toBe(200);
+    const again = await make(omar, 'Stay put');
+    expect(again.contractPath).toBe('Routines/stay-put-2/routine.yaml');
   });
 });
 

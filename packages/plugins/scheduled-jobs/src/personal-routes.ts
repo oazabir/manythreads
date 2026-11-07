@@ -293,7 +293,8 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
     }),
   });
 
-  // Deleting a routine removes the routine and its firings. Its folder in Files (the routine file, earlier outputs) stays: those are the person's own files.
+  // Deleting a routine removes the routine, its firings and its own folder in Personal files (`Routines/<slug>/`: the routine file and the reports written inside it, with their older
+  // versions). A report the routine wrote to some other folder stays: that is the person's own file. Only the folder named by the routine's own slug is ever removed.
   ctx.http.route({
     ...deletePersonalRoutineRoute,
     schema: { response: DeletePersonalRoutineResponse },
@@ -302,6 +303,10 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
       const { scheduledJobId } = req.params as { scheduledJobId: string };
       const row = await loadOwn(tx, member, scheduledJobId);
       await tx.query('DELETE FROM app.scheduled_jobs WHERE id = $1::uuid AND owner_person_id = $2::uuid', [row.id, member.personId]);
+      // the folder is the one the routine file is in, and only when it is `Routines/<slug>` exactly (a row that points anywhere else removes no folder)
+      if (row.slug !== null && /^[a-z][a-z0-9-]{0,39}$/.test(row.slug) && row.contract_path === contractPathOf(row.slug)) {
+        await filesOf(ctx).removeFolder(tx, member.personId, `Routines/${row.slug}`);
+      }
       return json(DeletePersonalRoutineResponse.parse({ deleted: true }));
     }),
   });

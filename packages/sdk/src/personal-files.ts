@@ -33,6 +33,13 @@ export interface PersonalFilesProvider extends ProviderImpl {
    * file, 413 when the text or the person's allowance is too large, 403 when the person has no Personal space. `changed` is false when the text was already there.
    */
   write(tx: PluginTx, personId: string, path: string, text: string, options?: PersonalWriteOptions): Promise<{ file: PersonalTextFile; created: boolean; changed: boolean }>;
+  /**
+   * Delete one folder of the person's space with every file in it and every folder under it (the files' older versions go with them; the stored bytes are removed by the files plugin's
+   * blob garbage collection). `folderPath` is the folder without a trailing slash (`Routines/morning-brief`). Nothing outside it is touched: a sibling whose name only starts the same
+   * (`Routines/morning-brief-2`) stays. An empty path, a path with an empty, `.` or `..` part and one of the folders every Personal space starts with are refused (400). A folder
+   * that does not exist removes nothing. Acts as the transaction's actor, so row level security still decides which rows are the person's.
+   */
+  removeFolder(tx: PluginTx, personId: string, folderPath: string): Promise<{ removed: number }>;
 }
 
 /** The most a routine file or action list may hold. */

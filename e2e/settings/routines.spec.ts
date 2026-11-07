@@ -206,8 +206,8 @@ test('pause, turn on, run now and delete (after a confirm)', async ({ browser, p
     await row.getByTestId('routine-delete-yes').click();
     await expect(rowNamed(page, 'Note taker')).toHaveCount(0);
     expect((await listRoutines(nadia)).items.some((r) => r.id === made.id)).toBe(false);
-    // the routine's files stay: they are the person's own
-    expect(await personalText(nadia, made.outputPath)).toContain('Routine note:');
+    // its folder goes with it, the report it wrote included
+    expect(await personalText(nadia, made.outputPath)).toBeNull();
   } finally {
     await context.close();
     await nadia.ctx.dispose();

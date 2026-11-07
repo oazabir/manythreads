@@ -4,7 +4,7 @@ import { PERSONAL_TEXT_MAX_BYTES, type PersonalFilesProvider, type PersonalTextF
 import { spaceRefOf, type PersonId } from '@manythreads/shared';
 import { conflict, forbidden, invalid, tooLarge } from './http.ts';
 import { sanitizeFileName } from './names.ts';
-import { ensureFolder, lockAllowance, personalUsage } from './personal.ts';
+import { ensureFolder, isSeedFolder, lockAllowance, personalUsage } from './personal.ts';
 import { PERSONAL_FILE_COLUMNS, dbFolder, wireFolder, type PersonalFileRow } from './rows.ts';
 import { storageOf } from './routes.ts';
 import { sizeInWords } from './units.ts';
@@ -66,6 +66,39 @@ export function createPersonalFilesProvider(ctx: PluginContext): PersonalFilesPr
       const { folder, name } = splitPath(path);
       const row = await find(tx, personId, folder, name, false);
       return row ? asText(row) : null;
+    },
+
+    async removeFolder(tx, personId, folderPath) {
+      const parts = folderPath.split('/');
+      if (folderPath === '' || folderPath.length > 500 || parts.some((p) => p === '' || p === '.' || p === '..')) {
+        throw invalid('Name the folder to remove, without empty, . or .. parts');
+      }
+      if (isSeedFolder(folderPath)) throw invalid('That is one of the folders every Personal space starts with, so it stays');
+      const actor = (
+        await tx.query<{ a: string | null }>(`SELECT coalesce(app.actor(), (SELECT a.id FROM app.actors a WHERE a.kind = 'person' AND a.ref_id = $1::uuid)) AS a`, [personId])
+      ).rows[0]?.a;
+      if (!actor) throw forbidden();
+      // A file is in the folder when its folder is the folder itself or starts with it plus a slash. `left(…, n) =` is a prefix test with no LIKE escaping to get wrong,
+      // and the trailing slash keeps a sibling (`Routines/a-2` next to `Routines/a`) out.
+      const prefix = dbFolder(folderPath);
+      const files = (
+        await tx.query<{ id: string }>(
+          `DELETE FROM app.files WHERE owner_person_id = $1 AND left(folder_path, length($2::text)) = $2::text RETURNING id`,
+          [personId, prefix],
+        )
+      ).rows;
+      await tx.query(`DELETE FROM app.personal_folders WHERE owner_person_id = $1 AND (path = $2 OR left(path, length($3::text)) = $3::text)`, [personId, folderPath, prefix]);
+      for (const f of files) {
+        await ctx.audit.emit(tx, {
+          type: 'files.file.deleted',
+          channelId: null,
+          teamId: null,
+          fileId: f.id,
+          deletedBy: actor,
+          space: spaceRefOf({ kind: 'person', personId: personId as PersonId }),
+        });
+      }
+      return { removed: files.length };
     },
 
     async write(tx, personId, path, text, options: PersonalWriteOptions = {}) {

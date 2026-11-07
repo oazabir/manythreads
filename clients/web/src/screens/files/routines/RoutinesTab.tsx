@@ -172,7 +172,7 @@ function RoutineRow({ routine: r, onChanged, onNotice }: { routine: PersonalRout
         <button type="button" className="btn s quiet" aria-expanded={showRuns} onClick={() => setShowRuns((v) => !v)} data-testid="routine-toggle-runs">{showRuns ? 'Hide runs' : 'Runs'}</button>
         {confirmDelete ? (
           <span className="rt-confirm" role="group" aria-label={`Delete ${r.name}`}>
-            <span className="rt-confirm-q">Delete it? Its files stay.</span>
+            <span className="rt-confirm-q">Delete it? Its folder in Personal files, under Routines, goes too, with the reports inside it.</span>
             <button type="button" className="btn s danger" disabled={busy} onClick={() => void act(() => deleteRoutine(r.id), 'It could not be deleted.')} data-testid="routine-delete-yes">Delete</button>
             <button type="button" className="btn s" onClick={() => setConfirmDelete(false)} data-testid="routine-delete-no">Keep</button>
           </span>
