@@ -6,7 +6,7 @@ import { apiOn, openOn, PHONE } from '../support/stack-browser.ts';
  * The team's Concepts tab (PLAN P21-15): one line per concept with a title and one trust icon; from 1024 px a preview pane sits on the right and
  * says "Select a concept" until one is picked; on a phone the concept rises as a sheet and Close puts the list back. A concept link
  * (`?concept=`) opens it at once. One stack for the file (the specs only read what the
- * first step wrote, apart from the one that confirms).
+ * first step wrote, apart from the last, which deprecates a concept: it runs after the rest).
  */
 test.skip(({ isMobile }) => isMobile, 'the tests set their own viewport; the mobile-web project adds nothing');
 test.describe.configure({ mode: 'serial' });
@@ -137,6 +137,22 @@ test('a team with no concept shows the empty state with a button to the inbox', 
     await expect(page.getByTestId('concepts-empty').locator('svg')).toHaveCount(1);
     await page.getByTestId('concepts-empty').getByRole('button', { name: 'Open the inbox' }).click();
     await expect(page).toHaveURL(/tab=inbox/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Deprecate changes the concept for real: the row says deprecated, the button is off, and it stays so after a reload', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/memory?concept=${encodeURIComponent(ONE.path)}`);
+  try {
+    await expect(page.getByTestId('concept-detail')).toContainText(ONE.title, { timeout: 20_000 });
+    await expect(page.getByTestId('concept-deprecate')).toBeEnabled();
+    await page.getByTestId('concept-deprecate').click();
+    // the list is read again after the call, once the index has followed the commit
+    await expect(row(page, ONE.title)).toHaveClass(/\bdeprecated\b/, { timeout: 20_000 });
+    await expect(page.getByTestId('concept-deprecate')).toBeDisabled();
+    await page.reload();
+    await expect(row(page, ONE.title)).toHaveClass(/\bdeprecated\b/, { timeout: 20_000 });
   } finally {
     await context.close();
   }

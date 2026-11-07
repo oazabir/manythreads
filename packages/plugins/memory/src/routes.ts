@@ -4,6 +4,7 @@ import { json, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { RETAIN_LOG_COLUMNS, toMemoryRetainLogEntry, type RetainLogRow } from './rows.ts';
 import { listMemoryConcepts } from './concepts.ts';
 import { CONCEPTS_QUEUE } from './constants.ts';
+import { changeConcept } from './concept-actions.ts';
 
 /**
  * `GET /api/teams/:slug/memory/retain-log`: what the platform retained into the team's bank, replaced, forgot or withheld, newest first. The
@@ -59,13 +60,14 @@ export function registerRoutes(ctx: PluginContext): void {
     }),
   });
 
+  // Confirm and Deprecate: a commit of the repo writer made as the person (concept-actions.ts). Not a lead-only action: it is a person's write.
   ctx.http.route({
     ...confirmConceptRoute,
     schema: { response: ConfirmConceptResponse },
     handler: route(async (req, tx) => {
-      const { slug } = ConceptPathParams.parse(req.params);
-      await requireTeam(tx, slug);
-      // Confirm appends `verified: human:<actor>` to the concept through the repo writer (P5-28). Stubbed here; full commit lands in a follow-up.
+      const { slug, path } = ConceptPathParams.parse(req.params);
+      const team = await requireTeam(tx, slug);
+      await changeConcept(ctx, tx, team.id, path, 'confirm');
       return json({ ok: true });
     }),
   });
@@ -74,8 +76,9 @@ export function registerRoutes(ctx: PluginContext): void {
     ...deprecateConceptRoute,
     schema: { response: DeprecateConceptResponse },
     handler: route(async (req, tx) => {
-      const { slug } = ConceptPathParams.parse(req.params);
-      await requireTeam(tx, slug);
+      const { slug, path } = ConceptPathParams.parse(req.params);
+      const team = await requireTeam(tx, slug);
+      await changeConcept(ctx, tx, team.id, path, 'deprecate');
       return json({ ok: true });
     }),
   });
