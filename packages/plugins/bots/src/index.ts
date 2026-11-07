@@ -2,6 +2,7 @@ import { definePlugin } from '@manythreads/sdk';
 import { registerBackfillJob } from './backfill.ts';
 import { registerEvals } from './evals.ts';
 import { registerEvalRoutes } from './evals-routes.ts';
+import { registerConsentRoutes } from './consents.ts';
 import { registerBotLoader } from './loader.ts';
 import { registerReaperJob } from './reaper.ts';
 import { registerPairingRoutes } from './routes.ts';
@@ -29,7 +30,7 @@ export default definePlugin({
     // `run.close`: the stale-run reaper ends a run through the run service (which emits `bots.run.closed`) and can do nothing else with `ctx.runs`
     extends: ['event.subscribe', 'event.emit', 'job.register', 'run.close'],
     events: {
-      emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed', 'bots.pairing.rotated', 'bots.eval.run.finished'],
+      emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed', 'bots.pairing.rotated', 'bots.eval.run.finished', 'bots.personal_consent.changed'],
       consumes: ['repo.repo.committed', 'proposals.proposal.applied'],
     },
   },
@@ -39,6 +40,7 @@ export default definePlugin({
     registerReaperJob(ctx);
     registerPairingRoutes(ctx);
     registerBotRoutes(ctx);
+    registerConsentRoutes(ctx);
     registerEvals(ctx);
     registerEvalRoutes(ctx);
   },
