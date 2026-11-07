@@ -254,6 +254,8 @@ seed (gate, DLP, egress) and has no such source; the tests build theirs.
   space the platform read the concept from. A concept of a person's own Memory is named `person:<id>:<path>` to `app.answer_resolve` (migration 0007),
   has scope `person`, and is shown only in the owner's own conversation (reach `asker`); a copy shared to a channel masks it, like every memory
   citation. A team concept carries `team:<id>`: scope `team` for the run's own team, `channel` for another team the asker also reads.
+  Migration 0008 (P20-R2): a Personal citation resolves only when the run's own source log holds the person's bank (`memory:bank:person:<workspace>:<person>`, which
+  `memory.recall` writes only when the bot was allowed to read it); otherwise it reads as not found, so a bot not allowed Personal memory cannot probe a path.
 
 ## Tests
 

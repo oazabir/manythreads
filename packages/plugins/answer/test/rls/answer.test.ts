@@ -1174,6 +1174,11 @@ describe('a memory citation carries its space (P20-08)', () => {
   /** A fresh conversation run (a run answers once; the shared ones may already have). */
   const conversation = (asker: Persona, chat: string, root: string): Promise<string> => run({ trigger: 'conversation', asker: asker.actorId, channel: chat, root });
   const ref = (owner: Persona, path: string): string => `person:${owner.personId}:${path}`;
+  /** The run recalled the person's own bank: the line `memory.recall` writes when the bot was allowed to read it. */
+  const recalledBank = async (runId: string, owner: Persona): Promise<string> => {
+    await log(runId, [['memory', `bank:person:${WS}:${owner.personId}`, 'person']]);
+    return runId;
+  };
 
   beforeAll(async () => {
     await personal(nadia, 'preferences/tea.md');
@@ -1184,9 +1189,9 @@ describe('a memory citation carries its space (P20-08)', () => {
   });
 
   it('shows a person their own Personal concept, in their own conversation, with its space', async () => {
-    const v = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
+    const v = await viewOf(botActor, await recalledBank(await conversation(nadia, nadiaChat, nadiaRoot), nadia), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
     expect(v.citations[0]).toMatchObject({ found: true, scope: 'person', audience: true, reached: true, label: 'Title of preferences/tea.md', space: `person:${nadia.personId}`, conceptType: 'preference', trustTier: 'unverified', stale: false, deprecated: false });
-    const old = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: ref(nadia, 'preferences/old.md') }]);
+    const old = await viewOf(botActor, await recalledBank(await conversation(nadia, nadiaChat, nadiaRoot), nadia), [{ kind: 'memory', ref: ref(nadia, 'preferences/old.md') }]);
     expect(old.citations[0]).toMatchObject({ found: true, stale: true, deprecated: true });
   });
 
@@ -1203,9 +1208,19 @@ describe('a memory citation carries its space (P20-08)', () => {
   it('keeps a Personal concept out of a run in a team channel, even the asker’s own', async () => {
     // a run in #dev asked by Nadia: she can read her own file, but a reply in a team channel is read by the team, so it is not shown there
     const root = await message(dev, nadia.actorId, '@brain what tea do I like?');
-    const r = await run({ trigger: 'mention', asker: nadia.actorId, channel: dev, root });
+    const r = await recalledBank(await run({ trigger: 'mention', asker: nadia.actorId, channel: dev, root }), nadia);
     const v = await viewOf(botActor, r, [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
     expect(v.citations[0]).toMatchObject({ found: true, scope: 'person', audience: false });
+  });
+
+  it('does not let a run that never recalled the person’s bank find out whether a Personal concept exists (P20-R2)', async () => {
+    // a bot that was not allowed to use Personal memory (no bank line in its log) cites a guessed path: the same answer as for a path that is not there
+    const noBank = await viewOf(botActor, await conversation(nadia, nadiaChat, nadiaRoot), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }, { kind: 'memory', ref: ref(nadia, 'preferences/nope.md') }]);
+    expect(noBank.citations[0]).toEqual(noBank.citations[1]);
+    expect(noBank.citations[0]).toMatchObject({ found: false });
+    // the team's bank line is not the person's; neither is another person's
+    const teamBank = await viewOf(botActor, await (async () => { const r = await conversation(nadia, nadiaChat, nadiaRoot); await log(r, [['memory', `bank:team:${WS}:eng`, 'team'], ['memory', `bank:person:${WS}:${rafi.personId}`, 'person']]); return r; })(), [{ kind: 'memory', ref: ref(nadia, 'preferences/tea.md') }]);
+    expect(teamBank.citations[0]).toMatchObject({ found: false });
   });
 
   it('gives a team concept the team’s space, and names another team’s space only to a reader of it', async () => {
