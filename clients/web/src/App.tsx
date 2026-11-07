@@ -43,6 +43,7 @@ import { RecipesScreen } from './screens/recipes/RecipesScreen';
 import { BoardsScreen } from './screens/boards/BoardsScreen';
 import { OrgScreen } from './screens/boards/OrgScreen';
 import { ScheduledJobsScreen } from './screens/boards/ScheduledJobsScreen';
+import { ChatScreen } from './screens/chat/ChatScreen';
 import { ConversationRedirect, ConversationView } from './screens/conversations/ConversationView';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
@@ -68,6 +69,20 @@ function ExpiredRoute() {
 function OldJobsAddress() {
   const { team = '' } = useParams();
   return <Navigate to={`/t/${team}/jobs`} replace />;
+}
+
+/**
+ * `/t/<team>/bots/<bot>/chat`: Brain's conversations live in Chat now, so an old link to Brain's chat lands there with its thread. Any other bot (and the
+ * Workshop tab of Brain) keeps the conversation view of the bot's own page.
+ */
+function BotChatRoute() {
+  const { team = '', botSlug = '' } = useParams();
+  const [params] = useSearchParams();
+  if (botSlug === 'brain' && params.get('view') === null && params.get('tab') === null) {
+    const thread = params.get('thread');
+    return <Navigate to={`/t/${team}/chat?bot=brain${thread ? `&c=${encodeURIComponent(thread)}` : ''}`} replace />;
+  }
+  return <ConversationView />;
 }
 
 function AppRoutes() {
@@ -113,7 +128,8 @@ function AppRoutes() {
             <Route path="/t/:team/proposals" element={<RequireTeam><ProposalsList /></RequireTeam>} />
             <Route path="/t/:team/proposals/:proposalId" element={<RequireTeam><ProposalPage /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug/usage" element={<RequireTeam><BotUsage /></RequireTeam>} />
-            <Route path="/t/:team/bots/:botSlug/chat" element={<RequireTeam><ConversationView /></RequireTeam>} />
+            <Route path="/t/:team/bots/:botSlug/chat" element={<RequireTeam><BotChatRoute /></RequireTeam>} />
+            <Route path="/t/:team/chat" element={<RequireTeam><ChatScreen /></RequireTeam>} />
             <Route path="/t/:team/chat/:channelId" element={<RequireTeam><ConversationRedirect /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />

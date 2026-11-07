@@ -11,7 +11,7 @@ import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon } from '@proicons/react';
-import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon } from '@proicons/react';
+import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -153,3 +153,7 @@ export const ThumbUpIcon = proIcon(ThumbsUpIcon, 14);
 export const ThumbDownIcon = proIcon(ThumbsDownIcon, 14);
 export const RailIcon = proIcon(PanelLeftIcon, 16);
 export const SavePageIcon = proIcon(SaveIcon, 14);
+export const RegenerateIcon = proIcon(ArrowSyncIcon, 14);
+export const NextIcon = proIcon(ChevronRightIcon, 14);
+export const ExportChatIcon = proIcon(ArrowDownloadIcon, 14);
+export const DownIcon = proIcon(ChevronDownIcon, 12);

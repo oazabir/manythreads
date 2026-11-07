@@ -38,8 +38,10 @@ export function crumbsFor(pathname: string, teamName: string | null, tail?: stri
   const base = `/t/${slug}`;
   if (teamName) out.push({ label: teamName, to: `${base}/threads` });
   if (sectionLabel) {
-    const sectionPath = section === 'chat' ? `${base}/bots` : `${base}/${section}`;
-    out.push({ label: section === 'chat' ? 'Bots' : sectionLabel, to: tail ? sectionPath : null });
+    // `/t/<team>/chat` is the Chat screen itself; `/t/<team>/chat/<channel>` is a link to one conversation, shown under Bots
+    const linkToOne = section === 'chat' && /^\/t\/[^/]+\/chat\/[^/]+/.test(pathname);
+    const sectionPath = linkToOne ? `${base}/bots` : `${base}/${section}`;
+    out.push({ label: linkToOne ? 'Bots' : section === 'chat' ? 'Chat' : sectionLabel, to: tail ? sectionPath : null });
   }
   if (tail) out.push({ label: tail, to: null });
   return out;
