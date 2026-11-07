@@ -1,0 +1,15 @@
+# Async stand-up: Asks the team for a short update each morning, then gathers the replies into one note and puts blockers on the board.
+id: async-standup
+name: Async stand-up
+summary: Asks the team for a short update each morning, gathers yesterday's replies into one note and puts each blocker on the board.
+category: rhythm
+version: 1
+schedule:
+  cron: 0 7 * * mon-fri
+  label: Weekdays at 07:00 UTC
+channels:
+  - "#standup"
+needs:
+  - "A channel called #standup where the team replies"
+  - "A board for the blockers to land on"
+botSlug: standup-collector

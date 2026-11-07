@@ -1,0 +1,5 @@
+name: Async stand-up
+prompt: "Gather the replies to yesterday's stand-up question in #standup into one note, add a card for each blocker, then post today's question in #standup."
+output:
+  page: pages/recipes/async-standup.md
+  mode: replace
