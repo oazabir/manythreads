@@ -3,8 +3,8 @@ import type { BotPersonalConsent } from '@manythreads/shared';
 import { PageHeader } from '../../components/PageHeader';
 import { ForbiddenBody, QueryView } from '../../components/states';
 import { Time } from '../../components/ui';
+import { useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
-import { useShell } from '../../shell/context';
 import { message } from '../memory/inboxWords';
 import { fetchBotConsents, setBotConsent } from './botConsentsApi';
 
@@ -21,15 +21,10 @@ export function consentSentence(c: BotPersonalConsent): string {
  * whose definition asks for it is listed as able to use one.
  */
 export function BotConsents() {
-  const { guest } = useShell();
-  if (guest) {
-    return (
-      <>
-        <PageHeader title="Bots that may read your Personal space" description="Personal space is not part of a guest account." />
-        <ForbiddenBody />
-      </>
-    );
-  }
+  // This page sits in the settings frame, outside the app shell, so the shell's context is not there: the role comes from the session.
+  const guest = useSession().role === 'guest';
+  // a guest has no Personal space; the page says so once (one heading), not under a second header
+  if (guest) return <div className="inline-state"><ForbiddenBody /></div>;
   return <BotConsentsBody />;
 }
 
