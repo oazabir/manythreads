@@ -10,7 +10,8 @@
 //                                and Office file in #dev), `guard` (seed v5 on top of that: the `standard` preset and the `local` alias bound to a model
 //                                on this machine, so the gate's classifier has an alias to ask), `work` (seed v4 plus seed v6: the Engineering board and
 //                                Bot Board, a heartbeat and a routine that are switched off, the routine's output page, the protected `production`
-//                                environment), `personas`
+//                                environment), `polish` (seed v3 and v4 plus seed v21, opt-in: `#polish` for the look checks of Phase 21 - a run of twelve
+//                                messages, a 40-line one, an Answer with three citations, a thread of seven), `personas`
 //                                (only the people, like the shared api server) or `none` (empty: the first-admin link is printed)
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
@@ -25,7 +26,7 @@ import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedFinishedSetup, withClusterLock } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedFinishedSetup, seedPolish, withClusterLock } from '@manythreads/test-utils';
 import { seedWorld } from './seed.ts';
 
 const dist = resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
@@ -102,7 +103,7 @@ await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
 const seedMode = process.env['MANYTHREADS_STACK_SEED'] ?? 'world';
-if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
 // Attachments (storage-local) go to a directory of this stack, removed on exit, never into the working tree.
 const storageDir = process.env['MANYTHREADS_STORAGE_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-blobs-'));
 process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
@@ -142,6 +143,11 @@ const server = await startServer({
 if (seedMode === 'content') await seedWorld(db, { content: true });
 else if (seedMode === 'repo') await seedWorld(db, { content: true, repo: true });
 else if (seedMode === 'guard') await seedWorld(db, { content: true, repo: true, guard: true });
+// `polish` is seed v21 (P21-24): seed v3 and v4, then `#polish` for the look checks (a run, a long message, an Answer, a thread). Opt-in: no other mode has it.
+else if (seedMode === 'polish') {
+  await seedWorld(db, { content: true, repo: true });
+  await seedPolish(db);
+}
 // `work` is seed v6 on top of v4: the Engineering board, scheduled jobs (off), routine page and the protected `production` environment.
 else if (seedMode === 'work') await seedWorld(db, { content: true, repo: true, work: true });
 // The plugins have migrated: a seeded workspace starts with its setup checklist already put away (an empty stack, `none`, is a fresh install and keeps it).

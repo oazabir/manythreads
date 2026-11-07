@@ -37,30 +37,65 @@ export const MOBILE = { width: 390, height: 844 } as const;
 export const W_OPTIONS = { maxDiffPixelRatio: CLASS_W.maxDiffRatio, animations: 'disabled', caret: 'hide' } as const;
 
 /** Storage state of a persona signed in through POST /api/auth/password/sign-in on the stack's origin. */
-export async function personaState(stack: Stack, key: PersonaKey): Promise<Awaited<ReturnType<BrowserContext['storageState']>>> {
+export async function personaState(stack: Stack, key: PersonaKey, look?: { theme?: string; density?: string }): Promise<Awaited<ReturnType<BrowserContext['storageState']>>> {
   const api = await request.newContext({ baseURL: stack.origin });
   try {
     const res = await api.post('/api/auth/password/sign-in', { data: { email: personaEmail(key), password: PERSONA_PASSWORD } });
     expect(res.status(), `password sign-in as ${key}`).toBe(200);
+    if (look) {
+      // the person's saved look is set before the page loads, so the session it reads says the same as the first frame
+      const csrf = (await api.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
+      const saved = await api.put('/api/me/appearance', {
+        data: { theme: look.theme ?? 'system', density: look.density ?? 'comfortable' },
+        headers: csrf ? { 'x-csrf-token': csrf.value } : {},
+      });
+      expect(saved.status(), `saving the look of ${key}`).toBe(200);
+    }
     return await api.storageState();
   } finally {
     await api.dispose();
   }
 }
 
-/** A page of a browser context signed in as `key` on `stack` (anonymous when `key` is null). */
+/** The two looks a polish plate is made in (P21-21, P21-24) and the two sizes. Only the polish specs shoot dark; the older specs stay light. */
+export const THEMES = ['light', 'dark'] as const;
+export type Theme = (typeof THEMES)[number];
+export const SIZES = { '1440': DESKTOP, '390': MOBILE } as const;
+export type SizeName = keyof typeof SIZES;
+
+/** How the person's screen looks: the theme, and the message density. */
+export interface Look {
+  theme?: Theme;
+  density?: 'comfortable' | 'compact';
+}
+
+/**
+ * A page of a browser context signed in as `key` on `stack` (anonymous when `key` is null).
+ *
+ * `look` (optional, additive: the older callers pass nothing and get exactly what they got) sets the screen's look for a polish plate: the device
+ * is told the theme (`colorScheme`), the person's saved look is set through the real route (`PUT /api/me/appearance`, so the session the page
+ * loads agrees with what was drawn first) and the browser's own copy (`mt.appearance`, which the boot script reads before the first paint) is seeded
+ * in the storage state. Without it the page is light, as before.
+ */
 export async function openPage(
   browser: Browser,
   stack: Stack,
   key: PersonaKey | null,
   viewport: { width: number; height: number } = DESKTOP,
   mobile = false,
+  look?: Look,
 ): Promise<{ page: Page; close: () => Promise<void> }> {
-  const storageState = key ? await personaState(stack, key) : undefined;
+  let storageState = key ? await personaState(stack, key, look) : undefined;
+  const theme = look?.theme;
+  if (look && storageState) {
+    const copy = JSON.stringify({ theme: theme ?? 'system', density: look.density ?? 'comfortable' });
+    storageState = { ...storageState, origins: [...storageState.origins.filter((o) => o.origin !== stack.origin), { origin: stack.origin, localStorage: [{ name: 'mt.appearance', value: copy }] }] };
+  }
   const context = await browser.newContext({
     baseURL: stack.origin,
     viewport,
     reducedMotion: 'reduce',
+    ...(theme ? { colorScheme: theme } : {}),
     ...(mobile ? { isMobile: true, hasTouch: true } : {}),
     ...(storageState ? { storageState } : {}),
   });
