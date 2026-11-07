@@ -205,10 +205,11 @@ A run in a person's conversation with a bot (trigger `conversation`, a person as
 
 - **Frames.** `live.ts` sends `run.delta` (the text so far in pieces, each with the `offset` of its first character), `run.looking` (a fixed label for
   the tool the bot is using, such as "Searching memory", never a document's text) and `run.ended` (`done`, `failed` or `stopped`, sent after the answer is
-  posted) through `realtime.pushToPerson` to the asker only. Frames are batched about every 80 ms and at most 3000 characters each. A missed frame costs the preview a word,
-  never the answer. The shapes are in `packages/shared/src/api/conversations/chat.ts`.
-- **Stop.** `POST /api/runs/:runId/stop` is the asker's alone (anyone else gets 404). The live runs of this server are kept in memory, so a run on another
-  replica answers `{ stopped: false }`. A stopped run ends with what had been written as its reply, or "Stopped before an answer was written."; the run's
+  posted) through `realtime.pushToPerson` to the asker only. Frames are batched about every 80 ms, at most 3000 characters and 4500 bytes (as JSON) each, because a push over 7000 bytes is refused, and never cut
+  between the two halves of one emoji. A frame is also sent when the run fails (`run.ended` with `failed`), so the screen never waits for an end that will not come. A page that
+  misses a frame (opened mid-answer, or reconnected) shows no half text: it keeps the working line until the final message. A missed frame costs the preview, never the answer. The shapes are in `packages/shared/src/api/conversations/chat.ts`.
+- **Stop.** `POST /api/runs/:runId/stop` is the asker's alone (anyone else gets 404). The live runs of this server are kept in memory from the moment the run opens, so a run on another
+  replica answers `{ stopped: false }`; a Stop pressed before the process exists is kept and applied as soon as it does. A stopped run ends with what had been written as its reply, or "Stopped before an answer was written."; the run's
   `stopped_by_asker` flag is committed before the reply is posted, so the conversations plugin sees it when the reply's event arrives and marks the variant.
 - **The model pick.** The send route files the person's pick in `app.message_model_picks` in the same transaction as the post. The router puts it in the
   payload as `modelAlias`; the run uses it only when the bot's definition lists it as an alias or a fallback, otherwise the bot's first alias answers.
