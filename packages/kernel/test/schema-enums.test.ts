@@ -44,6 +44,7 @@ import {
   PersonConnectionProblem,
   PersonConnectionState,
   InboxFailureStage,
+  PersonalMemoryAuthorKind,
   MeetingConsent,
   MeetingEndReason,
   MeetingSegmentSource,
@@ -223,6 +224,10 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'memory_inbox_items.hold_reason': InboxHoldReason,
   'memory_inbox_items.sender_check': InboxSenderCheck,
   'memory_inbox_items.failed_stage': InboxFailureStage,
+  'memory_personal_inbox_items.kind': InboxKind,
+  'memory_personal_files.status': OkfStatus,
+  'memory_personal_files.trust_tier': OkfTrustTier,
+  'memory_personal_versions.author_kind': PersonalMemoryAuthorKind,
   'memory_shares.status': ShareStatus,
   'memory_shares.mode': ShareMode,
   'memory_shares.approval': ShareApproval,
@@ -293,6 +298,12 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
  */
 const NOT_SHARED_ENUMS: Record<string, string> = {
   'memory_inbox_items.stage': 'pipeline bookkeeping (which job runs next); it never leaves the memory-inbox plugin',
+  'memory_personal_inbox_items.stage': 'pipeline bookkeeping (which job runs next); it never leaves the memory-inbox plugin',
+  'memory_personal_inbox_items.state': 'a subset of InboxState (a person\'s own inbox has no needs_review); the shape the API sends is PersonalInboxItem, which uses InboxState',
+  'memory_personal_inbox_items.origin': 'a subset of InboxOrigin (a person drops a file, a note or a message; no email, share or bot door); the API shape uses InboxOrigin',
+  'memory_personal_inbox_items.hold_reason': 'a subset of InboxHoldReason (foreign_bundle, dlp, oversize; no team rules); the API shape uses InboxHoldReason',
+  'memory_personal_inbox_items.failed_stage': 'a subset of InboxFailureStage (extract, commit); the API shape never carries it',
+  'bots.scope': 'no client shape carries it yet; the workspace Brain (P20-07) adds the shared enum with the field',
 };
 
 let db: TestDatabase;

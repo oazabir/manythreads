@@ -174,6 +174,7 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
   let hasKnowledge: boolean | undefined;
   let hasImport: boolean | undefined;
   let hasInbox: boolean | undefined;
+  let hasPersonalInbox: boolean | undefined;
   let after = options.cursor;
   for (;;) {
     const page = await storage.list({ ...(after !== undefined ? { after } : {}), limit: pageSize });
@@ -199,6 +200,11 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
       if ((hasInbox ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.memory_inbox_items') IS NOT NULL AS found")).rows[0]?.found === true)) {
         const held = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.memory_inbox_items WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
         for (const r of held.rows) referenced.add(r.blob_key);
+      }
+      // And the originals in a person's own inbox (P20-04, the memory-inbox plugin), until the owner discards the item.
+      if ((hasPersonalInbox ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.memory_personal_inbox_items') IS NOT NULL AS found")).rows[0]?.found === true)) {
+        const mine = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.memory_personal_inbox_items WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
+        for (const r of mine.rows) referenced.add(r.blob_key);
       }
       report.referenced += referenced.size;
       const doomed = [];

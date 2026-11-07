@@ -9,6 +9,7 @@ import {
 } from '../../entities/inbox.ts';
 import type { ApiRoute } from '../client/route.ts';
 import { TeamSlug } from '../teams/common.ts';
+import { PersonalInboxItemResponse } from './personal.ts';
 
 // The routes of a team's memory inbox (PLAN P8-14, P8-15, P8-17). Everyone who can read the team drops and sees their own drops and the team's; a team
 // lead or a workspace admin also sees what is held and releases, discards and retries. A guest drops nothing. docs/plugins/memory-inbox.md.
@@ -89,3 +90,7 @@ export const WS_INBOX_ITEM_CHANGED = 'inbox.item.changed';
 export const InboxItemChangedPush = z.object({ teamId: z.uuid(), itemId: InboxItemId, state: InboxState });
 export type InboxItemChangedPush = z.infer<typeof InboxItemChangedPush>;
 export * from './personal.ts';
+
+/** What Send to memory answers: the team's item for `target: 'team'`, the person's own for `target: 'personal'` (P20-04). */
+export const SendToMemoryResponse = z.union([InboxItemResponse, PersonalInboxItemResponse]);
+export type SendToMemoryResponse = z.infer<typeof SendToMemoryResponse>;

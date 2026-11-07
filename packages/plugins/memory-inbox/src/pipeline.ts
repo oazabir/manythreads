@@ -143,9 +143,9 @@ export async function importStep(ctx: PluginContext, tx: PluginTx, itemId: strin
 
 // ---- extract --------------------------------------------------------------------------------------------------------------------------
 
-type Read = { ok: true; text: string; title: string | null; sections: { label: string; start: number }[]; children: { name: string; bytes: Uint8Array }[] } | { ok: false; message: string };
+export type Read = { ok: true; text: string; title: string | null; sections: { label: string; start: number }[]; children: { name: string; bytes: Uint8Array }[] } | { ok: false; message: string };
 
-async function readItem(ctx: PluginContext, row: ItemRow, log: JobInfo['log']): Promise<Read> {
+export async function readItem(ctx: PluginContext, row: Pick<ItemRow, 'id' | 'kind' | 'blob_key' | 'size'>, log: JobInfo['log']): Promise<Read> {
   const kind = row.kind as InboxKind;
   const extractKind = extractKindOf(kind);
   if (kind !== 'link' && extractKind === null) return { ok: false, message: unreadableReason(kind) };

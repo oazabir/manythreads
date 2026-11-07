@@ -5,6 +5,7 @@ import { distilStep, extractStep, holdStep, importStep } from './pipeline.ts';
 import { COMMIT_QUEUE, DISTIL_QUEUE, EXTRACT_QUEUE, HOLD_QUEUE, IMPORT_QUEUE, KEEP_QUEUE, SWEEP_QUEUE } from './receive.ts';
 import type { ItemRow } from './rows.ts';
 import { enqueueStep, failItem, FAILURE_STAGES, type PipelineStage } from './states.ts';
+import { PERSONAL_FILE_QUEUE, PERSONAL_HOLD_QUEUE, PERSONAL_SWEEP_QUEUE, personalFileStep, personalHoldStep, personalPayloadOf, personalSweep } from './personal.ts';
 import { attempt, payloadOf } from './util.ts';
 
 // The pipeline's queues (SPEC §12.2: "every step is a job on the Postgres queue"). The handlers check their payload, the item's stage and its state before doing
@@ -64,6 +65,30 @@ export function registerJobs(ctx: PluginContext): void {
     SWEEP_QUEUE,
     async (_payload, tx) => {
       await sweep(ctx, tx);
+    },
+    { cron: '* * * * *' },
+  );
+  // A person's own inbox: a shorter road (hold check, then read and file), in queues of its own.
+  ctx.jobs.register(
+    PERSONAL_HOLD_QUEUE,
+    async (payload, tx) => {
+      const p = personalPayloadOf(payload);
+      if (p) await personalHoldStep(ctx, tx, p.itemId);
+    },
+    { concurrency: 4, serialKey: 'itemId' },
+  );
+  ctx.jobs.register(
+    PERSONAL_FILE_QUEUE,
+    async (payload, _tx, job) => {
+      const p = personalPayloadOf(payload);
+      if (p) await personalFileStep(ctx, job, p.itemId);
+    },
+    { concurrency: 2, serialKey: 'itemId', detached: true },
+  );
+  ctx.jobs.register(
+    PERSONAL_SWEEP_QUEUE,
+    async (_payload, tx) => {
+      await personalSweep(ctx, tx);
     },
     { cron: '* * * * *' },
   );

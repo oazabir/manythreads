@@ -21,6 +21,7 @@ import {
   InboxItemParams,
   InboxItemResponse,
   InboxTeamParams,
+  SendToMemoryResponse,
   ListInboxItemsQuery,
   ListInboxItemsResponse,
   INBOX_NAME_MAX,
@@ -39,6 +40,7 @@ import {
   type InboxKind,
 } from '@manythreads/shared';
 import { loadInboxConfig } from './config.ts';
+import { dropPersonalBytes, requireMe } from './personal.ts';
 import { kindOfName, linkOnly } from './kinds.ts';
 import { dropBytes, recordStored, requireDrop } from './receive.ts';
 import { ITEM_COLUMNS, toItem, type ItemRow } from './rows.ts';
@@ -200,7 +202,7 @@ export function registerRoutes(ctx: PluginContext): void {
   // see it; a private channel needs their yes (`confirmPrivate`). A direct message or a bot conversation has no team, so it cannot be sent.
   ctx.http.route({
     ...sendToMemoryRoute,
-    schema: { body: SendToMemoryRequest, response: InboxItemResponse },
+    schema: { body: SendToMemoryRequest, response: SendToMemoryResponse },
     rateLimit: { limit: 60, windowMs: 60_000 },
     handler: route(async (req, tx) => {
       const { channelId, messageId } = SendToMemoryParams.parse(req.params);
@@ -209,6 +211,20 @@ export function registerRoutes(ctx: PluginContext): void {
         await tx.query<{ id: string; name: string; kind: string; private: boolean; team_id: string | null }>('SELECT c.id, c.name, c.kind, c.private, c.team_id FROM app.channels c WHERE c.id = $1', [channelId])
       ).rows[0];
       if (!channel) throw forbidden();
+      // The person's own inbox takes a message from anywhere they can read (a direct message too: it is a copy for them alone, so nobody else is shown it).
+      if (options.target === 'personal') {
+        const me = await requireMe(tx);
+        const drop = await messageDrop(tx, channel, channelId, messageId, options.thread);
+        if (!allowDrop(tx.actor.id)) throw new HttpError(429, 'rate_limited', 'You are dropping things faster than the inbox allows. Wait a minute and try again.');
+        const result = await dropPersonalBytes(ctx, tx, me, storageOf(), new TextEncoder().encode(drop.text), {
+          origin: 'message',
+          kind: 'markdown',
+          name: drop.name,
+          sourceChannelId: channelId,
+          sourceMessageId: messageId,
+        });
+        return json(result, result.duplicate ? 200 : 201);
+      }
       if (channel.kind !== 'channel' || channel.team_id === null) throw conflict('Only a message in a team channel can be sent to a team’s memory. A direct message belongs to the people in it.');
       const teamRow = (await tx.query<TeamRow & { name: string }>('SELECT id, workspace_id, archived_at, name FROM app.teams WHERE id = $1', [channel.team_id])).rows[0];
       if (!teamRow) throw forbidden('You cannot see this team');
@@ -217,33 +233,12 @@ export function registerRoutes(ctx: PluginContext): void {
       if (channel.private && !options.confirmPrivate) {
         throw conflict(`This channel is private, but everyone in ${teamRow.name} will see what is sent to the team’s memory. Confirm to send it anyway.`);
       }
-      const messages = (
-        await tx.query<{ id: string; author_id: string; body: string; thread_root_id: string | null; deleted_at: Date | null; created_at: Date }>(
-          `SELECT m.id, m.author_id, m.body, m.thread_root_id, m.deleted_at, m.created_at FROM app.messages m
-            WHERE m.channel_id = $1 AND (m.id = $2 OR m.thread_root_id = $2) ORDER BY m.id LIMIT 201`,
-          [channelId, options.thread ? await threadRootOf(tx, channelId, messageId) : messageId],
-        )
-      ).rows;
-      const picked = options.thread ? messages : messages.filter((m) => m.id === messageId);
-      const first = picked.find((m) => m.id === messageId) ?? (options.thread ? picked[0] : undefined);
-      if (!first) throw notFound('No such message');
-      if (!options.thread && first.deleted_at) throw conflict('That message was deleted');
-      const live = picked.filter((m) => m.deleted_at === null);
-      if (live.length === 0) throw conflict('That message was deleted');
-      const names = new Map<string, string>();
-      const authors = await tx.query<{ actor_id: string; display_name: string }>('SELECT actor_id, display_name FROM app.message_authors($1::uuid[])', [live.map((m) => m.id)]);
-      for (const a of authors.rows) names.set(a.actor_id, a.display_name);
-      const lines = live.slice(0, 200).map((m) => `**${names.get(m.author_id) ?? 'Someone'}**, ${m.created_at.toISOString().slice(0, 16).replace('T', ' ')} UTC:\n\n${m.body}`);
-      const heading = options.thread ? `Thread in #${channel.name}` : `Message in #${channel.name}`;
-      const more = live.length > 200 ? '\n\n(The thread is longer; the first 200 messages were sent.)' : '';
-      const text = `# ${heading}\n\n${lines.join('\n\n---\n\n')}${more}\n`.slice(0, 200_000);
-      const firstAuthor = names.get((live[0] ?? first).author_id);
-      const name = `${heading}${firstAuthor ? ` from ${firstAuthor}` : ''}`.slice(0, INBOX_NAME_MAX);
+      const drop = await messageDrop(tx, channel, channelId, messageId, options.thread);
       if (!allowDrop(tx.actor.id)) throw new HttpError(429, 'rate_limited', 'You are dropping things faster than the inbox allows. Wait a minute and try again.');
-      const result = await dropBytes(ctx, tx, teamRow, storageOf(), new TextEncoder().encode(text), {
+      const result = await dropBytes(ctx, tx, teamRow, storageOf(), new TextEncoder().encode(drop.text), {
         origin: 'message',
         kind: 'markdown',
-        name,
+        name: drop.name,
         teamOnly: options.teamOnly,
         sourceChannelId: channelId,
         sourceMessageId: messageId,
@@ -343,6 +338,32 @@ export function registerRoutes(ctx: PluginContext): void {
       return json({ item: toItem(updated) });
     }),
   });
+}
+
+/** The Markdown a message (or the thread it belongs to) is sent as, and the name the card shows. The caller has already checked who may send it where. */
+async function messageDrop(tx: PluginTx, channel: { name: string }, channelId: string, messageId: string, thread: boolean): Promise<{ text: string; name: string }> {
+  const messages = (
+    await tx.query<{ id: string; author_id: string; body: string; thread_root_id: string | null; deleted_at: Date | null; created_at: Date }>(
+      `SELECT m.id, m.author_id, m.body, m.thread_root_id, m.deleted_at, m.created_at FROM app.messages m
+        WHERE m.channel_id = $1 AND (m.id = $2 OR m.thread_root_id = $2) ORDER BY m.id LIMIT 201`,
+      [channelId, thread ? await threadRootOf(tx, channelId, messageId) : messageId],
+    )
+  ).rows;
+  const picked = thread ? messages : messages.filter((m) => m.id === messageId);
+  const first = picked.find((m) => m.id === messageId) ?? (thread ? picked[0] : undefined);
+  if (!first) throw notFound('No such message');
+  if (!thread && first.deleted_at) throw conflict('That message was deleted');
+  const live = picked.filter((m) => m.deleted_at === null);
+  if (live.length === 0) throw conflict('That message was deleted');
+  const names = new Map<string, string>();
+  const authors = await tx.query<{ actor_id: string; display_name: string }>('SELECT actor_id, display_name FROM app.message_authors($1::uuid[])', [live.map((m) => m.id)]);
+  for (const a of authors.rows) names.set(a.actor_id, a.display_name);
+  const lines = live.slice(0, 200).map((m) => `**${names.get(m.author_id) ?? 'Someone'}**, ${m.created_at.toISOString().slice(0, 16).replace('T', ' ')} UTC:\n\n${m.body}`);
+  const heading = thread ? `Thread in #${channel.name}` : `Message in #${channel.name}`;
+  const more = live.length > 200 ? '\n\n(The thread is longer; the first 200 messages were sent.)' : '';
+  const text = `# ${heading}\n\n${lines.join('\n\n---\n\n')}${more}\n`.slice(0, 200_000);
+  const firstAuthor = names.get((live[0] ?? first).author_id);
+  return { text, name: `${heading}${firstAuthor ? ` from ${firstAuthor}` : ''}`.slice(0, INBOX_NAME_MAX) };
 }
 
 /** The root of the thread a message belongs to, or the message itself when it has no thread. */

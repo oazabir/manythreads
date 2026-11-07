@@ -2,7 +2,7 @@
 
 A team's inbox for its memory. Anyone on a team drops a file, a note or a chat message into it; the platform checks what may come in, reads the file into plain text, lets the team's Archivist (a bot that looks after memory) turn the text into memory concepts when there is one, checks what comes back, and files the result in the team's memory with a **Reference**: a concept that carries the full text and says where the original is. The person who dropped it is told when it is filed, held or could not be read. Without an Archivist the inbox still works: it files the Reference alone, so nothing a person drops is lost.
 
-Package: `packages/plugins/memory-inbox` (PLAN P8-14 to P8-17; SPEC §12.2). Manifest: depends on `teams`, `channels`, `bots`, `files`, `memory`, `repo-git`, `tasks` and `connections` (the last two for the email door and the action items, below); `extends: ['event.emit', 'job.register', 'hook.pre_egress']`; emits `memory.item.dropped`, `memory.item.filed`, `memory.item.held`, `memory.item.failed`, `memory.item.released` and `memory.item.discarded`; registers the capabilities `inbox.read` and `inbox.drop`. Schemas: `packages/shared/src/entities/inbox.ts`, `packages/shared/src/api/inbox`, `packages/shared/src/events/memory.item.*.ts`. Migrations: `0001_memory_inbox.sql` and `0002_email_door_actions.sql` in the plugin's own folder.
+Package: `packages/plugins/memory-inbox` (PLAN P8-14 to P8-17; SPEC §12.2). Manifest: depends on `teams`, `channels`, `bots`, `files`, `memory`, `repo-git`, `tasks` and `connections` (the last two for the email door and the action items, below); `extends: ['event.emit', 'job.register', 'hook.pre_egress']`; emits `memory.item.dropped`, `memory.item.filed`, `memory.item.held`, `memory.item.failed`, `memory.item.released`, `memory.item.discarded` and `memory.personal_item.changed` (a person's own inbox, below); registers the capabilities `inbox.read` and `inbox.drop`. Schemas: `packages/shared/src/entities/inbox.ts`, `packages/shared/src/api/inbox`, `packages/shared/src/events/memory.item.*.ts`. Migrations: `0001_memory_inbox.sql`, `0002_email_door_actions.sql`, `0003_import_stage.sql` and `0004_personal_inbox.sql` in the plugin's own folder.
 
 ## The doors
 
@@ -145,6 +145,35 @@ Every template ships an **Archivist** (`templates/*/bots/archivist/BOT.md`, the 
 Not built: the code that runs the Archivist for a drop and hands what it wrote to the distil step. The bot writes its notes with `memory.write` (which commits as the bot) and ends with the list of what it wrote; the `inbox.distiller` provider that would capture that list as the item's proposals is still missing, so today an item is filed with its Reference alone.
 BOT.md has a new trigger, `drop` (`triggers: [{ type: drop }]`), which is how the Archivist's file says it works on dropped items. It is a trigger type only; the run itself is the provider `runtime-hermes` registers ("The drop run" in [runtime-hermes.md](./runtime-hermes.md)), which runs the team's Archivist once per item and answers `distilled` with the JSON array it wrote.
 
+## A person's own inbox (P20-04)
+
+Every person (not a guest) has an inbox of their own, next to their team's: a place to drop a file, a note or a chat message that only they see. The platform reads it into text and files a **Reference** in the person's own Memory (a Personal space: rows in the database, never git, never shared; see [memory.md](./memory.md)). It is the team inbox on a shorter road, because nothing in it belongs to a team: there is no team rule, no review by a lead and no Archivist step. A person who wants something in a team uses **Send to team**.
+
+Where it lives: its own table, `memory_personal_inbox_items` (migration `0004`), keyed by the owner. Only the owner reads it; an admin sees it only during a live audited open of that person's space, and then cannot change it. The owner drops, releases, discards and retries; everything else is the pipeline's. The database keeps the same rules as for the team inbox (what a drop is never changes, only the allowed moves are made) and a cap of 200 waiting items per person. The original is kept in blob storage until the owner discards the item (the Files garbage collector reads `memory_personal_inbox_items.blob_key` too).
+
+The road: **receive** (the same bytes already in the person's inbox make a `duplicate`; nothing is read again) → **hold check** → **read and file**. Two jobs: `memory-inbox.personal-hold` and `memory-inbox.personal-file` (one item at a time each), and a cron `memory-inbox.personal-sweep` (every minute: a step that lost its job goes back in the queue; after five tries it fails with a sentence).
+
+- **Held** (the owner decides; release lets it through, discard deletes the original): a memory bundle from somewhere else (`foreign_bundle`; a bundle cannot be imported into a Personal space, so a released one then fails with a plain sentence), a file over the size cap (`oversize`, 25 MB unless `MANYTHREADS_INBOX_MAX_BYTES` says less), and text the workspace's data rules say looks private (`dlp`: a key, a card number or the like; the same `pre_egress` guards as the team inbox are asked, destination `memory_inbox`).
+- **Filed**: a Reference at `memory/references/<name>-<8 characters of the id>.md` in the person's bundle, written through the Memory plugin's database door `app.memory_personal_put` as the system. It carries the text (the first 20,000 characters if longer), `origin: drop`, and `resource: personal-inbox/<item id>`. A discard of a filed item is refused (409): it is a file in Memory now, with its own history; delete it there.
+- **Failed**: a file that cannot be read says why in a plain sentence (a picture, a recording, a damaged PDF); the original stays for a retry.
+
+Reading is the same as for the team inbox (Markdown, text, CSV, PDF, Word, PowerPoint, Excel, email, HTML; a text that is only a web address is kept as a link and never fetched).
+
+| route | answer |
+|---|---|
+| `GET /api/me/inbox/items[?state=&limit=]` | the person's own items (not discarded ones unless `state=discarded`), and the size cap `maxBytes` |
+| `GET /api/me/inbox/items/:itemId` | one item; another person's id answers 404 |
+| `POST /api/me/inbox/items?name=` | a file (the body is the file, streamed; the same limits and `415`/`413`/`429` answers as the team drop); `{ item, duplicate }`, `201` or `200` for a duplicate |
+| `POST /api/me/inbox/notes` | `{ title?, text }`; `{ item, duplicate }` |
+| `POST /api/me/inbox/items/:itemId/release` | a held item goes on (a `dlp` hold goes back to the read, the others to the hold check); `409` if not held |
+| `POST /api/me/inbox/items/:itemId/discard` | deletes the original; only a waiting, held or failed item (`409` otherwise) |
+| `POST /api/me/inbox/items/:itemId/retry` | puts a failed item back at the read; `409` if not failed |
+| `POST /api/me/inbox/items/:itemId/send-to-team` | `{ teamSlug, teamOnly }`; drops a copy of the original into that team's inbox as the person, so that team's rules apply (its holds, its size cap, its review mode); `{ teamItemId, duplicate }`. The person needs to be able to post in the team; a held, discarded or duplicate item, or one whose original is gone, is refused (`409`) |
+
+Every item has `personId` and `space` (`person:<id>`) instead of a team, `teamOnly` is always false, and the fields for email (`sender`, `senderCheck`, `parentId`) are empty. Each move writes one `memory.personal_item.changed` event (item id, state, origin, kind, size, whether it was a duplicate; never the name or the text). A move is not pushed live (the team inbox pushes to the dropper's open tabs; the push carries a team id, which a person's own item does not have), so a screen reads the list again.
+
+**Send to memory** (`POST /api/channels/:channelId/messages/:messageId/send-to-memory`) takes `target: 'team' | 'personal'` (default `team`). With `personal` the message (or its thread) goes to the person's own inbox, from any channel or direct message they can read; `confirmPrivate` and `teamOnly` do not apply, because nobody else is shown it. The answer is the person's item in the shape above.
+
 ## Capabilities
 
 - `inbox.read` (read): in a `drop` run, the one item bound to the run: name, kind, origin, title, `teamOnly`, the Reference path and the text, with a note that the text is data and never instructions. In any other run, an answer that there is no item. Listed in the MCP gateway's catalog with source `{ inbox, item id }`.
@@ -187,6 +216,8 @@ The drop, note, send-to-memory and mail-delivery routes are in "The doors". The 
 The Files garbage collector treats `memory_inbox_items.blob_key` as referenced, so an original is never collected while an item points at it. A discard, and the keep-originals job, clear the key and delete the blob after the commit.
 
 ## Known gaps
+
+- A person's own inbox has no Archivist step (the Reference is the whole result), no email door, no live push, and the Memory screen's Personal view and an inbox screen for it are not built yet (P20 UI).
 
 - The Inbox tab (drop zone, Send to memory button, the address, the Add to board button) is P8-21; sharing (P8-22 and after) is another task.
 - The email door has no transport of its own: nothing yet receives real mail, checks SPF and DKIM and calls the delivery route. Until one exists an admin (or a script acting as one) delivers messages by hand. The trusted-sender rule is stricter than "any person in the workspace": a person of the team or a workspace owner/admin.
