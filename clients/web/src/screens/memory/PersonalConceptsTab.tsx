@@ -113,6 +113,17 @@ function PersonalFileDetail({ concept, panel, onChanged, onGone }: { concept: Me
   const [stale, setStale] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const current = file.status === 'ok' ? file.data.file : null;
+  // The button that opened Edit or Earlier versions is gone while the form or the list is open: focus goes into it, and back to that button when it closes.
+  const editBtn = useRef<HTMLButtonElement>(null);
+  const historyBtn = useRef<HTMLButtonElement>(null);
+  const editArea = useRef<HTMLTextAreaElement>(null);
+  const leaving = useRef<Mode | null>(null);
+  useEffect(() => {
+    if (mode === 'edit') editArea.current?.focus();
+    else if (mode === 'view' && leaving.current === 'edit') editBtn.current?.focus();
+    else if (mode === 'view' && leaving.current === 'history') historyBtn.current?.focus();
+    leaving.current = mode;
+  }, [mode]);
 
   const reread = (): void => {
     setLoad((n) => n + 1);
@@ -182,8 +193,8 @@ function PersonalFileDetail({ concept, panel, onChanged, onGone }: { concept: Me
         <>
           <pre className="mp-text" tabIndex={0} aria-label={`Text of ${concept.title || concept.path}`} data-testid="personal-file-text" data-vt-mask>{current.content}</pre>
           <div className="mm-actions mp-actions">
-            <button type="button" className="btn s" onClick={() => startEdit(current)} data-testid="personal-file-edit">Edit</button>
-            <button type="button" className="btn s" onClick={() => setMode('history')} data-testid="personal-file-history">Earlier versions</button>
+            <button ref={editBtn} type="button" className="btn s" onClick={() => startEdit(current)} data-testid="personal-file-edit">Edit</button>
+            <button ref={historyBtn} type="button" className="btn s" onClick={() => setMode('history')} data-testid="personal-file-history">Earlier versions</button>
             <button type="button" className="btn s danger" onClick={() => setConfirming(true)} data-testid="personal-file-delete">Delete</button>
           </div>
         </>
@@ -198,7 +209,7 @@ function PersonalFileDetail({ concept, panel, onChanged, onGone }: { concept: Me
           }}
         >
           <label className="mi-label" htmlFor="mp-edit-text">Text of the file (Markdown, with its front block)</label>
-          <textarea id="mp-edit-text" className="mi-input mi-text mp-textarea" rows={16} value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} data-testid="personal-file-textarea" />
+          <textarea ref={editArea} id="mp-edit-text" className="mi-input mi-text mp-textarea" rows={16} value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} data-testid="personal-file-textarea" />
           <div className="mm-actions mp-actions">
             <button type="submit" className="btn s primary" disabled={busy || draft.trim() === '' || draft === current.content} data-testid="personal-file-save">{busy ? 'Saving…' : 'Save'}</button>
             <button type="button" className="btn s" disabled={busy} onClick={() => { setMode('view'); setError(null); }} data-testid="personal-file-cancel">Cancel</button>

@@ -6,7 +6,7 @@ import { Dialog } from '../../components/Dialog';
 import { Time } from '../../components/ui';
 import { message } from '../memory/inboxWords';
 import { createPersonalBase, deletePersonalBase, deletePersonalDocument, fetchPersonalBase, fetchPersonalBases, searchPersonalBase, uploadPersonalDocument } from './api';
-import { ACCEPTED_FILES, KIND_LABEL, countLine, searchModeSentence, sizeLabel, slugFromName, stateSentence, uploadSentence } from './words';
+import { ACCEPTED_FILES, KIND_LABEL, countLine, searchModeSentence, sizeLabel, fallbackSlug, slugFromName, stateSentence, uploadSentence } from './words';
 
 type Notice = { tone: 'ok' | 'bad'; text: string } | null;
 
@@ -27,10 +27,12 @@ export function PersonalKnowledge() {
   const wanted = params.get('base');
   const selected = bases.find((b) => b.slug === wanted) ?? bases[0] ?? null;
   const full = bases.length >= KNOWLEDGE_MAX_PERSONAL_BASES;
-  const slug = slugFromName(name);
+  const named = name.trim() !== '';
 
   const create = async (): Promise<void> => {
-    if (!slug || busy || full) return;
+    if (!named || busy || full) return;
+    // a name with no Latin letters or digits (Arabic, Chinese) has no readable address, so the base is given a neutral one; its name stays as typed
+    const slug = slugFromName(name) ?? fallbackSlug();
     setBusy(true);
     setNotice(null);
     try {
@@ -59,7 +61,7 @@ export function PersonalKnowledge() {
           <label className="mi-label" htmlFor="kn-new-name">New knowledge base</label>
           <input id="kn-new-name" className="mi-input" type="text" value={name} maxLength={120} placeholder="Reading list" onChange={(e) => setName(e.target.value)} autoComplete="off" disabled={full} data-testid="personal-knowledge-name" />
         </div>
-        <button type="submit" className="btn s primary" disabled={!slug || busy || full} data-testid="personal-knowledge-create">{busy ? 'Creating…' : 'Create'}</button>
+        <button type="submit" className="btn s primary" disabled={!named || busy || full} data-testid="personal-knowledge-create">{busy ? 'Creating…' : 'Create'}</button>
         <span className="faint kn-note" data-testid="personal-knowledge-count">{countLine(bases.length, 'base', 'bases')} of {String(KNOWLEDGE_MAX_PERSONAL_BASES)}{full ? '. Delete one to make another.' : ''}</span>
       </form>
       {notice ? <p className={`kn-note ${notice.tone}`} role={notice.tone === 'bad' ? 'alert' : 'status'} data-testid="personal-knowledge-notice">{notice.text}</p> : null}

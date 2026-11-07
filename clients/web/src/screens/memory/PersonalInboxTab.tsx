@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { PersonalInboxItem } from '@manythreads/shared';
+import type { ListPersonalInboxResponse, PersonalInboxItem } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { useShell } from '../../shell/context';
 import { FILTERS, countsByFilter, dropProblem, inFilter, isProcessing, message, type FilterId } from './inboxWords';
 import { fetchPersonalConcepts, fetchPersonalInbox, uploadPersonalFile } from './personalApi';
 import { PersonalInboxCard } from './PersonalInboxCard';
 import { PersonalNoteDialog, SendToTeamDialog } from './PersonalDialogs';
+import { conceptTitles } from './personalWords';
 
 type Upload = { id: number; name: string; state: 'sending' | 'done' | 'error'; fraction: number; message?: string };
 
@@ -33,11 +34,15 @@ export function PersonalInboxTab() {
   const picker = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
 
-  const items = q.status === 'ok' ? q.data.items : NO_ITEMS;
-  const maxBytes = q.status === 'ok' ? q.data.maxBytes : DEFAULT_MAX_BYTES;
+  // The last list that arrived is kept: a read that fails once (a dropped connection in the middle of the polling) must not empty the list or stop the polling
+  const lastGood = useRef<ListPersonalInboxResponse | null>(null);
+  if (q.status === 'ok') lastGood.current = q.data;
+  const data = q.status === 'ok' ? q.data : lastGood.current;
+  const items = data?.items ?? NO_ITEMS;
+  const maxBytes = data?.maxBytes ?? DEFAULT_MAX_BYTES;
   const counts = useMemo(() => countsByFilter(items), [items]);
   const shown = useMemo(() => items.filter((i) => inFilter(i, filter)), [items, filter]);
-  const titles = useMemo(() => new Map(concepts.status === 'ok' ? concepts.data.items.map((c) => [c.path, c.title]) : []), [concepts]);
+  const titles = useMemo(() => conceptTitles(concepts.status === 'ok' ? concepts.data.items : []), [concepts]);
 
   const { reload } = q;
   const conceptsReload = concepts.reload;
@@ -133,9 +138,15 @@ export function PersonalInboxTab() {
         ))}
       </div>
 
-      {q.status === 'loading' ? <div className="view-empty" aria-busy="true" /> : null}
-      {q.status === 'error' ? <p className="mi-error" role="alert" data-testid="personal-inbox-load-error">Your inbox could not be loaded: {q.error.message}</p> : null}
-      {q.status === 'ok' && shown.length === 0 ? (
+      {q.status === 'loading' && data === null ? <div className="view-empty" aria-busy="true" /> : null}
+      {q.status === 'error' ? (
+        <p className="mi-error" role={data === null ? 'alert' : undefined} data-testid="personal-inbox-load-error">
+          Your inbox could not be loaded: {q.error.message}
+          {data !== null ? ' The list below may be out of date.' : ' '}
+          <button type="button" className="btn s" onClick={q.reload}>Try again</button>
+        </p>
+      ) : null}
+      {data !== null && shown.length === 0 ? (
         <p className="mi-empty faint" data-testid="personal-inbox-empty">
           {items.length === 0 ? 'Nothing has been dropped yet. Drop a file, write a note, or use “Send to memory” on a message.' : 'Nothing here right now.'}
         </p>

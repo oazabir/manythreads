@@ -20,6 +20,10 @@ export function findConcept<T extends Pick<MemoryConceptSummary, 'path'>>(concep
   return concepts.find((c) => c.path === wanted) ?? concepts.find((c) => samePath(c.path, wanted)) ?? null;
 }
 
+/** The titles of the person's files by bundle path, so a path in either spelling finds its title (`titleFor`). */
+export const conceptTitles = (concepts: readonly Pick<MemoryConceptSummary, 'path' | 'title'>[]): Map<string, string> => new Map(concepts.map((c) => [bundlePath(c.path), c.title]));
+export const titleFor = (titles: ReadonlyMap<string, string>, path: string): string | undefined => titles.get(bundlePath(path));
+
 const isReference = (p: string): boolean => bundlePath(p).startsWith('references/');
 /** The files an inbox item became, except the Reference (the platform's own record of the original). */
 export const filedFiles = (item: Pick<PersonalInboxItem, 'filedPaths'>): string[] => item.filedPaths.filter((p) => !isReference(p));

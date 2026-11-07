@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // the byte-stream uploads switch to a JSON stand-in in mock mode (as the screens do offline)
 vi.mock('../src/api/setup', async (original) => ({ ...(await original<typeof import('../src/api/setup')>()), isMockMode: () => true }));
@@ -22,6 +23,7 @@ import {
 } from '../src/screens/memory/personalApi';
 import {
   bundlePath,
+  conceptTitles,
   filedFiles,
   filedReference,
   findConcept,
@@ -30,6 +32,7 @@ import {
   personalSentence,
   samePath,
   teamChoiceLabel,
+  titleFor,
 } from '../src/screens/memory/personalWords';
 import { PERSONAL_TABS, TABS, nextTab, tabFromParams } from '../src/screens/memory/memoryTabs';
 import {
@@ -41,7 +44,7 @@ import {
   searchPersonalBase,
   uploadPersonalDocument,
 } from '../src/screens/knowledge/api';
-import { countLine, searchModeSentence, sizeLabel, slugFromName, stateSentence, uploadSentence } from '../src/screens/knowledge/words';
+import { countLine, fallbackSlug, searchModeSentence, sizeLabel, slugFromName, stateSentence, uploadSentence } from '../src/screens/knowledge/words';
 import { fetchBotConsents, setBotConsent } from '../src/screens/account/botConsentsApi';
 import { consentSentence } from '../src/screens/account/BotConsents';
 
@@ -344,5 +347,27 @@ describe('the plain words', () => {
     expect(consentSentence({ ...base, allowed: false, isDefault: false })).toMatch(/You turned it off/);
     expect(consentSentence({ ...base, botSlug: 'planner', allowed: false })).toMatch(/until you allow it/);
     expect(consentSentence({ ...base, botSlug: 'support-responder', canAsk: false, allowed: false })).toMatch(/not set up to ask/);
+  });
+});
+
+describe('review fixes (P20-R5)', () => {
+  it('keeps the Account pages free of the app shell context: they sit in the settings frame, where it is not provided', () => {
+    // `useShell` throws outside the shell; /account/bots crashed on it until the role came from the session
+    const dir = new URL('../src/screens/account/', import.meta.url);
+    for (const name of readdirSync(dir).filter((f) => f.endsWith('.tsx'))) {
+      expect(readFileSync(new URL(name, dir), 'utf8'), name).not.toMatch(/shell\/context|useShell\(/);
+    }
+  });
+
+  it('finds a title for a file path in either spelling', () => {
+    const titles = conceptTitles([{ path: 'references/standup-7c1d9e02.md', title: 'Standup notes' }]);
+    expect(titleFor(titles, 'references/standup-7c1d9e02.md')).toBe('Standup notes');
+    expect(titleFor(titles, 'memory/references/standup-7c1d9e02.md')).toBe('Standup notes');
+    expect(titleFor(titles, 'memory/references/other.md')).toBeUndefined();
+  });
+
+  it('gives a base named in another script an address the server accepts', () => {
+    expect(slugFromName('مكتبتي')).toBeNull();
+    for (let i = 0; i < 50; i += 1) expect(fallbackSlug()).toMatch(/^[a-z0-9][a-z0-9-]{0,62}$/);
   });
 });

@@ -17,6 +17,9 @@ export function slugFromName(name: string): string | null {
   return slug === '' ? null : slug;
 }
 
+/** An address for a base whose name has nothing an address can be made of (a name written in another script): `base-` and a few letters and digits. */
+export const fallbackSlug = (): string => `base-${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`;
+
 const STATE_WORDS: Record<KnowledgeBaseState, string> = {
   ready: 'Ready: every document can be searched',
   attention: 'Needs attention: a document could not be read',
