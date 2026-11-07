@@ -3,7 +3,7 @@
 .av.pic {
   padding: 0;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--plate);
   box-shadow: inset 0 0 0 1px var(--rule);
 }
 

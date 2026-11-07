@@ -11,7 +11,7 @@
   padding: 10px 20px max(10px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--rule);
   background: var(--surface);
-  box-shadow: 0 -6px 14px -10px rgb(0 0 0 / 25%);
+  box-shadow: var(--savebar-shadow);
 }
 
 .b-savebar-msg {
@@ -48,7 +48,7 @@
 
 .b-split-arrow {
   padding-inline: 8px;
-  border-inline-start: 1px solid rgb(255 255 255 / 35%);
+  border-inline-start: 1px solid var(--on-color-line);
   border-start-start-radius: 0;
   border-end-start-radius: 0;
 }

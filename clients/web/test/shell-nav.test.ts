@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NavContribution, sortNav } from '@manythreads/shared';
+import { crumbsFor } from '../src/shell/breadcrumb';
 import { CORE_NAV, channelPath, navCount, navHref, teamSwitchPath, viewTitle, visibleNav } from '../src/shell/nav';
 
 const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id' | 'order'>): NavContribution =>
@@ -81,6 +82,8 @@ describe('team switching and titles', () => {
     expect(teamSwitchPath('/t/engineering/chat', 'support')).toBe('/t/support/chat');
     expect(teamSwitchPath('/t/engineering/approvals', 'support')).toBe('/t/support/approvals');
     expect(teamSwitchPath('/t/engineering/jobs', 'support')).toBe('/t/support/jobs');
+    expect(teamSwitchPath('/t/engineering/dms', 'support')).toBe('/t/support/dms');
+    expect(teamSwitchPath('/t/engineering/activity', 'support')).toBe('/t/support/activity');
     expect(teamSwitchPath('/t/engineering/org', 'support')).toBe('/t/support/org');
     expect(teamSwitchPath('/t/engineering/c/dev', 'support')).toBe('/t/support/threads');
     expect(teamSwitchPath('/t/engineering/dm/abc', 'support')).toBe('/t/support/threads');
@@ -97,6 +100,8 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/bots/brain')).toBe('Bots');
     expect(viewTitle('/t/engineering/org')).toBe('Org chart');
     expect(viewTitle('/t/engineering/jobs')).toBe('Jobs');
+    expect(viewTitle('/t/engineering/dms')).toBe('Messages');
+    expect(viewTitle('/t/engineering/activity')).toBe('Activity');
     expect(viewTitle('/')).toBe('Home');
     expect(viewTitle('/t/engineering/memory')).toBe('Memory');
     // a person's own Memory and Knowledge are outside any team; neither is called Home
@@ -108,5 +113,10 @@ describe('team switching and titles', () => {
 
   it('keeps the section when switching teams from a conversation with a bot', () => {
     expect(teamSwitchPath('/t/engineering/bots/brain/chat', 'support')).toBe('/t/support/bots');
+  });
+
+  it('names the phone pages in the breadcrumb trail', () => {
+    expect(crumbsFor('/t/eng/dms', 'Engineering').map((c) => c.label)).toEqual(['Engineering', 'Messages']);
+    expect(crumbsFor('/t/eng/activity', 'Engineering').map((c) => c.label)).toEqual(['Engineering', 'Activity']);
   });
 });

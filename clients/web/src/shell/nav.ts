@@ -45,7 +45,7 @@ export function navTone(item: NavContribution, counts: Readonly<Record<string, n
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['chat', 'threads', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'recipes', 'memory', 'knowledge'] as const;
+const SECTIONS = ['chat', 'threads', 'dms', 'activity', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'recipes', 'memory', 'knowledge'] as const;
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {
@@ -54,7 +54,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search' };
+const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

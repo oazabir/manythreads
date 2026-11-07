@@ -1,0 +1,8 @@
+[
+  { "theme": "light", "fg": "faint", "bg": "paper", "reason": "WP-0 keeps the light palette pixel-neutral; light --faint moves to #757D88 in WP-0b" },
+  { "theme": "light", "fg": "faint", "bg": "shell", "reason": "WP-0 keeps the light palette pixel-neutral; light --faint moves to #757D88 in WP-0b" },
+  { "theme": "light", "fg": "faint", "bg": "nav-on", "reason": "WP-0 keeps the light palette pixel-neutral; light --faint moves to #757D88 in WP-0b" },
+  { "theme": "light", "fg": "warn", "bg": "paper", "reason": "light amber is 2.76:1 on the page grey; the plan says no other light colour changes, so a darker amber is an owner decision" },
+  { "theme": "light", "fg": "warn", "bg": "shell", "reason": "light amber is 2.91:1 on the shell grey; see the paper entry" },
+  { "theme": "light", "fg": "warn", "bg": "nav-on", "reason": "light amber is 2.58:1 on the selected sidebar row; see the paper entry" }
+]

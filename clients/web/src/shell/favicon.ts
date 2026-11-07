@@ -1,3 +1,4 @@
+import { THEME_EVENT } from './appearance';
 import type { FaviconState } from './tabState';
 
 /*
@@ -8,6 +9,7 @@ import type { FaviconState } from './tabState';
 const SIZE = 64;
 let base: HTMLImageElement | null = null;
 let baseHref: string | null = null;
+let lastState: FaviconState | null = null;
 
 function link(): HTMLLinkElement | null {
   if (typeof document === 'undefined') return null;
@@ -29,6 +31,7 @@ function loadBase(href: string): Promise<HTMLImageElement> {
 }
 
 export async function drawFavicon(state: FaviconState): Promise<void> {
+  lastState = state;
   const el = link();
   if (!el) return;
   const plain = el.dataset['plain'] ?? el.getAttribute('href') ?? '/favicon.svg';
@@ -54,4 +57,11 @@ export async function drawFavicon(state: FaviconState): Promise<void> {
   } catch {
     el.setAttribute('href', plain);
   }
+}
+
+// the dot's colour is the alert token of the theme that is drawn, so it is read again when the theme changes
+if (typeof window !== 'undefined') {
+  window.addEventListener(THEME_EVENT, () => {
+    if (lastState?.dot) void drawFavicon(lastState);
+  });
 }

@@ -17,6 +17,7 @@ describe('accountPageFor', () => {
     expect(accountPageFor(h('acc-connections'))).toBe('connections');
     expect(accountPageFor(h('acc-presence'))).toBe('notifications');
     expect(accountPageFor(h('acc-methods'))).toBe('security');
+    expect(accountPageFor(h('acc-appearance'))).toBe('appearance');
   });
   it('reads the anchor without the hash sign and does not guess from a part of a name', () => {
     expect(accountPageFor('acc-sessions')).toBe('security');

@@ -790,7 +790,7 @@ a.sec:hover {
 }
 
 .chd-btn:hover {
-  background: var(--hover, rgb(0 0 0 / 5%));
+  background: var(--hover);
 }
 
 .chd-name {
@@ -812,7 +812,7 @@ a.sec:hover {
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  box-shadow: var(--pop-shadow);
 }
 
 .chd-stack {

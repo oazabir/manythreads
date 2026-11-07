@@ -2,7 +2,12 @@
 
 /*
  * manythreads design tokens (look tokens at the end of :root: type, radius, colour meanings, focus). Copied from the prototype `:root` in docs/spec/mockups-all.html.
- * This is the only file where raw hex colours are allowed (stylelint color-no-hex).
+ * This is the only file where raw hex colours, rgb() colours and a `data-theme` selector are allowed (stylelint color-no-hex,
+ * function-disallowed-list, selector-disallowed-list). Light is the first block; dark is `:root[data-theme="dark"]`, which public/theme-boot.js
+ * sets before the first paint (P21-21). A screen never writes a dark rule of its own: it uses a token and the token changes with the theme.
+ * A token that is built from another token (a meaning alias, a shadow) lives in the shared block after the two palettes, because a custom
+ * property that reads another one keeps the value it had where it was declared: a `.theme-dark-scope` box inside a light page has to
+ * declare them again.
  *
  * not yet tokens (prototype CSS values seen in section #app, kept out until a screen needs them):
  *   - #E3E7EB  selected sidebar item background (.it.on)
@@ -17,7 +22,10 @@
  *   - rgba(27, 36, 48, 0.06) frame shadow (ink at 6%)
  *   - radii 5/6/10/12 px, frame grid 248px | 1fr | 380px
  */
-:root {
+:root,
+.theme-light-scope {
+  color-scheme: light;
+
   --paper: #EDEEF0;
   --surface: #FFFFFF;
   --shell: #F3F4F6;
@@ -56,8 +64,6 @@
   --dot-off: #C3C8CE;
   --presence-ring: #78808B;
   --toggle-off: #CFD4DA;
-  --scrim: rgb(27 36 48 / 40%);
-  --menu-shadow: 0 6px 20px rgb(27 36 48 / 14%);
 
   /* initials avatars: ten calm background and ink pairs, picked by a hash of the person (toneOf) */
   --av-1-bg: #DCE8F4;
@@ -81,6 +87,132 @@
   --av-10-bg: #DDE0E6;
   --av-10-ink: #3B4452;
 
+  /* things that sit behind a picture stay light in both themes: avatars, bot pictures, image / PDF / diagram viewers, embedded apps */
+  --plate: #FFFFFF;
+  --on-color: #FFFFFF; /* text on a filled colour that does not change with the theme (the live-edit caret names, hue-picked chips) */
+  --on-color-line: rgb(255 255 255 / 35%);
+  --shadow-color: 27 36 48; /* r g b of the shadows built below */
+  --card-alpha: 6%;
+  --menu-alpha: 14%;
+  --savebar-alpha: 25%;
+  --scrim-alpha: 40%;
+  --hover: rgb(0 0 0 / 5%);
+  --skeleton: #E6E9ED;
+  --skeleton-hi: #F2F4F6;
+}
+
+:root[data-theme="dark"],
+.theme-dark-scope {
+  color-scheme: dark;
+
+  /* graphite, not black (B4); the primary button stays "ink on paper", so it becomes a light button with dark text (B5) */
+  --paper: #0F1216;
+  --surface: #171B21;
+  --shell: #12161B;
+  --ink: #E6E9EE;
+  --mute: #A3ACB8;
+  --faint: #7D8794;
+  --rule: #2B323C;
+  --human: #7FB0E3;
+  --agent: #B49AE0;
+  --agent-wash: #221D2E;
+  --ok: #6CC08F;
+  --warn: #D9B467;
+  --alert: #EE8A72;
+  --alert-wash: #2D1C18;
+
+  /* washes, borders and inks of the dark palette */
+  --hairline: #1F252D;
+  --table-head: #1B2027;
+  --nav-on: #262D37;
+  --human-wash: #1A2634;
+  --human-border: #35516F;
+  --ok-wash: #16261D;
+  --ok-border: #2E5B42;
+  --ok-ink: #8FD3AA;
+  --agent-border: #4B4068;
+  --agent-ink: #CDB8F0;
+  --warn-wash: #2A2416;
+  --warn-border: #5E4C25;
+  --warn-ink: #E6C887;
+  --alert-border: #6B3B2F;
+  --alert-ink: #F4A893;
+  --bot-grey: #8C96A3;
+  --msg-hover: #1D2229;
+  --txt: #D5DAE1;
+  --zip: #D9A06E;
+  --dot-off: #4A525D;
+  --presence-ring: #8C96A3;
+  --toggle-off: #3A424D;
+
+  /* initials avatars: a deep tone of each hue with a light ink */
+  --av-1-bg: #1F3347;
+  --av-1-ink: #A9CBEC;
+  --av-2-bg: #2B2440;
+  --av-2-ink: #CDB8F0;
+  --av-3-bg: #1D3427;
+  --av-3-ink: #9AD7B2;
+  --av-4-bg: #3A3019;
+  --av-4-ink: #E6C887;
+  --av-5-bg: #3C2420;
+  --av-5-ink: #F4A893;
+  --av-6-bg: #1B3438;
+  --av-6-ink: #8FD0D8;
+  --av-7-bg: #3A2338;
+  --av-7-ink: #E3A8DC;
+  --av-8-bg: #2D3318;
+  --av-8-ink: #C6D58A;
+  --av-9-bg: #3B2A1B;
+  --av-9-ink: #EDB98A;
+  --av-10-bg: #2A3039;
+  --av-10-ink: #BCC4CF;
+
+  /* the same names as the light palette, so a screen reads them in either theme */
+  --plate: #FFFFFF;
+  --on-color: #FFFFFF;
+  --on-color-line: rgb(255 255 255 / 35%);
+  --shadow-color: 0 0 0;
+  --card-alpha: 40%;
+  --menu-alpha: 55%;
+  --savebar-alpha: 70%;
+  --scrim-alpha: 60%;
+  --hover: rgb(255 255 255 / 6%);
+  --skeleton: #232A33;
+  --skeleton-hi: #2D3540;
+}
+
+/* a box that shows the other theme next to the page's own (Appearance previews, /dev/tokens) */
+.theme-dark-scope,
+.theme-light-scope {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* built from the palette, so declared again for every scope (see the top of this file) */
+:root,
+.theme-light-scope,
+:root[data-theme="dark"],
+.theme-dark-scope {
+  /* colour meanings: blue is you, purple is a bot, amber needs you, red is a danger or a mention */
+  --you: var(--human);
+  --you-wash: var(--human-wash);
+  --bot: var(--agent);
+  --bot-wash: var(--agent-wash);
+  --attention: var(--warn);
+  --attention-wash: var(--warn-wash);
+  --danger: var(--alert);
+  --mention: var(--alert);
+  --focus: var(--human);
+  --on-accent: var(--surface); /* text on a filled ink button (light text on dark ink, dark text on the light dark-theme button) */
+  --card-shadow: 0 1px 2px rgb(var(--shadow-color) / var(--card-alpha));
+  --menu-shadow: 0 6px 20px rgb(var(--shadow-color) / var(--menu-alpha));
+  --pop-shadow: 0 8px 24px rgb(0 0 0 / var(--menu-alpha));
+  --savebar-shadow: 0 -6px 14px -10px rgb(0 0 0 / var(--savebar-alpha));
+  --scrim: rgb(var(--shadow-color) / var(--scrim-alpha));
+}
+
+/* look tokens that do not change with the theme */
+:root {
   /* P21-20 look tokens: screens use these names, not raw sizes, radii or colours (stylelint enforces it) */
   --fs-display: 28px; /* the product name on the sign-in card */
   --fs-h1: 22px;
@@ -96,18 +228,29 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-pill: 999px;
-
-  /* colour meanings: blue is you, purple is a bot, amber needs you, red is a danger or a mention */
-  --you: var(--human);
-  --you-wash: var(--human-wash);
-  --bot: var(--agent);
-  --bot-wash: var(--agent-wash);
-  --attention: var(--warn);
-  --attention-wash: var(--warn-wash);
-  --danger: var(--alert);
-  --mention: var(--alert);
-  --focus: var(--human);
-  --card-shadow: 0 1px 2px rgb(27 36 48 / 6%);
   --sans: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", monospace;
+
+  /* motion (P21-22): menus and pop-overs fade and rise, a side panel slides; reduced motion switches them off in motion.css */
+  --dur-menu: 120ms;
+  --dur-panel: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* message density (P21-21): the numbers of a message row. Comfortable is the pixels the app always had */
+  --msg-pad-y: 6px; /* above and below one message */
+  --msg-gap: 6px; /* between two messages */
+  --run-gap: 1px; /* above a message that continues the author's run */
+  --av-size: 32px; /* the avatar beside the first line of a message */
+  --gutter-w: 34px; /* the avatar column */
+  --day-gap: 6px; /* above the day divider; it has two pixels more below */
+}
+
+/* Compact: channels, DMs and the thread panel only. Chat and the Threads inbox do not read these tokens (B8) */
+:root[data-density="compact"] {
+  --msg-pad-y: 3px;
+  --msg-gap: 2px;
+  --run-gap: 0;
+  --av-size: 28px;
+  --gutter-w: 28px;
+  --day-gap: 4px;
 }

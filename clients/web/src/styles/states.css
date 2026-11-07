@@ -1,0 +1,110 @@
+/*
+ * Loading and empty states (P21-22). Skeleton bars are plain boxes in --skeleton; the shimmer runs only for people who have not asked for
+ * reduced motion. The empty state is the global `.empty` box (screens.css) with an icon and one action added.
+ */
+
+.sk-bar {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--skeleton);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sk-bar {
+    background-image: linear-gradient(90deg, var(--skeleton) 0%, var(--skeleton-hi) 50%, var(--skeleton) 100%);
+    background-size: 200% 100%;
+    animation: sk-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes sk-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.sk-rows,
+.sk-messages {
+  display: flex;
+  flex-direction: column;
+}
+
+.sk-rows {
+  gap: 4px;
+}
+
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.sk-msg {
+  display: grid;
+  grid-template-columns: var(--gutter-w) minmax(0, 1fr);
+  gap: 11px;
+  padding: var(--msg-pad-y) 0;
+}
+
+.sk-messages {
+  gap: var(--msg-gap);
+  padding: 16px 0;
+}
+
+.sk-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sk-av {
+  flex: none;
+  width: var(--av-size);
+  height: var(--av-size);
+  border-radius: 50%;
+}
+
+.sk-msg .sk-av {
+  border-radius: var(--radius-md);
+}
+
+.sk-title {
+  height: 12px;
+}
+
+.sk-name {
+  width: 22%;
+  min-width: 60px;
+  height: 11px;
+}
+
+/* ---- empty state ---- */
+.empty.es {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 36px 20px;
+}
+
+.es-icon {
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+  color: var(--faint);
+}
+
+.es-title {
+  margin: 0;
+}
+
+.es-body {
+  max-width: 44ch;
+}
+
+.es-action {
+  margin-top: 12px;
+}

@@ -1,9 +1,10 @@
 import { Navigate, useLocation } from 'react-router';
 
 /** Which Account page holds a section that old links name by its anchor (`/account#status-and-dnd`, the digest email's `/account#acc-notifications`). */
-export function accountPageFor(hash: string): 'profile' | 'notifications' | 'connections' | 'security' {
+export function accountPageFor(hash: string): 'profile' | 'appearance' | 'notifications' | 'connections' | 'security' {
   const id = hash.replace(/^#/, '');
   if (id === 'status-and-dnd' || id === 'acc-presence' || id === 'acc-notifications') return 'notifications';
+  if (id === 'acc-appearance') return 'appearance';
   if (id === 'acc-connections') return 'connections';
   if (id === 'acc-password' || id === 'acc-sessions' || id === 'acc-methods') return 'security';
   return 'profile';

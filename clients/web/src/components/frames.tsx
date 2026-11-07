@@ -9,9 +9,10 @@ import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { Brand } from './ui';
 import {
   AddIcon, BackIcon, BellIcon, HashIcon, HookIcon, SettingsAuditIcon, SettingsDataIcon, SettingsDomainIcon, SettingsGeneralIcon, SettingsHealthIcon,
-  SettingsImportIcon, SettingsBrainIcon, SettingsLlmIcon, SettingsMemoryIcon, SettingsMembersIcon, SettingsProfileIcon, SettingsRolesIcon, SettingsRunnersIcon,
+  SettingsImportIcon, SettingsBrainIcon, SettingsLlmIcon, SettingsMemoryIcon, SettingsMembersIcon, AppearanceIcon, SettingsProfileIcon, SettingsRolesIcon, SettingsRunnersIcon,
   SettingsSecurityIcon, SettingsSetupIcon, SettingsSignInIcon, SettingsTemplateIcon, SettingsUsageIcon, ScheduledJobsIcon, ApprovalsIcon,
 } from '../shell/icons';
+import { APPEARANCE_PAGE_READY } from '../screens/account/Appearance';
 import { useDocumentTitle } from '../shell/usePageTitle';
 
 /** The card for sign-in, bootstrap, invite and error pages. A `tagline` makes it the sign-in card: the product name large with the line under it, and a wider card on a desktop. */
@@ -125,6 +126,7 @@ export function SettingsFrame() {
       heading: 'Account',
       items: [
         { to: '/account/profile', label: 'Profile', icon: SettingsProfileIcon },
+        ...(APPEARANCE_PAGE_READY ? [{ to: '/account/appearance', label: 'Appearance', icon: AppearanceIcon }] : []),
         { to: '/account/notifications', label: 'Notifications', icon: BellIcon },
         { to: '/account/connections', label: 'Connections', icon: HookIcon },
         { to: '/account/security', label: 'Security', icon: SettingsSecurityIcon },

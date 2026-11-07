@@ -7,6 +7,7 @@ import { SettingsFrame } from './components/frames';
 import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/states';
 import { DevTokens } from './pages/DevTokens';
 import { AccountIndex } from './screens/account/AccountIndex';
+import { Appearance as AccountAppearance } from './screens/account/Appearance';
 import { BotConsents as AccountBotConsents } from './screens/account/BotConsents';
 import { ActionItemsView as AccountActionItems } from './screens/files/actionItems/ActionItemsView';
 import { RoutinesTab as AccountRoutines } from './screens/files/routines/RoutinesTab';
@@ -51,6 +52,8 @@ import { ChatScreen } from './screens/chat/ChatScreen';
 import { ConversationRedirect, ConversationView } from './screens/conversations/ConversationView';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
+import { ActivityScreen } from './screens/phone/ActivityScreen';
+import { MessagesScreen } from './screens/phone/MessagesScreen';
 import { SearchScreen } from './screens/search/SearchScreen';
 import { Teams } from './screens/Teams';
 import { Onboarding } from './screens/onboarding/Onboarding';
@@ -113,6 +116,8 @@ function AppRoutes() {
             <Route path="/t/:team" element={<TeamHome />} />
             <Route path="/t/:team/search" element={<RequireTeam><SearchScreen /></RequireTeam>} />
             <Route path="/t/:team/threads" element={<RequireTeam><ThreadsInbox /></RequireTeam>} />
+            <Route path="/t/:team/dms" element={<RequireTeam><MessagesScreen /></RequireTeam>} />
+            <Route path="/t/:team/activity" element={<RequireTeam><ActivityScreen /></RequireTeam>} />
             <Route path="/files" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense>} />
             <Route element={<AdminOnly />}>
               <Route path="/files/person/:personId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense>} />
@@ -149,6 +154,7 @@ function AppRoutes() {
           <Route element={<SettingsFrame />}>
             <Route path="/account" element={<AccountIndex />} />
             <Route path="/account/profile" element={<AccountProfile />} />
+            <Route path="/account/appearance" element={<AccountAppearance />} />
             <Route path="/account/notifications" element={<AccountNotifications />} />
             <Route path="/account/connections" element={<AccountConnections />} />
             <Route path="/account/security" element={<AccountSecurity />} />

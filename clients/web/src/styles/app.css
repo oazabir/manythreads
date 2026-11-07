@@ -235,10 +235,28 @@ textarea {
   color: var(--mute);
 }
 
+/* the two palettes side by side; each box carries its own theme's tokens */
+.dev-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.dev-panel {
+  padding: 4px 16px 20px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+}
+
 .swatches {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
+}
+
+.dev-panel .swatches {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
 
 .swatch {

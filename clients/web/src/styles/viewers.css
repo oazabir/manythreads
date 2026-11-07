@@ -342,11 +342,11 @@
 }
 
 .live-dot.synced {
-  background: var(--ok, rgb(28 154 95));
+  background: var(--ok);
 }
 
 .live-dot.offline {
-  background: var(--danger, rgb(192 57 43));
+  background: var(--danger);
 }
 
 .live-state {
@@ -381,7 +381,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  color: rgb(255 255 255);
+  color: var(--on-color);
   font-size: var(--fs-tiny);
   font-weight: 700;
 }
@@ -434,7 +434,7 @@
   left: -2px;
   padding: 0 4px;
   border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 0;
-  color: rgb(255 255 255);
+  color: var(--on-color);
   font-family: var(--sans, system-ui, sans-serif);
   font-size: var(--fs-tiny);
   line-height: 15px;
@@ -600,7 +600,7 @@
 
 .pdf-canvas {
   display: block;
-  background: var(--surface);
+  background: var(--plate);
 }
 
 /* ---- images, video, audio ---- */
@@ -780,7 +780,7 @@
   width: 100%;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--plate);
 }
 
 .mm-error {
@@ -869,7 +869,7 @@
   height: 320px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--plate);
 }
 
 /* ---- /dev/viewers ---- */

@@ -73,6 +73,11 @@ export default tseslint.config(
     rules: { ...reactHooks.configs.recommended.rules },
   },
   {
+    // The contrast check works on colour values and its tests write them as hex.
+    files: ['tools/lint-contrast/**'],
+    rules: { 'no-restricted-syntax': ['error', ...nameBans, poolBan] },
+  },
+  {
     files: ['packages/shared/src/tokens.ts'],
     rules: { 'no-restricted-syntax': ['error', ...nameBans, poolBan] },
   },

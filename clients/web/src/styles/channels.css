@@ -32,7 +32,7 @@
 /* a row is its own formatting context, so the height the list measures includes the gap below it */
 .vrow {
   display: flow-root;
-  padding-bottom: 6px;
+  padding-bottom: var(--msg-gap);
   contain: layout style;
 }
 
@@ -72,7 +72,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 6px 0 8px;
+  margin: var(--day-gap) 0 calc(var(--day-gap) + 2px);
   color: var(--faint);
   font-size: 11px;
 }
@@ -131,10 +131,10 @@
 .msg {
   position: relative;
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: var(--gutter-w) 1fr;
   gap: 11px;
   margin: 0 -8px;
-  padding: 6px 8px;
+  padding: var(--msg-pad-y) 8px;
   border-radius: 6px;
 }
 
@@ -156,6 +156,14 @@
 
 .msg .av {
   margin-top: 1px;
+}
+
+/* the avatar beside the first line follows the density; the small faces of a reply preview keep their own size */
+.msg > .av,
+.msg > .av-wrap > .av,
+.msg > .pcard-avatar .av {
+  width: var(--av-size);
+  height: var(--av-size);
 }
 
 .msg-main {
@@ -183,7 +191,7 @@
 
 /* a message that continues the run above (P21-01): no avatar, no name; the time shows in the avatar column while the row is hovered, focused or tapped */
 .msg.run {
-  padding-top: 1px;
+  padding-top: var(--run-gap);
 }
 
 .msg.run .run-who {
@@ -228,7 +236,7 @@
 .txt.clamp {
   max-height: calc(4 * var(--lh));
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, rgb(0 0 0) calc(100% - 1.6 * var(--lh)), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 1.6 * var(--lh)), transparent);
 }
 
 .show-more {
@@ -928,7 +936,7 @@
   border: 1px solid var(--rule);
   border-radius: 6px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgb(27 36 48 / 6%);
+  box-shadow: var(--card-shadow);
 }
 
 .act {

@@ -141,6 +141,7 @@ export const SettingsTeamsIcon = proIcon(BuildingMultipleIcon, 16);
 export const SettingsTemplateIcon = proIcon(LayersIcon, 16);
 export const SettingsProfileIcon = proIcon(PersonIcon, 16);
 export const SettingsSecurityIcon = proIcon(ShieldIcon, 16);
+export const AppearanceIcon = proIcon(ColorPaletteIcon, 16);
 
 // the Show password button: the eye is open while the password is hidden, crossed out while it is shown
 export const ShowPasswordIcon = proIcon(EyeIcon, 18);

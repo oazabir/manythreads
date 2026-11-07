@@ -19,6 +19,8 @@ const SECTION_LABEL: Record<string, string> = {
   projects: 'Projects',
   proposals: 'Proposals',
   search: 'Search',
+  dms: 'Messages',
+  activity: 'Activity',
   chat: 'Conversation',
 };
 
