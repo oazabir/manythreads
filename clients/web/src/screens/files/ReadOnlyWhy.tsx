@@ -19,7 +19,7 @@ export const WHY: Readonly<Record<ReadOnlyReason, { title: string; body: string 
   },
   admin_view: {
     title: 'Read-only view',
-    body: 'You are looking at this person’s Personal space in read-only mode. Nothing here can be changed or downloaded for editing.',
+    body: 'You are looking at this person’s Personal space in read-only mode. Nothing here can be changed, and they can see that you opened it.',
   },
 };
 

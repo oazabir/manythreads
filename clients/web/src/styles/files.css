@@ -1569,6 +1569,7 @@
   }
 
   .fnote {
+    flex-wrap: wrap;
     margin: 10px 14px 0;
   }
 
@@ -1597,5 +1598,35 @@
     width: auto;
     border: 0;
     background: none;
+  }
+
+  /* touch targets: the folder sheet's rows, the breadcrumb steps, the small buttons in notes and the header actions are 44 px tall */
+  .dlg.sheet .tnode {
+    min-height: 44px;
+  }
+
+  .crumb-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 2px;
+  }
+
+  .fnote .btn,
+  .fup .btn,
+  .fhead-actions .btn.s {
+    min-height: 44px;
+  }
+
+  .fnote-actions {
+    flex-wrap: wrap;
+  }
+
+  .fhead-actions {
+    flex-wrap: wrap;
+  }
+
+  .fup-row {
+    flex-wrap: wrap;
   }
 }

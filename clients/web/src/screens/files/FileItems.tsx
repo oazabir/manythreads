@@ -125,6 +125,7 @@ export function ListRow(p: ItemProps) {
     <div
       role="row"
       tabIndex={p.tabStop ? 0 : -1}
+      aria-selected={p.checked}
       aria-current={p.current ? 'true' : undefined}
       className={cls(p, 'frow')}
       data-testid="file-row"

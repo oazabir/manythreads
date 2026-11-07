@@ -194,7 +194,7 @@ export function Members() {
       {inviting ? <InviteDialog onClose={() => setInviting(false)} /> : null}
       {changing ? <ChangeRoleDialog member={changing} onClose={() => setChanging(null)} onChanged={q.reload} /> : null}
       {opening ? <OpenSpaceDialog personId={opening.personId} name={opening.displayName} onClose={() => setOpening(null)} /> : null}
-      {deactivating ? <DeactivateDialog personId={deactivating.personId} name={deactivating.displayName} onClose={() => setDeactivating(null)} onDone={q.reload} /> : null}
+      {deactivating ? <DeactivateDialog personId={deactivating.personId} name={deactivating.displayName} guest={deactivating.role === 'guest'} onClose={() => setDeactivating(null)} onDone={q.reload} /> : null}
     </>
   );
 }

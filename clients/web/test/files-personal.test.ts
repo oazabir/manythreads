@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { rowEntries } from '../src/screens/files/actions';
 import type { Perms } from '../src/screens/files/backend';
 import { bytesLabel, DEFAULT_SORT, firstDir, rowKey, sortRowsBy, treeShows, type FileRow, type Sort } from '../src/screens/files/model';
+import { tooLargeWords } from '../src/screens/files/personalApi';
 import { createPersonalBackend, CURRENT_VERSION } from '../src/screens/files/personalBackend';
 import { mockOpenSpace, mockOpens, mockPersonalTransport, resetMockPersonal } from '../src/screens/files/personalMock';
 import { lockReason, WHY } from '../src/screens/files/ReadOnlyWhy';
@@ -119,7 +120,8 @@ describe('what a row offers', () => {
   });
   it('offers nothing that changes anything in an admin view', () => {
     const r = row({ path: 'Notes/a.md', readOnly: true, readOnlyReason: 'admin_view' });
-    expect(ids(r)).toEqual(['history', 'download']);
+    // no version history: its panel would open the admin's own file of the same path
+    expect(ids(r)).toEqual(['download']);
     expect(lockReason(r)).toBe('admin_view');
   });
   it('lets a starting folder stay and an empty one go', () => {
@@ -252,5 +254,15 @@ describe('the admin open', () => {
     const list = mockOpens();
     expect(list).toHaveLength(before + 1);
     expect(list[0]).toMatchObject({ adminName: 'Priya Raman', reason: 'Recovering the handover notes.', active: true });
+  });
+});
+
+describe('the words for a refused upload', () => {
+  it('turns the server byte limit into a size', () => {
+    expect(tooLargeWords('That file is larger than the 26214400 byte limit')).toMatch(/larger than 25(\.0)? ?MB/i);
+  });
+  it('keeps the allowance sentence and says something plain otherwise', () => {
+    expect(tooLargeWords('That would take you over your 5 GB of Personal space. Delete something or an older version first.')).toMatch(/^That would take you over/);
+    expect(tooLargeWords('')).toMatch(/too large/);
   });
 });

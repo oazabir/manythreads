@@ -60,13 +60,15 @@ export function OpenSpaceDialog({ personId, name, onClose }: { personId: string;
           id={id}
           value={reason}
           maxLength={REASON_MAX}
+          aria-describedby={`${id}-count`}
+          aria-required="true"
           rows={3}
           onChange={(e) => setReason(e.target.value)}
           placeholder="For example: they are away and we need the handover notes"
           data-testid="open-space-reason"
           data-autofocus
         />
-        <div className="fld-hint" data-testid="open-space-count">{reason.length} of {REASON_MAX} characters</div>
+        <div className="fld-hint" id={`${id}-count`} data-testid="open-space-count">{reason.length} of {REASON_MAX} characters</div>
       </div>
       {error ? <Alert>{error}</Alert> : null}
     </Dialog>
@@ -74,7 +76,8 @@ export function OpenSpaceDialog({ personId, name, onClose }: { personId: string;
 }
 
 /** "Deactivate": says what happens before it does. */
-export function DeactivateDialog({ personId, name, onClose, onDone }: { personId: string; name: string; onClose: () => void; onDone: () => void }) {
+/** A guest has no Personal space, so there is nothing to keep or delete for them. */
+export function DeactivateDialog({ personId, name, guest = false, onClose, onDone }: { personId: string; name: string; guest?: boolean; onClose: () => void; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,7 +108,7 @@ export function DeactivateDialog({ personId, name, onClose, onDone }: { personId
       }
     >
       <p className="dlg-text">{name} will not be able to sign in, and every browser they are signed in on is signed out now.</p>
-      <p className="dlg-text">Their Personal space is deleted {PERSONAL_KEEP_DAYS_DEFAULT} days from now. Until then you can open it, download it, or reactivate them to keep it.</p>
+      {guest ? null : <p className="dlg-text">Their Personal space is deleted {PERSONAL_KEEP_DAYS_DEFAULT} days from now. Until then you can open it, download it, or reactivate them to keep it.</p>}
       {error ? <Alert>{error}</Alert> : null}
     </Dialog>
   );

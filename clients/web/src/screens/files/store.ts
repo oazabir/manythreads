@@ -62,11 +62,17 @@ function botsOf(slug: string) {
   return load;
 }
 
-/** Who an actor id is: a person of the roster, a bot of the team (with its picture), or "A bot" for an actor neither list knows. */
-function useWho(teamSlug: string | null): (id: string | null) => Actor | null {
+type BotList = Array<{ actorId: string | null; name: string; avatar: string | null }>;
+
+/**
+ * Who an actor id is: a person of the roster, a bot of the given teams (with its picture), or "A bot" for an actor neither list knows. Personal files
+ * can be written by a bot of any team the person is in (their memory, an inbox filing), so Personal asks for all of them; a team page asks for its own.
+ */
+function useWho(teamSlugs: readonly string[]): (id: string | null) => Actor | null {
   const people = usePeople();
-  const bots = useQuery(`files-bots:${teamSlug ?? ''}`, () => (teamSlug ? botsOf(teamSlug) : Promise.resolve({ slug: null as string | null, list: [] as Array<{ actorId: string | null; name: string; avatar: string | null }> })));
-  const botList = bots.status === 'ok' ? bots.data.list : null;
+  const slugs = [...new Set(teamSlugs.filter((s) => s !== ''))];
+  const bots = useQuery(`files-bots:${slugs.join(',')}`, () => Promise.all(slugs.map(botsOf)).then((all) => all.flatMap((r) => r.list) as BotList));
+  const botList = bots.status === 'ok' ? bots.data : null;
   return useMemo(() => {
     const byActor = new Map((botList ?? []).filter((b) => b.actorId !== null).map((b) => [b.actorId as string, b]));
     return (id: string | null): Actor | null => {
@@ -79,6 +85,13 @@ function useWho(teamSlug: string | null): (id: string | null) => Actor | null {
   }, [people, botList]);
 }
 
+/** The team in the address (when there is one), then every team of the session: the teams whose bots may have written a file. */
+function useTeamSlugs(first: string): readonly string[] {
+  const session = useSession();
+  const joined = session.teams.map((t) => t.slug).join('\n');
+  return useMemo(() => [first, ...(joined ? joined.split('\n') : [])], [first, joined]);
+}
+
 /** The stores of the screen: Personal (not for a guest) and every team in the session, plus the team in the URL when the session does not list it. */
 export function useFileSpaces(): FileSpaces {
   const { team, teamSlug, guest } = useShell();
@@ -87,7 +100,7 @@ export function useFileSpaces(): FileSpaces {
   const isAdmin = session.role === 'owner' || session.role === 'admin';
   const personId = session.person.id;
   const personName = session.person.name;
-  const who = useWho(slug || null);
+  const who = useWho(useTeamSlugs(slug));
   const sessionTeams = session.teams;
   const shellTeamName = team?.name ?? slug;
   return useMemo(() => {
@@ -125,7 +138,7 @@ export function useTeamFiles(): TeamFiles | null {
  */
 export function useAdminFiles(personId: string | null): TeamFiles | null {
   const session = useSession();
-  const who = useWho(null);
+  const who = useWho(useTeamSlugs(''));
   const adminId = session.person.id;
   const adminName = session.person.name;
   return useMemo(() => {

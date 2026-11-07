@@ -70,7 +70,7 @@ function refuse(err: unknown): never {
   if (isApiError(err)) {
     if (err.status === 409) throw new FilesError('exists', err.message || 'Something with that name is already here.');
     if (err.status === 403) throw new FilesError('forbidden', err.message || 'You cannot change this here.');
-    if (err.status === 413) throw new FilesError('other', err.message || 'That file is too large, or your Personal files are over their allowance.');
+    if (err.status === 413) throw new FilesError('other', api.tooLargeWords(err.message));
     throw new FilesError('other', err.message);
   }
   throw err;

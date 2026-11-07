@@ -24,6 +24,9 @@ export function useFolders(lookup: (space: string) => TeamFiles | null): Folders
   const version = useFilesVersion();
   const cache = useRef(new Map<string, FolderState>());
   const fresh = useRef(new Map<string, number>());
+  /** The newest request per folder: an answer to an older one (slower, sent before a change) is dropped, never shown over the newer. */
+  const latest = useRef(new Map<string, number>());
+  const sent = useRef(0);
   const wanted = useRef(new Set<string>());
   const owners = useRef(new Map<string, TeamFiles>());
   const [, render] = useState(0);
@@ -35,6 +38,7 @@ export function useFolders(lookup: (space: string) => TeamFiles | null): Folders
       if (files !== known) {
         for (const k of [...cache.current.keys()]) if (k.startsWith(`${space}\0`)) cache.current.delete(k);
         for (const k of [...fresh.current.keys()]) if (k.startsWith(`${space}\0`)) fresh.current.delete(k);
+        for (const k of [...latest.current.keys()]) if (k.startsWith(`${space}\0`)) latest.current.delete(k);
         if (files) owners.current.set(space, files);
         else owners.current.delete(space);
       }
@@ -49,16 +53,18 @@ export function useFolders(lookup: (space: string) => TeamFiles | null): Folders
       if (!files) return;
       const key = keyOf(space, path);
       fresh.current.set(key, version);
+      const mine = ++sent.current;
+      latest.current.set(key, mine);
       const before = cache.current.get(key);
       cache.current.set(key, before?.listing ? { status: 'loading', listing: before.listing } : { status: 'loading' });
       files.backend.list(path).then(
         (listing) => {
-          if (owners.current.get(space) !== files) return;
+          if (owners.current.get(space) !== files || latest.current.get(key) !== mine) return;
           cache.current.set(key, { status: 'ok', listing });
           render((n) => n + 1);
         },
         (err: unknown) => {
-          if (owners.current.get(space) !== files) return;
+          if (owners.current.get(space) !== files || latest.current.get(key) !== mine) return;
           const status = isApiError(err) ? err.status : 0;
           const prior = cache.current.get(key)?.listing;
           cache.current.set(key, {

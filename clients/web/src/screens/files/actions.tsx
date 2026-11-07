@@ -74,7 +74,8 @@ export function rowEntries(row: FileRow, files: TeamFiles, act: { start: (action
     return out;
   }
   const pr = row.readOnlyReason === 'change_by_pull_request';
-  if (git || personal) out.push({ id: 'history', label: personal ? 'Version history' : 'History', run: act.history });
+  // an admin's look into someone's space has no history of its own: the panel would open the admin's own file of the same path
+  if ((git || personal) && row.readOnlyReason !== 'admin_view') out.push({ id: 'history', label: personal ? 'Version history' : 'History', run: act.history });
   if (row.contentUrl) out.push({ id: 'download', label: 'Download', href: withDownload(row.contentUrl), download: row.name });
   if ((git || personal) && !row.readOnly) {
     out.push({ id: 'rename', label: 'Rename', run: () => act.start('rename', row) });
@@ -90,7 +91,7 @@ export function rowEntries(row: FileRow, files: TeamFiles, act: { start: (action
 export const historyId = (row: FileRow): string => (row.store === 'personal' ? personalPanelId(row.path) : row.path);
 
 /** Menu entries as buttons; Up and Down move between them, Home and End jump, a letter does nothing. Focus starts on the first. */
-function MenuItems({ entries, onPick, label }: { entries: MenuEntry[]; onPick: () => void; label: string }) {
+function MenuItems({ entries, onPick, onLeave, label }: { entries: MenuEntry[]; onPick: () => void; onLeave?: () => void; label: string }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     box.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
@@ -106,6 +107,8 @@ function MenuItems({ entries, onPick, label }: { entries: MenuEntry[]; onPick: (
     else if (e.key === 'ArrowUp') go(at - 1);
     else if (e.key === 'Home') go(0);
     else if (e.key === 'End') go(items.length - 1);
+    // Tab leaves the menu: it closes and focus goes back to where it came from, and Tab then moves on from there
+    else if (e.key === 'Tab') onLeave?.();
   };
   return (
     <div className="menu fpop" role="menu" aria-label={label} ref={box} onKeyDown={onKey}>
@@ -141,7 +144,7 @@ export function RowMenu({ row, files, start, label }: { row: FileRow; files: Tea
       <button ref={trigger} type="button" className="icon-btn" aria-label={label ?? `Actions for ${row.name}`} aria-haspopup="menu" aria-expanded={open} data-testid="row-menu" onClick={() => setOpen((o) => !o)}>
         <MoreIcon />
       </button>
-      {open ? <MenuItems entries={entries} onPick={() => setOpen(false)} label={`${row.name} actions`} /> : null}
+      {open ? <MenuItems entries={entries} onPick={() => setOpen(false)} onLeave={closeAndReturn} label={`${row.name} actions`} /> : null}
     </div>
   );
 }
@@ -160,7 +163,7 @@ export function ContextMenu({ at, entries, label, onClose }: { at: { x: number; 
   if (entries.length === 0) return null;
   return (
     <div ref={box} className="fctx" style={{ left: at.x + shift.x, top: at.y + shift.y }} data-testid="context-menu" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
-      <MenuItems entries={entries} onPick={onClose} label={label} />
+      <MenuItems entries={entries} onPick={onClose} onLeave={onClose} label={label} />
     </div>
   );
 }

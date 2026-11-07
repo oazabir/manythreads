@@ -121,6 +121,8 @@ export function FileList(p: Props) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [ctx, setCtx] = useState<Ctx | null>(null);
   const [selecting, setSelecting] = useState(false);
+  // the row the menu was opened from with the keyboard: focus goes back to it when the menu closes
+  const menuFrom = useRef<HTMLElement | null>(null);
 
   const parts = segments(folder);
   const listed = state?.listing?.rows;
@@ -242,6 +244,7 @@ export function FileList(p: Props) {
       },
       onContextMenu: (e: MouseEvent) => {
         e.preventDefault();
+        menuFrom.current = null;
         openContext({ x: e.clientX, y: e.clientY }, row);
       },
       onKeyDown: (e: KeyboardEvent) => {
@@ -280,6 +283,7 @@ export function FileList(p: Props) {
         } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
           e.preventDefault();
           const r = e.currentTarget.getBoundingClientRect();
+          menuFrom.current = e.currentTarget as HTMLElement;
           openContext({ x: r.left + 24, y: r.bottom - 4 }, row);
         }
       },
@@ -324,6 +328,7 @@ export function FileList(p: Props) {
   const emptyContext = (e: MouseEvent): void => {
     if ((e.target as HTMLElement).closest('[data-row-key]')) return;
     e.preventDefault();
+    menuFrom.current = null;
     openContext({ x: e.clientX, y: e.clientY }, null);
   };
 
@@ -383,6 +388,11 @@ export function FileList(p: Props) {
         </p>
       ) : null}
       {p.notice}
+      {state?.listing?.truncated ? (
+        <p className="fnote" role="note" data-testid="truncated-note">
+          <span><b>This folder holds more than can be shown.</b> The first {everything.length} items are listed. Move some files into folders to see the rest.</span>
+        </p>
+      ) : null}
       <div className="filt">
         <div className="filt-chips" role="toolbar" aria-label="Filter files">
           {TYPES.map((t) => (
@@ -483,7 +493,16 @@ export function FileList(p: Props) {
         </div>
       </div>
       {p.footer}
-      {ctx ? <ContextMenu at={ctx.at} entries={ctxEntries(ctx)} label={ctx.rows === null ? 'Folder actions' : 'File actions'} onClose={() => setCtx(null)} /> : null}
+      {ctx ? <ContextMenu
+          at={ctx.at}
+          entries={ctxEntries(ctx)}
+          label={ctx.rows === null ? 'Folder actions' : 'File actions'}
+          onClose={() => {
+            setCtx(null);
+            menuFrom.current?.focus();
+            menuFrom.current = null;
+          }}
+        /> : null}
     </div>
   );
 }

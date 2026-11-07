@@ -34,7 +34,7 @@ import { bumpFiles, useAdminFiles, useFileSpaces, useFilesVersion, type TeamFile
 import { Tree, treeKey } from './Tree';
 import { useFolders } from './useFolders';
 import { NewFolderIcon, UploadIcon } from './icons';
-import { exportPersonalSpace } from './personalApi';
+import { savePersonalSpaceZip } from './personalApi';
 
 type Upload = { id: number; name: string; state: 'sending' | 'done' | 'error'; fraction: number; message?: string };
 
@@ -131,6 +131,14 @@ export function FilesScreen() {
   const picker = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
   const depth = useRef(0);
+  // set state only while the screen is up: a download or an upload can finish after the person left
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const setView = (view: View): void => {
     setPrefs((p) => ({ ...p, view }));
@@ -375,17 +383,14 @@ export function FilesScreen() {
   const exportZip = (): void => {
     if (!personId || exporting) return;
     setExporting(true);
-    exportPersonalSpace(personId).then(
-      (blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${personName.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'personal'}-files.zip`;
-        a.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-        setExporting(false);
+    const name = `${personName.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'personal'}-files.zip`;
+    // called straight from the click: the browser's "save as" window needs it
+    savePersonalSpaceZip(personId, name).then(
+      () => {
+        if (alive.current) setExporting(false);
       },
       (err: unknown) => {
+        if (!alive.current) return;
         setProblem(err instanceof Error ? err.message : 'The download could not be made.');
         setExporting(false);
       },
@@ -482,7 +487,9 @@ export function FilesScreen() {
     );
   }
 
-  const emptyHint = personal
+  const emptyHint = adminView
+    ? 'There are no files in this folder.'
+    : personal
     ? 'Drop files here, choose Upload, or create a note or a folder.'
     : info?.store === 'attachments' && folder !== 'channels'
       ? 'Files posted in this channel show up here. Upload one to add it.'

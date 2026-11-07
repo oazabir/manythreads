@@ -27,6 +27,8 @@ function useAsk() {
       return true;
     } catch (err) {
       setError(messageOf(err));
+      // a delete that stopped halfway has still removed some: the list must say so
+      bumpFiles();
       return false;
     } finally {
       setBusy(false);
@@ -345,6 +347,7 @@ export function ShareDialog({ files, row, onClose }: { files: TeamFiles; row: Fi
           <select id="share-team" className="dlg-input" value={teamSlug} onChange={(e) => setTeamSlug(e.target.value)} data-testid="share-team">
             {spaces.teams.map((t) => <option key={t.slug} value={t.slug}>{t.teamName}</option>)}
           </select>
+          {spaces.teams.length === 0 ? <p className="dlg-hint">You are not in a team yet, so there is nowhere to send this.</p> : null}
           {destination === 'team_files' ? (
             <>
               <label className="dlg-label" htmlFor="share-path">Path in the team's files</label>
