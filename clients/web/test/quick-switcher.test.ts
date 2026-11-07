@@ -21,6 +21,7 @@ import {
   personItems,
   rankItems,
   sectionItems,
+  switcherBadge,
   switcherTeamSlug,
   typingIn,
 } from '../src/app/quick-switcher';
@@ -301,5 +302,44 @@ describe('switcher edge cases', () => {
     expect(nextTab('files', 1)).toBe('all');
     expect(nextTab('all', -1)).toBe('files');
     expect(nextTab('channels', 1)).toBe('people');
+  });
+});
+
+describe('avatars and unread badges in Jump to (P21-10)', () => {
+  const dm = (peer: string, id = '11111111-1111-4111-8111-111111111111'): DirectMessageSummary =>
+    ({ channel: { id, name: null, isPrivate: true }, participants: [{ personId: 'me', displayName: 'Me' }, { personId: peer, displayName: 'Nadia Khan' }], unreadCount: 0 }) as unknown as DirectMessageSummary;
+
+  it('gives a person, a bot and a conversation a picture, and a channel its id', () => {
+    const [person] = personItems([{ personId: 'p1', displayName: 'Devi Rao', avatar: 'preset:fox' }], 'me');
+    expect(person?.avatar).toEqual({ name: 'Devi Rao', kind: 'person', avatar: 'preset:fox', personId: 'p1' });
+    const [bot] = botItems([{ id: 'b1', slug: 'coder', name: 'Coder', role: '', avatar: null }], 'eng');
+    expect(bot?.avatar).toEqual({ name: 'Coder', kind: 'agent', avatar: null, personId: null });
+    const [conv] = dmItems([dm('nadia')], 'me', 'eng', new Map([['nadia', 'preset:owl']]));
+    expect(conv?.avatar).toEqual({ name: 'Nadia Khan', kind: 'person', avatar: 'preset:owl', personId: 'nadia' });
+    expect(conv?.channelId).toBe('11111111-1111-4111-8111-111111111111');
+    const [chan] = channelItems([group('work', [{ name: 'dev' }])], 'eng');
+    expect(chan?.channelId).toBe('ch-work-dev');
+    expect(chan?.avatar).toBeUndefined();
+  });
+
+  it('a conversation with nobody else is drawn with its first participant, and a missing picture is null', () => {
+    const solo = { channel: { id: 'c9', name: null, isPrivate: true }, participants: [{ personId: 'me', displayName: 'Me' }], unreadCount: 0 } as unknown as DirectMessageSummary;
+    expect(dmItems([solo], 'me', 'eng')[0]?.avatar).toMatchObject({ name: 'Me', avatar: null });
+    expect(dmItems([dm('nadia')], 'me', 'eng')[0]?.avatar?.avatar).toBeNull();
+  });
+
+  it('badges follow the sidebar: a DM is red, a channel blue, a channel with an unread mention red, a muted one grey, none at zero', () => {
+    const none = new Set<string>();
+    expect(switcherBadge({ kind: 'dm', channelId: 'd1' }, { d1: 3 }, null, none)).toEqual({ n: 3, tone: 'mention' });
+    expect(switcherBadge({ kind: 'channel', channelId: 'c1' }, { c1: 2 }, null, none)).toEqual({ n: 2, tone: 'unread' });
+    expect(switcherBadge({ kind: 'channel', channelId: 'c1' }, { c1: 2 }, null, new Set(['c1']))).toEqual({ n: 2, tone: 'mention' });
+    expect(switcherBadge({ kind: 'channel', channelId: 'c1' }, { c1: 0 }, null, new Set(['c1']))).toBeNull();
+    expect(switcherBadge({ kind: 'channel', channelId: 'c1' }, {}, null, none)).toBeNull();
+  });
+
+  it('only channel and conversation rows carry a badge', () => {
+    expect(switcherBadge({ kind: 'person', channelId: undefined }, { x: 5 }, null, new Set())).toBeNull();
+    expect(switcherBadge({ kind: 'bot', channelId: 'x' }, { x: 5 }, null, new Set())).toBeNull();
+    expect(switcherBadge({ kind: 'channel', channelId: undefined }, { x: 5 }, null, new Set())).toBeNull();
   });
 });

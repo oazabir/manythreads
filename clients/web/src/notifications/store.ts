@@ -18,6 +18,7 @@ import { onPersonChange } from '../app/caches';
 import { laterStore } from '../later/store';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import { inDesktopApp } from './push';
+import { mentionedChannelIds, splitUnread, type UnreadRow } from './model';
 
 /*
  * The bell's data (PLAN P3-16, docs/plugins/notifications.md): the unread count from `GET /api/notifications/summary` kept live by
@@ -29,15 +30,22 @@ import { inDesktopApp } from './push';
 export type NotificationsSnapshot = {
   /** The server has the notifications plugin (known after the first summary answer). */
   supported: boolean;
+  /** Everything unread, as the server counts it. */
   unread: number;
+  /** Of `unread`, how many are background news (a message in a channel set to "all"): shown as a grey dot, not in the red number. */
+  activity: number;
+  /** Channels and direct messages with an unread mention of the person (the red badge in Jump to). */
+  mentionChannels: readonly string[];
   items: readonly InboxItem[];
   /** `idle` until the popover is first opened. */
   itemsStatus: 'idle' | 'loading' | 'ok' | 'error';
   prefs: NotificationPrefs | null;
 };
 
-const INITIAL: NotificationsSnapshot = { supported: false, unread: 0, items: [], itemsStatus: 'idle', prefs: null };
+const INITIAL: NotificationsSnapshot = { supported: false, unread: 0, activity: 0, mentionChannels: [], items: [], itemsStatus: 'idle', prefs: null };
 const PAGE = 30;
+/** How many unread rows the store asks for to split the count (more than this is rare; the total still comes from the summary). */
+const UNREAD_WINDOW = 100;
 
 /** What the browser says about operating-system alerts (`unsupported` when there is no Notification API, e.g. an old WebView). */
 export type BrowserAlerts = 'unsupported' | 'default' | 'granted' | 'denied';
@@ -69,6 +77,8 @@ export class NotificationStore {
   /** Ids already counted, also while the list was never opened: a reply that became a mention is the same row, not a new one. */
   private readonly counted = new Set<string>();
   private settle: ReturnType<typeof setTimeout> | null = null;
+  /** The unread rows the store knows of, by id: what splits the count into the red number and the grey dot. */
+  private readonly unreadRows = new Map<string, UnreadRow>();
 
   subscribe = (l: () => void): (() => void) => {
     this.listeners.add(l);
@@ -80,9 +90,16 @@ export class NotificationStore {
     for (const l of [...this.listeners]) l();
   }
 
+  /** Puts the split of the count and the mention channels back in step with the rows the store knows of. */
+  private derive(extra: Partial<NotificationsSnapshot> = {}): Partial<NotificationsSnapshot> {
+    const unread = extra.unread ?? this.snap.unread;
+    return { ...extra, activity: splitUnread(unread, this.unreadRows.values()).activity, mentionChannels: mentionedChannelIds(this.unreadRows.values()) };
+  }
+
   reset(): void {
     this.absent = false;
     this.counted.clear();
+    this.unreadRows.clear();
     this.snap = INITIAL;
     for (const l of [...this.listeners]) l();
   }
@@ -108,11 +125,15 @@ export class NotificationStore {
       if (this.counted.size > 1_000) this.counted.delete(this.counted.values().next().value as string);
       // upsert by id: a reply or dm that became a mention replaces its row; only a new id raises the badge
       const items = known ? this.snap.items.map((n) => (n.id === notification.id ? notification : n)) : [notification, ...this.snap.items];
-      this.set({
-        supported: true,
-        items: this.snap.itemsStatus === 'ok' || known ? items : this.snap.items,
-        unread: known || notification.readAt !== null ? this.snap.unread : this.snap.unread + 1,
-      });
+      if (notification.readAt === null) this.unreadRows.set(notification.id, { kind: notification.kind, channelId: notification.channelId });
+      else this.unreadRows.delete(notification.id);
+      this.set(
+        this.derive({
+          supported: true,
+          items: this.snap.itemsStatus === 'ok' || known ? items : this.snap.items,
+          unread: known || notification.readAt !== null ? this.snap.unread : this.snap.unread + 1,
+        }),
+      );
       if (!known && browser) raiseAlert(notification);
       // a reminder falling due moves its item to the top of Later
       if (!known && notification.kind === 'reminder') void laterStore.load(true);
@@ -124,10 +145,14 @@ export class NotificationStore {
       if (!p.success) return;
       const at = new Date().toISOString();
       const ids = new Set<string>(p.data.ids);
-      this.set({
-        unread: p.data.unreadCount,
-        items: this.snap.items.map((n) => (n.readAt === null && (p.data.all || ids.has(n.id)) ? { ...n, readAt: at } : n)),
-      });
+      if (p.data.all) this.unreadRows.clear();
+      else for (const id of ids) this.unreadRows.delete(id);
+      this.set(
+        this.derive({
+          unread: p.data.unreadCount,
+          items: this.snap.items.map((n) => (n.readAt === null && (p.data.all || ids.has(n.id)) ? { ...n, readAt: at } : n)),
+        }),
+      );
     }
   }
 
@@ -135,9 +160,27 @@ export class NotificationStore {
     if (this.absent) return;
     try {
       const s = await fetchNotificationSummary();
-      this.set({ supported: true, unread: s.unreadCount });
+      this.set({ supported: true, ...this.derive({ unread: s.unreadCount }) });
+      void this.syncUnreadRows(s.unreadCount);
     } catch (e) {
       if (isApiError(e) && (e.status === 404 || e.status === 403)) this.absent = true;
+    }
+  }
+
+  /** Re-reads which rows are unread (the newest hundred), so the count can be split into the red number and the grey dot. */
+  private async syncUnreadRows(total: number): Promise<void> {
+    if (total === 0) {
+      this.unreadRows.clear();
+      this.set(this.derive());
+      return;
+    }
+    try {
+      const page = await fetchNotifications({ limit: UNREAD_WINDOW, unread: true });
+      this.unreadRows.clear();
+      for (const n of page.items) if (n.readAt === null) this.unreadRows.set(n.id, { kind: n.kind, channelId: n.channelId });
+      this.set(this.derive());
+    } catch {
+      /* the total is still right; the split keeps what it knew */
     }
   }
 
@@ -158,13 +201,17 @@ export class NotificationStore {
     const wanted = ids ? new Set(ids) : null;
     const fresh = this.snap.items.filter((n) => n.readAt === null && (wanted === null || wanted.has(n.id)));
     if (wanted !== null && fresh.length === 0) return;
-    this.set({
-      items: this.snap.items.map((n) => (n.readAt === null && (wanted === null || wanted.has(n.id)) ? { ...n, readAt: at } : n)),
-      unread: wanted === null ? 0 : Math.max(0, this.snap.unread - fresh.length),
-    });
+    if (wanted === null) this.unreadRows.clear();
+    else for (const id of wanted) this.unreadRows.delete(id);
+    this.set(
+      this.derive({
+        items: this.snap.items.map((n) => (n.readAt === null && (wanted === null || wanted.has(n.id)) ? { ...n, readAt: at } : n)),
+        unread: wanted === null ? 0 : Math.max(0, this.snap.unread - fresh.length),
+      }),
+    );
     try {
       const res = await markNotificationsRead(wanted === null ? { all: true } : { ids: [...wanted] as Extract<MarkNotificationsReadRequest, { ids: unknown }>['ids'] });
-      this.set({ unread: res.unreadCount });
+      this.set(this.derive({ unread: res.unreadCount }));
     } catch {
       void this.refreshSummary();
     }

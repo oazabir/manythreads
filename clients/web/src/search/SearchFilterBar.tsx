@@ -5,8 +5,9 @@ import { isApiError } from '../api/client';
 import { useQuery } from '../app/useQuery';
 import { usePeople } from '../channels/hooks';
 import { usePanel, type PanelEntry } from '../kernel/panel';
+import { SkeletonRows } from '../components/Skeleton';
 import { searchEntry } from './searchEntry';
-import { CloseIcon } from '../shell/icons';
+import { BookmarkIcon, CloseIcon, OptionsIcon } from '../shell/icons';
 
 /** The words of a filter, in plain language (the chip and the screen-reader label). */
 export function filterChips(f: SearchFilters): { key: string; label: string; remove: SearchFilters }[] {
@@ -51,11 +52,11 @@ export function SearchFilterBar({ filters, channelId, onSearch }: { filters: Sea
         </ul>
       ) : null}
       <div className="sf-actions">
-        <button type="button" className="btn s sf-toggle" aria-expanded={open === 'filters'} aria-controls={`${ids}-filters`} onClick={() => toggle('filters')}>
-          Filters
+        <button type="button" className="sfb-pill" aria-expanded={open === 'filters'} aria-controls={`${ids}-filters`} data-testid="search-filters-toggle" onClick={() => toggle('filters')}>
+          <OptionsIcon size={12} /> Filters
         </button>
-        <button type="button" className="btn s sf-toggle" aria-expanded={open === 'saved'} aria-controls={`${ids}-saved`} onClick={() => toggle('saved')}>
-          Saved searches
+        <button type="button" className="sfb-pill" aria-expanded={open === 'saved'} aria-controls={`${ids}-saved`} data-testid="search-saved-toggle" onClick={() => toggle('saved')}>
+          <BookmarkIcon size={12} /> Saved searches
         </button>
       </div>
       {open === 'filters' ? (
@@ -161,7 +162,7 @@ function Saved({ id, filters, channelId, go }: { id: string; filters: SearchFilt
         <button type="submit" className="btn s" disabled={busy || name.trim() === '' || text.length < 2}>Save this search</button>
       </form>
       {error ? <p className="sf-error" role="alert">{error}</p> : null}
-      {list.status === 'loading' ? <p className="search-note" aria-busy="true">Loading…</p> : null}
+      {list.status === 'loading' ? <SkeletonRows rows={2} label="Loading saved searches" /> : null}
       {list.status === 'error' ? <p className="search-note" role="alert">Saved searches are not available right now.</p> : null}
       {list.status === 'ok' && list.data.items.length === 0 ? <p className="search-note" data-testid="saved-empty">You have not saved a search yet.</p> : null}
       {list.status === 'ok' && list.data.items.length > 0 ? (

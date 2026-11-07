@@ -40,12 +40,30 @@
   min-width: 15px;
   padding: 0 4px;
   border-radius: var(--radius-md);
-  background: var(--alert);
-  color: var(--surface);
+  background: var(--mention);
+  color: var(--on-accent);
   font-size: var(--fs-tiny);
   font-weight: 600;
   line-height: 15px;
   text-align: center;
+}
+
+/* other activity (messages from channels set to "all"): a small grey dot that never raises the red number */
+.bell-activity {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--surface);
+  border-radius: 50%;
+  background: var(--mute);
+}
+
+.bell-activity.beside {
+  top: auto;
+  right: -2px;
+  bottom: 0;
 }
 
 .ntf-pop {
@@ -84,8 +102,13 @@
   list-style: none;
 }
 
+.ntf-li {
+  position: relative;
+}
+
 .ntf {
   display: flex;
+  align-items: flex-start;
   gap: 10px;
   width: 100%;
   padding: 10px 14px;
@@ -108,12 +131,80 @@
   color: var(--ink);
 }
 
-.ntf-ic {
+.ntf-time {
   flex: none;
-  width: 16px;
-  color: var(--human);
-  font-weight: 600;
-  text-align: center;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.ntf-av {
+  display: grid;
+  flex: none;
+}
+
+.ntf-av .av {
+  width: 28px;
+  height: 28px;
+  font-size: var(--fs-tiny);
+}
+
+/* Mark read and Open: on hover or keyboard focus they take the place of the time */
+.ntf-acts {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ntf-li:hover .ntf-acts,
+.ntf-li:focus-within .ntf-acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ntf-li:hover .ntf-time,
+.ntf-li:focus-within .ntf-time {
+  visibility: hidden;
+}
+
+.ntf-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.ntf-act:hover {
+  background: var(--msg-hover);
+}
+
+.ntf-empty .empty.es {
+  margin: 0;
+  border: 0;
+  background: none;
+}
+
+@media (hover: none) {
+  .ntf-acts {
+    position: static;
+    padding: 0 14px 8px 52px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .ntf-li:hover .ntf-time {
+    visibility: visible;
+  }
 }
 
 .ntf-main {
@@ -135,12 +226,6 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   text-overflow: ellipsis;
-}
-
-.ntf-time {
-  flex: none;
-  color: var(--faint);
-  font-size: var(--fs-caption);
 }
 
 .ntf-note {
@@ -235,6 +320,28 @@
   background: var(--msg-hover);
 }
 
+.hit-msg {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.hit-av {
+  display: grid;
+  flex: none;
+}
+
+.hit-av .av {
+  width: 28px;
+  height: 28px;
+  font-size: var(--fs-tiny);
+}
+
+.hit-author {
+  color: var(--txt);
+  font-weight: 500;
+}
+
 .hit-where {
   display: flex;
   flex-wrap: wrap;
@@ -304,6 +411,10 @@
   min-width: 0;
 }
 
+.hit-msg .hit-text {
+  flex: 1;
+}
+
 /* ---- search filters and saved searches (PLAN P14-11) ---- */
 .sf-bar {
   display: flex;
@@ -357,8 +468,30 @@
   gap: 6px;
 }
 
-.sf-toggle[aria-expanded="true"] {
+/* Filters and Saved searches as chips under the box (P21-10) */
+.sfb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 11px;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--txt);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.sfb-pill:hover {
+  background: var(--msg-hover);
+}
+
+.sfb-pill[aria-expanded="true"] {
+  border-style: solid;
   border-color: var(--ink);
+  background: var(--nav-on);
 }
 
 .sf-form,

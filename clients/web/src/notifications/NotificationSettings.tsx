@@ -8,7 +8,7 @@ import { levelsStore } from './levelsStore';
 import { disablePush, enablePush, inDesktopApp, readPushStatus, registerWorker, type PushStatus } from './push';
 import { LEVEL_HELP, LEVEL_ORDER, PUSH_SUPPORT_TEXT, addKeyword, channelTitle, digestDelayOptions, digestHelp } from './settingsModel';
 import { browserAlerts, notificationStore } from './store';
-import { useNotifications } from './Bell';
+import { useNotifications } from './useNotifications';
 import { CloseIcon } from '../shell/icons';
 
 /** Shown instead of the browser push note inside the desktop app, which raises system alerts itself while it is open. */

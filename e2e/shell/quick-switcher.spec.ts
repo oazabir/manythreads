@@ -124,6 +124,37 @@ test('the switcher also finds people, bots and screens', async ({ browser, playw
   }
 });
 
+test('Jump to rows have a picture and the sidebar\'s unread badge: blue for unread, red for a mention', async ({ browser, playwright }) => {
+  const quiet = await channel('badge-quiet');
+  const loud = await channel('badge-loud');
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/threads');
+  try {
+    await expect(page.getByTestId('app-frame')).toBeVisible();
+    await postAs(nadia, quiet.id, 'plain news for the channel');
+    await postAs(nadia, loud.id, 'Hey @omar, a question for you');
+    await expect(page.locator(`a[href$="/c/${loud.name}"]`)).toHaveClass(/unread/);
+    await expect(page.getByTestId('bell-count')).toBeVisible({ timeout: 5_000 });
+    await blurFocus(page);
+
+    await page.keyboard.press('ControlOrMeta+k');
+    const rowOf = (name: string) => page.getByTestId('quick-switcher-option').filter({ has: page.locator('.qs-label', { hasText: new RegExp(`^${name}$`) }) });
+    await expect(rowOf(quiet.name)).toBeVisible();
+    // an unread channel: a blue count and a bold name; a channel where Omar was mentioned: red
+    await expect(rowOf(quiet.name).locator('.pill')).toContainText('1');
+    await expect(rowOf(quiet.name).locator('.pill')).not.toHaveClass(/mention/);
+    await expect(rowOf(quiet.name).locator('.qs-label')).toHaveClass(/unread/);
+    await expect(rowOf(loud.name).locator('.pill')).toHaveClass(/mention/, { timeout: 5_000 });
+    // a channel with nothing unread has no count
+    await expect(rowOf('general').locator('.pill')).toHaveCount(0);
+    // people and bots are drawn with their picture or initials; a channel keeps its #
+    const people = page.locator('[data-testid="quick-switcher-option"][data-kind="person"], [data-testid="quick-switcher-option"][data-kind="dm"]');
+    await expect(people.first().locator('.qs-mark .av')).toBeVisible();
+    await expect(rowOf(quiet.name).locator('.qs-mark .av')).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
 test('Alt+Down and Alt+Up walk the conversations with unread messages; Shift+Esc reads everything', async ({ browser, playwright }) => {
   const one = await channel('unread-one');
   const two = await channel('unread-two');

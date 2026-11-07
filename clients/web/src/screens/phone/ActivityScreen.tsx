@@ -1,11 +1,14 @@
 import { PageHeader } from '../../components/PageHeader';
+import { NotificationList } from '../../notifications/NotificationList';
 
-/** The phone's Activity page: the notifications as a full page behind the bottom bar. A placeholder until it is built (P21-10, work package C). */
+/** The Activity page (`/t/<team>/activity`): the bell's notifications as a full page, the same items and the same Unread / All tabs. It sits behind the phone's bottom bar. */
 export function ActivityScreen() {
   return (
-    <div className="phone-page" data-testid="activity-screen">
+    <div className="phone-page act-page" data-testid="activity-screen">
       <PageHeader title="Activity" description="Mentions, replies and other news for you." />
-      <p className="empty-body">Coming in this bundle.</p>
+      <div className="act-list" data-testid="activity-list">
+        <NotificationList mode="page" />
+      </div>
     </div>
   );
 }

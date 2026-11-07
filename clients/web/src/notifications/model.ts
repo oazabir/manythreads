@@ -17,3 +17,32 @@ export function groupByDay(items: readonly InboxItem[], now: Date): ReadonlyArra
   }
   return out;
 }
+
+/*
+ * The bell's two counts (P21-10). Most notifications are addressed to the person: a mention, a reply in a thread they follow, a direct message,
+ * a reminder they set. Those make the red count. The one kind that is only background news is `message` (any message in a channel they asked to
+ * hear everything from): it shows as a grey dot and never raises the number.
+ */
+export type NotifyKind = InboxItem['kind'];
+export const isActivityKind = (kind: NotifyKind): boolean => kind === 'message';
+
+/** What the store remembers of each unread row: enough to split the count and to colour a channel's badge. */
+export type UnreadRow = { kind: NotifyKind; channelId: string };
+
+/**
+ * Splits the server's unread total in two. `activity` is how many known unread rows are background news; `attention` is the rest of the
+ * total (a row the store has not seen yet counts as addressed to the person, which is the safer reading). Never negative.
+ */
+export function splitUnread(total: number, rows: Iterable<UnreadRow>): { attention: number; activity: number } {
+  let activity = 0;
+  for (const r of rows) if (isActivityKind(r.kind)) activity += 1;
+  activity = Math.min(activity, Math.max(0, total));
+  return { attention: Math.max(0, total - activity), activity };
+}
+
+/** The channels (and direct messages) that hold an unread mention of the person, for the red badge in Jump to. */
+export function mentionedChannelIds(rows: Iterable<UnreadRow>): string[] {
+  const out = new Set<string>();
+  for (const r of rows) if (r.kind === 'mention') out.add(r.channelId);
+  return [...out];
+}

@@ -129,7 +129,7 @@ test('Sameera finds only Support; a private channel is found by its members only
     await expect(sam.page.getByTestId('search-results')).toContainText('invoice');
     await expect(sam.page.getByTestId('search-results')).not.toContainText('cache TTL');
     await search(sam.page, 'zebra crossing');
-    await expect(sam.page.getByTestId('search-empty')).toHaveText('No results in what you can see.');
+    await expect(sam.page.getByTestId('search-empty')).toContainText('No results in what you can see.');
   } finally {
     await sam.context.close();
   }

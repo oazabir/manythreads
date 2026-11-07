@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { BotSummary, RosterMember, SearchFileHit, Task } from '@manythreads/shared';
 import { fetchBots } from '../screens/bots/api';
@@ -6,8 +6,15 @@ import { fetchColumnTasks } from '../screens/boards/api';
 import { fetchPageEntries, fetchRoster, fetchTeam, searchEverything } from '../api/endpoints';
 import { channelStore } from '../channels/store';
 import { Dialog } from '../components/Dialog';
+import { EmptyState } from '../components/EmptyState';
+import { SkeletonRows } from '../components/Skeleton';
+import { Avatar } from '../components/ui';
+import { useUnread } from '../channels/hooks';
+import { levelsStore } from '../notifications/levelsStore';
+import { useNotifications } from '../notifications/useNotifications';
+import { Pill } from '../shell/Pill';
 import { openConversation, useDms } from '../dms/store';
-import { LockIcon } from '../shell/icons';
+import { LockIcon, SearchIcon } from '../shell/icons';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { recalledTeam } from '../shell/views';
 import { PANEL_PARAM } from '../kernel/panel';
@@ -37,6 +44,7 @@ import {
   personItems,
   rankItems,
   sectionItems,
+  switcherBadge,
   switcherTeamSlug,
   typingIn,
   type SwitcherItem,
@@ -134,6 +142,14 @@ export function QuickSwitcher() {
   modeRef.current = mode;
 
   const sources = useSources(slug, mode === 'switcher', guest);
+  // the counts and colours of the sidebar's badges, so a row says the same thing here
+  const { unread } = useUnread();
+  const levels = useSyncExternalStore(levelsStore.subscribe, levelsStore.snapshot).levels;
+  const { mentionChannels } = useNotifications();
+  const mentioned = useMemo<ReadonlySet<string>>(() => new Set(mentionChannels), [mentionChannels]);
+  useEffect(() => {
+    if (mode === 'switcher') void levelsStore.load();
+  }, [mode]);
   const fileHits = useFileHits(mode === 'switcher', query);
 
   // the place in the address bar is remembered per person and team, for the top of the list when nothing is typed
@@ -146,9 +162,10 @@ export function QuickSwitcher() {
   const all = useMemo<SwitcherItem[]>(() => {
     if (!slug) return [];
     const me = session.person.id;
+    const pictures = new Map<string, string | null>(sources.people.map((p) => [p.personId, p.avatar]));
     return [
       ...channelItems(feed.groups, slug),
-      ...dmItems(dms.items, me, slug),
+      ...dmItems(dms.items, me, slug, pictures),
       ...dedupePeople(personItems(sources.people, me), dms.items, me),
       ...botItems(sources.bots, slug),
       ...sectionItems(slug, guest),
@@ -358,12 +375,18 @@ export function QuickSwitcher() {
           ))}
         </div>
         {loading ? (
-          <p className="dlg-hint" aria-busy="true">Loading…</p>
+          <SkeletonRows rows={5} avatar label="Loading places" />
         ) : results.length === 0 ? (
-          <p className="dlg-hint">{all.length === 0 ? 'There is nothing to jump to yet.' : 'Nothing has that name.'}</p>
+          <div className="qs-empty">
+            <EmptyState icon={SearchIcon} title={all.length === 0 ? 'There is nothing to jump to yet.' : 'Nothing has that name.'}>
+              {all.length === 0 ? null : 'Check the spelling, or pick another tab.'}
+            </EmptyState>
+          </div>
         ) : (
           <ul id={LIST_ID} role="listbox" aria-label="Results" data-testid="quick-switcher-list" className="qs-list">
-            {results.map((c, i) => (
+            {results.map((c, i) => {
+              const badge = switcherBadge(c, unread, levels, mentioned);
+              return (
               <li
                 key={c.key}
                 id={optionId(i)}
@@ -375,11 +398,15 @@ export function QuickSwitcher() {
                 onMouseEnter={() => setActive(i)}
                 onClick={() => go(c)}
               >
-                <span aria-hidden="true" className="qs-mark">{c.kind === 'channel' ? (c.isPrivate ? <LockIcon /> : '#') : null}</span>
-                <span className="qs-label">{c.label}</span>
+                <span aria-hidden="true" className="qs-mark">
+                  {c.avatar ? <Avatar name={c.avatar.name} kind={c.avatar.kind} avatar={c.avatar.avatar} personId={c.avatar.personId} /> : c.kind === 'channel' ? (c.isPrivate ? <LockIcon /> : '#') : null}
+                </span>
+                <span className={`qs-label ${badge && badge.tone !== 'quiet' ? 'unread' : ''}`}>{c.label}</span>
                 <span className="qs-hint">{c.hint}</span>
+                {badge ? <Pill n={badge.n} tone={badge.tone} note={badge.tone === 'mention' ? 'for you' : badge.tone === 'quiet' ? 'muted' : 'unread'} /> : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </Dialog>

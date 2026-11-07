@@ -178,3 +178,34 @@
     width: 100%;
   }
 }
+
+/* ---- the Activity page (`act-`): the bell's notifications as a full page (P21-10) ---- */
+.act-list {
+  max-width: 720px;
+  margin: 0 20px 24px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.act-list .ntf-list {
+  max-height: none;
+  overflow: visible;
+}
+
+.act-list .ntf-head {
+  justify-content: flex-end;
+}
+
+.act-list .ntf-tabs {
+  padding-inline: 14px;
+}
+
+@media (width <= 760px) {
+  .act-list {
+    margin-inline: 0;
+    border-width: 1px 0;
+    border-radius: 0;
+  }
+}

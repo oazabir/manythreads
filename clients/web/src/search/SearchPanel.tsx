@@ -5,6 +5,11 @@ import { Link, useNavigate } from 'react-router';
 import { fileContentUrl, searchEverything } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { ago, fileKind, fileSize } from '../channels/format';
+import { ActorAvatar } from '../components/ActorAvatar';
+import { EmptyState } from '../components/EmptyState';
+import { SkeletonRows } from '../components/Skeleton';
+import { SearchIcon } from '../shell/icons';
+import { searchStamp } from './stamp';
 import { usePeople } from '../channels/hooks';
 import type { PanelEntry } from '../kernel/panel';
 import { useShell } from '../shell/context';
@@ -39,6 +44,9 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
     return { messages: keep(res.data.messages), threads: keep(res.data.threads), files: keep(res.data.files), pages: channelId ? [] : res.data.pages, more: res.data.more, words: res.data.query, unmatched: res.data.unmatched };
   }, [res, channelId]);
 
+  // a person by name; a bot of the team as "Bot" (the roster knows its picture, not its name); anyone else as nobody
+  const authorName = (actorId: string): string => people.byActor(actorId)?.name ?? (people.botAvatar(actorId) !== undefined ? 'Bot' : '');
+
   const target = (c: HitChannel, messageId: string, threadRootId: string | null): MessageTarget => ({
     channelId: c.id,
     channelKind: c.kind,
@@ -50,7 +58,7 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
 
   const body = (): React.ReactNode => {
     if (short) return <p className="search-note">Type at least two characters to search.</p>;
-    if (res.status === 'loading') return <p className="loading" aria-busy="true">Searching…</p>;
+    if (res.status === 'loading') return <SkeletonRows rows={5} avatar label="Searching" />;
     if (res.status === 'error' || data === null) {
       return (
         <div role="alert">
@@ -72,7 +80,9 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
       return (
         <>
           {notes}
-          <p className="search-empty" data-testid="search-empty">No results in what you can see.</p>
+          <div data-testid="search-empty">
+            <EmptyState icon={SearchIcon} title="No results in what you can see.">Try other words, or take a filter off.</EmptyState>
+          </div>
         </>
       );
     }
@@ -85,18 +95,21 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
           <ul>
             {data.messages.map((h) => (
               <li key={h.id}>
-                <button type="button" className="hit" data-testid="search-hit" onClick={() => void open(target(h.channel, h.id, h.threadRootId), here)}>
-                  <span className="hit-where">
-                    <span className="hit-ch">{where(h.channel)}</span>
-                    <span>{people.byActor(h.authorId)?.name ?? ''}</span>
-                    <span data-vt-mask>{ago(h.createdAt)}</span>
+                <button type="button" className="hit hit-msg" data-testid="search-hit" onClick={() => void open(target(h.channel, h.id, h.threadRootId), here)}>
+                  <span className="hit-av"><ActorAvatar actorId={h.authorId} name={authorName(h.authorId)} /></span>
+                  <span className="hit-text">
+                    <span className="hit-where">
+                      <span className="hit-ch">{where(h.channel)}</span>
+                      <span className="hit-author">{authorName(h.authorId)}</span>
+                      <time dateTime={h.createdAt} data-vt-mask>{searchStamp(h.createdAt)}</time>
+                    </span>
+                    {voiceHitLength(h.snippet) !== null ? (
+                      // a voice message with no transcript: its stored text is only a stand-in line, so say what it is and how long
+                      <VoiceHitLabel length={voiceHitLength(h.snippet) ?? ''} />
+                    ) : (
+                      <span className="hit-snip"><Highlight text={h.snippet} query={words} /></span>
+                    )}
                   </span>
-                  {voiceHitLength(h.snippet) !== null ? (
-                    // a voice message with no transcript: its stored text is only a stand-in line, so say what it is and how long
-                    <VoiceHitLabel length={voiceHitLength(h.snippet) ?? ''} />
-                  ) : (
-                    <span className="hit-snip"><Highlight text={h.snippet} query={words} /></span>
-                  )}
                 </button>
               </li>
             ))}

@@ -1,4 +1,5 @@
-import type { DirectMessageSummary, NavChannelGroup, SearchFileHit } from '@manythreads/shared';
+import type { DirectMessageSummary, GetNotificationLevelsResponse, NavChannelGroup, SearchFileHit } from '@manythreads/shared';
+import { unreadLook } from '../shell/unreadLook';
 import { GUEST_SLUG } from '../shell/messageLink';
 
 /**
@@ -52,8 +53,24 @@ export const switcherTeamSlug = (pathname: string, guest: boolean, lastTeam: str
 
 export type SwitcherKind = 'channel' | 'dm' | 'person' | 'bot' | 'file' | 'page' | 'card' | 'section';
 
-/** One row of the switcher. A row with a `to` opens that address; a person row (no `to`) opens or finds the conversation with them. */
-export type SwitcherItem = { key: string; kind: SwitcherKind; label: string; hint: string; to: string | null; personId: string | null; isPrivate: boolean };
+/** The picture of a person or bot row: the same fields the shared `Avatar` takes. A row with none draws a mark (`#`, a lock) or nothing. */
+export type SwitcherAvatar = { name: string; kind: 'person' | 'agent'; avatar: string | null; personId: string | null };
+
+/**
+ * One row of the switcher. A row with a `to` opens that address; a person row (no `to`) opens or finds the conversation with them.
+ * `channelId` is set on channel and direct-message rows: it is what the unread badge is looked up by.
+ */
+export type SwitcherItem = {
+  key: string;
+  kind: SwitcherKind;
+  label: string;
+  hint: string;
+  to: string | null;
+  personId: string | null;
+  isPrivate: boolean;
+  avatar?: SwitcherAvatar | undefined;
+  channelId?: string | undefined;
+};
 
 /** The order the kinds are listed in when nothing is typed, and the tie-break between equal fits. */
 export const KIND_ORDER: readonly SwitcherKind[] = ['channel', 'dm', 'person', 'bot', 'section', 'page', 'card', 'file'];
@@ -74,21 +91,28 @@ const bare = (name: string): string => name.replace(/^#/, '');
 const teamPath = (slug: string, rest: string): string => `/t/${encodeURIComponent(slug)}/${rest}`;
 
 export const channelItems = (groups: readonly NavChannelGroup[], slug: string): SwitcherItem[] =>
-  flatChannels(groups).map((c) => item({ key: `channel:${c.id}`, kind: 'channel', label: bare(c.name), to: `${teamPath(slug, 'c')}/${encodeURIComponent(bare(c.name))}`, isPrivate: c.isPrivate }));
+  flatChannels(groups).map((c) => item({ key: `channel:${c.id}`, kind: 'channel', label: bare(c.name), to: `${teamPath(slug, 'c')}/${encodeURIComponent(bare(c.name))}`, isPrivate: c.isPrivate, channelId: c.id }));
 
 /** Names of the other people in a conversation; a conversation with only yourself is "Notes to self". */
 const dmName = (dm: DirectMessageSummary, selfPersonId: string): string => {
   const others = dm.participants.filter((p) => p.personId !== selfPersonId).map((p) => p.displayName);
   return others.length > 0 ? others.join(', ') : 'Notes to self';
 };
-export const dmItems = (dms: readonly DirectMessageSummary[], selfPersonId: string, slug: string): SwitcherItem[] =>
-  dms.map((d) => item({ key: `dm:${d.channel.id}`, kind: 'dm', label: dmName(d, selfPersonId), to: teamPath(slug, `dm/${d.channel.id}`) }));
+/** The picture of whoever the conversation is with: the other person of a 1:1, the first of a group, yours for notes to self. `pictures` is the roster's choice by person id. */
+const dmAvatar = (dm: DirectMessageSummary, selfPersonId: string, pictures: ReadonlyMap<string, string | null>): SwitcherAvatar => {
+  const other = dm.participants.find((p) => p.personId !== selfPersonId) ?? dm.participants[0];
+  return { name: other?.displayName ?? 'Notes to self', kind: 'person', avatar: other ? (pictures.get(other.personId) ?? null) : null, personId: other?.personId ?? null };
+};
+export const dmItems = (dms: readonly DirectMessageSummary[], selfPersonId: string, slug: string, pictures: ReadonlyMap<string, string | null> = new Map()): SwitcherItem[] =>
+  dms.map((d) => item({ key: `dm:${d.channel.id}`, kind: 'dm', label: dmName(d, selfPersonId), to: teamPath(slug, `dm/${d.channel.id}`), channelId: d.channel.id, avatar: dmAvatar(d, selfPersonId, pictures) }));
 
-export const personItems = (members: readonly { personId: string; displayName: string }[], selfPersonId: string): SwitcherItem[] =>
-  members.filter((m) => m.personId !== selfPersonId).map((m) => item({ key: `person:${m.personId}`, kind: 'person', label: m.displayName, hint: 'Person · message', personId: m.personId }));
+export const personItems = (members: readonly { personId: string; displayName: string; avatar?: string | null | undefined }[], selfPersonId: string): SwitcherItem[] =>
+  members
+    .filter((m) => m.personId !== selfPersonId)
+    .map((m) => item({ key: `person:${m.personId}`, kind: 'person', label: m.displayName, hint: 'Person · message', personId: m.personId, avatar: { name: m.displayName, kind: 'person', avatar: m.avatar ?? null, personId: m.personId } }));
 
-export const botItems = (bots: readonly { id: string; slug: string; name: string; role: string }[], slug: string): SwitcherItem[] =>
-  bots.map((b) => item({ key: `bot:${b.id}`, kind: 'bot', label: b.name, hint: b.role ? `Bot · ${b.role}` : 'Bot', to: teamPath(slug, `bots/${encodeURIComponent(b.slug)}`) }));
+export const botItems = (bots: readonly { id: string; slug: string; name: string; role: string; avatar?: string | null | undefined }[], slug: string): SwitcherItem[] =>
+  bots.map((b) => item({ key: `bot:${b.id}`, kind: 'bot', label: b.name, hint: b.role ? `Bot · ${b.role}` : 'Bot', to: teamPath(slug, `bots/${encodeURIComponent(b.slug)}`), avatar: { name: b.name, kind: 'agent', avatar: b.avatar ?? null, personId: null } }));
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['threads', 'Threads'],
@@ -129,6 +153,26 @@ export const fileItems = (hits: readonly SearchFileHit[], slug: string, teamId: 
   hits
     .filter((h) => teamId === null || h.channel === null || h.channel.teamId === teamId)
     .map((h) => item({ key: `file:${h.id}`, kind: 'file', label: h.name, hint: h.channel?.name ? `File · #${bare(h.channel.name)}` : 'File', to: `${teamPath(slug, 'files')}?open=${encodeURIComponent(`${h.folderPath}${h.name}`)}` }));
+
+/* ---- unread badges -------------------------------------------------------------------------------------------------------------- */
+
+export type SwitcherBadge = { n: number; tone: 'unread' | 'quiet' | 'mention' };
+
+/**
+ * The count at the end of a channel or direct-message row, from the same counts and the same colours as the sidebar: blue for unread
+ * messages, red when the conversation is a direct message or holds an unread mention of you, grey when you set it to "nothing". Other rows have none.
+ */
+export const switcherBadge = (
+  it: Pick<SwitcherItem, 'kind' | 'channelId'>,
+  unread: Readonly<Record<string, number>>,
+  levels: GetNotificationLevelsResponse | null,
+  mentioned: ReadonlySet<string>,
+): SwitcherBadge | null => {
+  if ((it.kind !== 'channel' && it.kind !== 'dm') || !it.channelId) return null;
+  const n = unread[it.channelId] ?? 0;
+  const look = unreadLook(n, levels, it.channelId, it.kind, mentioned.has(it.channelId));
+  return look.badge ? { n, tone: look.badge } : null;
+};
 
 const MAX_ROWS = 50;
 
