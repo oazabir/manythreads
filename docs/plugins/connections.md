@@ -288,7 +288,7 @@ How each lists and tells who may read (all results go through `everyoneMayRead`,
 
 - **Calendar (P16-05).** The meetings plugin plans rooms through the provider `connector.calendar`; the organizer's own Google or Microsoft calendar carries the event. The 10-minute `meetings.scheduled-sync` reads moved and deleted events. `calendar.find_free_time` is a person tool.
 - **Work apps (P16-10).** Jira, Linear, GitHub, Zendesk, Intercom and Asana have catalog triggers switched on in `triggers.ts`; they start a bot through a Work apps address (`/hooks/apps/:endpointId`), not through the sign-in, so the run has no asker and never borrows a person's connection.
-- **Chat apps (P16-09).** Telegram, WhatsApp, Slack and Teams are held by the admin as bridge accounts, not as connections; they are in the catalog so the gallery lists them (`auth: api_key`). The gallery shows no action button for an available chat entry yet (a gap; the set-up is at Settings, Chat apps).
+- **Chat apps (P16-09).** Telegram, WhatsApp, Slack and Teams are held by the admin as bridge accounts, not as connections; they are in the catalog so the gallery lists them (`auth: api_key`). The gallery's button for an available chat entry opens Settings, Chat apps (an admin) or Account, Chat apps (anyone else).
 - **Stand-ins (P16-12).** `tools/fake-saas` runs all of the above stand-ins in one process. `packages/test-utils/src/seed-connectors.ts` seeds a demo for them, in the opt-in stack `MANYTHREADS_STACK_SEED=connectors`; `seedWorld` alone never makes it.
 - **Per-provider guides.** One page for each of the 18 connectors is in `docs/connectors/`.
 

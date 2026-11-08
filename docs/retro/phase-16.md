@@ -50,7 +50,6 @@ Answers to PLAN Phase 16 section 0.
 
 - Nothing has run against a real provider. Each connector page lists what only a real account can show; the first connection of each is the live check. Q2 (no real accounts) decides this.
 - The integration pass: gates, vitest per project, one Playwright run of the new specs, the 48 plates viewed and baselined, a stage release for the probe's block B, then the probe against production.
-- The Add connection gallery has no action button for an available chat entry.
 - Gmail and Outlook "new mail" triggers (a run started by mail has no asker; an owner decision), Freshdesk (personal API key), the two-way tracker mirror, the Meet and Teams transcript imports, tools
   for Confluence, Dropbox and Box, Intercom's EU and Australia regions, Salesforce sandboxes, group shares in a team base (Q4).
 - A per-provider call budget and back-off (see section 1).
