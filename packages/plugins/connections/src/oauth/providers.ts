@@ -238,6 +238,57 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     defaultServices: ['records'],
     services: catalogServices('salesforce'),
   },
+  // ---- the document sources (P16-08): read only, used by the knowledge sync through documents-provider.ts ----
+  // Atlassian 3LO like Jira: the same consent address and token address, an app of its own for Confluence. The site is found from the accessible-resources list.
+  confluence: {
+    id: 'confluence',
+    label: 'Confluence',
+    pkce: false,
+    clientAuth: 'body',
+    tokenBody: 'json',
+    baseScopes: ['offline_access', 'read:me'],
+    scopeParam: true,
+    authorizeExtra: { audience: 'api.atlassian.com', prompt: 'consent' },
+    refreshes: true,
+    instance: null,
+    incremental: true,
+    defaultServices: ['pages'],
+    services: catalogServices('confluence'),
+  },
+  dropbox: {
+    id: 'dropbox',
+    label: 'Dropbox',
+    pkce: true,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    // account_info.read is the identity the screen shows
+    baseScopes: ['account_info.read'],
+    scopeParam: true,
+    // offline: a refresh token (Dropbox's access tokens last four hours)
+    authorizeExtra: { token_access_type: 'offline' },
+    refreshes: true,
+    instance: null,
+    incremental: true,
+    defaultServices: ['files'],
+    services: catalogServices('dropbox'),
+  },
+  box: {
+    id: 'box',
+    label: 'Box',
+    pkce: false,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    baseScopes: [],
+    // what the app may do (here: read and write nothing but `root_readonly`) is set on the app at Box, like Notion
+    scopeParam: false,
+    authorizeExtra: {},
+    // Box rotates the refresh token on every renewal (flow.ts keeps the new one)
+    refreshes: true,
+    instance: null,
+    incremental: false,
+    defaultServices: ['files'],
+    services: catalogServices('box'),
+  },
 };
 
 export const providerIds = (): PersonProviderId[] => Object.keys(PROVIDERS) as PersonProviderId[];
@@ -307,6 +358,8 @@ export interface Endpoints {
   revokeUrl: string | null;
   /** The base of the provider's API; the tools add their own paths. */
   apiBase: string;
+  /** Dropbox serves file downloads from a second host; the address of it (the fake's own address in tests). Absent for every other provider. */
+  contentBase?: string;
 }
 
 /** The version of the Salesforce REST API every call names. */
@@ -385,6 +438,26 @@ export function endpointsFor(id: PersonProviderId, env: Env = process.env, tenan
       const host = instanceHost(id, env, tenant);
       return { authorizeUrl: `${host}/services/oauth2/authorize`, tokenUrl: `${host}/services/oauth2/token`, revokeUrl: `${host}/services/oauth2/revoke`, apiBase: `${host}/services/data/${SALESFORCE_API}` };
     }
+    case 'confluence':
+      return fake
+        ? { authorizeUrl: `${fake}/authorize`, tokenUrl: `${fake}/oauth/token`, revokeUrl: null, apiBase: fake }
+        : { authorizeUrl: 'https://auth.atlassian.com/authorize', tokenUrl: 'https://auth.atlassian.com/oauth/token', revokeUrl: null, apiBase: 'https://api.atlassian.com' };
+    case 'dropbox':
+      // Dropbox's revoke call wants the access token as a bearer header, which the shared revoke does not send: the sealed tokens are deleted here either way
+      return fake
+        ? { authorizeUrl: `${fake}/oauth2/authorize`, tokenUrl: `${fake}/oauth2/token`, revokeUrl: null, apiBase: fake, contentBase: fake }
+        : {
+            authorizeUrl: 'https://www.dropbox.com/oauth2/authorize',
+            tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
+            revokeUrl: null,
+            apiBase: 'https://api.dropboxapi.com',
+            contentBase: 'https://content.dropboxapi.com',
+          };
+    case 'box':
+      // Box's revoke call wants the app's id and secret as well as the token, which the shared revoke does not send
+      return fake
+        ? { authorizeUrl: `${fake}/api/oauth2/authorize`, tokenUrl: `${fake}/oauth2/token`, revokeUrl: null, apiBase: fake }
+        : { authorizeUrl: 'https://account.box.com/api/oauth2/authorize', tokenUrl: 'https://api.box.com/oauth2/token', revokeUrl: null, apiBase: 'https://api.box.com' };
     case 'notion':
       return fake
         ? { authorizeUrl: `${fake}/v1/oauth/authorize`, tokenUrl: `${fake}/v1/oauth/token`, revokeUrl: `${fake}/v1/oauth/revoke`, apiBase: `${fake}/v1` }

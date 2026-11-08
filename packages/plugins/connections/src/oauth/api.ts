@@ -166,7 +166,7 @@ export function createProviderApi(
 
 const rec = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 /** Where each provider says whose account a token is (Notion gives it with the token). */
-const IDENTITY: Readonly<Partial<Record<PersonProviderId, { path: string; graphql?: string; /** The path is under the account's origin rather than the API base. */ origin?: boolean; pick(doc: Record<string, unknown> | null): unknown }>>> = {
+const IDENTITY: Readonly<Partial<Record<PersonProviderId, { path: string; graphql?: string; /** Dropbox asks who the account is with a POST that has no body. */ method?: 'POST'; /** The path is under the account's origin rather than the API base. */ origin?: boolean; pick(doc: Record<string, unknown> | null): unknown }>>> = {
   google: { path: '/oauth2/v3/userinfo', pick: (d) => d?.['email'] },
   microsoft: { path: '/me?$select=mail,userPrincipalName', pick: (d) => d?.['mail'] ?? d?.['userPrincipalName'] },
   jira: { path: '/me', pick: (d) => d?.['email'] ?? d?.['name'] },
@@ -178,6 +178,10 @@ const IDENTITY: Readonly<Partial<Record<PersonProviderId, { path: string; graphq
   // HubSpot names the account by its portal number
   hubspot: { path: '/account-info/v3/details', pick: (d) => (typeof d?.['portalId'] === 'number' ? `HubSpot account ${String(d['portalId'])}` : null) },
   salesforce: { path: '/services/oauth2/userinfo', origin: true, pick: (d) => d?.['email'] },
+  // the document sources (P16-08)
+  confluence: { path: '/me', pick: (d) => d?.['email'] ?? d?.['name'] },
+  dropbox: { path: '/2/users/get_current_account', method: 'POST', pick: (d) => d?.['email'] },
+  box: { path: '/2.0/users/me', pick: (d) => d?.['login'] },
 };
 
 /**
@@ -199,7 +203,7 @@ export async function accountLabelFor(
     // Salesforce's identity is served from the account's origin, not under the REST API path
     const root = who.origin ? new URL(endpoints.apiBase).origin : endpoints.apiBase;
     const res = await (deps.fetchImpl ?? ((url, init) => fetch(url, init)))(`${root}${who.path}`, {
-      method: who.graphql ? 'POST' : 'GET',
+      method: who.graphql || who.method ? 'POST' : 'GET',
       headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json', ...EXTRA_HEADERS[provider], ...(who.graphql ? { 'content-type': 'application/json' } : {}) },
       ...(who.graphql ? { body: JSON.stringify({ query: who.graphql }) } : {}),
       signal: AbortSignal.timeout(TIMEOUT_MS),

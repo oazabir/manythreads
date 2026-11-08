@@ -18,7 +18,10 @@
             "zendesk",
             "intercom",
             "hubspot",
-            "salesforce"
+            "salesforce",
+            "confluence",
+            "dropbox",
+            "box"
           ]
         },
         "label": {

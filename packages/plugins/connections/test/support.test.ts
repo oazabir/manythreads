@@ -103,7 +103,7 @@ const NEW = ['zendesk', 'intercom', 'hubspot', 'salesforce'] as const;
 describe('connecting', () => {
   it('lists the four providers with what each offers', async () => {
     const list = await providersOf(omar);
-    expect(list.map((p) => p.id)).toEqual(['google', 'microsoft', 'notion', 'jira', 'linear', 'githubissues', 'asana', ...NEW]);
+    expect(list.map((p) => p.id)).toEqual(['google', 'microsoft', 'notion', 'jira', 'linear', 'githubissues', 'asana', ...NEW, 'confluence', 'dropbox', 'box']);
     const zendesk = list.find((p) => p.id === 'zendesk')!;
     expect(zendesk).toMatchObject({ configured: true, connected: false });
     expect(zendesk.services.map((s) => s.id)).toEqual(['tickets', 'tickets_write']);

@@ -1,3 +1,6 @@
+import { boxModule } from './box.ts';
+import { confluenceModule } from './confluence.ts';
+import { dropboxModule } from './dropbox.ts';
 import type { StandInModule } from './types.ts';
 import { supportModule } from './support.ts';
 import { telegramModule } from './telegram.ts';
@@ -16,4 +19,7 @@ export const PROVIDER_MODULES: readonly StandInModule[] = [
   trackersModule, // Jira, Linear, GitHub Issues, Asana
   supportModule, // Zendesk, Intercom, HubSpot, Salesforce
   telegramModule, // Telegram Bot API
+  confluenceModule, // Confluence Cloud (document source)
+  dropboxModule, // Dropbox (document source)
+  boxModule, // Box (document source)
 ];
