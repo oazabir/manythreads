@@ -24,6 +24,7 @@ import {
   isBotDefinitionPath,
   isConceptPath,
   isGuardedRepoPath,
+  isMeetingsPath,
   isInboxPath,
   isMemoryPath,
   memoryIndexFiles,
@@ -435,6 +436,7 @@ export function createRepoService(deps: RepoServiceDeps) {
     // P7-01: the four guarded places change only through a proposal. The proposals plugin applies one as the approver and says so with
     // `options.proposalId`; a person's direct write (the HTTP commit route, a restore) is refused whoever they are. The rules below still apply to
     // the approver, so the writer, not the proposals plugin, is what keeps "a lead edits a bot, an admin adds or removes one".
+    if (prepared.some((c) => isMeetingsPath(c.path))) throw repoForbidden('meetings/ holds the transcripts and notes of voice rooms: the call writes them, and nobody changes or removes them by hand');
     if (options.proposalId === undefined && prepared.some((c) => isGuardedRepoPath(c.path))) {
       throw repoForbidden('Propose the change: bots/, TEAM.md, skills/ and routines/ change through a proposal that a team lead or workspace admin applies');
     }

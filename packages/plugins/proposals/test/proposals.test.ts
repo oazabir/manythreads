@@ -92,6 +92,7 @@ describe('making a proposal', () => {
     for (const who of [priya, omar]) {
       const res = await w.call(who, 'POST', '/api/teams/engineering/repo/commit', { changes: [{ op: 'put', path: 'meetings/2026/11/08-1402-x/notes.md', content: 'x' }], message: 'x' });
       expect(res.status).toBe(403);
+      expect(JSON.stringify(res.body)).toMatch(/voice rooms/);
     }
     expect((await propose(priya, 'engineering', { path: 'meetings/2026/11/08-1402-x/notes.md', content: 'x' })).status).toBe(400);
     expect((await propose(omar, 'engineering', { path: 'meetings/2026/11/08-1402-x/notes.md', content: 'x', applyNow: true })).status).toBe(400);
