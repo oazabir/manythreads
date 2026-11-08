@@ -64,7 +64,8 @@ export const NOTES_AGENDA_MAX_CHARS = 8_000;
  * prompt says it is data; a line in it that looks like a marker is indented so it cannot close the block early. Nothing for a room with no agenda.
  */
 export function agendaBlock(agendaMd: string | null): string[] {
-  const text = (agendaMd ?? '').replace(/\r\n?/g, '\n').trim();
+  // every kind of line end becomes "\n" first: a marker line behind a U+2028 or U+2029 (or a form feed) would otherwise be a line start for the model and not for this check
+  const text = (agendaMd ?? '').replace(/\r\n?|[\u2028\u2029\u0085\v\f]/g, '\n').trim();
   if (text === '') return [];
   const body = text
     .slice(0, NOTES_AGENDA_MAX_CHARS)
