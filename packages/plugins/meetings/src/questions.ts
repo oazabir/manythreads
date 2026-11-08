@@ -35,6 +35,13 @@ const NAME_MAX = 100;
 /** Questions taken per room in the last minute, in memory. The limit is a courtesy to the budget, not a security rule, so a restart forgetting it is fine. */
 export const questionLimiter = new WindowCounter(60_000);
 
+/**
+ * Model checks per room in the last minute. Every line that names the note-taker costs one `fast` call before it is known to be a question, and the room takes up to a thousand lines
+ * a minute, so a person saying the name over and over would spend the workspace's budget. Past this the line is dropped without a reply (it was not a question anyone is waiting on).
+ */
+export const MEETING_QUESTION_CHECKS_PER_MINUTE = 20;
+export const questionCheckLimiter = new WindowCounter(60_000);
+
 // ---- the scan --------------------------------------------------------------------------------------------------------------------------------------------------
 
 /** NFKC and lower case: "Note‑Taker", "NOTE-TAKER" and full-width letters all fold to the same text. */
@@ -323,6 +330,10 @@ export async function answerQuestion(
   } else {
     const llm = ctx.providers.get<CheckDoor>('llm');
     if (!llm || asked.botTeamId === null) return 'dropped';
+    if (questionCheckLimiter.take(p.meetingId, 1, MEETING_QUESTION_CHECKS_PER_MINUTE, now.getTime()) !== null) {
+      job.log.info(`meetings: a question check for ${p.meetingId} was skipped: too many in a minute`);
+      return 'dropped';
+    }
     const checked = await job.transaction((inner) =>
       llm.evalComplete(inner, {
         workspaceId: p.workspaceId,

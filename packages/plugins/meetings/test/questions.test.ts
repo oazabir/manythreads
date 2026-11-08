@@ -10,7 +10,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eventually } from '../../channels/test/world.ts';
 import { createWorld, ensureChannels, personas, type FilesWorld } from '../../files/test/world.ts';
-import { mentionsAt, mentionsName, noteTakerNames, questionLimiter, readCheck } from '../src/questions.ts';
+import { MEETING_QUESTION_CHECKS_PER_MINUTE, mentionsAt, mentionsName, noteTakerNames, questionCheckLimiter, questionLimiter, readCheck } from '../src/questions.ts';
 
 // Questions to the note-taker in a call (PLAN P15-24, decision C20) and the notes it writes when the call ends (P15-21).
 //  * the name scan: folding, word edges, hostile input (linear time);
@@ -405,6 +405,17 @@ describe('a question put to the note-taker in a call', () => {
     await eventually(async () => (captionsOf(room.id).some((c) => c.text.includes('questions a minute')) ? true : undefined), 20_000, 'the limit caption');
     expect(answerRuns().length).toBe(runs);
     expect((await botLines(room.id)).length).toBe(lines);
+  });
+
+  it('stops asking the model when a room says the name over and over', async () => {
+    while (questionCheckLimiter.take(room.id, 1, MEETING_QUESTION_CHECKS_PER_MINUTE, Date.now()) === null);
+    const asked = checks.length;
+    const runs = answerRuns().length;
+    expect(await speak(room.id, nadia, 'Note-taker, are you still counting?')).toBe(true);
+    await lineSaid(room.id, 'Note-taker, are you still counting?');
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(checks.length).toBe(asked);
+    expect(answerRuns().length).toBe(runs);
   });
 
   it('leaves no question behind when the room ends', async () => {
