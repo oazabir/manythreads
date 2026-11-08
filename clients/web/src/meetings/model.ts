@@ -1,4 +1,4 @@
-import type { Meeting, MeetingParticipant, MeetingSummary } from '@manythreads/shared';
+import type { Meeting, MeetingCaption, MeetingNotetaker, MeetingParticipant, MeetingRecordingState, MeetingSummary, ListMeetingNotetakersResponse } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 
 /*
@@ -159,4 +159,173 @@ export const ringText = (r: Pick<Ring, 'callerName'>): string => `${r.callerName
 // ---- small helpers -----------------------------------------------------------------------------------------------------------------------------------
 export function meetingTitleOf(m: Pick<Meeting, 'title'>): string {
   return m.title;
+}
+
+// ---- captions (P15-08) -------------------------------------------------------------------------------------------------------------------------------
+/** One caption as the page keeps it: the push's caption, a key that stays the same while a partial line grows into its final line, and when it arrived. */
+export type CaptionLine = {
+  key: string;
+  kind: MeetingCaption['kind'];
+  speakerId: string;
+  speakerName: string;
+  text: string;
+  final: boolean;
+  catchingUp: boolean;
+  askerName: string | null;
+  startMs: number;
+  endMs: number;
+  /** When the page got it (the page's clock), to let it fade from the strip. */
+  at: number;
+};
+
+/** How many captions the page remembers, how many the strip shows, and how long one stays on the strip after the last change. */
+export const CAPTION_KEEP = 40;
+export const CAPTION_SHOW = 2;
+export const CAPTION_FADE_MS = 8000;
+
+/**
+ * Folds a push into the lines already kept: a speaker's growing partial line is replaced by their next partial or final line (it keeps its key), a final line that
+ * is already there is not added twice, and an empty line is ignored. Only the newest `keep` lines stay.
+ */
+export function mergeCaptions(prev: readonly CaptionLine[], incoming: readonly MeetingCaption[], at: number, keep = CAPTION_KEEP): CaptionLine[] {
+  const out = [...prev];
+  incoming.forEach((c, i) => {
+    if (c.text.trim() === '') return;
+    const base = { kind: c.kind, speakerId: c.speakerId as string, speakerName: c.speakerName, text: c.text, final: c.final, catchingUp: c.catchingUp, askerName: c.askerName, startMs: c.startMs, endMs: c.endMs, at };
+    let open = -1;
+    for (let j = out.length - 1; j >= 0; j--) {
+      const l = out[j]!;
+      if (l.speakerId === base.speakerId && l.kind === base.kind && !l.final) {
+        open = j;
+        break;
+      }
+    }
+    if (open >= 0) {
+      out[open] = { ...base, key: out[open]!.key };
+      return;
+    }
+    if (c.final && out.some((l) => l.final && l.speakerId === base.speakerId && l.startMs === base.startMs && l.endMs === base.endMs && l.text === base.text)) return;
+    out.push({ ...base, key: `${at}-${i}-${base.speakerId}` });
+  });
+  return out.slice(-keep);
+}
+
+/** The lines the strip draws: the newest few that have not faded. */
+export function visibleCaptions(lines: readonly CaptionLine[], now: number, max = CAPTION_SHOW, fadeMs = CAPTION_FADE_MS): CaptionLine[] {
+  return lines.filter((l) => now - l.at <= fadeMs).slice(-max);
+}
+
+/** Who a caption is from: "You", a person's name, or for the note-taker's answer "<bot> answered <asker>". */
+export function captionHeading(line: Pick<CaptionLine, 'kind' | 'speakerId' | 'speakerName' | 'askerName'>, myActorId: string | null): string {
+  const who = line.speakerId === myActorId ? 'You' : line.speakerName;
+  if (line.kind === 'answer') return line.askerName ? `${who} answered ${line.askerName}` : `${who} answered`;
+  return who;
+}
+
+/** A time inside the call: 4:05, or 1:02:09 past the hour. */
+export function msClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
+/** The plain reason a correction was refused. */
+export function correctionFailure(err: unknown): string {
+  if (isApiError(err)) {
+    if (err.code === 'network') return 'Could not reach the server. Check your connection and try again.';
+    if (err.status === 403 || err.status === 409) return 'You can correct your own lines for 24 hours after you said them.';
+    if (err.status === 404) return 'That line is not there any more.';
+  }
+  return 'Could not save the correction. Try again.';
+}
+
+/** What the strip says when there are no captions to show yet. */
+export function captionsEmptyText(transcriptionOn: boolean, notetaker: boolean): string {
+  if (!transcriptionOn) return 'Captions show here when transcription is on.';
+  return notetaker ? 'The note-taker is listening. Captions show here as people speak.' : 'Captions show here as people speak.';
+}
+
+// ---- the note-taker (P15-18) -------------------------------------------------------------------------------------------------------------------------
+export const NOTETAKER_NONE_TEXT = 'This team has no note-taker yet. A team lead can add one.';
+export const NOTETAKER_BUSY_TEXT = 'The note-taker is not available in this room right now.';
+
+/** The words under the note-taker's face. */
+export function notetakerBadge(n: Pick<MeetingNotetaker, 'listening'>): string {
+  return n.listening ? 'Note-taker · listening' : 'Note-taker · joining';
+}
+
+/** Why "Add note-taker" is switched off, or null when it may be used. */
+export function notetakerReason(res: Pick<ListMeetingNotetakersResponse, 'bots' | 'current' | 'canAdd' | 'reason'> | null): string | null {
+  if (!res) return NOTETAKER_BUSY_TEXT;
+  if (res.current) return null;
+  if (!res.canAdd) return res.reason && res.reason !== '' ? res.reason : NOTETAKER_BUSY_TEXT;
+  if (res.bots.length === 0) return NOTETAKER_NONE_TEXT;
+  return null;
+}
+
+/** The organizer, or a lead of the team, may take the note-taker out. */
+export function canRemoveNotetaker(meeting: Pick<Meeting, 'organizerId' | 'startedBy'>, myActorId: string | null, canModerate: boolean): boolean {
+  return canModerate || (myActorId !== null && (meeting.organizerId === myActorId || meeting.startedBy === myActorId));
+}
+
+// ---- recording (P15-15) ------------------------------------------------------------------------------------------------------------------------------
+export type RecordingChip = { label: string; tone: 'rec' | 'wait'; title: string };
+
+/** People in the room who have not said yes to being recorded. */
+export function recordingWaitingOn(present: readonly MeetingParticipant[]): number {
+  return present.filter((p) => p.leftAt === null && p.consentRecord !== 'yes').length;
+}
+
+/** The chip for the whole call while recording is on; null while it is off. */
+export function recordingChip(rec: Pick<MeetingRecordingState, 'on' | 'recording'> | null, present: readonly MeetingParticipant[]): RecordingChip | null {
+  if (!rec || !rec.on) return null;
+  if (rec.recording) return { label: 'Recording', tone: 'rec', title: 'Everyone in the room said yes. Each person’s voice is being saved as a sound file.' };
+  const n = recordingWaitingOn(present);
+  return {
+    label: n === 1 ? 'Recording: waiting for 1 person' : n > 1 ? `Recording: waiting for ${n} people` : 'Recording: getting ready',
+    tone: 'wait',
+    title: 'Nothing is saved yet. Recording starts when everyone in the room has said yes, and stops when someone who has not joins.',
+  };
+}
+
+export type RecordConsentPlan = 'none' | 'ask' | 'settled';
+
+/** Ask "Record my voice?" when recording is on and the person has not answered. */
+export function planRecordConsent(rec: Pick<MeetingRecordingState, 'on' | 'yourConsent'> | null): RecordConsentPlan {
+  if (!rec || !rec.on) return 'none';
+  return rec.yourConsent === 'unasked' ? 'ask' : 'settled';
+}
+
+/** The words of the recording question: what yes and no mean. */
+export function recordPromptCopy(): { title: string; body: string; yes: string; no: string } {
+  return {
+    title: 'Record my voice?',
+    body: 'Recording was turned on for this call. If you say yes, your voice is saved as a sound file in this channel’s Files, for the people who can read the channel. Nothing is saved unless everyone in the room says yes, and it stops the moment someone who has not said yes joins. If you say no, nothing of your voice is saved and recording stays off.',
+    yes: 'Yes, record my voice',
+    no: 'No, do not record me',
+  };
+}
+
+/** Why the record button is off, or null when it works. */
+export function recordingReason(rec: Pick<MeetingRecordingState, 'cap' | 'reason'> | null): string | null {
+  if (!rec) return null;
+  if (rec.cap === 'off') return 'Recording is switched off for this workspace. A workspace admin can turn it on.';
+  return rec.reason && rec.reason !== '' ? rec.reason : null;
+}
+
+/** Whether the call bar draws a record button at all: only where the workspace allows recording, or while the room is already recording. */
+export function showsRecordButton(rec: Pick<MeetingRecordingState, 'cap' | 'on'> | null): boolean {
+  return !!rec && (rec.cap === 'on' || rec.on);
+}
+
+/** The words for a refused note-taker or recording change. */
+export function changeFailure(err: unknown, what: string): string {
+  if (isApiError(err)) {
+    if (err.code === 'network') return 'Could not reach the server. Check your connection and try again.';
+    if (err.message !== '' && err.status >= 400 && err.status < 500) return err.message;
+  }
+  return `Could not ${what}. Try again.`;
 }

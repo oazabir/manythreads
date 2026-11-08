@@ -1,10 +1,24 @@
-import type { Meeting, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingTranscriptionState } from '@manythreads/shared';
+import type { ListMeetingNotetakersResponse, Meeting, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { planConsent, micMayOpen, type ConsentPlan } from './consent';
-import type { CallApi } from './api';
-import type { TranscribeEngine } from './engine';
+import { canOfferServer, enginePlan, planConsent, micMayOpen, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
+import type { CallApi, addNotetaker, answerRecordConsent, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
+import type { StreamStatus, TranscribeEngine } from './engine';
 import { AUDIO_DEFAULTS, type AdapterEvents, type AdapterLoader, type Connection, type DeviceLists, type MediaAdapter } from './media';
-import { HEARTBEAT_EVERY_MS, LIVE_POLL_MS, REJOIN_ATTEMPTS, isNotConfigured, presenceChange, rejoinDelay, renewDelay, startFailure } from './model';
+import {
+  HEARTBEAT_EVERY_MS,
+  LIVE_POLL_MS,
+  REJOIN_ATTEMPTS,
+  changeFailure,
+  isNotConfigured,
+  mergeCaptions,
+  planRecordConsent,
+  presenceChange,
+  rejoinDelay,
+  renewDelay,
+  startFailure,
+  type CaptionLine,
+  type RecordConsentPlan,
+} from './model';
 import type { CallPrefs, KeyValue } from './prefs';
 import { savePrefs } from './prefs';
 import type { Sounds } from './sounds';
@@ -12,7 +26,7 @@ import type { Sounds } from './sounds';
 /*
  * The call (PLAN P15-04, P15-05): one room at a time per tab. This class is the whole story of being in a voice room: starting or joining it, connecting to the media
  * server, the heartbeat and the token renewal, mute / deafen / push-to-talk, the devices, getting back after a network drop, the consent answer that must come before
- * the microphone opens, and leaving. It knows nothing of React or of the media library: the server and the media layer are handed in, so a test drives every path.
+ * the microphone opens, the live captions, the note-taker, recording, and leaving. It knows nothing of React or of the media library: the server and the media layer are handed in, so a test drives every path.
  */
 
 export type Phase =
@@ -49,19 +63,43 @@ export type CallState = {
   consent: ConsentPlan;
   chatUnread: number;
   chatOpen: boolean;
+  /** The last captions that came in over the socket (newest last); the strip shows the latest two that have not faded. */
+  captions: readonly CaptionLine[];
+  /** What this person's own transcription engine is doing (P15-06): off, getting ready, listening, too slow for this device, or failed. */
+  engine: EngineUi;
+  /** The note-taker bots that may be added and the one that is in the room; null when the server has no note-taker. */
+  notetakers: ListMeetingNotetakersResponse | null;
+  /** Recording: the workspace switch, whether it is on, and this person's answer; null when the server has no recording. */
+  recording: MeetingRecordingState | null;
+  recordConsent: RecordConsentPlan;
+  /** The stored lines of the transcript so far, for the captions history (a person corrects their own line there). */
+  history: { status: 'idle' | 'loading' | 'ok' | 'failed'; lines: readonly MeetingTranscriptLine[] };
   /** A plain sentence to show above the controls (reconnecting, microphone blocked, you were removed). Null when there is nothing to say. */
   notice: string | null;
   /** The server's or the library's plain words for why the last start or join failed. */
   error: string | null;
 };
 
+/** The calls for the note-taker, recording and the transcript history (Bundle C), kept apart from `CallApi` so that file stays as it was. */
+export type RoomApi = {
+  notetakers: typeof fetchNotetakers;
+  addNotetaker: typeof addNotetaker;
+  removeNotetaker: typeof removeNotetaker;
+  recording: typeof fetchRecording;
+  setRecording: typeof setRecording;
+  recordConsent: typeof answerRecordConsent;
+  transcript: typeof fetchTranscript;
+  correct: typeof correctSegment;
+};
+
 export type CallDeps = {
   api: CallApi;
+  room: RoomApi;
   loadAdapter: AdapterLoader;
   sounds: Sounds;
   storage: KeyValue | null;
   prefs: CallPrefs;
-  loadEngine: () => Promise<TranscribeEngine | null>;
+  loadEngine: (mode?: 'on_device' | 'server') => Promise<TranscribeEngine | null>;
   now: () => number;
   setTimeout: (fn: () => void, ms: number) => unknown;
   clearTimeout: (h: unknown) => void;
@@ -91,6 +129,12 @@ const IDLE = (prefs: CallPrefs): CallState => ({
   prefs,
   transcription: null,
   consent: { kind: 'none' },
+  captions: [],
+  engine: { kind: 'off' },
+  notetakers: null,
+  recording: null,
+  recordConsent: 'none',
+  history: { status: 'idle', lines: [] },
   chatUnread: 0,
   chatOpen: false,
   notice: null,
@@ -105,6 +149,8 @@ export class CallController {
   private hooks: CallHooks = { openChat: () => undefined };
   private adapter: MediaAdapter | null = null;
   private engine: TranscribeEngine | null = null;
+  private engineMode: EnginePlan = 'none';
+  private engineChain: Promise<void> = Promise.resolve();
   private join: MeetingJoin | null = null;
   private heartbeat: unknown = null;
   private renew: unknown = null;
@@ -331,7 +377,13 @@ export class CallController {
     const gen = this.generation;
     const run = async (): Promise<void> => {
       try {
-        const [sum, tr] = await Promise.all([this.deps.api.get(m.id), this.deps.api.transcription(m.id).catch(() => null)]);
+        const [sum, tr, nts, rec] = await Promise.all([
+          this.deps.api.get(m.id),
+          this.deps.api.transcription(m.id).catch(() => null),
+          // a server without a note-taker or recording answers 404 or 501: those parts of the bar simply do not show
+          this.deps.room.notetakers(m.id).catch(() => null),
+          this.deps.room.recording(m.id).catch(() => null),
+        ]);
         if (gen !== this.generation) return;
         if (sum.meeting.state === 'ended') {
           this.gone('The voice room has ended.');
@@ -350,6 +402,9 @@ export class CallController {
           present: sum.present,
           transcription: tr ?? this.state.transcription,
           consent: planConsent(tr ?? this.state.transcription, mine, this.state.prefs.transcribeDefault),
+          notetakers: nts ?? this.state.notetakers,
+          recording: rec ?? this.state.recording,
+          recordConsent: planRecordConsent(rec ?? this.state.recording),
         });
         if (this.state.phase === 'connected') await this.applyConsentAndMic();
       } catch (e) {
@@ -442,7 +497,7 @@ export class CallController {
         this.micOpen = false;
       }
     });
-    return this.micChain;
+    return this.micChain.then(() => this.engine?.setMuted?.(!this.wantMic()));
   }
 
   /** Decides whether the person must answer the consent question first, sends their saved default, and then opens the microphone. */
@@ -463,16 +518,100 @@ export class CallController {
     await this.syncEngine();
   }
 
-  private async syncEngine(): Promise<void> {
+  /** Starts, switches or stops this person's own transcription engine so that it matches the room: on, said yes, and no note-taker listening on the server instead. */
+  private syncEngine(): Promise<void> {
+    this.engineChain = this.engineChain.then(() => this.runEngineSync()).catch(() => undefined);
+    return this.engineChain;
+  }
+
+  private wantedEngine(): EnginePlan {
     const s = this.state;
+    if (s.phase !== 'connected') return 'none';
     const mine = s.present.find((p) => p.actorId === s.myActorId)?.consentTranscribe;
-    const should = s.phase === 'connected' && s.transcription?.mode === 'on_device' && mine === 'yes';
-    if (should && !this.engine) {
-      this.engine = await this.deps.loadEngine();
-      this.engine?.start();
-    } else if (!should && this.engine) {
-      this.engine.stop();
-      this.engine = null;
+    return enginePlan(s.transcription, mine, s.notetakers?.current != null);
+  }
+
+  private engineUi(status: StreamStatus): EngineUi {
+    switch (status.kind) {
+      case 'listening':
+        return { kind: 'listening' };
+      case 'loading':
+        return { kind: 'loading', fraction: status.fraction };
+      case 'too_slow':
+        return { kind: 'too_slow', message: status.message };
+      case 'failed':
+        return { kind: 'failed', message: status.message };
+      default:
+        return { kind: 'off' };
+    }
+  }
+
+  private stopEngine(): void {
+    this.engine?.stop();
+    this.engine = null;
+    this.engineMode = 'none';
+  }
+
+  private async runEngineSync(): Promise<void> {
+    const gen = this.generation;
+    const want = this.wantedEngine();
+    if (want === this.engineMode) return;
+    if (this.engine) {
+      this.stopEngine();
+      this.set({ engine: { kind: 'off' } });
+    }
+    if (want === 'none') return;
+    const engine = await this.deps.loadEngine(want);
+    // the room moved on while the engine was loading: this one is not wanted any more
+    if (gen !== this.generation || this.wantedEngine() !== want) {
+      engine?.stop();
+      return;
+    }
+    if (!engine) {
+      this.set({ engine: { kind: 'failed', message: 'This browser cannot write down speech. Ask for server transcription, or join without it.' } });
+      return;
+    }
+    this.engine = engine;
+    this.engineMode = want;
+    this.set({ engine: { kind: 'loading', fraction: 0 } });
+    const m = this.state.meeting;
+    if (!m) return;
+    try {
+      engine.start({
+        meetingId: m.id,
+        startedAt: m.startedAt,
+        inputId: this.state.prefs.inputId,
+        onStatus: (status) => {
+          if (gen === this.generation && this.engine === engine) this.set({ engine: this.engineUi(status) });
+        },
+      });
+      engine.setMuted?.(!this.wantMic());
+    } catch {
+      this.set({ engine: { kind: 'failed', message: 'Could not start transcription. Try again.' } });
+    }
+  }
+
+  /** This device is too slow: move the room to server transcription (everybody is asked again, since their speech then goes to the server). */
+  async switchToServer(): Promise<void> {
+    const m = this.state.meeting;
+    if (!m || !canOfferServer(this.state.transcription)) return;
+    this.sentConsent = false;
+    try {
+      await this.deps.api.setTranscription(m.id, 'off');
+      const next = await this.deps.api.setTranscription(m.id, 'server');
+      this.set({ transcription: next, notice: null });
+    } catch (e) {
+      this.set({ notice: changeFailure(e, 'switch transcription to the server') });
+    }
+    await this.refresh();
+  }
+
+  /** "Join without it": the person says no to being transcribed, which stops their engine and shows them as "spoke (not transcribed)". */
+  async joinWithoutTranscription(): Promise<void> {
+    try {
+      await this.answerConsent('no', { remember: false });
+    } catch {
+      this.set({ notice: 'Could not save your answer. Try again.' });
     }
   }
 
@@ -549,6 +688,11 @@ export class CallController {
     }
   }
 
+  /** Says a plain sentence above the controls (why a button does nothing). */
+  notify(text: string): void {
+    this.set({ notice: text });
+  }
+
   setCaptions(on: boolean): void {
     const prefs = { ...this.state.prefs, captions: on };
     savePrefs(this.deps.storage, prefs);
@@ -593,6 +737,90 @@ export class CallController {
       return;
     }
     await this.refresh();
+  }
+
+  // ---- captions and the transcript so far ------------------------------------------------------------------------------------------------------
+  /** Captions came in over the socket for this room. */
+  noteCaptions(meetingId: string, captions: readonly MeetingCaption[]): void {
+    if (this.state.meeting?.id !== meetingId || !this.active) return;
+    const next = mergeCaptions(this.state.captions, captions, this.deps.now());
+    if (next.length === 0 && this.state.captions.length === 0) return;
+    this.set({ captions: next });
+  }
+
+  /** Reads the lines stored so far (the captions history). */
+  async loadHistory(): Promise<void> {
+    const m = this.state.meeting;
+    if (!m) return;
+    const gen = this.generation;
+    this.set({ history: { status: 'loading', lines: this.state.history.lines } });
+    try {
+      const res = await this.deps.room.transcript(m.id);
+      if (gen !== this.generation) return;
+      this.set({ history: { status: 'ok', lines: res.lines } });
+    } catch {
+      if (gen !== this.generation) return;
+      this.set({ history: { status: 'failed', lines: this.state.history.lines } });
+    }
+  }
+
+  /** The speaker corrects their own line (for 24 hours). Throws the server's refusal so the line's editor can say why. */
+  async correctLine(segmentId: string, text: string): Promise<void> {
+    const m = this.state.meeting;
+    if (!m) return;
+    const res = await this.deps.room.correct(m.id, segmentId, text);
+    this.set({ history: { ...this.state.history, lines: this.state.history.lines.map((l) => (l.segmentId === segmentId ? res.line : l)) } });
+  }
+
+  // ---- the note-taker (P15-18) -------------------------------------------------------------------------------------------------------------------
+  /** Anyone in the room may add a note-taker; everybody is asked again, and transcription moves to the server. */
+  async addNotetaker(botId: string): Promise<void> {
+    const m = this.state.meeting;
+    if (!m) return;
+    try {
+      await this.deps.room.addNotetaker(m.id, botId);
+    } catch (e) {
+      this.set({ notice: changeFailure(e, 'add the note-taker') });
+      return;
+    }
+    this.set({ notice: null });
+    this.sentConsent = false;
+    await this.refresh();
+  }
+
+  /** The organizer or a lead takes the note-taker out. */
+  async removeNotetaker(): Promise<void> {
+    const m = this.state.meeting;
+    if (!m) return;
+    try {
+      await this.deps.room.removeNotetaker(m.id);
+    } catch (e) {
+      this.set({ notice: isApiError(e) && e.status === 403 ? 'Only the person who started the call or a team lead can take the note-taker out.' : changeFailure(e, 'take the note-taker out') });
+      return;
+    }
+    this.set({ notice: null });
+    await this.refresh();
+  }
+
+  // ---- recording (P15-15) --------------------------------------------------------------------------------------------------------------------------
+  async setRecording(on: boolean): Promise<void> {
+    const m = this.state.meeting;
+    if (!m) return;
+    try {
+      const rec = await this.deps.room.setRecording(m.id, on);
+      this.set({ recording: rec, recordConsent: planRecordConsent(rec), notice: null });
+    } catch (e) {
+      this.set({ notice: changeFailure(e, on ? 'turn recording on' : 'turn recording off') });
+    }
+  }
+
+  /** The person's own answer to "Record my voice". No also stops their file at once. */
+  async answerRecordConsent(answer: 'yes' | 'no'): Promise<void> {
+    const m = this.state.meeting;
+    if (!m) return;
+    const rec = await this.deps.room.recordConsent(m.id, answer);
+    this.set({ recording: rec, recordConsent: planRecordConsent(rec) });
+    void this.refresh();
   }
 
   // ---- chat ---------------------------------------------------------------------------------------------------------------------------------------
@@ -645,8 +873,7 @@ export class CallController {
     this.generation++;
     this.stopTimers();
     this.clearRejoin();
-    this.engine?.stop();
-    this.engine = null;
+    this.stopEngine();
     const adapter = this.adapter;
     this.adapter = null;
     this.micOpen = false;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CallController } from '../src/meetings/controller';
-import { CHANNEL, MEETING, ME, NADIA, THREAD, apiError, person, rig, settle, transcription } from './meetings-fixtures';
+import type { EngineContext, TranscribeEngine } from '../src/meetings/engine';
+import { BOT, CHANNEL, MEETING, ME, NADIA, THREAD, apiError, person, rig, settle, transcription } from './meetings-fixtures';
 
 // P15-04 / P15-05: the whole life of a call, against the stand-in server and the in-memory media layer.
 
@@ -243,5 +244,295 @@ describe('consent before the microphone (P15-05)', () => {
     await t.c.turnTranscription('on_device');
     expect(t.server.calls).toContain('setTranscription on_device');
     expect(t.c.getState().transcription?.mode).toBe('on_device');
+  });
+});
+
+// ---- Bundle C: the engine, captions, the note-taker, recording (P15-08, P15-18, P15-15) ---------------------------------------------------------------------------
+
+type Spy = { engine: TranscribeEngine; started: EngineContext[]; stops: number; muted: boolean[]; modes: Array<string | undefined> };
+function spyEngine(t: { deps: { loadEngine: (mode?: 'on_device' | 'server') => Promise<TranscribeEngine | null> } }): Spy {
+  const spy: Spy = { started: [], stops: 0, muted: [], modes: [], engine: null as never };
+  spy.engine = {
+    start: (ctx) => void (ctx && spy.started.push(ctx)),
+    stop: () => void (spy.stops += 1),
+    setMuted: (m) => void spy.muted.push(m),
+  };
+  t.deps.loadEngine = async (mode) => {
+    spy.modes.push(mode);
+    return spy.engine;
+  };
+  return spy;
+}
+
+async function turnOn(t: Awaited<ReturnType<typeof connected>>, mode: 'on_device' | 'server', allowed: Array<'on_device' | 'server'> = ['on_device', 'server']) {
+  t.server.room = { ...t.server.room, transcription: mode };
+  t.server.transcriptionState = transcription({ mode, allowed, turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });
+  await t.c.refresh();
+  await settle();
+}
+
+describe('the transcription engine on the call (P15-06 wiring)', () => {
+  it('does not start before the person says yes, then starts with the room, its start time and the microphone choice', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    expect(spy.modes).toEqual([]);
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    expect(spy.modes).toEqual(['on_device']);
+    expect(spy.started).toHaveLength(1);
+    expect(spy.started[0]).toMatchObject({ meetingId: MEETING, startedAt: '2026-11-03T10:00:00.000Z', inputId: null });
+    expect(t.c.getState().engine.kind).toBe('loading');
+  });
+  it('shows what the engine reports: listening, too slow', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    spy.started[0]!.onStatus?.({ kind: 'loading', fraction: 0.5 });
+    expect(t.c.getState().engine).toEqual({ kind: 'loading', fraction: 0.5 });
+    spy.started[0]!.onStatus?.({ kind: 'listening' });
+    expect(t.c.getState().engine.kind).toBe('listening');
+    spy.started[0]!.onStatus?.({ kind: 'too_slow', message: 'This device is too slow to transcribe.' });
+    expect(t.c.getState().engine).toEqual({ kind: 'too_slow', message: 'This device is too slow to transcribe.' });
+  });
+  it('tells the engine when the person mutes, and when they unmute', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    spy.muted.length = 0;
+    t.c.toggleMute();
+    await settle();
+    expect(spy.muted.at(-1)).toBe(true);
+    t.c.toggleMute();
+    await settle();
+    expect(spy.muted.at(-1)).toBe(false);
+  });
+  it('stops the engine when the person says no, and sends that answer from "Join without transcription"', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    await t.c.joinWithoutTranscription();
+    await settle();
+    expect(t.server.calls).toContain('consent no');
+    expect(spy.stops).toBe(1);
+    expect(t.c.getState().engine.kind).toBe('off');
+  });
+  it('stops the engine when transcription is turned off or the person leaves', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    await t.c.leave();
+    expect(spy.stops).toBe(1);
+    expect(t.c.getState().engine.kind).toBe('off');
+  });
+  it('runs the server engine in a room set to the server, when no note-taker listens', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'server');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    expect(spy.modes).toEqual(['server']);
+  });
+  it('runs no engine on the device while a note-taker listens on the server', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'server');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    expect(spy.started).toHaveLength(1);
+    await t.c.addNotetaker(BOT);
+    await settle();
+    expect(spy.stops).toBe(1);
+    // everybody is asked again; after a yes the note-taker listens and the device stays quiet
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    expect(spy.started).toHaveLength(1);
+  });
+  it('says plainly when there is no engine in this browser', async () => {
+    const t = await connected();
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    expect(t.c.getState().engine.kind).toBe('failed');
+  });
+  it('does not start an engine that was replaced while it loaded', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    t.deps.loadEngine = async () => {
+      await gate;
+      return spy.engine;
+    };
+    await turnOn(t, 'on_device');
+    const answering = t.c.answerConsent('yes', { remember: false });
+    await settle();
+    const changing = t.c.answerConsent('no', { remember: false });
+    await settle();
+    release();
+    await Promise.all([answering, changing]);
+    await settle();
+    expect(spy.started).toHaveLength(0);
+    expect(spy.stops).toBe(1);
+  });
+  it('moves the room to the server (off, then server) when this device is too slow and the server is allowed', async () => {
+    const t = await connected();
+    spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.switchToServer();
+    expect(t.server.calls.filter((x) => x.startsWith('setTranscription'))).toEqual(['setTranscription off', 'setTranscription server']);
+    expect(t.c.getState().transcription?.mode).toBe('server');
+  });
+  it('does not offer the server when it is not allowed', async () => {
+    const t = await connected();
+    spyEngine(t);
+    await turnOn(t, 'on_device', ['on_device']);
+    await t.c.switchToServer();
+    expect(t.server.calls.some((x) => x.startsWith('setTranscription'))).toBe(false);
+  });
+});
+
+describe('captions on the call', () => {
+  const caption = (over = {}) => ({ kind: 'speech', speakerId: NADIA, speakerName: 'Nadia', startMs: 0, endMs: 900, text: 'Shall we ship?', final: true, catchingUp: false, askerName: null, ...over }) as never;
+  it('keeps the captions of the room the person is in, and nobody else\'s', async () => {
+    const t = await connected();
+    t.c.noteCaptions(MEETING, [caption()]);
+    expect(t.c.getState().captions.map((l) => l.text)).toEqual(['Shall we ship?']);
+    t.c.noteCaptions('00000000-0000-7000-8000-000000000999', [caption({ text: 'elsewhere' })]);
+    expect(t.c.getState().captions).toHaveLength(1);
+  });
+  it('forgets them when the person leaves', async () => {
+    const t = await connected();
+    t.c.noteCaptions(MEETING, [caption()]);
+    await t.c.leave();
+    expect(t.c.getState().captions).toEqual([]);
+  });
+  it('reads the lines so far and saves a correction of the person\'s own line', async () => {
+    const t = await connected();
+    t.room.lines = [
+      { segmentId: 'seg-1' as never, speakerId: ME as never, speakerName: 'Omar', startMs: 1000, endMs: 2000, text: 'Shall we shipp?', transcribed: true, editable: true },
+      { segmentId: null, speakerId: NADIA as never, speakerName: 'Nadia', startMs: 3000, endMs: 4000, text: 'Nadia spoke (not transcribed)', transcribed: false, editable: false },
+    ];
+    await t.c.loadHistory();
+    expect(t.c.getState().history.status).toBe('ok');
+    expect(t.c.getState().history.lines).toHaveLength(2);
+    await t.c.correctLine('seg-1', 'Shall we ship?');
+    expect(t.server.calls).toContain('correct seg-1');
+    expect(t.c.getState().history.lines[0]!.text).toBe('Shall we ship?');
+  });
+  it('says the history could not be read, and passes a refused correction on', async () => {
+    const t = await connected();
+    t.room.failAlways('transcript', apiError(500, 'down', 'internal'));
+    await t.c.loadHistory();
+    expect(t.c.getState().history.status).toBe('failed');
+    t.room.failAlways('correct', apiError(403, 'Too late', 'forbidden'));
+    await expect(t.c.correctLine('seg-1', 'x')).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('the note-taker on the call (P15-18)', () => {
+  it('reads the bots that may be added and the one in the room', async () => {
+    const t = await connected();
+    expect(t.c.getState().notetakers?.bots).toHaveLength(1);
+    expect(t.c.getState().notetakers?.current).toBeNull();
+  });
+  it('shows nothing when the server has no note-taker', async () => {
+    const r = rig();
+    r.room.failAlways('notetakers', apiError(404, 'Not found', 'not_found'));
+    const c = new CallController(r.deps);
+    c.setSelf(ME);
+    await c.start(CHANNEL);
+    await settle();
+    expect(c.getState().notetakers).toBeNull();
+    expect(c.getState().phase).toBe('connected');
+  });
+  it('adds one: the room moves to the server and the person is asked again before the microphone opens', async () => {
+    const t = await connected();
+    await t.c.addNotetaker(BOT);
+    await settle();
+    expect(t.server.calls).toContain(`addNotetaker ${BOT}`);
+    expect(t.c.getState().notetakers?.current?.bot.name).toBe('Note-taker');
+    expect(t.c.getState().transcription?.mode).toBe('server');
+    expect(t.c.getState().consent.kind).toBe('ask');
+    expect(t.c.getState().waitingForConsent).toBe(true);
+  });
+  it('says the server\'s reason when adding is refused', async () => {
+    const t = await connected();
+    t.room.failAlways('addNotetaker', apiError(409, 'The note-taker is busy, try again in a minute.'));
+    await t.c.addNotetaker(BOT);
+    expect(t.c.getState().notice).toBe('The note-taker is busy, try again in a minute.');
+    expect(t.c.getState().notetakers?.current).toBeNull();
+  });
+  it('takes it out, and says plainly when the person may not', async () => {
+    const t = await connected();
+    await t.c.addNotetaker(BOT);
+    await t.c.removeNotetaker();
+    expect(t.server.calls).toContain(`removeNotetaker ${MEETING}`);
+    expect(t.c.getState().notetakers?.current).toBeNull();
+    await t.c.addNotetaker(BOT);
+    t.room.failAlways('removeNotetaker', apiError(403, 'Forbidden', 'forbidden'));
+    await t.c.removeNotetaker();
+    expect(t.c.getState().notice).toMatch(/Only the person who started the call or a team lead/);
+  });
+});
+
+describe('recording on the call (P15-15)', () => {
+  it('reads the recording state, and asks nothing while it is off', async () => {
+    const t = await connected();
+    expect(t.c.getState().recording?.cap).toBe('on');
+    expect(t.c.getState().recordConsent).toBe('none');
+  });
+  it('shows nothing when the server has no recording', async () => {
+    const r = rig();
+    r.room.failAlways('recording', apiError(501, 'Not built yet', 'internal'));
+    const c = new CallController(r.deps);
+    c.setSelf(ME);
+    await c.start(CHANNEL);
+    await settle();
+    expect(c.getState().recording).toBeNull();
+    expect(c.getState().recordConsent).toBe('none');
+  });
+  it('turns it on, asks the person, and starts only once everybody said yes', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.setRecording(true);
+    expect(t.server.calls).toContain('setRecording true');
+    expect(t.c.getState().recording?.on).toBe(true);
+    expect(t.c.getState().recordConsent).toBe('ask');
+    await t.c.answerRecordConsent('yes');
+    expect(t.server.calls).toContain('recordConsent yes');
+    expect(t.c.getState().recordConsent).toBe('settled');
+    // Nadia has not answered: nothing is being recorded
+    expect(t.c.getState().recording?.recording).toBe(false);
+  });
+  it('keeps the microphone as it is: a recording question never blocks the voice', async () => {
+    const t = await connected();
+    await t.c.setRecording(true);
+    expect(t.media().state.micOn).toBe(true);
+  });
+  it('says why when turning it on is refused', async () => {
+    const t = await connected();
+    t.room.failAlways('setRecording', apiError(409, 'Recording needs a free listener.'));
+    await t.c.setRecording(true);
+    expect(t.c.getState().notice).toBe('Recording needs a free listener.');
+    expect(t.c.getState().recording?.on).toBe(false);
+  });
+  it('passes a failed answer on so the prompt can say so', async () => {
+    const t = await connected();
+    await t.c.setRecording(true);
+    t.room.failAlways('recordConsent', apiError(500, 'down', 'internal'));
+    await expect(t.c.answerRecordConsent('no')).rejects.toMatchObject({ status: 500 });
+  });
+  it('lets a person say a plain sentence above the controls', async () => {
+    const t = await connected();
+    t.c.notify('Recording is switched off.');
+    expect(t.c.getState().notice).toBe('Recording is switched off.');
   });
 });

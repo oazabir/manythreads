@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
-import { canTurnOn, consentChip, consentWord, micMayOpen, modeToTurnOn, planConsent, promptCopy } from '../src/meetings/consent';
+import { canOfferServer, canTurnOn, consentChip, consentWord, enginePlan, engineLine, micMayOpen, modeToTurnOn, planConsent, promptCopy } from '../src/meetings/consent';
+import type { MeetingCaption } from '@manythreads/shared';
 import {
+  CAPTION_FADE_MS,
   HEARTBEAT_EVERY_MS,
+  NOTETAKER_BUSY_TEXT,
+  NOTETAKER_NONE_TEXT,
   activeRings,
+  canRemoveNotetaker,
+  captionHeading,
+  captionsEmptyText,
+  changeFailure,
+  correctionFailure,
+  mergeCaptions,
+  msClock,
+  notetakerBadge,
+  notetakerReason,
+  planRecordConsent,
+  recordingChip,
+  recordingReason,
+  recordingWaitingOn,
+  showsRecordButton,
+  visibleCaptions,
   badgeFaces,
   callClock,
   isMuteShortcut,
@@ -20,7 +39,7 @@ import {
 } from '../src/meetings/model';
 import { DEFAULT_PREFS, PREFS_KEY, loadPrefs, savePrefs } from '../src/meetings/prefs';
 import { createSounds, toneSequence, type AudioContextLike } from '../src/meetings/sounds';
-import { CHANNEL, ME, NADIA, NOW, RAFI, id, meeting, person, summary, transcription } from './meetings-fixtures';
+import { BOT, CHANNEL, ME, NADIA, NOW, RAFI, id, meeting, notetakerBot, person, summary, transcription } from './meetings-fixtures';
 
 // P15-04 / P15-05: the plain rules of the voice-room page, with no browser and no media library.
 
@@ -250,6 +269,165 @@ describe('sounds', () => {
     s.stopRing();
     s.stopRing();
     expect(t.cleared).toBe(1);
+  });
+});
+
+// ---- Bundle C: captions, the note-taker, recording (P15-08, P15-18, P15-15) ----------------------------------------------------------------------------------
+const cap = (over: Partial<MeetingCaption> = {}): MeetingCaption =>
+  ({ kind: 'speech', speakerId: NADIA, speakerName: 'Nadia', startMs: 0, endMs: 1000, text: 'hello', final: false, catchingUp: false, askerName: null, ...over }) as MeetingCaption;
+
+describe('captions', () => {
+  it('replaces a speaker\'s growing partial line and keeps its key', () => {
+    const a = mergeCaptions([], [cap({ text: 'hel' })], 1000);
+    const b = mergeCaptions(a, [cap({ text: 'hello wor' })], 1500);
+    expect(b).toHaveLength(1);
+    expect(b[0]!.text).toBe('hello wor');
+    expect(b[0]!.key).toBe(a[0]!.key);
+    const c = mergeCaptions(b, [cap({ text: 'hello world', final: true })], 2000);
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ text: 'hello world', final: true, key: a[0]!.key });
+  });
+  it('keeps each speaker\'s partial apart and starts a new line after a final one', () => {
+    const a = mergeCaptions([], [cap({ text: 'one', final: true }), cap({ speakerId: RAFI as never, speakerName: 'Rafi', text: 'two' })], 1000);
+    expect(a.map((l) => l.text)).toEqual(['one', 'two']);
+    const b = mergeCaptions(a, [cap({ text: 'three' })], 2000);
+    expect(b.map((l) => l.text)).toEqual(['one', 'two', 'three']);
+  });
+  it('does not add a final line twice, and ignores an empty line', () => {
+    const a = mergeCaptions([], [cap({ text: 'same', final: true })], 1000);
+    expect(mergeCaptions(a, [cap({ text: 'same', final: true })], 2000)).toHaveLength(1);
+    expect(mergeCaptions(a, [cap({ text: '   ' })], 2000)).toHaveLength(1);
+  });
+  it('remembers only the newest lines', () => {
+    let lines = mergeCaptions([], [], 0);
+    for (let i = 0; i < 10; i++) lines = mergeCaptions(lines, [cap({ text: `line ${i}`, final: true, startMs: i, endMs: i + 1 })], i, 4);
+    expect(lines.map((l) => l.text)).toEqual(['line 6', 'line 7', 'line 8', 'line 9']);
+  });
+  it('shows the latest two lines and lets them fade', () => {
+    let lines = mergeCaptions([], [cap({ text: 'a', final: true, startMs: 1, endMs: 2 })], 1000);
+    lines = mergeCaptions(lines, [cap({ text: 'b', final: true, startMs: 3, endMs: 4 })], 2000);
+    lines = mergeCaptions(lines, [cap({ text: 'c', final: true, startMs: 5, endMs: 6 })], 3000);
+    expect(visibleCaptions(lines, 3500).map((l) => l.text)).toEqual(['b', 'c']);
+    expect(visibleCaptions(lines, 2000 + CAPTION_FADE_MS + 100).map((l) => l.text)).toEqual(['c']);
+    expect(visibleCaptions(lines, 3000 + CAPTION_FADE_MS + 100)).toEqual([]);
+  });
+  it('names the speaker, "You" for the person themselves, and the asker for a note-taker answer', () => {
+    expect(captionHeading({ kind: 'speech', speakerId: NADIA, speakerName: 'Nadia', askerName: null }, ME)).toBe('Nadia');
+    expect(captionHeading({ kind: 'speech', speakerId: ME, speakerName: 'Omar', askerName: null }, ME)).toBe('You');
+    expect(captionHeading({ kind: 'answer', speakerId: BOT, speakerName: 'Note-taker', askerName: 'Rafi' }, ME)).toBe('Note-taker answered Rafi');
+    expect(captionHeading({ kind: 'answer', speakerId: BOT, speakerName: 'Note-taker', askerName: null }, ME)).toBe('Note-taker answered');
+  });
+  it('carries "catching up" through', () => {
+    expect(mergeCaptions([], [cap({ catchingUp: true, final: true })], 1)[0]!.catchingUp).toBe(true);
+  });
+  it('writes times and says what is empty', () => {
+    expect(msClock(0)).toBe('0:00');
+    expect(msClock(65_000)).toBe('1:05');
+    expect(msClock(3_723_000)).toBe('1:02:03');
+    expect(captionsEmptyText(false, false)).toMatch(/when transcription is on/);
+    expect(captionsEmptyText(true, true)).toMatch(/note-taker is listening/);
+  });
+  it('says why a correction was refused', () => {
+    expect(correctionFailure(err(403, 'x', 'forbidden'))).toMatch(/24 hours/);
+    expect(correctionFailure(err(404, 'x', 'not_found'))).toMatch(/not there/);
+    expect(correctionFailure(err(0, 'x', 'network'))).toMatch(/Could not reach/);
+    expect(correctionFailure(new Error('x'))).toMatch(/Try again/);
+  });
+});
+
+describe('the note-taker', () => {
+  it('says whether it is listening or still joining', () => {
+    expect(notetakerBadge({ listening: true })).toBe('Note-taker · listening');
+    expect(notetakerBadge({ listening: false })).toBe('Note-taker · joining');
+  });
+  it('gives the reason adding is off, and none when it may be used', () => {
+    const base = { bots: [notetakerBot()], current: null, canAdd: true, reason: null };
+    expect(notetakerReason(base)).toBeNull();
+    expect(notetakerReason({ ...base, canAdd: false, reason: 'Your admin switched it off.' })).toBe('Your admin switched it off.');
+    expect(notetakerReason({ ...base, canAdd: false })).toBe(NOTETAKER_BUSY_TEXT);
+    expect(notetakerReason({ ...base, bots: [] })).toBe(NOTETAKER_NONE_TEXT);
+    expect(notetakerReason(null)).toBe(NOTETAKER_BUSY_TEXT);
+    expect(notetakerReason({ ...base, canAdd: false, current: { bot: notetakerBot(), listening: true } })).toBeNull();
+  });
+  it('lets the starter, the organizer or a lead take it out, and nobody else', () => {
+    const m = { organizerId: NADIA as never, startedBy: RAFI as never };
+    expect(canRemoveNotetaker(m, NADIA, false)).toBe(true);
+    expect(canRemoveNotetaker(m, RAFI, false)).toBe(true);
+    expect(canRemoveNotetaker(m, ME, false)).toBe(false);
+    expect(canRemoveNotetaker(m, ME, true)).toBe(true);
+    expect(canRemoveNotetaker(m, null, false)).toBe(false);
+  });
+  it('words the consent question around the note-taker, and the chip names it', () => {
+    const c = promptCopy('Nadia', 'server', 'Note-taker');
+    expect(c.title).toMatch(/note-taker/i);
+    expect(c.body).toMatch(/only writes down people who say yes/);
+    expect(c.body).toMatch(/If you say no/);
+    expect(promptCopy('Nadia', 'server').title).toBe('Transcribe my voice?');
+    const chip = consentChip(transcription({ mode: 'server' }), 'unasked', 'Note-taker');
+    expect(chip?.title).toMatch(/by the note-taker Note-taker/);
+  });
+  it('writes the room\'s words on the device only when this person said yes and no note-taker listens on the server', () => {
+    const on = { mode: 'on_device' as const };
+    const server = { mode: 'server' as const };
+    expect(enginePlan(on, 'yes', false)).toBe('on_device');
+    expect(enginePlan(on, 'no', false)).toBe('none');
+    expect(enginePlan(on, 'unasked', false)).toBe('none');
+    expect(enginePlan(on, undefined, false)).toBe('none');
+    expect(enginePlan(server, 'yes', false)).toBe('server');
+    expect(enginePlan(server, 'yes', true)).toBe('none');
+    expect(enginePlan({ mode: 'off' }, 'yes', false)).toBe('none');
+    expect(enginePlan(null, 'yes', false)).toBe('none');
+  });
+  it('offers the server only from the device mode when it is allowed', () => {
+    expect(canOfferServer({ mode: 'on_device', allowed: ['on_device', 'server'] })).toBe(true);
+    expect(canOfferServer({ mode: 'on_device', allowed: ['on_device'] })).toBe(false);
+    expect(canOfferServer({ mode: 'server', allowed: ['on_device', 'server'] })).toBe(false);
+    expect(canOfferServer(null)).toBe(false);
+  });
+  it('turns an engine status into one plain line', () => {
+    expect(engineLine({ kind: 'off' })).toBeNull();
+    expect(engineLine({ kind: 'listening' })).toBeNull();
+    expect(engineLine({ kind: 'loading', fraction: 0.42 })).toMatch(/42%/);
+    expect(engineLine({ kind: 'too_slow', message: 'Too slow.' })).toBe('Too slow.');
+    expect(engineLine({ kind: 'failed', message: 'Nope.' })).toBe('Nope.');
+  });
+  it('words a refused change in the server\'s own plain message', () => {
+    expect(changeFailure(err(409, 'The note-taker is busy, try again in a minute.'), 'add the note-taker')).toBe('The note-taker is busy, try again in a minute.');
+    expect(changeFailure(err(500, 'boom', 'internal'), 'add the note-taker')).toBe('Could not add the note-taker. Try again.');
+    expect(changeFailure(new Error('x'), 'turn recording on')).toBe('Could not turn recording on. Try again.');
+  });
+});
+
+describe('recording', () => {
+  const rec = (over = {}) => ({ cap: 'on' as const, on: false, recording: false, yourConsent: 'unasked' as const, reason: null, ...over });
+  it('draws the button only where the workspace allows recording, or while it is on', () => {
+    expect(showsRecordButton(null)).toBe(false);
+    expect(showsRecordButton(rec({ cap: 'off' }))).toBe(false);
+    expect(showsRecordButton(rec({ cap: 'off', on: true }))).toBe(true);
+    expect(showsRecordButton(rec())).toBe(true);
+  });
+  it('says why recording cannot be turned on', () => {
+    expect(recordingReason(rec({ cap: 'off' }))).toMatch(/workspace admin/);
+    expect(recordingReason(rec({ reason: 'No listener is free.' }))).toBe('No listener is free.');
+    expect(recordingReason(rec())).toBeNull();
+    expect(recordingReason(null)).toBeNull();
+  });
+  it('shows no chip while off, "Recording" while sound is saved and who it waits for otherwise', () => {
+    const people = [person(ME, 'Omar', { consentRecord: 'yes' }), person(NADIA, 'Nadia'), person(RAFI, 'Rafi', { consentRecord: 'no' }), person(id(4), 'Gone', { leftAt: '2026-11-03T10:05:00.000Z' })];
+    expect(recordingChip(null, people)).toBeNull();
+    expect(recordingChip(rec(), people)).toBeNull();
+    expect(recordingChip(rec({ on: true, recording: true }), people)).toMatchObject({ label: 'Recording', tone: 'rec' });
+    expect(recordingChip(rec({ on: true }), people)).toMatchObject({ label: 'Recording: waiting for 2 people', tone: 'wait' });
+    expect(recordingChip(rec({ on: true }), [people[0]!, people[1]!])).toMatchObject({ label: 'Recording: waiting for 1 person' });
+    expect(recordingChip(rec({ on: true }), [people[0]!])?.label).toBe('Recording: getting ready');
+    expect(recordingWaitingOn(people)).toBe(2);
+  });
+  it('asks "Record my voice?" only while recording is on and the person has not answered', () => {
+    expect(planRecordConsent(null)).toBe('none');
+    expect(planRecordConsent(rec())).toBe('none');
+    expect(planRecordConsent(rec({ on: true }))).toBe('ask');
+    expect(planRecordConsent(rec({ on: true, yourConsent: 'yes' }))).toBe('settled');
+    expect(planRecordConsent(rec({ on: true, yourConsent: 'no' }))).toBe('settled');
   });
 });
 

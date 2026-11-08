@@ -1,7 +1,7 @@
-import type { Meeting, MeetingJoin, MeetingParticipant, MeetingSummary, MeetingTranscriptionState } from '@manythreads/shared';
+import type { ListMeetingNotetakersResponse, Meeting, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingSummary, MeetingTranscriptLine, MeetingTranscriptionState } from '@manythreads/shared';
 import { ApiError } from '../src/api/client';
 import type { CallApi } from '../src/meetings/api';
-import type { CallDeps } from '../src/meetings/controller';
+import type { CallDeps, RoomApi } from '../src/meetings/controller';
 import { createFakeAdapter, type FakeAdapter } from '../src/meetings/fakeAdapter';
 import { DEFAULT_PREFS } from '../src/meetings/prefs';
 import type { Sound, Sounds } from '../src/meetings/sounds';
@@ -123,6 +123,75 @@ export function fakeServer(over: { people?: MeetingParticipant[]; room?: Partial
   return srv;
 }
 
+export const BOT = id(500);
+export const notetakerBot = (over: Partial<ListMeetingNotetakersResponse['bots'][number]> = {}) =>
+  ({ botId: BOT, slug: 'note-taker', name: 'Note-taker', role: 'Writes the notes', avatar: null, ...over }) as ListMeetingNotetakersResponse['bots'][number];
+
+/** A stand-in for the note-taker, recording and transcript calls. Its state is plain fields a test changes; calls are recorded in the server's list. */
+export type FakeRoom = RoomApi & {
+  notetakerState: ListMeetingNotetakersResponse;
+  recordingState: MeetingRecordingState;
+  lines: MeetingTranscriptLine[];
+  /** Make every call of this name reject with `error` until cleared (null). */
+  failAlways(name: keyof RoomApi, error: unknown | null): void;
+};
+
+export function fakeRoom(srv: FakeServer): FakeRoom {
+  const always = new Map<string, unknown>();
+  const room = {
+    notetakerState: { bots: [notetakerBot()], current: null, canAdd: true, reason: null },
+    recordingState: { cap: 'on', on: false, recording: false, yourConsent: 'unasked', reason: null, files: [] },
+    lines: [],
+    failAlways(name: keyof RoomApi, error: unknown | null) {
+      if (error === null) always.delete(name);
+      else always.set(name, error);
+    },
+  } as unknown as FakeRoom;
+  const run = async <T>(name: keyof RoomApi, text: string, produce: () => T): Promise<T> => {
+    srv.calls.push(text);
+    if (always.has(name)) throw always.get(name);
+    return produce();
+  };
+  room.notetakers = (meetingId) => run('notetakers', `notetakers ${meetingId}`, () => room.notetakerState);
+  room.addNotetaker = (meetingId, botId) =>
+    run('addNotetaker', `addNotetaker ${botId}`, () => {
+      const bot = room.notetakerState.bots.find((b) => b.botId === botId) ?? notetakerBot();
+      room.notetakerState = { ...room.notetakerState, current: { bot, listening: true } };
+      srv.room = { ...srv.room, transcription: 'server', notetakerBotId: botId as never };
+      srv.transcriptionState = transcription({ mode: 'server', allowed: ['on_device', 'server'], turnedOnBy: { actorId: ME as never, displayName: 'Omar' } });
+      srv.people = srv.people.map((p) => ({ ...p, consentTranscribe: 'unasked' as const }));
+      return { notetaker: room.notetakerState.current! };
+    });
+  room.removeNotetaker = (meetingId) =>
+    run('removeNotetaker', `removeNotetaker ${meetingId}`, () => {
+      room.notetakerState = { ...room.notetakerState, current: null };
+      return { removed: true };
+    });
+  room.recording = (meetingId) => run('recording', `recording ${meetingId}`, () => room.recordingState);
+  room.setRecording = (meetingId, on) =>
+    run('setRecording', `setRecording ${on}`, () => {
+      room.recordingState = { ...room.recordingState, on, recording: false, yourConsent: on ? room.recordingState.yourConsent : 'unasked' };
+      return room.recordingState;
+    });
+  room.recordConsent = (meetingId, answer) =>
+    run('recordConsent', `recordConsent ${answer}`, () => {
+      srv.people = srv.people.map((p) => (p.actorId === ME ? { ...p, consentRecord: answer } : p));
+      const everyone = srv.people.every((p) => p.consentRecord === 'yes');
+      room.recordingState = { ...room.recordingState, yourConsent: answer, recording: room.recordingState.on && everyone };
+      return room.recordingState;
+    });
+  room.transcript = (meetingId) => run('transcript', `transcript ${meetingId}`, () => ({ lines: room.lines }));
+  room.correct = (meetingId, segId, text) =>
+    run('correct', `correct ${segId}`, () => {
+      const old = room.lines.find((l) => l.segmentId === segId);
+      if (!old) throw apiError(404, 'Not found', 'not_found');
+      const line = { ...old, text };
+      room.lines = room.lines.map((l) => (l.segmentId === segId ? line : l));
+      return { line };
+    });
+  return room;
+}
+
 /** Timers a test steps by hand: `advance(ms)` runs what is due, in order. */
 export class FakeClock {
   now = NOW;
@@ -180,7 +249,7 @@ export function fakeSounds(): Sounds & Heard {
   return heard;
 }
 
-export type Rig = { deps: CallDeps; server: FakeServer; clock: FakeClock; sounds: Sounds & Heard; adapters: FakeAdapter[]; stored: Map<string, string> };
+export type Rig = { deps: CallDeps; server: FakeServer; room: FakeRoom; clock: FakeClock; sounds: Sounds & Heard; adapters: FakeAdapter[]; stored: Map<string, string> };
 
 /** Everything a call needs, with a stand-in server, a hand-stepped clock and fake media. */
 export function rig(over: Parameters<typeof fakeServer>[0] = {}, prefs = DEFAULT_PREFS): Rig {
@@ -189,8 +258,10 @@ export function rig(over: Parameters<typeof fakeServer>[0] = {}, prefs = DEFAULT
   const sounds = fakeSounds();
   const adapters: FakeAdapter[] = [];
   const stored = new Map<string, string>();
+  const room = fakeRoom(server);
   const deps: CallDeps = {
     api: server,
+    room,
     loadAdapter: async () => {
       const a = createFakeAdapter();
       adapters.push(a);
@@ -206,5 +277,5 @@ export function rig(over: Parameters<typeof fakeServer>[0] = {}, prefs = DEFAULT
     setInterval: clock.setInterval,
     clearInterval: clock.clearInterval,
   };
-  return { deps, server, clock, sounds, adapters, stored };
+  return { deps, server, room, clock, sounds, adapters, stored };
 }

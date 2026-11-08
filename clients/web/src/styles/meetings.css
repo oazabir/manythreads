@@ -207,6 +207,31 @@
   color: var(--warn-ink);
 }
 
+/* sound is being saved: the one chip that should not be missed */
+.call-chip.rec {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+/* the note-taker in the row of faces */
+.call-face.bot {
+  padding: 2px 8px 2px 2px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.call-nt-badge {
+  color: var(--mute);
+  font-size: var(--fs-tiny);
+  white-space: nowrap;
+}
+
+.call-nt-badge.on {
+  color: var(--ok-ink);
+}
+
 .call-controls {
   display: flex;
   flex-wrap: wrap;
@@ -246,6 +271,22 @@
   border-color: var(--alert-border);
   background: var(--alert-wash);
   color: var(--alert-ink);
+}
+
+.call-btn.live {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.call-btn.rec {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.call-btn[aria-disabled="true"] {
+  opacity: 0.55;
 }
 
 .call-ptt.talking {
@@ -294,13 +335,181 @@
   font-size: var(--fs-caption);
 }
 
+.call-captions-wrap {
+  display: grid;
+  gap: 6px;
+}
+
 .call-captions {
+  display: grid;
+  gap: 4px;
+  min-height: 2.6em;
   margin: 0;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--mute);
   font-size: var(--fs-small);
+}
+
+.cap-empty {
+  margin: 0;
+  color: var(--mute);
+}
+
+.cap-line {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.cap-text {
+  overflow-wrap: anywhere;
+}
+
+/* a line still being said is quieter than a finished one */
+.cap-line[data-final="false"] .cap-text {
+  color: var(--mute);
+}
+
+.cap-line[data-kind="answer"] {
+  padding-left: 8px;
+  border-left: 3px solid var(--human);
+}
+
+.cap-who {
+  margin-right: 6px;
+  color: var(--ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.cap-late {
+  margin-left: 8px;
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+  font-style: italic;
+}
+
+.cap-history-btn,
+.cap-edit-btn {
+  justify-self: start;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--human);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.cap-history-btn:focus-visible,
+.cap-edit-btn:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.cap-history {
+  display: grid;
+  gap: 6px;
+  max-height: 34vh;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.cap-hist-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cap-hist-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
+.cap-time {
+  min-width: 40px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.cap-hist-line .cap-who {
+  margin-right: 0;
+}
+
+.cap-skipped {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.cap-edit {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 6px;
+}
+
+.cap-edit-text {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.cap-edit-error {
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+.cap-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* the engine: getting ready, too slow for this device */
+.call-engine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.call-engine.stuck {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.call-engine-text {
+  flex: 1 1 240px;
+}
+
+.call-engine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* ---- settings popover ---- */
@@ -365,6 +574,40 @@
 .call-end-all {
   border-color: var(--alert-border);
   color: var(--alert-ink);
+}
+
+/* ---- the note-taker menu ---- */
+.nt-title {
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.nt-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nt-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nt-who {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.nt-sub {
+  color: var(--mute);
+  font-size: var(--fs-caption);
 }
 
 /* ---- consent ---- */
@@ -448,17 +691,25 @@
 }
 
 @media (width <= 760px) {
+  /*
+   * The sheet sits in the page under the channel, not over it: the frame already stops above the bottom bar, so the sheet never covers the bar, and the composer
+   * above it keeps its place (a fixed sheet hid both). Its height is capped so the channel stays in view; the captions stay inside it, above the controls.
+   */
   .call-dock.sheet {
-    position: fixed;
-    inset: auto 0 0;
-    z-index: 40;
-    max-height: 75vh;
-    padding: 6px 12px max(12px, env(safe-area-inset-bottom));
+    position: relative;
+    flex: none;
+    max-height: 60vh;
+    padding: 6px 12px 10px;
     overflow: auto;
     border: 1px solid var(--rule);
     border-bottom: 0;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: var(--menu-shadow);
+  }
+
+  /* without the bottom bar (a guest) the phone's home indicator still needs room */
+  :root:not([data-bottom-bar="on"]) .call-dock.sheet {
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 
   .call-grab {
@@ -483,8 +734,17 @@
   }
 
   /* collapsed: the bar is one line; open: the people and the settings show too */
-  .call-dock.sheet:not(.open) .call-faces,
-  .call-dock.sheet:not(.open) .call-captions {
+  .call-dock.sheet:not(.open) .call-faces {
+    display: none;
+  }
+
+  /* captions stay on the one-line bar: two lines, no history until the sheet is open */
+  .call-dock.sheet .cap-history {
+    max-height: 28vh;
+  }
+
+  .call-dock.sheet:not(.open) .cap-history-btn,
+  .call-dock.sheet:not(.open) .cap-history {
     display: none;
   }
 

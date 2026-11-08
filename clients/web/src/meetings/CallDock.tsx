@@ -5,8 +5,11 @@ import { useNarrow } from '../shell/useNarrow';
 import type { CallState } from './controller';
 import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy } from './consent';
 import { engineAvailable } from './engine';
+import { Captions, EngineNotice } from './Captions';
 import { CaptionsIcon, ChatIcon, HeadphonesIcon, LeaveIcon, MicIcon, SlidersIcon } from './icons';
-import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, rosterOf } from './model';
+import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, notetakerBadge, rosterOf, visibleCaptions } from './model';
+import { NotetakerButton, NotetakerMenu } from './NotetakerPicker';
+import { RecordConsentPrompt, RecordingChip, RecordingToggle } from './RecordingToggle';
 import { callController, useCall } from './store';
 
 /*
@@ -56,7 +59,7 @@ function ConsentPrompt({ call }: { call: CallState }) {
   const [error, setError] = useState<string | null>(null);
   const mode = call.transcription?.mode === 'server' ? 'server' : 'on_device';
   const by = call.consent.kind === 'ask' ? call.consent.by : null;
-  const copy = promptCopy(by, mode);
+  const copy = promptCopy(by, mode, call.notetakers?.current?.bot.name ?? null);
   const choose = async (answer: 'yes' | 'no'): Promise<void> => {
     setBusy(true);
     setError(null);
@@ -147,7 +150,7 @@ export function CallDock() {
   const call = useCall();
   const people = usePeople();
   const narrow = useNarrow();
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState<'settings' | 'notetaker' | null>(null);
   const [open, setOpen] = useState(false);
   const inRoom = call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost';
   const now = useNow(call.phase === 'connected');
@@ -157,7 +160,8 @@ export function CallDock() {
   const c = callController();
   const roster = rosterOf(call.present, call.speaking, call.myActorId);
   const me = call.present.find((p) => p.actorId === call.myActorId);
-  const chip = consentChip(call.transcription, me?.consentTranscribe ?? 'unasked');
+  const notetaker = call.notetakers?.current ?? null;
+  const chip = consentChip(call.transcription, me?.consentTranscribe ?? 'unasked', notetaker?.bot.name ?? null);
   const canEnd = call.meeting.startedBy === call.myActorId || people.canModerate;
   const connecting = call.phase === 'connecting';
   const lost = call.phase === 'lost';
@@ -170,6 +174,8 @@ export function CallDock() {
         <button type="button" className="call-grab" aria-expanded={open} aria-label={open ? 'Hide call details' : 'Show call details'} onClick={() => setOpen((o) => !o)} />
       ) : null}
       {call.consent.kind === 'ask' && call.phase === 'connected' ? <ConsentPrompt call={call} /> : null}
+      {call.phase === 'connected' ? <RecordConsentPrompt call={call} /> : null}
+      <EngineNotice call={call} />
       {call.notice ? <p className="call-notice" role="status" data-testid="call-notice">{call.notice}</p> : null}
       <div className="call-row">
         <div className="call-id">
@@ -185,7 +191,15 @@ export function CallDock() {
               {r.speaking ? <span className="sr-only">speaking</span> : null}
             </li>
           ))}
+          {notetaker ? (
+            <li className="call-face bot" data-testid="call-notetaker-face" title={`${notetaker.bot.name} · ${notetakerBadge(notetaker)}`}>
+              <Avatar name={notetaker.bot.name} kind="agent" avatar={notetaker.bot.avatar} />
+              <span className="call-face-name">{notetaker.bot.name}</span>
+              <span className={`call-nt-badge ${notetaker.listening ? 'on' : ''}`} data-testid="call-notetaker-badge">{notetakerBadge(notetaker)}</span>
+            </li>
+          ) : null}
         </ul>
+        <RecordingChip call={call} />
         {chip ? <span className={`call-chip ${chip.tone}`} title={chip.title} data-testid="call-chip">{chip.label}</span> : null}
         <div className="call-controls">
           {lost ? (
@@ -219,11 +233,16 @@ export function CallDock() {
           <button type="button" className={`call-btn ${call.prefs.captions ? 'on' : ''}`} aria-pressed={call.prefs.captions} aria-label="Captions" title="Captions" onClick={() => c.setCaptions(!call.prefs.captions)} data-testid="call-captions">
             <CaptionsIcon />
           </button>
+          <RecordingToggle call={call} />
           <div className="call-more">
-            <button type="button" className="call-btn" aria-label="Call settings" aria-haspopup="dialog" aria-expanded={menu} title="Devices and settings" onClick={() => { setMenu((m) => !m); void c.refreshDevices(); }} data-testid="call-settings-btn">
+            <NotetakerButton call={call} open={menu === 'notetaker'} onToggle={() => setMenu((m) => (m === 'notetaker' ? null : 'notetaker'))} />
+            {menu === 'notetaker' ? <NotetakerMenu call={call} canModerate={people.canModerate} onDone={() => setMenu(null)} /> : null}
+          </div>
+          <div className="call-more">
+            <button type="button" className="call-btn" aria-label="Call settings" aria-haspopup="dialog" aria-expanded={menu === 'settings'} title="Devices and settings" onClick={() => { setMenu((m) => (m === 'settings' ? null : 'settings')); void c.refreshDevices(); }} data-testid="call-settings-btn">
               <SlidersIcon />
             </button>
-            {menu ? <Settings call={call} canEnd={canEnd} /> : null}
+            {menu === 'settings' ? <Settings call={call} canEnd={canEnd} /> : null}
           </div>
           <button type="button" className="btn s call-chat" onClick={() => c.openChat()} disabled={!call.meeting.threadRootId} data-testid="call-chat">
             <ChatIcon />
@@ -236,11 +255,7 @@ export function CallDock() {
           </button>
         </div>
       </div>
-      {call.prefs.captions ? (
-        <p className="call-captions" data-testid="call-captions-strip" aria-live="polite">
-          {call.transcription && call.transcription.mode !== 'off' ? 'Captions show here as people speak.' : 'Captions show here when transcription is on.'}
-        </p>
-      ) : null}
+      {call.prefs.captions || visibleCaptions(call.captions.filter((l) => l.kind === 'answer'), now).length > 0 ? <Captions call={call} now={now} /> : null}
     </section>
   );
 }

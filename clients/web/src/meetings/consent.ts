@@ -29,10 +29,10 @@ export const micMayOpen = (plan: ConsentPlan): boolean => plan.kind === 'none' |
 
 export type Chip = { label: string; tone: 'on' | 'off' | 'wait'; title: string };
 
-/** The chip beside the call controls; null while transcription is off. */
-export function consentChip(state: Pick<MeetingTranscriptionState, 'mode' | 'turnedOnBy'> | null, mine: MeetingConsent): Chip | null {
+/** The chip beside the call controls; null while transcription is off. `notetaker` is the name of the note-taker bot while one is in the room. */
+export function consentChip(state: Pick<MeetingTranscriptionState, 'mode' | 'turnedOnBy'> | null, mine: MeetingConsent, notetaker: string | null = null): Chip | null {
   if (!state || state.mode === 'off') return null;
-  const where = state.mode === 'server' ? 'on the server' : 'on each person’s own device';
+  const where = notetaker ? `by the note-taker ${notetaker}, on the server` : state.mode === 'server' ? 'on the server' : 'on each person’s own device';
   const who = state.turnedOnBy ? `${state.turnedOnBy.displayName} turned on transcription (${where}).` : `Transcription is on (${where}).`;
   if (mine === 'yes') return { label: 'Transcribing', tone: 'on', title: `${who} Your voice is being written down.` };
   if (mine === 'no') return { label: 'Not transcribing you', tone: 'off', title: `${who} You said no: you appear as “spoke (not transcribed)”.` };
@@ -44,12 +44,24 @@ export function consentWord(c: MeetingConsent): string {
   return c === 'yes' ? 'transcribed' : c === 'no' ? 'not transcribed' : 'not answered yet';
 }
 
-/** The words of the prompt: names who turned it on and says exactly what yes and no mean. */
-export function promptCopy(by: string | null, mode: 'on_device' | 'server'): { title: string; body: string; yes: string; no: string } {
+/**
+ * The words of the prompt: names who turned it on and says exactly what yes and no mean. With a note-taker in the room it says who listens, where, and that a yes is
+ * what lets it write down this person's words.
+ */
+export function promptCopy(by: string | null, mode: 'on_device' | 'server', notetaker: string | null = null): { title: string; body: string; yes: string; no: string } {
+  const no = 'If you say no, you can still talk: the transcript only shows that you spoke, and when.';
+  if (notetaker) {
+    return {
+      title: 'Let the note-taker write down my voice?',
+      body: `${notetaker} is the note-taker in this call. It listens on the server to write the notes, so what you say is sent to this server to be written down; the sound is not kept unless recording is on and you agree. It only writes down people who say yes. ${no}`,
+      yes: 'Yes, write down my voice',
+      no: 'No, do not write me down',
+    };
+  }
   const where = mode === 'server' ? 'Your speech is sent to this server to be written down; the sound is not kept.' : 'Your own device writes down what you say; your sound stays on your device.';
   return {
     title: 'Transcribe my voice?',
-    body: `${by ?? 'Someone'} turned on transcription for this call. ${where} If you say no, you can still talk: the transcript only shows that you spoke, and when.`,
+    body: `${by ?? 'Someone'} turned on transcription for this call. ${where} ${no}`,
     yes: 'Yes, transcribe my voice',
     no: 'No, do not transcribe me',
   };
@@ -63,4 +75,32 @@ export function canTurnOn(state: Pick<MeetingTranscriptionState, 'mode' | 'allow
 /** The mode to turn on: the device when it is allowed, else the server. */
 export function modeToTurnOn(state: Pick<MeetingTranscriptionState, 'allowed'>): 'on_device' | 'server' | null {
   return state.allowed.includes('on_device') ? 'on_device' : (state.allowed[0] ?? null);
+}
+
+/** Which engine writes this person's words, if any. A note-taker in the room listens on the server itself, so no engine runs on the device then. */
+export type EnginePlan = 'none' | 'on_device' | 'server';
+export function enginePlan(state: Pick<MeetingTranscriptionState, 'mode'> | null, mine: MeetingConsent | undefined, notetaker: boolean): EnginePlan {
+  if (!state || state.mode === 'off' || mine !== 'yes') return 'none';
+  if (state.mode === 'on_device') return 'on_device';
+  return notetaker ? 'none' : 'server';
+}
+
+/** When this device is too slow, the room can move to the server where the workspace and the team allow it. It changes things for everybody, so it is a clear button. */
+export function canOfferServer(state: Pick<MeetingTranscriptionState, 'mode' | 'allowed'> | null): boolean {
+  return !!state && state.mode === 'on_device' && state.allowed.includes('server');
+}
+
+/** The status of this person's engine as the page keeps it. */
+export type EngineUi =
+  | { kind: 'off' }
+  | { kind: 'loading'; fraction: number }
+  | { kind: 'listening' }
+  | { kind: 'too_slow'; message: string }
+  | { kind: 'failed'; message: string };
+
+/** One plain line about the engine for the captions strip; null when there is nothing to say. */
+export function engineLine(e: EngineUi): string | null {
+  if (e.kind === 'loading') return `Getting the speech model ready… ${Math.round(Math.min(1, Math.max(0, e.fraction)) * 100)}%`;
+  if (e.kind === 'too_slow' || e.kind === 'failed') return e.message;
+  return null;
 }

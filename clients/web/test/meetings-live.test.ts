@@ -1,4 +1,4 @@
-import { MEETING_CHANGED_PUSH, MEETING_RINGING_PUSH } from '@manythreads/shared';
+import { MEETING_CAPTION_PUSH, MEETING_CHANGED_PUSH, MEETING_RINGING_PUSH } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { LiveRoomsStore, type LiveDeps } from '../src/meetings/store';
 import { CHANNEL, FakeClock, ME, MEETING, NADIA, THREAD, id, person, settle, summary } from './meetings-fixtures';
@@ -7,7 +7,7 @@ import { CHANNEL, FakeClock, ME, MEETING, NADIA, THREAD, id, person, settle, sum
 
 function build(rooms = [summary([person(ME, 'Omar')])]) {
   const clock = new FakeClock();
-  const log = { ringing: false, started: 0, notices: [] as string[], changed: [] as string[], chat: 0, fetches: 0 };
+  const log = { ringing: false, started: 0, notices: [] as string[], changed: [] as string[], captions: [] as Array<[string, number]>, chat: 0, fetches: 0 };
   const state = { rooms, fail: false, hidden: false, current: null as { meetingId: string; threadRootId: string | null } | null };
   const deps: LiveDeps = {
     fetchLive: async () => {
@@ -23,6 +23,7 @@ function build(rooms = [summary([person(ME, 'Omar')])]) {
     onRoomChanged: (m) => void log.changed.push(m),
     currentRoom: () => state.current,
     onChatMessage: () => void (log.chat += 1),
+    onCaptions: (m, captions) => void log.captions.push([m, captions.length]),
     selfActor: () => ME,
     sounds: {
       startRing: () => {
@@ -135,5 +136,20 @@ describe('a call ringing', () => {
     t.state.hidden = true;
     t.store.addRing(ringing);
     expect(t.log.notices).toEqual(['Nadia is calling you']);
+  });
+});
+
+describe('live captions (P15-08)', () => {
+  const caption = { kind: 'speech', speakerId: NADIA, speakerName: 'Nadia', startMs: 0, endMs: 900, text: 'Shall we ship?', final: true, catchingUp: false, askerName: null };
+  it('hands the captions of a push to the call', () => {
+    const t = build();
+    t.store.handlePush({ type: MEETING_CAPTION_PUSH, payload: { meetingId: MEETING, captions: [caption, { ...caption, text: 'Yes.' }] } } as never);
+    expect(t.log.captions).toEqual([[MEETING, 2]]);
+  });
+  it('ignores a push that is not shaped like captions', () => {
+    const t = build();
+    t.store.handlePush({ type: MEETING_CAPTION_PUSH, payload: { meetingId: MEETING, captions: [] } } as never);
+    t.store.handlePush({ type: MEETING_CAPTION_PUSH, payload: { nonsense: true } } as never);
+    expect(t.log.captions).toEqual([]);
   });
 });
