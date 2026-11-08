@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "github",
+        "gitlab",
+        "jira",
+        "linear",
+        "zendesk",
+        "intercom",
+        "hubspot",
+        "asana",
+        "generic"
+      ]
+    },
+    "endpointName": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "kind": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,3}$"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 2000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actorLabel": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 80
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "verified": {
+      "type": "boolean",
+      "const": true
+    },
+    "deliveryKey": {
+      "type": "string",
+      "maxLength": 8
+    }
+  },
+  "required": [
+    "provider",
+    "endpointName",
+    "kind",
+    "title",
+    "url",
+    "actorLabel",
+    "receivedAt",
+    "verified",
+    "deliveryKey"
+  ],
+  "additionalProperties": false
+}

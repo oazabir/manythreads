@@ -10,9 +10,12 @@ import { Brand } from './ui';
 import {
   AddIcon, BackIcon, BellIcon, HashIcon, HookIcon, SettingsAuditIcon, SettingsDataIcon, SettingsDomainIcon, SettingsGeneralIcon, SettingsHealthIcon,
   SettingsImportIcon, SettingsBrainIcon, SettingsLlmIcon, SettingsMemoryIcon, SettingsMembersIcon, AppearanceIcon, SettingsProfileIcon, SettingsRolesIcon, SettingsRunnersIcon,
-  SettingsSecurityIcon, SettingsSetupIcon, SettingsSignInIcon, SettingsTemplateIcon, SettingsUsageIcon, ScheduledJobsIcon, ApprovalsIcon,
+  SettingsSecurityIcon, SettingsSetupIcon, SettingsSignInIcon, SettingsTemplateIcon, SettingsUsageIcon, ScheduledJobsIcon, ApprovalsIcon, ConnectedAppsIcon, ChatAppsIcon,
 } from '../shell/icons';
 import { APPEARANCE_PAGE_READY } from '../screens/account/Appearance';
+import { CONNECTIONS_ADMIN_READY } from '../screens/admin/connections/ConnectionsAdmin';
+import { ACCOUNT_CHAT_APPS_READY } from '../screens/bridges/AccountChatApps';
+import { ADMIN_CHAT_APPS_READY } from '../screens/bridges/AdminChatApps';
 import { useDocumentTitle } from '../shell/usePageTitle';
 
 /** The card for sign-in, bootstrap, invite and error pages. A `tagline` makes it the sign-in card: the product name large with the line under it, and a wider card on a desktop. */
@@ -82,6 +85,9 @@ export const WORKSPACE_NAV: ReadonlyArray<{ heading: string; items: ReadonlyArra
       { to: '/settings/workspace/runners', label: 'Runners', icon: SettingsRunnersIcon },
       { to: '/settings/workspace/brain', label: 'Brain', icon: SettingsBrainIcon },
       { to: '/settings/workspace/memory-sharing', label: 'Memory sharing', icon: SettingsMemoryIcon },
+      // Bundle D pages: each entry appears when its work package has built the page
+      ...(CONNECTIONS_ADMIN_READY ? [{ to: '/settings/workspace/connections', label: 'Connected apps', icon: ConnectedAppsIcon }] : []),
+      ...(ADMIN_CHAT_APPS_READY ? [{ to: '/settings/workspace/chat-apps', label: 'Chat apps', icon: ChatAppsIcon }] : []),
     ],
   },
   {
@@ -129,6 +135,7 @@ export function SettingsFrame() {
         ...(APPEARANCE_PAGE_READY ? [{ to: '/account/appearance', label: 'Appearance', icon: AppearanceIcon }] : []),
         { to: '/account/notifications', label: 'Notifications', icon: BellIcon },
         { to: '/account/connections', label: 'Connections', icon: HookIcon },
+        ...(ACCOUNT_CHAT_APPS_READY ? [{ to: '/account/chat-apps', label: 'Chat apps', icon: ChatAppsIcon }] : []),
         { to: '/account/security', label: 'Security', icon: SettingsSecurityIcon },
         ...(session.role === 'guest' ? [] : [{ to: '/account/bots', label: 'Bots and Personal', icon: SettingsMemoryIcon }]),
         ...(session.role === 'guest' ? [] : [{ to: '/account/routines', label: 'Routines', icon: ScheduledJobsIcon }, { to: '/account/action-items', label: 'Action items', icon: ApprovalsIcon }]),

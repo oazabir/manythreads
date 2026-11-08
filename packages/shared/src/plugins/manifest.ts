@@ -56,6 +56,9 @@ export const EXTENSION_POINTS = [
   'provider.inbox.dropper',
   // A person's own text files in their Personal space (P20-10): registered by files, read by scheduled-jobs for a routine's contract and output and for the action-items list.
   'provider.personal.files',
+  // A person's calendar and documents at outside services (Bundle D): registered by connections, read by meetings and knowledge through the SDK's `CalendarConnector` and `DocumentsConnector`.
+  'provider.connector.calendar',
+  'provider.connector.documents',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

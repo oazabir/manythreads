@@ -2,6 +2,7 @@ import type { ToolSourceTool } from '@manythreads/sdk';
 import { z } from 'zod';
 import { CRM_TOOLS } from './crm-tools.ts';
 import { GOOGLE_TOOLS } from './google-tools.ts';
+import { FREE_TIME_TOOLS } from './free-time-tool.ts';
 import { MICROSOFT_TOOLS } from './microsoft-tools.ts';
 import { TRACKER_TOOLS } from './tracker-tools.ts';
 import { asArray, asRecord, clip, enc, idOf, limit, Q, query, str, title, untrusted, type PersonToolDef } from './person-kit.ts';
@@ -95,7 +96,7 @@ const NOTION_TOOLS: PersonToolDef[] = [
   },
 ];
 
-export const PERSON_TOOL_DEFS: readonly PersonToolDef[] = [...GOOGLE_TOOLS, ...MICROSOFT_TOOLS, ...NOTION_TOOLS, ...TRACKER_TOOLS, ...SUPPORT_TOOLS, ...CRM_TOOLS];
+export const PERSON_TOOL_DEFS: readonly PersonToolDef[] = [...GOOGLE_TOOLS, ...MICROSOFT_TOOLS, ...NOTION_TOOLS, ...TRACKER_TOOLS, ...SUPPORT_TOOLS, ...CRM_TOOLS, ...FREE_TIME_TOOLS];
 
 const BY_NAME: ReadonlyMap<string, PersonToolDef> = new Map(PERSON_TOOL_DEFS.map((t) => [t.name, t]));
 export const personToolDef = (name: string): PersonToolDef | undefined => BY_NAME.get(name);

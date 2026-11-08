@@ -20,7 +20,8 @@
               "dm",
               "message",
               "reminder",
-              "meeting_actions"
+              "meeting_actions",
+              "meeting_soon"
             ]
           },
           "refType": {
@@ -28,7 +29,8 @@
             "enum": [
               "message",
               "reminder",
-              "meeting"
+              "meeting",
+              "scheduled_meeting"
             ]
           },
           "refId": {

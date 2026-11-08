@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "notion",
+          "confluence",
+          "google_drive",
+          "sharepoint",
+          "onedrive",
+          "dropbox",
+          "box"
+        ]
+      }
+    }
+  },
+  "required": [
+    "providers"
+  ]
+}

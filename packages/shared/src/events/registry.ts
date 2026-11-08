@@ -81,6 +81,21 @@ import { MeetingsNotesWrittenEvent } from './meetings.notes.written.ts';
 import { MeetingsNotetakerAddedEvent } from './meetings.notetaker.added.ts';
 import { MeetingsNotetakerRemovedEvent } from './meetings.notetaker.removed.ts';
 import { MeetingsRecordingStartedEvent } from './meetings.recording.started.ts';
+import { MeetingsScheduledCreatedEvent } from './meetings.scheduled.created.ts';
+import { MeetingsScheduledChangedEvent } from './meetings.scheduled.changed.ts';
+import { MeetingsScheduledCancelledEvent } from './meetings.scheduled.cancelled.ts';
+import { MeetingsScheduledStartingSoonEvent } from './meetings.scheduled.starting_soon.ts';
+import { KnowledgeSourceSyncedEvent } from './knowledge.source.synced.ts';
+import { WebhooksProviderEndpointChangedEvent } from './webhooks.provider_endpoint.changed.ts';
+import { WebhooksProviderEventReceivedEvent } from './webhooks.provider_event.received.ts';
+import { WebhooksProviderEventRefusedEvent } from './webhooks.provider_event.refused.ts';
+import { BridgesAccountChangedEvent } from './bridges.account.changed.ts';
+import { BridgesChannelLinkedEvent } from './bridges.channel.linked.ts';
+import { BridgesChannelUnlinkedEvent } from './bridges.channel.unlinked.ts';
+import { BridgesIdentityLinkedEvent } from './bridges.identity.linked.ts';
+import { BridgesIdentityUnlinkedEvent } from './bridges.identity.unlinked.ts';
+import { BridgesMessageRefusedEvent } from './bridges.message.refused.ts';
+import { ConnectionsPersonOffboardedEvent } from './connections.person.offboarded.ts';
 import { MeetingsRecordingStoppedEvent } from './meetings.recording.stopped.ts';
 import { MeetingsNotesSharedEvent } from './meetings.notes.shared.ts';
 import { MeetingsNotesSavedEvent } from './meetings.notes.saved.ts';
@@ -392,6 +407,21 @@ export const eventRegistry = {
   'meetings.notetaker.added': { 1: MeetingsNotetakerAddedEvent },
   'meetings.notetaker.removed': { 1: MeetingsNotetakerRemovedEvent },
   'meetings.recording.started': { 1: MeetingsRecordingStartedEvent },
+  'meetings.scheduled.created': { 1: MeetingsScheduledCreatedEvent },
+  'meetings.scheduled.changed': { 1: MeetingsScheduledChangedEvent },
+  'meetings.scheduled.cancelled': { 1: MeetingsScheduledCancelledEvent },
+  'meetings.scheduled.starting_soon': { 1: MeetingsScheduledStartingSoonEvent },
+  'knowledge.source.synced': { 1: KnowledgeSourceSyncedEvent },
+  'webhooks.provider_endpoint.changed': { 1: WebhooksProviderEndpointChangedEvent },
+  'webhooks.provider_event.received': { 1: WebhooksProviderEventReceivedEvent },
+  'webhooks.provider_event.refused': { 1: WebhooksProviderEventRefusedEvent },
+  'bridges.account.changed': { 1: BridgesAccountChangedEvent },
+  'bridges.channel.linked': { 1: BridgesChannelLinkedEvent },
+  'bridges.channel.unlinked': { 1: BridgesChannelUnlinkedEvent },
+  'bridges.identity.linked': { 1: BridgesIdentityLinkedEvent },
+  'bridges.identity.unlinked': { 1: BridgesIdentityUnlinkedEvent },
+  'bridges.message.refused': { 1: BridgesMessageRefusedEvent },
+  'connections.person.offboarded': { 1: ConnectionsPersonOffboardedEvent },
   'meetings.recording.stopped': { 1: MeetingsRecordingStoppedEvent },
   'meetings.notes.shared': { 1: MeetingsNotesSharedEvent },
   'meetings.notes.saved': { 1: MeetingsNotesSavedEvent },
@@ -503,6 +533,21 @@ export type AnyEvent =
   | z.infer<typeof MeetingsConsentChangedEvent>
   | z.infer<typeof MeetingsTranscriptWrittenEvent>
   | z.infer<typeof MeetingsNotesWrittenEvent>
+  | z.infer<typeof MeetingsScheduledCreatedEvent>
+  | z.infer<typeof MeetingsScheduledChangedEvent>
+  | z.infer<typeof MeetingsScheduledCancelledEvent>
+  | z.infer<typeof MeetingsScheduledStartingSoonEvent>
+  | z.infer<typeof KnowledgeSourceSyncedEvent>
+  | z.infer<typeof WebhooksProviderEndpointChangedEvent>
+  | z.infer<typeof WebhooksProviderEventReceivedEvent>
+  | z.infer<typeof WebhooksProviderEventRefusedEvent>
+  | z.infer<typeof BridgesAccountChangedEvent>
+  | z.infer<typeof BridgesChannelLinkedEvent>
+  | z.infer<typeof BridgesChannelUnlinkedEvent>
+  | z.infer<typeof BridgesIdentityLinkedEvent>
+  | z.infer<typeof BridgesIdentityUnlinkedEvent>
+  | z.infer<typeof BridgesMessageRefusedEvent>
+  | z.infer<typeof ConnectionsPersonOffboardedEvent>
   | z.infer<typeof SurfacesSurfaceRenderedEvent>
   | z.infer<typeof SurfacesSurfaceUpdatedEvent>
   | z.infer<typeof SurfacesSurfaceEventPostedEvent>;

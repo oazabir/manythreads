@@ -32,7 +32,7 @@ export const searchModeSentence = (mode: KnowledgeSearchMode): string =>
     ? 'Searched by the words in a question and by their meaning.'
     : 'Searched by the words in a question. Meaning-based search needs an embedding model, which this workspace has not been given.';
 
-export const KIND_LABEL: Record<KnowledgeDocument['kind'], string> = { markdown: 'Markdown', text: 'Text', csv: 'CSV', pdf: 'PDF' };
+export const KIND_LABEL: Record<KnowledgeDocument['kind'], string> = { markdown: 'Markdown', text: 'Text', csv: 'CSV', pdf: 'PDF', docx: 'Word', xlsx: 'Excel', pptx: 'PowerPoint' };
 
 /** The kinds a personal base reads; the file picker offers only these. */
 export const ACCEPTED_FILES = '.md,.markdown,.txt,.csv,.pdf,text/markdown,text/plain,text/csv,application/pdf';

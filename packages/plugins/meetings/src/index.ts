@@ -10,6 +10,9 @@ import { registerNotesRoutes } from './routes-notes.ts';
 import { registerNotetaker } from './notetaker.ts';
 import { registerQuestions } from './questions.ts';
 import { registerRecording } from './recording.ts';
+import { registerScheduled } from './scheduled.ts';
+import { registerScheduledJobs } from './scheduled-jobs.ts';
+import { registerScheduledRoutes } from './routes-scheduled.ts';
 import { registerSearch } from './search.ts';
 import { registerSegments } from './segments.ts';
 import { registerShares } from './shares.ts';
@@ -47,12 +50,17 @@ export default definePlugin({
         'meetings.notetaker.removed',
         'meetings.recording.started',
         'meetings.recording.stopped',
+        // Bundle D (docs/plugins/meetings.md "Bundle D contracts"): rooms planned ahead on a calendar
+        'meetings.scheduled.created',
+        'meetings.scheduled.changed',
+        'meetings.scheduled.cancelled',
+        'meetings.scheduled.starting_soon',
         // the organizer's first conversation with the note-taker is made when it tells them their notes are ready (P15-21), the way the conversations plugin makes it
         'channel.channel.created',
       ],
       // channel.message.posted: a voice message in a call thread becomes a line (P15-14), and a mention of the note-taker in it is a question (P15-24).
       // meetings.meeting.ended and meetings.transcript.written: the transcript writer and the Scribe start from them (P15-09, P15-10).
-      consumes: ['channel.member.removed', 'team.member.removed', 'channel.message.posted', 'meetings.meeting.ended', 'meetings.transcript.written'],
+      consumes: ['channel.channel.archived', 'channel.member.removed', 'team.member.removed', 'channel.message.posted', 'meetings.meeting.ended', 'meetings.transcript.written'],
     },
     // The Scribe's and the note-taker's tools (P15-10, P15-24) and the search over what was said (P15-13). A bot gets them by listing them in its BOT.md.
     capabilities: [
@@ -87,5 +95,9 @@ export default definePlugin({
     registerQuestions(ctx);
     registerRecording(ctx);
     registerSearch(ctx);
+    // Bundle D: one call per module, each a stub until its work package fills it in.
+    registerScheduled(ctx);
+    registerScheduledJobs(ctx);
+    registerScheduledRoutes(ctx);
   },
 });

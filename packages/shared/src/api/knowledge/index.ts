@@ -132,3 +132,5 @@ export const DeleteKnowledgeSourceResponse = z.object({ removed: z.literal(true)
 export type DeleteKnowledgeSourceResponse = z.infer<typeof DeleteKnowledgeSourceResponse>;
 /** Only a `url` source can be removed; it takes its document with it. */
 export const deleteKnowledgeSourceRoute = { method: 'DELETE', path: '/api/teams/:slug/knowledge/:base/sources/:sourceId' } as const satisfies ApiRoute;
+
+export * from './connector-sources.ts';

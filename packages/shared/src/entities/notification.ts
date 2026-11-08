@@ -10,7 +10,7 @@ import { ChannelKind } from './channel.ts';
  * in a channel they asked to hear everything from (`message`, P14-09), a reminder they set themself (`reminder`, P14-04), or action items from a meeting that were given to them
  * (`meeting_actions`, P15-12). Matches the SQL CHECK exactly.
  */
-export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions']);
+export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions', 'meeting_soon']);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 /**
@@ -18,7 +18,7 @@ export type NotificationKind = z.infer<typeof NotificationKind>;
  * made for the person (one row per person and reference), so a mention and a reminder on one message are two rows. `meeting` is the action items of one meeting: `refId` is then the
  * meeting's id (not a message), and opening it goes to the meeting page.
  */
-export const NotificationRefType = z.enum(['message', 'reminder', 'meeting']);
+export const NotificationRefType = z.enum(['message', 'reminder', 'meeting', 'scheduled_meeting']);
 export type NotificationRefType = z.infer<typeof NotificationRefType>;
 
 /**

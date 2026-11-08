@@ -351,3 +351,17 @@ Not built: the webhook that calls it, the GitHub App credentials, and "merge rel
 * Workspace-scoped grants to a bot.
 * The tools of the planned connectors (P16-05, P16-08, P16-09, Freshdesk and the support triggers of P16-07).
 * A real mail transport (P8-29), audit lines and events for connection changes (P8-06), the Connections screen.
+
+## Bundle D contracts (P16-02, P16-03, P16-11)
+
+`connections/0006_connectors_admin.sql` adds the daily usage counters (`app.connection_usage_daily`, system-only, counts of calls and failures, never a payload; written by `app.connection_usage_bump`), the admin people
+list (`app.connections_admin_people`, `app.connections_resolve_people`), the owner move guard for team connections (`app.connections_guard`) and `app.connections_offboard_start`, which is system-only: the app role
+is refused. New services in the catalog (split into `catalog-files.ts` and `catalog-chat.ts`): Confluence, Dropbox and Box join Notion, Google and Microsoft.
+
+SDK (`@manythreads/sdk`, `connectors.ts`): `CalendarConnector` and `DocumentsConnector` are provider kinds `provider.connector.calendar` and `provider.connector.documents`; every call returns
+`ConnectorResult<T>`, an `ok` value or one of the codes `not_connected`, `scope_missing`, `provider_down`, `not_found` with a plain message. Callers: `meetings` (calendar), `knowledge` (documents) and the person tool
+`calendar.find_free_time` (`FREE_TIME_TOOLS`). `bumpConnectionUsage` counts a call.
+
+Routes: `GET /api/me/calendars`; `GET /api/admin/connections/health`, `GET /api/admin/connections/people`, `DELETE /api/admin/connections/people/:connectionId`;
+`GET|POST /api/admin/people/:personId/offboard-connections` (a preview, then do it). The offboarding also starts when a person is suspended (`workspace.member.status_changed`). Event
+`connections.person.offboarded` carries counts and ids. Work package A fills `usage.ts`, `offboard.ts`, `admin-routes.ts`; C fills `calendar-provider.ts` and `free-time-tool.ts`; D1 fills `documents-provider.ts`.

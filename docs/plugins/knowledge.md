@@ -133,3 +133,16 @@ The bot page's **Knowledge** tab (`clients/web/src/screens/bots/knowledge.tsx`):
 - Word, slides, spreadsheets and email are read by the extractor (`docx`, `pptx`, `xlsx`, `eml`; see `docs/plugins/memory-inbox.md`), but a knowledge base does not accept those kinds yet: its upload still takes Markdown, text, CSV and PDF.
 - Never run against a real embedding provider (there is none); the embed door is tested with a fake.
 - `sources.yaml` in the base's folder is generated and written only; the plugin does not read it back.
+
+## Bundle D contracts (P16-08, document sources that ride on a connection)
+
+`knowledge/0005_connector_sources.sql` adds the source kind `connector` to `app.knowledge_sources` with `provider`, `connection_id`, `granted_by`, `remote_root`, `cursor`, `status`, `skipped_limited` and
+`document_count`; a 10-source cap per base (`app.knowledge_sources_cap`); and the remote id, version and address of a document. Services: `KnowledgeConnectorProvider` = `notion`, `confluence`, `google_drive`,
+`sharepoint`, `onedrive`, `dropbox`, `box` (the connection a service reads with is in `CONNECTOR_SOURCE_CONNECTOR`). `connection_id` has no foreign key across plugins; a vanished connection pauses the source.
+
+Team rule (`access-rule.ts`, `everyoneMayRead(access, members)`): a document of a team base is read in only when the provider says every team member could open it (a public link, or an email domain or list
+covering every member's address); an answer that cannot be read counts as "not everyone" and the document is left out (counted in `skippedLimited`). A Personal base reads whatever the person could open.
+
+Routes: `POST /api/teams/:slug/knowledge/:base/connector-sources`, `POST /api/me/knowledge/:base/connector-sources`, `GET /api/me/knowledge-roots` (the picker), `GET /api/me/knowledge-providers`,
+`GET /api/admin/knowledge/connector-health`. Limits per pass: 100 documents and 20 MB; one document at most 10 MB; every 60 minutes unless set (15 to 10080). Event `knowledge.source.synced` (counts only). Work
+package D1 fills the documents providers; D2 fills `access-rule.ts`, `connector-sync.ts`, `connector-routes.ts`.

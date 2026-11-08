@@ -23,7 +23,10 @@
         "markdown",
         "text",
         "csv",
-        "pdf"
+        "pdf",
+        "docx",
+        "xlsx",
+        "pptx"
       ]
     },
     "source": {
@@ -31,7 +34,8 @@
       "enum": [
         "upload",
         "repo",
-        "url"
+        "url",
+        "connector"
       ]
     },
     "size": {

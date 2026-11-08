@@ -111,6 +111,49 @@ const MEETING_RECORDING_STOP: Record<string, string> = {
   joined_without_yes: 'Someone joined without saying yes',
   failed: 'The recorder failed',
 };
+const SCHEDULED_CANCEL_REASON: Record<string, string> = {
+  person: 'Cancelled by the organizer',
+  calendar_deleted: 'The event was deleted at the calendar',
+  channel_archived: 'The channel was archived',
+};
+const PROVIDER_ENDPOINT_CHANGE: Record<string, string> = {
+  created: 'Made',
+  rotated: 'Got a new signing secret',
+  secret_set: "The app's own signing secret was put in",
+  revoked: 'Turned off',
+};
+const PROVIDER_REFUSAL: Record<string, string> = {
+  bad_signature: 'Wrong signature',
+  stale: 'Too old',
+  replayed: 'Sent twice',
+  too_large: 'Too large',
+  unknown_endpoint: 'No such address',
+  bot_busy: 'The bot was too busy',
+};
+const BRIDGE_ACCOUNT_CHANGE: Record<string, string> = {
+  created: 'Made',
+  updated: 'Renamed',
+  switched: 'Switched on or off',
+  credential_set: 'A credential was put in',
+  deleted: 'Removed',
+};
+const BRIDGE_UNLINK_REASON: Record<string, string> = {
+  person: 'Taken off by a lead or admin',
+  channel_private: 'The channel became private',
+  channel_archived: 'The channel was archived',
+  account_removed: 'The chat app account was removed',
+};
+const BRIDGE_IDENTITY_UNLINK: Record<string, string> = {
+  person: 'The person unlinked it',
+  chat_command: 'Unlinked in the chat',
+  admin: 'Removed by an admin',
+  offboarded: 'The person left the workspace',
+};
+const BRIDGE_REFUSAL: Record<string, string> = {
+  unverified: 'From someone who is not linked',
+  disabled: 'The account is switched off',
+  bad_signature: 'Wrong signature',
+};
 const APPROVAL_SOURCE: Record<string, string> = {
   environment: 'Asked by the environment rules',
   dispatch: 'Asked by a command rule',
@@ -806,6 +849,109 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     teamId: team(e['teamId']),
     target: of('meeting', uuid(e['meetingId'])),
     reason: e['toMemory'] === true ? 'Also sent to the team memory inbox' : null,
+  }),
+  // Rooms planned ahead (Bundle D, P16-05): who and when, never the title, the agenda or an address. The five-minute reminder is routine and leaves no row.
+  'meetings.scheduled.created': (e) => ({
+    action: 'meeting.scheduled',
+    who: actor(e['organizerId']),
+    teamId: team(e['teamId']),
+    target: of('scheduled_meeting', uuid(e['scheduledMeetingId'])),
+    reason: `${plural(num(e['attendeeCount']), 'person', 'people')} invited, ${num(e['outsideCount'])} outside`,
+  }),
+  'meetings.scheduled.changed': (e) => ({
+    action: 'meeting.schedule_changed',
+    who: actor(e['changedBy']) ?? 'system',
+    teamId: team(e['teamId']),
+    target: of('scheduled_meeting', uuid(e['scheduledMeetingId'])),
+    reason: e['changedBy'] ? 'Changed by the organizer' : 'Copied from a change at the calendar',
+  }),
+  'meetings.scheduled.cancelled': (e) => ({
+    action: 'meeting.schedule_cancelled',
+    who: actor(e['cancelledBy']) ?? 'system',
+    teamId: team(e['teamId']),
+    target: of('scheduled_meeting', uuid(e['scheduledMeetingId'])),
+    reason: SCHEDULED_CANCEL_REASON[String(e['reason'])] ?? 'Cancelled',
+  }),
+  // A connected app read into a knowledge base (Bundle D, P16-08): counts only, and only a pass that moved or left something out; an idle pass is routine.
+  'knowledge.source.synced': (e) => {
+    const moved = num(e['added']) + num(e['updated']) + num(e['removed']);
+    if (moved === 0 && num(e['skippedLimited']) === 0 && e['status'] === 'ready') return null;
+    return {
+      action: 'knowledge.source_synced',
+      who: 'system',
+      teamId: team(e['teamId']),
+      target: of('knowledge_source', uuid(e['sourceId']), code(e['provider'])),
+      reason: `${num(e['added'])} added, ${num(e['updated'])} updated, ${num(e['removed'])} removed, ${num(e['skippedLimited'])} left out because not everyone on the team can open them`,
+    };
+  },
+  // The address a work app calls (Bundle D, P16-10): who made, rotated, gave a secret to or turned off which one, by the app's short name. A delivery that was understood is routine
+  // and leaves no row; one that was turned away does.
+  'webhooks.provider_endpoint.changed': (e) => ({
+    action: 'webhook.provider_endpoint_changed',
+    who: actor(e['actorId']),
+    teamId: team(e['teamId']),
+    target: of('webhook', uuid(e['webhookId']), code(e['provider'])),
+    reason: PROVIDER_ENDPOINT_CHANGE[String(e['change'])] ?? 'Changed',
+  }),
+  'webhooks.provider_event.refused': (e) => ({
+    action: 'webhook.provider_event_refused',
+    who: 'system',
+    teamId: team(e['teamId']),
+    target: of('webhook', uuid(e['webhookId']), code(e['provider'])),
+    outcome: 'denied',
+    reason: `${PROVIDER_REFUSAL[String(e['reason'])] ?? 'Turned away'}, ${plural(Math.max(1, num(e['count'])), 'time')}`,
+  }),
+  // Chat apps (Bundle D, P16-09): which service and who, never a credential, a chat's name or a word that was said.
+  'bridges.account.changed': (e) => ({
+    action: 'bridge.account_changed',
+    who: actor(e['actorId']) ?? 'system',
+    teamId: null,
+    target: of('bridge_account', uuid(e['accountId']), code(e['provider'])),
+    reason: BRIDGE_ACCOUNT_CHANGE[String(e['change'])] ?? 'Changed',
+  }),
+  'bridges.channel.linked': (e) => ({
+    action: 'bridge.channel_linked',
+    who: actor(e['actorId']),
+    teamId: team(e['teamId']),
+    target: of('channel', uuid(e['channelId']), null, 'channel'),
+    reason: `Joined to ${words(e['provider']) ?? 'a chat app'}`,
+  }),
+  'bridges.channel.unlinked': (e) => ({
+    action: 'bridge.channel_unlinked',
+    who: actor(e['actorId']) ?? 'system',
+    teamId: team(e['teamId']),
+    target: of('channel', uuid(e['channelId']), null, 'channel'),
+    reason: BRIDGE_UNLINK_REASON[String(e['reason'])] ?? 'Taken off',
+  }),
+  'bridges.identity.linked': (e) => ({
+    action: 'bridge.identity_linked',
+    who: person(e['personId']),
+    teamId: null,
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: `Linked to ${words(e['provider']) ?? 'a chat app'}`,
+  }),
+  'bridges.identity.unlinked': (e) => ({
+    action: 'bridge.identity_unlinked',
+    who: actor(e['actorId']) ?? person(e['personId']) ?? 'system',
+    teamId: null,
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: BRIDGE_IDENTITY_UNLINK[String(e['how'])] ?? 'Unlinked',
+  }),
+  'bridges.message.refused': (e) => ({
+    action: 'bridge.message_refused',
+    who: 'system',
+    teamId: null,
+    target: of('bridge_account', uuid(e['accountId']), code(e['provider'])),
+    outcome: 'denied',
+    reason: `${BRIDGE_REFUSAL[String(e['reason'])] ?? 'Turned away'}, ${plural(Math.max(1, num(e['count'])), 'message')}`,
+  }),
+  // A leaving person's connections (Bundle D, P16-11): counts and who pressed the button; never a token or an address.
+  'connections.person.offboarded': (e) => ({
+    action: 'connection.person_offboarded',
+    who: actor(e['actorId']) ?? 'system',
+    teamId: null,
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: `${plural(num(e['revoked']), 'connection')} removed, ${num(e['providerRevoked'])} forgotten by the service, ${num(e['moved'])} moved to another owner`,
   }),
   'notifications.digest.sent': (e) => ({
     action: 'digest.sent',

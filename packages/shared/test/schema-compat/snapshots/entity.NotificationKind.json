@@ -7,6 +7,7 @@
     "dm",
     "message",
     "reminder",
-    "meeting_actions"
+    "meeting_actions",
+    "meeting_soon"
   ]
 }

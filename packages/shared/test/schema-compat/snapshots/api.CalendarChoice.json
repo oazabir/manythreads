@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "google",
+        "microsoft"
+      ]
+    },
+    "calendarId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "primary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "provider",
+    "calendarId",
+    "name",
+    "primary"
+  ]
+}

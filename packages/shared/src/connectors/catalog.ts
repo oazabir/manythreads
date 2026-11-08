@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { CONNECTION_KIND_TOOLS, CONNECTION_KINDS } from '../entities/connection-kinds.ts';
 import { ConnectionKind, ConnectionToolName } from '../entities/connection.ts';
+import { CHAT_PLANNED_ENTRIES } from './catalog-chat.ts';
+import { FILES_PLANNED_ENTRIES } from './catalog-files.ts';
+import { planned, soon, svc, tool, trig } from './catalog-helpers.ts';
+import { withTriggerAvailability } from './triggers.ts';
 
 // The connector catalog (PLAN P16-01): ONE list of every outside service manythreads can be connected to, what it is signed in with, what a bot may do through it and
 // what it may start or fill. The Add connection gallery, the connections plugin (its OAuth sign-in reads its services and scopes from here) and the docs all read
@@ -114,20 +118,8 @@ export type ConnectorEntry = z.infer<typeof ConnectorEntry>;
 
 // ---- builders (plain functions that return plain data) ------------------------------------------------------------------------------------------------
 
-const svc = (id: string, label: string, description: string, scopes: string[], available = true): ConnectorService => ({ id, label, description, scopes, available });
-const tool = (name: string, label: string, access: 'read' | 'write', service: string | null, available = true): ConnectorTool => ({
-  name,
-  label,
-  access,
-  destructive: false,
-  service,
-  available,
-});
 /** A tool that deletes or cannot be undone: listed, tagged, and never offered. */
 const dangerous = (name: string, label: string, service: string | null): ConnectorTool => ({ name, label, access: 'write', destructive: true, service, available: false });
-const trig = (id: string, label: string, available = false): ConnectorTrigger => ({ id, label, available });
-
-const soon = (phase: string, reason: string): Pick<ConnectorEntry, 'status' | 'reason' | 'phase'> => ({ status: 'planned', reason, phase });
 const built = (phase: string | null = null): Pick<ConnectorEntry, 'status' | 'reason' | 'phase'> => ({ status: 'available', reason: null, phase });
 
 const GOOGLE = 'https://www.googleapis.com/auth';
@@ -498,14 +490,6 @@ const salesforce: ConnectorEntry = {
 
 // ---- connectors whose tools are not built yet: catalog data only ---------------------------------------------------------------------------------------
 
-const planned = (e: Omit<ConnectorEntry, 'kind' | 'syncTargets' | 'triggers' | 'services'> & Partial<Pick<ConnectorEntry, 'syncTargets' | 'triggers' | 'services'>>): ConnectorEntry => ({
-  kind: null,
-  syncTargets: [],
-  triggers: [],
-  services: [],
-  ...e,
-});
-
 const PLANNED_ENTRIES: ConnectorEntry[] = [
   planned({
     id: 'github',
@@ -550,102 +534,8 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
     triggers: [trig('ticket_created', 'A new ticket arrives')],
     ...soon('P16-07', 'Freshdesk signs in with a personal API key rather than a consent page, and the key-entry sign-in is not built yet.'),
   }),
-  planned({
-    id: 'confluence',
-    label: 'Confluence',
-    provider: 'Atlassian',
-    categories: ['files'],
-    description: 'Pages as a knowledge source, kept up to date as they change. A page is added to a team base only when everyone on the team may read it there.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team', 'person'],
-    services: [svc('pages', 'Pages (read)', 'Search and read pages.', ['read:confluence-content.all', 'offline_access'], false)],
-    tools: [tool('confluence.search', 'Search pages', 'read', 'pages', false), tool('confluence.read_page', 'Read a page', 'read', 'pages', false)],
-    syncTargets: ['knowledge'],
-    ...soon('P16-08', 'Documents as knowledge arrive in a later phase.'),
-  }),
-  planned({
-    id: 'dropbox',
-    label: 'Dropbox',
-    provider: 'Dropbox',
-    categories: ['files'],
-    description: 'Files as a knowledge source, kept up to date as they change.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team', 'person'],
-    services: [svc('files', 'Files (read)', 'Search and read files.', ['files.metadata.read', 'files.content.read'], false)],
-    tools: [tool('dropbox.search', 'Search files', 'read', 'files', false), tool('dropbox.read', 'Read a file', 'read', 'files', false)],
-    syncTargets: ['knowledge'],
-    ...soon('P16-08', 'Documents as knowledge arrive in a later phase.'),
-  }),
-  planned({
-    id: 'box',
-    label: 'Box',
-    provider: 'Box',
-    categories: ['files'],
-    description: 'Files as a knowledge source, kept up to date as they change.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team', 'person'],
-    services: [svc('files', 'Files (read)', 'Search and read files.', ['root_readonly'], false)],
-    tools: [tool('box.search', 'Search files', 'read', 'files', false), tool('box.read', 'Read a file', 'read', 'files', false)],
-    syncTargets: ['knowledge'],
-    ...soon('P16-08', 'Documents as knowledge arrive in a later phase.'),
-  }),
-  planned({
-    id: 'slack',
-    label: 'Slack',
-    provider: 'Slack',
-    categories: ['chat'],
-    description: 'A two-way bridge to a Slack channel for the move-in period. Messages show who wrote them and where.',
-    source: 'first_party',
-    auth: 'app_install',
-    heldBy: ['team'],
-    services: [svc('bridge', 'Channel bridge', 'Read and post in the channels the app is added to.', ['channels:history', 'chat:write'], false)],
-    tools: [],
-    triggers: [trig('message_posted', 'A message is posted')],
-    ...soon('P16-09', 'Chat bridges arrive in a later phase.'),
-  }),
-  planned({
-    id: 'telegram',
-    label: 'Telegram',
-    provider: 'Telegram',
-    categories: ['chat'],
-    description: 'A two-way bridge between a channel and a Telegram chat, and a way to reach your own assistant from your phone. Only linked people get through.',
-    source: 'first_party',
-    auth: 'api_key',
-    heldBy: ['team'],
-    tools: [],
-    triggers: [trig('message_received', 'A message arrives')],
-    ...soon('P16-09', 'Chat bridges arrive in a later phase.'),
-  }),
-  planned({
-    id: 'whatsapp',
-    label: 'WhatsApp Business',
-    provider: 'Meta',
-    categories: ['chat'],
-    description: 'A two-way bridge between a channel and WhatsApp, and a way to reach your own assistant from your phone. Only linked people get through.',
-    source: 'first_party',
-    auth: 'api_key',
-    heldBy: ['team'],
-    tools: [],
-    triggers: [trig('message_received', 'A message arrives')],
-    ...soon('P16-09', 'Chat bridges arrive in a later phase.'),
-  }),
-  planned({
-    id: 'teams',
-    label: 'Microsoft Teams',
-    provider: 'Microsoft',
-    categories: ['chat'],
-    description: 'A two-way bridge between a channel and a Teams channel, and a way to reach your own assistant from Teams.',
-    source: 'first_party',
-    auth: 'app_install',
-    heldBy: ['team'],
-    services: [svc('bridge', 'Channel bridge', 'Read and post in the channels the app is added to.', ['ChannelMessage.Send'], false)],
-    tools: [],
-    triggers: [trig('message_posted', 'A message is posted')],
-    ...soon('P16-09', 'Chat bridges arrive in a later phase.'),
-  }),
+  ...FILES_PLANNED_ENTRIES,
+  ...CHAT_PLANNED_ENTRIES,
   // Ready-made pieces of the connector service (Activepieces) for what no first-party connector covers.
   planned({
     id: 'stripe',
@@ -714,7 +604,7 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
 ];
 
 /** Every connector, in the order the gallery shows them: what works today first, then what is planned. */
-export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [...nativeEntries, google, microsoft, notion, jira, linear, githubIssues, asana, zendesk, intercom, hubspot, salesforce, ...PLANNED_ENTRIES];
+export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [...nativeEntries, google, microsoft, notion, jira, linear, githubIssues, asana, zendesk, intercom, hubspot, salesforce, ...PLANNED_ENTRIES].map(withTriggerAvailability);
 
 // ---- reading the catalog -----------------------------------------------------------------------------------------------------------------------------------
 

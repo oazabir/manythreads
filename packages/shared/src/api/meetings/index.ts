@@ -11,6 +11,7 @@ export * from './shares.ts';
 export * from './recording.ts';
 export * from './audio.ts';
 export * from './search.ts';
+export * from './scheduled.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Voice rooms (PLAN P15-03, plugin `meetings`, docs/plugins/meetings.md). One live room per channel; a DM call uses the DM's channel. Whoever may read the channel may

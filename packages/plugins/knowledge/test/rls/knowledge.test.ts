@@ -159,7 +159,7 @@ describe('knowledge tables keep their own rules', () => {
   });
 
   it('a kind and a status outside the lists are refused', async () => {
-    expect(await code(sys((tx) => tx.query(`UPDATE app.knowledge_documents SET kind = 'docx' WHERE id = $1`, [eng.doc])))).toBe('23514');
+    expect(await code(sys((tx) => tx.query(`UPDATE app.knowledge_documents SET kind = 'rtf' WHERE id = $1`, [eng.doc])))).toBe('23514');
     expect(await code(sys((tx) => tx.query(`UPDATE app.knowledge_documents SET status = 'pending' WHERE id = $1`, [eng.doc])))).toBe('23514');
     expect(await code(sys((tx) => tx.query(`INSERT INTO app.knowledge_sources (base_id, team_id, kind) VALUES ($1, $2, 'drive')`, [eng.base, ENG])))).toBe('23514');
   });

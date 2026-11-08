@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "notion",
+        "confluence",
+        "google_drive",
+        "sharepoint",
+        "onedrive",
+        "dropbox",
+        "box"
+      ]
+    },
+    "root": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "syncMinutes": {
+      "default": 60,
+      "type": "integer",
+      "minimum": 15,
+      "maximum": 10080
+    },
+    "acknowledgeTeamRule": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "provider",
+    "root"
+  ],
+  "additionalProperties": false
+}

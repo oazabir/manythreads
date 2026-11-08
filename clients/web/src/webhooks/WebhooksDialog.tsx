@@ -5,7 +5,9 @@ import { useQuery } from '../app/useQuery';
 import { Dialog } from '../components/Dialog';
 import { HookIcon } from '../shell/icons';
 import { CopyBox } from './CopyBox';
+import { ChatBridgeTab, CHAT_BRIDGE_TAB_READY } from './ChatBridgeTab';
 import { OutgoingPanel } from './OutgoingPanel';
+import { ProviderHooksTab, PROVIDER_HOOKS_TAB_READY } from './ProviderHooksTab';
 import { TokensPanel } from './TokensPanel';
 import { PLACEHOLDER_URL, curlExample, messageOf, useLine } from './model';
 import { SkeletonRows } from '../components/Skeleton';
@@ -238,11 +240,14 @@ function IncomingPanel({ channelId }: { channelId: string }) {
   );
 }
 
-type Tab = 'incoming' | 'outgoing' | 'tokens';
+type Tab = 'incoming' | 'outgoing' | 'tokens' | 'apps' | 'chat';
+// The last two tabs are Bundle D's (work apps, chat apps); each is drawn only once its work package has built it.
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'incoming', label: 'Incoming webhooks' },
   { id: 'outgoing', label: 'Outgoing webhooks' },
   { id: 'tokens', label: 'API tokens' },
+  ...(PROVIDER_HOOKS_TAB_READY ? [{ id: 'apps' as const, label: 'Work apps' }] : []),
+  ...(CHAT_BRIDGE_TAB_READY ? [{ id: 'chat' as const, label: 'Chat apps' }] : []),
 ];
 
 /**
@@ -264,6 +269,8 @@ export function WebhooksDialog({ channelId, channelName, onClose }: { channelId:
         {tab === 'incoming' ? <IncomingPanel channelId={channelId} /> : null}
         {tab === 'outgoing' ? <OutgoingPanel channelId={channelId} /> : null}
         {tab === 'tokens' ? <TokensPanel channelId={channelId} /> : null}
+        {tab === 'apps' ? <ProviderHooksTab channelId={channelId} /> : null}
+        {tab === 'chat' ? <ChatBridgeTab channelId={channelId} channelName={channelName} /> : null}
       </div>
     </Dialog>
   );

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { ActorId, ChannelId, FileId, MeetingId, MessageId, WorkspaceId } from '../ids.ts';
 import { AnswerPayloadView } from './answer.ts';
+import { MessageVia } from './bridge.ts';
 import { MAX_ATTACHMENTS_PER_MESSAGE } from './file.ts';
 
 /** A text that cannot be stored: the database refuses the NUL character (U+0000) in any text, so it is refused up front with a plain sentence rather than failing the save. */
@@ -71,6 +72,10 @@ export const Message = z.object({
     runFailure: z.string().max(40).optional().catch(undefined),
     /** The meeting a note-taker's direct message is about (P15-23): the client draws Open the notes, Share and Save buttons under the text. Written by the platform alone; a value that does not read is dropped, never the message. */
     meetingNotes: z.object({ meetingId: MeetingId }).optional().catch(undefined),
+    /** The run that wrote a bot's message (stamped by the platform): the client asks `GET /api/runs/:runId/origin` for what started it and draws the origin card when a work app did (Bundle D, P16-10). A value that does not read is dropped, never the message. */
+    runId: z.uuid().optional().catch(undefined),
+    /** The chat app a message came across from (Bundle D bridges, P16-09): the web draws a small "via Telegram" note. Written by the bridges plugin alone; a value that does not read is dropped, never the message. */
+    via: MessageVia.optional().catch(undefined),
   }),
   createdAt: IsoDateTime,
 });

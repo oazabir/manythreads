@@ -71,7 +71,7 @@ export type DocRow = {
   base_id: string;
   team_id: string | null;
   source_id: string;
-  source_kind: 'upload' | 'repo' | 'url';
+  source_kind: 'upload' | 'repo' | 'url' | 'connector';
   name: string;
   slug: string;
   kind: KnowledgeDocumentKind;

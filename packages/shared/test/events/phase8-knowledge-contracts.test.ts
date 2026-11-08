@@ -45,7 +45,7 @@ describe('the knowledge events', () => {
   it.each([
     ['knowledge.base.created', 'slug', { slug: 'Not A Slug' }],
     ['knowledge.base.deleted', 'documents', { documents: -1 }],
-    ['knowledge.document.added', 'kind', { kind: 'docx' }],
+    ['knowledge.document.added', 'kind', { kind: 'rtf' }],
     ['knowledge.document.added', 'status', { status: 'pending' }],
     ['knowledge.document.added', 'version', { version: 0 }],
     ['knowledge.document.removed', 'documentId', { documentId: 'x' }],

@@ -82,3 +82,5 @@ export const WebhookCallResponse = z.object({ ok: z.literal(true), messageId: z.
 export type WebhookCallResponse = z.infer<typeof WebhookCallResponse>;
 /** The public route. Not part of `/api`: a program calls it with no session. */
 export const webhookCallRoute = { method: 'POST', path: '/hooks/:webhookId/:secret' } as const;
+
+export * from './provider.ts';

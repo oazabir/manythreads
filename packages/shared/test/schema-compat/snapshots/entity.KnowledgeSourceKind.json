@@ -4,6 +4,7 @@
   "enum": [
     "upload",
     "repo",
-    "url"
+    "url",
+    "connector"
   ]
 }

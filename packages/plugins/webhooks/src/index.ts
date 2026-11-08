@@ -1,8 +1,11 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerOutgoing } from './outgoing.ts';
+import { registerRunOrigin } from './origin.ts';
+import { registerProviderDoor } from './provider-door.ts';
 import { registerCallRoute } from './routes-call.ts';
 import { registerManageRoutes } from './routes-manage.ts';
 import { registerOutgoingRoutes } from './routes-outgoing.ts';
+import { registerProviderRoutes } from './routes-provider.ts';
 import { registerTokenRoutes } from './routes-tokens.ts';
 import { registerSlackApi } from './slack-api.ts';
 
@@ -38,6 +41,10 @@ export default definePlugin({
         'webhooks.token.used',
         'webhooks.outgoing.changed',
         'webhooks.outgoing.delivered',
+        // Bundle D (docs/plugins/webhooks.md "Bundle D contracts"): endpoints a work app calls, and what came in through them
+        'webhooks.provider_endpoint.changed',
+        'webhooks.provider_event.received',
+        'webhooks.provider_event.refused',
       ],
       consumes: ['channel.message.posted'],
     },
@@ -53,5 +60,9 @@ export default definePlugin({
     registerOutgoingRoutes(ctx);
     registerSlackApi(ctx);
     registerOutgoing(ctx);
+    // Bundle D: one call per module, each a stub until its work package fills it in.
+    registerProviderRoutes(ctx);
+    registerProviderDoor(ctx);
+    registerRunOrigin(ctx);
   },
 });

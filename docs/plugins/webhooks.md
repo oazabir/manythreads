@@ -115,3 +115,16 @@ A lead sets, for one channel, up to 10 **trigger words** (matched whole-word, ca
 - The same `404` for every bad address. Do not add a reason to the answer.
 - New sender shapes go in `src/adapters` as pure functions with a test, and use `inline()`, `quote()`, `safeUrl()` for anything the sender wrote.
 - Rate limits stay in process memory (PLAN D3).
+
+## Bundle D contracts (P16-10, work apps calling in)
+
+`webhooks/0004_provider_endpoints.sql` adds the kind `provider` to `app.webhooks`, the tables `webhook_provider` (one address per channel and service, the signing secret sealed), `webhook_provider_events` (what came
+in: service, kind, a hash and an id; the body is not kept) and `webhook_provider_runs` (which delivery woke which bot run), the functions `app.integrations_create_provider`, `app.webhooks_claim_run` (system-only; a
+delivery wakes a bot once) and `app.webhooks_run_origin`. Services: `WebhookProvider` = `github`, `gitlab`, `jira`, `linear`, `zendesk`, `intercom`, `hubspot`, `asana`, `generic`.
+
+Door: `POST /hooks/apps/:endpointId` is public, `csrfExempt`, `rawBody`, rate limited by address; it believes only a valid signature (and a fresh timestamp and a new delivery id where the service sends them). The
+`ProviderReader` in `providers/index.ts` turns a request into a short plain event (a kind and a few sentences, never the whole payload). Admin routes: `GET|POST /api/channels/:channelId/provider-hooks`,
+`PATCH|DELETE /api/provider-hooks/:endpointId`, `PUT /api/provider-hooks/:endpointId/signing-secret`, `POST /api/provider-hooks/:endpointId/rotate`, `GET /api/runs/:runId/origin`, `GET
+/api/admin/webhooks/provider-health`. Events: `webhooks.provider_endpoint.changed`, `webhooks.provider_event.received` and `webhooks.provider_event.refused` (at most one per minute per endpoint and reason). The log
+redactor keeps `/hooks/apps/<id>` and `/hooks/bridges/<service>/<id>` readable and still hides the old `/hooks/<secret>/…`. Work package H fills `providers/`, `routes-provider.ts`, `provider-door.ts`, `origin.ts` and
+the `runtime-hermes` `router-webhook.ts`.

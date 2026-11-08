@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "bad_signature",
+    "stale",
+    "replayed",
+    "too_large",
+    "unknown_endpoint",
+    "bot_busy",
+    "no_channel"
+  ]
+}

@@ -1,4 +1,19 @@
 import {
+  CancelScheduledMeetingResponse,
+  CreateScheduledMeetingRequest,
+  CreateScheduledMeetingResponse,
+  GetScheduledMeetingResponse,
+  JoinScheduledMeetingResponse,
+  ListScheduledMeetingsQuery,
+  ListScheduledMeetingsResponse,
+  UpdateScheduledMeetingRequest,
+  UpdateScheduledMeetingResponse,
+  cancelScheduledMeetingRoute,
+  createScheduledMeetingRoute,
+  getScheduledMeetingRoute,
+  joinScheduledMeetingRoute,
+  listScheduledMeetingsRoute,
+  updateScheduledMeetingRoute,
   CreateMeetingShareRequest,
   CreateMeetingShareResponse,
   DeleteMeetingShareResponse,
@@ -166,3 +181,18 @@ export const realCallApi: CallApi = {
   setTranscription,
   consent: answerConsent,
 };
+
+// ---- Bundle D: rooms planned ahead (docs/plugins/meetings.md "Bundle D contracts") ----------------------------------------------------------------------------
+/** Plan a room in a channel: the plan, and an event at the caller's own calendar with the join link in it. */
+export const createScheduledMeeting = (channelId: string, body: CreateScheduledMeetingRequest) =>
+  call(createScheduledMeetingRoute, { request: CreateScheduledMeetingRequest, response: CreateScheduledMeetingResponse }, body, { channelId });
+export const fetchScheduledMeetings = (channelId: string, query: ListScheduledMeetingsQuery = { limit: 50 }) =>
+  call(listScheduledMeetingsRoute, { request: ListScheduledMeetingsQuery, response: ListScheduledMeetingsResponse }, query, { channelId });
+export const fetchScheduledMeeting = (scheduledMeetingId: string) =>
+  call(getScheduledMeetingRoute, { response: GetScheduledMeetingResponse }, undefined, { scheduledMeetingId });
+export const updateScheduledMeeting = (scheduledMeetingId: string, body: UpdateScheduledMeetingRequest) =>
+  call(updateScheduledMeetingRoute, { request: UpdateScheduledMeetingRequest, response: UpdateScheduledMeetingResponse }, body, { scheduledMeetingId });
+export const cancelScheduledMeeting = (scheduledMeetingId: string) =>
+  call(cancelScheduledMeetingRoute, { response: CancelScheduledMeetingResponse }, undefined, { scheduledMeetingId });
+export const joinScheduledMeeting = (scheduledMeetingId: string) =>
+  call(joinScheduledMeetingRoute, { response: JoinScheduledMeetingResponse }, undefined, { scheduledMeetingId });

@@ -93,6 +93,10 @@ export const PROVIDER_KINDS = [
   'meeting.runs',
   /** Files one markdown item into a team's memory inbox on the platform's behalf, as a voice room's notes (memory-inbox): `InboxDropper` in ./inbox.ts. */
   'inbox.dropper',
+  /** A person's calendar at Google or Microsoft: events, free/busy (connections, Bundle D): `CalendarConnector` in ./connectors.ts. */
+  'connector.calendar',
+  /** A person's documents at Notion, Confluence, Drive, SharePoint, OneDrive, Dropbox or Box, read only (connections, Bundle D): `DocumentsConnector` in ./connectors.ts. */
+  'connector.documents',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

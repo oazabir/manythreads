@@ -4,6 +4,8 @@ import { isApiError } from '../api/client';
 import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
 import { AuthorLine } from '../components/AuthorLine';
+import { MessageVia } from './MessageVia';
+import { RunOriginCard } from './RunOriginCard';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
 import { ReactionPill } from './ReactionPill';
@@ -366,9 +368,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       )}
       <div className="msg-main">
         <AuthorLine name={name} person={authorPerson ? { personId: authorPerson.personId, email: authorPerson.email } : undefined} mark={mark} createdAt={m.createdAt} continued={continued}>
+          {m.meta.via ? <MessageVia via={m.meta.via} /> : null}
           {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
           {done ? <span className="row-done" role="status">{done}</span> : null}
         </AuthorLine>
+        {m.author?.kind === 'bot' && m.meta.runId && !deleted ? <RunOriginCard runId={m.meta.runId} /> : null}
         {clip ? <VoicePlayer voice={clip.voice} who={name} /> : null}
         {adding && clip ? <WritingOut fileId={clip.voice.fileId} onText={(t) => setEditing(t)} onClose={() => setAdding(false)} /> : null}
         {deleted ? (

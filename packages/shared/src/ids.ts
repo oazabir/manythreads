@@ -121,6 +121,19 @@ export type MeetingShareId = z.infer<typeof MeetingShareId>;
 export const MeetingRecordingId = z.uuid().brand<'MeetingRecordingId'>();
 export type MeetingRecordingId = z.infer<typeof MeetingRecordingId>;
 
+/** One voice room planned ahead on a calendar (Bundle D, P16-05). */
+export const ScheduledMeetingId = z.uuid().brand<'ScheduledMeetingId'>();
+export type ScheduledMeetingId = z.infer<typeof ScheduledMeetingId>;
+/** One chat app account of the workspace: a Telegram bot, a WhatsApp number, a Slack app, a Teams bot (Bundle D, P16-09). */
+export const BridgeAccountId = z.uuid().brand<'BridgeAccountId'>();
+export type BridgeAccountId = z.infer<typeof BridgeAccountId>;
+/** One public channel joined to one outside chat (Bundle D, P16-09). */
+export const BridgeLinkId = z.uuid().brand<'BridgeLinkId'>();
+export type BridgeLinkId = z.infer<typeof BridgeLinkId>;
+/** One delivery a provider sent to an app endpoint, after it was verified and read (Bundle D, P16-10). */
+export const ProviderEventId = z.uuid().brand<'ProviderEventId'>();
+export type ProviderEventId = z.infer<typeof ProviderEventId>;
+
 // Phase 9: surfaces (bot-generated UI).
 
 /** One surface: a screen a bot drew in OpenUI Lang, shown in a thread (P9-01). */

@@ -7,8 +7,12 @@ const APP_TOKEN_SEGMENT = /~mta\.[^/?#]*/g;
 const MCP_RUN_SEGMENT = /(\/api\/mcp\/runs\/)([^/?#]*)/g;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The secret segment of an incoming webhook's address, `/hooks/<webhook id>/<secret>`: whoever reads it can post into the channel. The id stays (it names the webhook in a log). */
-const WEBHOOK_SECRET_SEGMENT = /^(\/hooks\/[^/?#]*\/)[^/?#]*/;
+/**
+ * The secret segment of an incoming webhook's address, `/hooks/<webhook id>/<secret>`: whoever reads it can post into the channel. The id stays (it names the webhook in a log).
+ * `/hooks/apps/<endpoint id>` (a work app's endpoint) and `/hooks/bridges/<provider>/<account id>` (a chat app) carry no secret in the address, the credential is a header, so
+ * those two are left as they are: the ids name the endpoint or account in a log.
+ */
+const WEBHOOK_SECRET_SEGMENT = /^(\/hooks\/(?!apps\/|bridges\/)[^/?#]*\/)[^/?#]*/;
 
 /** A `token=` value in the query string (a client that puts a credential there lands it in the access log) and any integration token (`mtat_...`) wherever it sits. One pass each, no nested quantifier. */
 const QUERY_TOKEN = /([?&]token=)[^&#]*/gi;

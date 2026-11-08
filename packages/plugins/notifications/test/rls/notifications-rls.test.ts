@@ -346,3 +346,36 @@ describe('the email digest settings (migration 0005, policy P)', () => {
     expect(Math.abs(Date.now() - after!.last_digest_at!.getTime())).toBeLessThan(60_000);
   });
 });
+
+describe('the meeting_soon kind (migration 0007, Bundle D)', () => {
+  const plan = '0198f0a0-0000-7000-8000-0000000000aa';
+  const add = (who: Persona): Promise<unknown> =>
+    sys((tx) =>
+      tx.query(
+        `INSERT INTO app.notifications (workspace_id, person_id, kind, ref_type, ref_id, channel_id, actor_id, actor_name, preview)
+         VALUES ($1, $2, 'meeting_soon', 'scheduled_meeting', $3, $4, $5, 'Nadia', 'Design review starts in 5 minutes')`,
+        [omar.workspaceId, who.personId, plan, general, nadia.actorId],
+      ),
+    );
+
+  it('the platform writes one per person and plan; the person reads it, nobody else does', async () => {
+    await add(rafi);
+    expect(await code(add(rafi))).toBe('23505');
+    const mine = await q<{ kind: string; ref_type: string }>(rafi, "SELECT kind, ref_type FROM app.notifications WHERE ref_id = $1", [plan]);
+    expect(mine).toEqual([{ kind: 'meeting_soon', ref_type: 'scheduled_meeting' }]);
+    expect(await q(nadia, 'SELECT 1 FROM app.notifications WHERE ref_id = $1', [plan])).toEqual([]);
+    expect(await q(omar, 'SELECT 1 FROM app.notifications WHERE ref_id = $1', [plan])).toEqual([]);
+  });
+
+  it('a person cannot write one, for themselves or anyone else', async () => {
+    const forge = (p: Persona): Promise<unknown> =>
+      as(p, (tx) =>
+        tx.query(
+          `INSERT INTO app.notifications (workspace_id, person_id, kind, ref_type, ref_id, channel_id, actor_id, actor_name, preview)
+           VALUES ($1, $2, 'meeting_soon', 'scheduled_meeting', uuidv7(), $3, $4, 'x', 'forged')`,
+          [omar.workspaceId, p.personId, general, p.actorId],
+        ),
+      );
+    expect(await code(forge(nadia))).toBe('42501');
+  });
+});

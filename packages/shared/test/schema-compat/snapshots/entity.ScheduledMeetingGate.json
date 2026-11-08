@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "readable": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "scheduled",
+        "cancelled",
+        "started"
+      ]
+    },
+    "channelName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "organizerName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "readable",
+    "status",
+    "channelName",
+    "organizerName"
+  ],
+  "additionalProperties": false
+}

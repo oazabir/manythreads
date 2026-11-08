@@ -284,3 +284,17 @@ the person last joined the room: a yes left over from before leaving and coming 
 at `channels/<name>/meetings/<dd>-<hhmm>-<slug>/audio/<person>.wav` (`dms/<id>/…` for a direct message), with the recorded person as uploader. Audio never goes to git. Stop reasons: `turned_off`, `left`, `ended`,
 `consent_withdrawn`, `joined_without_yes`, `failed`. Events carry ids only. Limits: three hours per person per file, `MANYTHREADS_RECORDING_MAX_ROOMS` rooms at once (default 10), one server process. Files expire per
 [retention](./retention.md) (default 30 days, `meetings.keepAudioDays` in `TEAM.md`). Exports for other packages: `audioFolder()`, `audioSlug()`, `isRecording()`, `recordingNow()`, `RECORDER_START_QUEUE`.
+
+## Bundle D contracts (P16-05, planned rooms)
+
+A plan is not a room. `app.scheduled_meetings` and `app.scheduled_meeting_attendees` (`meetings/0005_scheduled.sql`) hold a voice room planned ahead in a channel; the room itself is made when someone presses
+Start at the time, or opens the join link `/join/<id>`, and that room remembers its plan (`meetings.scheduled_meeting_id`, set by the trigger `meetings_mark_scheduled_started`). The organizer's own calendar
+(Google or Microsoft, through the `connections` calendar provider) carries the event; outside guests are only a count, their addresses are never kept. Enums: `ScheduledMeetingStatus` (`scheduled`, `cancelled`,
+`started`), `ScheduledMeetingProvider` (`google`, `microsoft`).
+
+Routes (shared `api/meetings/scheduled.ts`): `POST|GET /api/channels/:channelId/scheduled-meetings`, `GET|PATCH|DELETE /api/scheduled-meetings/:scheduledMeetingId` (the GET answers with a `gate`, the state of
+the plan that someone who may not read the channel is told, and the plan itself only for a reader), `POST /api/scheduled-meetings/:scheduledMeetingId/join`. Limits: 100 waiting plans per channel, 50 invited,
+120-character title, 8000-character agenda, at most 366 days ahead and 24 hours long. Events (ids and counts only): `meetings.scheduled.created|changed|cancelled|starting_soon`. The reminder is the notification
+kind `meeting_soon` (`notifications/0007_meeting_soon.sql`, ref type `scheduled_meeting`), sent five minutes ahead by the queue `meetings.scheduled-reminders`; the queue `meetings.scheduled-sync` reads the
+calendar for moved or deleted events. The definer functions `app.meetings_schedule`, `app.meetings_cancel_scheduled` and `app.meetings_scheduled_gate` do the writes and the gate under the caller's rights.
+Work package C fills in `scheduled.ts`, `scheduled-jobs.ts` and `routes-scheduled.ts`; every route answers 501 "Not built yet" until then.

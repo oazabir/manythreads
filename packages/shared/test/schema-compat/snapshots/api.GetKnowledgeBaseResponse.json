@@ -114,7 +114,10 @@
               "markdown",
               "text",
               "csv",
-              "pdf"
+              "pdf",
+              "docx",
+              "xlsx",
+              "pptx"
             ]
           },
           "source": {
@@ -122,7 +125,8 @@
             "enum": [
               "upload",
               "repo",
-              "url"
+              "url",
+              "connector"
             ]
           },
           "size": {
@@ -219,7 +223,8 @@
             "enum": [
               "upload",
               "repo",
-              "url"
+              "url",
+              "connector"
             ]
           },
           "url": {
@@ -278,6 +283,65 @@
                 "type": "null"
               }
             ]
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "notion",
+                  "confluence",
+                  "google_drive",
+                  "sharepoint",
+                  "onedrive",
+                  "dropbox",
+                  "box"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "attention",
+              "paused"
+            ]
+          },
+          "remoteRoot": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readWith": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skippedLimited": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "documentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [

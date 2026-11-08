@@ -67,6 +67,7 @@ export function notificationTitle(n: Pick<InboxItem, 'kind' | 'actorName' | 'cha
   if (n.kind === 'message') return `${n.actorName}${where}`;
   if (n.kind === 'reminder') return `Reminder: ${n.actorName}${where}`;
   if (n.kind === 'meeting_actions') return `${n.actorName} gave you action items${where}`;
+  if (n.kind === 'meeting_soon') return `A meeting starts in 5 minutes${where}`;
   return `${n.actorName} sent you a message`;
 }
 

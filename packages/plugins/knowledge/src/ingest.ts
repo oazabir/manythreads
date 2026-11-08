@@ -26,6 +26,11 @@ export type TeamBaseRef = BaseRef & { teamId: string };
 /** What a document's kind column holds: the kinds of file a person can upload. A web page is read as `html` and stored as `markdown`. */
 export type DocumentKind = 'markdown' | 'text' | 'csv' | 'pdf';
 
+/** True for the kinds an upload, a repo file or a web page can be; Word, Excel and PowerPoint documents only come from connected apps. */
+export function isIngestKind(kind: string): kind is DocumentKind {
+  return kind === 'markdown' || kind === 'text' || kind === 'csv' || kind === 'pdf';
+}
+
 export interface IngestFile {
   name: string;
   kind: DocumentKind;

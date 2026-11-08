@@ -1,4 +1,13 @@
 import {
+  AddKnowledgeConnectorSourceRequest,
+  AddKnowledgeConnectorSourceResponse,
+  ListConnectorProvidersResponse,
+  ListConnectorRootsQuery,
+  ListConnectorRootsResponse,
+  addKnowledgeConnectorSourceRoute,
+  addPersonalKnowledgeConnectorSourceRoute,
+  listConnectorProvidersRoute,
+  listConnectorRootsRoute,
   CreatePersonalKnowledgeBaseRequest,
   DeletePersonalKnowledgeBaseResponse,
   DeletePersonalKnowledgeDocumentResponse,
@@ -93,3 +102,13 @@ export function uploadPersonalDocument(base: string, file: File, onProgress: (fr
     xhr.send(file);
   });
 }
+
+// ---- Bundle D: sources read from a connected app (docs/plugins/knowledge.md "Bundle D contracts") --------------------------------------------------------------
+export const addTeamConnectorSource = (slug: string, base: string, body: AddKnowledgeConnectorSourceRequest) =>
+  call(addKnowledgeConnectorSourceRoute, { request: AddKnowledgeConnectorSourceRequest, response: AddKnowledgeConnectorSourceResponse }, body, { slug, base });
+export const addPersonalConnectorSource = (base: string, body: AddKnowledgeConnectorSourceRequest) =>
+  call(addPersonalKnowledgeConnectorSourceRoute, { request: AddKnowledgeConnectorSourceRequest, response: AddKnowledgeConnectorSourceResponse }, body, { base });
+/** The folders, spaces, sites or databases the caller's own connection offers for a service. */
+export const fetchConnectorRoots = (query: ListConnectorRootsQuery) =>
+  call(listConnectorRootsRoute, { request: ListConnectorRootsQuery, response: ListConnectorRootsResponse }, query);
+export const fetchConnectorProviders = () => call(listConnectorProvidersRoute, { response: ListConnectorProvidersResponse });

@@ -82,6 +82,8 @@ export class ExtensionRegistries {
     'personal.files': new ExtensionRegistry(),
     'meeting.runs': new ExtensionRegistry(),
     'inbox.dropper': new ExtensionRegistry(),
+    'connector.calendar': new ExtensionRegistry(),
+    'connector.documents': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

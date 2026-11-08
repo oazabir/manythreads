@@ -79,3 +79,6 @@ export const deleteConnectionRoute = { method: 'DELETE', path: '/api/connections
 export * from './mail.ts';
 export * from './oauth-apps.ts';
 export * from './person.ts';
+export * from './calendar.ts';
+export * from './admin.ts';
+export * from './offboard.ts';

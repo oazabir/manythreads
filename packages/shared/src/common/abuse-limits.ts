@@ -95,11 +95,22 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   // The OAuth app a workspace admin enters for a provider (P16-02): the client secret is sealed on the way in and never read back.
   r('PUT', '/api/admin/connections/oauth-apps/:provider', 20, 'person'),
   r('DELETE', '/api/admin/connections/oauth-apps/:provider', 20, 'person'),
+  // Work-app endpoints (Bundle D, P16-10): a lead makes, rotates or gives a signing secret to an address a work app calls; the secret is sealed and never read back.
+  r('POST', '/api/channels/:channelId/provider-hooks', 10, 'person'),
+  r('POST', '/api/provider-hooks/:endpointId/rotate', 10, 'person'),
+  r('PUT', '/api/provider-hooks/:endpointId/signing-secret', 10, 'person'),
+  // Chat apps (Bundle D, P16-09): a person asks for a one-time code to prove a chat user is theirs (5 in 10 minutes), a lead for the code that joins a channel; an admin puts the bot's credential in (sealed, never read back).
+  r('POST', '/api/me/bridges/:provider/link-code', 5, 'person', 'one-time code: 8 digits, ten minutes, single use; a chat gets 5 wrong codes in 15 minutes before it is locked out', 10 * MIN),
+  r('POST', '/api/channels/:channelId/bridge-links/:provider/code', 5, 'person', 'one-time code: 8 digits, ten minutes, single use; a chat gets 5 wrong codes in 15 minutes before it is locked out', 10 * MIN),
+  r('PUT', '/api/admin/bridges/:provider/credentials', 20, 'person'),
+  // Leaving people (Bundle D, P16-11): an admin removes every connection of a person who is leaving; each one is revoked at its provider.
+  r('POST', '/api/admin/people/:personId/offboard-connections', 10, 'person'),
   // Voice rooms (P15-03): starting a room and joining or renewing mint a media token (a credential that lets a browser into the room); the media server's signed
   // notices come in on a public address and are believed only with a valid signature.
   r('POST', '/api/channels/:channelId/meetings', 10, 'person'),
   r('POST', '/api/meetings/:meetingId/join', 60, 'person'),
   r('POST', '/api/meetings/:meetingId/token', 60, 'person'),
+  r('POST', '/api/scheduled-meetings/:scheduledMeetingId/join', 60, 'person'),
   r('POST', '/api/meetings/media-webhook', 120, 'address', 'media server signature: a call without a valid signature answers 401 and changes nothing'),
   // A person answering a bot's screen (P9-04): one history line the bot reads later; the screen's own checks refuse anything the part did not declare.
   r('POST', '/api/channels/:channelId/surfaces/:surfaceId/events', 60, 'person'),
@@ -112,6 +123,9 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/llm/runs/:runId/v1/chat/completions', 60, 'failures', 'run token: 60 failures per address a minute'),
   r('GET', '/api/runners/connect', 60, 'address', 'runner token'),
   r('POST', '/hooks/:webhookId/:secret', 600, 'address', 'webhook secret: 256-bit address; a refused call is recorded per webhook'),
+  r('POST', '/hooks/apps/:endpointId', 600, 'address', 'provider signature: a call without a valid signature answers 401 and changes nothing; a refused call is recorded per endpoint'),
+  r('POST', '/hooks/bridges/:provider/:accountId', 600, 'address', 'chat app signature or secret header: a call without a valid one answers 401 and changes nothing; a refused call is counted per account'),
+  r('GET', '/hooks/bridges/:provider/:accountId', 600, 'address', 'chat app challenge: answers only a challenge with the right signature'),
   // The Slack-shaped API: the integration token is 256 random bits and each token has its own limit (60 calls a minute). The route has no per-address counter
   // of its own: only a call with an unknown token counts (30 in 5 minutes lock the address for 5 minutes), so junk from a shared address never refuses a valid caller.
   ...(['chat.postMessage', 'chat.update', 'reactions.add', 'reactions.remove', 'auth.test'] as const).map((m) =>

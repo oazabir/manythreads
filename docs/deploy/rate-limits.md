@@ -65,6 +65,13 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `DELETE /api/webhooks/:webhookId` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/webhooks/:webhookId/signing-secret` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `DELETE /api/webhooks/:webhookId/signing-secret` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
+| `POST /api/channels/:channelId/provider-hooks` | none | 10 per 60 s | 60 s | person | none |
+| `POST /api/provider-hooks/:endpointId/rotate` | none | 10 per 60 s | 60 s | person | none |
+| `PUT /api/provider-hooks/:endpointId/signing-secret` | none | 10 per 60 s | 60 s | person | none |
+| `POST /api/me/bridges/:provider/link-code` | none | 5 per 600 s | 600 s | person | one-time code: 8 digits, ten minutes, single use; a chat gets 5 wrong codes in 15 min before it is locked out |
+| `POST /api/channels/:channelId/bridge-links/:provider/code` | none | 5 per 600 s | 600 s | person | one-time code: 8 digits, ten minutes, single use; a chat gets 5 wrong codes in 15 min before it is locked out |
+| `PUT /api/admin/bridges/:provider/credentials` | none | 20 per 60 s | 60 s | person | none |
+| `POST /api/admin/people/:personId/offboard-connections` | none | 10 per 60 s | 60 s | person | none |
 | `POST /api/channels/:channelId/api-tokens` | none | 30 per 60 s | 60 s | person | none |
 | `POST /api/api-tokens/:tokenId/rotate` | none | 30 per 60 s | 60 s | person | none |
 | `DELETE /api/api-tokens/:tokenId` | none | 30 per 60 s | 60 s | person | none |
@@ -93,6 +100,7 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/channels/:channelId/meetings` | none | 10 per 60 s | 60 s | person | none |
 | `POST /api/meetings/:meetingId/join` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/:meetingId/token` | none | 60 per 60 s | 60 s | person | none |
+| `POST /api/scheduled-meetings/:scheduledMeetingId/join` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/media-webhook` | none | 120 per 60 s | 60 s | address | media server signature: a call without a valid signature answers `401` and changes nothing |
 | `POST /api/channels/:channelId/surfaces/:surfaceId/events` | none | 60 per 60 s | 60 s | person | at most 100 answers wait for the bot per screen: the 101st is `429` until the bot has redrawn or updated it |
 | `POST /api/channels/:channelId/surfaces/:surfaceId/data/:nodeId` | none | 120 per 60 s | 60 s | person | one read tool call as the person looking; at most 4 of a person's calls run at once on a server (the 5th is `429`); a part refreshes at most every 10 s, so 120 a minute carries about 20 live parts |
@@ -102,6 +110,9 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/llm/runs/:runId/v1/chat/completions` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong run token in a minute and onward: `429` |
 | `GET /api/runners/connect` | 60 per 60 s | 60 per 60 s | 60 s | address | none (the socket closes at once on a wrong runner token) |
 | `POST /hooks/:webhookId/:secret` | 600 per 60 s (actor, else address) | 600 per 60 s | 60 s | address | 30 calls that name no live webhook or carry a wrong secret in 5 min lock the address 5 min (then failing calls get `429`; a call with the right secret is never refused by the lock, because senders share addresses) |
+| `POST /hooks/apps/:endpointId` | none | 600 per 60 s | 60 s | address | a call without a valid provider signature answers `401` and changes nothing; a refused call is recorded per endpoint |
+| `POST /hooks/bridges/:provider/:accountId` | none | 600 per 60 s | 60 s | address | a call without a valid chat app signature or secret header answers `401` and changes nothing; a refused call is counted per account |
+| `GET /hooks/bridges/:provider/:accountId` | none | 600 per 60 s | 60 s | address | answers only a challenge with the right signature |
 | `POST /api/slack/chat.postMessage` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
 | `POST /api/slack/chat.update` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
 | `POST /api/slack/reactions.add` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |

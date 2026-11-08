@@ -4,6 +4,7 @@
   "enum": [
     "message",
     "reminder",
-    "meeting"
+    "meeting",
+    "scheduled_meeting"
   ]
 }

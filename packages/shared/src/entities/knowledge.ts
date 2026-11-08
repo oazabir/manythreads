@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { TeamId } from '../ids.ts';
+import { KnowledgeConnectorProvider, KnowledgeSourceStatus } from './connector-source.ts';
 import { SpaceRef } from './space.ts';
 
 // A team's knowledge (SPEC §12.4, PLAN P8-07): a knowledge base is a named folder of documents (manuals, runbooks, policies) that bots search and
@@ -21,8 +22,8 @@ export const KnowledgeBaseSlug = z
 export type KnowledgeBaseSlug = z.infer<typeof KnowledgeBaseSlug>;
 export const KnowledgeBaseName = z.string().trim().min(1).max(120);
 
-/** What kind of file a document came from. The kinds the text extractor reads today; the list grows as extractors are added. */
-export const KnowledgeDocumentKind = z.enum(['markdown', 'text', 'csv', 'pdf']);
+/** What kind of file a document came from. The kinds the text extractor reads; `docx`, `xlsx` and `pptx` come only from connector sources (an upload still refuses them). */
+export const KnowledgeDocumentKind = z.enum(['markdown', 'text', 'csv', 'pdf', 'docx', 'xlsx', 'pptx']);
 export type KnowledgeDocumentKind = z.infer<typeof KnowledgeDocumentKind>;
 
 /** `indexed`: its passages are searchable. `failed`: the file could not be read; `reason` says why in plain words. */
@@ -31,9 +32,10 @@ export type KnowledgeDocumentStatus = z.infer<typeof KnowledgeDocumentStatus>;
 
 /**
  * `upload`: a file a person uploaded. `repo`: a Markdown or text file someone put in the base's folder in the team repo. `url`: one public web page or
- * file (a docs-site page, a PDF) the platform fetches again on a rhythm; Drive, SharePoint and Notion wait for the connections of phase 8.
+ * file (a docs-site page, a PDF) the platform fetches again on a rhythm. `connector`: a folder, space, site or database at a connected app (Drive, OneDrive, SharePoint,
+ * Notion, Confluence, Dropbox, Box), read with a person's connection and kept up to date by the app's own change token (Bundle D, P16-08).
  */
-export const KnowledgeSourceKind = z.enum(['upload', 'repo', 'url']);
+export const KnowledgeSourceKind = z.enum(['upload', 'repo', 'url', 'connector']);
 export type KnowledgeSourceKind = z.infer<typeof KnowledgeSourceKind>;
 
 /** How the base is searched. `lexical` is word matching (always available); `hybrid` adds meaning-based matching once a workspace has an embedding model. */
@@ -62,6 +64,16 @@ export const KnowledgeSource = z.object({
   lastSyncedAt: IsoDateTime.nullable(),
   /** Why the last read failed, in plain words; null when it did not. */
   error: z.string().max(400).nullable(),
+  // The fields below are present for a `connector` source (Bundle D, P16-08) and absent for the others.
+  provider: KnowledgeConnectorProvider.nullable().optional(),
+  status: KnowledgeSourceStatus.optional(),
+  /** The name of the folder, space, site or database the source reads (`label` carries it too). */
+  remoteRoot: z.string().max(1024).nullable().optional(),
+  /** Whose connection it is read with, as the workspace shows the name: "Nadia's Google Drive". Null when that person is gone. */
+  readWith: z.string().max(200).nullable().optional(),
+  /** Documents the last pass left out because not everyone on the team can open them at the app. A count only. */
+  skippedLimited: z.number().int().min(0).optional(),
+  documentCount: z.number().int().min(0).optional(),
 });
 export type KnowledgeSource = z.infer<typeof KnowledgeSource>;
 

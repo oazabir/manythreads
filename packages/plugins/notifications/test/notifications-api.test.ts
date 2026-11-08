@@ -371,7 +371,7 @@ describe('live push', () => {
   });
 
   it('knows the kinds', () => {
-    expect(NotificationKind.options).toEqual(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions']);
+    expect(NotificationKind.options).toEqual(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions', 'meeting_soon']);
   });
 });
 

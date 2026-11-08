@@ -522,6 +522,12 @@ export const meetingsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/meetings/migrations/', import.meta.url)),
 };
 
+/** Migrations of the bridges plugin (`bridge_accounts`, `bridge_secrets`, `bridge_identities`, `bridge_link_codes`, `bridge_links`, `bridge_dm_sessions`, `bridge_messages`, `bridge_unlinked_chats`); needs the kernel's, teams, channels and bots migrations. */
+export const bridgesMigrationSource: MigrationSource = {
+  namespace: 'bridges',
+  dir: fileURLToPath(new URL('../../plugins/bridges/migrations/', import.meta.url)),
+};
+
 /** Migrations of the surfaces plugin (`surfaces`, `surface_events`); needs the kernel's, teams, channels, files and bots migrations. */
 export const surfacesMigrationSource: MigrationSource = {
   namespace: 'surfaces',

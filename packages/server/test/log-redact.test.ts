@@ -25,6 +25,9 @@ describe('log redaction (L4)', () => {
     expect(redactUrl(`/hooks/${id}/mtwh_secret?x=1`)).toBe(`/hooks/${id}/[redacted]?x=1`);
     expect(redactUrl(`/hooks/${id}/mtwh_secret/extra`)).toBe(`/hooks/${id}/[redacted]/extra`);
     expect(redactUrl('/api/hooks/x/y')).toBe('/api/hooks/x/y');
+    // a work app's endpoint and a chat app's account carry no secret in the address (the credential is a header): the ids stay in the log
+    expect(redactUrl(`/hooks/apps/${id}`)).toBe(`/hooks/apps/${id}`);
+    expect(redactUrl(`/hooks/bridges/telegram/${id}?x=1`)).toBe(`/hooks/bridges/telegram/${id}?x=1`);
     const line = JSON.stringify(serializeRequest({ method: 'POST', url: `/hooks/${id}/mtwh_topsecret`, headers: {}, host: 'h', ip: '1.2.3.4', socket: { remotePort: 1 } } as never));
     expect(line).not.toContain('mtwh_topsecret');
   });

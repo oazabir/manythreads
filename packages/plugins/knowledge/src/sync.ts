@@ -1,6 +1,6 @@
 import type { BlobStorage, PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
 import type { KnowledgeResyncResult } from '@manythreads/shared';
-import { bodyOfConverted, findDocument, ingest, kindOfName, lockBase, removeFromRepo, sha256Hex, type TeamBaseRef } from './ingest.ts';
+import { bodyOfConverted, findDocument, ingest, isIngestKind, kindOfName, lockBase, removeFromRepo, sha256Hex, type TeamBaseRef } from './ingest.ts';
 import { DOC_COLUMNS, DOC_FROM, repoFolderOf, SOURCE_COLUMNS, type DocRow, type SourceRow } from './rows.ts';
 import { syncUrlSource } from './web.ts';
 
@@ -68,6 +68,8 @@ export async function resyncBase(ctx: PluginContext, tx: PluginTx, base: TeamBas
 
   for (const doc of docs) {
     counts.checked += 1;
+    // a document of a connected app is kept by its own pass (connector-sync.ts), never by the repo and web-page pass
+    if (doc.source_kind === 'connector' || !isIngestKind(doc.kind)) continue;
     const entry = doc.repo_path ? files.get(doc.repo_path) : undefined;
 
     // A repo-sourced document whose file is gone.

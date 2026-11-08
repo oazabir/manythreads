@@ -24,6 +24,7 @@ import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon, ArrowUpIcon } from '../shell/icons';
 import { useHeaderActionsSlot, useHeaderTitle, useHeaderTopic } from '../shell/topic';
 import { StartButton } from '../meetings/StartButton';
+import { ScheduledChip } from '../meetings/schedule/ScheduledChip';
 import { fetchChannelBoards } from './boards/api';
 import { boardPath, botBoardOf } from './boards/board';
 import { fetchProjects } from './projects/api';
@@ -309,6 +310,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
       {headerSlot && !dm && !guest ? createPortal(<MembersStack key={channelId} channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<ChannelSearch channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
+      {/* Bundle D slot: the next planned room's chip (work package C); it draws nothing until then */}
+      {headerSlot && !dm ? createPortal(<ScheduledChip channelId={channelId} />, headerSlot) : null}
       {botBoard && headerSlot
         ? createPortal(
             <Link className="chv-botboard" to={boardPath(teamSlug, botBoard.id)} data-testid="bot-board-link">

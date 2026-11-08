@@ -1,6 +1,10 @@
 import { definePlugin, type PluginEvent } from '@manythreads/sdk';
 import { ChannelMessagePostedEvent } from '@manythreads/shared';
 import { compileBot, compileTeam, dropBot, type Declared } from './compile.ts';
+import { registerAdminRoutes } from './admin-routes.ts';
+import { registerCalendarProvider } from './calendar-provider.ts';
+import { registerDocumentsProvider } from './documents-provider.ts';
+import { registerOffboard } from './offboard.ts';
 import { registerInboxDoorSetup } from './email/inbox-door.ts';
 import { createConnectionDeployStep } from './deploy.ts';
 import { linkPost } from './link.ts';
@@ -44,11 +48,13 @@ export default definePlugin({
     // tool.source: this plugin offers tools to bots; secret.seal: credentials are sealed by the platform's secret service; event.subscribe: the compile
     // job.register: the inbox watch and the renewal of people's sign-ins (P16-02); event.emit: `connections.connection.changed`, `connections.inbox.claimed`,
     // `connections.oauth_app.changed` and `connections.sign_in.expired`
+    // Bundle D (docs/plugins/connections.md "Bundle D contracts"): `connections.person.offboarded` when a leaving person's connections are removed; `workspace.member.status_changed` starts that;
+    // the calendar and documents doors are providers of kinds `connector.calendar` and `connector.documents`
     // provider.deploy.step: the connection step of the bot page's Deploy action (P8-34), composed by the workshop plugin
-    extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit', 'job.register', 'provider.deploy.step'],
+    extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit', 'job.register', 'provider.deploy.step', 'provider.connector.calendar', 'provider.connector.documents'],
     events: {
-      emits: ['connections.connection.changed', 'connections.inbox.claimed', 'connections.oauth_app.changed', 'connections.sign_in.expired'],
-      consumes: ['bots.bot.loaded', 'bots.bot.removed', 'connections.connection.changed', 'channel.message.posted'],
+      emits: ['connections.connection.changed', 'connections.inbox.claimed', 'connections.oauth_app.changed', 'connections.sign_in.expired', 'connections.person.offboarded'],
+      consumes: ['bots.bot.loaded', 'bots.bot.removed', 'connections.connection.changed', 'channel.message.posted', 'workspace.member.status_changed'],
     },
     // Every tool a connection can serve is a capability the broker knows by name. None is destructive: a tool that deletes outside data is not offered through a
     // connection (the compile refuses a destructive tool, and the broker never grants one).
@@ -106,5 +112,10 @@ export default definePlugin({
     registerPersonRoutes(ctx, oauth);
     registerOAuthAppRoutes(ctx, oauth);
     registerRefreshJob(ctx, oauth);
+    // Bundle D: one call per module, each a stub until its work package fills it in.
+    registerCalendarProvider(ctx);
+    registerDocumentsProvider(ctx);
+    registerAdminRoutes(ctx);
+    registerOffboard(ctx);
   },
 });

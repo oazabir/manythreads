@@ -1,6 +1,16 @@
 import {
   AvatarPhotoType,
   AclPermission,
+  BridgeCodePurpose,
+  BridgeMessageDirection,
+  BridgeMessageStatus,
+  BridgeProvider,
+  BridgeSecretName,
+  BridgeStatus,
+  KnowledgeConnectorProvider,
+  KnowledgeSourceStatus,
+  ScheduledMeetingProvider,
+  ScheduledMeetingStatus,
   ApprovalDecisionKind,
   ApprovalOutcome,
   ApprovalResumeKind,
@@ -131,6 +141,7 @@ import {
   createTestDatabase,
   dropTestDatabase,
   approvalsMigrationSource,
+  bridgesMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
   conversationsMigrationSource,
@@ -215,6 +226,16 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'knowledge_documents.kind': KnowledgeDocumentKind,
   'knowledge_documents.status': KnowledgeDocumentStatus,
   'knowledge_sources.kind': KnowledgeSourceKind,
+  'knowledge_sources.provider': KnowledgeConnectorProvider,
+  'knowledge_sources.status': KnowledgeSourceStatus,
+  'scheduled_meetings.provider': ScheduledMeetingProvider,
+  'scheduled_meetings.status': ScheduledMeetingStatus,
+  'bridge_accounts.provider': BridgeProvider,
+  'bridge_accounts.status': BridgeStatus,
+  'bridge_secrets.name': BridgeSecretName,
+  'bridge_link_codes.purpose': BridgeCodePurpose,
+  'bridge_messages.direction': BridgeMessageDirection,
+  'bridge_messages.status': BridgeMessageStatus,
   'connections.scope': ConnectionScope,
   'connections.status': ConnectionStatus,
   'connections.environment': ConnectionEnvironment,
@@ -333,7 +354,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, scheduledJobsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, scheduledJobsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource, bridgesMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

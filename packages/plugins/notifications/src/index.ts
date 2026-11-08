@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerConsumers } from './consumers.ts';
 import { registerMeetingActions } from './meeting-actions.ts';
+import { registerMeetingSoon } from './meeting-soon.ts';
 import { DIGEST_CRON, DIGEST_QUEUE, runDigestJob } from './digest-job.ts';
 import { RELEASE_HELD_CRON, RELEASE_HELD_QUEUE, releaseDue } from './hold.ts';
 import { PUSH_QUEUE, runPushJob } from './push.ts';
@@ -21,7 +22,7 @@ export default definePlugin({
     extends: ['event.emit', 'event.subscribe', 'job.register'],
     events: {
       emits: ['notifications.notification.created', 'notifications.digest.sent', 'notifications.digest.unsubscribed'],
-      consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due', 'connections.sign_in.expired', 'scheduled_jobs.scheduled_job.stopped', 'meetings.notes.written'],
+      consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due', 'connections.sign_in.expired', 'scheduled_jobs.scheduled_job.stopped', 'meetings.notes.written', 'meetings.scheduled.starting_soon'],
     },
     // meetings: the notes of a finished room (`meetings`, `meeting_notes`) that action items are counted from. presence: the Do not disturb settings a message is held by (`dnd_settings`, `person_status.time_zone`), and who has been away (the presence provider).
     dependsOn: ['channels', 'presence', 'meetings'],
@@ -33,6 +34,7 @@ export default definePlugin({
     registerDigestRoutes(ctx);
     registerConsumers(ctx);
     registerMeetingActions(ctx);
+    registerMeetingSoon(ctx);
     // Every minute: release what was held for people whose Do not disturb has ended by the clock (a pause ran out, a schedule closed).
     ctx.jobs.register(
       RELEASE_HELD_QUEUE,

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "preview": {
+      "type": "object",
+      "properties": {
+        "personId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "personName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "own": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "connector": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "services": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              }
+            },
+            "required": [
+              "connector",
+              "services"
+            ]
+          }
+        },
+        "moving": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "connector": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "newOwnerName": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "slug",
+              "connector",
+              "newOwnerName"
+            ]
+          }
+        }
+      },
+      "required": [
+        "personId",
+        "personName",
+        "own",
+        "moving"
+      ]
+    }
+  },
+  "required": [
+    "preview"
+  ]
+}

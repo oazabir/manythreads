@@ -36,7 +36,10 @@
         "markdown",
         "text",
         "csv",
-        "pdf"
+        "pdf",
+        "docx",
+        "xlsx",
+        "pptx"
       ]
     },
     "status": {

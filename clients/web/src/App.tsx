@@ -58,12 +58,16 @@ import { SearchScreen } from './screens/search/SearchScreen';
 import { Teams } from './screens/Teams';
 import { Onboarding } from './screens/onboarding/Onboarding';
 import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
+import { ConnectionsAdmin } from './screens/admin/connections/ConnectionsAdmin';
+import { AccountChatApps } from './screens/bridges/AccountChatApps';
+import { AdminChatApps } from './screens/bridges/AdminChatApps';
 
 // developer page: its viewers load on demand, not with the app
 // the Files screen carries the viewers' host: it loads when Files is opened
 const FilesScreen = lazy(() => import('./screens/files/FilesScreen').then((m) => ({ default: m.FilesScreen })));
 const KnowledgeScreen = lazy(() => import('./screens/knowledge/KnowledgeScreen').then((m) => ({ default: m.KnowledgeScreen })));
 const MemoryScreen = lazy(() => import('./screens/memory/MemoryScreen').then((m) => ({ default: m.MemoryScreen })));
+const JoinScheduled = lazy(() => import('./screens/meetings/JoinScheduled').then((m) => ({ default: m.JoinScheduled })));
 const MeetingView = lazy(() => import('./screens/meetings/MeetingView').then((m) => ({ default: m.MeetingView })));
 const DevSpeech = lazy(() => import('./pages/DevSpeech').then((m) => ({ default: m.DevSpeech })));
 const DevViewers = lazy(() => import('./pages/DevViewers').then((m) => ({ default: m.DevViewers })));
@@ -126,6 +130,7 @@ function AppRoutes() {
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
             <Route path="/t/:team/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
+            <Route path="/join/:scheduledId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><JoinScheduled /></Suspense>} />
             <Route path="/memory" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense>} />
             <Route path="/knowledge" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><KnowledgeScreen /></Suspense>} />
             <Route path="/t/:team/knowledge" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><KnowledgeScreen /></Suspense></RequireTeam>} />
@@ -160,6 +165,7 @@ function AppRoutes() {
             <Route path="/account/appearance" element={<AccountAppearance />} />
             <Route path="/account/notifications" element={<AccountNotifications />} />
             <Route path="/account/connections" element={<AccountConnections />} />
+            <Route path="/account/chat-apps" element={<AccountChatApps />} />
             <Route path="/account/security" element={<AccountSecurity />} />
             <Route path="/account/bots" element={<AccountBotConsents />} />
             <Route path="/account/routines" element={<AccountRoutines />} />
@@ -186,6 +192,8 @@ function AppRoutes() {
               <Route path="audit" element={<Audit />} />
               <Route path="usage" element={<WorkspaceUsage />} />
               <Route path="import" element={<ImportScreen />} />
+              <Route path="connections" element={<ConnectionsAdmin />} />
+              <Route path="chat-apps" element={<AdminChatApps />} />
             </Route>
             <Route path="/settings/team/:slug">
               <Route index element={<Navigate to="roster" replace />} />
