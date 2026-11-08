@@ -223,6 +223,35 @@ describe('consent before the microphone (P15-05)', () => {
     expect(t.media().state.micOn).toBe(true);
     expect(t.c.getState().waitingForConsent).toBe(false);
   });
+  it('does not let a refresh that was already running put the question back after the answer', async () => {
+    const t = await connected({ room: { transcription: 'on_device' } });
+    t.server.transcriptionState = transcription({ mode: 'on_device', turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });
+    await t.c.refresh();
+    await settle();
+    expect(t.c.getState().consent.kind).toBe('ask');
+    // a refresh reads the room (nobody has answered yet) and waits; meanwhile the person answers and the room asks to be read again
+    const read = t.server.get;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    let first = true;
+    t.server.get = async (id) => {
+      const seen = await read(id);
+      if (first) {
+        first = false;
+        await held;
+      }
+      return seen;
+    };
+    const running = t.c.refresh();
+    await settle();
+    await t.c.answerConsent('yes', { remember: false });
+    const again = t.c.refresh();
+    release();
+    await Promise.all([running, again]);
+    await settle();
+    expect(t.c.getState().consent.kind).toBe('settled');
+    expect(t.c.getState().waitingForConsent).toBe(false);
+  });
   it('keeps the answer as the personal default when asked to remember', async () => {
     const t = await connected({ room: { transcription: 'on_device' } });
     t.server.transcriptionState = transcription({ mode: 'on_device', turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { isMockMode } from '../api/setup';
 import { usePanel } from '../kernel/panel/usePanel';
 import { useShell } from '../shell/context';
+import { useNarrow } from '../shell/useNarrow';
 import { CallDock } from './CallDock';
 import { isMuteShortcut, isPushToTalkKey, ringText } from './model';
 import { callController, liveRooms, useCall, useLive } from './store';
@@ -53,10 +54,16 @@ export function MeetingHost() {
   const call = useCall();
   const c = callController();
   const top = panel.top();
+  const narrow = useNarrow();
 
-  // the chat opens beside the call
+  // the chat opens beside the call; on a phone the panel is a full sheet that would hide the call bar, so there it opens only when the person presses Chat
   useEffect(() => {
-    c.setHooks({ openChat: (threadRootId) => panel.push({ type: 'thread', id: threadRootId }) });
+    c.setHooks({
+      openChat: (threadRootId, _channelId, opts) => {
+        if (opts?.automatic && narrow) return;
+        panel.push({ type: 'thread', id: threadRootId });
+      },
+    });
   });
 
   // the unread count follows whether the call's thread is on screen

@@ -109,8 +109,8 @@ export type CallDeps = {
 
 /** Things only the screen can do. */
 export type CallHooks = {
-  /** Open the call's chat thread in the right panel (when a person joins, and when they press Chat). */
-  openChat(threadRootId: string, channelId: string | null): void;
+  /** Open the call's chat thread in the right panel (when a person joins, and when they press Chat). `automatic` is the opening on joining, not the person's own press. */
+  openChat(threadRootId: string, channelId: string | null, opts?: { automatic?: boolean }): void;
 };
 
 const IDLE = (prefs: CallPrefs): CallState => ({
@@ -163,6 +163,8 @@ export class CallController {
   private generation = 0;
   private lastPresent: string[] | null = null;
   private refreshing: Promise<void> | null = null;
+  /** A refresh was asked for while one was running: the running one may have read the room before the change that asked, so it runs once more. */
+  private refreshAgain = false;
   private sentConsent = false;
 
   constructor(private readonly deps: CallDeps) {
@@ -282,7 +284,7 @@ export class CallController {
     this.set({ phase: 'connected' });
     this.deps.sounds.play('join');
     this.startTimers(gen);
-    if (meeting.threadRootId) this.hooks.openChat(meeting.threadRootId, meeting.channelId);
+    if (meeting.threadRootId) this.hooks.openChat(meeting.threadRootId, meeting.channelId, { automatic: true });
     await this.refresh();
     if (gen !== this.generation) return;
     await this.applyConsentAndMic();
@@ -373,7 +375,10 @@ export class CallController {
   async refresh(): Promise<void> {
     const m = this.state.meeting;
     if (!m) return;
-    if (this.refreshing) return this.refreshing;
+    if (this.refreshing) {
+      this.refreshAgain = true;
+      return this.refreshing;
+    }
     const gen = this.generation;
     const run = async (): Promise<void> => {
       try {
@@ -412,8 +417,14 @@ export class CallController {
         if (isApiError(e) && GONE_STATUSES.has(e.status)) this.gone('You are no longer in this voice room.');
       }
     };
-    this.refreshing = run().finally(() => {
+    this.refreshing = (async () => {
+      do {
+        this.refreshAgain = false;
+        await run();
+      } while (this.refreshAgain && gen === this.generation);
+    })().finally(() => {
       this.refreshing = null;
+      this.refreshAgain = false;
     });
     return this.refreshing;
   }
