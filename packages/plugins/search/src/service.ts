@@ -5,6 +5,7 @@ import {
   searchDayStart,
   type SearchFileHit,
   type SearchFilters,
+  type SearchMeetingHit,
   type SearchMessageHit,
   type SearchPageHit,
   type SearchQuery,
@@ -120,6 +121,39 @@ export async function searchPages(tx: PluginTx, q: string, teamId: string | null
   );
 }
 
+type MeetingRow = {
+  meeting_id: string;
+  title: string;
+  channel_id: string | null;
+  at_ms: number;
+  speaker_id: string | null;
+  speaker_name: string | null;
+  snippet: string;
+  in_notes: boolean;
+  score: number;
+  started_at: Date;
+};
+/** Lines of meetings and meeting notes (P15-13). `app.search_meetings` runs as the caller: the room's read policies, the speaker's yes and the Personal-transcript rule decide, not this file. */
+export async function searchMeetings(tx: PluginTx, q: string, teamId: string | null, limit: number, n: SearchNarrow = {}): Promise<SearchMeetingHit[]> {
+  const res = await tx.query<MeetingRow>('SELECT * FROM app.search_meetings($1, $2, $3, $4, $5, $6, $7)', [q, teamId, limit, n.from ?? null, n.in ?? null, n.before ?? null, n.after ?? null]);
+  const channels = await channelsOf(tx, res.rows.map((r) => r.channel_id));
+  return res.rows.map(
+    (r) =>
+      ({
+        meetingId: r.meeting_id,
+        title: r.title,
+        channel: r.channel_id ? (channels.get(r.channel_id) ?? null) : null,
+        atMs: r.at_ms,
+        speakerId: r.speaker_id,
+        speakerName: r.speaker_name,
+        snippet: r.snippet,
+        where: r.in_notes ? 'notes' : 'transcript',
+        score: r.score,
+        startedAt: iso(r.started_at),
+      }) as SearchMeetingHit,
+  );
+}
+
 /**
  * Turns the names of `from:` and `in:` into ids, as the caller. People come from `app.search_resolve_people` (a guest resolves only
  * themself), channels from `app.channels` through its read policy, so a private channel the caller is not in is no more findable by name than
@@ -156,26 +190,29 @@ const cut = <T>(rows: T[], limit: number): { rows: T[]; more: boolean } => ({ ro
 /**
  * The `GET /api/search` answer: each requested kind best first (word similarity, then newest; newest first when the box holds only
  * filter words), the others empty. A kind that a filter cannot apply to is left out: `has:link` and `is:thread` are about messages,
- * so files and pages are not listed (`is:thread` still lists threads); `has:file` is about messages and files; `in:` is about a
- * channel, which a page does not have. Every list is what the caller may read, and `more` only says that list went on past `limit`.
+ * so files, pages and meetings are not listed (`is:thread` still lists threads); `has:file` is about messages and files; `in:` is about a
+ * channel, which a page does not have. Meetings (what was said, and the notes) need words to look for. Every list is what the caller may read, and `more` only says that list went on past `limit`.
  */
 export async function search(tx: PluginTx, query: SearchQuery): Promise<SearchResponse> {
   const filters = parseSearchText(normalizeQuery(query.q));
   const text = filters.text.length >= 2 ? filters.text : '';
   const teamId = query.teamId ?? null;
   const limit = query.limit;
-  const wants = (kind: 'messages' | 'threads' | 'files' | 'pages'): boolean => query.scope === 'all' || query.scope === kind;
+  const wants = (kind: 'messages' | 'threads' | 'files' | 'pages' | 'meetings'): boolean => query.scope === 'all' || query.scope === kind;
   const { narrow, unmatched } = await resolveFilters(tx, filters);
   const about = {
     threads: !filters.has.length,
     files: !filters.has.includes('link') && !filters.is.length,
     pages: !filters.has.length && !filters.is.length && !filters.in.length,
+    // what was said needs words to look for; `has:` and `is:` are about messages
+    meetings: text !== '' && !filters.has.length && !filters.is.length,
   };
   const none = { rows: [], more: false };
   const messages = wants('messages') ? cut(await searchMessages(tx, text, teamId, limit + 1, narrow), limit) : none;
   const threads = wants('threads') && about.threads ? cut(await searchThreads(tx, text, teamId, limit + 1, narrow), limit) : none;
   const files = wants('files') && about.files ? cut(await searchFiles(tx, text, teamId, limit + 1, narrow), limit) : none;
   const pages = wants('pages') && about.pages ? cut(await searchPages(tx, text, teamId, limit + 1, narrow), limit) : none;
+  const meetings = wants('meetings') && about.meetings ? cut(await searchMeetings(tx, text, teamId, limit + 1, narrow), limit) : none;
   return {
     query: text,
     filters,
@@ -184,6 +221,7 @@ export async function search(tx: PluginTx, query: SearchQuery): Promise<SearchRe
     threads: threads.rows as SearchThreadHit[],
     files: files.rows as SearchFileHit[],
     pages: pages.rows as SearchPageHit[],
-    more: { messages: messages.more, threads: threads.more, files: files.more, pages: pages.more },
+    meetings: meetings.rows as SearchMeetingHit[],
+    more: { messages: messages.more, threads: threads.more, files: files.more, pages: pages.more, meetings: meetings.more },
   };
 }

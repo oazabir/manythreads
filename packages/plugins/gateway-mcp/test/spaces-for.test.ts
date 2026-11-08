@@ -79,7 +79,7 @@ describe('every read tool that takes a team goes through withRunSpaces', () => {
       .map((t) => t.name)
       .sort();
     // each of these is fitted by withRunSpaces (TEAM_SCOPED_READS); a read tool added with a teamId argument fails here until it is
-    expect(withTeam).toEqual(['files.search', 'messages.search']);
+    expect(withTeam).toEqual(['files.search', 'meetings.search', 'messages.search']);
     for (const name of withTeam) {
       expect(withRunSpaces(name, { query: 'xx', teamId: FOREIGN }, channel, TEAM)).toMatchObject({ ok: false, code: 'other_space' });
     }

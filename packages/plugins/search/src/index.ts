@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { registerSavedSearchRoutes } from './saved.ts';
 import { search, searchFiles, searchMessages, normalizeQuery } from './service.ts';
 
-export { search, searchFiles, searchMessages, searchPages, searchThreads, resolveFilters, normalizeQuery } from './service.ts';
+export { search, searchFiles, searchMessages, searchMeetings, searchPages, searchThreads, resolveFilters, normalizeQuery } from './service.ts';
 
 /** What a bot or the Brain passes to `messages.search` / `files.search` (the same fields as the HTTP query, without the scope). */
 const CapabilityInput = z.object({
@@ -28,8 +28,8 @@ export default definePlugin({
       { name: 'messages.search', destructive: false },
       { name: 'files.search', destructive: false },
     ],
-    // The functions it calls read channels, messages, threads and files.
-    dependsOn: ['channels', 'files', 'repo-git'],
+    // The functions it calls read channels, messages, threads, files and meetings (P15-13).
+    dependsOn: ['channels', 'files', 'repo-git', 'meetings'],
     migrations: 'migrations',
   },
   register(ctx) {

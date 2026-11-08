@@ -17,6 +17,7 @@ const CLASS = {
   'files.search': 'team_argument',
   'files.read': 'asker_policies',
   'knowledge.search': 'team_argument',
+  'meetings.search': 'team_argument',
   'memory.recall': 'run_scoped',
   'inbox.read': 'run_scoped',
   'tasks.read': 'asker_policies',

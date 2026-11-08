@@ -9,10 +9,12 @@ import {
   createTestDatabase,
   dropTestDatabase,
   filesMigrationSource,
+  meetingsMigrationSource,
   memoryMigrationSource,
   personaActor,
   personas,
   repoGitMigrationSource,
+  searchMigrationSource,
   TEAM_IDS,
   teamsMigrationSource,
   testClient,
@@ -201,6 +203,8 @@ beforeAll(async () => {
       conversationsMigrationSource,
       memoryMigrationSource,
       answerMigrationSource,
+      meetingsMigrationSource,
+      searchMigrationSource,
     ],
   });
   await createPersonas(db);
@@ -1234,5 +1238,75 @@ describe('a memory citation carries its space (P20-08)', () => {
     const pr = await run({ trigger: 'mention', asker: priya.actorId, channel: dev, root });
     const theirs = await viewOf(botActor, pr, [{ kind: 'memory', ref: 'guides/launch.md', team: MKT }]);
     expect(theirs.citations[0]).toMatchObject({ found: true, scope: 'channel', audience: false, space: `team:${MKT}` });
+  });
+});
+
+// P15-13: a meeting can be cited. The room's read policy decides whether it exists for the asker; a note-taker's transcript that is still the organizer's Personal copy reaches only them.
+describe('citing a meeting (P15-13)', () => {
+  const startRoom = (p: Persona, channelId: string, title: string): Promise<string> =>
+    as(p, async (tx) => (await tx.query<{ id: string }>('INSERT INTO app.meetings (workspace_id, channel_id, title, started_by, organizer_id) VALUES ($1, $2, $3, $4, $4) RETURNING id', [WS, channelId, title, p.actorId])).rows[0]!.id);
+  const personalNotes = (room: string, organizer: Persona): Promise<unknown> =>
+    sys((tx) => tx.query("INSERT INTO app.meeting_notes (meeting_id, workspace_id, organizer_id, location, notes_md, status) VALUES ($1, $2, $3, 'personal', 'x', 'written')", [room, WS, organizer.actorId]));
+  let devRoom = '';
+  let leadsRoom = '';
+  let privateTeamRoom = '';
+  let personalRoom = '';
+  beforeAll(async () => {
+    devRoom = await startRoom(omar, dev, 'Release standup');
+    leadsRoom = await startRoom(omar, leads, 'Leads sync');
+    privateTeamRoom = await startRoom(omar, teamPrivate, 'Release room call');
+    personalRoom = await startRoom(nadia, await channel({ name: 'planning' }), 'Planning with the note-taker');
+    await personalNotes(personalRoom, nadia);
+  });
+  const cite = (ref: string) => [{ kind: 'meeting', ref }];
+
+  it('is found, with its title, channel and team, when the run searched it and the asker may read the room', async () => {
+    const r = await inNadiaChat([['meeting', devRoom, 'channel']]);
+    const v = await viewOf(botActor, r, cite(devRoom));
+    expect(v.citations[0]).toMatchObject({ found: true, reached: true, scope: 'team', audience: true, label: 'Release standup', channelId: dev, channelKind: 'channel', channelName: 'dev', teamId: ENG });
+  });
+
+  it('is not discussed when the run never searched it', async () => {
+    const v = await viewOf(botActor, await inNadiaChat([]), cite(devRoom));
+    expect(v.citations[0]).toEqual({ found: false, reached: false });
+  });
+
+  it('is not found, and says nothing of the room, when the asker may not read its channel', async () => {
+    const v = await viewOf(botActor, await inNadiaChat([['meeting', leadsRoom, 'channel']]), cite(leadsRoom));
+    expect(v.citations[0]).toEqual({ found: false, reached: true });
+    expect(JSON.stringify(v)).not.toContain('Leads sync');
+  });
+
+  it('is the asker’s to see but not the reply’s readers’ when it sits in a private channel and the reply goes to another', async () => {
+    const r = await inDev(nadia.actorId, [['meeting', privateTeamRoom, 'channel']]);
+    const v = await viewOf(botActor, r, cite(privateTeamRoom));
+    expect(v.citations[0]).toMatchObject({ found: true, scope: 'channel', audience: false });
+    // in her own conversation the only reader is her
+    const own = await viewOf(botActor, await inNadiaChat([['meeting', privateTeamRoom, 'channel']]), cite(privateTeamRoom));
+    expect(own.citations[0]).toMatchObject({ found: true, scope: 'channel', audience: true });
+  });
+
+  it('is only the organizer’s, in their own conversation, while a note-taker’s transcript is their Personal copy', async () => {
+    const mine = await viewOf(botActor, await inNadiaChat([['meeting', personalRoom, 'channel']]), cite(personalRoom));
+    expect(mine.citations[0]).toMatchObject({ found: true, scope: 'person', audience: true });
+    // in a team channel the reply is everybody's: not shown there
+    const shared = await viewOf(botActor, await inDev(nadia.actorId, [['meeting', personalRoom, 'channel']]), cite(personalRoom));
+    expect(shared.citations[0]).toMatchObject({ found: true, scope: 'person', audience: false });
+    // another person who can read the channel does not find it at all
+    const root = await message(omarChat, omar.actorId, 'What did the planning call decide?');
+    const theirs = await viewOf(botActor, await reachedRun({ trigger: 'conversation', asker: omar.actorId, channel: omarChat, root }, [['meeting', personalRoom, 'channel']]), cite(personalRoom));
+    expect(theirs.citations[0]).toEqual({ found: false, reached: true });
+  });
+
+  it('is the whole room again once the organizer has saved the notes to the team', async () => {
+    await sys((tx) => tx.query("UPDATE app.meeting_notes SET saved_at = now(), saved_by = organizer_id, saved_path = 'meetings/2026/11/plan' WHERE meeting_id = $1", [personalRoom]));
+    const root = await message(omarChat, omar.actorId, 'And now?');
+    const v = await viewOf(botActor, await reachedRun({ trigger: 'conversation', asker: omar.actorId, channel: omarChat, root }, [['meeting', personalRoom, 'channel']]), cite(personalRoom));
+    expect(v.citations[0]).toMatchObject({ found: true, scope: 'team', audience: true });
+  });
+
+  it('a ref that is not an id is not found', async () => {
+    const v = await viewOf(botActor, await inNadiaChat([]), cite('not-an-id'));
+    expect(v.citations[0]).toMatchObject({ found: false });
   });
 });

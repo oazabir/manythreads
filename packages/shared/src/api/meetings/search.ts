@@ -11,6 +11,8 @@ export const MEETINGS_NOTES_WRITE_CAPABILITY = 'meetings.write_notes';
 export const MeetingsSearchInput = z.strictObject({
   query: z.string().trim().min(1).max(500),
   limit: z.number().int().min(1).max(20).default(8),
+  /** Only meetings of this team. Never widens what the asker may read; a run in a team's channel is held to that team. */
+  teamId: TeamId.optional(),
 });
 export type MeetingsSearchInput = z.infer<typeof MeetingsSearchInput>;
 

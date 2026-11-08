@@ -95,7 +95,7 @@ describe('the workspace Brain', () => {
     expect(id).not.toBeNull();
     const row = await workspaceBot();
     expect(row).toMatchObject({ id, team_id: null, scope: 'workspace', visibility: 'workspace', status: 'active', slug: 'brain', name: 'Brain', runtime: 'hermes' });
-    expect(row?.['native']).toEqual(expect.arrayContaining(['files.read', 'personal.read', 'memory.recall', 'answer.post']));
+    expect(row?.['native']).toEqual(expect.arrayContaining(['files.read', 'personal.read', 'memory.recall', 'answer.post', 'meetings.search']));
     const versions = await sys(async (tx) => (await tx.query<{ version: number; sha: string }>('SELECT version, sha FROM app.workspace_bot_definitions WHERE workspace_id = $1', [WS])).rows);
     expect(versions).toEqual([{ version: 1, sha: row?.['definition_sha'] }]);
     const teams = await sys(async (tx) => (await tx.query<{ n: string }>('SELECT count(*)::text AS n FROM app.teams WHERE workspace_id = $1 AND archived_at IS NULL', [WS])).rows[0]!.n);

@@ -46,7 +46,7 @@ export async function spacesFor(ctx: PluginContext, run: BotRunHandle): Promise<
 const SPACE_KEYS = ['space', 'spaces', 'personId', 'ownerPersonId'] as const;
 
 /** The tools that look in a team's data and take an optional `teamId`. */
-const TEAM_SCOPED_READS: ReadonlySet<string> = new Set(['messages.search', 'files.search', 'knowledge.search']);
+const TEAM_SCOPED_READS: ReadonlySet<string> = new Set(['messages.search', 'files.search', 'knowledge.search', 'meetings.search']);
 
 export type SpacesInput = { ok: true; input: Record<string, unknown> } | { ok: false; code: 'other_space'; message: string };
 

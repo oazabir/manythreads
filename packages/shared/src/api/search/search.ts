@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
-import { ActorId, ChannelId, FileId, MessageId, TeamId } from '../../ids.ts';
+import { ActorId, ChannelId, FileId, MeetingId, MessageId, TeamId } from '../../ids.ts';
 import { SearchFilters } from './syntax.ts';
 
-/** What to look in. `all` is messages, threads, files and pages. */
-export const SearchScope = z.enum(['messages', 'threads', 'files', 'pages', 'all']);
+/** What to look in. `all` is messages, threads, files, pages and meetings. */
+export const SearchScope = z.enum(['messages', 'threads', 'files', 'pages', 'meetings', 'all']);
 export type SearchScope = z.infer<typeof SearchScope>;
 
 /**
@@ -70,8 +70,27 @@ export const SearchPageHit = z.object({
 });
 export type SearchPageHit = z.infer<typeof SearchPageHit>;
 
+/**
+ * A stretch of what was said in a voice room, or the room's notes (P15-13). `atMs` is the time on the meeting clock the line starts (0 for the notes); the link opens
+ * `/meetings/<meetingId>?t=<atMs>`. Only the words of a speaker who said yes to being transcribed are ever here, and only in rooms the caller may read.
+ */
+export const SearchMeetingHit = z.object({
+  meetingId: MeetingId,
+  title: z.string(),
+  channel: HitChannel.nullable(),
+  atMs: z.number().int().nonnegative(),
+  speakerId: ActorId.nullable(),
+  speakerName: z.string().nullable(),
+  /** A stretch of the line or the notes around the words (at most 240 characters). */
+  snippet: z.string(),
+  where: z.enum(['transcript', 'notes']),
+  score: z.number(),
+  startedAt: IsoDateTime,
+});
+export type SearchMeetingHit = z.infer<typeof SearchMeetingHit>;
+
 /** Which lists had more to show than `limit`. It says only that the person's own readable hits go on, never how many others exist. */
-export const SearchMore = z.object({ messages: z.boolean(), threads: z.boolean(), files: z.boolean(), pages: z.boolean() });
+export const SearchMore = z.object({ messages: z.boolean(), threads: z.boolean(), files: z.boolean(), pages: z.boolean(), meetings: z.boolean().default(false) });
 export type SearchMore = z.infer<typeof SearchMore>;
 
 /**
@@ -88,6 +107,8 @@ export const SearchResponse = z.object({
   threads: z.array(SearchThreadHit),
   files: z.array(SearchFileHit),
   pages: z.array(SearchPageHit),
+  /** Lines of meetings (P15-13); an older server leaves it out. */
+  meetings: z.array(SearchMeetingHit).default([]),
   more: SearchMore,
 });
 export type SearchResponse = z.infer<typeof SearchResponse>;

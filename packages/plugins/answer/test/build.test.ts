@@ -312,3 +312,35 @@ describe('hostile input', () => {
     expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(96_000);
   });
 });
+
+describe('a meeting citation (P15-13)', () => {
+  it('keeps the meeting and the time of the line, with the title the platform read, where the room lives and the team', () => {
+    const i = input({ citations: [{ kind: 'meeting', meetingId: uuid(30), atMs: 62_000, snippet: '  we hold the canary  ' }, { kind: 'meeting', meetingId: uuid(31) }] });
+    const v = view({
+      citations: [
+        { found: true, scope: 'team', audience: true, label: 'Release standup', at: '2026-11-02T09:00:00.000Z', channelId: uuid(20), channelKind: 'channel', channelName: 'dev', teamId: uuid(3) },
+        { found: true, scope: 'channel', audience: true, label: 'Leads sync', at: '2026-11-03T09:00:00.000Z', channelId: uuid(21), channelKind: 'dm', channelName: null, teamId: null },
+      ],
+    });
+    const { payload, keptCitations } = buildAnswer(i, v);
+    expect(keptCitations).toBe(2);
+    expect(payload.citations[0]).toMatchObject({ n: 1, kind: 'meeting', meetingId: uuid(30), atMs: 62_000, label: 'Release standup', scope: 'team', channelId: uuid(20), channelName: 'dev', teamId: uuid(3) });
+    // naming the meeting as a whole is time 0
+    expect(payload.citations[1]).toMatchObject({ n: 2, kind: 'meeting', meetingId: uuid(31), atMs: 0, teamId: null, channelName: null });
+    expect(payload.lineage[0]).toMatchObject({ n: 1, kind: 'meeting', snippet: 'we hold the canary', at: '2026-11-02T09:00:00.000Z' });
+  });
+
+  it('drops a meeting the asker cannot read, one the reply’s readers cannot, and one the run never searched, each for its own reason', () => {
+    const i = input({ citations: [{ kind: 'meeting', meetingId: uuid(30) }, { kind: 'meeting', meetingId: uuid(31) }, { kind: 'meeting', meetingId: uuid(32) }] });
+    const v = view({ citations: [{ found: false, reached: true }, visible({ audience: false }), { found: false, reached: false }] });
+    const { payload, droppedCitations } = buildAnswer(i, v);
+    expect(droppedCitations).toBe(3);
+    expect(payload.citations).toEqual([]);
+    expect(payload.outsideScope.items.map((x) => [x.kind, x.reason, x.count]).sort()).toEqual([['meeting', 'not_reached', 1], ['meeting', 'not_shared', 1], ['meeting', 'not_visible', 1]]);
+    expect(JSON.stringify(payload)).not.toContain(uuid(30));
+  });
+
+  it('names a meeting to the view by its id', () => {
+    expect(citationRef({ kind: 'meeting', meetingId: uuid(30) } as never)).toEqual({ kind: 'meeting', ref: uuid(30), team: null });
+  });
+});
