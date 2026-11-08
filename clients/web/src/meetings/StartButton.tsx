@@ -29,7 +29,8 @@ export function StartButton({ channelId, dm }: { channelId: string; dm: boolean 
       disabled={busy}
       aria-label={dm ? (live ? 'Join the call' : 'Call') : label}
       title={live ? `${live.present.length} in the room now` : dm ? 'Call by voice' : 'Open a voice room for this channel'}
-      onClick={() => void callController().start(channelId)}
+      // A live room is joined, not started: a guest may join a room of a channel they are in but may not start one (the server refuses the start with 403)
+      onClick={() => void (live ? callController().joinRoom(live.meeting.id, channelId) : callController().start(channelId))}
     >
       <PhoneIcon />
       <span className="call-start-label">{label}</span>
