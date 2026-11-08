@@ -1870,6 +1870,12 @@ importers:
         specifier: ^4
         version: 4.23.15
 
+  tools/fake-saas:
+    devDependencies:
+      tsx:
+        specifier: ^4
+        version: 4.23.15
+
   tools/plates:
     dependencies:
       '@playwright/test':

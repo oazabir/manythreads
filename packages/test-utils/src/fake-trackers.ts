@@ -173,7 +173,11 @@ async function readBody(req: IncomingMessage): Promise<string> {
 const adf = (text: string): unknown => ({ type: 'doc', version: 1, content: text.split(/\n{2,}/).filter((p) => p.trim() !== '').map((p) => ({ type: 'paragraph', content: [{ type: 'text', text: p }] })) });
 const adfPlain = (doc: unknown): string => arr(rec(doc)['content']).map((p) => arr(rec(p)['content']).map((t) => s(rec(t)['text'])).join('')).join('\n\n');
 
-export async function startFakeTrackers(options: { clientId?: string; clientSecret?: string; accounts?: string[] } = {}): Promise<FakeTrackers> {
+/**
+ * `host` and `port` say where it listens (default: 127.0.0.1 and a free port); `publicHost` is the host name written into the addresses it hands out (default: `host`, or
+ * 127.0.0.1 for 0.0.0.0). Only tools/fake-saas sets them, to put the stand-in on the devbox address a stage release can reach.
+ */
+export async function startFakeTrackers(options: { clientId?: string; clientSecret?: string; accounts?: string[]; host?: string; port?: number; publicHost?: string } = {}): Promise<FakeTrackers> {
   const clientId = options.clientId ?? 'fake-tracker-client-id';
   const clientSecret = options.clientSecret ?? 'fake-tracker-client-secret';
   const accounts = options.accounts ?? ['person@kahf.example'];
@@ -510,8 +514,9 @@ export async function startFakeTrackers(options: { clientId?: string; clientSecr
       res.end('{"error":"fake_failed"}');
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  baseUrl = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+  const listenHost = options.host ?? '127.0.0.1';
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, listenHost, resolve));
+  baseUrl = `http://${options.publicHost ?? (listenHost === '0.0.0.0' ? '127.0.0.1' : listenHost)}:${String((server.address() as AddressInfo).port)}`;
 
   return {
     url: baseUrl,

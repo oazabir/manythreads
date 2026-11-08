@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { defaultAccount, type FakeAccountData, type FakeFile } from './fake-providers-data.ts';
+import { defaultAccount, FOLDER, type FakeAccountData, type FakeEvent, type FakeFile, type FakeNotionPage, type FakePermission } from './fake-providers-data.ts';
 
-export type { FakeAccountData, FakeCategory, FakeEvent, FakeFile, FakeLabel, FakeMail, FakeNotionPage } from './fake-providers-data.ts';
+export type { FakeAccountData, FakeCategory, FakeEvent, FakeFile, FakeLabel, FakeMail, FakeNotionPage, FakePermission } from './fake-providers-data.ts';
 export { defaultAccount } from './fake-providers-data.ts';
 
 // A local double of Google, Microsoft 365 and Notion, for the connections plugin's tests and for the e2e fixtures (PLAN P8-02 and P8-12). One small HTTP server stands
@@ -69,8 +69,30 @@ export interface FakeProviders {
   outlookEventUpdates: Array<{ account: string; eventId: string; fields: Record<string, unknown> }>;
   /** Every free/busy question put to Outlook: the addresses asked about. */
   scheduleRequests: Array<{ account: string; schedules: string[] }>;
+  /** Events a calendar was asked to delete (Google) or cancel (Microsoft). */
+  deletedEvents: Array<{ provider: FakeProviderId; account: string; eventId: string }>;
+  /** The description and the location every created event was sent with. */
+  createdEventDetails: Array<{ provider: FakeProviderId; account: string; eventId: string; description: string; location: string }>;
   /** The data of one account; replace or edit it to change what the APIs answer. */
   account(email: string): FakeAccountData;
+  /** The addresses of the accounts it holds. */
+  accountEmails(): string[];
+  /** Adds or replaces a file of the account and puts it in the change feed (Drive `changes`, OneDrive `delta`). Its version counts up. */
+  putFile(email: string, file: FakeFile): void;
+  /** Puts a file in the bin (the feeds report it). */
+  trashFile(email: string, fileId: string): void;
+  /** Deletes a file for good (the feeds report it removed). */
+  removeFile(email: string, fileId: string): void;
+  /** Replaces who else can open a file and puts it in the change feed. */
+  setFilePermissions(email: string, fileId: string, permissions: FakePermission[]): void;
+  /** Adds or replaces a Notion page of the account; its last-edited time becomes now unless it carries one. */
+  putPage(email: string, page: FakeNotionPage): void;
+  /** Adds or replaces a calendar event of the account (what an organizer does at the provider). */
+  putEvent(email: string, event: FakeEvent): void;
+  /** Hands out a sign-in that exists before any consent (the seeds seal such tokens): both tokens are the ones given, never random. */
+  seedGrant(grant: SeedGrantInput): void;
+  /** Forgets every recorded call and write, every forced failure and every sign-in made since the start (seeded ones stay), and puts the accounts back as they were at the start. */
+  reset(): void;
   /** The account the next consent signs in as (the "person at the provider"). */
   signInAs(email: string): void;
   /** The next consent is refused by the person (the redirect carries `error=access_denied`). */
@@ -90,7 +112,23 @@ export interface FakeProviders {
   stop(): Promise<void>;
 }
 
+/** A sign-in made before the run, with tokens chosen by the caller (tools/fake-saas derives them from a seed key, so a seeded stack and the stand-in agree). */
+export interface SeedGrantInput {
+  provider: FakeProviderId;
+  /** The account at the provider the grant belongs to. */
+  email: string;
+  scopes: string[];
+  accessToken: string;
+  /** Google and Microsoft only: a refresh token that works until the person takes the access away. */
+  refreshToken?: string;
+}
+
 export interface FakeProvidersOptions {
+  /** Where it listens (default 127.0.0.1 and a free port) and the host name it writes into its own address (default: `host`, or 127.0.0.1 for 0.0.0.0). Only tools/fake-saas sets them. */
+  host?: string;
+  port?: number;
+  publicHost?: string;
+  seedGrants?: SeedGrantInput[];
   clientId?: string;
   clientSecret?: string;
   /** Accounts by address; the first one is the account consents sign in as until `signInAs`. Default: one account with the default data. */
@@ -128,7 +166,10 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
   const clientId = options.clientId ?? 'fake-client-id';
   const clientSecret = options.clientSecret ?? 'fake-client-secret';
   const accounts = new Map<string, FakeAccountData>((options.accounts ?? [defaultAccount()]).map((a) => [a.email, a]));
+  const initialAccounts = structuredClone([...accounts.values()]);
   let signedInAs = [...accounts.keys()][0]!;
+  const initialSignedInAs = signedInAs;
+  let selfUrl = '';
   let denyNext = false;
   let accessTtl = 3600;
   const rotation: Record<FakeProviderId, boolean> = { google: false, microsoft: true, notion: false };
@@ -140,6 +181,14 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
   const refreshTokens = new Map<string, Issued & { dead: boolean }>();
   /** What each account already agreed to at each provider, for Google's `include_granted_scopes`. */
   const granted = new Map<string, Set<string>>();
+  const seeded: SeedGrantInput[] = [...(options.seedGrants ?? [])];
+  const applySeedGrant = (g: SeedGrantInput): void => {
+    accessTokens.set(g.accessToken, { provider: g.provider, account: g.email, scopes: g.scopes, expired: false });
+    if (g.refreshToken) refreshTokens.set(g.refreshToken, { provider: g.provider, account: g.email, scopes: g.scopes, dead: false });
+    const key = `${g.provider}:${g.email}`;
+    granted.set(key, new Set([...(granted.get(key) ?? []), ...g.scopes]));
+  };
+  seeded.forEach(applySeedGrant);
 
   const apiCalls: FakeApiCall[] = [];
   const tokenCalls: FakeTokenCall[] = [];
@@ -155,9 +204,79 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
   const categoryChanges: FakeProviders['categoryChanges'] = [];
   const outlookEventUpdates: FakeProviders['outlookEventUpdates'] = [];
   const scheduleRequests: FakeProviders['scheduleRequests'] = [];
+  /** Events a calendar was asked to delete (Google) or cancel (Microsoft): the provider, the account and the event. */
+  const deletedEventCalls: FakeProviders['deletedEvents'] = [];
+  const deletedEvents = new Set<string>();
+  /** The text fields of every created event (the join link goes in the description and the location). */
+  const createdEventDetails: FakeProviders['createdEventDetails'] = [];
   /** Reply drafts Outlook made (`createReply`) and not yet sent, by id. */
   const replyDrafts = new Map<string, { account: string; original: string; fields: Record<string, unknown> }>();
   let nextId = 1;
+  /** The change feed of the files: one entry per change, numbered; a page token of the feeds is a number (changes after it). */
+  const changes: Array<{ seq: number; account: string; fileId: string; removed: boolean; time: string }> = [];
+  let changeSeq = 0;
+  const logChange = (account: string, fileId: string, removed: boolean): void => void changes.push({ seq: ++changeSeq, account, fileId, removed, time: new Date().toISOString() });
+  const accountOf = (email: string): FakeAccountData => {
+    let a = accounts.get(email);
+    if (!a) {
+      a = defaultAccount(email);
+      accounts.set(email, a);
+    }
+    return a;
+  };
+  const findFile = (email: string, fileId: string): { data: FakeAccountData; file: FakeFile } => {
+    const data = accountOf(email);
+    const file = data.files.find((f) => f.id === fileId);
+    if (!file) throw new Error(`no file ${fileId} in the account ${email}`);
+    return { data, file };
+  };
+  const fileVersion = (f: FakeFile): number => f.version ?? 1;
+
+  const googleEvent = (e: FakeEvent, owner: string): Record<string, unknown> => ({
+    id: e.id,
+    status: e.status ?? 'confirmed',
+    summary: e.title,
+    ...(e.description !== undefined ? { description: e.description } : {}),
+    start: { dateTime: e.start },
+    end: { dateTime: e.end },
+    location: e.location,
+    organizer: { email: owner, self: true },
+    attendees: (e.guests ?? []).map((email) => ({ email })),
+    htmlLink: `https://calendar.example/${e.id}`,
+    updated: new Date().toISOString(),
+  });
+  const msEvent = (e: FakeEvent): Record<string, unknown> => ({
+    id: e.id,
+    subject: e.title,
+    isCancelled: e.status === 'cancelled',
+    body: { contentType: 'text', content: e.description ?? '' },
+    start: { dateTime: e.start, timeZone: 'UTC' },
+    end: { dateTime: e.end, timeZone: 'UTC' },
+    location: { displayName: e.location ?? '' },
+    attendees: (e.guests ?? []).map((a) => ({ emailAddress: { address: a }, type: 'required' })),
+    webLink: `https://outlook.example/${e.id}`,
+  });
+  const msDriveItem = (f: FakeFile, owner: string): Record<string, unknown> => ({
+    id: f.id,
+    name: f.name,
+    lastModifiedDateTime: f.modified,
+    webUrl: `https://onedrive.example/${f.id}`,
+    size: Buffer.byteLength(f.text),
+    eTag: `"${f.id}-${fileVersion(f)}"`,
+    parentReference: { driveId: `drive-${owner}`, ...(f.parentId ? { id: f.parentId } : {}) },
+    ...(f.mimeType === FOLDER ? { folder: { childCount: 0 } } : { file: { mimeType: f.mimeType.startsWith('application/vnd.google') ? 'text/plain' : f.mimeType } }),
+  });
+  const driveFile = (f: FakeFile): Record<string, unknown> => ({
+    id: f.id,
+    name: f.name,
+    mimeType: f.mimeType,
+    modifiedTime: f.modified,
+    webViewLink: `https://drive.example/${f.id}`,
+    trashed: f.trashed === true,
+    version: String(fileVersion(f)),
+    size: String(Buffer.byteLength(f.text)),
+    ...(f.parentId ? { parents: [f.parentId] } : {}),
+  });
 
   const providerOfPath = (path: string): FakeProviderId | null => {
     if (path.startsWith('/v1.0/') || path.startsWith('/oauth2/v2.0/')) return 'microsoft';
@@ -326,9 +445,65 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
       if (path === '/oauth2/v3/userinfo') return send(200, { email: data.email, sub: data.email });
       if (method === 'GET' && path === '/drive/v3/files') {
         if (!need('drive.readonly')) return;
-        const words = /fullText contains '((?:[^'\\]|\\.)*)'/.exec(q.get('q') ?? '')?.[1]?.replaceAll("\\'", "'").replaceAll('\\\\', '\\') ?? '';
-        const files = data.files.filter((f) => matches(f.name, words) || matches(f.text, words));
-        return send(200, { files: files.map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modified, webViewLink: `https://drive.example/${f.id}` })) });
+        const query = q.get('q') ?? '';
+        const words = /fullText contains '((?:[^'\\]|\\.)*)'/.exec(query)?.[1]?.replaceAll("\\'", "'").replaceAll('\\\\', '\\') ?? '';
+        const parent = /'([^']+)' in parents/.exec(query)?.[1];
+        const onlyMime = /mimeType = '([^']+)'/.exec(query)?.[1];
+        const notMime = /mimeType != '([^']+)'/.exec(query)?.[1];
+        const files = data.files.filter(
+          (f) =>
+            (matches(f.name, words) || matches(f.text, words)) &&
+            (parent === undefined || (parent === 'root' ? f.parentId === undefined : f.parentId === parent)) &&
+            (onlyMime === undefined || f.mimeType === onlyMime) &&
+            (notMime === undefined || f.mimeType !== notMime) &&
+            !(/trashed = false/.test(query) && f.trashed === true),
+        );
+        const size = Math.max(1, Math.min(1000, Number(q.get('pageSize') ?? 1000)));
+        const from = Number(q.get('pageToken') ?? 0) || 0;
+        const page = files.slice(from, from + size);
+        return send(200, { files: page.map((f) => driveFile(f)), ...(from + size < files.length ? { nextPageToken: String(from + size) } : {}) });
+      }
+      if (method === 'GET' && path === '/drive/v3/changes/startPageToken') {
+        if (!need('drive.readonly')) return;
+        return send(200, { kind: 'drive#startPageToken', startPageToken: String(changeSeq) });
+      }
+      if (method === 'GET' && path === '/drive/v3/changes') {
+        if (!need('drive.readonly')) return;
+        const after = Number(q.get('pageToken'));
+        if (!/^\d+$/.test(q.get('pageToken') ?? '') || after > changeSeq) return send(400, { error: { code: 400, message: 'Invalid value for: pageToken' } });
+        const latest = new Map<string, (typeof changes)[number]>();
+        for (const c of changes) if (c.seq > after && c.account === data.email) latest.set(c.fileId, c);
+        const ordered = [...latest.values()].sort((a, b) => a.seq - b.seq);
+        const size = Math.max(1, Math.min(1000, Number(q.get('pageSize') ?? 100)));
+        const page = ordered.slice(0, size);
+        const more = ordered.length > size;
+        return send(200, {
+          kind: 'drive#changeList',
+          changes: page.map((c) => {
+            const f = data.files.find((x) => x.id === c.fileId);
+            return { kind: 'drive#change', changeType: 'file', fileId: c.fileId, removed: c.removed || !f, time: c.time, ...(c.removed || !f ? {} : { file: driveFile(f) }) };
+          }),
+          ...(more ? { nextPageToken: String(page[page.length - 1]!.seq) } : { newStartPageToken: String(changeSeq) }),
+        });
+      }
+      const permissionsOf = /^\/drive\/v3\/files\/([^/]+)\/permissions$/.exec(path);
+      if (method === 'GET' && permissionsOf) {
+        if (!need('drive.readonly')) return;
+        const f = data.files.find((x) => x.id === decodeURIComponent(permissionsOf[1]!));
+        if (!f) return send(404, { error: 'not_found' });
+        return send(200, {
+          kind: 'drive#permissionList',
+          permissions: [
+            { id: 'owner', type: 'user', role: 'owner', emailAddress: data.email },
+            ...(f.permissions ?? []).map((p, i) =>
+              p.type === 'anyone'
+                ? { id: 'anyoneWithLink', type: 'anyone', role: 'reader', allowFileDiscovery: false }
+                : p.type === 'domain'
+                  ? { id: `domain-${i}`, type: 'domain', role: 'reader', domain: p.domain }
+                  : { id: `${p.type}-${i}`, type: p.type, role: 'reader', emailAddress: p.email },
+            ),
+          ],
+        });
       }
       const file = /^\/drive\/v3\/files\/([^/]+)(\/export)?$/.exec(path);
       if (method === 'GET' && file) {
@@ -336,7 +511,7 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         const f = data.files.find((x) => x.id === decodeURIComponent(file[1]!));
         if (!f) return send(404, { error: 'not_found' });
         if (file[2] || q.get('alt') === 'media') return text(200, f.text);
-        return send(200, { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modified, webViewLink: `https://drive.example/${f.id}` });
+        return send(200, driveFile(f));
       }
       // Gmail reads work with the read-only scope or the wider modify scope, as at Google
       const needMailRead = (): boolean => {
@@ -431,20 +606,44 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         const calendars: Record<string, unknown> = {};
         for (const { id } of b.items ?? []) {
           // 'primary' is the signed-in account; another address answers only when the fake knows the account (its calendar is "shared"); the rest is "not found", as at Google
-          const owner = id === 'primary' ? data : accounts.get(id);
+          const own = id === 'primary' || id.toLowerCase() === data.email.toLowerCase();
+          const found = own ? data : accounts.get(id);
+          // a calendar its owner did not share answers like one that does not exist
+          const owner = found && (own || found.shareCalendar !== false) ? found : undefined;
           calendars[id] = owner
-            ? { busy: owner.events.filter((e) => e.end > b.timeMin && e.start < b.timeMax).map((e) => ({ start: e.start, end: e.end })) }
+            ? { busy: owner.events.filter((e) => e.status !== 'cancelled' && e.end > b.timeMin && e.start < b.timeMax).map((e) => ({ start: e.start, end: e.end })) }
             : { busy: [], errors: [{ domain: 'global', reason: 'notFound' }] };
         }
         return send(200, { kind: 'calendar#freeBusy', timeMin: b.timeMin, timeMax: b.timeMax, calendars });
       }
       const patched = /^\/calendar\/v3\/calendars\/primary\/events\/([^/]+)$/.exec(path);
+      if (method === 'GET' && patched) {
+        if (!token.scopes.some((sc) => sc.endsWith('/calendar.events') || sc.endsWith('/calendar.events.readonly') || sc.endsWith('/calendar.readonly'))) return void send(403, { error: 'insufficient_scope' });
+        const id = decodeURIComponent(patched[1]!);
+        if (deletedEvents.has(`${data.email}:${id}`)) return send(410, { error: { code: 410, message: 'Resource has been deleted' } });
+        const e = data.events.find((x) => x.id === id);
+        if (!e) return send(404, { error: 'not_found' });
+        return send(200, googleEvent(e, data.email));
+      }
+      if (method === 'DELETE' && patched) {
+        if (!need('calendar.events')) return;
+        const id = decodeURIComponent(patched[1]!);
+        const at = data.events.findIndex((x) => x.id === id);
+        if (at < 0) return send(deletedEvents.has(`${data.email}:${id}`) ? 410 : 404, { error: 'not_found' });
+        data.events.splice(at, 1);
+        deletedEvents.add(`${data.email}:${id}`);
+        deletedEventCalls.push({ provider, account: data.email, eventId: id });
+        res.writeHead(204);
+        return void res.end();
+      }
       if (method === 'PATCH' && patched) {
         if (!need('calendar.events')) return;
         const e = data.events.find((x) => x.id === decodeURIComponent(patched[1]!));
         if (!e) return send(404, { error: 'not_found' });
-        const b = JSON.parse(body || '{}') as { summary?: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees?: Array<{ email: string }>; description?: string };
+        const b = JSON.parse(body || '{}') as { summary?: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees?: Array<{ email: string }>; description?: string; location?: string };
         if (b.summary !== undefined) e.title = b.summary;
+        if (b.description !== undefined) e.description = b.description;
+        if (b.location !== undefined) e.location = b.location;
         if (b.start) e.start = b.start.dateTime;
         if (b.end) e.end = b.end.dateTime;
         if (b.attendees) e.guests = b.attendees.map((a) => a.email);
@@ -456,31 +655,32 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
           if (!need('calendar.events.readonly')) return;
           const from = q.get('timeMin') ?? '0000';
           const to = q.get('timeMax') ?? '9999';
-          const items = data.events.filter((e) => e.end > from && e.start < to).sort((a, b) => a.start.localeCompare(b.start));
-          return send(200, {
-            items: items.map((e) => ({
-              id: e.id,
-              summary: e.title,
-              start: { dateTime: e.start },
-              end: { dateTime: e.end },
-              location: e.location,
-              attendees: (e.guests ?? []).map((email) => ({ email })),
-              htmlLink: `https://calendar.example/${e.id}`,
-            })),
-          });
+          const items = data.events.filter((e) => e.status !== 'cancelled' && e.end > from && e.start < to).sort((a, b) => a.start.localeCompare(b.start));
+          return send(200, { items: items.map((e) => googleEvent(e, data.email)) });
         }
         if (method === 'POST') {
           if (!need('calendar.events')) return;
-          const b = JSON.parse(body || '{}') as { summary: string; start: { dateTime: string }; end: { dateTime: string }; attendees?: Array<{ email: string }> };
-          createdEvents.push({ provider, account: data.email, title: b.summary, start: b.start.dateTime, end: b.end.dateTime, guests: (b.attendees ?? []).map((a) => a.email) });
+          const b = JSON.parse(body || '{}') as { summary: string; start: { dateTime: string }; end: { dateTime: string }; attendees?: Array<{ email: string }>; description?: string; location?: string };
+          const guests = (b.attendees ?? []).map((a) => a.email);
+          createdEvents.push({ provider, account: data.email, title: b.summary, start: b.start.dateTime, end: b.end.dateTime, guests });
           const id = `event-new-${nextId++}`;
-          return send(200, { id, htmlLink: `https://calendar.example/${id}` });
+          // the event now exists at the provider: a later read, free/busy question or sync sees it (an organizer's own mailbox is not listed as a guest)
+          const created: FakeEvent = { id, title: b.summary, start: b.start.dateTime, end: b.end.dateTime, guests, ...(b.description !== undefined ? { description: b.description } : {}), ...(b.location !== undefined ? { location: b.location } : {}) };
+          data.events.push(created);
+          createdEventDetails.push({ provider, account: data.email, eventId: id, description: b.description ?? '', location: b.location ?? '' });
+          return send(200, googleEvent(created, data.email));
         }
       }
     }
 
     if (provider === 'microsoft') {
       const p = path.slice('/v1.0'.length);
+      // Outlook mail reads work with Mail.Read or the wider Mail.ReadWrite, as at Microsoft
+      const needAny = (...scopes: string[]): boolean => {
+        if (token.scopes.some((sc) => scopes.some((want) => sc === want || sc.endsWith(`/${want}`)))) return true;
+        send(403, { error: 'insufficient_scope' });
+        return false;
+      };
       if (p === '/me') return send(200, { mail: data.email, userPrincipalName: data.email });
       const search = /^\/me\/drive\/root\/search\(q='((?:[^']|'')*)'\)$/.exec(decodeURIComponent(p));
       if (method === 'GET' && search) {
@@ -498,7 +698,70 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         const f = data.files.find((x) => x.id === decodeURIComponent(item[1]!));
         if (!f) return send(404, { error: 'not_found' });
         if (item[2]) return text(200, f.text);
-        return send(200, { id: f.id, name: f.name, file: { mimeType: f.mimeType.startsWith('application/vnd.google') ? 'text/plain' : f.mimeType }, lastModifiedDateTime: f.modified, webUrl: `https://onedrive.example/${f.id}` });
+        return send(200, msDriveItem(f, data.email));
+      }
+      const itemPermissions = /^\/me\/drive\/items\/([^/]+)\/permissions$/.exec(p);
+      if (method === 'GET' && itemPermissions) {
+        if (!needAny('Files.Read', 'Files.Read.All')) return;
+        const f = data.files.find((x) => x.id === decodeURIComponent(itemPermissions[1]!));
+        if (!f) return send(404, { error: 'not_found' });
+        const owner = { id: 'owner', roles: ['owner'], grantedToV2: { user: { email: data.email, displayName: data.email.split('@')[0] } } };
+        const ownDomain = data.email.split('@')[1]!.toLowerCase();
+        return send(200, {
+          value: [
+            owner,
+            ...(f.permissions ?? []).flatMap((perm, i): Array<Record<string, unknown>> => {
+              if (perm.type === 'anyone') return [{ id: `link-${i}`, roles: ['read'], link: { scope: 'anonymous', type: 'view' } }];
+              // Graph does not name the tenant: an organization link is the owner's own, so a share to another domain has no counterpart here
+              if (perm.type === 'domain') return perm.domain.toLowerCase() === ownDomain ? [{ id: `link-${i}`, roles: ['read'], link: { scope: 'organization', type: 'view' } }] : [];
+              if (perm.type === 'user') return [{ id: `user-${i}`, roles: ['read'], grantedToV2: { user: { email: perm.email, displayName: perm.email.split('@')[0] } } }];
+              return [{ id: `group-${i}`, roles: ['read'], grantedToV2: { group: { id: perm.email, displayName: perm.email.split('@')[0] } } }];
+            }),
+          ],
+        });
+      }
+      const children = /^\/me\/drive\/(?:root|items\/([^/]+))\/children$/.exec(p);
+      if (method === 'GET' && children) {
+        if (!needAny('Files.Read', 'Files.Read.All')) return;
+        const parent = children[1] === undefined ? undefined : decodeURIComponent(children[1]);
+        const inside = data.files.filter((f) => f.trashed !== true && f.parentId === parent);
+        const size = Math.max(1, Math.min(200, Number(q.get('$top') ?? 200)));
+        const from = Number(q.get('$skiptoken') ?? 0) || 0;
+        return send(200, {
+          value: inside.slice(from, from + size).map((f) => msDriveItem(f, data.email)),
+          ...(from + size < inside.length ? { '@odata.nextLink': `${selfUrl}/v1.0${p}?$top=${size}&$skiptoken=${from + size}` } : {}),
+        });
+      }
+      if (method === 'GET' && p === '/me/drive/root/delta') {
+        if (!needAny('Files.Read', 'Files.Read.All')) return;
+        const tokenGiven = q.get('token');
+        if (tokenGiven !== null && (!/^\d+$/.test(tokenGiven) || Number(tokenGiven) > changeSeq)) return send(410, { error: { code: 'resyncRequired', message: 'The delta token is not valid.' } });
+        const size = Math.max(1, Math.min(200, Number(q.get('$top') ?? 200)));
+        const skip = Number(q.get('$skiptoken') ?? 0) || 0;
+        // the first round lists everything that is there; a later one lists what changed since the token, a removed or binned file as deleted
+        const upto = Number(q.get('upto') ?? changeSeq);
+        const since = q.get('since') ?? tokenGiven;
+        const rows: Array<Record<string, unknown>> =
+          since === null
+            ? data.files.filter((f) => f.trashed !== true).map((f) => msDriveItem(f, data.email))
+            : (() => {
+                const latest = new Map<string, (typeof changes)[number]>();
+                for (const c of changes) if (c.seq > Number(since) && c.seq <= upto && c.account === data.email) latest.set(c.fileId, c);
+                return [...latest.values()]
+                  .sort((a, b) => a.seq - b.seq)
+                  .map((c) => {
+                    const f = data.files.find((x) => x.id === c.fileId);
+                    return !f || c.removed || f.trashed === true ? { id: c.fileId, deleted: { state: 'deleted' }, parentReference: { driveId: `drive-${data.email}` } } : msDriveItem(f, data.email);
+                  });
+              })();
+        const keep = since === null ? '' : `&since=${since}`;
+        const page = rows.slice(skip, skip + size);
+        return send(200, {
+          value: page,
+          ...(skip + size < rows.length
+            ? { '@odata.nextLink': `${selfUrl}/v1.0/me/drive/root/delta?$top=${size}&$skiptoken=${skip + size}&upto=${upto}${keep}` }
+            : { '@odata.deltaLink': `${selfUrl}/v1.0/me/drive/root/delta?token=${upto}` }),
+        });
       }
       const sendDriveItem = (f: FakeFile, tail: string | undefined, sheetId: string | undefined, lastCol: string | undefined, lastRow: string | undefined): void => {
         if (!tail) return send(200, { id: f.id, name: f.name, size: f.text.length, file: { mimeType: f.mimeType }, lastModifiedDateTime: f.modified, webUrl: `https://sharepoint.example/${f.id}` });
@@ -508,12 +771,6 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         const rows = f.text.split('\n').filter((l) => l !== '').map((l) => l.split(',').map((c) => (c !== '' && !Number.isNaN(Number(c)) ? Number(c) : c)));
         const cols = (lastCol ?? 'A').charCodeAt(0) - 64;
         return send(200, { values: Array.from({ length: Number(lastRow ?? 1) }, (_, r) => Array.from({ length: cols }, (_, c) => rows[r]?.[c] ?? '')) });
-      };
-      // Outlook mail reads work with Mail.Read or the wider Mail.ReadWrite, as at Microsoft
-      const needAny = (...scopes: string[]): boolean => {
-        if (token.scopes.some((sc) => scopes.some((want) => sc === want || sc.endsWith(`/${want}`)))) return true;
-        send(403, { error: 'insufficient_scope' });
-        return false;
       };
       const msMail = (m: FakeAccountData['mails'][number]): Record<string, unknown> => ({
         id: m.id,
@@ -674,24 +931,56 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         if (!need('Calendars.Read')) return;
         const from = q.get('startDateTime') ?? '0000';
         const to = q.get('endDateTime') ?? '9999';
-        const items = data.events.filter((e) => e.end > from && e.start < to).sort((a, b) => a.start.localeCompare(b.start));
+        const items = data.events.filter((e) => e.status !== 'cancelled' && e.end > from && e.start < to).sort((a, b) => a.start.localeCompare(b.start));
         return send(200, {
           value: items.map((e) => ({ id: e.id, subject: e.title, start: { dateTime: e.start }, end: { dateTime: e.end }, location: { displayName: e.location ?? '' }, attendees: (e.guests ?? []).map((a) => ({ emailAddress: { address: a } })), webLink: `https://outlook.example/${e.id}` })),
         });
       }
       if (method === 'POST' && p === '/me/events') {
         if (!need('Calendars.ReadWrite')) return;
-        const b = JSON.parse(body || '{}') as { subject: string; start: { dateTime: string }; end: { dateTime: string }; attendees?: Array<{ emailAddress: { address: string } }> };
-        createdEvents.push({ provider, account: data.email, title: b.subject, start: b.start.dateTime, end: b.end.dateTime, guests: (b.attendees ?? []).map((a) => a.emailAddress.address) });
+        const b = JSON.parse(body || '{}') as { subject: string; start: { dateTime: string }; end: { dateTime: string }; attendees?: Array<{ emailAddress: { address: string } }>; body?: { content?: string }; location?: { displayName?: string } };
+        const guests = (b.attendees ?? []).map((a) => a.emailAddress.address);
+        createdEvents.push({ provider, account: data.email, title: b.subject, start: b.start.dateTime, end: b.end.dateTime, guests });
         const id = `event-new-${nextId++}`;
-        return send(201, { id, webLink: `https://outlook.example/${id}` });
+        const zoned = (iso: string): string => (/(Z|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`);
+        const created: FakeEvent = {
+          id,
+          title: b.subject,
+          start: new Date(zoned(b.start.dateTime)).toISOString(),
+          end: new Date(zoned(b.end.dateTime)).toISOString(),
+          guests,
+          description: b.body?.content ?? '',
+          location: b.location?.displayName ?? '',
+        };
+        data.events.push(created);
+        createdEventDetails.push({ provider, account: data.email, eventId: id, description: created.description ?? '', location: created.location ?? '' });
+        return send(201, msEvent(created));
+      }
+      const msOne = /^\/me\/events\/([^/]+)(\/cancel)?$/.exec(p);
+      if (msOne && (method === 'GET' || method === 'DELETE' || (method === 'POST' && msOne[2]))) {
+        const id = decodeURIComponent(msOne[1]!);
+        if (method === 'GET') {
+          if (!needAny('Calendars.Read', 'Calendars.ReadWrite')) return;
+          const e = data.events.find((x) => x.id === id);
+          return e ? send(200, msEvent(e)) : send(404, { error: { code: 'ErrorItemNotFound' } });
+        }
+        if (!need('Calendars.ReadWrite')) return;
+        const e = data.events.find((x) => x.id === id);
+        if (!e) return send(404, { error: { code: 'ErrorItemNotFound' } });
+        if (method === 'DELETE') data.events.splice(data.events.indexOf(e), 1);
+        else e.status = 'cancelled';
+        deletedEventCalls.push({ provider, account: data.email, eventId: id });
+        res.writeHead(method === 'DELETE' ? 204 : 202);
+        return void res.end();
       }
       if (method === 'PATCH' && /^\/me\/events\/[^/]+$/.test(p)) {
         if (!need('Calendars.ReadWrite')) return;
         const e = data.events.find((x) => x.id === decodeURIComponent(p.split('/')[3]!));
         if (!e) return send(404, { error: 'not_found' });
-        const b = JSON.parse(body || '{}') as { subject?: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees?: Array<{ emailAddress: { address: string } }> };
+        const b = JSON.parse(body || '{}') as { subject?: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees?: Array<{ emailAddress: { address: string } }>; body?: { content?: string }; location?: { displayName?: string } };
         if (b.subject !== undefined) e.title = b.subject;
+        if (b.body?.content !== undefined) e.description = b.body.content;
+        if (b.location?.displayName !== undefined) e.location = b.location.displayName;
         // a time without an offset is UTC here, as the tools say so
         if (b.start) e.start = new Date(`${b.start.dateTime}Z`).toISOString();
         if (b.end) e.end = new Date(`${b.end.dateTime}Z`).toISOString();
@@ -709,13 +998,15 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         const stamp = (iso: string): { dateTime: string; timeZone: string } => ({ dateTime: `${iso.slice(0, 19)}.0000000`, timeZone: 'UTC' });
         return send(200, {
           value: (b.schedules ?? []).map((id) => {
-            const owner = id.toLowerCase() === data.email.toLowerCase() ? data : accounts.get(id);
+            const own = id.toLowerCase() === data.email.toLowerCase();
+            const owner = own ? data : accounts.get(id);
             if (!owner) return { scheduleId: id, scheduleItems: [], error: { message: `There is no mailbox for ${id}: SECRET-MAILBOX-TEXT`, responseCode: 'ErrorMailRecipientNotFound' } };
+            if (!own && owner.shareCalendar === false) return { scheduleId: id, scheduleItems: [], error: { message: `No permission to read ${id}: SECRET-MAILBOX-TEXT`, responseCode: 'ErrorAccessDenied' } };
             return {
               scheduleId: id,
               availabilityView: '',
               scheduleItems: [
-                ...owner.events.filter((e) => e.end > from && e.start < to).map((e) => ({ status: 'busy', subject: e.title, location: e.location ?? '', start: stamp(e.start), end: stamp(e.end) })),
+                ...owner.events.filter((e) => e.status !== 'cancelled' && e.end > from && e.start < to).map((e) => ({ status: 'busy', subject: e.title, location: e.location ?? '', start: stamp(e.start), end: stamp(e.end) })),
                 // an item that is not busy time, so a reader has to leave it out
                 { status: 'free', start: stamp(from), end: stamp(from) },
               ],
@@ -763,24 +1054,48 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
       if (!req.headers['notion-version']) return send(400, { object: 'error', code: 'missing_version' });
       const p = path.slice('/v1'.length);
       const title = (t: string): unknown => ({ title: { type: 'title', title: [{ plain_text: t }] } });
+      const notionPage = (pg: FakeNotionPage): Record<string, unknown> => ({
+        object: 'page',
+        id: pg.id,
+        url: `https://notion.example/${pg.id}`,
+        last_edited_time: pg.lastEdited ?? '2026-10-30T12:00:00.000Z',
+        archived: pg.archived === true,
+        in_trash: pg.archived === true,
+        public_url: pg.public === true ? `https://notion.example/public/${pg.id}` : null,
+        properties: title(pg.title),
+      });
       if (method === 'POST' && p === '/search') {
-        const words = (JSON.parse(body || '{}') as { query?: string }).query ?? '';
+        const b = JSON.parse(body || '{}') as { query?: string; sort?: { direction?: string; timestamp?: string }; page_size?: number; start_cursor?: string };
+        const words = b.query ?? '';
+        const edited = (pg: FakeNotionPage): string => pg.lastEdited ?? '2026-10-30T12:00:00.000Z';
+        const found = data.pages.filter((pg) => pg.archived !== true && matches(pg.title, words));
+        if (b.sort?.timestamp === 'last_edited_time') found.sort((x, y) => (b.sort?.direction === 'ascending' ? 1 : -1) * edited(x).localeCompare(edited(y)));
+        const size = Math.max(1, Math.min(100, b.page_size ?? 100));
+        const from = Number(b.start_cursor ?? 0) || 0;
         return send(200, {
-          results: data.pages.filter((pg) => matches(pg.title, words)).map((pg) => ({ object: 'page', id: pg.id, url: `https://notion.example/${pg.id}`, last_edited_time: '2026-10-30T12:00:00.000Z', properties: title(pg.title) })),
+          object: 'list',
+          results: found.slice(from, from + size).map((pg) => notionPage(pg)),
+          has_more: from + size < found.length,
+          next_cursor: from + size < found.length ? String(from + size) : null,
         });
       }
       const page = /^\/pages\/([^/]+)$/.exec(p);
       if (method === 'GET' && page) {
         const pg = data.pages.find((x) => x.id === decodeURIComponent(page[1]!));
         if (!pg) return send(404, { object: 'error', code: 'object_not_found' });
-        return send(200, { object: 'page', id: pg.id, url: `https://notion.example/${pg.id}`, properties: title(pg.title) });
+        return send(200, notionPage(pg));
       }
       const blocks = /^\/blocks\/([^/]+)\/children$/.exec(p);
       if (method === 'GET' && blocks) {
         const pg = data.pages.find((x) => x.id === decodeURIComponent(blocks[1]!));
         if (!pg) return send(404, { object: 'error', code: 'object_not_found' });
+        const size = Math.max(1, Math.min(100, Number(q.get('page_size') ?? 100)));
+        const from = Number(q.get('start_cursor') ?? 0) || 0;
         return send(200, {
-          results: pg.blocks.map((b) => {
+          object: 'list',
+          has_more: from + size < pg.blocks.length,
+          next_cursor: from + size < pg.blocks.length ? String(from + size) : null,
+          results: pg.blocks.slice(from, from + size).map((b) => {
             const [type, content] = b.startsWith('## ') ? ['heading_2', b.slice(3)] : b.startsWith('# ') ? ['heading_1', b.slice(2)] : b.startsWith('- ') ? ['bulleted_list_item', b.slice(2)] : ['paragraph', b];
             return { object: 'block', type, [type!]: { rich_text: [{ plain_text: content }] } };
           }),
@@ -802,8 +1117,10 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
       res.end(JSON.stringify({ error: 'fake provider failure' }));
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve));
+  const listenHost = options.host ?? '127.0.0.1';
+  const url = `http://${options.publicHost ?? (listenHost === '0.0.0.0' ? '127.0.0.1' : listenHost)}:${(server.address() as AddressInfo).port}`;
+  selfUrl = url;
 
   return {
     url,
@@ -832,13 +1149,73 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
     categoryChanges,
     outlookEventUpdates,
     scheduleRequests,
-    account(email) {
-      let a = accounts.get(email);
-      if (!a) {
-        a = defaultAccount(email);
-        accounts.set(email, a);
-      }
-      return a;
+    deletedEvents: deletedEventCalls,
+    createdEventDetails,
+    account: accountOf,
+    accountEmails: () => [...accounts.keys()],
+    putFile(email, file) {
+      const data = accountOf(email);
+      const at = data.files.findIndex((f) => f.id === file.id);
+      const next: FakeFile = { ...file, version: (at >= 0 ? fileVersion(data.files[at]!) : 0) + 1 };
+      if (at >= 0) data.files[at] = next;
+      else data.files.push(next);
+      logChange(data.email, file.id, false);
+    },
+    trashFile(email, fileId) {
+      const { data, file } = findFile(email, fileId);
+      file.trashed = true;
+      file.version = fileVersion(file) + 1;
+      logChange(data.email, fileId, false);
+    },
+    removeFile(email, fileId) {
+      const { data } = findFile(email, fileId);
+      data.files.splice(data.files.findIndex((f) => f.id === fileId), 1);
+      logChange(data.email, fileId, true);
+    },
+    setFilePermissions(email, fileId, permissions) {
+      const { data, file } = findFile(email, fileId);
+      file.permissions = permissions;
+      file.version = fileVersion(file) + 1;
+      logChange(data.email, fileId, false);
+    },
+    putPage(email, page) {
+      const data = accountOf(email);
+      const next: FakeNotionPage = { ...page, lastEdited: page.lastEdited ?? new Date().toISOString() };
+      const at = data.pages.findIndex((pg) => pg.id === page.id);
+      if (at >= 0) data.pages[at] = next;
+      else data.pages.push(next);
+    },
+    putEvent(email, event) {
+      const data = accountOf(email);
+      const at = data.events.findIndex((e) => e.id === event.id);
+      if (at >= 0) data.events[at] = event;
+      else data.events.push(event);
+    },
+    seedGrant(grant) {
+      seeded.push(grant);
+      applySeedGrant(grant);
+    },
+    reset() {
+      for (const list of [apiCalls, tokenCalls, consents, revoked, drafts, sentMails, labelChanges, createdEvents, updatedEvents, createdPages, outlookSent, categoryChanges, outlookEventUpdates, scheduleRequests, deletedEventCalls, createdEventDetails, changes] as unknown[][]) list.length = 0;
+      deletedEvents.clear();
+      replyDrafts.clear();
+      codes.clear();
+      accessTokens.clear();
+      refreshTokens.clear();
+      granted.clear();
+      seeded.forEach(applySeedGrant);
+      accounts.clear();
+      for (const a of structuredClone(initialAccounts)) accounts.set(a.email, a);
+      signedInAs = initialSignedInAs;
+      denyNext = false;
+      accessTtl = 3600;
+      rotation.google = false;
+      rotation.microsoft = true;
+      rotation.notion = false;
+      apiFailure = null;
+      tokenFailure = null;
+      changeSeq = 0;
+      nextId = 1;
     },
     signInAs(email) {
       if (!accounts.has(email)) accounts.set(email, defaultAccount(email));

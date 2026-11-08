@@ -356,6 +356,10 @@ export interface FakeSupportOptions {
   clientId?: string;
   clientSecret?: string;
   data?: FakeSupportData;
+  /** Where the four servers listen (default 127.0.0.1); `port` is the first one's port, the next three follow it (default: free ports); `publicHost` is the host written into their addresses. Only tools/fake-saas sets them. */
+  host?: string;
+  port?: number;
+  publicHost?: string;
 }
 
 export async function startFakeSupport(options: FakeSupportOptions = {}): Promise<FakeSupport> {
@@ -683,16 +687,18 @@ export async function startFakeSupport(options: FakeSupportOptions = {}): Promis
 
   const servers = new Map<FakeSupportProviderId, Server>();
   const urls = {} as Record<FakeSupportProviderId, string>;
-  for (const provider of Object.keys(SPECS) as FakeSupportProviderId[]) {
+  const listenHost = options.host ?? '127.0.0.1';
+  const publicHost = options.publicHost ?? (listenHost === '0.0.0.0' ? '127.0.0.1' : listenHost);
+  for (const [index, provider] of (Object.keys(SPECS) as FakeSupportProviderId[]).entries()) {
     const server = createServer((req, res) => {
       handle(provider, req, res).catch(() => {
         res.writeHead(500, { 'content-type': 'application/json' });
         res.end('{"error":"fake failure"}');
       });
     });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => server.listen(options.port === undefined || options.port === 0 ? 0 : options.port + index, listenHost, resolve));
     servers.set(provider, server);
-    urls[provider] = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+    urls[provider] = `http://${publicHost}:${String((server.address() as AddressInfo).port)}`;
   }
 
   return {

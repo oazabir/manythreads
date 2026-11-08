@@ -1,12 +1,25 @@
 // What the fake Google, Microsoft and Notion accounts hold by default: a small, Kahf-shaped set of files, mail, events and pages, so a screen, a bot or a test has
 // something real-looking to search and read. Every text carries one distinctive fact that a test can look for. Nothing here is a credential.
 
+/** Who can open a file besides its owner: anyone with the link, everyone at a domain, one person, or a group (Google Groups, Microsoft 365 groups). */
+export type FakePermission = { type: 'anyone' } | { type: 'domain'; domain: string } | { type: 'user'; email: string } | { type: 'group'; email: string };
+
+export const FOLDER = 'application/vnd.google-apps.folder';
+
 export interface FakeFile {
   id: string;
   name: string;
   mimeType: string;
   modified: string;
   text: string;
+  /** Sharing besides the owner (the account that holds the file); default none, which is "only the owner". */
+  permissions?: FakePermission[];
+  /** In the bin: a Drive search leaves it out when asked, a change feed reports it, a OneDrive delta reports it deleted. */
+  trashed?: boolean;
+  /** The folder it is in (a file of the same account whose mimeType is a folder); default the top. */
+  parentId?: string;
+  /** Counts up on every change made through the fake's own methods; default 1. */
+  version?: number;
 }
 
 export interface FakeMail {
@@ -36,6 +49,10 @@ export interface FakeEvent {
   end: string;
   location?: string;
   guests?: string[];
+  /** The text of the invitation (the agenda and the join link, for an event a room was scheduled with). */
+  description?: string;
+  /** `cancelled` once the organizer cancelled it at the provider; the list leaves it out, a read by id says so. Default confirmed. */
+  status?: 'confirmed' | 'cancelled';
 }
 
 export interface FakeNotionPage {
@@ -43,6 +60,12 @@ export interface FakeNotionPage {
   title: string;
   /** One block per entry: `# ` and `## ` lines become headings, `- ` lines bullets, the rest paragraphs. */
   blocks: string[];
+  /** When it was last edited (ISO); default 2026-10-30T12:00:00.000Z. `putPage` of the fake sets it to now. */
+  lastEdited?: string;
+  /** In the trash: the search leaves it out, a read says `archived`. */
+  archived?: boolean;
+  /** Published to the web: the page carries a `public_url`. */
+  public?: boolean;
 }
 
 /** A Gmail label of an account. The built-in ones (INBOX, UNREAD, STARRED, IMPORTANT, TRASH, SPAM, SENT, DRAFT) are always there. */
@@ -60,6 +83,8 @@ export interface FakeCategory {
 export interface FakeAccountData {
   /** The address the provider reports for the account. */
   email: string;
+  /** Whether other accounts of the fake may ask this one's free/busy (default true). False: the question answers "not found", as a calendar that is not shared does. */
+  shareCalendar?: boolean;
   /** The account's own Gmail labels; default: Invoices and Offsite. */
   labels?: FakeLabel[];
   /** The account's Outlook categories; default: Customer, Urgent and Offsite. */
