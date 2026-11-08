@@ -208,6 +208,19 @@ describe('the payload kept with an event', () => {
     expect(Object.keys(trimmed)).not.toContain('__proto__');
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
   });
+  it('holds only text Postgres jsonb takes: no NUL, no lone surrogate, also after a cut through an emoji', () => {
+    const body = { text: `${'x'.repeat(1999)}\u{1F600}tail`, nul: 'a\u0000b', lone: 'a\ud800b\udc00c', 'k\u0000ey': 'v' };
+    const trimmed = JSON.stringify(trimPayload(body));
+    const back = JSON.parse(trimmed) as Record<string, string>;
+    for (const text of [...Object.keys(back), ...Object.values(back)]) {
+      expect(text).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);
+      expect(text).not.toContain('\u0000');
+    }
+    expect(back['nul']).toBe('ab');
+    expect(back['key']).toBe('v');
+    expect(back['lone']).toBe('a\ufffdb\ufffdc');
+    expect(back['text']!.startsWith('x'.repeat(1999))).toBe(true);
+  });
   it('keeps a small payload as it was', () => {
     expect(trimPayload({ a: 1, b: ['x'], c: { d: null } })).toEqual({ a: 1, b: ['x'], c: { d: null } });
   });

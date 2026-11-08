@@ -142,6 +142,28 @@ export const sha256Hex = (data: string | Uint8Array): string => createHash('sha2
 const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
+ * Text that Postgres will take inside a jsonb value, cut to `max` UTF-16 units: the NUL character (jsonb refuses `\u0000`) is dropped, and a surrogate that has lost its partner (a body
+ * can carry one, and a cut in the middle of an emoji makes one) becomes U+FFFD, which jsonb refuses otherwise. One pass.
+ */
+export function jsonbText(text: string, max: number): string {
+  const end = Math.min(text.length, max);
+  let out = '';
+  for (let i = 0; i < end; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 0) continue;
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+      if (i + 1 < end && next >= 0xdc00 && next <= 0xdfff) {
+        out += text[i]! + text[i + 1]!;
+        i++;
+      } else out += '\ufffd';
+    } else if (c >= 0xdc00 && c <= 0xdfff) out += '\ufffd';
+    else out += text[i]!;
+  }
+  return out;
+}
+
+/**
  * The payload kept with an event: the same JSON cut down so that it is always well under the 64 KB the table allows. Depth, array length, key count and string length are
  * capped, and the caps tighten until the text fits. Keys that could touch an object's prototype are dropped. What is left is outside text and is only ever read as data.
  */
@@ -153,7 +175,7 @@ export function trimPayload(body: unknown, budgetBytes = 48_000): unknown {
     [3, 3, 20, 60],
   ] as const) {
     const cut = (v: unknown, d: number): unknown => {
-      if (typeof v === 'string') return v.length > chars ? `${v.slice(0, chars)}…` : v;
+      if (typeof v === 'string') return v.length > chars ? `${jsonbText(v, chars)}…` : jsonbText(v, chars);
       if (typeof v === 'number' || typeof v === 'boolean' || v === null) return v;
       if (d >= depth) return undefined;
       if (Array.isArray(v)) return v.slice(0, items).map((x) => cut(x, d + 1));
@@ -164,7 +186,7 @@ export function trimPayload(body: unknown, budgetBytes = 48_000): unknown {
           if (BLOCKED_KEYS.has(key)) continue;
           if (n++ >= keys) break;
           const value = cut(v[key], d + 1);
-          if (value !== undefined) out[key.slice(0, 80)] = value;
+          if (value !== undefined) out[jsonbText(key, 80)] = value;
         }
         return out;
       }
