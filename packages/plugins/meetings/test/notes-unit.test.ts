@@ -1,7 +1,7 @@
 import type { MeetingNoteItem, MeetingNotesDraft } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { readAutoMemory, renderMemoryItem, sendWarning } from '../src/memory.ts';
-import { actionOwnerIds, buildNoteItems, escapeMarkdown, ownerDirectory, renderNotesMarkdown, threadBody, transcriptForModel } from '../src/notes.ts';
+import { actionOwnerIds, buildNoteItems, escapeMarkdown, ownerDirectory, renderNotesMarkdown, scribeMayRead, threadBody, transcriptForModel } from '../src/notes.ts';
 
 // The checks the platform makes on the Scribe's answer (PLAN P15-10, decision C7), and the text it writes from it. No database: the whole run is in notes.test.ts.
 
@@ -159,5 +159,22 @@ describe('the memory item and its switches', () => {
     expect(sendWarning('Engineering', true, false)).toContain('everyone in Engineering will see');
     expect(sendWarning('Engineering', false, false)).not.toContain('guest');
     expect(sendWarning('Engineering', true, true)).toContain('A guest was in the call');
+  });
+});
+
+describe('what the Scribe’s meetings.read may open', () => {
+  const room = { team_id: 'team-a', notetaker_bot_id: null as string | null };
+  const waiting = { status: 'pending', location: 'repo' };
+  it('opens a room of its own team that has no note-taker and waits for notes', () => {
+    expect(scribeMayRead(room, waiting, 'team-a')).toBe(true);
+  });
+  it('refuses another team, a finished note, and a room without a notes row', () => {
+    expect(scribeMayRead(room, waiting, 'team-b')).toBe(false);
+    expect(scribeMayRead(room, { status: 'written', location: 'repo' }, 'team-a')).toBe(false);
+    expect(scribeMayRead(room, undefined, 'team-a')).toBe(false);
+  });
+  it('refuses a note-taker’s room and a Personal transcript, even of its own team', () => {
+    expect(scribeMayRead({ ...room, notetaker_bot_id: 'bot' }, waiting, 'team-a')).toBe(false);
+    expect(scribeMayRead(room, { status: 'pending', location: 'personal' }, 'team-a')).toBe(false);
   });
 });

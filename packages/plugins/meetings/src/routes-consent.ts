@@ -169,6 +169,26 @@ export function registerConsentRoutes(ctx: PluginContext): void {
       }
       const m = await loadMeeting(tx, meetingId);
       if (!m) throw notFound('That voice room is not available');
+      // A note-taker's transcript is the organizer's Personal copy until they share or save it (the search and the answers already hold it back on that rule). While the room is live
+      // everyone in it sees the words as captions, so they are read as before; once it has ended, anyone but the organizer reads them only through `app.meetings_can_read_notes`
+      // (a share, or the team's copy), as `?copy=organizer`. The row that says "Personal" is hidden from the caller by its own policy, so it is read as the system.
+      if (m.state === 'ended' && m.organizer_id !== tx.actor.id) {
+        const personal = await ctx.db.system(
+          async (sys) =>
+            (
+              await sys.query<{ personal: boolean }>(
+                `SELECT CASE WHEN n.meeting_id IS NOT NULL THEN (n.location = 'personal' AND n.saved_at IS NULL) ELSE m.notetaker_bot_id IS NOT NULL END AS personal
+                   FROM app.meetings m LEFT JOIN app.meeting_notes n ON n.meeting_id = m.id WHERE m.id = $1::uuid`,
+                [m.id],
+              )
+            ).rows[0]?.personal === true,
+          { workspaceId: tx.actor.workspaceId },
+        );
+        if (personal) {
+          const can = (await tx.query<{ ok: boolean | null }>('SELECT app.meetings_can_read_notes($1::uuid) AS ok', [m.id])).rows[0]?.ok === true;
+          if (!can) throw notFound('That voice room is not available');
+        }
+      }
       const people = await tx.query<{ actor_id: string; display_name: string; consent_transcribe: 'yes' | 'no' | 'unasked' }>(
         'SELECT actor_id, display_name, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1::uuid',
         [m.id],

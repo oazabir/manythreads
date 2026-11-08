@@ -70,7 +70,7 @@ started, ended, consent changed, note-taker added and removed, recording started
 ## Limits
 
 Per person a minute: starting a room 10, joining 60, token renewals 60 (`docs/deploy/rate-limits.md`); heartbeat 20; end 30; lines posted 240 (a batch holds at most 20); corrections 60; audio chunks 120. Per room a
-minute: 1000 lines (429 after), 6 questions to the note-taker. The media server's webhook: 120 a minute per address. A line is at most 4000 characters (a longer one is refused with 413); the server strips control
+minute: 1000 lines (429 after), 6 questions to the note-taker answered a minute and 20 model checks ("is this a question for it?") a minute per room, past which a line that names the note-taker is dropped. The media server's webhook: 120 a minute per address. A line is at most 4000 characters (a longer one is refused with 413); the server strips control
 and bidirectional characters before storing it; a transcript file is at most 2 MB and then says "transcript truncated". People in a room: `meeting_settings.room_cap` (25). Note-taker rooms in one server process:
 `MANYTHREADS_NOTETAKER_MAX_ROOMS` (10).
 
@@ -164,7 +164,7 @@ note-taker meeting it is the Personal path, which only the organizer can open di
 ## The Scribe and the notes (P15-10 to P15-12)
 
 After a room's transcript is written (no note-taker in it), the `meetings.notes` job asks the team's Scribe for the notes. The Scribe is an ordinary team bot (`templates/*/bots/scribe`, trigger `meeting_ended`,
-holds `meetings.read`, `memory.recall` and `meetings.write_notes`, hidden from the mention picker because nobody can address it). `runtime-hermes` registers the `meeting.runs` provider; its `notes` method runs the
+holds `meetings.read`, `memory.recall` and `meetings.write_notes`, hidden from the mention picker because nobody can address it; `meetings.read` opens only a room of the run's team without a note-taker whose notes are still pending, never a Personal transcript). `runtime-hermes` registers the `meeting.runs` provider; its `notes` method runs the
 Scribe synchronously with the transcript in the prompt (`@<ms> | <clock> | <speaker>: <words>`, between markers, as data) and reads one JSON object back. An answer that is not an object is asked for once more.
 
 * The platform checks the answer: an item whose time is not inside a transcribed line is dropped; an owner is a team member by exact display name, else only the name is kept; an owner who did not say yes to being
@@ -215,7 +215,7 @@ line of someone who did not say yes is never taken as a question.
 
 **Share and save** (P15-23). The organizer shares the notes with a person or a channel (`GET/POST …/shares`, `DELETE …/shares/:shareId`, audit rows); a reader then gets the notes through `GET …/notes` and the transcript through
 `GET …/transcript?copy=organizer`. The meetings plugin serves them from the Personal file after `app.meetings_can_read_notes` says yes (the organizer, a person with an unrevoked share who is still in the team, or a member
-of a shared channel); Files rules are not changed, so the Personal folder stays closed to everyone else. A shared reader who has left the team gets 404. **Save to team**
+of a shared channel); Files rules are not changed, so the Personal folder stays closed to everyone else. A shared reader who has left the team gets 404. The room's own `GET …/transcript` follows the same rule once a note-taker room has ended and until the notes are saved to the team: only the organizer, a share or the team's copy opens it (404 for anyone else, including people who were in the call); while the room is live everyone in it reads as before. The organizer reaches the notes written for the team only while they can still read the place of the call (migration 0004); their own Personal copy stays theirs. **Save to team**
 (`POST /api/meetings/:meetingId/save-to-team`, the organizer, once: 409 after) copies both files into the team repository's `meetings/` folder with the organizer as author and, with the box ticked, files the notes into
 team memory as above. The meeting page (`GET …/summary`, `GET /api/meetings/by-path` from a file in the Files tree) shows people, length, links, decisions, action items and whether it is filed to memory.
 
@@ -272,7 +272,7 @@ Providers: `meeting.runs` (registered by `runtime-hermes`; methods `notes`, `ans
 ### Migrations
 
 `meetings/0003_transcripts_notes.sql` (late-line window, `client_seg_id`, `edited_at`, BRIN and trigram indexes, `app.meetings_correct_segment`, the tables `meeting_notes`, `meeting_shares`, `meeting_recordings`,
-`app.meetings_set_notetaker`, `app.meetings_set_recording`, `app.meetings_can_read_notes`, settings columns `room_cap`, `recording_cap`, `notetaker_allowed`) · `bots/0030_meeting_triggers.sql` · `memory-inbox/0005_meeting_origin.sql` ·
+`app.meetings_set_notetaker`, `app.meetings_set_recording`, `app.meetings_can_read_notes`, settings columns `room_cap`, `recording_cap`, `notetaker_allowed`) · `meetings/0004_organizer_leaves.sql` (the organizer's right to the team's copy ends with their right to the place) · `bots/0030_meeting_triggers.sql` · `memory-inbox/0005_meeting_origin.sql` ·
 `notifications/0006_meeting_actions.sql` · `search/0007_meetings.sql` · `answer/0009_meeting_citations.sql` · `retention/0002_meeting_audio.sql`.
 
 ## Recording (`recording.ts`, P15-15)

@@ -440,6 +440,14 @@ export async function writeMeetingNotes(ctx: PluginContext, tx: PluginTx, job: J
 
 const ReadInput = z.object({ meetingId: z.uuid() });
 
+/**
+ * Whether `meetings.read` may answer for this meeting: the run's own team, notes still waiting, and no note-taker. A note-taker's transcript is the organizer's Personal copy, and a
+ * Scribe run is fed text that people spoke, so it must not be able to ask for that copy of another meeting by its id.
+ */
+export function scribeMayRead(m: Pick<MeetingRow, 'team_id' | 'notetaker_bot_id'>, notes: { status: string; location: string } | undefined, runTeamId: string): boolean {
+  return m.team_id === runTeamId && m.notetaker_bot_id === null && notes?.status === 'pending' && notes.location !== 'personal';
+}
+
 export function registerNotes(ctx: PluginContext): void {
   ctx.jobs.register(
     NOTES_QUEUE,
@@ -458,7 +466,7 @@ export function registerNotes(ctx: PluginContext): void {
     await ctx.jobs.enqueue(tx, NOTES_QUEUE, { meetingId: event.meetingId, workspaceId: event.workspaceId, round: 0 }, { dedupeKey: `notes:${event.meetingId}:0` });
   });
 
-  // `meetings.read`: the Scribe's way to read the transcript it was asked about. It answers only inside a `meeting_ended` run, for a meeting of the run's own team whose notes
+  // `meetings.read`: the Scribe's way to read the transcript it was asked about. It answers only inside a `meeting_ended` run, for a meeting of the run's own team, without a note-taker, whose notes
   // are still waiting to be written, and with what every reader may see (the words of people who said yes). It takes no other argument.
   ctx.capabilities.register(MEETINGS_READ_CAPABILITY, async (input, tx) => {
     const args = ReadInput.safeParse(input);
@@ -471,9 +479,9 @@ export function registerNotes(ctx: PluginContext): void {
       if (run?.trigger_type !== 'meeting_ended') return { ok: false, code: 'not_allowed', message: 'meetings.read works only inside the run that was started to write a meeting\'s notes.' };
       const m = await loadMeeting(sys, args.data.meetingId);
       const pending = m
-        ? (await sys.query<{ status: string }>('SELECT status FROM app.meeting_notes WHERE meeting_id = $1::uuid', [m.id])).rows[0]?.status === 'pending'
-        : false;
-      if (!m || m.team_id !== context.team_id || !pending) return { ok: false, code: 'not_found', message: 'There is no such meeting waiting for notes.' };
+        ? (await sys.query<{ status: string; location: string }>('SELECT status, location FROM app.meeting_notes WHERE meeting_id = $1::uuid', [m.id])).rows[0]
+        : undefined;
+      if (!m || !scribeMayRead(m, pending, context.team_id)) return { ok: false, code: 'not_found', message: 'There is no such meeting waiting for notes.' };
       const { lines } = await loadTranscript(sys, m.id);
       const text = transcriptForModel(m, lines);
       return {

@@ -52,6 +52,11 @@ describe('who may see and make shares', () => {
     expect((await notesFor(priya, meeting.id)).status).toBe(404);
     expect((await w.call(priya, 'GET', `/api/meetings/${meeting.id}/transcript?copy=organizer`)).status).toBe(404);
   });
+  it('keeps the room’s own transcript from a person who was in the call but was not given the notes: the words are the organizer’s Personal copy', async () => {
+    expect((await w.call(nadia, 'GET', `/api/meetings/${meeting.id}/transcript`)).status).toBe(200);
+    expect((await w.call(priya, 'GET', `/api/meetings/${meeting.id}/transcript`)).status).toBe(404);
+    expect((await w.call(rafi, 'GET', `/api/meetings/${meeting.id}/transcript`)).status).toBe(404);
+  });
   it('refuses a share with oneself, with someone who does not exist, and with someone who is not in the place the call was held', async () => {
     expect((await w.call(nadia, 'POST', `/api/meetings/${meeting.id}/shares`, { kind: 'person', personId: nadia.personId })).status).toBe(400);
     expect((await w.call(nadia, 'POST', `/api/meetings/${meeting.id}/shares`, { kind: 'person', personId: '00000000-0000-7000-8000-0000000cffff' })).status).toBe(404);
@@ -80,6 +85,8 @@ describe('sharing with a person', () => {
     expect(notes.transcriptPath).toBeNull();
     expect(notes.notesPath).toBeNull();
 
+    // with the share the room's own transcript opens too (the same lines)
+    expect((await w.call(rafi, 'GET', `/api/meetings/${meeting.id}/transcript`)).status).toBe(200);
     const lines = GetMeetingTranscriptResponse.parse(ok(await w.call(rafi, 'GET', `/api/meetings/${meeting.id}/transcript?copy=organizer`))).lines;
     expect(lines.map((l) => [l.speakerName, l.text])).toEqual([['Nadia', 'We ship on Thursday.'], ['Rafi', 'Agreed.']]);
     expect(lines.every((l) => !l.editable)).toBe(true);
@@ -154,5 +161,23 @@ describe('a person who left the team no longer reads', () => {
     expect((await w.call(priya, 'GET', `/api/meetings/${meeting.id}/transcript?copy=organizer`)).status).toBe(404);
     expect((await w.call(priya, 'GET', `/api/meetings/${meeting.id}/summary`)).status).toBe(404);
     expect(ListMeetingSharesResponse.parse(ok(await sharesOf(meeting.id))).shares.some((s) => s.id === made.share.id && s.revokedAt === null)).toBe(true);
+  });
+});
+
+describe('an organizer who left the team', () => {
+  it('keeps their own Personal copy but no longer reads or edits the notes written for the team', async () => {
+    const personal = await seedNoteTakerMeeting(w, { organizer: rafi, channelId: general, others: [[nadia, 'yes']], lines: [[rafi, 'My own words.']], title: 'Rafi personal' });
+    const team = await seedNoteTakerMeeting(w, { organizer: rafi, channelId: general, others: [[nadia, 'yes']], lines: [[rafi, 'Words for the team.']], title: 'Rafi team' });
+    await w.system(async (tx) => {
+      await tx.query("UPDATE app.meeting_notes SET location = 'repo', transcript_path = 'meetings/2026/11/08-1000-rafi-team/transcript.md', notes_path = 'meetings/2026/11/08-1000-rafi-team/notes.md' WHERE meeting_id = $1", [team.id]);
+    });
+    expect((await notesFor(rafi, team.id)).status).toBe(200);
+    const removed = await w.call(omar, 'DELETE', `/api/teams/engineering/members/${rafi.personId}`);
+    expect(removed.status, JSON.stringify(removed.body)).toBeLessThan(300);
+    expect((await notesFor(rafi, team.id)).status).toBe(404);
+    expect((await w.call(rafi, 'PUT', `/api/meetings/${team.id}/notes`, { notesMd: 'Rewritten after leaving.', baseUpdatedAt: '2020-01-01T00:00:00.000Z' })).status).toBe(404);
+    expect((await notesFor(rafi, personal.id)).status).toBe(200);
+    // the people still in the team read the team's copy as before
+    expect((await notesFor(nadia, team.id)).status).toBe(200);
   });
 });
