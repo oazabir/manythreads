@@ -12,6 +12,8 @@ export interface FakeBoxCollaboration {
   /** A person's address, or a group's name. */
   who: string;
   group?: boolean;
+  /** Box's state of the invitation; `accepted` when left out. */
+  status?: 'accepted' | 'pending' | 'rejected';
 }
 
 export interface FakeBoxFolder {
@@ -99,7 +101,7 @@ export async function startFakeBox(options: { host?: string; port?: number; publ
     return [{ type: 'folder', id: '0', name: 'All Files' }, ...chain];
   };
   const collabJson = (list: FakeBoxCollaboration[] | undefined): unknown[] =>
-    (list ?? []).map((c, i) => ({ type: 'collaboration', id: `col-${i}`, status: 'accepted', accessible_by: c.group ? { type: 'group', id: `g-${i}`, name: c.who } : { type: 'user', id: `u-${i}`, login: c.who, name: c.who } }));
+    (list ?? []).map((c, i) => ({ type: 'collaboration', id: `col-${i}`, status: c.status ?? 'accepted', accessible_by: c.group ? { type: 'group', id: `g-${i}`, name: c.who } : { type: 'user', id: `u-${i}`, login: c.who, name: c.who } }));
   const page = <T>(rows: T[], r: DocApiRequest): { entries: T[]; next_marker: string } => {
     const limit = Math.max(1, Math.min(1000, Number(r.query.get('limit') ?? 100)));
     const from = Number(r.query.get('marker') ?? 0) || 0;

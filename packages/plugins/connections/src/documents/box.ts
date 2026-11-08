@@ -11,7 +11,7 @@ import { DocError, MAX_DOCUMENT_BYTES, MAX_PENDING_FOLDERS, accessAnswer, arr, c
 //     its folders), so a quiet pass over a big tree is many calls that return few files.
 //   * A file moved out of the root is not noticed here (Box says nothing of where it was); one deleted for good is noticed only if it passed through the trash.
 //   * `access`: the file's own link (`open` is anyone; a company link or anything else is "not everyone"), the owner, and the collaborators of the file and of each folder above
-//     it (at most ten). A group, a pending invitation without an address, or anything that could not be read gives groups true.
+//     it (at most ten). A group, an accepted invitation without an address, or anything that could not be read gives groups true; an invitation not yet accepted is not access.
 
 interface Frame {
   id: string;
@@ -198,6 +198,8 @@ async function collaborators(ctx: AdapterCtx, kind: 'files' | 'folders', id: str
       const users: string[] = [];
       let groups = typeof answer['next_marker'] === 'string' && answer['next_marker'] !== '';
       for (const raw of answer['entries']) {
+        // an invitation that was not accepted (or whose state is not given) opens nothing for anyone: it does not count as access
+        if (rec(raw)['status'] !== 'accepted') continue;
         const by = rec(rec(raw)['accessible_by']);
         const login = str(by['login'], 320);
         if (by['type'] === 'user' && login) users.push(login);

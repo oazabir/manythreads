@@ -185,6 +185,11 @@ describe('Box', () => {
     expect(await box.access(c(), '9999')).toEqual({ anyone: false, domains: [], users: [], groups: true });
   });
 
+  it('an invitation that was not accepted is not access: the person it names is not listed', async () => {
+    bx().putFile({ id: '210', name: 'Invited.txt', parentId: '102', content: 'i', collaborations: [{ who: 'lena@kahf.example' }, { who: 'pending@kahf.example', status: 'pending' }, { who: 'refused@kahf.example', status: 'rejected' }] });
+    expect(await box.access(ctx(), '210')).toEqual({ anyone: false, domains: [], users: [OWNER, 'lena@kahf.example'], groups: false });
+  });
+
   it('errors never carry the token', async () => {
     const c = ctx();
     bx().server.failNextApi(500, 1);
