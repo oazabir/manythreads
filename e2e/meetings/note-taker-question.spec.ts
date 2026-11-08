@@ -145,11 +145,14 @@ test('Priya, who said no, is never heard and never answered, in the call or in t
   const thread = (await lastMeeting(stack, 'general')).thread_root_id!;
   const channel = (await stack.sql<{ channel_id: string }>('SELECT channel_id FROM app.meetings WHERE id = $1', [meetingId]))[0]!.channel_id;
   expect(await statusOf(priya!.api, 'POST', `/api/channels/${channel}/messages`, { channelId: channel, body: '@Note-taker what is the plan?', threadRootId: thread })).toBe(201);
-  await expect.poll(async () => (await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.messages WHERE thread_root_id = $1`, [thread]))[0]!.n).not.toBe('0');
-  // a negative: give a wrongly queued question the time it would need to be taken, then show nothing was
-  await priya!.page.waitForTimeout(2_500);
+  // a negative needs a witness, not a sleep: Nadia mentions the note-taker in the same thread right after, and when ITS answer is in the thread the platform has had its turn
+  // with Priya's mention too (the mentions are taken in the order they were posted); nothing may have been asked or answered for hers
+  const control = await statusOf(nadia!.api, 'POST', `/api/channels/${channel}/messages`, { channelId: channel, body: '@Note-taker ZETA-CONTROL who owns the checklist?', threadRootId: thread });
+  expect(control).toBe(201);
+  await expect.poll(async () => (await botLines()).find((m) => m.body.includes('ZETA-CONTROL'))?.body, { timeout: 60_000, message: 'the answer to the control question' }).toBeTruthy();
+  expect(answerPrompts().length, 'only the control question was put to the model').toBe(runs + 1);
+  expect(answerPrompts().at(-1)).toContain('ZETA-CONTROL');
   expect((await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.jobs WHERE queue = 'meetings.question' AND payload->>'askerActorId' = $1`, [actorOf('priya')]))[0]!.n).toBe('0');
-  expect(answerPrompts().length).toBe(runs);
   expect(checks.length).toBe(asked);
   expect((await botLines()).some((m) => /plan/i.test(m.body) && m.body.includes('Priya'))).toBe(false);
 });

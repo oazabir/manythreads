@@ -98,7 +98,11 @@ test('Priya joins without having said yes: recording stops for everybody at once
 
   await expect(priya.page.getByTestId('call-record-consent')).toBeVisible();
   await answerRecord(priya, 'no');
-  await priya.page.waitForTimeout(2_500); // a negative: a "no" must not start anything
+  // wait for the server to have taken her "no" (what her page shows is the server's answer) and show nothing started; a start that came late would show in the next test, which counts exactly four stretches and none of them Priya's
+  const hers = priya.api;
+  await expect
+    .poll(async () => (await hers.get<{ yourConsent: string }>(`/api/meetings/${meetingId}/recording`)).yourConsent, { message: 'the server to hold her no' })
+    .toBe('no');
   expect(await open()).toEqual([]);
   expect((await rows()).some((r) => r.actor_id === actorOf('priya'))).toBe(false);
 

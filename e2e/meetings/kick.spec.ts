@@ -70,10 +70,11 @@ test('the pages follow: Rafi is told, Nadia sees one face', async () => {
 
 test('his join and his new token are refused, and he cannot see the room', async () => {
   const api = rafi!.api;
-  expect([403, 404]).toContain(await statusOf(api, 'POST', `/api/meetings/${meetingId}/join`));
-  expect([403, 404]).toContain(await statusOf(api, 'POST', `/api/meetings/${meetingId}/token`));
+  // PLAN §3 criterion 4: his token cannot rejoin. The room is gone from his point of view (404, as for a room that never was), not "forbidden".
+  expect(await statusOf(api, 'POST', `/api/meetings/${meetingId}/join`), 'rejoin').toBe(404);
+  expect(await statusOf(api, 'POST', `/api/meetings/${meetingId}/token`), 'new token').toBe(404);
   expect([403, 404]).toContain(await statusOf(api, 'POST', `/api/meetings/${meetingId}/heartbeat`, { speaking: false }));
-  expect([403, 404]).toContain(await statusOf(api, 'GET', `/api/meetings/${meetingId}`));
+  expect(await statusOf(api, 'GET', `/api/meetings/${meetingId}`)).toBe(404);
   expect([403, 404]).toContain(await statusOf(api, 'POST', `/api/channels/${channelId}/meetings`, {}));
   // Nadia is still in it
   expect(await statusOf(nadia!.api, 'GET', `/api/meetings/${meetingId}`)).toBe(200);
