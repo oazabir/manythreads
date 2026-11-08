@@ -171,7 +171,7 @@ const setRecording = (who: typeof omar, id: string, on: boolean) => w.call(who, 
 const getRecording = async (who: typeof omar, id: string) => MeetingRecordingState.parse((await w.call(who, 'GET', `/api/meetings/${id}/recording`)).body);
 const answer = (who: typeof omar, id: string, record: string) => w.call(who, 'POST', `/api/meetings/${id}/record-consent`, { record });
 const cap = (value: 'on' | 'off') => w.call(omar, 'PUT', '/api/workspace/meetings-settings', { recordingCap: value });
-const listenerOf = (id: string) => lastFakeMedia().listeners.get(id);
+const listenerOf = (id: string) => lastFakeMedia().listenerIn(id);
 const rows = (id: string) =>
   w.system(async (tx) =>
     (

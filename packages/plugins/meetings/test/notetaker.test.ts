@@ -98,7 +98,7 @@ const thread = (rootId: string) => w.system(async (tx) => (await tx.query<{ body
 const answers = (id: string) =>
   w.system(async (tx) => Object.fromEntries((await tx.query<{ actor_id: string; consent_transcribe: string }>('SELECT actor_id, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1', [id])).rows.map((r) => [r.actor_id, r.consent_transcribe])));
 const settings = (body: unknown) => w.call(omar, 'PUT', '/api/workspace/meetings-settings', body);
-const listenerOf = (id: string) => lastFakeMedia().listeners.get(id);
+const listenerOf = (id: string) => lastFakeMedia().listenerIn(id);
 
 describe('which bots can be added', () => {
   let id = '';

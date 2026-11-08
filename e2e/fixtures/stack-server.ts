@@ -11,11 +11,14 @@
 //                                on this machine, so the gate's classifier has an alias to ask), `work` (seed v4 plus seed v6: the Engineering board and
 //                                Bot Board, a heartbeat and a routine that are switched off, the routine's output page, the protected `production`
 //                                environment), `polish` (seed v3 and v4 plus seed v21, opt-in: `#polish` for the look checks of Phase 21 - a run of twelve
-//                                messages, a 40-line one, an Answer with three citations, a thread of seven), `personas`
+//                                messages, a 40-line one, an Answer with three citations, a thread of seven), `meetings` (seed v3 and v4 plus seed v15, opt-in: three
+//                                finished calls - a public stand-up with notes and memory, a private call, a note-taker call - see packages/test-utils/src/seed-meetings.ts), `personas`
 //                                (only the people, like the shared api server) or `none` (empty: the first-admin link is printed)
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
 //   MANYTHREADS_STACK_TEST_PLUGINS 1: the test-kernel plugin (bulk messages, channel grants, stub resources)
+//   MANYTHREADS_STACK_MEETINGS   1 (or the `meetings` seed): the voice-room stand-ins of the meeting specs - the fake media provider, the fake server ASR, a Hermes command that answers
+//                                the meeting prompts (e2e/fixtures/meeting-hermes.mjs), the test plugins and the dev actor header. Anything the caller sets stays as it is.
 //   MANYTHREADS_LINK_PREVIEW     `off` (the default here: NODE_ENV is `test`, and fixtures/stack.ts sends `off`) or `on`: whether the server reads the pages of
 //                                the links in posted messages (P14-08). A spec that posts links and does not test previews must leave it off.
 import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
@@ -26,7 +29,7 @@ import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedFinishedSetup, seedPolish, withClusterLock } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedFinishedSetup, seedMeetings, seedPolish, withClusterLock } from '@manythreads/test-utils';
 import { seedWorld } from './seed.ts';
 
 const dist = resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
@@ -103,7 +106,22 @@ await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
 const seedMode = process.env['MANYTHREADS_STACK_SEED'] ?? 'world';
-if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'meetings', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+// The meeting stand-ins (see the header): set before the server starts, because the plugins read them when they register.
+const meetingsStack = seedMode === 'meetings' || process.env['MANYTHREADS_STACK_MEETINGS'] === '1';
+const fallbackEnv = (key: string, value: string): void => {
+  if (process.env[key] === undefined) process.env[key] = value;
+};
+if (meetingsStack) {
+  fallbackEnv('MANYTHREADS_MEDIA_PROVIDER', 'fake');
+  fallbackEnv('MANYTHREADS_FAKE_ASR', '1');
+  fallbackEnv('MANYTHREADS_STACK_TEST_PLUGINS', '1');
+  fallbackEnv('MANYTHREADS_STACK_DEV_AUTH', '1');
+  fallbackEnv('MANYTHREADS_HERMES_BIN', process.execPath);
+  fallbackEnv('MANYTHREADS_HERMES_PREFIX', fileURLToPath(new URL('./meeting-hermes.mjs', import.meta.url)));
+  fallbackEnv('MANYTHREADS_RUNTIME_DIR', mkdtempSync(join(tmpdir(), 'manythreads-stack-runtime-')));
+  fallbackEnv('MANYTHREADS_LITELLM_URL', 'http://litellm.invalid:4000');
+}
 // Attachments (storage-local) go to a directory of this stack, removed on exit, never into the working tree.
 const storageDir = process.env['MANYTHREADS_STORAGE_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-blobs-'));
 process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
@@ -150,6 +168,11 @@ else if (seedMode === 'polish') {
 }
 // `work` is seed v6 on top of v4: the Engineering board, scheduled jobs (off), routine page and the protected `production` environment.
 else if (seedMode === 'work') await seedWorld(db, { content: true, repo: true, work: true });
+// `meetings` is seed v15 (P15-17): seed v3 and v4, then three finished calls made through the real routes of this server. Opt-in: no other mode has them.
+else if (seedMode === 'meetings') {
+  await seedWorld(db, { content: true, repo: true });
+  await seedMeetings({ url: `http://127.0.0.1:${server.port}`, db, log: (line) => process.stderr.write(`seed meetings: ${line}\n`) });
+}
 // The plugins have migrated: a seeded workspace starts with its setup checklist already put away (an empty stack, `none`, is a fresh install and keeps it).
 if (seedMode !== 'none') await seedFinishedSetup(db);
 apiPort = server.port;

@@ -171,6 +171,8 @@ export const FAKE_WEBHOOK_SECRET = 'fake-media-webhook-secret';
 
 export interface FakeMediaListener extends MediaListener {
   readonly room: string;
+  /** The identity this listener joined with. */
+  readonly identity: string;
   readonly options: MediaListenOptions;
   /** Every list `setIdentities` was given, oldest first, with the time: a test reads how fast the plugin followed a consent change. */
   readonly identityUpdates: Array<{ at: Date; identities: string[] }>;
@@ -187,8 +189,12 @@ export interface FakeMediaProvider extends MediaProvider {
   readonly tokens: Array<{ identity: string; room: string; grants: MediaGrants; expiresAt: Date; displayName: string; kind: 'person' | 'bot' }>;
   readonly kicked: Array<{ room: string; identity: string }>;
   readonly closed: string[];
-  /** The fake listeners that are open, by room (at most one per room). */
+  /** The fake listeners that are open, by the identity they joined with (`notetaker:<room>`, `recorder:<room>`): one room may hold several, one per identity. */
   readonly listeners: Map<string, FakeMediaListener>;
+  /** Every open listener of a room, oldest first. */
+  listenersIn(room: string): FakeMediaListener[];
+  /** The open listener of a room: the one with this identity prefix (`notetaker`, `recorder`), else the oldest. */
+  listenerIn(room: string, kind?: string): FakeMediaListener | undefined;
   /** Everything any participant published: a listener never publishes, so a test asserts this stays empty. */
   published(): Array<{ room: string; identity: string }>;
   /** Pretend the server is not set up. */
@@ -220,6 +226,11 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
     kicked,
     closed,
     listeners,
+    listenersIn: (room) => [...listeners.values()].filter((l) => l.room === room),
+    listenerIn(room, kind) {
+      const here = [...listeners.values()].filter((l) => l.room === room);
+      return (kind ? here.find((l) => l.identity.startsWith(`${kind}:`)) : undefined) ?? here[0];
+    },
     published: () => [],
     setConfigured(value) {
       configured = value;
@@ -249,18 +260,18 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
       need();
       rooms.delete(room);
       closed.push(room);
-      const l = listeners.get(room);
-      if (l && !l.closed) {
+      for (const l of [...listeners.values()].filter((x) => x.room === room)) {
+        if (l.closed) continue;
         l.closed = true;
-        listeners.delete(room);
+        listeners.delete(l.identity);
         l.options.onClosed('room_ended');
       }
     },
     async listen(room, options) {
       need();
-      if (listeners.has(room)) throw new MediaTokenRefusedError('This room already has a listener.');
       // like the real adapter, the listener joins with a hidden, subscribe-only token of its own, which a test can read back from `tokens`
       const who = options.listener ?? { identity: `notetaker:${room}`, displayName: 'Note-taker' };
+      if (listeners.has(who.identity)) throw new MediaTokenRefusedError('This room already has a listener.');
       const grants: MediaGrants = { canPublish: false, canSubscribe: true, listenOnly: true };
       assertTokenRequest({ id: who.identity, kind: 'bot', displayName: who.displayName }, room, grants);
       tokens.push({ identity: who.identity, room, grants, expiresAt: new Date(now().getTime() + clampTokenTtl(undefined) * 1000), displayName: who.displayName, kind: 'bot' });
@@ -268,6 +279,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
       const identityUpdates: FakeMediaListener['identityUpdates'] = [];
       const listener: FakeMediaListener = {
         room,
+        identity: who.identity,
         options,
         identityUpdates,
         closed: false,
@@ -279,7 +291,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
         async close() {
           if (listener.closed) return;
           listener.closed = true;
-          listeners.delete(room);
+          listeners.delete(who.identity);
           options.onClosed('closed');
         },
         deliver(chunk) {
@@ -288,7 +300,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
           return true;
         },
       };
-      listeners.set(room, listener);
+      listeners.set(who.identity, listener);
       return listener;
     },
     async kick(room, identity) {

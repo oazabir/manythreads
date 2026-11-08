@@ -60,7 +60,7 @@ const speak = async (who: typeof omar, text: string): Promise<boolean> => {
   expect(res.status, JSON.stringify(res.body)).toBe(200);
   return (res.body as { delivered: boolean }).delivered;
 };
-const subscribed = (): string[] => [...(lastFakeMedia().listeners.get(id)?.subscriptions() ?? [])].sort();
+const subscribed = (): string[] => [...(lastFakeMedia().listenerIn(id)?.subscriptions() ?? [])].sort();
 const sorted = (...who: Array<typeof omar>): string[] => who.map((p) => p.actorId).sort();
 const segments = () =>
   w.system(async (tx) =>
@@ -87,7 +87,7 @@ describe('the note-taker hears the people who said yes', () => {
     expect((await call(rafi, 'POST', `/api/meetings/${id}/join`)).status).toBe(200);
     expect((await call(priya, 'POST', `/api/meetings/${id}/join`)).status).toBe(200);
     expect((await call(rafi, 'PUT', `/api/meetings/${id}/notetaker`, { botId })).status).toBe(200);
-    await eventually(async () => lastFakeMedia().listeners.get(id), 20_000, 'the listener to join');
+    await eventually(async () => lastFakeMedia().listenerIn(id), 20_000, 'the listener to join');
     expect(subscribed()).toEqual([]); // the add reset everyone to "not asked"
     await consent(nadia, 'yes');
     await consent(rafi, 'yes');
@@ -182,7 +182,7 @@ describe('an unavailable transcriber', () => {
     }
     expect(await speak(nadia, 'Back again.')).toBe(true);
     await eventually(async () => ((await textsOf(nadia)).includes('Back again.') ? true : undefined), 10_000, 'the line after the outage');
-    expect(lastFakeMedia().listeners.get(id)).toBeDefined(); // the listener never left
+    expect(lastFakeMedia().listenerIn(id)).toBeDefined(); // the listener never left
   });
 });
 
@@ -201,7 +201,7 @@ describe('the organizer leaves and the room ends', () => {
   it('ending the room hears what is left, writes the last of the transcript once, says so, and leaves', async () => {
     expect(await speak(rafi, 'One last thing before we end.')).toBe(true);
     expect((await call(nadia, 'POST', `/api/meetings/${id}/end`)).status).toBe(200);
-    await eventually(async () => (lastFakeMedia().listeners.get(id) === undefined ? true : undefined), 15_000, 'the listener to leave');
+    await eventually(async () => (lastFakeMedia().listenerIn(id) === undefined ? true : undefined), 15_000, 'the listener to leave');
     const written = await eventually(
       async () => {
         const e = (await events('meetings.transcript.written')).filter((p) => p['meetingId'] === id);

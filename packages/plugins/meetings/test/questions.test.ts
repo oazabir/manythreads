@@ -285,7 +285,7 @@ const speak = async (room: string, who: Who, text: string): Promise<boolean> => 
   expect(res.status, JSON.stringify(res.body)).toBe(200);
   return (res.body as { delivered: boolean }).delivered;
 };
-const subscribed = (room: string): string[] => [...(lastFakeMedia().listeners.get(room)?.subscriptions() ?? [])].sort();
+const subscribed = (room: string): string[] => [...(lastFakeMedia().listenerIn(room)?.subscriptions() ?? [])].sort();
 const lineSaid = (room: string, text: string) =>
   eventually(async () => ((await w.system(async (tx) => (await tx.query('SELECT 1 FROM app.meeting_segments WHERE meeting_id = $1 AND text = $2', [room, text])).rows.length)) > 0 ? true : undefined), 20_000, `the line "${text}"`);
 
@@ -298,7 +298,7 @@ async function openRoom(channel: string, title: string): Promise<{ id: string; t
   ok(await w.call(priya, 'POST', `/api/meetings/${id}/join`));
   const botId = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT b.id FROM app.bots b JOIN app.teams t ON t.id = b.team_id WHERE t.slug = 'engineering' AND b.slug = 'note-taker'")).rows[0]!.id);
   ok(await w.call(rafi, 'PUT', `/api/meetings/${id}/notetaker`, { botId }));
-  await eventually(async () => lastFakeMedia().listeners.get(id), 20_000, 'the listener to join');
+  await eventually(async () => lastFakeMedia().listenerIn(id), 20_000, 'the listener to join');
   ok(await w.call(nadia, 'POST', `/api/meetings/${id}/consent`, { transcribe: 'yes' }));
   ok(await w.call(rafi, 'POST', `/api/meetings/${id}/consent`, { transcribe: 'yes' }));
   ok(await w.call(priya, 'POST', `/api/meetings/${id}/consent`, { transcribe: 'no' }));
@@ -409,7 +409,7 @@ describe('a question put to the note-taker in a call', () => {
 
   it('leaves no question behind when the room ends', async () => {
     ok(await w.call(nadia, 'POST', `/api/meetings/${room.id}/end`));
-    await eventually(async () => (lastFakeMedia().listeners.get(room.id) === undefined ? true : undefined), 20_000, 'the listener to leave');
+    await eventually(async () => (lastFakeMedia().listenerIn(room.id) === undefined ? true : undefined), 20_000, 'the listener to leave');
     const runs = answerRuns().length;
     ok(await postInThread(rafi, room, '@Note-taker are you still there?'), 201);
     await new Promise((r) => setTimeout(r, 1500));

@@ -42,3 +42,19 @@ export type FakeMediaSpeakRequest = z.infer<typeof FakeMediaSpeakRequest>;
 export const FakeMediaSpeakResponse = z.object({ delivered: z.boolean() });
 export type FakeMediaSpeakResponse = z.infer<typeof FakeMediaSpeakResponse>;
 export const fakeMediaSpeakRoute = { method: 'POST', path: '/api/test/media/speak' } as const satisfies ApiRoute;
+
+/**
+ * `GET /api/test/media/state?meetingId=`: what the fake media server of a test stack recorded for one room - every token it signed (claims only), everything anyone published
+ * (a listener never publishes), the open listeners with the people each is subscribed to, and who was removed. It is how a browser or API spec checks "no bot has a track in
+ * the room" and "a declined person is not subscribed" from outside the server process. Test servers only; needs the test auth token.
+ */
+export const FakeMediaStateQuery = z.strictObject({ meetingId: z.uuid() });
+export type FakeMediaStateQuery = z.infer<typeof FakeMediaStateQuery>;
+export const FakeMediaStateResponse = z.object({
+  tokens: z.array(z.object({ identity: z.string(), kind: z.enum(['person', 'bot']), canPublish: z.boolean(), canSubscribe: z.boolean(), listenOnly: z.boolean() })),
+  published: z.array(z.string()),
+  listeners: z.array(z.object({ identity: z.string(), subscriptions: z.array(z.string()) })),
+  kicked: z.array(z.string()),
+});
+export type FakeMediaStateResponse = z.infer<typeof FakeMediaStateResponse>;
+export const fakeMediaStateRoute = { method: 'GET', path: '/api/test/media/state' } as const satisfies ApiRoute;
