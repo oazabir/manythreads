@@ -2,7 +2,9 @@ import { boxModule } from './box.ts';
 import { confluenceModule } from './confluence.ts';
 import { dropboxModule } from './dropbox.ts';
 import type { StandInModule } from './types.ts';
+import { slackModule } from './slack.ts';
 import { supportModule } from './support.ts';
+import { teamsModule } from './teams.ts';
 import { telegramModule } from './telegram.ts';
 import { trackersModule } from './trackers.ts';
 import { whatsappModule } from './whatsapp.ts';
@@ -24,4 +26,6 @@ export const PROVIDER_MODULES: readonly StandInModule[] = [
   confluenceModule, // Confluence Cloud (document source)
   dropboxModule, // Dropbox (document source)
   boxModule, // Box (document source)
+  slackModule, // Slack (Events API, Web API)
+  teamsModule, // Microsoft Teams (Bot Framework: signing keys, access token, connector)
 ];

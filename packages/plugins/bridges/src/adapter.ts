@@ -57,8 +57,18 @@ export interface BridgeAdapter {
   provider: BridgeProvider;
   /** Is this request really from the service? Over the RAW body, constant time, with the service's replay window. A failure stores nothing. */
   verify(account: BridgeAccountRef, req: BridgeRequest): BridgeVerifyResult;
+  /**
+   * Gets ready to verify: fetches what `verify` needs and cannot get itself because it is synchronous (Teams' signing keys). Called by the door just before `verify`; it never throws and
+   * says nothing about the request, so a failure here only makes `verify` refuse.
+   */
+  prepare?(account: BridgeAccountRef, req: BridgeRequest): Promise<void>;
   /** Read a verified body into messages. A body that is not a message (a read receipt, a join notice) gives an empty list. Never throws for a shape it does not know. */
   parse(account: BridgeAccountRef, body: unknown): InboundMessage[];
+  /**
+   * A verified body that is the service's own check of the address, not a message (Slack's `url_verification`): the plain answer to send back, or null when the body is not one.
+   * Asked after `verify` and before `parse`.
+   */
+  handshake?(account: BridgeAccountRef, body: unknown): string | null;
   /** Send text to a chat; the service's id of the sent message. The core has already cut it to length and run it past the egress chain. */
   send(account: BridgeAccountRef, chat: string, text: string): Promise<string>;
   /** The answer to a `GET` URL check (WhatsApp's verification challenge), or null when the request is not a valid challenge. */

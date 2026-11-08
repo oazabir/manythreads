@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
-import { BUILT_PROVIDERS, callbackUrl, failureWords, isBuilt, LATER_PROVIDERS, PROVIDER_LABEL, STATUS_WORDS, whatItDoes } from '../src/screens/bridges/words';
+import { appIdLabel, BUILT_PROVIDERS, callbackUrl, consoleSteps, failureWords, isBuilt, LATER_PROVIDERS, PROVIDER_LABEL, STATUS_WORDS, tokenLabel, whatItDoes } from '../src/screens/bridges/words';
 import { ACCOUNT_CHAT_APPS_READY } from '../src/screens/bridges/AccountChatApps';
 import { ADMIN_CHAT_APPS_READY } from '../src/screens/bridges/AdminChatApps';
 import { CHAT_BRIDGE_TAB_READY } from '../src/webhooks/ChatBridgeTab';
@@ -14,13 +14,26 @@ describe('the chat-app pages', () => {
     expect(Object.keys(PROVIDER_LABEL).sort()).toEqual(['slack', 'teams', 'telegram', 'whatsapp']);
     expect([...BUILT_PROVIDERS, ...LATER_PROVIDERS].sort()).toEqual(['slack', 'teams', 'telegram', 'whatsapp']);
     expect(isBuilt('telegram')).toBe(true);
-    expect(isBuilt('slack')).toBe(false);
+    expect(isBuilt('slack')).toBe(true);
+    expect(isBuilt('teams')).toBe(true);
+    expect(LATER_PROVIDERS).toEqual([]);
     expect(STATUS_WORDS.attention).toBe('Needs attention');
   });
 
   it('explain WhatsApp’s 24 hour rule in plain words', () => {
     expect(whatItDoes('whatsapp')).toMatch(/24 hours/);
     expect(whatItDoes('telegram')).toMatch(/linked/);
+  });
+
+  it('say what to do in Slack’s and Teams’ own consoles, and what each asks for', () => {
+    expect(consoleSteps('slack')?.note).toMatch(/Request URL/);
+    expect(consoleSteps('teams')?.note).toMatch(/messaging endpoint/);
+    expect(consoleSteps('telegram')).toBeNull();
+    expect(tokenLabel('teams')).toBe('Client secret');
+    expect(tokenLabel('slack')).toBe('Bot token');
+    expect(appIdLabel('teams')?.label).toMatch(/client\) id/);
+    expect(appIdLabel('slack')).toBeNull();
+    for (const p of ['slack', 'teams'] as const) expect(whatItDoes(p)).toMatch(/linked/);
   });
 
   it('say the server’s own sentence, else the fallback', () => {

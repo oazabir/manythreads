@@ -18,7 +18,9 @@ import { availableAccounts, issueCode } from './routes-me.ts';
 function channelInstruction(provider: BridgeProvider, handle: string | null, command: string): string {
   const bot = handle ?? 'the bot';
   const where = provider === 'telegram' ? 'Telegram group' : provider === 'slack' ? 'Slack channel' : 'Teams channel';
-  return `Add ${bot} to the ${where}, then send this message there: ${command}. It works for 10 minutes, once, and only a lead of the team can do it.`;
+  // Teams only passes on messages that mention the bot
+  const say = provider === 'teams' ? `Add ${bot} to the ${where}, then send this message there, starting with an @mention of the bot: ${command}.` : `Add ${bot} to the ${where}, then send this message there: ${command}.`;
+  return `${say} It works for 10 minutes, once, and only a lead of the team can do it.`;
 }
 
 // Joining a PUBLIC channel to an outside chat (PLAN Bundle D, P16-09, decision D26). A lead of the channel's team (or a workspace admin) who is in the channel asks for a code, types
@@ -85,7 +87,8 @@ export function registerChannelRoutes(ctx: PluginContext): void {
       const account = (await availableAccounts(tx)).find((a) => a.provider === provider);
       if (!account) throw notFound('This chat app is not turned on');
       const { code, expiresAt } = await issueCode(tx, account.accountId, 'channel', channelId);
-      const command = `/connect ${code}`;
+      // Slack takes a message that starts with / for a slash command of its own, so there the command is the plain word
+      const command = provider === 'slack' || provider === 'teams' ? `connect ${code}` : `/connect ${code}`;
       return json(
         ChannelLinkCodeResponse.parse({
           code,

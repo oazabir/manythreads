@@ -303,7 +303,9 @@ export function registerInbound(ctx: PluginContext, identity: IdentityService): 
       if (!ref) throw NOT_FOUND();
       const raw = await readBody(req, MAX_BODY_BYTES);
       const adapter = BRIDGE_ADAPTERS[ref.provider];
-      const verdict = adapter.verify(ref, requestOf(req, 'POST', raw));
+      const signed = requestOf(req, 'POST', raw);
+      if (adapter.prepare) await adapter.prepare(ref, signed).catch(() => undefined);
+      const verdict = adapter.verify(ref, signed);
       if (!verdict.ok) {
         await refuse(row, 'bad_signature');
         throw new HttpError(401, 'unauthenticated', 'The call is not signed by the chat app');
@@ -314,6 +316,8 @@ export function registerInbound(ctx: PluginContext, identity: IdentityService): 
       } catch {
         throw new HttpError(400, 'validation_failed', 'The body is not JSON');
       }
+      const handshake = adapter.handshake ? adapter.handshake(ref, body) : null;
+      if (handshake !== null) return { status: 200, body: handshake, headers: { 'content-type': 'text/plain; charset=utf-8' } };
       for (const msg of adapter.parse(ref, body).slice(0, MAX_MESSAGES)) await handleMessage(row, ref, msg);
       return json(BridgeDoorResponse.parse({ ok: true }));
     },

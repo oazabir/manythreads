@@ -7,14 +7,15 @@ import { Alert, Field, Time, Toggle } from '../../components/ui';
 import { useQuery } from '../../app/useQuery';
 import '../../styles/bridges.css';
 import { deleteBridgeAccount, fetchBridgeAccounts, saveBridgeAccount, saveBridgeCredentials, switchBridge } from './api';
-import { BUILT_PROVIDERS, callbackUrl, failureWords, LATER_PROVIDERS, PROVIDER_LABEL, STATUS_WORDS, whatItDoes } from './words';
+import { appIdLabel, BUILT_PROVIDERS, callbackUrl, consoleSteps, failureWords, LATER_PROVIDERS, PROVIDER_LABEL, STATUS_WORDS, tokenLabel, whatItDoes } from './words';
 
 /** Set to true when the admin page for chat apps is built (PLAN Bundle D, P16-09). */
 export const ADMIN_CHAT_APPS_READY = true;
 
 /**
  * `/settings/workspace/chat-apps`: per service a switch, the credentials and the health. Credentials go in once and are sealed: no page ever shows them again, only which are set.
- * Telegram needs the bot token from BotFather. WhatsApp needs the phone number id, the access token, the app secret and a verify word of the admin's choosing.
+ * Telegram needs the bot token from BotFather. WhatsApp needs the phone number id, the access token, the app secret and a verify word of the admin's choosing. Slack needs the bot token and the
+ * signing secret. Teams needs the application id and the client secret of the Azure bot.
  */
 export function AdminChatApps() {
   const q = useQuery('admin-chat-apps', fetchBridgeAccounts);
@@ -79,11 +80,11 @@ function ProviderCard({ provider, account, onChanged }: { provider: BridgeProvid
         <>
           {current.lastError ? <div className="br-problem" role="alert" data-testid={`chat-app-${provider}-error`}>{current.lastError}</div> : null}
           <Credentials provider={provider} account={current} busy={busy} onSave={(creds) => run(() => saveBridgeCredentials(provider, creds))} onId={(id) => run(() => saveBridgeAccount(provider, { displayName: current.displayName, externalAppId: id }))} />
-          {provider === 'whatsapp' ? (
+          {consoleSteps(provider) ? (
             <div className="br-callback">
-              <span className="br-label">Address to give Meta</span>
+              <span className="br-label">{consoleSteps(provider)!.label}</span>
               <code className="mono" data-testid="chat-app-callback">{callbackUrl(current.callbackPath)}</code>
-              <span className="br-note">Paste it as the webhook address in the Meta console, with the verify word you chose above, and subscribe to messages.</span>
+              <span className="br-note">{consoleSteps(provider)!.note}</span>
             </div>
           ) : null}
           <div className="br-switch">
@@ -137,6 +138,7 @@ function ProviderCard({ provider, account, onChanged }: { provider: BridgeProvid
 function SetUp({ provider, busy, onCreate }: { provider: BridgeProvider; busy: boolean; onCreate: (displayName: string, externalAppId: string) => Promise<void> }) {
   const [name, setName] = useState(PROVIDER_LABEL[provider]);
   const [id, setId] = useState('');
+  const appId = appIdLabel(provider);
   return (
     <form
       className="br-form"
@@ -146,8 +148,8 @@ function SetUp({ provider, busy, onCreate }: { provider: BridgeProvider; busy: b
       }}
     >
       <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required hint="How it is shown to people who link their account." />
-      {provider === 'whatsapp' ? <Field label="Phone number id" className="mono" value={id} onChange={(e) => setId(e.target.value)} inputMode="numeric" hint="From the WhatsApp section of your Meta app. It is a long number, not the phone number itself." /> : null}
-      <button type="submit" className="btn primary" disabled={busy || name.trim() === ''}>Set up {PROVIDER_LABEL[provider]}</button>
+      {appId ? <Field label={appId.label} className="mono" value={id} onChange={(e) => setId(e.target.value)} {...(appId.numeric ? { inputMode: 'numeric' as const } : {})} required={provider === 'teams'} hint={appId.hint} data-testid={`chat-app-${provider}-appid`} /> : null}
+      <button type="submit" className="btn primary" disabled={busy || name.trim() === '' || (provider === 'teams' && id.trim() === '')}>Set up {PROVIDER_LABEL[provider]}</button>
     </form>
   );
 }
@@ -157,9 +159,10 @@ function Credentials({ provider, account, busy, onSave, onId }: { provider: Brid
   const [secret, setSecret] = useState('');
   const [word, setWord] = useState('');
   const [id, setId] = useState('');
-  const set = (name: 'bot_token' | 'app_secret' | 'inbound_secret'): boolean => account.secretsSet.includes(name);
+  const set = (name: 'bot_token' | 'app_secret' | 'inbound_secret' | 'signing_secret'): boolean => account.secretsSet.includes(name);
   const saved = (ok: boolean): string => (ok ? 'Saved. Paste a new one to replace it.' : 'Not saved yet.');
   const whatsapp = provider === 'whatsapp';
+  const slack = provider === 'slack';
   const dirty = token !== '' || secret !== '' || word !== '';
   return (
     <form
@@ -171,6 +174,7 @@ function Credentials({ provider, account, busy, onSave, onId }: { provider: Brid
           ...(token ? { botToken: token } : {}),
           ...(whatsapp && secret ? { appSecret: secret } : {}),
           ...(whatsapp && word ? { inboundSecret: word } : {}),
+          ...(slack && secret ? { signingSecret: secret } : {}),
         };
         void onSave(creds).then(() => {
           setToken('');
@@ -182,8 +186,18 @@ function Credentials({ provider, account, busy, onSave, onId }: { provider: Brid
       {whatsapp ? (
         <Field label="Phone number id" className="mono" value={id} placeholder={account.handle ? `Set (${account.handle})` : 'Not saved yet'} onChange={(e) => setId(e.target.value)} inputMode="numeric" hint={<><span>Save it before the access token.</span> <button type="button" className="btn s" disabled={busy || id.trim() === ''} onClick={() => void onId(id.trim()).then(() => setId(''))}>Save the number id</button></>} />
       ) : null}
-      <Field label={whatsapp ? 'Access token' : 'Bot token'} type="password" autoComplete="new-password" className="mono" value={token} onChange={(e) => setToken(e.target.value)} hint={`${saved(set('bot_token'))}${provider === 'telegram' ? ' From BotFather, it looks like 123456789:ABC…' : ''}`} data-testid={`chat-app-${provider}-token`} />
+      <Field
+        label={tokenLabel(provider)}
+        type="password"
+        autoComplete="new-password"
+        className="mono"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        hint={`${saved(set('bot_token'))}${provider === 'telegram' ? ' From BotFather, it looks like 123456789:ABC…' : ''}${slack ? ' Under OAuth & Permissions in your Slack app; it starts with xoxb-.' : ''}${provider === 'teams' ? ' The secret value of your Azure bot’s app registration.' : ''}`}
+        data-testid={`chat-app-${provider}-token`}
+      />
       {whatsapp ? <Field label="App secret" type="password" autoComplete="new-password" className="mono" value={secret} onChange={(e) => setSecret(e.target.value)} hint={saved(set('app_secret'))} /> : null}
+      {slack ? <Field label="Signing secret" type="password" autoComplete="new-password" className="mono" value={secret} onChange={(e) => setSecret(e.target.value)} hint={`${saved(set('signing_secret'))} Under Basic Information in your Slack app.`} data-testid="chat-app-slack-signing" /> : null}
       {whatsapp ? <Field label="Verify word" type="password" autoComplete="new-password" className="mono" value={word} onChange={(e) => setWord(e.target.value)} hint={`${saved(set('inbound_secret'))} Any word you choose; you type the same one in the Meta console.`} /> : null}
       <p className="br-note">Saving new credentials turns the app off until you turn it on again.</p>
       <button type="submit" className="btn primary" disabled={busy || !dirty} data-testid={`chat-app-${provider}-save`}>{busy ? 'Saving…' : 'Save credentials'}</button>

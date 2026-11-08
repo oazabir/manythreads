@@ -18,8 +18,19 @@ export const BRIDGE_BASES: Readonly<Record<BridgeProvider, string>> = {
 
 /** The hosts a service address taken from a payload may name, per service. Only Teams hands out an address in its payloads. */
 export const BRIDGE_HOST_PATTERNS: Readonly<Partial<Record<BridgeProvider, readonly RegExp[]>>> = {
-  teams: [/^[a-z0-9-]+(\.[a-z0-9-]+)*\.botframework\.com$/i, /^smba\.trafficmanager\.net$/i, /^[a-z0-9-]+\.trafficmanager\.net$/i],
+  // Microsoft's own hosts only. Not every `*.trafficmanager.net`: anyone can register a name there.
+  teams: [/^[a-z0-9-]+(\.[a-z0-9-]+)*\.botframework\.com$/i, /^smba\.trafficmanager\.net$/i],
 };
+
+/**
+ * The few other hosts a service needs besides its API: Teams checks the signing keys of an incoming call at `login.botframework.com` and asks for its own access token at
+ * `login.microsoftonline.com`. Constants too; nothing from a payload decides them.
+ */
+export const BRIDGE_AUX_BASES = {
+  teams_keys: 'https://login.botframework.com',
+  teams_token: 'https://login.microsoftonline.com',
+} as const;
+export type BridgeAux = keyof typeof BRIDGE_AUX_BASES;
 
 export const BRIDGE_TIMEOUT_MS = 10_000;
 export const BRIDGE_MAX_ANSWER_BYTES = 256 * 1024;
@@ -78,6 +89,10 @@ export interface BridgeCallInput {
   headers?: Record<string, string>;
   /** Sent as JSON. */
   json?: unknown;
+  /** Sent as a form (`application/x-www-form-urlencoded`), for a token request. */
+  form?: Record<string, string>;
+  /** Go to one of the service's other constant hosts (`BRIDGE_AUX_BASES`) instead of its API host. */
+  aux?: BridgeAux;
   /** Used instead of the constant base when the service handed one out (Teams) and it passes `originFor`. */
   serviceUrl?: string | null;
 }
@@ -86,6 +101,8 @@ export interface BridgeCallResult {
   status: number;
   /** The answer, at most 256 KB. */
   text: string;
+  /** The `Retry-After` header in seconds, when the service sent a plain number. */
+  retryAfter: number | null;
 }
 
 async function readCapped(res: Response, max: number): Promise<string> {
@@ -109,17 +126,22 @@ async function readCapped(res: Response, max: number): Promise<string> {
 /** Sends one request. Throws `BridgeSendError` for an address that is not allowed, a network failure or a timeout; a service's own refusal comes back as a status for the adapter to read. */
 export async function bridgeCall(input: BridgeCallInput, env: NodeJS.ProcessEnv = process.env): Promise<BridgeCallResult> {
   if (!input.path.startsWith('/') || input.path.startsWith('//')) throw new BridgeSendError('The chat app address is not valid', { retry: false });
-  const origin = originFor(input.provider, input.serviceUrl ?? null, env);
+  const origin = input.aux ? (fakeBase(input.provider, env) ?? BRIDGE_AUX_BASES[input.aux]) : originFor(input.provider, input.serviceUrl ?? null, env);
   if (origin === null) throw new BridgeSendError('That chat app address is not on the list of addresses manythreads talks to', { retry: false });
   try {
     const res = await fetch(`${origin}${input.path}`, {
       method: input.method ?? 'POST',
-      headers: { ...(input.json !== undefined ? { 'content-type': 'application/json' } : {}), accept: 'application/json', ...input.headers },
-      ...(input.json !== undefined ? { body: JSON.stringify(input.json) } : {}),
+      headers: {
+        ...(input.json !== undefined ? { 'content-type': 'application/json' } : input.form ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+        accept: 'application/json',
+        ...input.headers,
+      },
+      ...(input.json !== undefined ? { body: JSON.stringify(input.json) } : input.form ? { body: new URLSearchParams(input.form).toString() } : {}),
       redirect: 'manual',
       signal: AbortSignal.timeout(BRIDGE_TIMEOUT_MS),
     });
-    return { status: res.status, text: await readCapped(res, BRIDGE_MAX_ANSWER_BYTES) };
+    const wait = Number(res.headers.get('retry-after'));
+    return { status: res.status, text: await readCapped(res, BRIDGE_MAX_ANSWER_BYTES), retryAfter: Number.isFinite(wait) && wait >= 0 ? wait : null };
   } catch (err) {
     if (err instanceof BridgeSendError) throw err;
     // never the cause: a fetch error can carry the address, which for some services holds a token

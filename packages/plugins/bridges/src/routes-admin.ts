@@ -31,10 +31,13 @@ const CREDENTIAL_FIELDS: Readonly<Record<BridgeProvider, ReadonlyArray<keyof Put
   telegram: ['botToken'],
   whatsapp: ['botToken', 'appSecret', 'inboundSecret'],
   slack: ['botToken', 'signingSecret'],
-  teams: ['botToken', 'appSecret'],
+  // the Teams client secret is stored as the account's `bot_token`: it is the one credential the bot calls out with, and the database guard asks every account for one
+  teams: ['botToken'],
 };
 
 const TELEGRAM_TOKEN = /^[0-9]{3,20}:[A-Za-z0-9_-]{16,}$/;
+const SLACK_BOT_TOKEN = /^xoxb-[A-Za-z0-9-]{10,}$/;
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const now = (ctx: PluginContext): string => ctx.runtime.now().toISOString();
 
@@ -83,6 +86,8 @@ export function registerAdminRoutes(ctx: PluginContext): void {
       await requireAdmin(tx);
       const { provider } = BridgeProviderParams.parse(req.params);
       const body = PutBridgeAccountRequest.parse(req.body);
+      // the app id of Teams is what every incoming call is checked against: it must be the id Azure shows (a GUID)
+      if (provider === 'teams' && body.externalAppId != null && !GUID.test(body.externalAppId)) throw invalid('That does not look like an application (client) id. It is the long id with dashes that Azure shows for the bot.');
       const before = await loadAccountOf(tx, tx.actor.workspaceId, provider);
       const keepHandle = body.handle === undefined;
       const keepApp = body.externalAppId === undefined;
@@ -111,11 +116,12 @@ export function registerAdminRoutes(ctx: PluginContext): void {
       const allowed = CREDENTIAL_FIELDS[provider];
       for (const key of Object.keys(creds)) if (!allowed.includes(key as keyof PutBridgeCredentialsRequest)) throw invalid(`That credential does not belong to this chat app (${key})`);
       if (provider === 'telegram' && creds.botToken !== undefined && !TELEGRAM_TOKEN.test(creds.botToken)) throw invalid('That does not look like a Telegram bot token. It looks like 123456789:ABC… and comes from BotFather.');
+      if (provider === 'slack' && creds.botToken !== undefined && !SLACK_BOT_TOKEN.test(creds.botToken)) throw invalid('That does not look like a Slack bot token. It starts with xoxb- and is under OAuth & Permissions in your Slack app.');
       const row = await required(tx, provider);
       await ctx.db.system((sys) => putSecrets(ctx, sys, row, creds), { workspaceId: row.workspace_id });
       // a new token or secret changes who the service talks to: the app is switched off until the admin switches it on again (which tells the service again)
       let status = row.status;
-      if (row.status !== 'off' && (creds.botToken !== undefined || creds.appSecret !== undefined || creds.inboundSecret !== undefined)) {
+      if (row.status !== 'off' && (creds.botToken !== undefined || creds.appSecret !== undefined || creds.inboundSecret !== undefined || creds.signingSecret !== undefined)) {
         await tx.query(`UPDATE app.bridge_accounts SET status = 'off', last_error = NULL WHERE id = $1::uuid`, [row.id]);
         status = 'off';
       }
@@ -154,7 +160,21 @@ export function registerAdminRoutes(ctx: PluginContext): void {
         await audit(tx, row, 'switched', 'off');
         return json(BridgeAccountResponse.parse({ account: await present({ ...row, status: 'off', last_error: null }, tx) }));
       }
-      const missing = !prepared.secrets.bot_token ? 'Add the token first.' : provider === 'whatsapp' && (!prepared.secrets.app_secret || !prepared.secrets.inbound_secret || !prepared.externalAppId) ? 'Add the phone number id, the app secret and the verify word first.' : null;
+      const secrets = prepared.secrets;
+      const missing =
+        provider === 'teams'
+          ? !prepared.externalAppId || !secrets.bot_token
+            ? 'Add the application id and the client secret first.'
+            : null
+          : provider === 'slack'
+            ? !secrets.bot_token || !secrets.signing_secret
+              ? 'Add the bot token and the signing secret first.'
+              : null
+            : !secrets.bot_token
+              ? 'Add the token first.'
+              : provider === 'whatsapp' && (!secrets.app_secret || !secrets.inbound_secret || !prepared.externalAppId)
+                ? 'Add the phone number id, the app secret and the verify word first.'
+                : null;
       if (missing !== null) {
         await tx.query('UPDATE app.bridge_accounts SET last_error = $2 WHERE id = $1::uuid', [row.id, missing]);
         return json(BridgeAccountResponse.parse({ account: await present({ ...row, last_error: missing }, tx) }));

@@ -19,7 +19,7 @@ export function AccountChatApps() {
   const q = useQuery('account-chat-apps', fetchMyBridges);
   return (
     <>
-      <PageHeader title="Chat apps" description="Link your Telegram or WhatsApp so you can talk to a bot from your phone. What you write there is posted as you." />
+      <PageHeader title="Chat apps" description="Link your Telegram, WhatsApp, Slack or Teams account so you can talk to a bot from there. What you write there is posted as you." />
       <QueryView q={q}>
         {({ available, identities }) =>
           available.length === 0 ? (
@@ -89,7 +89,7 @@ function LinkCard({ available, identity, reload }: { available: BridgeAvailable;
       {identity ? (
         <>
           <p className="br-note">
-            Linked as {identity.externalLabel ?? 'your account'} since <Time iso={identity.verifiedAt} />. Write to {available.handle ?? available.displayName} to talk to a bot; send /bot there to choose which one.
+            Linked as {identity.externalLabel ?? 'your account'} since <Time iso={identity.verifiedAt} />. Write to {available.handle ?? available.displayName} to talk to a bot; send {available.provider === 'slack' || available.provider === 'teams' ? 'bot' : '/bot'} there to choose which one.
           </p>
           <div className="br-actions"><button type="button" className="btn" onClick={() => void unlink()} disabled={busy} data-testid={`chat-link-${available.provider}-unlink`}>Unlink</button></div>
         </>
