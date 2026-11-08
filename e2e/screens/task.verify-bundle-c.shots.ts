@@ -619,7 +619,7 @@ test('05 the note-taker: the Personal transcript, a question in the thread, the 
         const m = await threadMessages(omar, room);
         return m.length > before + 1 ? m : null;
       }, 45_000, 3000);
-      if (!answer) skip('05 the answer in the thread', 'no answer within 45 s: the run's answer is thrown away when its searches returned a hit outside the call's channels (server log: 'it read something outside the channels')');
+      if (!answer) skip('05 the answer in the thread', "no answer within 45 s: the run's answer is thrown away when its searches returned a hit outside the call's channels (server log: it read something outside the channels everyone in the call may read)");
       else check('05 the Note-taker answered in the thread within 45 s', true, `${answer.length - before} new messages`);
       const cap = await rafi.page.getByTestId('caption-line').filter({ hasText: /rafi/i }).count();
       log(`caption lines naming Rafi: ${cap}`);
