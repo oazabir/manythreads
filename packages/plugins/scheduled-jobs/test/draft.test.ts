@@ -65,7 +65,8 @@ describe('a routine set up in words', () => {
     const r = rig({ ok: false, reason: 'refused', detail: 'budget' });
     const out = await r.draft();
     expect(out.by).toBe('rules');
-    expect(out.notes.join(' ')).toContain('simple rules');
+    // the page says so once, from `by` (the plan dialog's own line); the notes do not repeat it
+    expect(out.notes.join(' ')).not.toContain('not available');
   });
 
   it('falls back to rules when the model answers with something that is not the JSON object', async () => {

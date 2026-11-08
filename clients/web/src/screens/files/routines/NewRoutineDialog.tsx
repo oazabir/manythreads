@@ -176,7 +176,7 @@ function Review({ proposal, onBack, onClose, onCreated }: { proposal: Proposal; 
     >
       <form className="dlg-form rt-form" onSubmit={(e) => { e.preventDefault(); void confirm(); }}>
         <p className="rt-said" data-testid="routine-said">You said: {proposal.words}</p>
-        {proposal.by === 'rules' ? <p className="dlg-hint" data-testid="routine-by-rules">The assistant was not available, so this plan was made by plain rules. Read it closely.</p> : null}
+        {proposal.by === 'rules' ? <p className="dlg-hint" data-testid="routine-by-rules">The assistant was not available, so this plan was made by plain rules. Read the instruction and fix it where it is off.</p> : null}
         {proposal.notes.length > 0 ? (
           <ul className="rt-notes" data-testid="routine-notes">
             {proposal.notes.map((n) => <li key={n}>{n}</li>)}

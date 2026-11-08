@@ -467,13 +467,18 @@ test('04 the phone: bottom bar, Messages badge, Activity, edge swipe, swipe to r
     await page.goto(`/t/engineering/c/verify-b-touch-${sfx}`);
     const row = page.getByTestId('message').filter({ hasText: 'verify-b swipe me' });
     await expect(row).toBeVisible(T);
-    const box = (await row.boundingBox())!;
-    await swipe(page, [box.x + 60, box.y + box.height / 2], [box.x + 260, box.y + box.height / 2 + 2]);
-    const opened = await page.getByTestId('thread-view').isVisible({ timeout: 4000 }).catch(() => false);
+    await settle(page);
+    // the finger goes down on the words of the message, not on the author's name (a name is a button and keeps its own touch behaviour)
+    const box = (await row.getByText('verify-b swipe me').boundingBox())!;
+    await swipe(page, [box.x + 10, box.y + box.height / 2], [box.x + 210, box.y + box.height / 2 + 2]);
+    const opened = await page.getByTestId('thread-view').waitFor({ state: 'visible', timeout: 4000 }).then(() => true, () => false);
     check('04 a swipe right on a message opens its thread to reply', opened);
     await shoot(page, '35-swipe-reply', 'm', 'light');
-    if (opened) await page.getByRole('button', { name: 'Close panel' }).click().catch(() => undefined);
-    await swipe(page, [box.x + 120, box.y + box.height / 2], [box.x + 121, box.y + box.height / 2], 700);
+    if (opened) {
+      await page.getByRole('button', { name: 'Close panel' }).click().catch(() => undefined);
+      await expect(page.getByTestId('thread-view')).toBeHidden(T).catch(() => undefined);
+    }
+    await swipe(page, [box.x + 20, box.y + box.height / 2], [box.x + 21, box.y + box.height / 2], 700);
     await page.waitForTimeout(500);
     const picker = await page.getByRole('menu').or(page.getByRole('dialog')).first().isVisible().catch(() => false);
     check('04 a long press on a message opens the reactions', picker);
@@ -515,7 +520,7 @@ test('05 a three-message DM, a long channel name at 390, Sameera\'s rail search,
     await shoot(omar.page, '40-dm-three', 'm', 'light');
 
     // a probe channel with a 40-character name: the full name reads at 390
-    const longName = `verify-b-${'long-name-'.repeat(3)}${sfx}`.slice(0, 40);
+    const longName = `verify-b-${sfx}-${'long-name-'.repeat(3)}`.slice(0, 40);
     const made = await api(omar.ctx, 'POST', '/api/teams/engineering/channels', { name: longName });
     check('05 long-named probe channel made', made.status < 300, `status ${made.status}`);
     await omar.page.goto(`/t/engineering/c/${longName}`);
@@ -548,10 +553,14 @@ test('05 a three-message DM, a long channel name at 390, Sameera\'s rail search,
   try {
     await files.page.goto('/files');
     await settle(files.page);
-    const crumbs = files.page.locator('.ph-crumbs, [aria-label="Breadcrumb"], nav[aria-label*="readcrumb"]').first();
+    // the root has one crumb; a folder inside it makes two, with a "/" between them
+    await files.page.getByTestId('file-row').filter({ hasText: 'Notes' }).first().click();
+    await expect(files.page).toHaveURL(/path=Notes/, T);
+    await settle(files.page);
+    const crumbs = files.page.getByTestId('breadcrumb').first();
     const text = (await crumbs.innerText().catch(() => '')).replace(/\s+/g, ' ');
     const parts = text.split('/').map((s) => s.trim()).filter(Boolean);
-    check('05 the files crumb trail shows "/" between the crumbs', parts.length >= 2 || text === '', text);
+    check('05 the files crumb trail shows "/" between the crumbs', parts.length >= 2, text);
     await shoot(files.page, '43-files-crumbs', 'd', 'light');
   } finally {
     await files.ctx.close();
@@ -620,7 +629,7 @@ test('07 Nadia: a routine in words is written by the assistant; create it, then 
       return;
     }
     const planText = (await plan.innerText()).replace(/\s+/g, ' ');
-    check('07 the plan says it was written by the assistant, not by a rule', /assistant|brain|written/i.test(planText) && !/could not understand|fallback/i.test(planText), planText.slice(0, 160));
+    check('07 the plan was written by the assistant, not by plain rules', (await page.getByTestId('routine-by-rules').count()) === 0 && !/was not available|plain rules/i.test(planText), planText.slice(0, 160));
     await shoot(page, '60-routine-plan', 'd', 'light');
     const name = `Verify B ${sfx}`;
     await page.getByTestId('routine-name').fill(name);
@@ -693,7 +702,7 @@ test('08 Tariq (Marketing): empty Boards and Jobs, the org chart grid; Omar: Mem
       await page.getByTestId('bell').click();
       await expect(page.getByTestId('notifications-popover')).toBeVisible(T);
       await shoot(page, '73-bell', 'd', scheme);
-      check(`08 the bell opens with tabs (${scheme})`, (await page.getByTestId('notifications-popover').getByRole('tab').count()) >= 2);
+      check(`08 the bell opens with Unread and All (${scheme})`, (await page.getByTestId('notifications-popover').locator('.ntf-tabs button').count()) === 2);
     } finally {
       await ctx.close();
     }

@@ -160,6 +160,12 @@
   }
 }
 
+/* The search box spans the whole dialog (a bare input is only as wide as its default size). */
+.qs-input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
 .qs-tabs {
   display: flex;
   flex-wrap: wrap;

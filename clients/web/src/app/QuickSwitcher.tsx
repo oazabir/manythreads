@@ -351,7 +351,7 @@ export function QuickSwitcher() {
     <>
       <Dialog title="Jump to…" onClose={close} testId="quick-switcher">
         <input
-          className="dlg-input"
+          className="dlg-input qs-input"
           data-autofocus
           data-testid="quick-switcher-search"
           role="combobox"

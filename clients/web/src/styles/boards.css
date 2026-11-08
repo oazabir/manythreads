@@ -847,6 +847,27 @@
   .bd-col {
     scroll-snap-align: start;
   }
+
+  /* A job on a phone: the name on its own line, the facts under it on a line that wraps between facts (never inside the schedule), the buttons under that. */
+  .bd-scheduled-job {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .bd-scheduled-job-main {
+    flex: none;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .bd-scheduled-job-name {
+    flex: 1 1 100%;
+  }
+
+  .bd-scheduled-job-schedule {
+    white-space: nowrap;
+  }
 }
 
 /* ---- a bot is working on this card (P6-13) ---- */

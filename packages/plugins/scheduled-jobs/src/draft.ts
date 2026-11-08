@@ -170,7 +170,6 @@ export async function draftRoutine(
   }
   if (by === 'rules') {
     prompt = rulesPrompt(sentence, sources);
-    notes.push('The assistant was not available, so this was written by simple rules. Read the instruction and fix it where it is off.');
   }
   const slug = slugFor(name, input.takenSlugs);
   return {
