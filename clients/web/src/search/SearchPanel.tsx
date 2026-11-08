@@ -17,6 +17,7 @@ import { useOpenMessage, type MessageTarget } from '../shell/messageLink';
 import { Highlight } from './SearchHighlight';
 import { VoiceHitLabel } from '../channels/voice/VoicePlayer';
 import { voiceHitLength } from '../channels/voice/playerFormat';
+import { MeetingHitRow } from './MeetingHitRow';
 import { SearchFilterBar } from './SearchFilterBar';
 import { parseSearchEntry, searchEntry } from './searchEntry';
 
@@ -41,7 +42,7 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
   const data = useMemo(() => {
     if (res.status !== 'ok' || res.data === null) return null;
     const keep = <T extends { channel: HitChannel | null }>(hits: T[]): T[] => (channelId ? hits.filter((h) => h.channel?.id === channelId) : hits);
-    return { messages: keep(res.data.messages), threads: keep(res.data.threads), files: keep(res.data.files), pages: channelId ? [] : res.data.pages, more: res.data.more, words: res.data.query, unmatched: res.data.unmatched };
+    return { messages: keep(res.data.messages), threads: keep(res.data.threads), files: keep(res.data.files), pages: channelId ? [] : res.data.pages, meetings: keep(res.data.meetings), more: res.data.more, words: res.data.query, unmatched: res.data.unmatched };
   }, [res, channelId]);
 
   // a person by name; a bot of the team as "Bot" (the roster knows its picture, not its name); anyone else as nobody
@@ -67,7 +68,7 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
         </div>
       );
     }
-    const total = data.messages.length + data.threads.length + data.files.length + data.pages.length;
+    const total = data.messages.length + data.threads.length + data.files.length + data.pages.length + data.meetings.length;
     const missing = data.unmatched.map((u) => (u.startsWith('from:') ? `No person called “${u.slice(5)}” that you can see.` : `No channel called “${u.slice(3)}” that you can see.`));
     const notes = missing.length > 0 ? (
       <ul className="sf-notes" role="status" data-testid="search-unmatched">
@@ -184,6 +185,20 @@ export function SearchPanel({ entry, onSearch, full = false }: { entry: PanelEnt
           </ul>
           {data.more.pages ? <p className="search-note" data-testid="search-more">{moreNote}</p> : null}
         </section>
+        {data.meetings.length > 0 || data.more.meetings ? (
+          // what was said in voice rooms (P15-13): drawn only when there is something, so a search without meetings looks as it always did
+          <section className="sr-group" aria-label="Meetings" data-testid="search-meetings">
+            <h3>{`Meetings (${data.meetings.length})`}</h3>
+            <ul>
+              {data.meetings.map((h) => (
+                <li key={`${h.meetingId}:${h.where}:${h.atMs}:${h.speakerId ?? ''}`}>
+                  <MeetingHitRow hit={h} words={words} />
+                </li>
+              ))}
+            </ul>
+            {data.more.meetings ? <p className="search-note" data-testid="search-more">{moreNote}</p> : null}
+          </section>
+        ) : null}
       </>
     );
   };

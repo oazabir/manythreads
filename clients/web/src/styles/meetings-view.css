@@ -1,0 +1,561 @@
+/*
+ * The meeting page (PLAN P15-20, work package W3): /meetings/:meetingId with its notes and transcript tabs, the share and save dialogs, the note-taker's message card in a
+ * direct message, and the search row for what was said in a meeting. Classes start with `mv-`. Tokens only; shared classes (.btn, .chip, .dlg*, .ph, .empty) are used, never
+ * redefined. Layout rule: nothing moves when a state changes. The marked line is a left rule and a wash (no size change), the tabs keep their size, and a time is a column of
+ * fixed width.
+ */
+
+.mv-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 20px 24px;
+  overflow: auto;
+}
+
+.mv-screen > .ph {
+  padding: 0;
+}
+
+.mv-quiet {
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.mv-bad {
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+.mv-banner {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--radius-md);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  font-size: var(--fs-small);
+}
+
+.mv-sub {
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-title);
+}
+
+/* ---- who was there ---- */
+.mv-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mv-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-small);
+}
+
+.mv-person .av {
+  width: 26px;
+  height: 26px;
+}
+
+.mv-person-name {
+  overflow-wrap: anywhere;
+}
+
+.mv-person.quiet .mv-person-name {
+  color: var(--mute);
+}
+
+.mv-person-note {
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+/* ---- links row ---- */
+.mv-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: var(--fs-small);
+}
+
+.mv-link-recording {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.mv-recording {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.mv-audio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mv-audio audio {
+  max-width: 100%;
+  height: 32px;
+}
+
+.mv-audio-name {
+  color: var(--mute);
+}
+
+/* ---- tabs ---- */
+.mv-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.mv-tab {
+  min-width: 96px;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: var(--fw-caption);
+  cursor: pointer;
+}
+
+.mv-tab:hover {
+  color: var(--ink);
+}
+
+.mv-tab.on {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.mv-panel {
+  min-width: 0;
+}
+
+/* ---- notes ---- */
+.mv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.mv-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.mv-notes-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mv-summary {
+  margin: 0;
+  color: var(--txt);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+}
+
+.mv-md {
+  color: var(--txt);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+}
+
+.mv-items {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mv-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.mv-item:first-child {
+  border-top: 0;
+}
+
+.mv-item-text {
+  color: var(--txt);
+  font-size: var(--fs-body);
+  overflow-wrap: anywhere;
+}
+
+.mv-item-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.mv-item-act {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mv-add {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mv-board-pick {
+  max-width: 100%;
+}
+
+/* a time in the meeting: a button that jumps to it */
+.mv-at {
+  min-width: 48px;
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--table-head);
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+}
+
+.mv-at:hover {
+  border-color: var(--human-border);
+  color: var(--human);
+}
+
+.mv-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mv-facts:empty {
+  display: none;
+}
+
+.mv-fact {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.mv-fact code {
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+}
+
+.mv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mv-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mv-textarea {
+  width: 100%;
+  min-height: 200px;
+  font-family: var(--mono);
+  line-height: var(--lh-body);
+  resize: vertical;
+}
+
+/* ---- transcript ---- */
+.mv-transcript,
+.mv-run-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mv-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mv-speaker {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-title);
+}
+
+.mv-line {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 4px 8px 4px 6px;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.mv-line.hit {
+  border-left-color: var(--human);
+  background: var(--human-wash);
+}
+
+.mv-line-text {
+  color: var(--txt);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+}
+
+.mv-line.quiet .mv-line-text {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.mv-line-edit {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mv-line-edit-btn {
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--human);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.mv-line-edit-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---- share dialog ---- */
+.mv-shares {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mv-share {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.mv-share:first-child {
+  border-top: 0;
+}
+
+.mv-share-name {
+  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
+}
+
+.mv-share-kind {
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.mv-share-list {
+  margin-bottom: 14px;
+}
+
+.mv-seg {
+  display: inline-flex;
+  align-self: start;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.mv-seg-btn {
+  padding: 6px 12px;
+  border: 0;
+  background: var(--surface);
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.mv-seg-btn + .mv-seg-btn {
+  border-left: 1px solid var(--rule);
+}
+
+.mv-seg-btn.on {
+  background: var(--nav-on);
+  color: var(--ink);
+  font-weight: var(--fw-caption);
+}
+
+.mv-share-go {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* ---- save to team ---- */
+.mv-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 6px;
+  font-size: var(--fs-small);
+}
+
+.mv-check input {
+  margin-top: 3px;
+}
+
+.mv-check > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mv-check-help {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* ---- the note-taker's message in a direct message ---- */
+.mv-msg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--radius-md);
+  background: var(--agent-wash);
+}
+
+/* ---- Files: the Open the meeting button sits with the other folder buttons ---- */
+.mv-open {
+  white-space: nowrap;
+}
+
+/* ---- search row ---- */
+.hit-meeting {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  text-align: left;
+}
+
+.hit-meeting-who {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* ---- phone ---- */
+@media (width <= 640px) {
+  .mv-screen {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .mv-tabs {
+    width: 100%;
+  }
+
+  .mv-tab {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mv-card {
+    padding: 12px;
+  }
+
+  .mv-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mv-item-meta {
+    justify-content: flex-start;
+  }
+
+  .mv-line {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .mv-line-edit-btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .mv-share {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mv-share-kind {
+    display: none;
+  }
+
+  .mv-people {
+    gap: 8px 12px;
+  }
+
+  .mv-audio {
+    flex-wrap: wrap;
+  }
+
+  .mv-actions .btn {
+    flex: 1 1 auto;
+  }
+}

@@ -4,6 +4,7 @@ import { usePanel } from '../../kernel/panel';
 import { ViewerMessage } from '../../viewers/common';
 import { RowMenu, historyId, useRowActions } from './actions';
 import { MEMORY_COPY, READ_ONLY_COPY, type FileRow } from './model';
+import { OpenMeeting } from '../meetings/OpenMeeting';
 import { WhyReadOnly, lockReason } from './ReadOnlyWhy';
 import type { TeamFiles } from './store';
 import { whenLabel } from './when';
@@ -39,6 +40,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
         <span className="m" data-vt-mask>{row.modifiedAt ? `updated ${whenLabel(row.modifiedAt)}` : ''}{row.by ? ` by ${row.by.name}` : ''}</span>
         <div className="r">
           {lock ? <WhyReadOnly reason={lock} look="link" /> : null}
+          {row.kind === 'file' ? <OpenMeeting path={row.path} personal={row.store === 'personal'} teamSlug={files.slug} /> : null}
           {history ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: historyId(row) })}>{row.store === 'personal' ? 'Versions' : 'History'}</button> : null}
           <RowMenu row={row} files={files} start={actions.start} />
           <button type="button" className="btn s" data-testid="close-file" onClick={onClose}>Close</button>

@@ -14,6 +14,7 @@ import { useDismiss } from '../shell/useDismiss';
 import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
 import { SurfaceMessage } from '../surfaces/SurfaceMessage';
+import { MeetingNotesMessage } from '../screens/meetings/MeetingNotesMessage';
 import { ForwardDialog } from './ForwardDialog';
 import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
@@ -416,6 +417,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             messageId={m.id}
             tools={answerTools !== undefined && m.channelId === answerTools.channelId && m.meta.answer.answeredFor.personId === people.me?.personId ? answerTools : undefined}
           />
+        ) : m.meta.meetingNotes ? (
+          // the note-taker's message after a meeting: its words with Open the notes, Share and Save to team meeting notes (P15-23)
+          <MeetingNotesMessage meetingId={m.meta.meetingNotes.meetingId} body={m.body} teamSlug={teamSlug} />
         ) : m.meta.surfaceRef ? (
           // a screen a bot drew (P9-04): read from the server by its id, answered with data only
           <SurfaceMessage channelId={m.channelId} surfaceId={m.meta.surfaceRef} canPost={canPost} />

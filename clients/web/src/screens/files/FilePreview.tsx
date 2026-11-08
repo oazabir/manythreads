@@ -8,6 +8,7 @@ import { usePanelSub, usePanelTitle } from '../../kernel/panel/sub';
 import { ViewerMessage } from '../../viewers/common';
 import { RowMenu, historyId, useRowActions } from './actions';
 import { READ_ONLY_COPY, MEMORY_COPY, isPage, parentOf, type FileRow } from './model';
+import { OpenMeeting } from '../meetings/OpenMeeting';
 import { WhyReadOnly, lockReason } from './ReadOnlyWhy';
 import { personalPanelId, spaceHref } from './spaces';
 import { usePanelFiles, type TeamFiles } from './store';
@@ -82,6 +83,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
   return (
     <div className={`fp ${reading ? 'reading' : ''}`} data-testid="file-preview" data-store={row.store} data-path={row.path}>
       <div className="fp-bar" data-testid="file-actions">
+        {row.kind === 'file' ? <OpenMeeting path={row.path} personal={personal} teamSlug={files.slug} /> : null}
         {history && row.readOnlyReason !== 'admin_view' ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: historyId(row) })}>{personal ? 'Versions' : 'History'}</button> : null}
         <button type="button" className="btn s" data-testid="open-in-files" onClick={() => void navigate(spaceHref(files.slug, history ? { folder, open: row.path } : { folder, panel: `file:${row.fileId ?? row.path}` }))}>Open in Files</button>
         {page && canEdit ? <button type="button" className="btn s" aria-pressed={editing} onClick={() => setEditing((e) => !e)}>{editing ? 'Done' : 'Edit'}</button> : null}

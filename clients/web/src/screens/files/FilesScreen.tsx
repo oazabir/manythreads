@@ -35,6 +35,7 @@ import { Tree, treeKey } from './Tree';
 import { useFolders } from './useFolders';
 import { NewFolderIcon, UploadIcon } from './icons';
 import { savePersonalSpaceZip } from './personalApi';
+import { OpenMeeting } from '../meetings/OpenMeeting';
 
 type Upload = { id: number; name: string; state: 'sending' | 'done' | 'error'; fraction: number; message?: string };
 
@@ -361,6 +362,7 @@ export function FilesScreen() {
   const uploadTitle = personal && folder === ROOT ? 'Open a folder first: files in Personal live inside a folder.' : folder === 'channels' ? 'Open a channel folder to upload there.' : undefined;
   const actions = adminView ? undefined : (
     <div className="fhead-actions" data-testid="files-actions">
+      {open ? null : <OpenMeeting path={folder} personal={personal} teamSlug={files?.slug} />}
       <button type="button" className="btn s" data-testid="new-page" disabled={!canPage} title={attachments ? 'Pages live in git folders such as pages/.' : personal && folder === ROOT ? 'Open a folder first: notes live inside a folder.' : writable ? (personal ? 'Create a note in this folder' : NEW_PAGE_TITLE) : 'This folder changes by proposal'} onClick={() => setDialog('page')}>{personal ? 'New note' : 'New page'}</button>
       {info?.readOnlyReason === 'change_by_pull_request' ? (
         <button type="button" className="btn s" data-testid="propose-new-file" title="Propose a new file in this folder" onClick={() => setDialog('propose')}>Propose a file</button>

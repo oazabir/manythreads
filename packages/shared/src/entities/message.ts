@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, ChannelId, FileId, MessageId, WorkspaceId } from '../ids.ts';
+import { ActorId, ChannelId, FileId, MeetingId, MessageId, WorkspaceId } from '../ids.ts';
 import { AnswerPayloadView } from './answer.ts';
 import { MAX_ATTACHMENTS_PER_MESSAGE } from './file.ts';
 
@@ -69,6 +69,8 @@ export const Message = z.object({
     voice: VoiceMeta.optional().catch(undefined),
     /** The run that failed and the category of why (`failure-notice.ts`): set on the notice a failed run leaves in its thread, by the platform alone. Chat offers Try again on it. */
     runFailure: z.string().max(40).optional().catch(undefined),
+    /** The meeting a note-taker's direct message is about (P15-23): the client draws Open the notes, Share and Save buttons under the text. Written by the platform alone; a value that does not read is dropped, never the message. */
+    meetingNotes: z.object({ meetingId: MeetingId }).optional().catch(undefined),
   }),
   createdAt: IsoDateTime,
 });
