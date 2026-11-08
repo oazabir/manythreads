@@ -624,6 +624,11 @@
   min-width: 0;
 }
 
+/* a long role must not squeeze the avatar (the Brain's picture was a sliver, P21-RUN) */
+.bd-org-bot-who > .av {
+  flex: none;
+}
+
 .bd-org-bot-role {
   color: var(--mute);
   font-size: var(--fs-caption);

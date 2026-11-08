@@ -2441,6 +2441,15 @@
   margin-right: 4px;
 }
 
+/* the header tools keep one order whichever of them is drawn first (the members arrive after the rest): search, voice room, members, bookmark (P21-RUN) */
+.chead-actions > .chd {
+  order: 2;
+}
+
+.chead-actions > .bm-open {
+  order: 3;
+}
+
 .bm-x {
   padding: 2px 8px 2px 0;
   border: 0;

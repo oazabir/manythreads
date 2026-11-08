@@ -487,12 +487,22 @@ a.sec:hover {
   font-weight: 600;
 }
 
+/* on a wide screen the name keeps its own width (the topic gives way, then the name's own ellipsis at 45% of the header): with the search panel open it read "#poli…" (P21-RUN) */
+@media (width > 760px) {
+  .chead > .chead-title {
+    flex-shrink: 0;
+    min-width: 0;
+    max-width: 45%;
+  }
+}
+
 .chead-tools .icon-btn {
   height: 26px;
 }
 
 .chead > .topic {
-  flex-shrink: 4;
+  /* the topic gives way first: with the search panel open the channel name read "#pol…" while the topic kept its room (P21-RUN) */
+  flex-shrink: 100;
   min-width: 0;
   overflow: hidden;
   color: var(--mute);

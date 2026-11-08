@@ -41,6 +41,11 @@
   line-height: 0;
 }
 
+/* two citations in a row read as two numbers, not one ("1 2", never "12") */
+.an-ref + .an-ref {
+  margin-left: 4px;
+}
+
 .an-ref a,
 .an-ref span {
   color: var(--human);

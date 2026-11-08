@@ -345,7 +345,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             apiRef={api}
           />
         )}
-        {floatDay && scrolls ? <div className="day-float daysep" aria-hidden="true" data-vt-mask><span>{floatDay}</span></div> : null}
+        {floatDay && scrolls ? <div className="day-float daysep" aria-hidden="true"><span data-vt-mask>{floatDay}</span></div> : null}
         {unreadShown && hadUnread && !unreadSeen && tl.status === 'ready' ? (
           <button
             type="button"

@@ -57,6 +57,11 @@
   color: var(--mute);
 }
 
+/* the three boxes sit apart (they touched each other before, P21-RUN) */
+.health-page .box + .box {
+  margin-top: 12px;
+}
+
 /* the one-line verdict beside the "Checks" title */
 .health-summary {
   margin-left: 10px;
