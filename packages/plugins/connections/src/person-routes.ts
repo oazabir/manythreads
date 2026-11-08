@@ -19,6 +19,7 @@ import { authorizationUrl, exchangeCode, newFlowSecrets } from './oauth/flow.ts'
 import { configuredProviders, resolveApp } from './oauth/apps.ts';
 import { endpointsFor, instanceReady, PROVIDERS, providerIds, redirectUriFor, scopesFor, serviceDef, servicesGranted } from './oauth/providers.ts';
 import { consumeFlow, disconnectPerson, ownConnections, recordFlow, saveSignIn, type OAuthDeps } from './oauth/store.ts';
+import { providersOf } from './person-kit.ts';
 import { PERSON_TOOL_DEFS } from './person-tools.ts';
 
 // The routes where a person connects their own Google, Microsoft, Notion, Zendesk, Intercom, HubSpot or Salesforce account (PLAN P8-02, P16-07). One start route and one callback route serve every provider: they read
@@ -190,5 +191,5 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
 }
 
 // The tools a service gives, and whether any of them writes, for the list the screen shows.
-const PERSON_TOOLS_BY_SERVICE = (provider: PersonProviderId, service: string): string[] => PERSON_TOOL_DEFS.filter((t) => t.provider === provider && t.service === service).map((t) => t.name);
-const PERSON_WRITES = (provider: PersonProviderId, service: string): boolean => PERSON_TOOL_DEFS.some((t) => t.provider === provider && t.service === service && t.kind === 'write');
+const PERSON_TOOLS_BY_SERVICE = (provider: PersonProviderId, service: string): string[] => PERSON_TOOL_DEFS.filter((t) => providersOf(t).includes(provider) && t.service === service).map((t) => t.name);
+const PERSON_WRITES = (provider: PersonProviderId, service: string): boolean => PERSON_TOOL_DEFS.some((t) => providersOf(t).includes(provider) && t.service === service && t.kind === 'write');

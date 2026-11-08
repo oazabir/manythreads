@@ -1,12 +1,15 @@
+import type { PersonProviderId } from '@manythreads/shared';
 import { forbidden, invalid, type BotRunHandle, type PluginTx, type ToolApprovalCard, type ToolSource } from '@manythreads/sdk';
 import { inputProblem, kindOf, kindServes, TOOLS } from './kinds.ts';
 import { createProviderApi, ProviderError } from './oauth/api.ts';
 import { appInstance } from './oauth/apps.ts';
 import { PROVIDERS, serviceDef } from './oauth/providers.ts';
 import { ConnectionProblem, usablePersonConnection, type OAuthDeps } from './oauth/store.ts';
+import { providersOf } from './person-kit.ts';
 import { PERSON_TOOLS, personToolDef } from './person-tools.ts';
 import { CONNECTION_COLUMNS, isUsable, type ConnectionRow } from './rows.ts';
 import { readConnectionSecret } from './secrets.ts';
+import { countToolCall, isFailedAnswer } from './usage.ts';
 
 // The connections plugin as a source of tools (PLAN P8-28, the `ToolSource` seam of P8-01). The gateway asks `offered` which tools a bot's grants let it list, and
 // hands `call` the tool a bot (or the person who asked) invoked AFTER the capability broker said yes. The two checks are independent and both must pass:
@@ -41,10 +44,16 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
     for (const { tool } of granted.rows) {
       const def = personToolDef(tool);
       if (!def) continue;
-      if (!connections.has(def.provider)) connections.set(def.provider, await usablePersonConnection(deps, { workspaceId: run.workspaceId, ownerId: run.askerActorId, provider: def.provider }));
-      const connection = connections.get(def.provider);
-      const service = serviceDef(PROVIDERS[def.provider], def.service);
-      if (connection && service && service.scopes.every((scope) => connection.scopes.includes(scope))) out.push(tool);
+      // a tool that works through more than one provider is offered when any of them is connected with the service agreed
+      for (const providerId of providersOf(def)) {
+        if (!connections.has(providerId)) connections.set(providerId, await usablePersonConnection(deps, { workspaceId: run.workspaceId, ownerId: run.askerActorId, provider: providerId }));
+        const connection = connections.get(providerId);
+        const service = serviceDef(PROVIDERS[providerId], def.service);
+        if (connection && service && service.scopes.every((scope) => connection.scopes.includes(scope))) {
+          out.push(tool);
+          break;
+        }
+      }
     }
     return out;
   }
@@ -60,21 +69,41 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
     if (def.kind === 'read' && tx.actor.id !== run.askerActorId) throw forbidden(`“${tool}” can only be read as the person who asked.`);
     const problem = inputProblem(tool, input);
     if (problem !== null) throw invalid(`The arguments of “${tool}” are not valid: ${problem}`);
-    const provider = PROVIDERS[def.provider];
-    const connection = await usablePersonConnection(deps, { workspaceId: run.workspaceId, ownerId: run.askerActorId, provider: def.provider });
-    if (!connection) return unavailable('not_connected', `The person who asked has not connected ${provider.label} (or it needs to be connected again), so “${tool}” cannot run. Ask them to connect it from their connections page.`);
-    const service = serviceDef(provider, def.service);
-    if (!service || !service.scopes.every((scope) => connection.scopes.includes(scope))) {
-      return unavailable('not_agreed', `The person who asked has not allowed “${service?.label ?? def.service}” on their ${provider.label} connection, so “${tool}” cannot run. They can add it from their connections page.`);
+    // the first provider (the tool's own, then the others it works through) the asker has connected AND agreed the service on
+    let chosen: { providerId: PersonProviderId; connection: NonNullable<Awaited<ReturnType<typeof usablePersonConnection>>> } | null = null;
+    let connectedWithoutService: { providerId: PersonProviderId; label: string } | null = null;
+    for (const providerId of providersOf(def)) {
+      const connection = await usablePersonConnection(deps, { workspaceId: run.workspaceId, ownerId: run.askerActorId, provider: providerId });
+      if (!connection) continue;
+      const service = serviceDef(PROVIDERS[providerId], def.service);
+      if (service && service.scopes.every((scope) => connection.scopes.includes(scope))) {
+        chosen = { providerId, connection };
+        break;
+      }
+      connectedWithoutService ??= { providerId, label: service?.label ?? def.service };
     }
+    if (!chosen) {
+      if (connectedWithoutService) {
+        return unavailable('not_agreed', `The person who asked has not allowed “${connectedWithoutService.label}” on their ${PROVIDERS[connectedWithoutService.providerId].label} connection, so “${tool}” cannot run. They can add it from their connections page.`);
+      }
+      const labels = providersOf(def).map((p) => PROVIDERS[p].label).join(' or ');
+      return unavailable('not_connected', `The person who asked has not connected ${labels} (or it needs to be connected again), so “${tool}” cannot run. Ask them to connect it from their connections page.`);
+    }
+    const { providerId, connection } = chosen;
+    // one call is counted (a day, the connection, worked or not; never what it read), also when it threw: the admin page shows these sums
+    let failed = true;
     try {
       // Zendesk and Salesforce: the account's address comes from the workspace's app, read here (never from the tool's arguments)
-      const instance = await appInstance(deps, run.workspaceId, def.provider);
-      return await def.run(createProviderApi(deps, { id: connection.id, workspaceId: run.workspaceId, provider: def.provider, instance }), input);
+      const instance = await appInstance(deps, run.workspaceId, providerId);
+      const answer = await def.run(createProviderApi(deps, { id: connection.id, workspaceId: run.workspaceId, provider: providerId, instance }), input, { provider: providerId, tx, run });
+      failed = isFailedAnswer(answer);
+      return answer;
     } catch (err) {
       if (err instanceof ProviderError) return unavailable(err.status === 401 || err.status === 403 ? 'provider_refused' : err.status === 404 ? 'not_found' : 'provider_unavailable', err.message);
       if (err instanceof ConnectionProblem) return unavailable(err.code, err.message);
       throw err;
+    } finally {
+      await countToolCall(deps, { workspaceId: run.workspaceId, connectionId: connection.id, failed });
     }
   }
 
@@ -129,14 +158,22 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
       // The arguments are the model's: they are held to the schema the model was shown before a kind sees them (a refusal names the fields, never a value).
       const problem = inputProblem(tool, input);
       if (problem !== null) throw invalid(`The arguments of “${tool}” are not valid: ${problem}`);
-      return kind.call({
-        tool,
-        input,
-        connection: granted,
-        tx,
-        run,
-        credential: (name) => readConnectionSecret(deps, { workspaceId: run.workspaceId, connectionId: granted.id, name }),
-      });
+      // one call is counted (a day, the connection, worked or not; never what it read), also when it threw
+      let failed = true;
+      try {
+        const answer = await kind.call({
+          tool,
+          input,
+          connection: granted,
+          tx,
+          run,
+          credential: (name) => readConnectionSecret(deps, { workspaceId: run.workspaceId, connectionId: granted.id, name }),
+        });
+        failed = isFailedAnswer(answer);
+        return answer;
+      } finally {
+        await countToolCall(deps, { workspaceId: run.workspaceId, connectionId: granted.id, failed });
+      }
     },
   };
 }

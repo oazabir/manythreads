@@ -1,4 +1,4 @@
-import type { ToolApprovalCard } from '@manythreads/sdk';
+import type { BotRunHandle, PluginTx, ToolApprovalCard } from '@manythreads/sdk';
 import type { PersonProviderId } from '@manythreads/shared';
 import { z } from 'zod';
 import type { ProviderApi } from './oauth/api.ts';
@@ -19,7 +19,12 @@ export interface PersonToolDef {
   kind: 'read' | 'write';
   description: string;
   input: z.ZodType<Record<string, unknown>>;
-  run(api: ProviderApi, input: Record<string, unknown>): Promise<unknown>;
+  /**
+   * A tool that works the same through more than one provider (`calendar.find_free_time` through Google or Microsoft 365) names the others here. The first of `provider` and these
+   * that the asker has connected, with the service agreed, is the one used, and `context.provider` says which it was.
+   */
+  alsoProviders?: readonly PersonProviderId[];
+  run(api: ProviderApi, input: Record<string, unknown>, context?: ToolRunContext): Promise<unknown>;
   /** For a write: the card an approver reads (a line for the inbox and the values that matter), built from the arguments after they passed the schema. */
   card?(input: Record<string, unknown>): ToolApprovalCard;
   /**
@@ -28,6 +33,15 @@ export interface PersonToolDef {
    */
   where?(api: ProviderApi): Promise<string | null>;
 }
+
+/** What a tool that needs more than the provider's API is given: which provider was used, and the transaction of the run (a read: the asking person's own). */
+export interface ToolRunContext {
+  provider: PersonProviderId;
+  tx: PluginTx;
+  run: BotRunHandle;
+}
+/** Every provider a tool can run through, in the order they are tried. */
+export const providersOf = (def: Pick<PersonToolDef, 'provider' | 'alsoProviders'>): PersonProviderId[] => [def.provider, ...(def.alsoProviders ?? [])];
 
 export const TEXT_CAP = 20_000;
 export const clip = (text: string, max = TEXT_CAP): { text: string; truncated: boolean } => (text.length > max ? { text: text.slice(0, max), truncated: true } : { text, truncated: false });

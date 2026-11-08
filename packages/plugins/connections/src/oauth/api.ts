@@ -23,7 +23,7 @@ export class ProviderError extends Error {
 }
 
 export interface ApiInit {
-  method?: 'GET' | 'POST' | 'PATCH' | 'PUT';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   /** A list value is sent as the same parameter repeated (Gmail's `metadataHeaders`). */
   query?: Record<string, string | number | readonly string[] | undefined>;
   body?: unknown;

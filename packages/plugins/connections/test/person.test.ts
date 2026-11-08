@@ -126,7 +126,7 @@ describe('connecting', () => {
     expect(google.services.find((s) => s.id === 'drive')).toMatchObject({ tools: ['google_drive.search', 'google_drive.read'], writes: false, granted: false });
     expect(google.services.find((s) => s.id === 'calendar_write')).toMatchObject({ tools: ['google_calendar.create_event', 'google_calendar.update_event'], writes: true });
     expect(google.services.find((s) => s.id === 'gmail_send')).toMatchObject({ tools: ['gmail.send'], writes: true, granted: false });
-    expect(google.services.find((s) => s.id === 'calendar_free_busy')).toMatchObject({ tools: ['google_calendar.free_busy'], writes: false });
+    expect(google.services.find((s) => s.id === 'calendar_free_busy')).toMatchObject({ tools: ['google_calendar.free_busy', 'calendar.find_free_time'], writes: false });
     expect((await w.call(null, 'GET', '/api/me/connections/providers')).status).toBe(401);
   });
 

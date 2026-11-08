@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createAppPool, createMemoryKv, createPluginContext, createSecretService, createSystemPool, ExtensionRegistries, withSystem, type Tx } from '@manythreads/kernel';
 import type { PluginEvent, PluginLogger, PluginTx } from '@manythreads/sdk';
 import {
@@ -189,8 +190,14 @@ describe('the workspace Brain', () => {
     // and a second pass changes nothing
     await sys((tx) => ensureWorkspaceBrain(ctx, tx as unknown as PluginTx, WS, log, new Set([stored.sha])));
     expect((await newest()).version).toBe(after.version);
-    // the shas of the three earlier shipped files are on the real list
-    expect(SUPERSEDED_BRAIN_SHAS.size).toBe(3);
+    // the shas of the four earlier shipped files are on the real list (the last one is the text before P16-05 renamed the Drive tool and added the free-time tool)
+    expect(SUPERSEDED_BRAIN_SHAS.size).toBe(4);
+    expect(SUPERSEDED_BRAIN_SHAS.has('a02d023c82c76163c1e3e655b890bc9314452cc53d6574691c8954ac84e9ead9')).toBe(true);
+    // the shipped text is not itself on the list (it would be replaced by itself), and it carries the P16-05 tools
+    expect(SUPERSEDED_BRAIN_SHAS.has(createHash('sha256').update(shipped).digest('hex'))).toBe(false);
+    expect(shipped).toContain('- google_drive.search');
+    expect(shipped).toContain('- calendar.find_free_time');
+    expect(shipped).not.toMatch(/^\s+- drive\.search$/m);
   });
 
   it('joins a team made later', async () => {

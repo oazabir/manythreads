@@ -189,6 +189,7 @@ const google: ConnectorEntry = {
     tool('gmail.send', 'Send a message', 'write', 'gmail_send'),
     tool('google_calendar.update_event', 'Change an event', 'write', 'calendar_write'),
     tool('google_calendar.free_busy', 'Find free time', 'read', 'calendar_free_busy'),
+    tool('calendar.find_free_time', 'Find a time with people', 'read', 'calendar_free_busy'),
     dangerous('google_drive.delete', 'Delete a Drive file', 'drive'),
   ],
   triggers: [trig('gmail_label_mail', 'New mail in a label')],

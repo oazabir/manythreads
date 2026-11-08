@@ -35,9 +35,10 @@ capabilities:
   connections:
     - name: person:*
       tools:
-        - drive.search
+        - google_drive.search
         - notion.search
         - gmail.search
+        - calendar.find_free_time
 guard:
   preset: standard
 approvals:

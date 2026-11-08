@@ -32,6 +32,7 @@ export const SUPERSEDED_BRAIN_SHAS: ReadonlySet<string> = new Set([
   '03b1f76d88960e83126ceddbc04b0bb6fba1fc2cc1beb44bb11849fc3923b011', // P20-07
   '960e781c34b10f9c317c8ba027fde8581e758ff9a0b5aaaae46353554b8ed2c8', // P20-LV
   'c4386ca01c4de726b803920ad682b45663ce2f02eeb885c1e1ad422fbdf70371', // P21-F
+  'a02d023c82c76163c1e3e655b890bc9314452cc53d6574691c8954ac84e9ead9', // P15-13 (drive.search, no calendar.find_free_time): P16-05 renames the Drive tool and adds the free-time tool
 ]);
 
 /** Make sure the workspace has its Brain: store the shipped definition when none is stored yet (or the stored one is a superseded shipped text), load it, retire the team Brains. Idempotent. Returns the bot's id, or null. */
