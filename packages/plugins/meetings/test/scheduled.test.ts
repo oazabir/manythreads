@@ -82,6 +82,9 @@ describe('planning a room', () => {
     const asOmar = await s.w.call(omar, 'GET', `/api/channels/${s.general}/scheduled-meetings`);
     expect(asOmar.status).toBe(200);
     expect(ListScheduledMeetingsResponse.parse(asOmar.body).scheduledMeetings.map((p) => p.id)).toContain(planId);
+    // a reader who is not the organizer is told who organizes it (a person sees only their own row of `actors`; the name comes through a definer function)
+    expect(ListScheduledMeetingsResponse.parse(asOmar.body).scheduledMeetings.find((p) => p.id === planId)?.organizerName).toBe('Nadia');
+    expect(GetScheduledMeetingResponse.parse((await s.w.call(omar, 'GET', `/api/scheduled-meetings/${planId}`)).body).scheduledMeeting?.organizerName).toBe('Nadia');
     expect(ListScheduledMeetingsResponse.parse((await s.w.call(omar, 'GET', `/api/channels/${s.general}/scheduled-meetings?upcoming=1&limit=1`)).body).scheduledMeetings.map((p) => p.id)).toContain(planId);
     // Sameera is not in Engineering: the channel is not hers
     const asSameera = await s.w.call(sameera, 'GET', `/api/channels/${s.general}/scheduled-meetings`);

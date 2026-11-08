@@ -296,7 +296,7 @@ Routes (shared `api/meetings/scheduled.ts`): `POST|GET /api/channels/:channelId/
 the plan that someone who may not read the channel is told, and the plan itself only for a reader), `POST /api/scheduled-meetings/:scheduledMeetingId/join`. Limits: 100 waiting plans per channel, 50 invited,
 120-character title, 8000-character agenda, at most 366 days ahead and 24 hours long. Events (ids and counts only): `meetings.scheduled.created|changed|cancelled|starting_soon`. The reminder is the notification
 kind `meeting_soon` (`notifications/0007_meeting_soon.sql`, ref type `scheduled_meeting`), sent five minutes ahead by the queue `meetings.scheduled-reminders`; the queue `meetings.scheduled-sync` reads the
-calendar for moved or deleted events. The definer functions `app.meetings_schedule`, `app.meetings_cancel_scheduled` and `app.meetings_scheduled_gate` do the writes and the gate under the caller's rights.
+calendar for moved or deleted events. The definer functions `app.meetings_schedule`, `app.meetings_cancel_scheduled` and `app.meetings_scheduled_gate` do the writes and the gate under the caller's rights; `app.meetings_organizer_name` (`meetings/0006_organizer_name.sql`) answers the organizer's name to any member of the workspace, because a person can read only their own row of `actors`.
 
 ### How it works (P16-05, built)
 

@@ -65,7 +65,7 @@ export type ScheduledRow = {
 
 const COLUMNS = `s.id, s.workspace_id, s.team_id, s.channel_id, s.organizer_id, s.provider, s.calendar_id, s.external_event_id, s.title, s.starts_at, s.ends_at, s.agenda_md, s.status,
   s.outside_count, s.reminded_at, s.synced_at, s.created_at,
-  (SELECT p.display_name FROM app.actors a JOIN app.people p ON p.id = a.ref_id AND p.workspace_id = a.workspace_id WHERE a.id = s.organizer_id AND a.kind = 'person') AS organizer_name,
+  app.meetings_organizer_name(s.organizer_id) AS organizer_name,
   coalesce((SELECT array_agg(x.person_id ORDER BY x.person_id) FROM app.scheduled_meeting_attendees x WHERE x.scheduled_meeting_id = s.id), ARRAY[]::uuid[]) AS attendee_ids,
   (SELECT m.id FROM app.meetings m WHERE m.scheduled_meeting_id = s.id ORDER BY m.started_at DESC, m.id DESC LIMIT 1) AS meeting_id`;
 
