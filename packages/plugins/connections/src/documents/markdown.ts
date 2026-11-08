@@ -18,6 +18,20 @@ export interface NotionBlock {
   [key: string]: unknown;
 }
 
+const SPACE = /\s/;
+
+/** Spaces and tabs taken off the end of every line (a scan from the end of each line: a regular expression for it takes quadratic time on a long run of spaces). */
+function trimLineEnds(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      let end = line.length;
+      while (end > 0 && (line.charCodeAt(end - 1) === 32 || line.charCodeAt(end - 1) === 9)) end -= 1;
+      return end === line.length ? line : line.slice(0, end);
+    })
+    .join('\n');
+}
+
 /** The text of a Notion rich-text list, with bold, italic, code, strike-through and links as markdown. */
 export function notionRichText(list: unknown): string {
   let out = '';
@@ -27,9 +41,14 @@ export function notionRichText(list: unknown): string {
     if (t === '') continue;
     const a = rec(r['annotations']);
     // markers go round the words, not round the spaces at the ends of a run
-    const lead = /^\s*/.exec(t)![0];
-    const trail = t.length > lead.length ? /\s*$/.exec(t)![0] : '';
-    let core = t.slice(lead.length, t.length - trail.length);
+    // (scanned by hand: `/\s*$/` re-reads a long run of white space from every position and takes quadratic time)
+    let from = 0;
+    while (from < t.length && SPACE.test(t.charAt(from))) from += 1;
+    let to = t.length;
+    while (to > from && SPACE.test(t.charAt(to - 1))) to -= 1;
+    const lead = t.slice(0, from);
+    const trail = t.slice(to);
+    let core = t.slice(from, to);
     if (core === '') {
       out += t;
       continue;
@@ -461,7 +480,7 @@ export function confluenceStorageToMarkdown(title: string, storage: string): str
     }
     if (BLOCKS.has(name) && tag.selfClose) newline();
   }
-  return `${out.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n').trim()}\n`;
+  return `${trimLineEnds(out.replace(/\n{3,}/g, '\n\n')).trim()}\n`;
 }
 
 /** A run of text between tags: entities decoded, runs of white space folded (but not inside code). */

@@ -29,7 +29,7 @@ describe('Confluence storage format', () => {
   });
 
   it('runs in time proportional to the input on hostile shapes', () => {
-    const shapes = ['<'.repeat(300_000), '<a '.repeat(100_000), '&'.repeat(300_000), '<p>'.repeat(100_000) + '<li>'.repeat(100_000), '<![CDATA['.repeat(50_000), '<table>'.repeat(50_000) + '<td>'.repeat(50_000)];
+    const shapes = ['<'.repeat(300_000), '<a '.repeat(100_000), '&'.repeat(300_000), '<p>'.repeat(100_000) + '<li>'.repeat(100_000), '<![CDATA['.repeat(50_000), '<table>'.repeat(50_000) + '<td>'.repeat(50_000), `<pre>${' '.repeat(120_000)}x</pre>`, `<pre>${'a  \t'.repeat(60_000)}x</pre>`];
     for (const input of shapes) {
       const started = Date.now();
       const out = confluenceStorageToMarkdown('x', input);
@@ -63,6 +63,15 @@ describe('Notion blocks', () => {
     expect(notionRichText([{ plain_text: ' hi ', annotations: { italic: true } }])).toBe(' *hi* ');
     expect(notionRichText([{ plain_text: 'a', href: 'javascript:alert(1)' }])).toBe('a');
     expect(notionRichText([{ plain_text: 'a', href: 'https://x.test/' }])).toBe('[a](https://x.test/)');
+  });
+
+  it('runs in linear time on a long run of white space inside a word', () => {
+    const run = ' '.repeat(120_000);
+    const started = Date.now();
+    notionRichText([{ plain_text: `a${run}b`, annotations: { bold: true } }]);
+    notionRichText([{ plain_text: `${run}a${run}` }]);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(notionRichText([{ plain_text: '  hi  ', annotations: { bold: true } }])).toBe('  **hi**  ');
   });
 
   it('handles a very large page in bounded output', () => {
