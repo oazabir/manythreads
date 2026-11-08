@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { Stack } from '../../fixtures/stack.ts';
 import { apiOn, type StackApi } from '../../support/stack-browser.ts';
-import { installBots, meetingsStack, notesCardMessage } from '../../meetings/support.ts';
+import { meetingsStack, notesCardMessage } from '../../meetings/support.ts';
 import { plate } from '../support/polish.ts';
 
 /*
@@ -39,7 +39,7 @@ test.beforeAll(async ({ playwright }) => {
   omar = await apiOn(playwright, stack, 'omar');
   nadia = await apiOn(playwright, stack, 'nadia');
   rafi = await apiOn(playwright, stack, 'rafi');
-  await installBots(stack, omar, ['scribe', 'archivist', 'note-taker']);
+  // the `meetings` seed already set up the Scribe, the Archivist and the Note-taker
 });
 test.afterAll(async () => {
   await Promise.all([omar, nadia, rafi].map((a) => a?.ctx.dispose()));
@@ -49,12 +49,39 @@ test.afterAll(async () => {
 const channelId = async (name: string): Promise<string> => (await stack.sql<{ id: string }>(`SELECT id FROM app.channels WHERE name = $1 AND kind <> 'dm' LIMIT 1`, [name]))[0]!.id;
 const meetingByTitle = async (title: string): Promise<string> => (await stack.sql<{ id: string }>(`SELECT id FROM app.meetings WHERE title = $1 ORDER BY started_at DESC LIMIT 1`, [title]))[0]!.id;
 
-/** The dates and times of a page carry the mask: the seeded calls were made today, so their stamps differ on every run. */
+/**
+ * The dates and times of a page carry the mask: the seeded calls were made today, so their stamps differ on every run. So does the channel behind a call
+ * bar: the seed spaces its history from the clock, so where the day lines fall depends on the time of day; the plates are about the call, not that list.
+ */
 async function maskDates(page: Page): Promise<void> {
+  await atLatest(page);
   await page.evaluate(() => {
-    const sel = 'time, .call-clock, .cap-time, [data-testid="meeting-facts"], [data-testid="notes-facts"], [data-testid="line-time"], [data-testid="note-at"], [data-testid="share-row"] .mv-share-when, .fhead .when, .frow .when, .file-when';
+    const sel = 'time, .jump, .vlist[aria-label^="Messages in #"], .call-clock, .cap-time, [data-testid="meeting-facts"], [data-testid="notes-facts"], [data-testid="line-time"], [data-testid="note-at"], [data-testid="share-row"] .mv-share-when, .fhead .when, .frow .when, .file-when';
     for (const el of Array.from(document.querySelectorAll(sel))) el.setAttribute('data-vt-mask', '');
+    // what carries the run's own clock without a tag of its own: a time of day ("13:11"), a call's folder ("08-1311-leads-sync"), a running clock ("0:06")
+    const stamp = /(^|\s)\d{1,2}:\d{2}(\s|$)|^\d{2}-\d{4}-/;
+    for (const el of Array.from(document.querySelectorAll('body *'))) {
+      if (el.children.length > 0 || el.closest('[data-vt-mask]')) continue;
+      if (stamp.test((el.textContent ?? '').trim())) el.setAttribute('data-vt-mask', '');
+    }
   });
+}
+
+/**
+ * The channel page behind a call bar is at its newest message: the dock opens after the page has drawn and shrinks the list, and for a moment the list is
+ * a little above the bottom ("Jump to latest" shows). Waits until it has stayed at the bottom for two looks in a row.
+ */
+async function atLatest(page: Page): Promise<void> {
+  const jump = page.locator('button.jump:not(.jump-top)');
+  let calm = 0;
+  for (let i = 0; i < 40 && calm < 2; i += 1) {
+    if ((await jump.count()) > 0) {
+      calm = 0;
+      await jump.first().click();
+    } else calm += 1;
+    await page.waitForTimeout(300);
+  }
+  await expect(jump).toHaveCount(0);
 }
 
 /** Presses Start voice room / Join voice room on a channel page and waits until the call bar is connected. */
@@ -62,16 +89,21 @@ async function intoRoom(page: Page, channel: string): Promise<void> {
   await page.goto(`/t/engineering/c/${channel}`);
   await page.getByTestId('call-start').click();
   await expect(page.getByTestId('call-dock')).toHaveAttribute('data-phase', 'connected', { timeout: 20_000 });
+  await atLatest(page);
 }
 
-/** A room in `channel` made through the routes (as the seed does), run by `fn`, and always ended afterwards. */
+/**
+ * A room in `channel` made through the routes (as the seed does), run by `fn`, and always ended afterwards. Its "Started a voice room" message is taken
+ * out again, so the next plate finds the channel as the seed left it whatever ran before it (a failed test also restarts the worker and the stack).
+ */
 async function withRoom(channel: string, organizer: StackApi, fn: (meetingId: string) => Promise<void>): Promise<void> {
-  const started = await organizer.post<{ meeting: { id: string } }>(`/api/channels/${await channelId(channel)}/meetings`, { title: `Plate room ${String(++seq)}` });
+  const started = await organizer.post<{ meeting: { id: string } }>(`/api/channels/${await channelId(channel)}/meetings`, { title: 'Plate room' });
   const id = started.meeting.id;
   try {
     await fn(id);
   } finally {
     await organizer.post(`/api/meetings/${id}/end`).catch(() => undefined);
+    await stack.sql(`DELETE FROM app.messages WHERE id = (SELECT thread_root_id FROM app.meetings WHERE id = $1::uuid)`, [id]);
   }
 }
 
@@ -111,6 +143,7 @@ test('captions: two lines just said', async ({ browser }) => {
           await api.post(`/api/meetings/${id}/segments`, { segments: [{ clientSegId: `plate-${String(seq)}`, startMs: at, endMs: at + 2500, text, final: true }] });
         }
         await expect(page.getByTestId('caption-line')).toHaveCount(2);
+        await atLatest(page);
       },
     });
   });
@@ -144,10 +177,12 @@ test('notetaker-consent: the same prompt when the Note-taker is in the room', as
     await plate(browser, stack, 'notetaker-consent', {
       who: 'rafi',
       order: ['header', 'content'],
-      go: async (page) => {
+      go: async (page, size) => {
         await intoRoom(page, 'releases');
         await expect(page.getByTestId('call-consent')).toBeVisible();
-        await expect(page.getByTestId('call-notetaker-face')).toBeVisible();
+        // on a phone the bar is a collapsed sheet, which keeps the row of faces folded away until it is opened
+        if (size === '1440') await expect(page.getByTestId('call-notetaker-face')).toBeVisible();
+        else await expect(page.getByTestId('call-notetaker-face')).toHaveCount(1);
         await maskDates(page);
       },
     });
