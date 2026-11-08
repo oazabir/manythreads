@@ -1,5 +1,6 @@
 import { forbidden, json, notFound, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
+  GetMeetingTranscriptQuery,
   GetMeetingTranscriptResponse,
   MeetingConsentRequest,
   MeetingConsentResponse,
@@ -134,11 +135,38 @@ export function registerConsentRoutes(ctx: PluginContext): void {
   // ---- the transcript as a reader may see it --------------------------------------------------------------------------------------
   ctx.http.route({
     ...getMeetingTranscriptRoute,
-    schema: { response: GetMeetingTranscriptResponse },
+    schema: { query: GetMeetingTranscriptQuery, response: GetMeetingTranscriptResponse },
     rateLimit: { limit: 60, windowMs: 60_000 },
     readOnly: true,
     handler: route(async (req, tx) => {
       const { meetingId } = MeetingPathParams.parse(req.params);
+      const query = GetMeetingTranscriptQuery.parse(req.query ?? {});
+      // `?copy=organizer` (P15-22): the organizer's own copy of a note-taker meeting, for a person it was shared with (or the readers of the place once it was saved to the team).
+      // Their way in is the notes rule, not the room's: the database function says yes or no, and the same lines are then read as the system. The answer is the same
+      // lines every reader of the room sees, only without an "editable" mark (it is a copy, not the speaker's own view).
+      if (query.copy === 'organizer') {
+        const can = (await tx.query<{ ok: boolean | null }>('SELECT app.meetings_can_read_notes($1::uuid) AS ok', [meetingId])).rows[0]?.ok === true;
+        if (!can) throw notFound('That voice room is not available');
+        const lines = await ctx.db.system(
+          async (sys) => {
+            const people = await sys.query<{ actor_id: string; display_name: string; consent_transcribe: 'yes' | 'no' | 'unasked' }>(
+              'SELECT actor_id, display_name, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1::uuid',
+              [meetingId],
+            );
+            const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
+            const segs = await sys.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
+              'SELECT id, speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+              [meetingId],
+            );
+            return renderTranscript(
+              segs.rows.map((s) => ({ id: s.id, speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final })),
+              speakers,
+            );
+          },
+          { workspaceId: tx.actor.workspaceId },
+        );
+        return json(GetMeetingTranscriptResponse.parse({ lines }));
+      }
       const m = await loadMeeting(tx, meetingId);
       if (!m) throw notFound('That voice room is not available');
       const people = await tx.query<{ actor_id: string; display_name: string; consent_transcribe: 'yes' | 'no' | 'unasked' }>(

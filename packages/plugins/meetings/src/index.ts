@@ -47,6 +47,8 @@ export default definePlugin({
         'meetings.notetaker.removed',
         'meetings.recording.started',
         'meetings.recording.stopped',
+        // the organizer's first conversation with the note-taker is made when it tells them their notes are ready (P15-21), the way the conversations plugin makes it
+        'channel.channel.created',
       ],
       // channel.message.posted: a voice message in a call thread becomes a line (P15-14), and a mention of the note-taker in it is a question (P15-24).
       // meetings.meeting.ended and meetings.transcript.written: the transcript writer and the Scribe start from them (P15-09, P15-10).

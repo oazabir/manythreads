@@ -165,9 +165,23 @@ export interface FiledMeeting {
  * Drops the meeting's notes and transcript into its team's memory inbox. Returns null when there is nothing to file (no notes yet, nobody who said yes, no team). Run it in a system
  * transaction. The meeting's notes row is locked, so two presses of the button file it once.
  */
-export async function fileMeetingIntoMemory(ctx: PluginContext, tx: PluginTx, meetingId: string, options: { automatic: boolean; sentBy?: string }): Promise<FiledMeeting | null> {
+export async function fileMeetingIntoMemory(
+  ctx: PluginContext,
+  tx: PluginTx,
+  meetingId: string,
+  options: {
+    automatic: boolean;
+    sentBy?: string;
+    /**
+     * "Save to team" (P15-23) files a note-taker meeting, whose own copies live in the organizer's Personal space: the team's memory is given the team copy's paths, and a
+     * direct-message call (which has no team of its own) is filed to the team the organizer chose.
+     */
+    teamCopy?: { teamId: string; transcriptPath: string; notesPath: string };
+  },
+): Promise<FiledMeeting | null> {
   const m = await loadMeeting(tx, meetingId);
-  if (!m || m.team_id === null || m.state !== 'ended') return null;
+  const teamId = options.teamCopy?.teamId ?? m?.team_id ?? null;
+  if (!m || teamId === null || m.state !== 'ended') return null;
   const note = (
     await tx.query<{ status: string; transcript_path: string | null; notes_path: string | null; notes_md: string; memory_item_id: string | null }>(
       'SELECT status, transcript_path, notes_path, notes_md, memory_item_id FROM app.meeting_notes WHERE meeting_id = $1::uuid FOR UPDATE',
@@ -188,25 +202,27 @@ export async function fileMeetingIntoMemory(ctx: PluginContext, tx: PluginTx, me
   // The person who pressed the button first, then the organizer, then the others in the order they joined.
   const order = [options.sentBy, m.organizer_id].filter((id): id is string => id !== undefined);
   const dropperIds = [...order.filter((id) => people.some((p) => p.actorId === id)), ...saying.map((p) => p.actorId)].filter((id, i, all) => all.indexOf(id) === i);
-  const guests = await guestsIn(tx, m);
+  const guests = await guestsIn(tx, { ...m, team_id: teamId });
+  const transcriptPath = options.teamCopy?.transcriptPath ?? note.transcript_path;
+  const notesPath = options.teamCopy?.notesPath ?? note.notes_path;
   const text = renderMemoryItem({
     title: m.title,
     date: m.started_at.toISOString().slice(0, 10),
     speakers: saying.map((p) => stripHostileText(p.displayName).slice(0, 80)),
-    transcriptPath: note.transcript_path,
-    notesPath: note.notes_path,
+    transcriptPath,
+    notesPath,
     notesMd: note.notes_md,
     lines: lines.filter((l) => l.transcribed),
   });
   const name = `${stripHostileText(m.title).slice(0, 150)} · ${m.started_at.toISOString().slice(0, 10)}`;
   const done = await dropper.drop(tx, {
-    teamId: m.team_id,
+    teamId,
     name,
     markdown: text,
     origin: 'meeting',
     dropperIds,
     ...(guests.length > 0 ? { hold: 'external' as const } : {}),
-    ...(note.transcript_path ? { sourcePath: note.transcript_path } : {}),
+    ...(transcriptPath ? { sourcePath: transcriptPath } : {}),
   });
   await tx.query('UPDATE app.meeting_notes SET memory_item_id = $2::uuid, updated_at = now() WHERE meeting_id = $1::uuid', [m.id, done.itemId]);
   void options.automatic;

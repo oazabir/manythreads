@@ -8,6 +8,8 @@ import {
   type MeetingNotesRunInput,
   type MeetingNotesRunResult,
   type MeetingRunsProvider,
+  type MeetingSayInput,
+  type MessageProvider,
   type PluginContext,
   type PluginLogger,
   type PluginTx,
@@ -365,6 +367,25 @@ export function createMeetingRunsProvider(ctx: PluginContext, log: PluginLogger)
 
   return {
     id: 'meeting.runs',
+
+    async say(input: MeetingSayInput): Promise<{ id: string } | null> {
+      const messages = ctx.providers.get<MessageProvider>('messages');
+      if (!messages) return null;
+      try {
+        const { run } = await ctx.runs.open({ botId: input.botId, teamId: input.teamId, workspaceId: input.workspaceId, trigger: 'meeting_ended', channelId: input.channelId, delegationDepth: 0 });
+        try {
+          const posted = await ctx.runs.asBot(run, (inner) =>
+            messages.post(inner, { channelId: input.channelId, body: input.body.slice(0, 3900), threadRootId: null, skipRefs: true, ...(input.meta === undefined ? {} : { meta: input.meta }) }),
+          );
+          return { id: posted.id };
+        } finally {
+          await close(run.runId, 'done');
+        }
+      } catch (err) {
+        log.warn(`runtime-hermes: the bot's message in its conversation could not be posted: ${err instanceof Error ? err.message.slice(0, 200) : 'unknown'}`);
+        return null;
+      }
+    },
 
     async notes(tx: PluginTx, input: MeetingNotesRunInput): Promise<MeetingNotesRunResult> {
       const transaction = transactionOf(tx, input.transaction);

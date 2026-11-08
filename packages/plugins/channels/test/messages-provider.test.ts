@@ -114,6 +114,15 @@ describe('the meta a plugin may put on a message', () => {
     await expect(post(bot(brain, brainRun), { body: 'x', meta: { answer: { version: 1 }, runId: brainRun } })).rejects.toMatchObject({ status: 400 });
   });
 
+  it('keeps meta.meetingNotes (a note-taker\u2019s nudge) and refuses one that is not a meeting id', async () => {
+    const meetingId = randomUUID();
+    const posted = await post(bot(brain, brainRun), { body: 'Your notes are ready', meta: { meetingNotes: { meetingId } } });
+    const meta = await w.system(async (tx) => (await tx.query<{ meta: Record<string, unknown> }>('SELECT meta FROM app.messages WHERE id = $1', [posted.id])).rows[0]!.meta);
+    expect(meta).toEqual({ meetingNotes: { meetingId } });
+    await expect(post(bot(brain, brainRun), { body: 'x', meta: { meetingNotes: { meetingId: 'not-a-uuid' } } })).rejects.toMatchObject({ status: 400 });
+    await expect(post(bot(brain, brainRun), { body: 'x', meta: { meetingNotes: { meetingId, extra: 1 } } as never })).rejects.toMatchObject({ status: 400 });
+  });
+
   it('is still the one write: a message with no meta is an ordinary message', async () => {
     const posted = await post(bot(brain, brainRun), { body: 'A plain reply' });
     expect(posted.channelId).toBe(dev);

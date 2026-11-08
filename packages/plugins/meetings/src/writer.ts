@@ -199,6 +199,9 @@ export async function writeTranscript(ctx: PluginContext, tx: PluginTx, meetingI
   };
 
   const previous = await existingWrite(tx, m);
+  // A note-taker that was removed before the room ended already wrote this meeting's transcript into the organizer's Personal space: that copy stays the meeting's
+  // (the location is never moved by a later write), and nothing is written for the team.
+  if (previous.location === 'personal') return null;
   const now = ctx.runtime.now();
   let store: 'repo' | 'files';
   let path: string;

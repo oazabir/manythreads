@@ -17,11 +17,11 @@ export interface MessagePostInput {
   /**
    * The platform's bookkeeping for the row, never a caller's: `answer` (an `AnswerPayload`, validated against the shared schema) and `runId`
    * (the bot run that wrote the message, which is how the runtime knows the run already answered) and `runFailure` (the category of a failed run's notice,
-   * which is how the runtime knows it already said so; it needs `runId`) and `surfaceRef` (the id of a surface the posting bot drew in its run, which the client draws in the message; the surfaces plugin checks the surface, this provider checks only that a bot inside a run posts it). Any other key is refused. The provider checks
+   * which is how the runtime knows it already said so; it needs `runId`) and `surfaceRef` (the id of a surface the posting bot drew in its run, which the client draws in the message; the surfaces plugin checks the surface, this provider checks only that a bot inside a run posts it) and `meetingNotes` (the meeting a note-taker's nudge is about: the client draws the Share and Save buttons from it). Any other key is refused. The provider checks
    * them against the transaction: `runId` must be the run the transaction acts for, and an `answer` must name that run and the posting bot in
    * `answeredFor` and carry the message's own text as its `body` (403 for another run or bot, 400 for another text).
    */
-  meta?: { answer?: unknown; runId?: string; runFailure?: string; surfaceRef?: string };
+  meta?: { answer?: unknown; runId?: string; runFailure?: string; surfaceRef?: string; meetingNotes?: { meetingId: string } };
   /**
    * The answer this message is a masked copy of (P5-17): the id of an Answer in the caller's OWN bot conversation. Given, the provider accepts an
    * `answer` posted by a person (no run), after checking it against that stored answer: the same run, bot and asker, the caller is the asker, the

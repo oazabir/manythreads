@@ -28,6 +28,9 @@ bots:
   - slug: scribe
     name: Scribe
     role: "Writes the notes of a team's meeting from its transcript, with a summary, the decisions and who does what."
+  - slug: note-taker
+    name: Note-taker
+    role: "Sits in a call to write its notes for the person who started it, and answers a question asked out loud from what everyone in the call may read."
   - slug: support-responder
     name: Support responder
     role: "Drafts answers from the manuals knowledge base; sending email needs approval."

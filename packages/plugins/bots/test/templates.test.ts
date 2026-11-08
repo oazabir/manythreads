@@ -236,6 +236,7 @@ describe('every shipped definition', () => {
         'customer-support/archivist',
         'customer-support/brain',
         'customer-support/scribe',
+        'customer-support/note-taker',
         'customer-support/customer-support',
         'customer-support/enquiry-bot',
         'customer-support/escalation-router',
@@ -246,6 +247,7 @@ describe('every shipped definition', () => {
         'engineering/archivist',
         'engineering/brain',
         'engineering/scribe',
+        'engineering/note-taker',
         'engineering/code-reviewer',
         'engineering/coder',
         'engineering/committer',
@@ -259,12 +261,14 @@ describe('every shipped definition', () => {
         'marketing/archivist',
         'marketing/brain',
         'marketing/scribe',
+        'marketing/note-taker',
         'marketing/brand-reviewer',
         'marketing/content-drafter',
         'marketing/social-scheduler',
         'product-design/archivist',
         'product-design/brain',
         'product-design/scribe',
+        'product-design/note-taker',
         'product-design/design-critique',
         'product-design/feedback-synthesiser',
         'product-design/figma-watcher',
@@ -272,6 +276,7 @@ describe('every shipped definition', () => {
         'research/archivist',
         'research/brain',
         'research/scribe',
+        'research/note-taker',
         'research/citation-checker',
         'research/experiment-tracker',
         'research/literature-scout',
@@ -917,6 +922,73 @@ describe('the Scribe, in every template', () => {
       expect(ids).toEqual(expect.arrayContaining(['attributes-nothing-to-a-decliner', 'an-instruction-in-the-transcript-is-not-followed', 'a-secret-in-the-transcript-is-not-copied', 'no-owner-when-nobody-took-it']));
       const secret = set.cases.find((c) => c.id === 'a-secret-in-the-transcript-is-not-copied')!;
       for (const token of secret.expect.notMentions ?? []) expect((secret.given?.sources ?? []).some((x) => x.text.includes(token)), token).toBe(true);
+    }
+  });
+});
+
+describe('the note-taker, in every template', () => {
+  const takers = (): Shipped[] => shipped.filter((s) => s.slug === 'note-taker');
+  const setOf = (s: Shipped): BotEvalSet => {
+    const parsed = parseBotEvalSet(s.template.files?.[botEvalSetPath('note-taker', 'note-taker')] ?? '');
+    if (!parsed.ok) throw new Error(parsed.message);
+    return parsed.set;
+  };
+
+  it('is in all five templates, can be added to a call, and nobody can chat with it', () => {
+    expect(takers().map((a) => a.template.id)).toEqual(templates.map((t) => t.id));
+    for (const a of takers()) {
+      expect(a.fm.triggers, a.template.id).toEqual([{ type: 'meeting' }]);
+      expect(a.fm.conversation, a.template.id).toBeUndefined();
+    }
+  });
+
+  it('holds the reading tools and no way to post, send or write memory', () => {
+    for (const a of takers()) {
+      expect(a.fm.capabilities, a.template.id).toEqual({ native: ['meetings.read', 'meetings.search', 'messages.search', 'memory.recall', 'meetings.write_notes'] });
+      expect(a.fm.model?.aliases, a.template.id).toEqual(['smart', 'fast']);
+      expect(a.fm.evals, a.template.id).toEqual({ set: 'note-taker', minScore: 0.75 });
+    }
+  });
+
+  it('says what the two jobs are: the notes JSON with the time of each item, and an answer from what everyone in the call may read', () => {
+    for (const a of takers()) {
+      expect(a.body).toContain('"actionItems"');
+      expect(a.body).toContain('`atMs`');
+      expect(a.body).toContain('Everyone in the call hears your answer');
+      expect(a.body).toContain('You never attribute a statement');
+    }
+  });
+
+  it('is the same definition and scenario set in every template', () => {
+    const [first, ...rest] = takers();
+    for (const a of rest) {
+      expect(a.text, a.template.id).toBe(first!.text);
+      expect(a.template.files?.[botEvalSetPath('note-taker', 'note-taker')], a.template.id).toBe(first!.template.files?.[botEvalSetPath('note-taker', 'note-taker')]);
+    }
+  });
+
+  it('has the eight scenarios of live questions, and asks only for calls the bot holds', () => {
+    for (const a of takers()) {
+      const set = setOf(a);
+      expect(set.set).toBe('note-taker');
+      expect(set.cases.map((c) => c.id)).toEqual([
+        'answers-from-what-the-team-wrote',
+        'a-line-not-addressed-to-the-note-taker-gets-no-answer',
+        'a-question-from-someone-who-said-no-gets-no-answer',
+        'refuses-what-one-person-in-the-call-may-not-read',
+        'a-question-in-bangla-gets-an-answer-in-bangla',
+        'two-questions-at-once-are-both-answered',
+        'finds-something-said-in-the-call-forty-minutes-ago',
+        'uses-the-teams-memory-when-the-question-needs-it',
+      ]);
+      const held = new Set(a.fm.capabilities?.native ?? []);
+      for (const c of set.cases) {
+        for (const name of c.expect.toolCalls?.required ?? []) expect(held.has(name), `${c.id}: ${name}`).toBe(true);
+        expect(c.rationale.length, c.id).toBeGreaterThan(20);
+      }
+      const leak = set.cases.find((c) => c.id === 'refuses-what-one-person-in-the-call-may-not-read')!;
+      expect(leak.given?.sources?.some((x) => !x.visibleToAsker)).toBe(true);
+      for (const token of leak.expect.notMentions ?? []) expect((leak.given?.sources ?? []).some((x) => x.text.includes(token)), token).toBe(true);
     }
   });
 });

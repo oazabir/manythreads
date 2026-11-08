@@ -47,9 +47,25 @@ export type MeetingAnswerRunResult =
   | { outcome: 'budget'; message: string }
   | { outcome: 'failed'; message: string };
 
+/** One message the room's bot writes in a person's own conversation with it (the message about their notes). */
+export interface MeetingSayInput {
+  workspaceId: string;
+  botId: string;
+  teamId: string;
+  /** The person's conversation channel with the bot (`bot_conversation`). */
+  channelId: string;
+  body: string;
+  meta?: { meetingNotes?: { meetingId: string } };
+}
+
 export interface MeetingRunsProvider extends ProviderImpl {
   id: 'meeting.runs';
   /** Runs in the plugin's job; `tx` is a system transaction the provider may use for its short writes (the run row). */
   notes(tx: PluginTx, input: MeetingNotesRunInput): Promise<MeetingNotesRunResult>;
   answer(tx: PluginTx, input: MeetingAnswerRunInput): Promise<MeetingAnswerRunResult>;
+  /**
+   * Posts one message as the bot in the person's conversation with it. A bot reads and posts there only inside a run opened for that channel (channels 0006), and opening a
+   * run is the runtime's door, not the meetings plugin's: this opens one, posts, and closes it. Null when the message could not be posted; it never throws.
+   */
+  say?(input: MeetingSayInput): Promise<{ id: string } | null>;
 }

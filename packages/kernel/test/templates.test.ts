@@ -32,7 +32,7 @@ describe('shipped templates', () => {
   it('Engineering ships the whole chain of bots, and the server image carries the templates folder', async () => {
     const eng = (await loadTemplates(templatesDir)).find((t) => t.id === 'engineering')!;
     expect(eng.bots.map((b) => b.slug).sort()).toEqual(
-      ['alert-triage', 'archivist', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'plan-reviewer', 'scribe', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
+      ['alert-triage', 'archivist', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'note-taker', 'plan-reviewer', 'scribe', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
     );
     // a fresh install reads `templates/` from the image: the server's docker ignore list must never drop it
     const ignored = (await readFile(path.resolve(templatesDir, '../deploy/docker/server.Dockerfile.dockerignore'), 'utf8')).split('\n').map((l) => l.trim());
@@ -60,6 +60,7 @@ describe('shipped templates', () => {
         'bots/enquiry-bot/BOT.md',
         'bots/escalation-router/BOT.md',
         'bots/kb-gardener/BOT.md',
+        'bots/note-taker/BOT.md',
         'bots/scribe/BOT.md',
         'bots/support-email/BOT.md',
         'bots/support-responder/BOT.md',
@@ -73,15 +74,16 @@ describe('shipped templates', () => {
         'bots/committer/BOT.md',
         'bots/deployer/BOT.md',
         'bots/engineer/BOT.md',
+        'bots/note-taker/BOT.md',
         'bots/plan-reviewer/BOT.md',
         'bots/scribe/BOT.md',
         'bots/standup-relay/BOT.md',
         'bots/tester/BOT.md',
         'bots/web-smoke-tester/BOT.md',
       ],
-      marketing: ['bots/analytics-digest/BOT.md', 'bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/brand-reviewer/BOT.md', 'bots/content-drafter/BOT.md', 'bots/scribe/BOT.md', 'bots/social-scheduler/BOT.md'],
-      'product-design': ['bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/design-critique/BOT.md', 'bots/feedback-synthesiser/BOT.md', 'bots/figma-watcher/BOT.md', 'bots/scribe/BOT.md', 'bots/spec-writer/BOT.md'],
-      research: ['bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/citation-checker/BOT.md', 'bots/experiment-tracker/BOT.md', 'bots/literature-scout/BOT.md', 'bots/scribe/BOT.md', 'bots/summariser/BOT.md'],
+      marketing: ['bots/analytics-digest/BOT.md', 'bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/brand-reviewer/BOT.md', 'bots/content-drafter/BOT.md', 'bots/note-taker/BOT.md', 'bots/scribe/BOT.md', 'bots/social-scheduler/BOT.md'],
+      'product-design': ['bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/design-critique/BOT.md', 'bots/feedback-synthesiser/BOT.md', 'bots/figma-watcher/BOT.md', 'bots/note-taker/BOT.md', 'bots/scribe/BOT.md', 'bots/spec-writer/BOT.md'],
+      research: ['bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/citation-checker/BOT.md', 'bots/experiment-tracker/BOT.md', 'bots/literature-scout/BOT.md', 'bots/note-taker/BOT.md', 'bots/scribe/BOT.md', 'bots/summariser/BOT.md'],
     });
     // every bot a template lists is shipped (the Enquiry bot's folder is `enquiry-bot`); in Customer support each also has a scenario set of its own name
     // (the engineering Coder has none yet)

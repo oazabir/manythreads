@@ -2,6 +2,7 @@ import { invalid, type PluginContext, type PluginEvent, type PluginTx } from '@m
 import { ChannelMessagePostedEvent, MEETING_LATE_LINE_SECONDS, MEETING_SEGMENT_TEXT_MAX, VoiceMeta, type MeetingConsent, type MeetingSegmentInput } from '@manythreads/shared';
 import { pushCaption } from './captions.ts';
 import { comparableText, stripHostileText } from './limits.ts';
+import { noteQuestions } from './questions.ts';
 
 // Work package S1 (P15-08, P15-14): taking lines into the transcript. Lines come from three places: a device (the route in routes-transcript.ts), the server's own
 // transcriber (S3, S4) and a voice message posted in the call's thread. All three end in `takeSegments`, so the same rules apply to each:
@@ -131,6 +132,14 @@ export async function takeSegments(
   result.duplicates += keep.length - taken.size;
   if (yes) {
     for (const f of keep) if (taken.has(f.input.clientSegId)) await caption(f.input, f.text, true);
+    // a line that names the room's note-taker may be a question for it (questions.ts, P15-24); only the words of a speaker who said yes are ever looked at
+    await noteQuestions(
+      ctx,
+      tx,
+      room,
+      speaker,
+      keep.filter((f) => taken.has(f.input.clientSegId)).map((f) => ({ clientSegId: f.input.clientSegId, text: f.text, endMs: f.input.endMs })),
+    );
   }
   return result;
 }

@@ -134,6 +134,8 @@ const ProviderMeta = z.strictObject({
   handoff: z.strictObject({ taskId: z.uuid() }).optional(),
   /** The surface a bot drew in its run (surfaces plugin, P9-04): the client draws that surface in this message. Only a bot inside a run may set it. */
   surfaceRef: z.uuid().optional(),
+  /** The card a note-taker's nudge draws (meetings plugin, P15-21): the meeting whose notes the message is about. The client reads the notes through the meeting's own routes, which decide who may. */
+  meetingNotes: z.strictObject({ meetingId: z.uuid() }).optional(),
   /** The category of the short notice a failed run leaves in the thread (runtime-hermes): at most one per run, found again by this key. */
   runFailure: z.enum(['gateway', 'runner_offline', 'runner_refused', 'hermes_unreachable', 'timeout', 'limit', 'steps', 'too_long', 'approval', 'not_allowed', 'not_on_team', 'other']).optional(),
 });
