@@ -164,7 +164,7 @@ const wordsIn = (text: string, words: string[]): boolean => words.some((w) => te
 async function personId(o: Opened, who: Who): Promise<string> {
   const have = personIds.get(who);
   if (have) return have;
-  const me = await api(o.ctx, 'GET', '/api/me');
+  const me = await api(o.ctx, 'GET', '/api/session');
   const id = String(me.json?.person?.id ?? '');
   personIds.set(who, id);
   return id;
