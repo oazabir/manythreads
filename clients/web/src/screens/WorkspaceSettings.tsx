@@ -14,6 +14,7 @@ import { MoreMenu, type MoreItem } from './bots/MoreMenu';
 import { filterMembers, lastActiveText } from './members';
 import { PageHeader } from '../components/PageHeader';
 import { DeactivateDialog, OpenSpaceDialog, reactivate } from './PersonalSpaceAdmin';
+import { OffboardDialog } from './admin/connections/OffboardDialog';
 
 export function WorkspaceGeneral() {
   const session = useSession();
@@ -117,6 +118,7 @@ export function Members() {
   const [changing, setChanging] = useState<Member | null>(null);
   const [opening, setOpening] = useState<Member | null>(null);
   const [deactivating, setDeactivating] = useState<Member | null>(null);
+  const [removingConnections, setRemovingConnections] = useState<Member | null>(null);
   const searchId = useId();
 
   const sendReset = (m: Member): void => {
@@ -143,6 +145,10 @@ export function Members() {
           ? { label: 'Reactivate', testId: 'member-reactivate', onSelect: () => void reactivate(m.personId, m.displayName, q.reload) }
           : { label: 'Deactivate', testId: 'member-deactivate', onSelect: () => setDeactivating(m) },
       );
+    }
+    // admins only (the server says 403 to anyone else); not for yourself, and only an owner touches an owner
+    if ((session.role === 'owner' || session.role === 'admin') && m.personId !== session.person.id && (m.role !== 'owner' || session.role === 'owner')) {
+      items.push({ label: 'Remove their connections', testId: 'member-remove-connections', onSelect: () => setRemovingConnections(m) });
     }
     return items;
   };
@@ -194,6 +200,7 @@ export function Members() {
       {inviting ? <InviteDialog onClose={() => setInviting(false)} /> : null}
       {changing ? <ChangeRoleDialog member={changing} onClose={() => setChanging(null)} onChanged={q.reload} /> : null}
       {opening ? <OpenSpaceDialog personId={opening.personId} name={opening.displayName} onClose={() => setOpening(null)} /> : null}
+      {removingConnections ? <OffboardDialog personId={removingConnections.personId} name={removingConnections.displayName} onClose={() => setRemovingConnections(null)} /> : null}
       {deactivating ? <DeactivateDialog personId={deactivating.personId} name={deactivating.displayName} guest={deactivating.role === 'guest'} onClose={() => setDeactivating(null)} onDone={q.reload} /> : null}
     </>
   );

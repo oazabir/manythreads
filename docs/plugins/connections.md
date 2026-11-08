@@ -352,6 +352,49 @@ Not built: the webhook that calls it, the GitHub App credentials, and "merge rel
 * The tools of the planned connectors (P16-05, P16-08, P16-09, Freshdesk and the support triggers of P16-07).
 * A real mail transport (P8-29), audit lines and events for connection changes (P8-06), the Connections screen.
 
+## Admin (P16-11, decisions D31 and D32)
+
+`/settings/workspace/connections` ("Connected apps", owners and admins; a team lead, member or guest gets 403 from every route below). Two tabs. **Connectors**: one row per service with the people who
+connected it, the team connections, the sign-ins that have to be redone, the calls and failures of the last 7 days, the last day it was used, and one plain sentence when something is wrong ("2 people have
+to sign in again", "More than half of this week's calls did not work"). The page asks four routes that share one row shape (`ConnectorHealthRow`): this plugin's `GET /api/admin/connections/health`, and the
+webhooks, knowledge and bridges plugins' own health routes. A plugin that is not installed answers 404 and its group is left out; any other failure is said under the table. **People**: one row per person
+sign-in with the service, the services granted (`drive`, `calendar`), whether it works, and the day it was last used, and one action, Disconnect.
+
+What an admin never sees: an account address, a token, or what a call said or read. Counts, states, service names and days are all there is.
+
+Usage (`usage.ts`, `app.connection_usage_daily`): one row per connection and day with `calls` and `failures`, written by `app.connection_usage_bump` through the system role (the application role has no
+privilege on the table). Every tool call through a person connection or a team connection is counted by `source.ts`, in a transaction of its own after the provider answered, so a call that threw is counted
+as a failure and a counter that cannot be written never fails the call. A failed call is exactly an answer `{ ok: false }`. The health route sums the last 7 days (today and the six before it, UTC) per provider
+(per kind for a connection that is not a sign-in). `lastUsedAt` is that day at midnight UTC; the table has no time of day. A row disappears with its connection.
+
+* `GET /api/admin/connections/health` returns `{ rows: ConnectorHealthRow[] }`, `area: 'connections'`, at most 100 rows, the busiest first.
+* `GET /api/admin/connections/people` returns `{ people: ConnectionPersonRow[] }` from `app.connections_admin_people()` (checks the role again; empty for anyone else).
+* `DELETE /api/admin/connections/people/:connectionId` forgets one person's sign-in: 404 when it is not a person sign-in of this workspace. The provider is asked to forget the token (no transaction is open
+  while it is asked, 5 seconds at most; a provider that is down or has no revoke address does not stop the removal), then the sign-in and its sealed tokens are deleted and one
+  `connections.connection.changed` (`deleted`, with the admin as `actorId`) is written. The answer says whether the provider was asked: `{ removed: true, providerRevoked }`.
+
+## Offboarding (P16-11, decisions D33 and D34)
+
+When a person leaves, their own connections must stop working at once and their sign-ins must not stay at the providers. It happens by itself when a person is suspended (`workspace.member.status_changed`
+with `suspended`; the actor is the admin who changed the status), and by an admin from Members, "Remove their connections", which first shows what will happen
+(`GET /api/admin/people/:personId/offboard-connections`: their own connections by service, and the team and workspace connections that will change hands with the new owner's name; nothing is changed
+by looking) and then does it (`POST` the same path, answers 202; an admin cannot remove their own this way, 400).
+
+The steps, in this order:
+
+1. **Fail closed** (`app.connections_offboard_start(person, fallback)`, system role only, one transaction with the job's enqueue). Every person connection of the person is switched off, so the very next tool
+   call is refused. Each team or workspace connection they own moves to the team's longest-serving active lead (never the person), else to the admin who acted (if still an owner or admin), else to the
+   longest-serving owner or admin; if nobody can take it, it is switched off and stays. The guard trigger allows an owner change only for the system role, only for team and workspace scope, and only to a lead
+   or an admin. A job `connections.offboard` is queued in the same transaction, with ids and counts only (never a token) and the dedupe key `connections-offboard:<personId>`.
+2. **Ask the providers** (the job, no transaction open, 5 seconds each). The sealed refresh token (else the access token) of each connection is read and sent to the provider's revoke address. Microsoft has no
+   revoke address, so it is not asked. A failure is counted, never retried inside the job, and never stops step 3.
+3. **Delete** in one transaction: the connections and their sealed secrets, and one `connections.person.offboarded` event (one audit line `connection.person_offboarded`) with the number of connections
+   removed, how many providers forgot them, how many could not be reached, the number moved and the new owners' ids. A run that finds nothing to remove, nothing moved and no admin's press writes no line. A
+   retry skips connections that are already gone.
+
+Reactivating the person restores nothing: they connect again themselves. Usage rows go with the connections. The preview runs the real step inside a savepoint and rolls it back, so it cannot disagree with
+what the button does.
+
 ## Bundle D contracts (P16-02, P16-03, P16-11)
 
 `connections/0006_connectors_admin.sql` adds the daily usage counters (`app.connection_usage_daily`, system-only, counts of calls and failures, never a payload; written by `app.connection_usage_bump`), the admin people

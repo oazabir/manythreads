@@ -1,0 +1,156 @@
+/* The admin page for connected apps (PLAN Bundle D, P16-11): `/settings/workspace/connections`. Classes are prefixed `ac-`; shared classes (.block, .table, .btn, .cn-state, .faint) are used, never redefined. */
+.ac-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ac-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ac-tab {
+  margin-bottom: -1px;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.ac-tab:hover {
+  color: var(--ink);
+}
+
+.ac-tab.on {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ac-lede {
+  max-width: 70ch;
+  margin: 0 0 14px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.ac-area {
+  margin-bottom: 22px;
+}
+
+.ac-h {
+  margin: 0 0 8px;
+  font-size: var(--fs-h2);
+}
+
+.ac-wrap {
+  overflow-x: auto;
+}
+
+.ac-c {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.ac-n {
+  font-variant-numeric: tabular-nums;
+}
+
+.ac-d {
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+.ac-warn {
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+.ac-problem {
+  margin-top: 4px;
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+}
+
+.ac-sub {
+  margin-top: 2px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ac-note {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.ac-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.table td.ac-act {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ac-search {
+  position: relative;
+  max-width: 340px;
+  margin-bottom: 14px;
+}
+
+.ac-search-ico {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  display: inline-flex;
+  color: var(--faint);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.ac-input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+
+.ac-list {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: var(--fs-small);
+}
+
+.ac-list li {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+@media (width <= 640px) {
+  .ac-search {
+    max-width: none;
+  }
+
+  .ac-wrap .table td.ac-act {
+    display: flex;
+    justify-content: flex-end;
+    width: auto;
+  }
+}

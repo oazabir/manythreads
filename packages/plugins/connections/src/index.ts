@@ -115,7 +115,7 @@ export default definePlugin({
     // Bundle D: one call per module, each a stub until its work package fills it in.
     registerCalendarProvider(ctx);
     registerDocumentsProvider(ctx);
-    registerAdminRoutes(ctx);
-    registerOffboard(ctx);
+    registerAdminRoutes(ctx, oauth);
+    registerOffboard(ctx, oauth);
   },
 });
