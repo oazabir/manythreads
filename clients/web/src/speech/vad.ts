@@ -156,3 +156,222 @@ export async function createSileroRunner(lib: VadLibrary): Promise<VadRunner> {
     },
   };
 }
+
+// ---- the live form (PLAN P15-06) -------------------------------------------------------------------------------------------------------------
+/*
+ * Cutting a microphone that keeps running into chunks (PLAN P15-06, decision C14's client twin): a plain loudness check on every 20 ms, no model, so it costs next
+ * to nothing on the page's main thread. A chunk is one stretch of speech: it closes after 600 ms of quiet, or at 28 seconds (a little under Whisper's 30 second
+ * limit) at the latest, and after 20 seconds it already closes on a short breath so a long talker is cut between words, not through one. The model-based finder
+ * above still runs inside the worker on every chunk, so this check only has to be roughly right: a missed breath makes a longer chunk, a click makes a chunk the
+ * worker finds no speech in. Everything is plain arithmetic on samples, so it is unit-tested in Node.
+ */
+
+export const STREAM_SETTINGS = {
+  /** A frame is 20 ms. */
+  frameMs: 20,
+  /** Quiet this long ends a chunk. */
+  silenceMs: 600,
+  /** Once a chunk is this long, a shorter quiet ends it. */
+  softAfterMs: 20_000,
+  softSilenceMs: 250,
+  /** The longest chunk (Whisper takes 30 s; the worker keeps a margin). */
+  maxChunkMs: 28_000,
+  /** Speech shorter than this is a click or a cough and is thrown away. */
+  minSpeechMs: 250,
+  /** Room kept before the first loud frame and after the last one. */
+  padMs: 200,
+  /** Loud frames in a row that start a chunk (a single spike does not). */
+  startFrames: 2,
+} as const;
+
+export type StreamSettings = { -readonly [K in keyof typeof STREAM_SETTINGS]: number };
+
+/** One finished stretch of speech. Sample numbers count from the first sample ever pushed (16 kHz). */
+export interface StreamChunk {
+  /** Counts up for every chunk; a partial result and its final chunk share it. */
+  id: number;
+  samples: Float32Array;
+  startSample: number;
+  endSample: number;
+}
+
+/** Says whether one 20 ms frame is speech. */
+export type FrameClassifier = (frame: Float32Array) => boolean;
+
+/** Root-mean-square loudness of a frame. */
+export function frameLevel(frame: Float32Array): number {
+  if (frame.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < frame.length; i++) {
+    const v = frame[i] ?? 0;
+    sum += v * v;
+  }
+  return Math.sqrt(sum / frame.length);
+}
+
+/**
+ * Loudness against a floor that follows the room's noise: it drops to a quiet frame at once and creeps up slowly, so a fan is learned in a second or two and a
+ * person who starts talking is not. A frame is speech when it is a few times the floor and above an absolute minimum.
+ */
+export function createEnergyClassifier(opts: { minLevel?: number; ratio?: number } = {}): FrameClassifier {
+  const minLevel = opts.minLevel ?? 0.012;
+  const ratio = opts.ratio ?? 3;
+  let floor = 0.004;
+  return (frame) => {
+    const level = frameLevel(frame);
+    floor = level < floor ? level : floor + (level - floor) * 0.002;
+    return level >= Math.max(minLevel, floor * ratio);
+  };
+}
+
+export interface StreamingSegmenter {
+  /** Feeds more 16 kHz samples (any length). Finished chunks come out through `onChunk` before this returns. */
+  push(samples: Float32Array): void;
+  /** Ends the open chunk now (the microphone was muted, or the engine stops). A short click is dropped as usual. */
+  flush(): void;
+  /** The speech heard so far in the open chunk, newest `maxSamples` of it, or null when nobody is talking. Used for the partial lines. */
+  current(maxSamples?: number): StreamChunk | null;
+  /** How many samples have been pushed. */
+  readonly position: number;
+}
+
+export interface StreamingSegmenterOptions {
+  onChunk(chunk: StreamChunk): void;
+  isSpeech?: FrameClassifier;
+  settings?: Partial<StreamSettings>;
+}
+
+const concat = (parts: Float32Array[], total: number): Float32Array => {
+  const out = new Float32Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+};
+
+export function createStreamingSegmenter(options: StreamingSegmenterOptions): StreamingSegmenter {
+  const s: StreamSettings = { ...STREAM_SETTINGS, ...options.settings };
+  const isSpeech = options.isSpeech ?? createEnergyClassifier();
+  const frameLen = Math.round((VAD_SAMPLE_RATE * s.frameMs) / 1000);
+  const padFrames = Math.ceil(s.padMs / s.frameMs);
+  const startFrames = Math.max(1, s.startFrames);
+
+  let position = 0; // samples pushed
+  let carry: Float32Array = new Float32Array(0); // less than a frame, waiting for more
+  let nextId = 1;
+  // before a chunk: the last few frames, kept as the pre-roll, and the loud run so far
+  let pre: Float32Array[] = [];
+  let loudRun = 0;
+  // in a chunk
+  let open = false;
+  let id = 0;
+  let frames: Float32Array[] = [];
+  let startSample = 0;
+  let sampleCount = 0;
+  let speechFrames = 0;
+  let quietRun = 0; // frames of quiet since the last loud one
+
+  const begin = (atFrame: Float32Array[], firstSample: number): void => {
+    open = true;
+    id = nextId++;
+    frames = atFrame;
+    startSample = firstSample;
+    sampleCount = atFrame.reduce((n, f) => n + f.length, 0);
+    speechFrames = 0;
+    quietRun = 0;
+  };
+
+  const close = (): void => {
+    if (!open) return;
+    // keep the pad of the quiet that followed the last loud frame, drop the rest
+    const dropFrames = Math.max(0, quietRun - padFrames);
+    const kept = dropFrames > 0 ? frames.slice(0, frames.length - dropFrames) : frames;
+    const total = kept.reduce((n, f) => n + f.length, 0);
+    const chunk: StreamChunk = { id, samples: concat(kept, total), startSample, endSample: startSample + total };
+    const long = speechFrames * s.frameMs >= s.minSpeechMs;
+    open = false;
+    frames = [];
+    sampleCount = 0;
+    speechFrames = 0;
+    quietRun = 0;
+    pre = [];
+    loudRun = 0;
+    if (long) options.onChunk(chunk);
+  };
+
+  const frame = (f: Float32Array, firstSample: number): void => {
+    const speech = isSpeech(f);
+    // the caller's buffer may be reused by the audio system, so what is kept is a copy
+    const own = f.slice();
+    if (!open) {
+      pre.push(own);
+      if (pre.length > padFrames + startFrames) pre.shift();
+      loudRun = speech ? loudRun + 1 : 0;
+      if (loudRun >= startFrames) {
+        const taken = pre;
+        pre = [];
+        const first = firstSample + f.length - taken.reduce((n, x) => n + x.length, 0);
+        begin(taken, first);
+        speechFrames = loudRun;
+        loudRun = 0;
+      }
+      return;
+    }
+    frames.push(own);
+    sampleCount += f.length;
+    if (speech) {
+      speechFrames += 1;
+      quietRun = 0;
+    } else {
+      quietRun += 1;
+    }
+    const lengthMs = (sampleCount * 1000) / VAD_SAMPLE_RATE;
+    const silenceNeeded = lengthMs >= s.softAfterMs ? s.softSilenceMs : s.silenceMs;
+    if (quietRun * s.frameMs >= silenceNeeded) close();
+    else if (lengthMs >= s.maxChunkMs) {
+      // too long: cut here and go straight on with a new chunk, since the person is still talking
+      const wasQuiet = quietRun;
+      close();
+      if (wasQuiet === 0) begin([], firstSample + f.length);
+    }
+  };
+
+  return {
+    push(samples) {
+      let data = samples;
+      if (carry.length > 0) {
+        data = new Float32Array(carry.length + samples.length);
+        data.set(carry, 0);
+        data.set(samples, carry.length);
+      }
+      let at = 0;
+      const base = position - carry.length;
+      while (at + frameLen <= data.length) {
+        frame(data.subarray(at, at + frameLen), base + at);
+        at += frameLen;
+      }
+      carry = data.slice(at);
+      position += samples.length;
+    },
+    flush() {
+      close();
+      carry = new Float32Array(0);
+    },
+    current(maxSamples) {
+      if (!open || speechFrames * s.frameMs < s.minSpeechMs) return null;
+      const total = sampleCount;
+      let all = concat(frames, total);
+      let from = startSample;
+      if (maxSamples !== undefined && all.length > maxSamples) {
+        all = all.subarray(all.length - maxSamples);
+        from = startSample + total - all.length;
+      }
+      return { id, samples: all, startSample: from, endSample: startSample + total };
+    },
+    get position() {
+      return position;
+    },
+  };
+}
