@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
-import { canOfferServer, canTurnOn, consentChip, consentWord, enginePlan, engineLine, micMayOpen, modeToTurnOn, planConsent, promptCopy } from '../src/meetings/consent';
+import { canOfferServer, canTurnOn, consentChip, consentWord, enginePlan, engineLine, micMayOpen, modeToTurnOn, planConsent, promptCopy, writtenOnServer } from '../src/meetings/consent';
 import type { MeetingCaption } from '@manythreads/shared';
 import {
   CAPTION_FADE_MS,
@@ -162,6 +162,14 @@ describe('consent: what the page asks and shows', () => {
     expect(planConsent(on, 'unasked', 'yes')).toEqual({ kind: 'apply', answer: 'yes' });
     expect(planConsent(on, 'no', 'yes')).toEqual({ kind: 'settled', answer: 'no' });
     expect(planConsent(on, 'yes', 'ask')).toEqual({ kind: 'settled', answer: 'yes' });
+  });
+  it('uses a saved yes only when the person\'s own device writes the words down; a saved no always holds', () => {
+    expect(planConsent(on, 'unasked', 'yes', true)).toEqual({ kind: 'ask', by: 'Nadia' });
+    expect(planConsent(on, 'unasked', 'no', true)).toEqual({ kind: 'apply', answer: 'no' });
+    expect(writtenOnServer(transcription({ mode: 'server' }), false)).toBe(true);
+    expect(writtenOnServer(on, true)).toBe(true);
+    expect(writtenOnServer(on, false)).toBe(false);
+    expect(writtenOnServer(null, false)).toBe(false);
   });
   it('opens the microphone only when nothing is left to ask', () => {
     expect(micMayOpen({ kind: 'none' })).toBe(true);

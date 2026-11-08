@@ -177,8 +177,8 @@ export interface LiveTranscriberOptions {
 
 export interface LiveTranscriber {
   start(): Promise<void>;
-  /** Stops listening, writes out what is left and resolves when every finished chunk has been delivered. */
-  stop(): Promise<void>;
+  /** Stops listening, writes out what is left and resolves when every finished chunk has been delivered. With `discard` what is left is thrown away unwritten and nothing more is delivered. */
+  stop(options?: { discard?: boolean }): Promise<void>;
   /** While muted, nothing the microphone hears is kept; the chunk being spoken is ended first. */
   setMuted(muted: boolean): void;
 }
@@ -197,6 +197,7 @@ export function createLiveTranscriber(o: LiveTranscriberOptions): LiveTranscribe
   let backlogMs = 0;
   let running = false;
   let stopped = false;
+  let discarded = false;
   let muted = false;
   let failures = 0;
   let language: string | null = o.language ?? null;
@@ -281,7 +282,7 @@ export function createLiveTranscriber(o: LiveTranscriberOptions): LiveTranscribe
         }
         chunksSinceLanguage += 1;
         const text = r.text.trim();
-        if (text !== '') o.onLine({ id: job.chunk.id, text, startMs: job.startMs, endMs: job.endMs, final: true, lang: r.language ?? language });
+        if (text !== '' && !discarded) o.onLine({ id: job.chunk.id, text, startMs: job.startMs, endMs: job.endMs, final: true, lang: r.language ?? language });
       })
       .catch((e: unknown) => failedOnce(e))
       .finally(() => {
@@ -340,13 +341,18 @@ export function createLiveTranscriber(o: LiveTranscriberOptions): LiveTranscribe
       await o.source.start(onPcm);
       status({ kind: 'listening' });
     },
-    stop() {
+    stop(options) {
+      if (options?.discard) {
+        discarded = true;
+        finals.length = 0;
+        backlogMs = 0;
+      }
       if (stopped && !running && finals.length === 0) return Promise.resolve();
       const wasStopped = stopped;
       stopped = true;
       o.source.stop();
       if (!wasStopped) {
-        segmenter.flush();
+        if (!discarded) segmenter.flush();
         // flush may have found the too-slow case, which has already settled
         status({ kind: 'stopped' });
       }

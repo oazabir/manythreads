@@ -17,12 +17,19 @@ export type ConsentPlan =
   /** Already answered. */
   | { kind: 'settled'; answer: 'yes' | 'no' };
 
-export function planConsent(state: Pick<MeetingTranscriptionState, 'mode' | 'turnedOnBy'> | null, mine: MeetingConsent, saved: TranscribeDefault): ConsentPlan {
+/**
+ * `serverSide` is true when the person's words would be written down by the server (the room is set to the server, or a note-taker listens). A saved "yes" was given
+ * for the person's own device, where the sound stays put, so it is never sent for them when the server does the writing: they are asked. A saved "no" always holds.
+ */
+export function planConsent(state: Pick<MeetingTranscriptionState, 'mode' | 'turnedOnBy'> | null, mine: MeetingConsent, saved: TranscribeDefault, serverSide = false): ConsentPlan {
   if (!state || state.mode === 'off') return { kind: 'none' };
   if (mine === 'yes' || mine === 'no') return { kind: 'settled', answer: mine };
-  if (saved === 'yes' || saved === 'no') return { kind: 'apply', answer: saved };
+  if (saved === 'no' || (saved === 'yes' && !serverSide)) return { kind: 'apply', answer: saved };
   return { kind: 'ask', by: state.turnedOnBy?.displayName ?? null };
 }
+
+/** Whether the server (and not the person's own device) would write down their words: the room is set to the server, or a note-taker is in it. */
+export const writtenOnServer = (state: Pick<MeetingTranscriptionState, 'mode'> | null, notetaker: boolean): boolean => notetaker || state?.mode === 'server';
 
 /** The microphone may open only when nothing is left to ask. */
 export const micMayOpen = (plan: ConsentPlan): boolean => plan.kind === 'none' || plan.kind === 'settled';

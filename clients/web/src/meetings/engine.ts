@@ -34,11 +34,15 @@ export interface EngineContext {
   onStatus?: (status: StreamStatus) => void;
 }
 
+export interface StopOptions {
+  discard?: boolean;
+}
+
 export interface TranscribeEngine {
   /** Starts listening to the person's own microphone and sending lines. Returns at once; progress comes through `context.onStatus`. */
   start(context?: EngineContext): void;
-  /** Stops listening and sends the lines still waiting. */
-  stop(): void;
+  /** Stops listening and sends the lines still waiting. With `discard` (the person took their yes back) what was heard but not yet sent is thrown away instead. */
+  stop(options?: StopOptions): void;
   /** While muted, nothing is listened to. Optional: an engine that reads the track itself hears a muted track as silence anyway. */
   setMuted?(muted: boolean): void;
 }
@@ -101,6 +105,8 @@ type SegmentInput = PostMeetingSegmentsRequest['segments'][number];
 export interface LineSender {
   /** A final line is kept until it is sent (and retried); a partial line replaces the partial before it, since only the newest is worth showing. */
   add(line: StreamLine): void;
+  /** Throws away every line not yet sent and stops retrying the one on its way. Nothing is sent after this. */
+  discard(): void;
   /** Sends everything waiting, resolves when it has been sent or given up on. */
   flush(): Promise<void>;
   /** Number of final lines given up on (the server refused them, or too many tries, or the queue was full). */
@@ -124,6 +130,7 @@ export function createLineSender(o: LineSenderOptions): LineSender {
   let timer: unknown = null;
   let busy: Promise<void> | null = null;
   let dropped = 0;
+  let discarded = false;
 
   const toInput = (line: StreamLine): SegmentInput => {
     const startMs = Math.max(0, Math.round(line.startMs));
@@ -158,7 +165,7 @@ export function createLineSender(o: LineSenderOptions): LineSender {
         await o.post({ segments });
         return;
       } catch (e) {
-        if (!retryable(e) || attempt >= SEGMENT_RETRIES) {
+        if (discarded || !retryable(e) || attempt >= SEGMENT_RETRIES) {
           dropped += batch.length;
           return;
         }
@@ -180,7 +187,17 @@ export function createLineSender(o: LineSenderOptions): LineSender {
   };
 
   return {
+    discard() {
+      discarded = true;
+      finals.length = 0;
+      partial = null;
+      if (timer !== null) {
+        o.clearTimeout(timer);
+        timer = null;
+      }
+    },
     add(line) {
+      if (discarded) return;
       const input = toInput(line);
       if (line.final) {
         if (partial?.clientSegId === input.clientSegId) partial = null;
@@ -303,6 +320,8 @@ export async function ownTrack(ctx: EngineContext, deps: EngineDeps): Promise<Me
 /** One run of an engine, from `start()` to `stop()`. `onStop` is set once the run is far enough along to need undoing. */
 export interface Run {
   cancelled: boolean;
+  /** Set by `stop({ discard: true })`: what is waiting is thrown away, not sent. */
+  discard?: boolean;
   onStop?: () => Promise<void>;
 }
 
@@ -344,13 +363,16 @@ export function createLiveEngine(deps: EngineDeps = defaultEngineDeps()): Transc
       if (recalibrate !== null) deps.clearTimeout(recalibrate);
       recalibrate = null;
       track.stop();
-      await sender.flush();
+      if (mine.discard) sender.discard();
+      else await sender.flush();
     };
     const transcriber = createLiveTranscriber({
       source: deps.createSource(track),
       recognizer: choice.recognizer,
       now: () => clock.nowMs(),
-      onLine: (line) => sender.add(line),
+      onLine: (line) => {
+        if (!mine.discard) sender.add(line);
+      },
       onStatus: (s) => {
         status(s);
         // a transcriber that gave up (too slow, the model failed) has already stopped listening: let go of the microphone and send what it had
@@ -360,7 +382,7 @@ export function createLiveEngine(deps: EngineDeps = defaultEngineDeps()): Transc
     current = transcriber;
     mine.onStop = async () => {
       current = null;
-      await transcriber.stop();
+      await transcriber.stop(mine.discard ? { discard: true } : undefined);
       await release();
     };
     transcriber.setMuted(muted);
@@ -391,11 +413,12 @@ export function createLiveEngine(deps: EngineDeps = defaultEngineDeps()): Transc
       run = mine;
       void begin(context, mine).catch(() => runStatus(mine, context)({ kind: 'failed', message: MIC_FAILED_MESSAGE }));
     },
-    stop() {
+    stop(options) {
       const mine = run;
       run = null;
       if (!mine) return;
       mine.cancelled = true;
+      if (options?.discard) mine.discard = true;
       current = null;
       void mine.onStop?.();
     },
@@ -458,17 +481,19 @@ export function createFakeLiveEngine(deps: EngineDeps = defaultEngineDeps()): Tr
         const untarget = setSayTarget(say);
         mine.onStop = async () => {
           untarget();
-          await sender.flush();
+          if (mine.discard) sender.discard();
+          else await sender.flush();
         };
         status({ kind: 'listening' });
         if (mine.cancelled) await mine.onStop();
       })();
     },
-    stop() {
+    stop(options) {
       const mine = run;
       run = null;
       if (!mine) return;
       mine.cancelled = true;
+      if (options?.discard) mine.discard = true;
       void mine.onStop?.();
     },
   };

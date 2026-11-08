@@ -1,6 +1,6 @@
 import type { ListMeetingNotetakersResponse, Meeting, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { canOfferServer, enginePlan, planConsent, micMayOpen, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
+import { canOfferServer, enginePlan, planConsent, micMayOpen, writtenOnServer, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
 import type { CallApi, addNotetaker, answerRecordConsent, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
 import type { StreamStatus, TranscribeEngine } from './engine';
 import { AUDIO_DEFAULTS, type AdapterEvents, type AdapterLoader, type Connection, type DeviceLists, type MediaAdapter } from './media';
@@ -166,6 +166,8 @@ export class CallController {
   /** A refresh was asked for while one was running: the running one may have read the room before the change that asked, so it runs once more. */
   private refreshAgain = false;
   private sentConsent = false;
+  /** Counts the person's consent answers (once as one leaves, once as the server's reply comes back): a room read that spans one may not have seen it. */
+  private answerEpoch = 0;
 
   constructor(private readonly deps: CallDeps) {
     this.state = IDLE(deps.prefs);
@@ -382,6 +384,7 @@ export class CallController {
     const gen = this.generation;
     const run = async (): Promise<void> => {
       try {
+        const epoch = this.answerEpoch;
         const [sum, tr, nts, rec] = await Promise.all([
           this.deps.api.get(m.id),
           this.deps.api.transcription(m.id).catch(() => null),
@@ -390,6 +393,11 @@ export class CallController {
           this.deps.room.recording(m.id).catch(() => null),
         ]);
         if (gen !== this.generation) return;
+        if (epoch !== this.answerEpoch) {
+          // the person answered while this was being read: it may show the old answer (and ask the question again). Read once more instead of using it.
+          this.refreshAgain = true;
+          return;
+        }
         if (sum.meeting.state === 'ended') {
           this.gone('The voice room has ended.');
           return;
@@ -406,7 +414,7 @@ export class CallController {
           meeting: sum.meeting,
           present: sum.present,
           transcription: tr ?? this.state.transcription,
-          consent: planConsent(tr ?? this.state.transcription, mine, this.state.prefs.transcribeDefault),
+          consent: planConsent(tr ?? this.state.transcription, mine, this.state.prefs.transcribeDefault, writtenOnServer(tr ?? this.state.transcription, (nts ?? this.state.notetakers)?.current != null)),
           notetakers: nts ?? this.state.notetakers,
           recording: rec ?? this.state.recording,
           recordConsent: planRecordConsent(rec ?? this.state.recording),
@@ -446,7 +454,9 @@ export class CallController {
     if (!m) return;
     if (attempt >= REJOIN_ATTEMPTS) {
       this.micOpen = false;
-      this.set({ phase: 'lost', notice: 'Lost the connection to the voice room.' });
+      // out of the room, nobody is listening to this person: their own microphone and transcription stop too (Rejoin starts them again)
+      this.stopEngine();
+      this.set({ phase: 'lost', engine: { kind: 'off' }, notice: 'Lost the connection to the voice room.' });
       return;
     }
     this.clearRejoin();
@@ -557,8 +567,9 @@ export class CallController {
     }
   }
 
-  private stopEngine(): void {
-    this.engine?.stop();
+  /** `discard`: the person took their yes back, so anything heard but not yet sent is thrown away instead of sent. */
+  private stopEngine(discard = false): void {
+    this.engine?.stop(discard ? { discard: true } : undefined);
     this.engine = null;
     this.engineMode = 'none';
   }
@@ -568,7 +579,9 @@ export class CallController {
     const want = this.wantedEngine();
     if (want === this.engineMode) return;
     if (this.engine) {
-      this.stopEngine();
+      const s = this.state;
+      // the engine stops because the answer is no, or asked for again: what it heard but did not send yet is not sent
+      this.stopEngine(s.present.find((p) => p.actorId === s.myActorId)?.consentTranscribe !== 'yes');
       this.set({ engine: { kind: 'off' } });
     }
     if (want === 'none') return;
@@ -721,9 +734,16 @@ export class CallController {
     const m = this.state.meeting;
     if (!m) return;
     if (opts.remember) this.saveDefault(answer);
+    // a no takes effect on this device first: nothing more is heard or sent while the answer travels to the server (if it fails, the next refresh starts the engine again)
+    if (answer === 'no' && this.engine) {
+      this.stopEngine(true);
+      this.set({ engine: { kind: 'off' } });
+    }
+    this.answerEpoch += 1;
     const res = await this.deps.api.consent(m.id, answer);
+    this.answerEpoch += 1;
     const present = this.state.present.map((p) => (p.actorId === res.participant.actorId ? res.participant : p));
-    const consent = planConsent(this.state.transcription, res.participant.consentTranscribe as MeetingConsent, this.state.prefs.transcribeDefault);
+    const consent = planConsent(this.state.transcription, res.participant.consentTranscribe as MeetingConsent, this.state.prefs.transcribeDefault, writtenOnServer(this.state.transcription, this.state.notetakers?.current != null));
     this.set({ present, consent, waitingForConsent: consent.kind === 'ask' });
     await this.syncMic();
     await this.syncEngine();

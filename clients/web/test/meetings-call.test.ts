@@ -268,6 +268,57 @@ describe('consent before the microphone (P15-05)', () => {
     expect(t.server.calls).toContain('consent yes');
     expect(t.media().state.micOn).toBe(true);
   });
+  it('never sends a remembered yes for a room where the server writes the words down, but still sends a remembered no', async () => {
+    const prefs = (await import('../src/meetings/prefs')).DEFAULT_PREFS;
+    const yes = await connected({ room: { transcription: 'server' } }, { ...prefs, transcribeDefault: 'yes' });
+    yes.server.transcriptionState = transcription({ mode: 'server', allowed: ['on_device', 'server'], turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });
+    await yes.c.refresh();
+    await settle();
+    expect(yes.server.calls).not.toContain('consent yes');
+    expect(yes.c.getState().consent.kind).toBe('ask');
+    expect(yes.media().state.micOn).toBe(false);
+    const no = await connected({ room: { transcription: 'server' } }, { ...prefs, transcribeDefault: 'no' });
+    no.server.transcriptionState = transcription({ mode: 'server', allowed: ['on_device', 'server'], turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });
+    await no.c.refresh();
+    await settle();
+    expect(no.server.calls).toContain('consent no');
+  });
+  it('asks again, despite a remembered yes, when a note-taker is added', async () => {
+    const t = await connected({ room: { transcription: 'on_device' } }, { ...(await import('../src/meetings/prefs')).DEFAULT_PREFS, transcribeDefault: 'yes' });
+    t.server.transcriptionState = transcription({ mode: 'on_device', turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });
+    await t.c.refresh();
+    await settle();
+    expect(t.server.calls.filter((x) => x === 'consent yes')).toHaveLength(1);
+    await t.c.addNotetaker(BOT);
+    await settle();
+    expect(t.server.calls.filter((x) => x === 'consent yes')).toHaveLength(1);
+    expect(t.c.getState().consent.kind).toBe('ask');
+  });
+  it('does not let a room read that spans the answer put the question back, even when nothing asks for another read', async () => {
+    const t = await connected({ room: { transcription: 'on_device' } });
+    t.server.transcriptionState = transcription({ mode: 'on_device', turnedOnBy: { actorId: NADIA as never, displayName: 'Nadia' } });
+    await t.c.refresh();
+    await settle();
+    const read = t.server.get;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    let first = true;
+    t.server.get = async (id) => {
+      const seen = await read(id);
+      if (first) {
+        first = false;
+        await held;
+      }
+      return seen;
+    };
+    const running = t.c.refresh();
+    await settle();
+    await t.c.answerConsent('yes', { remember: false });
+    release();
+    await running;
+    await settle();
+    expect(t.c.getState().consent.kind).toBe('settled');
+  });
   it('turns transcription on for the room and asks everybody again', async () => {
     const t = await connected();
     await t.c.turnTranscription('on_device');
@@ -278,12 +329,15 @@ describe('consent before the microphone (P15-05)', () => {
 
 // ---- Bundle C: the engine, captions, the note-taker, recording (P15-08, P15-18, P15-15) ---------------------------------------------------------------------------
 
-type Spy = { engine: TranscribeEngine; started: EngineContext[]; stops: number; muted: boolean[]; modes: Array<string | undefined> };
+type Spy = { engine: TranscribeEngine; started: EngineContext[]; stops: number; discards: boolean[]; muted: boolean[]; modes: Array<string | undefined> };
 function spyEngine(t: { deps: { loadEngine: (mode?: 'on_device' | 'server') => Promise<TranscribeEngine | null> } }): Spy {
-  const spy: Spy = { started: [], stops: 0, muted: [], modes: [], engine: null as never };
+  const spy: Spy = { started: [], stops: 0, discards: [], muted: [], modes: [], engine: null as never };
   spy.engine = {
     start: (ctx) => void (ctx && spy.started.push(ctx)),
-    stop: () => void (spy.stops += 1),
+    stop: (options) => {
+      spy.stops += 1;
+      spy.discards.push(options?.discard === true);
+    },
     setMuted: (m) => void spy.muted.push(m),
   };
   t.deps.loadEngine = async (mode) => {
@@ -351,6 +405,61 @@ describe('the transcription engine on the call (P15-06 wiring)', () => {
     expect(t.server.calls).toContain('consent no');
     expect(spy.stops).toBe(1);
     expect(t.c.getState().engine.kind).toBe('off');
+  });
+  it('throws away what the engine heard but did not send when the person says no, and keeps it when they just leave', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    await t.c.joinWithoutTranscription();
+    await settle();
+    expect(spy.discards).toEqual([true]);
+    const u = await connected();
+    const spy2 = spyEngine(u);
+    await turnOn(u, 'on_device');
+    await u.c.answerConsent('yes', { remember: false });
+    await settle();
+    await u.c.leave();
+    expect(spy2.discards).toEqual([false]);
+  });
+  it('stops the engine before the no reaches the server, so nothing is heard or sent while it travels', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    let stoppedBeforeSend = false;
+    const send = t.server.consent;
+    t.server.consent = async (id, answer) => {
+      stoppedBeforeSend = spy.stops === 1;
+      return send(id, answer);
+    };
+    await t.c.answerConsent('no', { remember: false });
+    expect(stoppedBeforeSend).toBe(true);
+  });
+  it('stops the engine, and its microphone, when the connection is lost, and starts it again on Rejoin', async () => {
+    const t = await connected();
+    const spy = spyEngine(t);
+    await turnOn(t, 'on_device');
+    await t.c.answerConsent('yes', { remember: false });
+    await settle();
+    expect(spy.started).toHaveLength(1);
+    t.server.failAlways('join', apiError(500, 'down', 'internal'));
+    t.server.failAlways('renew', apiError(500, 'down', 'internal'));
+    t.media().lose();
+    await t.clock.advance(120_000);
+    expect(t.c.getState().phase).toBe('lost');
+    expect(spy.stops).toBe(1);
+    expect(t.c.getState().engine.kind).toBe('off');
+    t.server.failAlways('join', null);
+    t.server.failAlways('renew', null);
+    const back = t.c.rejoin();
+    await t.clock.advance(1);
+    await back;
+    await settle();
+    expect(t.c.getState().phase).toBe('connected');
+    expect(spy.started).toHaveLength(2);
   });
   it('stops the engine when transcription is turned off or the person leaves', async () => {
     const t = await connected();

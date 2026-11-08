@@ -306,6 +306,31 @@ describe('the on-device engine', () => {
     expect(h.track.cloned).toBe(1);
   });
 
+  it('sends no more lines once the person takes their yes back, not even the ones heard but not yet sent', async () => {
+    const h = build();
+    const engine = createLiveEngine(h.deps);
+    engine.start({ meetingId: MEETING, track: h.track, onStatus: h.onStatus });
+    await h.clock.advance(0);
+    h.src.feed(cat(talk(1200), hush(900))); // a finished chunk is being written out
+    engine.stop({ discard: true });
+    await h.clock.advance(1000);
+    await h.clock.advance(1000);
+    expect(h.posts).toHaveLength(0);
+    expect(h.track.stopped).toBe(1);
+  });
+
+  it('still sends the lines heard before a plain stop (the person left)', async () => {
+    const h = build();
+    const engine = createLiveEngine(h.deps);
+    engine.start({ meetingId: MEETING, track: h.track, onStatus: h.onStatus });
+    await h.clock.advance(0);
+    h.src.feed(cat(talk(1200), hush(900)));
+    engine.stop();
+    await h.clock.advance(1000);
+    await h.clock.advance(1000);
+    expect(h.posts.flatMap((p) => p.body.segments).some((x) => x.final)).toBe(true);
+  });
+
   it('keeps nothing of a muted microphone', async () => {
     const h = build();
     const engine = createLiveEngine(h.deps);
@@ -449,6 +474,21 @@ describe('the server fallback', () => {
     await h.clock.advance(100);
     expect(h.uploads).toHaveLength(1);
     expect(h.track.stopped).toBe(1);
+  });
+
+  it('sends no audio at all when the person takes their yes back: the chunk being spoken is dropped, not cut and uploaded', async () => {
+    const h = build();
+    const engine = createFallbackEngine(h.deps);
+    engine.start({ meetingId: MEETING, track: h.track });
+    await h.clock.advance(0);
+    h.src.feed(cat(talk(1500), hush(900), talk(1500))); // one chunk waiting to go, another still being spoken
+    engine.stop({ discard: true });
+    await h.clock.advance(0);
+    await h.clock.advance(UPLOAD_GAP_MS + 100);
+    expect(h.uploads.length).toBeLessThanOrEqual(1); // at most the chunk that was already on the wire
+    expect(h.uploads.every((u) => Number(u.query['durationMs']) < 3000)).toBe(true);
+    expect(h.track.stopped).toBe(1);
+    expect(h.src.stops.n).toBeGreaterThanOrEqual(1);
   });
 
   it('in the test build, "said" words go up as a WAV that carries them for the fake server', async () => {

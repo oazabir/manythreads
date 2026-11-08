@@ -3,7 +3,7 @@ import { usePeople } from '../channels/hooks';
 import { Avatar } from '../components/ui';
 import { useNarrow } from '../shell/useNarrow';
 import type { CallState } from './controller';
-import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy } from './consent';
+import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenOnServer } from './consent';
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
 import { CaptionsIcon, ChatIcon, HeadphonesIcon, LeaveIcon, MicIcon, SlidersIcon } from './icons';
@@ -79,6 +79,9 @@ function ConsentPrompt({ call }: { call: CallState }) {
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
         <span>Remember my answer for future calls</span>
       </label>
+      {writtenOnServer(call.transcription, call.notetakers?.current != null) ? (
+        <p className="call-hint" data-testid="consent-remember-note">A remembered yes is used only when your own device writes down your words. When the server does, you are asked each time.</p>
+      ) : null}
       {error ? <p className="call-consent-error" role="alert">{error}</p> : null}
       <div className="call-consent-actions">
         <button type="button" className="btn primary s" disabled={busy} onClick={() => void choose('yes')} data-testid="consent-yes">{copy.yes}</button>
@@ -126,7 +129,7 @@ function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
             <span>“Transcribe my voice” when a call turns it on</span>
             <select id={ids.def} value={call.prefs.transcribeDefault} onChange={(e) => c.saveDefault(e.target.value as 'ask' | 'yes' | 'no')} data-testid="consent-default">
               <option value="ask">Ask me each time</option>
-              <option value="yes">Always yes</option>
+              <option value="yes">Always yes (my own device only)</option>
               <option value="no">Always no</option>
             </select>
           </label>

@@ -149,6 +149,11 @@ export function createFallbackEngine(deps: FallbackDeps = defaultFallbackDeps())
         while (queue.length > UPLOAD_QUEUE_MAX) queue.shift();
         void drain();
       },
+      /** Throws away every chunk waiting and sends no more (the person took their yes back). A chunk already on the wire cannot be called back. */
+      discard(): void {
+        dead = true;
+        queue.length = 0;
+      },
       /** Resolves when the queue is empty, or after `limitMs` (the person is leaving; a stuck network must not hold the page). */
       async finish(limitMs: number): Promise<void> {
         const done = drain();
@@ -192,7 +197,8 @@ export function createFallbackEngine(deps: FallbackDeps = defaultFallbackDeps())
       const untarget = setSayTarget(say);
       mine.onStop = async () => {
         untarget();
-        await uploader.finish(DRAIN_ON_STOP_MS);
+        if (mine.discard) uploader.discard();
+        else await uploader.finish(DRAIN_ON_STOP_MS);
       };
       status({ kind: 'listening' });
       if (mine.cancelled) await mine.onStop();
@@ -217,8 +223,13 @@ export function createFallbackEngine(deps: FallbackDeps = defaultFallbackDeps())
       if (!live) return;
       live = false;
       source.stop();
-      segmenter.flush();
       track.stop();
+      if (mine.discard) {
+        // the person took their yes back: the sound still in the chunk being spoken is not cut and sent
+        uploader.discard();
+        return;
+      }
+      segmenter.flush();
       await uploader.finish(DRAIN_ON_STOP_MS);
     };
     stopFn = () => void end();
@@ -251,11 +262,12 @@ export function createFallbackEngine(deps: FallbackDeps = defaultFallbackDeps())
       run = mine;
       void begin(context, mine).catch(() => runStatus(mine, context)({ kind: 'failed', message: MIC_FAILED_MESSAGE }));
     },
-    stop() {
+    stop(options) {
       const mine = run;
       run = null;
       if (!mine) return;
       mine.cancelled = true;
+      if (options?.discard) mine.discard = true;
       current = null;
       void mine.onStop?.();
     },

@@ -348,6 +348,21 @@ describe('the live transcriber', () => {
     expect(h.src.stops()).toBe(1);
     expect(h.statuses[h.statuses.length - 1]).toEqual({ kind: 'stopped' });
   });
+
+  it('with discard, writes out nothing more: no last chunk, and a chunk already being written is not delivered', async () => {
+    const h = build();
+    await h.t.start();
+    h.src.feed(join(talk(1200), hush(900))); // a chunk has closed and is being written out
+    await tick();
+    h.src.feed(talk(1500)); // another is still being spoken
+    const stopped = h.t.stop({ discard: true });
+    await tick();
+    for (const c of h.rec.calls) c.done({ text: 'words that must not be sent', language: 'en' });
+    await stopped;
+    expect(h.lines).toEqual([]);
+    expect(h.rec.calls).toHaveLength(1); // the open chunk was never cut and handed over
+    expect(h.src.stops()).toBe(1);
+  });
 });
 
 describe('encodeWav16', () => {
