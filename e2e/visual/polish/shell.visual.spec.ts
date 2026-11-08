@@ -39,7 +39,11 @@ test('sidebar with unread: Nadia has an unread direct message and a channel with
     go: async (page, size) => {
       await page.goto('/t/engineering/threads');
       await sidebarOpen(page, size);
-      await expect(page.locator('[data-landmark="sidebar"] .pill').first()).toBeVisible();
+      const pill = page.locator('[data-landmark="sidebar"] .pill').first();
+      await expect(pill).toBeVisible();
+      // in the phone drawer the Direct messages are below the fold: the plate shows the row it is about
+      await pill.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(150);
     },
   });
 });

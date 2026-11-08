@@ -43,6 +43,14 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
+/**
+ * Opening a chat marks it read about half a second later, and whether the rail has caught up when the picture is taken varies from run to run. The plates are
+ * of the unread state (the open chat keeps its dot, "Notes for Monday" too), so the read call is held back and the state is the same every time (P21-RUN).
+ */
+async function keepUnread(page: Page): Promise<void> {
+  await page.route('**/api/read-state/mark', (route) => route.abort());
+}
+
 /** The greeting follows the hour of the reader's clock: its box is kept, its words are not compared. */
 async function maskGreeting(page: Page): Promise<void> {
   await page.evaluate(() => document.querySelectorAll('[data-testid="chat-greeting"]').forEach((el) => el.setAttribute('data-vt-mask', '')));
@@ -68,6 +76,7 @@ for (const [size, viewport, mobile] of [
   test(`chat-conversation-${size} matches its baseline (W)`, async ({ browser }) => {
     const { page, close } = await openPage(browser, stack, 'nadia', viewport, mobile);
     try {
+      await keepUnread(page);
       await page.goto(`${CHAT_URL}&c=${rootId}`);
       await expect(page.getByTestId('chat-variant-pos')).toHaveText('2 / 2');
       await expect(page.getByTestId('chat-thumb-up')).toHaveAttribute('aria-pressed', 'true');
@@ -82,6 +91,7 @@ for (const [size, viewport, mobile] of [
 test('chat-rail-1440 matches its baseline (W)', async ({ browser }) => {
   const { page, close } = await openPage(browser, stack, 'nadia', DESKTOP, false);
   try {
+    await keepUnread(page);
     await page.goto(`${CHAT_URL}&c=${rootId}`);
     await expect(page.getByTestId('chat-group-pinned').getByTestId('chat-row')).toHaveCount(1);
     await expect(page.getByTestId('chat-group-today').getByTestId('chat-row')).toHaveCount(1);
@@ -95,6 +105,7 @@ test('chat-rail-1440 matches its baseline (W)', async ({ browser }) => {
 test('chat-drawer-390 matches its baseline (W)', async ({ browser }) => {
   const { page, close } = await openPage(browser, stack, 'nadia', MOBILE, true);
   try {
+    await keepUnread(page);
     await page.goto(`${CHAT_URL}&c=${rootId}`);
     await expect(page.getByTestId('chat-title')).toContainText('Release blockers');
     await page.getByTestId('chat-rail-toggle').click();

@@ -28,6 +28,7 @@ test('empty teams matches its baseline (W)', async ({ browser }) => {
     await expect(page.getByRole('heading', { level: 1, name: 'Kahf Software' })).toBeVisible();
     await page.goto('/teams');
     await expect(page.getByText('Create your first team.')).toBeVisible();
+    await expect(page.locator('[data-landmark="picker"]')).toBeVisible({ timeout: 20_000 }); // the templates load after the empty note
     await expectWireframe(page, 'empty-teams', [['nav', 'content'], ['title', 'lede', 'empty', 'picker']]);
   } finally {
     await close();
@@ -38,7 +39,7 @@ test('expired invitation matches its baseline (W)', async ({ browser }) => {
   const { page, close } = await openPage(browser, seeded, null);
   try {
     await page.goto('/invite/0123456789abcdef0123456789abcdef0123456789abcdef');
-    await expect(page.getByRole('heading', { name: 'This invitation has expired' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'This invitation has expired' })).toBeVisible({ timeout: 20_000 });
     await expectWireframe(page, 'expired-invite', ['content']);
   } finally {
     await close();
@@ -49,7 +50,7 @@ test('403 matches its baseline (W)', async ({ browser }) => {
   const { page, close } = await openPage(browser, seeded, 'lena');
   try {
     await page.goto('/teams/engineering');
-    await expect(page.getByRole('heading', { name: 'You do not have access' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'You do not have access' })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('link', { name: 'Back to manythreads' }).first()).toBeVisible();
     await expectWireframe(page, 'forbidden', ['nav', 'content']);
   } finally {

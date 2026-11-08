@@ -30,9 +30,13 @@ const heading = (page: Page) => page.getByRole('heading', { level: 1 });
 
 test('files manager: the team files', async ({ browser }) => {
   await plate(browser, stack, 'files-manager', {
-    go: async (page) => {
+    go: async (page, size) => {
       await page.goto('/t/engineering/files');
       await expect(heading(page)).toBeVisible();
+      // the folders' times are the real ones of the seed, so "newest first" can swap two of them between runs: the plate lists them by name
+      if (size === '390') await page.getByTestId('sort-select').selectOption('name:asc');
+      else await page.getByTestId('sort-name').click();
+      await expect(page.getByTestId('file-row').first()).toBeVisible();
     },
   });
 });
