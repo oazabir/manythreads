@@ -137,7 +137,7 @@ services:
   # on loopback only, and a deployment sets its own (the chart generates one). The webhook reaches the server on the host through host.docker.internal.
   livekit:
     profiles: ["media"]
-    image: livekit/livekit-server:v1.8.4
+    image: livekit/livekit-server:v1.13.11
     command: ["--bind", "0.0.0.0", "--config-body", "port: 7880\nrtc:\n  tcp_port: 7881\n  port_range_start: 50000\n  port_range_end: 50100\n  use_external_ip: false\n  node_ip: 127.0.0.1\nwebhook:\n  api_key: devkey\n  urls:\n    - http://host.docker.internal:3000/api/meetings/media-webhook\n"]
     extra_hosts:
       - "host.docker.internal:host-gateway"

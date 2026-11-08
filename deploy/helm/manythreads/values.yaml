@@ -265,7 +265,7 @@ hindsight:
 # NOT verified on a live cluster yet (P15-00): turn it on in values-live.yaml only after docs/spikes/voice.md "Deferred to the live site" is done.
 media:
   enabled: false
-  image: livekit/livekit-server:v1.8.4
+  image: livekit/livekit-server:v1.13.11
   publicUrl: ""            # wss://media.example.org : what browsers connect to (required when enabled)
   rtcPortStart: 50000
   rtcPortEnd: 50100        # 100 UDP ports are enough for a few dozen people; widen for more

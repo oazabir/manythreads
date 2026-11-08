@@ -275,6 +275,8 @@ a closed UDP port or a wrong `nodeIp`.
 
 Undo: `media.enabled: false` (the Secret stays; the next enable reuses it).
 
+**Server and browser library must be of the same age.** `livekit-client` 2.22 (clients/web/package.json) waits for an answer that carries the offer id; LiveKit server 1.8.4 never sends it, so the first live call connected, published a track and 15 seconds later the browser gave up ("negotiation timed out"). The chart's `media.image` is therefore `livekit/livekit-server:v1.13.11`; move the two together.
+
 **Room size.** The workspace setting `roomCap` (admin; default 25, 2 to 100) decides how many people the app lets into a room, and the app creates each LiveKit room with `max_participants` = that number plus 2 (the hidden note-taker and recorder count as participants on the media server), so the media server refuses the extra person even if a client skips the join route. The number is read when the room opens: raising `roomCap` does not widen a room that is already live. The chart's `media.maxParticipants` is only LiveKit's default for a room created without a number, and the app always gives one.
 
 **The note-taker and recording listener (one server process).** Both are a worker thread inside the **server** pod (the library `@livekit/rtc-node`, a prebuilt linux-x64 glibc binary that works on the `node:22-slim`
