@@ -90,4 +90,33 @@ describe('the sync job', () => {
     await sync();
     await eventually(async () => (await row(p.id))['status'] === 'cancelled', 40_000, 'the plan to be cancelled');
   });
+
+  it('leaves a plan alone whose room opened after the pass read it (only the agenda pass may write a started plan)', async () => {
+    const p = await plan('Race', 'First agenda');
+    const start = new Date(Date.parse(p.startsAt) + 3_600_000);
+    p.event.title = 'Race (moved)';
+    p.event.start = start.toISOString();
+    p.event.end = new Date(start.getTime() + 30 * 60_000).toISOString();
+    // The room opens between the pass reading the plan and writing it: this transaction marks the plan started and keeps its row locked, the pass (which read the plan as `scheduled`) reads the
+    // event and then waits at its write; when this transaction commits, the write is checked against the plan as it is then.
+    await s.w.system(async (tx) => {
+      await tx.query("UPDATE app.scheduled_meetings SET status = 'started' WHERE id = $1 AND status = 'scheduled'", [p.id]);
+      await sync();
+      await eventually(
+        async () => (await tx.query('SELECT 1 FROM pg_locks WHERE NOT granted')).rows.length > 0 || undefined,
+        40_000,
+        'the pass to wait at its write',
+      );
+    });
+    await eventually(
+      async () => (await s.w.system(async (tx) => (await tx.query('SELECT 1 FROM pg_locks WHERE NOT granted')).rows.length)) === 0 || undefined,
+      40_000,
+      'the pass to finish its write',
+    );
+    await new Promise((r) => setTimeout(r, 1000));
+    const after = await row(p.id);
+    expect(after).toMatchObject({ title: 'Race', status: 'started' });
+    expect((after['starts_at'] as Date).toISOString()).toBe(p.startsAt);
+    expect(await changedEvents(p.id)).toHaveLength(0);
+  }, 90_000);
 });

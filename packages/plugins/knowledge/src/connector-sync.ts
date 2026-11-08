@@ -193,6 +193,18 @@ export async function teamRoster(tx: PluginTx, teamId: string): Promise<TeamMemb
   });
 }
 
+/**
+ * A short fingerprint of who is on a team (what the team rule is checked against), the same for the same people in any order. A pass takes it of the roster it read at its start and again at its
+ * end; the follow-up recheck it queues when they differ is keyed by the new one, so it is not dropped as a copy of the recheck that is running.
+ */
+export function rosterKey(roster: readonly TeamMemberAddress[]): string {
+  const lines = roster.map((m) => `${m.kind}\u0000${m.verified ? 1 : 0}\u0000${m.email.toLowerCase()}\u0000${[...(m.others ?? [])].map((e) => e.toLowerCase()).sort().join('\u0001')}`).sort();
+  return sha256Hex(lines.join('\n')).slice(0, 12);
+}
+
+/** The queue key of a recheck for the team as it is now: one waiting recheck for each distinct roster, however many are running for another. */
+export const recheckKey = (sourceId: string, roster: readonly TeamMemberAddress[]): string => `${CONNECTOR_QUEUE}:${sourceId}:recheck:${rosterKey(roster)}`;
+
 async function storedDocs(tx: PluginTx, sourceId: string): Promise<StoredDoc[]> {
   return (
     await tx.query<{ id: string; remote_id: string; remote_version: string | null; name: string; status: string; repo_path: string | null }>(
@@ -322,6 +334,19 @@ export async function runSourcePass(
     answered();
     checked.add(remoteId);
     return everyoneMayRead(answer.value, roster) ? 'yes' : 'limited';
+  };
+
+  /**
+   * The team may have changed while this pass ran (a recheck already running holds the plain recheck key, so the queue drops the one the change asked for, and this pass judged its documents
+   * against the roster it read at its start). At the end the roster is read again; when it differs, a recheck keyed by the new roster is queued.
+   */
+  const recheckIfRosterMoved = async (): Promise<void> => {
+    if (roster === null || !source.teamId) return;
+    const teamId = source.teamId;
+    await tx1(async (t) => {
+      const current = await teamRoster(t, teamId);
+      if (rosterKey(current) !== rosterKey(roster)) await enqueueConnectorPass(ctx, t, source.workspaceId, source.id, 'recheck', { dedupeKey: recheckKey(source.id, current) });
+    });
   };
 
   let committed = env.c;
@@ -487,9 +512,11 @@ export async function runSourcePass(
   const nextEnv: CursorEnvelope = { c: committed, m: committed === null ? 'full' : committedMode, f: finishedFull ? now.toISOString() : env.f, k: finishedFull ? 0 : kCommitted, r: env.r };
   if (capHit) {
     await finish('attention', `This base already holds ${String(KNOWLEDGE_MAX_DOCUMENTS_PER_BASE)} documents, so the rest of this folder was not added.`, nextEnv, skippedLimited);
+    await recheckIfRosterMoved();
     return result('attention', false);
   }
   await finish('ready', null, nextEnv, skippedLimited);
+  await recheckIfRosterMoved();
   return result('ready', more);
 }
 

@@ -139,11 +139,12 @@ async function writeSync(ctx: PluginContext, row: SyncRow, event: CalendarEvent,
                 agenda_md = CASE WHEN $7::boolean THEN $8 ELSE agenda_md END,
                 reminded_at = CASE WHEN $4::boolean THEN NULL ELSE reminded_at END,
                 synced_at = now(), updated_at = now()
-          WHERE id = $1::uuid AND status IN ('scheduled', 'started') RETURNING starts_at`,
-        [row.id, fields.includes('title'), title, fields.includes('time'), start.toISOString(), end.toISOString(), fields.includes('agenda'), agendaNow],
+          WHERE id = $1::uuid AND (status = 'scheduled' OR ($9::boolean AND status = 'started')) RETURNING starts_at`,
+        [row.id, fields.includes('title'), title, fields.includes('time'), start.toISOString(), end.toISOString(), fields.includes('agenda'), agendaNow, opts.agendaOnly],
       );
       const next = changed.rows[0];
       if (!next) return 'same';
+      // (a plan whose room opened after the pass read it keeps its title and time: only the agenda pass may write a started plan, and it writes nothing else)
       // an agenda copied for the Scribe at room start is not an event worth telling anyone about
       if (!opts.agendaOnly) {
         await emitChanged(ctx, tx, { ...row, starts_at: next.starts_at }, null, fields);

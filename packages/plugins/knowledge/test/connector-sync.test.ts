@@ -9,7 +9,7 @@ import { setDocumentsConnectorForTests } from '../src/connector-sync.ts';
 
 vi.setConfig({ testTimeout: 120_000 });
 
-const { omar, nadia, rafi, priya, tariq } = personas;
+const { omar, nadia, rafi, priya, tariq, sameera } = personas;
 const OMAR_DRIVE = omar.email;
 const NADIA_DRIVE = nadia.email;
 
@@ -164,6 +164,29 @@ describe('a team source keeps to what everyone on the team may open', () => {
     expect(await names()).toEqual(['Engineering handbook', 'Public handbook']);
     // the domain file still stands (Tariq's verified address is at the same domain)
     expect(await connectorSource()).toMatchObject({ documentCount: 2 });
+  });
+
+  it('a person added to the team while a pass runs gets a recheck of their own (the pass judged the documents by the team it read at its start)', async () => {
+    const source = await connectorSource();
+    const rechecks = () =>
+      x.sys(async (tx) => (await tx.query<{ dedupe_key: string }>(`SELECT dedupe_key FROM app.jobs WHERE queue = 'knowledge.connector' AND dedupe_key LIKE $1 ORDER BY dedupe_key`, [`knowledge.connector:${source.id}:recheck:%`])).rows.map((r) => r.dedupe_key));
+    await idle();
+    expect(await rechecks()).toEqual([]);
+    // A pass is queued (not through the Re-sync button: the tests below stay inside its rate limit); this transaction holds the source's row, so the pass waits when it writes its result,
+    // after it read the team. Sameera joins while it waits.
+    await x.sys(async (tx) => {
+      await tx.query('SELECT 1 FROM app.knowledge_sources WHERE id = $1 FOR UPDATE', [source.id]);
+      await x.sys((t) => t.query('SELECT app.enqueue_job($1, $2::jsonb, NULL, $3)', ['knowledge.connector', JSON.stringify({ workspaceId: omar.workspaceId, sourceId: source.id, mode: 'force' }), `knowledge.connector:${source.id}:force`]));
+      for (let i = 0; i < 400 && (await tx.query('SELECT 1 FROM pg_locks WHERE NOT granted')).rows.length === 0; i++) await new Promise((r) => setTimeout(r, 100));
+      expect((await tx.query('SELECT 1 FROM pg_locks WHERE NOT granted')).rows.length, 'the pass to wait at its write').toBeGreaterThan(0);
+      const added = await x.w.call(omar, 'POST', '/api/teams/engineering/members', { personId: sameera.personId, role: 'member' });
+      expect([200, 201], JSON.stringify(added.body)).toContain(added.status);
+    });
+    // the pass ends, sees the team is not the one it read, and queues a recheck keyed by the new team
+    for (let i = 0; i < 100 && (await rechecks()).length === 0; i++) await new Promise((r) => setTimeout(r, 150));
+    expect(await rechecks()).toHaveLength(1);
+    await idle();
+    expect(await names()).toEqual(['Engineering handbook', 'Public handbook']);
   });
 });
 

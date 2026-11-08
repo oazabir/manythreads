@@ -8,6 +8,8 @@ import { normalizePrefs } from './prefs.ts';
 // notification of the kind `meeting_soon` per invited person who can still read the room's channel ("Design review starts in 5 minutes", from the organizer, opening `/join/<id>`; the row's
 // reference is the plan, `ref_type = scheduled_meeting`). Like a reminder, no channel level silences it; Do not disturb holds it, and the browser push is sent like the other kinds
 // (`push.ts` words the title and the link). One row per person and plan: the event delivered twice writes nothing the second time.
+// A plan whose time moves is reminded again (the reminder job says the event a second time): the same row is raised (unread, new timestamp, the title as it is now) instead of a second row, and
+// only when the event was said after the row was last written, so the first event delivered twice still changes nothing.
 const PREVIEW_MAX = 140;
 
 /** "Design review starts in 5 minutes", cut at the title to the preview length (never in the tail). */
@@ -51,9 +53,11 @@ export function registerMeetingSoon(ctx: PluginContext): void {
       const row = await tx.query<{ id: string; person_id: string; held_at: Date | null }>(
         `INSERT INTO app.notifications AS n (workspace_id, person_id, kind, ref_type, ref_id, channel_id, actor_id, actor_name, preview, held_at)
          VALUES ($1::uuid, $2::uuid, 'meeting_soon', 'scheduled_meeting', $3::uuid, $4::uuid, $5::uuid, $6, $7, CASE WHEN $8::boolean THEN now() END)
-         ON CONFLICT (person_id, ref_type, ref_id) DO NOTHING
+         ON CONFLICT (person_id, ref_type, ref_id) DO UPDATE
+           SET read_at = NULL, created_at = now(), preview = EXCLUDED.preview, actor_id = EXCLUDED.actor_id, actor_name = EXCLUDED.actor_name, held_at = EXCLUDED.held_at
+           WHERE n.created_at < $9::timestamptz
          RETURNING n.id, n.person_id, n.held_at`,
-        [event.workspaceId, personId, event.scheduledMeetingId, event.channelId, plan.organizer_id, (plan.organizer_name ?? 'Organizer').slice(0, 200), preview, quiet.has(personId)],
+        [event.workspaceId, personId, event.scheduledMeetingId, event.channelId, plan.organizer_id, (plan.organizer_name ?? 'Organizer').slice(0, 200), preview, quiet.has(personId), event.at],
       );
       if (row.rows[0]) written.push(row.rows[0]);
     }
