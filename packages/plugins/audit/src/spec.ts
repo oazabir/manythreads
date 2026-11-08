@@ -97,6 +97,20 @@ const BUDGET_REFUSAL: Record<string, string> = {
   preset: 'Blocked by the guard preset',
   dlp: 'Blocked by the data-loss check',
 };
+const MEETING_CONSENT_SUBJECT: Record<string, string> = {
+  transcribe: 'Voice written down',
+  record: 'Voice recorded',
+  room_transcription: 'Room transcription',
+  room_recording: 'Room recording',
+};
+const MEETING_RECORDING_STOP: Record<string, string> = {
+  turned_off: 'Turned off',
+  left: 'The person left',
+  ended: 'The room ended',
+  consent_withdrawn: 'Someone took back their yes',
+  joined_without_yes: 'Someone joined without saying yes',
+  failed: 'The recorder failed',
+};
 const APPROVAL_SOURCE: Record<string, string> = {
   environment: 'Asked by the environment rules',
   dispatch: 'Asked by a command rule',
@@ -732,6 +746,66 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     who: person(e['personId']) ?? 'system',
     target: of('import_placeholder', uuid(e['placeholderActorId'])),
     reason: `${plural(num(e['messages']), 'message')} moved to the person who signed in`,
+  }),
+  // Voice rooms (P15-16): who and what, never the title, the words or a file. A direct-message call has no team, so a call opened or ended there leaves no row.
+  'meetings.meeting.started': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return { action: 'meeting.started', who: actor(e['startedBy']), teamId, target: of('meeting', uuid(e['meetingId'])) };
+  },
+  'meetings.meeting.ended': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return {
+      action: 'meeting.ended',
+      who: actor(e['endedBy']) ?? 'system',
+      teamId,
+      target: of('meeting', uuid(e['meetingId'])),
+      reason: `${e['reason'] === 'empty' ? 'Everyone left' : 'Ended by a person'}; ${plural(num(e['participantCount']), 'person', 'people')} took part`,
+    };
+  },
+  'meetings.consent.changed': (e) => ({
+    action: 'meeting.consent_changed',
+    who: actor(e['actorId']),
+    teamId: team(e['teamId']),
+    target: of('meeting', uuid(e['meetingId'])),
+    reason: MEETING_CONSENT_SUBJECT[String(e['subject'])] ? `${MEETING_CONSENT_SUBJECT[String(e['subject'])]}: ${e['value'] === 'yes' ? 'yes' : e['value'] === 'no' ? 'no' : 'not answered'}` : null,
+  }),
+  'meetings.notetaker.added': (e) => ({ action: 'meeting.notetaker_added', who: actor(e['addedBy']), teamId: team(e['teamId']), target: of('bot', uuid(e['botId']), null, 'bot') }),
+  'meetings.notetaker.removed': (e) => ({
+    action: 'meeting.notetaker_removed',
+    who: actor(e['removedBy']) ?? bot(e['botId']),
+    teamId: team(e['teamId']),
+    target: of('bot', uuid(e['botId']), null, 'bot'),
+    reason: e['removedBy'] ? 'Taken out by a person' : 'Left when the room ended',
+  }),
+  'meetings.recording.started': (e) => ({
+    action: 'meeting.recording_started',
+    who: actor(e['startedBy']),
+    teamId: team(e['teamId']),
+    target: of('meeting', uuid(e['meetingId'])),
+    reason: `${plural(num(e['people']), 'person', 'people')} recorded`,
+  }),
+  'meetings.recording.stopped': (e) => ({
+    action: 'meeting.recording_stopped',
+    who: actor(e['stoppedBy']) ?? 'system',
+    teamId: team(e['teamId']),
+    target: of('meeting', uuid(e['meetingId'])),
+    reason: MEETING_RECORDING_STOP[String(e['reason'])] ?? 'Stopped',
+  }),
+  'meetings.notes.shared': (e) => ({
+    action: 'meeting.notes_shared',
+    who: actor(e['sharedBy']),
+    teamId: team(e['teamId']),
+    target: of('meeting', uuid(e['meetingId'])),
+    reason: `${e['revoked'] === true ? 'Stopped sharing with' : 'Shared with'} ${e['granteeKind'] === 'channel' ? 'a channel' : 'a person'}`,
+  }),
+  'meetings.notes.saved': (e) => ({
+    action: 'meeting.notes_saved',
+    who: actor(e['savedBy']),
+    teamId: team(e['teamId']),
+    target: of('meeting', uuid(e['meetingId'])),
+    reason: e['toMemory'] === true ? 'Also sent to the team memory inbox' : null,
   }),
   'notifications.digest.sent': (e) => ({
     action: 'digest.sent',

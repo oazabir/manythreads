@@ -115,6 +115,15 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'retention.sweep.completed': { sweepId: id(80), dryRun: false, runLogCutoff: AT, memoryLogCutoff: AT, counts: { runs: 0, runsSkipped: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0 }, durationMs: 5 },
   'workshop.terminal.opened': { teamId: id(20), botId: id(60), sessionId: id(95), adminId: id(13), runId: id(96), credentialsRevoked: 1, at: AT },
   'workshop.terminal.closed': { teamId: id(20), botId: id(60), sessionId: id(95), adminId: id(13), reason: 'idle', durationMs: 4000, bytesIn: 10, bytesOut: 20, truncated: false, at: AT },
+  'meetings.meeting.started': { teamId: id(20), channelId: id(40), meetingId: id(97), startedBy: id(13), at: AT },
+  'meetings.meeting.ended': { teamId: id(20), channelId: id(40), meetingId: id(97), endedBy: id(13), reason: 'person', durationSeconds: 600, participantCount: 3, at: AT },
+  'meetings.consent.changed': { teamId: id(20), channelId: id(40), meetingId: id(97), actorId: id(13), subject: 'transcribe', value: 'yes', at: AT },
+  'meetings.notetaker.added': { teamId: id(20), channelId: id(40), meetingId: id(97), botId: id(60), addedBy: id(13), at: AT },
+  'meetings.notetaker.removed': { teamId: id(20), channelId: id(40), meetingId: id(97), botId: id(60), removedBy: null, at: AT },
+  'meetings.recording.started': { teamId: id(20), channelId: id(40), meetingId: id(97), startedBy: id(13), people: 2, at: AT },
+  'meetings.recording.stopped': { teamId: id(20), channelId: id(40), meetingId: id(97), reason: 'turned_off', stoppedBy: id(13), at: AT },
+  'meetings.notes.shared': { teamId: id(20), channelId: id(40), meetingId: id(97), sharedBy: id(13), granteeKind: 'person', granteeId: id(10), revoked: false, at: AT },
+  'meetings.notes.saved': { teamId: id(20), channelId: id(40), meetingId: id(97), savedBy: id(13), path: 'meetings/2026/11/08-1402-review/notes.md', toMemory: true, at: AT },
   'audit.export.created': { exportedBy: id(13), rowCount: 12, truncated: false, from: null, to: null, keyId: 'abcdef0123456789', exportedAt: AT },
 };
 

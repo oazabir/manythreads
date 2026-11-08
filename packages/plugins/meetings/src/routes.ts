@@ -45,6 +45,7 @@ import {
 import { mediaFailure, mediaStatus, requireMedia, bestEffort } from './media.ts';
 import { MEETING_COLUMNS, loadMeeting, summaries, toMeeting, type MeetingRow } from './rows.ts';
 import { announceRoom, ringDirectMessage } from './live.ts';
+import { assertRoomHasSpace } from './limits.ts';
 import { emitJoined, endRoom, scheduleAutoEnd } from './service.ts';
 
 // The routes of voice rooms (docs/plugins/meetings.md). Every route but the media server's webhook runs as the caller, so the row-level security of the tables
@@ -75,8 +76,7 @@ async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvid
   ).rows[0];
   const present = existing !== undefined && existing.left_at === null;
   if (!present) {
-    const people = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.meeting_participants WHERE meeting_id = $1::uuid AND left_at IS NULL', [m.id])).rows[0]!.n;
-    if (people >= MEETING_MAX_PARTICIPANTS) throw conflict(`This voice room is full (${MEETING_MAX_PARTICIPANTS} people)`);
+    await assertRoomHasSpace(tx, m.id);
   }
   const row = (
     await tx.query<{ display_name: string }>(

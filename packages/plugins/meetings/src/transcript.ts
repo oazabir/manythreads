@@ -1,4 +1,4 @@
-import type { MeetingConsent, MeetingTranscriptLine } from '@manythreads/shared';
+import { MEETING_CORRECTION_HOURS, type MeetingConsent, type MeetingTranscriptLine } from '@manythreads/shared';
 
 // The transcript as a reader sees it (PLAN P15-05). One rule decides what a reader may see of a line: the speaker's answer to "Transcribe my voice" NOW. A speaker who
 // is not a "yes" (said no, or never answered) is shown only as "<name> spoke (not transcribed)" with the times of the stretch they spoke; their words are never part
@@ -13,6 +13,14 @@ export interface SegmentFacts {
   endMs: number;
   text: string;
   final: boolean;
+  /** When the line was stored; with `RenderOptions` it decides whether the speaker may still correct it. */
+  createdAt?: Date;
+}
+
+/** Who is looking and when, so a line can say whether the viewer may correct it (their own line, a "yes" speaker, stored less than a day ago). */
+export interface RenderOptions {
+  viewerActorId: string;
+  now: Date;
 }
 
 export interface SpeakerFacts {
@@ -28,7 +36,7 @@ export const notTranscribedText = (name: string): string => `${name} spoke (not 
 /** Orders by start time (then end time, then speaker, so the order never depends on how rows came out of the database). */
 const byTime = (a: SegmentFacts, b: SegmentFacts): number => a.startMs - b.startMs || a.endMs - b.endMs || (a.speakerId < b.speakerId ? -1 : a.speakerId > b.speakerId ? 1 : 0);
 
-export function renderTranscript(segments: readonly SegmentFacts[], speakers: ReadonlyMap<string, SpeakerFacts>): MeetingTranscriptLine[] {
+export function renderTranscript(segments: readonly SegmentFacts[], speakers: ReadonlyMap<string, SpeakerFacts>, options?: RenderOptions): MeetingTranscriptLine[] {
   const lines: MeetingTranscriptLine[] = [];
   for (const s of [...segments].filter((x) => x.final).sort(byTime)) {
     const who = speakers.get(s.speakerId);
@@ -44,7 +52,7 @@ export function renderTranscript(segments: readonly SegmentFacts[], speakers: Re
         endMs: Math.max(s.endMs, s.startMs),
         text,
         transcribed: true,
-        editable: false,
+        editable: options !== undefined && s.id !== undefined && s.speakerId === options.viewerActorId && s.createdAt !== undefined && options.now.getTime() - s.createdAt.getTime() <= MEETING_CORRECTION_HOURS * 3_600_000,
       });
       continue;
     }

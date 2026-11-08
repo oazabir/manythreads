@@ -146,13 +146,14 @@ export function registerConsentRoutes(ctx: PluginContext): void {
         [m.id],
       );
       const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
-      const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
-        'SELECT id, speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+      const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean; created_at: Date }>(
+        'SELECT id, speaker_id, start_ms, end_ms, text, final, created_at FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
         [m.id],
       );
       const lines = renderTranscript(
-        segs.rows.map((s) => ({ id: s.id, speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final })),
+        segs.rows.map((s) => ({ id: s.id, speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final, createdAt: s.created_at })),
         speakers,
+        { viewerActorId: tx.actor.id, now: ctx.runtime.now() },
       );
       return json(GetMeetingTranscriptResponse.parse({ lines }));
     }),
