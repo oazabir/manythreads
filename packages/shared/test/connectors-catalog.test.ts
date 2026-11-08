@@ -44,7 +44,7 @@ describe('the catalog', () => {
 
   it('a planned connector says why and which task builds it, and offers no tool and no service', () => {
     const planned = CONNECTOR_CATALOG.filter((e) => e.status === 'planned');
-    expect(planned.length).toBeGreaterThan(10);
+    expect(planned.length).toBeGreaterThan(0);
     for (const e of planned) {
       expect(e.reason, e.id).toMatch(/\S/);
       expect(e.phase, e.id).toMatch(/^P\d+-\d+$/);

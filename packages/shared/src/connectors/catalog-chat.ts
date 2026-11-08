@@ -2,7 +2,9 @@ import type { ConnectorEntry } from './catalog.ts';
 import { planned, soon, svc, trig } from './catalog-helpers.ts';
 
 // The catalog entries of the chat connectors (PLAN Bundle D, P16-09): Slack, Telegram, WhatsApp Business and Microsoft Teams. Owned by the package that builds them
-// (WP-B), which flips the statuses and services here and nowhere else.
+// (WP-B), which flips the statuses and services here and nowhere else. Telegram and WhatsApp are built (P16-09, first half); Slack and Teams stay planned until the second half.
+
+const built = { status: 'available', reason: null, phase: 'P16-09' } as const;
 
 export const CHAT_PLANNED_ENTRIES: ConnectorEntry[] = [
   planned({
@@ -30,7 +32,7 @@ export const CHAT_PLANNED_ENTRIES: ConnectorEntry[] = [
     heldBy: ['team'],
     tools: [],
     triggers: [trig('message_received', 'A message arrives')],
-    ...soon('P16-09', 'Chat bridges arrive in a later phase.'),
+    ...built,
   }),
   planned({
     id: 'whatsapp',
@@ -43,7 +45,7 @@ export const CHAT_PLANNED_ENTRIES: ConnectorEntry[] = [
     heldBy: ['team'],
     tools: [],
     triggers: [trig('message_received', 'A message arrives')],
-    ...soon('P16-09', 'Chat bridges arrive in a later phase.'),
+    ...built,
   }),
   planned({
     id: 'teams',

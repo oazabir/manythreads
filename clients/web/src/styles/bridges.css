@@ -1,0 +1,179 @@
+/*
+ * Chat apps (PLAN Bundle D, P16-09). `br-` is the prefix: the admin page, the account page, the channel's Integrations tab and the "via" note on a message. Shared classes (.block, .btn,
+ * .chip, .fld, .alert, .mono) come from app.css; colours, sizes and radii are tokens.
+ */
+.br-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.br-card {
+  padding-bottom: 14px;
+}
+
+.br-card.later {
+  opacity: 0.8;
+}
+
+.br-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 16px;
+}
+
+.br-note {
+  margin: 4px 16px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.br-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 560px;
+  padding: 8px 16px;
+}
+
+.br-form .br-note {
+  margin: 0;
+}
+
+.br-problem {
+  margin: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--alert-border);
+  border-radius: var(--radius-md);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: var(--fs-small);
+}
+
+.br-switch {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: var(--fs-small);
+}
+
+.br-callback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 16px;
+}
+
+.br-callback code {
+  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
+}
+
+.br-label {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.br-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  padding: 8px 16px;
+}
+
+.br-facts dt {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.br-facts dd {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.br-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.br-code {
+  padding: 4px 16px;
+}
+
+.br-code .br-note {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.br-code-digits {
+  display: inline-block;
+  margin: 6px 0;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--shell);
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* The channel's Integrations tab. */
+.br-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.br-tab .br-note {
+  margin: 0;
+}
+
+.br-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.br-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--fs-small);
+}
+
+.br-newlink .br-code {
+  padding: 0;
+}
+
+/* The note after an author's name on a message that came across a bridge. */
+.br-via {
+  margin-left: 6px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+
+/* Phone: every control is a 44 px target. */
+@media (width <= 760px) {
+  .br-actions .btn,
+  .br-link .btn,
+  .br-form .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
