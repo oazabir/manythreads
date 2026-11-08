@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { usePeople } from '../channels/hooks';
 import { Avatar } from '../components/ui';
+import { useDismiss } from '../shell/useDismiss';
 import { useNarrow } from '../shell/useNarrow';
 import type { CallState } from './controller';
 import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenOnServer } from './consent';
@@ -155,6 +156,12 @@ export function CallDock() {
   const narrow = useNarrow();
   const [menu, setMenu] = useState<'settings' | 'notetaker' | null>(null);
   const [open, setOpen] = useState(false);
+  const dock = useRef<HTMLElement>(null);
+  // Esc, or a press outside the bar, closes the settings or note-taker menu; Esc gives focus back to the button that opened it
+  useDismiss(menu !== null, () => {
+    dock.current?.querySelector<HTMLElement>('[aria-haspopup="dialog"][aria-expanded="true"]')?.focus();
+    setMenu(null);
+  }, dock);
   const inRoom = call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost';
   const now = useNow(call.phase === 'connected');
   if (call.phase === 'not-set-up' || call.phase === 'failed') return <StatusCard call={call} />;
@@ -172,7 +179,7 @@ export function CallDock() {
   const micLabel = call.deafened ? 'Unmute and listen again' : call.muted ? 'Unmute' : 'Mute';
 
   return (
-    <section className={`call-dock ${narrow ? 'sheet' : ''} ${sheetOpen ? 'open' : ''}`} aria-label="Voice room" data-testid="call-dock" data-phase={call.phase}>
+    <section ref={dock} className={`call-dock ${narrow ? 'sheet' : ''} ${sheetOpen ? 'open' : ''}`} aria-label="Voice room" data-testid="call-dock" data-phase={call.phase}>
       {narrow ? (
         <button type="button" className="call-grab" aria-expanded={open} aria-label={open ? 'Hide call details' : 'Show call details'} onClick={() => setOpen((o) => !o)} />
       ) : null}
