@@ -201,6 +201,12 @@ The bot never publishes audio, and a bot never receives a media token: only the 
 their Personal files, and `meta.meetingNotes { meetingId }` so the page draws Share and Save-to-team buttons. The call thread gets "Notes are with <organizer>." If the run fails, `meeting_notes.status = 'failed'` and the
 same message says the transcript is there.
 
+**A removed note-taker.** If the note-taker is removed before the room ends, its listener leaves at once and stops hearing anyone; lines already written stay in the database and in the organizer's Personal
+`transcript.md` (the listener appends every 30 seconds and once more when it closes). When the room then ends, the room's own transcript job (`writer.ts`, `writeTranscript`) decides by the file that exists:
+if the note-taker already created the Personal transcript (`meeting_notes.location = 'personal'`), the job writes nothing and the Personal copy stays the only copy, because the people in the call were told
+a private note-taker was listening and the organizer has not chosen to publish it (they can use Save to team); lines spoken after the removal (from devices or the server fallback) are in the database and the
+meeting page but not in that file. If the note-taker was removed before it wrote anything (no Personal file yet), the job writes the normal repository or channel Files copy and the Scribe makes the notes.
+
 **Questions in the call** (P15-22, `questions.ts`). Final lines of people who said yes are scanned (NFKC and lower case, one linear pass, whole words only) for the bot's name, its slug or "note-taker"; a hit queues
 `meetings.question`. One `fast` model call over the last 60 seconds decides whether the newest line is a question for the note-taker. A message in the call thread that **@mentions** the note-taker (the text `@note-taker`
 or the real mention) skips that check. Then the note-taker's `answer` run may read only the channels **every person in the call** may read (each person's own visible set, taken as that person), no Personal files; an answer

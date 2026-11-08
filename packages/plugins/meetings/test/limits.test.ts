@@ -1,7 +1,8 @@
+import { lastFakeMedia } from '@manythreads/plugin-media-fake';
 import { MEETING_ROOM_LINES_PER_MINUTE, StartMeetingResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, ensureChannels, personas, type World } from '../../channels/test/world.ts';
-import { SPEAKER_LINES_PER_MINUTE, WindowCounter, takeRoomLines } from '../src/limits.ts';
+import { MEETING_SERVICE_SEATS, SPEAKER_LINES_PER_MINUTE, WindowCounter, takeRoomLines } from '../src/limits.ts';
 
 // The limits on a room (P15-16): how many lines a minute it takes, and how many people it holds.
 
@@ -88,6 +89,31 @@ describe('people in a room', () => {
     expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 3 })).status).toBe(200);
     expect((await w.call(omar, 'POST', `/api/meetings/${id}/join`)).status).toBe(200);
     expect((await w.call(priya, 'POST', `/api/meetings/${id}/join`)).status).toBe(409);
+    expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 25 })).status).toBe(200);
+  });
+
+  it('gives the media server the workspace cap plus the two service seats, not a fixed number', async () => {
+    const channel = await w.channelId('engineering', 'dev');
+    expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 7 })).status).toBe(200);
+    const started = await w.call(nadia, 'POST', `/api/channels/${channel}/meetings`, {});
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    const id = StartMeetingResponse.parse(started.body).meeting.id;
+    expect(lastFakeMedia().rooms.get(id)).toEqual({ maxParticipants: 7 + MEETING_SERVICE_SEATS });
+    expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 25 })).status).toBe(200);
+    await w.call(nadia, 'POST', `/api/meetings/${id}/end`, {});
+  });
+
+  it('lets in no more than the cap when many people join in the same moment', async () => {
+    const channel = await w.channelId('engineering', 'dev');
+    const started = await w.call(nadia, 'POST', `/api/channels/${channel}/meetings`, {});
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    const id = StartMeetingResponse.parse(started.body).meeting.id;
+    expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 3 })).status).toBe(200);
+    const results = await Promise.all([rafi, omar, priya].map((p) => w.call(p, 'POST', `/api/meetings/${id}/join`)));
+    expect(results.filter((r) => r.status === 200).length).toBe(2); // nadia is in: room for two more
+    expect(results.filter((r) => r.status === 409).length).toBe(1);
+    const present = await w.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.meeting_participants WHERE meeting_id = $1 AND left_at IS NULL', [id])).rows[0]!.n);
+    expect(present).toBe(3);
     expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 25 })).status).toBe(200);
   });
 });

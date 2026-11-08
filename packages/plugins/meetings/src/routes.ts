@@ -18,7 +18,6 @@ import {
   ListMeetingsQuery,
   ListMeetingsResponse,
   ListTeamMeetingsPathParams,
-  MEETING_MAX_PARTICIPANTS,
   MeetingHeartbeatRequest,
   MeetingHeartbeatResponse,
   MeetingPathParams,
@@ -45,7 +44,7 @@ import {
 import { mediaFailure, mediaStatus, requireMedia, bestEffort } from './media.ts';
 import { MEETING_COLUMNS, loadMeeting, summaries, toMeeting, type MeetingRow } from './rows.ts';
 import { announceRoom, ringDirectMessage } from './live.ts';
-import { assertRoomHasSpace } from './limits.ts';
+import { MEETING_SERVICE_SEATS, assertRoomHasSpace, roomCap } from './limits.ts';
 import { emitJoined, endRoom, scheduleAutoEnd } from './service.ts';
 
 // The routes of voice rooms (docs/plugins/meetings.md). Every route but the media server's webhook runs as the caller, so the row-level security of the tables
@@ -143,7 +142,9 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
       if (!m) throw notFound('That voice room is not available');
       if (created) {
         try {
-          await media.createRoom({ name: m.id, maxParticipants: MEETING_MAX_PARTICIPANTS });
+          // The media server enforces the workspace's room size too (a client that skips our join route still cannot get past it), plus the seats of the two hidden
+          // service members (the note-taker's listener and the recorder). The size is the one in force when the room opens; the join route reads the live setting.
+          await media.createRoom({ name: m.id, maxParticipants: (await roomCap(tx)) + MEETING_SERVICE_SEATS });
         } catch (err) {
           throw mediaFailure(err);
         }

@@ -71,7 +71,7 @@ export default definePlugin({
     registerMediaWebhook(ctx);
     registerMeetingJobs(ctx);
     registerMeetingConsumers(ctx);
-    // Bundle C (docs/plugins/meetings.md "Bundle C contracts"): one call per module; each module is filled in by the work package that owns it, and until then answers 501.
+    // Bundle C (docs/plugins/meetings.md "Bundle C contracts"): one call per module.
     registerSegments(ctx);
     registerTranscriptRoutes(ctx);
     registerCaptions(ctx);

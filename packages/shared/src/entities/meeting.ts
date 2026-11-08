@@ -32,8 +32,6 @@ export const MEDIA_TOKEN_MAX_SECONDS = 600;
 export const MEETING_EMPTY_END_SECONDS = 120;
 /** A person who has sent no sign of life (heartbeat) for this long is counted as having left (seconds). The room page sends one every 30 s. */
 export const MEETING_PRESENCE_STALE_SECONDS = 180;
-/** Most people in one room. */
-export const MEETING_MAX_PARTICIPANTS = 50;
 /** A room title is one line. */
 export const MEETING_TITLE_MAX = 200;
 

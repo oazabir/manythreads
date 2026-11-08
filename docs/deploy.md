@@ -275,8 +275,7 @@ a closed UDP port or a wrong `nodeIp`.
 
 Undo: `media.enabled: false` (the Secret stays; the next enable reuses it).
 
-**Room size.** The workspace setting `roomCap` (admin; default 25, 2 to 100) decides how many people the app lets into a room. The app creates each LiveKit room with `max_participants` 50 (`MEETING_MAX_PARTICIPANTS`), which
-is the real ceiling; the chart's `media.maxParticipants` is only LiveKit's default for a room created without a number and the app always gives one. The hidden note-taker and recorder count as participants on the media server.
+**Room size.** The workspace setting `roomCap` (admin; default 25, 2 to 100) decides how many people the app lets into a room, and the app creates each LiveKit room with `max_participants` = that number plus 2 (the hidden note-taker and recorder count as participants on the media server), so the media server refuses the extra person even if a client skips the join route. The number is read when the room opens: raising `roomCap` does not widen a room that is already live. The chart's `media.maxParticipants` is only LiveKit's default for a room created without a number, and the app always gives one.
 
 **The note-taker and recording listener (one server process).** Both are a worker thread inside the **server** pod (the library `@livekit/rtc-node`, a prebuilt linux-x64 glibc binary that works on the `node:22-slim`
 image; it loads only when a note-taker is added). There is no separate deployment for them, so: they reach the media server at its in-cluster address, need no extra port beyond the table above, and are limited **per server

@@ -58,11 +58,9 @@ results go to `STATUS.md` after `e2e/screens/task.verify-bundle-c.shots.ts` has 
 
 ## Gaps found while writing the docs
 
-- `meetings/src/index.ts` still says the modules "answer 501 until the package fills them" and `not-built.ts` is no longer used by any route.
-- The app creates every LiveKit room with `max_participants` 50, so the workspace `roomCap` can be raised to 100 but never admits more than 50, and the chart's `media.maxParticipants` (25) has no effect on
-  rooms the app creates.
+- Fixed in review (P15-RV): the stale "answer 501" comment and the unused `not-built.ts` are gone, and the app now creates each LiveKit room with the workspace `roomCap` plus two seats for the hidden listener and recorder.
 - The note-taker room limit counts rooms with a note-taker in the **database** (all live rooms), not the rooms this process listens to; with one process they are the same.
-- A note-taker that was removed before the room ended keeps `meeting_notes.location = 'personal'`; the room's own transcript job does not write a repository copy for it.
+- A note-taker that was removed before the room ended keeps `meeting_notes.location = 'personal'`; the room's own transcript job does not write a repository copy for it. This is on purpose, see "A removed note-taker" in docs/plugins/meetings.md.
 
 ## Decisions taken without the owner (reversible)
 

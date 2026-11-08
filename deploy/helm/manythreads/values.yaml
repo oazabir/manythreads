@@ -274,7 +274,7 @@ media:
   # The router then forwards the audio ports to that machine (docs/deploy.md "Voice rooms"). Empty `nodeIp` and `useExternalIp: true` = the machine has a public address.
   nodeIp: ""
   useExternalIp: true
-  maxParticipants: 25      # people in one room; the room's cap in the app is lower or equal
+  maxParticipants: 25      # only LiveKit's default for a room made without a number; the app always sets the workspace room cap (+2 service seats)
   noteTakerMaxRooms: 10    # rooms one server pod's note-taker listens to at once
   # Put the signalling on the main address too: a path (for example /livekit) that the ingress sends to the media pod with the prefix taken off. Empty = no such rule
   # (then `publicUrl` is a name of its own that you route yourself). Needs Traefik's CRDs (the cluster's ingress is Traefik).
