@@ -372,4 +372,9 @@
   .wh-origin {
     max-width: none;
   }
+
+  /* a thumb needs 44 px */
+  .wh-origin-head {
+    min-height: 44px;
+  }
 }

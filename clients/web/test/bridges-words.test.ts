@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
-import { appIdLabel, BUILT_PROVIDERS, callbackUrl, consoleSteps, failureWords, isBuilt, LATER_PROVIDERS, PROVIDER_LABEL, STATUS_WORDS, tokenLabel, whatItDoes } from '../src/screens/bridges/words';
+import { appIdLabel, BUILT_PROVIDERS, callbackUrl, chatPlace, codeExpired, consoleSteps, failureWords, isBuilt, LATER_PROVIDERS, openableLink, PROVIDER_LABEL, STATUS_WORDS, tokenLabel, whatItDoes } from '../src/screens/bridges/words';
 import { ACCOUNT_CHAT_APPS_READY } from '../src/screens/bridges/AccountChatApps';
 import { ADMIN_CHAT_APPS_READY } from '../src/screens/bridges/AdminChatApps';
 import { CHAT_BRIDGE_TAB_READY } from '../src/webhooks/ChatBridgeTab';
@@ -34,6 +34,20 @@ describe('the chat-app pages', () => {
     expect(appIdLabel('teams')?.label).toMatch(/client\) id/);
     expect(appIdLabel('slack')).toBeNull();
     for (const p of ['slack', 'teams'] as const) expect(whatItDoes(p)).toMatch(/linked/);
+  });
+
+  it('name the place a channel is joined to, open a link code only over https, and know when a code has run out', () => {
+    expect(chatPlace('telegram')).toBe('group');
+    expect(chatPlace('slack')).toBe('channel');
+    expect(chatPlace('teams')).toBe('channel');
+    expect(openableLink('https://t.me/some_bot?start=123456')).toBe('https://t.me/some_bot?start=123456');
+    expect(openableLink('javascript:alert(1)')).toBeNull();
+    expect(openableLink('http://t.me/x')).toBeNull();
+    expect(openableLink('not a link')).toBeNull();
+    expect(openableLink(null)).toBeNull();
+    expect(codeExpired('2026-11-08T10:00:00.000Z', Date.parse('2026-11-08T09:59:59.000Z'))).toBe(false);
+    expect(codeExpired('2026-11-08T10:00:00.000Z', Date.parse('2026-11-08T10:00:00.000Z'))).toBe(true);
+    expect(codeExpired('garbage')).toBe(true);
   });
 
   it('say the server’s own sentence, else the fallback', () => {

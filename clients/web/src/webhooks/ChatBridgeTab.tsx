@@ -4,7 +4,7 @@ import { QueryView } from '../components/states';
 import { Alert } from '../components/ui';
 import { useQuery } from '../app/useQuery';
 import { createChannelLinkCode, deleteBridgeLink, fetchChannelBridges } from '../screens/bridges/api';
-import { failureWords, PROVIDER_LABEL } from '../screens/bridges/words';
+import { chatPlace, failureWords, PROVIDER_LABEL } from '../screens/bridges/words';
 import '../styles/bridges.css';
 
 /** Set to true when the "Chat apps" tab of the Integrations dialog is built (PLAN Bundle D, P16-09). */
@@ -63,7 +63,7 @@ function LinkRow({ link, canUnlink, reload }: { link: BridgeLink; canUnlink: boo
       <span className="br-link-main">
         <b>{PROVIDER_LABEL[link.provider]}</b> {link.externalLabel ? <span>{link.externalLabel}</span> : null}
       </span>
-      {canUnlink ? <button type="button" className="btn s" disabled={busy} onClick={() => void remove()}>Unjoin</button> : null}
+      {canUnlink ? <button type="button" className="btn s" disabled={busy} onClick={() => void remove()} aria-label={`Unjoin ${PROVIDER_LABEL[link.provider]}${link.externalLabel ? ` ${link.externalLabel}` : ''}`}>Unjoin</button> : null}
       {error ? <Alert>{error}</Alert> : null}
     </li>
   );
@@ -90,12 +90,12 @@ function NewLink({ channelId, provider, handle }: { channelId: string; provider:
       {error ? <Alert>{error}</Alert> : null}
       {code ? (
         <div className="br-code">
-          <p className="br-note">Add {handle} to the {label} group, then send this there:</p>
+          <p className="br-note">Add {handle} to the {label} {chatPlace(provider)}, then send this there:</p>
           <div className="br-code-digits mono" data-testid="chat-bridge-command">{code.command}</div>
           <p className="br-note">It works once, for ten minutes.</p>
         </div>
       ) : (
-        <button type="button" className="btn primary" onClick={() => void make()} disabled={busy} data-testid={`chat-bridge-link-${provider}`}>{busy ? 'Making a code…' : `Join a ${label} group`}</button>
+        <button type="button" className="btn primary" onClick={() => void make()} disabled={busy} data-testid={`chat-bridge-link-${provider}`}>{busy ? 'Making a code…' : `Join a ${label} ${chatPlace(provider)}`}</button>
       )}
     </div>
   );

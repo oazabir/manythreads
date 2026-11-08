@@ -6,7 +6,6 @@ import { PlainFrame } from '../../components/frames';
 import { QueryView } from '../../components/states';
 import { disconnectPersonConnection, fetchPersonProviders, startPersonConnection } from './personApi';
 import {
-  initialServices,
   message,
   notSetUpSentence,
   problemSentence,
@@ -14,7 +13,9 @@ import {
   reconnectTitle,
   renewedLine,
   resultFromQuery,
+  servicesToTick,
   standing,
+  ticksFromQuery,
   withoutResult,
   writesLine,
 } from './personWords';
@@ -32,6 +33,8 @@ export function PersonConnections() {
   const navigate = useNavigate();
   // the way back from a provider is read once and then taken out of the address, so a reload does not say it again
   const [back] = useState(() => loc.search);
+  // a link (the "Schedule a room" dialog) may ask for a service to be ticked already; read once, like the way back
+  const [asked] = useState(() => ticksFromQuery(loc.search));
   const [dismissed, setDismissed] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   useEffect(() => {
@@ -63,6 +66,7 @@ export function PersonConnections() {
               <ProviderCard
                 key={p.id}
                 provider={p}
+                asked={asked}
                 onChanged={(line) => {
                   setDismissed(true);
                   setSaid(line);
@@ -77,9 +81,9 @@ export function PersonConnections() {
   );
 }
 
-function ProviderCard({ provider: p, onChanged }: { provider: PersonConnectionProvider; onChanged: (said: string | null) => void }) {
+function ProviderCard({ provider: p, asked, onChanged }: { provider: PersonConnectionProvider; asked: ReturnType<typeof ticksFromQuery>; onChanged: (said: string | null) => void }) {
   const look = standing(p);
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(initialServices(p)));
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(servicesToTick(p, asked)));
   const [busy, setBusy] = useState<null | 'connect' | 'disconnect'>(null);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);

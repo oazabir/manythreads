@@ -11,6 +11,7 @@ import {
   type ConnectorCategory,
   type ConnectorEntry,
 } from '@manythreads/shared';
+import { isAdmin, useSession } from '../../app/session';
 import { authLine, toolsLine } from './galleryWords';
 
 /*
@@ -88,6 +89,9 @@ function Card({ entry: e, onPick, onNavigate }: { entry: ConnectorEntry; onPick:
   const kind = e.kind !== null ? connectionKindInfo(e.kind) : undefined;
   const teamForm = !planned && kind !== undefined && e.heldBy.includes('team') && kind.available;
   const personal = !planned && !teamForm && e.heldBy.includes('person');
+  // a chat app (Telegram, WhatsApp, Slack, Teams) has no form here: an admin sets it up on the Chat apps page, anyone else links their own account on theirs
+  const chat = !planned && !teamForm && !personal && e.categories.includes('chat');
+  const admin = isAdmin(useSession());
   const note = `cg-note-${e.id}`;
   return (
     <li className={`cg-card ${planned ? 'off' : ''}`} data-connector={e.id} data-status={e.status} data-testid={`connector-card-${e.id}`}>
@@ -112,6 +116,11 @@ function Card({ entry: e, onPick, onNavigate }: { entry: ConnectorEntry; onPick:
         {personal ? (
           <Link className="btn" to="/settings/connections" aria-describedby={note} data-testid={`connector-personal-${e.id}`} onClick={onNavigate}>
             Connect your own account
+          </Link>
+        ) : null}
+        {chat ? (
+          <Link className="btn" to={admin ? '/settings/workspace/chat-apps' : '/account/chat-apps'} aria-describedby={note} data-testid={`connector-chat-${e.id}`} onClick={onNavigate}>
+            {admin ? 'Set up in Chat apps' : 'Link your own account'}
           </Link>
         ) : null}
         {planned ? (

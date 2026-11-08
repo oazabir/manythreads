@@ -153,4 +153,16 @@
     justify-content: flex-end;
     width: auto;
   }
+
+  /* a thumb needs 44 px: the tabs, the buttons in a row, the search box and the "Try again" link */
+  .ac-tab,
+  .ac-link,
+  .ac-act .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .ac-input {
+    min-height: 44px;
+  }
 }

@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { RunOrigin } from '@manythreads/shared';
 import { isApiError } from '../api/client';
+import { CaretIcon } from '../shell/icons';
 import { fetchRunOrigin } from '../webhooks/providerApi';
 import { PROVIDER_LABELS, clockOf, originSummary, safeHref } from '../webhooks/providerModel';
 
@@ -34,6 +35,7 @@ export function RunOriginCard({ runId }: { runId: string }) {
   const [origin, setOrigin] = useState<RunOrigin | null>(null);
   const [open, setOpen] = useState(false);
   const bodyId = useId();
+  const head = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     let live = true;
     setOrigin(null);
@@ -56,12 +58,14 @@ export function RunOriginCard({ runId }: { runId: string }) {
         if (e.key === 'Escape' && open) {
           e.stopPropagation();
           setOpen(false);
+          // focus may be on the link inside the body, which goes away: keep it on the card
+          head.current?.focus();
         }
       }}
     >
-      <button type="button" className="wh-origin-head" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((v) => !v)} data-testid="run-origin-toggle">
+      <button ref={head} type="button" className="wh-origin-head" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((v) => !v)} data-testid="run-origin-toggle">
         <span className="wh-origin-line">{originSummary(origin)}</span>
-        <span className="wh-origin-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span className="wh-origin-caret"><CaretIcon open={open} /></span>
       </button>
       {open ? (
         <div className="wh-origin-body" id={bodyId} data-testid="run-origin-body">

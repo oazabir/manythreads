@@ -207,4 +207,22 @@
   .sch-row {
     grid-template-columns: 1fr;
   }
+
+  /* a thumb needs 44 px: the header button and chip, the card's buttons, a person's row, the dialog's fields and the join button */
+  .sch-add,
+  .sch-chip,
+  .sch-pop .btn,
+  .sch-connect .btn,
+  .sch-join .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sch-person {
+    min-height: 44px;
+  }
+
+  .sch-form .dlg-input:not(textarea) {
+    min-height: 44px;
+  }
 }

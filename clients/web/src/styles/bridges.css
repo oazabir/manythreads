@@ -172,6 +172,7 @@
 @media (width <= 760px) {
   .br-actions .btn,
   .br-link .btn,
+  .br-newlink .btn,
   .br-form .btn {
     min-width: 44px;
     min-height: 44px;

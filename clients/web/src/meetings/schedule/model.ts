@@ -32,6 +32,8 @@ export function localInstant(date: string, time: string): Date | null {
   const out = new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2]), 0, 0);
   // `new Date(2026, 1, 31)` rolls over to March: a day that is not on the calendar is not a time
   if (out.getFullYear() !== Number(d[1]) || out.getMonth() !== Number(d[2]) - 1 || out.getDate() !== Number(d[3])) return null;
+  // the hour that the clocks skip (02:30 when they go forward) rolls over to 03:30: the event would start at a time the person did not choose
+  if (out.getHours() !== Number(t[1]) || out.getMinutes() !== Number(t[2])) return null;
   return Number.isNaN(out.getTime()) ? null : out;
 }
 
@@ -78,7 +80,9 @@ export function buildCreateRequest(form: ScheduleForm, now: Date): BuiltRequest 
   if (title === '') return { ok: false, error: 'Give the meeting a title.' };
   if ([...title].length > SCHEDULED_TITLE_MAX) return { ok: false, error: `A title can have at most ${SCHEDULED_TITLE_MAX} characters.` };
   const start = localInstant(form.date, form.time);
-  if (!start) return { ok: false, error: 'Choose a date and a start time.' };
+  if (!start) {
+    return { ok: false, error: form.date === '' || form.time === '' ? 'Choose a date and a start time.' : 'That day and time do not exist (the date is not on the calendar, or the clocks skip that hour). Choose another start.' };
+  }
   if (start.getTime() < now.getTime() - PAST_GRACE_MS) return { ok: false, error: 'That time has already passed. Choose a time that is still to come.' };
   if (!LENGTHS.some((l) => l === form.lengthMinutes)) return { ok: false, error: 'Choose how long the meeting lasts.' };
   const { valid, invalid } = parseAddresses(form.outsideText);
@@ -99,6 +103,16 @@ export function buildCreateRequest(form: ScheduleForm, now: Date): BuiltRequest 
       outsideAddresses: valid,
     },
   };
+}
+
+/**
+ * Where the dialog's "connect" button goes: Settings, Connections, with the calendar service already ticked (`tick=calendar_write`; the page reads it once). `needsAccess` names the
+ * providers that are connected without the calendar; with exactly one of them the page ticks it only there, else on every provider that has the service.
+ */
+export function calendarConnectPath(needsAccess: readonly ScheduledMeetingProvider[]): string {
+  const q = new URLSearchParams({ tick: 'calendar_write' });
+  if (needsAccess.length === 1) q.set('only', needsAccess[0]!);
+  return `/settings/connections?${q.toString()}`;
 }
 
 const sameDay = (a: Date, b: Date): boolean => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();

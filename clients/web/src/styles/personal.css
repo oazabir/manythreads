@@ -602,4 +602,9 @@ a.sp-opt:hover {
     min-width: 44px;
     min-height: 44px;
   }
+
+  .kn-consent,
+  .kn-form .mi-input {
+    min-height: 44px;
+  }
 }

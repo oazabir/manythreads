@@ -7,7 +7,9 @@ import {
   isMailService,
   notSetUpSentence,
   resultFromQuery,
+  servicesToTick,
   standing,
+  ticksFromQuery,
   withoutResult,
   writesLine,
 } from '../src/screens/connections/personWords';
@@ -132,10 +134,25 @@ describe('the words', () => {
     expect(writesLine({ writes: false })).toBe('Reads only.');
   });
 
+  it('ticks a service a link asks for (the Schedule a room dialog), only on the provider it is for and only if that provider has it', () => {
+    const google = { id: 'google', services: [service('drive'), service('calendar'), service('calendar_write', true)] } as Parameters<typeof servicesToTick>[0];
+    const notion = { id: 'notion', services: [service('pages')] } as Parameters<typeof servicesToTick>[0];
+    const asked = ticksFromQuery('?tick=calendar_write&only=google');
+    expect(asked).toEqual({ services: ['calendar_write'], only: 'google' });
+    expect(servicesToTick(google, asked)).toEqual(['drive', 'calendar', 'calendar_write']);
+    expect(servicesToTick(notion, asked)).toEqual(['pages']);
+    // without `only` every provider that has the service ticks it; an id the provider lacks, or a junk value, is ignored
+    expect(servicesToTick(google, ticksFromQuery('?tick=calendar_write'))).toEqual(['drive', 'calendar', 'calendar_write']);
+    expect(servicesToTick(notion, ticksFromQuery('?tick=calendar_write'))).toEqual(['pages']);
+    expect(ticksFromQuery('?tick=a b,<script>&only=../x')).toEqual({ services: [], only: null });
+    expect(ticksFromQuery('')).toEqual({ services: [], only: null });
+    expect(withoutResult('?tick=calendar_write&only=google&connected=google&x=1')).toBe('?x=1');
+  });
+
   it('turns ?connected=<provider> into a sentence, with the provider’s name when the list is here', () => {
     expect(resultFromQuery('?connected=google')).toEqual({ tone: 'ok', text: 'Google is connected.' });
     expect(resultFromQuery('?connected=notion', { notion: 'Notion' })).toEqual({ tone: 'ok', text: 'Notion is connected.' });
-    expect(resultFromQuery('?connected=dropbox')).toEqual({ tone: 'ok', text: 'The account is connected.' });
+    expect(resultFromQuery('?connected=mastodon')).toEqual({ tone: 'ok', text: 'The account is connected.' });
   });
 
   it('turns ?connect_error=<code> into plain words for every code the server sends, and never echoes the code', () => {

@@ -9,7 +9,7 @@ import { Dialog } from '../../components/Dialog';
 import { fetchMyCalendars } from '../../screens/connections/api';
 import { actionFailure } from '../../screens/meetings/words';
 import { createScheduledMeeting } from '../api';
-import { LENGTHS, buildCreateRequest, dateInput, parseAddresses, proposedStart, timeInput } from './model';
+import { LENGTHS, buildCreateRequest, calendarConnectPath, dateInput, parseAddresses, proposedStart, timeInput } from './model';
 
 const SERVICE_NAME = { google: 'Google Calendar', microsoft: 'Outlook' } as const;
 
@@ -90,7 +90,7 @@ export function ScheduleRoomDialog({ channelId, channelLabel, onClose, onCreated
               ? `Your ${needsAccess.map((p) => SERVICE_NAME[p]).join(' and ')} connection does not include the calendar yet. Add it, then come back.`
               : 'Connect your Google or Microsoft calendar to schedule a room.'}
           </p>
-          <Link className="btn" to="/settings/connections" onClick={onClose} data-testid="schedule-connect-link">Open Settings, Connections</Link>
+          <Link className="btn" to={calendarConnectPath(needsAccess)} onClick={onClose} data-testid="schedule-connect-link">Open Settings, Connections</Link>
         </div>
       ) : null}
       {calendars.status === 'error' ? <p className="dlg-error" role="alert">Your calendars could not be loaded. Close this and try again.</p> : null}

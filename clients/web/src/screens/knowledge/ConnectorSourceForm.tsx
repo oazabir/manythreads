@@ -33,6 +33,8 @@ const RHYTHM_CHOICES: ReadonlyArray<{ minutes: number; label: string }> = [
 const KIND_WORD: Record<string, string> = { folder: 'Folder', space: 'Space', site: 'Site', drive: 'Drive', database: 'Database', workspace: 'Workspace' };
 const rootLabel = (r: ConnectorRoot): string => `${r.parent ? `${r.parent} / ` : ''}${r.name} (${(KIND_WORD[r.kind] ?? r.kind).toLowerCase()})`;
 const count = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
+/** True when a list of roots was asked for this app: `useQuery` keeps the last answer on screen while a new key loads, so another app's folders must not be offered under this app's name. */
+export const rootsAreFor = (answer: { provider: KnowledgeConnectorProvider } | undefined, provider: KnowledgeConnectorProvider): boolean => answer !== undefined && answer.provider === provider;
 const problem = (e: unknown): string => (e instanceof Error && e.message !== '' ? e.message : 'The source could not be added. Try again.');
 
 /** The consent sentence a lead confirms before a team base reads a connected app. */
@@ -134,7 +136,8 @@ function Picker({ team, base, providers, onClose, onAdded }: Where & { base: str
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const roots = useQuery(`connector-roots:${provider}`, () => fetchConnectorRoots({ provider }));
+  const asked = useQuery(`connector-roots:${provider}`, () => fetchConnectorRoots({ provider }).then((r) => ({ ...r, provider })));
+  const roots = asked.status === 'ok' && !rootsAreFor(asked.data, provider) ? { ...asked, status: 'loading' as const } : asked;
   const list = roots.status === 'ok' ? roots.data.roots : [];
   const chosen = list.find((r) => r.id === root) ?? null;
   const forTeam = team !== null;

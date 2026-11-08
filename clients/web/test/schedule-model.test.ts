@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateRequest, chipText, invitedWords, isoWithOffset, localInstant, parseAddresses, proposedStart, whenWords, type ScheduleForm } from '../src/meetings/schedule/model';
+import { buildCreateRequest, calendarConnectPath, chipText, invitedWords, isoWithOffset, localInstant, parseAddresses, proposedStart, whenWords, type ScheduleForm } from '../src/meetings/schedule/model';
 import { gateSentence } from '../src/screens/meetings/JoinScheduled';
 
 // P16-05: the pure parts of the "Schedule a room" dialog, the header chip and the join page's sentences.
@@ -30,6 +30,27 @@ describe('the schedule dialog', () => {
     expect(localInstant('2026-02-31', '15:00')).toBeNull();
     expect(localInstant('', '15:00')).toBeNull();
     expect(localInstant('2026-11-09', '')).toBeNull();
+  });
+
+  it('refuses an hour the clocks skip, instead of quietly starting an hour later', () => {
+    const before = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      // 2026-03-08 02:30 does not exist in New York: the clocks go from 02:00 to 03:00
+      expect(localInstant('2026-03-08', '02:30')).toBeNull();
+      expect(localInstant('2026-03-08', '03:30')?.getHours()).toBe(3);
+      const b = buildCreateRequest({ ...FORM, date: '2026-03-08', time: '02:30' }, new Date(2026, 2, 1, 10, 0, 0));
+      expect(b.ok ? '' : b.error).toMatch(/do not exist/);
+    } finally {
+      if (before === undefined) delete process.env.TZ;
+      else process.env.TZ = before;
+    }
+  });
+
+  it('points the connect button at Settings, Connections with the calendar service ticked', () => {
+    expect(calendarConnectPath([])).toBe('/settings/connections?tick=calendar_write');
+    expect(calendarConnectPath(['microsoft'])).toBe('/settings/connections?tick=calendar_write&only=microsoft');
+    expect(calendarConnectPath(['google', 'microsoft'])).toBe('/settings/connections?tick=calendar_write');
   });
 
   it('writes the time with its offset', () => {

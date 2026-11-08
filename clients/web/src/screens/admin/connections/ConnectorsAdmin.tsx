@@ -47,7 +47,7 @@ export function ConnectorsAdmin() {
       {({ rows, unavailable }) => (
         <div className="ac-connectors" data-testid="connectors-admin">
           <p className="ac-lede">What is connected, how often bots used it in the last 7 days, and where people have to sign in again. Only counts are shown, never an account or what a bot read.</p>
-          {rows.length === 0 ? (
+          {rows.length === 0 && unavailable.length > 0 ? null : rows.length === 0 ? (
             <EmptyState title="Nothing is connected yet">Once people connect their accounts, or a team adds a connection, each service shows up here.</EmptyState>
           ) : (
             AREAS.map((a) => {

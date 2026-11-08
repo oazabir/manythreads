@@ -53,6 +53,25 @@ export function initialServices(p: Pick<PersonConnectionProvider, 'services'>): 
   return p.services.filter((s) => !s.writes && !isMailService(s)).map((s) => s.id);
 }
 
+/**
+ * Services a link asks to have ticked already (`?tick=calendar_write` from the "Schedule a room" dialog), and the one provider they are for (`only`), if any. It only pre-ticks a
+ * box: nothing is asked of the provider until the person presses Connect.
+ */
+export function ticksFromQuery(search: string): { services: string[]; only: string | null } {
+  const q = new URLSearchParams(search);
+  const services = (q.get('tick') ?? '').split(',').map((s) => s.trim()).filter((s) => /^[a-z0-9_]{1,40}$/.test(s)).slice(0, 10);
+  const only = q.get('only');
+  return { services, only: only !== null && /^[a-z0-9_]{1,40}$/.test(only) ? only : null };
+}
+
+/** The services ticked when a provider's card opens: today's choice plus those a link asked for, if this provider has them (and is the one the link is for). */
+export function servicesToTick(p: Pick<PersonConnectionProvider, 'id' | 'services'>, asked: { services: readonly string[]; only: string | null }): string[] {
+  const base = initialServices(p);
+  if (asked.only !== null && asked.only !== p.id) return base;
+  const extra = asked.services.filter((id) => p.services.some((s) => s.id === id) && !base.includes(id));
+  return [...base, ...extra];
+}
+
 /** What a ticked service means for what a bot may do, in one clause. */
 export const writesLine = (s: Pick<PersonConnectionService, 'writes'>): string => (s.writes ? 'Changes something outside, so each use waits for your approval.' : 'Reads only.');
 
@@ -84,11 +103,13 @@ export function resultFromQuery(search: string, labels: Readonly<Record<string, 
   return parsed.success ? { tone: 'ok', text: `${labels[parsed.data] ?? titleCase(parsed.data)} is connected.` } : { tone: 'ok', text: 'The account is connected.' };
 }
 
-/** The address with the result removed, so a reload does not say it again. */
+/** The address with the result removed, so a reload does not say it again. The `tick` and `only` a link may bring (see `ticksFromQuery`) go with it. */
 export function withoutResult(search: string): string {
   const q = new URLSearchParams(search);
   q.delete('connected');
   q.delete('connect_error');
+  q.delete('tick');
+  q.delete('only');
   const s = q.toString();
   return s ? `?${s}` : '';
 }

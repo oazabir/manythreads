@@ -53,3 +53,23 @@ export const failureWords = (e: unknown, fallback: string): string => (isApiErro
 
 /** `/settings/workspace/chat-apps` callback address, as the admin pastes it into the chat service's console. */
 export const callbackUrl = (path: string, origin: string = typeof window === 'undefined' ? '' : window.location.origin): string => `${origin}${path}`;
+
+/** What a chat service calls the place a channel is joined to: a Telegram group, a Slack or Teams channel. */
+export const chatPlace = (p: BridgeProvider): string => (p === 'telegram' ? 'group' : 'channel');
+
+/** The link a link code offers to open the chat app, only when it is a web address (https); anything else is not drawn. */
+export function openableLink(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True once a code's time has gone (an unreadable time counts as gone, so nothing keeps asking for it). */
+export function codeExpired(expiresAt: string, now: number = Date.now()): boolean {
+  const at = Date.parse(expiresAt);
+  return Number.isNaN(at) || at <= now;
+}

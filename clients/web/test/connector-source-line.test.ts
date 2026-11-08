@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import type { KnowledgeSource } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { ConnectorSourceLine, TEAM_RULE_SENTENCE, providerName } from '../src/screens/knowledge/ConnectorSourceForm';
+import { ConnectorSourceLine, TEAM_RULE_SENTENCE, providerName, rootsAreFor } from '../src/screens/knowledge/ConnectorSourceForm';
 
 // The Sources list of a base shows a source read from a connected app (PLAN Bundle D, P16-08): where it comes from, whose connection reads it, how it went, and how many
 // documents were left out because not everyone on the team can open them (a count; never a name).
@@ -55,5 +55,13 @@ describe('a source from a connected app', () => {
     expect(TEAM_RULE_SENTENCE).toBe('Documents everyone on this team can already open will be copied into this base. Others stay with the people who can open them.');
     expect(providerName('sharepoint')).toBe('SharePoint');
     expect(providerName(null)).toBe('Connected app');
+  });
+});
+
+describe('the folder list of the add form', () => {
+  it('is offered only for the app it was asked for, never the previous app’s list under a new name', () => {
+    expect(rootsAreFor({ provider: 'notion' }, 'notion')).toBe(true);
+    expect(rootsAreFor({ provider: 'notion' }, 'box')).toBe(false);
+    expect(rootsAreFor(undefined, 'notion')).toBe(false);
   });
 });

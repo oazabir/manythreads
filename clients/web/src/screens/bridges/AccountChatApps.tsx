@@ -6,7 +6,7 @@ import { Alert, Time } from '../../components/ui';
 import { useQuery } from '../../app/useQuery';
 import '../../styles/bridges.css';
 import { createMyLinkCode, fetchMyBridges, unlinkMyBridge } from './api';
-import { failureWords, PROVIDER_LABEL } from './words';
+import { codeExpired, failureWords, openableLink, PROVIDER_LABEL } from './words';
 
 /** Set to true when the person's chat-apps page is built (PLAN Bundle D, P16-09). */
 export const ACCOUNT_CHAT_APPS_READY = true;
@@ -44,11 +44,20 @@ function LinkCard({ available, identity, reload }: { available: BridgeAvailable;
   const [code, setCode] = useState<LinkCodeResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
 
-  // while a code is showing, look again every few seconds: the card turns to "Linked" once the code is used in the chat app
+  // while a code is showing, look again every few seconds: the card turns to "Linked" once the code is used in the chat app. It stops when the code runs out (ten minutes), so a page left open does not ask for ever.
   useEffect(() => {
     if (code === null || identity !== null) return undefined;
-    const timer = window.setInterval(reload, 4000);
+    setExpired(codeExpired(code.expiresAt));
+    const timer = window.setInterval(() => {
+      if (codeExpired(code.expiresAt)) {
+        setExpired(true);
+        window.clearInterval(timer);
+        return;
+      }
+      reload();
+    }, 4000);
     return () => window.clearInterval(timer);
   }, [code, identity, reload]);
   useEffect(() => {
@@ -96,10 +105,15 @@ function LinkCard({ available, identity, reload }: { available: BridgeAvailable;
       ) : code ? (
         <div className="br-code" data-testid={`chat-link-${available.provider}-code`}>
           <p className="br-note">{code.instruction}</p>
-          <div className="br-code-digits mono" aria-label={`Your code is ${code.code.split('').join(' ')}`}>{code.code}</div>
-          <p className="br-note">It works once, until <Time iso={code.expiresAt} />. Keep it to yourself.</p>
+          <div className="br-code-digits mono" aria-hidden="true">{code.code}</div>
+          <span className="sr-only">Your code is {code.code.split('').join(' ')}</span>
+          {expired ? (
+            <p className="br-note" role="status" data-testid={`chat-link-${available.provider}-expired`}>This code has run out. Get a new one.</p>
+          ) : (
+            <p className="br-note">It works once, until <Time iso={code.expiresAt} />. Keep it to yourself.</p>
+          )}
           <div className="br-actions">
-            {code.deepLink ? <a className="btn primary" href={code.deepLink} target="_blank" rel="noreferrer noopener">Open {label}</a> : null}
+            {openableLink(code.deepLink) && !expired ? <a className="btn primary" href={openableLink(code.deepLink)!} target="_blank" rel="noreferrer noopener">Open {label}</a> : null}
             <button type="button" className="btn" onClick={() => void getCode()} disabled={busy}>New code</button>
           </div>
         </div>
