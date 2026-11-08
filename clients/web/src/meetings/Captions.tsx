@@ -59,6 +59,7 @@ function Line({ line, me }: { line: MeetingTranscriptLine; me: string | null }) 
             value={text}
             maxLength={4000}
             rows={2}
+            dir="auto"
             autoFocus
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -77,7 +78,7 @@ function Line({ line, me }: { line: MeetingTranscriptLine; me: string | null }) 
         </form>
       ) : (
         <>
-          <span className="cap-text">{line.text}</span>
+          <span className="cap-text" dir="auto">{line.text}</span>
           {line.editable && line.segmentId ? (
             <button type="button" className="cap-edit-btn" onClick={() => { setText(line.text); setEditing(true); }} data-testid="caption-edit">Edit</button>
           ) : null}
@@ -134,7 +135,7 @@ export function Captions({ call, now }: { call: CallState; now: number }) {
           lines.map((l) => (
             <p key={l.key} className="cap-line" data-final={l.final} data-kind={l.kind} data-testid="caption-line">
               <b className="cap-who">{captionHeading(l, call.myActorId)}</b>
-              <span className="cap-text">{l.text}</span>
+              <span className="cap-text" dir="auto">{l.text}</span>
               {l.catchingUp ? <span className="cap-late" data-testid="caption-catching-up">catching up</span> : null}
             </p>
           ))

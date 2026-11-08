@@ -98,7 +98,7 @@ function ActionRow({ item, slug, meetingId, meetingTitle, added, onAdded, onJump
   const key = itemKey(item);
   return (
     <li className="mv-item" data-testid="action-item">
-      <span className="mv-item-text">{item.text}</span>
+      <span className="mv-item-text" dir="auto">{item.text}</span>
       <span className="mv-item-meta">
         <span className={item.ownerName ? '' : 'mv-quiet'} data-testid="action-owner">{ownerLine(item)}</span>
         <At ms={item.atMs} onJump={onJump} />
@@ -147,7 +147,7 @@ export function NotesBody({
       {notes.summary.trim() !== '' ? (
         <section aria-label="Summary">
           <h3 className="mv-sub">Summary</h3>
-          <p className="mv-summary" data-testid="notes-summary">{notes.summary}</p>
+          <p className="mv-summary" data-testid="notes-summary" dir="auto">{notes.summary}</p>
         </section>
       ) : null}
       <section aria-labelledby="mv-decisions" data-testid="notes-decisions">
@@ -156,7 +156,7 @@ export function NotesBody({
           <ul className="mv-items">
             {decisions.map((d) => (
               <li key={itemKey(d)} className="mv-item">
-                <span className="mv-item-text">{d.text}</span>
+                <span className="mv-item-text" dir="auto">{d.text}</span>
                 <span className="mv-item-meta"><At ms={d.atMs} onJump={onJump} /></span>
               </li>
             ))}
@@ -179,7 +179,7 @@ export function NotesBody({
           <ul className="mv-items">
             {questions.map((q) => (
               <li key={itemKey(q)} className="mv-item">
-                <span className="mv-item-text">{q.text}</span>
+                <span className="mv-item-text" dir="auto">{q.text}</span>
                 <span className="mv-item-meta"><At ms={q.atMs} onJump={onJump} /></span>
               </li>
             ))}
@@ -237,7 +237,7 @@ export function NotesCard({ overview, notes: first, onJump }: { overview: Meetin
       {editing ? (
         <div className="mv-edit">
           <label className="dlg-label" htmlFor="mv-notes-edit">Notes</label>
-          <textarea id="mv-notes-edit" className="dlg-input mv-textarea" rows={16} value={draft} onChange={(e) => setDraft(e.target.value)} data-testid="notes-edit" />
+          <textarea id="mv-notes-edit" className="dlg-input mv-textarea" rows={16} dir="auto" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} data-testid="notes-edit" />
           {error ? <p className="dlg-error" role="alert" data-testid="notes-edit-error">{error}</p> : null}
           <div className="mv-actions">
             <button type="button" className="btn primary" disabled={busy} onClick={() => void saveEdit()} data-testid="notes-save">{busy ? 'Saving…' : 'Save notes'}</button>

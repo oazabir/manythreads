@@ -36,6 +36,9 @@ export function parseJump(raw: string | null): number | null {
   return Number(raw);
 }
 
+/** The tab a meeting page shows: the transcript when the address points at a moment (`?t=`, also when it changes while the page is open), else the one the reader is on. */
+export const tabFor = (mark: number | null, current: 'notes' | 'transcript'): 'notes' | 'transcript' => (mark === null ? current : 'transcript');
+
 /** The line a jump lands on: the last one that starts at or before the time, else the first one. -1 when there are no lines. */
 export function lineAt(lines: readonly Pick<Line, 'startMs'>[], ms: number): number {
   if (lines.length === 0) return -1;

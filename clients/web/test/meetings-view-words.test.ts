@@ -18,6 +18,7 @@ import {
   meetingFolderPath,
   ownerLine,
   parseJump,
+  tabFor,
   peopleWords,
   personChoices,
   questionsOf,
@@ -67,6 +68,13 @@ describe('the jump to a line (?t=)', () => {
     expect(parseJump(null)).toBeNull();
     for (const bad of ['', '-1', '1.5', '12s', '1e3', 'abc', '99999999999999']) expect(parseJump(bad)).toBeNull();
   });
+  it('shows the transcript when the address points at a moment, also when it changes while the page is open', () => {
+    expect(tabFor(null, 'notes')).toBe('notes');
+    expect(tabFor(null, 'transcript')).toBe('transcript');
+    expect(tabFor(0, 'notes')).toBe('transcript');
+    expect(tabFor(724_000, 'notes')).toBe('transcript');
+  });
+
   it('lands on the last line that starts at or before the time, or the first line', () => {
     const lines = [{ startMs: 1000 }, { startMs: 5000 }, { startMs: 9000 }];
     expect(lineAt(lines, 5000)).toBe(1);

@@ -122,6 +122,12 @@ describe('the transcript of a meeting', () => {
     expect(html(null).match(/data-testid="line-edit-open"/g)).toHaveLength(1);
   });
 
+  it('lets each line and speaker name choose their own direction, so Arabic and Bangla read right to left or as written', () => {
+    const out = renderToStaticMarkup(createElement(TranscriptLines, { lines: [line({ speakerName: 'ندى', text: 'صباح الخير' }), line({ speakerName: 'রাফি', text: 'শুরু করি' })], mark: null, onMark: noop, meetingId: id(1) }));
+    expect(out.match(/class="mv-line-text" dir="auto"/g)).toHaveLength(2);
+    expect(out).toContain('data-testid="transcript-speaker" dir="auto"');
+  });
+
   it('never draws markup from spoken words', () => {
     const hostile = renderToStaticMarkup(createElement(TranscriptLines, { lines: [line({ text: '<script>alert(1)</script> **bold**' })], mark: null, onMark: noop, meetingId: id(1) }));
     expect(hostile).not.toContain('<script>');

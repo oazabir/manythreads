@@ -14,7 +14,7 @@ import { searchStamp } from '../../search/stamp';
 import { NotesCard } from './NotesCard';
 import { ShareDialog } from './ShareDialog';
 import { TranscriptView } from './TranscriptView';
-import { isMissing, lengthWords, parseJump, peopleWords, readFailure, readsOrganizerCopy } from './words';
+import { isMissing, lengthWords, parseJump, peopleWords, readFailure, readsOrganizerCopy, tabFor } from './words';
 
 type Tab = 'notes' | 'transcript';
 /** A meeting whose notes are still being written is asked about again this often, and for this long. */
@@ -62,7 +62,11 @@ function Loaded({ overview }: { overview: MeetingOverview }) {
   const meetingId = overview.meeting.id;
   const [params, setParams] = useSearchParams();
   const mark = parseJump(params.get('t'));
-  const [tab, setTab] = useState<Tab>(mark !== null ? 'transcript' : 'notes');
+  const [tab, setTab] = useState<Tab>(() => tabFor(mark, 'notes'));
+  // a citation or search result for another moment of this same meeting changes `?t=` without leaving the page: show the transcript there
+  useEffect(() => {
+    setTab((current) => tabFor(mark, current));
+  }, [mark]);
   const [sharing, setSharing] = useState(false);
   const open = useOpenMessage();
   const notes = useQuery(`meeting-notes:${meetingId}`, () => fetchMeetingNotes(meetingId));

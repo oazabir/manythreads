@@ -35,16 +35,16 @@ function LineRow({ line, index, marked, onMark, onEdit, editing, onSave, onCance
           }}
         >
           <label className="sr-only" htmlFor={`mv-line-${index}`}>Your words</label>
-          <textarea id={`mv-line-${index}`} className="dlg-input" rows={2} value={text} maxLength={4000} onChange={(e) => setText(e.target.value)} data-testid="line-edit" />
+          <textarea id={`mv-line-${index}`} className="dlg-input" rows={2} value={text} maxLength={4000} dir="auto" autoFocus onChange={(e) => setText(e.target.value)} data-testid="line-edit" />
           {error ? <span className="mv-bad" role="alert">{error}</span> : null}
           <span className="mv-actions">
             <button type="submit" className="btn s primary" disabled={busy || text.trim() === ''}>{busy ? 'Saving…' : 'Save'}</button>
-            <button type="button" className="btn s" disabled={busy} onClick={onCancel}>Cancel</button>
+            <button type="button" className="btn s" disabled={busy} onClick={() => { setText(line.text); setError(null); onCancel(); }}>Cancel</button>
           </span>
         </form>
       ) : (
         <>
-          <span className="mv-line-text">{line.text}</span>
+          <span className="mv-line-text" dir="auto">{line.text}</span>
           {line.editable && line.segmentId ? <button type="button" className="mv-line-edit-btn" onClick={() => onEdit(index)} data-testid="line-edit-open">Edit</button> : null}
         </>
       )}
@@ -82,7 +82,7 @@ export function TranscriptLines({ lines: first, mark, onMark, meetingId }: { lin
     <ol className="mv-transcript" ref={box} data-testid="transcript">
       {runsOf(lines).map((run, r) => (
         <li key={`${run.speakerId}:${r}`} className="mv-run">
-          <p className="mv-speaker" data-testid="transcript-speaker">{lines[run.lines[0]?.index ?? 0]?.speakerName ?? ''}</p>
+          <p className="mv-speaker" data-testid="transcript-speaker" dir="auto">{lines[run.lines[0]?.index ?? 0]?.speakerName ?? ''}</p>
           <ol className="mv-run-lines">
             {run.lines.map(({ line, index }) => (
               <LineRow key={`${line.segmentId ?? 'x'}:${line.startMs}:${index}`} line={line} index={index} marked={index === marked} onMark={onMark} onEdit={setEditing} editing={editing === index} onSave={save} onCancel={() => setEditing(null)} />
