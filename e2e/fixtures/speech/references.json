@@ -1,5 +1,5 @@
 {
-  "note": "What each fixture is and what a test may expect from it. hello.wav is a synthetic buzz shaped like syllables, NOT speech: it feeds the fake microphone so the recorder, level meter and waveform have a real signal. No fixture here holds human speech, so no word error rate is measured from this folder (see docs/spikes/speech.md for the speech numbers and what is still unmeasured).",
+  "note": "What each fixture is and what a test may expect from it. hello.wav is a synthetic buzz shaped like syllables, NOT speech. nadia.wav and rafi.wav are real read-aloud English (LibriSpeech, CC BY 4.0, see LICENCE.md) and feed the fake microphone in the live Bundle C probe (e2e/screens/task.verify-bundle-c.shots.ts); only 'contains one of the reference words' may be asserted from them, never an exact transcript.",
   "files": {
     "hello.wav": {
       "format": "RIFF/WAVE, PCM 16-bit, 16000 Hz, mono",
@@ -8,6 +8,40 @@
       "containsSpeech": false,
       "fakeEngineText": "This is a test voice message.",
       "fakeEngineLanguage": "en"
+    },
+    "nadia.wav": {
+      "format": "RIFF/WAVE, PCM 16-bit, 16000 Hz, mono",
+      "seconds": 8.62,
+      "origin": "LibriSpeech 1272-141231-0009 via hf-internal-testing/librispeech_asr_dummy (CC BY 4.0)",
+      "containsSpeech": true,
+      "language": "en",
+      "reference": "the contestants in the twenties needed undisturbed rest therefore nights in the dormitories were as quiet as death",
+      "referenceWords": [
+        "contestants",
+        "twenties",
+        "undisturbed",
+        "rest",
+        "nights",
+        "dormitories",
+        "quiet",
+        "death"
+      ]
+    },
+    "rafi.wav": {
+      "format": "RIFF/WAVE, PCM 16-bit, 16000 Hz, mono",
+      "seconds": 7.52,
+      "origin": "LibriSpeech 1272-135031-0023 via hf-internal-testing/librispeech_asr_dummy (CC BY 4.0)",
+      "containsSpeech": true,
+      "language": "en",
+      "reference": "kaliko went to the big gong and pounded on it just as ruggedo used to do but no one answered the summons",
+      "referenceWords": [
+        "kaliko",
+        "gong",
+        "pounded",
+        "ruggedo",
+        "answered",
+        "summons"
+      ]
     }
   }
 }

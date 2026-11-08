@@ -246,7 +246,7 @@ Daily backups of the databases, the attachment store and the team repositories, 
 Run `ops-rollback` (empty revision = previous). Images in use by running pods stay on the node, so the previous revision normally still has its images.
 
 ## Voice rooms (LiveKit)
-Voice rooms run on LiveKit (`media.enabled`, chart template `media.yaml`; plugin `media-livekit`, page `docs/plugins/media-livekit.md`). Off by default. The chart makes the key pair once
+Voice rooms run on LiveKit (`media.enabled`, chart template `media.yaml`; plugin `media-livekit`, page `docs/plugins/media-livekit.md`; the rooms, transcripts and note-taker: `docs/plugins/meetings.md`). Off by default. The chart makes the key pair once
 (Secret `manythreads-media-secrets`, kept across upgrades); the server gets it as `MANYTHREADS_LIVEKIT_*`. The media pod uses the node's network (`hostNetwork`), so its ports are the
 node's own ports. Nothing here needs an outside account.
 
@@ -275,9 +275,25 @@ a closed UDP port or a wrong `nodeIp`.
 
 Undo: `media.enabled: false` (the Secret stays; the next enable reuses it).
 
-## Speech to text (the server fallback)
-A device too weak to transcribe by itself sends 30-second pieces of audio to `POST /api/meetings/:meetingId/audio-chunks`; the server turns each into text through the `transcribe` door
-of the LLM gateway (plugin `gateway-llm`, `src/transcribe.ts`) and stores a line. Audio is never stored. The words come from a Whisper server inside the deployment: **speaches** (MIT),
+**Room size.** The workspace setting `roomCap` (admin; default 25, 2 to 100) decides how many people the app lets into a room. The app creates each LiveKit room with `max_participants` 50 (`MEETING_MAX_PARTICIPANTS`), which
+is the real ceiling; the chart's `media.maxParticipants` is only LiveKit's default for a room created without a number and the app always gives one. The hidden note-taker and recorder count as participants on the media server.
+
+**The note-taker and recording listener (one server process).** Both are a worker thread inside the **server** pod (the library `@livekit/rtc-node`, a prebuilt linux-x64 glibc binary that works on the `node:22-slim`
+image; it loads only when a note-taker is added). There is no separate deployment for them, so: they reach the media server at its in-cluster address, need no extra port beyond the table above, and are limited **per server
+pod**: `MANYTHREADS_NOTETAKER_MAX_ROOMS` (chart `media.noteTakerMaxRooms`, default 10; the eleventh room gets 409 "The note-taker is busy, try again in a minute.") and `MANYTHREADS_RECORDING_MAX_ROOMS` (default 10). With two
+server replicas a room could get two listeners, so keep one replica while the note-taker is on. The note-taker also needs the speech-to-text server below and a bound `transcribe` alias; without them "Add note-taker" is
+disabled with the reason.
+
+**Admin switches after the first deploy** (the app, not the chart; as a workspace admin through `PUT /api/workspace/meetings-settings`): `transcribeCap` (default `on_device`; `server` lets a weak device use the
+speech-to-text server), `roomCap`, `notetakerAllowed` (default on) and `recordingCap` (default `off`; recording is opt-in per room and per person). A team narrows them in the front matter of its `TEAM.md` under
+`meetings:` (`transcribe`, `noteTaker`, `autoMemory`, `keepAudioDays`).
+
+**Bots in teams that already exist.** Template changes do not reach a team that was made before: the Scribe (`bots/scribe/BOT.md`) and the note-taker (`bots/note-taker/BOT.md`) must be committed into each existing team's
+repository (as an admin, through the repository commit route with `baseBlobSha`), and the workspace Brain gains `meetings.search` in its stored `BOT.md` by an admin edit. New teams get both from their template.
+
+## Speech to text (the server fallback and the note-taker)
+The page for this part is `docs/plugins/asr.md`. A device too weak to transcribe by itself sends 30-second pieces of audio to `POST /api/meetings/:meetingId/audio-chunks`; the server turns each into text through the `transcribe` door
+of the LLM gateway (plugin `gateway-llm`, `src/transcribe.ts`) and stores a line; the note-taker's listener sends its chunks through the same door. Audio is never stored. The words come from a Whisper server inside the deployment: **speaches** (MIT),
 an OpenAI-compatible server, CPU build, model `Systran/faster-whisper-tiny` (set `ASR_MODEL` at build time for a bigger one, for example `Systran/faster-whisper-base`).
 
 - **Image** (`deploy/images/asr`): the pinned speaches image plus the model, downloaded once while the image is built (needs the network for that one step; the pod never downloads
