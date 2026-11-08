@@ -37,6 +37,15 @@ export function parseJump(raw: string | null): number | null {
 }
 
 /** The tab a meeting page shows: the transcript when the address points at a moment (`?t=`, also when it changes while the page is open), else the one the reader is on. */
+/**
+ * Where a meeting page belongs: `/meetings/:id` has no team in the address, so the shell would show whichever team the person last used. A meeting of a team channel moves to
+ * `/t/<team>/meetings/:id` (keeping the query) so the page sits in its own team's shell; a direct message's meeting, a guest, or an address that already names a team stays put.
+ */
+export function meetingHomePath(meetingId: string, teamSlug: string | null | undefined, urlHasTeam: boolean, guest: boolean, search: string): string | null {
+  if (!teamSlug || urlHasTeam || guest) return null;
+  return `/t/${encodeURIComponent(teamSlug)}/meetings/${encodeURIComponent(meetingId)}${search}`;
+}
+
 export const tabFor = (mark: number | null, current: 'notes' | 'transcript'): 'notes' | 'transcript' => (mark === null ? current : 'transcript');
 
 /** The line a jump lands on: the last one that starts at or before the time, else the first one. -1 when there are no lines. */

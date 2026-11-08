@@ -16,6 +16,7 @@ import {
   lineAt,
   liveShares,
   meetingFolderPath,
+  meetingHomePath,
   ownerLine,
   parseJump,
   tabFor,
@@ -73,6 +74,13 @@ describe('the jump to a line (?t=)', () => {
     expect(tabFor(null, 'transcript')).toBe('transcript');
     expect(tabFor(0, 'notes')).toBe('transcript');
     expect(tabFor(724_000, 'notes')).toBe('transcript');
+  });
+
+  it('moves a team meeting into its own team, and leaves the other cases alone', () => {
+    expect(meetingHomePath('m1', 'engineering', false, false, '?t=5000')).toBe('/t/engineering/meetings/m1?t=5000');
+    expect(meetingHomePath('m1', undefined, false, false, '')).toBeNull();
+    expect(meetingHomePath('m1', 'engineering', true, false, '')).toBeNull();
+    expect(meetingHomePath('m1', 'engineering', false, true, '')).toBeNull();
   });
 
   it('lands on the last line that starts at or before the time, or the first line', () => {

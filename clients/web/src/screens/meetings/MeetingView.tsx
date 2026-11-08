@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { Navigate, useLocation, useMatch, useParams, useSearchParams } from 'react-router';
 import type { MeetingOverview } from '@manythreads/shared';
 import { fileContentUrl } from '../../api/endpoints';
+import { useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { ActorAvatar } from '../../components/ActorAvatar';
 import { EmptyState } from '../../components/EmptyState';
@@ -14,7 +15,7 @@ import { searchStamp } from '../../search/stamp';
 import { NotesCard } from './NotesCard';
 import { ShareDialog } from './ShareDialog';
 import { TranscriptView } from './TranscriptView';
-import { isMissing, lengthWords, parseJump, peopleWords, readFailure, readsOrganizerCopy, tabFor } from './words';
+import { isMissing, lengthWords, meetingHomePath, parseJump, peopleWords, readFailure, readsOrganizerCopy, tabFor } from './words';
 
 type Tab = 'notes' | 'transcript';
 /** A meeting whose notes are still being written is asked about again this often, and for this long. */
@@ -166,6 +167,9 @@ function Loaded({ overview }: { overview: MeetingOverview }) {
 export function MeetingView() {
   const { meetingId = '' } = useParams();
   const [params] = useSearchParams();
+  const loc = useLocation();
+  const session = useSession();
+  const urlHasTeam = useMatch('/t/:team/*') !== null;
   const overview = useQuery(`meeting-overview:${meetingId}`, () => fetchMeetingOverview(meetingId));
   if (overview.status === 'loading') {
     return (
@@ -191,5 +195,7 @@ export function MeetingView() {
       </div>
     );
   }
+  const home = meetingHomePath(meetingId, overview.data.teamSlug, urlHasTeam, session.role === 'guest', loc.search);
+  if (home) return <Navigate to={home} replace />;
   return <Loaded key={overview.data.meeting.id} overview={overview.data} />;
 }

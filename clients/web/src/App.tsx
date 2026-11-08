@@ -125,6 +125,7 @@ function AppRoutes() {
             </Route>
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
+            <Route path="/t/:team/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
             <Route path="/memory" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense>} />
             <Route path="/knowledge" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><KnowledgeScreen /></Suspense>} />
             <Route path="/t/:team/knowledge" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><KnowledgeScreen /></Suspense></RequireTeam>} />
