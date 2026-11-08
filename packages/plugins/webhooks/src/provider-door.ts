@@ -225,8 +225,12 @@ export function registerProviderDoor(ctx: PluginContext, deps: DoorDeps = {}): v
       ).rows[0];
       if (!hook || hook.kind !== 'provider' || hook.revoked_at !== null || !hook.live) throw stranger();
 
-      const slot = limiter.hit(hook.id, perMinute, 60_000);
-      if (!slot.allowed) throw new HttpError(429, 'rate_limited', `This address accepts ${perMinute} calls a minute. Try again shortly.`, { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) });
+      // Before the signature is looked at, a call is counted against the sender's own address only. The endpoint-wide count below takes signed calls alone: an address that does not know the
+      // secret must not be able to fill the endpoint's minute and make the provider's real deliveries answer 429.
+      const tooMany = (slot: { retryAfterMs: number }): HttpError =>
+        new HttpError(429, 'rate_limited', `This address accepts ${perMinute} calls a minute. Try again shortly.`, { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) });
+      const early = limiter.hit(`${hook.id}\n${addressKey(req.ip)}`, perMinute, 60_000);
+      if (!early.allowed) throw tooMany(early);
 
       let raw: Buffer;
       try {
@@ -271,6 +275,8 @@ export function registerProviderDoor(ctx: PluginContext, deps: DoorDeps = {}): v
         throw new HttpError(401, 'unauthenticated', judged.reason === 'stale' ? 'The call is too old' : 'The call is not signed with this address’s secret');
       }
       const body = judged.body;
+      const slot = limiter.hit(hook.id, perMinute, 60_000);
+      if (!slot.allowed) throw tooMany(slot);
 
       const normalised = reader.normalise({ headers: req.headers, body });
       const passes = normalised !== null && (hook.event_filter.length === 0 || hook.event_filter.some((p) => kindMatches(p, normalised.kind)));
