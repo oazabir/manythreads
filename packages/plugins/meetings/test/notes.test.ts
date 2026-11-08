@@ -299,8 +299,10 @@ describe('a room with somebody from outside the team', () => {
 
 describe('a private channel', () => {
   let room = '';
+  let channel = '';
   beforeAll(async () => {
     const made = ok<{ channel: { id: string } }>(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: 'scribe-private', private: true }), 201);
+    channel = made.channel.id;
     ok(await w.call(omar, 'POST', `/api/channels/${made.channel.id}/members`, { personId: nadia.personId }));
     room = await open(made.channel.id, 'Private sync', [[omar, 'yes'], [nadia, 'yes']]);
     await say(omar, room, 'DECIDE: Keep this between us', 0);
@@ -328,6 +330,17 @@ describe('a private channel', () => {
     // a second press returns the same item and files nothing more
     const again = ok<{ sent: boolean; memoryItemId: string }>(await w.call(omar, 'POST', `/api/meetings/${room}/send-to-memory`, { confirmed: true }));
     expect(again).toMatchObject({ sent: true, memoryItemId: sent.memoryItemId });
+  });
+
+  it('never names a person who said no as the one who dropped the item, even when that person organized the call and pressed the button', async () => {
+    const noRoom = await open(channel, 'Omar declined', [[omar, 'no'], [nadia, 'yes']]);
+    await say(nadia, noRoom, 'DECIDE: Keep this between us', 0);
+    await endAndWrite(noRoom, omar);
+    expect((await settled(noRoom)).status).toBe('written');
+    const sent = ok<{ sent: boolean; memoryItemId: string }>(await w.call(omar, 'POST', `/api/meetings/${noRoom}/send-to-memory`, { confirmed: true }));
+    expect(sent.sent).toBe(true);
+    const item = await inboxItem(noRoom);
+    expect(item).toMatchObject({ id: sent.memoryItemId, origin: 'meeting', dropper_id: nadia.actorId });
   });
 
   it('is refused for a person who was not in the room, and for a room that has no notes yet', async () => {

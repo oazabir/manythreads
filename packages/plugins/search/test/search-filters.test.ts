@@ -210,7 +210,7 @@ describe('a hit count never reveals hidden hits', () => {
     await post(nadia, dev, `${w1} one open note`);
     const outsider = await find(sameera, w1, '&limit=5');
     expect(outsider.messages).toEqual([]);
-    expect(outsider.more).toEqual({ messages: false, threads: false, files: false, pages: false });
+    expect(outsider.more).toEqual({ messages: false, threads: false, files: false, pages: false, meetings: false });
     const nothing = await find(sameera, word(), '&limit=5');
     const bare = (r: SearchResponse): string => JSON.stringify({ ...r, query: '', filters: { ...r.filters, text: '' } });
     expect(bare(outsider)).toBe(bare(nothing));

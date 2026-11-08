@@ -199,9 +199,10 @@ export async function fileMeetingIntoMemory(
   const { lines, people } = await loadTranscript(tx, m.id);
   const saying: PersonFacts[] = people.filter((p) => p.consent === 'yes');
   if (saying.length === 0) return null;
-  // The person who pressed the button first, then the organizer, then the others in the order they joined.
+  // The person who pressed the button first, then the organizer, then the others in the order they joined. Only people who said yes to transcription can be named as the
+  // dropper: someone who said "no" must not appear as the author of an item made from the call.
   const order = [options.sentBy, m.organizer_id].filter((id): id is string => id !== undefined);
-  const dropperIds = [...order.filter((id) => people.some((p) => p.actorId === id)), ...saying.map((p) => p.actorId)].filter((id, i, all) => all.indexOf(id) === i);
+  const dropperIds = [...order.filter((id) => saying.some((p) => p.actorId === id)), ...saying.map((p) => p.actorId)].filter((id, i, all) => all.indexOf(id) === i);
   const guests = await guestsIn(tx, { ...m, team_id: teamId });
   const transcriptPath = options.teamCopy?.transcriptPath ?? note.transcript_path;
   const notesPath = options.teamCopy?.notesPath ?? note.notes_path;

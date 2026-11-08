@@ -21,8 +21,10 @@ const routes = Object.entries(shared)
   .filter(([name, v]) => name.endsWith('Route') && typeof v === 'object' && v !== null && 'method' in v && 'path' in v)
   .map(([name, v]) => ({ name, ...(v as ApiRouteLike) }));
 
-const inboxRoutes = routes.filter((r) => /\/inbox(\/|-mail|$)/.test(r.path) || r.path.endsWith('/send-to-memory'));
-const shareRoutes = routes.filter((r) => /\/shares(\/|$)/.test(r.path) || r.path === '/api/workspace/memory-sharing');
+// A voice room's routes (`/api/meetings/…`, Phase 15) belong to the meetings plugin and are listed in docs/plugins/meetings.md, checked at the end of this file.
+const meetingRoutes = routes.filter((r) => r.path.startsWith('/api/meetings/'));
+const inboxRoutes = routes.filter((r) => !r.path.startsWith('/api/meetings/') && (/\/inbox(\/|-mail|$)/.test(r.path) || r.path.endsWith('/send-to-memory')));
+const shareRoutes = routes.filter((r) => !r.path.startsWith('/api/meetings/') && (/\/shares(\/|$)/.test(r.path) || r.path === '/api/workspace/memory-sharing'));
 
 const eventTypes = Object.keys(shared.eventRegistry);
 const mine = eventTypes.filter((t) => /^memory\.(item|share|sharing|digest)\./.test(t));
@@ -66,6 +68,19 @@ describe('what the pages say', () => {
 
   it('names the capabilities the inbox registers', () => {
     for (const name of ['inbox.read', 'inbox.drop']) expect(inboxDoc).toContain(name);
+  });
+});
+
+describe('the voice room routes that touch memory and sharing', () => {
+  const meetingsDoc = read('docs/plugins/meetings.md');
+  it.each([
+    ['sendMeetingToMemoryRoute', '/api/meetings/:meetingId/send-to-memory', 'POST /api/meetings/:meetingId/send-to-memory'],
+    ['listMeetingSharesRoute', '/api/meetings/:meetingId/shares', '/shares'],
+    ['createMeetingShareRoute', '/api/meetings/:meetingId/shares', '/shares'],
+    ['deleteMeetingShareRoute', '/api/meetings/:meetingId/shares/:shareId', '/shares/:shareId'],
+  ])('%s is a real route and meetings.md names it', (name, path, inDoc) => {
+    expect(meetingRoutes.find((r) => r.name === name)?.path).toBe(path);
+    expect(meetingsDoc).toContain(inDoc);
   });
 });
 

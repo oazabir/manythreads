@@ -83,7 +83,7 @@ async function shoot(page: Page, name: string, vp: Vp, scheme: Scheme): Promise<
   await page.screenshot({ path: join(OUT, file) });
   const info = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, text: document.body.innerText }));
   if (info.sw > info.cw + 1) note(`${file}: sideways scroll ${info.sw} > ${info.cw}`);
-  if (/[مجلس]{3,}|مجلس/.test(info.text)) note(`${file}: the old product name appears`);
+  if (/\u0645\u062c\u0644\u0633/.test(info.text)) note(`${file}: the old product name appears`);
   log(`shot ${file}`);
 }
 /** Every screen, in the four combinations. `act` runs before each shot (navigate). */
