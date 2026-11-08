@@ -52,10 +52,14 @@ test('pressing the button answers 202, switches Lena off at once, and removes he
   // the audit line carries counts and ids, never a token
   const line = await stack.sql<{ payload: Record<string, unknown> }>(`SELECT payload FROM app.events WHERE type = 'connections.person.offboarded'`);
   expect(JSON.stringify(line[0]!.payload)).not.toMatch(/fs_[a-z]+_[0-9a-f]{24}/);
-  // pressing again finds nothing to do and writes no second line
+  // pressing again finds nothing to remove; the second press is still written down, because an admin pressed it (the line says 0 removed), and a suspension with nothing to do would write none
   const again = await request.post(`/api/admin/people/${lena.personId}/offboard-connections`, { headers: as(omar), data: {} });
   expect(again.status()).toBeLessThan(500);
-  expect((await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.events WHERE type = 'connections.person.offboarded'`))[0]!.n).toBe('1');
+  await expect
+    .poll(async () => (await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.events WHERE type = 'connections.person.offboarded'`))[0]!.n, { timeout: 60_000, intervals: [500, 1_000] })
+    .toBe('2');
+  const lines = await stack.sql<{ payload: { revoked: number } }>(`SELECT payload FROM app.events WHERE type = 'connections.person.offboarded' ORDER BY id`);
+  expect(lines.map((l) => l.payload.revoked)).toEqual([1, 0]);
 });
 
 test('suspending Rafi does the same by itself: the stand-in is asked to forget his Google grant, and reactivating restores nothing', async ({ request }) => {

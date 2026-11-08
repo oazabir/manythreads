@@ -19,7 +19,8 @@ import { SEED_IDS } from './seed-content.ts';
  *  3. Seven days of connector usage counts for every sign-in (fixed numbers, so the admin page reads the same on every run).
  *  4. A work-app address `zendesk` in `#support` with the known signing secret `SEED_CONNECTORS.zendesk.secret`, and a Ticket watcher bot (a plain stand-in definition) whose
  *     `webhook` trigger names it, so a signed `ticket.created` from the sender starts a run. (The Support responder of seed v4 stays as it is: it answers a mention.)
- *  5. Telegram: the admin's account is on (against the Telegram stand-in), Nadia's Telegram user is linked with a code, and `#support` is joined to a Telegram group.
+ *  5. Telegram: the admin's account is on (against the Telegram stand-in), Nadia's Telegram user is linked with a code, and `#support` is joined to a Telegram group. Nadia is put on the
+ *     Customer support team (she is on Engineering only), because a linked person's group message is posted as her and "You cannot post in that channel" is the answer to anyone who may not.
  *  6. The Engineering knowledge base `handbook` with a Drive folder of Omar's (the lead) as a team source: one document anyone can open is read in, one shared with one other
  *     person is left out (counted, never named).
  *
@@ -269,6 +270,11 @@ export async function seedConnectors(options: SeedConnectorsOptions): Promise<Se
       for (const p of [OMAR, NADIA, RAFI]) {
         await tx.query('INSERT INTO app.person_emails (workspace_id, person_id, email, verified_at) VALUES ($1, $2, $3, now()) ON CONFLICT DO NOTHING', [p.workspaceId, p.personId, p.email]);
       }
+    });
+
+    // ---- Nadia reads and writes in #support: her Telegram group message is posted there as her, which needs her on the Customer support team (she is on Engineering only) -----------
+    await sys(async (tx) => {
+      await tx.query('INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [TEAM_IDS['Customer support'], NADIA.actorId, NADIA.workspaceId, 'member']);
     });
 
     // ---- the sign-ins that already exist ---------------------------------------------------------------------------------------------------------------

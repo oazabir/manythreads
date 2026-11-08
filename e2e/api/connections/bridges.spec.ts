@@ -41,7 +41,7 @@ test('the admin sees the four chat apps, Telegram on and the rest not set up; no
 test('credentials go in sealed: the WhatsApp secret is in no answer, no row and no event afterwards', async ({ request }) => {
   const stack = await iso.start();
   const made = await request.put('/api/admin/bridges/whatsapp', { headers: as(omar), data: { displayName: 'Kahf WhatsApp', externalAppId: '1234567890' } });
-  expect(made.status()).toBe(200);
+  expect(made.status()).toBe(201);
   const put = await request.put('/api/admin/bridges/whatsapp/credentials', { headers: as(omar), data: { botToken: 'whatsapp-access-token-0001', appSecret: SENTINEL, inboundSecret: 'whatsapp-verify-word-0001' } });
   expect(put.status()).toBe(200);
   expect(await put.text()).not.toContain(SENTINEL);

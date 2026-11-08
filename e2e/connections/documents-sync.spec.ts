@@ -128,6 +128,7 @@ test('a Personal base takes every document its owner can open, a teammate sees n
 });
 
 test('Add from a connected app: a lead picks Google Drive and a folder, ticks the team rule, and the folder is read into the base', async ({ browser, playwright }) => {
+  test.setTimeout(180_000); // the folder is read by a job; the last wait below is 90 s
   const omarEmail = personas.omar.email;
   await fake(stack, 'PATCH', `/__fake/accounts/${encodeURIComponent(omarEmail)}`, {
     files: [

@@ -184,7 +184,8 @@ test.describe('with the stand-ins (seed v16)', () => {
     try {
       const google = page.locator('[data-testid="person-provider"][data-provider="google"]');
       await expect(google).toHaveAttribute('data-connected', 'false');
-      for (const service of ['gmail', 'calendar', 'calendar_write']) await google.locator(`[data-service="${service}"] input`).uncheck();
+      // every service that starts ticked is put down (free and busy and the draft/label services are ticked or not by the page's own defaults), then Drive alone is ticked
+      for (const input of await google.locator('[data-service] input').all()) if ((await input.isEnabled()) && (await input.isChecked())) await input.uncheck();
       await google.locator('[data-service="drive"] input').check();
       await google.getByTestId('person-connect').click();
       await expect(page).toHaveURL(/\/settings\/connections(\?|$)/);

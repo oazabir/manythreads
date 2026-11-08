@@ -17,6 +17,7 @@ import {
 } from './api';
 import { Mono } from './parts';
 import { ConnectorSourceForm, ConnectorSourceLine } from '../knowledge/ConnectorSourceForm';
+import { firstReadPending, useFirstReadRefresh } from '../knowledge/useFirstRead';
 
 /*
  * What a knowledge base holds, shown under the base's line in the bot page's Knowledge tab (PLAN P8-33): its documents (name, kind, size, a short
@@ -154,6 +155,7 @@ export function KnowledgeBasePanel({ team, base, canEdit }: { team: string; base
   const [question, setQuestion] = useState('');
   const [hits, setHits] = useState<KnowledgeHit[] | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  useFirstReadRefresh(q.status === 'ok' && firstReadPending(q.data.sources), q.reload);
 
   if (q.status === 'loading') return <p className="b-notset" data-testid="knowledge-loading">Loading what is in this base…</p>;
   if (q.status === 'error') {

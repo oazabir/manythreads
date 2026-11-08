@@ -6,6 +6,7 @@ import { Dialog } from '../../components/Dialog';
 import { Time } from '../../components/ui';
 import { message } from '../memory/inboxWords';
 import { ConnectorSourceForm, ConnectorSourceLine } from './ConnectorSourceForm';
+import { firstReadPending, useFirstReadRefresh } from './useFirstRead';
 import { createPersonalBase, deletePersonalBase, deletePersonalDocument, deletePersonalSource, fetchPersonalBase, fetchPersonalBases, searchPersonalBase, uploadPersonalDocument } from './api';
 import { ACCEPTED_FILES, KIND_LABEL, countLine, searchModeSentence, sizeLabel, fallbackSlug, slugFromName, stateSentence, uploadSentence } from './words';
 
@@ -109,6 +110,7 @@ function BasePanel({ summary, onChanged, onRemoved }: { summary: PersonalKnowled
   const [hits, setHits] = useState<KnowledgeHit[] | null>(null);
   const [confirming, setConfirming] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
+  useFirstReadRefresh(q.status === 'ok' && firstReadPending(q.data.sources), q.reload);
 
   if (q.status === 'loading') return <div className="kn-detail" aria-busy="true"><p className="faint">Loading what is in this base…</p></div>;
   if (q.status === 'error') {
