@@ -290,7 +290,7 @@ speech-to-text server), `roomCap`, `notetakerAllowed` (default on) and `recordin
 `meetings:` (`transcribe`, `noteTaker`, `autoMemory`, `keepAudioDays`).
 
 **Bots in teams that already exist.** Template changes do not reach a team that was made before: the Scribe (`bots/scribe/BOT.md`) and the note-taker (`bots/note-taker/BOT.md`) must be committed into each existing team's
-repository (as an admin, through the repository commit route with `baseBlobSha`), and the workspace Brain gains `meetings.search` in its stored `BOT.md` by an admin edit. New teams get both from their template.
+repository (as an admin, through the repository commit route with `baseBlobSha`), and the workspace Brain gains `meetings.search` by itself: its stored `BOT.md` is moved to the shipped file at the next start when the stored text is an earlier shipped one that no admin edited (`SUPERSEDED_BRAIN_SHAS` in `packages/plugins/bots/src/workspace-brain.ts`; add the old file's sha there whenever the shipped Brain changes). New teams get both from their template.
 
 ## Speech to text (the server fallback and the note-taker)
 The page for this part is `docs/plugins/asr.md`. A device too weak to transcribe by itself sends 30-second pieces of audio to `POST /api/meetings/:meetingId/audio-chunks`; the server turns each into text through the `transcribe` door

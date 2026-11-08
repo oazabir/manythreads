@@ -16,7 +16,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bots from '../src/index.ts';
 import { joinNewTeam, loadWorkspaceBot } from '../src/loader.ts';
-import { ENSURE_BRAIN_QUEUE, ensureWorkspaceBrain, retireTeamBrains, shippedBrainDefinition } from '../src/workspace-brain.ts';
+import { ENSURE_BRAIN_QUEUE, SUPERSEDED_BRAIN_SHAS, ensureWorkspaceBrain, retireTeamBrains, shippedBrainDefinition } from '../src/workspace-brain.ts';
 
 // P20-07: the workspace Brain. The shipped BOT.md is stored as version 1 of its definition and loaded as a bot of scope `workspace` with no team; it is a member of every
 // team, its grants carry the workspace id, and the old per-team Brains are switched off (kept, with their history) once it is active.
@@ -168,6 +168,29 @@ describe('the workspace Brain', () => {
     // only a definition that loaded is kept as a version: the two refused texts added none (v1 shipped, v2 edited, v3 the shipped text put back)
     const versions = await sys(async (tx) => (await tx.query('SELECT 1 FROM app.workspace_bot_definitions WHERE workspace_id = $1', [WS])).rows.length);
     expect(versions).toBe(3);
+  });
+
+  it('moves a Brain that is only behind (its stored text is a superseded shipped one) to the shipped file, and leaves an edited one alone', async () => {
+    const shipped = (await shippedBrainDefinition())!;
+    const newest = () => sys(async (tx) => (await tx.query<{ version: number; sha: string; content: string }>('SELECT version, sha, content FROM app.workspace_bot_definitions WHERE workspace_id = $1 ORDER BY version DESC LIMIT 1', [WS])).rows[0]!);
+    // an admin's edit: not on the list, so an ensure keeps it
+    const behind = shipped.replace('meetings.search', 'meetings.read').replace(/\n\s+- meetings\.read\n/, '\n');
+    expect(behind).not.toBe(shipped);
+    await sys((tx) => loadWorkspaceBot(ctx, tx as unknown as PluginTx, { workspaceId: WS, slug: 'brain', content: behind }));
+    const stored = await newest();
+    await sys((tx) => ensureWorkspaceBrain(ctx, tx as unknown as PluginTx, WS, log));
+    expect((await newest()).version).toBe(stored.version);
+    // the same text on the list of superseded shipped files: the next ensure stores the shipped file as the next version
+    await sys((tx) => ensureWorkspaceBrain(ctx, tx as unknown as PluginTx, WS, log, new Set([stored.sha])));
+    const after = await newest();
+    expect(after.version).toBe(stored.version + 1);
+    expect(after.content).toBe(shipped);
+    expect((await workspaceBot())?.['native']).toEqual(expect.arrayContaining(['meetings.search']));
+    // and a second pass changes nothing
+    await sys((tx) => ensureWorkspaceBrain(ctx, tx as unknown as PluginTx, WS, log, new Set([stored.sha])));
+    expect((await newest()).version).toBe(after.version);
+    // the shas of the three earlier shipped files are on the real list
+    expect(SUPERSEDED_BRAIN_SHAS.size).toBe(3);
   });
 
   it('joins a team made later', async () => {

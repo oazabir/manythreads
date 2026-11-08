@@ -23,15 +23,34 @@ export async function shippedBrainDefinition(): Promise<string | null> {
   return existsSync(file) ? readFile(file, 'utf8') : null;
 }
 
-/** Make sure the workspace has its Brain: store the shipped definition when none is stored yet, load it, retire the team Brains. Idempotent. Returns the bot's id, or null. */
-export async function ensureWorkspaceBrain(ctx: PluginContext, tx: PluginTx, workspaceId: string, log: PluginLogger): Promise<string | null> {
+/**
+ * The sha256 of every earlier shipped `templates/_workspace/bots/brain/BOT.md`. A workspace whose newest stored version is one of these was never edited by an admin: it is
+ * only behind (a new shipped file never overwrites a stored version, so a Brain made on 2026-11-07 kept the first text and missed `meetings.search`), so the next ensure
+ * stores the shipped file as its next version. A text an admin edited has another sha and is left alone. Add the sha of the old file whenever the shipped one changes.
+ */
+export const SUPERSEDED_BRAIN_SHAS: ReadonlySet<string> = new Set([
+  '03b1f76d88960e83126ceddbc04b0bb6fba1fc2cc1beb44bb11849fc3923b011', // P20-07
+  '960e781c34b10f9c317c8ba027fde8581e758ff9a0b5aaaae46353554b8ed2c8', // P20-LV
+  'c4386ca01c4de726b803920ad682b45663ce2f02eeb885c1e1ad422fbdf70371', // P21-F
+]);
+
+/** Make sure the workspace has its Brain: store the shipped definition when none is stored yet (or the stored one is a superseded shipped text), load it, retire the team Brains. Idempotent. Returns the bot's id, or null. */
+export async function ensureWorkspaceBrain(
+  ctx: PluginContext,
+  tx: PluginTx,
+  workspaceId: string,
+  log: PluginLogger,
+  superseded: ReadonlySet<string> = SUPERSEDED_BRAIN_SHAS,
+): Promise<string | null> {
   const stored = (
-    await tx.query<{ content: string }>(
-      'SELECT content FROM app.workspace_bot_definitions WHERE workspace_id = $1 AND slug = $2 ORDER BY version DESC LIMIT 1',
+    await tx.query<{ content: string; sha: string }>(
+      'SELECT content, sha FROM app.workspace_bot_definitions WHERE workspace_id = $1 AND slug = $2 ORDER BY version DESC LIMIT 1',
       [workspaceId, WORKSPACE_BRAIN_SLUG],
     )
   ).rows[0];
-  const content = stored?.content ?? (await shippedBrainDefinition());
+  const behind = stored !== undefined && superseded.has(stored.sha);
+  const shipped = stored === undefined || behind ? await shippedBrainDefinition() : null;
+  const content = (behind ? shipped : null) ?? stored?.content ?? shipped;
   if (content === null) {
     log.warn('bots: templates/_workspace/bots/brain/BOT.md is not there, so the workspace has no Brain yet');
     return null;
