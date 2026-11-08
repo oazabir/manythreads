@@ -21,8 +21,8 @@ export default definePlugin({
     extends: ['event.emit', 'job.register'],
     events: { emits: ['retention.sweep.completed', 'retention.settings.changed'], consumes: [] },
     // bot_runs and run_source_log (bots), the memo and the log's pruning door (memory), the approvals a run may still be needed by, the Personal files of
-    // people deactivated for 30 days (files, memory, memory-inbox, knowledge).
-    dependsOn: ['bots', 'memory', 'approvals', 'files', 'memory-inbox', 'knowledge'],
+    // people deactivated for 30 days (files, memory, memory-inbox, knowledge), and the recordings of voice rooms whose audio is past its keep days (meetings).
+    dependsOn: ['bots', 'memory', 'approvals', 'files', 'memory-inbox', 'knowledge', 'meetings'],
     migrations: 'migrations',
   },
   register(ctx: PluginContext) {
@@ -87,7 +87,7 @@ export default definePlugin({
       });
       const c = summary.counts;
       job.log.info(
-        `retention: workspace ${state.workspaceId} ${summary.dryRun ? 'dry run: would prune' : 'pruned'} ${c.runs} run(s) (${c.runSourceLines} source line(s), ${c.runTokens} token(s), ${c.runMemos} memo(s); ${c.runsSkipped} left because the database refused), ${c.memoryLogLines} log line(s), ${c.memosRemoved} memo(s) of removed bots`,
+        `retention: workspace ${state.workspaceId} ${summary.dryRun ? 'dry run: would prune' : 'pruned'} ${c.runs} run(s) (${c.runSourceLines} source line(s), ${c.runTokens} token(s), ${c.runMemos} memo(s); ${c.runsSkipped} left because the database refused), ${c.memoryLogLines} log line(s), ${c.memosRemoved} memo(s) of removed bots, ${result.audioFiles} meeting audio file(s)`,
       );
     });
   },

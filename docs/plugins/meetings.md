@@ -144,6 +144,16 @@ the WAV helpers (`audio/wav.ts`, real) and the voice-activity segmenter (`audio/
 `app.meetings_set_notetaker`, `app.meetings_set_recording`, `app.meetings_can_read_notes`, settings columns) · `bots/0030_meeting_triggers.sql` · `memory-inbox/0005_meeting_origin.sql`.
 The retention, notifications and search changes belong to S6, S2 and S7.
 
+### Recording (`recording.ts`, P15-15)
+
+Off until an admin sets the workspace switch `recordingCap` to `on`. A person in the room turns recording on for that room (`PUT …/recording`); that sets everyone present back to "not asked" and every person
+answers for themselves (`POST …/record-consent`). A hidden listen-only participant, `recorder:<meetingId>`, joins the room; it publishes nothing. It hears a person only while **everyone present** has said yes, so
+one "no", or a newcomer who has not answered, stops every file at once (within about two seconds, and half a second at the chunk level) and the call thread gets one plain line. A yes counts only if it was given after
+the person last joined the room: a yes left over from before leaving and coming back is taken back to "not asked". Each consenting person gets one 16 kHz mono WAV, stored as the system actor in the channel's Files
+at `channels/<name>/meetings/<dd>-<hhmm>-<slug>/audio/<person>.wav` (`dms/<id>/…` for a direct message), with the recorded person as uploader. Audio never goes to git. Stop reasons: `turned_off`, `left`, `ended`,
+`consent_withdrawn`, `joined_without_yes`, `failed`. Events carry ids only. Limits: three hours per person per file, `MANYTHREADS_RECORDING_MAX_ROOMS` rooms at once (default 10), one server process. Files expire per
+[retention](./retention.md) (default 30 days, `meetings.keepAudioDays` in `TEAM.md`). Exports for other packages: `audioFolder()`, `audioSlug()`, `isRecording()`, `recordingNow()`, `RECORDER_START_QUEUE`.
+
 ### The `meetings/` path
 
 `meetings/YYYY/MM/DD-HHMM-slug/` in the team repo is a guarded directory: only the platform (the system actor) writes it. Nobody can commit it directly, no proposal can change it, and the Files tree

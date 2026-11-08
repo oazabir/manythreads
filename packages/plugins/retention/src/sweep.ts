@@ -31,10 +31,13 @@ const DAY_MS = 24 * 3_600_000;
 //   log    superseded retained/forgotten lines and attempt notes of `memory_retain_log` older than the workspace's memory-log window, a page at a
 //          time through `app.memory_retain_log_prune`; never a `withheld` line, never the newest state of a source.
 //   memos  the memos of bots that no longer exist (every verdict about a removed bot is `bot_removed`, the memo says nothing more).
+//   audio     the recorded audio of voice rooms (P15-15): the Files row of each person's recording once its `delete_after` has passed (30 days after the recording stopped when the
+//          meetings plugin wrote none), and never earlier than a day after it stopped. The recording row stays (it says that a recording was made, when and by whom) with no file;
+//          the bytes go with the blob collector. Keyset-paged on the recording's id, a batch per step. Absent meetings tables: nothing to do.
 //   personal  the Personal files, versions and folders, Memory files and versions, inbox items and knowledge bases of people deactivated more than 30 days ago
 //          (P20-13, P20-04..06), a batch of people at a time, keyset-paged on the person's id. Only people whose `suspended_at` is older than the cutoff and who still hold something; a person reactivated since has no
 //          `suspended_at` and is never touched. The bytes stay in the blob store until the blob collector finds no row naming them.
-// A dry run does all of it except the memo and the deletions, and counts what it would have done.
+// The phases run in the order runs, log, memos, personal, audio. A dry run does all of it except the memo and the deletions, and counts what it would have done.
 
 export const PRUNE_QUEUE = 'retention.prune';
 export const SWEEP_QUEUE = 'retention.sweep';
@@ -61,7 +64,9 @@ export const SweepState = z.object({
   memoryLogCutoff: z.iso.datetime({ offset: true }),
   /** Personal spaces of people deactivated before this are emptied. Absent in a sweep queued before P20-13 (then it is derived when the phase is reached). */
   personalCutoff: z.iso.datetime({ offset: true }).optional(),
-  phase: z.enum(['runs', 'log', 'memos', 'personal']),
+  phase: z.enum(['runs', 'log', 'memos', 'personal', 'audio']),
+  /** Voice-room audio files deleted (or, in a dry run, that would be) so far in this sweep. Absent in a sweep queued before P15-15. */
+  audioFiles: z.number().int().nonnegative().optional(),
   /** `runs`: `<ended_at as text>|<run id>` of the last run looked at; `log`: the last log line id. */
   cursor: z.string().max(100).nullable(),
   step: z.number().int().nonnegative().max(1_000_000),
@@ -100,7 +105,11 @@ export async function startSweep(tx: PluginTx, workspaceId: string, now: Date, d
   };
 }
 
-export type StepResult = { done: false; state: SweepState } | { done: true; summary: RetentionSweepSummary; durationMs: number };
+export type StepResult = { done: false; state: SweepState } | { done: true; summary: RetentionSweepSummary; durationMs: number; audioFiles: number };
+
+/** Recorded audio is kept this long after it stopped when the meetings plugin wrote no `delete_after`, and never less than a day. */
+export const MEETING_AUDIO_DEFAULT_DAYS = 30;
+const MEETING_AUDIO_MIN_AGE_MS = DAY_MS;
 
 /**
  * The eligibility of a run, as one predicate for the select and the delete ($1 workspace, $2 cutoff, $3 the tools that may never wait for an
@@ -184,6 +193,11 @@ async function weightOf(tx: PluginTx, ids: readonly string[]): Promise<Map<strin
     for (const r of tokens.rows) of(r.run_id).tokens = r.n;
   }
   return out;
+}
+
+/** True when the meetings plugin's tables are there (a deployment without it has no recordings). */
+async function hasMeetingRecordings(tx: PluginTx): Promise<boolean> {
+  return (await tx.query("SELECT 1 FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'meeting_recordings' AND column_name = 'delete_after'")).rows.length > 0;
 }
 
 /** Runs one step of a sweep inside `tx` and says what comes next. */
@@ -276,8 +290,7 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
     ).rows[0]?.n ?? 0;
     counts.memosRemoved += removed;
     if (removed < batch.runs) return { done: false, state: { ...state, phase: 'personal', cursor: null, counts, step: state.step + 1 } };
-  }
-  else {
+  } else if (phase === 'personal') {
     // Personal spaces of people deactivated for longer than the keep window. The cutoff is never later than the window gives now. The people rows are
     // locked while their files go (a reactivation in flight holds its row, so that person is left for the next sweep; one that comes after waits until
     // the files are gone, which is right because the window had passed).
@@ -311,16 +324,50 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
       counts.personalSpaces = (counts.personalSpaces ?? 0) + ids.length;
       cursor = ids[ids.length - 1]!;
     }
-    if (people.length < batch.runs) return finish(state, counts);
+    if (people.length < batch.runs) return { done: false, state: { ...state, phase: 'audio', cursor: null, counts, step: state.step + 1 } };
+  } else {
+    // Recorded audio of voice rooms past its day (docs/plugins/retention.md "meeting audio"). The predicate is asserted again by the delete; a forged payload cannot move it,
+    // because nothing in the payload names a time or a file.
+    if (!(await hasMeetingRecordings(tx))) return finish(state, counts, state.audioFiles ?? 0);
+    const rows = (
+      await tx.query<{ id: string; file_id: string }>(
+        `SELECT r.id, r.file_id FROM app.meeting_recordings r
+          WHERE r.workspace_id = $1::uuid AND r.file_id IS NOT NULL AND r.stopped_at IS NOT NULL
+            AND r.stopped_at < $2::timestamptz
+            AND coalesce(r.delete_after, r.stopped_at + make_interval(days => $3::int)) < $4::timestamptz
+            AND ($5::uuid IS NULL OR r.id > $5::uuid)
+          ORDER BY r.id LIMIT $6`,
+        [state.workspaceId, new Date(Date.now() - MEETING_AUDIO_MIN_AGE_MS).toISOString(), MEETING_AUDIO_DEFAULT_DAYS, new Date().toISOString(), cursor, batch.runs],
+      )
+    ).rows;
+    let audioFiles = state.audioFiles ?? 0;
+    if (rows.length > 0) {
+      if (state.dryRun) audioFiles += rows.length;
+      else {
+        // The Files row goes (the recording row keeps its history: `file_id` becomes NULL); the bytes stay until the blob collector finds no row naming them.
+        const gone = await tx.query<{ n: number }>(
+          `WITH doomed AS (
+             DELETE FROM app.files f USING app.meeting_recordings r
+              WHERE r.id = ANY($1::uuid[]) AND f.id = r.file_id AND f.workspace_id = $2::uuid RETURNING f.id
+           ) SELECT count(*)::int AS n FROM doomed`,
+          [rows.map((r) => r.id), state.workspaceId],
+        );
+        audioFiles += gone.rows[0]?.n ?? 0;
+      }
+      cursor = rows[rows.length - 1]!.id;
+    }
+    if (rows.length < batch.runs) return finish(state, counts, audioFiles);
+    return { done: false, state: { ...state, phase, cursor, counts, audioFiles, step: state.step + 1 } };
   }
   return { done: false, state: { ...state, phase, cursor, counts, step: state.step + 1 } };
 }
 
-function finish(state: SweepState, counts: RetentionCounts): StepResult {
+function finish(state: SweepState, counts: RetentionCounts, audioFiles: number): StepResult {
   const finishedAt = new Date();
   return {
     done: true,
     durationMs: Math.max(0, finishedAt.getTime() - Date.parse(state.startedAt)),
+    audioFiles,
     summary: {
       sweepId: state.sweepId,
       dryRun: state.dryRun,
