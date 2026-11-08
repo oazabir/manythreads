@@ -34,7 +34,7 @@ test('the page lists every provider of the catalog (Google first); the two witho
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', PATH);
   try {
     await expect(page.getByRole('heading', { level: 1, name: 'Connected accounts' })).toBeVisible();
-    await expect(page.getByTestId('person-provider')).toHaveCount(11);
+    await expect(page.getByTestId('person-provider')).toHaveCount(14);
     await expect(page.getByTestId('person-status')).toHaveAttribute('role', 'status');
 
     const google = provider(page, 'google');
@@ -113,7 +113,7 @@ test('the way back from a provider is said in plain words, and then taken out of
     await expect(page.getByTestId('person-result')).toHaveText('Google is connected.');
     await expect(page).toHaveURL((u) => u.search === '');
     await page.reload();
-    await expect(page.getByTestId('person-provider')).toHaveCount(11);
+    await expect(page.getByTestId('person-provider')).toHaveCount(14);
     await expect(page.getByTestId('person-result')).toHaveCount(0);
   } finally {
     await context.close();
@@ -152,7 +152,7 @@ test('the page and the account Connections screen link to each other', async ({ 
 test('on a phone the page fits the width', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', PATH, { viewport: PHONE, mobile: true });
   try {
-    await expect(page.getByTestId('person-provider')).toHaveCount(11);
+    await expect(page.getByTestId('person-provider')).toHaveCount(14);
     await expect(provider(page, 'microsoft').getByTestId('person-not-configured')).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
   } finally {

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { PHONE, apiOn, noSidewaysScroll, openOn } from '../support/stack-browser.ts';
+import { connectorsStack, fake, personas, stateOf } from './support.ts';
 
 /*
  * The Add connection gallery and the sign-in apps (PLAN P16-01, P16-02) end to end. The gallery lists the connector catalog with a search and nine shelves; what is
@@ -141,4 +142,74 @@ test('the gallery fits a phone', async ({ browser, playwright }) => {
   } finally {
     await context.close();
   }
+});
+
+/*
+ * Bundle D (P16-12): the gallery against the stand-ins. Priya has no Google sign-in on seed v16. She finds the calendar connectors by searching, connects fake Google with
+ * Drive only, and later adds Calendar: the second consent asks for the calendar scopes alone, and the first one's Drive stays allowed (the stand-in adds what was agreed before,
+ * the way Google does for `include_granted_scopes`). Written for the integration pass; not run by the coder that wrote it.
+ */
+test.describe('with the stand-ins (seed v16)', () => {
+  let fakeStack: Stack;
+  const priya = { email: personas.priya.email };
+
+  test.beforeAll(async () => {
+    fakeStack = await connectorsStack();
+    await fake(fakeStack, 'POST', '/__fake/sign-in-as', priya);
+  });
+  test.afterAll(async () => {
+    await fakeStack?.stop();
+  });
+
+  test('the new cards are on the shelves: the document apps, the four chat apps and the planned room tools; searching "calendar" finds Google and Microsoft', async ({ browser, playwright }) => {
+    const { page, context } = await openOn(browser, playwright, fakeStack, 'omar', '/settings/team/engineering/connections');
+    try {
+      await page.getByTestId('connection-add').click();
+      for (const id of ['confluence', 'dropbox', 'box', 'telegram', 'whatsapp', 'slack', 'teams']) {
+        await expect(page.getByTestId(`connector-card-${id}`), id).toHaveAttribute('data-status', 'available');
+      }
+      // the chat apps lead to Chat apps, the document apps to the person's own sign-ins
+      await expect(page.getByTestId('connector-chat-telegram')).toBeVisible();
+      await page.getByTestId('connector-search').fill('calendar');
+      await expect(page.getByTestId('connector-card-google')).toBeVisible();
+      await expect(page.getByTestId('connector-card-microsoft')).toBeVisible();
+      await expect(page.getByTestId('connector-card-telegram')).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('connect Google with Drive only, then add Calendar later: the second consent asks for the calendar scopes and nothing else', async ({ browser, playwright }) => {
+    const { page, context } = await openOn(browser, playwright, fakeStack, 'priya', '/settings/connections');
+    try {
+      const google = page.locator('[data-testid="person-provider"][data-provider="google"]');
+      await expect(google).toHaveAttribute('data-connected', 'false');
+      for (const service of ['gmail', 'calendar', 'calendar_write']) await google.locator(`[data-service="${service}"] input`).uncheck();
+      await google.locator('[data-service="drive"] input').check();
+      await google.getByTestId('person-connect').click();
+      await expect(page).toHaveURL(/\/settings\/connections(\?|$)/);
+      await expect(page.getByTestId('person-result')).toContainText(/connected/i);
+      await expect(google).toHaveAttribute('data-connected', 'true');
+
+      const first = (await stateOf(fakeStack)).workspace.consents.filter((c) => c.provider === 'google').at(-1)!;
+      expect(first.scopes.some((s) => /drive/.test(s))).toBe(true);
+      expect(first.scopes.some((s) => /calendar/.test(s))).toBe(false);
+
+      // later: Calendar only
+      await page.goto('/settings/connections');
+      await google.locator('[data-service="drive"] input').uncheck();
+      await google.locator('[data-service="calendar"] input').check();
+      await expect(google.getByTestId('person-connect')).toHaveAccessibleName(/Update what is allowed/);
+      await google.getByTestId('person-connect').click();
+      await expect(page.getByTestId('person-result')).toContainText(/connected|updated/i);
+      const second = (await stateOf(fakeStack)).workspace.consents.filter((c) => c.provider === 'google').at(-1)!;
+      expect(second.scopes.some((s) => /calendar/.test(s))).toBe(true);
+      expect(second.scopes.some((s) => /drive/.test(s))).toBe(false);
+      // the earlier Drive allowance is still shown as allowed
+      await expect(google.locator('[data-service="drive"]')).toContainText('allowed');
+      await expect(google.locator('[data-service="calendar"]')).toContainText('allowed');
+    } finally {
+      await context.close();
+    }
+  });
 });

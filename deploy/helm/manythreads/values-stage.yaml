@@ -1,0 +1,23 @@
+# The stage release (NOT production, NOT live): a throwaway second copy of the site that is wired to the stand-ins of tools/fake-saas, so that the live probe
+# (e2e/screens/task.verify-bundle-d.shots.ts, block B) can connect "Google", receive "Telegram" and offboard a person without touching a real account.
+# Applied by tools/devbox/stage.sh on top of values-ci.yaml (no ingress, test sign-in, small storage) and values-demo.yaml (fake-llm + fake-hindsight):
+#
+#     helm upgrade --install manythreads-stage ./deploy/helm/manythreads -n manythreads-stage \
+#       -f deploy/helm/manythreads/values-ci.yaml -f deploy/helm/manythreads/values-demo.yaml -f deploy/helm/manythreads/values-stage.yaml \
+#       -f <the file stage.sh writes with the fake bases> --set imageTag=$TAG
+#
+# The addresses of the stand-ins are NOT in this file: fake-saas prints them when it starts (its ready line `FAKE_SAAS {json}` has `env`), and stage.sh puts them in
+# a second values file (`server.env`) so the pod reaches them at the devbox address 10.0.2.15 (the host, from inside k3s). The port is 18090, the control port 18091.
+#
+# The release name is `manythreads-stage`, the namespace `manythreads-stage`, the site on the devbox at http://127.0.0.1:18080 through a port-forward.
+# It takes about 1.5 GB while it runs; stage.sh down removes it again.
+domain: manythreads-stage.local
+publicUrl: "http://127.0.0.1:18080"
+
+server:
+  env:
+    # Throwaway and unreachable: the test-mode server honours the dev-actor header, which the seed of the connectors world (seed v16) uses.
+    NODE_ENV: test
+    MANYTHREADS_TEST_PLUGINS: "1"
+
+# Persona passwords are the known test password (seed.fixedPasswords in values-ci.yaml): <key>@kahf.example / PERSONA_PASSWORD of e2e/support/env.ts.
