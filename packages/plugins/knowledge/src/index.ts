@@ -19,10 +19,10 @@ export default definePlugin({
     kind: 'server',
     migrations: 'migrations',
     // `provider.deploy.step`: the knowledge step of the bot page's Deploy action (P8-34), composed by the workshop plugin.
-    extends: ['event.emit', 'job.register', 'hook.pre_egress', 'provider.deploy.step'],
+    extends: ['event.emit', 'event.subscribe', 'job.register', 'hook.pre_egress', 'provider.deploy.step'],
     events: {
       emits: ['knowledge.base.created', 'knowledge.base.deleted', 'knowledge.document.added', 'knowledge.document.removed', 'knowledge.base.resynced', 'knowledge.personal_base.changed', 'knowledge.source.synced'],
-      consumes: [],
+      consumes: ['team.member.added', 'team.member.removed'],
     },
     capabilities: [{ name: 'knowledge.search', destructive: false }],
     // app.knowledge_run_grant() reads the run and the bot; the converted copy goes through the repo writer; the original goes to blob storage.

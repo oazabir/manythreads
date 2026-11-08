@@ -6,6 +6,8 @@ import {
   ListConnectorRootsResponse,
   addKnowledgeConnectorSourceRoute,
   addPersonalKnowledgeConnectorSourceRoute,
+  DeletePersonalKnowledgeSourceResponse,
+  deletePersonalKnowledgeSourceRoute,
   listConnectorProvidersRoute,
   listConnectorRootsRoute,
   CreatePersonalKnowledgeBaseRequest,
@@ -112,3 +114,6 @@ export const addPersonalConnectorSource = (base: string, body: AddKnowledgeConne
 export const fetchConnectorRoots = (query: ListConnectorRootsQuery) =>
   call(listConnectorRootsRoute, { request: ListConnectorRootsQuery, response: ListConnectorRootsResponse }, query);
 export const fetchConnectorProviders = () => call(listConnectorProvidersRoute, { response: ListConnectorProvidersResponse });
+/** Remove a source (and the documents it brought) from one of the caller's own Personal bases. */
+export const deletePersonalSource = (base: string, sourceId: string) =>
+  call(deletePersonalKnowledgeSourceRoute, { response: DeletePersonalKnowledgeSourceResponse }, undefined, { base, sourceId });

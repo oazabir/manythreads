@@ -519,3 +519,87 @@ a.sp-opt:hover {
     max-height: 320px;
   }
 }
+
+/* Documents read from a connected app (Bundle D, P16-08): the source line, the list of sources in a Personal base and the dialog that adds one. */
+.kn-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kn-source-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+
+.kn-source-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.kn-source-item:last-child {
+  border-bottom: 0;
+}
+
+.kn-source {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kn-source-title {
+  font-weight: 600;
+}
+
+.kn-source-sub,
+.kn-source-state {
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.kn-source-state.attention,
+.kn-source-state.paused {
+  color: var(--alert-ink);
+}
+
+.kn-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.kn-consent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: var(--fs-small);
+}
+
+.kn-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+@media (width <= 760px) {
+  .kn-source-item .btn,
+  .kn-form-actions .btn,
+  .kn-sources .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

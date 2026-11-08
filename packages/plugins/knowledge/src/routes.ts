@@ -34,6 +34,7 @@ import {
   updateKnowledgeSourceRoute,
   uploadKnowledgeDocumentRoute,
 } from '@manythreads/shared';
+import { enqueueBaseConnectorPasses } from './connector-sync.ts';
 import { findDocument, ingest, kindOfName, removeFromRepo, sha256Hex, type BaseRef, type TeamBaseRef } from './ingest.ts';
 import { ExtractError, maxExtractBytes } from './extract/index.ts';
 import { embedderOf } from './embed.ts';
@@ -454,7 +455,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const base = await requireBase(tx, team, params.base);
       const source = (await tx.query<SourceRow>(`SELECT ${SOURCE_COLUMNS} FROM app.knowledge_sources s WHERE s.base_id = $1 AND s.id = $2`, [base.id, params.sourceId])).rows[0];
       if (!source) throw notFound('That source is not in this knowledge base.');
-      if (source.kind !== 'url') throw conflict('Only a web-page source can be removed; uploads and the team folder are part of every base.');
+      if (source.kind !== 'url' && source.kind !== 'connector') throw conflict('Only a web-page source or a source from a connected app can be removed; uploads and the team folder are part of every base.');
       const docs = (await tx.query<DocRow>(`SELECT ${DOC_COLUMNS} FROM ${DOC_FROM} WHERE d.source_id = $1`, [source.id])).rows;
       for (const doc of docs) {
         await tx.query('DELETE FROM app.knowledge_documents WHERE id = $1', [doc.id]);
@@ -486,6 +487,8 @@ export function registerRoutes(ctx: PluginContext): void {
       requireWritable(team);
       const base = await requireBase(tx, team, params.base);
       const result = await resyncBase(ctx, tx, refOf(team, base), maxExtractBytes());
+      // the sources that read a connected app are read again by their own queue (a full read of the folder)
+      await enqueueBaseConnectorPasses(ctx, tx, team.workspace_id, base.id, 'force');
       const fresh = await requireBase(tx, team, params.base);
       return json({ result, base: toBase(fresh), documents: (await documentsOf(tx, base.id)).map(toDocument) });
     }),

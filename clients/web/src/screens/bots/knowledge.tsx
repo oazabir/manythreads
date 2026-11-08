@@ -16,6 +16,7 @@ import {
   uploadKnowledgeDocument,
 } from './api';
 import { Mono } from './parts';
+import { ConnectorSourceForm, ConnectorSourceLine } from '../knowledge/ConnectorSourceForm';
 
 /*
  * What a knowledge base holds, shown under the base's line in the bot page's Knowledge tab (PLAN P8-33): its documents (name, kind, size, a short
@@ -62,12 +63,16 @@ function SourcesList({ team, base, sources, writer, busy, run }: { team: string;
       <ul className="b-kb-docs">
         {sources.map((s) => (
           <li key={s.id} className="b-kb-doc" data-testid="knowledge-source" data-kind={s.kind} data-error={s.error ? 'true' : undefined}>
-            <div className="b-kb-name">{s.kind === 'url' ? (s.label ?? s.url ?? 'Web page') : SOURCE_NAME[s.kind]}</div>
-            {s.kind === 'url' && s.url ? <div className="b-kb-sub"><Mono>{s.url}</Mono></div> : null}
-            <div className={`b-kb-reason${s.error ? ' bad' : ''}`}>
-              {sourceLine(s)}
-              {s.lastSyncedAt && !s.error ? <> <Time iso={s.lastSyncedAt} /></> : null}
-            </div>
+            {s.kind === 'connector' ? <ConnectorSourceLine source={s} /> : (
+              <>
+                <div className="b-kb-name">{s.kind === 'url' ? (s.label ?? s.url ?? 'Web page') : SOURCE_NAME[s.kind]}</div>
+                {s.kind === 'url' && s.url ? <div className="b-kb-sub"><Mono>{s.url}</Mono></div> : null}
+                <div className={`b-kb-reason${s.error ? ' bad' : ''}`}>
+                  {sourceLine(s)}
+                  {s.lastSyncedAt && !s.error ? <> <Time iso={s.lastSyncedAt} /></> : null}
+                </div>
+              </>
+            )}
             {writer ? (
               <div className="b-add-row">
                 <select
@@ -87,16 +92,16 @@ function SourcesList({ team, base, sources, writer, busy, run }: { team: string;
                     <option key={String(r.minutes)} value={r.minutes === null ? '' : String(r.minutes)}>{r.label}</option>
                   ))}
                 </select>
-                {s.kind === 'url' ? (
+                {s.kind === 'url' || s.kind === 'connector' ? (
                   <button
                     type="button"
                     className="btn s"
                     disabled={busy !== null}
-                    aria-label={`Remove ${s.label ?? s.url ?? 'this page'}`}
+                    aria-label={`Remove ${s.label ?? s.url ?? 'this source'}`}
                     data-testid="knowledge-source-remove"
                     onClick={() => run('remove', async () => {
                       const res = await deleteKnowledgeSource(team, base, s.id);
-                      return `The page was removed with its ${String(res.documents)} ${res.documents === 1 ? 'document' : 'documents'}.`;
+                      return `${s.kind === 'connector' ? 'The source' : 'The page'} was removed with its ${String(res.documents)} ${res.documents === 1 ? 'document' : 'documents'}.`;
                     })}
                   >
                     Remove
@@ -110,6 +115,7 @@ function SourcesList({ team, base, sources, writer, busy, run }: { team: string;
         ))}
       </ul>
       {writer ? (
+        <>
         <form
           className="b-add-row"
           onSubmit={(e) => {
@@ -131,6 +137,10 @@ function SourcesList({ team, base, sources, writer, busy, run }: { team: string;
           </select>
           <button type="submit" className="btn s" disabled={busy !== null || address.trim().length < 8} data-testid="knowledge-url-add">{busy === 'add' ? 'Reading the page…' : 'Add a web page'}</button>
         </form>
+        <div className="b-add-row">
+          <ConnectorSourceForm team={team} base={base} disabled={busy !== null} onAdded={(line) => run('connector', () => Promise.resolve(line))} />
+        </div>
+        </>
       ) : null}
     </section>
   );

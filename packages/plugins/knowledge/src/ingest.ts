@@ -31,9 +31,16 @@ export function isIngestKind(kind: string): kind is DocumentKind {
   return kind === 'markdown' || kind === 'text' || kind === 'csv' || kind === 'pdf';
 }
 
+/** What a document read from a connected app can be: the upload kinds, and also Word, Excel and PowerPoint files (the extractor reads them; an upload still refuses them). */
+export type ConnectorDocumentKind = DocumentKind | 'docx' | 'xlsx' | 'pptx';
+
+export function isConnectorKind(kind: string): kind is ConnectorDocumentKind {
+  return isIngestKind(kind) || kind === 'docx' || kind === 'xlsx' || kind === 'pptx';
+}
+
 export interface IngestFile {
   name: string;
-  kind: DocumentKind;
+  kind: ConnectorDocumentKind;
   /** How to read the bytes when that differs from the document's kind (an edited converted copy of a PDF is Markdown). */
   extractAs?: ExtractKind;
   bytes: Uint8Array;
@@ -41,8 +48,8 @@ export interface IngestFile {
   size: number;
   /** Where the original is in blob storage (an upload); null for a file that lives in the repo. */
   blobKey: string | null;
-  source: 'upload' | 'repo' | 'url';
-  /** The source row, for a `url` source (a base has many); the other kinds have one row each. */
+  source: 'upload' | 'repo' | 'url' | 'connector';
+  /** The source row, for a `url` or `connector` source (a base has many); the other kinds have one row each. */
   sourceId?: string;
   /** For a repo file: its path and git blob id. */
   repoPath?: string;
@@ -94,7 +101,7 @@ export async function attempt<T>(tx: PluginTx, fn: () => Promise<T>): Promise<{ 
   }
 }
 
-export async function sourceIdOf(tx: PluginTx, baseId: string, kind: 'upload' | 'repo' | 'url'): Promise<string> {
+export async function sourceIdOf(tx: PluginTx, baseId: string, kind: IngestFile['source']): Promise<string> {
   const row = (await tx.query<{ id: string }>('SELECT id FROM app.knowledge_sources WHERE base_id = $1 AND kind = $2', [baseId, kind])).rows[0];
   if (!row) throw new Error(`knowledge base ${baseId} has no ${kind} source`);
   return row.id;
@@ -169,6 +176,17 @@ async function sourcesYaml(tx: PluginTx, baseId: string): Promise<string> {
   if (rows.length === 0) lines[1] = 'documents: []';
   for (const r of rows) {
     lines.push(`  - name: ${JSON.stringify(r.name)}`, `    file: ${JSON.stringify(`${r.slug}.md`)}`, `    from: ${r.source}`, `    kind: ${r.kind}`, `    version: ${r.version}`, `    sha256: ${r.sha256.slice(0, 12)}`, `    status: ${r.status}`);
+  }
+  // the sources that read a connected app (written only; nothing reads this file back): which service and which folder, never a connection or a person
+  const connectors = (
+    await tx.query<{ provider: string; remote_root: string; label: string | null }>(
+      `SELECT provider, remote_root, label FROM app.knowledge_sources WHERE base_id = $1 AND kind = 'connector' ORDER BY provider, remote_root`,
+      [baseId],
+    )
+  ).rows;
+  if (connectors.length > 0) {
+    lines.push('sources:');
+    for (const c of connectors) lines.push('  - kind: connector', `    provider: ${c.provider}`, `    root: ${JSON.stringify(c.remote_root)}`, `    label: ${JSON.stringify(c.label ?? c.remote_root)}`);
   }
   return `${lines.join('\n')}\n`;
 }

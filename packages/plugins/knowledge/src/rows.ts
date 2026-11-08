@@ -1,4 +1,4 @@
-import { KnowledgeBase, KnowledgeDocument, KnowledgeSource, PersonalKnowledgeBase, type KnowledgeDocumentKind } from '@manythreads/shared';
+import { KnowledgeBase, KnowledgeDocument, KnowledgeSource, PersonalKnowledgeBase, type KnowledgeConnectorProvider, type KnowledgeDocumentKind, type KnowledgeSourceStatus } from '@manythreads/shared';
 
 // Database rows and how they become the API's shapes.
 
@@ -114,16 +114,47 @@ export function toDocument(row: DocRow): KnowledgeDocument {
 export type SourceRow = {
   id: string;
   base_id: string;
-  kind: 'upload' | 'repo' | 'url';
+  kind: 'upload' | 'repo' | 'url' | 'connector';
   url: string | null;
   label: string | null;
   sync_minutes: number | null;
   last_synced_at: Date | null;
   error: string | null;
+  // present for a connector source (SOURCE_COLUMNS selects them; an INSERT ... RETURNING of an older kind leaves them out)
+  provider?: KnowledgeConnectorProvider | null;
+  status?: KnowledgeSourceStatus;
+  remote_root?: string | null;
+  skipped_limited?: number;
+  document_count?: number;
+  read_with_name?: string | null;
 }
-export const SOURCE_COLUMNS = 's.id, s.base_id, s.kind, s.url, s.label, s.sync_minutes, s.last_synced_at, s.error';
+/** The columns of a source, the connector ones included. `read_with_name` is the first name of the person whose connection a connector source is read with. */
+export const SOURCE_COLUMNS = `s.id, s.base_id, s.kind, s.url, s.label, s.sync_minutes, s.last_synced_at, s.error, s.provider, s.status, s.remote_root, s.skipped_limited, s.document_count,
+  (SELECT split_part(p.display_name, ' ', 1) FROM app.people p WHERE p.id = s.granted_by) AS read_with_name`;
+
+const PROVIDER_LABEL: Record<KnowledgeConnectorProvider, string> = {
+  notion: 'Notion',
+  confluence: 'Confluence',
+  google_drive: 'Google Drive',
+  sharepoint: 'SharePoint',
+  onedrive: 'OneDrive',
+  dropbox: 'Dropbox',
+  box: 'Box',
+};
+export const providerLabel = (provider: KnowledgeConnectorProvider): string => PROVIDER_LABEL[provider];
 
 export function toSource(row: SourceRow): KnowledgeSource {
+  const connector =
+    row.kind === 'connector' && row.provider
+      ? {
+          provider: row.provider,
+          status: row.status ?? 'ready',
+          remoteRoot: row.label ?? row.remote_root ?? null,
+          readWith: row.read_with_name ? `${row.read_with_name}’s ${providerLabel(row.provider)}` : null,
+          skippedLimited: row.skipped_limited ?? 0,
+          documentCount: row.document_count ?? 0,
+        }
+      : {};
   return KnowledgeSource.parse({
     id: row.id,
     kind: row.kind,
@@ -132,5 +163,6 @@ export function toSource(row: SourceRow): KnowledgeSource {
     syncMinutes: row.sync_minutes,
     lastSyncedAt: row.last_synced_at ? row.last_synced_at.toISOString() : null,
     error: row.error,
+    ...connector,
   });
 }

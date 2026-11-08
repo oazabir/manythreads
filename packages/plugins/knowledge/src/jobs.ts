@@ -1,4 +1,5 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import { enqueueDueConnectorSources } from './connector-sync.ts';
 import { backfillEmbeddings, embedderOf } from './embed.ts';
 import { GAPS_QUEUE, postGaps } from './gaps.ts';
 import { maxExtractBytes } from './extract/index.ts';
@@ -30,7 +31,7 @@ export async function syncDueSources(ctx: PluginContext, tx: PluginTx, workspace
     await tx.query<DueRow>(
       `SELECT ${SOURCE_COLUMNS}, s.team_id, b.workspace_id, b.slug AS base_slug
          FROM app.knowledge_sources s JOIN app.knowledge_bases b ON b.id = s.base_id
-        WHERE s.sync_minutes IS NOT NULL AND s.team_id IS NOT NULL AND b.workspace_id = $2
+        WHERE s.sync_minutes IS NOT NULL AND s.team_id IS NOT NULL AND s.kind <> 'connector' AND b.workspace_id = $2
           AND (s.last_synced_at IS NULL OR s.last_synced_at + make_interval(mins => s.sync_minutes) <= now())
         ORDER BY s.last_synced_at NULLS FIRST, s.id
         LIMIT $1 FOR UPDATE OF s SKIP LOCKED`,
@@ -52,6 +53,8 @@ export async function syncDueSources(ctx: PluginContext, tx: PluginTx, workspace
     }
     read += 1;
   }
+  // the sources that read a connected app are read by the detached queue `knowledge.connector`: they share this pass's budget (and always get at least one place)
+  read += await enqueueDueConnectorSources(ctx, tx, workspaceId, Math.max(limit - read, 1));
   return read;
 }
 

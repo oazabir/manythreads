@@ -5,7 +5,8 @@ import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
 import { Time } from '../../components/ui';
 import { message } from '../memory/inboxWords';
-import { createPersonalBase, deletePersonalBase, deletePersonalDocument, fetchPersonalBase, fetchPersonalBases, searchPersonalBase, uploadPersonalDocument } from './api';
+import { ConnectorSourceForm, ConnectorSourceLine } from './ConnectorSourceForm';
+import { createPersonalBase, deletePersonalBase, deletePersonalDocument, deletePersonalSource, fetchPersonalBase, fetchPersonalBases, searchPersonalBase, uploadPersonalDocument } from './api';
 import { ACCEPTED_FILES, KIND_LABEL, countLine, searchModeSentence, sizeLabel, fallbackSlug, slugFromName, stateSentence, uploadSentence } from './words';
 
 type Notice = { tone: 'ok' | 'bad'; text: string } | null;
@@ -119,6 +120,7 @@ function BasePanel({ summary, onChanged, onRemoved }: { summary: PersonalKnowled
     );
   }
   const { base: info, documents } = q.data;
+  const connectorSources = q.data.sources.filter((src) => src.kind === 'connector');
 
   const upload = (file: File): void => {
     setBusy('upload');
@@ -151,6 +153,23 @@ function BasePanel({ summary, onChanged, onRemoved }: { summary: PersonalKnowled
       (e: unknown) => {
         setBusy(null);
         setNotice({ tone: 'bad', text: message(e, 'The document could not be removed.') });
+      },
+    );
+  };
+
+  const removeSource = (id: string, name: string): void => {
+    setBusy('remove-source');
+    setNotice(null);
+    deletePersonalSource(base, id).then(
+      (res) => {
+        setBusy(null);
+        setNotice({ tone: 'ok', text: `${name} was removed with its ${countLine(res.documents, 'document', 'documents')}.` });
+        q.reload();
+        onChanged();
+      },
+      (e: unknown) => {
+        setBusy(null);
+        setNotice({ tone: 'bad', text: message(e, 'The source could not be removed.') });
       },
     );
   };
@@ -205,6 +224,31 @@ function BasePanel({ summary, onChanged, onRemoved }: { summary: PersonalKnowled
         {searchModeSentence(q.data.searchMode)} Only you can open this base. Web pages cannot be added to a personal base yet.
       </p>
       {notice ? <p className={`kn-note ${notice.tone}`} role={notice.tone === 'bad' ? 'alert' : 'status'} data-testid="personal-base-notice">{notice.text}</p> : null}
+
+      <div className="kn-sources" data-testid="personal-base-sources">
+        {connectorSources.length > 0 ? (
+          <ul className="kn-source-list" aria-label={`Connected apps read into ${info.name}`}>
+            {connectorSources.map((src) => (
+              <li key={src.id} className="kn-source-item">
+                <ConnectorSourceLine source={src} />
+                <button type="button" className="btn s" disabled={busy !== null} onClick={() => removeSource(src.id, src.label ?? 'The source')} aria-label={`Remove ${src.label ?? 'this source'}`} data-testid="personal-base-source-remove">Remove</button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="kn-actions">
+          <ConnectorSourceForm
+            team={null}
+            base={base}
+            disabled={busy !== null}
+            onAdded={(line) => {
+              setNotice({ tone: 'ok', text: line });
+              q.reload();
+              onChanged();
+            }}
+          />
+        </div>
+      </div>
 
       {documents.length === 0 ? (
         <p className="mi-empty faint" data-testid="personal-base-empty">No documents yet. Upload a Markdown, text, CSV or PDF file.</p>

@@ -184,3 +184,62 @@ describe('the base says when a source needs attention', () => {
     expect(await status()).not.toBe('attention');
   });
 });
+
+describe('who sees the documents a connector source brought in', () => {
+  const docIn = (base: string, source: string, team: string | null, owner: string | null, slug: string): Promise<unknown> =>
+    sys((tx) =>
+      tx.query(
+        `INSERT INTO app.knowledge_documents (base_id, team_id, owner_person_id, source_id, name, slug, kind, size, sha256, status, remote_id)
+         VALUES ($1, $2, $3, $4, $5, $5, 'markdown', 10, repeat('d', 64), 'indexed', $5)`,
+        [base, team, owner, source, slug],
+      ),
+    );
+  const seen = (p: Persona, slug: string): Promise<number> => as(p, async (tx) => (await tx.query('SELECT 1 FROM app.knowledge_documents WHERE slug = $1', [slug])).rowCount ?? 0);
+
+  it('a team base\'s document is read by the team, not by another team or a guest', async () => {
+    const source = await teamSource(teamBase);
+    await docIn(teamBase, source, ENG, null, 'team-doc');
+    expect(await seen(nadia, 'team-doc')).toBe(1);
+    expect(await seen(rafi, 'team-doc')).toBe(1);
+    expect(await seen(tariq, 'team-doc')).toBe(0);
+    expect(await seen(lena, 'team-doc')).toBe(0);
+  });
+
+  it('a Personal base\'s document is read by its owner alone, an admin included', async () => {
+    const source = await mySource(nadia, myBase);
+    await docIn(myBase, source, null, nadia.personId, 'my-doc');
+    expect(await seen(nadia, 'my-doc')).toBe(1);
+    for (const p of [omar, rafi, tariq, lena]) expect(await seen(p, 'my-doc'), p.name).toBe(0);
+  });
+
+  it('removing a source removes its documents with it, and only those', async () => {
+    const one = await teamSource(teamBase);
+    const two = await teamSource(teamBase);
+    await docIn(teamBase, one, ENG, null, 'cascade-one');
+    await docIn(teamBase, two, ENG, null, 'cascade-two');
+    await sys((tx) => tx.query('DELETE FROM app.knowledge_sources WHERE id = $1', [one]));
+    expect(await seen(nadia, 'cascade-one')).toBe(0);
+    expect(await seen(nadia, 'cascade-two')).toBe(1);
+  });
+
+  it('a person cannot remove a document of a team they are not on, nor one in a Personal base that is not theirs', async () => {
+    const del = (p: Persona, slug: string): Promise<number> => as(p, async (tx) => (await tx.query('DELETE FROM app.knowledge_documents WHERE slug = $1', [slug])).rowCount ?? 0);
+    expect(await del(tariq, 'team-doc')).toBe(0);
+    expect(await del(rafi, 'my-doc')).toBe(0);
+    expect(await seen(nadia, 'my-doc')).toBe(1);
+  });
+});
+
+describe('who changes a connector source', () => {
+  it('only the team or the owner may update or remove it; another person changes and removes nothing', async () => {
+    const id = await mySource(nadia, myBase);
+    const touch = (p: Persona): Promise<number> => as(p, async (tx) => (await tx.query(`UPDATE app.knowledge_sources SET label = 'changed' WHERE id = $1`, [id])).rowCount ?? 0);
+    const drop = (p: Persona): Promise<number> => as(p, async (tx) => (await tx.query('DELETE FROM app.knowledge_sources WHERE id = $1', [id])).rowCount ?? 0);
+    for (const p of [omar, rafi, tariq, lena]) {
+      expect(await touch(p), p.name).toBe(0);
+      expect(await drop(p), p.name).toBe(0);
+    }
+    expect(await touch(nadia)).toBe(1);
+    expect(await drop(nadia)).toBe(1);
+  });
+});

@@ -126,11 +126,11 @@ The bot page's **Knowledge** tab (`clients/web/src/screens/bots/knowledge.tsx`):
 ## Honest limits
 
 - Search is by words until the model gateway offers an `embed` method (see Searching); until then a question phrased with other words than the document finds nothing (a bot told to answer only from the base says so). The vector index is a partial HNSW index created in `0002`, not "only when an embed alias exists" as the plan wording had it; it is empty and free until a passage gets a vector.
-- Web pages are read, not crawled: one address is one document. No Drive, SharePoint or Notion sources: they need the Phase 8 connections.
+- Web pages are read, not crawled: one address is one document. Connected-app sources (Drive, SharePoint, OneDrive, Notion, Confluence, Dropbox, Box) are described in "Documents from connected apps" below.
 - No new Answer citation kind: a knowledge passage is cited through its converted `page`. The Answer card's **Sources reached** row for a knowledge passage (`<base>/<document> v<n>`) asks the base for the document's version as the reader and shows "the source has changed since" (or "no longer in the knowledge base") when it moved on; a reader who cannot open the base sees nothing extra.
 - `answer_only_from` stops `answer.post`, not a plain-text final reply that ignores the note. It counts a passage as read when the search logged it, even if the data-loss guard then held the answer back.
 - A bot loaded before `bots` migration 0017 has no stored list (reads as "every base of the team") until its BOT.md is applied again.
-- Word, slides, spreadsheets and email are read by the extractor (`docx`, `pptx`, `xlsx`, `eml`; see `docs/plugins/memory-inbox.md`), but a knowledge base does not accept those kinds yet: its upload still takes Markdown, text, CSV and PDF.
+- Word, slides, spreadsheets and email are read by the extractor (`docx`, `pptx`, `xlsx`, `eml`; see `docs/plugins/memory-inbox.md`). A document that comes from a connected app may be Word, Excel or PowerPoint; a person's own upload still takes Markdown, text, CSV and PDF only.
 - Never run against a real embedding provider (there is none); the embed door is tested with a fake.
 - `sources.yaml` in the base's folder is generated and written only; the plugin does not read it back.
 
@@ -144,5 +144,54 @@ Team rule (`access-rule.ts`, `everyoneMayRead(access, members)`): a document of 
 covering every member's address); an answer that cannot be read counts as "not everyone" and the document is left out (counted in `skippedLimited`). A Personal base reads whatever the person could open.
 
 Routes: `POST /api/teams/:slug/knowledge/:base/connector-sources`, `POST /api/me/knowledge/:base/connector-sources`, `GET /api/me/knowledge-roots` (the picker), `GET /api/me/knowledge-providers`,
-`GET /api/admin/knowledge/connector-health`. Limits per pass: 100 documents and 20 MB; one document at most 10 MB; every 60 minutes unless set (15 to 10080). Event `knowledge.source.synced` (counts only). Work
-package D1 fills the documents providers; D2 fills `access-rule.ts`, `connector-sync.ts`, `connector-routes.ts`.
+`GET /api/admin/knowledge/connector-health`. Limits per pass: 100 documents and 20 MB; one document at most 10 MB; every 60 minutes unless set (15 to 10080). Event `knowledge.source.synced` (counts only).
+
+## Documents from connected apps (P16-08, work package D2)
+
+A source of kind `connector` reads a folder, space, site or database through the person's OWN connection (never the workspace's or a bot's). The knowledge plugin looks up the provider
+`connector.documents` (the connections plugin's documents door) when it needs it; the plugins do not import each other. A source stores who granted it (`granted_by`) and the connection it was made with;
+the door finds the grant again by person and service on every call, so a connection that was disconnected and connected again keeps working.
+
+**Adding.** A team lead or workspace admin adds to a team base (`POST /api/teams/:slug/knowledge/:base/connector-sources`, with `acknowledgeTeamRule: true`, the consent sentence "Documents everyone on this
+team can already open will be copied into this base. Others stay with the people who can open them."). A person adds to their own Personal base (`POST /api/me/knowledge/:base/connector-sources`). The folder must
+be one the caller's own connection lists (`GET /api/me/knowledge-roots?provider=`, at most 200; `GET /api/me/knowledge-providers` lists the services the person has connected). A person without the connection
+gets "Connect Google Drive first: Settings, Connections". The same folder twice in a base is refused (409), and so is an eleventh source (409). A Personal source is removed with
+`DELETE /api/me/knowledge/:base/sources/:sourceId` (its documents go with it); a team source with the existing team route. The first read starts at once, off the request.
+
+**The team rule (decision D14).** For a team base a document is copied in only when the service says every person on the team may open it: a public link; or every member's VERIFIED address (a row of
+`app.person_emails` with `verified_at`) is at a listed domain, exactly (a subdomain is another domain) or is listed one by one. Bots and guests are not counted. A group share, an empty answer, an empty team
+and an address that is not verified all mean "not everyone": the document stays out, and the source says how many (`skippedLimited`), never which. A person who has no verified address (a bootstrap
+user, for one) therefore keeps every domain-shared document out of the team base until the address is verified. A Personal base takes whatever the person can open. The rule is the pure function
+`everyoneMayRead` in `access-rule.ts`; `test/access-rule.test.ts` tries every shape of answer.
+
+**A pass** (`connector-sync.ts`, queue `knowledge.connector`, one job per source, serial by source). It lists with no transaction open, then takes each document in with its own short transaction.
+Only documents that were actually fetched count against the budget of 100 documents and 20 MB per pass; the cursor stays at the start of a page that is not fully done, so the next pass continues and
+nothing is read twice. Up to 4 passes run in a job, then a follow-up is queued 20 seconds later. The cursor of the provider is kept inside `knowledge_sources.cursor` in a small envelope (`c` the
+provider's cursor or the place in an unfinished listing, `m` full or incremental, `f` when the last full read finished, `k` the limited documents found by a full read in progress, `r` the rotating re-check
+offset); it is opaque to everyone else.
+
+- *What changed.* Full read: every listed document is compared with what is stored (a new version is fetched again; a document no longer listed is removed, which is how a file moved out of the root is
+  dropped, because Drive reports no move). Incremental read: the provider's change feed; `removed` removes. Notion and Box have no deletion feed, so their stored documents are re-checked.
+- *Re-checking who may read.* Up to 50 stored documents per pass (all of them after a team change or "Read again") have their access asked again, because a permission change may not change the version. Team
+  bases do this always; Personal bases only for Notion and Box. A document that is no longer open to everyone is taken out. Answers may be up to 60 seconds old at the provider, so a change shows on the pass after.
+- *A team change* (a member joins, leaves, or a verified address changes) queues a re-check 10 seconds later; `POST .../resync` runs a full read with a full re-check.
+- *Full reads repeat* every 24 hours, or every 6 hours while some documents are being left out, so a file that became public appears on its own. `skippedLimited` is exact after a full read; an incremental
+  pass can add to it, so it may over-count until the next full read.
+- *Failures leave things alone.* A fetch that fails skips that document. An access answer that could not be had (not connected, 401/429/5xx, provider down) removes nothing and changes nothing. Three failed
+  answers in a row end the pass; the source shows "Needs attention" and the next pass tries again. A lost or revoked sign-in pauses the source with "Omar’s Google Drive is no longer connected." (the base shows
+  attention); what is indexed stays searchable. Connecting again resumes it.
+- *Word, Excel and PowerPoint* documents from an app go through the extractor (`docx`, `xlsx`, `pptx`); Google Docs, Sheets and Slides arrive already exported by the provider. `sources.yaml` lists the
+  connector sources by app and folder name only.
+
+**Seen where.** The Sources list of a team base (bot page, Knowledge tab) and a Personal base show each source with the app, the folder, whose connection reads it (`readWith`), the last read, the document count and
+"N documents not added: not everyone on the team can open them", with the states Ready, Needs attention and Paused. A Personal source is added only by its owner and read by nobody else, an admin included.
+
+**Health.** `GET /api/admin/knowledge/connector-health` (workspace admins) returns the shared `ConnectorHealthRow` shape (area `knowledge`) per app: people who granted, team-shared sources, paused sources,
+`calls7d` (sources read in the last 7 days, an approximation: passes are not logged), `failures7d` (of those, the ones not ready) and `refused7d.not_everyone_on_team` (documents left out). Counts only: no
+folder, document or person name.
+
+**Events.** `knowledge.source.synced` carries ids and counts (`sourceId`, `baseId`, `teamId` or `ownerPersonId`, `provider`, `status`, `added`, `updated`, `removed`, `skippedLimited`, `at`). No document name,
+folder name, address or token is in an event, a log line or an error shown to a person. Text that comes from an app is hostile input: it goes through the extractor and is never run or trusted.
+
+**Not done / limits.** The folder picker lists the roots a connection offers, not folders inside folders (`parent` is accepted and ignored). The provider is asked while the request holds its transaction
+(bounded by the door's timeouts and the route rate limits). A Drive file shared with a group is never copied into a team base, even if the group is the whole team.
