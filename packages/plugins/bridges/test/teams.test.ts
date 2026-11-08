@@ -364,6 +364,29 @@ describe('the Teams adapter: replies go only to Microsoft’s hosts', () => {
     expect(teamsAdapter.verify(ref({ externalAppId: null }), req({ authorization: `Bearer ${mint(pair('x'))}` })).ok).toBe(false);
     expect(teamsAdapter.verify(ref(), req({ authorization: 'Basic abc' })).ok).toBe(false);
   });
+
+  it('reads only Teams: a call signed for another channel of the same bot (Web Chat, Direct Line) is refused, whatever user id it names', async () => {
+    const saved = process.env['MANYTHREADS_BRIDGE_TEAMS_FAKE_BASE'];
+    delete process.env['MANYTHREADS_BRIDGE_TEAMS_FAKE_BASE'];
+    forgetTeamsKeys();
+    const good = pair('unit-channel-kid');
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ keys: [good.jwk] }), { status: 200 })));
+    try {
+      const token = mint(good);
+      const ask = async (over: Record<string, unknown>): Promise<boolean> => {
+        const req: BridgeRequest = { method: 'POST', headers: { authorization: `Bearer ${token}` }, query: {}, rawBody: Buffer.from(JSON.stringify(activity(over))), now: NOW };
+        await teamsAdapter.prepare?.(ref(), req);
+        return teamsAdapter.verify(ref(), req).ok;
+      };
+      expect(await ask({})).toBe(true);
+      expect(await ask({ channelId: 'webchat' })).toBe(false);
+      expect(await ask({ channelId: 'directline', from: { id: '29:1nadia', name: 'x' } })).toBe(false);
+    } finally {
+      spy.mockRestore();
+      forgetTeamsKeys();
+      if (saved !== undefined) process.env['MANYTHREADS_BRIDGE_TEAMS_FAKE_BASE'] = saved;
+    }
+  });
 });
 
 // --- end to end ---------------------------------------------------------------------------------------------------------------------------------------------

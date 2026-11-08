@@ -187,8 +187,10 @@ export const teamsAdapter: BridgeAdapter = {
     const claim = str(checked.claims['serviceurl']);
     const address = str(activity['serviceUrl']);
     if (claim === null || address === null || !sameUrl(claim, address)) return bad;
+    // This bridge is for Teams only. The Bot Framework signs calls for every channel the bot is registered on (Web Chat, Direct Line, ...), and on some of them the sender picks their own
+    // user id, so an activity of another channel is refused here: it must not be read as a Teams user (it could name a linked person's Teams id).
     const channel = str(activity['channelId']) ?? CHANNEL;
-    if (!checked.key.endorsements?.includes(channel)) return bad;
+    if (channel !== CHANNEL || !checked.key.endorsements?.includes(channel)) return bad;
     return { ok: true };
   },
 
