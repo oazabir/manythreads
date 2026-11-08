@@ -4,7 +4,17 @@ import type { ConnectorEntry } from './catalog.ts';
 // package that builds a trigger lists it HERE (`connector id` -> `trigger ids`), so the catalog files are not edited by two packages at once. catalog.ts applies this
 // list to every entry; an id that names no trigger of the entry changes nothing (the catalog test refuses it).
 
-export const AVAILABLE_TRIGGERS: Readonly<Record<string, readonly string[]>> = {};
+// P16-10 (work-app endpoints): a lead makes an address for the app at the channel's Integrations screen, and a bot's `webhook` trigger names it. These are the triggers that
+// start that way. Freshdesk and HubSpot have no address kind of their own yet (a HubSpot ticket arrives through its `hubspot` endpoint, which no catalog trigger names).
+export const AVAILABLE_TRIGGERS: Readonly<Record<string, readonly string[]>> = {
+  jira: ['issue_changed'],
+  linear: ['issue_changed'],
+  asana: ['task_changed'],
+  zendesk: ['ticket_created'],
+  intercom: ['conversation_created'],
+  github: ['issue_opened', 'pull_request_changed'],
+  gitlab: ['issue_opened'],
+};
 
 /** The entry with the triggers of `AVAILABLE_TRIGGERS` turned on. */
 export const withTriggerAvailability = (entry: ConnectorEntry): ConnectorEntry => {

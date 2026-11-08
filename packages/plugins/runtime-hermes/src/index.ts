@@ -58,6 +58,8 @@ export default definePlugin({
         'hermes.profiles.changed',
         'bot_runner.run.refused',
         'bot_runner.run.unmetered',
+        // the webhook trigger tells a lead once a minute when a bot cannot post in the endpoint's channel or is over its hourly cap (the webhooks plugin owns the type and the other reasons)
+        'webhooks.provider_event.refused',
       ],
       consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed', 'conversations.turn.regenerated', 'webhooks.provider_event.received'],
     },

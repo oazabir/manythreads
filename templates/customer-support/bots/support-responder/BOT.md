@@ -15,6 +15,9 @@ triggers:
       channels:
         - "#support"
   - type: conversation
+  - type: webhook
+    connection: zendesk
+    event: ticket.created
 conversation:
   prompts:
     - What does the manual say about changing a delivery address?

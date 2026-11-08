@@ -60,7 +60,7 @@ async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: 
       [here],
     )
   ).rows[0];
-  if (!row?.channel_id || (!row.reply_root_id && row.trigger_type !== 'inbox')) return null;
+  if (!row?.channel_id || (!row.reply_root_id && !['inbox', 'webhook'].includes(row.trigger_type))) return null;
   return { runId: here, channelId: row.channel_id, replyRootId: row.reply_root_id };
 }
 

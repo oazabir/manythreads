@@ -56,7 +56,7 @@ export const RunPayload = z.strictObject({
   botId: z.uuid(),
   teamId: z.uuid(),
   channelId: z.uuid(),
-  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned', 'routine', 'inbox']),
+  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned', 'routine', 'inbox', 'webhook']),
   askerActorId: z.uuid().nullable(),
   /**
    * Where the reply goes: the thread root when the message is inside one, else the message itself (the reply opens the thread). Null for a run
@@ -107,6 +107,12 @@ export const RunPayload = z.strictObject({
    * mail to that post. Such a run has no reply root (the post it makes opens the thread) and no asker.
    */
   inbox: z.strictObject({ claimId: z.uuid(), connectionId: z.uuid(), mailId: z.uuid() }).optional(),
+  /**
+   * Set when this run answers a work app's delivery (a `webhook` trigger, PLAN P16-10): the stored event that makes it the one run of this bot for this delivery. Only the id
+   * travels; the text is read from the event's row. The run claims it (`app.webhooks_claim_run`) as soon as it is open, and a run that finds it already claimed stops. Such a run has
+   * no reply root (the post it makes opens the thread) and no asker.
+   */
+  webhook: z.strictObject({ eventId: z.uuid() }).optional(),
   /** The card this run works on (a `task_assigned` run). Absent on a run queued before cards were recorded, and on every other trigger. Read by the board's bot icon. */
   taskId: z.uuid().optional(),
   /** Marks the payload stored with a gate hold, so that approving it resumes the run past the gate (not past the DLP check). */
@@ -815,6 +821,19 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           const { run, token } = openedRun;
           opened = run;
           await emitScheduledJobStarted(ctx, tx, payload, run);
+
+          // One run of one bot for one delivery: the latch row is written in the same step that names this run, so a job that was replayed after a crash stops here instead of answering twice.
+          if (payload.webhook) {
+            const eventId = payload.webhook.eventId;
+            const first = await ctx.db.system(async (sys) => (await sys.query<{ ok: boolean }>('SELECT app.webhooks_claim_run($1::uuid, $2::uuid, $3::uuid) AS ok', [eventId, bot.id, run.runId])).rows[0]?.ok === true, {
+              workspaceId: bot.workspace_id,
+            });
+            if (!first) {
+              job.log.warn(`runtime-hermes: delivery ${eventId} already started a run for bot ${bot.slug}; this one stops`);
+              await ctx.runs.close(run.runId, 'stopped');
+              return null;
+            }
+          }
 
           // A rehearsal holds back what goes through the tool door; a definition that also lets the bot's own process change things (a shell, files, a
           // browser) cannot be held back there, so the run says why it did not start and ends here, before anything is sent to a model.

@@ -126,5 +126,70 @@ Door: `POST /hooks/apps/:endpointId` is public, `csrfExempt`, `rawBody`, rate li
 `ProviderReader` in `providers/index.ts` turns a request into a short plain event (a kind and a few sentences, never the whole payload). Admin routes: `GET|POST /api/channels/:channelId/provider-hooks`,
 `PATCH|DELETE /api/provider-hooks/:endpointId`, `PUT /api/provider-hooks/:endpointId/signing-secret`, `POST /api/provider-hooks/:endpointId/rotate`, `GET /api/runs/:runId/origin`, `GET
 /api/admin/webhooks/provider-health`. Events: `webhooks.provider_endpoint.changed`, `webhooks.provider_event.received` and `webhooks.provider_event.refused` (at most one per minute per endpoint and reason). The log
-redactor keeps `/hooks/apps/<id>` and `/hooks/bridges/<service>/<id>` readable and still hides the old `/hooks/<secret>/…`. Work package H fills `providers/`, `routes-provider.ts`, `provider-door.ts`, `origin.ts` and
+redactor keeps `/hooks/apps/<id>` and `/hooks/bridges/<service>/<id>` readable and still hides the old `/hooks/<secret>/…`. Work package H filled `providers/`, `routes-provider.ts`, `provider-door.ts`, `origin.ts` and
 the `runtime-hermes` `router-webhook.ts`.
+
+## Work apps calling in (P16-10, built)
+
+What a lead does: at a channel's Integrations screen, tab **Work apps**, make an address for GitHub, GitLab, Jira, Linear, Zendesk, Intercom, HubSpot, Asana or any sender that signs its calls
+(`generic`). The address is `https://<site>/hooks/apps/<id>` and holds no secret; the app proves each call with a signature. GitHub, GitLab, Jira, Linear and `generic` get a signing secret made here,
+shown once (and again only through "New signing secret", which retires the old one at once). Zendesk, Intercom and HubSpot have their own secret: the lead pastes it (at make time or later). Asana makes
+its own when the address is connected (its handshake). A bot starts from an event when its BOT.md has `- type: webhook` with `connection:` equal to the address's **short name** (`slug`) and, if wanted, `event:`
+(`ticket.created`, or `ticket.*`). A `webhook` trigger with no `connection` matches no address. The shipped Support responder lists `connection: zendesk`, `event: ticket.created`: a lead makes an address
+called `zendesk` in #support and it works.
+
+### The door, in order (`provider-door.ts`)
+
+1. The address must be an id. An unknown, revoked or switched-off address all answer the same `404` (30 such calls in 5 minutes from one client address lock that address for 5 minutes: `429`).
+2. 120 calls a minute per address (`429`), then the body, at most 1 MB (`413`, read as a stream, so a larger body is never held).
+3. Asana's first call carries `X-Hook-Secret`: it is echoed, sealed, and kept once (a later one is not a handshake).
+4. The signature is checked over the **raw bytes** with the sealed secret, in time that does not depend on where the first wrong byte is. A bad one answers `401` and changes nothing. Nothing is read from the body first.
+5. Only then is the body parsed as JSON (`400` if it is not), checked for age where the app sends no timestamp inside its signature, turned into a kind, title, link and actor, and passed through the address's event
+   filter (`202`, forgotten, for an event the platform does not use or the filter leaves out).
+6. One transaction stores it and announces it (`200`; `{ "duplicate": true }` for a repeat). The answer never waits for a model.
+
+| App | Header(s) | What is signed | Replay window |
+| --- | --- | --- | --- |
+| GitHub | `X-Hub-Signature-256: sha256=<hex>` | HMAC-SHA256 of the body | event time within 7 days |
+| GitLab | `X-Gitlab-Token` | the token itself (it does not cover the body) | event time within 7 days |
+| Jira | `X-Hub-Signature: sha256=<hex>` | HMAC-SHA256 of the body | event time within 7 days |
+| Linear | `Linear-Signature: <hex>` | HMAC-SHA256 of the body; body field `webhookTimestamp` | 60 seconds |
+| Zendesk | `X-Zendesk-Webhook-Signature` and `-Timestamp` | base64 HMAC-SHA256 of timestamp + body | 5 minutes |
+| Intercom | `X-Hub-Signature: sha1=<hex>` | HMAC-SHA1 of the body | event time within 7 days |
+| HubSpot (v3) | `X-HubSpot-Signature-v3` and `X-HubSpot-Request-Timestamp` | base64 HMAC-SHA256 of `POST` + the public address + body + timestamp | 5 minutes |
+| Asana | `X-Hook-Signature` | HMAC-SHA256 of the body (after the handshake) | event time within 7 days |
+| generic | `X-Manythreads-Signature: v0=<hex>` and `X-Manythreads-Request-Timestamp` (seconds) | HMAC-SHA256 of `v0:<timestamp>:<body>` | 5 minutes |
+
+HubSpot signs the address it was given, so the door rebuilds it from the site's public URL (`publicUrl`): if that is wrong, every HubSpot call fails with `401`. GitLab's token does not cover the body, so a body
+changed in flight is not noticed for GitLab (the app offers nothing stronger).
+
+### Dedupe
+
+A delivery is the same one when its delivery key (the app's own delivery id, or the body's sha256 when it sends none) was seen on that address in the last 7 days. Because a delivery id in a header is not
+covered by the signature, the **body's sha256** is checked too: a signed body replayed under a new id is still a repeat. One good delivery is exactly one stored event and one `webhooks.provider_event.received`.
+
+### From event to run (`runtime-hermes/src/router-webhook.ts`)
+
+`webhooks.provider_event.received` (ids and the kind only) is read again from its rows. Every active bot of the address's team with a matching `webhook` trigger gets one run: no asker (the bot's own rights),
+the prompt is the platform's facts plus the app's title, link, actor and trimmed payload inside one fenced "outside data" block (`buildWebhookPrompt`, text that cannot close the fence), and the post lands at the top
+of the channel with `meta.runId`. A latch row in `outbox_processed` (per bot) stops a redelivered announcement; the run itself claims `app.webhooks_claim_run(event, bot, run)` as soon as it is open, so a
+replayed job stops there. A bot that may not post in the channel gets no run (`no_channel`), and a bot is capped at 30 webhook runs an hour (`bot_busy`); each is told to the lead once a minute with a count in
+`webhooks.provider_event.refused`.
+
+### "What started this run"
+
+`GET /api/runs/:runId/origin` answers `webhooks_run_origin`: the app, the address's name, the kind, title, link, who did it and when it arrived. Anyone who cannot read the channel, and any run that no app started,
+gets `404`. The web card under the bot's top-level post is closed by default ("What started this run · Zendesk · <title>"), opens to the details, closes with Esc, and links only to http or https addresses.
+
+### Deviations from the contract, on purpose
+
+- `webhook_provider_events` keeps the **trimmed payload** (under 48 KB, no `__proto__`, `constructor` or `prototype` keys) next to the hash, not only the hash: the run's prompt and the card are read from it. Events are
+  kept **30 days** (an hourly purge job), longer than the 7-day dedupe window, so the card under an old post still opens. The signing secret itself is never stored in the row, only sealed.
+- `ProviderReader` has two methods more than the stub: `deliveryKey` and an optional `eventTime`.
+- Migration `0005_provider_make_by_system.sql` lets `app.integrations_create_provider` be called from a system transaction (the route seals the secret in the same step), leaving `created_by` for the route to fill.
+- A name is at most 60 characters here (the contract allows 80). The route's health view (`GET /api/admin/webhooks/provider-health`) lives in `routes-provider.ts`.
+
+### Proved against the stand-in only
+
+Every signature scheme is tested against `tools/fake-saas` (which signs the way each app's documentation says) and, for GitHub, against the documented test vector. No real GitHub, Zendesk, Jira, Linear,
+Intercom, HubSpot or Asana has called this code yet; the first real call of each is the live check.

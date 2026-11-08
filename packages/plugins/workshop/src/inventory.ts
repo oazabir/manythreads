@@ -22,7 +22,7 @@ const TRIGGERS: SetupInventory['triggers'] = [
   { type: 'routine', available: true },
   { type: 'inbox', available: true, note: 'Starts when a mail arrives on a mailbox the team has connected. The mailbox and its email tools are given to a bot on its own page; the setup helper cannot give a bot a connection yet.' },
   { type: 'drop', available: true, note: 'Starts when something is dropped into the team memory inbox. Each team has one Archivist for this, so a bot made here would only compete with it and the setup helper does not make one.' },
-  { type: 'webhook', available: false, note: 'Starting from an outside event needs a connection to that app, which is not available yet.' },
+  { type: 'webhook', available: true, note: 'Starts when a work app (GitHub, Zendesk, Jira and others) sends an event to an address a lead makes for the channel. The bot’s trigger names that address by its short name. The setup helper cannot make the address, so a lead adds it at the channel’s Integrations screen, under Work apps.' },
 ];
 
 /** The model aliases a bot of a team may be pointed at. */
