@@ -9,6 +9,7 @@ import {
   type MediaProvider,
   type MediaWebhookEvent,
 } from '@manythreads/sdk';
+import { startLivekitListener } from './listener.ts';
 
 // LiveKit, hand-written over node:crypto and fetch (no SDK package is needed for three calls and a signature check). What it speaks:
 //  * An access token is an HS256 JWT signed with the API secret: `iss` the API key, `sub` the identity, `video` the grants of one room.
@@ -24,6 +25,8 @@ export interface LivekitConfig {
   apiSecret: string;
   /** Where the server API is reached from this server (`https://…`); derived from `url` when absent (inside a cluster it is often an internal address). */
   apiUrl: string;
+  /** Where the note-taker's listener connects from this server (`ws://…`); `MANYTHREADS_LIVEKIT_LISTEN_URL`, else the public address. Inside a cluster this is the service address. */
+  listenUrl: string;
 }
 
 /** Why the provider is not configured, in plain words; null when it is. Reads names, never prints a value. */
@@ -46,8 +49,10 @@ export function livekitConfigFromEnv(env: Readonly<Record<string, string | undef
   const url = (env['MANYTHREADS_LIVEKIT_URL'] ?? '').trim().replace(/\/+$/, '');
   const explicit = (env['MANYTHREADS_LIVEKIT_API_URL'] ?? '').trim().replace(/\/+$/, '');
   const wsUrl = url.replace(/^http/i, 'ws');
+  const listen = (env['MANYTHREADS_LIVEKIT_LISTEN_URL'] ?? '').trim().replace(/\/+$/, '');
   return {
     url: wsUrl,
+    listenUrl: listen ? listen.replace(/^http/i, 'ws') : wsUrl,
     apiKey: (env['MANYTHREADS_LIVEKIT_API_KEY'] ?? '').trim(),
     apiSecret: (env['MANYTHREADS_LIVEKIT_API_SECRET'] ?? '').trim(),
     apiUrl: explicit || url.replace(/^ws/i, 'http'),
@@ -86,6 +91,8 @@ export function verifyJwt(token: string, secret: string, nowSec: number): Record
 export interface LivekitOptions {
   /** `process.env` by default; a test passes its own. Read on every call, so a change takes effect without a restart. */
   env?: () => Readonly<Record<string, string | undefined>>;
+  /** Test hook: the worker file the listener starts (see `startLivekitListener`). */
+  listenerWorkerUrl?: URL;
   fetch?: typeof fetch;
   now?: () => Date;
   /** Milliseconds before a call to the server API gives up. */
@@ -110,6 +117,7 @@ const EVENT_KINDS: Readonly<Record<string, MediaWebhookEvent['kind']>> = {
 };
 
 export function createLivekitProvider(options: LivekitOptions = {}): MediaProvider {
+  const listenerWorkerUrl = options.listenerWorkerUrl;
   const env = options.env ?? ((): Readonly<Record<string, string | undefined>> => process.env);
   const doFetch = options.fetch ?? fetch;
   const now = options.now ?? ((): Date => new Date());
@@ -145,7 +153,7 @@ export function createLivekitProvider(options: LivekitOptions = {}): MediaProvid
     throw new LivekitApiError(res.status, res.status === 401 || res.status === 403 ? 'The media server refused our key.' : `The media server answered ${res.status}.`);
   };
 
-  return {
+  const provider: MediaProvider = {
     id: 'livekit',
 
     status() {
@@ -209,6 +217,17 @@ export function createLivekitProvider(options: LivekitOptions = {}): MediaProvid
       }
     },
 
+    /**
+     * The note-taker's server participant (P15-18, P15-19): joins as a hidden participant with a token that can only subscribe, in a worker thread of its own, and
+     * hears the listed people only. Its identity is never an actor id (the webhook would treat an unknown actor id as a person who must be dropped).
+     */
+    async listen(room, options) {
+      const c = config();
+      const who = options.listener ?? { identity: `notetaker:${room}`, displayName: 'Note-taker' };
+      const minted = await provider.token({ id: who.identity, kind: 'bot', displayName: who.displayName }, room, { canPublish: false, canSubscribe: true, listenOnly: true });
+      return startLivekitListener({ url: c.listenUrl, token: minted.token, options, ...(listenerWorkerUrl ? { workerUrl: listenerWorkerUrl } : {}) });
+    },
+
     verifyWebhook(headers, rawBody) {
       const c = livekitConfigFromEnv(env());
       if (!c) return null;
@@ -240,4 +259,5 @@ export function createLivekitProvider(options: LivekitOptions = {}): MediaProvid
       }
     },
   };
+  return provider;
 }

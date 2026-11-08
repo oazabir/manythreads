@@ -84,6 +84,11 @@ export interface MediaListenChunk {
 export interface MediaListenOptions {
   /** The people whose audio to receive (the actor ids of those who said yes). Nobody else's track is subscribed. */
   identities: readonly string[];
+  /**
+   * The listener's own identity on the media server and the name it shows there (it is hidden). Left out: `notetaker:<room>`. It is never an actor id (a UUID): the
+   * meetings plugin's webhook treats a UUID it does not know as a person who must not be in the room and drops it.
+   */
+  listener?: { identity: string; displayName: string };
   onChunk(chunk: MediaListenChunk): void;
   /** The listener stopped: the room closed, the connection was lost, or `close()` was called. */
   onClosed(reason: 'closed' | 'room_ended' | 'error'): void;
@@ -167,6 +172,8 @@ export const FAKE_WEBHOOK_SECRET = 'fake-media-webhook-secret';
 export interface FakeMediaListener extends MediaListener {
   readonly room: string;
   readonly options: MediaListenOptions;
+  /** Every list `setIdentities` was given, oldest first, with the time: a test reads how fast the plugin followed a consent change. */
+  readonly identityUpdates: Array<{ at: Date; identities: string[] }>;
   /** Hand a chunk to the listener's owner as if `chunk.identity` spoke; refused (false) when that person is not subscribed. */
   deliver(chunk: Omit<MediaListenChunk, 'backlogMs'> & { backlogMs?: number }): boolean;
   closed: boolean;
@@ -252,13 +259,21 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
     async listen(room, options) {
       need();
       if (listeners.has(room)) throw new MediaTokenRefusedError('This room already has a listener.');
+      // like the real adapter, the listener joins with a hidden, subscribe-only token of its own, which a test can read back from `tokens`
+      const who = options.listener ?? { identity: `notetaker:${room}`, displayName: 'Note-taker' };
+      const grants: MediaGrants = { canPublish: false, canSubscribe: true, listenOnly: true };
+      assertTokenRequest({ id: who.identity, kind: 'bot', displayName: who.displayName }, room, grants);
+      tokens.push({ identity: who.identity, room, grants, expiresAt: new Date(now().getTime() + clampTokenTtl(undefined) * 1000), displayName: who.displayName, kind: 'bot' });
       let subscribed = [...options.identities];
+      const identityUpdates: FakeMediaListener['identityUpdates'] = [];
       const listener: FakeMediaListener = {
         room,
         options,
+        identityUpdates,
         closed: false,
         setIdentities(identities) {
           subscribed = [...identities];
+          identityUpdates.push({ at: now(), identities: [...identities] });
         },
         subscriptions: () => [...subscribed],
         async close() {

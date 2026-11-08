@@ -10,7 +10,8 @@
     "./pods": "./src/pods.ts",
     "./safe-fetch": "./src/safe-fetch/index.ts",
     "./extract": "./src/extract/index.ts",
-    "./extract/core": "./src/extract/core.ts"
+    "./extract/core": "./src/extract/core.ts",
+    "./audio/vad": "./src/audio/vad.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
