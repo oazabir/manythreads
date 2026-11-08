@@ -111,7 +111,7 @@ test('Members, Lena, Remove their connections: the preview names her Microsoft, 
   }
 });
 
-test('confirming switches Lena’s sign-in off and removes it within a minute; her bots lose it at once', async ({ browser, playwright }) => {
+test('confirming switches Lena’s sign-in off and removes it within a minute, with one audit line', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/settings/workspace/members');
   try {
     const row = page.getByTestId('member-row').filter({ hasText: 'Lena' });

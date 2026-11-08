@@ -36,7 +36,12 @@ test('a person who is not linked is told once how to link, and nothing they wrot
   await expect.poll(async () => (await sentTo(STRANGER_TG)).length, { timeout: 30_000 }).toBe(1);
   expect((await sentTo(STRANGER_TG))[0]).toMatch(/link/i);
   // a second message within the hour is not answered again
-  await telegramSend(stack, { fromUserId: STRANGER_TG, text: 'stranger-sentence-two' });
+  const second = await telegramSend(stack, { fromUserId: STRANGER_TG, text: 'stranger-sentence-two' });
+  expect(second.responses.map((r) => r.status)).toEqual([200]);
+  // both were seen and dropped (counted, no text kept), and only the first was answered
+  const dropped = await rows<{ dropped_count: number }>(stack, `SELECT dropped_count FROM app.bridge_unlinked_chats WHERE external_chat_id = $1`, [String(STRANGER_TG)]);
+  expect(dropped[0]?.dropped_count).toBe(2);
+  expect((await sentTo(STRANGER_TG)).length).toBe(1);
   expect(await storedWith('stranger-sentence')).toBe(0);
 });
 
@@ -75,6 +80,8 @@ test('Priya links her Telegram with a code from Account, Chat apps: the code wor
     await telegramSend(stack, { fromUserId: STRANGER_TG + 1, text: code });
     const linked = await rows<{ n: string }>(stack, `SELECT count(*)::text AS n FROM app.bridge_identities WHERE person_id = $1`, [personas.priya.personId]);
     expect(linked[0]!.n).toBe('1');
+    // and the one who sent the used code is linked to nobody
+    expect(await rows(stack, `SELECT 1 FROM app.bridge_identities WHERE external_user_id = $1`, [String(STRANGER_TG + 1)])).toHaveLength(0);
   } finally {
     await context.close();
   }

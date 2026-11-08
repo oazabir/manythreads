@@ -23,18 +23,23 @@ STATE="${STAGE_STATE_DIR:-/tmp/manythreads-stage}"
 SEED_KEY="stage-seed"
 TG_TOKEN="${FAKE_SAAS_TELEGRAM_TOKEN:-111111:stage-fake-telegram-bot-token}"
 TAG="${TAG:-$(git rev-parse --short=12 HEAD)}"
+# The stage lives in ONE namespace and one release, both named manythreads-stage. Anything else (above all the live namespace `manythreads`) is refused before any kubectl
+# or helm call, so a stray STAGE_NAMESPACE can never point `up`, `down` or `status` at the production release. Nothing in this script runs `kubectl exec` or touches a pod.
+readonly STAGE_NS="manythreads-stage"
+[ "$NS" = "$STAGE_NS" ] || { printf 'FAILED: STAGE_NAMESPACE must be %s (got "%s"); this script never touches any other namespace\n' "$STAGE_NS" "$NS" >&2; exit 1; }
 step() { printf '\n=== %s ===\n' "$1"; }
 die() { printf '\nFAILED: %s\n' "$1" >&2; exit 1; }
 stop_pid() {
   local file="${STATE:?}/$1.pid"
-  if [ -f "$file" ]; then kill "$(cat "$file")" 2>/dev/null || true; fi
+  # only a process this script started (a stale pid file may name an unrelated process now)
+  if [ -f "$file" ] && tr '\0' ' ' <"/proc/$(cat "$file")/cmdline" 2>/dev/null | grep -Eq 'kubectl|fake-saas|pnpm|node'; then pkill -P "$(cat "$file")" 2>/dev/null || true; kill "$(cat "$file")" 2>/dev/null || true; fi
 }
 
 down() {
   step "stage down"
   stop_pid pf-web; stop_pid pf-api; stop_pid pf-pg; stop_pid fake-saas
-  helm uninstall manythreads-stage -n "$NS" >/dev/null 2>&1 || true
-  kubectl delete namespace "$NS" --ignore-not-found --wait=true --timeout=300s
+  helm uninstall "$STAGE_NS" -n "$STAGE_NS" >/dev/null 2>&1 || true
+  kubectl delete namespace "$STAGE_NS" --ignore-not-found --wait=true --timeout=300s
   echo "the stage is gone (the pid files in $STATE are stale and are overwritten by the next up)"
 }
 
@@ -60,7 +65,7 @@ up() {
   step "fake-saas on $HOST:$FAKE_PORT (control $((FAKE_PORT + 1)))"
   # The grants are the ones of the seed (packages/test-utils seed-connectors.ts SEED_CONNECTORS.grants); the seed's runner seals tokens for them.
   FAKE_SAAS_TELEGRAM_TOKEN="$TG_TOKEN" FAKE_SAAS_TELEGRAM_BOT_USERNAME=manythreads_stage_bot \
-    nohup pnpm -C tools/fake-saas start --host 0.0.0.0 --public-host "$HOST" --port "$FAKE_PORT" --seed "$SEED_KEY" \
+    nohup pnpm -C tools/fake-saas start --host "$HOST" --public-host "$HOST" --port "$FAKE_PORT" --seed "$SEED_KEY" \
       --seed-grant google:nadia@kahf.example --seed-grant google:omar@kahf.example --seed-grant google:rafi@kahf.example --seed-grant microsoft:lena@kahf.example \
       >"$STATE/fake-saas.log" 2>&1 &
   echo $! >"$STATE/fake-saas.pid"

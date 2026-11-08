@@ -126,7 +126,11 @@ describe('Google', () => {
     expect(fake.createdEvents.slice(before)).toEqual([{ provider: 'google', account: nadia.email, title: 'Design review', start: EVENT.startsAt, end: EVENT.endsAt, guests: [omar.email, 'x@outside.test'] }]);
     expect(fake.createdEventDetails.at(-1)).toMatchObject({ provider: 'google', account: nadia.email, eventId, description: EVENT.description, location: EVENT.location });
     // it is the person's own sign-in that was used
-    expect(fake.apiCalls.filter((c) => c.provider === 'google' && c.path.endsWith('/events') && c.method === 'POST').every((c) => c.authorized)).toBe(true);
+    const posts = fake.apiCalls.filter((c) => c.provider === 'google' && c.path.endsWith('/events') && c.method === 'POST');
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts.every((c) => c.authorized)).toBe(true);
+    // the stand-in does not send mail; Google invites the guests only when asked to, so the request must ask (a missing parameter would pass every other check here)
+    expect(new URLSearchParams(posts.at(-1)!.query).get('sendUpdates')).toBe('all');
   });
 
   it('reads it back, changes only the fields named, and answers what the calendar now says', async () => {

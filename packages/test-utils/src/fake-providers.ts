@@ -22,8 +22,10 @@ export type FakeProviderId = 'google' | 'microsoft' | 'notion';
 export interface FakeApiCall {
   provider: FakeProviderId;
   method: string;
-  /** The path only; the query is left out. */
+  /** The path only; the query is left out (it is in `query`). */
   path: string;
+  /** The query string as sent, without the leading `?` (a test that must see a parameter the real service acts on, such as Google's `sendUpdates`). */
+  query: string;
   authorized: boolean;
 }
 
@@ -426,7 +428,7 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
     const given = /^Bearer (.+)$/.exec(String(req.headers.authorization ?? ''))?.[1];
     const token = given ? accessTokens.get(given) : undefined;
     const authorized = !!token && !token.expired && token.provider === provider;
-    apiCalls.push({ provider, method, path, authorized });
+    apiCalls.push({ provider, method, path, query: url.search.replace(/^\?/, ''), authorized });
     if (apiFailure && apiFailure.left > 0) {
       apiFailure.left--;
       return send(apiFailure.status, { error: 'forced failure' });

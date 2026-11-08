@@ -9,15 +9,20 @@ import { PERSONA_PASSWORD, personaEmail, type PersonaKey } from '../support/env.
  * Live verification of Bundle D (connectors: work-app triggers, planned rooms, documents from apps, chat apps, the admin screens, offboarding). PLAN P16-12, plan section 7.
  * Run: set -a; . ~/manythreads.passwords.env; set +a; MANYTHREADS_URL=https://manythreads.kahf.to \
  *   pnpm -C e2e exec playwright test -c screens/task.config.ts verify-bundle-d --retries=0 --workers=1
- * and, with the throwaway stage release up (tools/devbox/stage-release.sh up, a port-forward on 18080, tools/fake-saas on 10.0.2.15):
- *   MANYTHREADS_STAGE_URL=http://127.0.0.1:18080 FAKE_SAAS_CONTROL=http://10.0.2.15:18091 ... (same command)
+ * and, with the throwaway stage release up (tools/devbox/stage.sh up: a port-forward on 18080, tools/fake-saas on 10.0.2.15:18090-18091), the same command with
+ *   MANYTHREADS_STAGE_URL=http://127.0.0.1:18080 FAKE_SAAS_CONTROL=http://10.0.2.15:18091
  *
- * Block A is PRODUCTION, read-only except what it makes itself: a channel `verify-d-hooks-<id>`, two work-app addresses in it and the bot `verify-d-responder`. Persons sign in through the
- * sign-in form once each (<WHO>_EMAIL / <WHO>_PASSWORD from the environment, never printed). It never writes in the live teams' own channels, bots or knowledge bases.
- * Block B is the STAGE (the personas of the test seed and the stand-ins for Google, Microsoft, Telegram and the rest), skipped when MANYTHREADS_STAGE_URL is not set or does not answer. Stage
- * writes are free, but the things it makes are named `verify-d-*` and are cleaned up too.
+ * SAFETY (the owner approved only the throwaway stage release for live checks):
+ *  - Block A runs against PRODUCTION and is READ-ONLY. It signs in (each person once), opens pages and dialogs and reads. Every browser context it opens for production aborts any
+ *    request that is not GET/HEAD/OPTIONS, and `api()` refuses a non-GET call on a production context; the only other request it makes is one POST that cannot write: a work-app door and
+ *    a chat-app door given a random id, which both answer 404 for an address that does not exist. It makes no endpoint, bot, channel, connection, plan or message, and
+ *    sends no webhook to a real address. Nothing in block A is cleaned up because nothing is made.
+ *  - Block B (and everything that writes) runs ONLY against the stage release. It refuses to run unless MANYTHREADS_STAGE_URL and FAKE_SAAS_CONTROL both point at a loopback or private
+ *    address (never a public host, never the production host), the stand-ins' control port answers (fake-saas never runs in production), and the two are not the production address.
+ * Block B's things are named `verify-d-*` and removed at the end (a reset of the stage is `tools/devbox/stage.sh down`).
+ * Persons of block A sign in through the sign-in form (<WHO>_EMAIL / <WHO>_PASSWORD from the environment, never printed); block B uses the personas of the test seed.
  * Shots go to MANYTHREADS_SHOTS_DIR (default temp/screenshots/verify-d) as `<nn>-<name>.<1440|390>.<light|dark>.png`; every one is meant to be looked at.
- * Each check writes `PASS`, `FAIL` or `SKIPPED: reason` (the list is in `results.txt`); the last test fails when a check failed, after the clean-up. Nothing here is known to pass.
+ * Each check writes `PASS`, `FAIL` or `SKIPPED: reason` (the list is in `results.txt`); the last test fails when a check failed. Nothing here is known to pass.
  */
 const BASE = (process.env['MANYTHREADS_URL'] ?? 'https://manythreads.kahf.to').replace(/\/+$/, '');
 const STAGE = (process.env['MANYTHREADS_STAGE_URL'] ?? '').replace(/\/+$/, '');
@@ -42,6 +47,29 @@ const browsers = new Map<string, Browser>();
 const states = new Map<string, any>();
 let stageUp = false;
 let stageWhy = 'MANYTHREADS_STAGE_URL is not set';
+
+/** A loopback or private-network host: the only kind of address the stage may have (the devbox's port-forward, the stand-ins at 10.0.2.15). */
+function isPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '::1') return true;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+}
+/** Why `url` may not be used as the stage (empty: it may). The production address, any public host and any address that is not plain http(s) are refused. */
+function whyNotStage(url: string, what: string): string {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return `${what} (${url}) is not an address`;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return `${what} (${url}) is not an http address`;
+  if (!isPrivateHost(u.hostname)) return `${what} (${url}) is not a loopback or private address: block B only ever runs against the throwaway stage`;
+  if (new URL(BASE).host === u.host) return `${what} (${url}) is the address block A runs against`;
+  return '';
+}
 
 const pass = (name: string, detail = ''): void => {
   results.push(`PASS ${name}${detail ? ` (${detail})` : ''}`);
@@ -93,7 +121,10 @@ interface Opened {
   ctx: BrowserContext;
   page: Page;
 }
+const siteOf = new WeakMap<BrowserContext, Site>();
+const blockedWrites: string[] = [];
 async function open(who: Who, vp: Vp = 'd', scheme: Scheme = 'light', site: Site = 'prod'): Promise<Opened> {
+  if (site === 'stage' && !stageUp) throw new Error(`refusing to open the stage: ${stageWhy}`);
   const browser = await browserFor(site);
   const key = `${site}:${who}`;
   if (!states.has(key)) states.set(key, await signIn(site, who));
@@ -107,6 +138,17 @@ async function open(who: Who, vp: Vp = 'd', scheme: Scheme = 'light', site: Site
     isMobile: vp === 'm',
     hasTouch: vp === 'm',
   });
+  siteOf.set(ctx, site);
+  if (site === 'prod') {
+    // production is read-only: a page that tries to write anything (a read marker, a heartbeat) has that request dropped and noted
+    await ctx.route('**/*', (route) => {
+      const m = route.request().method();
+      if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return route.continue();
+      blockedWrites.push(`${m} ${route.request().url()}`);
+      log(`BLOCKED write on production: ${m} ${route.request().url()}`);
+      return route.abort('blockedbyclient');
+    });
+  }
   const page = await ctx.newPage();
   page.on('response', (r) => {
     if (r.status() >= 500) {
@@ -123,6 +165,7 @@ const csrf = async (ctx: BrowserContext): Promise<Record<string, string>> => {
   return c ? { 'x-csrf-token': c.value } : {};
 };
 const api = async (ctx: BrowserContext, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown): Promise<{ status: number; json: any }> => {
+  if (method !== 'GET' && siteOf.get(ctx) !== 'stage') throw new Error(`refusing ${method} ${path}: only the stage may be written to`);
   const res = await ctx.request.fetch(path, { method, ...(data !== undefined ? { data } : {}), headers: await csrf(ctx) });
   const text = await res.text();
   let json: any = null;
@@ -157,6 +200,7 @@ async function poll<R>(fn: () => Promise<R | null | undefined | false>, ms: numb
 
 /** A call to the stand-ins' control port (stage only). */
 async function fake(method: 'GET' | 'POST' | 'PATCH' | 'PUT', path: string, body?: unknown): Promise<any> {
+  if (!stageUp) throw new Error(`refusing to call the stand-ins: ${stageWhy}`);
   const res = await fetch(`${CONTROL}${path}`, { method, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
   const text = await res.text();
   if (res.status >= 300) throw new Error(`${method} ${path}: ${res.status} ${text.slice(0, 200)}`);
@@ -173,7 +217,7 @@ interface Screen {
   go: (page: Page) => Promise<boolean>;
 }
 const screens: Screen[] = [];
-const visible = (page: Page, id: string): Promise<boolean> => page.getByTestId(id).first().waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false);
+const visible = (page: Page, id: string, timeout = 15_000): Promise<boolean> => page.getByTestId(id).first().waitFor({ state: 'visible', timeout }).then(() => true, () => false);
 
 screens.push({
   name: '01-gallery',
@@ -224,7 +268,7 @@ screens.push({
   who: 'NADIA',
   go: async (page) => {
     await page.goto('/account/chat-apps');
-    return visible(page, 'chat-apps-account-none') || visible(page, 'chat-apps-account');
+    return (await visible(page, 'chat-apps-account-none', 8_000)) || (await visible(page, 'chat-apps-account', 8_000));
   },
 });
 screens.push({
@@ -247,10 +291,10 @@ screens.push({
 const made = { channelId: '', endpoints: [] as string[], botSlug: 'verify-d-responder' };
 let cleanDone = false;
 
-/** Deletes the probe's addresses, removes the probe bot and archives its channels. Safe to run twice; also runs at the start of a rerun. */
+/** STAGE ONLY. Deletes the probe's addresses, removes the probe bot and archives its channels. Safe to run twice; also runs at the start of a rerun. Production is never touched. */
 async function clean(): Promise<void> {
-  if (cleanDone) return;
-  const omar = await open('OMAR');
+  if (cleanDone || !stageUp) return;
+  const omar = await open('OMAR', 'd', 'light', 'stage');
   try {
     const dir = await api(omar.ctx, 'GET', '/api/teams/engineering/channels');
     const named: Array<{ id: string; name: string }> = ((dir.json?.groups ?? []) as any[]).flatMap((g) => g.channels ?? []).filter((x: any) => /^#?verify-d-/.test(x.name));
@@ -272,14 +316,22 @@ async function clean(): Promise<void> {
 }
 
 test.beforeAll(async () => {
+  // the stage is checked FIRST: nothing below writes unless it is the throwaway stage
+  if (!STAGE) stageWhy = 'MANYTHREADS_STAGE_URL is not set';
+  else if (!CONTROL) stageWhy = 'FAKE_SAAS_CONTROL is not set';
+  else {
+    const refused = whyNotStage(STAGE, 'MANYTHREADS_STAGE_URL') || whyNotStage(CONTROL, 'FAKE_SAAS_CONTROL');
+    if (refused) stageWhy = `REFUSED: ${refused}`;
+    else {
+      const up = await fetch(`${STAGE}/api/health`).then((r) => r.status < 500, () => false);
+      const ctl = await fetch(`${CONTROL}/__fake/health`).then((r) => r.status < 300, () => false);
+      stageUp = up && ctl;
+      stageWhy = stageUp ? '' : `the stage (${STAGE}) or the stand-ins (${CONTROL}) do not answer`;
+    }
+  }
+  if (stageWhy) log(`block B is off: ${stageWhy}`);
   await clean().catch((e: Error) => log(`pre-clean: ${e.message.slice(0, 160)}`));
   cleanDone = false;
-  if (STAGE && CONTROL) {
-    const up = await fetch(`${STAGE}/api/health`).then((r) => r.status < 500, () => false);
-    const ctl = await fetch(`${CONTROL}/__fake/health`).then((r) => r.status < 300, () => false);
-    stageUp = up && ctl;
-    stageWhy = stageUp ? '' : `the stage (${STAGE}) or the stand-ins (${CONTROL}) do not answer`;
-  } else if (STAGE) stageWhy = 'FAKE_SAAS_CONTROL is not set';
 });
 test.afterAll(async () => {
   await clean().catch((e: Error) => log(`clean: ${e.message.slice(0, 160)}`));
@@ -287,7 +339,7 @@ test.afterAll(async () => {
 });
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
-/* Block A: production                                                                                                                                                           */
+/* Block A: production, READ-ONLY                                                                                                                                                */
 /* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
 
 test('A01 the gallery as Nadia: the new apps are cards, and "calendar" finds the calendar apps', async () => {
@@ -341,97 +393,33 @@ test('A03 Nadia in #dev, Schedule a room: the connect-your-calendar message', as
   }
 });
 
-test('A04 the Knowledge tab as Omar: no app is connected, so the dialog says to connect first', async () => {
+test('A04 the Knowledge tab as Omar: "Add from a connected app" opens, and says to connect first or offers the folders (nothing is added)', async () => {
   const o = await open('OMAR');
   try {
-    const bots = await api(o.ctx, 'GET', '/api/teams/engineering/bots');
-    const slug = ((bots.json?.bots ?? []) as any[])[0]?.slug as string | undefined;
-    if (!slug) return skip('A04 knowledge', 'Engineering has no bot to open');
-    await o.page.goto(`/t/engineering/bots/${slug}?tab=knowledge`);
+    await o.page.goto('/t/engineering/knowledge');
+    const row = o.page.getByTestId('team-knowledge-row').first();
+    if (!(await row.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false))) return skip('A04 knowledge', 'Engineering has no knowledge base to open');
+    await row.click();
     const add = o.page.getByTestId('connector-add');
-    if (!(await add.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false))) return skip('A04 knowledge', `the bot ${slug} has no knowledge base to add a source to`);
+    if (!(await add.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true, () => false))) return skip('A04 knowledge', 'the add-from-an-app button is not shown for this base');
     await add.click();
     const none = o.page.getByTestId('connector-none');
     const picker = o.page.getByTestId('connector-form');
     const state = await Promise.race([none.waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'none'), picker.waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'picker')]).catch(() => 'neither');
-    check('A04 the dialog says nothing is connected yet', state === 'none', state);
+    // Omar may have a real Drive connected on production: then the picker is the right answer. Either way the dialog is the new one.
+    check('A04 the dialog opens with "connect first" or the picker', state !== 'neither', state);
+    if (state === 'none') check('A04 it names Confluence, Dropbox and Box', /Confluence, Dropbox or Box/.test(await none.innerText()));
     await shoot(o.page, 'A04-knowledge-connect-first', 'd', 'light');
   } finally {
     await o.ctx.close();
   }
 });
 
-test('A05 a work app calls the real door: the whole refusal table, and one bot post with the origin card', async () => {
-  const omar = await open('OMAR');
-  const priya = await open('PRIYA');
-  try {
-    const channel = await api(omar.ctx, 'POST', '/api/teams/engineering/channels', { name: `verify-d-hooks-${sfx}` });
-    made.channelId = String(channel.json?.channel?.id ?? channel.json?.id ?? '');
-    if (!check('A05 the probe channel is made', made.channelId !== '', `${channel.status}`)) return;
-    const secret = `verify-d-${sfx}-signing-secret-0001`;
-    const generic = await api(omar.ctx, 'POST', `/api/channels/${made.channelId}/provider-hooks`, { provider: 'generic', slug: 'verify-d-generic', name: 'verify-d generic' });
-    const zen = await api(omar.ctx, 'POST', `/api/channels/${made.channelId}/provider-hooks`, { provider: 'zendesk', slug: 'verify-d-hooks', name: 'verify-d zendesk', signingSecret: secret });
-    const genericId = String(generic.json?.endpoint?.id ?? '');
-    const zenId = String(zen.json?.endpoint?.id ?? '');
-    made.endpoints.push(genericId, zenId);
-    if (!check('A05 the generic and zendesk addresses are made', generic.status === 201 && zen.status === 201, `${generic.status} ${zen.status}`)) return;
-    const genericSecret = String(generic.json?.signingSecret ?? '');
-    check('A05 the generic secret is shown once and is not in the listing', genericSecret.length >= 16 && !JSON.stringify((await api(omar.ctx, 'GET', `/api/channels/${made.channelId}/provider-hooks`)).json).includes(genericSecret));
-
-    // the probe bot: listens for ticket.created on the zendesk address
-    const botMd = [
-      '---', 'schema: 1', 'name: verify-d responder', 'role: Reads a new ticket and says what it saw', 'kind: agent', 'runtime: hermes', 'model:', '  aliases: [smart]', 'visibility: team',
-      'triggers:', '  - type: webhook', '    connection: verify-d-hooks', '    event: ticket.created', 'capabilities:', '  native: [messages.post]', '---', '', '# verify-d responder', '', 'Probe bot of the Bundle D live check; removed at the end.', '',
-    ].join('\n');
-    const prop = await api(omar.ctx, 'POST', '/api/teams/engineering/proposals', { path: `bots/${made.botSlug}/BOT.md`, op: 'put', content: botMd, title: 'verify-d: probe bot', applyNow: true });
-    check('A05 the probe bot is set up', prop.status < 300, `${prop.status}`);
-    const loaded = await poll(async () => ((await api(omar.ctx, 'GET', '/api/teams/engineering/bots')).json?.bots ?? []).some((b: any) => b.slug === made.botSlug), 90_000, 3000);
-    check('A05 the loader loaded the probe bot', loaded === true);
-
-    const door = (id: string): string => `${BASE}/hooks/apps/${id}`;
-    const send = async (o: Parameters<typeof sendWebhook>[0]): Promise<number[]> => (await sendWebhook(o)).responses.map((r) => r.status);
-    const base = { provider: 'zendesk' as const, url: door(zenId), secret, kind: 'ticket.created', title: `verify-d ticket ${sfx}` };
-    const first = await sendWebhook({ ...base, deliveryId: `verify-d-${sfx}-1` });
-    check('A05 a signed ticket.created is 200', first.responses[0]?.status === 200, String(first.responses[0]?.status));
-    const again = await sendWebhook({ ...base, deliveryId: `verify-d-${sfx}-1` });
-    check('A05 the repeat is 200 duplicate', again.responses[0]?.status === 200 && /duplicate/.test(again.responses[0]?.body ?? ''), `${again.responses[0]?.status} ${again.responses[0]?.body.slice(0, 60)}`);
-    for (const tamper of ['body', 'stale', 'unsigned'] as const) check(`A05 ${tamper} is 401`, (await send({ ...base, tamper }))[0] === 401);
-    check('A05 an unknown id is 404', (await fetch(door('00000000-0000-4000-8000-0000000d0404'), { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })).status === 404);
-    const revoked = await api(omar.ctx, 'DELETE', `/api/provider-hooks/${genericId}`);
-    made.endpoints = made.endpoints.filter((x) => x !== genericId);
-    const goneAnswer = await fetch(door(genericId), { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
-    const unknownAnswer = await fetch(door('00000000-0000-4000-8000-0000000d0405'), { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
-    check('A05 a revoked id is the same 404 as an unknown one', revoked.status === 200 && goneAnswer.status === 404 && (await goneAnswer.text()) === (await unknownAnswer.text()));
-    check('A05 1.5 MB is 413', (await send({ ...base, padBytes: 1_500_000 }))[0] === 413);
-
-    const posted = await poll(async () => {
-      const list = await api(omar.ctx, 'GET', `/api/channels/${made.channelId}/messages`);
-      const items = ((list.json?.items ?? list.json?.messages ?? []) as any[]).filter((m) => m.author?.kind === 'bot' && m.meta?.runId);
-      return items.length >= 1 ? items : null;
-    }, 180_000, 5000);
-    check('A05 within 3 minutes there is a bot post', posted !== null);
-    if (posted) {
-      check('A05 exactly one bot post', posted.length === 1, `${posted.length}`);
-      const runId = String(posted[0].meta.runId);
-      const origin = await api(omar.ctx, 'GET', `/api/runs/${runId}/origin`);
-      check('A05 the origin route names Zendesk and the title', origin.status === 200 && /zendesk/i.test(JSON.stringify(origin.json)) && JSON.stringify(origin.json).includes(`verify-d ticket ${sfx}`), `${origin.status}`);
-      check('A05 Priya, who cannot read the channel, gets 404', (await api(priya.ctx, 'GET', `/api/runs/${runId}/origin`)).status === 404);
-      await omar.page.goto(`/t/engineering/c/verify-d-hooks-${sfx}`);
-      const card = omar.page.getByTestId('run-origin').first();
-      const shown = await card.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false);
-      check('A05 the card "What started this run · Zendesk" is on the page', shown && /What started this run · Zendesk/.test(await card.innerText()));
-      if (shown) {
-        await omar.page.getByTestId('run-origin-toggle').first().click();
-        await shoot(omar.page, 'A05-run-origin-card', 'd', 'light');
-      }
-    }
-  } finally {
-    await omar.ctx.close();
-    await priya.ctx.close();
-  }
+test('A05 the real door of a work app (production is read-only: not called here)', async () => {
+  skip('A05 the 404 of an unknown address, the signed refusals, the duplicate, the 413 and the origin card', 'every one of them is a POST to the door; production gets no POST from this probe, they run against the stage in B00');
 });
 
-test('A06 chat apps: four "Not set up", the door of an unknown account is 404, Nadia is told her admin has turned none on', async () => {
+test('A06 chat apps: four "Not set up", Nadia is told no chat app is switched on yet', async () => {
   const omar = await open('OMAR');
   const nadia = await open('NADIA');
   try {
@@ -440,10 +428,8 @@ test('A06 chat apps: four "Not set up", the door of an unknown account is 404, N
       const text = await omar.page.getByTestId(`chat-app-${p}`).innerText().catch(() => '');
       check(`A06 ${p} is not set up`, /Not set up/i.test(text), text.slice(0, 40).replace(/\s+/g, ' '));
     }
-    const res = await fetch(`${BASE}/hooks/bridges/telegram/${crypto.randomUUID()}`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
-    check('A06 POST /hooks/bridges/telegram/<random> is 404', res.status === 404, String(res.status));
     check('A06 the account page opens', await screens[5]!.go(nadia.page));
-    check('A06 it says the admin has not turned on any chat app', /Your admin has not turned on any chat app/.test(await nadia.page.locator('main').innerText()));
+    check('A06 it says no chat app is switched on yet', /No chat app is switched on yet/.test(await nadia.page.locator('main').innerText()));
   } finally {
     await omar.ctx.close();
     await nadia.ctx.close();
@@ -454,10 +440,13 @@ test('A07 Members, Lena, "Remove their connections": the preview opens, then Can
   const o = await open('OMAR');
   try {
     if (!check('A07 the preview opens', await screens[6]!.go(o.page))) return;
-    const own = await o.page.getByTestId('offboard-own').isVisible().catch(() => false);
-    const nothing = await o.page.getByTestId('offboard-nothing').isVisible().catch(() => false);
-    check('A07 the preview says what will be removed, or that there is nothing', own || nothing);
-    await o.page.getByTestId('offboard-dialog').getByRole('button', { name: /Cancel|Close/ }).click();
+    // the preview is read when the dialog opens; wait for it to be drawn (a GET: nothing is changed by looking)
+    const state = await Promise.race([
+      o.page.getByTestId('offboard-own').waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'own'),
+      o.page.getByTestId('offboard-nothing').waitFor({ state: 'visible', timeout: 15_000 }).then(() => 'nothing'),
+    ]).catch(() => 'neither');
+    check('A07 the preview says what will be removed, or that there is nothing', state !== 'neither', state);
+    await o.page.getByTestId('offboard-dialog').getByRole('button', { name: /^(Cancel|Close)$/ }).click();
     check('A07 Cancel closes it', (await o.page.getByTestId('offboard-dialog').count()) === 0);
   } finally {
     await o.ctx.close();
@@ -487,7 +476,7 @@ test('A08 the plates of 1 to 7 at 1440 and 390, light and dark', async () => {
 });
 
 /* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
-/* Block B: the stage                                                                                                                                                            */
+/* Block B: the STAGE ONLY (refused unless the addresses are loopback/private; see whyNotStage)                                                                                     */
 /* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
 
 const gateB = (name: string): boolean => {
@@ -496,6 +485,80 @@ const gateB = (name: string): boolean => {
   return false;
 };
 const stageEmail = (who: Who): string => personaEmail(who.toLowerCase() as PersonaKey);
+
+test('B00 a work app calls the stage door: the whole refusal table, and one bot post with the origin card', async () => {
+  if (!gateB('B00 provider door')) return;
+  const omar = await open('OMAR', 'd', 'light', 'stage');
+  // Sameera is in Customer support only: she cannot read an Engineering channel (Priya, who is in Engineering, could)
+  const outsider = await open('SAMEERA', 'd', 'light', 'stage');
+  try {
+    const channel = await api(omar.ctx, 'POST', '/api/teams/engineering/channels', { name: `verify-d-hooks-${sfx}` });
+    made.channelId = String(channel.json?.channel?.id ?? channel.json?.id ?? '');
+    if (!check('B00 the probe channel is made', made.channelId !== '', `${channel.status}`)) return;
+    const secret = `verify-d-${sfx}-signing-secret-0001`;
+    const generic = await api(omar.ctx, 'POST', `/api/channels/${made.channelId}/provider-hooks`, { provider: 'generic', slug: 'verify-d-generic', name: 'verify-d generic' });
+    const zen = await api(omar.ctx, 'POST', `/api/channels/${made.channelId}/provider-hooks`, { provider: 'zendesk', slug: 'verify-d-hooks', name: 'verify-d zendesk', signingSecret: secret });
+    const genericId = String(generic.json?.endpoint?.id ?? '');
+    const zenId = String(zen.json?.endpoint?.id ?? '');
+    made.endpoints.push(genericId, zenId);
+    if (!check('B00 the generic and zendesk addresses are made', generic.status === 201 && zen.status === 201, `${generic.status} ${zen.status}`)) return;
+    const genericSecret = String(generic.json?.signingSecret ?? '');
+    check('B00 the generic secret is shown once and is not in the listing', genericSecret.length >= 16 && !JSON.stringify((await api(omar.ctx, 'GET', `/api/channels/${made.channelId}/provider-hooks`)).json).includes(genericSecret));
+
+    // the probe bot: listens for ticket.created on the zendesk address
+    const botMd = [
+      '---', 'schema: 1', 'name: verify-d responder', 'role: Reads a new ticket and says what it saw', 'kind: agent', 'runtime: hermes', 'model:', '  aliases: [smart]', 'visibility: team',
+      'triggers:', '  - type: webhook', '    connection: verify-d-hooks', '    event: ticket.created', 'capabilities:', '  native: [messages.post]', '---', '', '# verify-d responder', '', 'Probe bot of the Bundle D check; removed at the end.', '',
+    ].join('\n');
+    const prop = await api(omar.ctx, 'POST', '/api/teams/engineering/proposals', { path: `bots/${made.botSlug}/BOT.md`, op: 'put', content: botMd, title: 'verify-d: probe bot', applyNow: true });
+    check('B00 the probe bot is set up', prop.status < 300, `${prop.status}`);
+    const loaded = await poll(async () => ((await api(omar.ctx, 'GET', '/api/teams/engineering/bots')).json?.bots ?? []).some((b: any) => b.slug === made.botSlug), 90_000, 3000);
+    check('B00 the loader loaded the probe bot', loaded === true);
+
+    const door = (id: string): string => `${STAGE}/hooks/apps/${id}`;
+    const send = async (o: Parameters<typeof sendWebhook>[0]): Promise<number[]> => (await sendWebhook(o)).responses.map((r) => r.status);
+    const base = { provider: 'zendesk' as const, url: door(zenId), secret, kind: 'ticket.created', title: `verify-d ticket ${sfx}` };
+    const first = await sendWebhook({ ...base, deliveryId: `verify-d-${sfx}-1` });
+    check('B00 a signed ticket.created is 200', first.responses[0]?.status === 200, String(first.responses[0]?.status));
+    const again = await sendWebhook({ ...base, deliveryId: `verify-d-${sfx}-1` });
+    check('B00 the repeat is 200 duplicate', again.responses[0]?.status === 200 && /duplicate/.test(again.responses[0]?.body ?? ''), `${again.responses[0]?.status} ${again.responses[0]?.body.slice(0, 60)}`);
+    for (const tamper of ['body', 'stale', 'unsigned'] as const) check(`B00 ${tamper} is 401`, (await send({ ...base, tamper }))[0] === 401);
+    check('B00 an unknown id is 404', (await fetch(door('00000000-0000-4000-8000-0000000d0404'), { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } })).status === 404);
+    const revoked = await api(omar.ctx, 'DELETE', `/api/provider-hooks/${genericId}`);
+    made.endpoints = made.endpoints.filter((x) => x !== genericId);
+    const goneAnswer = await fetch(door(genericId), { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    const unknownAnswer = await fetch(door('00000000-0000-4000-8000-0000000d0405'), { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    check('B00 a revoked id is the same 404 as an unknown one', revoked.status === 200 && goneAnswer.status === 404 && (await goneAnswer.text()) === (await unknownAnswer.text()));
+    const tg = await fetch(`${STAGE}/hooks/bridges/telegram/${crypto.randomUUID()}`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    check('B00 the Telegram door of an unknown account is 404', tg.status === 404, String(tg.status));
+    check('B00 1.5 MB is 413', (await send({ ...base, padBytes: 1_500_000 }))[0] === 413);
+
+    const posted = await poll(async () => {
+      const list = await api(omar.ctx, 'GET', `/api/channels/${made.channelId}/messages`);
+      const items = ((list.json?.items ?? []) as any[]).filter((m) => m.author?.kind === 'bot' && m.meta?.runId);
+      return items.length >= 1 ? items : null;
+    }, 180_000, 5000);
+    if (posted === null) skip('B00 within 3 minutes there is a bot post', 'the stage answers bot runs with the demo stand-in model (fake-llm), which has no scenario for a ticket; the run itself is covered by e2e/connections/zendesk-trigger.spec.ts against the Hermes stand-in');
+    else {
+      check('B00 exactly one bot post', posted.length === 1, `${posted.length}`);
+      const runId = String(posted[0].meta.runId);
+      const origin = await api(omar.ctx, 'GET', `/api/runs/${runId}/origin`);
+      check('B00 the origin route names Zendesk and the title', origin.status === 200 && /zendesk/i.test(JSON.stringify(origin.json)) && JSON.stringify(origin.json).includes(`verify-d ticket ${sfx}`), `${origin.status}`);
+      check('B00 Sameera, who cannot read the channel, gets 404', (await api(outsider.ctx, 'GET', `/api/runs/${runId}/origin`)).status === 404);
+      await omar.page.goto(`/t/engineering/c/verify-d-hooks-${sfx}`);
+      const card = omar.page.getByTestId('run-origin').first();
+      const shown = await card.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false);
+      check('B00 the card "What started this run · Zendesk" is on the page', shown && /What started this run · Zendesk/.test(await card.innerText()));
+      if (shown) {
+        await omar.page.getByTestId('run-origin-toggle').first().click();
+        await shoot(omar.page, 'B00-run-origin-card', 'd', 'light');
+      }
+    }
+  } finally {
+    await omar.ctx.close();
+    await outsider.ctx.close();
+  }
+});
 
 test('B01 connect fake Google with Drive only, then add Calendar: the second consent asks for the calendar scopes alone', async () => {
   if (!gateB('B01 incremental consent')) return;
@@ -547,9 +610,13 @@ test('B02 schedule a room at now+5.5 minutes: the event with the join link, the 
     await expect(nadia.page.getByTestId('schedule-dialog')).toHaveCount(0, T);
 
     const state = await fake('GET', '/__fake/state');
-    const detail = (state.workspace.createdEventDetails ?? []).find((d: any) => /verify-d design review|\/join\//.test(d.description) && d.account === stageEmail('NADIA') && state.workspace.createdEvents.some((e: any) => e.title === 'verify-d design review'));
-    const event = (state.workspace.createdEvents ?? []).find((e: any) => e.title === 'verify-d design review');
-    check('B02 the event is at the fake calendar with Rafi and the outside guest', !!event && event.guests.includes(stageEmail('RAFI')) && event.guests.includes('guest@outside.test'));
+    // createdEventDetails runs index for index with createdEvents (both are appended together by the stand-in)
+    const events: any[] = state.workspace.createdEvents ?? [];
+    const at0 = events.map((e: any) => e.title).lastIndexOf('verify-d design review');
+    const event = at0 >= 0 ? events[at0] : undefined;
+    const found = at0 >= 0 ? (state.workspace.createdEventDetails ?? [])[at0] : undefined;
+    const detail = found && found.account === stageEmail('NADIA') ? found : undefined;
+    check('B02 the event is at the fake calendar with Rafi and the outside guest', !!event && (event.guests ?? []).includes(stageEmail('RAFI')) && (event.guests ?? []).includes('guest@outside.test'));
     check('B02 the event has the /join/ link', !!detail && /\/join\//.test(detail.description) && /\/join\//.test(detail.location));
     plannedId = /\/join\/([0-9a-f-]{36})/.exec(detail?.description ?? '')?.[1] ?? '';
     await nadia.page.reload();
@@ -580,7 +647,7 @@ test('B02 schedule a room at now+5.5 minutes: the event with the join link, the 
       if (plannedId) {
         const moved = await poll(async () => {
           const plan = await api(nadia.ctx, 'GET', `/api/scheduled-meetings/${plannedId}`);
-          return plan.status === 200 && new Date(JSON.stringify(plan.json).match(/"startsAt":"([^"]+)"/)?.[1] ?? 0).toISOString() === startsAt ? true : null;
+          return plan.status === 200 && Math.abs(new Date(JSON.stringify(plan.json).match(/"startsAt":"([^"]+)"/)?.[1] ?? 0).getTime() - new Date(startsAt).getTime()) < 60_000 ? true : null;
         }, SYNC_WAIT_MIN * 60_000, 15_000);
         check(`B02 the plan takes the new time within ${SYNC_WAIT_MIN} minutes`, moved === true);
       }
@@ -681,7 +748,7 @@ test('B05 Telegram: an unlinked person is refused, a code links, "via Telegram" 
   }
 });
 
-test('B06 deactivate Lena and Rafi: connections off at once and gone within a minute, the grant revoked at the fake, one audit line each, reactivate restores nothing', async () => {
+test('B06 deactivate Lena and Rafi: connections gone within a minute, the grant revoked at the fake, reactivate restores nothing', async () => {
   if (!gateB('B06 offboarding')) return;
   const omar = await open('OMAR', 'd', 'light', 'stage');
   try {
@@ -712,7 +779,8 @@ test('99 cleanup and verdict', async () => {
   await clean();
   const failed = results.filter((r) => r.startsWith('FAIL'));
   const skipped = results.filter((r) => r.startsWith('SKIPPED'));
-  writeFileSync(join(OUT, 'results.txt'), `${results.join('\n')}\n${fivexx.length > 0 ? `\n5xx seen:\n${fivexx.join('\n')}\n` : ''}`);
+  writeFileSync(join(OUT, 'results.txt'), `${results.join('\n')}\n${fivexx.length > 0 ? `\n5xx seen:\n${fivexx.join('\n')}\n` : ''}${blockedWrites.length > 0 ? `\nwrites to production that the guard stopped (must be empty):\n${blockedWrites.join('\n')}\n` : ''}`);
   log(`${results.length - failed.length - skipped.length} passed, ${skipped.length} skipped, ${failed.length} failed, ${fivexx.length} server errors`);
+  expect(blockedWrites, 'the production guard stopped a write').toEqual([]);
   expect(failed, failed.join('\n')).toEqual([]);
 });

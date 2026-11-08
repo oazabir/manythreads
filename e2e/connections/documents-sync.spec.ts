@@ -88,7 +88,7 @@ test('the owner of the file makes it public at the app, and the next read brings
   }
 });
 
-test('a Personal base takes every document its owner can open, a teammate sees neither the base nor the text, and a team lead’s read does not touch it', async ({ playwright }) => {
+test('a Personal base takes every document its owner can open, a teammate sees neither the base nor the text', async ({ playwright }) => {
   const nadiaEmail = personas.nadia.email;
   // Nadia's own folder with a document shared with Omar alone: two people can open it, which a team base would leave out
   await fake(stack, 'PATCH', `/__fake/accounts/${encodeURIComponent(nadiaEmail)}`, {
@@ -146,7 +146,8 @@ test('Add from a connected app: a lead picks Google Drive and a folder, ticks th
     await page.getByTestId('connector-add').click();
     await expect(page.getByTestId('connector-add-dialog')).toBeVisible();
     await page.getByTestId('connector-provider').selectOption('google_drive');
-    await page.getByTestId('connector-root').selectOption({ label: 'Release notes folder (folder)' });
+    // by the provider's id of the folder (the option's text carries a parent prefix when the app reports one)
+    await page.getByTestId('connector-root').selectOption('folder-ui-added');
     // the team rule must be agreed before the button works
     await expect(page.getByTestId('connector-submit')).toBeDisabled();
     await page.getByTestId('connector-consent').check();
@@ -176,6 +177,8 @@ test('Lena signs in with Microsoft only: the apps the dialog offers her do not i
       return ((await res.json()) as { providers: string[] }).providers;
     });
     expect(providers).not.toContain('google_drive');
+    // she did connect Microsoft with the files permission, so the dialog is not empty for her
+    expect(providers).toContain('onedrive');
   } finally {
     await context.close();
   }

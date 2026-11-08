@@ -143,6 +143,28 @@ for (const [name, adapter, provider] of [
       expect(await adapter.access(c, '../x')).toEqual({ anyone: false, domains: [], users: [], groups: true });
     });
 
+    // The real services answer a reader who may not see the sharing list with a refusal or with no list at all, and a long list in pages: none of these may read as "shared with the team".
+    // The stand-in always answers with the full list, so the three shapes are put in front of the reader here.
+    it('a refusal, an answer without a list and a list that goes on are all "not everyone" (the stand-in is kinder than the services)', async () => {
+      const entry = provider === 'google' ? { type: 'domain', domain: 'kahf.example' } : { link: { scope: 'anonymous' } };
+      const listKey = provider === 'google' ? 'permissions' : 'value';
+      const nextKey = provider === 'google' ? 'nextPageToken' : '@odata.nextLink';
+      const answering = (status: number, body: unknown) => async (url: string, init: Parameters<typeof fetch>[1]): Promise<Response> =>
+        /\/permissions/.test(url) ? new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) : fetch(url, init);
+      const notEveryone = { anyone: false, domains: [], users: [], groups: true };
+
+      // 403: the person who connected may read the file but not who it is shared with
+      const refused = rig.ctx(provider, { fetchImpl: answering(403, { error: { code: 403, message: 'The user does not have sufficient permissions for this file.' } }) });
+      expect(await adapter.access(refused, 'file-notes')).toEqual(notEveryone);
+      // 200 with no list at all
+      const bare = rig.ctx(provider, { fetchImpl: answering(200, {}) });
+      expect(await adapter.access(bare, 'file-notes')).toEqual(notEveryone);
+      // a list that never ends: what was seen (a whole domain, or a public link) is not trusted to be all of it, so the answer carries "a group" too
+      const endless = rig.ctx(provider, { fetchImpl: answering(200, { [listKey]: [entry], [nextKey]: 'more' }) });
+      const long = await adapter.access(endless, 'file-notes');
+      expect(long.groups).toBe(true);
+    });
+
     it('a dead sign-in or a service that is down is an error, not an answer; no message carries the token', async () => {
       const c = ctx();
       ws().failNextApi(500, 1);
