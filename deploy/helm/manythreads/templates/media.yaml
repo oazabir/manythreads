@@ -4,6 +4,8 @@
   key below (MANYTHREADS_LIVEKIT_*); LiveKit calls back http://manythreads-server/api/meetings/media-webhook, signed with the same key.
   The pod uses the node's network: the audio ports are UDP and TCP on the node itself, so no Service can carry them and the node's firewall must allow
   rtcPortStart-rtcPortEnd (UDP) and rtcTcpPort (TCP). Signalling (7880) is plain inside the cluster; the ingress or load balancer in front of `publicUrl` does TLS.
+  With media.ingressPath set (for example /livekit) the main address also carries the signalling: an Ingress sends that path to the pod and a Traefik Middleware
+  takes the prefix off first (LiveKit answers on /). The audio itself never goes through the ingress: see docs/deploy.md "Voice rooms".
 */ -}}
 {{- if not .Values.media.publicUrl }}{{ fail "media.enabled needs media.publicUrl (the wss:// address browsers connect to)" }}{{ end }}
 {{- if and .Values.media.turn.enabled (not .Values.media.turn.domain) }}{{ fail "media.turn.enabled needs media.turn.domain" }}{{ end }}
@@ -40,11 +42,15 @@ data:
       port_range_start: {{ .Values.media.rtcPortStart }}
       port_range_end: {{ .Values.media.rtcPortEnd }}
       tcp_port: {{ .Values.media.rtcTcpPort }}
-      use_external_ip: true
+      {{- if .Values.media.nodeIp }}
+      # Behind NAT (a machine with no public address): the address people reach it on is not on the machine, so it is given here.
+      node_ip: {{ .Values.media.nodeIp | quote }}
+      {{- end }}
+      use_external_ip: {{ .Values.media.useExternalIp }}
     room:
       auto_create: false
       empty_timeout: 300
-      max_participants: 50
+      max_participants: {{ .Values.media.maxParticipants }}
     webhook:
       api_key: __API_KEY__
       urls:
@@ -54,6 +60,7 @@ data:
       enabled: true
       domain: {{ .Values.media.turn.domain | quote }}
       tls_port: {{ .Values.media.turn.tlsPort }}
+      udp_port: {{ .Values.media.turn.udpPort }}
       external_tls: true
     {{- end }}
 ---
@@ -134,4 +141,57 @@ spec:
     app.kubernetes.io/component: media
   ports:
     - { name: signal, port: 7880, targetPort: signal }
+{{- if .Values.media.ingressPath }}
+{{- $tlsMode := include "manythreads.tlsMode" . }}
+{{- $tlsSecret := include "manythreads.tlsSecret" . }}
+{{- $flexible := and (eq $tlsMode "cloudflare") (eq .Values.tls.cloudflare.origin "flexible") }}
+{{- $path := .Values.media.ingressPath }}
+{{- if not (hasPrefix "/" $path) }}{{ fail "media.ingressPath must start with /" }}{{ end }}
+---
+# Takes the path prefix off before the request reaches LiveKit (Traefik v3 CRD; the cluster's ingress is Traefik).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: manythreads-media-strip
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  stripPrefix:
+    prefixes: [{{ $path | quote }}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: manythreads-media
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+  {{- $ann := .Values.ingress.annotations | default dict }}
+  {{- if $flexible }}{{ $ann = merge (deepCopy $ann) (dict "traefik.ingress.kubernetes.io/router.entrypoints" "web,websecure") }}{{ end }}
+  {{- $ann = merge (deepCopy $ann) (dict "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-manythreads-media-strip@kubernetescrd" .Release.Namespace)) }}
+  annotations:
+    {{- toYaml $ann | nindent 4 }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if $tlsSecret }}
+  tls:
+    - hosts: [{{ .Values.domain }}]
+      secretName: {{ $tlsSecret }}
+  {{- else if and (eq $tlsMode "none") .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.domain }}]
+      {{- if .Values.ingress.tls.secretName }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+      {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.domain }}
+      http:
+        paths:
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service: { name: manythreads-media, port: { name: signal } }
+{{- end }}
 {{- end }}

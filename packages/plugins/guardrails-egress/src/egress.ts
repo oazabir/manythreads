@@ -21,7 +21,8 @@ export interface EgressRefusal {
 export function judgeTargets(preset: LlmGuardPreset, allowlist: readonly string[], targets: readonly EgressTarget[]): EgressRefusal | null {
   const first = targets[0];
   for (const link of targets) {
-    if (preset === 'air-gapped' && link.name !== 'local') {
+    // `transcribe` (speech to text, P15-07) is the one other alias an air gap may reach, and only as the call's own target; the check below still insists that it is inside the deployment.
+    if (preset === 'air-gapped' && link.name !== 'local' && !(link === first && link.name === 'transcribe')) {
       return {
         target: link.name,
         host: link.host,

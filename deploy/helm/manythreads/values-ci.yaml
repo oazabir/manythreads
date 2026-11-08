@@ -88,3 +88,9 @@ mail:
 # The test sign-in route (POST /api/test/session). Throwaway namespace only.
 testAuth:
   enabled: true
+
+# No voice server and no speech-to-text server here: a CI stack uses the stand-ins (MANYTHREADS_MEDIA_PROVIDER=fake, MANYTHREADS_FAKE_ASR=1).
+media:
+  enabled: false
+asr:
+  enabled: false

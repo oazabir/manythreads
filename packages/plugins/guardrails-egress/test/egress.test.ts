@@ -26,6 +26,15 @@ describe('judgeTargets', () => {
     expect(refused!.message).toBe('The air-gapped preset allows only the local alias, and this call asks for smart.');
   });
 
+  it('air-gapped also lets the transcribe alias (speech to text) through, as the call\'s own target and only when it is a model inside the deployment', () => {
+    const asr = (isLocal: boolean): EgressTarget => ({ name: 'transcribe', host: 'manythreads-asr', local: isLocal });
+    expect(judgeTargets('air-gapped', [], [asr(true)])).toBeNull();
+    expect(judgeTargets('air-gapped', [], [asr(false)])!.message).toContain('the local alias goes to manythreads-asr');
+    // it is not a way out for another alias, and not a fallback that excuses a hosted first link
+    expect(judgeTargets('air-gapped', [], [hosted('smart', 'api.openai.com'), asr(true)])!.message).toContain('this call asks for smart');
+    expect(judgeTargets('air-gapped', [], [local, asr(true)])!.message).toContain('local falls back to transcribe');
+  });
+
   it('air-gapped judges the host, not the name: `local` bound to a hosted provider (or one whose host cannot be told) is refused', () => {
     const refused = judgeTargets('air-gapped', [], [hosted('local', 'api.openai.com')]);
     expect(refused).toMatchObject({ target: 'local', host: 'api.openai.com' });

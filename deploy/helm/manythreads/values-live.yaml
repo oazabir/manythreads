@@ -70,3 +70,16 @@ backup:
   retention: 7
   storage:
     size: 10Gi
+
+# Voice rooms (docs/deploy.md "Voice rooms"). The devbox has no public address (10.0.2.15 behind NAT): the signalling goes through the main address (Cloudflare carries the
+# WebSocket on /livekit), and the audio ports work from the machine itself until the owner forwards them at the network edge (docs/deploy.md, items O1 and O3).
+# For outside callers add a DNS-only name and the forwarded ports there; the app does not change, only `publicUrl` (and `media.turn.*` for TURN).
+media:
+  enabled: true
+  publicUrl: wss://manythreads.kahf.to/livekit
+  nodeIp: 10.0.2.15
+  useExternalIp: false
+  ingressPath: /livekit
+# The speech-to-text server for devices too weak to transcribe by themselves (docs/deploy.md "Speech to text"); the image is built by tools/devbox/deploy.sh.
+asr:
+  enabled: true

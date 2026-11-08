@@ -24,6 +24,7 @@ const PURPOSE_LABELS: Record<string, string> = {
   workshop: 'Workshop helper',
   'alias-test': 'Model test',
   gate: 'Safety check',
+  transcribe: 'Meeting transcription',
   eval: 'Scenario test run',
   rehearsal: 'Rehearsal',
   run: 'Bot work',

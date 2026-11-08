@@ -270,11 +270,31 @@ media:
   rtcPortStart: 50000
   rtcPortEnd: 50100        # 100 UDP ports are enough for a few dozen people; widen for more
   rtcTcpPort: 7881         # audio over TCP when UDP is blocked
+  # A machine behind NAT (no public address on it): `nodeIp` is the address LiveKit puts in what it tells browsers, with `useExternalIp: false`.
+  # The router then forwards the audio ports to that machine (docs/deploy.md "Voice rooms"). Empty `nodeIp` and `useExternalIp: true` = the machine has a public address.
+  nodeIp: ""
+  useExternalIp: true
+  maxParticipants: 25      # people in one room; the room's cap in the app is lower or equal
+  noteTakerMaxRooms: 10    # rooms one server pod's note-taker listens to at once
+  # Put the signalling on the main address too: a path (for example /livekit) that the ingress sends to the media pod with the prefix taken off. Empty = no such rule
+  # (then `publicUrl` is a name of its own that you route yourself). Needs Traefik's CRDs (the cluster's ingress is Traefik).
+  ingressPath: ""
   turn:
     enabled: false         # TURN over TLS on 443 for networks that only allow HTTPS
     domain: ""             # turn.example.org : a separate name; its certificate is the load balancer's (externalTls)
     tlsPort: 5349          # the port the load balancer forwards TURN/TLS 443 to
+    udpPort: 3478          # TURN over UDP, for networks that allow UDP but not the audio ports
   resources: {}
+
+# The speech-to-text server (PLAN P15-07, docs/deploy.md "Speech to text"): speaches, a Whisper server with the model inside the image (deploy/images/asr). It is the
+# fallback for a device too weak to transcribe by itself. OFF by default. After it runs, bind the alias `transcribe` in Models to a model with api_base
+# http://manythreads-asr:8000/v1 (provider marked "runs inside this deployment"). tools/devbox/deploy.sh builds the image when this is on in values-live.yaml.
+asr:
+  enabled: false
+  image: manythreads/asr:1
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 3Gi }
 # Hermes runs on the host through a runner, never in the cluster: this switch only fails the render if turned on.
 hermes: { enabled: false }
 

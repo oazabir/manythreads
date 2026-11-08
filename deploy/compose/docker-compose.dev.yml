@@ -148,6 +148,23 @@ services:
     environment:
       LIVEKIT_KEYS: "devkey: secret-for-local-development-only-0123456789"
 
+  # Optional (profile `asr`): the speech-to-text server for the fallback of a device too weak to transcribe by itself (PLAN P15-07): speaches (Whisper) with the `tiny`
+  # model inside the image. `docker compose -f deploy/compose/docker-compose.dev.yml --profile asr up -d --build asr` (the build downloads the model once). Then, in the app's
+  # Models page, bind the alias `transcribe` to a model with api_base http://localhost:8000/v1 and "runs inside this deployment" on (the LiteLLM proxy reaches it by
+  # host.docker.internal:8000 when it runs in compose too). Tests do not need it: MANYTHREADS_FAKE_ASR=1 is the stand-in. Port on loopback only; no key, so never publish it.
+  asr:
+    profiles: ["asr"]
+    build:
+      context: ../images/asr
+    image: manythreads/asr:dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   # Optional (profile `app`): the server image against the dev Postgres, with the same environment the Helm chart sets
   # (KMS key, public URL, proxy trust, mail through mailpit). `docker compose -f deploy/compose/docker-compose.dev.yml
   # --profile app up -d --build server`; `pnpm db:up` does not start it. Set MANYTHREADS_KMS_KEY first (see dev.env.example).

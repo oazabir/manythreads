@@ -123,6 +123,8 @@ spec:
             {{- if .Values.media.enabled }}
             - { name: MANYTHREADS_LIVEKIT_URL, value: {{ .Values.media.publicUrl | quote }} }
             - { name: MANYTHREADS_LIVEKIT_API_URL, value: "http://manythreads-media:7880" }
+            {{- /* How many rooms one server pod's note-taker may listen to at once (a refusal beyond that: "The note-taker is busy"). */}}
+            - { name: MANYTHREADS_NOTETAKER_MAX_ROOMS, value: {{ .Values.media.noteTakerMaxRooms | default 10 | quote }} }
             - name: MANYTHREADS_LIVEKIT_API_KEY
               valueFrom: { secretKeyRef: { name: manythreads-media-secrets, key: api-key } }
             - name: MANYTHREADS_LIVEKIT_API_SECRET

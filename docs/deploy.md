@@ -245,6 +245,58 @@ Daily backups of the databases, the attachment store and the team repositories, 
 ## Rollback
 Run `ops-rollback` (empty revision = previous). Images in use by running pods stay on the node, so the previous revision normally still has its images.
 
+## Voice rooms (LiveKit)
+Voice rooms run on LiveKit (`media.enabled`, chart template `media.yaml`; plugin `media-livekit`, page `docs/plugins/media-livekit.md`). Off by default. The chart makes the key pair once
+(Secret `manythreads-media-secrets`, kept across upgrades); the server gets it as `MANYTHREADS_LIVEKIT_*`. The media pod uses the node's network (`hostNetwork`), so its ports are the
+node's own ports. Nothing here needs an outside account.
+
+| What | Port | Who connects | Goes through the ingress? |
+| --- | --- | --- | --- |
+| Signalling (WebSocket) | TCP 7880 inside the cluster; browsers use `publicUrl` (`wss://manythreads.kahf.to/livekit`) | browsers | yes: `media.ingressPath: /livekit` adds an Ingress rule and a Traefik `Middleware` that takes the prefix off; Cloudflare carries the WebSocket |
+| Audio over UDP | UDP `media.rtcPortStart`-`media.rtcPortEnd` (50000-50100) | browsers | no: straight to the node |
+| Audio over TCP (when UDP is blocked) | TCP `media.rtcTcpPort` (7881) | browsers | no: straight to the node |
+| TURN over UDP (`media.turn.enabled`) | UDP `media.turn.udpPort` (3478) | browsers | no: straight to the node |
+| TURN over TLS (`media.turn.enabled`) | TCP 443 on `media.turn.domain`, forwarded to `media.turn.tlsPort` (5349) | browsers on networks that allow only HTTPS | no: a DNS-only name, never through Cloudflare's proxy |
+
+Values (`values.yaml`, `media:`): `publicUrl` (required when enabled), `nodeIp`, `useExternalIp`, `maxParticipants` (25), `noteTakerMaxRooms` (10, the rooms one server pod's note-taker listens
+to at once), `ingressPath`, `turn.*`, `resources`. The live release (`values-live.yaml`) sets `enabled: true`, `publicUrl: wss://manythreads.kahf.to/livekit`, `nodeIp: 10.0.2.15`,
+`useExternalIp: false`, `ingressPath: /livekit`. The chart's CI release leaves it off; CI stacks use the stand-in (`MANYTHREADS_MEDIA_PROVIDER=fake`).
+
+**The devbox has no public address.** It is a VM behind NAT (10.0.2.15), and Cloudflare's proxy carries only HTTP(S) and WebSockets, never UDP. So with this setup a call works for
+people on the machine itself (and the live checks run there), and **a call between people on different networks needs the owner to do three things at the network edge**. The app does not
+change for any of them, only values:
+1. Forward UDP 50000-50100 and TCP 7881 from the public address to the VM (the same numbers on both sides), and open them in the VM's firewall.
+2. Make a DNS-only name (grey cloud in Cloudflare, not proxied) such as `media.kahf.to` for the public address, and set `media.publicUrl: wss://media.kahf.to` with a certificate for it (or keep the
+   signalling on `manythreads.kahf.to/livekit` and only give the audio the public address: set `media.nodeIp` to the public address and `useExternalIp: false`).
+3. For people behind a firewall that allows only HTTPS: a second DNS-only name for TURN (`turn.kahf.to`), `media.turn.enabled: true`, `media.turn.domain: turn.kahf.to`, and TCP 443 on that
+   name forwarded to the VM's `media.turn.tlsPort` (5349); TURN over UDP uses `media.turn.udpPort` (3478).
+Check: `kubectl get pods -l app.kubernetes.io/component=media`, then start a voice room in the app and read the call bar; a call that never connects while the pod is healthy is almost always
+a closed UDP port or a wrong `nodeIp`.
+
+Undo: `media.enabled: false` (the Secret stays; the next enable reuses it).
+
+## Speech to text (the server fallback)
+A device too weak to transcribe by itself sends 30-second pieces of audio to `POST /api/meetings/:meetingId/audio-chunks`; the server turns each into text through the `transcribe` door
+of the LLM gateway (plugin `gateway-llm`, `src/transcribe.ts`) and stores a line. Audio is never stored. The words come from a Whisper server inside the deployment: **speaches** (MIT),
+an OpenAI-compatible server, CPU build, model `Systran/faster-whisper-tiny` (set `ASR_MODEL` at build time for a bigger one, for example `Systran/faster-whisper-base`).
+
+- **Image** (`deploy/images/asr`): the pinned speaches image plus the model, downloaded once while the image is built (needs the network for that one step; the pod never downloads
+  anything). About 3.5 GB. `tools/devbox/deploy.sh` builds it, tags it by the content of the folder and imports it into k3s when `asr.enabled` is true in `values-live.yaml`; it stops with
+  a message when under 10 GB is free.
+- **Chart** (`templates/asr.yaml`): `asr.enabled` (off by default), `asr.image`, `asr.resources` (about 1 GB requested). Deployment `manythreads-asr` and Service `manythreads-asr:8000`,
+  no outside address needed, no key (reachable inside the cluster only).
+- **Dev compose**: `docker compose -f deploy/compose/docker-compose.dev.yml --profile asr up -d --build asr` (port 8000 on loopback).
+- **Admin step after the first deploy** (the app, not the chart): in the Models page bind the alias `transcribe` to a model with provider "openai-compatible", model `openai/Systran/faster-whisper-tiny` (the name the server lists at `/v1/models`; `openai/` makes the gateway speak the OpenAI protocol),
+  `api_base` `http://manythreads-asr:8000/v1`, and mark the provider as running inside this deployment (the same flag as a local model). Until it is bound the door answers "Speech to
+  text is not set up" and the app tells the person so. The alias shows in Spend as "Meeting transcription", costs nothing per call, and is under the workspace's budgets and guardrails
+  like any other.
+- **Air-gapped preset**: allowed, because the server is inside the deployment; a `transcribe` model outside it is refused like any other outside model.
+- **Who may use it**: a room whose transcription is `server`, and only while the workspace's and the team's caps both allow `server` (the lower wins); only the sender's own speech, and only
+  after they said yes. Tests and screenshots use the stand-in `MANYTHREADS_FAKE_ASR=1` (text read from the audio itself; the server refuses to start with it when `NODE_ENV=production`).
+- **Check after deploy**: `kubectl rollout status deploy/manythreads-asr`, then in a room with server transcription say a sentence and read the line in the transcript; Spend shows a
+  `transcribe` line.
+- **Undo**: `asr.enabled: false` (the alias then answers "not set up"; nothing else changes).
+
 ## Temporary test triggers
 During development `ops-rollout`, `ops-status` and `ops-logs` had a temporary `push:` trigger on branch
 `claude/inspiring-turing-dzp82p` (paths `deploy/.rollout-trigger`, `.status-trigger`, `.logs-trigger`) because

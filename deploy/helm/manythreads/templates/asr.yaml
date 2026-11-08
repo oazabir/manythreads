@@ -1,0 +1,72 @@
+{{- if .Values.asr.enabled }}
+{{- /*
+  The speech-to-text server (PLAN P15-07, decision C15, docs/deploy.md "Speech to text"): speaches, an OpenAI-compatible Whisper server, with the model baked into
+  the image (deploy/images/asr; nothing is downloaded at run time). Only the platform's LLM gateway (LiteLLM) talks to it: bind the `transcribe` alias in the Models
+  page to a model whose api_base is http://manythreads-asr:8000/v1. The pod needs no outside address.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-asr
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: asr
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: asr
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: asr
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: asr
+          image: {{ .Values.asr.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports: [{ name: http, containerPort: 8000 }]
+          env:
+            - { name: HF_HUB_OFFLINE, value: "1" }
+            - { name: ENABLE_UI, value: "false" }
+            - { name: LOG_LEVEL, value: "info" }
+            - { name: WHISPER__INFERENCE_DEVICE, value: "cpu" }
+            - { name: WHISPER__COMPUTE_TYPE, value: "int8" }
+            - { name: WHISPER__TTL, value: "-1" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          {{- with .Values.asr.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-asr
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: asr
+  ports:
+    - { name: http, port: 8000, targetPort: http }
+{{- end }}

@@ -3,7 +3,7 @@ import { requestKeyCheck } from './keys.ts';
 import { classify, type LlmClassifyRequest, type LlmClassifyResult } from './complete.ts';
 import { chat, type ChatTx, type LlmChatRequest, type LlmChatResult } from './chat.ts';
 import { evalComplete, type LlmEvalRequest, type LlmEvalResult } from './eval-complete.ts';
-import { transcribe } from './transcribe.ts';
+import { assertFakeAsrAllowed, transcribe } from './transcribe.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
 // The `provider.llm` contract (SPEC §10.2, PLAN P5-06 and P5-07). A bot's runtime does not reach LiteLLM itself; it is
@@ -50,6 +50,8 @@ export interface LlmProviderServices extends ProviderImpl {
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
+  // The speech-to-text stand-in is for tests: the server does not start with it on in production.
+  assertFakeAsrAllowed();
   // One limiter per process, shared by every runtime call (PLAN D3: rate limits live in process memory, per replica).
   const window = createSlidingWindow();
   const impl: LlmProviderServices = {

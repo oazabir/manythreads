@@ -212,6 +212,27 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   if [ "$CP_NAME" = claude-pod-fake ]; then CP_ARGS=(--set "claudePod.fakeImage=manythreads/$CP_NAME:$CP_TAG"); else CP_ARGS=(--set "claudePod.image=manythreads/$CP_NAME:$CP_TAG"); fi
 fi
 
+# The speech-to-text server (values-live.yaml asr, docs/deploy.md "Speech to text"): speaches with the model inside the image (deploy/images/asr). Nothing happens unless
+# values-live.yaml turns `asr.enabled` on. Tagged by the content of its build folder; the build downloads the model once from Hugging Face (needs the base image from ghcr.io
+# and the network for that one step). The image is about 3.5 GB, so it stops when under 10 GB is free. Binding the `transcribe` alias is an admin step in the app, not here.
+ASR_ARGS=()
+ASR_TAG=""
+asr_value() { sed -n '/^asr:/,/^[^ #]/p' deploy/helm/manythreads/values-live.yaml | grep -E "^  $1:" | head -n 1 | sed -E "s/^  $1:[[:space:]]*//; s/[[:space:]]*#.*$//"; }
+if [ "$(asr_value enabled)" = "true" ]; then
+  ASR_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C deploy/images/asr -cf - . | sha256sum | cut -c1-10)
+  if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/asr:$ASR_TAG\$"; then
+    FREE_GB=$(df -BG --output=avail / | tail -n 1 | tr -dc '0-9')
+    if [ "${FREE_GB:-0}" -lt 10 ]; then
+      echo "ERROR: only ${FREE_GB}G free on /; the speech-to-text image is not built (free some space first, see devbox.md)"
+      exit 1
+    fi
+    echo "--- build manythreads/asr:$ASR_TAG"
+    docker build -t "manythreads/asr:$ASR_TAG" deploy/images/asr
+    IMAGES+=("manythreads/asr:$ASR_TAG")
+  fi
+  ASR_ARGS=(--set "asr.image=manythreads/asr:$ASR_TAG")
+fi
+
 echo "--- import into k3s"
 # k3s keeps its own copy of every image, so once one is in k3s Docker's copy is only weight: on a 77 GB disk the duplicates of the
 # server, web and pod images pushed the node into disk pressure on 2026-10-27, which evicted the live database and the team pods
@@ -242,14 +263,14 @@ docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(ser
   docker rmi "$ref" >/dev/null 2>&1 || true
 done
 # pod images: keep the current content tags and whatever a pod still uses
-docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(hermes-pod|workbench|claude-pod|claude-pod-fake):' || true; } | while read -r ref; do
-  case "$ref" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}"|*":${CP_TAG:-none}") continue ;; esac
+docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(hermes-pod|workbench|claude-pod|claude-pod-fake|asr):' || true; } | while read -r ref; do
+  case "$ref" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}"|*":${CP_TAG:-none}"|*":${ASR_TAG:-none}") continue ;; esac
   echo "$USED" | grep -qx "$ref" && continue
   docker rmi "$ref" >/dev/null 2>&1 || true
 done
-k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench|claude-pod|claude-pod-fake):' || true; } | while read -r ref; do
+k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench|claude-pod|claude-pod-fake|asr):' || true; } | while read -r ref; do
   short=${ref#docker.io/}
-  case "$short" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}"|*":${CP_TAG:-none}") continue ;; esac
+  case "$short" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}"|*":${CP_TAG:-none}"|*":${ASR_TAG:-none}") continue ;; esac
   echo "$USED" | grep -qx "$short" && continue
   k3s ctr -n k8s.io images rm "$ref" || true
 done
@@ -383,7 +404,7 @@ helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespac
   --set resources.requests.memory=64Mi --set resources.limits.memory=256Mi --wait --timeout 5m
 
 # The live install runs a real LiteLLM gateway and Hindsight memory engine (values-live.yaml); --demo overrides that with stand-ins.
-HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${CP_ARGS[@]}" "${TLS_ARGS[@]}")
+HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${CP_ARGS[@]}" "${ASR_ARGS[@]}" "${TLS_ARGS[@]}")
 [ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
 echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
 # `--wait` also waits for every claim to be Bound, and the backups claim (a WaitForFirstConsumer volume) is not until the first nightly job runs, so on a

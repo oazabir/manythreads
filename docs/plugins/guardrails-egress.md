@@ -6,7 +6,7 @@ The destination half of the `pre_egress` chain (SPEC §15, PLAN P5-21; the chain
 | preset | rule |
 |---|---|
 | `standard`, `customer-facing` | no restriction on where a call goes |
-| `air-gapped` | only the `local` alias, **and only when it really is local** — the rule judges where the call goes, not what the alias is called (an admin can bind `local` to a hosted provider, and then it is refused; an allowlist does not open an air gap) |
+| `air-gapped` | only the `local` alias, **and only when it really is local** — the rule judges where the call goes, not what the alias is called (an admin can bind `local` to a hosted provider, and then it is refused; an allowlist does not open an air gap). The `transcribe` alias (speech to text for voice rooms, P15-07) is the one other alias it lets through, as a call's own target and on the same terms: only when it really is inside the deployment |
 | `strict-egress` | only a host on the workspace's allowlist; a **local** target is never egress and needs no entry; a target whose host the caller cannot tell is refused |
 
 **Local** is the caller's one answer (`EgressTarget.local`), never guessed here. The LLM gateway sets it from the provider the admin marked "Runs inside this deployment — never egress"
