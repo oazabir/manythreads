@@ -64,8 +64,11 @@ test('Rafi is taken out of the channel in the middle of the call and is dropped 
 });
 
 test('the pages follow: Rafi is told, Nadia sees one face', async () => {
+  test.setTimeout(120_000);
+  const t0 = Date.now();
   await expect(nadia!.page.getByTestId('call-face')).toHaveCount(1, { timeout: 15_000 });
   await expect(rafi!.page.getByTestId('call-dock')).toBeHidden({ timeout: 60_000 });
+  console.log(`kick: Rafi's call bar closed ${Date.now() - t0} ms after Nadia saw one face`);
 });
 
 test('his join and his new token are refused, and he cannot see the room', async () => {

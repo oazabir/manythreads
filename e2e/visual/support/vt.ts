@@ -40,7 +40,13 @@ export const W_OPTIONS = { maxDiffPixelRatio: CLASS_W.maxDiffRatio, animations: 
 export async function personaState(stack: Stack, key: PersonaKey, look?: { theme?: string; density?: string }): Promise<Awaited<ReturnType<BrowserContext['storageState']>>> {
   const api = await request.newContext({ baseURL: stack.origin });
   try {
-    const res = await api.post('/api/auth/password/sign-in', { data: { email: personaEmail(key), password: PERSONA_PASSWORD } });
+    let res = await api.post('/api/auth/password/sign-in', { data: { email: personaEmail(key), password: PERSONA_PASSWORD } });
+    // The sign-in route allows 30 a minute from one address (docs/deploy/rate-limits.md); a spec with dozens of plates waits out the minute the server names instead of failing.
+    for (let waits = 0; res.status() === 429 && waits < 3; waits += 1) {
+      const after = Number(res.headers()['retry-after'] ?? '60');
+      await new Promise((r) => setTimeout(r, (Number.isFinite(after) && after > 0 ? Math.min(after, 65) : 60) * 1000 + 500));
+      res = await api.post('/api/auth/password/sign-in', { data: { email: personaEmail(key), password: PERSONA_PASSWORD } });
+    }
     expect(res.status(), `password sign-in as ${key}`).toBe(200);
     if (look) {
       // the person's saved look is set before the page loads, so the session it reads says the same as the first frame

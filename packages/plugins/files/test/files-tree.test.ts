@@ -195,6 +195,41 @@ describe('access per folder (criterion 6)', () => {
   });
 });
 
+describe('a call\'s folder inside a channel\'s files (P15-09)', () => {
+  it('lists the sub-folder in the channel folder, its two files inside it, and keeps a private channel private', async () => {
+    const folder = 'channels/eng-leads/meetings/08-1305-leads-sync/';
+    await w.system(async (tx) => {
+      const who = await tx.query<{ workspace_id: string; id: string }>("SELECT workspace_id, id FROM app.channels WHERE id = $1", [secret]);
+      const ws = who.rows[0]!.workspace_id;
+      for (const name of ['transcript.md', 'notes.md']) {
+        await tx.query(
+          `INSERT INTO app.files (workspace_id, channel_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+           VALUES ($1, $2, $3, $4, $5, 5, 'text/markdown', $6, $7)`,
+          [ws, secret, folder, name, `blob-${name}`, 'a'.repeat(64), omar.actorId],
+        );
+      }
+    });
+    const channel = ok(await tree(omar, 'engineering', 'channels/eng-leads'));
+    expect(channel.entries.map((e) => `${e.kind}:${e.name}`)).toEqual(['folder:meetings', 'file:budget.txt']);
+    expect(row(channel, 'meetings').path).toBe('channels/eng-leads/meetings');
+    const mid = ok(await tree(omar, 'engineering', 'channels/eng-leads/meetings'));
+    expect(mid.entries.map((e) => `${e.kind}:${e.name}`)).toEqual(['folder:08-1305-leads-sync']);
+    const inside = ok(await tree(omar, 'engineering', 'channels/eng-leads/meetings/08-1305-leads-sync'));
+    expect(inside.entries.map((e) => `${e.kind}:${e.name}:${e.path}`)).toEqual([
+      'file:notes.md:channels/eng-leads/meetings/08-1305-leads-sync/notes.md',
+      'file:transcript.md:channels/eng-leads/meetings/08-1305-leads-sync/transcript.md',
+    ]);
+    expect(inside.entries.every((e) => e.fileId !== null && e.contentUrl !== null)).toBe(true);
+    expect((await tree(omar, 'engineering', 'channels/eng-leads/meetings/nothing-here')).status).toBe(404);
+    // somebody who cannot read the private channel is refused on every level
+    for (const path of ['channels/eng-leads', 'channels/eng-leads/meetings', 'channels/eng-leads/meetings/08-1305-leads-sync']) {
+      expect((await tree(priya, 'engineering', path)).status, path).toBe(403);
+    }
+    // the plain files of the channel stay in the channel folder and not in the call's
+    expect(inside.entries.some((e) => e.name === 'budget.txt')).toBe(false);
+  });
+});
+
 describe('long folders', () => {
   it('limit cuts the list and says so', async () => {
     for (let i = 0; i < 4; i += 1) await w.upload(nadia, dev, Buffer.from(`file ${i}`), { name: `note-${i}.txt`, type: 'text/plain' });

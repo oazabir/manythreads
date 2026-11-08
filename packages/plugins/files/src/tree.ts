@@ -151,30 +151,64 @@ export function registerTreeRoute(ctx: PluginContext): void {
         }
         const channel = (await channels(segments[1]))[0];
         if (!channel) throw forbidden('You cannot see this channel');
-        if (segments.length > 2) throw notFound('Attachment folders have no sub-folders');
+        // An upload sits flat in `channels/<name>/`; the platform files a private call's transcript and notes in a sub-folder of its own (`meetings/<call>/`, PLAN P15-09), so a
+        // folder below the channel's own lists the files whose folder says so and the sub-folders under it. `rel` is the folder after `channels/<name>/` (a renamed channel
+        // keeps its old name in `folder_path`, so only what follows the first two parts counts); a folder nobody wrote into is as missing as before.
+        const rel = segments.slice(2).map((part) => `${part}/`).join('');
+        const relOf = "coalesce(substring(f.folder_path from '^channels/[^/]+/(.*)$'), '')";
         const files = await tx.query<FileRow>(
-          `SELECT ${FILE_COLUMNS} FROM app.files f WHERE f.channel_id = $1 ORDER BY f.name COLLATE "C", f.id LIMIT $2`,
-          [channel.id, q.limit + 1],
+          `SELECT ${FILE_COLUMNS} FROM app.files f WHERE f.channel_id = $1 AND ${relOf} = $2 ORDER BY f.name COLLATE "C", f.id LIMIT $3`,
+          [channel.id, rel, q.limit + 1],
         );
-        const rows: Entry[] = files.rows.map((f) =>
-          FilesTreeEntry.parse({
-            kind: 'file',
-            path: `${FILES_CHANNELS_DIR}/${channel.name}/${f.name}`,
-            name: f.name,
-            size: Number(f.size),
-            mime: f.mime,
-            updatedAt: f.created_at.toISOString(),
-            updatedBy: f.uploader_id,
-            source: 'attachment',
-            readOnly: true,
-            readOnlyReason: 'attachment',
-            managedBy: null,
-            fileId: f.id,
-            channelId: channel.id,
-            blobSha: null,
-            contentUrl: `/api/files/${f.id}/content`,
-          }),
+        const below = await tx.query<{ part: string }>(
+          `SELECT DISTINCT split_part(substr(${relOf}, length($2::text) + 1), '/', 1) AS part
+             FROM app.files f WHERE f.channel_id = $1 AND ${relOf} <> $2 AND left(${relOf}, length($2::text)) = $2::text ORDER BY 1 LIMIT $3`,
+          [channel.id, rel, q.limit + 1],
         );
+        if (segments.length > 2 && files.rows.length === 0 && below.rows.length === 0) throw notFound('This folder does not exist');
+        const folders: Entry[] = below.rows
+          .filter((r) => r.part !== '')
+          .map((r) =>
+            FilesTreeEntry.parse({
+              kind: 'folder',
+              path: `${q.path}/${r.part}`,
+              name: r.part,
+              size: null,
+              mime: null,
+              updatedAt: null,
+              updatedBy: null,
+              source: 'attachment',
+              readOnly: true,
+              readOnlyReason: 'attachment',
+              managedBy: null,
+              fileId: null,
+              channelId: channel.id,
+              blobSha: null,
+              contentUrl: null,
+            }),
+          );
+        const rows: Entry[] = [
+          ...folders,
+          ...files.rows.map((f) =>
+            FilesTreeEntry.parse({
+              kind: 'file',
+              path: `${q.path}/${f.name}`,
+              name: f.name,
+              size: Number(f.size),
+              mime: f.mime,
+              updatedAt: f.created_at.toISOString(),
+              updatedBy: f.uploader_id,
+              source: 'attachment',
+              readOnly: true,
+              readOnlyReason: 'attachment',
+              managedBy: null,
+              fileId: f.id,
+              channelId: channel.id,
+              blobSha: null,
+              contentUrl: `/api/files/${f.id}/content`,
+            }),
+          ),
+        ];
         return finish(
           {
             path: q.path,

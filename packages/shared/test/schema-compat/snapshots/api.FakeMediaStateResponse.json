@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person",
+              "bot"
+            ]
+          },
+          "canPublish": {
+            "type": "boolean"
+          },
+          "canSubscribe": {
+            "type": "boolean"
+          },
+          "listenOnly": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "identity",
+          "kind",
+          "canPublish",
+          "canSubscribe",
+          "listenOnly"
+        ]
+      }
+    },
+    "published": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "listeners": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "string"
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "identity",
+          "subscriptions"
+        ]
+      }
+    },
+    "kicked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "tokens",
+    "published",
+    "listeners",
+    "kicked"
+  ]
+}

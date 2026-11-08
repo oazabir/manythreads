@@ -239,10 +239,20 @@ export async function noteTakerMeeting(
 
 /** The conversation channel and message in which the note-taker told the person its notes are ready (the card with Share and Save). */
 export async function notesCardMessage(stack: Stack, meetingId: string): Promise<{ channelId: string; messageId: string }> {
-  const rows = await stack.sql<{ channel_id: string; id: string }>(
-    `SELECT m.channel_id, m.id FROM app.messages m JOIN app.actors a ON a.id = m.author_id WHERE a.kind = 'bot' AND m.meta->'meetingNotes'->>'meetingId' = $1 ORDER BY m.id DESC LIMIT 1`,
-    [meetingId],
-  );
-  expect(rows[0], 'the note-taker told the organizer').toBeDefined();
-  return { channelId: rows[0]!.channel_id, messageId: rows[0]!.id };
+  // The notes row turns `written` a moment before the bot's message is posted, so wait for the message.
+  let found: { channel_id: string; id: string } | undefined;
+  await expect
+    .poll(
+      async () => {
+        const rows = await stack.sql<{ channel_id: string; id: string }>(
+          `SELECT m.channel_id, m.id FROM app.messages m JOIN app.actors a ON a.id = m.author_id WHERE a.kind = 'bot' AND m.meta->'meetingNotes'->>'meetingId' = $1 ORDER BY m.id DESC LIMIT 1`,
+          [meetingId],
+        );
+        found = rows[0];
+        return found !== undefined;
+      },
+      { timeout: 30_000, message: 'the note-taker told the organizer' },
+    )
+    .toBe(true);
+  return { channelId: found!.channel_id, messageId: found!.id };
 }

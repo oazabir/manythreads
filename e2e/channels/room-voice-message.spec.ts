@@ -105,14 +105,17 @@ test('the page of the meeting shows the line at its time, and the files of the r
   await nadia.post(`/api/meetings/${meetingId}/end`, {});
   const notes = await finishNotes(stack, meetingId);
   expect(notes.status).toBe('written');
-  const startMs = (await nadia.get<{ lines: Array<{ text: string; startMs: number }> }>(`/api/meetings/${meetingId}/transcript`)).lines.find((l) => l.text === RAFI_WORDS)!.startMs;
+  const all = (await nadia.get<{ lines: Array<{ text: string; startMs: number }> }>(`/api/meetings/${meetingId}/transcript`)).lines;
+  const startMs = all.find((l) => l.text === RAFI_WORDS)!.startMs;
+  // `?t=` marks the last line that starts at or before the time: when another line starts at the same millisecond (the room's first second), that one is marked
+  const markedText = all.filter((l) => l.startMs <= startMs).at(-1)!.text;
 
   reader = await openAs(browser, playwright, stack, 'nadia', `/meetings/${meetingId}?t=${startMs}`);
   await reader.page.getByTestId('meeting-tab-transcript').click();
   const line = reader.page.getByTestId('transcript-line').filter({ hasText: RAFI_WORDS });
   await expect(line).toBeVisible();
   await expect(line).toHaveAttribute('data-start-ms', String(startMs));
-  await expect(line).toHaveAttribute('aria-current', 'true');
+  await expect(reader.page.getByTestId('transcript-line').filter({ hasText: markedText })).toHaveAttribute('aria-current', 'true');
   await expect(reader.page.getByTestId('transcript')).not.toContainText('rather not');
 
   const transcript = await repoText(nadia, 'engineering', notes.transcript_path);
