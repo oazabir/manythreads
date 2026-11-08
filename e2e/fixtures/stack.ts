@@ -16,6 +16,13 @@ export interface Stack {
   testAuthToken: string;
   /** The one-time first-admin token of an empty stack (`MANYTHREADS_STACK_SEED=none`), else null. */
   bootstrapToken: string | null;
+  /**
+   * The stand-ins of tools/fake-saas that run inside the stack (`MANYTHREADS_STACK_SEED=connectors`, or `MANYTHREADS_STACK_FAKE_SAAS=1`), else null: the control address
+   * (`POST <control>/__fake/send-webhook`, `/__fake/state`, `/__fake/telegram/send` ...), the key the seeded tokens come from, the server's variables, the fake Telegram bot token.
+   */
+  fakeSaas: { control: string; seedKey: string; env: Record<string, string>; telegramBotToken: string | null } | null;
+  /** What the `connectors` seed made (ids of #design, its planned room, the Zendesk address, the Telegram account, the handbook base, the sign-ins), else null. */
+  seeded: Record<string, unknown> | null;
   /** SQL as the database owner, to arrange or inspect state the API cannot reach. */
   sql<T extends Record<string, unknown> = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<T[]>;
   stop(): Promise<void>;
@@ -55,7 +62,8 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
   const killOnExit = (): void => void child.kill('SIGTERM');
   process.once('exit', killOnExit);
   let output = '';
-  const ready = await new Promise<{ origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null }>((resolve, reject) => {
+  type Ready = { origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null; fakeSaas?: Stack['fakeSaas']; seeded?: Stack['seeded'] };
+  const ready = await new Promise<Ready>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`stack did not start in time:\n${output.slice(-1500)}`)), START_BUDGET_MS);
     const onData = (chunk: Buffer): void => {
       output += chunk.toString('utf8');
@@ -63,7 +71,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
       const line = /MANYTHREADS_STACK (\{.*\})/.exec(output);
       if (line?.[1]) {
         clearTimeout(timer);
-        resolve(JSON.parse(line[1]) as { origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null });
+        resolve(JSON.parse(line[1]) as Ready);
       }
     };
     child.stdout?.on('data', onData);
@@ -81,6 +89,8 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
     ownerUrl: ready.ownerUrl,
     testAuthToken: ready.testAuthToken,
     bootstrapToken: ready.bootstrapToken,
+    fakeSaas: ready.fakeSaas ?? null,
+    seeded: ready.seeded ?? null,
     sql: (text, params) => ownerSql(ready.ownerUrl, text, params),
     stop: () =>
       new Promise<void>((resolve) => {

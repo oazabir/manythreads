@@ -11,6 +11,7 @@
 //                                          MCP endpoint, as a model that reads before it cites would, then finishes with the `answer.post` tool citing the first hit's
 //                                          meeting at that hit's time. With no hit it answers that it found nothing and cites nothing.
 //   "ECHO-ME" anywhere in the prompt (a bot a spec mentions)  a reply that repeats the prompt, so a spec sees what the run was given.
+//   "An event arrived from ..." (a work app's webhook run, P16-10)  one sentence with the event's kind and title.
 //   anything else (the Archivist's drop)   one Meeting concept named after the item.
 //
 // Every prompt is appended to the file named by HERMES_FAKE_SPOOL (when set) as one JSON line, so a spec can read what the model was shown.
@@ -79,6 +80,11 @@ if (first === 'Write the notes of a meeting.') {
     await tool('answer.post', { body: 'I did not find that in the meetings I may read.' });
   }
   reply('Posted my answer above.');
+} else if (first.startsWith('An event arrived from ')) {
+  // a bot whose `webhook` trigger fired (P16-10, the `connectors` seed): it says what it was told, so a spec sees the run was given the title and not the secret
+  const title = /^title: (.*)$/m.exec(prompt)?.[1]?.trim() ?? '(none)';
+  const kind = /^- kind: (.*)$/m.exec(prompt)?.[1]?.trim() ?? 'event';
+  reply(`Noted a ${kind}: ${title.slice(0, 200)}. I will look at it.`);
 } else if (prompt.includes('ECHO-ME')) {
   // a bot of a spec that is mentioned or asked something: it repeats what it was given, as the conversation stand-in of the conversation specs does
   reply(`Answering: ${prompt.replace(/\s+/g, ' ').slice(0, 600)}`);
