@@ -143,7 +143,7 @@ describe('what the model may pass', () => {
     expect(inputProblem('zendesk.add_note', { ticketId: '4101', body: 'ok\nsecond line' })).toBeNull();
     expect(inputProblem('zendesk.add_note', { ticketId: '4101', body: 'x'.repeat(MAX_NOTE) })).toBeNull();
     expect(inputProblem('zendesk.add_note', { ticketId: '4101', body: 'x'.repeat(MAX_NOTE + 1) })).toMatch(/^body:/);
-    for (const bad of ['', '   ', 'a\u0000b', 'a‮b', 'a​b', 'a﻿b', 'a b']) expect(inputProblem('zendesk.reply', { ticketId: '4101', body: bad }), JSON.stringify(bad)).toMatch(/^body:/);
+    for (const bad of ['', '   ', 'a\u0000b', 'a‮b', 'a​b', 'a﻿b', 'a\u2028b']) expect(inputProblem('zendesk.reply', { ticketId: '4101', body: bad }), JSON.stringify(bad)).toMatch(/^body:/);
     expect(inputProblem('zendesk.reply', { ticketId: '4101', body: 'x', public: false })).toMatch(/unexpected field “public”/);
     expect(inputProblem('zendesk.reply', { ticketId: '4101', body: 'x', requesterEmail: 'a@b.co' })).toMatch(/unexpected field/);
     expect(inputProblem('zendesk.add_note', { ticketId: '4101', body: 'x', private_note: true })).toMatch(/unexpected field/);

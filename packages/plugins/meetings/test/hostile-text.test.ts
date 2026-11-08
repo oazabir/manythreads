@@ -54,7 +54,7 @@ describe('stripHostileText', () => {
     expect(stripHostileText('a\ud800b')).toBe('ab');
   });
   it('turns breaks and tabs into one space and trims the ends', () => {
-    expect(stripHostileText('  one\r\ntwo\t\tthree four   ')).toBe('one two three four');
+    expect(stripHostileText('  one\r\ntwo\t\tthree\u2028four   ')).toBe('one two three four');
     expect(stripHostileText('\n\n')).toBe('');
   });
   it('keeps the joiners that Bangla, Arabic and emoji need, and ordinary text as it is', () => {

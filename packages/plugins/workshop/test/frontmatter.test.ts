@@ -74,7 +74,7 @@ describe('renderBotMd writes the name and the role itself', () => {
   it('a name or a role on more than one line is refused with a plain reason', () => {
     expect(oneLineProblem('role', 'one\ntwo', 200)).toMatch(/one line/);
     expect(renderBotMd(bot('x'), { name: 'Two\nlines', role: 'ok' }).ok).toBe(false);
-    expect(renderBotMd(bot('x'), { name: 'Ok', role: 'a b' }).ok).toBe(false);
+    expect(renderBotMd(bot('x'), { name: 'Ok', role: 'a\u2028b' }).ok).toBe(false);
     expect(renderBotMd(bot('x'), { name: 'Ok', role: 'x'.repeat(201) }).ok).toBe(false);
     expect(renderBotMd(bot('x'), { name: '  ', role: 'ok' }).ok).toBe(false);
   });

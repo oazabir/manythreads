@@ -124,7 +124,7 @@ describe('the safe zone', () => {
   });
 
   it('removes the characters that reorder or hide text', () => {
-    expect(cleanText('safe‮txt.exe⁦x⁩\u0000\u0007﻿ y')).toBe('safetxt.exexy');
+    expect(cleanText('safe‮txt.exe⁦x⁩\u0000\u0007﻿\u2028y')).toBe('safetxt.exexy');
     expect(cleanText('line\nnext\ttab 😀‍👩')).toBe('line\nnext\ttab 😀‍👩');
     expect(html('a‮b')).not.toContain('‮');
   });

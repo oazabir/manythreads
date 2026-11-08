@@ -66,7 +66,7 @@ describe('what the model may pass', () => {
     expect(inputProblem('outlook.send', { ...ok, to: ['é@b.co'] })).toMatch(/^to/);
     expect(inputProblem('outlook.send', { ...ok, to: ['a@b.c‮'] })).toMatch(/^to/);
     expect(inputProblem('outlook.send', { ...ok, subject: '' })).toMatch(/^subject:/);
-    for (const bad of ['a\nb', 'a\rb', 'a\u0000b', 'a\u0085b', 'a b', 'a b', 'a\u007fb']) expect(inputProblem('outlook.send', { ...ok, subject: bad }), JSON.stringify(bad)).toMatch(/^subject:/);
+    for (const bad of ['a\nb', 'a\rb', 'a\u0000b', 'a\u0085b', 'a\u2028b', 'a\u2029b', 'a\u007fb']) expect(inputProblem('outlook.send', { ...ok, subject: bad }), JSON.stringify(bad)).toMatch(/^subject:/);
     expect(inputProblem('outlook.send', { ...ok, bcc: ['x@y.co'] })).toMatch(/unexpected field “bcc”/);
     expect(inputProblem('outlook.send', { ...ok, replyTo: ['x@y.co'] })).toMatch(/unexpected field “replyTo”/);
     expect(inputProblem('outlook.send', { ...ok, to: Array.from({ length: 8 }, (_, i) => `a${String(i)}@b.co`), cc: Array.from({ length: 3 }, (_, i) => `c${String(i)}@b.co`) })).toMatch(/at most 10/);

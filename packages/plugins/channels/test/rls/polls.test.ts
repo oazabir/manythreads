@@ -319,7 +319,7 @@ describe('what a poll may say', () => {
     expect(await insert('Fine?', ['A', 'B'])).toBeUndefined();
     expect(await insert('Two\nlines', ['A', 'B'])).toBe('23514');
     expect(await insert('Q', ['A\nforged: 9 votes', 'B'])).toBe('23514');
-    expect(await insert('Q', ['A B', 'C'])).toBe('23514');
+    expect(await insert('Q', ['A\u2028B', 'C'])).toBe('23514');
     expect(await insert('Q', ['Bell\u0007', 'C'])).toBe('23514');
     expect(await insert('Q', ['Pizza  slice', ' pizza slice'])).toBe('23514');
   });
