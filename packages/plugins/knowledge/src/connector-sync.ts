@@ -286,7 +286,10 @@ export async function runSourcePass(
   const stored = await tx1((t) => storedDocs(t, source.id));
   const byRemote = new Map(stored.map((d) => [d.remoteId, d]));
   let baseTotal = await tx1(async (t) => (await t.query<{ n: number }>('SELECT count(*)::int AS n FROM app.knowledge_documents WHERE base_id = $1', [source.baseId])).rows[0]?.n ?? 0);
+  /** Remote ids the listing has seen this pass (so they exist at the service). */
   const evaluated = new Set<string>();
+  /** Remote ids whose access was read this pass. A full read does not look again at a stored document whose version did not move, and a sharing change does not always move the version. */
+  const checked = new Set<string>();
 
   let env = readEnvelope(source.cursor);
   let down = 0;
@@ -317,6 +320,7 @@ export async function runSourcePass(
     const answer = await door.access(tx, { ...caller, remoteId });
     if (!answer.ok) return trouble(answer) === 'gone' ? 'gone' : 'unknown';
     answered();
+    checked.add(remoteId);
     return everyoneMayRead(answer.value, roster) ? 'yes' : 'limited';
   };
 
@@ -448,7 +452,9 @@ export async function runSourcePass(
     // Stored documents are checked against the service now and then: access can change without the document changing, and Notion and Box say nothing about deletions.
     const checkExistence = NO_DELETION_FEED.has(source.provider);
     if (roster !== null || checkExistence) {
-      const candidates = [...byRemote.values()].filter((d) => !evaluated.has(d.remoteId)).sort((a, b) => (a.id < b.id ? -1 : 1));
+      // a team base re-reads the access of every stored document the listing did not just read it for (a listed-but-unchanged one counts as not read); a Personal base only checks that it still exists
+      const seen = roster !== null ? checked : evaluated;
+      const candidates = [...byRemote.values()].filter((d) => !seen.has(d.remoteId)).sort((a, b) => (a.id < b.id ? -1 : 1));
       const take = recheckAll ? candidates.length : Math.min(candidates.length, RECHECK_PER_PASS);
       const start = candidates.length === 0 ? 0 : env.r % candidates.length;
       for (let i = 0; i < take; i++) {

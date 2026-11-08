@@ -189,6 +189,24 @@ describe('what changes at the service', () => {
     expect(await names()).toEqual(['Public handbook']);
   });
 
+  it('a file that stops being open to everyone is taken out by a full read even when the service does not move its version', async () => {
+    x.fake.putFile(OMAR_DRIVE, file('f-quiet', 'Quiet note', text('The quiet note is about the lighthouse keys.'), 'folder-eng', [{ type: 'anyone' }]));
+    await x.w.call(omar, 'POST', '/api/teams/engineering/knowledge/wiki/resync');
+    await idle();
+    expect(await names()).toEqual(['Public handbook', 'Quiet note']);
+    // the sharing changes at the service, and the stored version is the one it lists (a sharing change is not an edit)
+    x.fake.setFilePermissions(OMAR_DRIVE, 'f-quiet', [{ type: 'user', email: nadia.email }]);
+    const listed = (await x.sys(async (tx) => (await tx.query<{ remote_version: string }>(`SELECT remote_version FROM app.knowledge_documents WHERE remote_id = 'f-quiet'`)).rows[0]))?.remote_version;
+    await x.sys(async (tx) => {
+      await tx.query(`UPDATE app.knowledge_documents SET remote_version = $1 WHERE remote_id = 'f-quiet'`, [String(Number(listed) + 1)]);
+    });
+    await x.w.call(omar, 'POST', '/api/teams/engineering/knowledge/wiki/resync');
+    await idle();
+    expect(await names()).toEqual(['Public handbook']);
+    const found = await x.w.call<{ hits: unknown[] }>(priya, 'GET', '/api/teams/engineering/knowledge/wiki/search?q=lighthouse%20keys');
+    expect(found.body.hits).toEqual([]);
+  });
+
   it('a pass reads at most 100 documents; the rest follow on their own, and nothing is read twice', async () => {
     for (let i = 0; i < 130; i++) x.fake.putFile(OMAR_DRIVE, file(`bulk-${String(i)}`, `Bulk ${String(i).padStart(3, '0')}`, text(`Bulk note number ${String(i)} about the harbour crane.`), 'folder-eng', [{ type: 'anyone' }]));
     const calls = x.fake.apiCalls.length;
