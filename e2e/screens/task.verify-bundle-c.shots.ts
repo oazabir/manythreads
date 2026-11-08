@@ -383,7 +383,11 @@ test('02 on-device transcription: consent, words under the right names, "Not me"
     await rafi.page.waitForTimeout(25_000);
     // the call bar on a phone-sized screen: the same page, narrowed
     await nadia.page.setViewportSize(VIEW.m);
+    // at 390 the open thread is a drawer over the page: close it, so the plate shows the channel and the call bar
+    await nadia.page.getByRole('button', { name: /^close( thread)?$/i }).first().click({ timeout: 5000 }).catch(() => undefined);
+    await nadia.page.waitForTimeout(600);
     await shoot(nadia.page, '08-call-dock', 'm', 'light');
+    check('02 the call bar is on screen at 390', await nadia.page.getByTestId('call-dock').isVisible().catch(() => false));
     check('02 the call bar has no sideways scroll at 390', !(await sideways(nadia.page)));
     await nadia.page.emulateMedia({ colorScheme: 'dark' });
     await shoot(nadia.page, '08-call-dock', 'm', 'dark');
@@ -570,7 +574,8 @@ test('05 the note-taker: the Personal transcript, a question in the thread, the 
   const tariq = await open('TARIQ');
   const name = `verify-c-notes-${sfx}`;
   try {
-    const channelId = await makeChannel(omar, name, false, ['NADIA', 'RAFI']);
+    // Tariq is a member too: the notes can be shared with a person only if that person is in the place the call was held
+    const channelId = await makeChannel(omar, name, false, ['NADIA', 'RAFI', 'TARIQ']);
     const meetingId = await startCall(nadia, name);
     check('05 Nadia started a call', meetingId !== '');
     await expect(nadia.page.getByTestId('call-dock')).toBeVisible({ timeout: 30_000 });
@@ -637,21 +642,13 @@ test('05 the note-taker: the Personal transcript, a question in the thread, the 
       skip('05 the card, share and save', notes ? `notes failed: ${String(notes.failure ?? '').slice(0, 120)}` : 'no notes within 3 minutes: no Hermes pod answered');
       return;
     }
-    const dm = await poll(async () => {
-      const b = await api(nadia.ctx, 'GET', '/api/notifications');
-      const hit = ((b.json?.items ?? []) as any[]).find((n) => n.channelKind === 'dm' || n.channelKind === 'direct');
-      return hit ? String(hit.channelId) : null;
-    }, 90_000, 5000);
-    if (!dm) {
-      skip('05 the message card', 'no direct message from the Note-taker was found in the bell');
-    } else {
-      await nadia.page.goto(`/t/engineering/dm/${dm}`);
-      await settle(nadia.page);
-      const share = nadia.page.getByTestId('meeting-card-share').first();
-      const seen = await share.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false);
-      check('05 the message card shows Share and Save', seen && (await nadia.page.getByTestId('meeting-card-save').first().isVisible().catch(() => false)));
-      await shoot(nadia.page, '14-meeting-card', 'd', 'light');
-    }
+    // the organizer's conversation with the Note-taker carries the card (it is a bot chat, not a notification)
+    await nadia.page.goto('/t/engineering/chat?bot=note-taker');
+    await settle(nadia.page);
+    const share = nadia.page.getByTestId('meeting-card-share').first();
+    const seen = await share.waitFor({ state: 'visible', timeout: 30_000 }).then(() => true, () => false);
+    check('05 the message card shows Share and Save', seen && (await nadia.page.getByTestId('meeting-card-save').first().isVisible().catch(() => false)));
+    await shoot(nadia.page, '14-meeting-card', 'd', 'light');
     // share with Tariq
     const tid = await personId(tariq, 'TARIQ');
     const sh = await api(nadia.ctx, 'POST', `/api/meetings/${meetingId}/shares`, { kind: 'person', personId: tid });
