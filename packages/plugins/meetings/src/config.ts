@@ -1,5 +1,5 @@
 import type { PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
-import { TeamMeetingsConfig, type MeetingTranscribeMode, type MeetingTranscription } from '@manythreads/shared';
+import { TeamMeetingsConfig, type MeetingsSettings, type MeetingTranscribeMode, type MeetingTranscription } from '@manythreads/shared';
 import { parse as parseYaml } from 'yaml';
 
 // What may be turned on in a room: the lower of two caps (docs/plugins/meetings.md).
@@ -63,6 +63,16 @@ export async function loadTeamTranscribeCap(ctx: PluginContext, tx: PluginTx, te
 export async function loadWorkspaceTranscribeCap(tx: PluginTx): Promise<MeetingTranscription> {
   const row = (await tx.query<{ transcribe_cap: MeetingTranscription }>('SELECT transcribe_cap FROM app.meeting_settings WHERE workspace_id = app.workspace_id()')).rows[0];
   return row?.transcribe_cap ?? 'on_device';
+}
+
+/** The workspace switches as the settings screen shows them (defaults for what an admin never set). */
+export async function loadMeetingsSettings(tx: PluginTx): Promise<MeetingsSettings> {
+  const row = (
+    await tx.query<{ transcribe_cap: MeetingTranscription; room_cap: number; recording_cap: 'off' | 'on'; notetaker_allowed: boolean }>(
+      'SELECT transcribe_cap, room_cap, recording_cap, notetaker_allowed FROM app.meeting_settings WHERE workspace_id = app.workspace_id()',
+    )
+  ).rows[0];
+  return { transcribeCap: row?.transcribe_cap ?? 'on_device', roomCap: row?.room_cap ?? 25, recordingCap: row?.recording_cap ?? 'off', notetakerAllowed: row?.notetaker_allowed ?? true };
 }
 
 /** Why nothing may be turned on, in plain words, naming who closed it. */

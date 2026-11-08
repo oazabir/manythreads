@@ -88,6 +88,15 @@ describe('making a proposal', () => {
     }
   });
 
+  it('meetings/ is written by the platform only: a direct commit is refused for a member and for a lead, and no proposal can change it', async () => {
+    for (const who of [priya, omar]) {
+      const res = await w.call(who, 'POST', '/api/teams/engineering/repo/commit', { changes: [{ op: 'put', path: 'meetings/2026/11/08-1402-x/notes.md', content: 'x' }], message: 'x' });
+      expect(res.status).toBe(403);
+    }
+    expect((await propose(priya, 'engineering', { path: 'meetings/2026/11/08-1402-x/notes.md', content: 'x' })).status).toBe(400);
+    expect((await propose(omar, 'engineering', { path: 'meetings/2026/11/08-1402-x/notes.md', content: 'x', applyNow: true })).status).toBe(400);
+  });
+
   it('only the four places go through proposals; other files, bad paths, empty changes and guests are refused', async () => {
     expect((await propose(priya, 'engineering', { path: 'pages/a.md', content: 'x' })).status).toBe(400);
     expect((await propose(priya, 'engineering', { path: 'skills/../pages/a.md', content: 'x' })).status).toBe(400);

@@ -344,7 +344,8 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
          ON CONFLICT (meeting_id, actor_id) DO UPDATE SET seen_at = now(), speaking = EXCLUDED.speaking`,
         [m.id, caller.actorId, body.speaking],
       );
-      return json({ ok: true });
+      // the server's clock, so the device can place its lines on the meeting clock (`startMs`) whatever its own clock says
+      return json({ ok: true, serverNow: ctx.runtime.now().toISOString() });
     }),
   });
 }

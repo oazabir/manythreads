@@ -80,6 +80,8 @@ export class ExtensionRegistries {
     'deploy.step': new ExtensionRegistry(),
     media: new ExtensionRegistry(),
     'personal.files': new ExtensionRegistry(),
+    'meeting.runs': new ExtensionRegistry(),
+    'inbox.dropper': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

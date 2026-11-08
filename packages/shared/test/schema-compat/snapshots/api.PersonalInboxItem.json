@@ -14,7 +14,8 @@
         "message",
         "email",
         "share",
-        "bot"
+        "bot",
+        "meeting"
       ]
     },
     "state": {

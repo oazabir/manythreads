@@ -16,7 +16,7 @@ import {
   putMeetingsSettingsRoute,
   setMeetingTranscriptionRoute,
 } from '@manythreads/shared';
-import { loadWorkspaceTranscribeCap, transcribeLimits } from './config.ts';
+import { loadMeetingsSettings, transcribeLimits } from './config.ts';
 import { announceRoom } from './live.ts';
 import { PARTICIPANT_COLUMNS, loadMeeting, toParticipant, type MeetingRow, type ParticipantRow } from './rows.ts';
 import { renderTranscript, type SpeakerFacts } from './transcript.ts';
@@ -146,12 +146,12 @@ export function registerConsentRoutes(ctx: PluginContext): void {
         [m.id],
       );
       const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
-      const segs = await tx.query<{ speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
-        'SELECT speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+      const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
+        'SELECT id, speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
         [m.id],
       );
       const lines = renderTranscript(
-        segs.rows.map((s) => ({ speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final })),
+        segs.rows.map((s) => ({ id: s.id, speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final })),
         speakers,
       );
       return json(GetMeetingTranscriptResponse.parse({ lines }));
@@ -164,7 +164,7 @@ export function registerConsentRoutes(ctx: PluginContext): void {
     schema: { response: MeetingsSettings },
     rateLimit: { limit: 120, windowMs: 60_000 },
     readOnly: true,
-    handler: route(async (_req, tx) => json(MeetingsSettings.parse({ transcribeCap: await loadWorkspaceTranscribeCap(tx) }))),
+    handler: route(async (_req, tx) => json(MeetingsSettings.parse(await loadMeetingsSettings(tx)))),
   });
 
   ctx.http.route({
@@ -176,12 +176,17 @@ export function registerConsentRoutes(ctx: PluginContext): void {
       const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
       if (role !== 'owner' && role !== 'admin') throw forbidden('Only a workspace admin can change this');
       const actor = (await tx.query<{ actor: string | null }>('SELECT app.actor() AS actor')).rows[0]?.actor ?? null;
+      // only what was sent changes; a row made here starts from the defaults for the rest
       await tx.query(
-        `INSERT INTO app.meeting_settings (workspace_id, transcribe_cap, updated_by, updated_at) VALUES (app.workspace_id(), $1, $2::uuid, now())
-         ON CONFLICT (workspace_id) DO UPDATE SET transcribe_cap = EXCLUDED.transcribe_cap, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-        [body.transcribeCap, actor],
+        `INSERT INTO app.meeting_settings (workspace_id, transcribe_cap, room_cap, recording_cap, notetaker_allowed, updated_by, updated_at)
+         VALUES (app.workspace_id(), coalesce($1, 'on_device'), coalesce($2::int, 25), coalesce($3, 'off'), coalesce($4::boolean, true), $5::uuid, now())
+         ON CONFLICT (workspace_id) DO UPDATE SET
+           transcribe_cap = coalesce($1, app.meeting_settings.transcribe_cap), room_cap = coalesce($2::int, app.meeting_settings.room_cap),
+           recording_cap = coalesce($3, app.meeting_settings.recording_cap), notetaker_allowed = coalesce($4::boolean, app.meeting_settings.notetaker_allowed),
+           updated_by = EXCLUDED.updated_by, updated_at = now()`,
+        [body.transcribeCap ?? null, body.roomCap ?? null, body.recordingCap ?? null, body.notetakerAllowed ?? null, actor],
       );
-      return json(MeetingsSettings.parse({ transcribeCap: body.transcribeCap }));
+      return json(MeetingsSettings.parse(await loadMeetingsSettings(tx)));
     }),
   });
 }

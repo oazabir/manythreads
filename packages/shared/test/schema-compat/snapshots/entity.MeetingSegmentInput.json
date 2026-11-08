@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "clientSegId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_.:-]+$"
+    },
+    "startMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "endMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "final": {
+      "type": "boolean"
+    },
+    "lang": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "clientSegId",
+    "startMs",
+    "endMs",
+    "text",
+    "final"
+  ],
+  "additionalProperties": false
+}

@@ -5,8 +5,11 @@
 export const REPO_PATH_MAX_BYTES = 1024;
 export const REPO_SEGMENT_MAX_BYTES = 255;
 
-/** Directories under which a bot never writes, and the one file (SPEC section 7.2: changes arrive only as an approved proposal). */
-export const GUARDED_REPO_DIRS: readonly string[] = ['bots', 'skills', 'routines'];
+/**
+ * Directories under which a bot never writes, and the one file (SPEC section 7.2: changes arrive only as an approved proposal). `meetings` (P15-09) holds the
+ * transcripts and notes of voice rooms; only the platform writes there (the meetings plugin, as the system actor), never a person's direct commit, a bot or a proposal.
+ */
+export const GUARDED_REPO_DIRS: readonly string[] = ['bots', 'skills', 'routines', 'meetings'];
 export const GUARDED_REPO_FILES: readonly string[] = ['TEAM.md'];
 
 // Compared case-insensitively and NFKC-folded, trailing dots and spaces trimmed: the repo may be cloned onto a case-insensitive file system
@@ -19,6 +22,27 @@ const GUARDED_FILE_SET: ReadonlySet<string> = new Set(GUARDED_REPO_FILES.map(fol
 export function isGuardedRepoPath(normalized: string): boolean {
   const parts = normalized.split('/').map(fold);
   return GUARDED_DIR_SET.has(parts[0] ?? '') || GUARDED_FILE_SET.has(parts.join('/'));
+}
+
+/** The folder of voice-room transcripts and notes in a public channel's team repo (`meetings/<yyyy>/<mm>/<dd>-<hhmm>-<slug>/`). */
+export const MEETINGS_DIR = 'meetings';
+
+/** True for `meetings/...`: written by the meetings plugin only. Unlike the other guarded places, nothing is changed here by a proposal either. */
+export function isMeetingsPath(normalized: string): boolean {
+  return fold(normalized.split('/')[0] ?? '') === MEETINGS_DIR;
+}
+
+/**
+ * The folder of one meeting: `meetings/2026/11/08-1402-sprint-review` (the date and time are UTC; `slug` is lowercase letters, digits and hyphens). The same folder
+ * name is used under `channels/<name>/meetings/` in Files storage for a private channel or a direct message, and under the organizer's Personal `Meetings/` space.
+ */
+export function meetingFolderName(startedAt: Date, slug: string): string {
+  const p2 = (n: number): string => String(n).padStart(2, '0');
+  return `${p2(startedAt.getUTCDate())}-${p2(startedAt.getUTCHours())}${p2(startedAt.getUTCMinutes())}-${slug}`;
+}
+export function meetingRepoDir(startedAt: Date, slug: string): string {
+  const p2 = (n: number): string => String(n).padStart(2, '0');
+  return `${MEETINGS_DIR}/${startedAt.getUTCFullYear()}/${p2(startedAt.getUTCMonth() + 1)}/${meetingFolderName(startedAt, slug)}`;
 }
 
 /**

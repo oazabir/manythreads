@@ -1,5 +1,5 @@
 import {
-  CallIcon, ChatIcon as ProChat, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, SoundwaveIcon, TuneIcon,
+  AndroidIcon, BoardIcon as BoardIcon_, CallIcon, ChatIcon as ProChat, ClockIcon as ProClock, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, RecordIcon, ShareIcon as ProShare, SoundwaveIcon, TuneIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -18,3 +18,10 @@ export const ChatIcon = proIcon(ProChat);
 export const CaptionsIcon = proIcon(ClosedCaptionsIcon);
 export const SlidersIcon = proIcon(TuneIcon);
 export const WaveIcon = proIcon(SoundwaveIcon);
+
+/* Bundle C: the note-taker (a bot), recording, sharing, the board an action item goes to, and a time in the transcript. */
+export const BotIcon = proIcon(AndroidIcon);
+export const RecordDotIcon = proIcon(RecordIcon);
+export const ShareIcon = proIcon(ProShare);
+export const BoardIcon = proIcon(BoardIcon_);
+export const ClockIcon = proIcon(ProClock);

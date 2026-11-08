@@ -78,6 +78,12 @@ import { MeetingsParticipantLeftEvent } from './meetings.participant.left.ts';
 import { MeetingsConsentChangedEvent } from './meetings.consent.changed.ts';
 import { MeetingsTranscriptWrittenEvent } from './meetings.transcript.written.ts';
 import { MeetingsNotesWrittenEvent } from './meetings.notes.written.ts';
+import { MeetingsNotetakerAddedEvent } from './meetings.notetaker.added.ts';
+import { MeetingsNotetakerRemovedEvent } from './meetings.notetaker.removed.ts';
+import { MeetingsRecordingStartedEvent } from './meetings.recording.started.ts';
+import { MeetingsRecordingStoppedEvent } from './meetings.recording.stopped.ts';
+import { MeetingsNotesSharedEvent } from './meetings.notes.shared.ts';
+import { MeetingsNotesSavedEvent } from './meetings.notes.saved.ts';
 import { SurfacesSurfaceRenderedEvent } from './surfaces.surface.rendered.ts';
 import { SurfacesSurfaceUpdatedEvent } from './surfaces.surface.updated.ts';
 import { SurfacesSurfaceEventPostedEvent } from './surfaces.surface.event_posted.ts';
@@ -383,6 +389,12 @@ export const eventRegistry = {
   'meetings.consent.changed': { 1: MeetingsConsentChangedEvent },
   'meetings.transcript.written': { 1: MeetingsTranscriptWrittenEvent },
   'meetings.notes.written': { 1: MeetingsNotesWrittenEvent },
+  'meetings.notetaker.added': { 1: MeetingsNotetakerAddedEvent },
+  'meetings.notetaker.removed': { 1: MeetingsNotetakerRemovedEvent },
+  'meetings.recording.started': { 1: MeetingsRecordingStartedEvent },
+  'meetings.recording.stopped': { 1: MeetingsRecordingStoppedEvent },
+  'meetings.notes.shared': { 1: MeetingsNotesSharedEvent },
+  'meetings.notes.saved': { 1: MeetingsNotesSavedEvent },
   'surfaces.surface.rendered': { 1: SurfacesSurfaceRenderedEvent },
   'surfaces.surface.updated': { 1: SurfacesSurfaceUpdatedEvent },
   'surfaces.surface.event_posted': { 1: SurfacesSurfaceEventPostedEvent },

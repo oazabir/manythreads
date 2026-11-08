@@ -4,6 +4,13 @@ import { Team } from '../../entities/team.ts';
 import { ChannelId, MeetingId } from '../../ids.ts';
 
 export * from './consent.ts';
+export * from './segments.ts';
+export * from './notes.ts';
+export * from './notetaker.ts';
+export * from './shares.ts';
+export * from './recording.ts';
+export * from './audio.ts';
+export * from './search.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Voice rooms (PLAN P15-03, plugin `meetings`, docs/plugins/meetings.md). One live room per channel; a DM call uses the DM's channel. Whoever may read the channel may
@@ -54,7 +61,11 @@ export const getMeetingRoute = { method: 'GET', path: '/api/meetings/:meetingId'
 /** The room page says "I am still here" every 30 seconds and whether the person is speaking; a person silent for three minutes is counted as gone. */
 export const MeetingHeartbeatRequest = z.strictObject({ speaking: z.boolean().default(false) });
 export type MeetingHeartbeatRequest = z.infer<typeof MeetingHeartbeatRequest>;
-export const MeetingHeartbeatResponse = z.object({ ok: z.literal(true) });
+export const MeetingHeartbeatResponse = z.object({
+  ok: z.literal(true),
+  /** The server's clock (ISO time). The device keeps the difference to its own clock, so `startMs` of a line is on the meeting clock whatever the device's clock says. */
+  serverNow: z.iso.datetime({ offset: true }),
+});
 export type MeetingHeartbeatResponse = z.infer<typeof MeetingHeartbeatResponse>;
 export const heartbeatMeetingRoute = { method: 'POST', path: '/api/meetings/:meetingId/heartbeat' } as const satisfies ApiRoute;
 

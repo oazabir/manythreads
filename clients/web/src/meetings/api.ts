@@ -1,5 +1,49 @@
 import {
+  CreateMeetingShareRequest,
+  CreateMeetingShareResponse,
+  DeleteMeetingShareResponse,
   EndMeetingResponse,
+  GetMeetingByPathQuery,
+  GetMeetingByPathResponse,
+  GetMeetingNotesResponse,
+  GetMeetingOverviewResponse,
+  ListMeetingNotetakersResponse,
+  ListMeetingSharesResponse,
+  MeetingRecordConsentRequest,
+  MeetingRecordConsentResponse,
+  MeetingRecordingState,
+  PatchMeetingSegmentRequest,
+  PatchMeetingSegmentResponse,
+  PostMeetingSegmentsRequest,
+  PostMeetingSegmentsResponse,
+  PutMeetingNotesRequest,
+  PutMeetingNotesResponse,
+  RemoveMeetingNotetakerResponse,
+  SaveMeetingToTeamRequest,
+  SaveMeetingToTeamResponse,
+  SendMeetingToMemoryRequest,
+  SendMeetingToMemoryResponse,
+  SetMeetingNotetakerRequest,
+  SetMeetingNotetakerResponse,
+  SetMeetingRecordingRequest,
+  SetMeetingRecordingResponse,
+  createMeetingShareRoute,
+  deleteMeetingShareRoute,
+  getMeetingByPathRoute,
+  getMeetingNotesRoute,
+  getMeetingOverviewRoute,
+  getMeetingRecordingRoute,
+  listMeetingNotetakersRoute,
+  listMeetingSharesRoute,
+  meetingRecordConsentRoute,
+  patchMeetingSegmentRoute,
+  postMeetingSegmentsRoute,
+  putMeetingNotesRoute,
+  removeMeetingNotetakerRoute,
+  saveMeetingToTeamRoute,
+  sendMeetingToMemoryRoute,
+  setMeetingNotetakerRoute,
+  setMeetingRecordingRoute,
   GetMeetingResponse,
   GetMeetingTranscriptResponse,
   JoinMeetingResponse,
@@ -58,6 +102,43 @@ export const fetchTranscript = (meetingId: string) => call(getMeetingTranscriptR
 
 export const fetchMeetingsSettings = () => call(getMeetingsSettingsRoute, { response: MeetingsSettings });
 export const saveMeetingsSettings = (body: MeetingsSettingsUpdate) => call(putMeetingsSettingsRoute, { request: MeetingsSettingsUpdate, response: MeetingsSettings }, body);
+
+// ---- Bundle C: lines, notes, the note-taker, sharing and recording (docs/plugins/meetings.md "Bundle C contracts") ------------------------------------------------
+/** Send the lines this device heard from its own person (final lines are stored; partial ones only become captions). At most 20 at once. */
+export const postSegments = (meetingId: string, body: PostMeetingSegmentsRequest) =>
+  call(postMeetingSegmentsRoute, { request: PostMeetingSegmentsRequest, response: PostMeetingSegmentsResponse }, body, { meetingId });
+/** Correct the words of your own line (for 24 hours). */
+export const correctSegment = (meetingId: string, segId: string, text: string) =>
+  call(patchMeetingSegmentRoute, { request: PatchMeetingSegmentRequest, response: PatchMeetingSegmentResponse }, { text }, { meetingId, segId });
+
+export const fetchMeetingOverview = (meetingId: string) => call(getMeetingOverviewRoute, { response: GetMeetingOverviewResponse }, undefined, { meetingId });
+export const fetchMeetingByPath = (query: GetMeetingByPathQuery) =>
+  call(getMeetingByPathRoute, { request: GetMeetingByPathQuery, response: GetMeetingByPathResponse }, query);
+export const fetchMeetingNotes = (meetingId: string) => call(getMeetingNotesRoute, { response: GetMeetingNotesResponse }, undefined, { meetingId });
+export const saveMeetingNotes = (meetingId: string, body: PutMeetingNotesRequest) =>
+  call(putMeetingNotesRoute, { request: PutMeetingNotesRequest, response: PutMeetingNotesResponse }, body, { meetingId });
+export const sendMeetingToMemory = (meetingId: string, body: SendMeetingToMemoryRequest) =>
+  call(sendMeetingToMemoryRoute, { request: SendMeetingToMemoryRequest, response: SendMeetingToMemoryResponse }, body, { meetingId });
+export const saveMeetingToTeam = (meetingId: string, body: SaveMeetingToTeamRequest) =>
+  call(saveMeetingToTeamRoute, { request: SaveMeetingToTeamRequest, response: SaveMeetingToTeamResponse }, body, { meetingId });
+
+export const fetchMeetingShares = (meetingId: string) => call(listMeetingSharesRoute, { response: ListMeetingSharesResponse }, undefined, { meetingId });
+export const shareMeeting = (meetingId: string, body: CreateMeetingShareRequest) =>
+  call(createMeetingShareRoute, { request: CreateMeetingShareRequest, response: CreateMeetingShareResponse }, body, { meetingId });
+export const unshareMeeting = (meetingId: string, shareId: string) => call(deleteMeetingShareRoute, { response: DeleteMeetingShareResponse }, undefined, { meetingId, shareId });
+
+export const fetchNotetakers = (meetingId: string) => call(listMeetingNotetakersRoute, { response: ListMeetingNotetakersResponse }, undefined, { meetingId });
+export const addNotetaker = (meetingId: string, botId: string) =>
+  call(setMeetingNotetakerRoute, { request: SetMeetingNotetakerRequest, response: SetMeetingNotetakerResponse }, { botId } as SetMeetingNotetakerRequest, { meetingId });
+export const removeNotetaker = (meetingId: string) => call(removeMeetingNotetakerRoute, { response: RemoveMeetingNotetakerResponse }, undefined, { meetingId });
+
+export const fetchRecording = (meetingId: string) => call(getMeetingRecordingRoute, { response: MeetingRecordingState }, undefined, { meetingId });
+export const setRecording = (meetingId: string, on: boolean) =>
+  call(setMeetingRecordingRoute, { request: SetMeetingRecordingRequest, response: SetMeetingRecordingResponse }, { on }, { meetingId });
+export const answerRecordConsent = (meetingId: string, answer: MeetingRecordConsentRequest['record']) =>
+  call(meetingRecordConsentRoute, { request: MeetingRecordConsentRequest, response: MeetingRecordConsentResponse }, { record: answer }, { meetingId });
+
+// The server fallback upload (`POST /api/meetings/:id/audio-chunks`, a WAV body) is not here: `call` sends JSON, so the fallback client (work package W1) sends it with `fetch`.
 
 /** The calls the call controller makes, as one object: the page passes the real ones, a test passes a stand-in for the server. */
 export type CallApi = {

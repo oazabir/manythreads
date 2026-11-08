@@ -24,8 +24,8 @@ export type InboxItemId = z.infer<typeof InboxItemId>;
 export const InboxState = z.enum(['queued', 'extracting', 'filing', 'filed', 'held', 'failed', 'duplicate', 'needs_review', 'discarded']);
 export type InboxState = z.infer<typeof InboxState>;
 
-/** How the item arrived: a person's file or note, a message sent to memory, an email, another team's share, or a bot. (`meeting` joins in phase 15.) */
-export const InboxOrigin = z.enum(['person', 'message', 'email', 'share', 'bot']);
+/** How the item arrived: a person's file or note, a message sent to memory, an email, another team's share, or a bot. A voice room's notes filed by the platform arrive as `meeting`. */
+export const InboxOrigin = z.enum(['person', 'message', 'email', 'share', 'bot', 'meeting']);
 export type InboxOrigin = z.infer<typeof InboxOrigin>;
 
 /** What the original is, as far as the extractor is concerned. `image`, `audio` and `video` are recognised so the person is told plainly when they cannot be read yet. */

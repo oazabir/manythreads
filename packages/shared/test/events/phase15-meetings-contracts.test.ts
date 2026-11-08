@@ -13,7 +13,13 @@ const SAMPLES = {
   'meetings.participant.left': { ...base, type: 'meetings.participant.left', actorId: uuid(5), how: 'kicked' },
   'meetings.consent.changed': { ...base, type: 'meetings.consent.changed', actorId: uuid(5), subject: 'transcribe', value: 'yes' },
   'meetings.transcript.written': { ...base, type: 'meetings.transcript.written', path: 'meetings/2026-11-03-standup.md', store: 'repo', lineCount: 42 },
-  'meetings.notes.written': { ...base, type: 'meetings.notes.written', writtenBy: uuid(6), path: 'meetings/2026-11-03-standup-notes.md', store: 'files' },
+  'meetings.notes.written': { ...base, type: 'meetings.notes.written', writtenBy: uuid(6), path: 'meetings/2026-11-03-standup-notes.md', store: 'files', actionOwnerIds: [] },
+  'meetings.notetaker.added': { ...base, type: 'meetings.notetaker.added', botId: uuid(7), addedBy: uuid(5) },
+  'meetings.notetaker.removed': { ...base, type: 'meetings.notetaker.removed', botId: uuid(7), removedBy: null },
+  'meetings.recording.started': { ...base, type: 'meetings.recording.started', startedBy: uuid(5), people: 3 },
+  'meetings.recording.stopped': { ...base, type: 'meetings.recording.stopped', reason: 'consent_withdrawn', stoppedBy: null },
+  'meetings.notes.shared': { ...base, type: 'meetings.notes.shared', sharedBy: uuid(5), granteeKind: 'person', granteeId: uuid(8), revoked: false },
+  'meetings.notes.saved': { ...base, type: 'meetings.notes.saved', savedBy: uuid(5), path: 'meetings/2026/11/03-1000-standup', toMemory: true },
 } as const;
 const TYPES = Object.keys(SAMPLES) as (keyof typeof SAMPLES)[];
 
@@ -36,6 +42,20 @@ describe('voice room events', () => {
     for (const forbidden of ['title', 'text', 'body', 'transcript', 'notes', 'token']) expect(keys).not.toContain(forbidden);
     const parsed = parseEvent({ ...SAMPLES[type], title: 'secret plan', text: 'secret', token: 'abc' }) as unknown as Record<string, unknown>;
     for (const forbidden of ['title', 'text', 'token']) expect(parsed[forbidden]).toBeUndefined();
+  });
+
+  it('notes written name who owns the action items, and older events without the list still parse', () => {
+    const older: Record<string, unknown> = { ...SAMPLES['meetings.notes.written'] };
+    delete older.actionOwnerIds;
+    expect(parseEvent(older)).toMatchObject({ actionOwnerIds: [] });
+    expect(parseEvent({ ...SAMPLES['meetings.notes.written'], actionOwnerIds: [uuid(5)] })).toMatchObject({ actionOwnerIds: [uuid(5)] });
+    expect(() => parseEvent({ ...SAMPLES['meetings.notes.written'], actionOwnerIds: ['x'] })).toThrow();
+  });
+
+  it('recording stops for a known reason only; sharing names a person or a channel', () => {
+    expect(() => parseEvent({ ...SAMPLES['meetings.recording.stopped'], reason: 'bored' })).toThrow();
+    expect(() => parseEvent({ ...SAMPLES['meetings.notes.shared'], granteeKind: 'bot' })).toThrow();
+    expect(() => parseEvent({ ...SAMPLES['meetings.recording.started'], people: 0 })).toThrow();
   });
 
   it('a call in a direct message has no team and may have no channel yet', () => {

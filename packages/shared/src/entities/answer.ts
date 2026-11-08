@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { OkfTrustTier } from '../okf/concept.ts';
-import { BotId, ChannelId, FileId, MessageId, PersonId, RunId, TeamId } from '../ids.ts';
+import { BotId, ChannelId, FileId, MeetingId, MessageId, PersonId, RunId, TeamId } from '../ids.ts';
 import { ChannelKind } from './channel.ts';
 import { SpaceRef } from './space.ts';
 
@@ -31,8 +31,8 @@ export const ANSWER_LIMITS = {
   alias: 100,
 } as const;
 
-/** The kinds of source an answer can cite in this version. P5-27 adds `memory`; the list is how clients tell "known" from "unsupported". */
-export const ANSWER_CITATION_KINDS = ['message', 'thread', 'page', 'file', 'run', 'memory'] as const;
+/** The kinds of source an answer can cite in this version. P5-27 adds `memory`, P15-13 adds `meeting`; the list is how clients tell "known" from "unsupported". */
+export const ANSWER_CITATION_KINDS = ['message', 'thread', 'page', 'file', 'run', 'memory', 'meeting'] as const;
 export type AnswerCitationKind = (typeof ANSWER_CITATION_KINDS)[number];
 /**
  * The kind of a citation in a shared copy whose source the copy's readers may not open (P5-17, SPEC §6.3). It is never something a bot cites: the
@@ -66,6 +66,8 @@ export const AnswerCitationInput = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('run'), runId: RunId, snippet: Snippet.optional() }),
   /** A concept of a Memory: the run's team's by default, or the asker's own Personal one when `space` says `person:<id>`. */
   z.strictObject({ kind: z.literal('memory'), conceptPath: z.string().min(1).max(500), space: SpaceRef.optional(), snippet: Snippet.optional() }),
+  /** A line of a voice room's transcript (P15-13): the meeting, and the time on its clock the line starts (milliseconds). */
+  z.strictObject({ kind: z.literal('meeting'), meetingId: MeetingId, atMs: z.number().int().min(0).optional(), snippet: Snippet.optional() }),
 ]);
 export type AnswerCitationInput = z.infer<typeof AnswerCitationInput>;
 
@@ -158,6 +160,18 @@ export const AnswerMemoryCitation = z.object({
   /** The space the concept was read from (`team:<id>` or `person:<id>`); absent on citations written before Personal spaces. */
   space: SpaceRef.optional(),
 });
+/** A line of a meeting's transcript. The link opens `/meetings/<meetingId>?t=<atMs>`; the platform checked, as the asker, that they may read the meeting. */
+export const AnswerMeetingCitation = z.object({
+  kind: z.literal('meeting'),
+  ...CitationBase,
+  meetingId: MeetingId,
+  /** Milliseconds on the meeting clock; 0 when the citation names the meeting as a whole. */
+  atMs: z.number().int().min(0).default(0),
+  /** The team of the meeting's channel (null for a direct message call), whose address the link carries. */
+  teamId: TeamId.nullable().default(null),
+  channelId: ChannelId.nullable().default(null),
+  channelName: z.string().max(80).nullable().default(null),
+});
 
 /**
  * A source of the asker's that a shared copy's readers may not open: "from Omar's message · not shared" (SPEC §6.3). It keeps the number the text
@@ -180,6 +194,7 @@ export const AnswerCitation = z.discriminatedUnion('kind', [
   AnswerFileCitation,
   AnswerRunCitation,
   AnswerMemoryCitation,
+  AnswerMeetingCitation,
   AnswerMaskedCitation,
 ]);
 export type AnswerCitation = z.infer<typeof AnswerCitation>;

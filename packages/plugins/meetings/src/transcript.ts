@@ -6,6 +6,8 @@ import type { MeetingConsent, MeetingTranscriptLine } from '@manythreads/shared'
 // the live captions and the transcript file, so a rule changed here changes both.
 
 export interface SegmentFacts {
+  /** The stored line's id; absent for a line that is not stored (a test's, a caption's). */
+  id?: string;
   speakerId: string;
   startMs: number;
   endMs: number;
@@ -34,7 +36,16 @@ export function renderTranscript(segments: readonly SegmentFacts[], speakers: Re
     if (who?.consent === 'yes') {
       const text = s.text.trim();
       if (text === '') continue;
-      lines.push({ speakerId: s.speakerId as MeetingTranscriptLine['speakerId'], speakerName: name, startMs: s.startMs, endMs: Math.max(s.endMs, s.startMs), text, transcribed: true });
+      lines.push({
+        segmentId: (s.id ?? null) as MeetingTranscriptLine['segmentId'],
+        speakerId: s.speakerId as MeetingTranscriptLine['speakerId'],
+        speakerName: name,
+        startMs: s.startMs,
+        endMs: Math.max(s.endMs, s.startMs),
+        text,
+        transcribed: true,
+        editable: false,
+      });
       continue;
     }
     const last = lines.at(-1);
@@ -42,7 +53,16 @@ export function renderTranscript(segments: readonly SegmentFacts[], speakers: Re
       last.endMs = Math.max(last.endMs, s.endMs);
       continue;
     }
-    lines.push({ speakerId: s.speakerId as MeetingTranscriptLine['speakerId'], speakerName: name, startMs: s.startMs, endMs: Math.max(s.endMs, s.startMs), text: notTranscribedText(name), transcribed: false });
+    lines.push({
+      segmentId: null,
+      speakerId: s.speakerId as MeetingTranscriptLine['speakerId'],
+      speakerName: name,
+      startMs: s.startMs,
+      endMs: Math.max(s.endMs, s.startMs),
+      text: notTranscribedText(name),
+      transcribed: false,
+      editable: false,
+    });
   }
   return lines;
 }

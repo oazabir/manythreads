@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "warning": {
+      "type": "string"
+    },
+    "sent": {
+      "type": "boolean"
+    },
+    "memoryItemId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "warning",
+    "sent",
+    "memoryItemId"
+  ]
+}

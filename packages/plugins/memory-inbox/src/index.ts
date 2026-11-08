@@ -1,3 +1,4 @@
+import { createInboxDropper } from './dropper.ts';
 import { definePlugin } from '@manythreads/sdk';
 import { registerActions } from './actions.ts';
 import { inboxDropFor, inboxRead } from './capability.ts';
@@ -18,7 +19,7 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     migrations: 'migrations',
-    extends: ['event.emit', 'event.subscribe', 'job.register', 'hook.pre_egress'],
+    extends: ['event.emit', 'event.subscribe', 'job.register', 'hook.pre_egress', 'provider.inbox.dropper'],
     events: {
       emits: ['memory.item.dropped', 'memory.item.filed', 'memory.item.held', 'memory.item.failed', 'memory.item.released', 'memory.item.discarded', 'memory.personal_item.changed'],
       consumes: ['memory.digest.delivered'],
@@ -33,6 +34,7 @@ export default definePlugin({
     dependsOn: ['teams', 'channels', 'bots', 'files', 'memory', 'repo-git', 'tasks', 'connections'],
   },
   register(ctx) {
+    ctx.providers.register('inbox.dropper', createInboxDropper(ctx));
     ctx.capabilities.register('inbox.read', inboxRead);
     ctx.capabilities.register('inbox.drop', inboxDropFor(ctx));
     registerRoutes(ctx);

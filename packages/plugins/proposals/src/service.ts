@@ -3,6 +3,7 @@ import {
   PROPOSAL_MAX_CHARS,
   isBotDefinitionPath,
   isGuardedRepoPath,
+  isMeetingsPath,
   parseRepoPath,
   toUnifiedDiff,
   ProposalCheck,
@@ -125,7 +126,8 @@ export async function createProposal(ctx: PluginContext, tx: PluginTx, team: Tea
   const parsedPath = parseRepoPath(req.path);
   if (!parsedPath.ok) throw invalid(`path: ${parsedPath.reason}`);
   const path = parsedPath.path;
-  if (!isGuardedRepoPath(path)) throw invalid(RESERVED);
+  // `meetings/` is guarded so nobody commits there directly, but it is the platform's alone: a proposal cannot reach it either.
+  if (!isGuardedRepoPath(path) || isMeetingsPath(path)) throw invalid(RESERVED);
   if (tx.actor.kind !== 'person' && tx.actor.kind !== 'bot') throw forbidden('Only a person or a bot makes a proposal');
   if (req.applyNow === true && tx.actor.kind !== 'person') throw forbidden('A bot can only propose. A lead or admin applies it.');
   if (team.archived_at) throw conflict('This team is archived, so nothing can be proposed for it');

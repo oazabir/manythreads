@@ -21,6 +21,7 @@ import {
   restoreRepoFileRoute,
   writePageRoute,
   isGuardedRepoPath,
+  isMeetingsPath,
   type FilesTreeEntry,
   type RepoChange,
 } from '@manythreads/shared';
@@ -98,10 +99,12 @@ const sha7 = (sha: string): string => sha.slice(0, 7);
 /** The flags every row of the team repo carries, computed the way the server does (the mock and the fallback use it). */
 export function repoRowFlags(path: string): Pick<FileRow, 'readOnly' | 'readOnlyReason' | 'managedBy'> {
   // P7-01: nobody commits bots/, TEAM.md, skills/ or routines/ from Files; every change is a proposal (the dialog behind "Propose a change").
+  // `meetings/` holds voice-room transcripts and notes that only the platform writes: read-only, and no proposal changes it either.
+  const platformOnly = isMeetingsPath(path);
   const guarded = isGuardedRepoPath(path);
   return {
     readOnly: guarded,
-    readOnlyReason: guarded ? 'change_by_pull_request' : null,
+    readOnlyReason: platformOnly ? 'no_write_access' : guarded ? 'change_by_pull_request' : null,
     managedBy: path === 'memory' || path.startsWith('memory/') ? 'team_memory' : null,
   };
 }

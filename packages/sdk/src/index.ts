@@ -27,6 +27,10 @@ export * from './http.ts';
 export * from './lockout.ts';
 export * from './tool-sources.ts';
 export * from './personal-files.ts';
+export * from './meeting-runs.ts';
+export * from './transcribe.ts';
+export * from './audio/vad.ts';
+export * from './audio/wav.ts';
 
 /**
  * Declare a plugin. The manifest is validated immediately (a bad field throws a ZodError naming it), so a

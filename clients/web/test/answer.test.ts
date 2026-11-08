@@ -180,6 +180,12 @@ describe('where a citation opens', () => {
   const slugOf = (id: string): string | null => (id === uuid(12) ? 'engineering' : id === uuid(30) ? 'marketing' : null);
   const cite = (c: Record<string, unknown>): AnswerCitation => payload({ citations: [c], lineage: [] }).citations[0] as AnswerCitation;
 
+  it('opens a meeting on its page, at the line cited when there is one', () => {
+    const base = { kind: 'meeting', n: 1, label: 'Sprint review', scope: 'team', meetingId: uuid(50), teamId: uuid(12), channelId: uuid(11), channelName: 'general' };
+    expect(citationTarget(cite({ ...base, atMs: 61000 }), 'engineering', slugOf)).toEqual({ type: 'route', pathname: `/meetings/${uuid(50)}`, search: '?t=61000', state: null });
+    expect(citationTarget(cite(base), 'engineering', slugOf)).toMatchObject({ pathname: `/meetings/${uuid(50)}`, search: '' });
+  });
+
   it('opens a message in its channel, a reply in its thread, and a conversation in the conversation view', () => {
     expect(citationTarget(cite(message()), 'engineering', slugOf)).toMatchObject({
       type: 'route',

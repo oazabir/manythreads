@@ -9,6 +9,24 @@
         "server",
         "off"
       ]
+    },
+    "roomCap": {
+      "default": 25,
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 100
+    },
+    "recordingCap": {
+      "default": "off",
+      "type": "string",
+      "enum": [
+        "off",
+        "on"
+      ]
+    },
+    "notetakerAllowed": {
+      "default": true,
+      "type": "boolean"
     }
   },
   "required": [

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { MeetingConsent, MeetingParticipant, MeetingState, MeetingTranscription } from '../../entities/meeting.ts';
-import { ActorId, ChannelId, MeetingId } from '../../ids.ts';
+import { MEETING_KEEP_AUDIO_DAYS_DEFAULT, MEETING_ROOM_CAP_MAX, MEETING_ROOM_CAP_MIN, MeetingConsent, MeetingParticipant, MeetingRecordingCap, MeetingState, MeetingTranscription } from '../../entities/meeting.ts';
+import { ActorId, ChannelId, MeetingId, MeetingSegmentId } from '../../ids.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Consent and the transcription switch of a voice room (PLAN P15-05, docs/plugins/meetings.md). Anyone in the room may turn transcription on; everyone in the room
@@ -11,10 +11,36 @@ import type { ApiRoute } from '../client/route.ts';
 export const TeamMeetingsConfig = z.object({ transcribe: z.enum(['on-device', 'server', 'off']).default('on-device') });
 export type TeamMeetingsConfig = z.infer<typeof TeamMeetingsConfig>;
 
+/**
+ * The other keys `TEAM.md` may carry under `meetings` (Bundle C), read apart from `transcribe` so that a typo here never switches transcription off. Every key may be left out.
+ * `noteTaker: off` forbids adding a note-taker; `autoMemory: false` stops a public channel's meeting being filed into the team's memory by itself; `keepAudioDays` is how
+ * long recorded audio is kept (1 to 3650 days).
+ */
+export const TeamMeetingsBundleConfig = z.object({
+  noteTaker: z.enum(['on', 'off']).default('on'),
+  autoMemory: z.boolean().default(true),
+  keepAudioDays: z.number().int().min(1).max(3650).default(MEETING_KEEP_AUDIO_DAYS_DEFAULT),
+});
+export type TeamMeetingsBundleConfig = z.infer<typeof TeamMeetingsBundleConfig>;
+
 /** The workspace switch: the most a voice room here may turn on. `off` forbids transcription; `on_device` allows each person's own device; `server` also allows the server fallback. */
-export const MeetingsSettings = z.object({ transcribeCap: MeetingTranscription });
+export const MeetingsSettings = z.object({
+  transcribeCap: MeetingTranscription,
+  /** Most people in one room (2 to 100, 25 by default); a join over it is refused with a plain 409. */
+  roomCap: z.number().int().min(MEETING_ROOM_CAP_MIN).max(MEETING_ROOM_CAP_MAX).default(25),
+  /** Whether a room may record audio at all. Off until an admin turns it on. */
+  recordingCap: MeetingRecordingCap.default('off'),
+  /** Whether a team bot may be added to a room as its note-taker (it listens on the server). On by default. */
+  notetakerAllowed: z.boolean().default(true),
+});
 export type MeetingsSettings = z.infer<typeof MeetingsSettings>;
-export const MeetingsSettingsUpdate = z.strictObject({ transcribeCap: MeetingTranscription });
+/** Every field may be left out: only what is sent changes. */
+export const MeetingsSettingsUpdate = z.strictObject({
+  transcribeCap: MeetingTranscription.optional(),
+  roomCap: z.number().int().min(MEETING_ROOM_CAP_MIN).max(MEETING_ROOM_CAP_MAX).optional(),
+  recordingCap: MeetingRecordingCap.optional(),
+  notetakerAllowed: z.boolean().optional(),
+});
 export type MeetingsSettingsUpdate = z.infer<typeof MeetingsSettingsUpdate>;
 export const getMeetingsSettingsRoute = { method: 'GET', path: '/api/workspace/meetings-settings' } as const satisfies ApiRoute;
 export const putMeetingsSettingsRoute = { method: 'PUT', path: '/api/workspace/meetings-settings' } as const satisfies ApiRoute;
@@ -56,12 +82,16 @@ export const meetingConsentRoute = { method: 'POST', path: '/api/meetings/:meeti
  * times of the stretch they spoke; their words are never part of the answer.
  */
 export const MeetingTranscriptLine = z.object({
+  /** The stored line, for a correction; null for a stand-in line of someone who is not a "yes". */
+  segmentId: MeetingSegmentId.nullable().default(null),
   speakerId: ActorId,
   speakerName: z.string(),
   startMs: z.number().int().min(0),
   endMs: z.number().int().min(0),
   text: z.string(),
   transcribed: z.boolean(),
+  /** True when the caller may correct this line now (their own, within 24 hours). */
+  editable: z.boolean().default(false),
 });
 export type MeetingTranscriptLine = z.infer<typeof MeetingTranscriptLine>;
 export const GetMeetingTranscriptResponse = z.object({ lines: z.array(MeetingTranscriptLine) });

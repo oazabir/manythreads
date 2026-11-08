@@ -68,6 +68,39 @@ export interface MediaStatus {
   reason: string | null;
 }
 
+/** One stretch of one person's speech the note-taker's listener heard, already cut at a pause (`audio/vad.ts`). */
+export interface MediaListenChunk {
+  /** Whose voice (the identity in their token: the actor id). */
+  identity: string;
+  /** One 16 kHz mono 16-bit WAV, at most 30 s and 2 MiB. */
+  wav: Uint8Array;
+  /** When the person started speaking. */
+  startedAt: Date;
+  durationMs: number;
+  /** How far behind the room the listener is, in milliseconds of audio waiting (0 when it keeps up). */
+  backlogMs: number;
+}
+
+export interface MediaListenOptions {
+  /** The people whose audio to receive (the actor ids of those who said yes). Nobody else's track is subscribed. */
+  identities: readonly string[];
+  onChunk(chunk: MediaListenChunk): void;
+  /** The listener stopped: the room closed, the connection was lost, or `close()` was called. */
+  onClosed(reason: 'closed' | 'room_ended' | 'error'): void;
+}
+
+/**
+ * The note-taker's server participant in a room (P15-18, P15-19): it subscribes to the audio of the listed people only and never publishes. The meetings plugin owns
+ * who is listed and keeps `setIdentities` current (consent changes, joins, leaves, kicks reach it within five seconds).
+ */
+export interface MediaListener {
+  /** Replace the list of people to hear; a track of anyone not in it is dropped at once. */
+  setIdentities(identities: readonly string[]): void;
+  /** The identities whose audio is subscribed right now. */
+  subscriptions(): string[];
+  close(): Promise<void>;
+}
+
 export interface MediaProvider extends ProviderImpl {
   /** `livekit`, `fake`. */
   id: string;
@@ -83,6 +116,11 @@ export interface MediaProvider extends ProviderImpl {
   kick(room: string, identity: string): Promise<void>;
   /** The notice the server signed, or null when the signature is missing, wrong, or the body is not a notice. Never throws for bad input. */
   verifyWebhook(headers: Readonly<Record<string, string | undefined>>, rawBody: Uint8Array | string): MediaWebhookEvent | null;
+  /**
+   * Joins the room as a listen-only participant (minted with a `listenOnly` token by this call) and delivers the chosen people's speech as chunks. Optional: a provider
+   * without it cannot host a note-taker, and the meetings plugin says so in plain words. Throws `MediaNotConfiguredError` with no server set up.
+   */
+  listen?(room: string, options: MediaListenOptions): Promise<MediaListener>;
 }
 
 /** Thrown by every call of a provider that has no media server set up. `message` is in plain words. */
@@ -126,6 +164,14 @@ export function assertTokenRequest(actor: MediaActor, room: string, grants: Medi
 export const FAKE_MEDIA_URL = 'wss://media.fake.invalid';
 export const FAKE_WEBHOOK_SECRET = 'fake-media-webhook-secret';
 
+export interface FakeMediaListener extends MediaListener {
+  readonly room: string;
+  readonly options: MediaListenOptions;
+  /** Hand a chunk to the listener's owner as if `chunk.identity` spoke; refused (false) when that person is not subscribed. */
+  deliver(chunk: Omit<MediaListenChunk, 'backlogMs'> & { backlogMs?: number }): boolean;
+  closed: boolean;
+}
+
 export interface FakeMediaProvider extends MediaProvider {
   id: 'fake';
   /** Every room created and not closed, by name. */
@@ -134,6 +180,10 @@ export interface FakeMediaProvider extends MediaProvider {
   readonly tokens: Array<{ identity: string; room: string; grants: MediaGrants; expiresAt: Date; displayName: string; kind: 'person' | 'bot' }>;
   readonly kicked: Array<{ room: string; identity: string }>;
   readonly closed: string[];
+  /** The fake listeners that are open, by room (at most one per room). */
+  readonly listeners: Map<string, FakeMediaListener>;
+  /** Everything any participant published: a listener never publishes, so a test asserts this stays empty. */
+  published(): Array<{ room: string; identity: string }>;
   /** Pretend the server is not set up. */
   setConfigured(configured: boolean): void;
   /** Read the claims back out of a token made by this provider (null for anything else). */
@@ -147,6 +197,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
   const tokens: FakeMediaProvider['tokens'] = [];
   const kicked: FakeMediaProvider['kicked'] = [];
   const closed: string[] = [];
+  const listeners = new Map<string, FakeMediaListener>();
   const need = (): void => {
     if (!configured) throw new MediaNotConfiguredError();
   };
@@ -161,6 +212,8 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
     tokens,
     kicked,
     closed,
+    listeners,
+    published: () => [],
     setConfigured(value) {
       configured = value;
     },
@@ -189,6 +242,39 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
       need();
       rooms.delete(room);
       closed.push(room);
+      const l = listeners.get(room);
+      if (l && !l.closed) {
+        l.closed = true;
+        listeners.delete(room);
+        l.options.onClosed('room_ended');
+      }
+    },
+    async listen(room, options) {
+      need();
+      if (listeners.has(room)) throw new MediaTokenRefusedError('This room already has a listener.');
+      let subscribed = [...options.identities];
+      const listener: FakeMediaListener = {
+        room,
+        options,
+        closed: false,
+        setIdentities(identities) {
+          subscribed = [...identities];
+        },
+        subscriptions: () => [...subscribed],
+        async close() {
+          if (listener.closed) return;
+          listener.closed = true;
+          listeners.delete(room);
+          options.onClosed('closed');
+        },
+        deliver(chunk) {
+          if (listener.closed || !subscribed.includes(chunk.identity)) return false;
+          options.onChunk({ ...chunk, backlogMs: chunk.backlogMs ?? 0 });
+          return true;
+        },
+      };
+      listeners.set(room, listener);
+      return listener;
     },
     async kick(room, identity) {
       need();

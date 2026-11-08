@@ -13,6 +13,8 @@ export const MeetingsNotesWrittenEvent = z.object({
   writtenBy: ActorId,
   path: z.string().min(1).max(500),
   store: z.enum(['repo', 'files', 'organizer_files']),
+  /** The people the action items were given to (exact name matches with a team member); the notifications plugin makes one row per owner. Ids only. */
+  actionOwnerIds: z.array(ActorId).max(50).default([]),
   at: IsoDateTime,
 });
 export type MeetingsNotesWrittenEvent = z.infer<typeof MeetingsNotesWrittenEvent>;

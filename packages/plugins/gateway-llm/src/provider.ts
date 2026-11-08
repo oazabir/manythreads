@@ -1,8 +1,9 @@
-import type { PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
+import type { LlmTranscribeRequest, LlmTranscribeResult, PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
 import { requestKeyCheck } from './keys.ts';
 import { classify, type LlmClassifyRequest, type LlmClassifyResult } from './complete.ts';
 import { chat, type ChatTx, type LlmChatRequest, type LlmChatResult } from './chat.ts';
 import { evalComplete, type LlmEvalRequest, type LlmEvalResult } from './eval-complete.ts';
+import { transcribe } from './transcribe.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
 // The `provider.llm` contract (SPEC §10.2, PLAN P5-06 and P5-07). A bot's runtime does not reach LiteLLM itself; it is
@@ -41,6 +42,11 @@ export interface LlmProviderServices extends ProviderImpl {
    * ledger (under the bot and the run) are inside; the run's first turn is a hit on the bot's rate limit. Never throws for an unavailable model.
    */
   chat(run: ChatTx, request: LlmChatRequest): Promise<LlmChatResult>;
+  /**
+   * Speech to text for a voice room (P15-07, P15-19): one 16 kHz mono WAV of at most 30 s through the pre-call check, the master key and a spend line (purpose `transcribe`).
+   * The audio is never stored. Never throws for an unavailable model; the answer says why. Same shape as `LlmTranscriber` in the SDK, which the meetings plugin types it by.
+   */
+  transcribe(tx: PluginTx, request: LlmTranscribeRequest): Promise<LlmTranscribeResult>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
@@ -63,6 +69,7 @@ export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
     classify: (tx, request) => classify(ctx, tx, window.hit, request),
     evalComplete: (tx, request) => evalComplete(ctx, tx, request),
     chat: (run, request) => chat(ctx, run, window.hit, request),
+    transcribe: (tx, request) => transcribe(ctx, tx, request),
   };
   ctx.providers.register('llm', impl);
   return impl;

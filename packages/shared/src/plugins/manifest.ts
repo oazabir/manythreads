@@ -50,6 +50,10 @@ export const EXTENSION_POINTS = [
   'provider.deploy.step',
   // The media server that carries a voice room's audio (P15-02): registered by media-livekit (or the test-only media-fake), read by meetings.
   'provider.media',
+  // Runs a bot for a meeting (P15-10, P15-24): the Scribe's or the note-taker's notes and the note-taker's answers. Registered by runtime-hermes, read by meetings.
+  'provider.meeting.runs',
+  // Files a finished voice room's notes into a team's memory inbox on the platform's behalf (P15-11): registered by memory-inbox, read by meetings.
+  'provider.inbox.dropper',
   // A person's own text files in their Personal space (P20-10): registered by files, read by scheduled-jobs for a routine's contract and output and for the action-items list.
   'provider.personal.files',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.

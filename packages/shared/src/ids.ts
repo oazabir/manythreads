@@ -111,6 +111,15 @@ export type PollId = z.infer<typeof PollId>;
 /** One voice room: a live or finished meeting (P15-01). */
 export const MeetingId = z.uuid().brand<'MeetingId'>();
 export type MeetingId = z.infer<typeof MeetingId>;
+/** One line of a meeting's transcript (P15-08). */
+export const MeetingSegmentId = z.uuid().brand<'MeetingSegmentId'>();
+export type MeetingSegmentId = z.infer<typeof MeetingSegmentId>;
+/** One person's or channel's access to a meeting's notes, given by the organizer (P15-23). */
+export const MeetingShareId = z.uuid().brand<'MeetingShareId'>();
+export type MeetingShareId = z.infer<typeof MeetingShareId>;
+/** One person's audio file of a recorded meeting (P15-15). */
+export const MeetingRecordingId = z.uuid().brand<'MeetingRecordingId'>();
+export type MeetingRecordingId = z.infer<typeof MeetingRecordingId>;
 
 // Phase 9: surfaces (bot-generated UI).
 

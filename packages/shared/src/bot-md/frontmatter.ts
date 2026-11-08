@@ -60,6 +60,13 @@ export const BotTrigger = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('webhook'), connection: Slug.optional(), event: z.string().min(1).optional() }),
   /** A drop into the team's memory inbox (SPEC §12.2, PLAN P8-14): the run reads that one item as data (`inbox.read`) and proposes concepts. */
   z.strictObject({ type: z.literal('drop') }),
+  /**
+   * A bot a person may add to a voice room as its note-taker (P15-18): it listens on the server, writes the notes for the organizer and answers questions asked
+   * of it by name. Marks the bot as eligible only; the platform starts its runs (`meeting_ended`, `meeting_question`).
+   */
+  z.strictObject({ type: z.literal('meeting') }),
+  /** A room the bot's team held just ended and its transcript is written (the Scribe, P15-10): the run reads that one meeting (`meetings.read`) and writes its notes. */
+  z.strictObject({ type: z.literal('meeting_ended') }),
 ]);
 export type BotTrigger = z.infer<typeof BotTrigger>;
 

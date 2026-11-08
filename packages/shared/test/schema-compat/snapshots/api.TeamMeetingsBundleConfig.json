@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "noteTaker": {
+      "default": "on",
+      "type": "string",
+      "enum": [
+        "on",
+        "off"
+      ]
+    },
+    "autoMemory": {
+      "default": true,
+      "type": "boolean"
+    },
+    "keepAudioDays": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3650
+    }
+  }
+}

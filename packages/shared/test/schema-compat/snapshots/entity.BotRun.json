@@ -27,7 +27,9 @@
         "inbox",
         "channel_message",
         "webhook",
-        "drop"
+        "drop",
+        "meeting_ended",
+        "meeting_question"
       ]
     },
     "askerId": {

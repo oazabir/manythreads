@@ -1,4 +1,5 @@
-import { createFakeMediaProvider, definePlugin, type FakeMediaProvider } from '@manythreads/sdk';
+import { HttpError, createFakeMediaProvider, definePlugin, route, type FakeMediaProvider } from '@manythreads/sdk';
+import { FakeMediaSpeakRequest, FakeMediaSpeakResponse, fakeMediaSpeakRoute } from '@manythreads/shared';
 
 /**
  * A deterministic `provider.media` for tests (PLAN P15-02). Loaded only by test servers (`TEST_ONLY_PLUGIN_DIRS`), never in a real deployment. The meetings
@@ -29,5 +30,13 @@ export default definePlugin({
     const fake = createFakeMediaProvider({ now: () => ctx.runtime.now() });
     slot[KEY] = fake;
     ctx.providers.register('media', fake);
+    // Work package S4 (P15-19): make a person "speak" into the fake listener of a room. STUB: 501 until S4.
+    ctx.http.route({
+      ...fakeMediaSpeakRoute,
+      schema: { body: FakeMediaSpeakRequest, response: FakeMediaSpeakResponse },
+      handler: route(async () => {
+        throw new HttpError(501, 'internal', 'Not built yet');
+      }),
+    });
   },
 });

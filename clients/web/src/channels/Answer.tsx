@@ -72,6 +72,8 @@ export function citationTarget(c: AnswerCitation, teamSlug: string, teamSlugOf: 
       const slug = (c.fromTeam ? teamSlugOf(c.fromTeam) : null) ?? teamSlug;
       return { type: 'route', pathname: `/t/${slug}/memory`, search: `?open=${encodeURIComponent(c.conceptPath)}`, state: null };
     }
+    case 'meeting':
+      return { type: 'route', pathname: `/meetings/${c.meetingId}`, search: c.atMs > 0 ? `?t=${String(c.atMs)}` : '', state: null };
     case 'masked':
       return null;
   }
@@ -84,6 +86,7 @@ const KIND_NAMES: Record<string, readonly [string, string]> = {
   file: ['file', 'files'],
   run: ['run', 'runs'],
   memory: ['memory item', 'memory items'],
+  meeting: ['meeting', 'meetings'],
 };
 
 /** "1 message", "2 pages": a kind and a count in words; a kind this client has no word for is "source". */
@@ -92,7 +95,7 @@ export function kindCount(kind: string, count: number): string {
   return `${count} ${count === 1 ? names[0] : names[1]}`;
 }
 
-const KIND_LABEL: Record<string, string> = { message: 'Message', thread: 'Thread', page: 'Page', file: 'File', run: 'Run', memory: 'Memory', knowledge: 'Knowledge' };
+const KIND_LABEL: Record<string, string> = { message: 'Message', thread: 'Thread', page: 'Page', file: 'File', run: 'Run', memory: 'Memory', meeting: 'Meeting', knowledge: 'Knowledge' };
 const kindLabel = (kind: string): string => KIND_LABEL[kind] ?? 'Source';
 
 /**
@@ -133,7 +136,7 @@ function KnowledgeSinceFor({ team, reference }: { team: string; reference: strin
   return read ? <KnowledgeSince team={team} read={read} /> : null;
 }
 
-const SOURCE_NOUN: Record<string, string> = { message: 'message', thread: 'thread', page: 'page', file: 'file', run: 'run', drive: 'Drive', memory: 'memory item' };
+const SOURCE_NOUN: Record<string, string> = { message: 'message', thread: 'thread', page: 'page', file: 'file', run: 'run', drive: 'Drive', memory: 'memory item', meeting: 'meeting' };
 
 /** What a shared copy says of a source its readers may not open: "from Omar's message · not shared". Nothing of the source itself. */
 export function maskedLine(who: string | null, source: string): string {

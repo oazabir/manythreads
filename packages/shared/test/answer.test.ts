@@ -53,6 +53,7 @@ describe('AnswerInput (what a bot sends)', () => {
         { kind: 'file', fileId: uuid(3) },
         { kind: 'run', runId: uuid(4) },
         { kind: 'memory', conceptPath: 'memory/a.md' },
+        { kind: 'meeting', meetingId: uuid(5), atMs: 61000 },
       ],
       outsideScope: [{ kind: 'drive', count: 2 }],
       chips: [{ kind: 'followup', prompt: 'And then?' }, { kind: 'handoff', botSlug: 'coder' }],

@@ -106,7 +106,7 @@ export function fakeServer(over: { people?: MeetingParticipant[]; room?: Partial
   srv.leave = (meetingId) => run('leave', `leave ${meetingId}`, () => ({ meeting: srv.room }));
   srv.end = (meetingId) => run('end', `end ${meetingId}`, () => ({ meeting: { ...srv.room, state: 'ended' as const } }));
   srv.get = (meetingId) => run('get', `get ${meetingId}`, () => ({ meeting: srv.room, present: srv.people }));
-  srv.heartbeat = (meetingId, speaking) => run('heartbeat', `heartbeat ${meetingId} ${speaking}`, () => ({ ok: true as const }));
+  srv.heartbeat = (meetingId, speaking) => run('heartbeat', `heartbeat ${meetingId} ${speaking}`, () => ({ ok: true as const, serverNow: new Date().toISOString() }));
   srv.transcription = (meetingId) => run('transcription', `transcription ${meetingId}`, () => srv.transcriptionState);
   srv.setTranscription = (meetingId, mode) =>
     run('setTranscription', `setTranscription ${mode}`, () => {

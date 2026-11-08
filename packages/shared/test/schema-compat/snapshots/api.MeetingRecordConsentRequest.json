@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "record": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "no"
+      ]
+    }
+  },
+  "required": [
+    "record"
+  ],
+  "additionalProperties": false
+}

@@ -26,6 +26,7 @@ const DEFAULT_LABEL: Record<AnswerCitationInput['kind'], string> = {
   file: 'A file',
   run: 'A run',
   memory: 'A memory item',
+  meeting: 'A meeting',
 };
 
 /** The id a citation names, as the SQL view reads it and as the dropped-item set keys it. */
@@ -41,6 +42,8 @@ export function citationRef(c: AnswerCitationInput): { kind: string; ref: string
       return { kind: 'file', ref: c.fileId, team: null };
     case 'run':
       return { kind: 'run', ref: c.runId, team: null };
+    case 'meeting':
+      return { kind: 'meeting', ref: c.meetingId, team: null };
     case 'memory':
       // a Personal concept is named `person:<id>:<path>`; one of a team's names the team (the view reads the run's own team when it is left out)
       if (c.space?.startsWith('person:')) return { kind: 'memory', ref: `${c.space}:${c.conceptPath}`, team: null };
@@ -143,6 +146,10 @@ export function buildAnswer(input: AnswerInput, view: AnswerView): BuiltAnswer {
         break;
       case 'run':
         if (seen.botId) citation = { kind: 'run', ...base, runId: c.runId, botId: seen.botId, botSlug: seen.botSlug ?? null };
+        break;
+      case 'meeting':
+        // S7 fills the SQL view that says whether the asker and the reply's readers may open the meeting; until it does, `seen.channelId` is absent and the citation is dropped
+        if (seen.channelId) citation = { kind: 'meeting', ...base, meetingId: c.meetingId, atMs: c.atMs ?? 0, teamId: seen.teamId ?? null, channelId: seen.channelId, channelName: seen.channelName ?? null };
         break;
       case 'memory':
         if (seen.conceptType && seen.trustTier) citation = { kind: 'memory', ...base, conceptPath: c.conceptPath, type: seen.conceptType, trustTier: seen.trustTier, stale: seen.stale ?? false, deprecated: seen.deprecated ?? false, fromTeam: seen.fromTeam ?? null, ...(seen.space ? { space: seen.space } : {}) };

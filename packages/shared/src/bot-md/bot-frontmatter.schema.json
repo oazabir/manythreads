@@ -280,6 +280,32 @@
               "type"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "meeting"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "meeting_ended"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
           }
         ]
       }

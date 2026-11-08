@@ -150,6 +150,7 @@ const ORIGIN_WORDS: Record<InboxOrigin, string> = {
   email: 'Emailed',
   share: 'Shared by another team',
   bot: 'Dropped by a bot',
+  meeting: 'From a meeting',
 };
 export const originLabel = (origin: InboxOrigin): string => ORIGIN_WORDS[origin];
 

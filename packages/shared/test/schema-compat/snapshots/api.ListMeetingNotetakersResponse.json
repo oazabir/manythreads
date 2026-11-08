@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "bots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "botId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "avatar": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(preset:[a-z0-9-]{1,40}|photo:[0-9a-f]{16})$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "botId",
+          "slug",
+          "name",
+          "role"
+        ]
+      }
+    },
+    "current": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "bot": {
+              "type": "object",
+              "properties": {
+                "botId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "avatar": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^(preset:[a-z0-9-]{1,40}|photo:[0-9a-f]{16})$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "botId",
+                "slug",
+                "name",
+                "role"
+              ]
+            },
+            "listening": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "bot",
+            "listening"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "canAdd": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "bots",
+    "current",
+    "canAdd",
+    "reason"
+  ]
+}

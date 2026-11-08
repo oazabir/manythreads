@@ -95,3 +95,56 @@ Tests: `clients/web/test/meetings-model.test.ts`, `meetings-call.test.ts` (the c
 Real microphone capture, echo cancellation and noise suppression quality; the device picker with real devices; speaking detection from the media server; the reconnect after a real network drop; the join /
 leave / ring sounds on a real speaker; the browser's autoplay rule for remote audio; the bottom sheet on a real phone; the page's content security policy letting the page reach the media server's address
 (`connect-src`, see the deploy notes); the ring push on a phone.
+
+## Bundle C contracts (P15-08: lines, notes, note-taker, sharing, recording)
+
+This section is the contract the later work packages build against. Everything below exists as types, tables and stubs; the stubs answer `501 "Not built yet"` until their package fills them.
+"Provider" here means a service one plugin registers and another reads through the SDK (`ctx.providers`); "capability" means a named action the bot broker checks before a bot may do it.
+
+### Routes (shared Zod in `packages/shared/src/api/meetings/`, handlers in `packages/plugins/meetings/src/`)
+
+| Route | Shared constant | Handler file | Built by |
+|---|---|---|---|
+| `POST /api/meetings/:meetingId/segments` (up to 20 final lines; partial lines become captions only) | `postMeetingSegmentsRoute` | `routes-transcript.ts` | S1 |
+| `PATCH /api/meetings/:meetingId/segments/:segId` (correct your own line for 24 hours) | `patchMeetingSegmentRoute` | `routes-transcript.ts` | S1 |
+| `POST /api/meetings/:meetingId/audio-chunks` (WAV body, server fallback) | `postMeetingAudioChunkRoute` | `routes-audio.ts` | S3 |
+| `GET /api/meetings/:meetingId/summary` | `getMeetingOverviewRoute` | `routes-notes.ts` | S5 |
+| `GET /api/meetings/by-path` | `getMeetingByPathRoute` | `routes-notes.ts` | S5 |
+| `GET` / `PUT /api/meetings/:meetingId/notes` | `getMeetingNotesRoute`, `putMeetingNotesRoute` | `routes-notes.ts` | S5 |
+| `POST …/notes/save-to-team` | `saveMeetingToTeamRoute` | `routes-notes.ts` | S5 |
+| `POST …/notes/send-to-memory` | `sendMeetingToMemoryRoute` | `memory.ts` | S2 |
+| `GET` / `POST` / `DELETE …/shares` | `listMeetingSharesRoute`, `createMeetingShareRoute`, `deleteMeetingShareRoute` | `shares.ts` | S5 |
+| `GET …/notetakers`, `PUT` / `DELETE …/notetaker` | `listMeetingNotetakersRoute`, `setMeetingNotetakerRoute`, `removeMeetingNotetakerRoute` | `notetaker.ts` | S4 |
+| `GET` / `PUT …/recording`, `POST …/record-consent` | `getMeetingRecordingRoute`, `setMeetingRecordingRoute`, `meetingRecordConsentRoute` | `recording.ts` | S6 |
+| `POST /api/test/media/speak` (test servers only) | `fakeMediaSpeakRoute` | `media-fake` plugin | S3 |
+
+The heartbeat answer is now `{ ok: true, serverNow }` so a device can measure how far its clock is from the server's. Workspace settings gain `roomCap`, `recordingCap` and `notetakerAllowed`;
+`TeamMeetingsBundleConfig` is the team's `TEAM.md` `meetings:` block (`noteTaker`, `autoMemory`, `keepAudioDays`). `MeetingTranscriptLine` carries `segmentId` and `editable`.
+
+### Stub files in the plugin (each later package fills its own)
+
+`segments.ts`, `writer.ts`, `limits.ts`, `captions.ts` (S1) · `listener.ts`, `notetaker.ts` (S4) · `questions.ts`, `shares.ts`, `routes-notes.ts` (S5) · `notes.ts`, `memory.ts` (S2) ·
+`recording.ts` (S6) · `search.ts` (S7) · `routes-audio.ts` (S3). `not-built.ts` holds `notBuilt()`, the one place that throws the 501.
+
+### Events (all carry ids and times only, never text)
+
+New: `meetings.notetaker.added`, `meetings.notetaker.removed`, `meetings.recording.started`, `meetings.recording.stopped`, `meetings.notes.shared`, `meetings.notes.saved`.
+Changed: `meetings.notes.written` gains `actionOwnerIds`. Bot run triggers gain `meeting_ended` and `meeting_question`; BOT.md triggers gain `{ type: meeting }` and `{ type: meeting_ended }`.
+
+### Capabilities, providers, extension points
+
+Capabilities declared by the manifest: `meetings.read`, `meetings.write_notes`, `meetings.search` (none destructive). Providers: `meeting.runs` (registered by `runtime-hermes`; writes notes and answers
+questions for a meeting) and `inbox.dropper` (registered by `memory-inbox`; files a meeting into a team's inbox). Both have extension points (`provider.meeting.runs`, `provider.inbox.dropper`) and
+kernel registries. `MediaProvider.listen?` is optional so the LiveKit adapter is untouched; the fake provider implements it. The SDK also holds `LlmTranscriber` (gateway-llm answers `unavailable` until S3),
+the WAV helpers (`audio/wav.ts`, real) and the voice-activity segmenter (`audio/vad.ts`, a stub).
+
+### Migrations
+
+`meetings/0003_transcripts_notes.sql` (late-line window of 120 seconds, `client_seg_id`, `edited_at`, `app.meetings_correct_segment`, the tables `meeting_notes`, `meeting_shares`, `meeting_recordings`,
+`app.meetings_set_notetaker`, `app.meetings_set_recording`, `app.meetings_can_read_notes`, settings columns) · `bots/0030_meeting_triggers.sql` · `memory-inbox/0005_meeting_origin.sql`.
+The retention, notifications and search changes belong to S6, S2 and S7.
+
+### The `meetings/` path
+
+`meetings/YYYY/MM/DD-HHMM-slug/` in the team repo is a guarded directory: only the platform (the system actor) writes it. Nobody can commit it directly, no proposal can change it, and the Files tree
+and screen show it read-only without a "Propose a change" button.

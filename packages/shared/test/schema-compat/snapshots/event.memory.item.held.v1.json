@@ -32,7 +32,8 @@
         "message",
         "email",
         "share",
-        "bot"
+        "bot",
+        "meeting"
       ]
     },
     "reason": {

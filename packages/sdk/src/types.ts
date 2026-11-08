@@ -89,6 +89,10 @@ export const PROVIDER_KINDS = [
   'media',
   /** A person's own text files (files plugin): `PersonalFilesProvider` in ./personal-files.ts. */
   'personal.files',
+  /** Runs a bot for a meeting: the Scribe's or the note-taker's notes, and the note-taker's answers (runtime-hermes): `MeetingRunsProvider` in ./meeting-runs.ts. */
+  'meeting.runs',
+  /** Files one markdown item into a team's memory inbox on the platform's behalf, as a voice room's notes (memory-inbox): `InboxDropper` in ./inbox.ts. */
+  'inbox.dropper',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

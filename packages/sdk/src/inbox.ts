@@ -89,3 +89,28 @@ export interface InboxImporter extends ProviderImpl {
   /** Runs in the inbox's job transaction (system actor); the commit goes through the repo writer in that transaction. */
   import(tx: PluginTx, input: InboxImportInput): Promise<InboxImportResult>;
 }
+
+// ---- Dropping a finished voice room's notes into the memory inbox (PLAN P15-11) -------------------------------------------------------------------------------
+
+/** What the meetings plugin hands over: the notes and transcript as one markdown item. */
+export interface InboxDropInput {
+  teamId: string;
+  /** The item's name in the inbox list, e.g. `Sprint review · 8 Nov`. */
+  name: string;
+  markdown: string;
+  origin: 'meeting';
+  /** The people who said yes to being transcribed: the item is theirs to follow, and the filed concept names them as sources. */
+  dropperIds: readonly string[];
+  /** `external` when a guest was present: the item is held for a lead to release, like any other item that came from outside the team. */
+  hold?: 'external';
+  /** Where the original text lives (a repo path or a Files path), for the concept's `sources`. */
+  sourcePath?: string;
+}
+
+export type InboxDropResult = { itemId: string; state: string };
+
+/** Registered by the memory inbox plugin (kind `inbox.dropper`); runs in the caller's system transaction. */
+export interface InboxDropper extends ProviderImpl {
+  id: 'inbox.dropper';
+  drop(tx: PluginTx, input: InboxDropInput): Promise<InboxDropResult>;
+}
