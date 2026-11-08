@@ -344,8 +344,9 @@ describe('the catalog and the tools agree', () => {
     }
   });
 
-  it('triggers are listed but not available; Freshdesk is still planned', () => {
-    for (const id of ids) for (const t of connectorEntry(id)!.triggers) expect(t.available, `${id}:${t.id}`).toBe(false);
+  it('only the triggers a work-app address starts are available (Zendesk, Intercom); HubSpot and Salesforce triggers are listed, not available; Freshdesk is still planned', () => {
+    const startedByAnAddress: Record<string, string[]> = { zendesk: ['ticket_created'], intercom: ['conversation_created'] };
+    for (const id of ids) for (const t of connectorEntry(id)!.triggers) expect(t.available, `${id}:${t.id}`).toBe(startedByAnAddress[id]?.includes(t.id) ?? false);
     expect(connectorEntry('freshdesk')).toMatchObject({ status: 'planned' });
   });
 
