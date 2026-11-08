@@ -184,15 +184,14 @@ describe('what changes at the service', () => {
 
   it('a file moved out of the folder is dropped when the folder is read in full again', async () => {
     x.fake.putFile(OMAR_DRIVE, file('f-new', 'Fire drill', text('The fire drill is on the first Monday of every month.'), 'root', [{ type: 'anyone' }]));
-    await x.w.call(omar, 'POST', '/api/teams/engineering/knowledge/wiki/resync');
-    await idle();
-    expect(await names()).toEqual(['Public handbook']);
-  });
-
-  it('a file that stops being open to everyone is taken out by a full read even when the service does not move its version', async () => {
+    // (the file of the next test comes in with this read: the Re-sync route lets a lead press ten times a minute, and this file already uses them)
     x.fake.putFile(OMAR_DRIVE, file('f-quiet', 'Quiet note', text('The quiet note is about the lighthouse keys.'), 'folder-eng', [{ type: 'anyone' }]));
     await x.w.call(omar, 'POST', '/api/teams/engineering/knowledge/wiki/resync');
     await idle();
+    expect(await names()).toEqual(['Public handbook', 'Quiet note']);
+  });
+
+  it('a file that stops being open to everyone is taken out by a full read even when the service does not move its version', async () => {
     expect(await names()).toEqual(['Public handbook', 'Quiet note']);
     // the sharing changes at the service, and the stored version is the one it lists (a sharing change is not an edit)
     x.fake.setFilePermissions(OMAR_DRIVE, 'f-quiet', [{ type: 'user', email: nadia.email }]);
