@@ -198,6 +198,8 @@ test.describe('phone', () => {
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         const buttons = page.locator('.chead button');
         await expect(buttons.first()).toBeVisible();
+        // a channel's tools (search, members, bell) arrive a moment after its heading
+        if (path.includes('/c/')) await expect(page.getByTestId('bell')).toBeVisible();
         const sizes = await buttons.evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => {
           const r = e.getBoundingClientRect();
           return { name: e.getAttribute('aria-label') ?? e.textContent?.trim().slice(0, 30) ?? '', w: Math.round(r.width), h: Math.round(r.height) };
