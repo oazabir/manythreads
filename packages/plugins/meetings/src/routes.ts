@@ -50,13 +50,13 @@ import { emitJoined, endRoom, scheduleAutoEnd } from './service.ts';
 // The routes of voice rooms (docs/plugins/meetings.md). Every route but the media server's webhook runs as the caller, so the row-level security of the tables
 // decides who sees a room: whoever can read the channel. Starting needs the right to post there. Nothing here hands a media token to a bot.
 
-interface Caller {
+export interface Caller {
   actorId: string;
   personId: string;
 }
 
 /** The signed-in person; voice rooms are for people, so a bot is refused. */
-async function callerPerson(tx: PluginTx): Promise<Caller> {
+export async function callerPerson(tx: PluginTx): Promise<Caller> {
   const row = (await tx.query<{ person: string | null; actor: string | null }>('SELECT app.person_id() AS person, app.actor() AS actor')).rows[0];
   if (!row?.person || !row.actor) throw forbidden('Voice rooms are for people');
   return { actorId: row.actor, personId: row.person };
@@ -68,7 +68,7 @@ export function defaultTitle(now: Date): string {
 }
 
 /** Puts the caller in the room (or leaves them in it) and makes their token. The media server is asked only after the database accepted the person. */
-async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvider, m: MeetingRow, caller: Caller): Promise<MeetingJoin> {
+export async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvider, m: MeetingRow, caller: Caller): Promise<MeetingJoin> {
   if (m.state !== 'live') throw conflict('This voice room has ended');
   const existing = (
     await tx.query<{ left_at: Date | null }>('SELECT left_at FROM app.meeting_participants WHERE meeting_id = $1::uuid AND actor_id = $2::uuid', [m.id, caller.actorId])
@@ -98,6 +98,83 @@ async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvid
   return { provider: token.provider, url: token.url, token: token.token, identity: token.identity as MeetingJoin['identity'], roomName: token.roomName, expiresAt: token.expiresAt.toISOString() };
 }
 
+/**
+ * Gets or makes the one live room of a channel and puts the caller in it. Used by the start route and by the join route of a planned room (`scheduledMeetingId`: the new room remembers
+ * its plan, and the database marks the plan `started`). A second start in the same moment, or while a room is live, comes back with the room that is there (`created: false`).
+ */
+export async function startRoom(
+  ctx: PluginContext,
+  tx: PluginTx,
+  input: { channelId: string; title: string | undefined; caller: Caller; scheduledMeetingId?: string },
+): Promise<{ m: MeetingRow; created: boolean; join: MeetingJoin }> {
+  const { channelId, caller } = input;
+  const media = requireMedia(ctx);
+  // Whoever may post in the channel may start a room there; a channel the caller cannot read looks the same as one they cannot post in.
+  const can = (await tx.query<{ ok: boolean | null }>("SELECT app.lookup_channel_can($1::uuid, 'post') AS ok", [channelId])).rows[0]?.ok;
+  if (can !== true) throw forbidden('You cannot start a voice room in this channel');
+  const now = ctx.runtime.now();
+  const ids = (await tx.query<{ id: string; workspace_id: string }>('SELECT uuidv7() AS id, app.workspace_id() AS workspace_id')).rows[0]!;
+  // One live room per channel: a second start in the same moment, or while a room is live, comes back with the room that is there.
+  const row = await ctx.db.getOneOrCreate<{ id: string }>(tx, {
+    table: 'app.meetings',
+    values: {
+      id: ids.id,
+      workspace_id: ids.workspace_id,
+      channel_id: channelId,
+      title: input.title ?? defaultTitle(now),
+      started_by: caller.actorId,
+      organizer_id: caller.actorId,
+      ...(input.scheduledMeetingId ? { scheduled_meeting_id: input.scheduledMeetingId } : {}),
+    },
+    conflict: ['channel_id'],
+    conflictWhere: "state = 'live' AND channel_id IS NOT NULL",
+    returning: ['id'],
+  });
+  const created = row.id === ids.id;
+  const m = await loadMeeting(tx, row.id);
+  if (!m) throw notFound('That voice room is not available');
+  if (created) {
+    try {
+      // The media server enforces the workspace's room size too (a client that skips our join route still cannot get past it), plus the seats of the two hidden
+      // service members (the note-taker's listener and the recorder). The size is the one in force when the room opens; the join route reads the live setting.
+      await media.createRoom({ name: m.id, maxParticipants: (await roomCap(tx)) + MEETING_SERVICE_SEATS });
+    } catch (err) {
+      throw mediaFailure(err);
+    }
+    await ctx.audit.emit(
+      tx,
+      MeetingsMeetingStartedEvent.parse({
+        type: 'meetings.meeting.started',
+        schemaVersion: 1,
+        workspaceId: m.workspace_id,
+        teamId: m.team_id,
+        channelId: m.channel_id,
+        meetingId: m.id,
+        startedBy: caller.actorId,
+        at: m.started_at.toISOString(),
+      }),
+    );
+    // The call's chat thread: a message in the channel that people reply to. If it cannot be written, the room still opens.
+    const messages = ctx.providers.get<MessageProvider>('messages');
+    if (messages) {
+      await tx.query('SAVEPOINT meeting_thread');
+      try {
+        const root = await messages.post(tx, { channelId, body: `Started a voice room: ${m.title}` });
+        await tx.query('RELEASE SAVEPOINT meeting_thread');
+        await tx.query('UPDATE app.meetings SET thread_root_id = $2::uuid WHERE id = $1::uuid', [m.id, root.id]);
+        m.thread_root_id = root.id;
+      } catch {
+        await tx.query('ROLLBACK TO SAVEPOINT meeting_thread');
+        await tx.query('RELEASE SAVEPOINT meeting_thread');
+      }
+    }
+  }
+  const join = await joinAndToken(ctx, tx, media, m, caller);
+  // a new call in a direct message rings the other people for thirty seconds (a job writes "Missed call" if nobody picks up)
+  if (created) await ringDirectMessage(ctx, tx, m, { actorId: caller.actorId, personId: caller.personId });
+  return { m, created, join };
+}
+
 export function registerMeetingRoutes(ctx: PluginContext): void {
   // ---- media status -------------------------------------------------------------------------------------------------------------
   ctx.http.route({
@@ -115,70 +192,8 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { channelId } = StartMeetingPathParams.parse(req.params);
       const body = StartMeetingRequest.parse(req.body ?? {});
-      const media = requireMedia(ctx);
       const caller = await callerPerson(tx);
-      // Whoever may post in the channel may start a room there; a channel the caller cannot read looks the same as one they cannot post in.
-      const can = (await tx.query<{ ok: boolean | null }>("SELECT app.lookup_channel_can($1::uuid, 'post') AS ok", [channelId])).rows[0]?.ok;
-      if (can !== true) throw forbidden('You cannot start a voice room in this channel');
-      const now = ctx.runtime.now();
-      const ids = (await tx.query<{ id: string; workspace_id: string }>('SELECT uuidv7() AS id, app.workspace_id() AS workspace_id')).rows[0]!;
-      // One live room per channel: a second start in the same moment, or while a room is live, comes back with the room that is there.
-      const row = await ctx.db.getOneOrCreate<{ id: string }>(tx, {
-        table: 'app.meetings',
-        values: {
-          id: ids.id,
-          workspace_id: ids.workspace_id,
-          channel_id: channelId,
-          title: body.title ?? defaultTitle(now),
-          started_by: caller.actorId,
-          organizer_id: caller.actorId,
-        },
-        conflict: ['channel_id'],
-        conflictWhere: "state = 'live' AND channel_id IS NOT NULL",
-        returning: ['id'],
-      });
-      const created = row.id === ids.id;
-      const m = await loadMeeting(tx, row.id);
-      if (!m) throw notFound('That voice room is not available');
-      if (created) {
-        try {
-          // The media server enforces the workspace's room size too (a client that skips our join route still cannot get past it), plus the seats of the two hidden
-          // service members (the note-taker's listener and the recorder). The size is the one in force when the room opens; the join route reads the live setting.
-          await media.createRoom({ name: m.id, maxParticipants: (await roomCap(tx)) + MEETING_SERVICE_SEATS });
-        } catch (err) {
-          throw mediaFailure(err);
-        }
-        await ctx.audit.emit(
-          tx,
-          MeetingsMeetingStartedEvent.parse({
-            type: 'meetings.meeting.started',
-            schemaVersion: 1,
-            workspaceId: m.workspace_id,
-            teamId: m.team_id,
-            channelId: m.channel_id,
-            meetingId: m.id,
-            startedBy: caller.actorId,
-            at: m.started_at.toISOString(),
-          }),
-        );
-        // The call's chat thread: a message in the channel that people reply to. If it cannot be written, the room still opens.
-        const messages = ctx.providers.get<MessageProvider>('messages');
-        if (messages) {
-          await tx.query('SAVEPOINT meeting_thread');
-          try {
-            const root = await messages.post(tx, { channelId, body: `Started a voice room: ${m.title}` });
-            await tx.query('RELEASE SAVEPOINT meeting_thread');
-            await tx.query('UPDATE app.meetings SET thread_root_id = $2::uuid WHERE id = $1::uuid', [m.id, root.id]);
-            m.thread_root_id = root.id;
-          } catch {
-            await tx.query('ROLLBACK TO SAVEPOINT meeting_thread');
-            await tx.query('RELEASE SAVEPOINT meeting_thread');
-          }
-        }
-      }
-      const join = await joinAndToken(ctx, tx, media, m, caller);
-      // a new call in a direct message rings the other people for thirty seconds (a job writes "Missed call" if nobody picks up)
-      if (created) await ringDirectMessage(ctx, tx, m, { actorId: caller.actorId, personId: caller.personId });
+      const { m, created, join } = await startRoom(ctx, tx, { channelId, title: body.title, caller });
       return json(StartMeetingResponse.parse({ meeting: toMeeting(m), created, join }), 200);
     }),
   });

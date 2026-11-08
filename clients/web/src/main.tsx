@@ -53,6 +53,7 @@ import './styles/brain.css';
 import './styles/connections.css';
 import './styles/meetings.css';
 import './styles/meetings-view.css';
+import './styles/schedule.css';
 import './styles/recipes.css';
 import './styles/states.css';
 import './styles/motion.css';

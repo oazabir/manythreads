@@ -1,0 +1,210 @@
+/*
+ * Rooms planned ahead (PLAN Bundle D, P16-05): the "Schedule a room" button and the planned-room chip in a channel's header (`sch-chip`, `sch-pop`, `sch-add`), the dialog
+ * (`sch-form`, `sch-people`) and the join page (`sch-join`). Tokens only; shared classes (.btn, .dlg-*) are used, never redefined. A state change never moves a neighbour:
+ * the chip has a fixed maximum width and cuts its text with an ellipsis.
+ */
+
+/* ---- header ---- */
+.sch-chip-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.sch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sch-chip:hover {
+  background: var(--paper);
+}
+
+.sch-chip.live {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.sch-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sch-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.sch-chip:focus-visible,
+.sch-add:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.sch-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 25;
+  display: grid;
+  gap: 4px;
+  width: 280px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--pop-shadow);
+}
+
+.sch-pop-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sch-pop-line {
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.sch-pop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* ---- dialog ---- */
+.sch-form {
+  gap: 8px;
+}
+
+.sch-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sch-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sch-people {
+  display: grid;
+  gap: 2px;
+  max-height: 168px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+
+.sch-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.sch-person:hover {
+  background: var(--paper);
+}
+
+.sch-outside,
+.sch-agenda {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.sch-connect {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+.sch-connect .dlg-text {
+  margin: 0;
+}
+
+/* ---- the join page ---- */
+.sch-join {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  max-width: 560px;
+  padding: 16px;
+}
+
+.sch-join-line {
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-small);
+}
+
+.sch-join-agenda {
+  width: 100%;
+  max-height: 240px;
+  margin: 4px 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sch-join-note {
+  max-width: 560px;
+}
+
+/* ---- a phone: the button keeps only its icon, the date and time sit one under the other ---- */
+@media (width <= 760px) {
+  .sch-add-label {
+    display: none;
+  }
+
+  .sch-chip {
+    max-width: 150px;
+  }
+
+  .sch-row {
+    grid-template-columns: 1fr;
+  }
+}

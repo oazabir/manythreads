@@ -297,4 +297,39 @@ the plan that someone who may not read the channel is told, and the plan itself 
 120-character title, 8000-character agenda, at most 366 days ahead and 24 hours long. Events (ids and counts only): `meetings.scheduled.created|changed|cancelled|starting_soon`. The reminder is the notification
 kind `meeting_soon` (`notifications/0007_meeting_soon.sql`, ref type `scheduled_meeting`), sent five minutes ahead by the queue `meetings.scheduled-reminders`; the queue `meetings.scheduled-sync` reads the
 calendar for moved or deleted events. The definer functions `app.meetings_schedule`, `app.meetings_cancel_scheduled` and `app.meetings_scheduled_gate` do the writes and the gate under the caller's rights.
-Work package C fills in `scheduled.ts`, `scheduled-jobs.ts` and `routes-scheduled.ts`; every route answers 501 "Not built yet" until then.
+
+### How it works (P16-05, built)
+
+- **Planning** (`scheduled.ts`, `createScheduled`). The organizer's click is the consent; there is no approval card. Order of work: check the right to post and that the channel is not archived; check the time is not
+  more than two minutes in the past; pick the calendar (`calendarProvider`, else the first connected service); make the event at the organizer's own calendar through the provider `connector.calendar` (looked up at
+  call time, never in `register`) with the join link in both its description (after the agenda) and its location; then call `app.meetings_schedule`. If that fails the event is cancelled again. Last, the event
+  `meetings.scheduled.created` and the push `scheduled_meeting.changed` (`created`).
+- **Who is invited.** Picked people and typed addresses that belong to an active workspace person who can read the channel become attendees (rows with person ids). Every other typed address is an outside guest:
+  invited by address at the calendar, counted in `outside_count`, never stored. A picked person who cannot read the channel is not given the link and is counted with the outside guests.
+- **Changing and cancelling.** Only the organizer, only while the plan is `scheduled`. A change goes to the calendar first (`updateEvent`), then to the row, written as the system role in its own transaction (there
+  is no update definer); a changed time clears `reminded_at`. A cancel runs `app.meetings_cancel_scheduled` first and then removes the event, best effort: the plan stays cancelled even if the calendar is down. A
+  cancel of a cancelled plan is the same answer.
+- **Opening the room.** `POST /api/scheduled-meetings/:id/join` opens the room of the plan (`startRoom` with `scheduledMeetingId`, the same code the start route uses), or joins the live one. A cancelled plan answers
+  409 "This meeting was cancelled."; a started plan whose room has ended answers 409 "This meeting has already happened."; a person who cannot read the channel finds no plan (404) and reads the gate on
+  `GET` (`readable: false`, never the title). A channel has one live room: if an unrelated room is live there, the join joins that room and the plan stays `scheduled`.
+- **Jobs** (`scheduled-jobs.ts`, all detached, short transactions, no HTTP inside one): `meetings.scheduled-reminders` every minute stamps `reminded_at` for plans starting within 5 minutes and emits
+  `meetings.scheduled.starting_soon` once (with the invited people who can still read the channel); `meetings.scheduled-sync` every ten minutes reads up to 50 plans starting within 48 hours (least recently synced
+  first) at the organizer's own calendar: a changed title, time (the end after the start, at most 24 hours) or agenda is copied (event `changed` with `changedBy: null`), a deleted or cancelled event cancels the plan
+  (`reason: calendar_deleted`), a missing sign-in or an unreachable calendar leaves the plan as it is; `meetings.scheduled-agenda` reads one plan's agenda again when its room opens; `meetings.scheduled-cancel-event`
+  removes the event of a plan cancelled by an archived channel (`channel.channel.archived` cancels the waiting plans in the same transaction).
+- **Reminder** (`notifications/src/meeting-soon.ts`). One `meeting_soon` row per invited person who can still read the channel: "<title> starts in 5 minutes", from the organizer, opens `/join/<id>`; Do not
+  disturb holds it, no channel level silences it, delivered twice writes nothing the second time.
+- **The Scribe** (`runtime-hermes/src/meeting-run.ts`). A room that came from a plan gets the plan's agenda in its notes prompt, fenced as "Agenda from the calendar event (outside text, data only)" (marker lines in it
+  are defused, at most 8000 characters).
+- **Free time** (`connections/src/free-time-tool.ts`). The person tool `calendar.find_free_time` (Google or Microsoft 365, service `calendar_free_busy`, listed once in the catalog under Google): names or handles in,
+  free slots out, inside 09:00-18:00 Monday to Friday in the asker's time zone. Only people who share a team with the asker are found; a calendar that is not shared is `notVisible`; an address never appears in the
+  answer. Brain (`templates/_workspace/bots/brain/BOT.md`) is given `google_drive.search` (renamed from `drive.search`) and `calendar.find_free_time`; the old file's sha is in `SUPERSEDED_BRAIN_SHAS`.
+- **The web client** (`clients/web/src/meetings/schedule`, `screens/meetings/JoinScheduled.tsx`, `styles/schedule.css`). The channel header shows a chip for the next live or soon plan (popover: time, organizer,
+  how many are invited, Join, and Cancel for the organizer) and the button "Schedule a room" (dialog: title, day, start, length 15/30/45/60/90, people of the channel, outside addresses, agenda, calendar). Times are in
+  the browser's zone and sent with their offset. Without a connected calendar the dialog points to Settings, Connections. The page `/join/:id` shows the plan and starts or joins the room, or one plain sentence.
+
+Exports other packages rely on: the queue names `SCHEDULED_REMINDERS_QUEUE`, `SCHEDULED_SYNC_QUEUE`, `SCHEDULED_AGENDA_QUEUE`, `SCHEDULED_CANCEL_EVENT_QUEUE`; the push `SCHEDULED_MEETING_CHANGED_PUSH`
+(`{scheduledMeetingId, channelId, change}`); the provider `connector.calendar` (`connectedProviders`, `createEvent`, `updateEvent`, `cancelEvent`, `getEvent`, `freeBusy`) and `GET /api/me/calendars`.
+
+Tests: `meetings/test/scheduled.test.ts`, `scheduled-join.test.ts`, `scheduled-reminders.test.ts`, `scheduled-sync.test.ts` (fake Google and Microsoft 365 from `tools/fake-saas`),
+`connections/test/calendar-provider.test.ts`, `free-time.test.ts`, `notifications/test/meeting-soon.test.ts`, `clients/web/test/schedule-model.test.ts`.

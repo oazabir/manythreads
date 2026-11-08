@@ -1,5 +1,15 @@
 import { useSyncExternalStore } from 'react';
-import { MEETING_CAPTION_PUSH, MEETING_CHANGED_PUSH, MEETING_RINGING_PUSH, MeetingCaptionPush, MeetingChangedPush, MeetingRingingPush, type MeetingSummary } from '@manythreads/shared';
+import {
+  MEETING_CAPTION_PUSH,
+  MEETING_CHANGED_PUSH,
+  MEETING_RINGING_PUSH,
+  MeetingCaptionPush,
+  MeetingChangedPush,
+  MeetingRingingPush,
+  SCHEDULED_MEETING_CHANGED_PUSH,
+  ScheduledMeetingChangedPush,
+  type MeetingSummary,
+} from '@manythreads/shared';
 import { channelStore } from '../channels/store';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import { addNotetaker, answerRecordConsent, correctSegment, fetchLiveMeetings, fetchNotetakers, fetchRecording, fetchTranscript, realCallApi, removeNotetaker, setRecording } from './api';
@@ -58,6 +68,7 @@ export class LiveRoomsStore {
   /** Calls the person has answered or turned down: they stop ringing. */
   private readonly skip = new Set<string>();
   private ringing = false;
+  private readonly scheduledListeners = new Set<(p: ScheduledMeetingChangedPush) => void>();
 
   constructor(private readonly deps: LiveDeps) {}
 
@@ -125,7 +136,21 @@ export class LiveRoomsStore {
     }
   }
 
+  /** A planned room was made, changed, cancelled or opened (P16-05): the channel header's chip asks again. Returns the way to stop listening. */
+  onScheduledChanged = (listener: (p: ScheduledMeetingChangedPush) => void): (() => void) => {
+    this.scheduledListeners.add(listener);
+    return () => this.scheduledListeners.delete(listener);
+  };
+
   handlePush(push: Push): void {
+    if (push.type === SCHEDULED_MEETING_CHANGED_PUSH) {
+      const p = ScheduledMeetingChangedPush.safeParse(push.payload);
+      if (!p.success) return;
+      // a plan that became a room: the live badge and the Join button learn of it at once
+      if (p.data.change === 'started') void this.refresh();
+      for (const l of [...this.scheduledListeners]) l(p.data);
+      return;
+    }
     if (push.type === MEETING_CHANGED_PUSH) {
       const p = MeetingChangedPush.safeParse(push.payload);
       if (!p.success) return;

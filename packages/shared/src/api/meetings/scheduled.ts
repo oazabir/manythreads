@@ -84,4 +84,12 @@ export const JoinScheduledMeetingResponse = z.object({ meeting: Meeting, created
 export type JoinScheduledMeetingResponse = z.infer<typeof JoinScheduledMeetingResponse>;
 export const joinScheduledMeetingRoute = { method: 'POST', path: '/api/scheduled-meetings/:scheduledMeetingId/join' } as const satisfies ApiRoute;
 
-
+// ---- Live push over the socket ----------------------------------------------------------------------------------------------------------------------
+/** Pushed to everyone who can read the plan's channel when a plan is made, changed, cancelled or opened as a room: the channel header asks `GET /api/channels/:id/scheduled-meetings?upcoming=1` again. Ids only. */
+export const SCHEDULED_MEETING_CHANGED_PUSH = 'scheduled_meeting.changed';
+export const ScheduledMeetingChangedPush = z.object({
+  scheduledMeetingId: ScheduledMeetingId,
+  channelId: ChannelId,
+  change: z.enum(['created', 'changed', 'cancelled', 'started']),
+});
+export type ScheduledMeetingChangedPush = z.infer<typeof ScheduledMeetingChangedPush>;
