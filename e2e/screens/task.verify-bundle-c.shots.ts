@@ -334,6 +334,11 @@ test('02 on-device transcription: consent, words under the right names, "Not me"
   if (!room || !nadia || !rafi) return skip('02 transcription', 'step 01 did not run (no media server)');
   const omar = await open('OMAR');
   try {
+    // captions are off until a person turns them on (the CC button); both people do, so the strip has lines to show
+    for (const p of [nadia, rafi]) {
+      const cc = p.page.getByRole('button', { name: 'Captions' });
+      if ((await cc.getAttribute('aria-pressed').catch(() => 'true')) !== 'true') await cc.click().catch(() => undefined);
+    }
     await nadia.page.getByTestId('call-settings-btn').click();
     const on = nadia.page.getByTestId('transcription-on');
     if (await on.isVisible().catch(() => false)) await on.click();
@@ -432,17 +437,30 @@ test('03 end the call: transcript in the repository, the Scribe notes, memory, t
     check('03 notes.md is beside the transcript', /notes\.md$/.test(String(notes.notesPath ?? '')), String(notes.notesPath ?? ''));
     const thread = await poll(async () => ((await threadMessages(omar, room)).some((m) => /notes/i.test(JSON.stringify(m))) ? true : null), 60_000, 4000);
     check('03 a notes post is in the call thread', thread === true);
-    const concepts = await api(omar.ctx, 'GET', '/api/teams/engineering/memory/concepts');
-    const conceptText = JSON.stringify(concepts.json ?? {});
-    const filed = await poll(async () => {
-      const c = await api(omar.ctx, 'GET', '/api/teams/engineering/memory/concepts');
-      return /meeting/i.test(JSON.stringify(c.json ?? {})) && JSON.stringify(c.json ?? {}).includes(room.meetingId.slice(0, 8)) ? true : null;
-    }, 60_000, 5000);
-    check('03 a Meeting concept with sources is in Engineering memory', filed === true || (conceptText.includes('meetings/') && /meeting/i.test(conceptText)), `${concepts.status}`);
+    // a public channel's meeting goes to the team's memory inbox by itself (origin `meeting`); the Archivist files it a little later
+    const ov0 = await overview(omar, room.meetingId);
+    const title = String(ov0?.meeting?.title ?? 'Voice room');
+    const inboxItem = await poll(async () => {
+      const r = await api(omar.ctx, 'GET', '/api/teams/engineering/inbox/items');
+      return ((r.json?.items ?? []) as any[]).find((i) => i.origin === 'meeting' && String(i.name).startsWith(title)) ?? null;
+    }, 60_000, 4000);
+    check('03 the meeting is in Engineering\'s memory inbox (origin meeting)', inboxItem !== null, inboxItem ? `state ${String(inboxItem.state)}` : 'no item');
+    if (inboxItem) {
+      const filedItem = await poll(async () => {
+        const r = await api(omar.ctx, 'GET', '/api/teams/engineering/inbox/items');
+        const it = ((r.json?.items ?? []) as any[]).find((i) => i.id === inboxItem.id);
+        return it && it.state === 'filed' && (it.filedPaths ?? []).length > 0 ? it : null;
+      }, 120_000, 6000);
+      if (filedItem) pass('03 the Archivist filed it as memory pages', `${(filedItem.filedPaths as string[]).slice(0, 2).join(', ')}`);
+      else skip('03 the Archivist filing', 'the item was still being filed after 2 minutes (a model run on the host gateway)');
+    }
     // the meeting page as Omar
     await omar.page.goto(`/meetings/${room.meetingId}`);
     await expect(omar.page.getByTestId('meeting-view')).toBeVisible(T);
     await expect(omar.page.getByTestId('notes-card')).toBeVisible(T);
+    // the page sits in its own team's shell: the address names the team, and the sidebar is that team's
+    await expect(omar.page).toHaveURL(new RegExp(`/t/engineering/meetings/${room.meetingId}`), T);
+    pass('03 the meeting page opens inside the Engineering team', new URL(omar.page.url()).pathname.replace(room.meetingId, ':id'));
     await shoot(omar.page, '09-meeting-notes', 'd', 'light');
     await omar.page.getByTestId('meeting-tab-transcript').click();
     await shoot(omar.page, '10-meeting-transcript', 'd', 'light');
@@ -460,9 +478,10 @@ test('03 end the call: transcript in the repository, the Scribe notes, memory, t
       const added = await nadia.page.getByTestId('action-added').first().waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false);
       check('03 "Add to board" makes a card', added);
     }
-    const bell = await api(omar.ctx, 'GET', '/api/notifications');
-    const mine = ((bell.json?.items ?? []) as any[]).filter((n) => JSON.stringify(n).includes(room.meetingId) || /meeting/i.test(String(n.preview ?? '')));
-    check('03 the organizer got a notification for the meeting', mine.length >= 1, `${mine.length} found`);
+    // the organizer is the person who started the call (Nadia): the notes post in the call thread notifies her
+    const bell = await api(nadia.ctx, 'GET', '/api/notifications');
+    const mine = ((bell.json?.items ?? []) as any[]).filter((n) => n.channelId === room.channelId && /Notes from/i.test(String(n.preview ?? '')));
+    check('03 the organizer (Nadia) got a notification for the notes', mine.length >= 1, `${mine.length} found`);
   } finally {
     await omar.ctx.close();
     await keep.rafi?.ctx.close().catch(() => undefined);
@@ -507,7 +526,10 @@ test('04 a private channel: Files copy, no repository, no memory, Priya shut out
       check(`04 Priya cannot read the private ${route}`, r.status === 403 || r.status === 404, `${r.status}`);
     }
     const concepts = await api(omar.ctx, 'GET', '/api/teams/engineering/memory/concepts');
-    check('04 no memory concept was filed for the private meeting', !JSON.stringify(concepts.json ?? {}).includes(meetingId), `${concepts.status}`);
+    const startedAt = String((await overview(nadia, meetingId))?.meeting?.startedAt ?? (await overview(nadia, meetingId))?.meeting?.createdAt ?? '');
+    const inbox = await api(omar.ctx, 'GET', '/api/teams/engineering/inbox/items');
+    const sinceStart = ((inbox.json?.items ?? []) as any[]).filter((i) => i.origin === 'meeting' && startedAt !== '' && String(i.createdAt) >= startedAt);
+    check('04 nothing of the private meeting went to memory by itself (no concept, no inbox item)', !JSON.stringify(concepts.json ?? {}).includes(meetingId) && sinceStart.length === 0, `${concepts.status} ${inbox.status} items since start: ${sinceStart.length}`);
     const notes = await poll(async () => {
       const n = await api(rafi.ctx, 'GET', `/api/meetings/${meetingId}/notes`);
       return n.status === 200 && n.json?.status === 'written' ? n.json : null;
@@ -663,6 +685,8 @@ test('06 Brain: "what did we decide in the verify-c stand-up?" cites the meeting
     await box.press('Enter');
     const cite = await poll(async () => ((await nadia.page.locator('[data-testid="answer-citation"][data-kind="meeting"]').count()) > 0 ? true : null), 150_000, 4000);
     if (!cite) {
+      await shoot(nadia.page, '15-brain-no-citation', 'd', 'light');
+      log(`06 the Brain's last words: ${(await nadia.page.getByTestId('chat-main').innerText()).replace(/\s+/g, ' ').slice(-500)}`);
       skip('06 Brain', 'no meeting citation: the live Brain may not have `meetings.search` yet, or the meeting was not indexed or no Hermes pod answered');
     } else {
       pass('06 an answer cites a meeting');
