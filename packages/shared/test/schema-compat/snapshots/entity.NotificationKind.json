@@ -6,6 +6,7 @@
     "reply",
     "dm",
     "message",
-    "reminder"
+    "reminder",
+    "meeting_actions"
   ]
 }

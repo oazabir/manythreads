@@ -69,7 +69,7 @@ export default definePlugin({
     const dataRoot = (process.env['MANYTHREADS_RUNTIME_DIR'] ?? join(tmpdir(), 'manythreads-runtime')).trim();
     // A server that died mid-run left its profiles (run token, bot key) on disk: anything older than the longest run goes.
     void sweepStaleProfiles(dataRoot, STALE_PROFILE_MS).catch(() => undefined);
-    ctx.providers.register('meeting.runs', createMeetingRunsProvider());
+    ctx.providers.register('meeting.runs', createMeetingRunsProvider(ctx, { info: (line) => void process.stderr.write(`${line}\n`), warn: (line) => void process.stderr.write(`${line}\n`) }));
     ctx.providers.register(
       'bot_runtime',
       createHermesProvider({

@@ -24,6 +24,9 @@ bots:
   - slug: archivist
     name: Archivist
     role: "Files what lands in the memory inbox as short, linked notes in the team's memory."
+  - slug: scribe
+    name: Scribe
+    role: "Writes the notes of a team's meeting from its transcript, with a summary, the decisions and who does what."
   - slug: content-drafter
     name: Content drafter
     role: "Drafts posts, emails and pages in the team's voice."

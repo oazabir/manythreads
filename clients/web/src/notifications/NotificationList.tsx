@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import type { Notification as InboxItem } from '@manythreads/shared';
 import { ActorAvatar } from '../components/ActorAvatar';
 import { EmptyState } from '../components/EmptyState';
@@ -48,6 +48,7 @@ function Item({ n, onOpen, onRead }: { n: InboxItem; onOpen: (n: InboxItem) => v
 export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; onOpened?: () => void }) {
   const snap = useNotifications();
   const openMessage = useOpenMessage();
+  const navigate = useNavigate();
   const dnd = useMyDnd();
   const resume = useSaver();
   const [tab, setTab] = useState<BellTab>('unread');
@@ -63,6 +64,11 @@ export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; o
   const open = (n: InboxItem): void => {
     onOpened?.();
     void notificationStore.markRead([n.id]);
+    // Action items from a meeting point at the meeting, not at a message.
+    if (n.refType === 'meeting') {
+      void navigate(`/meetings/${n.refId}`);
+      return;
+    }
     void openMessage({ channelId: n.channelId, channelKind: n.channelKind, channelName: n.channelName, messageId: n.refId, threadRootId: n.threadRootId });
   };
   const read = (n: InboxItem): void => void notificationStore.markRead([n.id]);

@@ -22,6 +22,9 @@ bots:
   - slug: archivist
     name: Archivist
     role: "Files what lands in the memory inbox as short, linked notes in the team's memory."
+  - slug: scribe
+    name: Scribe
+    role: "Writes the notes of a team's meeting from its transcript, with a summary, the decisions and who does what."
   - slug: literature-scout
     name: Literature scout
     role: "Finds new papers on the team's topics and posts the relevant ones."

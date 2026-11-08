@@ -16,6 +16,11 @@ export interface MeetingNotesRunInput {
   meetingId: string;
   /** The transcript as the platform renders it: only the words of people who said yes. Data, never instructions. */
   transcriptMd: string;
+  /**
+   * Runs `fn` in a short system transaction. A detached job has no transaction of its own to hand over, so it passes its `job.transaction`; the provider uses it for
+   * the run row and the run's books, never while the model is working. Left out, the provider uses the `tx` it was given.
+   */
+  transaction?: <T>(fn: (tx: PluginTx) => Promise<T>) => Promise<T>;
 }
 
 export type MeetingNotesRunResult =
@@ -33,6 +38,8 @@ export interface MeetingAnswerRunInput {
   askerId: string;
   /** The channels every present person may read; the run's reads stay inside them. */
   channelIds: readonly string[];
+  /** As on `MeetingNotesRunInput`. */
+  transaction?: <T>(fn: (tx: PluginTx) => Promise<T>) => Promise<T>;
 }
 
 export type MeetingAnswerRunResult =

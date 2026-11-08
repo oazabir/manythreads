@@ -158,3 +158,20 @@ at `channels/<name>/meetings/<dd>-<hhmm>-<slug>/audio/<person>.wav` (`dms/<id>/â
 
 `meetings/YYYY/MM/DD-HHMM-slug/` in the team repo is a guarded directory: only the platform (the system actor) writes it. Nobody can commit it directly, no proposal can change it, and the Files tree
 and screen show it read-only without a "Propose a change" button.
+
+### The Scribe (P15-10 to P15-12)
+
+After a room's transcript is written (no note-taker in it), the `meetings.notes` job asks the team's Scribe for the notes. The Scribe is an ordinary team bot (`templates/*/bots/scribe`, trigger `meeting_ended`,
+holds `meetings.read`, `memory.recall` and `meetings.write_notes`, hidden from the mention picker because nobody can address it). `runtime-hermes` registers the `meeting.runs` provider; its `notes` method runs the
+Scribe synchronously with the transcript in the prompt (`@<ms> | <clock> | <speaker>: <words>`, between markers, as data) and reads one JSON object back. An answer that is not an object is asked for once more.
+
+* The platform checks the answer: an item whose time is not inside a transcribed line is dropped; an owner is a team member by exact display name, else only the name is kept; an owner who did not say yes to being
+  transcribed becomes "no owner". The model never writes a file: the platform renders `notes.md` beside the transcript (repo commit for a public channel, a Files entry for a private one).
+* `meetings.notes.written` carries ids only, including `actionOwnerIds`. The notifications plugin turns it into one `meeting_actions` notification for each owner ("2 action items from Sprint review"), which opens `/meetings/<id>`.
+* A public channel's meeting is filed into the team's memory inbox by itself (origin `meeting`; a room with somebody outside the team is held for a lead; `TEAM.md` `meetings.autoMemory: false` turns it off). A private
+  channel or a team without the switch is filed only by `POST /api/meetings/:meetingId/send-to-memory` after the person sees the warning and confirms. The concept's `sources` point at the inbox original; the
+  transcript path and the `[hh:mm:ss]` line times are inside that text.
+* A run that fails (or answers twice without an object) sets `meeting_notes.status = 'failed'` and the thread says "The notes could not be written", with the transcript path and a link to the meeting. A budget that
+  says "later" is tried again after 15 minutes, up to six times.
+* The thread line is written by the Scribe's own actor in a transaction of its own after the notes are saved.
+

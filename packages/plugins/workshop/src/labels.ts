@@ -12,6 +12,8 @@ const TOOLS: Record<string, string> = {
   'memory.recall': 'remember things it was told',
   'memory.write': 'save notes to memory',
   'inbox.read': 'read the item it is filing',
+  'meetings.read': 'read the transcript of a meeting',
+  'meetings.write_notes': 'write the notes of a meeting',
   'inbox.drop': 'drop notes into the team inbox',
   'pages.write': 'write pages',
   'pages.read': 'read pages',

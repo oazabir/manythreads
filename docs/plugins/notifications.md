@@ -199,11 +199,17 @@ ignores a message in a `reminders:` conversation** (`consumers.ts`: it would oth
 *Reminders* (`systemAuthorName` in `service.ts` knows the webhook names and the Reminders sender). A reminder for a channel is an ordinary message there, with no mention and no link, notified by the channel's
 own rules. See [reminders.md](./reminders.md).
 
+## Action items from a meeting (P15-12, migration `0006`)
+
+`meetings.notes.written` (consumed by `src/meeting-actions.ts`) makes one `meeting_actions` notification for each person the Scribe gave action items to (`ref_type` `meeting`, `ref_id` the meeting, `actor_name` the Scribe, `preview`
+"2 action items from <title>"). Only owners who are people of the workspace and can read the room's channel get one; the row is unique for a person and a meeting, so the event can be replayed. It follows the person's
+"mentions" switch, is held by Do not disturb like any other, is never silenced by a channel level (it is addressed to the person) and opens `/meetings/<id>`.
+
 ## Manifest
 
-`notifications` / `0.1.0` / `server`, `dependsOn: ['channels', 'presence']`, `extends: ['event.emit', 'event.subscribe', 'job.register']` (the jobs `notifications.release_held`, `notifications.push` and `notifications.digest`), emits
+`notifications` / `0.1.0` / `server`, `dependsOn: ['channels', 'presence', 'meetings']`, `extends: ['event.emit', 'event.subscribe', 'job.register']` (the jobs `notifications.release_held`, `notifications.push` and `notifications.digest`), emits
 `notifications.notification.created`, `notifications.digest.sent`, `notifications.digest.unsubscribed`, consumes `channel.mention.created`,
-`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`, `connections.sign_in.expired`, `scheduled_jobs.scheduled_job.stopped` (a person's routine was switched off by the platform: the notice sits in their Reminders conversation and reaches the bell as a `reminder`).
+`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`, `meetings.notes.written`, `connections.sign_in.expired`, `scheduled_jobs.scheduled_job.stopped` (a person's routine was switched off by the platform: the notice sits in their Reminders conversation and reaches the bell as a `reminder`).
 
 ## Tests
 

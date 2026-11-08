@@ -14,7 +14,7 @@ const TITLE_MAX = 160;
 /** What a notification is, as far as its push is concerned. */
 export interface PushFacts {
   notificationId: string;
-  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder';
+  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder' | 'meeting_actions';
   keyword: string | null;
   actorName: string;
   preview: string;
@@ -43,6 +43,7 @@ export function buildPushPayload(f: PushFacts): PushPayload {
   const where = open && f.channelName !== '' ? ` in #${clip(f.channelName.replace(/^#/, ''), 60)}` : '';
   let title: string;
   if (f.kind === 'reminder') title = `Reminder${where}`;
+  else if (f.kind === 'meeting_actions') title = 'You have action items from a meeting';
   else if (f.kind === 'dm') title = `${sender} sent you a message`;
   else if (f.kind === 'reply') title = `${sender} replied in a thread${where}`;
   else if (f.kind === 'message') title = where !== '' ? `${sender}${where}` : `${sender} sent you a message`;
@@ -55,7 +56,8 @@ export function buildPushPayload(f: PushFacts): PushPayload {
     title: clip(title, TITLE_MAX),
     body: open ? clip(f.preview, BODY_MAX) || PRIVATE_BODY : PRIVATE_BODY,
     tag: `n-${f.notificationId}`,
-    url: `/open?${params.toString()}`,
+    // For action items from a meeting `messageId` is the meeting's id: it opens the meeting page.
+    url: f.kind === 'meeting_actions' ? `/meetings/${f.messageId}` : `/open?${params.toString()}`,
     notificationId: f.notificationId,
   });
 }

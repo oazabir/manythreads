@@ -36,7 +36,7 @@ export function effectiveLevel(own: NotificationLevel | null | undefined, channe
  */
 export function levelAllows(level: NotificationLevel, kind: NotificationKind): boolean {
   // A reminder is something the person asked for themself, so no channel level silences it.
-  if (kind === 'reminder') return true;
+  if (kind === 'reminder' || kind === 'meeting_actions') return true;
   if (level === 'nothing') return false;
   if (level === 'all') return true;
   return kind === 'mention' || kind === 'reply';

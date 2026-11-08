@@ -142,6 +142,48 @@ describe('demoScenarioCompletion', () => {
   });
 });
 
+describe('the meeting runs', () => {
+  const notesPrompt = (lines: string[]): string =>
+    ['Write the notes of a meeting.', '', 'Read the transcript below.', '', '----- TRANSCRIPT -----', ...lines, '----- END OF TRANSCRIPT -----'].join('\n');
+
+  it('writes the notes JSON from the transcript lines, keyed by the first line of the prompt', () => {
+    const text = demoScenarioCompletion({
+      model: 'smart',
+      messages: user(
+        notesPrompt([
+          '@1000 | 00:00:01 | Nadia: Can you write the migration note, Tariq?',
+          '@5000 | 00:00:05 | Tariq: I will do it by 2026-11-06.',
+          '@9000 | 00:00:09 | Nadia: So it is decided, we ship on Thursday.',
+          '@12000 | 00:00:12 | Omar: What about the brain deploy plan task?',
+        ]),
+      ),
+      authorized: true,
+    });
+    const notes = JSON.parse(text) as { summary: string; decisions: unknown[]; actionItems: Array<{ owner: string | null; due: string | null; atMs: number }>; questions: unknown[] };
+    expect(notes.summary).toContain('Nadia and Tariq and Omar');
+    expect(notes.decisions).toEqual([{ text: 'So it is decided, we ship on Thursday.', atMs: 9000 }]);
+    expect(notes.actionItems.map((a) => [a.owner, a.due, a.atMs])).toEqual([
+      [null, null, 1000],
+      ['Tariq', '2026-11-06', 5000],
+    ]);
+    expect(notes.questions).toHaveLength(2);
+  });
+
+  it('is not caught by a persona word inside the transcript, and answers an empty transcript with empty lists', () => {
+    const text = demoScenarioCompletion({ model: 'smart', messages: user(notesPrompt(['@1 | 00:00:00 | Ana: @coder implement the plan and delegate it.'])), authorized: true });
+    expect(JSON.parse(text)).toMatchObject({ decisions: [], questions: [] });
+    expect(JSON.parse(demoScenarioCompletion({ model: 'smart', messages: user(notesPrompt([])), authorized: true }))).toMatchObject({ actionItems: [] });
+  });
+
+  it('answers a question asked in a call, short and in plain words', () => {
+    const prompt = ['Answer a question asked in a meeting.', '', '----- QUESTION -----', 'What is the deploy command?', '----- END OF QUESTION -----'].join('\n');
+    const text = demoScenarioCompletion({ model: 'smart', messages: user(prompt), authorized: true });
+    expect(text).toContain('pnpm ship:dev');
+    const none = ['Answer a question asked in a meeting.', '', '----- QUESTION -----', 'Xyz?', '----- END OF QUESTION -----'].join('\n');
+    expect(demoScenarioCompletion({ model: 'smart', messages: user(none), authorized: true })).toContain('found nothing');
+  });
+});
+
 describe('demo scenario over HTTP', () => {
   it('serves the full chain through /v1/chat/completions', async () => {
     fake = await startFakeLlm({ scenario: 'demo' });

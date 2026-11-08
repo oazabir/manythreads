@@ -169,6 +169,68 @@ function orchestratorNextStep(task: string): string {
   ].join('\n');
 }
 
+// ---- the meeting runs (P15-10, P15-18) ----------------------------------------------------------------------------------------------------------------
+
+/** The first line of the prompt the platform writes for a Scribe run and for a note-taker's answer run (runtime-hermes `meeting-run.ts`). */
+export const MEETING_NOTES_FIRST_LINE = 'Write the notes of a meeting.';
+export const MEETING_QUESTION_FIRST_LINE = 'Answer a question asked in a meeting.';
+
+const firstLineOf = (text: string): string => text.split('\n').find((l) => l.trim().length > 0)?.trim() ?? '';
+
+interface HeardLine {
+  atMs: number;
+  speaker: string;
+  text: string;
+}
+
+const heardLines = (prompt: string): HeardLine[] => {
+  const start = prompt.indexOf('----- TRANSCRIPT -----');
+  const end = prompt.indexOf('----- END OF TRANSCRIPT -----');
+  const body = start >= 0 ? prompt.slice(start + '----- TRANSCRIPT -----'.length, end > start ? end : undefined) : '';
+  const out: HeardLine[] = [];
+  for (const raw of body.split('\n')) {
+    const m = /^@(\d+) \| [^|]* \| ([^:]{1,80}): (.+)$/.exec(raw.trim());
+    if (m) out.push({ atMs: Number(m[1]), speaker: m[2]!.trim(), text: m[3]!.trim() });
+  }
+  return out;
+};
+
+/**
+ * The Scribe's JSON, worked out from the transcript lines by plain rules, so a test knows what comes back: a line with "decided", "decision" or "agreed" is a
+ * decision; a line where the speaker says "I will" or "I'll" is an action for that speaker, "can you" or "please" with no taker is an action with no owner;
+ * a line ending in "?" is a question. A date written YYYY-MM-DD in the line is its due date. Nothing here reads a name out of a line other than its speaker.
+ */
+function meetingNotesAnswer(prompt: string): string {
+  const lines = heardLines(prompt);
+  const speakers = [...new Set(lines.map((l) => l.speaker))];
+  const decisions = lines.filter((l) => /\b(decided|decision|agreed)\b/i.test(l.text)).slice(0, 5).map((l) => ({ text: l.text, atMs: l.atMs }));
+  const actionItems = lines
+    .filter((l) => /\b(i will|i'll|can you|please)\b/i.test(l.text))
+    .slice(0, 5)
+    .map((l) => ({
+      text: l.text,
+      owner: /\b(i will|i'll)\b/i.test(l.text) ? l.speaker : null,
+      due: /\b(\d{4}-\d{2}-\d{2})\b/.exec(l.text)?.[1] ?? null,
+      atMs: l.atMs,
+    }));
+  const questions = lines.filter((l) => l.text.endsWith('?')).slice(0, 5).map((l) => ({ text: l.text, atMs: l.atMs }));
+  const summary =
+    lines.length === 0
+      ? 'Nothing was said in this meeting.'
+      : `${speakers.join(' and ')} spoke in this meeting: ${lines.length} lines. The first was "${lines[0]!.text.slice(0, 80)}".`;
+  return JSON.stringify({ summary, decisions, actionItems, questions });
+}
+
+/** An answer to a question asked in a call: the seeded memory facts that share a word with the question, or a plain "I found nothing". */
+function meetingQuestionAnswer(prompt: string): string {
+  const start = prompt.indexOf('----- QUESTION -----');
+  const end = prompt.indexOf('----- END OF QUESTION -----');
+  const question = start >= 0 ? prompt.slice(start + '----- QUESTION -----'.length, end > start ? end : undefined).trim() : '';
+  const q = question.toLowerCase();
+  const fact = DEMO_MEMORY_FACTS.find((f) => f.toLowerCase().split(/[^a-z0-9]+/).some((w) => w.length > 3 && q.includes(w)));
+  return fact === undefined ? 'I looked in the channels I was given and found nothing that answers that.' : `From the team's notes: ${fact}`;
+}
+
 /**
  * The demo completion: pure, synchronous, deterministic. Route order matters —
  * a tester confirmation also names the orchestrator, so confirmations are
@@ -176,6 +238,12 @@ function orchestratorNextStep(task: string): string {
  * brain is asked directly.
  */
 export function demoScenarioCompletion(request: ScenarioRequest): string {
+  // The meeting runs (the Scribe's notes, a note-taker's answer) are keyed by the first line of the prompt the platform writes, so no persona routing below can
+  // catch them by a word that happens to be in a transcript.
+  const first = firstLineOf(lastUserText(request.messages));
+  if (first === MEETING_NOTES_FIRST_LINE) return meetingNotesAnswer(lastUserText(request.messages));
+  if (first === MEETING_QUESTION_FIRST_LINE) return meetingQuestionAnswer(lastUserText(request.messages));
+
   const all = textOf(request.messages).toLowerCase();
   const last = stripAuthorHeaders(lastUserText(request.messages));
   const lowerLast = last.toLowerCase();

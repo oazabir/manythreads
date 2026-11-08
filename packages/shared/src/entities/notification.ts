@@ -7,16 +7,18 @@ import { ChannelKind } from './channel.ts';
 
 /**
  * Why a person is told: named in a message (or a keyword of theirs is in it), a reply in a thread they follow, a direct message, or any message
- * in a channel they asked to hear everything from (`message`, P14-09), or a reminder they set themself (`reminder`, P14-04). Matches the SQL CHECK exactly.
+ * in a channel they asked to hear everything from (`message`, P14-09), a reminder they set themself (`reminder`, P14-04), or action items from a meeting that were given to them
+ * (`meeting_actions`, P15-12). Matches the SQL CHECK exactly.
  */
-export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder']);
+export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions']);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 /**
  * What `refId` points at: a message either way. `reminder` keeps a reminder's row apart from the notification the same message may already have
- * made for the person (one row per person and reference), so a mention and a reminder on one message are two rows.
+ * made for the person (one row per person and reference), so a mention and a reminder on one message are two rows. `meeting` is the action items of one meeting: `refId` is then the
+ * meeting's id (not a message), and opening it goes to the meeting page.
  */
-export const NotificationRefType = z.enum(['message', 'reminder']);
+export const NotificationRefType = z.enum(['message', 'reminder', 'meeting']);
 export type NotificationRefType = z.infer<typeof NotificationRefType>;
 
 /**

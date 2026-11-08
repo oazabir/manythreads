@@ -26,6 +26,9 @@ bots:
   - slug: archivist
     name: Archivist
     role: "Files what lands in the memory inbox as short, linked notes in the team's memory."
+  - slug: scribe
+    name: Scribe
+    role: "Writes the notes of a team's meeting from its transcript, with a summary, the decisions and who does what."
   - slug: engineer
     name: Engineer
     role: "Plans a goal, has the plan reviewed, then runs the bots that code, review, test, deploy and smoke test it."

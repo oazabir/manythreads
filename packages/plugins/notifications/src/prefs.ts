@@ -19,11 +19,11 @@ export function normalizePrefs(raw: unknown): NotificationPrefs {
 
 /**
  * Which of the three settings rows governs a kind: a message from a channel set to "all messages" is treated like a direct message, and a reminder
- * uses the mentions row for its browser alert (its in-app switch is never read: the person asked for the reminder).
+ * uses the mentions row for its browser alert (its in-app switch is never read: the person asked for the reminder); action items from a meeting use it the same way.
  */
 export function prefKey(kind: NotificationKind): 'mention' | 'reply' | 'dm' {
   if (kind === 'message') return 'dm';
-  return kind === 'reminder' ? 'mention' : kind;
+  return kind === 'reminder' || kind === 'meeting_actions' ? 'mention' : kind;
 }
 
 /** Does a person with these settings want `kind` for a message in `channelId`, in the app? */

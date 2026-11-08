@@ -32,14 +32,16 @@
         "reply",
         "dm",
         "message",
-        "reminder"
+        "reminder",
+        "meeting_actions"
       ]
     },
     "refType": {
       "type": "string",
       "enum": [
         "message",
-        "reminder"
+        "reminder",
+        "meeting"
       ]
     },
     "refId": {
