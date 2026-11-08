@@ -161,26 +161,15 @@ test('Add from a connected app: a lead picks Google Drive and a folder, ticks th
   }
 });
 
-test('Lena signs in with Microsoft only: the apps the dialog offers her do not include Google Drive', async ({ browser, playwright }) => {
-  // Lena signs in with Microsoft only; a Personal base is open to her wherever she works
+test('Lena is a guest: she has no Personal space and is offered no connected app, even with Microsoft connected', async ({ playwright }) => {
+  // a guest has no Personal space and no connections of her own to read documents with (the seed still gives her Microsoft)
   const lena = await apiOn(playwright, stack, 'lena');
   try {
-    await lena.post('/api/me/knowledge', { slug: 'lena-notes', name: 'Lena notes' });
+    expect(await lena.status('POST', '/api/me/knowledge', { slug: 'lena-notes', name: 'Lena notes' })).toBe(403);
+    const res = await lena.ctx.get('/api/me/knowledge-providers');
+    expect(res.status()).toBe(403);
+    expect(await res.text()).not.toContain('google_drive');
   } finally {
     await lena.ctx.dispose();
-  }
-  const { page, context } = await openOn(browser, playwright, stack, 'lena', '/knowledge');
-  try {
-    await expect(page.getByTestId('knowledge-screen')).toBeVisible();
-    // the dialog lists only the apps she has connected
-    const providers = await page.evaluate(async () => {
-      const res = await fetch('/api/me/knowledge-providers');
-      return ((await res.json()) as { providers: string[] }).providers;
-    });
-    expect(providers).not.toContain('google_drive');
-    // she did connect Microsoft with the files permission, so the dialog is not empty for her
-    expect(providers).toContain('onedrive');
-  } finally {
-    await context.close();
   }
 });

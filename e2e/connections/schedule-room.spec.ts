@@ -134,6 +134,8 @@ test('the organizer cancels: the plan is cancelled, the chip goes, and the event
 });
 
 test('five minutes before the start the invited people get "starts in 5 minutes", once, and the join page opens the room', async ({ browser, playwright }) => {
+  // the minute job picks the plan up on its next tick (up to a minute), and the join page then opens the room
+  test.setTimeout(240_000);
   const seeded = seededOf(stack);
   const nadia = await apiOn(playwright, stack, 'nadia');
   let planId: string;

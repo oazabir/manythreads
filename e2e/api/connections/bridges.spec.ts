@@ -56,7 +56,7 @@ test('credentials go in sealed: the WhatsApp secret is in no answer, no row and 
 test('a person gets an eight-digit link code, and the list of their chat apps never repeats it', async ({ request }) => {
   await iso.start();
   const res = await request.post('/api/me/bridges/telegram/link-code', { headers: as(priya), data: {} });
-  expect(res.status()).toBe(200);
+  expect(res.status()).toBe(201);
   const code = (await res.json()) as { code: string; expiresAt: string; instruction: string };
   expect(code.code).toMatch(/^\d{8}$/);
   expect(Date.parse(code.expiresAt)).toBeGreaterThan(Date.now());
@@ -103,7 +103,7 @@ test('only a lead of the team makes the code that joins a channel to a chat, and
   expect([403, 404]).toContain((await request.post(`/api/channels/${channel}/bridge-links/telegram/code`, { headers: as(priya), data: {} })).status());
   expect((await request.post(`/api/channels/${channel}/bridge-links/telegram/code`, { headers: as(sameera), data: {} })).status()).toBe(403);
   const made = await request.post(`/api/channels/${channel}/bridge-links/telegram/code`, { headers: as(omar), data: {} });
-  expect(made.status()).toBe(200);
+  expect(made.status()).toBe(201);
   const code = (await made.json()) as { code: string; command: string };
   expect(code.command).toBe(`/connect ${code.code}`);
 });

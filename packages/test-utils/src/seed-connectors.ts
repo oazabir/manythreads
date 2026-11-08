@@ -12,7 +12,7 @@ import { SEED_IDS } from './seed-content.ts';
  *
  * What it makes (the things that need no browser are written with the platform's own pieces, the rest goes through the real routes of the running server):
  *
- *  1. `#design` (Engineering, public) and, planned in it by Nadia through the real route, a voice room "Design review" with Rafi invited, today at 15:00 of the server's clock.
+ *  1. `#design` (Engineering, public) with Nadia and Rafi as members and, planned in it by Nadia through the real route, a voice room "Design review" with Rafi invited, today at 15:00 of the server's clock.
  *     When 15:00 is not between three minutes and eleven hours away, the room is planned four hours from now so the channel header always has something to show.
  *  2. Sign-ins that already exist, sealed with the platform's secret service and accepted by the stand-in with no consent: Omar's (the Engineering lead, who adds the team source),
  *     Nadia's and Rafi's Google (Drive, Calendar read and write, free/busy) and Lena's Microsoft (files and calendar). The tokens are `fs_<provider>_<hash>` of `seedKey + address` (tools/fake-saas `tokens.ts`).
@@ -264,6 +264,8 @@ export async function seedConnectors(options: SeedConnectorsOptions): Promise<Se
     const made = await ok(url, OMAR, 'POST', `/api/teams/${SEED_CONNECTORS.design.team}/channels`, { name: SEED_CONNECTORS.design.channel, purpose: 'Design reviews and the things we look at together.' });
     const designChannelId = made.body.channel.id as string;
     log(`#design is ${designChannelId}`);
+    // the people of the design team are in it (a public channel has no members until someone joins; the schedule dialog lists a channel's members)
+    for (const p of [NADIA, RAFI]) await ok(url, OMAR, 'POST', `/api/channels/${designChannelId}/members`, { personId: p.personId });
 
     // ---- verified addresses: the team rule counts only those ------------------------------------------------------------------------------------------
     await sys(async (tx) => {

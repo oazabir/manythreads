@@ -32,7 +32,7 @@ test('an admin adds a mailbox: Kubernetes is shut with its reason, the credentia
   const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH);
   try {
     await expect(page.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Connections', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Engineering').getByRole('link', { name: 'Connections', exact: true })).toBeVisible();
     await expect(page.getByTestId('connection-empty')).toContainText('No connection yet');
     await expect(page.getByTestId('connection-status')).toHaveAttribute('role', 'status');
 
