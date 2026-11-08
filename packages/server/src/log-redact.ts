@@ -14,8 +14,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 const WEBHOOK_SECRET_SEGMENT = /^(\/hooks\/(?!apps\/|bridges\/)[^/?#]*\/)[^/?#]*/;
 
-/** A `token=` value in the query string (a client that puts a credential there lands it in the access log) and any integration token (`mtat_...`) wherever it sits. One pass each, no nested quantifier. */
-const QUERY_TOKEN = /([?&]token=)[^&#]*/gi;
+/**
+ * A `token=` value in the query string (a client that puts a credential there lands it in the access log) and any integration token (`mtat_...`) wherever it sits. One pass each, no
+ * nested quantifier. `hub.verify_token=` is WhatsApp's check of a chat bridge address (`GET /hooks/bridges/whatsapp/<account>`): the verify word the admin chose is in that query.
+ */
+const QUERY_TOKEN = /([?&](?:hub\.verify_)?token=)[^&#]*/gi;
 const API_TOKEN_TEXT = /mtat_[A-Za-z0-9_-]+/g;
 
 /**

@@ -39,6 +39,11 @@ describe('log redaction (L4)', () => {
     expect(redactUrl('/a?TOKEN=abc&x=1')).toBe('/a?TOKEN=[redacted]&x=1');
     expect(redactUrl(`/a?next=${t}`)).toBe('/a?next=[redacted]');
     expect(redactUrl('/a?mytoken=1&tokens=2')).toBe('/a?mytoken=1&tokens=2');
+    // WhatsApp's check of a chat bridge address carries the admin's verify word in the query
+    const id = '0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b';
+    expect(redactUrl(`/hooks/bridges/whatsapp/${id}?hub.mode=subscribe&hub.verify_token=verify-word-1&hub.challenge=42`)).toBe(
+      `/hooks/bridges/whatsapp/${id}?hub.mode=subscribe&hub.verify_token=[redacted]&hub.challenge=42`,
+    );
     const line = JSON.stringify(serializeRequest({ method: 'GET', url: `/api/slack/auth.test?token=${t}`, headers: {}, host: 'h', ip: '1.2.3.4', socket: { remotePort: 1 } } as never));
     expect(line).not.toContain(t);
   });
