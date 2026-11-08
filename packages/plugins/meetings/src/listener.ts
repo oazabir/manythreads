@@ -624,8 +624,8 @@ export function registerListener(ctx: PluginContext): void {
         if (st.rooms.size + st.starting.size >= maxRooms()) break;
         try {
           await startListener(ctx, r.id, r.workspace_id, job.log);
-        } catch {
-          job.log.warn('meetings: the note-taker could not join a voice room; trying again in a minute');
+        } catch (e) {
+          job.log.warn(`meetings: the note-taker could not join a voice room; trying again in a minute (${e instanceof Error ? e.message : String(e)})`);
         }
       }
     },

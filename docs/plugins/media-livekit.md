@@ -35,6 +35,7 @@ Written by hand with `node:crypto` and `fetch` (no LiveKit package):
 - **Who is heard.** A track is subscribed only when its owner is on the list; any other track is unsubscribed at once and not a sample of it is read. When the list changes, a person who left it loses their track
   immediately and what was buffered for them is discarded. The audio is cut at pauses by the energy detector in `packages/sdk/src/audio/vad.ts` (silence of 600 ms or more, at most 30 s a chunk, 16 kHz mono) and posted
   to the server thread as WAV chunks.
+- **Address.** The worker joins from inside the server pod, so the chart sets `MANYTHREADS_LIVEKIT_LISTEN_URL=ws://manythreads-media:7880` (the service). Without it the worker would use the public `wss://…/livekit` name, which a pod behind the site's router may not reach; the sweep's warning then ends with the reason.
 - **Limit.** At most `MANYTHREADS_NOTETAKER_MAX_ROOMS` (default 10, chart `media.noteTakerMaxRooms`) rooms with a note-taker per server process; the eleventh answers 409 "The note-taker is busy, try again in a minute."
   Recording has its own `MANYTHREADS_RECORDING_MAX_ROOMS`. Both counts are per server process; the live site runs one.
 - **Fake.** `createFakeMediaProvider().listen` (in `packages/sdk/src/media.ts`, used by `media-fake`) records the subscriptions, keeps one listener per identity, and `POST /api/test/media/speak` (test servers only)
