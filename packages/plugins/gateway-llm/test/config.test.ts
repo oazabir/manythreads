@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_ALIASES, buildConfigDocument, nextLocal, resolveModel } from '../src/config.ts';
+import { ALL_ALIASES, KEYLESS_OPENAI_COMPATIBLE_KEY, buildConfigDocument, nextLocal, resolveModel } from '../src/config.ts';
 import type { AliasRow, ProviderRow } from '../src/rows.ts';
 import { LiteLlmError, createLiteLlmClient, type LiteLlmConfigDocument, type LiteLlmResult, type LiteLlmTransport } from '../src/litellm.ts';
 
@@ -102,6 +102,27 @@ describe('buildConfigDocument', () => {
       api_base: 'https://x.openai.azure.com',
       api_version: '2024-10-21',
     });
+  });
+});
+
+describe('an OpenAI-compatible endpoint without a key', () => {
+  it('gets a stand-in key (the proxy refuses to call without one), and a real key is kept', () => {
+    const keyless = buildConfigDocument({
+      providers: [provider({ kind: 'openai_compatible', api_base: 'http://manythreads-asr:8000/v1', secret_id: null })],
+      aliases: [alias({ model: 'openai/Systran/faster-whisper-tiny' })],
+      keyFor: () => null,
+    });
+    expect(keyless.model_list[0]?.litellm_params).toEqual({
+      model: 'openai/Systran/faster-whisper-tiny',
+      api_key: KEYLESS_OPENAI_COMPATIBLE_KEY,
+      api_base: 'http://manythreads-asr:8000/v1',
+    });
+    const keyed = buildConfigDocument({
+      providers: [provider({ kind: 'openai_compatible', api_base: 'http://x/v1' })],
+      aliases: [alias({ model: 'm' })],
+      keyFor: () => 'sk-real',
+    });
+    expect(keyed.model_list[0]?.litellm_params).toMatchObject({ api_key: 'sk-real' });
   });
 });
 

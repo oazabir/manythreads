@@ -21,6 +21,12 @@ const PROVIDER_PREFIX: Record<z.infer<typeof LlmProviderKind>, string> = {
   openai_compatible: 'openai',
 };
 
+/**
+ * LiteLLM's OpenAI client refuses to start without an api key, even for an OpenAI-compatible server that checks none (a speech or model server inside the cluster).
+ * Such an endpoint gets this stand-in; a provider with a real key keeps it. It is never a secret: the server it is sent to ignores it.
+ */
+export const KEYLESS_OPENAI_COMPATIBLE_KEY = 'no-key-needed';
+
 /** The aliases bound in a workspace; the other members of the closed set are pushed as deletions. */
 export const ALL_ALIASES: readonly string[] = ['smart', 'fast', 'code', 'local', 'embed', 'vision', 'image', 'transcribe'];
 
@@ -48,7 +54,8 @@ export function buildConfigDocument(input: {
     const provider = alias.provider_id ? byId.get(alias.provider_id) : undefined;
     // A bare model (`anthropic/claude-...`) needs no provider row; one that names a provider needs it live.
     if (alias.provider_id && !provider) continue;
-    const key = provider ? input.keyFor(provider.id) : null;
+    const stored = provider ? input.keyFor(provider.id) : null;
+    const key = stored ?? (provider?.kind === 'openai_compatible' ? KEYLESS_OPENAI_COMPATIBLE_KEY : null);
     model_list.push({
       model_name: alias.alias,
       litellm_params: {
