@@ -316,6 +316,10 @@
                 {
                   "name": "HOME",
                   "value": "/tmp"
+                },
+                {
+                  "name": "REPO_SYNC_SCRATCH",
+                  "value": "/run/sync"
                 }
               ],
               "securityContext": {
@@ -347,6 +351,10 @@
                 {
                   "name": "tmp",
                   "mountPath": "/tmp"
+                },
+                {
+                  "name": "repo-sync-scratch",
+                  "mountPath": "/run/sync"
                 },
                 {
                   "name": "config",
@@ -454,6 +462,13 @@
               "name": "repos",
               "emptyDir": {
                 "sizeLimit": "8Mi"
+              }
+            },
+            {
+              "name": "repo-sync-scratch",
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "4Mi"
               }
             },
             {

@@ -71,6 +71,17 @@ file system, uid 1000, no Kubernetes token (`automountServiceAccountToken: false
 read-only and its own projected token. When `claudePod.publisher.enabled` is on, the pod gets a third container, the publisher (P19-09): it is the only container that mounts a team's
 push Secret (read-only), and it mounts `work` read-only. The run container mounts no push Secret; it reaches the publisher only through a socket in one shared `emptyDir`. No container of the pod gets a host path, a privileged setting or the Docker socket.
 
+**The repo-sync container never trusts a clone (P19-09, security review).** It clones and fetches the public projects of the runner's teams into `work`, which the bot writes too, as the same user. A plain
+`git -C <clone> fetch` reads the clone's own `.git/config` and `.git/hooks`, so a bot that had written `remote.origin.uploadpack`, `core.sshCommand`, an `include`, a `url.*.insteadOf`, `core.hooksPath`,
+`core.fsmonitor` or a hook file there had a command run in the one container that has the network (the same attacks run against the old script start the program; see `packages/plugins/claude-pods/test/repo-sync.test.ts`).
+`deploy/images/claude-pod/repo-sync.sh` now runs git in a fresh environment (`env -i`: none of the caller's `GIT_*` variables, no global or system config, https only, and hooks, fsmonitor, ssh and proxy commands,
+credential helper and auto gc fixed on top of any config) and a fetch never reads the clone's config or hooks. It makes a private git folder in its own scratch folder (`/run/sync`, a 4Mi memory volume that
+only this container mounts; `/tmp` and `/work` are shared with the bot, so a file kept there could be changed under the script's feet), with a fresh config and `objects`, `refs` and `packed-refs` linked to the clone's,
+and fetches the address on the project list into `refs/remotes/origin/*`. The one thing read from the clone is its origin address, and it must equal the list's address or the clone is left alone. A team, bot,
+project, `.git`, `objects` or `refs` folder that is a link is not followed, a clone with an alternates file is not fetched, a list address with a user name, query or odd character is skipped, and the first
+clone is made under a hidden name with empty templates and moved into place. Automatic gc is off for these fetches (the clone's own config no longer decides). Tests: `repo-sync.test.ts` (real git, a local
+bare origin, ten hostile set-ups, each also run as plain `git fetch` to show the attack works without the script).
+
 **Push Secrets.** Each team on the runner's list has a Secret `hermes-<team>-push` (made by the Hermes pods' controller, one key per project, the same Secret the Hermes pod
 reads). The publisher mounts it read-only at `/etc/publisher-push/<team>` (mode 0444 so uid 1001 can read it; optional: it exists only once a lead has saved a token for a project of the
 team). The publisher keeps a private copy of one token file per request in a memory-backed `/tmp` and removes it at the end. No other container of the pod mounts these Secrets.

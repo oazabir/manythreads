@@ -7,6 +7,8 @@ import type { ClaudePodConfig } from './config.ts';
 // is drawn by the caller and passed in), so every object can be asserted in a test. One runner is one pod: a pod serves every team on the runner's list.
 
 export const BRIDGE_PORT = 8650;
+/** The scratch folder of the repo-sync container: a memory volume that only that container mounts (deploy/images/claude-pod/repo-sync.sh). */
+export const REPO_SYNC_SCRATCH = '/run/sync';
 /** The list of repositories the bridge writes (from the controller's `PUT /internal/repos`) and the repo-sync container reads every few seconds. */
 export const REPOS_FILE = '/run/repos/repos.txt';
 /** Where the publisher container listens, and the folder the run container shares with it to reach it. */
@@ -381,12 +383,18 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
               image: cfg.image,
               imagePullPolicy: 'IfNotPresent',
               command: ['sh', '/opt/claude-pod/repo-sync.sh'],
-              env: [{ name: 'HOME', value: '/tmp' }],
+              env: [
+                { name: 'HOME', value: '/tmp' },
+                { name: 'REPO_SYNC_SCRATCH', value: REPO_SYNC_SCRATCH },
+              ],
               securityContext: { ...NO_PRIVILEGE, readOnlyRootFilesystem: true },
               resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { memory: '256Mi' } },
               volumeMounts: [
                 { name: 'work', mountPath: '/work' },
                 { name: 'tmp', mountPath: '/tmp' },
+                // the one place this container writes that the bot's container cannot: /work and /tmp are shared with the bot, which writes them as the same user, so a git config
+                // or a state file kept there could be changed under the script's feet (repo-sync.sh makes its private git folder here)
+                { name: 'repo-sync-scratch', mountPath: REPO_SYNC_SCRATCH },
                 { name: 'config', mountPath: '/etc/bridge', readOnly: true },
                 { name: 'repos', mountPath: '/run/repos', readOnly: true },
               ],
@@ -422,6 +430,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
             { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
             { name: 'config', configMap: { name: names.config } },
             { name: 'repos', emptyDir: { sizeLimit: '8Mi' } },
+            { name: 'repo-sync-scratch', emptyDir: { medium: 'Memory', sizeLimit: '4Mi' } },
             ...(publishing
               ? [
                   { name: 'publish', emptyDir: { sizeLimit: '1Mi' } },

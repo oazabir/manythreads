@@ -282,7 +282,7 @@ function syncSetup(): Sync {
       const child = spawn('sh', [SYNC], {
         detached: true,
         stdio: 'ignore',
-        env: { PATH: `${shims}:${process.env['PATH']}`, GIT_CONFIG_GLOBAL: gitconfig, REPO_SYNC_WORK: work, REPO_SYNC_LIST: join(root, 'run-repos.txt'), REPO_SYNC_FALLBACK: join(root, 'etc-repos.txt'), REPO_SYNC_STATE: join(root, 'state'), ...env },
+        env: { PATH: `${shims}:${process.env['PATH']}`, REPO_SYNC_GIT_CONFIG: gitconfig, REPO_SYNC_ALLOW_FILE: '1', REPO_SYNC_SCRATCH: join(root, 'scratch'), REPO_SYNC_WORK: work, REPO_SYNC_LIST: join(root, 'run-repos.txt'), REPO_SYNC_FALLBACK: join(root, 'etc-repos.txt'), REPO_SYNC_STATE: join(root, 'state'), ...env },
       });
       children.push(child);
       return child;
