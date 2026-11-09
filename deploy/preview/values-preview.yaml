@@ -87,3 +87,8 @@ hermesPods:
   enabled: false
   deployTargets: []
 registry: { enabled: false }
+
+# The deployer bot installs this release with a Role that may not touch NetworkPolicies, and the namespace already has its own default-deny and allow rules:
+# the release's own policies stay off here (the full-cycle deploy to test.manythreads.kahf.to failed on "networkpolicies is forbidden" otherwise).
+networkPolicies:
+  release: { enabled: false }
