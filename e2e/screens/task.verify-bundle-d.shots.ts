@@ -596,7 +596,12 @@ test('B01 connect fake Google with Drive only, then add Calendar: the second con
     const first = (await consents()).at(-1);
     check('B01 the first consent has Drive and no calendar', !!first && first.scopes.some((s: string) => /drive/.test(s)) && !first.scopes.some((s: string) => /calendar/.test(s)));
     await o.page.goto('/settings/connections');
+    // the ticks are set from what is granted once the page has read it: wait for that, or the page's own reset undoes the ticks below
+    await expect(google).toHaveAttribute('data-connected', 'true', T);
+    await expect(google.locator('[data-service="drive"] input')).toBeChecked(T);
     await only('calendar');
+    await expect(google.locator('[data-service="calendar"] input')).toBeChecked(T);
+    await expect(google.locator('[data-service="drive"] input')).not.toBeChecked(T);
     await google.getByTestId('person-connect').click();
     await expect(o.page.getByTestId('person-result')).toBeVisible(T);
     const second = (await consents()).at(-1);
