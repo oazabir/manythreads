@@ -46,7 +46,9 @@ const HOOK_BUDGET_MS = START_BUDGET_MS + 60_000;
  */
 function allowForStart(): void {
   try {
-    if (test.info().timeout !== 0 && test.info().timeout < HOOK_BUDGET_MS) test.setTimeout(HOOK_BUDGET_MS);
+    // Always set it, never compare first: a spec that calls `test.setTimeout(300_000)` at file level makes `info().timeout` read 300 s inside its `beforeAll`, while the hook still
+    // dies at 30 s (the runners specs of P19-12 did exactly that, and failed in every run that started four stacks at once). `Math.max` keeps a larger value.
+    if (test.info().timeout !== 0) test.setTimeout(Math.max(test.info().timeout, HOOK_BUDGET_MS));
   } catch {
     // not running inside Playwright
   }
