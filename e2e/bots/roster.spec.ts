@@ -235,6 +235,11 @@ test('a team made from a template starts with its bots: Brain in every template,
       slug: 'front-desk',
     });
     expect(made.created).toBe(true);
+    // The workspace Brain is made with the team (P10-13) and is on the roster at once; the template's own bots are seated a moment later, by the loader reading the first commit.
+    // The roster does not refresh itself, so open it when the loader has finished (or the row waited for below never shows).
+    await expect
+      .poll(async () => (await omar.get<{ bots: { slug: string }[] }>('/api/teams/front-desk/bots')).bots.some((b) => b.slug === 'support-responder'), { timeout: 60_000 })
+      .toBe(true);
   } finally {
     await omar.ctx.dispose();
   }
