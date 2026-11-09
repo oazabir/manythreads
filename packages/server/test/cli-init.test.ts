@@ -247,6 +247,33 @@ describe('runInit', () => {
     expect(err.join('\n')).toMatch(/--email/);
   });
 
+  it('shows a made-up password as soon as the workspace exists, even when a later step fails (the owner would be locked out of a workspace that was made)', async () => {
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        const ok = req.url === '/readyz' || req.url?.startsWith('/api/bootstrap/');
+        res.writeHead(ok ? 200 : 500, { 'content-type': 'application/json' });
+        res.end('{}');
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as { port: number }).port;
+    // Enough of a pool for `withSystem`: the workspace count is 0, so the command takes the first-run path.
+    const pool = { connect: async () => ({ query: async () => ({ rows: [{ n: 0 }] }), release: () => undefined }), end: async () => undefined };
+    const out: string[] = [];
+    const err: string[] = [];
+    try {
+      const code = await runInit(['--email', 'a@b.c'], { stdin: Object.assign((async function* () {})(), { isTTY: true }), out: (l) => out.push(l), err: (l) => err.push(l), env: { MANYTHREADS_INTERNAL_URL: `http://127.0.0.1:${port}` } }, false, () => pool as never);
+      expect(code).toBe(1); // the team could not be made
+      expect(err.join('\n')).toMatch(/first team could not be made/);
+      const shown = out.filter((l) => l.startsWith('Password (shown once'));
+      expect(shown).toHaveLength(1);
+      expect(shown[0]).toMatch(/: [A-Za-z0-9]{24}$/);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
   it('brain-profile needs the password on standard input', async () => {
     const err: string[] = [];
     const code = await runInit(['--email', 'a@b.c'], { stdin: (async function* () {})(), out: () => undefined, err: (l) => err.push(l), env: {} }, true, () => {

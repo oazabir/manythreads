@@ -79,6 +79,15 @@ groups:
         annotations:
           summary: A database standby is more than 30 seconds behind
           description: A failover now would lose this much recent work. The built-in watcher uses MANYTHREADS_ALERT_REPLICA_LAG_SECONDS.
+      - alert: ManythreadsStandbyGone
+        # The lag metric is left out when no standby is connected, so a standby that dropped away raises no lag alert; this one sees the count fall to 0 after it was above 0
+        # in the last day. (A standby removed on purpose clears itself after a day.)
+        expr: max by (job) (max_over_time(manythreads_db_replicas[1d])) > 0 and max by (job) (manythreads_db_replicas) == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: The database standby is no longer connected
+          description: A failover now has nothing to promote. Check the standby pod of the database and its replication.
       - alert: ManythreadsMetricsPartial
         expr: manythreads_ops_section_ok == 0
         for: 10m

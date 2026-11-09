@@ -55,7 +55,7 @@ docker compose -f deploy/compose/docker-compose.yml ps
 docker compose -f deploy/compose/docker-compose.yml exec manythreads manythreads-admin init --email you@example.org --name "Your Name" --workspace "Your Workspace" --team General
 ```
 
-With no password on standard input, the command makes one up and prints it once at the end: keep it. To choose your own, pipe it in (it is read from standard input, never from the command line):
+With no password on standard input, the command makes one up and prints it once, as soon as the workspace is made: keep it. (To run the command again later, pipe that password in, as below; a new made-up one could not sign in.) To choose your own, pipe it in (it is read from standard input, never from the command line):
 
 ```sh
 printf '%s' 'a long password' | docker compose -f deploy/compose/docker-compose.yml exec -T manythreads manythreads-admin init --email you@example.org

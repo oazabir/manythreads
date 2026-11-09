@@ -60,6 +60,12 @@ describe('the Prometheus rules', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('sees a standby that dropped away (the lag metric is left out then, so the lag alert alone would stay silent)', () => {
+    const rule = rules.find((r) => r.alert === 'ManythreadsStandbyGone');
+    expect(rule?.expr).toContain('manythreads_db_replicas');
+    expect(rule?.expr).toContain('max_over_time');
+  });
+
   it('uses the same limits as the built-in watcher defaults', () => {
     const config = readRepo('packages/plugins/ops-health/src/config.ts');
     expect(config).toMatch(/replicaLagSeconds[^\n]*30/);

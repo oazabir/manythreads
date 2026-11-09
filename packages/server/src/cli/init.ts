@@ -163,7 +163,7 @@ export async function signInOrBootstrap(pool: pg.Pool, http: Http, admin: Omit<F
   if (r.status !== 200) {
     throw new InitError(
       r.status === 401 || r.status === 400
-        ? `A workspace already exists and ${admin.email} could not sign in with that password. Give the administrator's own email and password.`
+        ? `A workspace already exists and ${admin.email} could not sign in with that password. Give the administrator's own email and pipe its password on standard input.`
         : `Sign-in failed (${errorText(r)}).`,
     );
   }
@@ -448,6 +448,9 @@ export async function runInit(rest: readonly string[], io: CommandIo, brainOnly:
     } else {
       created = await signInOrBootstrap(pool, http, { email: parsed.email, name: parsed.name, workspace: parsed.workspace, password }, io.now ?? (() => new Date()));
       say(created ? `Workspace "${parsed.workspace}" made; ${parsed.email} is its owner.` : `The workspace exists already; signed in as ${parsed.email}.`);
+      // Said the moment the administrator exists, not at the end: a later step (the team, the runner test) can fail, and a made-up password that was never shown would
+      // lock the owner out of a workspace that was made (running the command again signs in with the password it is given, not a new one).
+      if (created && generated) say(`Password (shown once, keep it): ${password}`);
     }
     const team = await ensureTeam(http, parsed.team);
     if (!brainOnly) say(`Team: ${team}.`);
@@ -483,7 +486,6 @@ export async function runInit(rest: readonly string[], io: CommandIo, brainOnly:
     }
     if (!brainOnly) {
       say(`Sign in at the install's address with ${parsed.email}.`);
-      if (generated) say(`Password (shown once, keep it): ${password}`);
     }
     return 0;
   } catch (err) {
