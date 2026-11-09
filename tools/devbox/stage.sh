@@ -9,6 +9,9 @@
 #
 # Needs: images for $TAG in k3s (tools/devbox/ci.sh or deploy.sh built them; default TAG is the short sha of HEAD); the demo layer (server-demo, demo-fakes) is built here when missing.
 # Variables: TAG, STAGE_NAMESPACE (manythreads-stage), STAGE_PORT (18080), STAGE_API_PORT (18081), STAGE_HOST (10.0.2.15), FAKE_SAAS_PORT (18090), STAGE_STATE_DIR (/tmp/manythreads-stage).
+# STAGE_PROFILE=<a,b>  (Bundle E) adds deploy/helm/manythreads/values-stage-<a>.yaml, <b>... after values-stage.yaml. Known profiles: runners, airgap, otel (any other word is refused).
+#   `runners` also makes the pods namespace `manythreads-stage-bots` (Claude and Codex pods, Hermes pods of the stage) and reserves a host port for the stand-ins the profile runs
+#   (STAGE_STANDIN_PORT, default 18100, printed at the end). `down` removes that namespace too. Like the release namespace, the bots namespace is a fixed name that no variable changes.
 # The fake values (seed key, bot token) are made up here and live only in $STAGE_STATE_DIR; nothing in them is a secret. About 1.5 GB of memory while it runs.
 # Written for the integration pass; not run by the coder that wrote it.
 set -euo pipefail
@@ -28,6 +31,25 @@ TAG="${TAG:-$(git rev-parse --short=12 HEAD)}"
 # or helm call, so a stray STAGE_NAMESPACE can never point `up`, `down` or `status` at the production release. Nothing in this script runs `kubectl exec` or touches a pod.
 readonly STAGE_NS="manythreads-stage"
 [ "$NS" = "$STAGE_NS" ] || { printf 'FAILED: STAGE_NAMESPACE must be %s (got "%s"); this script never touches any other namespace\n' "$STAGE_NS" "$NS" >&2; exit 1; }
+# The pods namespace of the `runners` profile: the only other namespace this script ever touches, also a fixed name.
+readonly STAGE_BOTS_NS="manythreads-stage-bots"
+STANDIN_PORT="${STAGE_STANDIN_PORT:-18100}"
+# Profiles: a comma list of words from this list only; each one is a values file that must exist. Anything else is refused before any kubectl or helm call.
+PROFILES="${STAGE_PROFILE:-}"
+PROFILE_ARGS=()
+HAS_RUNNERS=0
+if [ -n "$PROFILES" ]; then
+  IFS=',' read -r -a PROFILE_LIST <<<"$PROFILES"
+  for p in "${PROFILE_LIST[@]}"; do
+    case "$p" in
+      runners|airgap|otel) ;;
+      *) printf 'FAILED: STAGE_PROFILE word "%s" is not one of runners, airgap, otel\n' "$p" >&2; exit 1 ;;
+    esac
+    [ -f "deploy/helm/manythreads/values-stage-$p.yaml" ] || { printf 'FAILED: deploy/helm/manythreads/values-stage-%s.yaml is missing\n' "$p" >&2; exit 1; }
+    PROFILE_ARGS+=(-f "deploy/helm/manythreads/values-stage-$p.yaml")
+    [ "$p" = runners ] && HAS_RUNNERS=1
+  done
+fi
 step() { printf '\n=== %s ===\n' "$1"; }
 die() { printf '\nFAILED: %s\n' "$1" >&2; exit 1; }
 stop_pid() {
@@ -43,6 +65,8 @@ down() {
   pkill -f "src/cli.ts --host $HOST --public-host $HOST --port $FAKE_PORT" 2>/dev/null || true
   helm uninstall "$STAGE_NS" -n "$STAGE_NS" >/dev/null 2>&1 || true
   kubectl delete namespace "$STAGE_NS" --ignore-not-found --wait=true --timeout=300s
+  # the pods namespace exists only when a `runners` stage made it; deleting it is harmless when it does not
+  kubectl delete namespace "$STAGE_BOTS_NS" --ignore-not-found --wait=true --timeout=300s
   echo "the stage is gone (the pid files in $STATE are stale and are overwritten by the next up)"
 }
 
@@ -88,9 +112,14 @@ up() {
   step "the release in $NS"
   kubectl delete namespace "$NS" --ignore-not-found --wait=true --timeout=300s
   kubectl create namespace "$NS"
+  if [ "$HAS_RUNNERS" = 1 ]; then
+    kubectl delete namespace "$STAGE_BOTS_NS" --ignore-not-found --wait=true --timeout=300s
+    kubectl create namespace "$STAGE_BOTS_NS"
+    echo "pods namespace $STAGE_BOTS_NS made; stand-ins use host port $STANDIN_PORT (STAGE_STANDIN_PORT)"
+  fi
   helm upgrade --install manythreads-stage ./deploy/helm/manythreads -n "$NS" \
     -f deploy/helm/manythreads/values-ci.yaml -f deploy/helm/manythreads/values-demo.yaml -f deploy/helm/manythreads/values-stage.yaml \
-    -f "$STATE/values-fake-bases.yaml" --set imageTag="$TAG" --wait --timeout 15m
+    -f "$STATE/values-fake-bases.yaml" ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --set imageTag="$TAG" --wait --timeout 15m
   kubectl -n "$NS" rollout status deploy/manythreads-server --timeout=300s
   kubectl -n "$NS" rollout status deploy/manythreads-web --timeout=300s
 
@@ -124,6 +153,7 @@ the stage is up:
 Run the probe:
   MANYTHREADS_STAGE_URL=http://127.0.0.1:$PORT FAKE_SAAS_CONTROL=$CONTROL pnpm -C e2e exec playwright test -c screens/task.config.ts verify-bundle-d --retries=0 --workers=1
 Take it down: tools/devbox/stage.sh down
+profiles        ${PROFILES:-none}$([ "$HAS_RUNNERS" = 1 ] && printf '   (pods namespace %s, stand-in host port %s)' "$STAGE_BOTS_NS" "$STANDIN_PORT")
 MSG
 }
 

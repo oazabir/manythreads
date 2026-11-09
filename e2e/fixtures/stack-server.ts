@@ -17,6 +17,9 @@
 //                                the server starts; then `#design` with a planned room, sealed Google sign-ins of Nadia and Rafi and a Microsoft one of Lena, a Zendesk work-app address in #support,
 //                                Telegram on with Nadia linked, and a Drive folder read into the Engineering `handbook` base - see packages/test-utils/src/seed-connectors.ts), `personas`
 //                                (only the people, like the shared api server) or `none` (empty: the first-admin link is printed)
+//                                `runners` (seed v3 and v4 plus seed v19, opt-in: a populated Runners page - host, team pod, two Claude runners, an LLM gateway runner and a Codex runner
+//                                waiting for sign-in, all with made-up sign-ins - see packages/test-utils/src/seed-runners.ts)
+//   MANYTHREADS_STACK_SNAPSHOT   `day-1` or `week-2` (P12-02): restore the saved database and folders (tools/seed/src/restore.ts) instead of running a seed; the seed modes then do nothing.
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
 //   MANYTHREADS_STACK_TEST_PLUGINS 1: the test-kernel plugin (bulk messages, channel grants, stub resources)
@@ -35,8 +38,9 @@ import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedConnectors, seedFinishedSetup, seedMeetings, seedPolish, SEED_CONNECTORS, withClusterLock, type SeedConnectorsResult } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedConnectors, seedFinishedSetup, seedMeetings, seedPolish, seedRunners, SEED_CONNECTORS, withClusterLock, type SeedConnectorsResult } from '@manythreads/test-utils';
 import type { FakeSaas } from '../../tools/fake-saas/src/index.ts';
+import { restoreSnapshot } from '../../tools/seed/src/restore.ts';
 import { seedWorld } from './seed.ts';
 
 const dist = resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
@@ -113,7 +117,7 @@ await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
 const seedMode = process.env['MANYTHREADS_STACK_SEED'] ?? 'world';
-if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'meetings', 'connectors', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'meetings', 'connectors', 'runners', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
 // The meeting stand-ins (see the header): set before the server starts, because the plugins read them when they register.
 const meetingsStack = seedMode === 'meetings' || process.env['MANYTHREADS_STACK_MEETINGS'] === '1';
 const fallbackEnv = (key: string, value: string): void => {
@@ -141,6 +145,8 @@ if (connectorsStack) {
   fallbackEnv('MANYTHREADS_RUNTIME_DIR', mkdtempSync(join(tmpdir(), 'manythreads-stack-runtime-')));
   fallbackEnv('MANYTHREADS_LITELLM_URL', 'http://litellm.invalid:4000');
 }
+// The `runners` seed (P19-11) makes its runners through the real routes, so it needs the dev actor header.
+if (seedMode === 'runners') fallbackEnv('MANYTHREADS_STACK_DEV_AUTH', '1');
 let saas: FakeSaas | null = null;
 if (wantsFakeSaas) {
   const { startFakeSaas } = await import('../../tools/fake-saas/src/index.ts');
@@ -160,7 +166,10 @@ process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
 const repoDir = process.env['MANYTHREADS_REPO_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-repos-'));
 process.env['MANYTHREADS_REPO_DIR'] = repoDir;
 const db = await createTestDatabase();
-if (seedMode === 'personas') await createPersonas(db);
+// `MANYTHREADS_STACK_SNAPSHOT` (P12-02) restores a saved database and its folders; the seed modes below then do not run.
+const snapshot = process.env['MANYTHREADS_STACK_SNAPSHOT'] ?? '';
+if (snapshot !== '') await restoreSnapshot({ name: snapshot, database: { name: db.name, ownerUrl: db.ownerUrl }, repoDir, storageDir });
+else if (seedMode === 'personas') await createPersonas(db);
 else if (seedMode !== 'none') await seedWorld(db);
 const logs: string[] = [];
 const token = process.env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? 'e2e-test-auth-token';
@@ -190,7 +199,9 @@ const server = await startServer({
 apiPort = server.port; // the seeds below call back through the front (a chat app's webhook posts to the public address, which is this front)
 // The server's plugin migrations have run: now the conversations (seed v3 needs the channel tables).
 // `repo` is seed v3 plus seed v4: the team repositories (pages with history, a CSV, a diagram, an app, memory, bots) and the attachments of #dev.
-if (seedMode === 'content') await seedWorld(db, { content: true });
+if (snapshot !== '') {
+  // restored above: nothing to seed
+} else if (seedMode === 'content') await seedWorld(db, { content: true });
 else if (seedMode === 'repo') await seedWorld(db, { content: true, repo: true });
 else if (seedMode === 'guard') await seedWorld(db, { content: true, repo: true, guard: true });
 // `polish` is seed v21 (P21-24): seed v3 and v4, then `#polish` for the look checks (a run, a long message, an Answer, a thread). Opt-in: no other mode has it.
@@ -207,8 +218,13 @@ else if (seedMode === 'meetings') {
 }
 // `connectors` is seed v16 (P16-12): seed v3 and v4, then the planned room, the sealed sign-ins, the work-app address, Telegram and the handbook folder, made through the real routes of this
 // server against the stand-ins of tools/fake-saas. Opt-in: no other mode has them.
+// `runners` is seed v19 (P19-11): seed v3 and v4, then the Runners page's runners, made through the real routes of this server. Opt-in: no other mode has them.
+if (snapshot === '' && seedMode === 'runners') {
+  await seedWorld(db, { content: true, repo: true });
+  await seedRunners({ url: `http://127.0.0.1:${server.port}`, db, log: (line) => process.stderr.write(`seed runners: ${line}\n`) });
+}
 let seeded: SeedConnectorsResult | null = null;
-if (connectorsStack) {
+if (snapshot === '' && connectorsStack) {
   await seedWorld(db, { content: true, repo: true });
   seeded = await seedConnectors({ url: `http://127.0.0.1:${server.port}`, db, saas: saas!, log: (line) => process.stderr.write(`seed connectors: ${line}\n`) });
 }
