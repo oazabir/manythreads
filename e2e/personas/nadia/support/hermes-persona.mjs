@@ -33,7 +33,8 @@ const call = async (name, args) => {
     return text;
   }
 };
-const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+// the messages a person may be shown as a source: those of a channel (a search also finds the question just asked in the Brain chat, which is nobody's source)
+const channelHits = (found) => (Array.isArray(found?.hits) ? found.hits : []).filter((h) => h?.channel?.kind === 'channel' && typeof h.id === 'string').map((h) => ({ id: h.id, snippet: String(h.snippet ?? '').replace(/<[^>]+>/g, '').slice(0, 120) }));
 
 // the person's own words come after the one line of context the platform writes ("Name in #channel:" / blank line)
 const cut = prompt.indexOf(':\n\n');
@@ -46,11 +47,11 @@ if (/Handed over from/i.test(prompt)) {
   reply = 'Got it. I have the answer about the cache TTL and will start from its sources.';
 } else if (/cache ttl/i.test(question)) {
   const found = await call('messages.search', { query: 'cache TTL' });
-  const ids = [...new Set(JSON.stringify(found).match(UUID) ?? [])];
+  const hits = channelHits(found);
   const recalled = await call('memory.recall', { query: 'cache TTL' });
   const concept = /"(?:conceptPath|path)":"([^"]+)"/.exec(JSON.stringify(recalled))?.[1];
   const citations = [
-    ...ids.slice(0, 2).map((id, i) => ({ kind: 'message', messageId: id, snippet: i === 0 ? 'Deploy plan: cache TTL 300 s to 60 s (v2.14)' : 'No migration. A config flag and the TTL constant' })),
+    ...hits.slice(0, 2).map((h) => ({ kind: 'message', messageId: h.id, snippet: h.snippet })),
     ...(concept ? [{ kind: 'memory', conceptPath: concept, snippet: 'The cache TTL change from 300 s to 60 s was agreed' }] : []),
   ];
   await call('answer.post', {
@@ -62,15 +63,16 @@ if (/Handed over from/i.test(prompt)) {
 } else if (channel === 'support' && /\bdraft\b/i.test(question)) {
   // the Support responder: it writes the customer's reply as a message of its own; the bot's definition says a person must approve a post, so the platform holds it
   await call('messages.post', { body: 'Hi, thanks for writing in. You can change the delivery address of an order until it has shipped: open the order in your account, choose Change delivery address and save. If it has already shipped, send the carrier your tracking number.' });
-  reply = 'My draft is in the thread and waits for one of you to approve it.';
+  // the call answered "approval_pending": a model that is told so stops there and says nothing more (the card in the thread is the answer)
+  reply = '';
 } else if (/refund/i.test(question)) {
   const recalled = await call('memory.recall', { query: 'refund policy' });
   const concept = /"(?:conceptPath|path)":"([^"]*refund[^"]*)"/.exec(JSON.stringify(recalled))?.[1];
   const found = await call('messages.search', { query: 'refund' });
-  const ids = [...new Set(JSON.stringify(found).match(UUID) ?? [])];
+  const hits = channelHits(found);
   await call('answer.post', {
     body: 'Refunds up to 30 days after a charge need no approval [1]. Anything older goes to the team lead with the ticket number.',
-    citations: [...(concept ? [{ kind: 'memory', conceptPath: concept, snippet: 'Refunds up to 30 days after a charge need no approval.' }] : []), ...ids.slice(0, 1).map((id) => ({ kind: 'message', messageId: id, snippet: 'refund' }))],
+    citations: [...(concept ? [{ kind: 'memory', conceptPath: concept, snippet: 'Refunds up to 30 days after a charge need no approval.' }] : []), ...hits.slice(0, 1).map((h) => ({ kind: 'message', messageId: h.id, snippet: h.snippet }))],
     chips: [{ kind: 'followup', prompt: 'What do I tell the customer?', label: 'What do I tell the customer?' }],
   });
   reply = 'Posted my answer above.';

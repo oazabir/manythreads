@@ -16,11 +16,17 @@ export default defineJourney({
   start: 'week-2',
   steps: [
     {
-      id: 'request-waits',
-      expect: TID.approvalCard,
-      run: async ({ stack, pages, page }) => {
+      id: 'inbox-opens',
+      expect: TID.approvalsInbox,
+      run: async ({ stack, pages }) => {
         [release] = await arrangeApprovals(stack, [{ path: 'releases/v2.14-production.md', requester: 'nadia', approvers: ['role:on-call'] }]);
         await pages.approvals.open();
+      },
+    },
+    {
+      id: 'request-waits',
+      expect: TID.approvalCard,
+      run: async ({ pages, page }) => {
         const card = await pages.approvals.select(/v2\.14-production/);
         await expect(page.getByTestId('approval-blocked')).toHaveText('You asked for this, so someone else has to decide it.');
         await expect(card.getByTestId(TID.approvalApprove)).toHaveCount(0);
@@ -36,10 +42,16 @@ export default defineJourney({
       },
     },
     {
+      id: 'decided-tab',
+      expect: TID.approvalsInbox,
+      run: async ({ page }) => {
+        await page.goto('/t/engineering/approvals?tab=decided');
+      },
+    },
+    {
       id: 'release-approved',
       expect: TID.approvalCard,
-      run: async ({ pages, page }) => {
-        await page.goto('/t/engineering/approvals?tab=decided');
+      run: async ({ pages }) => {
         const card = await pages.approvals.select(/v2\.14-production/);
         await expect(card.getByTestId(TID.approvalOutcome)).toBeVisible();
       },
