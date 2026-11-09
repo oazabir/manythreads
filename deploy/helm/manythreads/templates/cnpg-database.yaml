@@ -1,0 +1,22 @@
+{{- /*
+  The `hindsight` database as an object of its own (PLAN P10-08, Bundle E decision E18). Hindsight keeps its data in a database `hindsight` owned by a login role of
+  the same name; the init container of the Hindsight pod (templates/hindsight.yaml) still makes the role and the database when they are missing and stays as it is,
+  so an install that has the database already is adopted, not recreated: `ensure: present` on a database that exists changes nothing but what differs (the owner).
+  `databaseReclaimPolicy: retain`: removing this object (or the release) never drops the database.
+*/ -}}
+{{- if and (eq .Values.postgres.mode "cnpg") .Values.hindsight.enabled .Values.hindsight.database.object }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: manythreads-pg-hindsight
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  cluster:
+    name: manythreads-pg
+  name: hindsight
+  owner: hindsight
+  ensure: present
+  databaseReclaimPolicy: retain
+{{- end }}

@@ -50,7 +50,7 @@ describe.skipIf(!haveHelm)('the chart (P19-08)', () => {
   });
 
   it('adds no cluster role when the pods are off, and passes the allowlist to the server', () => {
-    const off = spawnSync('helm', ['template', 't', chart], { encoding: 'utf8' });
+    const off = spawnSync('helm', ['template', 't', chart, '--set', 'hermesPods.enabled=false'], { encoding: 'utf8' });
     expect(off.status, off.stderr).toBe(0);
     expect(docsOf(off.stdout, 'ClusterRole')).toHaveLength(0);
     const on = render(['--set', 'botRunners.allowedNodes[0]=ubuntu-vm', '--set', 'botRunners.allowedNodes[1]=worker-2']);

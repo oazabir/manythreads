@@ -23,3 +23,48 @@ Lockouts (temporary, in memory): 5 wrong passwords for one email from one addres
 any address lock the account 15 minutes (a completed password reset lifts it); 5 wrong current passwords lock a password change
 15 minutes; 10 refused reset, verification, setup or invitation links from one address lock that address 15 minutes; 30 calls to
 /hooks with no live webhook or a wrong secret lock the address 5 minutes for failing calls (a right secret still posts).
+
+The database: failover and restore (docs/deploy/backup.md)
+----------------------------------------------------------
+{{- if eq .Values.postgres.mode "cnpg" }}
+Postgres runs under CloudNativePG ({{ .Values.postgres.instances }} instance{{ if ne (int .Values.postgres.instances) 1 }}s{{ end }}). {{ if gt (int .Values.postgres.instances) 1 }}If the primary fails, a standby takes over within about a minute and the Service manythreads-pg-rw follows it.{{ else }}With one instance there is no standby: a failed pod is restarted, and the site is down until it is back. Set postgres.instances to 3 for a standby that takes over.{{ end }}
+UNLOGGED tables (a table made UNLOGGED is not written to the write-ahead log) are EMPTY after a failover or a crash, and they are not on a standby. The platform keeps nothing
+it cannot lose in one; if you add a table of your own, do not make it UNLOGGED unless it can be rebuilt.
+{{- else }}
+Postgres runs as a single StatefulSet (postgres.mode=statefulset): no standby, no failover. Use postgres.mode=cnpg for both.
+{{- end }}
+
+Restore from the nightly dump (the default; templates/backup.yaml, backup.enabled):
+  bash tools/backup/restore.sh --help        # restores a set into a namespace after you type its name; tools/backup/drill.sh proves the latest set restores
+{{- if .Values.postgres.objectStore.enabled }}
+
+Continuous backup to object storage is ON (postgres.objectStore: bucket {{ .Values.postgres.objectStore.bucket }}, base backup {{ .Values.postgres.objectStore.schedule }}, kept {{ .Values.postgres.objectStore.retention }}).
+It needs the CloudNativePG Barman Cloud plug-in installed in the cluster ({{ .Values.networkPolicies.release.operatorNamespace }} namespace); this chart does not install it and its objects were NOT tried on a cluster that has it.
+Restore to a point in time: make a NEW Cluster (another name) that recovers from the store, check it, then point the platform at it:
+  apiVersion: postgresql.cnpg.io/v1
+  kind: Cluster
+  metadata: { name: manythreads-pg-restored }
+  spec:
+    instances: 1
+    storage: { size: {{ .Values.postgres.storage.size }} }
+    bootstrap:
+      recovery:
+        source: origin
+        recoveryTarget: { targetTime: "2026-01-31 12:00:00+00" }   # leave out for "the latest"
+    externalClusters:
+      - name: origin
+        plugin:
+          name: barman-cloud.cloudnative-pg.io
+          parameters: { barmanObjectName: manythreads-pg-store, serverName: manythreads-pg }
+Stop the server first (kubectl scale deployment manythreads-server --replicas=0), and keep the blobs and repositories volumes: they are not in the database backup.
+{{- else }}
+
+Continuous backup (point-in-time restore) is OFF: the nightly dump is the only database backup, so up to a day of changes can be lost. To turn it on, install the CloudNativePG
+Barman Cloud plug-in and set postgres.objectStore (bucket, existingSecret with the keys access-key and secret-key).
+{{- end }}
+{{- if .Values.networkPolicies.release.enabled }}
+
+Network policies of this namespace: the database takes calls only from the platform's own workloads, Hindsight only from the server, LiteLLM only from the server, Hindsight and the
+Hermes pods' namespace. A tool you run in this namespace that must reach one of them needs the label app.kubernetes.io/component=backup-tool (what tools/backup uses) or its own policy.
+Roll back with networkPolicies.release.enabled=false.
+{{- end }}

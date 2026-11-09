@@ -78,6 +78,15 @@ seed:
   demo: true
   fixedPasswords: true
 
+# What a default install turns on (litellm, hindsight and the Hermes pod controller, values.yaml) is turned off here, said out loud so a change of the
+# default can never reach the test namespace unseen: it keeps to the database, the server and the web, to save memory (a CI stack uses stand-ins).
+litellm:
+  enabled: false
+hindsight:
+  enabled: false
+hermesPods:
+  enabled: false
+
 # The mail catcher of the live release is not needed here (the tests read mail from the
 # database), and the CI namespace has no SMTP relay.
 mailpit:

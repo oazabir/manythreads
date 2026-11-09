@@ -1,0 +1,62 @@
+{{- /*
+  Continuous backup of the database to object storage (PLAN P10-07, Bundle E decision E17). CloudNativePG 1.30 no longer carries the object-store code in the
+  operator: it comes from the Barman Cloud plug-in (a cluster-wide add-on with its own ObjectStore kind, installed once per cluster by the cluster's owner;
+  docs/deploy/backup.md). With postgres.objectStore.enabled this file makes
+    * the ObjectStore (where the base backups and the write-ahead log go and how long they are kept),
+    * a ScheduledBackup (a base backup through the plug-in on a schedule),
+  and templates/postgres-cnpg.yaml adds the plug-in to the Cluster as the WAL archiver. The nightly pg_dump (templates/backup.yaml) stays as it is.
+  NOT proved on a cluster that has the plug-in: only `helm template` shows these objects (tests in deploy/helm/test).
+*/ -}}
+{{- $os := .Values.postgres.objectStore }}
+{{- if $os.enabled }}
+{{- if ne .Values.postgres.mode "cnpg" }}{{ fail "postgres.objectStore.enabled needs postgres.mode=cnpg (the plug-in belongs to CloudNativePG)" }}{{ end }}
+{{- if not $os.bucket }}{{ fail "postgres.objectStore.enabled needs postgres.objectStore.bucket (the bucket the backups go to)" }}{{ end }}
+{{- if not $os.existingSecret }}{{ fail "postgres.objectStore.enabled needs postgres.objectStore.existingSecret (a Secret with the keys access-key and secret-key)" }}{{ end }}
+{{- if not (regexMatch "^[0-9]+[dwm]$" (toString $os.retention)) }}{{ fail "postgres.objectStore.retention must be a number of days, weeks or months, like 30d" }}{{ end }}
+{{- /* CloudNativePG's schedule has a seconds field in front; a usual five-field cron line gets "0" there. */ -}}
+{{- $fields := splitList " " (trim (toString $os.schedule)) }}
+{{- if not (or (eq (len $fields) 5) (eq (len $fields) 6)) }}{{ fail "postgres.objectStore.schedule must be a cron line of five fields (minute hour day month weekday)" }}{{ end }}
+{{- $schedule := ternary (printf "0 %s" (join " " $fields)) (join " " $fields) (eq (len $fields) 5) }}
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: manythreads-pg-store
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  retentionPolicy: {{ $os.retention | quote }}
+  configuration:
+    destinationPath: {{ printf "s3://%s/" $os.bucket | quote }}
+    {{- if $os.endpoint }}
+    endpointURL: {{ $os.endpoint | quote }}
+    {{- end }}
+    s3Credentials:
+      accessKeyId: { name: {{ $os.existingSecret | quote }}, key: access-key }
+      secretAccessKey: { name: {{ $os.existingSecret | quote }}, key: secret-key }
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  {{- if $os.region }}
+  instanceSidecarConfiguration:
+    env:
+      - { name: AWS_REGION, value: {{ $os.region | quote }} }
+  {{- end }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: manythreads-pg-nightly
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $schedule | quote }}
+  backupOwnerReference: self
+  immediate: false
+  cluster:
+    name: manythreads-pg
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+{{- end }}

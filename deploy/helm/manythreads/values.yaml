@@ -84,8 +84,8 @@ postgres:
     size: 10Gi
     storageClass: local-path
   resources: {}
-  # Continuous backup to object storage through the CloudNativePG Barman Cloud plugin (Bundle E, decision E17). OFF. No template reads this block until
-  # WP-O2 adds them: it renders an ObjectStore, the Cluster's `plugins:` entry (WAL archiving) and a ScheduledBackup. The plugin is a cluster-wide operator the owner installs.
+  # Continuous backup to object storage through the CloudNativePG Barman Cloud plug-in (templates/cnpg-objectstore.yaml). OFF. It renders an ObjectStore, the Cluster's
+  # `plugins:` entry (WAL archiving) and a ScheduledBackup. The plug-in is a cluster-wide add-on the cluster's owner installs; proved by `helm template` only (docs/deploy/backup.md).
   objectStore:
     enabled: false
     bucket: ""
@@ -93,7 +93,7 @@ postgres:
     region: us-east-1
     existingSecret: ""    # a Secret with the keys access-key and secret-key
     retention: 30d
-    schedule: "0 2 * * *"
+    schedule: "0 2 * * *"   # five-field cron line (CloudNativePG's own has a seconds field: the chart adds it)
 
 server:
   enabled: true
@@ -199,9 +199,10 @@ mail:
   smtpUrl: ""
 
 # In-cluster mail catcher for the test environment: a Deployment + ClusterIP Service, never exposed by the ingress
-# (read mail with `kubectl -n manythreads port-forward svc/manythreads-mailpit 8025`). Turn off with a real relay.
+# (read mail with `kubectl -n manythreads port-forward svc/manythreads-mailpit 8025`). OFF in the base values (a default install sends mail through
+# `mail.smtpUrl`); values-live.yaml turns it on, because the live site reads its mail there.
 mailpit:
-  enabled: true
+  enabled: false
   image: axllent/mailpit:v1.31
   resources: {}
 
@@ -257,16 +258,21 @@ web:
     size: 1Gi
     storageClass: local-path
 
-# LLM gateway (LiteLLM) and team memory (Hindsight). Off in the base values (the CI namespace keeps them off to save memory);
-# values-live.yaml turns them on for the live install, and tools/devbox/deploy.sh applies it. Keys are generated once into the
+# LLM gateway (LiteLLM) and team memory (Hindsight). ON in the base values: a default install is the five workloads of the spec (database, server,
+# web, LiteLLM, Hindsight) plus the controller that makes the Hermes pods (`hermesPods` below). values-ci.yaml turns LiteLLM and Hindsight off again to
+# save memory in the test namespace, and values-demo.yaml swaps them for stand-ins; values-live.yaml pins them on. Keys are generated once into the
 # Secret manythreads-llm-secrets (kept across upgrades). Providers are NOT configured here: use Workspace -> LLM API in the product.
 litellm:
-  enabled: false
+  enabled: true
   image: ghcr.io/berriai/litellm:main-stable
   resources: {}
 hindsight:
-  enabled: false          # needs litellm.enabled
+  enabled: true           # needs litellm.enabled
   image: ghcr.io/vectorize-io/hindsight:0.10.3
+  # The database `hindsight` as a CloudNativePG Database object (templates/cnpg-database.yaml; postgres.mode=cnpg). The Hindsight pod's init container still makes the role
+  # and the database when they are missing, so an install that has them is adopted. false = no such object.
+  database:
+    object: true
   llmModel: fast          # the LiteLLM alias its fact extraction calls
   extractionMode: concise # `chunks` calls no model
   # Skip the model check at start-up. True while no provider is configured behind the alias `fast`
@@ -354,17 +360,24 @@ claudePod:
   runtimeClassName: ""
 
 # Network policies of the release namespace itself (Bundle E, decision E20). The pods namespace already has its own (templates/hermes-pods.yaml).
-# `release.enabled`: Hindsight, LiteLLM and Postgres take traffic only from the workloads that need them. No template reads this until WP-O2 adds netpol-release.yaml.
+# `release.enabled`: Hindsight, LiteLLM and Postgres take traffic only from the workloads that need them (templates/netpol-release.yaml). Set it false to roll back.
 networkPolicies:
   release:
     enabled: true
+    # The namespace of the database operator (and of the backup plug-in): it may call every database pod. k3s default install: cnpg-system.
+    operatorNamespace: cnpg-system
+    # The server's own policy: who may call the API. OFF until a live check shows that no pod on the host network and no tool on the host needs a
+    # direct way in (they arrive from the node's address: list it in extraCidrs, e.g. ["10.0.2.15/32"]).
+    server:
+      enabled: false
+      extraCidrs: []
 
 # Managed Hermes pods ("mode B", docs/plugins/hermes-pods.md): the platform runs one pod per team (`hermes-<team>`) holding the team's bots.
 # The server's hermes-pods plugin creates and updates them through the Kubernetes API (a ServiceAccount of its own with a Role in THIS
-# namespace only). Off in the base values; values-live.yaml turns it on. The two images are built by tools/devbox/deploy.sh
+# namespace only). On in the base values (values-ci.yaml turns it off, values-live.yaml pins it on). The two images are built by tools/devbox/deploy.sh
 # (deploy/images/hermes-pod, deploy/images/workbench) and imported into k3s; nothing is pulled from a registry.
 hermesPods:
-  enabled: false
+  enabled: true
   images:
     hermes: manythreads/hermes-pod:1      # Hermes Agent (official installer) + the profile sync
     workbench: manythreads/workbench:2    # the bots' shell: Playwright/Chromium, git, node, python, kubectl, helm, sshd
@@ -385,6 +398,15 @@ hermesPods:
     limits: { memory: 4Gi }
   # Namespace of the teams' pods. Pod security "baseline" is enforced there; the controller's rights are limited to it.
   namespace: manythreads-bots
+  # The RuntimeClass of the teams' pods (gVisor where the cluster has one). Empty = the cluster's default runtime. A name the cluster does not have fails the render with a
+  # plain message (the lookup needs a cluster: `helm template` has none, so set `runtimeClassCheck: false` there).
+  runtimeClassName: ""
+  runtimeClassCheck: true
+  # A team whose egress rule is on (Settings > Workspace > Data protection) and names a proxy gets HTTPS_PROXY and may reach ONLY that proxy outside the cluster. A policy
+  # cannot name a host, so list here the addresses the proxy's host stands for. We ship no proxy: it is the customer's. A team with a proxy and no entry here reaches
+  # nothing outside the cluster (the safe way to fail). Example:
+  #   - { team: engineering, cidrs: ["203.0.113.10/32"], port: 3128 }
+  teamProxies: []
   # Teams whose deployer bot may ship apps. Each gets a namespace `<apps.prefix><team slug>` (pod security "restricted", a quota, default limits,
   # default-deny network policy) and its own deployer account. A team not listed gets no deployer credential. The list is in the chart on purpose:
   # creating namespaces and roles at run time would give the server the power to grant itself anything.

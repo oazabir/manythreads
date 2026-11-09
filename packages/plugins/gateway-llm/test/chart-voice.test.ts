@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 const chart = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../deploy/helm/manythreads');
 const haveHelm = spawnSync('helm', ['version', '--short'], { encoding: 'utf8' }).status === 0;
 const render = (files: string[], extra: string[] = []): { code: number; out: string } => {
-  const args = ['template', 't', chart, '-n', 'manythreads', ...files.flatMap((f) => ['-f', resolve(chart, f)]), ...extra];
+  // the Hermes pod controller is on in the base values and needs the Kubernetes API address, which `helm template` cannot look up (P10-07)
+  const args = ['template', 't', chart, '-n', 'manythreads', ...files.flatMap((f) => ['-f', resolve(chart, f)]), '--set', 'hermesPods.apiServer.cidr=10.0.2.15/32', ...extra];
   const r = spawnSync('helm', args, { encoding: 'utf8' });
   return { code: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
 };

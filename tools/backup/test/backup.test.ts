@@ -337,7 +337,8 @@ describe('pull.sh', () => {
 describe('the chart', () => {
   const haveHelm = spawnSync('helm', ['version', '--short'], { encoding: 'utf8' }).status === 0;
   const render = (extra: string[]): { code: number; out: string } => {
-    const r = spawnSync('helm', ['template', 't', chartDir, ...extra], { encoding: 'utf8' });
+    // the Hermes pod controller is on in the base values and needs the Kubernetes API address, which `helm template` cannot look up (P10-07)
+    const r = spawnSync('helm', ['template', 't', chartDir, '--set', 'hermesPods.apiServer.cidr=10.0.2.15/32', ...extra], { encoding: 'utf8' });
     return { code: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
   };
 

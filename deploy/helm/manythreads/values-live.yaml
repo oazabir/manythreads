@@ -24,6 +24,7 @@ server:
     requests: { cpu: 100m, memory: 512Mi }
     limits: { memory: 2Gi }
 mailpit:
+  enabled: true          # pinned: the base values turn the mail catcher off
   resources:
     requests: { cpu: 10m, memory: 32Mi }
     limits: { memory: 256Mi }

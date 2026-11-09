@@ -30,4 +30,12 @@ spec:
   resources:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  {{- if .Values.postgres.objectStore.enabled }}
+  # WAL archiving to object storage through the Barman Cloud plug-in (templates/cnpg-objectstore.yaml; needs the plug-in installed, docs/deploy/backup.md)
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: manythreads-pg-store
+  {{- end }}
 {{- end }}
