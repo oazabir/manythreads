@@ -275,6 +275,8 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
           // The pod's own token stays off. Only the keeper container mounts one (a projected volume below), for the ServiceAccount that can patch the sign-in Secret.
           automountServiceAccountToken: false,
           serviceAccountName: names.keeper,
+          // gVisor (or another sandbox runtime) when the chart names one (claudePod.runtimeClassName, decision E22); the same for a Claude and a Codex pod
+          ...(cfg.runtimeClassName !== undefined && cfg.runtimeClassName !== '' ? { runtimeClassName: cfg.runtimeClassName } : {}),
           ...(node !== null ? { nodeSelector: { [HOSTNAME_LABEL]: node } } : {}),
           enableServiceLinks: false,
           terminationGracePeriodSeconds: 30,

@@ -26,6 +26,8 @@ export interface ClaudePodConfig {
   serverUrl: string;
   /** The publisher: the third container, the only one that holds a team's push token (P19-09, docs/plugins/claude-pods.md). */
   publisher: { enabled: boolean; resources: { requests?: Record<string, string>; limits?: Record<string, string> } };
+  /** The pods' RuntimeClass (gVisor where the cluster has one; the chart's `claudePod.runtimeClassName`, decision E22). Empty or absent: the cluster's default runtime. */
+  runtimeClassName?: string;
 }
 
 const DEFAULT_RESOURCES = { requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '2Gi' } };
@@ -39,6 +41,11 @@ function parseJson<T>(raw: string | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/** A RuntimeClass name as Kubernetes allows it (a DNS subdomain), or '' (the cluster's default runtime). */
+export function runtimeClassOf(raw: string): string {
+  return /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/.test(raw) && raw.length <= 253 ? raw : '';
 }
 
 export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
@@ -62,5 +69,6 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
       enabled: !['0', 'false', 'off'].includes((env['MANYTHREADS_CLAUDE_PODS_PUBLISHER'] ?? '').trim().toLowerCase()),
       resources: parseJson(env['MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES'], DEFAULT_PUBLISHER_RESOURCES),
     },
+    runtimeClassName: runtimeClassOf(get('RUNTIME_CLASS_NAME', '')),
   };
 }
