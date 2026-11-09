@@ -1,0 +1,65 @@
+name: k3s-fresh
+
+# The install page, tested (PLAN P10-09, decision E27). Every night, and by hand, the devbox starts a new k3s in a container and runs the commands of docs/deploy/k3s.md on it
+# (tools/deploy-test/k3s-fresh.sh). It passes only when /readyz answers 200 and the first administrator signs in. It costs about 3 GB and 15 minutes.
+#
+# The devbox is shared, so this job is polite:
+#   - it takes the test lock (/tmp/manythreads-test.lock) without waiting; when somebody else holds it, the night is skipped;
+#   - the script itself refuses to start while a CI run or a stage is up, or the disk is more than 80 % full (exit code 2). That is a skipped night, not a failed one.
+# It deploys nothing and talks to the live cluster at most once, read-only (does the stage namespace exist).
+
+on:
+  schedule:
+    - cron: '40 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: k3s-fresh
+  cancel-in-progress: false
+
+jobs:
+  k3s-fresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get install -y -qq sshpass
+
+      - name: Copy the tree to the devbox
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          # A directory of its own: the test builds images from it and writes my-values.yaml into it.
+          remote 'rm -rf /root/k3s-fresh && mkdir -p /root/k3s-fresh'
+          tar czf - --exclude=node_modules --exclude=.codegraph --exclude=temp \
+            --exclude=e2e/test-results --exclude=e2e/playwright-report . \
+            | remote 'tar xzf - -C /root/k3s-fresh'
+          remote 'chown -R root:root /root/k3s-fresh'
+
+      - name: Run the fresh-k3s test
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          set +e
+          remote 'cd /root/k3s-fresh && export PATH="$PATH:/usr/local/bin" && flock -n -E 99 /tmp/manythreads-test.lock tools/deploy-test/k3s-fresh.sh'
+          code=$?
+          set -e
+          if [ "$code" -eq 99 ]; then
+            echo "::notice::the lock is held by another job; tonight's run is skipped"
+            code=0
+          elif [ "$code" -eq 2 ]; then
+            echo "::notice::the script refused to start (busy machine or disk over 80 percent); tonight's run is skipped"
+            code=0
+          fi
+          exit "$code"
+
+      - name: Fetch the log
+        if: always()
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          remote 'tail -n 80 /tmp/k3s-fresh.log 2>/dev/null' || true

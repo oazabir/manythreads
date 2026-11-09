@@ -1,1 +1,7 @@
-# Stage profile "airgap" (STAGE_PROFILE, tools/devbox/stage.sh): values added on top of values-stage.yaml. Empty until the package that needs it fills it (Bundle E).
+# Stage profile "airgap" (STAGE_PROFILE=airgap, tools/devbox/stage.sh; PLAN P10-09): the stage as it would run with no way out. The stage already answers every model call
+# from the in-cluster stand-in (values-demo.yaml: fake-llm for LiteLLM, fake-hindsight for the memory) and sends no mail (mailpit stays in the namespace). What this profile adds
+# is the network: `tools/deploy-test/stage-profile.sh airgap up` applies a policy that lets the stage's pods reach only each other, the name service and the Kubernetes API, then
+# proves it (an outside address fails, Brain still answers). It combines with the "otel" profile: the collector runs inside the namespace, so the policy lets the spans through.
+hermesPods:
+  # the pod controller pulls from registries and clones from git hosts: nothing it needs is inside the namespace
+  enabled: false

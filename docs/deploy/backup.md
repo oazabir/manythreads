@@ -84,6 +84,23 @@ It checks that every row count in the manifest matches the restored database, th
 
 A passing drill proves the set is whole and restorable by this procedure, not that your off-box copy exists: check that separately.
 
+## Continuous backup and a standby (database level)
+
+The nightly set above is a dump: the worst loss is one interval (about a day). Two chart settings narrow that, both on the database (CloudNativePG) and both **off or single by default**.
+
+| Setting | What it gives | What it does not |
+|---|---|---|
+| `postgres.instances: 3` | a standby that takes over within about a minute when the main database fails (the Service `manythreads-pg-rw` follows it) | protection from a mistake: a deleted row is deleted on the standby too |
+| `postgres.objectStore.enabled: true` (with `bucket`, `existingSecret` holding `access-key` and `secret-key`, `retention`, `schedule`) | the write-ahead log and a nightly base backup go to your S3 bucket, so the database can be restored to a point in time, down to the minute | the attachments and repositories (they are in the nightly set, or in your bucket for the S3 store) |
+
+**The object store needs the Barman Cloud plug-in**, a cluster-wide add-on of CloudNativePG that the cluster's owner installs once. The chart does not install it. The objects the chart renders for it (`ObjectStore`, `ScheduledBackup`, the plug-in line on the `Cluster`) have been shown by `helm template` and its tests only; **they have not been tried on a cluster that has the plug-in**. Do a rehearsal restore into a new Cluster before you rely on it. `helm install` prints the restore recipe (a new Cluster with `bootstrap.recovery` and a `targetTime`) in its notes.
+
+**A standby is watched.** With more than one instance the server reads how far the standby is behind (System health, `/metrics` as `manythreads_db_replica_lag_seconds`) and tells the workspace's admins when it is more than 30 seconds (`MANYTHREADS_ALERT_REPLICA_LAG_SECONDS`). For the server to see the real numbers, its system database role needs the built-in role `pg_monitor`; see [monitoring.md](monitoring.md). A standby that lags a long time is a standby that cannot take over without losing that much, so treat the alert as a failed backup.
+
+**What a failover loses.** A failover promotes the standby, which holds everything the main database had written to its log and the standby had received. Anything the standby had not yet replayed when the main failed is the lag at that moment. `UNLOGGED` tables are empty after a failover; the platform keeps nothing in them that it cannot rebuild.
+
+A fresh install, command by command, is in [k3s.md](k3s.md); the nightly set works the same on it (`backup.enabled: true`).
+
 ## Limits
 
 - The set is one consistent snapshot of the database but the volumes are copied a little later; a restore may find a file or repository commit the database does not mention yet. The server tolerates both (unreferenced files are collected later, a repository index heals itself from git).

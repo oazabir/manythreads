@@ -1,0 +1,30 @@
+# The network of the stage profile "airgap" (PLAN P10-09, decision E28): every pod of the stage namespace may talk to the other pods of that namespace, to the cluster's
+# name service and to the Kubernetes API, and to nothing else. No outside address, no other namespace. Applied by tools/deploy-test/stage-profile.sh into the
+# stage namespace only; `__NODE_IP__` is the node's address, filled in by that script (the Kubernetes API is the node's port 6443).
+#
+# A real air-gapped site has no route out at all; this policy is the closest thing a test machine can show: with it on, Brain still answers and nothing leaves.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: airgap-deny-egress
+  namespace: manythreads-stage
+  labels: { app.kubernetes.io/part-of: manythreads-stage-profile }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    # the cluster's name service
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # the pods of this namespace among themselves
+    - to:
+        - podSelector: {}
+    # the Kubernetes API (the database's instance manager and the operator's status calls need it)
+    - to:
+        - ipBlock: { cidr: __NODE_IP__/32 }
+      ports:
+        - { port: 6443, protocol: TCP }
