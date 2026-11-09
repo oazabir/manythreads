@@ -13,6 +13,7 @@
 # Written for the integration pass; not run by the coder that wrote it.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"  # helm has no default kubeconfig on the devbox (deploy.sh sets the same)
 
 NS="${STAGE_NAMESPACE:-manythreads-stage}"
 PORT="${STAGE_PORT:-18080}"
