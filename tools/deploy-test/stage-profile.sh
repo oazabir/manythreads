@@ -26,7 +26,8 @@ k() { kubectl -n "$NS" "$@"; }
 
 case "$PROFILE/$ACTION" in
   airgap/up)
-    NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+    # a dual-stack node lists an IPv4 and an IPv6 InternalIP (space separated): the policy's /32 is the IPv4 one
+    NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' | tr ' ' '\n' | grep -E '^[0-9]+(\.[0-9]+){3}$' | head -n 1)
     [ -n "$NODE_IP" ] || { echo "FAILED: no node address"; exit 1; }
     sed "s|__NODE_IP__|$NODE_IP|" "$HERE/stage/airgap-deny-egress.yaml" | kubectl apply -f -
     echo "airgap: the stage namespace can now reach only itself, the name service and the API at $NODE_IP:6443"

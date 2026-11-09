@@ -77,7 +77,8 @@ alive() { [ -f "$STATE/$1.pid" ] && kill -0 "$(cat "$STATE/$1.pid")" 2>/dev/null
 up() {
   mkdir -p "$STATE"
   alive fake-saas && die "the stage is already up (run: stage.sh down)"
-  have_image "manythreads/server:$TAG" || die "no image manythreads/server:$TAG in k3s (build it with tools/devbox/ci.sh or deploy.sh first, or set TAG)"
+  # The server image is needed only to build the demo layer from; with both demo images in k3s already (a second `up` on a busy disk, where the kubelet drops images nobody runs) it may be gone.
+  { have_image "manythreads/server-demo:$TAG" && have_image "manythreads/demo-fakes:$TAG"; } || have_image "manythreads/server:$TAG" || die "no image manythreads/server:$TAG in k3s (build it with tools/devbox/ci.sh or deploy.sh first, or set TAG)"
 
   step "the demo layer (fake-llm, fake-hindsight)"
   # The demo images are built FROM the server image, which docker must hold: deploy.sh and ci.sh drop docker's copy once k3s has it, so it is loaded back from k3s here and dropped again after.
