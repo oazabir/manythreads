@@ -32,7 +32,7 @@ export interface GatewayTarget {
   profileRule?: string;
   /** The name of the runner of the catalog this target came from (a pod runner), when it came from one. Used to name the runner in the unmetered-run event. */
   runner?: string;
-  /** Set when the target is a shared Claude Code runner (P19-07): the run's result then carries `viaClaude` so the run job can count it and pause the runner. */
+  /** Set when the target is a shared Claude Code or Codex runner (P19-07, P19-13): the run's result then carries `viaClaude` so the run job can count it and pause the runner. */
   claudeRunner?: string;
 }
 
@@ -203,6 +203,7 @@ export async function runOnGateway(
   };
 
   const claudeRunner = target.claudeRunner;
+  const targetAgent = target.agent;
   const budgetMs = (input.limits.runBudgetSeconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
   const startedAt = Date.now();
   const unreachable = (what: string): BotRuntimeHandle => {
@@ -250,7 +251,7 @@ export async function runOnGateway(
         await res.body?.cancel().catch(() => undefined);
         const asked = Number(res.headers.get('retry-after'));
         const pause = Math.min(30, Math.max(Number.isFinite(asked) && asked > 0 ? asked : 1, 2 ** Math.min(attempt, 5)));
-        if ((Date.now() - startedAt) / 1000 + pause > MAX_START_WAIT_SECONDS) return { handle: refusedRun(target.claudeRunner !== undefined ? 'This Claude runner is busy: it is at its limit of runs at once. Try again in a few minutes.' : "the bot's Hermes is busy: it is at its limit of runs at once") };
+        if ((Date.now() - startedAt) / 1000 + pause > MAX_START_WAIT_SECONDS) return { handle: refusedRun(target.claudeRunner !== undefined ? `This ${targetAgent === 'codex' ? 'Codex' : 'Claude'} runner is busy: it is at its limit of runs at once. Try again in a few minutes.` : "the bot's Hermes is busy: it is at its limit of runs at once") };
         scope.log(`runtime-hermes: run ${runId}: the gateway is at its run limit; retrying in ${pause}s`);
         await sleep(pause * retryUnitMs);
         continue;
@@ -463,7 +464,8 @@ export async function runOnGateway(
     // A shared Claude runner that reports a standing account failure: say it in a plain line, once, and let the run job pause the runner.
     const account = claudeRunner !== undefined ? accountFailureOf(f) : null;
     if (account !== null) {
-      const line = account.failure === 'plan_limit' ? `The Claude plan's limit was reached${account.resetsAt ? `; it resets at ${account.resetsAt.slice(11, 16)} UTC` : ''}.` : 'Claude refused the sign-in of this runner. An admin has to upload a new sign-in file.';
+      const who = targetAgent === 'codex' ? { plan: 'ChatGPT', program: 'Codex' } : { plan: 'Claude', program: 'Claude' };
+      const line = account.failure === 'plan_limit' ? `The ${who.plan} plan's limit was reached${account.resetsAt ? `; it resets at ${account.resetsAt.slice(11, 16)} UTC` : ''}.` : `${who.program} refused the sign-in of this runner. An admin has to upload a new sign-in file.`;
       yield { type: 'result', text: streamed, ok: false, error: line, failure: 'runner_refused', refusal: { runner: claudeRunner!, reason: account.failure, line }, tokens: null, ...claudeMark(f) };
       return;
     }

@@ -110,12 +110,13 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
     if (target.key === null) return cannot('which is not set up yet. An admin has to give it a key.');
     return { baseUrl: target.address, apiKey: target.key, guarded: target.guard, kind: 'external', agent: target.agent, profileRule: target.profileRule };
   }
-  if (target.kind === 'claude_cli') {
+  if (target.kind === 'claude_cli' || target.kind === 'codex_cli') {
     if (target.key === null) return cannot('which is not set up yet.');
+    // (A Codex runner is the same: its target says `codex`, and `claudeRunner` names any shared agent-bridge runner, so its usage is counted and a plan limit pauses it.)
     // One pod for every team on the runner's list: the bridge's profile is `<team>--<bot>`, so the team's slug is put into the rule here.
     const slug = (await ctx.db.system(async (tx) => (await tx.query<{ slug: string }>('SELECT slug FROM app.teams WHERE id = $1::uuid', [teamId])).rows[0]))?.slug;
     if (!slug) return cannot('but the bot\'s team could not be found.');
-    return { baseUrl: target.address, apiKey: target.key, guarded: false, kind: 'external', agent: 'claude-code', profileRule: target.profileRule.split('{team}').join(slug), runner, claudeRunner: runner };
+    return { baseUrl: target.address, apiKey: target.key, guarded: false, kind: 'external', agent: target.kind === 'codex_cli' ? 'codex' : 'claude-code', profileRule: target.profileRule.split('{team}').join(slug), runner, claudeRunner: runner };
   }
   if (target.kind === 'hermes_pod') {
     if (!bot) return cannot('but the bot could not be found on this team.');
