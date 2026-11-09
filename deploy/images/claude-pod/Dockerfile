@@ -17,7 +17,10 @@ COPY keeper.mjs /opt/claude-pod/keeper.mjs
 # The push script and its askpass helper are the workbench's own files (deploy.sh stages them next to this Dockerfile); jq and curl are what the script uses; uid 1001 is the publisher's.
 COPY publisher.mjs mt-publish.sh mt-askpass.sh /opt/claude-pod/
 COPY mt-publish-client.sh /usr/local/bin/mt-publish
-RUN chmod 0755 /opt/claude-pod/mt-publish.sh /opt/claude-pod/mt-askpass.sh /usr/local/bin/mt-publish \
+# `mt-git` is the only git a bot may run without a question (the pod's approved command list names `mt-git <subcommand>` and never plain `git`): see mt-git.mjs.
+COPY mt-git.mjs /opt/claude-pod/mt-git.mjs
+COPY mt-git.sh /usr/local/bin/mt-git
+RUN chmod 0755 /opt/claude-pod/mt-publish.sh /opt/claude-pod/mt-askpass.sh /usr/local/bin/mt-publish /usr/local/bin/mt-git \
  && useradd --system --uid 1001 --no-create-home --shell /usr/sbin/nologin publisher
 # uid 1000 is the image's `node` user; the pod runs as it with a read-only root (only /state, /work and /tmp are writable)
 USER 1000:1000

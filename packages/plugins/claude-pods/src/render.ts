@@ -117,6 +117,9 @@ export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = 
     'The team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.',
     'Do not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner\'s sign-in and keys, which are not yours to use.',
     'Post your answer and reports with the manythreads tools, not by writing files for people to find.',
+    ...(agent === 'claude'
+      ? ['For git, use `mt-git` in place of `git`: `mt-git status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>` and `branch --show-current`, inside the project folder. Plain `git` is not available to you, and `mt-git` refuses any other command or option.']
+      : []),
     ...(mayPublish
       ? [
           'To hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> "<title>"` (the pull request text on standard input).',
@@ -126,8 +129,26 @@ export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = 
   ].join('\n');
 }
 
-/** Git commands every bot may run without a question (decision E5): enough to look, commit on a branch of its own and nothing that reaches the network or rewrites history. */
-export const GIT_TOOLS: readonly string[] = ['Bash(git status)', 'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git switch:*)', 'Bash(git checkout -b:*)'];
+/**
+ * Git commands every bot may run without a question (decision E5, hardened in the P19-09 security review): enough to look, commit on a branch of its own and nothing that
+ * reaches the network or rewrites history. They are `mt-git <subcommand>` and never plain `git`: a pre-approved `git diff:*` also allowed `git diff --no-index <any file> /dev/null`
+ * (reads the shared sign-in under /state), `git log --output=<path>` (overwrites a file), `git add --pathspec-from-file` (leaks a file in its error text) and, with a hook or
+ * a `core.fsmonitor` line written into `.git`, any command. `mt-git` (deploy/images/claude-pod/mt-git.mjs) accepts a fixed list of subcommands and options, keeps to the
+ * project folder, refuses a repository config that could start a program and runs git with a clean environment.
+ */
+export const GIT_WRAPPER = 'mt-git';
+export const GIT_TOOLS: readonly string[] = [
+  `Bash(${GIT_WRAPPER} status:*)`,
+  `Bash(${GIT_WRAPPER} diff:*)`,
+  `Bash(${GIT_WRAPPER} log:*)`,
+  `Bash(${GIT_WRAPPER} show:*)`,
+  `Bash(${GIT_WRAPPER} rev-parse:*)`,
+  `Bash(${GIT_WRAPPER} add:*)`,
+  `Bash(${GIT_WRAPPER} commit:*)`,
+  `Bash(${GIT_WRAPPER} switch:*)`,
+  `Bash(${GIT_WRAPPER} checkout -b:*)`,
+  `Bash(${GIT_WRAPPER} branch --show-current)`,
+];
 /** The one extra command of a bot whose definition grants `tasks.pull_request`: the client of the pod's publisher. */
 export const PUBLISH_TOOL = 'Bash(mt-publish:*)';
 
@@ -317,7 +338,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
                 { name: 'HOME', value: '/state/home' },
                 { name: spec.homeVar, value: spec.dir },
                 // A Codex process in a pod loses OPENAI_API_KEY (an API key would go around the platform's model gateway): the bridge reads this switch.
-                ...(codex ? [{ name: 'MANYTHREADS_BRIDGE_IN_POD', value: '1' }] : []),
+                
               ],
               securityContext: { ...NO_PRIVILEGE, readOnlyRootFilesystem: true },
               // /health wants the key, which a probe cannot carry: the port answering is the signal
