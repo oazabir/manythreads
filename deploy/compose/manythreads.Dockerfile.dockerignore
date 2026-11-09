@@ -8,3 +8,8 @@ deploy
 tools
 # a developer's own `pnpm models:fetch` output: the image fetches (and checks) its own copy
 clients/web/public/models
+# a developer's own settings files never go into an image
+.env
+.env.*
+**/.env
+**/.env.*
