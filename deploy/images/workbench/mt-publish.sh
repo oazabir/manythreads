@@ -104,6 +104,10 @@ if [ -n "$SOURCE" ]; then
   # the one branch, fetched into a private bare repository: the push below runs there, never in the bot's folder
   work="$(mktemp -d)"
   git init --bare -q -b mt-publish-unused "$work/r.git" 2>/dev/null || die 2 "cannot make a working copy"
+  # The copy borrows the clone's objects (read-only) instead of copying them: the publisher's scratch space is a small memory folder, and a whole history copied into
+  # it would not fit (a real project is larger than that) and could get the pod evicted. The fetch below then only sets the branch. Nothing is run from the clone.
+  [ -d "$SOURCE/.git/objects" ] && [ ! -L "$SOURCE/.git/objects" ] || die 2 "no such project folder"
+  printf '%s\n' "$SOURCE/.git/objects" > "$work/r.git/objects/info/alternates"
   git -C "$work/r.git" -c safe.directory='*' fetch -q --no-tags --no-write-fetch-head -- "$SOURCE" "+refs/heads/$branch:refs/heads/$branch" >/dev/null 2>&1 || die 4 "the branch $branch is not in the project folder: commit your work on that branch first"
   dir="$work/r.git"
 fi
