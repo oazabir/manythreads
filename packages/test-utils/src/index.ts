@@ -12,7 +12,7 @@ export { repoSteps, SEED_V7_EVAL_SET, SEED_V7_MIN_SCORE, SEED_V7_LESSONS } from 
 export { seedMeetings, SEED_MEETINGS, SEED_MEETINGS_GUEST, MEETING_BOT_FILES, STANDUP_LINES, LEADS_LINES, DESIGN_LINES, type SeedMeetingsOptions, type SeedMeetingsResult, type SeededMeeting } from './seed-meetings.ts';
 export { seedConnectors, sealPersonGrant, designReviewStart, usageFor, SEED_CONNECTORS, SEED_GRANT_SCOPES, RESPONDER_BOT_MD, type SeedConnectorsOptions, type SeedConnectorsResult, type SeedConnectorsSaas, type SealGrantInput } from './seed-connectors.ts';
 export { seedPolish, SEED_POLISH, type SeedPolishOptions, type SeedPolishResult } from './seed-polish.ts';
-export { seedRunners, type SeedRunnersOptions, type SeedRunnersResult } from './seed-runners.ts';
+export { seedRunners, madeUpClaudeSignin, SEED_RUNNERS, type SeedRunnerKey, type SeedRunnersOptions, type SeedRunnersResult } from './seed-runners.ts';
 export { seedGuard, seedGateBotMd, SEED_GUARD, type SeedGuardResult } from './seed-guard.ts';
 export { seedWork, SEED_WORK, type SeedWorkOptions, type SeedWorkResult } from './seed-work.ts';
 export { openSeedStorage, putSeedAttachment, type SeedStorageOptions, type SeedStorageKind } from './seed-storage.ts';

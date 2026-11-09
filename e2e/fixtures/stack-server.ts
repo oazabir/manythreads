@@ -38,7 +38,7 @@ import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedConnectors, seedFinishedSetup, seedMeetings, seedPolish, seedRunners, SEED_CONNECTORS, withClusterLock, type SeedConnectorsResult } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedConnectors, seedFinishedSetup, seedMeetings, seedPolish, seedRunners, SEED_CONNECTORS, startFakeK8s, withClusterLock, type FakeK8s, type SeedConnectorsResult } from '@manythreads/test-utils';
 import type { FakeSaas } from '../../tools/fake-saas/src/index.ts';
 import { restoreSnapshot } from '../../tools/seed/src/restore.ts';
 import { seedWorld } from './seed.ts';
@@ -145,8 +145,14 @@ if (connectorsStack) {
   fallbackEnv('MANYTHREADS_RUNTIME_DIR', mkdtempSync(join(tmpdir(), 'manythreads-stack-runtime-')));
   fallbackEnv('MANYTHREADS_LITELLM_URL', 'http://litellm.invalid:4000');
 }
-// The `runners` seed (P19-11) makes its runners through the real routes, so it needs the dev actor header.
+// The `runners` seed (P19-11) makes its runners through the real routes, so it needs the dev actor header, and its two Claude Code runners need the claude-pods plugin, which a test
+// server loads when `MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL` points at a stand-in of the Kubernetes API (set before the server starts: the plugin reads it when it registers).
 if (seedMode === 'runners') fallbackEnv('MANYTHREADS_STACK_DEV_AUTH', '1');
+let k8s: FakeK8s | null = null;
+if (seedMode === 'runners' && process.env['MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL'] === undefined) {
+  k8s = await startFakeK8s();
+  process.env['MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL'] = k8s.url;
+}
 let saas: FakeSaas | null = null;
 if (wantsFakeSaas) {
   const { startFakeSaas } = await import('../../tools/fake-saas/src/index.ts');
@@ -251,6 +257,7 @@ const stop = async (): Promise<void> => {
     front.close();
     await server.close();
     await saas?.stop().catch(() => undefined);
+    await k8s?.stop().catch(() => undefined);
   } finally {
     await dropTestDatabase(db).catch(() => undefined);
     rmSync(storageDir, { recursive: true, force: true });
