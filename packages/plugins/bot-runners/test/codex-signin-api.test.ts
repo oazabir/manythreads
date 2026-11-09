@@ -145,6 +145,9 @@ describe('uploading a Codex sign-in file', () => {
     // the same ChatGPT account with fresh tokens (a second `codex login`) is still the same login
     const relogin = await put(omar, two, fakeCodexCredentials('e', { tokens: { refresh_token: 'rt-another' } }));
     expect(relogin.status).toBe(409);
+    // the sentence of the check itself (the unique index behind it would only say "That already exists")
+    expect(relogin.body.error.message).toContain('every Codex runner needs its own sign-in file');
+    expect(relogin.text).not.toContain('acct-e');
     expect(secretOf('cx-e2')).toBeUndefined();
     // another account is fine
     expect((await put(omar, two, fakeCodexCredentials('e-other'))).status).toBe(200);

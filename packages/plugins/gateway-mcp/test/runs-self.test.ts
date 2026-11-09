@@ -118,6 +118,37 @@ describe('GET /api/runs/self', () => {
     expect(res.status).toBe(401);
   });
 
+  it('counts only the grant the bot holds in the run\'s own team: a pull request grant in another team does not make this run a publisher', async () => {
+    const other = ids['engineering']!;
+    const mine = ids['marketing']!;
+    // the marketing bot's actor is granted tasks.pull_request, but in the engineering team's scope
+    await world.system((tx) =>
+      tx.query(`INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, 'tasks.pull_request', false, '{}')`, [other.teamId, mine.actorId]),
+    );
+    try {
+      const { token } = await openRun('marketing');
+      const res = await self(token);
+      expect(res.status, res.text).toBe(200);
+      expect(res.body).toMatchObject({ teamSlug: 'marketing', mayPublish: false });
+    } finally {
+      await world.system((tx) => tx.query(`DELETE FROM app.capability_grants WHERE team_id = $1 AND actor_id = $2 AND capability = 'tasks.pull_request'`, [other.teamId, mine.actorId]));
+    }
+  });
+
+  it('refuses a run whose bot is no longer active: the same 401 as for an ended run', async () => {
+    const { token } = await openRun('engineering');
+    expect((await self(token)).status).toBe(200);
+    const b = ids['engineering']!;
+    await world.system((tx) => tx.query(`UPDATE app.bots SET status = 'disabled' WHERE id = $1`, [b.botId]));
+    try {
+      const res = await self(token);
+      expect(res.status, res.text).toBe(401);
+      expect(res.text).not.toContain('builder');
+    } finally {
+      await world.system((tx) => tx.query(`UPDATE app.bots SET status = 'active' WHERE id = $1`, [b.botId]));
+    }
+  });
+
   it('slows a client that keeps presenting wrong tokens: the 61st failure in a minute is 429, and a correct token is still answered', async () => {
     const { token } = await openRun('engineering');
     // this file's earlier refusals already count for the address; read the status until the limit is reached

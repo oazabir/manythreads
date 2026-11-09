@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- the tests read rendered Kubernetes objects and parsed JSON whose shape the assertions pin */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir, userInfo } from 'node:os';
@@ -284,6 +284,21 @@ describe('publishing through the publisher', () => {
     expect(gh.calls).toHaveLength(0);
   });
 
+  it('never forces: an origin branch that holds other work stays as it is (the origin here accepts a forced push, so only the script can refuse), exit 5, no pull request', async () => {
+    // someone already put a different commit on the card branch's name at the origin; this origin is a plain bare repository and has no rule against rewriting a branch
+    makeClone(join(root, 'other'), join(root, 'origin.git'));
+    git(join(root, 'other'), 'commit', '-q', '--allow-empty', '-m', 'someone else');
+    git(join(root, 'other'), 'push', '-q', join(root, 'origin.git'), `HEAD:refs/heads/${BRANCH}`);
+    const before = originRefs();
+    expect(before).toContain(`refs/heads/${BRANCH}`);
+    expect(before).not.toContain(headA);
+    const r = await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix the widget']);
+    expect(r.code, r.err).toBe(5);
+    expect(originRefs()).toBe(before);
+    expect(gh.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    expect(r.out + r.err).not.toContain(TOKEN_A);
+  });
+
   it('refuses a branch the bot never made, with nothing pushed', async () => {
     git(join(root, 'work/team-a/builder/widgets'), 'switch', '-q', 'main');
     git(join(root, 'work/team-a/builder/widgets'), 'branch', '-q', '-D', BRANCH);
@@ -309,6 +324,13 @@ describe('publishing through the publisher', () => {
     expect(sneaky.code).toBe(2);
     expect(originRefs()).toBe('');
     expect(gh.calls).toHaveLength(0);
+    // a project both teams have: the folder and the token are team A's, whatever the caller says about the team; team B's push file is a pipe, so a read of it would hang
+    rmSync(join(root, 'push/team-b/widgets'));
+    expect(spawnSync('mkfifo', [join(root, 'push/team-b/widgets')]).status).toBe(0);
+    const same = await handle({ op: 'publish', token: RUN_A, project: 'widgets', card: CARD, sha: headA, title: 'x', teamSlug: 'team-b', pushRoot: join(root, 'push/team-b') }, { serverUrl: platformUrl, work: join(root, 'work'), pushRoot: join(root, 'push'), script: SCRIPT, repoUser: ME, timeoutMs: 20_000, passEnv: { MT_GITHUB_API: gh.url, MT_PUSH_URL: join(root, 'origin.git'), MT_PR_TRIES: '2', MT_PR_WAIT: '0' } });
+    expect(same.code, same.err).toBe(0);
+    expect(gh.calls.every((c) => c.authorized)).toBe(true);
+    expect(same.out + same.err).not.toContain(TOKEN_B);
   });
 
   it('publishes team B’s own folder with team B’s own token only for a run that is team B’s', async () => {
@@ -375,11 +397,14 @@ describe('publishing through the publisher', () => {
     rmSync(join(root, 'work/team-a/builder/widgets'), { recursive: true });
     symlinkSync(join(root, 'work/team-b/builder/widgets'), join(root, 'work/team-a/builder/widgets'));
     expect((await mtPublish(RUN_A, ['check', 'widgets'])).code).toBe(2);
-    rmSync(join(root, 'work/team-a/builder/widgets'));
-    symlinkSync(join(root, 'work/team-b/builder'), join(root, 'work/team-a/builder-link'));
-    SELF[RUN_A] = { teamSlug: 'team-a', botSlug: 'builder', runId: '11111111-1111-4111-8111-111111111111', mayPublish: true };
+    // the bot's own folder is the link: the last part of the path is a real folder (team B's), only the way to it goes through a link
+    rmSync(join(root, 'work/team-a/builder'), { recursive: true });
+    symlinkSync(join(root, 'work/team-b/builder'), join(root, 'work/team-a/builder'));
+    expect(lstatSync(join(root, 'work/team-a/builder/widgets')).isDirectory()).toBe(true);
     expect((await mtPublish(RUN_A, ['check', 'widgets'])).code).toBe(2);
+    expect((await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'through a link'])).code).toBe(2);
     expect(originRefs()).toBe('');
+    expect(gh.calls).toHaveLength(0);
   });
 
   it('answers 3 when the team has no token saved, and 7 once the platform marked it refused', async () => {

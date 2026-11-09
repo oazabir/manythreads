@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { RunSelfResponse, inspectCodexCredentials, runSelfRoute } from '../src/index.ts';
+import { RunSelfResponse, runSelfRoute } from '../src/index.ts';
 import { uuid } from './fixtures.ts';
 
-// Bundle E WP-0: the contract of `GET /api/runs/self` (what a pod's publisher learns from a run token) and the Codex sign-in reader's stub.
+// Bundle E WP-0: the contract of `GET /api/runs/self` (what a pod's publisher learns from a run token). (The Codex sign-in reader is tested in codex-credentials.test.ts.)
 
 describe('RunSelfResponse', () => {
   const valid = { teamSlug: 'engineering', botSlug: 'coder', runId: uuid(7), mayPublish: true };
@@ -22,12 +22,5 @@ describe('RunSelfResponse', () => {
     const parsed = RunSelfResponse.parse({ ...valid, token: 'mtr_secret', address: 'http://10.0.0.5' }) as Record<string, unknown>;
     expect(parsed['token']).toBeUndefined();
     expect(parsed['address']).toBeUndefined();
-  });
-});
-
-describe('inspectCodexCredentials (stub until WP-R3a)', () => {
-  it('refuses every file with a short message and returns no token', () => {
-    const result = inspectCodexCredentials('{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"account_id":"canary-account"}}');
-    expect(result).toEqual({ ok: false, message: 'not built' });
   });
 });
