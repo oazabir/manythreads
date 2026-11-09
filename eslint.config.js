@@ -28,6 +28,7 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      'clients/web/dist-*/**',
       '.claude/**',
       'data/**',
       '**/node_modules/**',
