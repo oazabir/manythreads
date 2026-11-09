@@ -64,6 +64,19 @@ spec:
           podSelector: { matchLabels: { app.kubernetes.io/component: server } }
       ports:
         - { port: {{ .Values.server.port }}, protocol: TCP }
+    {{- /* The keeper patches the sign-in Secret through the Kubernetes API. The cluster sends kubernetes.default.svc to the node's API address (10.0.2.15:6443 on the
+         devbox), which the rule below shuts (a private address, not port 443): without this rule a renewed sign-in never reaches its Secret, and after a restart the pod starts
+         from a dead refresh token. The same address as the Hermes pods' rule (hermesPods.apiServer). Only the keeper container holds a Kubernetes token. */}}
+    {{- $api := .Values.hermesPods.apiServer }}
+    {{- $cidr := $api.cidr }}
+    {{- if not $cidr }}
+      {{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" }}
+      {{- if and $ep $ep.subsets }}{{ $cidr = printf "%s/32" (index (index $ep.subsets 0).addresses 0).ip }}{{ else }}{{ fail "hermesPods.apiServer.cidr is required: the chart could not look up the Kubernetes API address (helm template has no cluster); set it, e.g. 10.0.2.15/32" }}{{ end }}
+    {{- end }}
+    - to:
+        - ipBlock: { cidr: {{ $cidr }} }
+      ports:
+        - { port: {{ $api.port }}, protocol: TCP }
     {{- if eq .Values.claudePod.egress.mode "public443" }}
     - to:
         - ipBlock:

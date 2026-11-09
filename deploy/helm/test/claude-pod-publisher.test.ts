@@ -67,6 +67,13 @@ describe.skipIf(!haveHelm)('the publisher container: what the pod policy lets it
     expect(can(docs, out('140.82.112.3'), 443)).toBe(false);
   });
 
+  it('the keeper reaches the Kubernetes API at the node address (it patches the sign-in Secret), and only on the API port', () => {
+    const docs = render('live', ON);
+    expect(can(docs, out('10.0.2.15'), 6443)).toBe(true);
+    expect(can(docs, out('10.0.2.15'), 10250)).toBe(false); // not the kubelet
+    expect(can(docs, out('10.0.2.16'), 6443)).toBe(false);
+  });
+
   it('the pod is not given a second policy by the publisher setting: off or on, the same walls', () => {
     const names = (docs: K8sDoc[]): string[] => docs.filter((d) => d.kind === 'NetworkPolicy' && d.metadata.namespace === BOTS).map((d) => d.metadata.name).sort();
     expect(names(render('live', [...ON, 'claudePod.publisher.enabled=false']))).toEqual(names(render('live', ON)));
