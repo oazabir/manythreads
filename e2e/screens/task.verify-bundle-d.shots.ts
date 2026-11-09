@@ -123,6 +123,9 @@ interface Opened {
 }
 const siteOf = new WeakMap<BrowserContext, Site>();
 const blockedWrites: string[] = [];
+/** The page's own background beacons (who is online, the read marker, Cloudflare's analytics beacon): production drops them like any write, and they are counted, not reported as a write the probe tried. */
+const BEACON = /\/api\/presence(?:\?|$)|\/api\/read-state\/mark(?:\?|$)|\/cdn-cgi\/rum(?:\?|$)/;
+let beaconsDropped = 0;
 async function open(who: Who, vp: Vp = 'd', scheme: Scheme = 'light', site: Site = 'prod'): Promise<Opened> {
   if (site === 'stage' && !stageUp) throw new Error(`refusing to open the stage: ${stageWhy}`);
   const browser = await browserFor(site);
@@ -144,6 +147,10 @@ async function open(who: Who, vp: Vp = 'd', scheme: Scheme = 'light', site: Site
     await ctx.route('**/*', (route) => {
       const m = route.request().method();
       if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return route.continue();
+      if (BEACON.test(route.request().url())) {
+        beaconsDropped += 1;
+        return route.abort('blockedbyclient');
+      }
       blockedWrites.push(`${m} ${route.request().url()}`);
       log(`BLOCKED write on production: ${m} ${route.request().url()}`);
       return route.abort('blockedbyclient');
@@ -221,7 +228,7 @@ const visible = (page: Page, id: string, timeout = 15_000): Promise<boolean> => 
 
 screens.push({
   name: '01-gallery',
-  who: 'NADIA',
+  who: 'OMAR',
   go: async (page) => {
     await page.goto('/settings/team/engineering/connections');
     if (!(await visible(page, 'connection-add'))) return false;
@@ -342,12 +349,12 @@ test.afterAll(async () => {
 /* Block A: production, READ-ONLY                                                                                                                                                */
 /* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
 
-test('A01 the gallery as Nadia: the new apps are cards, and "calendar" finds the calendar apps', async () => {
-  const o = await open('NADIA');
+test('A01 the gallery as Omar (a lead of Engineering): the new apps are cards, and "calendar" finds the calendar apps', async () => {
+  const o = await open('OMAR');
   try {
     const ok = await screens[0]!.go(o.page);
     if (!ok) {
-      skip('A01 gallery', 'Nadia has no Add connection button on Engineering (only a lead sees it) or the gallery did not open');
+      skip('A01 gallery', 'Omar has no Add connection button on Engineering or the gallery did not open');
       return;
     }
     for (const id of ['confluence', 'dropbox', 'box', 'telegram', 'whatsapp', 'slack', 'teams']) {
@@ -371,6 +378,8 @@ test('A02 Omar, Settings, Connections: Connectors and People have real numbers, 
     const text = await o.page.getByTestId('connectors-admin').innerText();
     check('A02 Connectors shows numbers', /\d/.test(text));
     check('A02 People tab opens', await screens[2]!.go(o.page));
+    // the box is there before its rows are read: wait for a row or the empty message
+    await o.page.locator('[data-testid="person-connection"], :text("No one has connected")').first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
     const people = await o.page.getByTestId('people-scopes').innerText();
     check('A02 People shows no @', !people.includes('@'));
     check('A02 People has rows or says nobody has connected', (await o.page.getByTestId('person-connection').count()) > 0 || /No one has connected/.test(people), `${await o.page.getByTestId('person-connection').count()} rows`);
@@ -384,7 +393,8 @@ test('A03 Nadia in #dev, Schedule a room: the connect-your-calendar message', as
   try {
     if (!check('A03 the dialog opens', await screens[3]!.go(o.page))) return;
     const connect = o.page.getByTestId('schedule-connect');
-    const shown = await connect.isVisible().catch(() => false);
+    // the dialog asks which calendars the person has before it shows the message
+    const shown = await connect.waitFor({ state: 'visible', timeout: 12_000 }).then(() => true, () => false);
     if (shown) check('A03 the message says to connect a calendar', /Connect your Google or Microsoft calendar/.test(await connect.innerText()));
     else skip('A03 connect message', 'Nadia already has a calendar connected on production');
     await shoot(o.page, 'A03-schedule-dialog', 'd', 'light');
@@ -779,7 +789,7 @@ test('99 cleanup and verdict', async () => {
   await clean();
   const failed = results.filter((r) => r.startsWith('FAIL'));
   const skipped = results.filter((r) => r.startsWith('SKIPPED'));
-  writeFileSync(join(OUT, 'results.txt'), `${results.join('\n')}\n${fivexx.length > 0 ? `\n5xx seen:\n${fivexx.join('\n')}\n` : ''}${blockedWrites.length > 0 ? `\nwrites to production that the guard stopped (must be empty):\n${blockedWrites.join('\n')}\n` : ''}`);
+  writeFileSync(join(OUT, 'results.txt'), `${results.join('\n')}\n${fivexx.length > 0 ? `\n5xx seen:\n${fivexx.join('\n')}\n` : ''}\nthe page's own beacons dropped on production (presence, read marker, analytics): ${beaconsDropped}\n${blockedWrites.length > 0 ? `\nwrites to production that the guard stopped (must be empty):\n${blockedWrites.join('\n')}\n` : ''}`);
   log(`${results.length - failed.length - skipped.length} passed, ${skipped.length} skipped, ${failed.length} failed, ${fivexx.length} server errors`);
   expect(blockedWrites, 'the production guard stopped a write').toEqual([]);
   expect(failed, failed.join('\n')).toEqual([]);
