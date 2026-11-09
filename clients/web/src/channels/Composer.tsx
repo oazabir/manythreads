@@ -148,7 +148,19 @@ const phoneNow = (): boolean => typeof window !== 'undefined' && typeof window.m
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
-export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, compact = false, commands }: ComposerProps) {
+/**
+ * The canary of the persona suite (PLAN P12-04, Bundle E decision E32): a build made with `VITE_MANYTHREADS_CANARY=hide-composer` draws no composer anywhere, so
+ * the suite must fail on exactly the steps that use one (tools/review/canary.sh). The value is read at build time; no production build sets it, so the bundler
+ * drops this branch (clients/web/test/canary-build.test.ts proves the string is not in a normal build).
+ */
+const CANARY_HIDE_COMPOSER = import.meta.env.VITE_MANYTHREADS_CANARY === 'hide-composer';
+
+export function Composer(props: ComposerProps) {
+  if (CANARY_HIDE_COMPOSER) return null;
+  return <ComposerBody {...props} />;
+}
+
+function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, compact = false, commands }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const guest = useContext(ShellContext)?.guest ?? false;
   const rec = useRecorder();
