@@ -15,7 +15,7 @@ Names carry the runner's short name. A Deployment (one replica, or zero while th
 on port 8650, a ConfigMap (bridge config and `repos.txt`), a Secret with the bridge key, and two claims: `state` (the CLI's home, 256Mi) and `work` (10Gi).
 The init step copies the Secret `claude-<runner>-credentials` into the state volume when the volume has no file yet, or when the Secret's `upload-id` differs from the one the volume last took (a replaced upload). The pod runs as uid 1000, read-only
 root, no service-account token, tini as PID 1. Probes are TCP (the bridge's `/health` needs the key).
-The NetworkPolicy lets only the server in (port 8650) and lets out DNS, the server, and public 443 when `egress.mode=public443`.
+The NetworkPolicy lets only the server in (port 8650) and lets out DNS, the server, the Kubernetes API at its node address (`hermesPods.apiServer`, for the keeper), and public 443 when `egress.mode=public443`.
 
 **The publisher container (P19-09).** With `claudePod.publisher.enabled` (the default; the server gets `MANYTHREADS_CLAUDE_PODS_PUBLISHER` and
 `MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES` from it) the pod has a third container next to the run and the keeper: the same image started as
@@ -64,7 +64,7 @@ Codex pods stay off on the live site until then.
 | ClusterRole `<release>-manythreads-nodes-reader` and its ClusterRoleBinding | the server's service account | `get` and `list` on `nodes`, nothing else cluster-wide, for the machine picker (P19-08). Exists only when `hermesPods.enabled` is true |
 | Role `manythreads-claude-pods-controller` (pods namespace) | the server's service account | `get`, `list`, `create`, `patch`, `update` on ServiceAccounts, Roles and RoleBindings of the pods namespace, so the controller can make the keeper's own account. No `delete`, nothing in the release namespace, nothing cluster-wide. Kubernetes refuses a Role that grants more than the controller itself holds |
 | ServiceAccount `claude-<runner>-keeper`, its Role and RoleBinding (one set per runner; `codex-<runner>-keeper` for a Codex runner) | the keeper container only | `get` and `patch` on the one Secret that holds that runner's sign-in file, by name. The token is projected into the keeper container only |
-| NetworkPolicy `manythreads-claude-pods` | the run, keeper and publisher containers (one policy for the pod) | in: the server on port 8650. Out: DNS, the server on its port (the MCP address, the API and `GET /api/runs/self`), and (below) public 443 |
+| NetworkPolicy `manythreads-claude-pods` | the run, keeper and publisher containers (one policy for the pod) | in: the server on port 8650. Out: DNS, the server on its port (the MCP address, the API and `GET /api/runs/self`), the Kubernetes API at its node address and port (`hermesPods.apiServer`; the keeper's Secret patch, the only container with a token), and (below) public 443 |
 
 **Mounts of a runner's pod.** The run container: `state` (the tool's home, with the sign-in file; 256Mi) and `work` (the team repositories; 10Gi), a read-only root
 file system, uid 1000, no Kubernetes token (`automountServiceAccountToken: false`). The init step reads the sign-in Secret to fill `state`. The keeper container: `state`
