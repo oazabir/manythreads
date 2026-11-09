@@ -33,7 +33,7 @@ let stack: Stack;
 
 test.beforeAll(async () => {
   test.setTimeout(300_000); // the web client is built and the stack seeds the bundle first
-  stack = await connectorsStack({ MANYTHREADS_STACK_MEETINGS: '1' });
+  stack = await connectorsStack({ MANYTHREADS_STACK_MEETINGS: '1', MANYTHREADS_CLOCK: 'fixed' });
   const seeded = seededOf(stack);
   // a ticket the Ticket watcher answers, and a message from the Telegram group: the two channel plates need them
   await sendWebhook(stack, { provider: 'zendesk', url: doorUrl(stack, seeded.zendeskEndpointId), secret: SEED_CONNECTORS.zendesk.secret, kind: 'ticket.created', title: 'Refund not received', deliveryId: 'plate-ticket-1' });
