@@ -106,7 +106,7 @@ server:
   trustProxy: "2"
   env: {}
   # OpenTelemetry traces (Bundle E, decision E24). Off while `endpoint` is empty. When set, the server gets MANYTHREADS_OTEL_EXPORTER_OTLP_ENDPOINT (OTLP over HTTP)
-  # and MANYTHREADS_OTEL_SAMPLE_RATIO (0 to 1). No template reads these until WP-O3 adds them.
+  # and MANYTHREADS_OTEL_SAMPLE_RATIO (0 to 1) (templates/server.yaml); with no endpoint the server gets neither line.
   otel:
     endpoint: ""
     sampleRatio: 1
@@ -350,13 +350,13 @@ claudePod:
     limits: { memory: 2Gi }
   egress:
     mode: public443
-  # The third container of a pod that publishes a branch for a bot allowed to open a pull request (Bundle E, decision E2). No template reads this block until WP-R1 adds it.
+  # The third container of a pod that publishes a branch for a bot allowed to open a pull request (Bundle E, decision E2). templates/server.yaml passes `enabled` and `resources` to the controller (MANYTHREADS_CLAUDE_PODS_PUBLISHER, _PUBLISHER_RESOURCES).
   publisher:
     enabled: true
     resources:
       requests: { cpu: 50m, memory: 64Mi }
       limits: { memory: 256Mi }
-  # RuntimeClass of the pod (gVisor where the cluster has it, decision E22). Empty = the cluster's default runtime. No template reads this until WP-O2 adds it.
+  # RuntimeClass of the pod (gVisor where the cluster has it, decision E22). Empty = the cluster's default runtime. templates/server.yaml checks the name against the cluster and passes it as MANYTHREADS_CLAUDE_PODS_RUNTIME_CLASS_NAME, but the claude-pods plugin does not read that variable yet: Claude and Codex pods run on the cluster's default runtime whatever is set here (hermesPods.runtimeClassName below does work).
   runtimeClassName: ""
 
 # Network policies of the release namespace itself (Bundle E, decision E20). The pods namespace already has its own (templates/hermes-pods.yaml).
