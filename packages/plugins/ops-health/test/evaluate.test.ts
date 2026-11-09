@@ -175,3 +175,29 @@ describe('describing a change in plain words', () => {
     expect(formatValue('percent', 85.04)).toBe('85 %');
   });
 });
+
+describe('evaluate: replica lag', () => {
+  const standby = (lagSeconds: number | null, standbys = 1) => healthy({ replication: { standbys, lagSeconds } });
+
+  it('is not a check at all with no standby: a single database must not show as Down', () => {
+    for (const snapshot of [healthy(), healthy({ replication: { standbys: 0, lagSeconds: null } }), healthy({ replication: null })]) {
+      expect(evaluate(snapshot, thresholds, {}, at(0), 3).checks.map((c) => c.name)).not.toContain('replica_lag');
+    }
+  });
+
+  it('trips above 30 s and not at 30 s', () => {
+    expect(evaluate(standby(30), thresholds, {}, at(0), 3).transitions).toEqual([]);
+    const r = evaluate(standby(31), thresholds, {}, at(0), 3);
+    expect(r.transitions.map((t) => t.check)).toEqual(['replica_lag']);
+    expect(describeTransition(r.transitions[0]!).detail).toContain('behind the main one');
+  });
+
+  it('a standby whose lag cannot be read shows as not measured, not as fine', () => {
+    const c = evaluate(standby(null), thresholds, {}, at(0), 3).checks.find((x) => x.name === 'replica_lag');
+    expect(c).toMatchObject({ value: null, breached: false });
+  });
+
+  it('has a label for the mail job', () => {
+    expect(checkLabel('replica_lag')).toBe('Database copy behind the main one');
+  });
+});

@@ -43,6 +43,7 @@ import { withRedactedLogs } from './log-redact.ts';
 import { authenticateAppToken, isAppRoute, isCanonicalAppRequest, mountAppTokenRoute } from './app-token-route.ts';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
 import { envelope, errorHandler, notFoundHandler } from './errors.ts';
+import { registerHttpTracing } from './http-trace.ts';
 import {
   authenticateCookie,
   clearSessionCookies,
@@ -145,6 +146,8 @@ export function addressFromHeader(value: string | string[] | undefined): string 
  */
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: withRedactedLogs(options.logger), trustProxy: trustProxySetting(options.trustProxy) });
+  // Tracing hooks go first of all so the whole request, hooks included, sits inside the request's span (a no-op while tracing is off).
+  registerHttpTracing(app);
   const addressHeader = options.clientAddressHeader?.trim().toLowerCase();
   if (addressHeader) {
     // First hook of all, so every later hook, route and log line sees the same `req.ip`.

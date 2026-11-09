@@ -41,6 +41,11 @@ export const OpsHealthSnapshot = z.object({
   /** Model budgets: how many have a dollar cap, how many are at 80 % or more, how many are used up, and the fullest one. */
   budgets: z.object({ limits: count, nearLimit: count, exhausted: count, maxBurnPercent: z.number().nonnegative() }).nullable(),
   database: z.object({ connectionsUsed: count, connectionsMax: count }).nullable(),
+  /**
+   * Copies of the database that follow the main one (standbys). `standbys` is how many are connected; `lagSeconds` is how far behind the slowest is, `null` when there is none (a
+   * single database, the usual small install) or when it cannot be read. Absent on a snapshot taken by an older server.
+   */
+  replication: z.object({ standbys: count, lagSeconds: seconds.nullable() }).nullable().optional(),
   process: z.object({
     residentBytes: count,
     heapUsedBytes: count,

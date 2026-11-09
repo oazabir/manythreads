@@ -229,6 +229,38 @@
             }
           ]
         },
+        "replication": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "standbys": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lagSeconds": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "standbys",
+                "lagSeconds"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "process": {
           "type": "object",
           "properties": {

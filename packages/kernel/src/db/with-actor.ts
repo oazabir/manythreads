@@ -1,6 +1,7 @@
 import type { ActorId, RunId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import { getAppPool, getSystemPool } from './pool.ts';
+import { traceTransaction } from './trace.ts';
 
 export type ActorKind = 'person' | 'bot' | 'system';
 
@@ -50,10 +51,19 @@ export interface WithActorOptions {
  * The one DB entry. Opens a transaction on the manythreads_app pool, sets the actor for RLS with SET LOCAL
  * semantics (`set_config(..., true)`), runs `fn`, then commits; any throw rolls back.
  */
-export async function withActor<T>(
+export function withActor<T>(
   actor: Actor,
   fn: (tx: Tx) => Promise<T>,
   options: WithActorOptions = {},
+): Promise<T> {
+  // One span per transaction when a request or job is being traced (db/trace.ts); otherwise this is `runActor` itself.
+  return traceTransaction(actor, options.readOnly === true, () => runActor(actor, fn, options));
+}
+
+async function runActor<T>(
+  actor: Actor,
+  fn: (tx: Tx) => Promise<T>,
+  options: WithActorOptions,
 ): Promise<T> {
   const client = await (options.pool ?? (actor.kind === 'system' ? getSystemPool() : getAppPool())).connect();
   let released = false;

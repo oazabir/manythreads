@@ -48,7 +48,7 @@ export function createMonitor(ctx: PluginContext, env: NodeJS.ProcessEnv): Monit
         onSectionError: failed,
       }),
     );
-    for (const key of ['outbox', 'jobs', 'runs', 'approvals', 'budgets', 'database']) sections[key] ??= true;
+    for (const key of ['outbox', 'jobs', 'runs', 'approvals', 'budgets', 'database', 'replication']) sections[key] ??= true;
     const volumes = await collectVolumes(volumesFrom(env), (name) => {
       sections[`volume_${name}`] = false;
     });

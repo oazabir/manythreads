@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OpsHealthCheck } from '@manythreads/shared';
-import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds } from '../src/screens/health/format';
+import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds, replicaText } from '../src/screens/health/format';
 
 const check = (over: Partial<OpsHealthCheck> = {}): OpsHealthCheck => ({
   name: 'outbox_lag',
@@ -40,5 +40,15 @@ describe('System health formatting', () => {
     expect(checkStatus(check({ breached: true })).tone).toBe('warn');
     expect(checkStatus(check({ threshold: 0 })).word).toBe('Off');
     expect(checkStatus(check({ value: null })).word).toBe('Down');
+  });
+});
+
+describe('replica row', () => {
+  it('says "no standby" for a single database', () => {
+    expect(replicaText({ standbys: 0, lagSeconds: null })).toMatch(/^no standby/);
+  });
+  it('gives the lag of the slowest standby, or says it cannot be read', () => {
+    expect(replicaText({ standbys: 1, lagSeconds: 12 })).toBe('12 s behind the main database (1 standby)');
+    expect(replicaText({ standbys: 2, lagSeconds: null })).toBe('2 standbys, the lag cannot be read');
   });
 });

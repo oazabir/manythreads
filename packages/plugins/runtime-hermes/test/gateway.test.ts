@@ -1,5 +1,5 @@
 import { AgentBridgeRunExtension, parseBotMd } from '@manythreads/shared';
-import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
+import { setTraceBridge, type BotRuntimeEvent, type BotRuntimeInput, type BotRuntimeScope, type SpanAttributes, type TraceBridge } from '@manythreads/sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway } from '../../../../tools/fake-hermes-gateway/src/server.ts';
 import { GatewayRefused, MAX_FRAME_BYTES, profileFor, readLimitedText, runOnGateway, sessionIdFor, sseFrames, type GatewayRuntimeOptions } from '../src/gateway.ts';
@@ -224,6 +224,67 @@ describe('a run on a gateway', () => {
     const events = await collect(handle.events);
     expect(resultOf(events)).toMatchObject({ ok: false, failure: 'timeout' });
     expect(gw.calls.some((c) => c.path.endsWith('/stop'))).toBe(true);
+  });
+});
+
+describe('the trace parent of a run (P10-10)', () => {
+  const TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+  const spans: Array<{ name: string; attributes: SpanAttributes }> = [];
+  const stub: TraceBridge = {
+    span: (name, attributes, fn) => {
+      spans.push({ name, attributes });
+      return fn();
+    },
+    root: (_name, _attributes, fn) => fn(),
+    request: () => undefined,
+    headers: () => ({ traceparent: TRACEPARENT }),
+    traceId: () => undefined,
+  };
+  afterEach(() => {
+    setTraceBridge(null);
+    spans.length = 0;
+  });
+
+  /** Runs one short run and returns the headers of every call it made. */
+  const headersOfRun = async (over: Partial<GatewayRuntimeOptions> & { guarded?: boolean }): Promise<Array<Record<string, string>>> => {
+    const seen: Array<Record<string, string>> = [];
+    const spy: typeof fetch = (url, init) => {
+      seen.push({ ...(init?.headers as Record<string, string>) });
+      return fetch(url, init);
+    };
+    gw.setScript(() => [{ type: 'finish', output: 'ok', usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }]);
+    const { guarded, ...rest } = over;
+    const handle = await runOnGateway(
+      options({ fetch: spy, resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'managed', agent: 'hermes', ...(guarded === undefined ? {} : { guarded }) }), ...rest }),
+      input(),
+      scope,
+      { connection: 'managed' },
+    );
+    await collect(handle.events);
+    return seen;
+  };
+
+  it('with tracing on, the platform\'s own gateway gets the trace parent on the start and on the stream, and the start is a span of ids only', async () => {
+    setTraceBridge(stub);
+    const seen = await headersOfRun({});
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    for (const h of seen) expect(h['traceparent']).toBe(TRACEPARENT);
+    const start = spans.find((x) => x.name === 'hermes.run.start')!;
+    expect(start.attributes).toMatchObject({ 'mt.hermes.agent': 'hermes', 'mt.run_id': RUN_ID, 'mt.bot_id': BOT_ID });
+    expect(JSON.stringify(start.attributes)).not.toMatch(/Nadia|what changed|soul/);
+  });
+
+  it('an address a team lead typed (guarded) never gets the trace parent', async () => {
+    setTraceBridge(stub);
+    const seen = await headersOfRun({ guarded: true });
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    for (const h of seen) expect(h).not.toHaveProperty('traceparent');
+  });
+
+  it('with tracing off no call carries it', async () => {
+    const seen = await headersOfRun({});
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    for (const h of seen) expect(h).not.toHaveProperty('traceparent');
   });
 });
 

@@ -61,6 +61,7 @@ const CHECK_LABEL: Record<string, string> = {
   approval_age: 'Oldest pending approval',
   budget_burn: 'Fullest model budget',
   db_connections: 'Database connections in use',
+  replica_lag: 'Database copy behind the main one',
 };
 
 /** The label of a check by its name (the mail job rebuilds its text from this, never from a payload); null for a name no check has. */
@@ -93,6 +94,10 @@ function specsOf(s: OpsHealthSnapshot, t: Thresholds): CheckSpec[] {
       value: s.database && s.database.connectionsMax > 0 ? (s.database.connectionsUsed / s.database.connectionsMax) * 100 : null,
     },
   ];
+  // Only with a standby: a single database has nothing to lag behind, and a check that can never be measured would show as Down on every small install.
+  if (s.replication && s.replication.standbys > 0) {
+    specs.push({ name: 'replica_lag', label: 'Database copy behind the main one', unit: 'seconds', threshold: t.replicaLagSeconds, margin: 0, value: s.replication.lagSeconds });
+  }
   for (const v of s.volumes) {
     specs.push({ name: `volume_${v.name}`, label: `${volumeLabel(v.name)} used`, unit: 'percent', threshold: t.volumePercent, margin: 2, value: v.usedPercent });
   }
@@ -173,6 +178,7 @@ const WHAT: Record<string, string> = {
   approval_age: 'The oldest approval nobody has decided has waited',
   budget_burn: 'The fullest model budget is used up to',
   db_connections: 'The database has connections open to',
+  replica_lag: 'The slowest copy of the database (a standby) is behind the main one by',
 };
 
 /** A plain-language title and detail for a change, used in the mail and the event log. */

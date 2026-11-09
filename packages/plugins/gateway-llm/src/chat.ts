@@ -1,4 +1,4 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import { traceSpan, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { LlmAliasName } from '@manythreads/shared';
 import { ALL_ALIASES } from './config.ts';
 import { gatewayFromEnv } from './gateway.ts';
@@ -108,19 +108,25 @@ export async function chat(
   const messages = checked.messages;
   if (!gateway.enabled) return { ok: false, reason: 'unavailable', detail: 'No LLM gateway URL is configured.' };
   try {
-    const answer = await gateway.chat({
-      model: request.alias,
-      messages,
-      tools: request.tools,
-      maxTokens: request.maxTokens,
-      metadata: {
-        manythreads_workspace: request.workspaceId,
-        ...(request.botId === null ? {} : { manythreads_bot: request.botId }),
-        ...(request.runId === null ? {} : { manythreads_run: request.runId }),
-        purpose: request.purpose ?? 'run',
-      },
-      ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
-    });
+    // One span for the proxy call (ids and the alias name only: never the messages), whose trace parent the client sends on to the proxy.
+    const answer = await traceSpan(
+      'llm.chat',
+      { 'mt.llm.alias': request.alias, 'mt.llm.purpose': request.purpose ?? 'run', 'mt.llm.messages': messages.length, 'mt.workspace_id': request.workspaceId, 'mt.bot_id': request.botId ?? undefined, 'mt.run_id': request.runId ?? undefined },
+      () =>
+        gateway.chat({
+          model: request.alias,
+          messages,
+          tools: request.tools,
+          maxTokens: request.maxTokens,
+          metadata: {
+            manythreads_workspace: request.workspaceId,
+            ...(request.botId === null ? {} : { manythreads_bot: request.botId }),
+            ...(request.runId === null ? {} : { manythreads_run: request.runId }),
+            purpose: request.purpose ?? 'run',
+          },
+          ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
+        }),
+    );
     await run((tx) =>
       recordSpend(tx, {
         workspaceId: request.workspaceId,

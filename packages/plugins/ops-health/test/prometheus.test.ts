@@ -48,6 +48,16 @@ describe('renderPrometheus', () => {
     expect(text).toContain('manythreads_process_resident_memory_bytes');
   });
 
+  it('exposes the replica lag with a standby, and nothing but a zero count without one', () => {
+    const withStandby = render(healthy({ replication: { standbys: 2, lagSeconds: 4.5 } }));
+    expect(withStandby).toMatch(/^manythreads_db_replicas 2$/m);
+    expect(withStandby).toMatch(/^manythreads_db_replica_lag_seconds 4\.5$/m);
+    const single = render(healthy({ replication: { standbys: 0, lagSeconds: null } }));
+    expect(single).toMatch(/^manythreads_db_replicas 0$/m);
+    expect(single).not.toContain('manythreads_db_replica_lag_seconds');
+    expect(render(healthy({ replication: { standbys: 1, lagSeconds: null } }))).not.toContain('manythreads_db_replica_lag_seconds');
+  });
+
   it('escapes label values', () => {
     const text = render(healthy({ volumes: [{ name: 'a"b\\c\nd', totalBytes: 1, freeBytes: 1, usedPercent: 0 }] }));
     expect(text).toContain('volume="a\\"b\\\\c\\nd"');

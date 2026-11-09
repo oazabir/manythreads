@@ -47,6 +47,7 @@ All names start with `manythreads_`. Labels are few and fixed (no user, team or 
 | `budget_limits`, `budget_limits_near`, `budget_limits_exhausted`, `budget_burn_ratio_max` | model budgets with a cap; at 80 % or more; used up; the fullest one (0 to 1 and above) |
 | `db_connections_in_use`, `db_connections_max` | database connections open, and the server's limit |
 | `process_resident_memory_bytes`, `process_heap_used_bytes` | server memory |
+| `db_replicas`, `db_replica_lag_seconds` | database standbys connected right now (0 with one database); how far the slowest one is behind, in seconds (left out with no standby or when the lag cannot be read) |
 | `event_loop_lag_p99_seconds` | how late the server's timers fire (99th percentile of the last stretch); a busy or blocked server shows here |
 | `process_uptime_seconds` | seconds since the server started |
 | `volume_total_bytes{volume}`, `volume_free_bytes{volume}`, `volume_used_ratio{volume}` | the attachment store (`blobs`) and the team repositories (`repos`); more with `MANYTHREADS_OPS_VOLUMES=name=/path,...` |
@@ -69,6 +70,9 @@ Once a minute the server judges the numbers above against these limits. Set them
 | Approval | the oldest pending approval is older than | `MANYTHREADS_ALERT_APPROVAL_HOURS` | 24 |
 | Model budget | the fullest budget is used to | `MANYTHREADS_ALERT_BUDGET_PERCENT` | 90 (percent) |
 | Database | connections in use reach | `MANYTHREADS_ALERT_DB_CONNECTIONS_PERCENT` | 90 (percent of the limit) |
+| Replica lag | a database standby is behind by more than | `MANYTHREADS_ALERT_REPLICA_LAG_SECONDS` | 30 |
+
+**Replica lag.** The check exists only while the database has a standby (a copy that follows the main one, `postgres.instances` above 1). With one database the System health panel shows "no standby" and nothing is judged. The server reads `pg_stat_replication`, which Postgres shows in full only to a role that may read statistics: the system role needs `pg_monitor` (or `pg_read_all_stats`) on a cluster with standbys. Without it the rows are visible with empty columns, and the check then says the lag cannot be read instead of guessing. The lag shown is the slowest standby's replay lag; a standby that has replayed everything and has nothing new to replay shows 0.
 
 Other switches: `MANYTHREADS_ALERTS=off` (no events or mail; `/metrics` and the panel still work), `MANYTHREADS_ALERT_MAIL=0` (events and panel, no mail), `MANYTHREADS_ALERT_RECOVER_ROUNDS` (quiet minutes in a row before "back to normal"; default 3).
 
@@ -80,7 +84,7 @@ Other switches: `MANYTHREADS_ALERTS=off` (no events or mail; `/metrics` and the 
 
 ## Example Prometheus alert rules
 
-Use these if you run Prometheus; they say the same as the built-in limits, so the two agree.
+Use these if you run Prometheus; they say the same as the built-in limits, so the two agree. The same rules, a Grafana dashboard and an example collector configuration are ready as files in [`deploy/helm/monitoring`](../../deploy/helm/monitoring/README.md); the rules file is checked with `promtool check rules` and a test makes sure every metric named in the rules and the dashboard is one `/metrics` serves.
 
 ```yaml
 groups:
@@ -113,7 +117,33 @@ groups:
         for: 5m
       - alert: ManythreadsDeadJobs
         expr: increase(manythreads_jobs_dead[1h]) > 0
+      - alert: ManythreadsReplicaLag
+        expr: manythreads_db_replica_lag_seconds > 30
+        for: 5m
 ```
+
+## Traces
+
+The server can send OpenTelemetry traces to a collector. **Off by default**: with no address set the server loads no tracing code at all and costs nothing extra.
+
+To turn it on, give the chart the collector's address (OTLP over HTTP, port 4318 by default):
+
+```yaml
+server:
+  otel:
+    endpoint: http://otel-collector.monitoring.svc:4318
+    sampleRatio: 1        # 0 to 1: the share of requests that are traced
+```
+
+The chart passes them to the server as `MANYTHREADS_OTEL_EXPORTER_OTLP_ENDPOINT` and `MANYTHREADS_OTEL_SAMPLE_RATIO`. A value that is not a web address, or a ratio outside 0 to 1, is written to the log at start and tracing stays off; the server still starts. An example collector configuration is in [`deploy/helm/monitoring/otel-collector.yaml`](../../deploy/helm/monitoring/otel-collector.yaml).
+
+**What you see.** One trace per API request, named `METHOD /route` (the route pattern, never the address with its numbers in it), with one child span for every database transaction the request made (`db.transaction`) and for every call to the model gateway (`llm.chat`) and to a team's Hermes (`hermes.run.start`). A background job is a trace of its own (`job <queue>`). Health checks, `/metrics` and WebSocket connections are not traced.
+
+**Logs and traces meet.** Every log line of a traced request carries a `traceId` field (the first line of a request, "incoming request", is written before the trace starts and has none). Search the log for a `traceId` you saw in the tracing backend, or the other way round.
+
+**Calls to our own services carry the trace.** The model gateway (LiteLLM) and a managed Hermes pod receive a `traceparent` header, so their own traces can join. An address a team lead typed in (a Hermes of their own) never receives it.
+
+**What a span holds.** Ids (workspace, bot, run, job), counts (messages, tokens), kinds (the alias, the queue) and status codes. Never message text, a person's name or address, SQL or a secret: a list of allowed attribute names is enforced in one place, and anything else is dropped before it leaves the server. A failed span records the kind of error (for example `TypeError`) and not its message. A `traceparent` that arrives from outside is ignored: every request starts its own trace, so no caller can choose what is sampled.
 
 ## Logs
 
@@ -125,6 +155,7 @@ The server logs one JSON object per line on standard output (Fastify's logger, `
 | `time` | milliseconds since 1970 |
 | `msg` | the message |
 | `reqId` | the request id; on request lines `req` and `res` also carry method, URL and status, and `responseTime` is in milliseconds |
+| `traceId` | the trace the request belongs to, when tracing is on (see Traces) |
 | `pid`, `hostname` | the process |
 
 Request addresses are cleaned before they are written: the one-time token in an embedded-app address and anything odd after `/api/mcp/runs/` is replaced by `[redacted]`. Useful filters: `level >= 40` for trouble; one `reqId` for everything a single request did.

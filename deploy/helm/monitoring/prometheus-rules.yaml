@@ -1,0 +1,88 @@
+# Prometheus alert rules for manythreads (P10-09). Plain rule-file form: load it with `rule_files:` or wrap it in a PrometheusRule (see README.md).
+# The limits equal the built-in watcher's defaults (docs/deploy/monitoring.md), so both say the same thing. Check with:
+#   promtool check rules deploy/helm/monitoring/prometheus-rules.yaml
+groups:
+  - name: manythreads
+    rules:
+      - alert: ManythreadsDown
+        expr: up{job="manythreads"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: manythreads does not answer its metrics scrape
+          description: The server has not answered /metrics for 2 minutes. Check the pod and its logs.
+      - alert: ManythreadsVolumeFull
+        expr: manythreads_volume_used_ratio > 0.85
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Volume {{ $labels.volume }} is more than 85 percent full'
+          description: The node disk behind this volume is nearly full. A full disk evicts pods.
+      - alert: ManythreadsOutboxLag
+        expr: manythreads_outbox_oldest_age_seconds > 60
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: Changes wait more than a minute to be handed on
+          description: The oldest undelivered change is older than 60 seconds. Live updates and bots are late.
+      - alert: ManythreadsJobsStuck
+        expr: manythreads_jobs_oldest_ready_age_seconds > 600
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: A background job has waited more than 10 minutes for a worker
+          description: Jobs are due and nobody takes them. Look at the queues in System health.
+      - alert: ManythreadsRunSlotsSaturated
+        expr: manythreads_run_slots_used >= manythreads_run_slots_limit and manythreads_runs_queued > 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: Every bot run slot is taken and runs are waiting
+          description: Raise MANYTHREADS_RUN_CONCURRENCY or add a server replica.
+      - alert: ManythreadsApprovalWaiting
+        expr: manythreads_approvals_oldest_pending_age_seconds > 24 * 3600
+        labels: { severity: info }
+        annotations:
+          summary: An approval has waited more than a day
+          description: A person has to decide it; the bot's work is on hold until then.
+      - alert: ManythreadsBudgetNearlyUsed
+        expr: manythreads_budget_burn_ratio_max > 0.9
+        labels: { severity: warning }
+        annotations:
+          summary: A model budget is more than 90 percent used
+          description: At 100 percent the bots on that budget stop calling the model.
+      - alert: ManythreadsDatabaseConnections
+        expr: manythreads_db_connections_in_use / manythreads_db_connections_max > 0.9
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: The server uses more than 90 percent of its database connections
+          description: Requests will start to queue for a connection.
+      - alert: ManythreadsEventLoopSlow
+        expr: manythreads_event_loop_lag_p99_seconds > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: The server's timers fire more than a second late
+          description: Something blocks the server process. Look at the traces of slow requests.
+      - alert: ManythreadsDeadJobs
+        expr: increase(manythreads_jobs_dead[1h]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: Background jobs were given up on in the last hour
+          description: A job failed its last attempt. See the queue in System health for which.
+      - alert: ManythreadsReplicaLag
+        # Absent (no series) with one database: the metric exists only while a standby is attached.
+        expr: manythreads_db_replica_lag_seconds > 30
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: A database standby is more than 30 seconds behind
+          description: A failover now would lose this much recent work. The built-in watcher uses MANYTHREADS_ALERT_REPLICA_LAG_SECONDS.
+      - alert: ManythreadsMetricsPartial
+        expr: manythreads_ops_section_ok == 0
+        for: 10m
+        labels: { severity: info }
+        annotations:
+          summary: 'Part of the numbers ({{ $labels.section }}) could not be read'
+          description: Its other metrics are left out of /metrics while this holds. Look at the server log.

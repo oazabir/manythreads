@@ -144,3 +144,51 @@ describe('collectDatabaseSections', () => {
     expect(s.runs).toEqual({ slotsUsed: 0, slotsLimit: 4, queued: 0, oldestQueuedAgeSeconds: 0 });
   });
 });
+
+describe('collectDatabaseSections: replication', () => {
+  /** A transaction whose `pg_stat_replication` answer is the one given (or an error), everything else empty. */
+  const withReplication = (row: Record<string, unknown> | Error | null) => ({
+    actor: {},
+    query: async (sql: string) => {
+      if (sql.includes('pg_stat_replication')) {
+        if (row instanceof Error) throw row;
+        return { rows: row === null ? [] : [row] };
+      }
+      return { rows: [] };
+    },
+  });
+  const read = async (row: Record<string, unknown> | Error | null) =>
+    (await collectDatabaseSections(withReplication(row) as never, { runSlotsLimit: 6, deadJobs: async () => 0 })).replication;
+
+  it('a single database has no standby and no lag', async () => {
+    expect(await read({ standbys: 0, readable: 0, lag: null })).toEqual({ standbys: 0, lagSeconds: null });
+    expect(await read(null)).toEqual({ standbys: 0, lagSeconds: null });
+  });
+
+  it('one standby reports how far behind it is', async () => {
+    expect(await read({ standbys: 1, readable: 1, lag: 12.5 })).toEqual({ standbys: 1, lagSeconds: 12.5 });
+  });
+
+  it('a standby this role cannot read is unknown, never a lag of zero', async () => {
+    expect(await read({ standbys: 2, readable: 1, lag: 3 })).toEqual({ standbys: 2, lagSeconds: null });
+  });
+
+  it('a failing read is a null section and the rest still answer', async () => {
+    const failed: string[] = [];
+    const s = await collectDatabaseSections(withReplication(new Error('permission denied')) as never, {
+      runSlotsLimit: 6,
+      deadJobs: async () => 0,
+      onSectionError: (n) => failed.push(n),
+    });
+    expect(s.replication).toBeNull();
+    expect(s.outbox).not.toBeNull();
+    expect(failed).toEqual(['replication']);
+  });
+
+  it('asks only for readable rows when it measures the lag', async () => {
+    const seen: string[] = [];
+    const tx = { actor: {}, query: async (sql: string) => (seen.push(sql), { rows: [] }) };
+    await collectDatabaseSections(tx as never, { runSlotsLimit: 6, deadJobs: async () => 0 });
+    expect(seen.find((sql) => sql.includes('pg_stat_replication'))).toMatch(/FILTER \(WHERE replay_lsn IS NOT NULL\)/);
+  });
+});

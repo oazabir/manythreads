@@ -42,7 +42,7 @@ export type SectionStatus = Readonly<Record<string, boolean>>;
 
 export function renderPrometheus(snapshot: OpsHealthSnapshot, checks: readonly OpsHealthCheck[], sections: SectionStatus = {}): string {
   const w = new Writer();
-  const { outbox, jobs, runs, approvals, budgets, database } = snapshot;
+  const { outbox, jobs, runs, approvals, budgets, database, replication } = snapshot;
 
   w.metric('manythreads_outbox_backlog', 'gauge', 'Events written with a change and not yet delivered to every subscriber.', one(outbox?.backlog));
   w.metric('manythreads_outbox_retrying', 'gauge', 'Undelivered events that have already failed at least once.', one(outbox?.retrying));
@@ -70,6 +70,9 @@ export function renderPrometheus(snapshot: OpsHealthSnapshot, checks: readonly O
 
   w.metric('manythreads_db_connections_in_use', 'gauge', 'Client connections open to the database server.', one(database?.connectionsUsed));
   w.metric('manythreads_db_connections_max', 'gauge', 'The database server connection limit.', one(database?.connectionsMax));
+
+  w.metric('manythreads_db_replicas', 'gauge', 'Standbys (copies of the database that follow the main one) connected right now; 0 with a single database.', one(replication?.standbys));
+  w.metric('manythreads_db_replica_lag_seconds', 'gauge', 'How far the slowest standby is behind the main database, in seconds. Left out with no standby, or when the lag cannot be read.', one(replication?.lagSeconds));
 
   w.metric('manythreads_process_resident_memory_bytes', 'gauge', 'Resident memory of this server process.', one(snapshot.process.residentBytes));
   w.metric('manythreads_process_heap_used_bytes', 'gauge', 'JavaScript heap in use in this server process.', one(snapshot.process.heapUsedBytes));

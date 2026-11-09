@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createAppPool, createPluginContext, createSecretService, createSystemPool, ExtensionRegistries, createMemoryKv, withSystem, type Tx } from '@manythreads/kernel';
-import type { PluginEvent, PluginTx } from '@manythreads/sdk';
+import { setTraceBridge, type PluginEvent, type PluginTx, type SpanAttributes, type TraceBridge } from '@manythreads/sdk';
 import {
   botsMigrationSource,
   channelsMigrationSource,
@@ -17,7 +17,7 @@ import {
   type TestDatabase,
 } from '@manythreads/test-utils';
 import pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import guardrailsDlp from '../../guardrails-dlp/src/index.ts';
 import guardrailsEgress from '../../guardrails-egress/src/index.ts';
@@ -158,6 +158,47 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ bot_id: botId, team_id: ENG, alias: 'smart', prompt_tokens: 12, completion_tokens: 7, session_id: r.runId });
     expect(Number(rows[0]!.cost_usd)).toBe(0);
+  });
+
+  it('with tracing on, the turn is an `llm.chat` span of ids only and the call to the proxy carries the trace parent; with it off no header is added', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'chat-trace'));
+    const spans: Array<{ name: string; attributes: SpanAttributes }> = [];
+    const TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    const stub: TraceBridge = {
+      span: (name, attributes, fn) => {
+        spans.push({ name, attributes });
+        return fn();
+      },
+      root: (_name, _attributes, fn) => fn(),
+      request: () => undefined,
+      headers: () => ({ traceparent: TRACEPARENT }),
+      traceId: () => undefined,
+    };
+    const seen: Array<Record<string, string>> = [];
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      if (String(input).endsWith('/chat/completions')) seen.push({ ...(init?.headers as Record<string, string>) });
+      return realFetch(input, init);
+    });
+    try {
+      setTraceBridge(stub);
+      const r = request(botId);
+      expect((await turn(r)).ok).toBe(true);
+      expect(spans.map((x) => x.name)).toContain('llm.chat');
+      const span = spans.find((x) => x.name === 'llm.chat')!;
+      expect(span.attributes).toMatchObject({ 'mt.llm.alias': 'smart', 'mt.run_id': r.runId, 'mt.bot_id': botId });
+      // Ids, counts and kinds only: no message text.
+      expect(JSON.stringify(span.attributes)).not.toMatch(/pricing|team notes/);
+      expect(seen.at(-1)?.['traceparent']).toBe(TRACEPARENT);
+      setTraceBridge(null);
+      seen.length = 0;
+      expect((await turn(request(botId))).ok).toBe(true);
+      expect(seen.at(-1)).toBeDefined();
+      expect(seen.at(-1)).not.toHaveProperty('traceparent');
+    } finally {
+      setTraceBridge(null);
+      spy.mockRestore();
+    }
   });
 
   it('offers the tools in the OpenAI form and returns the tool call the model asks for', async () => {

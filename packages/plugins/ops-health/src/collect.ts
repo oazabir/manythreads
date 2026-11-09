@@ -43,7 +43,7 @@ async function section<T>(tx: PluginTx, name: string, opts: CollectOptions, fn: 
 export async function collectDatabaseSections(
   tx: PluginTx,
   opts: CollectOptions,
-): Promise<Pick<OpsHealthSnapshot, 'outbox' | 'jobs' | 'runs' | 'approvals' | 'budgets' | 'database'>> {
+): Promise<Pick<OpsHealthSnapshot, 'outbox' | 'jobs' | 'runs' | 'approvals' | 'budgets' | 'database' | 'replication'>> {
   const outbox = await section(tx, 'outbox', opts, async () => {
     const r = (
       await tx.query<{ backlog: number; retrying: number; oldest: number }>(
@@ -108,6 +108,23 @@ export async function collectDatabaseSections(
     return { connectionsUsed: num(r?.used), connectionsMax: num(r?.max) };
   });
 
+  // Standbys (copies that follow this database). `pg_stat_replication` lists one row per connected standby. A role without the right to see the other sessions gets the rows with
+  // every column empty: a row whose `replay_lsn` is empty is therefore "present, not readable", and the lag is then unknown (null), never a guess of zero. A readable row with no
+  // `replay_lag` has caught up and has seen no write for a while (Postgres empties the figure then): that is zero.
+  const replication = await section(tx, 'replication', opts, async () => {
+    const r = (
+      await tx.query<{ standbys: number; readable: number; lag: number | null }>(
+        `SELECT count(*)::int AS standbys,
+                (count(*) FILTER (WHERE replay_lsn IS NOT NULL))::int AS readable,
+                (max(coalesce(extract(epoch FROM replay_lag), 0)) FILTER (WHERE replay_lsn IS NOT NULL))::float8 AS lag
+           FROM pg_stat_replication`,
+      )
+    ).rows[0];
+    const standbys = num(r?.standbys);
+    const unreadable = standbys > 0 && num(r?.readable) < standbys;
+    return { standbys, lagSeconds: standbys === 0 || unreadable ? null : Math.max(0, num(r?.lag)) };
+  });
+
   const jobs =
     queues === null
       ? null
@@ -131,7 +148,7 @@ export async function collectDatabaseSections(
           oldestQueuedAgeSeconds: Math.max(0, num(runQueue?.oldest)),
         };
 
-  return { outbox, jobs, runs, approvals, budgets, database };
+  return { outbox, jobs, runs, approvals, budgets, database, replication };
 }
 
 /** How full the model budgets are: the count with a dollar cap, those at 80 % or more, those used up, and the fullest in percent. */

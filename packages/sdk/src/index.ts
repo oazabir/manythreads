@@ -30,6 +30,7 @@ export * from './personal-files.ts';
 export * from './meeting-runs.ts';
 export * from './transcribe.ts';
 export * from './connectors.ts';
+export * from './trace.ts';
 export * from './audio/vad.ts';
 export * from './audio/wav.ts';
 

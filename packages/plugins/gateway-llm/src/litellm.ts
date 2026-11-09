@@ -21,6 +21,8 @@
 //
 // A client is injectable so tests run against a fake transport with no proxy at all.
 
+import { traceHeaders } from '@manythreads/sdk';
+
 /**
  * The config document the proxy is fed: one `model_list` entry per bound alias, the `fallbacks` chains, and `deleted` —
  * the aliases that are no longer bound and whose model must go.
@@ -135,6 +137,8 @@ function fetchTransport(baseUrl: string, masterKey: string | null, timeoutMs: nu
           headers: {
             ...(body === undefined ? {} : { 'content-type': 'application/json' }),
             ...(masterKey ? { authorization: `Bearer ${masterKey}` } : {}),
+            // The proxy is ours (the platform's own service), so the trace parent goes with the call; empty when tracing is off or no trace is active.
+            ...traceHeaders(),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           signal: controller.signal,

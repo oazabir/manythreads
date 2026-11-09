@@ -1,1 +1,7 @@
-# Stage profile "otel" (STAGE_PROFILE, tools/devbox/stage.sh): values added on top of values-stage.yaml. Empty until the package that needs it fills it (Bundle E).
+# Stage profile "otel" (STAGE_PROFILE=otel, tools/devbox/stage.sh; PLAN P10-10): the server sends its traces to the collector of tools/deploy-test/stage/otel-collector.yaml,
+# which prints every span to its log. Start the collector with `tools/deploy-test/stage-profile.sh otel up` (the endpoint below does not exist until it runs; the server keeps
+# working and drops the spans it cannot send).
+server:
+  otel:
+    endpoint: "http://otel-collector:4318"
+    sampleRatio: 1

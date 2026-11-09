@@ -1,0 +1,38 @@
+# An OpenTelemetry Collector configuration that receives manythreads' traces and passes them on (PLAN P10-10, docs/deploy/monitoring.md#traces).
+# Point the server at it with the chart value `server.otel.endpoint: http://otel-collector.<namespace>.svc:4318` (OTLP over HTTP; the server adds /v1/traces).
+#
+# The server sends spans of ids, kinds and status codes. They hold no message text, no names and no addresses. Spans of ordinary requests come in as one trace
+# each: the request, the database transactions under it, and the calls to the model gateway and to Hermes.
+#
+# This is an example: replace the `otlphttp/backend` exporter with your own tracing backend (Tempo, Jaeger, a hosted service), or keep only `debug` to read the spans in
+# the collector's own log. Run it with the contrib or the core image of the OpenTelemetry Collector, for example:
+#   docker run --rm -p 4318:4318 -v $PWD/deploy/helm/monitoring/otel-collector.yaml:/etc/otelcol/config.yaml otel/opentelemetry-collector:0.120.0
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  batch:
+    timeout: 5s
+
+exporters:
+  # Prints each span to the collector's log: good for a first look.
+  debug:
+    verbosity: basic
+  # Your backend. The address here is an example; remove this exporter and its line under `pipelines` to use `debug` alone.
+  otlphttp/backend:
+    endpoint: http://tempo.monitoring.svc:4318
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug, otlphttp/backend]

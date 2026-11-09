@@ -1,7 +1,7 @@
 import { fetchOpsHealth } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
-import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds, healthSummary, sortChecks, volumeTitle } from './format';
+import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds, healthSummary, replicaText, sortChecks, volumeTitle } from './format';
 import { PageHeader } from '../../components/PageHeader';
 
 /**
@@ -54,6 +54,7 @@ export function SystemHealth() {
                 {s.approvals ? <Row k="Approvals waiting" v={`${s.approvals.pending} (oldest ${formatSeconds(s.approvals.oldestPendingAgeSeconds)})`} /> : null}
                 {s.budgets ? <Row k="Model budgets" v={`${s.budgets.limits} with a dollar cap, ${s.budgets.nearLimit} at 80 % or more, ${s.budgets.exhausted} used up`} /> : null}
                 {s.database ? <Row k="Database connections" v={`${s.database.connectionsUsed} of ${s.database.connectionsMax}`} /> : null}
+                {s.replication ? <Row k="Replica lag" v={replicaText(s.replication)} /> : null}
                 <Row k="Server memory" v={`${formatBytes(s.process.residentBytes)} in use`} />
                 <Row k="Event loop delay" v={`${Math.round(s.process.eventLoopLagP99Seconds * 1000)} ms (99th percentile)`} />
                 <Row k="Server running for" v={formatSeconds(s.process.uptimeSeconds)} />

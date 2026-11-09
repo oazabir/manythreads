@@ -1,4 +1,4 @@
-import type { BotRuntimeEvent, BotRuntimeHandle, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
+import { traceHeaders, traceSpan, type BotRuntimeEvent, type BotRuntimeHandle, type BotRuntimeInput, type BotRuntimeScope } from '@manythreads/sdk';
 import { AGENT_BRIDGE_RUN_KEY, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
 import { guardedFetch } from './outbound.ts';
 import { withOutputStyle } from './output-style.ts';
@@ -195,11 +195,13 @@ export async function runOnGateway(
   const doFetch = options.fetch ?? (target.guarded === true ? guardedFetch : fetch);
   const base = `${target.baseUrl.replace(/\/+$/, '')}/p/${encodeURIComponent(profile)}/v1`;
   const headers = { authorization: `Bearer ${target.apiKey}` };
+  // The trace parent goes only to the platform's own gateways (a managed pod, a Claude or Codex runner). An address a team lead typed (`guarded`) is a third party's: no trace id leaves the install.
+  const ownTrace = (): Record<string, string> => (target.guarded === true ? {} : traceHeaders());
 
   /** A request with its own deadline; a network failure and a timeout both throw. */
   const call = async (path: string, init: RequestInit = {}, timeoutMs = requestTimeoutMs): Promise<Response> => {
     const signal = AbortSignal.timeout(timeoutMs);
-    return doFetch(`${base}${path}`, { ...init, redirect: 'error', headers: { ...headers, ...(init.headers as Record<string, string> | undefined) }, signal });
+    return doFetch(`${base}${path}`, { ...init, redirect: 'error', headers: { ...headers, ...ownTrace(), ...(init.headers as Record<string, string> | undefined) }, signal });
   };
 
   const claudeRunner = target.claudeRunner;
@@ -279,7 +281,7 @@ export async function runOnGateway(
     }
     return { id: hermesRunId };
   };
-  const first = await startRemote(JSON.stringify(runBody), runId);
+  const first = await traceSpan('hermes.run.start', { 'mt.hermes.agent': target.agent, 'mt.run_id': runId, 'mt.bot_id': input.bot.id }, () => startRemote(JSON.stringify(runBody), runId));
   if ('handle' in first) return first.handle;
   let remoteId = first.id;
 
@@ -312,7 +314,7 @@ export async function runOnGateway(
       try {
         const res = await doFetch(`${base}/runs/${encodeURIComponent(remoteId)}/events${lastSeq >= 0 ? `?last_seq=${lastSeq}` : ''}`, {
           redirect: 'error',
-          headers: { ...headers, accept: 'text/event-stream', ...(lastSeq >= 0 ? { 'last-event-id': String(lastSeq) } : {}) },
+          headers: { ...headers, ...ownTrace(), accept: 'text/event-stream', ...(lastSeq >= 0 ? { 'last-event-id': String(lastSeq) } : {}) },
           signal: abort.signal,
         });
         if (!res.ok || !res.body) {

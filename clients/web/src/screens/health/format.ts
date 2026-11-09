@@ -64,3 +64,10 @@ export function healthSummary(checks: readonly OpsHealthCheck[]): { problems: nu
 }
 
 export const volumeTitle = (v: OpsVolume): string => (v.name === 'blobs' ? 'Attachment store' : v.name === 'repos' ? 'Team repositories' : v.name);
+
+/** The replica row of the Numbers box: how far the copies of the database are behind the main one. A single database has none, which is normal, not a problem. */
+export function replicaText(r: { standbys: number; lagSeconds: number | null }): string {
+  if (r.standbys === 0) return 'no standby (one database, nothing to follow it)';
+  const copies = r.standbys === 1 ? '1 standby' : `${r.standbys} standbys`;
+  return r.lagSeconds === null ? `${copies}, the lag cannot be read` : `${formatSeconds(r.lagSeconds)} behind the main database (${copies})`;
+}

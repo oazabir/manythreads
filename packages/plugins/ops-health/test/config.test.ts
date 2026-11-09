@@ -11,6 +11,7 @@ describe('thresholdsFrom', () => {
       runSlotsSeconds: 600,
       approvalAgeSeconds: 86_400,
       budgetPercent: 90,
+      replicaLagSeconds: 30,
       dbConnectionsPercent: 90,
     });
     expect(DEFAULT_THRESHOLDS.volumePercent).toBe(85);
@@ -24,9 +25,10 @@ describe('thresholdsFrom', () => {
       MANYTHREADS_ALERT_RUN_SLOTS_SECONDS: '300',
       MANYTHREADS_ALERT_APPROVAL_HOURS: '48',
       MANYTHREADS_ALERT_BUDGET_PERCENT: '80',
+      MANYTHREADS_ALERT_REPLICA_LAG_SECONDS: '5',
       MANYTHREADS_ALERT_DB_CONNECTIONS_PERCENT: '75',
     });
-    expect(t).toEqual({ volumePercent: 70, outboxLagSeconds: 30, jobAgeSeconds: 120, runSlotsSeconds: 300, approvalAgeSeconds: 172_800, budgetPercent: 80, dbConnectionsPercent: 75 });
+    expect(t).toEqual({ volumePercent: 70, outboxLagSeconds: 30, jobAgeSeconds: 120, runSlotsSeconds: 300, approvalAgeSeconds: 172_800, budgetPercent: 80, replicaLagSeconds: 5, dbConnectionsPercent: 75 });
   });
 
   it('ignores nonsense, accepts 0 to switch a check off, and caps percents at 100', () => {

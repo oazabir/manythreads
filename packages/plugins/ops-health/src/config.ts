@@ -14,6 +14,8 @@ export interface Thresholds {
   approvalAgeSeconds: number;
   /** A model budget may be this full, in percent. */
   budgetPercent: number;
+  /** A standby (a copy of the database that follows the main one) may be this far behind, in seconds. Not measured with a single database. */
+  replicaLagSeconds: number;
   /** The database may have this share of its connections open, in percent. */
   dbConnectionsPercent: number;
 }
@@ -25,6 +27,7 @@ export const DEFAULT_THRESHOLDS: Readonly<Thresholds> = {
   runSlotsSeconds: 10 * 60,
   approvalAgeSeconds: 24 * 60 * 60,
   budgetPercent: 90,
+  replicaLagSeconds: 30,
   dbConnectionsPercent: 90,
 };
 
@@ -39,7 +42,7 @@ function numberFrom(raw: string | undefined, fallback: number): number {
 
 /**
  * `MANYTHREADS_ALERT_VOLUME_PERCENT` (85), `_OUTBOX_LAG_SECONDS` (60), `_JOB_AGE_SECONDS` (600), `_RUN_SLOTS_SECONDS` (600),
- * `_APPROVAL_HOURS` (24), `_BUDGET_PERCENT` (90), `_DB_CONNECTIONS_PERCENT` (90).
+ * `_APPROVAL_HOURS` (24), `_BUDGET_PERCENT` (90), `_REPLICA_LAG_SECONDS` (30), `_DB_CONNECTIONS_PERCENT` (90).
  */
 export function thresholdsFrom(env: Env): Thresholds {
   const d = DEFAULT_THRESHOLDS;
@@ -50,6 +53,7 @@ export function thresholdsFrom(env: Env): Thresholds {
     runSlotsSeconds: numberFrom(env['MANYTHREADS_ALERT_RUN_SLOTS_SECONDS'], d.runSlotsSeconds),
     approvalAgeSeconds: numberFrom(env['MANYTHREADS_ALERT_APPROVAL_HOURS'], d.approvalAgeSeconds / 3600) * 3600,
     budgetPercent: numberFrom(env['MANYTHREADS_ALERT_BUDGET_PERCENT'], d.budgetPercent),
+    replicaLagSeconds: numberFrom(env['MANYTHREADS_ALERT_REPLICA_LAG_SECONDS'], d.replicaLagSeconds),
     dbConnectionsPercent: Math.min(100, numberFrom(env['MANYTHREADS_ALERT_DB_CONNECTIONS_PERCENT'], d.dbConnectionsPercent)),
   };
 }

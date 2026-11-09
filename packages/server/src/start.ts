@@ -39,11 +39,12 @@ import {
   type Tx,
   type Worker,
 } from '@manythreads/kernel';
-import { guardPluginTx, type IdentityServices, type PluginLogger, type PluginTx } from '@manythreads/sdk';
+import { guardPluginTx, traceRoot, type IdentityServices, type PluginLogger, type PluginTx } from '@manythreads/sdk';
 import type { PersonId, WorkspaceId } from '@manythreads/shared';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { buildServer } from './build-server.ts';
+import { otelConfigFromEnv, startOtel } from './otel.ts';
 import { createSessionService, sessionConfigFromEnv, type SessionConfig, type SessionService } from './session/index.ts';
 
 /**
@@ -209,6 +210,9 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   const systemSize = poolMaxOf(options.poolMax?.system, process.env['MANYTHREADS_SYSTEM_POOL_MAX'], 10, POOL_MIN.system, 'MANYTHREADS_SYSTEM_POOL_MAX');
   const appPool = createAppPool(options.appUrl, appSize.max);
   const systemPool = createSystemPool(options.systemUrl, systemSize.max);
+  // Traces (docs/deploy/monitoring.md#traces): started before the plugins and the server so their first work is traced; loads no telemetry code when the endpoint is unset.
+  const otelEnv = otelConfigFromEnv(process.env);
+  const otel = await startOtel(otelEnv.config);
 
   // One `storage` provider only: the plugin of the other store is not even loaded.
   const storage = options.storage ?? storageFromEnv(process.env['MANYTHREADS_STORAGE']);
@@ -311,7 +315,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   });
   app.decorate('broker', broker);
   mailWarn = (line) => app.log.warn(line);
-  for (const w of [appSize.warning, systemSize.warning]) if (w !== undefined) app.log.warn(w);
+  for (const w of [appSize.warning, systemSize.warning, otelEnv.problem]) if (w !== undefined) app.log.warn(w);
 
   // Start-up tasks of identity plugins (first-admin bootstrap line) run once, as the system actor, before listening.
   const log: PluginLogger = { info: (m) => app.log.info(m), warn: (m) => app.log.warn(m) };
@@ -374,23 +378,26 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
           ...(value.options.concurrency !== undefined ? { concurrency: value.options.concurrency } : {}),
           ...(value.options.maxAttempts !== undefined ? { maxAttempts: value.options.maxAttempts } : {}),
           ...(value.options.serialKey !== undefined ? { serialKey: value.options.serialKey } : {}),
-          handler: async (payload, job) => {
+          handler: (payload, job) => {
             const workspaceId = typeof payload['workspaceId'] === 'string' ? (payload['workspaceId'] as WorkspaceId) : undefined;
-            const inTransaction = <T>(fn: (tx: PluginTx) => Promise<T>): Promise<T> =>
-              withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: systemPool, ...(workspaceId ? { workspaceId } : {}) });
-            // A detached job gets no transaction of its own: whatever it does with the database it does in short ones (`job.transaction`),
-            // so a slow step (a model turn) holds no connection and no snapshot.
-            if (value.options.detached === true) {
-              const unusable = new Proxy({} as PluginTx, {
-                get() {
-                  throw new Error('this job is detached: open a transaction with job.transaction(fn)');
-                },
+            // One trace per job run (ids only; a no-op while tracing is off).
+            return traceRoot(`job ${value.queue}`, { 'mt.job.queue': value.queue, 'mt.job.id': job.jobId, 'mt.job.attempt': job.attempt, 'mt.workspace_id': workspaceId }, async () => {
+              const inTransaction = <T>(fn: (tx: PluginTx) => Promise<T>): Promise<T> =>
+                withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: systemPool, ...(workspaceId ? { workspaceId } : {}) });
+              // A detached job gets no transaction of its own: whatever it does with the database it does in short ones (`job.transaction`),
+              // so a slow step (a model turn) holds no connection and no snapshot.
+              if (value.options.detached === true) {
+                const unusable = new Proxy({} as PluginTx, {
+                  get() {
+                    throw new Error('this job is detached: open a transaction with job.transaction(fn)');
+                  },
+                });
+                await value.handler(payload, unusable, { ...job, log, transaction: inTransaction });
+                return;
+              }
+              await inTransaction(async (tx) => {
+                await value.handler(payload, tx, { ...job, log, transaction: (fn) => fn(tx) });
               });
-              await value.handler(payload, unusable, { ...job, log, transaction: inTransaction });
-              return;
-            }
-            await inTransaction(async (tx) => {
-              await value.handler(payload, tx, { ...job, log, transaction: (fn) => fn(tx) });
             });
           },
         }),
@@ -442,6 +449,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
         clearInterval(sweep);
       }
       await Promise.all([appPool.end(), systemPool.end()]);
+      await otel?.shutdown();
     },
   };
 }
