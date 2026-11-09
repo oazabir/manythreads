@@ -75,7 +75,7 @@ export const talkingBotMd = (name: string, role: string, triggers: readonly stri
     ...triggers.map((t) => `  - { type: ${t} }`),
     'capabilities:',
     `  native: [${['messages.search', 'messages.post', ...moreTools].join(', ')}]`,
-    ...(approval ? ['approvals:', `  needsApproval: [${approval.tools.join(', ')}]`, `  approvers: [${approval.approvers.join(', ')}]`] : []),
+    ...(approval ? ['approvals:', `  needsApproval: [${approval.tools.join(', ')}]`, ...(approval.approvers.length > 0 ? [`  approvers: [${approval.approvers.join(', ')}]`] : [])] : []),
     '---',
     '',
     `# ${name}`,

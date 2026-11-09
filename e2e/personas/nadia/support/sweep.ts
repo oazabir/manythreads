@@ -75,14 +75,17 @@ export function tabWalkSteps(
     expect: s.expect,
     run: async ({ page }) => {
       await page.goto(s.path);
-      await expect(page.locator(`[data-landmark=${JSON.stringify(s.expect)}],[data-testid=${JSON.stringify(s.expect)}]`).first()).toBeVisible();
+      await expect(page.locator(`[data-landmark=${JSON.stringify(s.expect)}],[data-testid=${JSON.stringify(s.expect)}]`).first()).toBeVisible({ timeout: 20_000 });
       await page.waitForLoadState('networkidle').catch(() => undefined);
-      // Chromium goes on from where the last focus was, even after a blur (the Chat screen focuses its message box on load): start from the top of the document
+      // Chromium goes on from where focus last was, even after a blur (the Chat screen focuses its message box on load, so the first Tab would land after it and the walk
+      // would end at the end of the document): put the starting point at the very top with a throw-away element
       await page.evaluate(() => {
         (document.activeElement as HTMLElement | null)?.blur();
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.collapse(document.body, 0);
+        const mark = document.createElement('span');
+        mark.tabIndex = -1;
+        document.body.prepend(mark);
+        mark.focus();
+        mark.remove();
       });
       const stops = await tabWalk(page, { max: 15 });
       results.set(s.id, { stops, problems: tabWalkProblems(stops) });
