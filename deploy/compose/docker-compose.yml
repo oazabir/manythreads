@@ -139,8 +139,12 @@ services:
     # Starts as root only to make the shared profile directory writable, then runs as `node` (the script says how).
     user: "0:0"
     entrypoint: ["/bin/bash", "/usr/local/bin/hermes-entrypoint.sh"]
+    # A tiny init as process 1: the profile loop starts short-lived `hermes` commands that must be reaped.
+    init: true
     environment:
       API_SERVER_PORT: "8642"
+      # The gateway refuses to open its API without a key. This is the default profile's key; it is the same value the runner and every profile use.
+      API_SERVER_KEY: ${MANYTHREADS_HERMES_API_KEY:?MANYTHREADS_HERMES_API_KEY is not set}
     volumes:
       - ./hermes-entrypoint.sh:/usr/local/bin/hermes-entrypoint.sh:ro
       - hermes_profiles:/home/node/.hermes/profiles

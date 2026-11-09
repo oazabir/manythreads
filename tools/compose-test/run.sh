@@ -87,6 +87,8 @@ cleanup() {
   # the images this test built: by their own tag (a tag shared with an older image of the same content only loses the tag)
   docker rmi manythreads/postgres:compose manythreads/manythreads:compose manythreads/hermes:compose manythreads/fake-llm:compose-test >/dev/null 2>&1
   docker image prune -f >/dev/null 2>&1
+  # the build cache this test made (several GB); what other builds used most recently stays
+  docker builder prune -f --keep-storage "${COMPOSE_TEST_KEEP_CACHE:-3gb}" >/dev/null 2>&1
   if [ -n "$TREE" ]; then git -C "$REPO" worktree remove --force "$TREE" >/dev/null 2>&1; git -C "$REPO" worktree prune; fi
   [ -z "$WORK" ] || rm -rf "$WORK"
   say "$RESULT. disk ${DISK_BEFORE} % before, $(disk_percent) % after; log: $LOG"
@@ -120,7 +122,7 @@ STATS_PID=$!
 export MANYTHREADS_PORT=$PORT MANYTHREADS_BIND=127.0.0.1 MANYTHREADS_PUBLIC_URL="http://localhost:$PORT"
 say "docker compose up -d --build --wait (the first build takes several minutes)"
 UP_STARTED=$(date +%s)
-dc up -d --build --wait --wait-timeout 900
+dc up -d --build --wait --wait-timeout 600
 UP_SECONDS=$(( $(date +%s) - UP_STARTED ))
 say "up in ${UP_SECONDS} s"
 dc ps
