@@ -579,16 +579,24 @@ test('B01 connect fake Google with Drive only, then add Calendar: the second con
     await o.page.goto('/settings/connections');
     const google = o.page.locator('[data-testid="person-provider"][data-provider="google"]');
     await google.waitFor({ state: 'visible', timeout: 20_000 });
-    for (const s of ['gmail', 'calendar', 'calendar_write']) await google.locator(`[data-service="${s}"] input`).uncheck();
-    await google.locator('[data-service="drive"] input').check();
+    // every service that can be unticked is, except Drive (the page offers more than Gmail and Calendar: free and busy, drafts, labels, send are ticked too)
+    const only = async (keep: string): Promise<void> => {
+      const boxes = google.locator('[data-service] input[type="checkbox"]:not([disabled])');
+      for (let i = 0; i < (await boxes.count()); i += 1) {
+        const box = boxes.nth(i);
+        const svc = (await box.locator('xpath=ancestor::*[@data-service][1]').getAttribute('data-service')) ?? '';
+        if (svc === keep) await box.check();
+        else await box.uncheck();
+      }
+    };
+    await only('drive');
     await google.getByTestId('person-connect').click();
     await expect(google).toHaveAttribute('data-connected', 'true', T);
     const consents = async (): Promise<any[]> => ((await fake('GET', '/__fake/state')).workspace?.consents ?? []).filter((c: any) => c.provider === 'google');
     const first = (await consents()).at(-1);
     check('B01 the first consent has Drive and no calendar', !!first && first.scopes.some((s: string) => /drive/.test(s)) && !first.scopes.some((s: string) => /calendar/.test(s)));
     await o.page.goto('/settings/connections');
-    await google.locator('[data-service="drive"] input').uncheck();
-    await google.locator('[data-service="calendar"] input').check();
+    await only('calendar');
     await google.getByTestId('person-connect').click();
     await expect(o.page.getByTestId('person-result')).toBeVisible(T);
     const second = (await consents()).at(-1);
@@ -631,7 +639,7 @@ test('B02 schedule a room at now+5.5 minutes: the event with the join link, the 
     plannedId = /\/join\/([0-9a-f-]{36})/.exec(detail?.description ?? '')?.[1] ?? '';
     await nadia.page.reload();
     const chip = nadia.page.getByTestId('scheduled-chip').filter({ hasText: /verify-d design review/ });
-    check('B02 the chip is in the header', await chip.first().isVisible().catch(() => false));
+    check('B02 the chip is in the header', await chip.first().waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false));
     await shoot(nadia.page, 'B02-scheduled-chip', 'd', 'light');
 
     const bell = await poll(async () => {
@@ -644,7 +652,10 @@ test('B02 schedule a room at now+5.5 minutes: the event with the join link, the 
       await expect(rafi.page.getByTestId('join-scheduled')).toBeVisible(T);
       await rafi.page.getByTestId('join-scheduled-go').click();
       const connected = await rafi.page.getByTestId('call-dock').waitFor({ state: 'visible', timeout: 30_000 }).then(() => true, () => false);
-      check('B02 Join opens the room', connected);
+      // the stage has no LiveKit media server (the chart's demo layer does not run one): the page then says so, and a room cannot be started whoever presses
+      const noMedia = !connected && (await rafi.page.getByText(/Voice rooms are not set up on this server/).first().isVisible().catch(() => false));
+      if (noMedia) skip('B02 Join opens the room', 'the stage has no LiveKit media server, so the join page can only say voice rooms are not set up (the page opened and showed the plan: title, time, organizer)');
+      else check('B02 Join opens the room', connected);
       await shoot(rafi.page, 'B02-joined', 'd', 'light');
     } else skip('B02 Join', 'the join link was not read from the event');
 
@@ -741,7 +752,8 @@ test('B05 Telegram: an unlinked person is refused, a code links, "via Telegram" 
     const text = `verify-d reply ${sfx}`;
     const chans = await api(sameera.ctx, 'GET', '/api/teams/customer-support/channels');
     const supportId = String(((chans.json?.groups ?? []) as any[]).flatMap((g) => g.channels ?? []).find((c: any) => /support/.test(c.name))?.id ?? '');
-    await api(sameera.ctx, 'POST', `/api/channels/${supportId}/messages`, { body: text });
+    const posted = await api(sameera.ctx, 'POST', `/api/channels/${supportId}/messages`, { channelId: supportId, body: text, threadRootId: null });
+    check('B05 Sameera posts the reply in #support', posted.status === 201, String(posted.status));
     const out = await poll(async () => ((await sentTo(-1_001_000_000_001)).filter((t) => t.includes(text)).length >= 1 ? true : null), 60_000, 2000);
     check('B05 the reply reaches the fake', out === true);
     await sleep(8000);
