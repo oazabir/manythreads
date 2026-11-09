@@ -17,6 +17,20 @@ The init step copies the Secret `claude-<runner>-credentials` into the state vol
 root, no service-account token, tini as PID 1. Probes are TCP (the bridge's `/health` needs the key).
 The NetworkPolicy lets only the server in (port 8650) and lets out DNS, the server, and public 443 when `egress.mode=public443`.
 
+**The publisher container (P19-09).** With `claudePod.publisher.enabled` (the default; the server gets `MANYTHREADS_CLAUDE_PODS_PUBLISHER` and
+`MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES` from it) the pod has a third container next to the run and the keeper: the same image started as
+`publisher.mjs serve`, uid 1001, read-only root, no Kubernetes token. It is how a bot gets a branch pushed and a pull request opened without ever holding the push token
+(the run container mounts no push Secret). The run calls `mt-publish check|publish <project> <card> <commit> <title>`; that small command only talks to the publisher over a
+Unix socket in a shared `emptyDir`. The publisher takes the run's own MCP token from the request, asks the server `GET /api/runs/self`, and gets back the team, the bot, the run
+and `mayPublish` (the bot's definition grants `tasks.pull_request`). It publishes only the folder `/work/<team>/<bot>/<project>` the server's answer names, with that team's
+token, through the same script the Hermes pods use (`deploy/images/workbench/mt-publish.sh`: same branch rule, same exit codes). It needs the server (port 3000, inside the cluster)
+and, to reach the git host, public 443; both are in the pod's one NetworkPolicy. With `egress.mode=serverOnly` it can only answer "refused".
+
+**The pod rolls when the bots change.** The pod template carries the annotation `manythreads.io/profiles-sha`, a hash of the bridge's profiles (each bot's folder, model, allowed
+tools including `mt-publish`, instructions, and the runs-at-once limit). A change to a bot's placement or grants (for instance `tasks.pull_request` added or removed), or a bot added to or
+removed from the runner, changes the hash and **rolls the pod: a run in flight ends** and the next one starts on the new pod. (The bridge reads its profiles from a ConfigMap, so without the
+annotation an old pod would keep the old list for about a minute.) A team added to or removed from the runner changes the pod's volumes and rolls it too.
+
 ## Moves
 The node choice works as for Hermes pods: set a node on the runner, the controller applies it. A work volume is deleted only in an admin-confirmed move;
 the confirmation `<node>@<epoch ms>` is valid 15 minutes. A move without it is shown as `waiting_for_node` and nothing is deleted.
@@ -48,12 +62,22 @@ Codex pods stay off on the live site until then.
 | ClusterRole `<release>-manythreads-nodes-reader` and its ClusterRoleBinding | the server's service account | `get` and `list` on `nodes`, nothing else cluster-wide, for the machine picker (P19-08). Exists only when `hermesPods.enabled` is true |
 | Role `manythreads-claude-pods-controller` (pods namespace) | the server's service account | `get`, `list`, `create`, `patch`, `update` on ServiceAccounts, Roles and RoleBindings of the pods namespace, so the controller can make the keeper's own account. No `delete`, nothing in the release namespace, nothing cluster-wide. Kubernetes refuses a Role that grants more than the controller itself holds |
 | ServiceAccount `claude-<runner>-keeper`, its Role and RoleBinding (one set per runner; `codex-<runner>-keeper` for a Codex runner) | the keeper container only | `get` and `patch` on the one Secret that holds that runner's sign-in file, by name. The token is projected into the keeper container only |
-| NetworkPolicy `manythreads-claude-pods` | the run, keeper and publisher containers | in: the server on port 8650. Out: DNS, the server, and (below) public 443 |
+| NetworkPolicy `manythreads-claude-pods` | the run, keeper and publisher containers (one policy for the pod) | in: the server on port 8650. Out: DNS, the server on its port (the MCP address, the API and `GET /api/runs/self`), and (below) public 443 |
 
 **Mounts of a runner's pod.** The run container: `state` (the tool's home, with the sign-in file; 256Mi) and `work` (the team repositories; 10Gi), a read-only root
 file system, uid 1000, no Kubernetes token (`automountServiceAccountToken: false`). The init step reads the sign-in Secret to fill `state`. The keeper container: `state`
 read-only and its own projected token. When `claudePod.publisher.enabled` is on, the pod gets a third container, the publisher (P19-09): it is the only container that mounts a team's
 push Secret (read-only), and it mounts `work` read-only. The run container mounts no push Secret; it reaches the publisher only through a socket in one shared `emptyDir`. No container of the pod gets a host path, a privileged setting or the Docker socket.
+
+**Push Secrets.** Each team on the runner's list has a Secret `hermes-<team>-push` (made by the Hermes pods' controller, one key per project, the same Secret the Hermes pod
+reads). The publisher mounts it read-only at `/etc/publisher-push/<team>` (mode 0444 so uid 1001 can read it; optional: it exists only once a lead has saved a token for a project of the
+team). The publisher keeps a private copy of one token file per request in a memory-backed `/tmp` and removes it at the end. No other container of the pod mounts these Secrets.
+
+**Commands a bot may run without a question.** The bridge's profile for each bot carries a fixed list (decision E5, `render.ts`); the bot's definition has no field for it, so the
+grant list is the permission.
+- Every bot: `Bash(git status)`, `Bash(git diff:*)`, `Bash(git log:*)`, `Bash(git add:*)`, `Bash(git commit:*)`, `Bash(git switch:*)`, `Bash(git checkout -b:*)`. Enough to look, and to commit on a branch of its own; nothing that reaches the network (no push, fetch or clone) or rewrites history.
+- Only a bot whose definition grants `tasks.pull_request`: also `Bash(mt-publish:*)`, the client of the publisher above. Without the grant the command is not allowed, and the
+  server's answer (`mayPublish` false) would refuse it anyway.
 
 **Egress: public 443 until measured.** The chart value `claudePod.egress.mode` is `public443` by default: the pod may reach any public address on port 443 and no private
 address. The reason is plain: which host names the Claude and Codex tools really need was never measured (task P19-01 (d)), and a narrower list that is wrong stops every
