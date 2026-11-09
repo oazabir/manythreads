@@ -132,6 +132,20 @@ describe('files/backup.sh', () => {
     expect(readdirSync(join(dir, 'backups')).filter((n) => n.startsWith('.incoming'))).toEqual([]);
   });
 
+  it('asks again when the database refuses the first connections of a new pod (network rules not in place yet), and fails plainly when it never answers', () => {
+    const { dir, env } = setup('refused');
+    const slow = { ...env, BACKUP_DB_STEP: '0.1' };
+    const ok = run('bash', [backupScript], { ...slow, FAKE_PG_REFUSE: '3' });
+    expect(ok.code, ok.out).toBe(0);
+    expect(sets(dir)).toHaveLength(1);
+    expect(readFileSync(`${env['FAKE_LOG']}.refused`, 'utf8').trim()).toBe('3');
+    rmSync(`${env['FAKE_LOG']}.refused`);
+    const never = run('bash', [backupScript], { ...slow, FAKE_PG_REFUSE: '99', BACKUP_DB_TRIES: '4' });
+    expect(never.code).not.toBe(0);
+    expect(never.out).toMatch(/the database manythreads did not answer after 4 tries/);
+    expect(sets(dir)).toHaveLength(1); // no half set from the failed run
+  });
+
   it('keeps only the newest N sets', () => {
     const { dir, env } = setup('retention');
     for (let i = 0; i < 3; i++) {

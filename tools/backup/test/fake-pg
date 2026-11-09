@@ -19,6 +19,13 @@ case "$(basename "$0")" in
       *pg_get_userbyid*) echo manythreads_owner; exit 0 ;;
       *string_agg*) echo "manythreads_app manythreads_owner manythreads_system"; exit 0 ;;
       *server_version*) echo "19beta4"; exit 0 ;;
+      # FAKE_PG_REFUSE=<n>: the first n "SELECT 1" asks are refused, as the first seconds of a new pod behind a network policy are
+      "SELECT 1")
+        if [ -n "${FAKE_PG_REFUSE:-}" ]; then
+          n=$(cat "$FAKE_LOG.refused" 2>/dev/null || echo 0)
+          if [ "$n" -lt "$FAKE_PG_REFUSE" ]; then echo $((n + 1)) >"$FAKE_LOG.refused"; echo 'psql: error: connection to server at "manythreads-pg-rw" failed: Connection refused' >&2; exit 2; fi
+        fi
+        echo 1; exit 0 ;;
     esac
     IFS= read -r first || exit 0
     case "$first" in

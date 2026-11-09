@@ -76,8 +76,23 @@ dump_main() {
   wait "$PSQL_PID" || fail "psql session for $db ended with an error"
 }
 
+# A new pod's first second or two: the cluster's network rules for the pod are not in place yet, so a job that dials the database at once is refused
+# ("Connection refused") although its label is on the database's allow list; a database that is starting needs longer still. Ask until it answers
+# (BACKUP_DB_TRIES x BACKUP_DB_STEP seconds, 45 x 2 by default) instead of failing the night's backup on the first refusal.
+DB_TRIES=${BACKUP_DB_TRIES:-45}
+DB_STEP=${BACKUP_DB_STEP:-2}
+wait_for_database() {
+  local db=$1 n=0
+  until psql -X -q -A -t -d "$db" -c 'SELECT 1' >/dev/null 2>&1; do
+    n=$((n + 1))
+    [ "$n" -lt "$DB_TRIES" ] || fail "the database $db did not answer after $n tries"
+    sleep "$DB_STEP"
+  done
+}
+
 for db in $BACKUP_DATABASES; do
   log "dumping database $db"
+  wait_for_database "$db"
   out="$WORK/db-$db.dump"
   if [ "$db" = "$MAIN_DB" ]; then
     dump_main "$db" "$out"
