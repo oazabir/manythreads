@@ -9,9 +9,10 @@
     "desktop:signin": "playwright test -c desktop/signin.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1",
+    "@axe-core/playwright": "^4.14.0",
+    "@manythreads/server": "workspace:*",
     "@manythreads/shared": "workspace:*",
     "@manythreads/test-utils": "workspace:*",
-    "@manythreads/server": "workspace:*"
+    "@playwright/test": "1.56.1"
   }
 }
