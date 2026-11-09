@@ -14,3 +14,14 @@ temp/
 clients/desktop/src-tauri/target/
 clients/desktop/src-tauri/gen/
 clients/web/public/models/
+
+# Persona journeys (Phase 12): the pictures and per-run files are made by a run and published, not committed. Declarations, captions.yaml and manifest.schema.json are.
+docs/journeys/**/*.png
+docs/journeys/**/manifest.desktop.json
+docs/journeys/**/manifest.mobile.json
+docs/journeys/**/manifest.native.json
+docs/journeys/**/results.desktop.json
+docs/journeys/**/results.mobile.json
+docs/journeys/_example/
+# The canary build of the web client (tools/review/canary.sh)
+clients/web/dist-*/

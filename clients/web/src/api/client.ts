@@ -1,4 +1,5 @@
 import { ErrorEnvelope, type ApiRoute, type ApiSchemas, type ErrorCode } from '@manythreads/shared';
+import { trackRequest } from './ready';
 
 /** Typed API client (PLAN Appendix B.3): parse the request, send, map errors, parse the response. */
 
@@ -31,21 +32,23 @@ export type TransportRequest = {
 export type TransportResponse = { status: number; body: unknown };
 export type Transport = (req: TransportRequest) => Promise<TransportResponse>;
 
-export const fetchTransport: Transport = async (req) => {
-  const res = await fetch(req.url, {
-    method: req.method,
-    headers: req.headers,
-    body: req.body,
-    credentials: req.credentials,
+// Every call is counted for `data-ready` (api/ready.ts): a screenshot waits until no request has been in flight for a moment.
+export const fetchTransport: Transport = (req) =>
+  trackRequest(async () => {
+    const res = await fetch(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+      credentials: req.credentials,
+    });
+    const text = await res.text();
+    if (text === '') return { status: res.status, body: undefined };
+    try {
+      return { status: res.status, body: JSON.parse(text) as unknown };
+    } catch {
+      return { status: res.status, body: text };
+    }
   });
-  const text = await res.text();
-  if (text === '') return { status: res.status, body: undefined };
-  try {
-    return { status: res.status, body: JSON.parse(text) as unknown };
-  } catch {
-    return { status: res.status, body: text };
-  }
-};
 
 /** The readable CSRF cookie: `__Host-`-prefixed when the server's cookies are Secure, plain on local http. */
 export const CSRF_COOKIE = 'manythreads_csrf';

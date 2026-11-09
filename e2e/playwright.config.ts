@@ -18,6 +18,8 @@ const DESKTOP_SHELL = '**/desktop/**';
 /** Voice message specs (P14-17): they need Chromium's fake microphone, so only the `voice` projects run them. */
 const VOICE_SPECS = '**/voice-*.spec.ts';
 const VOICE_MOBILE_SPEC = '**/voice-mobile.spec.ts';
+/** The persona journeys (P12-01): their own projects below; the plain `desktop` and `mobile-web` projects never run them. */
+const PERSONA_SPECS = '**/personas/**';
 /**
  * Chromium flags for the voice projects: a fake microphone that plays the fixture on a loop, no permission prompt. The web build for the e2e run has the
  * fake speech engine on (VITE_MANYTHREADS_FAKE_ASR=1, see webServer below), so every clip "says" the same known sentence.
@@ -35,6 +37,8 @@ const baseURL = external ?? `http://localhost:${WEB_PORT}`;
 const argv = process.argv;
 const projectArgs = argv.flatMap((a, i) => (a === '--project' ? [argv[i + 1]] : a.startsWith('--project=') ? [a.slice(10)] : []));
 const apiOnly = projectArgs.length > 0 && projectArgs.every((p) => p === 'api');
+// The persona projects start a stack of their own per persona (fixtures/stack.ts) and need neither the shared servers nor the sign-in files of global setup.
+const personasOnly = projectArgs.length > 0 && projectArgs.every((p) => p?.startsWith('personas-'));
 // Free ports picked when the config loads (support/ports.ts), so parallel runs never meet on a fixed number.
 const apiPort = API_PORT;
 const apiURL = process.env.MANYTHREADS_API_URL ?? `http://127.0.0.1:${apiPort}`;
@@ -70,7 +74,9 @@ const webServer = (port: number, apiPortForWeb: number, build: boolean) => ({
 
 export default defineConfig({
   testDir: '.',
-  globalSetup: './support/global-setup.ts',
+  globalSetup: personasOnly ? undefined : './support/global-setup.ts',
+  // The persona stacks each open a database on the one shared Postgres: one shard at a time (a project, optionally `--grep @<persona>`).
+  ...(personasOnly ? { workers: 1 } : {}),
   testMatch: '**/*.spec.ts',
   // Two runs side by side keep their own results: MANYTHREADS_E2E_OUTPUT_DIR (and PLAYWRIGHT_HTML_REPORT for the report).
   outputDir: process.env['MANYTHREADS_E2E_OUTPUT_DIR'] ?? 'test-results',
@@ -79,8 +85,8 @@ export default defineConfig({
   use: { baseURL, browserName: 'chromium' },
   webServer: [
     // The manythreads server with the test plugins on a database created fresh for this run (dropped on exit).
-    ...(process.env.MANYTHREADS_API_URL ? [] : [testServer(apiPort, 'api/support/start-server.ts')]),
-    ...(external || apiOnly
+    ...(process.env.MANYTHREADS_API_URL || personasOnly ? [] : [testServer(apiPort, 'api/support/start-server.ts')]),
+    ...(external || apiOnly || personasOnly
       ? []
       : [
           testServer(API_EMPTY_PORT, 'support/start-empty-server.ts'),
@@ -99,14 +105,32 @@ export default defineConfig({
     },
     {
       name: 'desktop',
-      testIgnore: ['**/api/**', DESKTOP_SHELL, PERF_SPECS, VOICE_SPECS],
+      testIgnore: ['**/api/**', DESKTOP_SHELL, PERF_SPECS, VOICE_SPECS, PERSONA_SPECS],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile-web',
       // Visual specs (plate comparison) run on desktop only.
-      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', DESKTOP_SHELL, PERF_SPECS, VOICE_SPECS],
+      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', DESKTOP_SHELL, PERF_SPECS, VOICE_SPECS, PERSONA_SPECS],
       use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+    },
+    {
+      // Persona journeys, desktop 1440x900 (P12-01). One shard per persona: `--project=personas-desktop --grep @omar`. The run is budgeted at 25 minutes for all seven
+      // (harness/runlog.ts RUN_BUDGET_MINUTES, recorded in run-log.json). `MANYTHREADS_JOURNEY_SET=example` runs the harness's own example journey.
+      name: 'personas-desktop',
+      testMatch: '**/personas/desktop.spec.ts',
+      use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
+    },
+    {
+      // The same journeys on the 390x844 web client.
+      name: 'personas-mobile-web',
+      testMatch: '**/personas/mobile.spec.ts',
+      use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+    },
+    {
+      // What the journey set and its pictures must satisfy; starts no stack. Run it after the two projects above.
+      name: 'personas-meta',
+      testMatch: ['**/personas/completeness.spec.ts', '**/personas/journeys.meta.spec.ts'],
     },
     {
       // Voice messages on the desktop layout and on a 390 px phone, with a fake microphone playing e2e/fixtures/speech/hello.wav.
