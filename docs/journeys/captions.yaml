@@ -9,14 +9,14 @@ omar:
     spend-read: "The Spend panel shows this month's total of 0 dollars and 6 calls, broken down by team and by bot."
   O5:
     audit-opened: "Omar opens the Audit page and sees the list of recorded actions, topped by a Shared an answer row, with an Export button."
-    filtered-to-nadia: "Omar narrows the Audit list with the Who buttons and sees rows such as Shared an answer and voice room events."
+    filtered-to-nadia: "The Audit page lists rows such as Shared an answer and voice room events, with the Who and Outcome filters above the list."
     exported: "A green notice confirms the audit file is saved and signed, with buttons to save the signature and the public key."
     key-never-shown: "The model provider row shows the key only as stored; the key text itself appears nowhere on the page."
     key-read-refused: "Omar looks at the provider list again and still sees only the word stored, never the key itself."
-    conversation-refused: "Omar tries to open Nadia's private Brain chat and gets the message You cannot see this channel."
+    conversation-refused: "Omar opens a Direct message page and sees You cannot see this channel, with a note that it may be private."
   O6:
     proposal-waiting: "Omar opens Proposals and sees one change, Coder names the pull request, from Priya, marked Waiting for a decision."
-    lines-read: "Omar reads the proposed change: one added line, a passed check, and Apply and Decline buttons below."
+    lines-read: "Omar reads a +2 change adding the line Always name the pull request you reviewed, with a passed check and Apply and Decline buttons."
     applied: "The proposal is marked Applied, with a line saying Omar applied it and where it is saved in the team repo."
     bots-read-only: "Coder's definition file opens read-only with a Change by proposal note and no Save button."
     bot-page: "Omar opens the Coder bot page and sees its name, role and settings tabs, with Talk and Deploy buttons."
@@ -25,7 +25,7 @@ omar:
     only-mine-listed: "The Direct messages list in the sidebar holds a single conversation, the one with Priya."
     my-dm-open: "Omar opens the conversation with Priya and reads her message about her laptop setup."
     reply-sent: "Omar's reply, Of course: come by at 3, appears under Priya's message in the conversation."
-    their-dm-refused: "Omar tries to open the private conversation between two colleagues and gets the message You cannot see this channel."
+    their-dm-refused: "A Direct message page shows You cannot see this channel, while the sidebar's Direct messages list holds only Priya."
   O20:
     audit-empty: "The Audit page shows an empty list with a message that nothing is recorded yet."
     audit-error: "The Audit page shows a red notice, Request failed (500), with a Try again button."
@@ -37,7 +37,7 @@ omar:
     bots-error: "The Bots page shows a red notice, Request failed (500), with a Try again button."
     bots-loading: "The Bots page shows grey placeholder bars where the list of bots goes."
     llm-error: "The LLM settings page shows a red notice, Request failed (500), with a Try again button."
-    dm-denied: "Omar opens a conversation between two colleagues and gets the message You cannot see this channel."
+    dm-denied: "A Direct message page shows You cannot see this channel, with a note that it may be private or may not exist."
     bot-board-none: "The dev channel header shows Start voice room and Schedule a room but no Bot Board button."
     bot-board-columns: "The Bot Board shows five columns, Open, In progress, Verify, Waiting on a person and Done, each holding cards."
     bot-board-handed-back: "Omar opens the card Fix the flaky search test and reads the note that says Handed back."
@@ -50,7 +50,7 @@ omar:
     boards: "Pressing Tab on the Boards page moves a dark focus ring onto the dev channel link in the sidebar."
     audit: "Pressing Tab on the Audit page moves a dark focus ring onto the Sign-in link in the settings menu."
     llm: "Pressing Tab on the LLM page moves a dark focus ring onto the Sign-in link in the settings menu."
-    members: "Pressing Tab on the Members page moves a dark focus ring onto the Sign-in link, above the list of seven people."
+    members: "Pressing Tab on the Members page puts a dark focus ring on the Sign-in link in the settings menu, beside the list of seven people."
 nadia:
   N1:
     threads-inbox: "Nadia opens Threads and sees the threads she follows, with a voice-room thread already open beside the list."
@@ -76,12 +76,12 @@ nadia:
     live-editing: "Nadia switches the runbook to live editing and adds her own line about who checks after the deploy."
     brain-writes-section: "The live editor still shows Nadia's added line and the Done button, but Brain's new section is not visible in the picture."
     saved-to-history: "Nadia leaves live mode and the runbook shows again as a finished page ending with her added line."
-    history: "Nadia opens History, where the newest entry, live with 2 editors with Brain, shows its added lines in green."
+    history: "History lists the live-editing entry on top; the entry below it, add the canary hold and the rollback, shows its added lines in green."
     restore: "Nadia restores the older version, and a new top entry shows the extra section and her line removed in red."
   N5:
     inbox-opens: "Nadia opens Approvals and sees her request for Coder to create a release page waiting, with no buttons to decide it."
     request-waits: "Her request still waits, and the card explains that she asked for it, so someone else has to decide."
-    rafi-decides: "Rafi decides, so Approvals shows zero waiting and a Nothing waiting message with a button to open the Decided list."
+    rafi-decides: "Approvals shows 0 waiting and a Nothing waiting message with a button to see past decisions."
     decided-tab: "On the tab for finished requests, her request shows as approved by Rafi, with his short note."
     release-approved: "The open card on the Decided tab shows an approved label, the page request details and Rafi's note."
   N9:
@@ -146,9 +146,9 @@ rafi:
   R4:
     own-request-waits: "Rafi sees his own request waiting in Approvals, with a line saying someone else has to decide it."
     own-request-blocked: "Rafi opens his own request and finds no Approve or Deny buttons, only the note that someone else decides."
-    support-approvals-refused: "Rafi opens the Customer Support approvals page and gets You do not have access, with an empty team list."
-    guard-read-only: "Rafi opens Coder's Safety tab and sees the guard settings, with no button to save a change."
-    what-it-can-do-read-only: "Rafi opens Coder's What it can do tab and sees its capabilities listed, with no button to save a change."
+    support-approvals-refused: "Rafi opens another team's Approvals page and sees You do not have access, with No team in the sidebar."
+    guard-read-only: "Rafi opens Coder's Safety tab and sees the Guard preset, Gate list and Bot rules sections, with a note that an admin sets the preset."
+    what-it-can-do-read-only: "Rafi opens Coder's What it can do tab and sees Native, Runtime and Connections with nothing granted, plus the Never bot-writable note."
   R20:
     approvals-empty: "Approvals shows Nothing waiting with a button to see the decided requests, and the right pane says nothing is waiting."
     approvals-error: "When loading fails, Approvals says Could not load approvals and offers a Try again button."
@@ -161,7 +161,7 @@ rafi:
   R21:
     approvals: "Pressing Tab on the Approvals screen puts a clear focus ring on the dev channel in the sidebar."
     threads: "On the Threads screen, the focus ring sits on the dev channel while a followed deploy-plan thread is open."
-    incidents: "On the incidents channel, the focus ring sits on the dev channel in the sidebar above the message list."
+    incidents: "On the incidents channel, the focus ring sits on the dev channel in the sidebar beside the message list."
     bots: "On the Bots screen, the focus ring sits on the dev channel in the sidebar beside the list of five bots."
     brain: "On the Brain chat screen, the focus ring sits on the dev channel in the sidebar beside the empty chat."
 sameera:
@@ -175,12 +175,12 @@ sameera:
     own-team-only: "Sameera's Threads page lists her refund chat, and the sidebar shows only Customer support channels, with no dev or releases channel."
     engineering-channel-refused: "Opening Engineering's dev channel shows \"You do not have access\" with buttons to go back, and the sidebar lists no team."
     engineering-memory-refused: "Opening Engineering's Memory page shows \"You do not have access\" and the same back buttons."
-    engineering-inbox-refused: "Opening Engineering's memory inbox shows the same \"You do not have access\" message under a Memory title."
-    coder-refused: "Opening Coder's chat in Engineering shows \"You do not have access\" under a Conversation title."
-    engineering-api-refused: "Sameera's own Threads page stays on screen while a manual request for Engineering's dev messages goes out; the refusal itself is not visible."
-    engineering-memory-api-refused: "Sameera's Threads page looks unchanged while manual requests for Engineering's memory and inbox go out; no refusal is visible."
-    coder-api-refused: "Sameera's Threads page looks unchanged while manual requests for the Coder bot go out; no refusal is visible."
-    others-conversations-refused: "Sameera's Threads page looks unchanged while manual requests for other people's chats go out; only her own refund chat is listed."
+    engineering-inbox-refused: "Opening another Memory page shows the same You do not have access message under a Memory title, with No team in the sidebar."
+    coder-refused: "Opening a conversation page shows You do not have access under a Conversation title, with No team in the sidebar and buttons to go back."
+    engineering-api-refused: "Sameera's Threads page shows her refund chat in Customer support; no request or refusal is visible."
+    engineering-memory-api-refused: "Sameera's Threads page is unchanged, showing only her refund chat; no requests or refusals are visible."
+    coder-api-refused: "Sameera's Threads page is unchanged, showing only her refund chat; no requests or refusals are visible."
+    others-conversations-refused: "Sameera's Threads page lists only her own refund chat, and Direct messages says No conversations yet; no requests are visible."
     back-to-support: "Sameera is back in the support channel, reading the week's customer posts above the message box."
   S8:
     open-support: "Sameera opens the support channel and sees the week's customer posts above an empty message box."
@@ -228,10 +228,10 @@ tariq:
     job-run: "After Run now, the routine's run list shows one finished run next to the report page it produced."
     report-page: "The report page opens, showing the Weekly social round-up with three posts for the week and a note for the Brand reviewer."
   T9:
-    support-channel-refused: "Tariq tries to open the Customer support channel and sees a page saying he does not have access, with a Go back button."
-    support-mail-refused: "Tariq tries to open Support's email channel and gets the same page saying he does not have access."
+    support-channel-refused: "Tariq tries to open a support channel and sees a page saying he does not have access, with Back to manythreads and Go back buttons."
+    support-mail-refused: "Tariq tries to open the support-inbox channel and sees the same page saying he does not have access."
     sidebar-marketing-only: "In Threads, Tariq's sidebar lists only Marketing's channels, with no Customer support channel anywhere in the list."
-    production-approval-refused: "Tariq opens a production release request from Engineering and sees a page saying he does not have access, with no approval card."
+    production-approval-refused: "Tariq opens Approvals and sees a page saying he does not have access, with Back to manythreads and Go back buttons and no approval card."
     production-approve-refused: "The screen still says Tariq does not have access to Approvals, so there is no way for him to approve the production release."
     brain-closed-source-asked: "Tariq types a request asking Brain to read Omar's Drive and tell him what is in it, with the Send button ready."
     brain-closed-source-outside-scope: "Brain replies that it can only read what Tariq may read, and an Outside scope note counts one message it never read."
@@ -243,7 +243,7 @@ tariq:
     jobs-error: "The Jobs screen shows a red banner saying the request failed, with a Try again button."
     files-error: "The Files screen shows a short message saying the files could not be loaded."
     brain-empty: "Brain opens a fresh chat with a greeting and an empty message box, and earlier chats are listed on the left."
-    support-denied: "Tariq looks at the Customer support channel and sees a page saying he does not have access, with buttons to go back."
+    support-denied: "Tariq looks at the support channel and sees a page saying he does not have access, with Back to manythreads and Go back buttons."
   T21:
     threads: "Pressing Tab on the Threads screen puts a focus ring on the content channel in the sidebar, with the followed threads listed beside it."
     channel: "Pressing Tab in the content channel puts a focus ring on the content channel's row in the sidebar, with the channel's posts beside it."
@@ -272,7 +272,7 @@ priya:
     bot-read-only: "Priya opens the Coder bot page; the Name and Role fields are greyed out, so she can read the definition but not change it."
     approval-view-only: "Priya opens Approvals and sees Nadia's waiting request in detail, with no Approve or Decline buttons for her."
     private-channel-refused: "Priya tries the private eng-leads channel and sees You cannot see this channel instead of any messages."
-    members-page-gone: "Priya opens the workspace members settings page and gets a missing-page message, with only her own settings in the side menu."
+    members-page-gone: "Priya opens the workspace members settings page and sees a not-there message, with account and team pages listed in the side menu."
   P4:
     threads-inbox: "Priya's Threads page lists two followed threads, with the PR 482 thread open and her own reply visible."
     thread-row-opened: "Priya clicks a thread in the list, and its full conversation opens on the right with a reply box underneath."
@@ -288,12 +288,12 @@ priya:
     general-empty: "With no messages, the general channel says This is the very beginning of #general, with its description beneath."
     approvals-empty: "With no requests, Approvals shows Nothing waiting, notes that requests needing a person appear here, and offers a button to the decided list."
     private-channel-denied: "On the private eng-leads channel, a plain message says You cannot see this channel and tells her to ask a team lead."
-    support-denied: "On the Customer Support team's channel, the page says You do not have access and offers Back to manythreads and Go back."
+    support-denied: "On the support channel under No team, the page says You do not have access and offers Back to manythreads and Go back."
   P21:
     threads: "On the Threads page, the keyboard focus ring sits on the dev channel in the sidebar, with the followed threads listed beside it."
     general: "On the general channel, the keyboard focus ring sits on the dev channel in the sidebar while the messages show on the right."
     dev: "On the dev channel, the keyboard focus ring sits on the dev entry in the sidebar, which also shows its menu button."
-    bots: "On the Bots page, the focus ring sits on dev in the sidebar, beside the list of five bots with their Talk buttons."
+    bots: "On the Bots page, the focus ring sits on dev in the sidebar, beside a list of five bots, two with Talk buttons."
     brain: "On the Brain chat page, the focus ring sits on dev in the sidebar, beside the empty chat with its four sample questions."
     approvals: "On Approvals, the focus ring sits on dev in the sidebar, beside Nadia's waiting request and its details."
 lena:
@@ -342,4 +342,4 @@ lena:
   L21:
     releases: "In #releases the keyboard focus rests on a message's more button, shown with a dark outline on the right."
     search: "In search results for deploy, the keyboard focus outlines one result, the message about v2.12.1 being deployed."
-    no-access: "On the page for a channel she cannot see, the first keyboard stop is a Skip to messages link, outlined in the top left."
+    no-access: "On the page for a channel she cannot see, a Skip to messages link is outlined in the top left."
