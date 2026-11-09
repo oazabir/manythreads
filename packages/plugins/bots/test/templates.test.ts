@@ -40,6 +40,8 @@ interface Shipped {
 
 let templates: TeamTemplate[] = [];
 let shipped: Shipped[] = [];
+/** The workspace Brain's shipped file (P20-07): in a workspace with a team, this is the Brain a team's roster shows; the Brain a template ships is switched off when it loads. */
+let workspaceBrainFm: BotFrontmatter;
 
 const BRAIN_NATIVE = ['knowledge.search', 'files.search', 'memory.recall', 'messages.search', 'messages.post', 'answer.post', 'pages.write'];
 const BRAIN_CASE_IDS = [
@@ -60,6 +62,9 @@ const BRAIN_CASE_IDS = [
 
 beforeAll(async () => {
   templates = await loadTemplates(TEMPLATES_DIR);
+  const workspaceBrain = parseBotMd(await readFile(`${TEMPLATES_DIR}_workspace/bots/brain/BOT.md`, 'utf8'));
+  if (!workspaceBrain.ok) throw new Error(`_workspace/bots/brain/BOT.md: ${workspaceBrain.failure.message}`);
+  workspaceBrainFm = workspaceBrain.frontmatter;
   shipped = templates.flatMap((template) =>
     Object.entries(template.files ?? {})
       .filter(([path]) => path.endsWith('/BOT.md'))
@@ -1037,10 +1042,21 @@ describe('a team created from a template starts with its bots', () => {
 
       for (const m of mine) {
         const row = roster.find((b) => b.slug === m.slug)!;
-        expect(row, `${t.id}/${m.slug}`).toMatchObject({ name: m.fm.name, role: m.fm.role, kind: m.fm.kind, runtime: 'hermes', status: 'active', invalid: null,
-          conversational: (m.fm.triggers ?? []).some((x) => x.type === 'conversation'),
-          mentionable: (m.fm.triggers ?? []).some((x) => x.type === 'conversation' || x.type === 'mention'),
+        // The first team of a workspace makes the workspace Brain (P10-13), and the Brain a template ships is switched off when it loads (P20-07): the roster's `brain` is
+        // the workspace's, from its own file. The template's file is still loaded and compiled, and its grants are held to the file below.
+        const shown = m.slug === 'brain' ? workspaceBrainFm : m.fm;
+        expect(row, `${t.id}/${m.slug}`).toMatchObject({ name: shown.name, role: shown.role, kind: shown.kind, runtime: 'hermes', status: 'active', invalid: null,
+          conversational: (shown.triggers ?? []).some((x) => x.type === 'conversation'),
+          mentionable: (shown.triggers ?? []).some((x) => x.type === 'conversation' || x.type === 'mention'),
         });
+        if (m.slug === 'brain') {
+          expect(row.scope, `${t.id}: the roster's Brain is the workspace's`).toBe('workspace');
+          const own = await until(async () => {
+            const rows = (await w.system((tx) => tx.query<{ status: string; retired: boolean }>(`SELECT status, retired_at IS NOT NULL AS retired FROM app.bots WHERE team_id = $1 AND scope = 'team' AND slug = 'brain'`, [teamId]))).rows;
+            return rows.length > 0 ? rows : null;
+          }, 60_000);
+          expect(own, `${t.id}: the Brain the template ships is switched off, with its history kept`).toEqual([{ status: 'disabled', retired: true }]);
+        }
 
         // the compiled allowlist is the file's, plus `tasks.handoff` where `handover.mayTag` names somebody, and nothing the file does not say
         const grants = await w.system(async (tx) =>
@@ -1082,7 +1098,8 @@ describe('a team created from a template starts with its bots', () => {
       const slug = `tpl-${b.template.id}`;
       const opened = await w.call<OpenConversationResponse>(omar, 'POST', `/api/teams/${slug}/bots/brain/conversation`);
       expect([200, 201], `${b.template.id}: ${JSON.stringify(opened.body)}`).toContain(opened.status);
-      expect(opened.body.prompts).toEqual(b.fm.conversation?.prompts);
+      // the conversation is the workspace Brain's (the Brain a template ships is switched off)
+      expect(opened.body.prompts).toEqual(workspaceBrainFm.conversation?.prompts);
       expect(opened.body.promptSource).toBe('definition');
     }
   });
