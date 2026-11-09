@@ -20,6 +20,8 @@ export interface ClaudePodConfig {
   repoOriginAllow: string[];
   /** Models a bot's `model.alias` stands for in the Claude command. */
   modelAliases: Record<string, string>;
+  /** The same for a Codex runner. Empty by default: a name that is not listed is ignored and Codex uses the model its sign-in plan gives it. */
+  codexModelAliases: Record<string, string>;
   /** The platform's address inside the cluster: where the publisher container asks `GET /api/runs/self`. Empty: the pod gets no publisher. */
   serverUrl: string;
   /** The publisher: the third container, the only one that holds a team's push token (P19-09, docs/plugins/claude-pods.md). */
@@ -53,6 +55,7 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
     allowedNodes: (env['MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'] ?? '').split(/[\s,]+/).filter((n) => n !== ''),
     repoOriginAllow: parseRepoOriginAllow(env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW']),
     modelAliases: parseJson(env['MANYTHREADS_CLAUDE_PODS_MODEL_ALIASES'], DEFAULT_ALIASES),
+    codexModelAliases: parseJson(env['MANYTHREADS_CLAUDE_PODS_CODEX_MODEL_ALIASES'], {}),
     // the server pod's address in the cluster; the chart sets MANYTHREADS_INCLUSTER_URL whenever the pods namespace is on
     serverUrl: (env['MANYTHREADS_CLAUDE_PODS_SERVER_URL'] ?? env['MANYTHREADS_INCLUSTER_URL'] ?? '').trim().replace(/\/+$/, ''),
     publisher: {

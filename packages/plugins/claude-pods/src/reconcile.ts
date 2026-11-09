@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { ClaudePodPlacement, PluginLogger, PodRunnerInfo, PodRunnerState } from '@manythreads/sdk';
+import type { ClaudePodPlacement, PluginLogger, PodRunnerState } from '@manythreads/sdk';
 import {
   confirmedFor,
   isNodeLabelValue,
@@ -32,12 +32,14 @@ import {
   pushSecretName,
   reposFor,
   type Names,
+  type PodRunner,
   type RepoToSync,
 } from './render.ts';
 
 /** What the controller needs from the platform besides the runner list: the repositories the runner's teams ask for. Absent in a test that needs none. */
 export interface RunnerSource {
-  runners(): Promise<PodRunnerInfo[]>;
+  /** Every Claude Code and Codex runner; a Codex runner says so in `agent`. */
+  runners(): Promise<PodRunner[]>;
   /** The teams' projects, as repositories of record. */
   reposForTeams?(teamIds: readonly string[]): Promise<(ProjectRepo & { teamSlug: string })[]>;
   /** The bots of these teams whose definition grants `tasks.pull_request`: only they are allowed the `mt-publish` command. Absent in a test that needs none. */
@@ -77,7 +79,7 @@ export function stateFor(input: { hasCredentials: boolean; hasBots: boolean; ena
 
 const b64 = (s: string | undefined): string => (s ? Buffer.from(s, 'base64').toString('utf8') : '');
 
-/** Brings the Kubernetes objects of every Claude Code runner in line with the catalog. Safe to run repeatedly; it touches only objects it labelled itself. */
+/** Brings the Kubernetes objects of every Claude Code and Codex runner in line with the catalog. Safe to run repeatedly; it touches only objects it labelled itself. */
 export class Reconciler {
   constructor(
     private readonly k8s: K8s,
@@ -109,7 +111,7 @@ export class Reconciler {
    * Sends the repository list to the runner's bridge (decision E4): the ConfigMap copy reaches a pod after about a minute, this reaches the repo-sync container in seconds.
    * Returns whether the bridge took it. Any failure (the pod is not up yet, or restarting) is logged in words and tried again on the next pass; the pod starts from the ConfigMap's list.
    */
-  async pushRepos(runner: PodRunnerInfo, names: Names, apiKey: string, repos: readonly RepoToSync[]): Promise<boolean> {
+  async pushRepos(runner: PodRunner, names: Names, apiKey: string, repos: readonly RepoToSync[]): Promise<boolean> {
     const body = JSON.stringify({ repos: reposFor(runner, repos) });
     const digest = createHash('sha256').update(body).digest('hex');
     if (this.sentRepos.get(runner.id) === digest) return true;
@@ -132,9 +134,9 @@ export class Reconciler {
     }
   }
 
-  async reconcileRunner(runner: PodRunnerInfo): Promise<RunnerResult> {
+  async reconcileRunner(runner: PodRunner): Promise<RunnerResult> {
     const { cfg, k8s } = this;
-    const names = namesFor(runner.name);
+    const names = namesFor(runner.name, runner.agent);
     const plan = await this.planNode(runner, names);
     const { node, moving } = plan;
 
@@ -196,7 +198,7 @@ export class Reconciler {
     return { runner: runner.name, pod: names.base, replicas, node, moving, held: plan.held, state: state.status };
   }
 
-  private pinnedNode(runner: PodRunnerInfo): string | null {
+  private pinnedNode(runner: PodRunner): string | null {
     if (runner.node === null) return null;
     if (!isNodeLabelValue(runner.node)) {
       this.log.warn(`claude-pods: ${runner.name}: the machine chosen for this runner is not a usable node name, so the pod is not pinned`);
@@ -210,7 +212,7 @@ export class Reconciler {
    * no claims yet or claims on the chosen machine: pin to it; claims elsewhere and no confirmation in the last 15 minutes: HELD, the pod stays where its data is;
    * confirmed and the machine is an existing, Ready node the admin may choose: stop the pod, delete both claims once no pod is left.
    */
-  private async planNode(runner: PodRunnerInfo, names: Names): Promise<NodePlan> {
+  private async planNode(runner: PodRunner, names: Names): Promise<NodePlan> {
     const wanted = this.pinnedNode(runner);
     const claimNames = [names.state, names.work];
     const claims = new Map<string, K8sObject | null>();
@@ -277,7 +279,7 @@ export class Reconciler {
    * Second half of a move: once no pod of the runner is left, both claims are deleted (only when both carry this runner's id label); the next pass makes them new on the chosen
    * machine. Everything on them is lost: the clones and the work files, and the state folder. The Secrets (the key and the sign-in file) are never touched.
    */
-  private async finishMove(runner: PodRunnerInfo, names: Names, claimNames: readonly string[]): Promise<void> {
+  private async finishMove(runner: PodRunner, names: Names, claimNames: readonly string[]): Promise<void> {
     const pods = await this.k8s.list('Pod', this.cfg.namespace, `manythreads.io/pod=${names.base}`);
     if (pods.length > 0) {
       this.log.info(`claude-pods: ${runner.name}: moving the pod; waiting for it to stop before its volumes are made again`);
@@ -297,7 +299,7 @@ export class Reconciler {
     this.log.info(`claude-pods: ${runner.name}: the volumes are being made again on the chosen machine`);
   }
 
-  /** One pass over every Claude runner; a runner that fails is logged and does not stop the others. A Deployment of a runner that no longer exists is scaled to zero (never deleted). */
+  /** One pass over every Claude and Codex runner; a runner that fails is logged and does not stop the others. A Deployment of a runner that no longer exists is scaled to zero (never deleted). */
   async reconcileAll(): Promise<RunnerResult[]> {
     const runners = await this.source.runners();
     const results: RunnerResult[] = [];

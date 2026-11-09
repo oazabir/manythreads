@@ -1,12 +1,13 @@
-import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type PluginContext, type PluginLogger, type PodAgent } from '@manythreads/sdk';
+import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
 import { HttpK8s, confirmMark, type K8s, type ProjectRepo } from '@manythreads/sdk/pods';
 import { configFrom, type ClaudePodConfig } from './config.ts';
 import { Reconciler, type RunnerSource } from './reconcile.ts';
-import { labelsFor, MANAGED_BY, namesFor, type Names } from './render.ts';
+import { labelsFor, MANAGED_BY, namesFor, type PodRunner } from './render.ts';
 
 export { Reconciler, stateFor } from './reconcile.ts';
 export { configFrom } from './config.ts';
 export { buildBridgeConfig, buildDeployment, namesFor, slugForRunner, profileName } from './render.ts';
+export type { PodRunner } from './render.ts';
 
 export const FIELD_MANAGER = MANAGED_BY;
 const FIRST_PASS_DELAY_MS = 20_000;
@@ -33,7 +34,8 @@ export function createWake(run: () => void, delayMs: number = WAKE_DELAY_MS, tim
 }
 
 /**
- * claude-pods: the controller that gives every Claude Code runner (a workspace admin made it on the Runners page) its own pod, `claude-<runner>`, in the pods namespace.
+ * claude-pods: the controller that gives every Claude Code runner and every Codex runner (a workspace admin made it on the Runners page) its own pod, `claude-<runner>` or
+ * `codex-<runner>`, in the pods namespace.
  * It reads the runner list and the bots placed on each from the `bot.runners` provider, writes the bridge's configuration, and keeps the pod, its two volumes and its
  * Service in step. It stops the pod (replicas 0) while there is no sign-in file, the runner is off or no bot is placed on it, and never deletes a volume except in a move an admin
  * confirmed. Runs only where the chart turned it on (MANYTHREADS_CLAUDE_PODS=1). docs/plugins/claude-pods.md.
@@ -59,14 +61,19 @@ function makeLogger(): PluginLogger {
 }
 
 /** The platform side of the controller: the runner list through the `bot.runners` provider, the teams' projects from the projects table. */
-function platformSource(ctx: PluginContext): RunnerSource {
+export function platformSource(ctx: PluginContext): RunnerSource {
   const runnersProvider = (): BotRunnersProvider => {
     const p = ctx.providers.get<BotRunnersProvider>('bot.runners');
     if (!p) throw new Error('the bot.runners provider is not loaded (bot-runners)');
     return p;
   };
   return {
-    runners: () => runnersProvider().podRunners({ kind: 'claude_cli' }),
+    // Both kinds in one list. If either question fails the whole pass fails: a pass that saw only one kind would take the other kind's pods for runners that are gone.
+    runners: async (): Promise<PodRunner[]> => {
+      const p = runnersProvider();
+      const [claude, codex] = await Promise.all([p.podRunners({ kind: 'claude_cli' }), p.podRunners({ kind: 'codex_cli' })]);
+      return [...claude.map((r): PodRunner => ({ ...r, agent: 'claude' })), ...codex.map((r): PodRunner => ({ ...r, agent: 'codex' }))];
+    },
     report: (state) => runnersProvider().reportPodState(state),
     publishersForTeams: (teamIds) =>
       ctx.db.system(async (tx) => {
@@ -96,20 +103,9 @@ function platformSource(ctx: PluginContext): RunnerSource {
 /** What the bridge's sign-in check answers; anything else (or no answer) reads as `unreachable`. The words are the bridge's own, in tools/agent-bridge/src/signin.ts. */
 const CHECK_RESULTS = ['ok', 'rejected', 'expired', 'no_scope', 'limit'] as const;
 
-/**
- * The names of a runner's objects for the tool its pod runs. A Codex runner's are the Claude ones with `codex-` for `claude-` (`codex-<runner>-credentials`, `-key`, ...), and its
- * sign-in file is `auth.json`. Stop-gap of P19-13 (server half): the pod half (WP-R3b) moves this into render.ts with the rest of the Codex objects.
- */
-function podNames(runnerName: string, agent: PodAgent | undefined): { names: Names; file: string } {
-  const claude = namesFor(runnerName);
-  if (agent !== 'codex') return { names: claude, file: '.credentials.json' };
-  const names = Object.fromEntries(Object.entries(claude).map(([k, v]) => [k, v.replace(/^claude-/, 'codex-')])) as unknown as Names;
-  return { names, file: 'auth.json' };
-}
-
 export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: ClaudePodConfig, now: () => number = Date.now, doFetch: typeof fetch = fetch): ClaudePodsProvider {
   const bridge: ClaudePodsProvider['bridge'] = async ({ runnerName, agent }) => {
-    const { names } = podNames(runnerName, agent);
+    const names = namesFor(runnerName, agent);
     const secret = await k8s().get('Secret', cfg.namespace, names.key);
     const key = secret?.data ? Buffer.from(String((secret.data as Record<string, string>)['api-key'] ?? ''), 'base64').toString('utf8') : '';
     return key === '' ? null : { address: `http://${names.base}.${cfg.namespace}.svc:8650`, key };
@@ -118,18 +114,18 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
     id: 'claude.pods',
     podPlacements: (q) => reconciler().placements(q.runnerIds),
     async putCredentials({ runnerName, runnerId, bytes, uploadId, agent }) {
-      const { names, file } = podNames(runnerName, agent);
+      const names = namesFor(runnerName, agent);
       // The bytes go in exactly as they came. The controller never applies this Secret again, so a refreshed copy the keeper writes back is not overwritten.
       await k8s().apply({
         apiVersion: 'v1',
         kind: 'Secret',
         metadata: { name: names.credentials, namespace: cfg.namespace, labels: labelsFor({ id: runnerId, name: runnerName }) },
         type: 'Opaque',
-        data: { [file]: Buffer.from(bytes).toString('base64'), 'upload-id': Buffer.from(uploadId).toString('base64') },
+        data: { [names.file]: Buffer.from(bytes).toString('base64'), 'upload-id': Buffer.from(uploadId).toString('base64') },
       });
     },
     async removeCredentials({ runnerName, agent }) {
-      await k8s().delete('Secret', cfg.namespace, podNames(runnerName, agent).names.credentials);
+      await k8s().delete('Secret', cfg.namespace, namesFor(runnerName, agent).credentials);
     },
     bridge,
     async checkSignin({ runnerName, agent }) {

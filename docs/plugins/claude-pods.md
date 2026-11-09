@@ -85,12 +85,29 @@ run. `serverOnly` lets the pod reach only DNS and the server, which is all the s
 Hermes pods (see [hermes-pods](./hermes-pods.md)); it does not narrow a Claude pod. The list of hosts is an open item in [the Phase 19 retro](../retro/phase-19.md).
 
 ## Codex pods (P19-13)
-A runner of kind `codex_cli` uses the same plugin. Its objects are the Claude ones with `codex-` for `claude-`: the Deployment and Service `codex-<runner>`, the
-Secret `codex-<runner>-credentials` (key `auth.json`, plus `upload-id`), the key Secret, `state` and `work`. The tool's home is `CODEX_HOME=/state/codex`, so the
-sign-in file is `/state/codex/auth.json`; the keeper is planned to watch that file and to wait while a lock file is next to it. The bridge drops `OPENAI_API_KEY` from the
-environment of a Codex process when it runs in a pod (`MANYTHREADS_BRIDGE_IN_POD=1`): a key would go around the platform's model gateway. Only the ChatGPT sign-in
-file is accepted. The server half (making the runner, the upload route, the reader of the file) and the bridge driver are built; the pod objects above are the
-decision of the plan (E6) and are drawn by the pod package when it lands. How to find the file: [runner sign-in files](../guide/runner-signin-files.md).
+A runner of kind `codex_cli` uses the same plugin and the same reconciler, in the same pass as the Claude runners (the runner list is both kinds read together; if either
+read fails the whole pass fails, so a pass never takes one kind's pods for pods of runners that are gone). Everything that differs is one table in `render.ts` (`AGENTS`):
+
+| | Claude runner | Codex runner |
+|---|---|---|
+| Objects | `claude-<runner>`, `-state`, `-work`, `-key`, `-credentials`, `-config`, `-keeper` | the same with `codex-` for `claude-`: no object name is shared with a Claude runner |
+| Sign-in Secret key | `.credentials.json` (+ `upload-id`) | `auth.json` (+ `upload-id`) |
+| Tool's home | `CLAUDE_CONFIG_DIR=/state/claude` | `CODEX_HOME=/state/codex`, so the file is `/state/codex/auth.json` |
+| Bridge profile | `agent: claude-code`, `extraAllowedTools` (git, `mt-publish`) | `agent: codex`, no `extraAllowedTools` (that list is Claude Code's), `modelAliases` from `MANYTHREADS_CLAUDE_PODS_CODEX_MODEL_ALIASES` (empty by default: Codex uses the model its plan gives) |
+| Bridge container env | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` and `MANYTHREADS_BRIDGE_IN_POD=1` |
+| Keeper | watches `.credentials.json`, accepts a file with `claudeAiOauth.refreshToken` | watches `auth.json` (`KEEPER_KIND=codex`), accepts only a file with `tokens.refresh_token` and no API key, and **waits while `auth.lock` is next to it** |
+| Publisher | shared: the same third container, the same push Secrets, the same socket | |
+
+The bridge drops `OPENAI_API_KEY` from the environment of a Codex process when it runs in a pod (`MANYTHREADS_BRIDGE_IN_POD=1`): a key would go around the platform's
+model gateway. Only the ChatGPT sign-in file is accepted. The keeper copies a renewed `auth.json` into `codex-<runner>-credentials` only when the file has held the same
+size and modification time for 2 seconds **and** `auth.lock` does not exist; while the lock exists it copies nothing and the quiet time starts again once the lock is gone
+(it looks once more right before the copy). Whether the real Codex CLI makes a lock file of that name is not measured (the owner test of P19-13); the keeper simply honours
+the file if it exists. The keeper's Role is made the same way as for Claude: `get` and `patch` on the one `codex-<runner>-credentials` Secret by name, nothing else.
+
+The pod's network policy and the controller's Roles are the Claude ones (a Codex pod has the same `claude-pod` component label); Codex adds no permission. When a Codex
+runner stops taking runs, the catalog writes `codex_pod.runner.paused` (a plan limit, or a sign-in that must be done again); uploads and removals write
+`codex_pod.credentials.*`. The machine picker works for a Codex runner exactly as for a Claude one (one pod of its own). Codex pods stay off on the live site with the
+Claude ones. How to find the file: [runner sign-in files](../guide/runner-signin-files.md).
 
 ## Who may do what
 | | Workspace admin | Team lead | Team member | Guest |

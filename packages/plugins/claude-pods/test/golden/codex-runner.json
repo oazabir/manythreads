@@ -1,0 +1,702 @@
+[
+  {
+    "apiVersion": "v1",
+    "kind": "ConfigMap",
+    "metadata": {
+      "name": "codex-team-codex-config",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "data": {
+      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home\"\n      },\n      \"instructions\": \"You run on a shared Codex runner, not on a person's machine. Your working folder is /work/engineering/engineer.\\nThe team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.\\nDo not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner's sign-in and keys, which are not yours to use.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nTo hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> \\\"<title>\\\"` (the pull request text on standard input).\\nIt pushes that branch and opens the pull request. You never hold the push token and never push to the main branch yourself.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
+      "repos.txt": "engineering engineer app main https://github.com/acme/app.git\n"
+    }
+  },
+  {
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+      "name": "codex-team-codex",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "spec": {
+      "replicas": 1,
+      "strategy": {
+        "type": "Recreate"
+      },
+      "selector": {
+        "matchLabels": {
+          "manythreads.io/pod": "codex-team-codex"
+        }
+      },
+      "template": {
+        "metadata": {
+          "labels": {
+            "app.kubernetes.io/name": "manythreads",
+            "app.kubernetes.io/component": "claude-pod",
+            "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+            "manythreads.io/runner": "team-codex",
+            "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
+            "manythreads.io/pod": "codex-team-codex"
+          },
+          "annotations": {
+            "manythreads.io/upload-id": "up-1",
+            "manythreads.io/profiles-sha": "8a5fd9f3dd197301"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "serviceAccountName": "codex-team-codex-keeper",
+          "enableServiceLinks": false,
+          "terminationGracePeriodSeconds": 30,
+          "securityContext": {
+            "runAsNonRoot": true,
+            "runAsUser": 1000,
+            "runAsGroup": 1000,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "initContainers": [
+            {
+              "name": "prepare",
+              "image": "manythreads/claude-pod:1",
+              "imagePullPolicy": "IfNotPresent",
+              "command": [
+                "sh",
+                "-c",
+                "install -d -o 1000 -g 1000 -m 0700 /state/codex /state/home /state/bridge && install -d -o 1000 -g 1000 -m 0755 /work && if [ -f /creds/auth.json ] && { [ ! -f /state/codex/auth.json ] || [ \"$(cat /creds/upload-id 2>/dev/null)\" != \"$(cat /state/codex/.upload-id 2>/dev/null)\" ]; }; then install -o 1000 -g 1000 -m 0600 /creds/auth.json /state/codex/auth.json && install -o 1000 -g 1000 -m 0600 /creds/upload-id /state/codex/.upload-id; fi"
+              ],
+              "securityContext": {
+                "runAsNonRoot": false,
+                "runAsUser": 0,
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ],
+                  "add": [
+                    "CHOWN",
+                    "DAC_OVERRIDE",
+                    "FOWNER"
+                  ]
+                },
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "resources": {
+                "limits": {
+                  "memory": "64Mi"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "name": "state",
+                  "mountPath": "/state"
+                },
+                {
+                  "name": "work",
+                  "mountPath": "/work"
+                },
+                {
+                  "name": "creds",
+                  "mountPath": "/creds",
+                  "readOnly": true
+                }
+              ]
+            }
+          ],
+          "containers": [
+            {
+              "name": "bridge",
+              "image": "manythreads/claude-pod:1",
+              "imagePullPolicy": "IfNotPresent",
+              "command": [
+                "/usr/bin/tini",
+                "--",
+                "node",
+                "--experimental-transform-types",
+                "--disable-warning=ExperimentalWarning",
+                "/opt/bridge/src/main.ts",
+                "--config",
+                "/etc/bridge/config.json",
+                "--listen",
+                "0.0.0.0:8650",
+                "--state-dir",
+                "/state/bridge",
+                "--repos-file",
+                "/run/repos/repos.txt"
+              ],
+              "ports": [
+                {
+                  "name": "bridge",
+                  "containerPort": 8650
+                }
+              ],
+              "env": [
+                {
+                  "name": "AGENT_BRIDGE_API_KEY",
+                  "valueFrom": {
+                    "secretKeyRef": {
+                      "name": "codex-team-codex-key",
+                      "key": "api-key"
+                    }
+                  }
+                },
+                {
+                  "name": "HOME",
+                  "value": "/state/home"
+                },
+                {
+                  "name": "CODEX_HOME",
+                  "value": "/state/codex"
+                },
+                {
+                  "name": "MANYTHREADS_BRIDGE_IN_POD",
+                  "value": "1"
+                }
+              ],
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "readinessProbe": {
+                "tcpSocket": {
+                  "port": 8650
+                },
+                "initialDelaySeconds": 3,
+                "periodSeconds": 5,
+                "failureThreshold": 12
+              },
+              "livenessProbe": {
+                "tcpSocket": {
+                  "port": 8650
+                },
+                "initialDelaySeconds": 30,
+                "periodSeconds": 20,
+                "failureThreshold": 6
+              },
+              "resources": {
+                "requests": {
+                  "cpu": "250m",
+                  "memory": "512Mi"
+                },
+                "limits": {
+                  "memory": "2Gi"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "name": "state",
+                  "mountPath": "/state"
+                },
+                {
+                  "name": "work",
+                  "mountPath": "/work"
+                },
+                {
+                  "name": "tmp",
+                  "mountPath": "/tmp"
+                },
+                {
+                  "name": "config",
+                  "mountPath": "/etc/bridge",
+                  "readOnly": true
+                },
+                {
+                  "name": "repos",
+                  "mountPath": "/run/repos"
+                },
+                {
+                  "name": "publish",
+                  "mountPath": "/run/publish"
+                }
+              ]
+            },
+            {
+              "name": "keeper",
+              "image": "manythreads/claude-pod:1",
+              "imagePullPolicy": "IfNotPresent",
+              "command": [
+                "node",
+                "/opt/claude-pod/keeper.mjs"
+              ],
+              "env": [
+                {
+                  "name": "KEEPER_NAMESPACE",
+                  "value": "bots"
+                },
+                {
+                  "name": "KEEPER_SECRET",
+                  "value": "codex-team-codex-credentials"
+                },
+                {
+                  "name": "KEEPER_KIND",
+                  "value": "codex"
+                },
+                {
+                  "name": "KEEPER_FILE",
+                  "value": "/state/codex/auth.json"
+                },
+                {
+                  "name": "KEEPER_KEY",
+                  "value": "auth.json"
+                },
+                {
+                  "name": "KEEPER_LOCK",
+                  "value": "/state/codex/auth.lock"
+                }
+              ],
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "resources": {
+                "requests": {
+                  "cpu": "5m",
+                  "memory": "24Mi"
+                },
+                "limits": {
+                  "memory": "96Mi"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "name": "state",
+                  "mountPath": "/state/codex",
+                  "subPath": "codex",
+                  "readOnly": true
+                },
+                {
+                  "name": "keeper-token",
+                  "mountPath": "/var/run/secrets/keeper",
+                  "readOnly": true
+                }
+              ]
+            },
+            {
+              "name": "repo-sync",
+              "image": "manythreads/claude-pod:1",
+              "imagePullPolicy": "IfNotPresent",
+              "command": [
+                "sh",
+                "/opt/claude-pod/repo-sync.sh"
+              ],
+              "env": [
+                {
+                  "name": "HOME",
+                  "value": "/tmp"
+                }
+              ],
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "resources": {
+                "requests": {
+                  "cpu": "10m",
+                  "memory": "32Mi"
+                },
+                "limits": {
+                  "memory": "256Mi"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "name": "work",
+                  "mountPath": "/work"
+                },
+                {
+                  "name": "tmp",
+                  "mountPath": "/tmp"
+                },
+                {
+                  "name": "config",
+                  "mountPath": "/etc/bridge",
+                  "readOnly": true
+                },
+                {
+                  "name": "repos",
+                  "mountPath": "/run/repos",
+                  "readOnly": true
+                }
+              ]
+            },
+            {
+              "name": "publisher",
+              "image": "manythreads/claude-pod:1",
+              "imagePullPolicy": "IfNotPresent",
+              "command": [
+                "node",
+                "/opt/claude-pod/publisher.mjs",
+                "serve"
+              ],
+              "env": [
+                {
+                  "name": "PUBLISHER_SERVER_URL",
+                  "value": "http://manythreads-server.manythreads.svc:3000"
+                },
+                {
+                  "name": "HOME",
+                  "value": "/tmp"
+                }
+              ],
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                },
+                "readOnlyRootFilesystem": true,
+                "runAsNonRoot": true,
+                "runAsUser": 1001,
+                "runAsGroup": 1001
+              },
+              "resources": {
+                "requests": {
+                  "cpu": "50m",
+                  "memory": "64Mi"
+                },
+                "limits": {
+                  "memory": "256Mi"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "name": "work",
+                  "mountPath": "/work",
+                  "readOnly": true
+                },
+                {
+                  "name": "publish",
+                  "mountPath": "/run/publish"
+                },
+                {
+                  "name": "publisher-tmp",
+                  "mountPath": "/tmp"
+                },
+                {
+                  "name": "push-0",
+                  "mountPath": "/etc/publisher-push/engineering",
+                  "readOnly": true
+                }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "state",
+              "persistentVolumeClaim": {
+                "claimName": "codex-team-codex-state"
+              }
+            },
+            {
+              "name": "work",
+              "persistentVolumeClaim": {
+                "claimName": "codex-team-codex-work"
+              }
+            },
+            {
+              "name": "tmp",
+              "emptyDir": {
+                "sizeLimit": "512Mi"
+              }
+            },
+            {
+              "name": "config",
+              "configMap": {
+                "name": "codex-team-codex-config"
+              }
+            },
+            {
+              "name": "repos",
+              "emptyDir": {
+                "sizeLimit": "8Mi"
+              }
+            },
+            {
+              "name": "publish",
+              "emptyDir": {
+                "sizeLimit": "1Mi"
+              }
+            },
+            {
+              "name": "publisher-tmp",
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "32Mi"
+              }
+            },
+            {
+              "name": "push-0",
+              "secret": {
+                "secretName": "hermes-engineering-push",
+                "defaultMode": 292,
+                "optional": true
+              }
+            },
+            {
+              "name": "keeper-token",
+              "projected": {
+                "sources": [
+                  {
+                    "serviceAccountToken": {
+                      "path": "token",
+                      "expirationSeconds": 3600
+                    }
+                  },
+                  {
+                    "configMap": {
+                      "name": "kube-root-ca.crt",
+                      "items": [
+                        {
+                          "key": "ca.crt",
+                          "path": "ca.crt"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "creds",
+              "secret": {
+                "secretName": "codex-team-codex-credentials",
+                "defaultMode": 292,
+                "optional": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "name": "codex-team-codex-state",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "storageClassName": "local-path",
+      "resources": {
+        "requests": {
+          "storage": "256Mi"
+        }
+      }
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
+      "name": "codex-team-codex-work",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "storageClassName": "local-path",
+      "resources": {
+        "requests": {
+          "storage": "10Gi"
+        }
+      }
+    }
+  },
+  {
+    "apiVersion": "rbac.authorization.k8s.io/v1",
+    "kind": "Role",
+    "metadata": {
+      "name": "codex-team-codex-keeper",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "rules": [
+      {
+        "apiGroups": [
+          ""
+        ],
+        "resources": [
+          "secrets"
+        ],
+        "resourceNames": [
+          "codex-team-codex-credentials"
+        ],
+        "verbs": [
+          "get",
+          "patch"
+        ]
+      }
+    ]
+  },
+  {
+    "apiVersion": "rbac.authorization.k8s.io/v1",
+    "kind": "RoleBinding",
+    "metadata": {
+      "name": "codex-team-codex-keeper",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "roleRef": {
+      "apiGroup": "rbac.authorization.k8s.io",
+      "kind": "Role",
+      "name": "codex-team-codex-keeper"
+    },
+    "subjects": [
+      {
+        "kind": "ServiceAccount",
+        "name": "codex-team-codex-keeper",
+        "namespace": "bots"
+      }
+    ]
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "codex-team-codex-credentials",
+      "namespace": "bots"
+    },
+    "data": {
+      "auth.json": "eyJtYWRlIjoidXAifQ==",
+      "upload-id": "dXAtMQ=="
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Secret",
+    "metadata": {
+      "name": "codex-team-codex-key",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "type": "Opaque",
+    "stringData": {
+      "api-key": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "Service",
+    "metadata": {
+      "name": "codex-team-codex",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "spec": {
+      "selector": {
+        "manythreads.io/pod": "codex-team-codex"
+      },
+      "ports": [
+        {
+          "name": "bridge",
+          "port": 8650,
+          "targetPort": 8650
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "ServiceAccount",
+    "metadata": {
+      "name": "codex-team-codex-keeper",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+      }
+    },
+    "automountServiceAccountToken": false
+  }
+]
