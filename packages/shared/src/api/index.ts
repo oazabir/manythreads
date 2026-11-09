@@ -29,6 +29,7 @@ export * from './action-items/index.ts';
 export * from './runners/index.ts';
 export * from './hermes/index.ts';
 export * from './bot-runners/index.ts';
+export * from './runs/index.ts';
 export * from './projects/index.ts';
 export * from './webhooks/index.ts';
 export * from './bridges/index.ts';
