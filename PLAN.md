@@ -4,7 +4,7 @@ Phase-wise build plan for Claude as orchestrating coding agent. Contract: `SPEC-
 
 ## 1. Purpose
 
-Build the spec in twenty-one phases. Phases 1–11 and 14–19 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. Phase 19 (added 2026-11-01) gives the workspace admin a catalog of runners (a Hermes gateway, the team Hermes pod, a Claude Code pod in k3s signed in from an uploaded file, a model API) that bot editors simply pick from. Phase 21 (added 2026-11-04) turns what a walk through the live site found (`POLISH.md`) into work: message runs, hover actions, one page header, plain words, dark mode, a phone bottom bar. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
+Build the spec in twenty-two phases. Phases 1–11 and 14–19 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. Phase 19 (added 2026-11-01) gives the workspace admin a catalog of runners (a Hermes gateway, the team Hermes pod, a Claude Code pod in k3s signed in from an uploaded file, a model API) that bot editors simply pick from. Phase 21 (added 2026-11-04) turns what a walk through the live site found (`POLISH.md`) into work: message runs, hover actions, one page header, plain words, dark mode, a phone bottom bar. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
 
 ## 2. How to use
 
@@ -155,6 +155,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 19 | 11 | Mobile client | L | 10 | 0 of 10 built |
 | 20 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 0 of 8 built |
 | 21 | 13 | Screenshot UI review | M | 12 | 0 of 11 built |
+| 22 | 22 | The team builds a feature itself, seen from the channel | M | 6, 9, 19 | 0 of 5 built |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -644,6 +645,16 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P21-26 | Click a message that has a thread to open the thread on the side | Built | clients/web (message row click, right panel thread); e2e/screens/task.verify-p21-26-28.shots.ts | live check 2026-11-05. Gaps: the phone loses tap-for-actions on messages with replies; the first click of a double click may open the thread |
 | P21-27 | The open thread goes full screen on a small window and back on a big one | Built | clients/web (right panel, window width); e2e/screens/task.verify-p21-26-28.shots.ts | live check 2026-11-05. Gaps: the side-by-side threshold is 888 px and the thread fills the area below it; the open-thread panel renders its fill layout synchronously on resize (flushSync) to avoid a one-frame squeeze that corrupted the channel's measured row heights |
 | P21-28 | The message box is twice as tall; the "Also send to #channel" tick leaves the thread editor | Built | clients/web composer; e2e/screens/task.verify-p21-26-28.shots.ts | live check 2026-11-05 (resting box 46 px in channel, DM and thread; no tick) |
+
+### Phase 22 · The team builds a feature itself, seen from the channel — 0 built, 0 partly, 5 not built
+
+| ID | Task | Status | Where | Gap |
+|---|---|---|---|---|
+| P22-01 | A Planner bot in the Engineering template that turns a goal into a plan and a todo list | Not built | - | added 2026-11-09 at the owner's request; Engineer plans on its own today, then hands the plan to Plan reviewer |
+| P22-02 | Engineer asks Planner first, and keeps the goal's todo list on the board | Not built | templates/engineering/bots/engineer/BOT.md | added 2026-11-09 |
+| P22-03 | One plan card in the parent channel of the working thread, kept up to date as the todo list changes | Not built | plugins/surfaces (surface.render/update, data binding P9-06), screens in clients/web/src/surfaces | added 2026-11-09; the surface tools post into the run's own thread today, not into the channel |
+| P22-04 | The self-build test: Engineer builds a small feature end to end and it is deployed to and checked on test.manythreads.kahf.to | Not built | tools/devbox/sync-engineering-bots.mjs, e2e/self-build | added 2026-11-09; the chain ran once for P14-10 (2026-10-28) by hand |
+| P22-05 | Seed v22, evals for Planner and Engineer, docs and retro | Not built | - | added 2026-11-09 |
 
 ---
 
@@ -2768,6 +2779,54 @@ The W baselines above, in light and dark, at 1440×900 and 390×844.
 ### 6 · Exit
 
 A person who has used Slack opens `#dev` and a thread, reacts, mentions a bot, finds a message, switches to dark mode and uses the same screens on a phone, and nothing in it looks unfinished, hides a channel name or shows a word they cannot read. Deployed and checked on the live site at 1440 and 390 px, in light and dark.
+
+---
+
+# Phase 22 · The team builds a feature itself, seen from the channel
+
+Goal (owner, 2026-11-09): **manythreads is used to build a feature of manythreads, from one message to a checked deployment, by the bots of the Engineering template**, and anyone in the channel can see how far the work is without opening the thread. Size M. Needs the tasks and boards of phase 6, the surfaces of phase 9 and the runners of phase 19. Earlier proofs: the chain ran by hand for P14-10 on 2026-10-28; the full-cycle test of 2026-10-25 is the ancestor of this phase.
+
+**Words.** **Plan card**: one message in the channel, drawn with OpenUI (phase 9), that shows a goal's steps. **Working thread**: the thread under the message that gave the goal; the bots talk there.
+
+### 1 · Tasks
+
+| ID | Task | Where | Size |
+|---|---|---|---|
+| P22-01 | **Planner bot.** A new `planner` bot in `templates/engineering/bots/`: given a goal (and the repo and Brain's memory), it writes a plan of at most 12 steps, each with the bot that does it (`coder`, `code-reviewer`, `tester`, `committer`, `deployer`, `web-smoke-tester`), what done looks like and what it depends on; it creates the todo list as board cards of the goal through `tasks.create`; it asks no question a person could answer from the repo. Evals (`planner.yaml`, min score 0.9): a plan always ends with deploy and a browser check when the goal changes the web client; it never plans a step for a bot the Engineer may not tag. | `templates/engineering`, `plugins/tasks` | Sonnet |
+| P22-02 | **Engineer asks Planner first.** On a goal Engineer hands the goal to Planner (`tasks.handoff`, `planner` joins `handover.mayTag`), reads back the plan and todo list, has Plan reviewer check it as today, then starts the first step. Whoever finishes a step (Engineer or any other bot) marks its card; Engineer is the one that adds a step the plan missed and says so in the thread. | `templates/engineering/bots/engineer` | Sonnet |
+| P22-03 | **The plan card on the channel.** When the plan is accepted Engineer posts **one** plan card in the parent channel of the working thread (the channel the goal was given in; for a goal given in a thread, that thread's channel) and never a second one for the same goal. It looks like the reference below: the goal id and name, a state chip (`planned`, `running`, `waiting for a person`, `done`, `stopped`), the spend against the goal's budget, one row per step (a dot for its state, the step in words with the bots on it, and `done`, `rework 1`, `waiting` or `blocked` on the right), a card link to the board, and the reply count of the working thread with the faces of the bots that wrote in it. The card **follows the board**: it is an OpenUI surface bound to the goal (data binding, P9-06) that refreshes when a task of the goal changes, so any bot's `tasks.complete` or `tasks.handoff` moves it with no extra step for that bot; Engineer posts and edits nothing by hand after the first post. Needs: a `surface.render` target that is the channel (today the tools post into the run's own thread), checked against the bot's right to write there, a goal-bound read in the data-binding allowlist, and a message kind that the message list draws (P9-04 mounted it). The card is shown to everyone who can read the channel and holds nothing a reader of the channel could not already see in the thread; on a phone it is one column; with no OpenUI support (an old client) the message body says "Goal G-27 · running · step 2 of 3". | `plugins/surfaces`, `plugins/tasks`, `gateway-mcp`, `clients/web/src/surfaces` | Opus plans, Sonnet |
+| P22-04 | **The self-build test.** A scripted live test, `tools/self-build/run.sh` with `e2e/self-build/self-build.spec.ts`, run against `https://test.manythreads.kahf.to` (namespace `test-manythreads`, owned by Engineering): a person writes `@engineer Goal: <a small real feature, chosen from the not-built rows>` in `#dev`; Planner plans; Plan reviewer approves; Coder writes the code and tests; Code reviewer reviews (a rework round is allowed once); Tester builds and tests; Committer opens the pull request; the merge waits for a person's approval, given in the test through the page; Deployer deploys to `test-manythreads`; Web smoke tester signs in on `test.manythreads.kahf.to` with a test account and checks the feature in a browser, with screenshots. The test fails if any step is skipped, if the plan card is missing, doubled, or does not move through at least running → done, or if a bot did anything the Engineering template does not allow. It is run twice for the phase: on the Hermes pod runner and on the Claude Code runner. Nothing in it touches the live `manythreads` namespace. | `tools/self-build`, `e2e/self-build`, `tools/devbox/sync-engineering-bots.mjs` | Opus plans, Sonnet |
+| P22-05 | **Seed v22, evals, docs and retro.** Seed a team with the Engineering chain and a mapped project for stack tests; evals for Planner and the changed Engineer; `docs/plugins/tasks.md` and `surfaces.md` describe the plan card; `docs/retro/phase-22.md` records the measured time, spend and every manual step the run still needed. | `tools/seed`, `docs` | Sonnet |
+
+### 2 · UI references
+
+The plan card as the owner drew it (a message by the bot, with an agent tag, in the channel list): the goal line of text above, a bordered card under it with the title in bold (`G-27 · schedule migration`), a small `running` chip beside it and `£1.61 / £12.00` on the right; then one row per step, each with a coloured dot (green done, amber running or in rework, grey waiting) and the status at the right in mono; a footer row with the board card chip (`Board card G-27`) and `bots · boards` on the right; under the card the reply link `7 replies · Tester, 2m ago` with the faces of the bots in the thread. Mockup plate: `docs/spec/mockups-all.html` section `bots`, the Orchestrator message (grep `G-27`). W baselines (light, dark, 1440 and 390): `channel/plan-card-running`, `channel/plan-card-done`, `channel/plan-card-waiting`.
+
+### 3 · Acceptance criteria
+
+1. Given a goal, Engineer's first act is a handoff to Planner; no coder step starts before the plan has been reviewed.
+2. After the plan is accepted exactly one plan card is in the parent channel; asking Engineer for the same goal again, or restarting its run, does not post a second one.
+3. A step finished by Coder, Tester or Deployer changes that step's dot and text on the card within 10 seconds, with no message from Engineer.
+4. A rework round shows `rework 1` on its row; a step waiting for an approval shows `waiting`; the chip says `waiting for a person` while one is open and `done` at the end.
+5. A person who can read the channel but not the board sees the card's text but not a card link they cannot open; a person outside the team sees nothing.
+6. The self-build test passes twice (Hermes pod, Claude Code runner), and the feature it built can be used by a person on `test.manythreads.kahf.to`.
+7. The card is readable at 390 px and in dark mode; it passes the copy lint (no `tasks.handoff`, slug or internal id in its text).
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/surfaces/plan-card.spec.ts` | a goal's tasks change through the API; the card follows; one card only; hidden from a non-member; no link to a board the viewer cannot read |
+| `e2e/self-build/self-build.spec.ts` | the P22-04 chain on a stack with stand-in models and a fake GitHub; then the same on test.manythreads.kahf.to with the real runners (run by hand, twice) |
+| `e2e/bots/planner-evals.spec.ts` | the Planner and Engineer evals pass their minimum score |
+
+### 5 · Visual browser tests
+
+The W baselines above, in light and dark, at 1440×900 and 390×844.
+
+### 6 · Exit
+
+The owner writes one `@engineer Goal:` message in `#dev` and watches one card on the channel go from planned to done while a feature reaches `test.manythreads.kahf.to`, without opening the thread unless they want the detail.
 
 ---
 
