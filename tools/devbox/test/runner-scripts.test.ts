@@ -217,7 +217,7 @@ describe('stage-runners-probe.sh', () => {
   it('FAILS when a right is wider than the table in security.md', () => {
     const keeper = run(probe, ['check'], stageEnv({ FAKE_CANI_YES: 'delete secret/claude-claude-shared-credentials' }));
     expect(keeper.out).toMatch(/FAIL {2}can-i keeper may not delete it: expected no, got yes/);
-    const server = run(probe, ['check'], stageEnv({ FAKE_CANI_YES: 'create pods/exec' }));
+    const server = run(probe, ['check'], stageEnv({ FAKE_CANI_YES: 'create pods --subresource=exec' }));
     expect(server.code).toBe(1);
     expect(server.out).toMatch(/FAIL {2}can-i controller may not exec into a pod: expected no, got yes/);
   });
@@ -231,6 +231,24 @@ describe('stage-runners-probe.sh', () => {
     const res = run(probe, ['check'], stageEnv({ FAKE_KEEPER_API: 'error ETIMEDOUT' }));
     expect(res.code).toBe(1);
     expect(res.out).toMatch(/FAIL {2}keeper renews: the keeper container cannot reach the Kubernetes API/);
+  });
+
+  it('a runner with no pod yet (0 replicas, so `kubectl logs` fails) does not end the check early: every later line still runs', () => {
+    const res = run(probe, ['check'], stageEnv({ FAKE_STOPPED_RUNNER: '1' }));
+    expect(res.code, res.out).toBe(0);
+    expect(res.out).toContain('=== pod codex-codex-chatgpt ===');
+    expect(res.out).toContain("PASS  the server's log holds no sign-in byte");
+    expect(res.out).toContain('PASS  can-i keeper may not list nodes: no');
+    expect(res.out).toContain('=== rights of the server\'s service account ===');
+    expect(res.out).toContain('all checks passed');
+  });
+
+  it('asks about pod logs and exec with --subresource (the TYPE/NAME form `pods/log` means a pod named "log" and answers yes to any role that reads pods)', () => {
+    run(probe, ['check'], stageEnv());
+    const all = calls();
+    expect(all.some((c) => c.includes('get pods --subresource=log'))).toBe(true);
+    expect(all.some((c) => c.includes('create pods --subresource=exec'))).toBe(true);
+    expect(all.some((c) => /pods\/(log|exec)/.test(c))).toBe(false);
   });
 
   it('stops with a plain message when the stage has no runner pod', () => {

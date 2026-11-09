@@ -135,6 +135,7 @@ expect_closed() {
 }
 
 can_i() {
+  # NOTE: a subresource is asked with --subresource=<name>. `pods/log` is kubectl's TYPE/NAME form (the pod named "log"), which any role that can read pods answers yes to.
   # can_i <yes|no> <label> <service account> <kubectl auth can-i words...>; the namespace is the pods namespace unless the words carry -n
   local want=$1 label=$2 sa=$3 got
   shift 3
@@ -195,8 +196,9 @@ cmd_check() {
     kb describe deploy "$deploy" 2>/dev/null | leak_check "kubectl describe of the Deployment"
     kb get pod,deploy,cm -l "manythreads.io/runner" -o yaml 2>/dev/null | leak_check "the pod, Deployment and ConfigMap YAML"
     kb get events 2>/dev/null | leak_check "the events"
-    kb logs "deploy/$deploy" --all-containers --tail=-1 2>/dev/null | leak_check "the logs of every container"
-    ks logs deploy/manythreads-server --tail=-1 2>/dev/null | leak_check "the server's log"
+    # A runner with no sign-in has no pod (0 replicas): `kubectl logs` then fails, and with pipefail that would end the whole check here without a word. No pod, no log to read.
+    { kb logs "deploy/$deploy" --all-containers --tail=-1 2>/dev/null || true; } | leak_check "the logs of every container"
+    { ks logs deploy/manythreads-server --tail=-1 2>/dev/null || true; } | leak_check "the server's log"
     # ---- mounts and tokens (the pod's own JSON; names of volumes only) ------------------------------------------------------------------------------
     local mounts
     mounts=$(kb get deploy "$deploy" -o json 2>/dev/null | node -e '
@@ -232,7 +234,7 @@ cmd_check() {
     can_i no "keeper may not create Secrets" "$sa" -n "$BOTS_NS" create secrets
     can_i no "keeper may not read another runner's Secret" "$sa" -n "$BOTS_NS" get "secret/not-$creds"
     can_i no "keeper may not read Secrets of the release namespace" "$sa" -n "$STAGE_NS" get secrets
-    can_i no "keeper may not exec into a pod" "$sa" -n "$BOTS_NS" create pods/exec
+    can_i no "keeper may not exec into a pod" "$sa" -n "$BOTS_NS" create pods --subresource=exec
     can_i no "keeper may not list nodes" "$sa" list nodes
   done
 
@@ -249,8 +251,8 @@ cmd_check() {
   can_i no "controller may not delete Deployments" "$srv" -n "$BOTS_NS" delete deployments
   can_i no "controller may not delete ServiceAccounts" "$srv" -n "$BOTS_NS" delete serviceaccounts
   can_i no "controller may not delete Roles" "$srv" -n "$BOTS_NS" delete roles
-  can_i no "controller may not exec into a pod" "$srv" -n "$BOTS_NS" create pods/exec
-  can_i no "controller may not read pod logs" "$srv" -n "$BOTS_NS" get pods/log
+  can_i no "controller may not exec into a pod" "$srv" -n "$BOTS_NS" create pods --subresource=exec
+  can_i no "controller may not read pod logs" "$srv" -n "$BOTS_NS" get pods --subresource=log
   can_i no "controller may not change nodes" "$srv" patch nodes
   can_i no "controller may not read Secrets cluster-wide" "$srv" get secrets --all-namespaces
   can_i no "controller may not read Secrets in kube-system" "$srv" -n kube-system get secrets

@@ -80,6 +80,12 @@ up() {
   have_image "manythreads/server:$TAG" || die "no image manythreads/server:$TAG in k3s (build it with tools/devbox/ci.sh or deploy.sh first, or set TAG)"
 
   step "the demo layer (fake-llm, fake-hindsight)"
+  # The demo images are built FROM the server image, which docker must hold: deploy.sh and ci.sh drop docker's copy once k3s has it, so it is loaded back from k3s here and dropped again after.
+  LOADED_SERVER=0
+  if { ! have_image "manythreads/server-demo:$TAG" || ! have_image "manythreads/demo-fakes:$TAG"; } && ! docker image inspect "manythreads/server:$TAG" >/dev/null 2>&1; then
+    k3s ctr -n k8s.io images export - "docker.io/manythreads/server:$TAG" | docker load >/dev/null || die "could not load manythreads/server:$TAG from k3s into docker"
+    LOADED_SERVER=1
+  fi
   if ! have_image "manythreads/server-demo:$TAG"; then
     docker build -f deploy/docker/server-demo.Dockerfile --build-arg SERVER_TAG="$TAG" -t "manythreads/server-demo:$TAG" .
     import_image "manythreads/server-demo:$TAG"
@@ -88,6 +94,7 @@ up() {
     docker build -f deploy/docker/demo-fakes.Dockerfile --build-arg SERVER_TAG="$TAG" -t "manythreads/demo-fakes:$TAG" .
     import_image "manythreads/demo-fakes:$TAG"
   fi
+  [ "$LOADED_SERVER" = 0 ] || docker rmi "manythreads/server:$TAG" >/dev/null 2>&1 || true
 
   step "fake-saas on $HOST:$FAKE_PORT (control $((FAKE_PORT + 1)))"
   # The grants are the ones of the seed (packages/test-utils seed-connectors.ts SEED_CONNECTORS.grants); the seed's runner seals tokens for them.
