@@ -18,6 +18,14 @@ export function journeyFiles(set: JourneySet = currentSet()): string[] {
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir).sort()) if (f.endsWith('.journey.ts')) out.push(join(dir, f));
+    // The states sweeps and Tab-walks live one level down (`states/`, `tabwalk/`). `support/` holds helpers and is never a journey folder.
+    if (set === 'real') {
+      for (const sub of ['states', 'tabwalk']) {
+        const subDir = join(dir, sub);
+        if (!existsSync(subDir)) continue;
+        for (const f of readdirSync(subDir).sort()) if (f.endsWith('.journey.ts')) out.push(join(subDir, f));
+      }
+    }
   }
   return out;
 }
