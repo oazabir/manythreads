@@ -114,4 +114,8 @@ while (Date.now() < deadline) {
     if (other) log(`a bot message arrived without the expected text: ${String(other.body).slice(0, 120).replace(/\n/g, ' / ')}`);
   }
 }
+{
+  const list = await call('GET', `/api/channels/${channelId}/messages?limit=20`);
+  for (const m of (list.json?.items ?? []).reverse()) log(`  message by ${m.author?.kind ?? '?'} ${m.author?.displayName ?? ''}: ${String(m.body ?? '').replace(/\n/g, ' / ').slice(0, 200)}`);
+}
 fail(`no reply that matches ${EXPECT} within ${timeoutS} seconds`);

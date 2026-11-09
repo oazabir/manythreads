@@ -76,7 +76,12 @@ cleanup() {
     if [ "$code" -ne 0 ]; then
       say "the state at the failure"
       dc ps -a 2>&1 | tail -n 20
-      for s in manythreads hermes litellm hindsight postgres fake-llm; do printf '\n----- logs: %s\n' "$s"; dc logs --no-color --tail 40 "$s" 2>&1 | tail -n 40; done
+      for s in manythreads hermes litellm hindsight postgres fake-llm; do
+        printf '\n----- logs: %s (health checks and polling left out)\n' "$s"
+        dc logs --no-color --tail 400 "$s" 2>&1 | grep -vE 'readyz|health/liveliness|"msg":"request completed"|"msg":"incoming request"|GET /health' | tail -n 50 | cut -c1-400
+      done
+      printf '\n----- the latest bot runs\n'
+      dc exec -T postgres psql -U manythreads_owner -d manythreads -x -c "SELECT * FROM app.bot_runs ORDER BY created_at DESC LIMIT 3" 2>&1 | cut -c1-300
     fi
     say "clean-up: down -v"
     dc down -v --remove-orphans --timeout 20 >/dev/null 2>&1
