@@ -56,7 +56,8 @@ const meetingByTitle = async (title: string): Promise<string> => (await stack.sq
 async function maskDates(page: Page): Promise<void> {
   await atLatest(page);
   await page.evaluate(() => {
-    const sel = 'time, .jump, .vlist[aria-label^="Messages in #"], .call-clock, .cap-time, [data-testid="meeting-facts"], [data-testid="notes-facts"], [data-testid="line-time"], [data-testid="note-at"], [data-testid="share-row"] .mv-share-when, .fhead .when, .frow .when, .file-when';
+    // a bot's picture is drawn at random for each stack, so the Note-taker's face in the bar is masked too
+    const sel = 'time, .jump, .vlist[aria-label^="Messages in #"], .call-clock, .cap-time, [data-testid="meeting-facts"], [data-testid="notes-facts"], [data-testid="line-time"], [data-testid="note-at"], [data-testid="share-row"] .mv-share-when, [data-testid="call-notetaker-face"] .av, .fhead .when, .frow .when, .file-when';
     for (const el of Array.from(document.querySelectorAll(sel))) el.setAttribute('data-vt-mask', '');
     // what carries the run's own clock without a tag of its own: a time of day ("13:11"), a call's folder ("08-1311-leads-sync"), a running clock ("0:06")
     const stamp = /(^|\s)\d{1,2}:\d{2}(\s|$)|^\d{2}-\d{4}-/;
@@ -87,6 +88,8 @@ async function atLatest(page: Page): Promise<void> {
 /** Presses Start voice room / Join voice room on a channel page and waits until the call bar is connected. */
 async function intoRoom(page: Page, channel: string): Promise<void> {
   await page.goto(`/t/engineering/c/${channel}`);
+  // the header's Schedule button arrives with the plan list, a moment after the rest of the header: the plate waits for it
+  await expect(page.getByTestId('schedule-open')).toBeVisible();
   await page.getByTestId('call-start').click();
   await expect(page.getByTestId('call-dock')).toHaveAttribute('data-phase', 'connected', { timeout: 20_000 });
   await atLatest(page);

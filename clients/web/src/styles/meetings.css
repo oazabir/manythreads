@@ -772,6 +772,21 @@
   .call-start-label {
     display: none;
   }
+
+  /* the header also holds the Schedule button (44 px) now: the pill of the room the person is in keeps only its wave, its words stay for a screen reader, so the bell stays on the screen (P16-IT) */
+  .chead-actions .call-here {
+    position: relative;
+    padding: 6px;
+  }
+
+  .chead-actions .call-here > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ---- an incoming call ---- */

@@ -64,7 +64,7 @@ test('Members: the row menu, the two dialogs and a deactivated row keep their la
     await page.goto('/settings/workspace/members');
     await expect(page.getByTestId('member-row')).toHaveCount(7);
     await page.getByRole('button', { name: 'Options for Rafi' }).click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Deactivate']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Deactivate', 'Remove their connections']);
     await expectWireframe(page, 'members-menu', MEMBERS_ORDER);
 
     await page.getByRole('menuitem', { name: 'Open Personal space' }).click();
