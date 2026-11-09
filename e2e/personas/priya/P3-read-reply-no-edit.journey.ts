@@ -84,7 +84,7 @@ export default defineJourney({
     const pending = await stack.sql<{ id: string }>("SELECT id FROM app.approvals WHERE summary LIKE '%priya-view-only%'");
     expect(pending.length).toBe(1);
     expect(await priya.status('POST', `/api/teams/engineering/approvals/${pending[0]!.id}/approve`, {}), 'approving').toBe(403);
-    expect(await priya.status('POST', '/api/teams/engineering/bots/coder/workshop/terminal', {}), 'opening a terminal').toBeGreaterThanOrEqual(403);
+    expect(await priya.status('POST', '/api/teams/engineering/bots/coder/workshop/terminal', {}), 'opening a terminal').toBe(403);
     const channels = await priya.get<{ groups: Array<{ channels: Array<{ name: string }> }> }>('/api/teams/engineering/channels');
     expect(channels.groups.flatMap((g) => g.channels).map((c) => c.name.replace(/^#/, '')), 'the private channel is not in her list').not.toContain('eng-leads');
   },

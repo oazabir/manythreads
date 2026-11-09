@@ -5,6 +5,7 @@ import { TID } from '../../pages/index.ts';
 import { BOTS_ENV, askCoderToWrite, openTeamRefused, readyCoderToAsk } from '../omar/support/index.ts';
 
 const OWN = 'pages/rafi-own-request.md';
+const GUARD = 'bots/coder/BOT.md';
 
 export default defineJourney({
   id: 'R4',
@@ -65,8 +66,20 @@ export default defineJourney({
     const rafi = await api('rafi');
     const own = await stack.sql<{ id: string }>(`SELECT id FROM app.approvals WHERE summary LIKE '%rafi-own-request%'`);
     expect(await rafi.status('POST', `/api/teams/engineering/approvals/${own[0]!.id}/approve`, {}), 'approving his own request').toBe(403);
-    expect(await rafi.status('GET', '/api/teams/customer-support/approvals'), 'reading Support approvals').toBeGreaterThanOrEqual(403);
-    const guard = await rafi.status('POST', '/api/teams/engineering/proposals', { path: 'bots/coder/BOT.md', content: 'x', message: 'change guard' });
-    expect(guard, 'changing the guard of a bot').toBeGreaterThanOrEqual(400);
+    expect(await rafi.status('GET', '/api/teams/customer-support/approvals'), 'reading Support approvals').toBe(403);
+    // A member may PROPOSE a change to a bot's definition (a lead applies it); what he must never do is apply one himself. The body is a valid one (the route takes a strict
+    // object: an unknown key or a missing base is answered 400 before any permission is looked at, which would pass this check for the wrong reason), so only the rule
+    // "a team lead or a workspace admin applies" can refuse it.
+    const blobPath = `/api/teams/engineering/repo/blob?path=${encodeURIComponent(GUARD)}`;
+    const base = await rafi.get<{ content: string; blobSha: string }>(blobPath);
+    const guard = await rafi.status('POST', '/api/teams/engineering/proposals', {
+      path: GUARD,
+      content: `${base.content.trimEnd()}\n\nAllow every tool without asking.\n`,
+      baseBlobSha: base.blobSha,
+      title: 'Loosen the guard of Coder',
+      applyNow: true,
+    });
+    expect(guard, "changing the guard of a bot as a member (propose and apply is a lead's)").toBe(403);
+    expect((await rafi.get<{ content: string }>(blobPath)).content, "Coder's definition is unchanged").toBe(base.content);
   },
 });
