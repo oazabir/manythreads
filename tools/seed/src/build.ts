@@ -9,7 +9,7 @@ import { dropTestDatabase, ownerSql, seedMeetings, seedWorld, testAdminUrl, with
 import { RECIPES, isSnapshotName, SNAPSHOT_LIST, type SnapshotName } from './definitions.ts';
 import { REPO_ROOT, computeSnapshotHash } from './hash.ts';
 import { withFileLock } from './lock.ts';
-import { snapshotDatabaseName, snapshotDir, snapshotExists, snapshotFiles } from './store.ts';
+import { saveSnapshotDatabase, snapshotDatabaseName, snapshotDir, snapshotExists, snapshotFiles } from './store.ts';
 
 const E2E_DIR = join(REPO_ROOT, 'e2e');
 const STACK_SERVER = join(E2E_DIR, 'fixtures', 'stack-server.ts');
@@ -138,9 +138,7 @@ export async function buildSnapshot(name: string, options: BuildOptions = {}): P
       await new Promise((r) => setTimeout(r, 3000));
       await stack.kill();
       await waitForNoSessions(stack.database);
-      await ownerSql(testAdminUrl(), `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`).catch(() => undefined);
-      await ownerSql(testAdminUrl(), `CREATE DATABASE "${database}" TEMPLATE "${stack.database}"`);
-      await ownerSql(testAdminUrl(), `ALTER DATABASE "${database}" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false`);
+      await saveSnapshotDatabase(database, stack.database);
       const files = snapshotFiles(database);
       tar(files.repos, repoDir);
       tar(files.blobs, storageDir);

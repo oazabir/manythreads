@@ -80,3 +80,15 @@ export async function dropSnapshot(databaseName: string): Promise<void> {
   rmSync(files.repos, { force: true });
   rmSync(files.blobs, { force: true });
 }
+
+/**
+ * Saves `sourceDatabase` as the snapshot database `databaseName` (a Postgres template that nobody connects to), replacing an earlier one of the same name. The
+ * earlier one is a template, and Postgres refuses to drop a template database ("cannot drop a template database") until it stops being one: a plain
+ * `DROP DATABASE` made `snapshot build --force` fail with "already exists". `sourceDatabase` must have no other session.
+ */
+export async function saveSnapshotDatabase(databaseName: string, sourceDatabase: string): Promise<void> {
+  if (!SNAPSHOT_DB_PATTERN.test(databaseName)) throw new Error(`Refusing to write ${databaseName}`);
+  await dropSnapshot(databaseName);
+  await ownerSql(testAdminUrl(), `CREATE DATABASE "${databaseName}" TEMPLATE "${sourceDatabase}"`);
+  await ownerSql(testAdminUrl(), `ALTER DATABASE "${databaseName}" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false`);
+}

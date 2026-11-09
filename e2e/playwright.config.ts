@@ -74,7 +74,8 @@ const webServer = (port: number, apiPortForWeb: number, build: boolean) => ({
 
 export default defineConfig({
   testDir: '.',
-  globalSetup: personasOnly ? undefined : './support/global-setup.ts',
+  // A persona-only run needs none of the shared sign-in files; its setup only removes the pictures of an earlier full run (personas/harness/global-setup.ts).
+  globalSetup: personasOnly ? './personas/harness/global-setup.ts' : './support/global-setup.ts',
   // The persona stacks each open a database on the one shared Postgres: one shard at a time (a project, optionally `--grep @<persona>`).
   ...(personasOnly ? { workers: 1 } : {}),
   testMatch: '**/*.spec.ts',

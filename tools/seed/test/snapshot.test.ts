@@ -7,7 +7,7 @@ import { createTestDatabase, dropTestDatabase, ownerSql, testAdminUrl, testClien
 import { computeSnapshotHash, snapshotInputs } from '../src/hash.ts';
 import { withFileLock } from '../src/lock.ts';
 import { restoreSnapshot } from '../src/restore.ts';
-import { dropSnapshot, snapshotDatabaseName, snapshotExists, snapshotFiles } from '../src/store.ts';
+import { dropSnapshot, saveSnapshotDatabase, snapshotDatabaseName, snapshotExists, snapshotFiles } from '../src/store.ts';
 
 describe('snapshot hash', () => {
   it('changes with a migration and with a seed source, and not with an unrelated file', () => {
@@ -208,6 +208,29 @@ describe('restoreSnapshot', () => {
       }
     } finally {
       if (fakeDir !== undefined) process.env['MANYTHREADS_SNAPSHOT_DIR'] = fakeDir;
+    }
+  }, 60_000);
+});
+
+describe('saveSnapshotDatabase', () => {
+  it('saves a snapshot and replaces one that is already there (snapshot build --force on a current one)', async () => {
+    const name = snapshotDatabaseName('week-2', 'fedcba9876');
+    const first = await createTestDatabase({ migrate: false });
+    const second = await createTestDatabase({ migrate: false });
+    made.push(first, second);
+    try {
+      await ownerSql(first.ownerUrl, `CREATE TABLE public.marker (note text); INSERT INTO public.marker VALUES ('first')`);
+      await ownerSql(second.ownerUrl, `CREATE TABLE public.marker (note text); INSERT INTO public.marker VALUES ('second')`);
+      await saveSnapshotDatabase(name, first.name);
+      // the saved copy is a template: a plain DROP DATABASE is refused, which is what made the rebuild fail
+      await expect(ownerSql(testAdminUrl(), `DROP DATABASE "${name}"`)).rejects.toThrow(/template database/);
+      await saveSnapshotDatabase(name, second.name);
+      const copy = await newStackDatabase();
+      await ownerSql(testAdminUrl(), `DROP DATABASE "${copy.name}" WITH (FORCE)`);
+      await ownerSql(testAdminUrl(), `CREATE DATABASE "${copy.name}" TEMPLATE "${name}"`);
+      expect((await ownerSql<{ note: string }>(copy.ownerUrl, 'SELECT note FROM public.marker'))[0]?.note).toBe('second');
+    } finally {
+      await dropSnapshot(name).catch(() => undefined);
     }
   }, 60_000);
 });

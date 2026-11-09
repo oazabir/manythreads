@@ -18,6 +18,10 @@ export interface IgnoreRule {
 export const DEFAULT_IGNORE: readonly IgnoreRule[] = [
   // the session probe of a page nobody is signed in on answers 401 by design
   { status: 401, url: /\/api\/session(\?|$)/ },
+  // Known client noise, only these two exact shapes (nothing wider): opening a bot's post made for somebody else's question asks `GET /api/runs/<id>/origin`, and a
+  // Brain conversation's first message is followed by `GET .../bots/<bot>/conversations/<id>/state` before the conversation exists. Both answer 404 and the screen is fine.
+  { status: 404, url: /\/api\/runs\/[^/?#]+\/origin(\?|$)/ },
+  { status: 404, url: /\/conversations\/[^/?#]+\/state(\?|$)/ },
 ];
 
 export interface PageMonitor {
@@ -27,18 +31,28 @@ export interface PageMonitor {
 
 const monitors = new WeakMap<Page, PageMonitor>();
 
-/** Attach once per page, before it navigates. Safe to call again: the first monitor stays. */
+const ignoreRules = new WeakMap<Page, IgnoreRule[]>();
+
+/**
+ * Attach once per page, before it navigates (`loginAs` does). Safe to call again: the first monitor stays and keeps listening, and the extra rules of a later call
+ * are added to it (a persona's own known noise), so attaching early never drops them.
+ */
 export function monitorPage(page: Page, extraIgnore: readonly IgnoreRule[] = []): PageMonitor {
   const existing = monitors.get(page);
-  if (existing) return existing;
+  if (existing) {
+    ignoreRules.get(page)?.push(...extraIgnore);
+    return existing;
+  }
   const ignore = [...DEFAULT_IGNORE, ...extraIgnore];
+  ignoreRules.set(page, ignore);
   let seen: PageProblem[] = [];
   const skipped = (url: string, status?: number): boolean => ignore.some((r) => r.url.test(url) && (r.status === undefined || r.status === status));
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
     const url = msg.location().url;
     // the browser repeats a failed load as a console line without the status; the response handler below already has it
-    if (/^Failed to load resource/.test(msg.text()) && skipped(url)) return;
+    // (Chromium words it "...the server responded with a status of 404 (Not Found)"; the status is read from it so a rule that names a status also covers its console line)
+    if (/^Failed to load resource/.test(msg.text()) && skipped(url, Number(/status of (\d{3})/.exec(msg.text())?.[1]) || undefined)) return;
     seen.push({ kind: 'console', text: msg.text(), url });
   });
   page.on('pageerror', (error) => seen.push({ kind: 'pageerror', text: error.message }));
@@ -68,7 +82,12 @@ export function monitorPage(page: Page, extraIgnore: readonly IgnoreRule[] = [])
 export function judge(problems: readonly PageProblem[], expectDenied: number | undefined): string[] {
   if (expectDenied !== undefined) {
     const answered = problems.some((p) => p.kind === 'response' && p.status === expectDenied);
-    return answered ? [] : [`this step expects the server to answer ${expectDenied}, and nothing did${problems.length ? ` (saw: ${problems.map((p) => p.text).slice(0, 3).join('; ')})` : ''}`];
+    if (!answered) return [`this step expects the server to answer ${expectDenied}, and nothing did${problems.length ? ` (saw: ${problems.map((p) => p.text).slice(0, 3).join('; ')})` : ''}`];
+    // The refusal itself, and the browser's console line about it, are what this step is for. Everything else that went wrong while it ran still fails it: a page that threw,
+    // a request that never arrived, a server fault (5xx) hidden behind the refusal.
+    return problems
+      .filter((p) => p.kind === 'pageerror' || p.kind === 'requestfailed' || (p.kind === 'response' && p.status !== expectDenied && (p.status ?? 0) >= 500))
+      .map((p) => `${p.kind}: ${p.text}`);
   }
   return problems.map((p) => `${p.kind}: ${p.text}`);
 }

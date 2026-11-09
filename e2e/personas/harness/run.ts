@@ -3,7 +3,7 @@ import type { Browser, PlaywrightWorkerArgs } from '@playwright/test';
 import type { Stack } from '../../fixtures/stack.ts';
 import { resolvePersona, type JourneyDeclaration, type StepDeclaration } from './journey.ts';
 import { clearJourney, recordResult, type JourneyResult, type StepStatus } from './manifest.ts';
-import { openJourney } from './persona.ts';
+import { openJourney, type JourneySession } from './persona.ts';
 import { shot } from './shot.ts';
 
 export interface RunOptions {
@@ -20,6 +20,8 @@ export interface RunOptions {
    * `failed`; the caller decides whether to throw.
    */
   continueOnFailure?: boolean;
+  /** Opens the windows of the journey (default: `openJourney`, which signs the persona in on the stack). A test seam: a unit test hands in a page of its own. */
+  open?: () => Promise<JourneySession>;
 }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -48,7 +50,9 @@ export async function runJourney(options: RunOptions): Promise<JourneyResult> {
     for (const s of journey.steps) steps[s.id] = 'pending';
     return finish('pending');
   }
-  const session = await openJourney(options.browser, options.playwright, options.stack, journey.persona, kind, { empty: journey.start === 'empty' });
+  const session = options.open
+    ? await options.open()
+    : await openJourney(options.browser, options.playwright, options.stack, journey.persona, kind, { empty: journey.start === 'empty' });
   let failed = false;
   try {
     for (const declared of journey.steps) {

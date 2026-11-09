@@ -5,14 +5,15 @@ import { Pages } from '../../pages/index.ts';
 import { DESKTOP, PHONE, apiOn, type StackApi } from '../../support/stack-browser.ts';
 import { personaEmail } from '../../support/env.ts';
 import { VIEWPORTS, type JourneyContext, type Persona } from './journey.ts';
+import { monitorPage } from './monitor.ts';
 
-/** Teams a persona opens first. Priya has two; everybody else lives in Engineering. */
+/** Teams a persona opens first (the seed, packages/test-utils/src/personas.ts): Sameera is in Customer support and Tariq in Marketing; Priya has two (Engineering first); Lena is a guest in Engineering. */
 export const HOME_TEAM: Record<Persona, string> = {
   omar: 'engineering',
   nadia: 'engineering',
   rafi: 'engineering',
-  sameera: 'engineering',
-  tariq: 'engineering',
+  sameera: 'customer-support',
+  tariq: 'marketing',
   priya: 'engineering',
   lena: 'engineering',
 };
@@ -53,6 +54,8 @@ export async function loginAs(
   const storageState = await api.ctx.storageState();
   const context = await newContext(browser, { baseURL: stack.origin, storageState, ...contextOptions(kind) });
   const page = await context.newPage();
+  // before the first request, so what the first screen logs while it loads is judged by the first picture
+  monitorPage(page);
   await page.goto(path);
   return { context, page, api };
 }
@@ -61,6 +64,7 @@ export async function loginAs(
 export async function anonymousWindow(browser: Browser, stack: Stack, kind: 'desktop' | 'mobile', path = '/'): Promise<Windows> {
   const context = await newContext(browser, { baseURL: stack.origin, ...contextOptions(kind) });
   const page = await context.newPage();
+  monitorPage(page);
   await page.goto(path);
   return { context, page };
 }

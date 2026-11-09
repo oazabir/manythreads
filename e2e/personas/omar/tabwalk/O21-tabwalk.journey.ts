@@ -8,16 +8,6 @@ import { tabWalkSteps } from '../support/sweep.ts';
 const KNOWN: Record<string, readonly string[]> = {
   // FINDING (product, phone layout only): the message list (role=log, focusable) shows no focus ring when it takes focus
   'mobile:channel': ['stop 11 (log "Messages in #dev") shows no focus ring'],
-  // HELPER FALSE POSITIVES (reported to the lead): the walk names a control by aria-label or text only; these inputs are named by a <label> ("From"/"To" dates, "Kind", "Search people", ...)
-  'mobile:audit': ['stop 15 (input) has no name for a screen reader'],
-  'mobile:llm': [
-    'stop 6 (input) has no name for a screen reader',
-    'stop 8 (input) has no name for a screen reader',
-    'stop 9 (input) has no name for a screen reader',
-    'stop 10 (input) has no name for a screen reader',
-    'stop 11 (llm-provider-local) has no name for a screen reader',
-  ],
-  'mobile:members': ['stop 4 (members-search) has no name for a screen reader'],
 };
 
 const walk = tabWalkSteps(

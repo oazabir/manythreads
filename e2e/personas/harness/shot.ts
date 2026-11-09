@@ -62,12 +62,26 @@ export function landmarkLocator(page: Page, landmark: string) {
   return page.locator(`[data-landmark=${quote(landmark)}],[data-testid=${quote(landmark)}]`).first();
 }
 
+/** Answers `fallback` when `work` has not finished in `ms`: a page stuck in a script loop never answers `evaluate`, and the wait for it must not wait forever too. */
+function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([work.catch(() => fallback), late]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 /**
  * Waits for `data-ready="true"` on <html> (clients/web/src/api/ready.ts), seen twice 60 ms apart so the gap between two requests does not count. A page that
- * has asked the API nothing never gets the attribute: after 4 s the harness falls back to the network going quiet.
+ * has asked the API nothing never gets the attribute: after 4 s the harness falls back to the network going quiet. It cannot hang: after `timeoutMs` it throws
+ * (`the screen never became ready ...`), and each read of the page gives up after 5 s (a page stuck in a script loop does not answer).
  */
-async function waitReady(page: Page, timeoutMs: number): Promise<void> {
-  const read = (): Promise<string | null> => page.evaluate(() => document.documentElement.getAttribute('data-ready')).catch(() => null);
+export async function waitReady(page: Page, timeoutMs: number): Promise<void> {
+  const read = (): Promise<string | null | 'unreadable'> =>
+    within(page.evaluate(() => document.documentElement.getAttribute('data-ready')), 5_000, 'unreadable');
+  const fontsReady = (): Promise<unknown> => within(page.evaluate(() => document.fonts.ready.then(() => true)), 5_000, false);
   const start = Date.now();
   await page.waitForTimeout(150);
   while (Date.now() - start < timeoutMs) {
@@ -75,20 +89,35 @@ async function waitReady(page: Page, timeoutMs: number): Promise<void> {
     if (state === 'true') {
       await page.waitForTimeout(60);
       if ((await read()) === 'true') {
-        await page.evaluate(() => document.fonts.ready);
+        await fontsReady();
         return;
       }
     } else if (state === null && Date.now() - start > 4000) {
       await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-      await page.evaluate(() => document.fonts.ready);
+      await fontsReady();
       return;
     }
     await page.waitForTimeout(100);
   }
-  const now = await page
-    .evaluate(() => ({ ready: document.documentElement.getAttribute('data-ready'), busy: document.querySelectorAll('[aria-busy="true"]').length }))
-    .catch(() => ({ ready: 'unreadable', busy: -1 }));
+  const now = await within(
+    page.evaluate(() => ({ ready: document.documentElement.getAttribute('data-ready'), busy: document.querySelectorAll('[aria-busy="true"]').length })),
+    5_000,
+    { ready: 'unreadable', busy: -1 },
+  );
   throw new Error(`the screen never became ready within ${timeoutMs} ms (data-ready=${String(now.ready)}, ${now.busy} element(s) still aria-busy)`);
+}
+
+/**
+ * Runs one Playwright assertion and, when it fails, throws `message` (which names the step) followed by what the assertion saw. The message is added here and not
+ * passed to `expect`: outside the Playwright test runner `expect` leaves a custom message out of the error, and the step must be named wherever the harness runs.
+ */
+async function must(message: string, assertion: () => Promise<unknown>): Promise<void> {
+  try {
+    await assertion();
+  } catch (e) {
+    const seen = (e instanceof Error ? e.message : String(e)).split('Call log:')[0]!.trim().split('\n').filter((l) => l.trim() !== '').slice(0, 6).join('\n  ');
+    throw new Error(`${message}\n  ${seen}`);
+  }
 }
 
 /** The viewport kind of a page. */
@@ -112,15 +141,13 @@ export async function shot(page: Page, step: ResolvedStep, options: ShotOptions 
   const monitor = monitorPage(page);
   const where = `${step.persona}/${step.journeyId}/${step.id}`;
   // 1. the screen is the one the step declared
-  await expect(landmarkLocator(page, step.expect), `${where}: landmark "${step.expect}" is not visible at ${page.url()}`).toBeVisible({ timeout: timeoutMs });
+  await must(`${where}: landmark "${step.expect}" is not visible at ${page.url()}`, () => expect(landmarkLocator(page, step.expect)).toBeVisible({ timeout: timeoutMs }));
   // 2. no error page
-  await expect(page.getByRole('heading', { name: 'Something went wrong' }), `${where}: the error page is showing`).toHaveCount(0);
+  await must(`${where}: the error page is showing`, () => expect(page.getByRole('heading', { name: 'Something went wrong' })).toHaveCount(0));
   // 3. the control the next step will use is there
   if (step.next && !step.next.unchecked) {
-    await expect(
-      page.locator(`[data-testid=${quote(step.next.testid)}]`).first(),
-      `${where}: the next control [data-testid="${step.next.testid}"] is not on the page`,
-    ).toBeAttached({ timeout: 5_000 });
+    const testid = step.next.testid;
+    await must(`${where}: the next control [data-testid="${testid}"] is not on the page`, () => expect(page.locator(`[data-testid=${quote(testid)}]`).first()).toBeAttached({ timeout: 5_000 }));
   }
   // 4. finished loading
   if (!step.loading) await waitReady(page, timeoutMs);

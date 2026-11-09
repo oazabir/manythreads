@@ -39,7 +39,9 @@ export const TID = {
   botsRoster: 'bots-roster',
   botRow: 'bot-row',
   botPage: 'bot-page',
-  botTalk: 'bot-talk',
+  /** The "Talk" link on a bot's page (BotPage.tsx). The roster row has its own: `bot-talk`. */
+  botTalk: 'open-conversation',
+  botRosterTalk: 'bot-talk',
   // approvals
   approvalsInbox: 'approvals-inbox',
   approvalRow: 'approval-row',
