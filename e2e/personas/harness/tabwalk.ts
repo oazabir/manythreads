@@ -17,7 +17,18 @@ export async function tabWalk(page: Page, options: { max?: number; from?: string
     (document.activeElement as HTMLElement | null)?.blur();
     const start = from ? document.querySelector<HTMLElement>(from) : null;
     if (start) start.focus();
-    else window.scrollTo(0, 0);
+    else {
+      window.scrollTo(0, 0);
+      // Chromium starts the next Tab where the last focus was, even after blur(); put the starting point at the top of the page.
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.setStart(document.body, 0);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
   }, options.from ?? null);
   const stops: FocusStop[] = [];
   for (let i = 0; i < max; i++) {
