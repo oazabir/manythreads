@@ -83,7 +83,7 @@ describe('seedRunners (seed v19)', () => {
     // the canary is in no table of the runner catalog, no audit row, no event and no log line
     const runners = JSON.stringify(await sql(`SELECT * FROM app.bot_runners`));
     expect(runners).not.toContain(SEED_RUNNERS.canary);
-    expect(JSON.stringify(await sql(`SELECT * FROM app.audit_log`).catch(() => []))).not.toContain(SEED_RUNNERS.canary);
+    expect(JSON.stringify(await sql(`SELECT * FROM app.audit_events`))).not.toContain(SEED_RUNNERS.canary);
     expect(server.logs.join('\n')).not.toContain(SEED_RUNNERS.canary);
   });
 
