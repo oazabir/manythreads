@@ -338,7 +338,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
                 { name: 'HOME', value: '/state/home' },
                 { name: spec.homeVar, value: spec.dir },
                 // A Codex process in a pod loses OPENAI_API_KEY (an API key would go around the platform's model gateway): the bridge reads this switch.
-                
+                ...(codex ? [{ name: 'MANYTHREADS_BRIDGE_IN_POD', value: '1' }] : []),
               ],
               securityContext: { ...NO_PRIVILEGE, readOnlyRootFilesystem: true },
               // /health wants the key, which a probe cannot carry: the port answering is the signal
