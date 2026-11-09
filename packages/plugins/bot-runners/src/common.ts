@@ -1,9 +1,15 @@
-import { forbidden, invalid, notFound, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { forbidden, invalid, notFound, type PluginContext, type PluginTx, type PodAgent } from '@manythreads/sdk';
 import { assertAllowedUrl, OutboundBlockedError } from '@manythreads/sdk/hermes-outbound';
 import type { BotRunner } from '@manythreads/shared';
 import { placementsOf, RUNNER_SELECT, teamsOf, toBotRunner, type RunnerRow } from './rows.ts';
 
 // What the admin routes and the adoption routes share.
+
+/** The two kinds that run a command-line agent in a pod, each with its sign-in file. */
+export type PodCliKind = 'claude_cli' | 'codex_cli';
+export const isPodCli = (kind: string): kind is PodCliKind => kind === 'claude_cli' || kind === 'codex_cli';
+/** Which tool a pod runner's kind runs; the pod provider is told in these words. */
+export const agentOfKind = (kind: PodCliKind): PodAgent => (kind === 'codex_cli' ? 'codex' : 'claude');
 
 /** Only a workspace owner or admin goes on; everyone else is told no, in words that say nothing about what exists. */
 export async function requireWorkspaceAdmin(tx: PluginTx): Promise<void> {

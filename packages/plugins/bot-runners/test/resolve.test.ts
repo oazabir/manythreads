@@ -88,10 +88,11 @@ describe('resolveRunner', () => {
     expect(JSON.stringify(odd)).not.toContain('script');
   });
 
-  it('the kinds that cannot run a bot yet are refused as such; a gateway without a key is "not set up"', async () => {
+  it('a gateway without a key is "not set up"; a Codex runner is runnable now, and with no pod provider in this context it is "not set up" like a Claude one', async () => {
     await insertRunner('later-codex', { kind: 'codex_cli', allTeams: true });
     await insertRunner('half-made', { kind: 'hermes_gateway', allTeams: true, baseUrl: 'http://x.example.test' });
-    expect(await resolve('later-codex')).toMatchObject({ ok: false, reason: 'not_runnable' });
+    const bare = { ...ctx, providers: { get: () => undefined } } as unknown as PluginContext;
+    expect(await resolveRunner(bare, { teamId: TEAM_IDS.Engineering, runner: 'later-codex' })).toMatchObject({ ok: false, reason: 'not_set_up' });
     expect(await resolve('half-made')).toMatchObject({ ok: false, reason: 'not_set_up' });
   });
 

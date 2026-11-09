@@ -32,7 +32,7 @@ import {
 import { registerAdoptionRoutes } from './adopt.ts';
 import { registerNodeRoutes } from './nodes.ts';
 import { registerSigninRoutes } from './signin.ts';
-import { loadRunner, presentOne, presentRunners, requireAllowedAddress, requireWorkspaceAdmin } from './common.ts';
+import { agentOfKind, isPodCli, loadRunner, presentOne, presentRunners, requireAllowedAddress, requireWorkspaceAdmin } from './common.ts';
 import { DEFAULT_PROFILE_RULE } from './resolve.ts';
 import { effectiveStatus, placementsOf, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 
@@ -45,9 +45,8 @@ const WRITE_LIMIT = { limit: 60, windowMs: 60_000 };
 
 const now = (ctx: PluginContext): string => ctx.runtime.now().toISOString();
 
-/** The kinds that need no sign-in file or pod yet. The other two are accepted by the shape and answered here. */
-const NOT_YET = 'Codex runners are not available yet.';
 const NO_CLAUDE_PODS = 'Claude Code runners are not turned on in this install. An operator turns them on in the chart (claudePod.enabled).';
+const NO_CODEX_PODS = 'Codex runners are not turned on in this install. An operator turns them on in the chart (claudePod.enabled).';
 
 /** The status a new or re-aimed LLM gateway runner starts in: ready when its alias is bound on the LLM page, otherwise not set up. */
 async function llmAliasStatus(tx: PluginTx, workspaceId: string, alias: string): Promise<{ status: BotRunnerStatus; detail: string | null }> {
@@ -81,7 +80,7 @@ function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown
   if ((s.baseUrl !== undefined || s.apiKey !== undefined) && !gateway) throw invalid('An address and a key belong to a Hermes gateway runner only.');
   if (s.profileRule !== undefined && !gateway && !pod) throw invalid('A profile rule belongs to a Hermes runner only.');
   if (s.modelAlias !== undefined && kind !== 'llm_gateway') throw invalid('A model alias belongs to an LLM gateway runner only.');
-  if (s.maxConcurrent !== undefined && kind !== 'claude_cli') throw invalid('How many runs at once belongs to a Claude Code runner only.');
+  if (s.maxConcurrent !== undefined && !isPodCli(kind)) throw invalid('How many runs at once belongs to a Claude Code or Codex runner only.');
 }
 
 function requireAlias(alias: string | undefined): string {
@@ -111,8 +110,7 @@ export function registerRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const body = CreateBotRunnerRequest.parse(req.body);
       await requireWorkspaceAdmin(tx);
-      if (body.kind === 'codex_cli') throw conflict(NOT_YET);
-      if (body.kind === 'claude_cli' && !ctx.providers.get('claude.pods')) throw conflict(NO_CLAUDE_PODS);
+      if (isPodCli(body.kind) && !ctx.providers.get('claude.pods')) throw conflict(body.kind === 'codex_cli' ? NO_CODEX_PODS : NO_CLAUDE_PODS);
       checkSettingsFit(body.kind, body);
       const workspaceId = tx.actor.workspaceId;
       if ((await tx.query('SELECT 1 FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [workspaceId, body.name])).rows.length > 0) {
@@ -130,8 +128,8 @@ export function registerRoutes(ctx: PluginContext): void {
         detail = 'Not tested yet. Use Test to check the address and the key.';
       } else if (body.kind === 'llm_gateway') {
         ({ status, detail } = await llmAliasStatus(tx, workspaceId, requireAlias(body.modelAlias)));
-      } else if (body.kind === 'claude_cli') {
-        // The pod stays stopped until a sign-in file is uploaded (P19-06); the controller keeps this state up to date.
+      } else if (isPodCli(body.kind)) {
+        // The pod stays stopped until a sign-in file is uploaded (P19-06, P19-13); the controller keeps this state up to date.
         status = 'waiting_for_sign_in';
         detail = 'Waiting for a sign-in file. Upload one to start this runner.';
       }
@@ -269,12 +267,12 @@ export function registerRoutes(ctx: PluginContext): void {
       }
       const gone = await tx.query('DELETE FROM app.bot_runners WHERE id = $1::uuid RETURNING id', [id]);
       if (gone.rows.length !== 1) throw forbidden();
-      // A Claude Code runner's sign-in file lives in the pod's Secret: it goes with the runner, so a later runner of the same name never inherits it. Written last so a refusal rolls the delete back.
-      if (current.kind === 'claude_cli') {
+      // A Claude Code or Codex runner's sign-in file lives in the pod's Secret: it goes with the runner, so a later runner of the same name never inherits it. Written last so a refusal rolls the delete back.
+      if (isPodCli(current.kind)) {
         const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
         if (pods) {
           try {
-            await pods.removeCredentials({ runnerName: current.name });
+            await pods.removeCredentials({ runnerName: current.name, agent: agentOfKind(current.kind) });
           } catch {
             throw conflict('The cluster did not remove the sign-in file. Nothing was changed; try again in a moment.');
           }

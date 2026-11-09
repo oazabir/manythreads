@@ -133,10 +133,11 @@ describe('an admin makes, changes, tests and removes a Hermes gateway runner', (
 });
 
 describe('the other kinds', () => {
-  it('Codex answers "not available yet", Claude Code says the install has no Claude pods; the pod and the LLM gateway can be made', async () => {
+  it('Codex and Claude Code both say the install has no pods; the pod and the LLM gateway can be made', async () => {
     const codex = await adminCreate({ name: 'x-codex-cli', label: 'Later', kind: 'codex_cli' });
     expect(codex.status).toBe(409);
-    expect(JSON.stringify(codex.body)).toContain('not available yet');
+    expect(JSON.stringify(codex.body)).toContain('not turned on in this install');
+    expect(JSON.stringify(codex.body)).toContain('Codex');
     const claude = await adminCreate({ name: 'x-claude-cli', label: 'Later', kind: 'claude_cli' });
     expect(claude.status).toBe(409);
     expect(JSON.stringify(claude.body)).toContain('not turned on in this install');

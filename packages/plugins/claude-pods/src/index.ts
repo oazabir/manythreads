@@ -1,8 +1,8 @@
-import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
+import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type PluginContext, type PluginLogger, type PodAgent } from '@manythreads/sdk';
 import { HttpK8s, confirmMark, type K8s, type ProjectRepo } from '@manythreads/sdk/pods';
 import { configFrom, type ClaudePodConfig } from './config.ts';
 import { Reconciler, type RunnerSource } from './reconcile.ts';
-import { labelsFor, MANAGED_BY, namesFor } from './render.ts';
+import { labelsFor, MANAGED_BY, namesFor, type Names } from './render.ts';
 
 export { Reconciler, stateFor } from './reconcile.ts';
 export { configFrom } from './config.ts';
@@ -96,9 +96,20 @@ function platformSource(ctx: PluginContext): RunnerSource {
 /** What the bridge's sign-in check answers; anything else (or no answer) reads as `unreachable`. The words are the bridge's own, in tools/agent-bridge/src/signin.ts. */
 const CHECK_RESULTS = ['ok', 'rejected', 'expired', 'no_scope', 'limit'] as const;
 
+/**
+ * The names of a runner's objects for the tool its pod runs. A Codex runner's are the Claude ones with `codex-` for `claude-` (`codex-<runner>-credentials`, `-key`, ...), and its
+ * sign-in file is `auth.json`. Stop-gap of P19-13 (server half): the pod half (WP-R3b) moves this into render.ts with the rest of the Codex objects.
+ */
+function podNames(runnerName: string, agent: PodAgent | undefined): { names: Names; file: string } {
+  const claude = namesFor(runnerName);
+  if (agent !== 'codex') return { names: claude, file: '.credentials.json' };
+  const names = Object.fromEntries(Object.entries(claude).map(([k, v]) => [k, v.replace(/^claude-/, 'codex-')])) as unknown as Names;
+  return { names, file: 'auth.json' };
+}
+
 export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: ClaudePodConfig, now: () => number = Date.now, doFetch: typeof fetch = fetch): ClaudePodsProvider {
-  const bridge: ClaudePodsProvider['bridge'] = async ({ runnerName }) => {
-    const names = namesFor(runnerName);
+  const bridge: ClaudePodsProvider['bridge'] = async ({ runnerName, agent }) => {
+    const { names } = podNames(runnerName, agent);
     const secret = await k8s().get('Secret', cfg.namespace, names.key);
     const key = secret?.data ? Buffer.from(String((secret.data as Record<string, string>)['api-key'] ?? ''), 'base64').toString('utf8') : '';
     return key === '' ? null : { address: `http://${names.base}.${cfg.namespace}.svc:8650`, key };
@@ -106,24 +117,24 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
   return {
     id: 'claude.pods',
     podPlacements: (q) => reconciler().placements(q.runnerIds),
-    async putCredentials({ runnerName, runnerId, bytes, uploadId }) {
-      const names = namesFor(runnerName);
+    async putCredentials({ runnerName, runnerId, bytes, uploadId, agent }) {
+      const { names, file } = podNames(runnerName, agent);
       // The bytes go in exactly as they came. The controller never applies this Secret again, so a refreshed copy the keeper writes back is not overwritten.
       await k8s().apply({
         apiVersion: 'v1',
         kind: 'Secret',
         metadata: { name: names.credentials, namespace: cfg.namespace, labels: labelsFor({ id: runnerId, name: runnerName }) },
         type: 'Opaque',
-        data: { '.credentials.json': Buffer.from(bytes).toString('base64'), 'upload-id': Buffer.from(uploadId).toString('base64') },
+        data: { [file]: Buffer.from(bytes).toString('base64'), 'upload-id': Buffer.from(uploadId).toString('base64') },
       });
     },
-    async removeCredentials({ runnerName }) {
-      await k8s().delete('Secret', cfg.namespace, namesFor(runnerName).credentials);
+    async removeCredentials({ runnerName, agent }) {
+      await k8s().delete('Secret', cfg.namespace, podNames(runnerName, agent).names.credentials);
     },
     bridge,
-    async checkSignin({ runnerName }) {
+    async checkSignin({ runnerName, agent }) {
       try {
-        const target = await bridge({ runnerName });
+        const target = await bridge({ runnerName, ...(agent !== undefined ? { agent } : {}) });
         if (!target) return 'unreachable';
         const res = await doFetch(`${target.address}/v1/signin/check`, { method: 'POST', headers: { authorization: `Bearer ${target.key}` }, signal: AbortSignal.timeout(60_000) });
         if (!res.ok) return 'unreachable';

@@ -67,7 +67,7 @@ export interface PodRunnerBot {
   botSlug: string;
 }
 
-/** One Claude Code runner, as the `claude-pods` controller reads it (P19-05). No key, no address: those stay in the catalog. */
+/** One Claude Code or Codex runner, as the `claude-pods` controller reads it (P19-05, P19-13). No key, no address: those stay in the catalog. */
 export interface PodRunnerInfo {
   id: string;
   workspaceId: string;
@@ -112,15 +112,15 @@ export interface BotRunnersProvider extends ProviderImpl {
   kindOf(tx: PluginTx, query: { teamId: string; runner: string }): Promise<{ kind: RunnerTarget['kind']; modelAlias: string | null } | null>;
   /** The default runner and the pod runners that apply to a team (P19-03). Runs as the system actor. */
   teamRunners(query: { teamId: string }): Promise<TeamRunnerInfo>;
-  /** The runners of one pod kind (P19-05): the Claude Code pod controller asks for its list here, so it never reads the catalog's tables. Runs as the system actor. */
-  podRunners(query: { kind: 'claude_cli' }): Promise<PodRunnerInfo[]>;
+  /** The runners of one pod kind (P19-05, P19-13): the Claude Code and Codex pod controller asks for its list here, so it never reads the catalog's tables. Runs as the system actor. */
+  podRunners(query: { kind: 'claude_cli' | 'codex_cli' }): Promise<PodRunnerInfo[]>;
   /** The pod controller reports what it found; the catalog stores it as the runner's status. A runner the admin has paused or that needs a sign-in keeps that state. */
   reportPodState(state: PodRunnerState): Promise<void>;
   /** Count one finished run of a Claude Code runner for the team that used it (P19-07): runs, seconds and the CLI's own cost figure, per runner, team and day. Runs as the system actor. */
   recordUsage(input: { runner: string; teamId: string; seconds: number; cost: number | null }): Promise<void>;
   /**
-   * A Claude Code runner stopped taking runs by itself: `plan_limit` pauses it until `until` (null or not usable: a short default, then the next run tries again), `needs_sign_in` marks it so until a new sign-in file is uploaded.
-   * Writes the state and the `claude_pod.runner.paused` event once (a runner already in that state is left alone). Runs as the system actor.
+   * A Claude Code or Codex runner stopped taking runs by itself: `plan_limit` pauses it until `until` (null or not usable: a short default, then the next run tries again), `needs_sign_in` marks it so until a new sign-in file is uploaded.
+   * Writes the state and the `claude_pod.runner.paused` (or `codex_pod.runner.paused`) event once (a runner already in that state is left alone). Runs as the system actor.
    */
   pauseRunner(input: { runner: string; teamId: string; reason: 'plan_limit' | 'needs_sign_in'; until: string | null }): Promise<void>;
 }
