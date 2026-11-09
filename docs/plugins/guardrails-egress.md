@@ -22,7 +22,7 @@ A refusal is `block` with `reason: 'preset'`, no rules, and the sentence the cal
 ## Per team (P10-04)
 
 Each team can carry its own list of hosts its bots may reach, in `app.team_egress` (migration `0001_team_egress.sql`): `enforce` (when on, a non-LLM call from the team may reach only the workspace allowlist plus the team's hosts), `hosts` (at most 200, lower-case, no scheme or path) and `proxy_url`
-(an `http(s)://host[:port]` address, never with a user name or password; stored for the team's outbound proxy and read by the proxy work in P10-08 — nothing in this plugin sends traffic through it). Admins read and write every team's row; a member reads their own teams' rows.
+(an `http(s)://host[:port]` address, never with a user name or password; stored for the team's outbound proxy and read by the `hermes-pods` controller (P10-08), which points the team's pod at it and lets the pod reach only the proxy's addresses from the chart — nothing in this plugin sends traffic through it). Admins read and write every team's row; a member reads their own teams' rows.
 
 **Model-provider domains are never on a team list.** The save route refuses a host that belongs to a model provider (the known provider domains in `LLM_PROVIDER_DOMAINS` plus the host of any provider the workspace configured), and the check ignores such an entry if one slips in, so
 a team list cannot open a way to a hosted model around the model guard (which judges `destination: 'llm'` by the preset and the workspace allowlist alone).

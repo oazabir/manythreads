@@ -132,6 +132,22 @@ spec:
         - ipBlock: { cidr: {{ $cidr }} }
       ports:
         - { port: {{ $hp.apiServer.port }}, protocol: TCP }
+---
+# The public internet on 80/443, for every team's pod EXCEPT one whose team sends its traffic through its own proxy (the label manythreads.io/egress=proxy, set by
+# the controller from the team's egress rule: Settings > Workspace > Data protection). Policies add up, so this is its own object: such a pod keeps the rules above
+# (DNS, the server, the gateway, the Kubernetes API) and gets the address of its proxy from the policy per team below, nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-hermes-pods-internet
+  namespace: {{ $bots }}
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: hermes-pod }
+    matchExpressions:
+      - { key: manythreads.io/egress, operator: NotIn, values: [proxy] }
+  policyTypes: [Egress]
+  egress:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -139,6 +155,33 @@ spec:
       ports:
         - { port: 443, protocol: TCP }
         - { port: 80, protocol: TCP }
+{{- /* A team's proxy: the controller cannot name a host in a policy, so the operator lists the addresses the proxy's host stands for (hermesPods.teamProxies). */}}
+{{- range $i, $tp := $hp.teamProxies }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" (toString $tp.team)) }}{{ fail (printf "hermesPods.teamProxies[%d].team %q is not a valid team slug" $i (toString $tp.team)) }}{{ end }}
+{{- if not $tp.cidrs }}{{ fail (printf "hermesPods.teamProxies[%d] (%s) needs at least one address in cidrs, like 203.0.113.10/32" $i (toString $tp.team)) }}{{ end }}
+{{- range $tp.cidrs }}{{ if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$" (toString .)) }}{{ fail (printf "hermesPods.teamProxies[%d].cidrs: %q is not an IPv4 address with a prefix length, like 203.0.113.10/32" $i (toString .)) }}{{ end }}{{ if or (hasPrefix "0." (toString .)) (hasSuffix "/0" (toString .)) }}{{ fail (printf "hermesPods.teamProxies[%d].cidrs: %q would open the whole internet; list the proxy's own address" $i (toString .)) }}{{ end }}{{ end }}
+---
+# Team {{ $tp.team }} sends its traffic through a proxy: its pod (label manythreads.io/egress=proxy) may reach the proxy's address and nothing outside the cluster otherwise.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-hermes-pods-proxy-{{ $tp.team }}
+  namespace: {{ $bots }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: hermes-pod
+      manythreads.io/team: {{ $tp.team | quote }}
+      manythreads.io/egress: proxy
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range $tp.cidrs }}
+        - ipBlock: { cidr: {{ . }} }
+        {{- end }}
+      ports:
+        - { port: {{ $tp.port | default 3128 }}, protocol: TCP }
+{{- end }}
 {{- range $team := $hp.appTeams }}
 {{- $ns := printf "%s%s" $hp.apps.prefix $team }}
 ---

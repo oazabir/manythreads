@@ -35,6 +35,11 @@ export interface PodConfig {
   hostApiServer?: string;
   /** The machines an admin may choose (the Helm value `botRunners.allowedNodes`, as `MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES`); a move goes only to one of these. Absent or empty: every machine. */
   allowedNodes?: string[];
+  /**
+   * The pod's RuntimeClass (gVisor where the cluster has one; the chart's `hermesPods.runtimeClassName`, which fails the render when the cluster lacks the class). Empty or
+   * absent: the cluster's default runtime.
+   */
+  runtimeClassName?: string;
 }
 
 /** A namespace where one team's deployer bot has full control of what runs in it (a preview install of the platform). */
@@ -356,6 +361,44 @@ export function buildService(cfg: PodConfig, team: Team, names: Names): K8sObjec
   };
 }
 
+/** The pod label that marks a pod whose team sends its traffic through its own proxy: the chart's shared "public 443" policy leaves such pods out (templates/hermes-pods.yaml). */
+export const EGRESS_LABEL = 'manythreads.io/egress';
+export const EGRESS_PROXY = 'proxy';
+
+/** Addresses a proxied pod always reaches directly: itself, and the platform inside the cluster (the server's MCP and the LLM gateway are not outside traffic). */
+export const NO_PROXY = 'localhost,127.0.0.1,::1,.svc,.cluster.local,manythreads-server,manythreads-litellm';
+
+/**
+ * The proxy address a team stored (`app.team_egress.proxy_url`) as a usable one, or null: `http(s)://host[:port]`, no user name or password, no path, and not a loopback or
+ * link-local literal (the pod would send its traffic to itself or to the node's metadata address). The database checks the shape too; this is the second look at what goes into a pod.
+ */
+export function proxyUrlOf(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string' || raw === '' || raw.length > 300) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  if (u.username !== '' || u.password !== '' || u.search !== '' || u.hash !== '' || (u.pathname !== '/' && u.pathname !== '')) return null;
+  const h = u.hostname.toLowerCase();
+  if (h === '' || h === 'localhost' || h.endsWith('.localhost') || /^127\./.test(h) || /^169\.254\./.test(h) || h === '[::1]' || h === '0.0.0.0') return null;
+  return `${u.protocol}//${u.host}`;
+}
+
+/** The environment that sends a pod's outgoing web traffic through the team's proxy (both spellings: tools differ). */
+export function proxyEnv(url: string): { name: string; value: string }[] {
+  return [
+    { name: 'HTTPS_PROXY', value: url },
+    { name: 'HTTP_PROXY', value: url },
+    { name: 'https_proxy', value: url },
+    { name: 'http_proxy', value: url },
+    { name: 'NO_PROXY', value: NO_PROXY },
+    { name: 'no_proxy', value: NO_PROXY },
+  ];
+}
+
 export interface DeploymentOptions {
   replicas: number;
   withDeployer: boolean;
@@ -365,10 +408,17 @@ export interface DeploymentOptions {
   moving?: boolean;
   /** The wanted machine, when a move waits for the admin's confirmation (annotation, so the admin page can say so). The pod itself stays where its volumes are. */
   held?: string | null;
+  /**
+   * The team's own proxy (a result of `proxyUrlOf`) when the team's egress rule is on and names one: the pod's containers get the proxy environment and the label
+   * `manythreads.io/egress: proxy`, which takes the pod out of the shared "public 443" policy. The chart's `hermesPods.teamProxies` then decides which addresses it may reach.
+   */
+  proxy?: string | null;
 }
 
 export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: DeploymentOptions): K8sObject {
-  const podLabels = labelsFor(team, { 'manythreads.io/pod': names.base });
+  const proxy = proxyUrlOf(opts.proxy ?? null);
+  const podLabels = labelsFor(team, { 'manythreads.io/pod': names.base, ...(proxy !== null ? { [EGRESS_LABEL]: EGRESS_PROXY } : {}) });
+  const runtimeClass = typeof cfg.runtimeClassName === 'string' && /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/.test(cfg.runtimeClassName) ? cfg.runtimeClassName : null;
   const ro = (name: string, mountPath: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ name, mountPath, readOnly: true, ...extra });
   const node = isNodeLabelValue(opts.node) ? opts.node : null;
   return {
@@ -394,6 +444,7 @@ export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: 
           // The admin chose a machine for the runner (P19-08): the pod stands on it or waits for it, it is never placed elsewhere.
           ...(node !== null ? { nodeSelector: { [HOSTNAME_LABEL]: node } } : {}),
           enableServiceLinks: false,
+          ...(runtimeClass !== null ? { runtimeClassName: runtimeClass } : {}),
           terminationGracePeriodSeconds: 30,
           initContainers: [
             {
@@ -419,6 +470,7 @@ export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: 
                 { name: 'API_SERVER_KEY', valueFrom: { secretKeyRef: { name: names.key, key: 'api-key' } } },
                 { name: 'WORKBENCH_HOST', value: '127.0.0.1' },
                 { name: 'WORKBENCH_PORT', value: String(SSH_PORT) },
+                ...(proxy !== null ? proxyEnv(proxy) : []),
               ],
               securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] }, seccompProfile: { type: 'RuntimeDefault' } },
               readinessProbe: { httpGet: { path: '/health', port: GATEWAY_PORT }, initialDelaySeconds: 10, periodSeconds: 5, failureThreshold: 12 },
@@ -443,6 +495,7 @@ export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: 
                 seccompProfile: { type: 'RuntimeDefault' },
               },
               readinessProbe: { exec: { command: ['pgrep', '-x', 'sshd'] }, periodSeconds: 5 },
+              ...(proxy !== null ? { env: proxyEnv(proxy) } : {}),
               resources: cfg.resources.workbench,
               volumeMounts: [
                 { name: 'workspace', mountPath: '/workspace' },

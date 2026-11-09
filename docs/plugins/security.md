@@ -84,6 +84,17 @@ Phase 19 (P19-08) adds one right in the Kubernetes cluster that is not inside th
 
 An owner who does not want the cluster-wide read sets `hermesPods.enabled` off (no controller, no pods) or removes the template block: the machine picker then says "This install has no cluster to list machines from" and nothing else in the platform changes.
 
+## The release namespace's network policies (P10-08)
+
+Until now only the bots and apps namespaces had network policies; the release namespace (server, web, database, LiteLLM, Hindsight) was open. With `networkPolicies.release.enabled` (on by default) the chart adds
+ingress policies there (`templates/netpol-release.yaml`; k3s enforces them):
+
+* `manythreads-postgres` (CloudNativePG installs only): the database accepts port 5432 only from the release namespace's own server, seed, backup, restore helper (`backup-tool`), Hindsight and LiteLLM pods; the database pods talk to each other freely; the CloudNativePG operator (and the backup plug-in) reaches it from its namespace (`networkPolicies.release.operatorNamespace`, default `cnpg-system`).
+* `manythreads-hindsight`: Hindsight is reached from the server only. `manythreads-litellm`: LiteLLM is reached from the server, Hindsight and (when the pods controller is on) the bots namespace's pods.
+* `manythreads-server` is **off** by default (`networkPolicies.release.server.enabled`): it would close the server to everything but the release namespace, the bots namespace, the ingress controller and `networkPolicies.release.server.extraCidrs`, and the paths from host-network tools are not checked on every install. Turn it on after trying it on a stage.
+
+Policies only add ingress rules and a pod no policy selects stays open, so the effect is limited to the pods named above. **Accepted permission:** the chart now creates NetworkPolicy objects in the release namespace, and a wrong rule can cut a path (the plan's list: operator, backup, seed, Hindsight to database, server to LiteLLM, pods to the MCP address; a chart test evaluates all of them). **Rollback:** `networkPolicies.release.enabled=false` and upgrade; the policies disappear and everything is open as before. The Hermes pods' internet rule moved into `manythreads-hermes-pods-internet`; a live upgrade changes the old policy and creates the new one in the same release, so there can be a moment of a second without internet for those pods.
+
 ## The janitor's door: `run.close`
 
 A plugin that extends `run.close` and not `tool.invoke` gets a `ctx.runs` of which one member works: `close(runId, status)` — end a run through the run service (which revokes its tokens and emits `bots.run.closed`). Every other member (`open`, `asBot`, `asReader`, `asApproved`, `authorize`, `may`, `invoke`, `logSource`, `inheritSources`) throws, naming `tool.invoke`. It exists so the bots plugin's stale-run reaper can end a run whose worker died without being handed the whole run door. A plugin with both gets the full door.

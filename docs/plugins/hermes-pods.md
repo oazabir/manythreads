@@ -205,7 +205,18 @@ The workbench container runs as root (sshd and `useradd` need it), so everything
 
 `NetworkPolicy manythreads-hermes-pods` (in `manythreads-bots`, enforced by k3s' built-in policy controller): **ingress** to the pods only from the server pods on port 8642.
 **Egress** only to DNS (kube-dns), the server (3000), LiteLLM (4000), the Kubernetes API address on 6443 (for the deployer's
-kubectl) and the internet on 80/443 with every private range excluded (no database, no other namespace, no node). Each container has requests and
+kubectl) and the internet on 80/443 with every private range excluded (no database, no other namespace, no node). The internet rule lives in its own policy,
+`manythreads-hermes-pods-internet`, which selects only pods **without** the label `manythreads.io/egress=proxy`.
+
+**Team proxy (P10-08).** A team whose egress rule is on and which names a `proxy_url` ([guardrails-egress](./guardrails-egress.md)) gets its pod labelled
+`manythreads.io/egress=proxy`, `HTTPS_PROXY`/`HTTP_PROXY` (and lower-case twins) on both containers, and a `NO_PROXY` that keeps the cluster's own names direct. The pod then leaves
+the internet policy and falls under `manythreads-hermes-pods-proxy-<team>`, which lets it reach **only** the addresses listed for that team in `hermesPods.teamProxies` (on the proxy's port),
+besides the in-cluster destinations above. A network policy cannot name a host, so the chart takes the addresses; a team with a proxy and no entry reaches nothing outside the cluster
+(the safe failure). A malformed `proxy_url` is ignored with a warning that does not print the address. The controller reads the row through the system database
+(`app.team_egress`, skipped when the table does not exist); it needs no right to write NetworkPolicies, because the policies come from the chart.
+
+**RuntimeClass.** `hermesPods.runtimeClassName` (default empty: the cluster's runtime) sets `spec.runtimeClassName` on every pod, for example gVisor. A name the cluster does not have fails the render
+(`runtimeClassCheck: false` skips that lookup for `helm template`). Each container has requests and
 limits (`hermesPods.hermesResources` / `workbenchResources`); the Hermes container is non-root with all capabilities dropped and no privilege escalation; the
 workbench keeps only the capabilities sshd, useradd and sudo need.
 
@@ -215,13 +226,15 @@ Chart values (`values.yaml`, `hermesPods`), passed to the server as `MANYTHREADS
 
 | Value | Meaning |
 | --- | --- |
-| `enabled` | turns the controller on (`MANYTHREADS_HERMES_PODS=1`); off in the base values, on in `values-live.yaml` |
+| `enabled` | turns the controller on (`MANYTHREADS_HERMES_PODS=1`); on in the base values (the CI values turn it off) |
 | `images.hermes`, `images.workbench` | built and imported by `tools/devbox/deploy.sh`, tagged by the content of their build folders |
 | `workspaceSize`, `homeSize`, `storageClass` | volumes per team |
 | `repos` | repositories of record created in every team's workbench |
 | `deployerBot` | slug of the bot that gets the deployer kubeconfig (default `deployer`) |
 | `namespace` | the teams' pods' namespace (`manythreads-bots`) |
 | `appTeams`, `apps.prefix`, `apps.host`, `apps.quota`, `apps.limitRange` | the teams that get an apps namespace, its name prefix, the host the apps live under (default: the domain), quota and default limits |
+| `runtimeClassName`, `runtimeClassCheck` | the pods' RuntimeClass (empty = default), and whether the render checks that the cluster has it; passed as `MANYTHREADS_HERMES_PODS_RUNTIME_CLASS_NAME` |
+| `teamProxies` | `[{team, cidrs, port}]`: the addresses a proxy-using team may reach outside the cluster (one `manythreads-hermes-pods-proxy-<team>` policy each) |
 | `apiServer.cidr`, `apiServer.port` | the Kubernetes API address for the network policy (empty: looked up at render time) |
 | `botRunners.allowedNodes` (outside `hermesPods`) | the machines an admin may choose for a pod runner, by name; empty means every machine. Passed to the server as `MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES` |
 

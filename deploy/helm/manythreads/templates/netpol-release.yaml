@@ -1,0 +1,135 @@
+{{- /*
+  Network policies of the release namespace itself (PLAN P10-08, Bundle E decision E20). Until now only the pods, apps and registry namespaces had any, so every
+  pod of the release could call the database, the memory engine and the LLM gateway. These policies are about who may CALL a workload (ingress only): the
+  server has to reach model providers and the Kubernetes API, so nothing here limits what a pod sends out.
+
+    database (CloudNativePG pods)   the server, the seed Job, the backup CronJob and the restore tool's pods, Hindsight and LiteLLM (port 5432); the database pods
+                                    among themselves; the database operator and the backup plug-in (its namespace, every port)
+    Hindsight (8888)                the server only
+    LiteLLM (4000)                  the server, Hindsight (fact extraction) and the Hermes / Claude pods' namespace (their model calls)
+    server (3000), OPT-IN           the web pod and the rest of the release, the pods namespace (MCP) and the ingress controller. Off by default because pods on the
+                                    host network (the voice server) and tools on the host reach the server from the node's address; turn it on after that was checked.
+
+  Enforced by k3s' built-in network policy controller. A pod no policy selects is open, as before. Rollback: networkPolicies.release.enabled=false.
+*/ -}}
+{{- if .Values.networkPolicies.release.enabled }}
+{{- $rel := .Release.Namespace }}
+{{- $np := .Values.networkPolicies.release }}
+{{- $bots := .Values.hermesPods.namespace }}
+{{- if eq .Values.postgres.mode "cnpg" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-postgres
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels: { cnpg.io/cluster: manythreads-pg }
+  policyTypes: [Ingress]
+  ingress:
+    # the workloads that use the database, on the database port only
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [server, seed, backup, backup-tool, hindsight, litellm] }
+      ports:
+        - { port: 5432, protocol: TCP }
+    # the database pods among themselves (replication, the instance manager's status port)
+    - from:
+        - podSelector:
+            matchLabels: { cnpg.io/cluster: manythreads-pg }
+    # the database operator (status port 8000, the database port) and the backup plug-in it works with, from their own namespace
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $np.operatorNamespace }} } }
+{{- end }}
+{{- if .Values.hindsight.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-hindsight
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: hindsight }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/component: server } }
+      ports:
+        - { port: 8888, protocol: TCP }
+{{- end }}
+{{- if .Values.litellm.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-litellm
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: litellm }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [server{{ if .Values.hindsight.enabled }}, hindsight{{ end }}] }
+      ports:
+        - { port: 4000, protocol: TCP }
+    {{- if .Values.hermesPods.enabled }}
+    # the Hermes and Claude pods call the gateway for their model (the pods namespace's own policies allow this port out)
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $bots }} } }
+      ports:
+        - { port: 4000, protocol: TCP }
+    {{- end }}
+{{- end }}
+{{- if and .Values.server.enabled $np.server.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-server
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: server }
+  policyTypes: [Ingress]
+  ingress:
+    # the web pod (the proxy in front of the API) and every other pod of the release (jobs, media)
+    - from:
+        - podSelector: {}
+    {{- if .Values.hermesPods.enabled }}
+    # the Hermes and Claude pods: the bots' tools (MCP) and the platform API
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $bots }} } }
+      ports:
+        - { port: {{ .Values.server.port }}, protocol: TCP }
+    {{- end }}
+    # the ingress controller
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+      ports:
+        - { port: {{ .Values.server.port }}, protocol: TCP }
+    {{- with $np.server.extraCidrs }}
+    # addresses outside the cluster that reach the server directly (the node, for pods on the host network and tools on the host)
+    - from:
+        {{- range . }}
+        - ipBlock: { cidr: {{ . }} }
+        {{- end }}
+      ports:
+        - { port: {{ $.Values.server.port }}, protocol: TCP }
+    {{- end }}
+{{- end }}
+{{- end }}

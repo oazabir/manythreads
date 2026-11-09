@@ -25,6 +25,7 @@ import {
   namesFor,
   type Names,
   isNodeLabelValue,
+  proxyUrlOf,
   type PodConfig,
   type Team,
 } from './render.ts';
@@ -38,6 +39,11 @@ export interface ProfileSource {
   publishersForTeam?(teamId: string): Promise<string[]>;
   /** The machine the team's pod is pinned to (the node of the pod runner the team uses; P19-08), or null for none. Absent in the test-only static mode: no pinning. */
   nodeForTeam?(teamId: string): Promise<string | null>;
+  /**
+   * The proxy address of the team's outbound rule when the rule is on (`app.team_egress`: `enforce` and `proxy_url`), or null. Absent in the test-only static mode: no proxy.
+   * A read that fails fails the pass: a pass that cannot tell must not move a pod out of, or into, the proxy.
+   */
+  proxyForTeam?(teamId: string): Promise<string | null>;
   /** Absent in the test-only static mode. */
   setManagedGateway?(teamId: string, input: { baseUrl: string }): Promise<void>;
 }
@@ -147,6 +153,10 @@ export class Reconciler {
     const publishers = new Set((await this.source.publishersForTeam?.(team.id)) ?? []);
     const users = assignUsers(profiles, existingUids, cfg.deployerBot, publishers);
     const projectRepos = (await this.source.reposForTeam?.(team.id)) ?? [];
+    // the team's own proxy: stored as text by an admin, so it is looked at again before it reaches a pod
+    const storedProxy = (await this.source.proxyForTeam?.(team.id)) ?? null;
+    const proxy = proxyUrlOf(storedProxy);
+    if (storedProxy !== null && proxy === null) this.log.warn(`hermes-pods: ${team.slug}: the team's proxy address is not usable (it must be http(s)://host[:port], with no sign-in, path or loopback address), so the pod is started without a proxy`);
 
     // the deployer credential, for the deployer bot only
     let withDeployer = false;
@@ -202,7 +212,7 @@ export class Reconciler {
       buildBotsConfigMap(withProjectRepos(cfg, projectRepos), team, names, users),
       ...(deployerSecret ? [deployerSecret] : []),
       buildService(cfg, team, names),
-      buildDeployment(cfg, team, names, { replicas: users.length > 0 && !moving ? 1 : 0, withDeployer, node, moving, held: plan.held }),
+      buildDeployment(cfg, team, names, { replicas: users.length > 0 && !moving ? 1 : 0, withDeployer, node, moving, held: plan.held, proxy }),
     ];
     assertGatewayOnly(objects);
     for (const obj of objects) await k8s.apply(obj);

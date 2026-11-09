@@ -97,3 +97,20 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- $cidr -}}
 {{- end }}
+
+{{/*
+  A RuntimeClass named in the values must exist in the cluster (PLAN P10-08, decision E22): a pod that names a class the cluster lacks never starts. Call with
+  (dict "root" $ "value" <the name> "key" "<the values key>"); prints the name ("" = the cluster's default runtime). `helm template` has no cluster, so hermesPods.runtimeClassCheck=false
+  skips the look-up there; on an install or an upgrade the look-up is real and a missing class stops the release with a plain message.
+*/}}
+{{- define "manythreads.runtimeClass" -}}
+{{- $name := toString .value -}}
+{{- if $name -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" $name) -}}{{ fail (printf "%s %q is not a valid RuntimeClass name (lowercase letters, digits, dashes and dots)" .key $name) }}{{- end -}}
+{{- if .root.Values.hermesPods.runtimeClassCheck -}}
+{{- $rc := lookup "node.k8s.io/v1" "RuntimeClass" "" $name -}}
+{{- if not $rc -}}{{ fail (printf "%s is %q, but this cluster has no RuntimeClass of that name (see: kubectl get runtimeclass). Install the sandbox runtime and its RuntimeClass first, or leave %s empty to use the cluster's default runtime. (helm template has no cluster: set hermesPods.runtimeClassCheck=false there.)" .key $name .key) }}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $name -}}
+{{- end }}

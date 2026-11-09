@@ -123,6 +123,20 @@ async function publisherSlugsOf(ctx: PluginContext, teamId: string): Promise<str
   });
 }
 
+/**
+ * The team's own proxy, when its egress rule is on and names one (`app.team_egress`, the guardrails-egress plugin's table: Settings > Workspace > Data protection). Without that
+ * plugin the table is not there and nothing is proxied. The row is read here and not through a provider so the controller owns no second copy of the rule.
+ */
+async function proxyOfTeam(ctx: PluginContext, teamId: string): Promise<string | null> {
+  return ctx.db.system(async (tx) => {
+    const exists = await tx.query<{ found: boolean }>("SELECT to_regclass('app.team_egress') IS NOT NULL AS found");
+    if (exists.rows[0]?.found !== true) return null;
+    const res = await tx.query<{ enforce: boolean; proxy_url: string | null }>('SELECT enforce, proxy_url FROM app.team_egress WHERE team_id = $1::uuid', [teamId]);
+    const row = res.rows[0];
+    return row && row.enforce && row.proxy_url ? row.proxy_url : null;
+  });
+}
+
 async function teamById(ctx: PluginContext, id: string): Promise<Team | null> {
   return ctx.db.system(async (tx) => {
     const res = await tx.query<{ id: string; slug: string }>('SELECT id, slug FROM app.teams WHERE id = $1::uuid', [id]);
@@ -178,6 +192,7 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
           reposForTeam: (id) => projectReposOf(ctx, id),
           publishersForTeam: (id) => publisherSlugsOf(ctx, id),
           nodeForTeam: (id) => nodeOfTeam(ctx, id),
+          proxyForTeam: (id) => proxyOfTeam(ctx, id),
           setManagedGateway: async (id, input) => {
             await provider()?.setManagedGateway(id, input);
           },

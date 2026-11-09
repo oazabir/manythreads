@@ -151,6 +151,8 @@ spec:
             {{- range .deployTargets }}{{ $dt = append $dt (dict "team" .team "namespace" .namespace "hosts" (.hosts | default list)) }}{{ end }}
             - { name: MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS, value: {{ toJson $dt | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_HOST_API_SERVER, value: {{ (.hostApiServer | default "") | quote }} }
+            {{- /* The pods' RuntimeClass (gVisor where the cluster has one): checked against the cluster when the release is made. */}}
+            - { name: MANYTHREADS_HERMES_PODS_RUNTIME_CLASS_NAME, value: {{ include "manythreads.runtimeClass" (dict "root" $ "value" .runtimeClassName "key" "hermesPods.runtimeClassName") | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_RESOURCES, value: {{ dict "hermes" .hermesResources "workbench" .workbenchResources | toJson | quote }} }
             {{- /* Team pods live in another namespace: a short Service name would not resolve there, so the profiles get full ones. */}}
             - { name: MANYTHREADS_INCLUSTER_URL, value: {{ printf "http://manythreads-server.%s.svc.cluster.local:3000" $.Release.Namespace | quote }} }
@@ -169,6 +171,14 @@ spec:
             - { name: MANYTHREADS_CLAUDE_PODS_DEFAULT_CONCURRENCY, value: {{ .defaultConcurrency | quote }} }
             - { name: MANYTHREADS_CLAUDE_PODS_RESOURCES, value: {{ .resources | toJson | quote }} }
             - { name: MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW, value: {{ join "," $.Values.hermesPods.repoOriginAllow | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_RUNTIME_CLASS_NAME, value: {{ include "manythreads.runtimeClass" (dict "root" $ "value" .runtimeClassName "key" "claudePod.runtimeClassName") | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- /* OpenTelemetry traces (docs/deploy/monitoring.md): off while server.otel.endpoint is empty, and then the server loads none of the telemetry code. */}}
+            {{- with .Values.server.otel }}
+            {{- if .endpoint }}
+            - { name: MANYTHREADS_OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ .endpoint | quote }} }
+            - { name: MANYTHREADS_OTEL_SAMPLE_RATIO, value: {{ .sampleRatio | default 1 | quote }} }
             {{- end }}
             {{- end }}
             {{- range $k, $v := .Values.server.env }}

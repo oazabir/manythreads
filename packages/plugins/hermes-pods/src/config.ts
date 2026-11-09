@@ -24,6 +24,11 @@ export function parseDeployTargets(raw: string | undefined): DeployTarget[] {
   }
 }
 
+/** A RuntimeClass name is a DNS subdomain; anything else is ignored (the pod then runs on the cluster's default runtime) rather than put into a pod spec. */
+export function runtimeClassOf(raw: string): string {
+  return /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/.test(raw) && raw.length <= 253 ? raw : '';
+}
+
 /** The controller's settings, from the environment the chart sets (values.yaml `hermesPods`). */
 export function configFrom(env: NodeJS.ProcessEnv): PodConfig {
   const get = (name: string, fallback: string): string => (env[`MANYTHREADS_HERMES_PODS_${name}`] ?? '').trim() || fallback;
@@ -53,6 +58,7 @@ export function configFrom(env: NodeJS.ProcessEnv): PodConfig {
     resources,
     deployTargets: parseDeployTargets(env['MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS']),
     hostApiServer: get('HOST_API_SERVER', ''),
+    runtimeClassName: runtimeClassOf(get('RUNTIME_CLASS_NAME', '')),
     allowedNodes: (env['MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'] ?? '').split(/[\s,]+/).filter((n) => n !== ''),
   };
 }

@@ -32,6 +32,10 @@ e2e/                   Playwright: api/<area>, <area>, visual/<area>, personas/<
 deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md, spec/)
 ```
 
+## Controllers stay plugins (note, 2026-11-09, P10-08)
+
+The Kubernetes controllers (`hermes-pods`, `claude-pods`) stay plugins that run inside the server process. There is no `packages/controller` and none is planned: a second process would need its own deployment, rights and release, for no gain at this size. What a controller may do in the cluster is limited by the chart's Role in the pods namespace and nothing else. The Helm chart (`deploy/helm/manythreads`) owns every cluster object, including the network policies, the RuntimeClass setting and the backup objects; the controllers only read their configuration from `MANYTHREADS_*` environment variables the chart sets.
+
 ## Plugin sockets and the terminal (P7-09)
 A plugin may serve a WebSocket on its own route (`ctx.http.route({ ws: true })`); the server mounts it under the same cookie session as every route, behind the web proxy's `/api/` location (which passes the upgrade). Three things hold for every such socket, whatever the plugin: an `Origin` whose host differs from the request's host is refused with `403` before the upgrade; a route may declare a `guard` that runs as the caller, in a transaction, before the upgrade, so a refusal is a real HTTP status; (that guard runs through the plugin-transaction wrapper like a handler), and the socket is registered with the caller's session, so signing out (or the 15 second revalidation finding the session gone) closes it with code 1008, after telling the route (`PluginSocket.on('sessionEnded')`).
 
