@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { lastLine, redact } from '../process.ts';
+import { classifyFailure } from '../signin.ts';
 import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 
 // The Codex driver: one `codex exec --json` process per run. NOT TESTED AGAINST A REAL CODEX INSTALL: the flags and config keys come from
 // OpenAI's published Codex documentation (non-interactive mode, config reference, MCP page); the tests use a fake `codex` that prints
-// the documented JSON lines.
+// the documented JSON lines. The FLAGS (not the config keys, not the JSON lines) are checked against the program's own `--help` text in docs/spikes/codex-flags.md, and
+// test/codex.test.ts keeps `codexArgs` and that page in step. `exec resume` has no `-C`, so a resumed thread gets its folder from the process's `cwd`.
 //
 //   codex exec --json --skip-git-repo-check -C <workdir> -c sandbox_mode="…" -c approval_policy="never"
 //          [-c developer_instructions="…"] [-c mcp_servers.manythreads.url="…"]
@@ -198,8 +200,10 @@ export const codexDriver: Driver = {
     if (job.request.sessionId === null) return (await attempt(job, null, token)).result ?? { ok: false, error: 'no result' };
     const known = job.sessions.get(sessionKey(job));
     let a = await attempt(job, known ?? null, token);
-    // A saved thread that Codex no longer has: start a new one once.
-    if (known !== undefined && a.result?.ok !== true && !job.stopped() && !a.emitted) {
+    // A saved thread that Codex no longer has: start a new one once. Never for an account failure (a refused sign-in, a reused refresh token, a plan limit): a second
+    // process would only present the same dead token again, and for a reused refresh token that is the very thing that ends the login.
+    const account = a.result !== null && !a.result.ok && classifyFailure(a.result.error, 'codex') !== null;
+    if (known !== undefined && a.result?.ok !== true && !job.stopped() && !a.emitted && !account) {
       job.sessions.delete(sessionKey(job));
       a = await attempt(job, null, token);
     }

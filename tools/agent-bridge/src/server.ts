@@ -32,6 +32,8 @@ export interface BridgeOptions {
   authFailLimit?: number;
   /** The folder that holds the Claude sign-in file (`CLAUDE_CONFIG_DIR`). Given, the bridge keeps one process renewing it and answers `POST /v1/signin/check`. */
   claudeConfigDir?: string;
+  /** The folder that holds the Codex sign-in file (`CODEX_HOME`, with `auth.json`). Given, the bridge keeps one process renewing it too (P19-13). */
+  codexHome?: string;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: import('./runs.ts').RunManagerOptions['drivers'];
 }
@@ -95,14 +97,19 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
   const log = options.log ?? ((line: string) => console.log(line));
   const sessions = new SessionStore(options.stateDir);
   const gate = options.claudeConfigDir !== undefined && options.claudeConfigDir !== '' ? new SigninGate(options.claudeConfigDir) : undefined;
+  const codexGate = options.codexHome !== undefined && options.codexHome !== '' ? new SigninGate(options.codexHome, Date.now, 'codex') : undefined;
   const manager = new RunManager({
     config: options.config,
     sessions,
     log,
     ...(options.tmpRoot !== undefined ? { tmpRoot: options.tmpRoot } : {}),
     ...(gate ? { gate } : {}),
+    ...(codexGate ? { codexGate } : {}),
     ...(options.drivers ? { drivers: options.drivers } : {}),
   });
+
+  // A pod holds one sign-in; a bridge started with both answers with the first that is not fine.
+  const signinCheck = (): string => [gate?.check(), codexGate?.check()].find((r) => r !== undefined && r !== 'ok') ?? 'ok';
 
   const bodyTimeoutMs = options.bodyTimeoutMs ?? 30_000;
   const authFailLimit = options.authFailLimit ?? 30;
@@ -167,9 +174,9 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     const url = new URL(req.url ?? '/', 'http://bridge');
     const path = url.pathname;
     const method = req.method ?? 'GET';
-    if (path === '/health' && method === 'GET') return send(res, 200, { status: 'ok', profiles: Object.keys(options.config.profiles), ...(gate ? { signin: gate.check() } : {}) });
+    if (path === '/health' && method === 'GET') return send(res, 200, { status: 'ok', profiles: Object.keys(options.config.profiles), ...(gate || codexGate ? { signin: signinCheck() } : {}) });
     // The admin page's "check this sign-in" and the pod controller ask here. The answer is one word from a fixed list; nothing from the file.
-    if (path === '/v1/signin/check' && method === 'POST') return gate ? send(res, 200, { result: gate.check() }) : fail(res, 404, 'this bridge has no Claude sign-in', 'not_found');
+    if (path === '/v1/signin/check' && method === 'POST') return gate || codexGate ? send(res, 200, { result: signinCheck() }) : fail(res, 404, 'this bridge has no sign-in', 'not_found');
     // The server's connection check asks `/v1/models` (or `/p/<profile>/v1/models`), as it would a Hermes gateway: one model per profile, named by its agent.
     const models = /^(?:\/p\/([^/]+))?\/v1\/models$/.exec(path);
     if (models && method === 'GET') {

@@ -54,7 +54,7 @@ if (apiKey.length < 16) fatal('the API key must be at least 16 characters');
 // The key lives in this process only; children are started without it (see runs.ts), and it is dropped from the environment here too.
 delete process.env['AGENT_BRIDGE_API_KEY'];
 
-const bridge = await startBridge({ config, apiKey, stateDir, host: listen![1] ?? listen![2]!, port: Number(listen![3]), ...(process.env['CLAUDE_CONFIG_DIR'] ? { claudeConfigDir: process.env['CLAUDE_CONFIG_DIR'] } : {}) });
+const bridge = await startBridge({ config, apiKey, stateDir, host: listen![1] ?? listen![2]!, port: Number(listen![3]), ...(process.env['CLAUDE_CONFIG_DIR'] ? { claudeConfigDir: process.env['CLAUDE_CONFIG_DIR'] } : {}), ...(process.env['CODEX_HOME'] ? { codexHome: process.env['CODEX_HOME'] } : {}) });
 console.log(`agent-bridge listening on ${bridge.url} (profiles: ${Object.keys(config.profiles).join(', ')})`);
 const shutdown = (): void => {
   void bridge.close().then(() => process.exit(0));

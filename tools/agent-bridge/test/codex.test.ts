@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { codexArgs, toml } from '../src/drivers/codex.ts';
+import type { DriverJob } from '../src/drivers/types.ts';
 import { events, harness, start, type Harness } from './support.ts';
 
 // Against a fake `codex`: this checks the bridge's mapping of the documented JSON lines, NOT a real Codex install.
@@ -93,5 +97,70 @@ describe('codex hardening', () => {
     expect((call['argv'] as string[]).join(' ')).not.toContain('developer_instructions');
     expect(call['stdin']).toBe(`${big}\n\n---\n\nthe prompt`);
     expect(typeof codexArgs).toBe('function');
+  });
+});
+
+// ---- the flags, against docs/spikes/codex-flags.md (P19-13) ------------------------------------------------------------------------------------------------------
+// That page holds the two flag lists the driver is meant to use and the program's own `--help` text for `exec` and `exec resume` (codex-cli 0.166.0). This keeps the three in
+// step: the flags `codexArgs` builds, the lists, and the help. It checks flag NAMES only; the config keys behind `-c` cannot be read from help text.
+
+const DOC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs', 'spikes', 'codex-flags.md'), 'utf8');
+const section = (heading: string): string => {
+  const at = DOC.indexOf(`## ${heading}`);
+  expect(at, heading).toBeGreaterThan(-1);
+  const open = DOC.indexOf('```text\n', at) + '```text\n'.length;
+  return DOC.slice(open, DOC.indexOf('\n```', open));
+};
+const listed = (key: string): string[] => {
+  const m = new RegExp(`^${key}: (.+)$`, 'm').exec(DOC);
+  expect(m, key).not.toBeNull();
+  return m![1]!.trim().split(/\s+/).sort();
+};
+const flagsOf = (args: string[]): string[] => [...new Set(args.filter((a) => /^-[A-Za-z-]/.test(a)))].sort();
+const mentioned = (help: string, flag: string): boolean => new RegExp(`(^|[\\s,])${flag.replace(/[-]/g, '\\-')}(?=[,\\s<]|$)`, 'm').test(help);
+
+// every option the driver can add at once: files and shell grants, instructions, the platform's MCP address, a model alias
+const fullJob = (): DriverJob =>
+  ({
+    request: { instructions: 'rules', input: 'go', sessionId: 's', manythreads: { tools: ['files', 'shell'], mcp: { url: 'https://example.test/mcp', token: 't' }, model: { alias: 'smart' } } },
+    profile: { agent: 'codex', workdir: '/work', model: 'base-model', modelAliases: { smart: 'mapped-model' } },
+  }) as unknown as DriverJob;
+
+describe('codexArgs against docs/spikes/codex-flags.md', () => {
+  it('builds exactly the flags the page lists, for a new thread and for a resumed one', () => {
+    const fresh = codexArgs(fullJob(), null, true);
+    const resumed = codexArgs(fullJob(), 'thread-1', true);
+    expect(flagsOf(fresh)).toEqual(listed('flags-exec'));
+    expect(flagsOf(resumed)).toEqual(listed('flags-resume'));
+  });
+
+  it('every flag it builds is in the program\'s own help text for that subcommand', () => {
+    const exec = section('Help output: codex exec');
+    const resume = section('Help output: codex exec resume');
+    expect(exec).toContain('Usage: codex exec [OPTIONS] [PROMPT]');
+    expect(resume).toContain('Usage: codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]');
+    for (const f of flagsOf(codexArgs(fullJob(), null, true))) expect(mentioned(exec, f), `exec: ${f}`).toBe(true);
+    for (const f of flagsOf(codexArgs(fullJob(), 'thread-1', true))) expect(mentioned(resume, f), `resume: ${f}`).toBe(true);
+    // the page's own claims: `resume` is a subcommand of exec, and only exec has -C and -s
+    expect(exec).toMatch(/^\s+resume\s/m);
+    expect(mentioned(exec, '-C') && mentioned(exec, '-s')).toBe(true);
+    expect(mentioned(resume, '-C') || mentioned(resume, '-s')).toBe(false);
+  });
+
+  it('reads the prompt from stdin: "-" last, after the thread id on a resume; and a resume names the thread, never --last', () => {
+    expect(codexArgs(fullJob(), null, true).at(-1)).toBe('-');
+    expect(codexArgs(fullJob(), 'thread-1', true).slice(-2)).toEqual(['thread-1', '-']);
+    expect(codexArgs(fullJob(), 'thread-1', true)).not.toContain('--last');
+    expect(mentioned(section('Help output: codex exec resume'), '--last')).toBe(true);
+  });
+
+  it('never sets a flag the page says is not used on purpose', () => {
+    const all = [...codexArgs(fullJob(), null, true), ...codexArgs(fullJob(), 'x', false)];
+    for (const banned of ['-s', '--sandbox', '--dangerously-bypass-approvals-and-sandbox', '--ephemeral', '--oss', '--approve-for-me']) expect(all, banned).not.toContain(banned);
+  });
+
+  it('the page names the CLI version it was captured from, and the check against a real install is still open', () => {
+    expect(DOC).toMatch(/codex-cli \d+\.\d+\.\d+/);
+    expect(DOC).toContain('[owner test]');
   });
 });

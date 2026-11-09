@@ -75,6 +75,8 @@ export interface RunManagerOptions {
   tmpRoot?: string;
   /** The Claude sign-in gate (claude-code profiles only): one renewing process, and the account failures remembered. */
   gate?: SigninGate;
+  /** The same for Codex (codex profiles only; its `auth.json`). */
+  codexGate?: SigninGate;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: Record<string, Driver>;
   log: (line: string) => void;
@@ -89,7 +91,10 @@ const ENV_BY_AGENT: Record<string, RegExp> = {
   codex: /^(CODEX_HOME|OPENAI_API_KEY)$/,
 };
 
-/** The environment a child starts with: the allowlist above, the profile's `passEnv` names, then the profile's `env` values. */
+/**
+ * The environment a child starts with: the allowlist above, the profile's `passEnv` names, then the profile's `env` values. In a pod (`MANYTHREADS_BRIDGE_IN_POD=1`) a Codex child
+ * never gets `OPENAI_API_KEY`, however it was asked for: an API key would go around the workspace's model gateway (PLAN P19-13).
+ */
 export function childEnv(profile: BridgeConfig['profiles'][string], from: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const own = ENV_BY_AGENT[profile.agent];
   const env: NodeJS.ProcessEnv = {};
@@ -98,6 +103,7 @@ export function childEnv(profile: BridgeConfig['profiles'][string], from: NodeJS
     if (ENV_COMMON.test(k) || own?.test(k) === true || profile.passEnv?.includes(k) === true) env[k] = v;
   }
   for (const [k, v] of Object.entries(profile.env ?? {})) env[k] = v;
+  if (profile.agent === 'codex' && from['MANYTHREADS_BRIDGE_IN_POD'] === '1') delete env['OPENAI_API_KEY'];
   return env;
 }
 
@@ -233,11 +239,12 @@ export class RunManager {
         abort: (reason) => this.stop(run, reason),
         baseEnv: () => childEnv(profile),
       };
-      const gate = profile.agent === 'claude-code' ? this.opts.gate : undefined;
+      const gate = profile.agent === 'claude-code' ? this.opts.gate : this.opts.codexGate;
       const standing = gate?.standing() ?? null;
       if (standing !== null) {
         // A refused sign-in or a plan limit is already known: no process is started and nothing is retried.
-        const error = standing.kind === 'needs_sign_in' ? 'The Claude sign-in was refused. An admin has to upload a new sign-in file.' : "The Claude plan's limit was reached.";
+        const who = profile.agent === 'codex' ? { name: 'Codex', plan: 'ChatGPT plan' } : { name: 'Claude', plan: 'Claude plan' };
+        const error = standing.kind === 'needs_sign_in' ? `The ${who.name} sign-in was refused. An admin has to upload a new sign-in file.` : `The ${who.plan}'s limit was reached.`;
         this.finish(run, 'failed', 'run.failed', { error, reason: standing.kind, ...(standing.until !== null ? { resets_at: standing.until } : {}) });
         return;
       }
@@ -254,7 +261,7 @@ export class RunManager {
         this.finish(run, 'completed', 'run.completed', { output: result.output, usage: result.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 } });
       } else {
         run.error = result.error;
-        const account = gate ? classifyFailure(result.error) : null;
+        const account = gate ? classifyFailure(result.error, profile.agent) : null;
         if (account !== null) gate!.noteFailure(account, result.error);
         const resets = account === 'plan_limit' ? limitResetsAt(result.error) : null;
         this.finish(run, 'failed', 'run.failed', { error: result.error, ...(account !== null ? { reason: account } : {}), ...(resets !== null ? { resets_at: resets } : {}) });
