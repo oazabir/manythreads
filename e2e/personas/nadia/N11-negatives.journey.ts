@@ -95,7 +95,8 @@ export default defineJourney({
     expect(await nadia.status('GET', `/api/channels/${support[0]!.id}/messages`), 'messages of #support').toBeGreaterThanOrEqual(400);
     const listed = await nadia.get<{ groups: Array<{ channels: unknown[] }> }>('/api/teams/customer-support/channels');
     expect(listed.groups.flatMap((g) => g.channels), 'Customer support lists no channel to her').toHaveLength(0);
-    const sessions = await stack.sql<{ n: string }>(`select count(*)::text as n from app.terminal_sessions`).catch(() => [{ n: '0' }]);
-    expect(Number(sessions[0]?.n ?? 0), 'no terminal was opened').toBe(0);
+    const sessions = await stack.sql<{ n: string }>(`select count(*)::text as n from app.terminal_sessions`);
+    // no `.catch`: a missing table must fail the journey, not read as "no terminal"
+    expect(Number(sessions[0]!.n), 'no terminal was opened').toBe(0);
   },
 });

@@ -72,9 +72,22 @@ export default defineJourney({
     },
   ],
   outcome: async ({ stack }) => {
-    const rows = await stack.sql<{ cites: string }>(
-      `SELECT coalesce(max(jsonb_array_length(m.meta->'answer'->'citations')), 0)::text AS cites FROM app.messages m WHERE m.meta ? 'answer'`,
+    // Rafi's own question and the Answer that came after it in his chat with Brain (other journeys of the stack have Answers too: this one is found by his words)
+    const rows = await stack.sql<{ citations: Array<{ kind: string; messageId?: string; channelName?: string | null }> }>(
+      `SELECT a.meta->'answer'->'citations' AS citations
+         FROM app.messages q
+         JOIN app.actors qa ON qa.id = q.author_id
+         JOIN app.people p ON p.id = qa.ref_id AND p.display_name = 'Rafi'
+         JOIN app.messages a ON a.channel_id = q.channel_id AND a.meta ? 'answer' AND a.created_at > q.created_at
+        WHERE q.body = $1
+        ORDER BY a.created_at LIMIT 1`,
+      [QUESTION],
     );
-    expect(Number(rows[0]?.cites), 'the Answer cites at least one source of the incident').toBeGreaterThan(0);
+    expect(rows, "Rafi's question has an Answer after it").toHaveLength(1);
+    const cited = rows[0]!.citations.filter((c) => c.kind === 'message');
+    expect(cited.length, 'the Answer to his question cites at least one message').toBeGreaterThan(0);
+    // what it cites is a message of a channel he can open, found in the database (not the stand-in's word for it)
+    const real = await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.messages m JOIN app.channels c ON c.id = m.channel_id WHERE c.kind = 'channel' AND m.id = ANY($1::uuid[])`, [cited.map((c) => c.messageId)]);
+    expect(Number(real[0]!.n), 'every cited message is a message of a channel').toBe(cited.length);
   },
 });

@@ -16,7 +16,7 @@ const STAND_IN = fileURLToPath(new URL('./hermes-persona.mjs', import.meta.url))
 export const BOT_STACK_ENV: Readonly<Record<string, string>> = { ...conversationStackEnv(), MANYTHREADS_HERMES_PREFIX: STAND_IN };
 
 /** Brain as these journeys need it: it answers a conversation and a mention, reads messages and memory, and finishes with an Answer. */
-export const brainMd = (prompts: readonly string[]): string =>
+export const brainMd = (prompts: readonly string[], moreNative: readonly string[] = []): string =>
   [
     '---',
     'schema: 1',
@@ -33,7 +33,7 @@ export const brainMd = (prompts: readonly string[]): string =>
     '  prompts:',
     ...prompts.map((p) => `    - "${p}"`),
     'capabilities:',
-    '  native: [messages.search, memory.recall, messages.post, answer.post]',
+    `  native: [${['messages.search', 'memory.recall', 'messages.post', 'answer.post', ...moreNative].join(', ')}]`,
     '---',
     '',
     '# Brain',
@@ -43,8 +43,8 @@ export const brainMd = (prompts: readonly string[]): string =>
   ].join('\n');
 
 /** Makes the workspace Brain answer with Answers, and gives the `smart` alias a model so a conversation can start. Safe to call again. */
-export async function arrangeBrain(stack: Stack, prompts: readonly string[]): Promise<void> {
-  await useWorkspaceBrain(stack, brainMd(prompts));
+export async function arrangeBrain(stack: Stack, prompts: readonly string[], moreNative: readonly string[] = []): Promise<void> {
+  await useWorkspaceBrain(stack, brainMd(prompts, moreNative));
   await stack.sql(`INSERT INTO app.llm_aliases (workspace_id, alias, model) SELECT id, 'smart', 'test-model' FROM app.workspaces ON CONFLICT DO NOTHING`);
 }
 

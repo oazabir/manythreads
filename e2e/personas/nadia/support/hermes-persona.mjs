@@ -4,6 +4,7 @@
 //
 //   "cache TTL"     searches the team's messages and memory, cites what it found, hands the answer to Coder
 //   "refund"        the same for Customer support's refund policy
+//   "section" + "runbook"  appends a section to pages/runbook.md with `pages.write` (into the live editor when a person has the page open live), then says so
 //   "draft" in #support  a message of its own that a person must approve (messages.post held by the bot's approval rule)
 //   "Engineering"   an answer that has nothing to cite and lists what it could not reach (Sameera asks about Engineering)
 //   "orchestrate"   the Bot Board of the channel (boards.ensure) and one card per step (tasks.create)
@@ -45,6 +46,19 @@ let reply = `Answering: ${prompt.replace(/\s+/g, ' ')}`;
 if (/Handed over from/i.test(prompt)) {
   // a bot that is given an answer (the Coder chip of an Answer card): it says it has it, and does not answer the question again
   reply = 'Got it. I have the answer about the cache TTL and will start from its sources.';
+} else if (/\bsection\b/i.test(question) && /runbook/i.test(question)) {
+  // Brain writes a section of the runbook while a person edits it live (N4): the platform applies a bot's page write to the open document
+  const section = [
+    '',
+    '## After the deploy',
+    '',
+    '1. Watch the error rate and p95 latency for thirty minutes.',
+    '2. Post "deploy done" in #releases when both are back to normal.',
+    '3. If either stays high, start the rollback above and say so in #incidents.',
+    '',
+  ].join('\n');
+  const written = await call('pages.write', { mode: 'append', path: 'pages/runbook.md', content: section });
+  reply = written?.ok === false ? `I could not write the section: ${JSON.stringify(written).slice(0, 200)}` : 'I added an "After the deploy" section at the end of the runbook.';
 } else if (/cache ttl/i.test(question)) {
   const found = await call('messages.search', { query: 'cache TTL' });
   const hits = channelHits(found);

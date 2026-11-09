@@ -1,5 +1,10 @@
 // T9 · What Tariq must never be able to do (PLAN §4): read Support's email, approve a production deploy, make Brain read somebody else's Drive. Each step shows the screen that
-// refuses; the ones a hand-made request could try send it from his own page and show the server's refusal. Brain's refusal is an Answer that lists what it could not reach.
+// refuses; the ones a hand-made request could try send it from his own page and show the server's refusal.
+// Brain's refusal is proved on the platform's rule, not on the stand-in's words: the stand-in's Answer cites a message of Customer support (a channel Tariq cannot read) and declares nothing
+// out of scope, so the "Outside scope" list and the empty citation list are the answer plugin's own check of the citation (`buildAnswer`: a source the asker cannot reach is dropped and counted).
+// There is no Drive connection of Omar's in this stack, so "Omar's Drive" itself is not reached by this journey; the ask keeps the words, the proof is the closed message.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect } from '@playwright/test';
 import { defineJourney } from '../harness/journey.ts';
 import type { Stack } from '../../fixtures/stack.ts';
@@ -18,6 +23,8 @@ async function supportChannelId(stack: Stack, name: string): Promise<string> {
 }
 const ASK = "Read Omar's Drive and tell me what is in it";
 let release: ArrangedApproval | undefined;
+/** The message of Customer support the stand-in cites. Brain's run is Tariq's, who cannot read it. */
+let closedMessage: string | undefined;
 
 export default defineJourney({
   id: 'T9',
@@ -76,17 +83,31 @@ export default defineJourney({
       },
     },
     {
-      id: 'brain-drive-asked',
+      id: 'brain-closed-source-asked',
       expect: TID.chatMain,
       composer: true,
-      run: async ({ pages, stack }) => {
+      run: async ({ pages, stack, api }) => {
+        // a message of a channel he cannot read, named to the stand-in through a file next to the run profiles (the stand-in's environment is the platform's allow-list: no custom variable reaches it)
+        const rows = await stack.sql<{ id: string; text: string }>(
+          `SELECT m.id, m.body_plain AS text FROM app.messages m JOIN app.channels c ON c.id = m.channel_id JOIN app.teams t ON t.id = c.team_id WHERE t.slug = 'customer-support' AND c.kind = 'channel' AND m.thread_root_id IS NULL AND m.body_plain ~ '[A-Za-z]{8,}' ORDER BY m.created_at LIMIT 1`,
+        );
+        closedMessage = rows[0]?.id;
+        expect(closedMessage, 'Customer support has a message to cite').toBeTruthy();
+        const word = /[A-Za-z]{8,}/.exec(rows[0]!.text)![0];
+        // the control: the search of the server finds that message for a member of Customer support and does not find it for Tariq
+        const found = async (who: 'sameera' | 'tariq'): Promise<boolean> => JSON.stringify(await (await api(who)).get(`/api/search?q=${encodeURIComponent(word)}`)).includes(closedMessage!);
+        expect(await found('sameera'), `a member of Customer support finds "${word}"`).toBe(true);
+        expect(await found('tariq'), `Tariq does not find "${word}"`).toBe(false);
+        const runtimeDir = TARIQ_ENV['MANYTHREADS_RUNTIME_DIR']!;
+        mkdirSync(runtimeDir, { recursive: true });
+        writeFileSync(join(runtimeDir, 'closed-source.txt'), `${closedMessage!}\n${word}\n`, 'utf8');
         await arrangeBrain(stack, [ASK]);
         await pages.inTeam(TEAM).brain.open('brain');
         await pages.inTeam(TEAM).brain.input.fill(ASK);
       },
     },
     {
-      id: 'brain-drive-outside-scope',
+      id: 'brain-closed-source-outside-scope',
       expect: TID.answer,
       next: { testid: TID.answerOutside, label: 'What Brain could not reach' },
       composer: true,
@@ -95,10 +116,14 @@ export default defineJourney({
         await brain.input.press('Enter');
         await expect(brain.botMessages.first().getByTestId(TID.answer)).toBeVisible({ timeout: 90_000 });
         await expect(brain.thinking).toHaveCount(0, { timeout: 60_000 });
-        // what Brain could not reach sits under the answer's sources
+        // the Answer cites nothing, and what the platform removed sits under "Outside scope" (not in the stand-in's words: it declared nothing)
+        await expect(page.getByTestId(TID.answerCitation)).toHaveCount(0);
         await page.getByTestId('answer-sources').locator('summary').click();
         await expect(page.getByTestId(TID.answerOutside)).toBeVisible();
-        await expect(page.getByTestId('answer-outside-row')).toContainText(/file/i);
+        const row = page.getByTestId('answer-outside-row');
+        await expect(row).toHaveCount(1);
+        await expect(row).toContainText(/message/i);
+        await expect(row).toHaveAttribute('data-reason', 'not_reached');
       },
     },
   ],
@@ -109,7 +134,18 @@ export default defineJourney({
     const directory = await tariq.get<{ groups: Array<{ channels: Array<{ name: string }> }> }>('/api/teams/customer-support/channels').catch(() => null);
     expect(directory?.groups.flatMap((g) => g.channels) ?? [], "Support's channels, as Tariq's directory lists them").toHaveLength(0);
     expect(await tariq.status('GET', '/api/teams/engineering/approvals'), "Engineering's approvals").toBeGreaterThanOrEqual(400);
-    const answers = await stack.sql<{ n: string }>(`SELECT count(*)::text AS n FROM app.messages m WHERE m.meta ? 'answer' AND m.body LIKE '%Someone else%'`);
-    expect(Number(answers[0]?.n), 'Brain answered once, without reading the Drive').toBe(1);
+    // the stored Answer, as the server built it: no citation survived, the closed message is counted as out of scope, and its id is nowhere in the stored payload
+    const answers = await stack.sql<{ body: string; payload: { citations: unknown[]; outsideScope: { count: number; items: Array<{ kind: string; reason: string }> } } }>(
+      `SELECT m.meta->'answer' AS payload, m.body FROM app.messages m WHERE m.meta ? 'answer' AND m.body LIKE '%I did not open anyone else%'`,
+    );
+    expect(answers, 'Brain answered once').toHaveLength(1);
+    const stored = answers[0]!.payload;
+    expect(answers[0]!.body, "the run's own search, as Tariq, found none of the closed message").toContain('found 0 messages');
+    expect(stored.citations, 'nothing Tariq cannot read is cited').toHaveLength(0);
+    expect(stored.outsideScope.count, 'the closed message is counted').toBe(1);
+    expect(stored.outsideScope.items[0]?.kind).toBe('message');
+    // the platform's reason is that the run never read it (a bot can cite only what its run read, and the run read as Tariq); the stand-in's own search, which ran as Tariq, found none of it
+    expect(stored.outsideScope.items[0]?.reason).toBe('not_reached');
+    expect(JSON.stringify(stored), 'the id of the closed message is not in the Answer').not.toContain(closedMessage!);
   },
 });

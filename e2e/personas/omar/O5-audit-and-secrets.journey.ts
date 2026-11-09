@@ -3,7 +3,7 @@
 import { expect } from '@playwright/test';
 import { defineJourney } from '../harness/journey.ts';
 import { TID } from '../../pages/index.ts';
-import { BOTS_ENV, allowChatStateRace, openRefused, readyForBots } from './support/index.ts';
+import { BOTS_ENV, allowChatStateRace, askFromPage, openRefused, readyForBots } from './support/index.ts';
 
 const NADIA_QUESTION = 'What do we do when the search index falls behind?';
 const KEY = ['sk-journey', 'omar-secret-0042'].join('');
@@ -83,6 +83,23 @@ export default defineJourney({
         // the key is write-only: neither the list nor a read of the row gives it back
         const list = JSON.stringify(await omar.get('/api/workspace/llm/providers'));
         expect(list).not.toContain(KEY);
+      },
+    },
+    {
+      id: 'key-read-refused',
+      expect: TID.llmProviders,
+      expectDenied: 404,
+      run: async ({ api, page, stack, pages }) => {
+        // PLAN: "reading a stored provider secret ... (expectDenied)". The key is write-only: no route gives a provider back with its key, so a hand-made read of the row answers 404
+        // (an unknown route is not found, and the list above shows `hasSecret` only). And a person who is not an admin does not even get the list: the server answers 403 (the comment in
+        // packages/shared/src/api/llm/providers.ts says 404; the answer is what the journey pins).
+        await pages.llm.open();
+        const id = (await stack.sql<{ id: string }>(`SELECT id FROM app.llm_providers WHERE name = 'Journey OpenAI'`))[0]?.id;
+        expect(id, 'the provider stored by the step before').toBeTruthy();
+        expect(await askFromPage(page, 'GET', `/api/workspace/llm/providers/${id!}`), 'a read of the provider row').toBe(404);
+        const nadia = await api('nadia');
+        expect(await nadia.status('GET', '/api/workspace/llm/providers'), "a member's read of the provider list").toBe(403);
+        expect(await nadia.status('GET', `/api/workspace/llm/providers/${id!}`), "a member's read of the provider row").toBe(404);
       },
     },
     {

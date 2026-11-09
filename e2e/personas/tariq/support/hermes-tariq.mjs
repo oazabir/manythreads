@@ -3,9 +3,12 @@
 //
 //   Content drafter, a brief that asks for a "launch announcement"   writes pages/drafts/launch-announcement.md with `pages.write`, then tells the thread where it is
 //   Brain, a question about the "brand voice"                         searches the team's messages and memory, finishes with an Answer citing what it found
-//   Brain, a question that names a "Drive" (somebody else's)          an Answer that has nothing to cite and lists what it could not reach under Outside scope
+//   Brain, a question that names a "Drive" (somebody else's)          an Answer whose only citation is a message Tariq may not read (its id is in `closed-source.txt`, next to the profile
+//                                                                    folders, put there by journey T9); the stand-in declares nothing out of scope: the platform's own check of the
+//                                                                    citation decides, and what the Answer lists under Outside scope is its doing
 //   anything else                                                     echo
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
@@ -97,9 +100,21 @@ if (/launch announcement/i.test(asked)) {
   });
   reply = 'Posted my answer above.';
 } else if (/drive/i.test(asked)) {
+  // Nobody here can reach another person's Drive (no connection of Omar's exists in this stack), so the refusal that can be proved is the platform's check of a citation: the stand-in cites
+  // a message of a channel Tariq cannot read and says nothing about scope itself. `outsideScope` is left out on purpose: whatever the Answer lists is the server's own finding.
+  let closed = '';
+  let word = '';
+  try {
+    [closed = '', word = ''] = readFileSync(join(dirname(process.env.HERMES_HOME ?? ''), 'closed-source.txt'), 'utf8').trim().split('\n');
+  } catch {
+    closed = '';
+  }
+  // the run searches as Tariq, through the platform: the closed message is not among what it finds (the count is the platform's answer, not a figure written in advance)
+  const found = word === '' ? null : await call('messages.search', { query: word });
+  const mine = Array.isArray(found?.hits) ? found.hits.filter((h) => h?.id === closed).length : null;
   await call('answer.post', {
-    body: 'I can only read what you may read. Someone else\'s Drive is not yours, so I did not open it. Ask the owner to share the file with the team.',
-    outsideScope: [{ kind: 'file', count: 2 }],
+    body: `I can only read what you may read. I did not open anyone else's files. My search for the message found ${mine === null ? 'an error' : `${mine} messages`}. Ask the owner to share what you need with the team.`,
+    citations: closed === '' ? [] : [{ kind: 'message', messageId: closed, snippet: 'A message of a channel Tariq cannot read' }],
   });
   reply = 'Posted my answer above.';
 }

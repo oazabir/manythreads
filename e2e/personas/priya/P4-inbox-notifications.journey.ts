@@ -4,6 +4,8 @@ import { defineJourney } from '../harness/journey.ts';
 import { TID } from '../../pages/index.ts';
 import { LOCAL, channelId, say } from '../omar/support/index.ts';
 
+/** The message she answered in the first step: the one root the inbox must list. */
+let followedRoot: string | undefined;
 const MENTION = '@priya the new canary dashboard link is under "Watching a deploy" in the runbook.';
 
 export default defineJourney({
@@ -26,6 +28,7 @@ export default defineJourney({
         const rows = await ctx.stack.sql<{ id: string }>(`SELECT m.id FROM app.messages m WHERE m.channel_id = $1 AND m.thread_root_id IS NULL AND m.body LIKE '%flag%' ORDER BY m.created_at LIMIT 1`, [dev]);
         const root = rows[0]?.id;
         expect(root, 'a message in #dev about the flag').toBeTruthy();
+        followedRoot = root;
         await say(ctx, 'priya', dev, 'I will read the flag notes tomorrow.', root!);
         await say(ctx, 'nadia', dev, 'Good. The flag notes are in the wiki under Releases.', root!);
         await ctx.pages.threads.open();
@@ -72,7 +75,10 @@ export default defineJourney({
   ],
   outcome: async ({ api }) => {
     const priya = await api('priya');
-    const mine = await priya.get<{ items: unknown[] }>('/api/teams/engineering/threads?tab=followed');
-    expect(mine.items.length, 'the thread she answered is in her inbox').toBeGreaterThan(0);
+    const mine = await priya.get<{ items: Array<{ rootMessageId: string }> }>('/api/teams/engineering/threads?tab=followed');
+    expect(
+      mine.items.map((i) => i.rootMessageId),
+      'the thread she answered (the message about the flag) is in her inbox',
+    ).toContain(followedRoot);
   },
 });
