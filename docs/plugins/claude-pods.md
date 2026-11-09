@@ -43,6 +43,8 @@ replaced file rolls the pod. Removing the sign-in deletes the Secret and the run
 
 The controller never applies the credentials Secret again, so what the keeper writes back survives a reconcile.
 
+**Remove sign-in** (P19-12) deletes the state claim first and the credentials Secret second. The state volume holds the second copy of the login (the one the tool renews), so deleting only the Secret would leave a working login on disk; a claim still mounted stays `Terminating` until the controller has stopped the pod (it does so as soon as the Secret is gone), and is made again, empty, for the next sign-in. A failure deleting the claim stops before the Secret is touched. The work claim (public clones only) is kept. `packages/plugins/claude-pods/test/signin-removal.test.ts`; on the stage `stage-runners-probe.sh remove`.
+
 **Keeper.** A second container in the pod watches the state volume (read-only) for a renewed `.credentials.json`. When the file has been stable for 2 seconds
 and differs from the Secret it patches the Secret with the pod's own service account (`claude-<runner>-keeper`). Its Role allows `get` and `patch` on that
 one Secret by name; the token is projected into the keeper container only. The chart gives the controller the right to create that ServiceAccount, Role and

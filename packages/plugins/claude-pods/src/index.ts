@@ -125,7 +125,12 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
       });
     },
     async removeCredentials({ runnerName, agent }) {
-      await k8s().delete('Secret', cfg.namespace, namesFor(runnerName, agent).credentials);
+      const names = namesFor(runnerName, agent);
+      // The login also lives in the pod's state volume (the copy the tool renews; the keeper copies it back to the Secret). Deleting only the Secret would leave a working login on that volume for good,
+      // so the state claim goes first (its volume is freed once the pod stops, which the controller does as soon as the Secret is gone); the claim is made again, empty, for the next sign-in.
+      // A failure here stops before the Secret is touched, so "nothing was changed" stays true. The work claim holds only public clones and stays.
+      await k8s().delete('PersistentVolumeClaim', cfg.namespace, names.state);
+      await k8s().delete('Secret', cfg.namespace, names.credentials);
     },
     bridge,
     async checkSignin({ runnerName, agent }) {

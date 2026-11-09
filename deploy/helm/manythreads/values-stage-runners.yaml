@@ -1,1 +1,39 @@
-# Stage profile "runners" (STAGE_PROFILE, tools/devbox/stage.sh): values added on top of values-stage.yaml. Empty until the package that needs it fills it (Bundle E).
+# Stage profile "runners" (STAGE_PROFILE=runners, tools/devbox/stage.sh): values added on top of values-stage.yaml (P19-12). The stage release gets the pods world of the Runners page:
+# Hermes pods and Claude Code / Codex runner pods in its OWN pods namespace `manythreads-stage-bots`, all running FAKE images, so the security proof of
+# tools/devbox/stage-runners-probe.sh can look at real pods, real Roles and a real network policy without a real sign-in file or a real model.
+#
+# What is on, and why it is safe to leave on:
+#   - hermesPods: the namespace, the controller's Roles, the network policies and the pods ServiceAccount. The Hermes pods themselves are not what is proved here; a small request
+#     keeps the stage inside its memory budget (about 1.5 GB for the release plus a few hundred MB per pod).
+#   - claudePod with useFake: the pod runs deploy/images/claude-pod-fake (a stand-in `claude`, a stand-in bridge address). It never reaches a model and never holds a real login.
+#     The image `manythreads/claude-pod-fake:stage` is built into k3s by `tools/devbox/stage-runners-probe.sh image` (the stage never pulls from a registry).
+#   - appTeams is EMPTY on purpose. The chart makes one `apps-<team>` namespace per listed team; stage.sh only ever deletes the release namespace and the pods namespace, so a team
+#     namespace made here would be left behind after `stage.sh down`.
+# The Kubernetes API address below is the devbox's node address, the same as values-live.yaml (k3s answers on the node IP after service NAT); `runtimeClassCheck` is off because the
+# stage uses the cluster's default runtime and the chart's lookup needs nothing here.
+hermesPods:
+  enabled: true
+  namespace: manythreads-stage-bots
+  appTeams: []
+  deployTargets: []
+  runtimeClassCheck: false
+  apiServer:
+    cidr: 10.0.2.15/32
+  hermesResources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  workbenchResources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  workspaceSize: 1Gi
+  homeSize: 256Mi
+
+claudePod:
+  enabled: true
+  useFake: true
+  fakeImage: manythreads/claude-pod-fake:stage
+  workSize: 1Gi
+  stateSize: 64Mi
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }

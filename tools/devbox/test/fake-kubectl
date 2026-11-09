@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# A stand-in for kubectl for the tests of stage-runners-probe.sh: records every call in $FAKE_LOG and answers like a healthy stage with one Claude pod. Knobs (environment):
+# FAKE_LEAK=<describe|logs|events|yaml>  the text of that read holds a made-up sign-in byte
+# FAKE_KEEPER_API=<word>                what the same probe answers in the keeper container (default "status 401": reachable, refused without a token)
+# FAKE_API=<word>                        what the Kubernetes API probe in the run container answers (default "error ETIMEDOUT")
+# FAKE_META=<word>                       what the 169.254.169.254 probe answers (default "timeout")
+# FAKE_ENVLEAK=1                         the process probe finds the canary in a container's environment
+# FAKE_NO_PODS=1                         no pod in the pods namespace
+# FAKE_CANI_YES="<text>"                 any `auth can-i` whose words contain <text> answers yes (default: the right table)
+# FAKE_MOUNT_CREDS=<list>                the containers that mount the sign-in Secret (default "prepare")
+set -u
+echo "kubectl $*" >>"$FAKE_LOG"
+args="$*"
+leak() { [ "${FAKE_LEAK:-}" = "$1" ] && echo "token: fake-access-shared-CANARY-SEEDRUNNERS-3c8d"; return 0; }
+case "$args" in
+  *"auth can-i"*)
+    # the right table: yes for these, no for the rest
+    want=no
+    case "$args" in
+      *"get secret/claude-claude-shared-credentials"* | *"patch secret/claude-claude-shared-credentials"*) want=yes ;;
+      *"as=system:serviceaccount:manythreads-stage:manythreads-server"*)
+        case "$args" in
+          *"create deployments"* | *"create serviceaccounts"* | *"create roles -n"* | *"-n manythreads-stage-bots create roles"* | *"create rolebindings"* | *"get secrets"* | *"delete persistentvolumeclaims"* | *"list nodes"*) want=yes ;;
+        esac
+        case "$args" in *"-n manythreads-stage create roles"*) want=no ;; *"--all-namespaces"* | *"kube-system"*) want=no ;; esac
+        ;;
+    esac
+    if [ -n "${FAKE_CANI_YES:-}" ] && [[ "$args" == *"$FAKE_CANI_YES"* ]]; then want=yes; fi
+    echo "$want"
+    [ "$want" = yes ] || exit 1
+    ;;
+  *"get deploy -l app.kubernetes.io/component=claude-pod"*) [ -n "${FAKE_NO_PODS:-}" ] || echo "claude-claude-shared" ;;
+  *"get deploy claude-claude-shared -o jsonpath"*) echo 1 ;;
+  *"get deploy claude-claude-shared -o json"*)
+    creds="${FAKE_MOUNT_CREDS:-prepare}"
+    node -e '
+      const creds = process.argv[1].split(",").filter(Boolean);
+      const mount = (n) => [{ name: n }];
+      const spec = {
+        automountServiceAccountToken: false,
+        initContainers: [{ name: "prepare", volumeMounts: creds.includes("prepare") ? mount("creds") : [] }],
+        containers: ["bridge", "keeper", "repo-sync", "publisher"].map((n) => ({ name: n, volumeMounts: [...(creds.includes(n) ? mount("creds") : []), ...(n === "keeper" ? mount("keeper-token") : []), ...(n === "publisher" ? mount("push-0") : [])] })),
+        volumes: [{ name: "creds" }, { name: "keeper-token" }, { name: "push-0" }],
+      };
+      console.log(JSON.stringify({ spec: { template: { spec } } }));' "$creds"
+    ;;
+  *"describe pod"*) leak describe; echo "Name: claude-claude-shared-abc" ;;
+  *"describe deploy"*) echo "Name: claude-claude-shared" ;;
+  *"get pod,deploy,cm"*) leak yaml; echo "kind: List" ;;
+  *"get events"*) leak events; echo "No events" ;;
+  *"logs deploy/claude-claude-shared"*) leak logs; echo "bridge listening" ;;
+  *"logs deploy/manythreads-server"*) echo "server up" ;;
+  *"exec deploy/claude-claude-shared"*)
+    case "$args" in
+      *"readdirSync"*) echo "processes 3"; [ -n "${FAKE_ENVLEAK:-}" ] && echo "hit environ CANARY-SEEDRUNNERS-3c8d 1"; true ;;
+      *"/proc/"*"environ"*"cut"*) printf 'HOME\nAGENT_BRIDGE_API_KEY\nCLAUDE_CONFIG_DIR\n' ;;
+      *"/state/claude"*) echo present ;;
+      *"require(\"https\")"*) if [[ "$args" == *"-c keeper"* ]]; then echo "${FAKE_KEEPER_API-status 401}"; else echo "${FAKE_API-error ETIMEDOUT}"; fi ;;
+      *"169.254.169.254"*) echo "${FAKE_META:-timeout}" ;;
+      *"manythreads-server.manythreads-stage.svc"*) echo open ;;
+      *"require(\"net\")"*) echo timeout ;;
+    esac
+    ;;
+  *) ;;
+esac
+exit 0

@@ -37,6 +37,7 @@ Plain string work, no database, no network; a bounded quantifier per detector, l
 |---|---|
 | `private-key` | a `-----BEGIN … PRIVATE KEY-----` block from header **through footer** (a truncated one up to 16 KB; a text of footerless headers is scanned once) |
 | `api-key` | `sk-…` (up to 512 characters, so `sk-proj-…` is whole; a hyphenated word such as `sk-learn-pipeline` is not a key), `AKIA…`, `ghp_…`, `xox…` |
+| `signin-token` (P19-12) | the sign-in tokens of a runner: Anthropic access and refresh tokens (`sk-ant-oat…`, `sk-ant-ort…`), a JSON web token (`eyJ….eyJ….…`, an id or access token of a ChatGPT sign-in), a ChatGPT refresh token (`rt_…` with a digit or capital), and the value of the sign-in file's own token fields (`accessToken`, `refreshToken`, `idToken`, `access_token`, `refresh_token`, `id_token`) whatever it looks like. The field name stays readable. Always on: the settings of the other detectors do not reach it. The agent bridge hides the same shapes in a run's answer (`tools/agent-bridge/src/process.ts`; a test checks the two name the same samples) |
 | `bearer-token` | `Bearer <token>` |
 | `credential-url` | `scheme://user:password@host` |
 | `card-number` | 13–19 digits with separators, confirmed by Luhn |
