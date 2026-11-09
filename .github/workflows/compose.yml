@@ -1,0 +1,67 @@
+name: compose
+
+# The Docker Compose install, tested from nothing (PLAN P10-13). Every night, and by hand, the devbox checks out a clean copy of the commit, builds the images,
+# starts the five containers with the test overlay, runs `admin init`, asks Brain a question through the Hermes container and tears everything down
+# (tools/compose-test/run.sh, described in docs/deploy/compose.md). It costs about 8 GB of disk while it runs and 15 to 25 minutes.
+#
+# The devbox is shared, so this job is polite:
+#   - it takes the test lock (/tmp/manythreads-test.lock) without waiting; when somebody else holds it, the night is skipped;
+#   - the script itself refuses to start while a CI run or a stage is up, or the disk is 80 % full or more (exit code 2). That is a skipped night, not a failed one.
+# It deploys nothing and touches no container, volume or network that is not named mt-compose-<pid>.
+
+on:
+  schedule:
+    - cron: '20 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compose
+  cancel-in-progress: false
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sshpass
+        run: sudo apt-get install -y -qq sshpass
+
+      - name: Copy the tree to the devbox
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          # A directory of its own, with the git history: the test checks out a clean copy of the commit from it.
+          remote 'rm -rf /root/compose-test-tree && mkdir -p /root/compose-test-tree'
+          tar czf - --exclude=node_modules --exclude=.codegraph --exclude=temp \
+            --exclude=e2e/test-results --exclude=e2e/playwright-report . \
+            | remote 'tar xzf - -C /root/compose-test-tree'
+          remote 'chown -R root:root /root/compose-test-tree'
+
+      - name: Run the Docker Compose test
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          set +e
+          remote 'cd /root/compose-test-tree && export PATH="$PATH:/usr/local/bin" && flock -n -E 99 /tmp/manythreads-test.lock tools/compose-test/run.sh'
+          code=$?
+          set -e
+          if [ "$code" -eq 99 ]; then
+            echo "::notice::the lock is held by another job; tonight's run is skipped"
+            code=0
+          elif [ "$code" -eq 2 ]; then
+            echo "::notice::the script refused to start (busy machine or disk 80 percent full); tonight's run is skipped"
+            code=0
+          fi
+          exit "$code"
+
+      - name: Fetch the log
+        if: always()
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          remote 'tail -n 80 /tmp/compose-test.log 2>/dev/null' || true
+          remote 'rm -rf /root/compose-test-tree' || true

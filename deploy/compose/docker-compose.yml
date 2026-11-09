@@ -1,0 +1,165 @@
+# manythreads on one machine with Docker Compose (docs/deploy/compose.md). Five containers, nothing else:
+#
+#   postgres     the one database (application, model gateway and memory each in their own database)
+#   litellm      the model gateway: every model call of the install goes through it
+#   hindsight    team memory (reachable only from the gateway, the model gateway and Postgres)
+#   manythreads  the server AND the web client (it serves the built files itself)
+#   hermes       the agent runtime the bots run on (one profile per bot, in a volume shared with the manythreads container)
+#
+# Every password and key comes from the `.env` file next to this one (`sh deploy/compose/make-env.sh` writes it). There is no default for any of
+# them here: a missing value stops `docker compose up` with a message that names it. After the first start run `admin init` once (docs/deploy/compose.md).
+
+name: manythreads
+
+services:
+  postgres:
+    build: ../postgres
+    image: manythreads/postgres:compose
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: manythreads_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set; run sh deploy/compose/make-env.sh}
+      POSTGRES_DB: manythreads
+      HINDSIGHT_DB_PASSWORD: ${MANYTHREADS_HINDSIGHT_DB_PASSWORD:?MANYTHREADS_HINDSIGHT_DB_PASSWORD is not set}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      # Runs only when the volume is first made: the `litellm` database and the `hindsight` role and database.
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-selfhost.sh:ro
+    # `memory` too: Hindsight keeps its banks in the `hindsight` database of this server.
+    networks: [default, memory]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manythreads_owner -d manythreads"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    command: ["--config", "/config/litellm.yaml", "--port", "4000", "--num_workers", "1"]
+    environment:
+      LITELLM_MASTER_KEY: ${MANYTHREADS_LITELLM_MASTER_KEY:?MANYTHREADS_LITELLM_MASTER_KEY is not set}
+      LITELLM_SALT_KEY: ${MANYTHREADS_LITELLM_SALT_KEY:?MANYTHREADS_LITELLM_SALT_KEY is not set}
+      STORE_MODEL_IN_DB: "True"
+      DATABASE_URL: postgresql://manythreads_owner:${POSTGRES_PASSWORD}@postgres:5432/litellm
+    volumes:
+      - ./litellm.selfhost.yaml:/config/litellm.yaml:ro
+    # `memory` too: Hindsight's fact extraction goes through the one model gateway (it never holds a provider key).
+    networks: [default, memory]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:${MANYTHREADS_HINDSIGHT_TAG:-0.10.3}
+    restart: unless-stopped
+    environment:
+      # Its own login role, which owns only the `hindsight` database and cannot connect to `manythreads` (deploy/compose/postgres-init.sh).
+      HINDSIGHT_API_DATABASE_URL: postgresql://hindsight:${MANYTHREADS_HINDSIGHT_DB_PASSWORD}@postgres:5432/hindsight
+      HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      HINDSIGHT_API_TENANT_API_KEY: ${MANYTHREADS_HINDSIGHT_API_KEY:?MANYTHREADS_HINDSIGHT_API_KEY is not set}
+      # Fact extraction is a model call; it goes to the gateway (alias `fast`) with a key that is good for that alias only, never the master key.
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_BASE_URL: http://litellm:4000/v1
+      HINDSIGHT_API_LLM_API_KEY: ${MANYTHREADS_HINDSIGHT_LLM_KEY:?MANYTHREADS_HINDSIGHT_LLM_KEY is not set}
+      HINDSIGHT_API_LLM_MODEL: fast
+      HINDSIGHT_API_RETAIN_EXTRACTION_MODE: concise
+      # The key does not exist until `admin init` makes it, so the engine must start without checking it.
+      HINDSIGHT_API_SKIP_LLM_VERIFICATION: "true"
+    # Reachable only by Postgres, the model gateway and the manythreads server (they share `memory`); the Hermes bots cannot call it.
+    # No port is published: the engine's own pages would show every team's bank.
+    networks: [memory]
+    healthcheck:
+      # the image has python3 and no curl
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  manythreads:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/manythreads.Dockerfile
+    image: manythreads/manythreads:compose
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://manythreads_owner:${POSTGRES_PASSWORD}@postgres:5432/manythreads
+      MANYTHREADS_APP_PASSWORD: ${MANYTHREADS_APP_PASSWORD:?MANYTHREADS_APP_PASSWORD is not set}
+      MANYTHREADS_SYSTEM_PASSWORD: ${MANYTHREADS_SYSTEM_PASSWORD:?MANYTHREADS_SYSTEM_PASSWORD is not set}
+      MANYTHREADS_APP_DATABASE_URL: postgres://manythreads_app:${MANYTHREADS_APP_PASSWORD}@postgres:5432/manythreads
+      MANYTHREADS_SYSTEM_DATABASE_URL: postgres://manythreads_system:${MANYTHREADS_SYSTEM_PASSWORD}@postgres:5432/manythreads
+      MANYTHREADS_KMS_KEY: ${MANYTHREADS_KMS_KEY:?MANYTHREADS_KMS_KEY is not set; run sh deploy/compose/make-env.sh}
+      MANYTHREADS_PUBLIC_URL: ${MANYTHREADS_PUBLIC_URL:-http://localhost:3000}
+      MANYTHREADS_TRUST_PROXY: ${MANYTHREADS_TRUST_PROXY:-0}
+      MANYTHREADS_SMTP_URL: ${MANYTHREADS_SMTP_URL:-}
+      MANYTHREADS_MAIL_FROM: ${MANYTHREADS_MAIL_FROM:-manythreads <no-reply@localhost>}
+      MANYTHREADS_LITELLM_URL: http://litellm:4000
+      MANYTHREADS_LITELLM_MASTER_KEY: ${MANYTHREADS_LITELLM_MASTER_KEY}
+      MANYTHREADS_HINDSIGHT_URL: http://hindsight:8888
+      MANYTHREADS_HINDSIGHT_API_KEY: ${MANYTHREADS_HINDSIGHT_API_KEY}
+      # What `admin init` needs to make the Hermes runner and the Brain's profile (it runs inside this container, `docker compose exec`).
+      MANYTHREADS_INTERNAL_URL: http://127.0.0.1:3000
+      MANYTHREADS_HERMES_URL: http://hermes:8642
+      MANYTHREADS_HERMES_API_KEY: ${MANYTHREADS_HERMES_API_KEY:?MANYTHREADS_HERMES_API_KEY is not set}
+      MANYTHREADS_HERMES_LLM_KEY: ${MANYTHREADS_HERMES_LLM_KEY:?MANYTHREADS_HERMES_LLM_KEY is not set}
+      MANYTHREADS_HINDSIGHT_LLM_KEY: ${MANYTHREADS_HINDSIGHT_LLM_KEY}
+      MANYTHREADS_HERMES_LLM_BASE_URL: http://litellm:4000/v1
+      MANYTHREADS_HERMES_MCP_URL: http://manythreads:3000/mcp
+    volumes:
+      - data:/data
+      - hermes_profiles:/hermes-profiles
+    # The server is the one gateway to memory: it shares `memory` with the engine.
+    networks: [default, memory]
+    ports:
+      - "${MANYTHREADS_BIND:-127.0.0.1}:${MANYTHREADS_PORT:-3000}:3000"
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/readyz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  hermes:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/hermes.Dockerfile
+    image: manythreads/hermes:compose
+    restart: unless-stopped
+    # Starts as root only to make the shared profile directory writable, then runs as `node` (the script says how).
+    user: "0:0"
+    entrypoint: ["/bin/bash", "/usr/local/bin/hermes-entrypoint.sh"]
+    environment:
+      API_SERVER_PORT: "8642"
+    volumes:
+      - ./hermes-entrypoint.sh:/usr/local/bin/hermes-entrypoint.sh:ro
+      - hermes_profiles:/home/node/.hermes/profiles
+    networks: [default]
+    depends_on:
+      litellm: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8642/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+networks:
+  default: {}
+  # Only Postgres, the model gateway, Hindsight and the manythreads server are on it; the Hermes container is not.
+  memory: {}
+
+volumes:
+  pgdata:
+  data:
+  hermes_profiles:

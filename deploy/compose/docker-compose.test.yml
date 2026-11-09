@@ -1,0 +1,27 @@
+# The overlay the install's own test uses (tools/compose-test/run.sh): `docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build`.
+# NOT for a real install. It adds a stand-in model provider (the repository's fake LLM, no key and no network) and passwords written in the open,
+# and it builds the web client without the speech model files. docker-compose.yml itself has no fake service and no fixed password (a test checks it).
+
+services:
+  fake-llm:
+    build:
+      context: ../..
+      dockerfile: tools/compose-test/fake-llm.Dockerfile
+    image: manythreads/fake-llm:compose-test
+    environment:
+      FAKE_LLM_PORT: "4010"
+      FAKE_LLM_HOST: 0.0.0.0
+      FAKE_LLM_SCENARIO: demo
+    networks: [default]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4010/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  manythreads:
+    build:
+      args:
+        WITH_MODELS: "0"
+    depends_on:
+      fake-llm: { condition: service_healthy }

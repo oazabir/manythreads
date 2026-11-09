@@ -25,6 +25,7 @@ import { startServer } from './start.ts';
  *   MANYTHREADS_JOB_WORKERS=0      do not run job workers in this process (the kms.rewrap queue and plugin queues); default on
  *   MANYTHREADS_KMS_KEY / MANYTHREADS_KMS_PREVIOUS_KEYS   master key, and (comma-separated base64) the keys it replaced until
  *                                  `admin kms-rewrap` has moved every secret
+ *   MANYTHREADS_WEB_DIR            directory of the built web client; when set, this process serves it too (Docker Compose installs; see web-static.ts)
  *   NODE_ENV=test                  the only setting that honours the x-manythreads-dev-actor header
  */
 const env = process.env;

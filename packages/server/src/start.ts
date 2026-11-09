@@ -46,6 +46,7 @@ import type pg from 'pg';
 import { buildServer } from './build-server.ts';
 import { otelConfigFromEnv, startOtel } from './otel.ts';
 import { createSessionService, sessionConfigFromEnv, type SessionConfig, type SessionService } from './session/index.ts';
+import { registerWebStatic, webDirFromEnv } from './web-static.ts';
 
 /**
  * `MANYTHREADS_TRUST_PROXY`: unset/0/false = off; 1/true = one proxy hop (the ingress); a number N = N hops; anything
@@ -314,6 +315,9 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
   app.decorate('broker', broker);
+  // The built web client, when `MANYTHREADS_WEB_DIR` names it (a Docker Compose install has no separate web server). Mounted last: every other route wins.
+  const webDir = webDirFromEnv(process.env);
+  if (webDir) await registerWebStatic(app, webDir);
   mailWarn = (line) => app.log.warn(line);
   for (const w of [appSize.warning, systemSize.warning, otelEnv.problem]) if (w !== undefined) app.log.warn(w);
 

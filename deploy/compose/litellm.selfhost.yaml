@@ -1,0 +1,16 @@
+# LiteLLM proxy config for the Docker Compose install (docs/deploy/compose.md). The models and the fallback chains are NOT written here: the
+# gateway-llm plugin owns them and pushes them from the database (the LLM page of the app), so this file only starts the proxy. The master key and the
+# salt come from the environment (LITELLM_MASTER_KEY, LITELLM_SALT_KEY; deploy/compose/make-env.sh makes them).
+
+model_list: []
+
+general_settings:
+  # Virtual keys are stored in the proxy's own database (the `litellm` database of the install's Postgres).
+  database_url: os.environ/DATABASE_URL
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+
+# No `router_settings` here, on purpose: LiteLLM refuses to change any setting the file names, so a default here would make every config push from the
+# gateway-llm plugin fail (the same rule as deploy/compose/litellm.yaml).

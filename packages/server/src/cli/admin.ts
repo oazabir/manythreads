@@ -6,12 +6,15 @@ import type { PersonId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import { databaseUrlsFromEnv } from '../db-env.ts';
 import { createSessionService, sessionConfigFromEnv } from '../session/index.ts';
+import { INIT_USAGE, runInit } from './init.ts';
 
 /**
  * Operator commands for a running deployment, run inside the server image (`kubectl exec`), never over HTTP:
  *
  *   pnpm --filter @manythreads/server admin set-password <email>      new password on stdin
  *   pnpm --filter @manythreads/server admin kms-rewrap                 queue the move of every secret to the current master key
+ *   pnpm --filter @manythreads/server admin init --email <address>     first administrator, first team, the Hermes runner and the Brain's profile (Docker Compose installs)
+ *   pnpm --filter @manythreads/server admin brain-profile --email <address>   only the Brain's profile and token again (docs/deploy/compose.md)
  *
  * `set-password` reads the new password from standard input (never from the command line, so it is not in `ps`, shell
  * history or logs), refuses one shorter than the policy minimum, stores its argon2id hash, signs the person out
@@ -110,6 +113,7 @@ export interface AdminIo {
 const USAGE = [
   'usage: admin set-password <email>   (the new password is read from standard input)',
   '       admin kms-rewrap             (queue the move of every secret to the current master key)',
+  INIT_USAGE,
 ].join('\n');
 
 export interface KmsRewrapResult {
@@ -133,6 +137,9 @@ export async function queueKmsRewrap(pool: pg.Pool): Promise<KmsRewrapResult> {
 /** Runs one admin command; returns the process exit code. Never prints the password. */
 export async function runAdmin(argv: readonly string[], io: AdminIo): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === 'init' || command === 'brain-profile') {
+    return runInit(rest, io, command === 'brain-profile', () => (io.pool ?? (() => createSystemPool(databaseUrlsFromEnv(io.env).systemUrl, 2)))());
+  }
   if (command === 'kms-rewrap') {
     if (rest.length > 0) {
       io.err(USAGE);

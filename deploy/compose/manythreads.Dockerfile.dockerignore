@@ -1,0 +1,10 @@
+# What the image needs is packages/, clients/web, templates/ and the workspace files. tools/ is left out: workspace members not needed at run time.
+**/node_modules
+**/dist
+.git
+e2e
+docs
+deploy
+tools
+# a developer's own `pnpm models:fetch` output: the image fetches (and checks) its own copy
+clients/web/public/models
