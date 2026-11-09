@@ -22,8 +22,11 @@ FROM node:22-slim AS web
 ENV CI=true COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
+# The packages are fetched from the lockfile alone, so this layer is rebuilt only when the lockfile changes, not on every source change.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm fetch
 COPY . .
-RUN pnpm install --frozen-lockfile --filter @manythreads/web... \
+RUN pnpm install --offline --frozen-lockfile --filter @manythreads/web... \
     && pnpm --filter @manythreads/web build
 
 FROM node:22-slim
@@ -33,17 +36,20 @@ RUN corepack enable
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY . .
-RUN pnpm install --frozen-lockfile --prod=false
-COPY --from=web /app/clients/web/dist /app/web
-COPY --from=models /models /app/web/models
 # `manythreads-admin <command>` is the admin command line (`docker compose exec manythreads manythreads-admin init ...`); it needs no pnpm at run time.
 RUN printf '%s\n' '#!/bin/sh' 'cd /app/packages/server && exec /app/node_modules/.bin/tsx src/cli/admin.ts "$@"' > /usr/local/bin/manythreads-admin \
     && chmod +x /usr/local/bin/manythreads-admin \
-    && mkdir -p /data/storage /data/repos /hermes-profiles \
-    && chown -R node:node /app /data /hermes-profiles
+    && mkdir -p /app /data/storage /data/repos /hermes-profiles \
+    && chown node:node /app /data /data/storage /data/repos /hermes-profiles
+# Everything below runs as `node`, so no layer has to copy the files again to change their owner.
 USER node
+WORKDIR /app
+COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm fetch
+COPY --chown=node:node . .
+RUN pnpm install --offline --frozen-lockfile --prod=false
+COPY --from=web --chown=node:node /app/clients/web/dist /app/web
+COPY --from=models --chown=node:node /models /app/web/models
 WORKDIR /app/packages/server
 ENV PORT=3000 MANYTHREADS_WEB_DIR=/app/web MANYTHREADS_STORAGE_DIR=/data/storage MANYTHREADS_REPO_DIR=/data/repos MANYTHREADS_HERMES_PROFILES_DIR=/hermes-profiles
 EXPOSE 3000

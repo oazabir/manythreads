@@ -113,8 +113,26 @@ export function registerWorkspaceBrain(ctx: PluginContext): void {
     { cron: '*/15 * * * *', maxAttempts: 1, concurrency: 1 },
   );
   // A new team: the workspace Brain joins it at once, so it can post in the team's channels.
-  ctx.events.subscribe('workspace.team.created', async (raw: PluginEvent, tx: PluginTx) => {
-    const event = WorkspaceTeamCreatedEvent.parse(raw);
-    await joinNewTeam(tx, event.workspaceId, event.teamId);
-  });
+  ctx.events.subscribe('workspace.team.created', (raw: PluginEvent, tx: PluginTx) => onTeamCreated(ctx, tx, raw));
+}
+
+/**
+ * A team was made. In a workspace that has no Brain yet (a new install: the server started before the workspace existed, so the start-time ensure found nothing) this is the
+ * moment to make it, so the first team has its Brain at once and not at the next 15-minute slot. A failure is logged and does not stop the team from being joined.
+ */
+export async function onTeamCreated(ctx: PluginContext, tx: PluginTx, raw: PluginEvent, log: PluginLogger = console): Promise<void> {
+  const event = WorkspaceTeamCreatedEvent.parse(raw);
+  const stored = (await tx.query('SELECT 1 FROM app.workspace_bot_definitions WHERE workspace_id = $1 AND slug = $2 LIMIT 1', [event.workspaceId, WORKSPACE_BRAIN_SLUG])).rows.length;
+  if (stored === 0) {
+    await tx.query('SAVEPOINT ensure_brain_on_team');
+    try {
+      await ensureWorkspaceBrain(ctx, tx, event.workspaceId, log);
+      await tx.query('RELEASE SAVEPOINT ensure_brain_on_team');
+    } catch (err) {
+      await tx.query('ROLLBACK TO SAVEPOINT ensure_brain_on_team');
+      await tx.query('RELEASE SAVEPOINT ensure_brain_on_team');
+      log.warn(`bots: the workspace Brain could not be made when team ${event.teamId} was created (the 15-minute job tries again): ${err instanceof Error ? err.message.slice(0, 300) : 'unknown'}`);
+    }
+  }
+  await joinNewTeam(tx, event.workspaceId, event.teamId);
 }

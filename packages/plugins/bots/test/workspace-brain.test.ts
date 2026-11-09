@@ -17,7 +17,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bots from '../src/index.ts';
 import { joinNewTeam, loadWorkspaceBot } from '../src/loader.ts';
-import { ENSURE_BRAIN_QUEUE, SUPERSEDED_BRAIN_SHAS, ensureWorkspaceBrain, retireTeamBrains, shippedBrainDefinition } from '../src/workspace-brain.ts';
+import { ENSURE_BRAIN_QUEUE, SUPERSEDED_BRAIN_SHAS, ensureWorkspaceBrain, onTeamCreated, retireTeamBrains, shippedBrainDefinition } from '../src/workspace-brain.ts';
 
 // P20-07: the workspace Brain. The shipped BOT.md is stored as version 1 of its definition and loaded as a bot of scope `workspace` with no team; it is a member of every
 // team, its grants carry the workspace id, and the old per-team Brains are switched off (kept, with their history) once it is active.
@@ -207,5 +207,27 @@ describe('the workspace Brain', () => {
       (await tx.query(`SELECT 1 FROM app.team_members m JOIN app.actors a ON a.id = m.actor_id AND a.kind = 'bot' JOIN app.bots b ON b.id = a.ref_id AND b.scope = 'workspace' WHERE m.team_id = $1`, [team])).rows.length,
     );
     expect(seat).toBe(1);
+  });
+
+  it('makes the Brain when the first team of a workspace is created (a fresh install has no Brain at start), joins the team, and does nothing more the second time', async () => {
+    const other = await sys(async (tx) => (await tx.query<{ id: string }>(`INSERT INTO app.workspaces (slug, name) VALUES ('fresh-install', 'Fresh install') RETURNING id`)).rows[0]!.id);
+    const team = await sys(async (tx) => (await tx.query<{ id: string }>(`INSERT INTO app.teams (workspace_id, slug, name) VALUES ($1, 'general', 'General') RETURNING id`, [other])).rows[0]!.id);
+    const fresh = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: other as typeof WS });
+    const event = { type: 'workspace.team.created', schemaVersion: 1, workspaceId: other, teamId: team, slug: 'general', name: 'General', template: null } as unknown as PluginEvent;
+    const brains = () => fresh(async (tx) => (await tx.query(`SELECT 1 FROM app.bots WHERE workspace_id = $1 AND scope = 'workspace' AND slug = 'brain'`, [other])).rows.length);
+    const versions = () => fresh(async (tx) => (await tx.query(`SELECT 1 FROM app.workspace_bot_definitions WHERE workspace_id = $1 AND slug = 'brain'`, [other])).rows.length);
+    const seats = () =>
+      fresh(async (tx) =>
+        (await tx.query(`SELECT 1 FROM app.team_members m JOIN app.actors a ON a.id = m.actor_id AND a.kind = 'bot' JOIN app.bots b ON b.id = a.ref_id AND b.scope = 'workspace' WHERE m.team_id = $1`, [team])).rows.length,
+      );
+    expect(await brains()).toBe(0);
+    await fresh((tx) => onTeamCreated(ctx, tx as unknown as PluginTx, event, log));
+    expect(await brains()).toBe(1);
+    expect(await versions()).toBe(1);
+    expect(await seats()).toBe(1);
+    await fresh((tx) => onTeamCreated(ctx, tx as unknown as PluginTx, event, log));
+    expect(await brains()).toBe(1);
+    expect(await versions()).toBe(1);
+    expect(await seats()).toBe(1);
   });
 });
