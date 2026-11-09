@@ -63,12 +63,12 @@ export interface WalkScreen {
 
 /**
  * What a walk of one screen found, by step id: the stops (first 15) and the problems the helper lists. A journey asserts that the problems are exactly the ones it knows about
- * (`known`), with the cause written next to them, so a fixed defect makes the journey say its list is out of date and a new one fails it.
+ * (`known`, keyed by the step id, or `mobile:<step id>` for a problem of the phone layout only), with the cause written next to them, so a fixed defect makes the journey say its list is out of date and a new one fails it.
  */
 export function tabWalkSteps(
   screens: readonly WalkScreen[],
   known: Readonly<Record<string, readonly string[]>> = {},
-): { steps: StepDeclaration[]; results: Map<string, { stops: FocusStop[]; problems: string[] }>; check: () => void } {
+): { steps: StepDeclaration[]; results: Map<string, { stops: FocusStop[]; problems: string[] }>; check: (viewport?: string) => void } {
   const results = new Map<string, { stops: FocusStop[]; problems: string[] }>();
   const steps: StepDeclaration[] = screens.map((s) => ({
     id: s.id,
@@ -91,12 +91,12 @@ export function tabWalkSteps(
       results.set(s.id, { stops, problems: tabWalkProblems(stops) });
     },
   }));
-  const check = (): void => {
+  const check = (viewport = 'desktop'): void => {
     for (const s of screens) {
       const r = results.get(s.id);
       expect(r, `${s.id}: the walk ran`).toBeTruthy();
       expect(r!.stops.length, `${s.id}: the walk reached stops (${r!.stops.map((x) => `${x.id}[${x.name}]`).join(', ')})`).toBeGreaterThanOrEqual(5);
-      expect(r!.problems, `${s.id}: keyboard problems (list the cause in the journey's known list)`).toEqual([...(known[s.id] ?? [])]);
+      expect(r!.problems, `${s.id}: keyboard problems (list the cause in the journey's known list)`).toEqual([...(known[`${viewport}:${s.id}`] ?? known[s.id] ?? [])]);
     }
   };
   return { steps, results, check };

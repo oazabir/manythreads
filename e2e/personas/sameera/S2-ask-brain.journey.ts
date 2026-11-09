@@ -61,7 +61,12 @@ export default defineJourney({
       expect: TID.frame,
       run: async ({ page }) => {
         // the first source is a memory item when the memory engine found one, else the message the refund rule was written in (it opens its thread): either opens where it lives
-        await page.getByTestId(TID.answerCitation).first().click();
+        // a person scrolls the source clear of the sticky header on the phone before tapping it (the automatic scroll leaves it under the header)
+        const source = page.getByTestId(TID.answerCitation).first();
+        await source.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+        const box = await source.boundingBox();
+        if (box === null) throw new Error('the first source has no box on the page');
+        await page.mouse.click(box.x + Math.min(12, box.width / 2), box.y + box.height / 2);
         await expect(page.getByTestId(TID.conceptDetail).or(page.getByTestId(TID.channelView)).or(page.getByTestId(TID.threadView)).or(page.getByTestId(TID.chatScreen)).first(), `the source opened (now at ${page.url()})`).toBeVisible({ timeout: 30_000 });
         await expect(page.getByText(/refund/i).first()).toBeVisible();
       },
