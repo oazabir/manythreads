@@ -20,6 +20,7 @@
 //                                `runners` (seed v3 and v4 plus seed v19, opt-in: a populated Runners page - host, team pod, two Claude runners, an LLM gateway runner and a Codex runner
 //                                waiting for sign-in, all with made-up sign-ins - see packages/test-utils/src/seed-runners.ts)
 //   MANYTHREADS_STACK_SNAPSHOT   `day-1` or `week-2` (P12-02): restore the saved database and folders (tools/seed/src/restore.ts) instead of running a seed; the seed modes then do nothing.
+//   MANYTHREADS_STACK_WEB_DIST   a folder with another web build to serve instead of clients/web/dist (the canary run)
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
 //   MANYTHREADS_STACK_TEST_PLUGINS 1: the test-kernel plugin (bulk messages, channel grants, stub resources)
@@ -43,7 +44,10 @@ import type { FakeSaas } from '../../tools/fake-saas/src/index.ts';
 import { restoreSnapshot } from '../../tools/seed/src/restore.ts';
 import { seedWorld } from './seed.ts';
 
-const dist = resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
+// `MANYTHREADS_STACK_WEB_DIST` serves another build (the canary run of tools/review/canary.sh builds a client without the composer into its own folder).
+const dist = process.env['MANYTHREADS_STACK_WEB_DIST']
+  ? resolve(process.env['MANYTHREADS_STACK_WEB_DIST'])
+  : resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
 const apiOnly = process.env['MANYTHREADS_STACK_API_ONLY'] === '1';
 if (!apiOnly && !existsSync(join(dist, 'index.html'))) {
   console.error(`clients/web/dist is not built (${dist}); run \`pnpm --filter @manythreads/web build\` first`);
