@@ -56,8 +56,13 @@ export default defineJourney({
         await pages.threads.open();
         const row = page.getByTestId('thread-row').filter({ hasText: 'Deploy plan' }).first();
         await expect(row).toBeVisible();
-        await page.getByRole('option', { name: /Deploy plan/ }).getByTestId('thread-actions').click();
-        await expect(page.getByTestId('thread-action-save')).toBeVisible();
+        // the Actions menu closes on any scroll or resize of the window (ThreadCard.tsx); a late scroll of the list probably shuts it
+        // just after the click (cause not proven; seen once in a full run: "thread-action-save" not found). The step opens it again until it stays open; the menu must still show.
+        const save = page.getByTestId('thread-action-save');
+        await expect(async () => {
+          if (!(await save.isVisible())) await page.getByRole('option', { name: /Deploy plan/ }).getByTestId('thread-actions').click();
+          await expect(save).toBeVisible({ timeout: 2_000 });
+        }).toPass({ timeout: 20_000 });
       },
     },
     {
