@@ -84,6 +84,16 @@ postgres:
     size: 10Gi
     storageClass: local-path
   resources: {}
+  # Continuous backup to object storage through the CloudNativePG Barman Cloud plugin (Bundle E, decision E17). OFF. No template reads this block until
+  # WP-O2 adds them: it renders an ObjectStore, the Cluster's `plugins:` entry (WAL archiving) and a ScheduledBackup. The plugin is a cluster-wide operator the owner installs.
+  objectStore:
+    enabled: false
+    bucket: ""
+    endpoint: ""
+    region: us-east-1
+    existingSecret: ""    # a Secret with the keys access-key and secret-key
+    retention: 30d
+    schedule: "0 2 * * *"
 
 server:
   enabled: true
@@ -95,6 +105,11 @@ server:
   # Traefik (one shared sign-in lockout). Set it to the number of proxies in front of the server pod.
   trustProxy: "2"
   env: {}
+  # OpenTelemetry traces (Bundle E, decision E24). Off while `endpoint` is empty. When set, the server gets MANYTHREADS_OTEL_EXPORTER_OTLP_ENDPOINT (OTLP over HTTP)
+  # and MANYTHREADS_OTEL_SAMPLE_RATIO (0 to 1). No template reads these until WP-O3 adds them.
+  otel:
+    endpoint: ""
+    sampleRatio: 1
   resources: {}
   # Attachment bytes (storage-local, MANYTHREADS_STORAGE_DIR). Without a volume an upload lives in the pod's disk and
   # vanishes on restart. One PVC (local-path, ReadWriteOnce) mounted at mountPath in the server pod and in the seed Job.
@@ -329,6 +344,20 @@ claudePod:
     limits: { memory: 2Gi }
   egress:
     mode: public443
+  # The third container of a pod that publishes a branch for a bot allowed to open a pull request (Bundle E, decision E2). No template reads this block until WP-R1 adds it.
+  publisher:
+    enabled: true
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { memory: 256Mi }
+  # RuntimeClass of the pod (gVisor where the cluster has it, decision E22). Empty = the cluster's default runtime. No template reads this until WP-O2 adds it.
+  runtimeClassName: ""
+
+# Network policies of the release namespace itself (Bundle E, decision E20). The pods namespace already has its own (templates/hermes-pods.yaml).
+# `release.enabled`: Hindsight, LiteLLM and Postgres take traffic only from the workloads that need them. No template reads this until WP-O2 adds netpol-release.yaml.
+networkPolicies:
+  release:
+    enabled: true
 
 # Managed Hermes pods ("mode B", docs/plugins/hermes-pods.md): the platform runs one pod per team (`hermes-<team>`) holding the team's bots.
 # The server's hermes-pods plugin creates and updates them through the Kubernetes API (a ServiceAccount of its own with a Role in THIS
