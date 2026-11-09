@@ -40,7 +40,10 @@ async function signedIn(browser: Browser, width: 1440 | 390, scheme: 'light' | '
     const m = req.method();
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return route.continue();
     if (m === 'POST' && new URL(req.url()).pathname === '/api/auth/password/sign-in') return route.continue();
-    problems.push(`blocked ${m} ${new URL(req.url()).pathname}`);
+    // The page's own beacons (Cloudflare's analytics and the presence ping) are answered with an empty 204: they write nothing here, and an abort would log a console error.
+    const path = new URL(req.url()).pathname;
+    if (m === 'POST' && (path === '/api/presence' || path.startsWith('/cdn-cgi/'))) return route.fulfill({ status: 204, body: '' });
+    problems.push(`blocked ${m} ${path}`);
     return route.abort();
   });
   const page = await context.newPage();
@@ -112,7 +115,7 @@ for (const width of [1440, 390] as const) {
       try {
         const tag = `${width}.${scheme}`;
         await page.goto('/settings/workspace/health');
-        await expect(page.getByText('System health').first()).toBeVisible(T);
+        await expect(page.getByRole('heading', { name: 'System health' }).first()).toBeVisible(T);
         await expect(page.getByText('Loading…')).toHaveCount(0, T);
         await page.waitForLoadState('networkidle');
         const text = (await page.locator('main').innerText().catch(() => page.locator('body').innerText())).replace(/\s+/g, ' ');
