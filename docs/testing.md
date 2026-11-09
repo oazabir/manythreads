@@ -229,3 +229,14 @@ the tests search every answer, event, audit row and log for the canary. `startFa
 tests use `tools/agent-bridge/test/fixtures/fake-claude.mjs` (it answers `FAKE401` and `FAKELIMIT` prompts and rotates refresh tokens), and the Runners page uses
 the mock transport. `e2e/admin/runners-claude.spec.ts` starts a stack with `MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL` pointing at the double. It was written but not run in the
 session that built it (no browser was allowed there); run it before relying on it.
+
+## The runner security proof (P19-12)
+`e2e/runners/` runs three specs on the `runners` stack (seed v19, with its own `startFakeK8s()`; `e2e/runners/support.ts` starts it and keeps the server log, `Stack.log()`).
+`visibility.spec.ts` walks every `*Route` of `@manythreads/shared` under the runner and bot prefixes as a team lead, a member and a guest, on three teams and with made-up ids, and
+searches every answer, header and bot page for the address, key, node, sign-in canary and Secret names; `canary.spec.ts` uploads made-up Claude and Codex files through the real
+route and searches the log, answers, K8s calls and every `app` table for the canary, checks the DLP test box on each token shape, and that Remove sign-in deletes the state volume
+then the Secret; `placement.spec.ts` has Nadia (promoted to Engineering lead; adding a bot stays an admin's job) change one bot's `runs_on` to a Hermes gateway, Claude Code, Codex
+and an LLM gateway runner in turn and read the stand-in's answer (screenshots in `temp/screenshots/p19-12`). The Claude and Codex pods are reached through the test seam
+`MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL` / `_KEY` (see [claude-pods](plugins/claude-pods.md)). The team-pod kind has no seam and is proved on the stage
+(`tools/devbox/stage-runners-probe.sh`, [runners-live](runbooks/runners-live.md)). Run one spec file at a time:
+`flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test runners/<name>.spec.ts --project=desktop --workers=1 --retries=0`.

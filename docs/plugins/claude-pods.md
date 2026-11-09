@@ -140,6 +140,12 @@ The wording of the refusals is a guess until the real tools are measured. `tools
 a local MCP stand-in and a made-up home folder; it also proves a changed `BOT.md` reaches the next run (see [agent-bridge](../agent-bridge.md#a-fresh-process-per-run)).
 The stand-in image is for the **stage** (`claudePod.enabled=true, useFake=true`, its own pods namespace), never for a runner made on the live site.
 
+**Test seam for the bridge address (P19-12).** A stack has no pod and no cluster DNS, so the Claude and Codex runners could never be reached in a browser test. When the server runs
+with `NODE_ENV=test` and both `MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL` and `MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY` are set, the bridge address the resolver hands to the run is that
+stand-in (a server that speaks the bridge's wire, such as `tools/fake-hermes-gateway`) and not the pod's Service. With any other `NODE_ENV`, or only one of the two set, nothing
+changes; a real install sets neither. `e2e/runners/placement.spec.ts` uses it so a team lead's bot on each runner kind gets an answer; `packages/plugins/claude-pods/test/bridge-seam.test.ts`
+proves the three cases (both set under test, one set, not under test).
+
 **Seed v19** (`packages/test-utils/src/seed-runners.ts`, stack mode `runners`, opt-in) makes five runners through the real routes: a host Hermes gateway, the team pod, a
 Claude runner shared by Engineering and Marketing, a Claude runner for Customer support with a different made-up login, and an LLM gateway runner on the alias `fast`,
 with one bot placed on each by a proposal that changes its `BOT.md`; it also makes a Codex runner waiting for a sign-in when this build allows it. Sign-in files are

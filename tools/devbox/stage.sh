@@ -115,6 +115,9 @@ up() {
   if [ "$HAS_RUNNERS" = 1 ]; then
     kubectl delete namespace "$STAGE_BOTS_NS" --ignore-not-found --wait=true --timeout=300s
     kubectl create namespace "$STAGE_BOTS_NS"
+    # The chart (templates/hermes-pods.yaml) renders this Namespace itself; Helm refuses to take over one it did not make unless it carries these marks.
+    kubectl label namespace "$STAGE_BOTS_NS" app.kubernetes.io/managed-by=Helm --overwrite
+    kubectl annotate namespace "$STAGE_BOTS_NS" meta.helm.sh/release-name=manythreads-stage meta.helm.sh/release-namespace="$NS" --overwrite
     echo "pods namespace $STAGE_BOTS_NS made; stand-ins use host port $STANDIN_PORT (STAGE_STANDIN_PORT)"
   fi
   helm upgrade --install manythreads-stage ./deploy/helm/manythreads -n "$NS" \

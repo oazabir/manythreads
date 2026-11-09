@@ -108,6 +108,11 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
     const names = namesFor(runnerName, agent);
     const secret = await k8s().get('Secret', cfg.namespace, names.key);
     const key = secret?.data ? Buffer.from(String((secret.data as Record<string, string>)['api-key'] ?? ''), 'base64').toString('utf8') : '';
+    // Test seam (P19-12): a test server (NODE_ENV=test) may point every bridge at one stand-in that speaks the bridge's protocol, since no pod and no cluster DNS exist in a stack.
+    // Both variables must be set; in a real install neither is, and a NODE_ENV other than `test` ignores them.
+    const standInUrl = process.env['NODE_ENV'] === 'test' ? (process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL'] ?? '') : '';
+    const standInKey = process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY'] ?? '';
+    if (standInUrl !== '' && standInKey !== '') return { address: standInUrl, key: standInKey };
     return key === '' ? null : { address: `http://${names.base}.${cfg.namespace}.svc:8650`, key };
   };
   return {

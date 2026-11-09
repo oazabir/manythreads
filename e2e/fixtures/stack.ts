@@ -23,6 +23,8 @@ export interface Stack {
   fakeSaas: { control: string; seedKey: string; env: Record<string, string>; telegramBotToken: string | null } | null;
   /** What the `connectors` seed made (ids of #design, its planned room, the Zendesk address, the Telegram account, the handbook base, the sign-ins), else null. */
   seeded: Record<string, unknown> | null;
+  /** Everything the server process has written so far to its output and error streams (its log lines among them), for a spec that proves a value is in no log line. Grows while the stack runs. */
+  log(): string;
   /** SQL as the database owner, to arrange or inspect state the API cannot reach. */
   sql<T extends Record<string, unknown> = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<T[]>;
   stop(): Promise<void>;
@@ -92,6 +94,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
     fakeSaas: ready.fakeSaas ?? null,
     seeded: ready.seeded ?? null,
     sql: (text, params) => ownerSql(ready.ownerUrl, text, params),
+    log: () => output,
     stop: () =>
       new Promise<void>((resolve) => {
         process.off('exit', killOnExit);
