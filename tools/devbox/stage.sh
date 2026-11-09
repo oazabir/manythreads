@@ -39,6 +39,8 @@ stop_pid() {
 down() {
   step "stage down"
   stop_pid pf-web; stop_pid pf-api; stop_pid pf-pg; stop_pid fake-saas
+  # pnpm starts tsx, which starts node: stop_pid reaches only the first two, so the listener on the stand-ins' ports is stopped by its command line too
+  pkill -f "src/cli.ts --host $HOST --public-host $HOST --port $FAKE_PORT" 2>/dev/null || true
   helm uninstall "$STAGE_NS" -n "$STAGE_NS" >/dev/null 2>&1 || true
   kubectl delete namespace "$STAGE_NS" --ignore-not-found --wait=true --timeout=300s
   echo "the stage is gone (the pid files in $STATE are stale and are overwritten by the next up)"
