@@ -25,3 +25,6 @@ docs/journeys/**/results.mobile.json
 docs/journeys/_example/
 # The canary build of the web client (tools/review/canary.sh)
 clients/web/dist-*/
+
+# Review rounds and the precheck report (tools/review)
+/review/

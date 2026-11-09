@@ -1939,6 +1939,8 @@ importers:
         specifier: ^6
         version: 6.0.5
 
+  tools/review: {}
+
   tools/seed:
     devDependencies:
       tsx:
