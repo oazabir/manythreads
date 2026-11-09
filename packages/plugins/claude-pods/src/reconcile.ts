@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { ClaudePodPlacement, PluginLogger, PodRunnerInfo, PodRunnerState } from '@manythreads/sdk';
 import {
   confirmedFor,
@@ -15,13 +15,33 @@ import {
   type RepoConfig,
 } from '@manythreads/sdk/pods';
 import type { ClaudePodConfig } from './config.ts';
-import { buildConfigMap, buildDeployment, buildKeeperRbac, buildKeySecret, buildPvc, buildService, COMPONENT, MANAGED_BY, namesFor, type Names, type RepoToSync } from './render.ts';
+import {
+  BRIDGE_PORT,
+  buildBridgeConfig,
+  buildConfigMap,
+  buildDeployment,
+  buildKeeperRbac,
+  buildKeySecret,
+  buildPvc,
+  buildService,
+  COMPONENT,
+  MANAGED_BY,
+  namesFor,
+  publisherKey,
+  publisherOn,
+  pushSecretName,
+  reposFor,
+  type Names,
+  type RepoToSync,
+} from './render.ts';
 
 /** What the controller needs from the platform besides the runner list: the repositories the runner's teams ask for. Absent in a test that needs none. */
 export interface RunnerSource {
   runners(): Promise<PodRunnerInfo[]>;
   /** The teams' projects, as repositories of record. */
   reposForTeams?(teamIds: readonly string[]): Promise<(ProjectRepo & { teamSlug: string })[]>;
+  /** The bots of these teams whose definition grants `tasks.pull_request`: only they are allowed the `mt-publish` command. Absent in a test that needs none. */
+  publishersForTeams?(teamIds: readonly string[]): Promise<{ teamSlug: string; botSlug: string }[]>;
   /** Tell the catalog how the pod is doing. */
   report?(state: PodRunnerState): Promise<void>;
 }
@@ -66,7 +86,51 @@ export class Reconciler {
     private readonly log: PluginLogger,
     private readonly newKey: () => string = () => randomBytes(24).toString('hex'),
     private readonly now: () => number = Date.now,
+    /** Test seams: the HTTP client the repository list is sent with, and the address of a runner's bridge. */
+    private readonly doFetch: typeof fetch = fetch,
+    private readonly bridgeUrl: (names: Names) => string = (names) => `http://${names.base}.${cfg.namespace}.svc:${BRIDGE_PORT}`,
   ) {}
+
+  /** What the bridge of each runner was last sent (a hash of the list), so an unchanged list is not sent again. A failed send is not recorded and is tried again. */
+  private readonly sentRepos = new Map<string, string>();
+
+  /**
+   * The push Secret of a team's Hermes pod: the same one the Hermes pods' controller fills (`hermes-<team>-push`). A team whose plain name is taken by another team's pod
+   * has the longer name, as there.
+   */
+  private async pushSecretOf(team: { id: string; slug: string }): Promise<string> {
+    const plain = pushSecretName(team);
+    const existing = await this.k8s.get('Deployment', this.cfg.namespace, plain.replace(/-push$/, ''));
+    const owner = existing?.metadata.labels?.['manythreads.io/team-id'];
+    return existing && owner !== undefined && owner !== team.id ? pushSecretName(team, true) : plain;
+  }
+
+  /**
+   * Sends the repository list to the runner's bridge (decision E4): the ConfigMap copy reaches a pod after about a minute, this reaches the repo-sync container in seconds.
+   * Returns whether the bridge took it. Any failure (the pod is not up yet, or restarting) is logged in words and tried again on the next pass; the pod starts from the ConfigMap's list.
+   */
+  async pushRepos(runner: PodRunnerInfo, names: Names, apiKey: string, repos: readonly RepoToSync[]): Promise<boolean> {
+    const body = JSON.stringify({ repos: reposFor(runner, repos) });
+    const digest = createHash('sha256').update(body).digest('hex');
+    if (this.sentRepos.get(runner.id) === digest) return true;
+    try {
+      const res = await this.doFetch(`${this.bridgeUrl(names)}/internal/repos`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) {
+        this.log.warn(`claude-pods: ${runner.name}: the bridge refused the repository list (${res.status}); the pod keeps the list it started with`);
+        return false;
+      }
+      this.sentRepos.set(runner.id, digest);
+      return true;
+    } catch {
+      this.log.info(`claude-pods: ${runner.name}: the bridge did not take the repository list yet; it is tried again on the next pass`);
+      return false;
+    }
+  }
 
   async reconcileRunner(runner: PodRunnerInfo): Promise<RunnerResult> {
     const { cfg, k8s } = this;
@@ -90,6 +154,16 @@ export class Reconciler {
       }
     }
 
+    // the bots of this runner that may publish (their definition grants tasks.pull_request) and the push Secret of each team on it
+    const publishers = new Set<string>();
+    const pushSecrets: { teamSlug: string; secret: string }[] = [];
+    if (publisherOn(cfg)) {
+      const teams = [...new Map(runner.bots.map((b) => [b.teamId, b.teamSlug])).entries()].map(([id, slug]) => ({ id, slug }));
+      if (teams.length > 0 && this.source.publishersForTeams) for (const p of await this.source.publishersForTeams(teams.map((t) => t.id))) publishers.add(publisherKey(p.teamSlug, p.botSlug));
+      for (const t of teams) pushSecrets.push({ teamSlug: t.slug, secret: await this.pushSecretOf(t) });
+    }
+    const profilesSha = createHash('sha256').update(buildBridgeConfig(cfg, runner, publishers)).digest('hex').slice(0, 16);
+
     const stampOf = (claim: string): string | null => (claim in plan.stamp ? (plan.stamp[claim] ?? null) : node);
     const replicas = runner.enabled && runner.bots.length > 0 && hasCredentials && !moving ? 1 : 0;
     const objects: K8sObject[] = [
@@ -97,9 +171,9 @@ export class Reconciler {
       ...(moving ? [] : [buildPvc(cfg, runner, names.state, cfg.stateSize, stampOf(names.state)), buildPvc(cfg, runner, names.work, cfg.workSize, stampOf(names.work))]),
       ...buildKeeperRbac(cfg, runner, names),
       buildKeySecret(cfg, runner, names, apiKey),
-      buildConfigMap(cfg, runner, names, repos),
+      buildConfigMap(cfg, runner, names, repos, publishers),
       buildService(cfg, runner, names),
-      buildDeployment(cfg, runner, names, { replicas, node, moving, held: plan.held, uploadId }),
+      buildDeployment(cfg, runner, names, { replicas, node, moving, held: plan.held, uploadId, pushSecrets, profilesSha }),
     ];
     for (const obj of objects) await k8s.apply(obj);
     if (moving && plan.stale.length > 0) await this.finishMove(runner, names, plan.stale);
@@ -116,6 +190,8 @@ export class Reconciler {
       unschedulable: pods.some((p) => unschedulable(p)),
       running: pods.some((p) => phase(p) === 'Running'),
     });
+    // a pod that is up takes the repository list now; a pod that is not up starts from the ConfigMap's copy
+    if (state.status === 'ready') await this.pushRepos(runner, names, apiKey, repos);
     await this.source.report?.({ runnerId: runner.id, status: state.status, detail: state.detail });
     return { runner: runner.name, pod: names.base, replicas, node, moving, held: plan.held, state: state.status };
   }

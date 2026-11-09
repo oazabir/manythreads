@@ -194,6 +194,8 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   fi
   CP_STAGE=$(mktemp -d)
   cp -r deploy/images/claude-pod/. "$CP_STAGE/"
+  # the publisher container (P19-09) runs the workbench's push script, so it travels in the same image
+  cp deploy/images/workbench/mt-publish.sh deploy/images/workbench/mt-askpass.sh "$CP_STAGE/"
   mkdir -p "$CP_STAGE/bridge"
   cp -r tools/agent-bridge/src "$CP_STAGE/bridge/src"
   if [ "$(claude_pod_value useFake)" = "true" ]; then

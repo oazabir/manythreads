@@ -10,6 +10,27 @@ export { buildBridgeConfig, buildDeployment, namesFor, slugForRunner, profileNam
 
 export const FIELD_MANAGER = MANAGED_BY;
 const FIRST_PASS_DELAY_MS = 20_000;
+/** The events that change which repositories a runner's pod must have. */
+export const PROJECT_EVENTS = ['project.project.created', 'project.project.updated', 'project.project.deleted'] as const;
+/** How long after a project event the controller runs a pass (a burst of events makes one pass). A clone then follows within the sync step's own few seconds. */
+export const WAKE_DELAY_MS = 1_000;
+
+/**
+ * A wake-up with a short delay: calling it again while one is waiting changes nothing, so a burst of events costs one pass. Returns the function that asks for the pass.
+ * `run` is called once the delay is over; its failures are the caller's to catch.
+ */
+export function createWake(run: () => void, delayMs: number = WAKE_DELAY_MS, timers: { set: typeof setTimeout } = { set: setTimeout }): () => void {
+  let waiting = false;
+  return () => {
+    if (waiting) return;
+    waiting = true;
+    const t = timers.set(() => {
+      waiting = false;
+      run();
+    }, delayMs);
+    (t as { unref?: () => void }).unref?.();
+  };
+}
 
 /**
  * claude-pods: the controller that gives every Claude Code runner (a workspace admin made it on the Runners page) its own pod, `claude-<runner>`, in the pods namespace.
@@ -23,8 +44,9 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     // `provider.claude.pods`: where each runner's pod stands, and the admin's confirmation of a move (read by bot-runners for the Runners page).
-    extends: ['provider.claude.pods'],
-    events: { emits: [], consumes: [] },
+    extends: ['provider.claude.pods', 'event.subscribe'],
+    // A project that is added, moved or removed wakes the controller within seconds (the repository list reaches the pod's bridge instead of waiting for the next pass).
+    events: { emits: [], consumes: [...PROJECT_EVENTS] },
     dependsOn: ['bot-runners', 'projects', 'teams'],
   },
   register(ctx) {
@@ -46,6 +68,20 @@ function platformSource(ctx: PluginContext): RunnerSource {
   return {
     runners: () => runnersProvider().podRunners({ kind: 'claude_cli' }),
     report: (state) => runnersProvider().reportPodState(state),
+    publishersForTeams: (teamIds) =>
+      ctx.db.system(async (tx) => {
+        // the same question the Hermes pods ask: which bots of these teams hold a tasks.pull_request grant
+        const res = await tx.query<{ team_slug: string; bot_slug: string }>(
+          `SELECT DISTINCT t.slug AS team_slug, b.slug AS bot_slug
+             FROM app.capability_grants g
+             JOIN app.actors a ON a.id = g.actor_id AND a.kind = 'bot'
+             JOIN app.bots b ON b.id = a.ref_id AND b.team_id = g.team_id AND b.status = 'active'
+             JOIN app.teams t ON t.id = g.team_id
+            WHERE g.team_id = ANY($1::uuid[]) AND g.capability = 'tasks.pull_request'`,
+          [[...teamIds]],
+        );
+        return res.rows.map((r) => ({ teamSlug: r.team_slug, botSlug: r.bot_slug }));
+      }),
     reposForTeams: (teamIds) =>
       ctx.db.system(async (tx) => {
         const res = await tx.query<{ team_slug: string; name: string; repo_url: string; default_branch: string }>(
@@ -138,6 +174,9 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
     tick();
     setInterval(tick, intervalMs).unref();
   }, FIRST_PASS_DELAY_MS).unref();
+  // a project change runs a pass soon, so the repository list reaches the pod in seconds
+  const wake = createWake(tick);
+  for (const type of PROJECT_EVENTS) ctx.events.subscribe(type, async () => wake());
 }
 
 export { namesFor as claudePodNames };

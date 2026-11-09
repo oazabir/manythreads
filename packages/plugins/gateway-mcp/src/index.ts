@@ -2,6 +2,7 @@ import { definePlugin, type McpToolsProvider, type PluginContext, type PluginEve
 import { STUB_CAPABILITIES, TOOLS } from './catalog.ts';
 import { callTool, offeredTools, reportFault } from './protocol.ts';
 import { registerMcpRoutes } from './routes.ts';
+import { registerRunsSelfRoute } from './runs-self.ts';
 import { sandboxMembers } from './sandbox.ts';
 import { createMcpSessions, sessionSecretFromEnv } from './session.ts';
 import { createStreamHub, type StreamHub } from './streams.ts';
@@ -120,6 +121,8 @@ export default definePlugin({
       warn,
     });
     registerMcpRoutes(ctx, { sessions, hub });
+    // GET /api/runs/self: the run's own team, bot and publish right, for the publisher container of a Claude or Codex pod (P19-09)
+    registerRunsSelfRoute(ctx);
     watchToolChanges(ctx, hub);
     const provider: McpToolsProvider = {
       id: 'mcp.tools',

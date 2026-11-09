@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { loadConfig } from './config.ts';
 import { startBridge } from './server.ts';
 
-// tsx tools/agent-bridge/src/main.ts --config <file> [--listen 127.0.0.1:8650] [--state-dir ~/.manythreads-bridge] [--key-file <file>]
+// tsx tools/agent-bridge/src/main.ts --config <file> [--listen 127.0.0.1:8650] [--state-dir ~/.manythreads-bridge] [--key-file <file>] [--repos-file <file>]
 //
 // The API key comes from the environment (AGENT_BRIDGE_API_KEY) or from a file that only its owner can read (mode 0600);
 // the bridge does not start without one.
@@ -36,6 +36,7 @@ const { values } = parseArgs({
     listen: { type: 'string', default: '127.0.0.1:8650' },
     'state-dir': { type: 'string' },
     'key-file': { type: 'string' },
+    'repos-file': { type: 'string' },
   },
 });
 if (!values.config) fatal('--config <file> is required');
@@ -54,7 +55,7 @@ if (apiKey.length < 16) fatal('the API key must be at least 16 characters');
 // The key lives in this process only; children are started without it (see runs.ts), and it is dropped from the environment here too.
 delete process.env['AGENT_BRIDGE_API_KEY'];
 
-const bridge = await startBridge({ config, apiKey, stateDir, host: listen![1] ?? listen![2]!, port: Number(listen![3]), ...(process.env['CLAUDE_CONFIG_DIR'] ? { claudeConfigDir: process.env['CLAUDE_CONFIG_DIR'] } : {}), ...(process.env['CODEX_HOME'] ? { codexHome: process.env['CODEX_HOME'] } : {}) });
+const bridge = await startBridge({ config, apiKey, stateDir, host: listen![1] ?? listen![2]!, port: Number(listen![3]), ...(values['repos-file'] ? { reposFile: values['repos-file'] } : {}), ...(process.env['CLAUDE_CONFIG_DIR'] ? { claudeConfigDir: process.env['CLAUDE_CONFIG_DIR'] } : {}), ...(process.env['CODEX_HOME'] ? { codexHome: process.env['CODEX_HOME'] } : {}) });
 console.log(`agent-bridge listening on ${bridge.url} (profiles: ${Object.keys(config.profiles).join(', ')})`);
 const shutdown = (): void => {
   void bridge.close().then(() => process.exit(0));

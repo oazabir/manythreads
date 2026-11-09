@@ -7,6 +7,10 @@
 # secrets, configmaps, volume claims and pods in the namespace. The one addition is the Role below, for the keeper's identity (owner decision O2). The policy selects only `claude-pod`, so a Hermes pod keeps its own.
 #   ingress  only the server pod, on the bridge port (8650)
 #   egress   DNS, the server (the MCP address and the API), and, with egress.mode=public443, the public internet on port 443 with no private, link-local or CGNAT address
+# The publisher (P19-09, values claudePod.publisher) is a third container of the pod: the only one that mounts a team's push Secret (`hermes-<team>-push`, filled by the Hermes pods' controller), and
+# the only one that pushes a branch and opens a pull request. It asks the server (the egress rule below) which team and bot a run belongs to, and reaches GitHub on 443 (egress.mode=public443;
+# with serverOnly it can only say "refused"). It needs no Role of its own: a Secret volume is mounted by the kubelet, and the pod has no Kubernetes token for it. It takes the server's address from
+# the server pod's MANYTHREADS_INCLUSTER_URL (set whenever hermesPods is on).
 # The keeper (P19-06) is a container of the runner's pod that copies a renewed sign-in file back into its Secret. It runs as its own ServiceAccount, with a Role that can get and patch that one
 # Secret. To make those, the controller may create, read and change ServiceAccounts, Roles and RoleBindings in the pods namespace; nothing cluster-wide, nothing in {{ $rel }}, and Kubernetes
 # itself refuses a Role that grants more than the controller holds.

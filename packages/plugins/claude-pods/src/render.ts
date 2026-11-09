@@ -7,6 +7,13 @@ import type { ClaudePodConfig } from './config.ts';
 // is drawn by the caller and passed in), so every object can be asserted in a test. One runner is one pod: a pod serves every team on the runner's list.
 
 export const BRIDGE_PORT = 8650;
+/** The list of repositories the bridge writes (from the controller's `PUT /internal/repos`) and the repo-sync container reads every few seconds. */
+export const REPOS_FILE = '/run/repos/repos.txt';
+/** Where the publisher container listens, and the folder the run container shares with it to reach it. */
+export const PUBLISH_DIR = '/run/publish';
+/** Where each team's push Secret is mounted in the publisher container (and nowhere else): `/etc/publisher-push/<team>/<project>`. */
+export const PUSH_ROOT = '/etc/publisher-push';
+export const PUBLISHER_UID = 1001;
 export const COMPONENT = 'claude-pod';
 export const MANAGED_BY = 'manythreads-claude-pods';
 /** The folder a runner's `claude` keeps its sign-in file in (a folder of the state volume, so a refreshed file survives a restart). */
@@ -64,38 +71,63 @@ export interface RepoToSync {
 }
 
 /** The note appended after a bot's own definition in every run: where it runs and what it must leave alone. */
-export function instructionsFor(teamSlug: string, botSlug: string): string {
+export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = false): string {
   return [
     `You run on a shared Claude Code runner, not on a person's machine. Your working folder is /work/${teamSlug}/${botSlug}.`,
     'The team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.',
     'Do not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner\'s sign-in and keys, which are not yours to use.',
     'Post your answer and reports with the manythreads tools, not by writing files for people to find.',
+    ...(mayPublish
+      ? [
+          'To hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> "<title>"` (the pull request text on standard input).',
+          'It pushes that branch and opens the pull request. You never hold the push token and never push to the main branch yourself.',
+        ]
+      : []),
   ].join('\n');
 }
 
-export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunnerInfo): string {
+/** Git commands every bot may run without a question (decision E5): enough to look, commit on a branch of its own and nothing that reaches the network or rewrites history. */
+export const GIT_TOOLS: readonly string[] = ['Bash(git status)', 'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git add:*)', 'Bash(git commit:*)', 'Bash(git switch:*)', 'Bash(git checkout -b:*)'];
+/** The one extra command of a bot whose definition grants `tasks.pull_request`: the client of the pod's publisher. */
+export const PUBLISH_TOOL = 'Bash(mt-publish:*)';
+
+/** The pod has a publisher container: it is turned on and the platform's address is known. */
+export const publisherOn = (cfg: ClaudePodConfig): boolean => cfg.publisher.enabled && cfg.serverUrl !== '';
+
+/** `team slug` + `bot slug` of the bots whose definition grants `tasks.pull_request`, as one key per bot. */
+export const publisherKey = (teamSlug: string, botSlug: string): string => `${teamSlug}/${botSlug}`;
+
+export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunnerInfo, publishers: ReadonlySet<string> = new Set()): string {
   const profiles: Record<string, unknown> = {};
+  const publishing = publisherOn(cfg);
   for (const b of runner.bots) {
+    const mayPublish = publishing && publishers.has(publisherKey(b.teamSlug, b.botSlug));
     profiles[profileName(b.teamSlug, b.botSlug)] = {
       agent: 'claude-code',
       workdir: `/work/${b.teamSlug}/${b.botSlug}`,
       modelAliases: cfg.modelAliases,
+      extraAllowedTools: [...GIT_TOOLS, ...(mayPublish ? [PUBLISH_TOOL] : [])],
       env: { CLAUDE_CONFIG_DIR, HOME: '/state/home', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' },
-      instructions: instructionsFor(b.teamSlug, b.botSlug),
+      instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish),
     };
   }
   return JSON.stringify({ profiles, maxConcurrentRuns: runner.maxConcurrent ?? cfg.defaultConcurrency }, null, 2);
 }
 
-export function buildConfigMap(cfg: ClaudePodConfig, runner: PodRunnerInfo, names: Names, repos: readonly RepoToSync[]): K8sObject {
+/** One entry per clone the runner's bots need: the platform's list of projects, per bot of the team. Sent to the bridge as JSON and written into the ConfigMap as lines. */
+export function reposFor(runner: PodRunnerInfo, repos: readonly RepoToSync[]): { team: string; bot: string; project: string; branch: string | null; origin: string }[] {
+  return runner.bots.flatMap((b) => repos.filter((r) => r.teamSlug === b.teamSlug).map((r) => ({ team: b.teamSlug, bot: b.botSlug, project: r.name, branch: r.branch ?? null, origin: r.origin })));
+}
+
+export function buildConfigMap(cfg: ClaudePodConfig, runner: PodRunnerInfo, names: Names, repos: readonly RepoToSync[], publishers: ReadonlySet<string> = new Set()): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'ConfigMap',
     metadata: { name: names.config, namespace: cfg.namespace, labels: labelsFor(runner) },
     data: {
-      'config.json': buildBridgeConfig(cfg, runner),
+      'config.json': buildBridgeConfig(cfg, runner, publishers),
       // one line per clone for the sync step: <team> <bot> <project> <branch or -> <https address>
-      'repos.txt': runner.bots.flatMap((b) => repos.filter((r) => r.teamSlug === b.teamSlug).map((r) => `${b.teamSlug} ${b.botSlug} ${r.name} ${r.branch ?? '-'} ${r.origin}`)).join('\n') + '\n',
+      'repos.txt': reposFor(runner, repos).map((r) => `${r.team} ${r.bot} ${r.project} ${r.branch ?? '-'} ${r.origin}`).join('\n') + '\n',
     },
   };
 }
@@ -148,6 +180,16 @@ export interface DeploymentOptions {
   held?: string | null;
   /** The id of the stored sign-in upload; a new one rolls the pod so it starts from the new file. */
   uploadId?: string | null;
+  /** The push Secret of each team on the runner (decision E2): mounted in the publisher container and nowhere else. Empty or absent: no token is mounted. */
+  pushSecrets?: readonly { teamSlug: string; secret: string }[];
+  /** A hash of the bridge's profiles (config.json). The bridge reads them once at start, so a changed set rolls the pod; the repository list is not part of it. */
+  profilesSha?: string | null;
+}
+
+/** The Secret of a team's push tokens made by the Hermes pods' controller (`hermes-<team>-push`, one key per project): the same name rule as there, so the two pod kinds read one Secret. */
+export function pushSecretName(team: { id: string; slug: string }, disambiguate = false): string {
+  const slug = team.slug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'team';
+  return disambiguate ? `hermes-${slug.slice(0, 30)}-${team.id.replace(/-/g, '').slice(0, 8)}-push` : `hermes-${slug}-push`;
 }
 
 const NO_PRIVILEGE = { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] }, seccompProfile: { type: 'RuntimeDefault' } } as const;
@@ -155,6 +197,8 @@ const NO_PRIVILEGE = { allowPrivilegeEscalation: false, capabilities: { drop: ['
 export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, names: Names, opts: DeploymentOptions): K8sObject {
   const podLabels = labelsFor(runner, { 'manythreads.io/pod': names.base });
   const node = isNodeLabelValue(opts.node) ? opts.node : null;
+  const publishing = publisherOn(cfg);
+  const pushSecrets = publishing ? [...(opts.pushSecrets ?? [])].sort((a, b) => a.teamSlug.localeCompare(b.teamSlug)) : [];
   const annotations: Record<string, string> = {};
   if (opts.moving === true && node !== null) annotations[MOVING_ANNOTATION] = node;
   if (isNodeLabelValue(opts.held)) annotations[MOVE_HELD_ANNOTATION] = opts.held;
@@ -168,7 +212,10 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
       strategy: { type: 'Recreate' },
       selector: { matchLabels: { 'manythreads.io/pod': names.base } },
       template: {
-        metadata: { labels: podLabels, ...(opts.uploadId ? { annotations: { 'manythreads.io/upload-id': opts.uploadId } } : {}) },
+        metadata: {
+          labels: podLabels,
+          ...(opts.uploadId || opts.profilesSha ? { annotations: { ...(opts.uploadId ? { 'manythreads.io/upload-id': opts.uploadId } : {}), ...(opts.profilesSha ? { 'manythreads.io/profiles-sha': opts.profilesSha } : {}) } } : {}),
+        },
         spec: {
           // no ServiceAccount token in the pod: neither the bridge nor a bot can talk to the Kubernetes API with the pod's identity
           // The pod's own token stays off. Only the keeper container mounts one (a projected volume below), for the ServiceAccount that can patch the sign-in Secret.
@@ -207,7 +254,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
               name: 'bridge',
               image: cfg.image,
               imagePullPolicy: 'IfNotPresent',
-              command: ['/usr/bin/tini', '--', 'node', '--experimental-transform-types', '--disable-warning=ExperimentalWarning', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', '/state/bridge'],
+              command: ['/usr/bin/tini', '--', 'node', '--experimental-transform-types', '--disable-warning=ExperimentalWarning', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', '/state/bridge', '--repos-file', REPOS_FILE],
               ports: [{ name: 'bridge', containerPort: BRIDGE_PORT }],
               env: [
                 { name: 'AGENT_BRIDGE_API_KEY', valueFrom: { secretKeyRef: { name: names.key, key: 'api-key' } } },
@@ -224,6 +271,10 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
                 { name: 'work', mountPath: '/work' },
                 { name: 'tmp', mountPath: '/tmp' },
                 { name: 'config', mountPath: '/etc/bridge', readOnly: true },
+                // the controller's repository list lands here (the bridge writes it, the repo-sync container reads it)
+                { name: 'repos', mountPath: '/run/repos' },
+                // the socket the `mt-publish` command talks to; the publisher container owns the other end. No token, no Secret and no push folder is mounted in this container.
+                ...(publishing ? [{ name: 'publish', mountPath: PUBLISH_DIR }] : []),
               ],
             },
             {
@@ -256,14 +307,49 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunnerInfo, nam
                 { name: 'work', mountPath: '/work' },
                 { name: 'tmp', mountPath: '/tmp' },
                 { name: 'config', mountPath: '/etc/bridge', readOnly: true },
+                { name: 'repos', mountPath: '/run/repos', readOnly: true },
               ],
             },
+            ...(publishing
+              ? [
+                  {
+                    // The publisher (P19-09): pushes a bot's branch and opens its pull request. The only container that mounts a team's push Secret. It has its own user, a read-only root, the work
+                    // volume read-only and no Kubernetes token; it learns which team and bot a request comes from by asking the platform with the run's own token, never from the request.
+                    name: 'publisher',
+                    image: cfg.image,
+                    imagePullPolicy: 'IfNotPresent',
+                    command: ['node', '/opt/claude-pod/publisher.mjs', 'serve'],
+                    env: [
+                      { name: 'PUBLISHER_SERVER_URL', value: cfg.serverUrl },
+                      { name: 'HOME', value: '/tmp' },
+                    ],
+                    securityContext: { ...NO_PRIVILEGE, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: PUBLISHER_UID, runAsGroup: PUBLISHER_UID },
+                    resources: cfg.publisher.resources,
+                    volumeMounts: [
+                      { name: 'work', mountPath: '/work', readOnly: true },
+                      { name: 'publish', mountPath: PUBLISH_DIR },
+                      { name: 'publisher-tmp', mountPath: '/tmp' },
+                      ...pushSecrets.map((p, i) => ({ name: `push-${i}`, mountPath: `${PUSH_ROOT}/${p.teamSlug}`, readOnly: true })),
+                    ],
+                  },
+                ]
+              : []),
           ],
           volumes: [
             { name: 'state', persistentVolumeClaim: { claimName: names.state } },
             { name: 'work', persistentVolumeClaim: { claimName: names.work } },
             { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } },
             { name: 'config', configMap: { name: names.config } },
+            { name: 'repos', emptyDir: { sizeLimit: '8Mi' } },
+            ...(publishing
+              ? [
+                  { name: 'publish', emptyDir: { sizeLimit: '1Mi' } },
+                  // the publisher's scratch space (a private copy of one token file per request, removed at the end); memory, so no token reaches a disk
+                  { name: 'publisher-tmp', emptyDir: { medium: 'Memory', sizeLimit: '32Mi' } },
+                  // optional: the Secret exists only once a lead has saved a token for a project of the team. Files are readable by the publisher's user; no other container mounts them.
+                  ...pushSecrets.map((p, i) => ({ name: `push-${i}`, secret: { secretName: p.secret, defaultMode: 0o444, optional: true } })),
+                ]
+              : []),
             {
               name: 'keeper-token',
               projected: {

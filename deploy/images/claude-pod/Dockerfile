@@ -8,11 +8,17 @@ ARG CLAUDE_VERSION=2.1.318
 # The Codex CLI for a Codex runner (decision E6, P19-13): one image holds both commands and a runner uses one of them. `@openai/codex` is the package on npm
 # (0.166.0 is the version the devbox runs and the one the driver's flags are checked against). Pinned for the same reason as `claude`.
 ARG CODEX_VERSION=0.166.0
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini procps && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini procps jq curl && rm -rf /var/lib/apt/lists/* \
  && npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}" "@openai/codex@${CODEX_VERSION}" && npm cache clean --force
 COPY bridge /opt/bridge
 COPY repo-sync.sh /opt/claude-pod/repo-sync.sh
 COPY keeper.mjs /opt/claude-pod/keeper.mjs
+# The publisher container (decision E2, P19-09) is this same image started with `publisher.mjs serve`; the run container calls `mt-publish`, which only talks to it over a socket.
+# The push script and its askpass helper are the workbench's own files (deploy.sh stages them next to this Dockerfile); jq and curl are what the script uses; uid 1001 is the publisher's.
+COPY publisher.mjs mt-publish.sh mt-askpass.sh /opt/claude-pod/
+COPY mt-publish-client.sh /usr/local/bin/mt-publish
+RUN chmod 0755 /opt/claude-pod/mt-publish.sh /opt/claude-pod/mt-askpass.sh /usr/local/bin/mt-publish \
+ && useradd --system --uid 1001 --no-create-home --shell /usr/sbin/nologin publisher
 # uid 1000 is the image's `node` user; the pod runs as it with a read-only root (only /state, /work and /tmp are writable)
 USER 1000:1000
 ENV HOME=/state/home CLAUDE_CONFIG_DIR=/state/claude DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1

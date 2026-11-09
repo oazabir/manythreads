@@ -20,10 +20,15 @@ export interface ClaudePodConfig {
   repoOriginAllow: string[];
   /** Models a bot's `model.alias` stands for in the Claude command. */
   modelAliases: Record<string, string>;
+  /** The platform's address inside the cluster: where the publisher container asks `GET /api/runs/self`. Empty: the pod gets no publisher. */
+  serverUrl: string;
+  /** The publisher: the third container, the only one that holds a team's push token (P19-09, docs/plugins/claude-pods.md). */
+  publisher: { enabled: boolean; resources: { requests?: Record<string, string>; limits?: Record<string, string> } };
 }
 
 const DEFAULT_RESOURCES = { requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '2Gi' } };
 const DEFAULT_ALIASES = { smart: 'opus', fast: 'haiku', default: 'sonnet' };
+const DEFAULT_PUBLISHER_RESOURCES = { requests: { cpu: '50m', memory: '64Mi' }, limits: { memory: '256Mi' } };
 
 function parseJson<T>(raw: string | undefined, fallback: T): T {
   if (!raw || raw.trim() === '') return fallback;
@@ -48,5 +53,11 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
     allowedNodes: (env['MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'] ?? '').split(/[\s,]+/).filter((n) => n !== ''),
     repoOriginAllow: parseRepoOriginAllow(env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW']),
     modelAliases: parseJson(env['MANYTHREADS_CLAUDE_PODS_MODEL_ALIASES'], DEFAULT_ALIASES),
+    // the server pod's address in the cluster; the chart sets MANYTHREADS_INCLUSTER_URL whenever the pods namespace is on
+    serverUrl: (env['MANYTHREADS_CLAUDE_PODS_SERVER_URL'] ?? env['MANYTHREADS_INCLUSTER_URL'] ?? '').trim().replace(/\/+$/, ''),
+    publisher: {
+      enabled: !['0', 'false', 'off'].includes((env['MANYTHREADS_CLAUDE_PODS_PUBLISHER'] ?? '').trim().toLowerCase()),
+      resources: parseJson(env['MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES'], DEFAULT_PUBLISHER_RESOURCES),
+    },
   };
 }

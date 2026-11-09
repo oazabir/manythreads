@@ -18,6 +18,11 @@
 #
 # MT_REPOS_DIR / MT_PUSH_DIR / MT_REPO_USER / MT_GITHUB_API / MT_PUSH_URL are test hooks (a local bare "origin" and a local double of GitHub). A bot cannot set
 # them: sudo clears the environment and allows only the two command shapes above.
+#
+# MT_SOURCE_DIR (the publisher container of a Claude or Codex pod, P19-09) names a bot's own working clone instead of a repository of record under MT_REPOS_DIR.
+# The clone belongs to the bot, so nothing in it is trusted: the branch is fetched into a private bare repository made for this one call (no hooks, no config of the
+# clone is read except its origin address), the tested-commit check and the push run on that copy, and the token still counts only for the address it was issued for.
+# The rules, the exit codes and the masking are the same as for a repository of record. The caller (publisher.mjs) is the only one that sets it.
 set -euo pipefail
 REPOS="${MT_REPOS_DIR:-/workspace/repos}"
 PUSHDIR="${MT_PUSH_DIR:-/run/mt-push}"
@@ -27,9 +32,20 @@ die() { local code="$1"; shift; echo "$*" >&2; exit "$code"; }
 
 mode="${1:-}"; project="${2:-}"
 [[ "$project" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] && [[ "$project" != *..* ]] || die 2 "bad project name"
+SOURCE="${MT_SOURCE_DIR:-}"
+work=""
+tmp=""
+cleanup() { [ -z "$tmp" ] || rm -f "$tmp"; [ -z "$work" ] || rm -rf "$work"; }
+trap cleanup EXIT
 dir="$REPOS/$project.git"
-[ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(realpath -e "$dir")" = "$(realpath -m "$REPOS")/$project.git" ] || die 2 "no such repository of record"
-[ "$(stat -c %U "$dir")" = "$RUSER" ] || die 2 "repository is not owned by $RUSER"
+if [ -n "$SOURCE" ]; then
+  # a working clone of the bot: a real folder (not a link) with a real .git folder; its own files are never run
+  [ -d "$SOURCE" ] && [ ! -L "$SOURCE" ] && [ -d "$SOURCE/.git" ] && [ ! -L "$SOURCE/.git" ] && [ -f "$SOURCE/.git/config" ] && [ ! -L "$SOURCE/.git/config" ] || die 2 "no such project folder"
+  export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
+else
+  [ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(realpath -e "$dir")" = "$(realpath -m "$REPOS")/$project.git" ] || die 2 "no such repository of record"
+  [ "$(stat -c %U "$dir")" = "$RUSER" ] || die 2 "repository is not owned by $RUSER"
+fi
 metafile="$PUSHDIR/$project"
 tokenfile="$metafile"
 # a project on the team's owner token reads the token (and the refused mark) from that file, the address and branch from its own
@@ -44,7 +60,8 @@ have_token() { [ -f "$tokenfile" ] && [ ! -L "$tokenfile" ] && [ "$(stat -c %U "
 # the token counts only for the address it was issued for: if the project moved to another repository, the old token is refused here
 token_matches_origin() { [ -n "$origin" ] && [ "$(jq -r '.origin // empty' -- "$metafile" 2>/dev/null)" = "$origin" ] && [ -n "$(jq -r '.token // empty' -- "$tokenfile" 2>/dev/null)" ] && [ -n "$(jq -r '.branch // empty' -- "$metafile" 2>/dev/null)" ]; }
 
-origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
+if [ -n "$SOURCE" ]; then origin="$(git config --file "$SOURCE/.git/config" --get remote.origin.url 2>/dev/null || true)"
+else origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"; fi
 # The origin must be plain https (the same rule as mt-repo-create.sh) and name exactly <host>/<owner>/<repo>.
 plain() { [[ "$1" =~ ^https://[^/@?#[:space:]\\%]+(/[^/@?#[:space:]\\]+)*/?$ ]]; }
 parse_origin() {
@@ -83,6 +100,13 @@ branch="card-${card:0:8}"
 # the branch a pull request is aimed at is the project's main branch, as the token was issued for it (not whatever the repository's HEAD says)
 base="$(jq -r '.branch' -- "$metafile")"
 [[ "$base" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$ ]] && [ "$branch" != "$base" ] || die 2 "cannot tell the project's main branch"
+if [ -n "$SOURCE" ]; then
+  # the one branch, fetched into a private bare repository: the push below runs there, never in the bot's folder
+  work="$(mktemp -d)"
+  git init --bare -q -b mt-publish-unused "$work/r.git" 2>/dev/null || die 2 "cannot make a working copy"
+  git -C "$work/r.git" -c safe.directory='*' fetch -q --no-tags --no-write-fetch-head -- "$SOURCE" "+refs/heads/$branch:refs/heads/$branch" >/dev/null 2>&1 || die 4 "the branch $branch is not in the project folder: commit your work on that branch first"
+  dir="$work/r.git"
+fi
 head="$(git -C "$dir" rev-parse --verify -q "refs/heads/$branch^{commit}" || true)"
 [ -n "$head" ] || die 4 "the branch $branch is not in the repository of record: push it first"
 tested="$(git -C "$dir" rev-parse --verify -q "$sha^{commit}" || true)"
@@ -128,7 +152,7 @@ done
 
 if [ -z "$number" ]; then
   body="$(head -c 8000 || true)"
-  tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+  tmp="$(mktemp)"
   body="$body"$'\n\n'"---"$'\n'"Opened by manythreads for card $card, branch $branch, tested commit $head."
   jq -n --arg title "$title" --arg head "$branch" --arg base "$base" --arg body "$body" '{title: $title, head: $head, base: $base, body: $body, maintainer_can_modify: false}' > "$tmp"
   made="$(gh POST "$repo_api" "$tmp" 2>&1 || true)"

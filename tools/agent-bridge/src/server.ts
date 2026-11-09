@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { BridgeConfig } from './config.ts';
 import { profileFor } from './config.ts';
+import { parseRepoList, writeRepoList } from './repos.ts';
 import { parseRunRequest } from './request.ts';
 import { IdempotencyConflict, RunManager, TooManyRuns, UnknownProfile, type Run } from './runs.ts';
 import { SessionStore } from './sessions.ts';
@@ -14,6 +15,7 @@ import { SigninGate } from './signin.ts';
 //   GET  /p/<profile>/v1/runs/<id>          -> { run_id, status, output, usage, error }
 //   GET  /p/<profile>/v1/runs/<id>/events   server-sent events, resumable with ?last_seq= or Last-Event-ID
 //   POST /p/<profile>/v1/runs/<id>/stop
+//   PUT  /internal/repos                    { repos: [{ team, bot, project, branch, origin }] }  -> { ok, count }   (only with `reposFile`, a pod's repo list; see repos.ts)
 //
 // Every request carries `Authorization: Bearer <key>`.
 
@@ -34,6 +36,8 @@ export interface BridgeOptions {
   claudeConfigDir?: string;
   /** The folder that holds the Codex sign-in file (`CODEX_HOME`, with `auth.json`). Given, the bridge keeps one process renewing it too (P19-13). */
   codexHome?: string;
+  /** The file the pod's repo-sync step reads (`PUT /internal/repos` rewrites it). Not given: that route answers 404. */
+  reposFile?: string;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: import('./runs.ts').RunManagerOptions['drivers'];
 }
@@ -177,6 +181,29 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     if (path === '/health' && method === 'GET') return send(res, 200, { status: 'ok', profiles: Object.keys(options.config.profiles), ...(gate || codexGate ? { signin: signinCheck() } : {}) });
     // The admin page's "check this sign-in" and the pod controller ask here. The answer is one word from a fixed list; nothing from the file.
     if (path === '/v1/signin/check' && method === 'POST') return gate || codexGate ? send(res, 200, { result: signinCheck() }) : fail(res, 404, 'this bridge has no sign-in', 'not_found');
+    // The pod's controller sends the repository list here when a project changes; the bridge checks it and writes the file the repo-sync step reads.
+    if (path === '/internal/repos') {
+      if (options.reposFile === undefined || options.reposFile === '') return fail(res, 404, 'this bridge keeps no repository list', 'not_found');
+      if (method !== 'PUT') return fail(res, 405, 'method not allowed', 'method_not_allowed', { allow: 'PUT' });
+      let raw: string;
+      try {
+        raw = await readBody(req, bodyTimeoutMs);
+      } catch (err) {
+        if (err instanceof BodyTooLarge) return fail(res, 413, 'the request body is over 1 MB', 'too_large', { connection: 'close' });
+        if (err instanceof BodyTimeout) return fail(res, 408, 'the request body took too long', 'request_timeout', { connection: 'close' });
+        throw err;
+      }
+      let body: unknown;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return fail(res, 400, 'the body is not JSON', 'bad_request');
+      }
+      const list = parseRepoList(body);
+      if (!list.ok) return fail(res, 400, list.error, 'bad_request');
+      writeRepoList(options.reposFile, list.repos);
+      return send(res, 200, { ok: true, count: list.repos.length });
+    }
     // The server's connection check asks `/v1/models` (or `/p/<profile>/v1/models`), as it would a Hermes gateway: one model per profile, named by its agent.
     const models = /^(?:\/p\/([^/]+))?\/v1\/models$/.exec(path);
     if (models && method === 'GET') {

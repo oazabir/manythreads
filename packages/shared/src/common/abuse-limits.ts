@@ -120,6 +120,7 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/mcp/runs', 60, 'address', 'pairing token: failures counted below'),
   r('POST', '/api/mcp/bots/:botId', 60, 'failures', 'bot token: 60 failures per address a minute'),
   r('POST', '/mcp', 60, 'failures', 'bot or run token: 60 failures per address a minute'),
+  r('GET', '/api/runs/self', 60, 'failures', 'run token: 60 failures per address a minute'),
   r('POST', '/api/llm/runs/:runId/v1/chat/completions', 60, 'failures', 'run token: 60 failures per address a minute'),
   r('GET', '/api/runners/connect', 60, 'address', 'runner token'),
   r('POST', '/hooks/:webhookId/:secret', 600, 'address', 'webhook secret: 256-bit address; a refused call is recorded per webhook'),
