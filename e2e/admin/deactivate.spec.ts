@@ -72,7 +72,7 @@ test('Deactivate says what it does first; Cancel changes nothing; confirming dea
     await expect(row.getByTestId('member-deactivated')).toHaveText('Deactivated');
     // the menu now offers the way back, and not the way out
     await page.getByRole('button', { name: 'Options for Rafi' }).click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Reactivate']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Reactivate', 'Remove their connections']);
     await page.keyboard.press('Escape');
 
     const after = await personRow(rafi.personId);

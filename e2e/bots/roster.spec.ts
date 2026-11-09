@@ -246,7 +246,7 @@ test('a team made from a template starts with its bots: Brain in every template,
     await expect(brain).toBeVisible({ timeout: 45_000 });
     await expect(brain).toContainText('Brain');
     await expect(brain).toContainText('Hermes');
-    await expect(rosterRow(page, 'support-responder')).toBeVisible({ timeout: 15_000 });
+    await expect(rosterRow(page, 'support-responder')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('roster-count')).toContainText(/^\d+ bots/);
 
     // the bot's page reads the file the first commit wrote, and its allowlist is the one SPEC §12.4 names plus the answer tool

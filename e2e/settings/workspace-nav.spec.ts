@@ -16,7 +16,7 @@ test.afterAll(async () => {
 
 const GROUPS: Record<string, string[]> = {
   People: ['General', 'Members', 'Roles', 'Sign-in'],
-  'Bots and models': ['LLM', 'Runners', 'Brain', 'Memory sharing'],
+  'Bots and models': ['LLM', 'Runners', 'Brain', 'Memory sharing', 'Connected apps', 'Chat apps'],
   Security: ['Data protection', 'Domain & HTTPS', 'Audit'],
   Operations: ['Setup', 'System health', 'Usage', 'Import'],
 };

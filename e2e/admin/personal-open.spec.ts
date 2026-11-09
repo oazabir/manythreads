@@ -299,7 +299,7 @@ test('Members: the menu offers Open Personal space for a member, not for a guest
   try {
     await expect(page.getByTestId('member-row')).toHaveCount(7);
     await page.getByRole('button', { name: 'Options for Rafi' }).click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Deactivate']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Change role', 'Send a password reset', 'Open Personal space', 'Deactivate', 'Remove their connections']);
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Options for Lena' }).click();
     await expect(page.getByRole('menuitem', { name: 'Open Personal space' })).toHaveCount(0);

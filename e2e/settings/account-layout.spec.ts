@@ -90,7 +90,7 @@ test('a guest sees only the Account pages in the settings layout', async ({ brow
     const groups = await page.locator('#settings-section optgroup').evaluateAll((os) => os.map((o) => (o as HTMLOptGroupElement).label));
     expect(groups).toEqual(['Account']);
     const options = await page.locator('#settings-section option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).label));
-    expect(options).toEqual(['Profile', 'Appearance', 'Notifications', 'Connections', 'Security']);
+    expect(options).toEqual(['Profile', 'Appearance', 'Notifications', 'Connections', 'Chat apps', 'Security']);
     expect(options).not.toContain('Routines');
     expect(options).not.toContain('Action items');
     if (!isMobile) {

@@ -73,7 +73,7 @@ test.afterAll(async () => {
   await new Promise<void>((resolve) => receiver?.close(() => resolve()));
 });
 
-test('a member does not get the Integrations button; a lead does, with three tabs', async ({ browser, playwright }) => {
+test('a member does not get the Integrations button; a lead does, with five tabs', async ({ browser, playwright }) => {
   const member = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${roomName}`);
   try {
     await expect(member.page.getByText('Welcome to the room')).toBeVisible(T);   // the channel has loaded
@@ -89,7 +89,7 @@ test('a member does not get the Integrations button; a lead does, with three tab
     await lead.page.getByTestId('webhooks-open').click();
     const dialog = lead.page.getByTestId('webhooks-dialog');
     await expect(dialog.getByRole('heading', { name: `Integrations for #${roomName}` })).toBeVisible(T);
-    await expect(dialog.getByRole('tab')).toHaveText(['Incoming webhooks', 'Outgoing webhooks', 'API tokens']);
+    await expect(dialog.getByRole('tab')).toHaveText(['Incoming webhooks', 'Outgoing webhooks', 'API tokens', 'Work apps', 'Chat apps']);
     await expect(dialog.getByRole('tab', { name: 'Incoming webhooks' })).toHaveAttribute('aria-selected', 'true');
     await expect(dialog.getByTestId('webhooks-empty')).toBeVisible(T);
   } finally {

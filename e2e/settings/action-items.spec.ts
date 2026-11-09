@@ -180,6 +180,8 @@ test('a save made since the list was read is a 409, and the screen reloads inste
   const nadia = await apiOn(playwright, stack, 'nadia');
   const { page, context } = await open(browser, playwright, isMobile, 'nadia');
   try {
+    // the page has read the list before anyone else writes to it (the page is the older read)
+    await expect(page.getByTestId('action-items-count')).toBeVisible();
     // through the route: the revision of an older read is refused with a sentence
     const old = (await listOf(nadia)).revision;
     const fresh = await patchItems(nadia, old, { op: 'add', what: 'Written by a second tab' });
