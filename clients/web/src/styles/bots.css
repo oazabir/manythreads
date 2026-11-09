@@ -760,6 +760,20 @@
   gap: 6px;
 }
 
+/* the address, rhythm and button of a web source wrap on a phone instead of making the list wider than the screen */
+.b-kb-sources,
+.b-kb-doc {
+  min-width: 0;
+}
+
+.b-kb-sources .b-add-row {
+  flex-wrap: wrap;
+}
+
+.b-kb-sources .b-add-row input {
+  flex: 1 1 180px;
+}
+
 .b-kb-docs,
 .b-kb-hits {
   display: grid;

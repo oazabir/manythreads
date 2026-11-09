@@ -121,11 +121,11 @@ export function ScheduleRoomDialog({ channelId, channelLabel, onClose, onCreated
           <>
             <label className="dlg-label" htmlFor="sch-calendar">Calendar</label>
             <select id="sch-calendar" className="dlg-input" value={chosen ? `${chosen.provider}|${chosen.calendarId}` : ''} onChange={(e) => setCalendarKey(e.target.value)} data-testid="schedule-calendar">
-              {choices.map((c) => (<option key={`${c.provider}|${c.calendarId}`} value={`${c.provider}|${c.calendarId}`}>{c.name} ({SERVICE_NAME[c.provider]})</option>))}
+              {choices.map((c) => (<option key={`${c.provider}|${c.calendarId}`} value={`${c.provider}|${c.calendarId}`}>{c.name}</option>))}
             </select>
           </>
         ) : chosen ? (
-          <p className="dlg-hint" data-testid="schedule-calendar-one">Goes in your {chosen.name} calendar ({SERVICE_NAME[chosen.provider]}).</p>
+          <p className="dlg-hint" data-testid="schedule-calendar-one">Goes in your calendar: {chosen.name}.</p>
         ) : null}
 
         <span className="dlg-label" id="sch-people-label">People in this channel</span>

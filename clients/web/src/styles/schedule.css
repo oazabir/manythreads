@@ -159,6 +159,11 @@
   margin: 0;
 }
 
+/* the intro line and the first label are not set against each other */
+.dlg-text + .sch-form {
+  margin-top: 12px;
+}
+
 /* ---- the join page ---- */
 .sch-join {
   display: grid;

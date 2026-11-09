@@ -70,7 +70,7 @@ export function RunOriginCard({ runId }: { runId: string }) {
       {open ? (
         <div className="wh-origin-body" id={bodyId} data-testid="run-origin-body">
           <p className="wh-origin-row">
-            <span className="wh-origin-key">App</span> {app} · {origin.endpointName}
+            <span className="wh-origin-key">App</span> {origin.endpointName === app ? app : `${app} · ${origin.endpointName}`}
           </p>
           <p className="wh-origin-row">
             <span className="wh-origin-key">Event</span> {origin.kind}

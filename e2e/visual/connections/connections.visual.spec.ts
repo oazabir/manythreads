@@ -60,7 +60,50 @@ async function mask(page: Page, selector: string): Promise<void> {
   }, selector);
 }
 
-const VOLATILE = 'time, .ac-d, .sch-chip-text, .wh-origin-fine, [data-testid="provider-state"], [data-testid="provider-address"], [data-testid="chat-app-callback"], [data-testid="connector-source-state"], [data-testid$="-health"]';
+/** Scrolling a row into view can also scroll the frame around the list, which hides the header; the plate is of the frame as it opens. */
+async function frameToTop(page: Page): Promise<void> {
+  const top = (): Promise<void> =>
+    page.evaluate(() => {
+      for (let el: Element | null = document.querySelector('[data-testid="app-frame"]'); el; el = el.parentElement) el.scrollTop = 0;
+    });
+  await top();
+  // the list measures its rows after the first paint and can move the frame again: look once more when it has settled
+  await page.waitForTimeout(500);
+  await top();
+  // and the list itself rests at its end, where the newest row is, whatever order the first paints came in
+  await page.evaluate(() => {
+    for (let el: Element | null = document.querySelector('.vlist'); el; el = el.parentElement) {
+      const box = el as HTMLElement;
+      if (box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== 'visible') {
+        box.scrollTop = box.scrollHeight;
+        break;
+      }
+    }
+  });
+  await page.waitForTimeout(300);
+  // anything inside the frame other than the list that ended up scrolled (the header sat 18 px up on some runs) goes back to its top
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() => {
+      const list = document.querySelector('.vlist');
+      let scroller: Element | null = null;
+      for (let el: Element | null = list; el; el = el.parentElement) {
+        const box = el as HTMLElement;
+        if (box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== 'visible') {
+          scroller = box;
+          break;
+        }
+      }
+      const frame = document.querySelector('[data-testid="app-frame"]');
+      if (!frame) return;
+      for (const el of [frame, ...Array.from(frame.querySelectorAll('*'))]) {
+        if (el !== scroller && el.scrollTop !== 0 && !el.closest('.vlist') && !(scroller && scroller.contains(el))) el.scrollTop = 0;
+      }
+    });
+    await page.waitForTimeout(250);
+  }
+}
+
+const VOLATILE = 'time, .ac-d, .sch-chip-text, .wh-origin-fine, [data-testid="provider-state"], [data-testid="provider-address"], [data-testid="chat-app-callback"], [data-testid="connector-source-state"], [data-testid$="-health"], .av.pic';
 
 test('connections/gallery', async ({ browser }) => {
   await plate(browser, stack, 'connections/gallery', {
@@ -158,6 +201,7 @@ test('channels/run-origin-card', async ({ browser }) => {
       await expect(page.getByTestId('run-origin-body').first()).toBeVisible();
       // the seed spaces the channel's history from the clock: the list behind the card is not what the plate is about
       await mask(page, `${VOLATILE}, .vlist[aria-label^="Messages in #"] > :not(:has([data-testid="run-origin"]))`);
+      await frameToTop(page);
     },
   });
 });
@@ -207,6 +251,7 @@ test('channels/message-via', async ({ browser }) => {
       await via.scrollIntoViewIfNeeded();
       await expect(via).toHaveText('via Telegram');
       await mask(page, `${VOLATILE}, .vlist[aria-label^="Messages in #"] > :not(:has([data-testid="message-via"]))`);
+      await frameToTop(page);
     },
   });
 });

@@ -8,7 +8,9 @@ describe('names', () => {
     expect(connectorName('google')).toBe('Google Workspace');
     expect(connectorName('telegram')).toBe('Telegram');
     expect(connectorName('some_new-thing')).toBe('Some new thing');
-    expect(serviceName('google_drive')).toBe('Google drive');
+    expect(serviceName('google_drive')).toBe('Google Drive');
+    expect(servicesLine(['onedrive', 'calendar_write', 'calendar_free_busy'])).toBe('OneDrive, Calendar (add and change events), Calendar (free and busy times)');
+    expect(serviceName('some_new-thing')).toBe('Some new thing');
     expect(servicesLine(['drive', 'calendar'])).toBe('Drive, Calendar');
     expect(servicesLine([])).toBe('No services listed');
   });
@@ -38,5 +40,10 @@ describe('areas and refusals', () => {
   it('lists refusal reasons by size and leaves out zero', () => {
     expect(refusedLine({})).toBeNull();
     expect(refusedLine({ bad_signature: 1, unknown_event: 0, too_old: 3 })).toBe('3 too old, 1 bad signature');
+  });
+
+  it('says a held-back source in words, and names the services a source reads in full', () => {
+    expect(refusedLine({ not_everyone_on_team: 1 })).toBe('1 held back, not everyone on the team has access');
+    expect([connectorName('google_drive'), connectorName('onedrive'), connectorName('sharepoint')]).toEqual(['Google Drive', 'OneDrive', 'SharePoint']);
   });
 });

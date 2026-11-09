@@ -23,6 +23,14 @@
   align-items: center;
   justify-content: space-between;
   padding-right: 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--table-head);
+}
+
+/* the band is the whole row, not only the words in it */
+.br-head .bh {
+  border-bottom: 0;
+  background: transparent;
 }
 
 .br-note {
