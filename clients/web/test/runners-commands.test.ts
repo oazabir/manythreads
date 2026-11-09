@@ -58,14 +58,16 @@ const KEY = 'gateway-key-0123456789';
 const form = (patch: Partial<ReturnType<typeof emptyForm>> = {}) => ({ ...emptyForm(), label: 'Office Hermes', name: 'office-hermes', ...patch });
 
 describe('the chooser of kinds', () => {
-  it('offers the five kinds with one sentence each; Claude Code and Codex are shown but cannot be picked yet', () => {
+  it('offers the five kinds with one sentence each; Claude Code and Codex are shown but cannot be picked until the install turns pods on', () => {
     expect(KIND_CARDS.map((c) => c.kind)).toEqual(['hermes_gateway', 'hermes_pod', 'claude_cli', 'codex_cli', 'llm_gateway']);
     for (const c of KIND_CARDS) expect(c.sentence.length, c.kind).toBeGreaterThan(20);
     expect(KIND_CARDS.filter((c) => c.available).map((c) => c.kind)).toEqual(['hermes_gateway', 'hermes_pod', 'llm_gateway']);
     expect(KIND_CARDS.find((c) => c.kind === 'claude_cli')?.unavailable).toBe('Not turned on in this install.');
     expect(cardsFor(true).find((c) => c.kind === 'claude_cli')?.available).toBe(true);
     expect(cardsFor(false).find((c) => c.kind === 'claude_cli')?.available).toBe(false);
-    expect(KIND_CARDS.find((c) => c.kind === 'codex_cli')?.unavailable).toBe('Needs a Codex sign-in; coming with the Claude pod.');
+    expect(KIND_CARDS.find((c) => c.kind === 'codex_cli')?.unavailable).toBe('Not turned on in this install.');
+    expect(cardsFor(true).find((c) => c.kind === 'codex_cli')?.available).toBe(true);
+    expect(cardsFor(false).find((c) => c.kind === 'codex_cli')?.available).toBe(false);
   });
 
   it('uses no plan or phase wording', () => {

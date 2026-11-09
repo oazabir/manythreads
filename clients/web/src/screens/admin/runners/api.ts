@@ -1,6 +1,7 @@
 import {
   AdoptConnectionRequest,
   CheckClaudeSigninResponse,
+  CODEX_PLAN_LABEL_HEADER,
   ClaudeRunnerUsageResponse,
   CREDENTIALS_SIGNINS_HEADER,
   CREDENTIALS_TERMS_HEADER,
@@ -85,6 +86,13 @@ export const adoptOldConnection = (connectionId: string, body: AdoptConnectionRe
 // runner (plan, expiry), never the file. Both boxes must be ticked: the plan's terms, and the other sign-ins the file holds.
 export const uploadClaudeCredentials = (id: string, text: string) =>
   call(putClaudeCredentialsRoute, { response: PutClaudeCredentialsResponse }, undefined, { id }, { rawBody: text, headers: { [CREDENTIALS_TERMS_HEADER]: '1', [CREDENTIALS_SIGNINS_HEADER]: '1' } });
+
+/**
+ * The Codex runner's sign-in (P19-13) goes the same route with the same two boxes. The server reads no token, so the page names the plan it read from the file in the
+ * `x-plan-label` header (the server accepts only a name from a fixed list).
+ */
+export const uploadCodexCredentials = (id: string, text: string, planLabel: string) =>
+  call(putClaudeCredentialsRoute, { response: PutClaudeCredentialsResponse }, undefined, { id }, { rawBody: text, headers: { [CREDENTIALS_TERMS_HEADER]: '1', [CREDENTIALS_SIGNINS_HEADER]: '1', [CODEX_PLAN_LABEL_HEADER]: planLabel } });
 
 export const removeClaudeCredentials = (id: string) => call(removeClaudeCredentialsRoute, { response: RemoveClaudeCredentialsResponse }, undefined, { id });
 

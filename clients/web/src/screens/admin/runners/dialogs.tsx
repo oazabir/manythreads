@@ -160,14 +160,14 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
           </>
         ) : null}
 
-        {kind === 'claude_cli' ? (
+        {kind === 'claude_cli' || kind === 'codex_cli' ? (
           <div className="rn-field">
             <div className="fld">
               <label htmlFor="runner-concurrency">Runs at once</label>
               <select id="runner-concurrency" value={v.maxConcurrent} onChange={(e) => set({ maxConcurrent: Number(e.target.value) })} data-testid="runner-concurrency">
                 {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
-              <div className="fld-hint">How many bot runs this runner does at the same time. Each Claude runner needs its own sign-in file; you upload it after adding the runner.</div>
+              <div className="fld-hint">How many bot runs this runner does at the same time. Each {kind === 'codex_cli' ? 'Codex' : 'Claude'} runner needs its own sign-in file; you upload it after adding the runner.</div>
             </div>
           </div>
         ) : null}

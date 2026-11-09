@@ -29,6 +29,9 @@ import {
   checkClaudeSigninRoute,
   claudeRunnerUsageRoute,
   inspectClaudeCredentials,
+  inspectCodexCredentials,
+  codexPlanLabelFrom,
+  CODEX_PLAN_LABEL_HEADER,
   CREDENTIALS_TERMS_HEADER,
   CREDENTIALS_SIGNINS_HEADER,
   listLlmAliasesRoute,
@@ -765,9 +768,8 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   on(createBotRunnerRoute, ({ body }) => {
     requireAdmin();
     seedRunners();
-    if (body['kind'] === 'codex_cli') throw new MockHttpError(409, 'conflict', 'Codex runners are not available yet.');
     if (runners.some((r) => r.name === body['name'])) throw new MockHttpError(409, 'conflict', 'A runner with that name already exists. Names are used in bot files, so pick a different one.');
-    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], modelAlias: body['modelAlias'], ...(typeof body['maxConcurrent'] === 'number' ? { maxConcurrent: body['maxConcurrent'] } : {}), ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'claude_cli' ? 'waiting_for_sign_in' : body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
+    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], modelAlias: body['modelAlias'], ...(typeof body['maxConcurrent'] === 'number' ? { maxConcurrent: body['maxConcurrent'] } : {}), ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'claude_cli' || body['kind'] === 'codex_cli' ? 'waiting_for_sign_in' : body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
     runners.push(r);
     return created({ runner: runnerBody(r) });
   });
@@ -812,52 +814,71 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     Object.assign(r, teamIdsFrom(body));
     return { runner: runnerBody(r) };
   });
-  // The Claude sign-in (P19-06): the same file rules and sentences as the server (shared reader, signin.ts of the bot-runners plugin). The file is read and dropped; only the plan and expiry stay.
-  const claudeRunnerOf = (id: string | undefined): MockRunner => {
+  // The Claude and Codex sign-in (P19-06, P19-13): the same file rules and sentences as the server (shared readers, signin.ts of the bot-runners plugin). The file is read and dropped;
+  // only the plan and expiry stay. A Codex file's plan name comes in the `x-plan-label` header (the browser read it from the tokens), as it does to the server.
+  const WORDS = {
+    claude_cli: { name: 'Claude', terms: "Confirm that the Claude plan's terms allow sharing this runner.", ok: 'The sign-in works.', belongs: 'A sign-in file belongs to a Claude Code or Codex runner only.' },
+    codex_cli: { name: 'Codex', terms: "Confirm that the ChatGPT plan's terms allow sharing this runner.", ok: 'The sign-in works.', belongs: 'A sign-in file belongs to a Claude Code or Codex runner only.' },
+  } as const;
+  const signinRunnerOf = (id: string | undefined): { r: MockRunner; kind: 'claude_cli' | 'codex_cli' } => {
     const r = runnerOf(id);
-    if (r['kind'] !== 'claude_cli') throw new MockHttpError(400, 'validation_failed', 'A sign-in file belongs to a Claude Code runner only.');
-    return r;
+    const kind = r['kind'];
+    if (kind !== 'claude_cli' && kind !== 'codex_cli') throw new MockHttpError(400, 'validation_failed', WORDS.claude_cli.belongs);
+    return { r, kind };
   };
   const mockLogins = new Map<string, string>();
   on(putClaudeCredentialsRoute, ({ params, raw, headers }) => {
     requireAdmin();
-    const r = claudeRunnerOf(params.id);
-    if (headers[CREDENTIALS_TERMS_HEADER] !== '1') throw new MockHttpError(400, 'validation_failed', "Confirm that the Claude plan's terms allow sharing this runner.");
+    const { r, kind } = signinRunnerOf(params.id);
+    if (headers[CREDENTIALS_TERMS_HEADER] !== '1') throw new MockHttpError(400, 'validation_failed', WORDS[kind].terms);
     if (headers[CREDENTIALS_SIGNINS_HEADER] !== '1') throw new MockHttpError(400, 'validation_failed', 'Confirm that the other sign-ins in the file may be stored as they are.');
-    const looked = inspectClaudeCredentials(raw);
-    if (!looked.ok) throw new MockHttpError(400, 'validation_failed', looked.message);
-    for (const [other, login] of mockLogins) {
-      if (other !== r.id && login === looked.refreshToken) {
+    let login: string;
+    let plan: string;
+    let expires: string | null;
+    if (kind === 'claude_cli') {
+      const looked = inspectClaudeCredentials(raw);
+      if (!looked.ok) throw new MockHttpError(400, 'validation_failed', looked.message);
+      login = `claude|${looked.refreshToken}`;
+      plan = looked.summary.planLabel;
+      expires = new Date(looked.summary.expiresAt).toISOString();
+    } else {
+      const looked = inspectCodexCredentials(raw);
+      if (!looked.ok) throw new MockHttpError(400, 'validation_failed', looked.message);
+      login = `codex|${looked.loginKey}`;
+      plan = codexPlanLabelFrom(headers[CODEX_PLAN_LABEL_HEADER]);
+      expires = null;
+    }
+    for (const [other, known] of mockLogins) {
+      if (other !== r.id && known === login) {
         const label = String(runners.find((x) => x.id === other)?.['label'] ?? 'another runner');
-        throw new MockHttpError(409, 'conflict', `This Claude login is already used by "${label}". A shared login can sign the other copy out, so every Claude runner needs its own sign-in file. Log in again and upload that one.`);
+        throw new MockHttpError(409, 'conflict', `This ${kind === 'codex_cli' ? 'ChatGPT' : 'Claude'} login is already used by "${label}". A shared login can sign the other copy out, so every ${WORDS[kind].name} runner needs its own sign-in file. Log in again and upload that one.`);
       }
     }
-    mockLogins.set(r.id, looked.refreshToken);
+    mockLogins.set(r.id, login);
     const replaced = r['uploadedAt'] !== null;
-    Object.assign(r, { planLabel: looked.summary.planLabel, credentialsExpiresAt: new Date(looked.summary.expiresAt).toISOString(), uploadedAt: NOW, ownerActorId: me().id, ownerName: me().name, termsAcceptedBy: me().id, termsAcceptedAt: NOW, status: 'ready', statusDetail: null });
+    Object.assign(r, { planLabel: plan, credentialsExpiresAt: expires, uploadedAt: NOW, ownerActorId: me().id, ownerName: me().name, termsAcceptedBy: me().id, termsAcceptedAt: NOW, status: 'ready', statusDetail: null });
     return { runner: runnerBody(r), replaced };
   });
   on(removeClaudeCredentialsRoute, ({ params }) => {
     requireAdmin();
-    const r = claudeRunnerOf(params.id);
+    const { r } = signinRunnerOf(params.id);
     mockLogins.delete(r.id);
     Object.assign(r, { planLabel: null, credentialsExpiresAt: null, uploadedAt: null, ownerActorId: null, ownerName: null, status: 'waiting_for_sign_in', statusDetail: 'Waiting for a sign-in file. Upload one to start this runner.' });
     return { runner: runnerBody(r) };
   });
   on(checkClaudeSigninRoute, ({ params }) => {
     requireAdmin();
-    const r = claudeRunnerOf(params.id);
+    const { r, kind } = signinRunnerOf(params.id);
     if (r['uploadedAt'] === null) throw new MockHttpError(409, 'conflict', 'This runner has no sign-in file yet.');
     r['lastCheckedAt'] = NOW;
-    return { result: 'ok', message: 'The sign-in works.', runner: runnerBody(r) };
+    return { result: 'ok', message: WORDS[kind].ok, runner: runnerBody(r) };
   });
   on(claudeRunnerUsageRoute, () => {
     requireAdmin();
     seedRunners();
-    const claude = runners.find((r) => r['kind'] === 'claude_cli');
     const eng = teams.find((t) => t.slug === 'engineering');
-    if (!claude || !eng || claude['uploadedAt'] === null) return { items: [] };
-    return { items: [{ runnerId: claude.id, teamId: eng.id, teamName: eng.name, day: '2026-10-06', runs: 4, seconds: 540, cliCost: 0.31 }] };
+    if (!eng) return { items: [] };
+    return { items: runners.filter((r) => (r['kind'] === 'claude_cli' || r['kind'] === 'codex_cli') && r['uploadedAt'] !== null).map((r) => ({ runnerId: r.id, teamId: eng.id, teamName: eng.name, day: '2026-10-06', runs: 4, seconds: 540, cliCost: 0.31 })) };
   });
   on(setDefaultBotRunnerRoute, ({ body }) => {
     requireAdmin();

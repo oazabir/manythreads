@@ -5,6 +5,7 @@ import {
   CreateBotRunnerRequest,
   UpdateBotRunnerRequest,
   inspectClaudeCredentials,
+  inspectCodexCredentials,
   type BotRunner,
   type ClaudeRunnerUsageRow,
   type BotRunnerKind,
@@ -61,7 +62,7 @@ export const KIND_CARDS: readonly KindCard[] = [
     title: 'Codex',
     sentence: 'Runs the Codex program in its own pod, signed in with a ChatGPT plan.',
     available: false,
-    unavailable: 'Needs a Codex sign-in; coming with the Claude pod.',
+    unavailable: 'Not turned on in this install.',
   },
   {
     kind: 'llm_gateway',
@@ -263,9 +264,9 @@ export function suggestName(label: string): string {
   return BotRunnerName.safeParse(slug).success ? slug : '';
 }
 
-/** The chooser's cards; the Claude Code card can be picked only when the server says Claude pods are turned on. */
+/** The chooser's cards; the Claude Code and Codex cards can be picked only when the server says pods for them are turned on (one switch for both). */
 export const cardsFor = (claudePodsAvailable: boolean): readonly KindCard[] =>
-  KIND_CARDS.map((c) => (c.kind === 'claude_cli' && claudePodsAvailable ? { ...c, available: true } : c));
+  KIND_CARDS.map((c) => ((c.kind === 'claude_cli' || c.kind === 'codex_cli') && claudePodsAvailable ? { ...c, available: true } : c));
 
 export const DEFAULT_PROFILE_RULE = '{bot}';
 
@@ -277,7 +278,7 @@ export type RunnerFormValues = {
   profileRule: string;
   modelAlias: string;
   teams: TeamsChoice;
-  /** Claude Code only: how many bot runs at once, 1 to 4. */
+  /** Claude Code and Codex only: how many bot runs at once, 1 to 4. */
   maxConcurrent: number;
 };
 
@@ -297,7 +298,7 @@ export function validateNew(kind: BotRunnerKind, v: RunnerFormValues): Checked {
     draft['apiKey'] = v.apiKey;
     draft['profileRule'] = v.profileRule.trim() === '' ? DEFAULT_PROFILE_RULE : v.profileRule.trim();
   }
-  if (kind === 'claude_cli') draft['maxConcurrent'] = v.maxConcurrent;
+  if (kind === 'claude_cli' || kind === 'codex_cli') draft['maxConcurrent'] = v.maxConcurrent;
   if (kind === 'llm_gateway') {
     if (v.modelAlias === '') errors.modelAlias = FRIENDLY.modelAlias;
     else draft['modelAlias'] = v.modelAlias;
@@ -446,7 +447,37 @@ export function nodeSavedWords(label: string, node: string | null, recreates: bo
   return recreates ? `${label} will run on ${node}. Its work volumes are being made again there.` : `${label} will run on ${node}.`;
 }
 
-// ---- the Claude Code sign-in (P19-06) -------------------------------------------------------------------------
+// ---- the Claude Code and Codex sign-in (P19-06, P19-13) -------------------------------------------------------
+
+/** The two kinds that are signed in with a file the admin uploads. */
+export type SigninKind = 'claude_cli' | 'codex_cli';
+export const isSigninKind = (k: BotRunnerKind): k is SigninKind => k === 'claude_cli' || k === 'codex_cli';
+
+/** The words that differ between the two: the program, the plan, the file. One table, so the Codex sentences stay beside the Claude ones. */
+export const SIGNIN_WORDS: Record<SigninKind, { program: string; plan: string; fileName: string; fileFor: string; login: string; terms: string; termsLabel: string; usageHeader: string; refused: string }> = {
+  claude_cli: {
+    program: 'Claude Code',
+    plan: 'Claude plan',
+    fileName: '.credentials.json',
+    fileFor: 'Choose the .credentials.json file of a Claude login.',
+    login: 'Claude login',
+    terms: "Confirm that the Claude plan's terms allow sharing this runner.",
+    termsLabel: "The Claude plan's terms allow this login to be shared by the teams I chose.",
+    usageHeader: "Claude's own cost figure",
+    refused: "Claude refused this runner's sign-in.",
+  },
+  codex_cli: {
+    program: 'Codex',
+    plan: 'ChatGPT plan',
+    fileName: 'auth.json',
+    fileFor: 'Choose the auth.json file of a Codex login with a ChatGPT account.',
+    login: 'ChatGPT login',
+    terms: "Confirm that the ChatGPT plan's terms allow sharing this runner.",
+    termsLabel: "The ChatGPT plan's terms allow this login to be shared by the teams I chose.",
+    usageHeader: "Codex's own cost figure",
+    refused: "Codex refused this runner's sign-in.",
+  },
+};
 
 /** What the page shows of a chosen sign-in file before it goes up. Read here in the browser only; no token is ever in it. */
 export type SigninPreview =
@@ -455,8 +486,23 @@ export type SigninPreview =
 
 const dateWords = (ms: number): string => new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 
-/** The summary of a chosen file's text. Reads the shape with the shared reader; the text is then sent unchanged. */
-export function previewSignin(text: string, now: number = Date.now()): SigninPreview {
+/**
+ * The summary of a chosen file's text. Reads the shape with the shared reader; the text is then sent unchanged. For a Codex file the plan name and the access token's expiry are
+ * read from the two tokens here, in the browser (the server reads no token), and the page sends the plan name in a header.
+ */
+export function previewSignin(text: string, kind: SigninKind = 'claude_cli', now: number = Date.now()): SigninPreview {
+  if (kind === 'codex_cli') {
+    const looked = inspectCodexCredentials(text, { readPlan: true });
+    if (!looked.ok) return { ok: false, message: looked.message };
+    const s = looked.summary;
+    const expiresWords =
+      s.expiresAt === null
+        ? 'Codex renews the access part by itself.'
+        : s.expiresAt <= now
+          ? `The access part ran out on ${dateWords(s.expiresAt)}. Codex renews it by itself.`
+          : `The access part runs out on ${dateWords(s.expiresAt)}. Codex renews it by itself.`;
+    return { ok: true, plan: s.planLabel, expiresWords, others: { count: s.otherCount, names: s.otherNames }, needsAck: s.otherCount > 0 };
+  }
   const looked = inspectClaudeCredentials(text, now);
   if (!looked.ok) return { ok: false, message: looked.message };
   const s = looked.summary;
@@ -469,29 +515,34 @@ export function previewSignin(text: string, now: number = Date.now()): SigninPre
   };
 }
 
-export function othersSentence(p: { count: number; names: string[] }): string {
-  if (p.count === 0) return 'The file holds no other sign-ins.';
+export function othersSentence(p: { count: number; names: string[] }, kind: SigninKind = 'claude_cli'): string {
   const names = p.names.length > 0 ? ` (${p.names.join(', ')}${p.count > p.names.length ? ', …' : ''})` : '';
+  if (kind === 'codex_cli') {
+    if (p.count === 0) return 'The file holds nothing beyond the Codex login.';
+    const one = p.count === 1;
+    return `The file also holds ${one ? '1 other entry' : `${p.count} other entries`}${names}. ${one ? 'It is' : 'They are'} stored with the file, as ${one ? 'it is' : 'they are'}, in this runner's pod.`;
+  }
+  if (p.count === 0) return 'The file holds no other sign-ins.';
   return `The file also holds ${p.count === 1 ? '1 other sign-in' : `${p.count} other sign-ins`}${names}. They are stored with it, as they are, in this runner's pod.`;
 }
 
 export type UploadChecks = { termsTicked: boolean; signinsTicked: boolean };
 
 /** Why Upload cannot go yet, in one sentence; null when it can. */
-export function uploadProblem(preview: SigninPreview | null, c: UploadChecks): string | null {
-  if (preview === null) return 'Choose the .credentials.json file of a Claude login.';
+export function uploadProblem(preview: SigninPreview | null, c: UploadChecks, kind: SigninKind = 'claude_cli'): string | null {
+  if (preview === null) return SIGNIN_WORDS[kind].fileFor;
   if (!preview.ok) return preview.message;
-  if (!c.termsTicked) return "Confirm that the Claude plan's terms allow sharing this runner.";
-  if (preview.needsAck && !c.signinsTicked) return 'Confirm that the other sign-ins in the file may be stored as they are.';
+  if (!c.termsTicked) return SIGNIN_WORDS[kind].terms;
+  if (preview.needsAck && !c.signinsTicked) return kind === 'codex_cli' ? 'Confirm that the other entries in the file may be stored with it, as they are.' : 'Confirm that the other sign-ins in the file may be stored as they are.';
   return null;
 }
 
-export function signedInWords(r: Pick<BotRunner, 'planLabel' | 'credentialsExpiresAt' | 'uploadedAt'>): string | null {
+export function signedInWords(r: Pick<BotRunner, 'planLabel' | 'credentialsExpiresAt' | 'uploadedAt'> & { kind?: BotRunnerKind }): string | null {
   if (!r.uploadedAt) return null;
-  return `Signed in: ${r.planLabel ?? 'Claude plan'}. Uploaded ${r.uploadedAt.slice(0, 10)}.`;
+  return `Signed in: ${r.planLabel ?? (r.kind === 'codex_cli' ? SIGNIN_WORDS.codex_cli.plan : SIGNIN_WORDS.claude_cli.plan)}. Uploaded ${r.uploadedAt.slice(0, 10)}.`;
 }
 
-export const needsSigninBanner = (r: Pick<BotRunner, 'kind' | 'status'>): boolean => r.kind === 'claude_cli' && r.status === 'needs_sign_in';
+export const needsSigninBanner = (r: Pick<BotRunner, 'kind' | 'status'>): boolean => isSigninKind(r.kind) && r.status === 'needs_sign_in';
 
 export type UsageLine = { team: string; runs: number; minutes: number; cost: string | null };
 

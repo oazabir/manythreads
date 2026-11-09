@@ -100,7 +100,6 @@ describe('the mock transport answers like the server', () => {
     expect(made.runner).toMatchObject({ name: 'lab', status: 'not_set_up', hasKey: true, allTeams: false });
     expect(JSON.stringify(made)).not.toContain('lab-key-0123456');
     await expect(createBotRunner({ name: 'lab', label: 'Again', kind: 'hermes_gateway', baseUrl: 'https://lab.example.com', apiKey: 'lab-key-0123456' })).rejects.toMatchObject({ status: 409 });
-    await expect(createBotRunner({ name: 'cl', label: 'Claude', kind: 'codex_cli' })).rejects.toMatchObject({ status: 409 });
 
     const bad = await testBotRunner(made.runner.id, { profile: 'ghost' });
     expect(bad).toMatchObject({ ok: false, status: 'not_set_up', error: 'The gateway did not answer as a Hermes gateway for that profile.' });
@@ -114,8 +113,8 @@ describe('the mock transport answers like the server', () => {
     expect((await updateBotRunner(made.runner.id, { enabled: false })).runner).toMatchObject({ enabled: false, status: 'off' });
   });
 
-  it('answers the way the server does for the edge cases: the Claude text, an LLM runner that is ready, a patch with no change', async () => {
-    await expect(createBotRunner({ name: 'cl', label: 'Claude', kind: 'codex_cli' })).rejects.toMatchObject({ status: 409, message: 'Codex runners are not available yet.' });
+  it('answers the way the server does for the edge cases: a Codex runner that waits for its sign-in, an LLM runner that is ready, a patch with no change', async () => {
+    expect((await createBotRunner({ name: 'cx', label: 'Codex', kind: 'codex_cli', teams: { all: true } })).runner).toMatchObject({ kind: 'codex_cli', status: 'waiting_for_sign_in', planLabel: null });
     const llm = await createBotRunner({ name: 'plain', label: 'Plain', kind: 'llm_gateway', modelAlias: 'smart', teams: { all: true } });
     expect(llm.runner).toMatchObject({ status: 'ready', modelAlias: 'smart' });
     await expect(updateBotRunner(llm.runner.id, { label: 'Plain' })).rejects.toMatchObject({ status: 400, message: 'Nothing to change' });

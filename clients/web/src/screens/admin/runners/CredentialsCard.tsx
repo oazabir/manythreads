@@ -3,14 +3,15 @@ import type { BotRunner } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
 import { useQuery } from '../../../app/useQuery';
 import { Dialog } from '../../../components/Dialog';
-import { checkClaudeSignin, fetchClaudeUsage, removeClaudeCredentials, uploadClaudeCredentials } from './api';
-import { othersSentence, previewSignin, signedInWords, uploadProblem, usageLines, type SigninPreview } from './commands';
+import { checkClaudeSignin, fetchClaudeUsage, removeClaudeCredentials, uploadClaudeCredentials, uploadCodexCredentials } from './api';
+import { SIGNIN_WORDS, isSigninKind, othersSentence, previewSignin, signedInWords, uploadProblem, usageLines, type SigninPreview } from './commands';
 import { SkeletonRows } from '../../../components/Skeleton';
 
 /*
- * The sign-in of one Claude Code runner (PLAN P19-06). The admin chooses the `.credentials.json` of a Claude login. The browser reads it only to show a
- * summary (the plan, when the access part runs out, how many other sign-ins the file holds) with the shared reader, and sends the text unchanged. Nothing
- * of the file is kept on this page after it goes up or is dropped, and a token is never shown. The server keeps the file in the pod's own Secret.
+ * The sign-in of one Claude Code or Codex runner (PLAN P19-06, P19-13). The admin chooses the `.credentials.json` of a Claude login or the `auth.json` of a Codex
+ * login with a ChatGPT account. The browser reads it only to show a summary (the plan, when the access part runs out, how many other entries the file holds) with
+ * the shared reader, and sends the text unchanged. Nothing of the file is kept on this page after it goes up or is dropped, and a token is never shown. The server
+ * keeps the file in the pod's own Secret. For Codex the plan name is read here from the file's tokens and sent in a header; the server reads no token.
  */
 
 const message = (e: unknown): string => (isApiError(e) ? e.message : e instanceof Error ? e.message : 'Something went wrong. Try again.');
@@ -18,6 +19,8 @@ const message = (e: unknown): string => (isApiError(e) ? e.message : e instanceo
 type Props = { runner: BotRunner; onClose: () => void; onChanged: (r: BotRunner, text: string) => void };
 
 export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
+  const kind = isSigninKind(runner.kind) ? runner.kind : 'claude_cli';
+  const words = SIGNIN_WORDS[kind];
   const [text, setText] = useState<string | null>(null);
   const [fileName, setFileName] = useState('');
   const [preview, setPreview] = useState<SigninPreview | null>(null);
@@ -30,7 +33,7 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
   const sending = useRef(false);
   const usage = useQuery(`runner-usage-${runner.id}`, fetchClaudeUsage);
   const signedIn = signedInWords(runner);
-  const problem = uploadProblem(preview, { termsTicked: terms, signinsTicked: others });
+  const problem = uploadProblem(preview, { termsTicked: terms, signinsTicked: others }, kind);
   const lines = usage.status === 'ok' ? usageLines(usage.data.items, runner.id) : [];
 
   async function choose(e: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -47,13 +50,13 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
     if (file.size > 256 * 1024) {
       setText(null);
       setFileName(file.name);
-      setPreview({ ok: false, message: 'That file is too large to be a Claude sign-in file.' });
+      setPreview({ ok: false, message: `That file is too large to be a ${words.program === 'Codex' ? 'Codex' : 'Claude'} sign-in file.` });
       return;
     }
     const body = await file.text();
     setFileName(file.name);
     setText(body);
-    setPreview(previewSignin(body));
+    setPreview(previewSignin(body, kind));
     setTerms(false);
     setOthers(false);
   }
@@ -83,7 +86,8 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
   const upload = () =>
     run(async () => {
       if (text === null) throw new Error('Choose the sign-in file first.');
-      const res = await uploadClaudeCredentials(runner.id, text);
+      if (kind === 'codex_cli' && preview?.ok !== true) throw new Error('Choose the sign-in file first.');
+      const res = kind === 'codex_cli' && preview?.ok === true ? await uploadCodexCredentials(runner.id, text, preview.plan) : await uploadClaudeCredentials(runner.id, text);
       return { runner: res.runner, text: res.replaced ? `The sign-in of ${runner.label} was replaced. The runner is starting again.` : `${runner.label} is signed in and starting.` };
     });
   const remove = () => run(async () => ({ runner: (await removeClaudeCredentials(runner.id)).runner, text: `The sign-in of ${runner.label} was removed. It waits for a new one.` }));
@@ -124,21 +128,21 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
       <div className="rn-form">
         {runner.status === 'needs_sign_in' ? (
           <p className="notice warn" role="status" data-testid="runner-signin-banner">
-            Claude refused this runner's sign-in. {runner.statusDetail ?? 'Log in again and upload a new file.'}
+            {words.refused} {runner.statusDetail ?? 'Log in again and upload a new file.'}
           </p>
         ) : null}
-        {signedIn ? <p className="dlg-text" data-testid="runner-signin-current">{signedIn}</p> : <p className="dlg-text" data-testid="runner-signin-none">No sign-in yet. Every Claude runner needs its own Claude login.</p>}
+        {signedIn ? <p className="dlg-text" data-testid="runner-signin-current">{signedIn}</p> : <p className="dlg-text" data-testid="runner-signin-none">No sign-in yet. Every {words.program === 'Codex' ? 'Codex' : 'Claude'} runner needs its own {words.login}.</p>}
         <div className="fld">
-          <label htmlFor="runner-signin-file">Sign-in file (.credentials.json)</label>
+          <label htmlFor="runner-signin-file">Sign-in file ({words.fileName})</label>
           <input id="runner-signin-file" type="file" accept=".json,application/json" onChange={(e) => void choose(e)} disabled={busy} data-testid="runner-signin-file" data-autofocus="" />
-          <div className="fld-hint">Log in with Claude Code on a computer of your own, then choose the file it saved. The file stays in this runner's pod. This page never shows it.</div>
+          <div className="fld-hint">{kind === 'codex_cli' ? 'Log in with Codex on a computer of your own, using a ChatGPT account, then choose the auth.json it saved. ' : 'Log in with Claude Code on a computer of your own, then choose the file it saved. '}The file stays in this runner's pod. This page never shows it.</div>
         </div>
         {preview ? (
           preview.ok ? (
             <div className="dlg-text" data-testid="runner-signin-preview">
               <p><strong>{fileName}</strong>: {preview.plan}.</p>
               <p>{preview.expiresWords}</p>
-              <p>{othersSentence(preview.others)}</p>
+              <p>{othersSentence(preview.others, kind)}</p>
             </div>
           ) : (
             <p className="dlg-error" role="alert" data-testid="runner-signin-invalid">{preview.message}</p>
@@ -147,11 +151,11 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
         {preview?.ok ? (
           <>
             <label className="check">
-              <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} data-testid="runner-signin-terms" /> The Claude plan's terms allow this login to be shared by the teams I chose.
+              <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} data-testid="runner-signin-terms" /> {words.termsLabel}
             </label>
             {preview.needsAck ? (
               <label className="check">
-                <input type="checkbox" checked={others} onChange={(e) => setOthers(e.target.checked)} data-testid="runner-signin-others" /> The other sign-ins in the file may be stored with it, as they are.
+                <input type="checkbox" checked={others} onChange={(e) => setOthers(e.target.checked)} data-testid="runner-signin-others" /> {kind === 'codex_cli' ? 'The other entries in the file may be stored with it, as they are.' : 'The other sign-ins in the file may be stored with it, as they are.'}
               </label>
             ) : null}
           </>
@@ -185,7 +189,7 @@ export function CredentialsDialog({ runner, onClose, onChanged }: Props) {
         ) : (
           <table className="rn-usage" data-testid="runner-usage">
             <thead>
-              <tr><th scope="col">Team</th><th scope="col">Runs</th><th scope="col">Minutes</th><th scope="col">Claude's own cost figure</th></tr>
+              <tr><th scope="col">Team</th><th scope="col">Runs</th><th scope="col">Minutes</th><th scope="col">{words.usageHeader}</th></tr>
             </thead>
             <tbody>
               {lines.map((l) => (

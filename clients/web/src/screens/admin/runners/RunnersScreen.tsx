@@ -20,6 +20,7 @@ import {
   hasNoTeams,
   hasNodeChoice,
   isChangingPlacement,
+  isSigninKind,
   kindWords,
   placementLine,
   stateLook,
@@ -392,7 +393,7 @@ function RunnerRow({
         </span>
         <button type="button" className="btn sm" onClick={onTest} disabled={busy} data-testid="runner-test" aria-label={`Test ${r.label}`}>Test</button>
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
-        {r.kind === 'claude_cli' ? (
+        {isSigninKind(r.kind) ? (
           <button type="button" className="btn sm" onClick={onSignin} disabled={busy} data-testid="runner-signin-open" aria-label={`Sign-in for ${r.label}`}>Sign-in</button>
         ) : null}
         {hasNodeChoice(r) ? (
