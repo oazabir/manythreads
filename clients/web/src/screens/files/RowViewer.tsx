@@ -25,7 +25,7 @@ function useFolderNames(files: TeamFiles, row: FileRow): string[] | null {
 }
 
 /** The viewer of a row: a file in the viewer its type asks for, an app folder as a sandboxed app. */
-export function RowViewer({ files, row, content, save, readOnly }: { files: TeamFiles; row: FileRow; content: FileContent; save: ((text: string) => Promise<void>) | undefined; readOnly: boolean }) {
+export function RowViewer({ files, row, content, save, readOnly, onFileChanged }: { files: TeamFiles; row: FileRow; content: FileContent; save: ((text: string) => Promise<void>) | undefined; readOnly: boolean; onFileChanged?: () => void }) {
   const session = useSession();
   const names = useFolderNames(files, row);
   const context = { teamSlug: files.slug, teamName: files.teamName, authorName: session.person.name, ...(files.space === 'personal' ? { store: 'personal' as const } : {}) };
@@ -34,5 +34,5 @@ export function RowViewer({ files, row, content, save, readOnly }: { files: Team
     if (!isAppFolder(names)) return <ViewerMessage title="This folder is not an app">Open a file from the tree or the list.</ViewerMessage>;
     return <FileViewer path={row.path} kind="folder" entries={names} source={content.source} readOnly context={context} />;
   }
-  return <FileViewer path={row.path} {...(row.mime ? { mime: row.mime } : {})} source={content.source} readOnly={readOnly} {...(save ? { onSave: save } : {})} context={context} />;
+  return <FileViewer path={row.path} {...(row.mime ? { mime: row.mime } : {})} source={content.source} readOnly={readOnly} {...(save ? { onSave: save } : {})} {...(onFileChanged ? { onFileChanged } : {})} context={context} />;
 }

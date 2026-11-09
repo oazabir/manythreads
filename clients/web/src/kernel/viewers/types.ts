@@ -26,6 +26,8 @@ export type ViewerProps = {
   readOnly: boolean;
   /** Persist new text; rejects with the reason (conflict, forbidden). Absent when the viewer cannot save. */
   onSave?: (text: string) => Promise<void>;
+  /** The viewer changed the file by a route other than `onSave` (live editing): the host's idea of the file's version is out of date. */
+  onFileChanged?: () => void;
   context: ViewerContext;
   /** An Office file's PDF rendition when the optional worker made one. */
   renditionUrl?: string;

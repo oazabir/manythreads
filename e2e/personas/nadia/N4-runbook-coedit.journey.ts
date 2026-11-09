@@ -98,10 +98,7 @@ export default defineJourney({
         await expect(dialog.getByTestId('restore-question')).toContainText('A new commit will be made');
         await dialog.getByRole('button', { name: 'Restore', exact: true }).click();
         await expect(page.getByText('Restored. A new commit was made.')).toBeVisible();
-        // KNOWN PRODUCT BUG (found by this step, reported, not hidden): the Markdown viewer that is open behind the History panel keeps showing the text from before the restore
-        // (MarkdownViewer.tsx makes its editor once and has no effect for a changed `text`; `useContent` does read the file again). Twice it stayed stale for 20 s; a reload shows the
-        // restored page. A later Save from that stale view would write the old text over the restore. Until it is fixed the step reads the page again, as a person who doubts would.
-        await page.reload();
+        // no reload: the viewer behind the History panel shows the restored page by itself (it used to keep the text from before the restore)
         const restored = page.getByTestId('viewer-markdown').locator('.md-prose');
         await expect(restored).toContainText('canary');
         await expect(restored).not.toContainText(SECTION);

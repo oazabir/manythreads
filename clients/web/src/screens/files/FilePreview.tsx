@@ -67,7 +67,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
   const history = git || personal;
   const page = git && isPage(row.path);
   const [editing, setEditing] = useState(false);
-  const { content, save } = useContent(files, row);
+  const { content, save, viewerChangedFile } = useContent(files, row);
   const folder = parentOf(row.path);
   const actions = useRowActions(files, {
     onDone: (r) => {
@@ -99,7 +99,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
         </p>
       ) : null}
       {row.managedBy ? <p className="fnote memory" role="note"><b>{MEMORY_COPY}.</b> Edits to facts are kept by the team's memory.</p> : null}
-      <RowViewer files={files} row={row} content={content} save={save} readOnly={reading || row.readOnly} />
+      <RowViewer files={files} row={row} content={content} save={save} readOnly={reading || row.readOnly} onFileChanged={viewerChangedFile} />
       {row.store === 'attachments' ? <Kv row={row} files={files} /> : null}
       {actions.dialog}
     </div>

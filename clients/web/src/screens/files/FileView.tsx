@@ -27,7 +27,7 @@ export function FileView({ files, path, onClose, onMoved, onGone }: { files: Tea
 
 function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFiles; row: FileRow; onClose: () => void; onMoved: (to: string) => void; onGone: () => void }) {
   const panel = usePanel();
-  const { content, save } = useContent(files, row);
+  const { content, save, viewerChangedFile } = useContent(files, row);
   const actions = useRowActions(files, { onDone: (r) => (r.action === 'delete' || r.action === 'delete-many' || r.action === 'move-many' ? onGone() : onMoved(r.to)) });
   // a repo file keeps commits, a Personal file keeps versions; an admin's read-only look keeps no panel
   const history = row.kind === 'file' && (row.store === 'git' || row.store === 'personal') && row.readOnlyReason !== 'admin_view';
@@ -54,7 +54,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
       ) : null}
       {row.managedBy ? <p className="fnote memory" role="note"><b>{MEMORY_COPY}.</b> Edits to facts are kept by the team's memory.</p> : null}
       <div className="fvb">
-        <RowViewer files={files} row={row} content={content} save={save} readOnly={row.readOnly} />
+        <RowViewer files={files} row={row} content={content} save={save} readOnly={row.readOnly} onFileChanged={viewerChangedFile} />
       </div>
       {actions.dialog}
     </div>

@@ -18,6 +18,8 @@ export type FileViewerProps = {
   source: ContentSource;
   readOnly?: boolean;
   onSave?: (text: string) => Promise<void>;
+  /** The viewer changed the file by a route other than `onSave` (live editing). */
+  onFileChanged?: () => void;
   context: ViewerContext;
   /** An Office file's PDF rendition. */
   renditionUrl?: string;
@@ -111,6 +113,7 @@ export function FileViewer(props: FileViewerProps) {
             {...(url ? { url } : {})}
             readOnly={props.readOnly === true || !props.onSave}
             {...(props.onSave ? { onSave: props.onSave } : {})}
+            {...(props.onFileChanged ? { onFileChanged: props.onFileChanged } : {})}
             context={props.context}
             {...(props.renditionUrl ? { renditionUrl: props.renditionUrl } : {})}
           />

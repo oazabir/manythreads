@@ -15,7 +15,7 @@ export const RICH_LIMIT = 200_000;
  * Markdown page: Tiptap WYSIWYG with a `/` menu (table among them) and a Raw toggle. The text of the file stays the source
  * of truth: untouched pages keep their bytes, an edit re-serialises the body once, the frontmatter is never rewritten.
  */
-export default function MarkdownViewer({ path, text = '', readOnly, onSave, context }: ViewerProps) {
+export default function MarkdownViewer({ path, text = '', readOnly, onSave, onFileChanged, context }: ViewerProps) {
   const big = text.length > RICH_LIMIT;
   const initial = useMemo(() => (big ? null : bodyToDoc(text)), [text, big]);
   const frontmatter = initial?.frontmatter ?? '';
@@ -27,6 +27,10 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   const programmatic = useRef(false);
   // A click on a checklist box (see `tickBox` below). The editor is made once, so it reads the current handler through this ref.
   const tickRef = useRef<((nth: number, checked: boolean, boxes: number, text: string) => boolean) | null>(null);
+  // What the editor's callbacks and the effect for a changed `text` read (the editor is made once, so its closures would otherwise keep the first values).
+  const frontmatterRef = useRef(frontmatter);
+  const stateRef = useRef({ current, saved, live });
+  const seenText = useRef(text);
 
   const editor = useEditor(
     {
@@ -55,7 +59,7 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
       },
       onUpdate: ({ editor: ed, transaction }) => {
         if (!transaction.docChanged || programmatic.current) return;
-        setCurrent(docToText(frontmatter, ed.getJSON()));
+        setCurrent(docToText(frontmatterRef.current, ed.getJSON()));
         saver.reset();
       },
     },
@@ -63,8 +67,33 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   );
 
   useEffect(() => {
+    frontmatterRef.current = frontmatter;
+    stateRef.current = { current, saved, live };
+  });
+
+  useEffect(() => {
     editor?.setEditable(!readOnly);
   }, [editor, readOnly]);
+
+  // The file's text changed from outside (a restore from History, another editor's save): show it, so a later Save does not start from the old text. A person
+  // who has unsaved edits keeps them (their Save is then refused by the file's conflict check, which says so); while editing live the server's document is the truth.
+  const resetSave = saver.reset;
+  useEffect(() => {
+    if (text === seenText.current) return;
+    seenText.current = text;
+    const now = stateRef.current;
+    if (now.live || now.current !== now.saved) return;
+    const tooBig = text.length > RICH_LIMIT;
+    setCurrent(text);
+    setSaved(text);
+    resetSave();
+    if (tooBig) setMode('raw');
+    if (editor && !tooBig) {
+      programmatic.current = true;
+      editor.commands.setContent(bodyToDoc(text).doc, { emitUpdate: false });
+      programmatic.current = false;
+    }
+  }, [text, editor, resetSave]);
 
   const toRaw = () => setMode('raw');
   const toRich = () => {
@@ -105,6 +134,8 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   });
   // Leaving live editing: the server has committed the source, so the viewer shows exactly that text (no refetch, no second save).
   const leaveLive = (finalText: string) => {
+    // the file now holds text the host did not read or save: it must read the file again at the next change, or a restore of the version it knows would go unseen
+    onFileChanged?.();
     setLive(false);
     setCurrent(finalText);
     setSaved(finalText);
