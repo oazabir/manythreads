@@ -324,6 +324,27 @@ describe('the stand-in codex', () => {
   });
 });
 
+describe('a changed BOT.md and tool list', () => {
+  it('reach the next run of the same conversation, because every run is a fresh process (PLAN 19.0: P14-22 does not apply to the bridge)', async () => {
+    // the bridge's own recording stand-in (test/fixtures) writes what each process was given
+    h = await harness({}, 'claude-code');
+    const session = 'thread-1';
+    const run = async (instructions: string, tools: string[]): Promise<void> => {
+      const res = await start(h!, { input: 'go', session_id: session, instructions, manythreads: { tools } });
+      await events(h!, ((await res.json()) as { run_id: string }).run_id);
+    };
+    await run('You are Bot, version one.', ['files']);
+    await run('You are Bot, version two. You may now use the shell.', ['files', 'shell']);
+    const [one, two] = h.calls();
+    expect(one!['instructions']).toContain('version one');
+    expect(two!['instructions']).toContain('version two');
+    expect(one!['argv'].join(' ')).not.toContain('Bash');
+    expect(two!['argv'].join(' ')).toContain('Bash');
+    // the second run resumes the conversation of the first, in a new process
+    expect(two!['argv']).toContain('--resume');
+  });
+});
+
 describe('what the stand-ins may touch', () => {
   it('their sources never name the home folder or a real sign-in path', () => {
     for (const file of [STAND_IN_CLAUDE, STAND_IN_CODEX]) {

@@ -24,7 +24,7 @@ owners and admins can read or write.
 | `model_alias`, `owner_actor_id`, `plan_label`, `credentials_expires_at`, `login_id`, `terms_*`, `max_concurrent` | for the kinds that come later (the LLM gateway and the Claude and Codex pods); not shown to teams |
 | `status` | `not_set_up`, `waiting_for_sign_in`, `starting`, `ready`, `needs_sign_in`, `waiting_for_node`, `moving`, `paused`, `off`, with `status_detail` and `last_checked_at` |
 
-**Which kinds can be made now.** `hermes_gateway`, `hermes_pod` and `llm_gateway`. `claude_cli` and `codex_cli` answer `409` ("not available yet") until their pods are built; the database already allows them so the later migration changes nothing here.
+**Which kinds can be made now.** `hermes_gateway`, `hermes_pod` and `llm_gateway` always. `claude_cli` (and `codex_cli`, from P19-13) can be made when the `claude.pods` provider is present; without it the answer is `409` ("not turned on in this install"). The database allowed every kind from the first migration, so nothing changed there.
 
 **The key is never returned.** A Hermes gateway's key is encrypted with the secrets mechanism (`ctx.secrets.put`, extension `secret.seal`) and only `hasKey` is shown to an admin. A Claude or Codex sign-in will live in the pod's own Secret, never in a column.
 
@@ -41,7 +41,7 @@ All admin routes require a workspace owner or admin (`403` "Only a workspace adm
 | route | what it does |
 |---|---|
 | `GET /api/admin/bot-runners` | every runner with its team list, `hasKey`, `botCount` and the names of the teams that have bots on it |
-| `POST /api/admin/bot-runners` | make a runner. `hermes_gateway` needs `baseUrl` (passes the outbound guard) and `apiKey` (at least 8 characters). `409` for a taken name and for `claude_cli`/`codex_cli` |
+| `POST /api/admin/bot-runners` | make a runner. `hermes_gateway` needs `baseUrl` (passes the outbound guard) and `apiKey` (at least 8 characters). `409` for a taken name, and for `claude_cli`/`codex_cli` when the pods plugin is not on |
 | `PATCH /api/admin/bot-runners/:id` | change label, address, key, profile rule, `enabled`. A new address or key marks the state `not_set_up` until a test passes. The default runner cannot be switched off |
 | `DELETE /api/admin/bot-runners/:id` | delete. Refused with `409` while bots are placed on it; the message says how many and in which teams |
 | `POST /api/admin/bot-runners/:id/test` | ask the runner whether it answers; the state becomes `ready` or stays `not_set_up`. Answers one of fixed sentences; nothing the remote side said comes back |
@@ -140,7 +140,7 @@ which runner (id and name); never an address, key, node or sign-in, and `updated
 `runtime-hermes/test/gateway-run.test.ts` (an adopted connection keeps working; the old routes answer `403`), `runtime-hermes/test/model-run.test.ts` (a mention end to end on an `llm_gateway` runner with a stand-in proxy: the tool call, the reply, the spend under the bot, a spent budget, the step limit). The events contract is `packages/shared/test/events/phase19-bot-runner-contracts.test.ts`.
 
 ## Claude Code runners
-With the `claude.pods` provider present (see [claude-pods](claude-pods.md)), a runner of kind `claude_cli` can be made; it starts as `waiting_for_sign_in`, with a number of runs at once (1 to 4, default 2). The list answer carries `claudePodsAvailable`. Without the provider, making one answers 409 "not turned on in this install". Codex stays 409.
+With the `claude.pods` provider present (see [claude-pods](claude-pods.md)), a runner of kind `claude_cli` can be made; it starts as `waiting_for_sign_in`, with a number of runs at once (1 to 4, default 2). The list answer carries `claudePodsAvailable`. Without the provider, making one answers 409 "not turned on in this install". A Codex runner (`codex_cli`, P19-13) is made the same way and is signed in with an `auth.json` file; see [claude-pods](claude-pods.md#codex-pods-p19-13) and [runner sign-in files](../guide/runner-signin-files.md).
 
 ### The sign-in routes (P19-06, admin only)
 - `PUT /api/admin/bot-runners/:id/credentials`: the body is the file as it is (`application/json`, at most 256 KB, read as a stream). Both `x-terms-ack: 1` and `x-signins-ack: 1` are required. The file must be a Claude login with the `user:inference` permission. A login another runner holds (keyed hash) or a file with the same SHA-256 is refused with the sentence "every Claude runner needs its own sign-in file". The runner moves to `starting`; the pod provider writes the Secret last, so a refusal by the cluster rolls the rows back.
@@ -154,3 +154,23 @@ profile rule `{team}--{bot}`. The runner's team list is the permission: a team t
 `recordUsage` (one row per runner, team and day) and, when the run ended because the plan's limit was reached or the sign-in was refused, `pauseRunner`, which
 sets the status (`paused` with a time, or `needs_sign_in`) and emits `claude_pod.runner.paused` once. A pause clears itself when its time has passed. The bot's
 person sees one plain line; the asker never sees the account's details.
+
+### Who may do what
+| | Workspace admin | Team lead | Team member | Guest |
+|---|---|---|---|---|
+| Make, change, test, share, delete a runner; sign-in file; machine; default | yes | no | no | no |
+| Read the runner tables (address, key id, node, plan, expiry, usage) | yes | no | no | no |
+| Read the short list for a team (`GET /api/teams/:slug/bot-runners`) | yes, any team | yes | yes | `403` unless the guest sits in that team |
+| Choose a runner for a bot (`placement.runs_on`) | yes | yes, among the runners the team may use | no | no |
+| Ask a bot that runs on it | yes | yes | yes | as for any bot |
+
+The rule behind the table is the database's, not the page's: the tables are forced-RLS for owners and admins only, and the one door for everyone else is
+`app.bot_runners_for_team`. A lead's pick is only a name; the loader refuses a name the team may not use, and the refusal names nothing about runners the team cannot see.
+
+### Trying it without a real sign-in
+The seed **v19** (`packages/test-utils/src/seed-runners.ts`, `seedRunners({ url, db })`; stack mode `runners` in `e2e/fixtures/stack-server.ts`) is opt-in, so no older
+baseline moves. It makes, through the real routes, `office-hermes` (a host gateway, open to every team), `team-pods`, `claude-shared` (Engineering and Marketing),
+`claude-support` (Customer support, a different made-up login), `fast-gateway` (alias `fast`) and, when this build lets an admin make one, `codex-chatgpt` waiting for a sign-in,
+with one bot on each through a proposal that sets `placement.runs_on` in its `BOT.md`. Running it twice changes nothing. The Claude files are made-up (an access token
+that starts `fake-`, a canary string, no real login read) and go through the same upload route as a real one. The stand-in commands that answer in the pod are in
+[claude-pods](claude-pods.md#stand-in-commands-and-the-seed).

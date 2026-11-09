@@ -187,3 +187,26 @@ Used when the bridge runs in a Claude pod (`CLAUDE_CONFIG_DIR` is set). `SigninG
   process: a refused sign-in until the file changes, a limit until `resets_at`.
 - `GET /health` includes the sign-in state; `POST /v1/signin/check` answers `ok|rejected|expired|no_scope|limit` from the file's shape and the remembered failure.
 The patterns hold the stand-in's words and a guess at the real ones; the real texts are not measured yet.
+
+### The pod, in short
+In a runner's pod the bridge is the only thing the server talks to (port 8650, the bridge key on every call except the probes). Differences from a bridge on a person's own machine:
+- `CLAUDE_CONFIG_DIR` (Claude) or `CODEX_HOME` (Codex) points into the pod's `state` volume, which holds the sign-in file. The bridge reads that file only for its expiry and
+  never prints it; the final-answer scrub (`redact`) removes anything shaped like a token.
+- `MANYTHREADS_BRIDGE_IN_POD=1` makes the Codex child's environment drop `OPENAI_API_KEY`: an API key would go around the platform's model gateway.
+- Runs ask for the platform's tools through the run's MCP address with a per-run token (`MANYTHREADS_RUN_TOKEN`), never through a stored key.
+- A Codex run is never retried after an account failure (a refused sign-in or the plan's limit): a retry would only spend another renewal.
+- The renewed sign-in file is copied back into its Kubernetes Secret by the keeper container, not by the bridge. The permissions that pod holds are listed in
+  [claude-pods](plugins/claude-pods.md#every-permission-the-runners-add).
+
+### A fresh process per run
+Every run starts a new `claude` or `codex` process; the bridge keeps the session id, not the process. So a change to a bot's `BOT.md` (its instructions or its tool list)
+is seen by the **next** run of the same conversation: the bridge builds the command line again from the definition it is given, and passes `--resume` so the
+conversation goes on. Nothing is cached between runs. `tools/agent-bridge/test/fake-cli.test.ts` ("a changed BOT.md and tool list") runs the same session twice with
+different instructions and tools and checks that the second command line carries the new ones and `--resume`.
+
+### Stand-in commands
+`deploy/images/claude-pod-fake` holds a stand-in `claude` and a stand-in `codex` that print the real tools' JSON lines, call the run's MCP address, and fail on the words
+`FAKE401` and `FAKELIMIT` (see [claude-pods](plugins/claude-pods.md#stand-in-commands-and-the-seed)). `tools/agent-bridge/test/fake-cli.test.ts` runs them under the real
+bridge with a local MCP stand-in and a made-up home folder, so the sign-in gate is tested against what a process really prints. The failure texts they print are guesses until the
+real tools are measured, and `FAILURE_PATTERNS` (`src/signin.ts`) matches them case-sensitively, so a real text that differs only in case is not classified.
+
