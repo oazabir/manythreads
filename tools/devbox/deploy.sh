@@ -198,7 +198,7 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   cp -r tools/agent-bridge/src "$CP_STAGE/bridge/src"
   if [ "$(claude_pod_value useFake)" = "true" ]; then
     CP_NAME=claude-pod-fake
-    cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs "$CP_STAGE/"
+    cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs "$CP_STAGE/"
   else
     CP_NAME=claude-pod
   fi
