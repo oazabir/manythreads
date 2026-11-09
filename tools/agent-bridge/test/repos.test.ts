@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -43,6 +43,18 @@ describe('PUT /internal/repos', () => {
     expect(readdirSync(join(folder, 'run'))).toEqual(['repos.txt']);
   });
 
+  it('replaces the file, it does not write through it: a link left at the path is not followed', async () => {
+    // the list is written to a temporary file and renamed over the path, so a link planted at the path (or a file someone else holds open) is replaced and never written into
+    const victim = join(folder, 'victim.txt');
+    writeFileSync(victim, 'keep me\n');
+    mkdirSync(join(folder, 'run'), { recursive: true });
+    symlinkSync(victim, file);
+    expect((await put({ repos: [repo()] })).status).toBe(200);
+    expect(readFileSync(victim, 'utf8')).toBe('keep me\n');
+    expect(lstatSync(file).isSymbolicLink()).toBe(false);
+    expect(readFileSync(file, 'utf8')).toBe('engineering builder widgets main https://github.com/acme/widgets.git\n');
+  });
+
   it('writes an empty file for an empty list (the last project was removed)', async () => {
     await put({ repos: [repo()] });
     expect((await put({ repos: [] })).status).toBe(200);
@@ -54,6 +66,9 @@ describe('PUT /internal/repos', () => {
     const before = readFileSync(file, 'utf8');
     const bad: Array<Record<string, unknown>> = [
       { project: '..' },
+      { project: 'a..b' },
+      { team: 'x..' },
+      { bot: 'a..b' },
       { project: '.hidden' },
       { team: 'a/b' },
       { bot: 'x y' },

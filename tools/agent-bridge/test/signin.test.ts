@@ -173,6 +173,8 @@ describe('the Codex failure table', () => {
     expect(c('Your access token could not be refreshed because your refresh token was already used (refresh_token_reused). Please log out and sign in again.')).toBe('needs_sign_in');
     expect(c('Your access token could not be refreshed because your refresh token was revoked.')).toBe('needs_sign_in');
     expect(c('error: invalid_grant')).toBe('needs_sign_in');
+    // the bare code alone (no sentence around it) is a reused token too: it is the one word a log may carry on its own
+    expect(c('refresh_token_reused')).toBe('needs_sign_in');
     expect(c('Please run `codex login` to sign in again')).toBe('needs_sign_in');
     expect(c("You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again in 2 days 3 hours 4 minutes.")).toBe('plan_limit');
     expect(c("You've hit your usage limit. Try again later (stand-in).")).toBe('plan_limit');
