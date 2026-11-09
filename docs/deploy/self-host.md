@@ -5,12 +5,14 @@ manythreads with a first administrator who can sign in.
 
 ## What you get, and what is supported
 
-There is **one supported install path**: the Helm chart in `deploy/helm/manythreads`, on a single-node
+The **main supported install path** is the Helm chart in `deploy/helm/manythreads`, on a single-node
 [k3s](https://k3s.io) cluster. k3s is a small Kubernetes. Helm is the tool that installs a chart (a bundle of Kubernetes
 files) into it.
 
-- `deploy/compose/docker-compose.dev.yml` is for developers and tests. A comment in it says a self-host compose file
-  "comes in phase 10". There is no self-host Docker Compose file yet.
+- `deploy/compose/docker-compose.dev.yml` is for developers and tests.
+- `deploy/compose/docker-compose.yml` is a second, smaller path: all five containers on one machine with Docker Compose, for a
+  trial or a small team. It has no failover and no automatic backups. [compose.md](compose.md) is the install page; a nightly
+  test (`tools/compose-test/run.sh`) builds it from nothing and asks Brain a question.
 - `tools/devbox/deploy.sh` is the project's own release script. It is tied to the project's host name and registry. Do not
   run it. This page replaces it with plain `docker`, `helm` and `kubectl` commands.
 - The chart runs **one** server pod. Run more only after reading [rate-limits.md](rate-limits.md) (limits are counted per pod).
