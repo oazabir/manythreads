@@ -524,6 +524,15 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
     reason: e['reason'] === 'plan_limit' ? "The Claude plan's limit was reached" : 'The sign-in was refused',
   }),
+  'codex_pod.credentials.uploaded': (e) => ({ action: 'codex_pod.credentials_uploaded', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'codex_pod.credentials.replaced': (e) => ({ action: 'codex_pod.credentials_replaced', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'codex_pod.credentials.removed': (e) => ({ action: 'codex_pod.credentials_removed', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'codex_pod.runner.paused': (e) => ({
+    action: 'codex_pod.runner_paused',
+    who: 'system',
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason: e['reason'] === 'plan_limit' ? "The Codex plan's limit was reached" : 'The sign-in was refused',
+  }),
   'bot_runner.run.refused': (e) => ({
     action: 'bot_runner.run_refused',
     who: bot(e['botId']),

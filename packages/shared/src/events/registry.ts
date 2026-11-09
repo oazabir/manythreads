@@ -111,6 +111,10 @@ import { ClaudePodCredentialsUploadedEvent } from './claude_pod.credentials.uplo
 import { ClaudePodCredentialsReplacedEvent } from './claude_pod.credentials.replaced.ts';
 import { ClaudePodCredentialsRemovedEvent } from './claude_pod.credentials.removed.ts';
 import { ClaudePodRunnerPausedEvent } from './claude_pod.runner.paused.ts';
+import { CodexPodCredentialsUploadedEvent } from './codex_pod.credentials.uploaded.ts';
+import { CodexPodCredentialsReplacedEvent } from './codex_pod.credentials.replaced.ts';
+import { CodexPodCredentialsRemovedEvent } from './codex_pod.credentials.removed.ts';
+import { CodexPodRunnerPausedEvent } from './codex_pod.runner.paused.ts';
 import { BotRunnerRunRefusedEvent } from './bot_runner.run.refused.ts';
 import { BotRunnerRunUnmeteredEvent } from './bot_runner.run.unmetered.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
@@ -384,6 +388,10 @@ export const eventRegistry = {
   'claude_pod.credentials.replaced': { 1: ClaudePodCredentialsReplacedEvent },
   'claude_pod.credentials.removed': { 1: ClaudePodCredentialsRemovedEvent },
   'claude_pod.runner.paused': { 1: ClaudePodRunnerPausedEvent },
+  'codex_pod.credentials.uploaded': { 1: CodexPodCredentialsUploadedEvent },
+  'codex_pod.credentials.replaced': { 1: CodexPodCredentialsReplacedEvent },
+  'codex_pod.credentials.removed': { 1: CodexPodCredentialsRemovedEvent },
+  'codex_pod.runner.paused': { 1: CodexPodRunnerPausedEvent },
   'bot_runner.run.refused': { 1: BotRunnerRunRefusedEvent },
   'bot_runner.run.unmetered': { 1: BotRunnerRunUnmeteredEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },

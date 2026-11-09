@@ -18,6 +18,7 @@ import { TeamSlug } from '../teams/common.ts';
 // only reads the short view of the runners available to their team. A key is accepted on create and update and never returned.
 
 export * from './credentials.ts';
+export * from './codex-credentials.ts';
 
 export const BotRunnerPathParams = z.object({ id: BotRunnerId });
 export const TeamBotRunnersPathParams = z.object({ slug: TeamSlug });

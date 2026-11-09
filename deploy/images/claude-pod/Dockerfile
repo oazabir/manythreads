@@ -1,12 +1,15 @@
 # syntax=docker/dockerfile:1
-# The Claude Code runner's pod (docs/plugins/claude-pods.md): the agent bridge (tools/agent-bridge) as entry point, and the `claude` command it starts for every run.
+# The Claude Code runner's pod (docs/plugins/claude-pods.md): the agent bridge (tools/agent-bridge) as entry point, and the `claude` or `codex` command it starts for every run.
 # Build from a staged folder that holds this Dockerfile, repo-sync.sh and the bridge's source as `bridge/` (tools/devbox/deploy.sh makes it):
 #   docker build -t manythreads/claude-pod:1 <staged folder>
 # The version is pinned on purpose: a new `claude` can change what it writes to its sign-in file. The first stage is the same base as claude-pod-fake, so the layers are shared.
 FROM node:22-slim
 ARG CLAUDE_VERSION=2.1.318
+# The Codex CLI for a Codex runner (decision E6, P19-13): one image holds both commands and a runner uses one of them. `@openai/codex` is the package on npm
+# (0.166.0 is the version the devbox runs and the one the driver's flags are checked against). Pinned for the same reason as `claude`.
+ARG CODEX_VERSION=0.166.0
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini procps && rm -rf /var/lib/apt/lists/* \
- && npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}" && npm cache clean --force
+ && npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}" "@openai/codex@${CODEX_VERSION}" && npm cache clean --force
 COPY bridge /opt/bridge
 COPY repo-sync.sh /opt/claude-pod/repo-sync.sh
 COPY keeper.mjs /opt/claude-pod/keeper.mjs
