@@ -103,7 +103,9 @@ while (Date.now() < deadline) {
   const until = Math.min(deadline, Date.now() + 90_000);
   while (Date.now() < until) {
     await sleep(3000);
-    const list = await call('GET', `/api/channels/${channelId}/messages?limit=50`);
+    // The answer is a reply in the thread of the question; the channel's own list shows only the question.
+    const rootId = posted.json?.id ?? posted.json?.message?.id;
+    const list = await call('GET', `/api/channels/${channelId}/messages?limit=50${rootId ? `&threadRootId=${rootId}` : ''}`);
     const items = list.json?.items ?? [];
     const reply = items.find((m) => m.author?.kind === 'bot' && EXPECT.test(String(m.body ?? '')));
     if (reply) {
@@ -116,6 +118,9 @@ while (Date.now() < deadline) {
 }
 {
   const list = await call('GET', `/api/channels/${channelId}/messages?limit=20`);
-  for (const m of (list.json?.items ?? []).reverse()) log(`  message by ${m.author?.kind ?? '?'} ${m.author?.displayName ?? ''}: ${String(m.body ?? '').replace(/\n/g, ' / ').slice(0, 200)}`);
+  const roots = (list.json?.items ?? []).slice(0, 3);
+  const replies = [];
+  for (const r of roots) replies.push(...((await call('GET', `/api/channels/${channelId}/messages?limit=20&threadRootId=${r.id}`)).json?.items ?? []));
+  for (const m of [...roots, ...replies].reverse()) log(`  message by ${m.author?.kind ?? '?'} ${m.author?.displayName ?? ''}: ${String(m.body ?? '').replace(/\n/g, ' / ').slice(0, 200)}`);
 }
 fail(`no reply that matches ${EXPECT} within ${timeoutS} seconds`);
