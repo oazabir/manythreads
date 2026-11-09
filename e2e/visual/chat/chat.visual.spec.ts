@@ -53,7 +53,14 @@ async function keepUnread(page: Page): Promise<void> {
 
 /** The greeting follows the hour of the reader's clock: its box is kept, its words are not compared. */
 async function maskGreeting(page: Page): Promise<void> {
-  await page.evaluate(() => document.querySelectorAll('[data-testid="chat-greeting"]').forEach((el) => el.setAttribute('data-vt-mask', '')));
+  // The greeting follows the reader's clock ("Hello" before 5, then "Good morning", "Good afternoon", "Good evening"), and the black box is as wide as its words: a baseline taken
+  // at 4 a.m. failed every run after 5 a.m. (220 px of box against 109). Fix the words first, to the ones the baselines were taken with, then mask them.
+  await page.evaluate(() =>
+    document.querySelectorAll('[data-testid="chat-greeting"]').forEach((el) => {
+      el.textContent = (el.textContent ?? '').replace(/^[^,]+/, 'Hello');
+      el.setAttribute('data-vt-mask', '');
+    }),
+  );
 }
 
 for (const [size, viewport, mobile] of [
