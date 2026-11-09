@@ -33,6 +33,9 @@ export function allowedNodeNames(env: NodeJS.ProcessEnv = process.env): Readonly
   return names.length === 0 ? null : new Set(names);
 }
 
+/** A Claude Code or a Codex runner: one pod of its own (the `claude-pods` controller runs both), so it alone decides its machine. */
+const isAgentPod = (kind: string): boolean => kind === 'claude_cli' || kind === 'codex_cli';
+
 const NO_CLUSTER = 'This install has no cluster to list machines from, so no machine can be chosen here.';
 const NO_ANSWER = 'The cluster did not answer, so the machines could not be listed. Try again in a moment.';
 
@@ -124,11 +127,11 @@ export function registerNodeRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       const { runnerId } = ListRunnerNodesQuery.parse(req.query ?? {});
       const runner = runnerId === undefined ? null : await loadRunner(tx, runnerId);
-      if (runner !== null && runner.kind !== 'hermes_pod' && runner.kind !== 'claude_cli') throw invalid('A machine can be chosen for a pod runner only.');
+      if (runner !== null && runner.kind !== 'hermes_pod' && !isAgentPod(runner.kind)) throw invalid('A machine can be chosen for a pod runner only.');
       const { provider, nodes } = await listing(ctx);
       if (!nodes.ok) return json(ListRunnerNodesResponse.parse({ available: false, nodes: [], singleNode: false, placement: null, note: nodes.note }));
       // only the pods of the teams this runner decides the machine of (another runner may outrank it for the others)
-      const pods = runner === null ? [] : runner.kind === 'claude_cli' ? await claudePlacements(ctx, runner.id) : await placementsOf(provider, await governedTeams(tx, runner, ANY_NODE));
+      const pods = runner === null ? [] : isAgentPod(runner.kind) ? await claudePlacements(ctx, runner.id) : await placementsOf(provider, await governedTeams(tx, runner, ANY_NODE));
       const out: RunnerNode[] = nodes.allowed.map((n) => {
         const here = pods.filter((p) => p.volumeNode === n.name).length;
         return { ...n, hasWorkVolume: here > 0, workVolumes: here };
@@ -149,8 +152,8 @@ export function registerNodeRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       // Locked: two admins changing the machine of one runner take turns, and the second sees what the first did.
       const current = await loadRunner(tx, id, true);
-      if (current.kind !== 'hermes_pod' && current.kind !== 'claude_cli') throw invalid('A machine can be chosen for a pod runner only.');
-      const isClaude = current.kind === 'claude_cli';
+      if (current.kind !== 'hermes_pod' && !isAgentPod(current.kind)) throw invalid('A machine can be chosen for a pod runner only.');
+      const isClaude = isAgentPod(current.kind);
       const changed = body.node !== current.node;
       let recreates = false;
       let moveTeams: string[] = [];

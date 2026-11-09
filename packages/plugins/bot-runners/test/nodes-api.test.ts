@@ -403,3 +403,30 @@ describe('a Claude Code runner (P19-05, P19-08)', () => {
     expect((await w.call<any>(omar, 'PUT', `/api/admin/bot-runners/${id}/node`, { node: 'worker-3' })).status).toBe(409);
   });
 });
+
+describe('a Codex runner (P19-13)', () => {
+  it('can be put on a machine like a Claude Code runner; a move to a machine its volumes are not on needs the admin to confirm it', async () => {
+    const made = await adminCreate({ name: 'codex-node', label: 'Codex node', kind: 'codex_cli' });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const id = made.body.runner.id;
+    const first = await w.call<any>(omar, 'PUT', `/api/admin/bot-runners/${id}/node`, { node: 'ubuntu-vm' });
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect(first.body).toMatchObject({ recreatesWorkVolume: false, runner: { node: 'ubuntu-vm' } });
+
+    k8s.deployments.push({ metadata: { name: 'codex-codex-node', labels: { 'app.kubernetes.io/component': 'claude-pod', 'app.kubernetes.io/managed-by': 'manythreads-claude-pods', 'manythreads.io/runner-id': id } } });
+    k8s.pods.push({ metadata: { name: 'codex-codex-node-1' }, spec: { nodeName: 'ubuntu-vm' }, status: { phase: 'Running' } });
+    for (const part of ['state', 'work']) {
+      k8s.claims.push({ metadata: { name: `codex-codex-node-${part}`, labels: { 'manythreads.io/runner-id': id }, annotations: { 'manythreads.io/node': 'ubuntu-vm' } } });
+    }
+    const listed = await w.call<any>(omar, 'GET', `/api/admin/bot-runners/nodes?runnerId=${id}`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.nodes.find((n: any) => n.name === 'ubuntu-vm')).toMatchObject({ hasWorkVolume: true });
+    const move = await w.call<any>(omar, 'PUT', `/api/admin/bot-runners/${id}/node`, { node: 'worker-2' });
+    expect(move.status, JSON.stringify(move.body)).toBe(200);
+    expect(move.body.recreatesWorkVolume).toBe(true);
+    const mine = k8s.claims.filter((c: any) => c.metadata.name.startsWith('codex-codex-node-'));
+    expect(mine).toHaveLength(2);
+    for (const c of mine) expect(((c as any).metadata.annotations['manythreads.io/move-confirmed'] as string).startsWith('worker-2@')).toBe(true);
+  });
+});
+
