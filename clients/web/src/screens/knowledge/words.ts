@@ -47,7 +47,7 @@ export function sizeLabel(bytes: number): string {
 export function uploadSentence(outcome: 'added' | 'updated' | 'unchanged' | 'failed', doc: Pick<KnowledgeDocument, 'name' | 'chunkCount' | 'version' | 'reason'>): string {
   switch (outcome) {
     case 'added':
-      return `${doc.name} was added (${String(doc.chunkCount)} passages).`;
+      return `${doc.name} was added (${countLine(doc.chunkCount, 'passage', 'passages')}).`;
     case 'updated':
       return `${doc.name} changed and is now at version ${String(doc.version)}.`;
     case 'unchanged':

@@ -332,6 +332,7 @@ describe('the plain words', () => {
     expect(countLine(0, 'document', 'documents')).toBe('0 documents');
     const doc = { name: 'a.md', chunkCount: 3, version: 2, reason: null };
     expect(uploadSentence('added', doc)).toContain('3 passages');
+    expect(uploadSentence('added', { ...doc, chunkCount: 1 })).toContain('(1 passage)');
     expect(uploadSentence('updated', doc)).toContain('version 2');
     expect(uploadSentence('unchanged', doc)).toContain('nothing changed');
     expect(uploadSentence('failed', { ...doc, reason: 'Not readable.' })).toContain('Not readable.');

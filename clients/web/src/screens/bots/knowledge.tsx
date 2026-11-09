@@ -16,6 +16,7 @@ import {
   uploadKnowledgeDocument,
 } from './api';
 import { Mono } from './parts';
+import { countLine } from '../knowledge/words';
 import { ConnectorSourceForm, ConnectorSourceLine } from '../knowledge/ConnectorSourceForm';
 import { firstReadPending, useFirstReadRefresh } from '../knowledge/useFirstRead';
 
@@ -210,7 +211,7 @@ export function KnowledgeBasePanel({ team, base, canEdit }: { team: string; base
         setBusy(null);
         const d = res.document;
         const text =
-          res.outcome === 'added' ? `${d.name} was added (${String(d.chunkCount)} passages).`
+          res.outcome === 'added' ? `${d.name} was added (${countLine(d.chunkCount, 'passage', 'passages')}).`
           : res.outcome === 'updated' ? `${d.name} changed and is now at version ${String(d.version)}.`
           : res.outcome === 'unchanged' ? `${d.name} has the same content as before, so nothing changed.`
           : `${d.name} could not be read. ${d.reason ?? ''}`;
@@ -226,7 +227,7 @@ export function KnowledgeBasePanel({ team, base, canEdit }: { team: string; base
       <p className="b-kb-state" data-state={info.state} data-testid="knowledge-state">
         {state}
         <span className="b-kb-sub">
-          {' '}· {info.documentCount} {info.documentCount === 1 ? 'document' : 'documents'} · {info.chunkCount} passages
+          {' '}· {info.documentCount} {info.documentCount === 1 ? 'document' : 'documents'} · {countLine(info.chunkCount, 'passage', 'passages')}
           {info.lastIndexedAt ? <> · last read <Time iso={info.lastIndexedAt} /></> : null}
         </span>
       </p>
