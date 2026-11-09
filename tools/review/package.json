@@ -1,0 +1,14 @@
+{
+  "name": "@manythreads/tools-review",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Screenshot review tools (PLAN phase 13): pre-checks, contact sheets, review batches, the checklist, caption checks. Needs no install of its own: Playwright and axe-core are loaded from e2e/node_modules (lib/e2e-require.ts).",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "tokens": "tsx tokens.ts --write",
+    "batches": "tsx batches.ts",
+    "precheck": "tsx precheck.ts",
+    "captions": "tsx check-captions.ts"
+  }
+}

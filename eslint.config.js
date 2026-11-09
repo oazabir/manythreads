@@ -73,8 +73,8 @@ export default tseslint.config(
     rules: { ...reactHooks.configs.recommended.rules },
   },
   {
-    // The contrast check works on colour values and its tests write them as hex.
-    files: ['tools/lint-contrast/**'],
+    // The contrast check and the screenshot review tools (token probe, fixtures) work on colour values and write them as hex.
+    files: ['tools/lint-contrast/**', 'tools/review/**', 'e2e/review/**'],
     rules: { 'no-restricted-syntax': ['error', ...nameBans, poolBan] },
   },
   {

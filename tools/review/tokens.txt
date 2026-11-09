@@ -1,0 +1,167 @@
+manythreads design tokens
+Generated from clients/web/src/styles/tokens.css by tools/review/tokens.ts. Do not edit; run `tsx tools/review/tokens.ts --write`.
+A colour, radius or font that is not on this list is a C04 finding. The agent colour (purple) belongs to bots, the human colour (blue) to people.
+
+Colours, light theme
+  --paper: #EDEEF0
+  --surface: #FFFFFF
+  --shell: #F3F4F6
+  --ink: #1B2430
+  --mute: #5A6472
+  --faint: #757D88
+  --rule: #D4D8DE
+  --human: #2E5C8A
+  --agent: #7B5EA7
+  --agent-wash: #FBF9FE
+  --ok: #3F7D58
+  --warn: #B08A3E
+  --alert: #B4472E
+  --alert-wash: #FDF6F3
+  --hairline: #EDEFF2
+  --table-head: #FAFBFC
+  --nav-on: #E3E7EB
+  --human-wash: #EEF3F8
+  --human-border: #B9CBDD
+  --ok-wash: #EFF5F1
+  --ok-border: #BBD4C4
+  --ok-ink: #2E5F41
+  --agent-border: #DCD2EC
+  --agent-ink: #4E3B6E
+  --warn-wash: #FBF7EE
+  --warn-border: #E3D3AC
+  --warn-ink: #7A5D1F
+  --alert-border: #E4BCB0
+  --alert-ink: #8E3722
+  --bot-grey: #6E7681
+  --msg-hover: #F7F8F9
+  --txt: #2A3340
+  --zip: #8E5A2E
+  --dot-off: #C3C8CE
+  --presence-ring: #78808B
+  --toggle-off: #CFD4DA
+  --av-1-bg: #DCE8F4
+  --av-1-ink: #1F4468
+  --av-2-bg: #E6DDF2
+  --av-2-ink: #4E3B6E
+  --av-3-bg: #D6EBE0
+  --av-3-ink: #2E5F41
+  --av-4-bg: #F4E6C8
+  --av-4-ink: #7A5D1F
+  --av-5-bg: #F6DDD6
+  --av-5-ink: #8A3520
+  --av-6-bg: #D4EAEC
+  --av-6-ink: #1F5E66
+  --av-7-bg: #EBDDEA
+  --av-7-ink: #70356A
+  --av-8-bg: #E2E8CF
+  --av-8-ink: #4A5A1C
+  --av-9-bg: #F6E0CC
+  --av-9-ink: #8E5A2E
+  --av-10-bg: #DDE0E6
+  --av-10-ink: #3B4452
+  --plate: #FFFFFF
+  --on-color: #FFFFFF
+  --on-color-line: rgb(255 255 255 / 35%)
+  --hover: rgb(0 0 0 / 5%)
+  --skeleton: #E6E9ED
+  --skeleton-hi: #F2F4F6
+
+Colours, dark theme
+  --paper: #0F1216
+  --surface: #171B21
+  --shell: #12161B
+  --ink: #E6E9EE
+  --mute: #A3ACB8
+  --faint: #7D8794
+  --rule: #2B323C
+  --human: #7FB0E3
+  --agent: #B49AE0
+  --agent-wash: #221D2E
+  --ok: #6CC08F
+  --warn: #D9B467
+  --alert: #EE8A72
+  --alert-wash: #2D1C18
+  --hairline: #1F252D
+  --table-head: #1B2027
+  --nav-on: #262D37
+  --human-wash: #1A2634
+  --human-border: #35516F
+  --ok-wash: #16261D
+  --ok-border: #2E5B42
+  --ok-ink: #8FD3AA
+  --agent-border: #4B4068
+  --agent-ink: #CDB8F0
+  --warn-wash: #2A2416
+  --warn-border: #5E4C25
+  --warn-ink: #E6C887
+  --alert-border: #6B3B2F
+  --alert-ink: #F4A893
+  --bot-grey: #8C96A3
+  --msg-hover: #1D2229
+  --txt: #D5DAE1
+  --zip: #D9A06E
+  --dot-off: #4A525D
+  --presence-ring: #8C96A3
+  --toggle-off: #3A424D
+  --av-1-bg: #1F3347
+  --av-1-ink: #A9CBEC
+  --av-2-bg: #2B2440
+  --av-2-ink: #CDB8F0
+  --av-3-bg: #1D3427
+  --av-3-ink: #9AD7B2
+  --av-4-bg: #3A3019
+  --av-4-ink: #E6C887
+  --av-5-bg: #3C2420
+  --av-5-ink: #F4A893
+  --av-6-bg: #1B3438
+  --av-6-ink: #8FD0D8
+  --av-7-bg: #3A2338
+  --av-7-ink: #E3A8DC
+  --av-8-bg: #2D3318
+  --av-8-ink: #C6D58A
+  --av-9-bg: #3B2A1B
+  --av-9-ink: #EDB98A
+  --av-10-bg: #2A3039
+  --av-10-ink: #BCC4CF
+  --plate: #FFFFFF
+  --on-color: #FFFFFF
+  --on-color-line: rgb(255 255 255 / 35%)
+  --hover: rgb(255 255 255 / 6%)
+  --skeleton: #232A33
+  --skeleton-hi: #2D3540
+
+Meanings (the same in both themes)
+  --you: var(--human)
+  --you-wash: var(--human-wash)
+  --bot: var(--agent)
+  --bot-wash: var(--agent-wash)
+  --attention: var(--warn)
+  --attention-wash: var(--warn-wash)
+  --danger: var(--alert)
+  --mention: var(--alert)
+  --focus: var(--human)
+  --on-accent: var(--surface)
+
+Radii
+  --radius-sm: 6px
+  --radius-md: 10px
+  --radius-lg: 14px
+  --radius-pill: 999px
+
+Fonts
+  --sans: "Inter", system-ui, sans-serif
+  --mono: "JetBrains Mono", monospace
+
+Type sizes and weights
+  --fs-display: 28px
+  --fs-h1: 22px
+  --fs-h2: 16px
+  --fs-body: 14.5px
+  --lh-body: 1.5
+  --fs-small: 13px
+  --fs-caption: 12px
+  --fs-tiny: 11px
+  --fw-title: 600
+  --fw-caption: 500
+
+Spacing: multiples of 4 px (message rows use the --msg-* and --gutter-w tokens).
