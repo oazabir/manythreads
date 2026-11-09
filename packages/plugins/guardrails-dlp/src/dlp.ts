@@ -98,12 +98,38 @@ const phoneOk = (matched: string): boolean => {
 };
 
 /**
+ * The sign-in tokens of a Claude or Codex runner (PLAN P19-12). A runner's sign-in file is a live login, so the shapes it holds are named and never let through, on top of the generic
+ * `sk-` and `Bearer` findings: a refresh token is as good as the login itself. The shapes are GUESSES until the real files have been measured (P19-01, P19-13); the field-name finding
+ * (`"refresh_token": "…"`, `"accessToken": "…"`) does not depend on the shape of the value, so a token of a form nobody has seen is still caught when it sits in the file's own JSON.
+ * The same shapes are in `tools/agent-bridge/src/process.ts` (the bridge's scrub of an answer); a test keeps the two together.
+ *
+ * Linear time, on purpose: every quantifier is bounded, and each pattern may only start where a run of token characters starts (the look-behind), so a text of `eyJ-eyJ-eyJ-…` is not
+ * rescanned from every `eyJ`. One name for all of them: the person sees "sign-in token" and one rule decides, whatever the shape.
+ */
+const TOKEN_RUN_START = '(?<![A-Za-z0-9_-])';
+const SIGNIN_TOKEN_DETECTORS: readonly Detector[] = [
+  // Anthropic's own: `sk-ant-oat01-…` (access) and `sk-ant-ort01-…` (refresh).
+  { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}sk-ant-o(?:at|rt)\\d{2}-[A-Za-z0-9_-]{16,512}`, 'g') },
+  // A JSON web token: three dot-separated parts, the first two start with `eyJ` (a base64 `{"`). The ChatGPT sign-in's id_token and access_token are of this shape.
+  { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}eyJ[A-Za-z0-9_-]{8,4096}\\.eyJ[A-Za-z0-9_-]{8,4096}\\.[A-Za-z0-9_-]{8,4096}`, 'g') },
+  // A ChatGPT refresh token as seen in `auth.json` (`rt_…`, maybe two parts). A snake_case word is not one: it must also hold a digit or a capital.
+  { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}rt_[A-Za-z0-9_-]{20,200}(?:\\.[A-Za-z0-9_-]{20,200})?`, 'g'), accept: (m) => /[0-9A-Z]/.test(m) },
+  // The sign-in file's own fields, whatever the value looks like: the value is the finding, the field name stays readable.
+  {
+    name: 'signin-token',
+    pattern: /"(?:refresh_token|access_token|id_token|accessToken|refreshToken|idToken)"[ \t\r\n]{0,8}:[ \t\r\n]{0,8}"([^"\s]{16,4096})(?=")/g, // the closing quote is looked at, not matched: a finding that is a capture group must end where the match ends
+    valueGroup: true,
+  },
+];
+
+/**
  * The detectors, in the order they run. Every quantifier is bounded (MISTAKES: an open-ended inner quantifier is how a
  * scanner becomes quadratic on hostile input), and every pattern is global so a text with several findings is covered.
  */
 const DETECTORS: readonly Detector[] = [
   // The header finds the block; the locator extends the finding over its body and footer, so the key itself is redacted and not just its label.
   { name: 'private-key', pattern: /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----/g, locator: pemLocator },
+  ...SIGNIN_TOKEN_DETECTORS,
   {
     name: 'api-key',
     // `sk-` keys run long (`sk-proj-…` and `sk-ant-…` are 100–200 characters): up to 512, and no trailing boundary, so the tail
@@ -127,7 +153,7 @@ const DETECTORS: readonly Detector[] = [
 ];
 
 /** Every built-in detector's name, in the order they run. */
-export const DETECTOR_NAMES: readonly string[] = DETECTORS.map((d) => d.name);
+export const DETECTOR_NAMES: readonly string[] = [...new Set(DETECTORS.map((d) => d.name))];
 
 export interface DlpFinding {
   /** The detector or custom rule that fired. */
@@ -203,7 +229,11 @@ function overlapsDropped(found: PolicyFinding[]): PolicyFinding[] {
   const kept: PolicyFinding[] = [];
   for (const finding of found) {
     const last = kept[kept.length - 1];
-    if (last && finding.start < last.end) continue;
+    if (last && finding.start < last.end) {
+      // The later finding starts inside the earlier one but may reach past it (a long token that a shorter pattern began): the redaction covers both, so no tail is left behind.
+      if (finding.end > last.end) last.end = finding.end;
+      continue;
+    }
     kept.push(finding);
   }
   return kept;
