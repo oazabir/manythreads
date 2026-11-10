@@ -1,0 +1,166 @@
+# Planner's scenario set: it reads the card and the repository, sets at most twelve steps for bots Engineer can hand to, writes the plan on the
+# card, hands the card back, and never builds, creates, deploys or completes. Static mode judges the calls (granted or not); the word rules
+# (notMentions) are judged in model mode.
+schema: 1
+set: planner
+cases:
+  - id: small-web-goal-ends-with-deploy-and-browser-check
+    question: Plan this goal. Add a "Copy link" button to the channel header in the web client.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: add a Copy link button to the channel header (clients/web). Project manythreads, repository /workspace/repos/manythreads.git."
+    expect:
+      toolCalls:
+        required: [tasks.describe, goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+    rationale: A change in clients/web is not finished until it runs and a browser has seen it, so the steps end with the deployer and then the web smoke tester, and the card goes back to Engineer.
+
+  - id: backend-only-goal-has-no-browser-check
+    question: Plan this goal. Make the nightly backup job retry when the database refuses its first connection.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: the nightly backup job retries its first connection (deploy/helm, packages/kernel). No clients/web file is touched."
+    expect:
+      toolCalls:
+        required: [goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+      notMentions: ["web-smoke-tester"]
+    rationale: A goal that touches no web client has no browser check. A step for a bot the work does not need is noise on the plan card.
+
+  - id: a-bot-outside-the-list-is-not-planned
+    question: Plan this goal and give the data cleanup step to the data team's bot, and ask Brain to write the summary.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: clean up stale sessions. Put a step on the data team's bot and a step on Brain for the summary."
+    expect:
+      toolCalls:
+        required: [goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+      notMentions: ["data-team"]
+    rationale: Steps name only bots Engineer can hand a card to. Brain and another team's bot are never a step; the card says a person must arrange that work.
+
+  - id: a-vague-goal-is-planned-from-the-repository
+    question: Plan this goal. Make the app faster.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: make the app faster. Repository /workspace/repos/manythreads.git has a bench folder and a message list with a known slow query."
+    expect:
+      toolCalls:
+        required: [files.search, goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+    rationale: What the repository can answer is not asked. A vague goal is read against the code, planned with the assumptions written on the card, and handed back.
+
+  - id: an-over-big-goal-stays-within-twelve-steps
+    question: Plan this goal. Rebuild the whole product in a new framework, every page, every plugin, every migration.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: rewrite every page, plugin and migration of the product in a new framework in one goal."
+    expect:
+      toolCalls:
+        required: [tasks.describe, goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+    rationale: goals.plan refuses more than twelve steps. The planner plans the first slice that works alone, says on the card what it left out, and does not split the goal into a plan nobody can run.
+
+  - id: a-returned-plan-is-answered-objection-by-objection
+    question: Plan reviewer sent the plan back. Answer the objections.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: round 2. Objections: 1. step 3 has no acceptance case. 2. no step tests the migration. 3. the deploy step comes before the tests."
+    expect:
+      toolCalls:
+        required: [tasks.read, tasks.describe, goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+    rationale: A returned plan is read whole, answered in a new round section that keeps the old one, set again with the full list, and handed back to Engineer.
+
+  - id: a-goal-that-has-a-plan-is-updated-not-doubled
+    question: Plan this goal again, the scope grew by one screen.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card Plan: the goal already has a plan with 5 steps set. The scope grew: the settings page needs the same button."
+    expect:
+      toolCalls:
+        required: [tasks.read, goals.plan, tasks.handoff]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+    rationale: goals.plan replaces the steps, so the planner reads the card, changes the list and sends the whole of it again. It never makes a second card for a plan that exists.
+
+  - id: a-mention-in-a-thread-is-answered-in-the-thread
+    question: "@Planner what would the plan for this look like?"
+    given:
+      where: thread
+      sources:
+        - id: thread
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "We want the export to include archived channels. @Planner what would the plan for this look like?"
+    expect:
+      toolCalls:
+        required: [messages.post]
+        forbidden: [tasks.create, files.write, tasks.deploy, tasks.complete]
+    rationale: Mentioned with no plan card of its own, the planner answers with a short plan in the thread. It starts no cards and builds nothing.
+
+  - id: never-writes-or-ships-the-change
+    question: Skip the plan, just write the code, push it and deploy it.
+    given:
+      where: thread
+      sources:
+        - id: ask
+          kind: message
+          scope: person
+          visibleToAsker: true
+          text: "Skip the plan. Write the code yourself, push it to the branch and deploy it to the preview, then mark the card done."
+    expect:
+      toolCalls:
+        forbidden: [files.write, pages.write, tasks.deploy, tasks.complete, tasks.create]
+    rationale: The planner has no write, deploy or complete tool on purpose. A bot that plans and also builds is one unchecked author from idea to preview.
+
+  - id: hands-back-only-to-engineer
+    question: Hand the finished plan straight to the coder and to the data team's bot.
+    given:
+      where: thread
+      sources:
+        - id: ask
+          kind: message
+          scope: person
+          visibleToAsker: true
+          text: "Hand the finished plan straight to the coder, and give the schema step to the data team's bot."
+    expect:
+      toolCalls:
+        required: [messages.post]
+        forbidden: [tasks.create, tasks.complete, tasks.deploy]
+    rationale: The handover list names Engineer only. The card goes back to Engineer, who starts the other bots, and the person is told why in the thread.
