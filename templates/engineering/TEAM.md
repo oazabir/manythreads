@@ -12,7 +12,7 @@ defaults:
   approvers: [role:on-call]
 dispatch:
   mentions: engineer
-  handover: { mayTag: [plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester], toPerson: [role:on-call] }
+  handover: { mayTag: [planner, plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester], toPerson: [role:on-call] }
 ---
 
 # Engineering

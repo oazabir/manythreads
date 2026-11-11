@@ -259,6 +259,7 @@ describe('every shipped definition', () => {
         'engineering/deployer',
         'engineering/engineer',
         'engineering/plan-reviewer',
+        'engineering/planner',
         'engineering/standup-relay',
         'engineering/tester',
         'engineering/web-smoke-tester',

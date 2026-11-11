@@ -32,7 +32,7 @@ describe('shipped templates', () => {
   it('Engineering ships the whole chain of bots, and the server image carries the templates folder', async () => {
     const eng = (await loadTemplates(templatesDir)).find((t) => t.id === 'engineering')!;
     expect(eng.bots.map((b) => b.slug).sort()).toEqual(
-      ['alert-triage', 'archivist', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'note-taker', 'plan-reviewer', 'scribe', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
+      ['alert-triage', 'archivist', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'note-taker', 'plan-reviewer', 'planner', 'scribe', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
     );
     // a fresh install reads `templates/` from the image: the server's docker ignore list must never drop it
     const ignored = (await readFile(path.resolve(templatesDir, '../deploy/docker/server.Dockerfile.dockerignore'), 'utf8')).split('\n').map((l) => l.trim());
@@ -76,6 +76,7 @@ describe('shipped templates', () => {
         'bots/engineer/BOT.md',
         'bots/note-taker/BOT.md',
         'bots/plan-reviewer/BOT.md',
+        'bots/planner/BOT.md',
         'bots/scribe/BOT.md',
         'bots/standup-relay/BOT.md',
         'bots/tester/BOT.md',
