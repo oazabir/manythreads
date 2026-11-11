@@ -51,3 +51,16 @@ describe('server start runs migrations (criterion 1)', () => {
     expect((await applied()).length).toBe(afterFirst.length);
   }, 120_000);
 });
+
+// The 2026-11-09 outage: the new server crashed on its FIRST database connection while Postgres was away. The start now waits, and a
+// database that never comes back ends in a clear error (and leaves nothing open).
+describe('server start waits for the database', () => {
+  it('a database that is not there ends in a clear error after the limit, naming the host and no password', async () => {
+    const url = (user: string) => `postgresql://${user}:pw-secret@127.0.0.1:1/manythreads`;
+    const started = Date.now();
+    const run = startServer({ port: 0, ownerUrl: url('o'), appUrl: url('a'), systemUrl: url('s'), dbConnectTimeoutSeconds: 1, testPlugins: false });
+    await expect(run).rejects.toThrow(/127\.0\.0\.1:1 did not take a connection within 1 s/);
+    await run.catch((e: Error) => expect(e.message).not.toContain('pw-secret'));
+    expect(Date.now() - started).toBeLessThan(15_000);
+  }, 30_000);
+});

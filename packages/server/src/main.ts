@@ -3,6 +3,7 @@ import { startServer } from './start.ts';
 
 /**
  * Environment:
+ *   MANYTHREADS_DB_CONNECT_TIMEOUT_SECONDS   how long the start waits for the database's first connection (120; 0 = one try)
  *   PORT                      listen port (3000)
  *   DATABASE_URL              manythreads_owner URL, used for migrations (dev default: the compose Postgres)
  *   MANYTHREADS_APP_DATABASE_URL   manythreads_app URL; derived from DATABASE_URL when unset

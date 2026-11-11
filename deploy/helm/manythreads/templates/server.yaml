@@ -190,6 +190,12 @@ spec:
           readinessProbe:
             httpGet: { path: /readyz, port: http }
             periodSeconds: 5
+          # The start waits up to MANYTHREADS_DB_CONNECT_TIMEOUT_SECONDS (120) for a database that is down or starting, and the port is not open
+          # while it waits; the startup probe gives it 5 x 48 = 240 s before the liveness probe (which would kill the pod) takes over.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 48
           livenessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 20

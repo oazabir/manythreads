@@ -30,6 +30,7 @@ import {
   startScheduler,
   startWorker,
   subscribe,
+  waitForDatabase,
   withSystem,
   type Consumer,
   type Mailer,
@@ -113,6 +114,11 @@ export interface StartServerOptions {
   appUrl: string;
   /** manythreads_system URL: the kernel's system actor (outbox, jobs, plugin registry). Never used for requests. */
   systemUrl: string;
+  /**
+   * How long the start waits for the database to take its first connection (seconds). Default `MANYTHREADS_DB_CONNECT_TIMEOUT_SECONDS`,
+   * else 120. A database that is down or starting up is retried with a growing pause; a refused login is not.
+   */
+  dbConnectTimeoutSeconds?: number;
   /** Password given to manythreads_app by the migration runner (null leaves it alone). */
   appPassword?: string | null;
   /**
@@ -207,6 +213,12 @@ export function poolMaxOf(
  * plugin routes and starts listening. `close()` stops consumers, the server and the pool.
  */
 export async function startServer(options: StartServerOptions): Promise<RunningServer> {
+  // First of all, before any pool exists: a database that is down or still starting (a node that evicted it, a pod that restarts)
+  // is waited for instead of crashing the start on the first connection.
+  await waitForDatabase({
+    connectionString: options.ownerUrl,
+    ...(options.dbConnectTimeoutSeconds !== undefined ? { timeoutSeconds: options.dbConnectTimeoutSeconds } : {}),
+  });
   const appSize = poolMaxOf(options.poolMax?.app, process.env['MANYTHREADS_APP_POOL_MAX'], 10, POOL_MIN.app, 'MANYTHREADS_APP_POOL_MAX');
   const systemSize = poolMaxOf(options.poolMax?.system, process.env['MANYTHREADS_SYSTEM_POOL_MAX'], 10, POOL_MIN.system, 'MANYTHREADS_SYSTEM_POOL_MAX');
   const appPool = createAppPool(options.appUrl, appSize.max);
