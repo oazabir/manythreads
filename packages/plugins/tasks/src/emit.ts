@@ -1,5 +1,5 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { TasksTaskCompletedEvent, TasksTaskHandedOffEvent, TasksTaskUpdatedEvent, type Handoff, type Task } from '@manythreads/shared';
+import { TasksGoalUpdatedEvent, TasksTaskCompletedEvent, TasksTaskHandedOffEvent, TasksTaskUpdatedEvent, type Goal, type Handoff, type Task } from '@manythreads/shared';
 
 /** Emit `tasks.task.updated`, the one event a board, a thread and a runtime watch. */
 export async function emitUpdated(ctx: PluginContext, tx: PluginTx, before: Task, after: Task): Promise<void> {
@@ -54,6 +54,25 @@ export async function emitCompleted(ctx: PluginContext, tx: PluginTx, after: Tas
       kind: after.kind,
       actorId: tx.actor.id,
       testedSha: after.testedSha,
+    }),
+  );
+}
+
+/** Emit `tasks.goal.updated` (the plan card follows it): the goal was made, its steps were set, or its status changed. */
+export async function emitGoalUpdated(ctx: PluginContext, tx: PluginTx, goal: Goal, change: 'created' | 'planned' | 'status'): Promise<void> {
+  await ctx.audit.emit(
+    tx,
+    TasksGoalUpdatedEvent.parse({
+      type: 'tasks.goal.updated',
+      schemaVersion: 1,
+      workspaceId: goal.workspaceId,
+      teamId: goal.teamId,
+      goalId: goal.id,
+      number: goal.number,
+      change,
+      status: goal.status,
+      stepCount: goal.steps.length,
+      actorId: tx.actor.id,
     }),
   );
 }

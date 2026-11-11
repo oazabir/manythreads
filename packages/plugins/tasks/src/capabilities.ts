@@ -16,10 +16,10 @@ async function cardOf(tx: PluginTx, taskId: string) {
   return row ? toTask(row) : null;
 }
 
-type ActorLabel = { kind: string; name: string; slug: string | null };
+export type ActorLabel = { kind: string; name: string; slug: string | null };
 
 /** Names for a list of actor ids (a person cannot read another actor's row, so this goes through the tasks door). */
-async function actorLabels(tx: PluginTx, ids: string[]): Promise<Map<string, ActorLabel>> {
+export async function actorLabels(tx: PluginTx, ids: string[]): Promise<Map<string, ActorLabel>> {
   if (ids.length === 0) return new Map();
   const res = await tx.query<{ o_actor_id: string; o_kind: string; o_name: string; o_slug: string | null }>(
     'SELECT o_actor_id, o_kind, o_name, o_slug FROM app.tasks_actor_labels($1::uuid[])',

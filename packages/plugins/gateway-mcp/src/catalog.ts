@@ -489,6 +489,64 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     },
     kind: 'write',
   },
+  'goals.ensure': {
+    name: 'goals.ensure',
+    description:
+      'Get the goal of the thread you are answering in, creating it when the thread has none: a goal is the line of work several cards belong to, with a short number such as G-27, an optional budget in US dollars and a plan of steps. The place (channel and thread) comes from your run, never from you; you must be answering in a thread of a team channel. Safe to call again: you get the same goal and nothing changes. Answers `goalId` (pass it as `goalId` to tasks.create and goals.plan), `ref` (G-27) and whether it was `created`.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', minLength: 1, maxLength: 200, description: 'The goal in one line.' },
+        description: { type: 'string', maxLength: 4000, description: 'What done looks like, in a few sentences.' },
+        budgetUsd: { type: 'number', minimum: 0, maximum: 1000000, description: 'What the goal may cost in US dollars. Shown beside the spend; it does not stop anything.' },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    kind: 'write',
+  },
+  'goals.plan': {
+    name: 'goals.plan',
+    description:
+      'Set the steps of a goal of your team, replacing the old ones (one to twelve). A step is a line of the plan, not a card: say what it is, which bots of your team do it (by slug, one to three) and what done looks like. The platform works out which step is under way from the cards and their handoffs, so nobody ticks a step off. `cardRef` says which card the step follows: `work` (the one card that travels the chain; the default), `plan` (the card the plan is written and reviewed on) or `publish` (the card that opens the pull request). A closed goal keeps its plan.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        goalId: { type: 'string', description: 'The goal (from goals.ensure).' },
+        steps: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 12,
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', minLength: 1, maxLength: 120, description: 'What the step is, in a few words.' },
+              bots: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'string' }, description: 'The slugs of the bots of your team that do the step.' },
+              cardRef: { type: 'string', enum: ['plan', 'work', 'publish'], description: 'The card the step follows (default `work`).' },
+              done: { type: 'string', minLength: 1, maxLength: 300, description: 'What done looks like for this step.' },
+            },
+            required: ['title', 'bots', 'done'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['goalId', 'steps'],
+      additionalProperties: false,
+    },
+    kind: 'write',
+  },
+  'tasks.goal': {
+    name: 'tasks.goal',
+    description:
+      'Read where a goal stands: its short number (G-27), a chip (`planned`, `running`, `waiting for a person`, `done`, `stopped`), what it has cost against its budget, each step with the bots that do it and its status (`done`, `running`, `rework 1`, `waiting`, `blocked`, or empty when not started), the step now under way, its board and the working thread. Bots are named by display name. What you see is what you may read.',
+    inputSchema: {
+      type: 'object',
+      properties: { goalId: { type: 'string', description: 'The goal.' } },
+      required: ['goalId'],
+      additionalProperties: false,
+    },
+    kind: 'read',
+  },
   'tasks.claim': {
     name: 'tasks.claim',
     description:

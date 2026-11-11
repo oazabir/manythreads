@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerActivitySubscribers } from './activity.ts';
 import { registerCapabilities } from './capabilities.ts';
+import { registerGoalCapabilities } from './goals.ts';
 import { registerTurnCapabilities } from './capabilities-turns.ts';
 import { registerApprovalSubscriber, registerNotWokenSubscriber } from './events.ts';
 import { registerJobs } from './jobs.ts';
@@ -28,6 +29,9 @@ export default definePlugin({
       { name: 'tasks.read', destructive: false },
       { name: 'tasks.create', destructive: false },
       { name: 'boards.ensure', destructive: false },
+      { name: 'goals.ensure', destructive: false },
+      { name: 'goals.plan', destructive: false },
+      { name: 'tasks.goal', destructive: false },
       { name: 'tasks.claim', destructive: false },
       { name: 'tasks.complete', destructive: false },
       { name: 'tasks.release', destructive: false },
@@ -38,7 +42,7 @@ export default definePlugin({
       { name: 'tasks.deploy', destructive: false },
     ],
     events: {
-      emits: ['tasks.board.created', 'tasks.board.updated', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
+      emits: ['tasks.board.created', 'tasks.board.updated', 'tasks.goal.updated', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
       consumes: ['approvals.approval.decided', 'runtime.task.not_woken', 'bots.run.opened', 'bots.run.closed'],
     },
     dependsOn: ['approvals', 'channels', 'projects'],
@@ -47,6 +51,7 @@ export default definePlugin({
   register(ctx) {
     registerRoutes(ctx);
     registerCapabilities(ctx);
+    registerGoalCapabilities(ctx);
     registerTurnCapabilities(ctx);
     registerJobs(ctx);
     registerPullRequestSync(ctx);

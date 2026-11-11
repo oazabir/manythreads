@@ -22,6 +22,7 @@ const CLASS = {
   'memory.recall': 'run_scoped',
   'inbox.read': 'run_scoped',
   'tasks.read': 'asker_policies',
+  'tasks.goal': 'asker_policies',
   'tasks.private_note': 'asker_policies',
 } as const satisfies Record<string, 'team_argument' | 'run_scoped' | 'asker_policies'>;
 

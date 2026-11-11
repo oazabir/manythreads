@@ -80,22 +80,36 @@ export interface GoalRow extends Record<string, unknown> {
   id: string;
   workspace_id: string;
   team_id: string;
+  number: number;
   title: string;
   description: string;
   status: string;
+  budget_usd: string | number | null;
+  channel_id: string | null;
+  thread_root_id: string | null;
+  steps: unknown;
   created_by: string;
   created_at: Date;
   updated_at: Date;
 }
+
+/** The columns of a goal, in one place so the routes and the goal tools read the same row. */
+export const GOAL_COLUMNS = `id, workspace_id, team_id, number, title, description, status, budget_usd, channel_id, thread_root_id, steps, created_by, created_at, updated_at`;
 
 export function toGoal(r: GoalRow): Goal {
   return Goal.parse({
     id: r.id,
     workspaceId: r.workspace_id,
     teamId: r.team_id,
+    number: r.number,
     title: r.title,
     description: r.description,
     status: r.status,
+    // numeric(12,2) arrives as text
+    budgetUsd: r.budget_usd === null ? null : Number(r.budget_usd),
+    channelId: r.channel_id,
+    threadRootId: r.thread_root_id,
+    steps: r.steps,
     createdBy: r.created_by,
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),

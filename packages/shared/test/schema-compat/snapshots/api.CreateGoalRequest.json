@@ -11,6 +11,18 @@
       "default": "",
       "type": "string",
       "maxLength": 4000
+    },
+    "budgetUsd": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, BoardId, ChannelId, EnvironmentId, GoalId, HandoffId, RunnerId, TaskClaimId, TaskEventId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
+import { ActorId, BoardId, ChannelId, EnvironmentId, GoalId, HandoffId, MessageId, RunnerId, TaskClaimId, TaskEventId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
 import { JsonObject } from './kernel.ts';
 
 // Phase 6 task substrate (SPEC §8, PLAN A.6). Every enum here matches a CHECK of the tasks plugin's migration 0001_tasks.sql;
@@ -49,13 +49,40 @@ export type TaskEventType = z.infer<typeof TaskEventType>;
 export const GoalStatus = z.enum(['open', 'done', 'dropped']);
 export type GoalStatus = z.infer<typeof GoalStatus>;
 
+/** The most steps a goal's plan holds (matches the CHECK of tasks migration 0016_goal_plan.sql). */
+export const MAX_GOAL_STEPS = 12;
+
+/**
+ * Which of a goal's cards a plan step is worked out from: `plan` (the card the plan is written and reviewed on), `work` (the one card that
+ * travels the chain of bots; the default) and `publish` (the card that opens the pull request). See `goalSteps` in tasks/goal-steps.ts.
+ */
+export const GoalCardRef = z.enum(['plan', 'work', 'publish']);
+export type GoalCardRef = z.infer<typeof GoalCardRef>;
+
+/** One step of a goal's plan: what it is, the bots (by slug) that do it and what done looks like. Whether it is done is worked out from the cards, never stored. */
+export const GoalStep = z.strictObject({
+  title: z.string().trim().min(1).max(120),
+  bots: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]*$/).max(64)).min(1).max(3),
+  cardRef: GoalCardRef.optional(),
+  done: z.string().trim().min(1).max(300),
+});
+export type GoalStep = z.infer<typeof GoalStep>;
+
 export const Goal = z.object({
   id: GoalId,
   workspaceId: WorkspaceId,
   teamId: TeamId,
+  /** The short number within the team: goal 27 is shown as `G-27`. Given by the database, never chosen. */
+  number: z.number().int().positive(),
   title: z.string().min(1).max(200),
   description: z.string().max(4000),
   status: GoalStatus,
+  /** What the goal may cost, in US dollars; shown beside the spend, never enforced. */
+  budgetUsd: z.number().min(0).nullable(),
+  /** The team channel and the thread (its first message) the goal was given in; null for a goal made on the Goals API. */
+  channelId: ChannelId.nullable(),
+  threadRootId: MessageId.nullable(),
+  steps: z.array(GoalStep).max(MAX_GOAL_STEPS),
   createdBy: ActorId,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

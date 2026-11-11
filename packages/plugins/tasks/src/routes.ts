@@ -84,9 +84,9 @@ import { registerColumnRoutes } from './columns.ts';
 import { conflict, forbidden, json, notFound, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
-import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
+import { emitCompleted, emitGoalUpdated, emitHandedOff, emitUpdated } from './emit.ts';
 import { handoverAllowlist, handoverPeople, isCardCreator, mayHandoffToActor } from './handoff.ts';
-import { TASK_SELECT, actorOf, toBoard, toEnvironment, toGoal, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type GoalRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
+import { GOAL_COLUMNS, TASK_SELECT, actorOf, toBoard, toEnvironment, toGoal, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type GoalRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
 
 /** The card of this team, or 404 (a card of another team and a missing one answer the same). */
 async function taskOf(tx: PluginTx, teamId: string, taskId: string): Promise<Task> {
@@ -476,7 +476,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const q = ListGoalsQuery.parse(req.query);
       const rows = (
         await tx.query<GoalRow>(
-          `SELECT id, workspace_id, team_id, title, description, status, created_by, created_at, updated_at
+          `SELECT ${GOAL_COLUMNS}
              FROM app.goals WHERE team_id = $1::uuid AND ($2::text IS NULL OR status = $2::text)
              ORDER BY created_at DESC LIMIT $3`,
           [team.id, q.status ?? null, q.limit],
@@ -495,13 +495,14 @@ export function registerRoutes(ctx: PluginContext): void {
       const body = CreateGoalRequest.parse(req.body);
       const row = (
         await tx.query<GoalRow>(
-          `INSERT INTO app.goals (workspace_id, team_id, title, description, created_by)
-           VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
-           RETURNING id, workspace_id, team_id, title, description, status, created_by, created_at, updated_at`,
-          [team.workspace_id, team.id, body.title, body.description, tx.actor.id],
+          `INSERT INTO app.goals (workspace_id, team_id, title, description, budget_usd, created_by)
+           VALUES ($1::uuid, $2::uuid, $3, $4, $5::numeric, $6::uuid)
+           RETURNING ${GOAL_COLUMNS}`,
+          [team.workspace_id, team.id, body.title, body.description, body.budgetUsd ?? null, tx.actor.id],
         )
       ).rows[0];
       if (!row) throw conflict('Could not create the goal');
+      await emitGoalUpdated(ctx, tx, toGoal(row), 'created');
       return json(CreateGoalResponse.parse({ goal: toGoal(row) }), 201);
     }),
   });
@@ -517,11 +518,12 @@ export function registerRoutes(ctx: PluginContext): void {
         await tx.query<GoalRow>(
           `UPDATE app.goals SET status = coalesce($3, status), updated_at = now()
             WHERE id = $1::uuid AND team_id = $2::uuid
-            RETURNING id, workspace_id, team_id, title, description, status, created_by, created_at, updated_at`,
+            RETURNING ${GOAL_COLUMNS}`,
           [goalId, team.id, body.status ?? null],
         )
       ).rows[0];
       if (!row) throw notFound('No such goal');
+      if (body.status !== undefined) await emitGoalUpdated(ctx, tx, toGoal(row), 'status');
       return json(UpdateGoalResponse.parse({ goal: toGoal(row) }));
     }),
   });
