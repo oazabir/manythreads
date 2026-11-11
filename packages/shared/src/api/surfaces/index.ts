@@ -64,5 +64,9 @@ export const postSurfaceDataRoute = { method: 'POST', path: '/api/channels/:chan
 
 /** The live push that says a surface was drawn, changed or answered: the page that shows it reads it again. */
 export const WS_SURFACE_CHANGED = 'surfaces.changed';
-export const SurfaceChangedPush = z.object({ channelId: ChannelId, surfaceId: SurfaceId, version: z.number().int().min(1) });
+/**
+ * `reason: 'data'` (PLAN P22-03) says the screen itself is unchanged and what its bound parts read may have changed (a goal moved on): the page reads its bound parts
+ * again, once, and does not fetch the screen. Absent: the screen was drawn, changed or answered, as before.
+ */
+export const SurfaceChangedPush = z.object({ channelId: ChannelId, surfaceId: SurfaceId, version: z.number().int().min(1), reason: z.literal('data').optional() });
 export type SurfaceChangedPush = z.infer<typeof SurfaceChangedPush>;
