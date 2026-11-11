@@ -87,6 +87,52 @@ describe('goalSteps', () => {
     expect(r.chip).toBe('running');
   });
 
+  it('a blocker on a card that sits with the Engineer (a holder in no step) keeps the step it came from blocked', () => {
+    const r = run(['engineer', 'coder', 'code-reviewer', 'tester', 'engineer'], 'in_progress', 'the tests fail on main');
+    expect(statuses(r)).toEqual(['done', 'done', 'blocked', 'todo', 'todo']);
+    expect(stepDot(r.steps[2]!)).toBe('blocked');
+    // waiting on a person still wins over a blocker, and a card with no blocker leaves the step done
+    expect(statuses(run(['engineer', 'coder', 'code-reviewer', 'tester', 'engineer'], 'waiting_on_person', 'x'))[2]).toBe('waiting');
+    expect(statuses(run(['engineer', 'coder', 'code-reviewer', 'tester', 'engineer']))[2]).toBe('done');
+  });
+
+  describe('a step with more than one bot', () => {
+    const multi: GoalStepSpec[] = [{ bots: ['coder', 'code-reviewer'] }, { bots: ['tester'] }];
+    const go = (holders: (string | null)[], state: GoalCardFacts['state'] = 'in_progress') =>
+      goalSteps({ goalStatus: 'open', steps: multi, cards: { work: card(holders, state) } });
+
+    it('moving on inside the step is not rework', () => {
+      const r = go(['engineer', 'coder', 'code-reviewer']);
+      expect(r.steps[0]).toEqual({ status: 'running', rework: 0 });
+    });
+
+    it('the reviewer sending the card back to the coder inside the step is one rework', () => {
+      const r = go(['engineer', 'coder', 'code-reviewer', 'coder']);
+      expect(r.steps[0]).toEqual({ status: 'running', rework: 1 });
+      expect(stepWords(r.steps[0]!)).toBe('rework 1');
+      expect(go(['engineer', 'coder', 'code-reviewer', 'coder', 'code-reviewer']).steps[0]!.rework).toBe(1);
+      expect(go(['engineer', 'coder', 'code-reviewer', 'coder', 'code-reviewer', 'coder']).steps[0]!.rework).toBe(2);
+    });
+
+    it('back to the coder through the Engineer counts too, and the coder holding it twice in a row does not', () => {
+      expect(go(['engineer', 'coder', 'code-reviewer', 'engineer', 'coder']).steps[0]!.rework).toBe(1);
+      expect(go(['engineer', 'coder', 'engineer', 'coder']).steps[0]!.rework).toBe(0);
+    });
+
+    it('rework in the first step and then the next step: the first is done, the count stays', () => {
+      const r = go(['engineer', 'coder', 'code-reviewer', 'coder', 'code-reviewer', 'tester']);
+      expect(statuses(r)).toEqual(['done', 'running']);
+      expect(r.steps[0]!.rework).toBe(1);
+      expect(r.steps[1]!.rework).toBe(0);
+    });
+
+    it('the tester sending the card back into the step is rework of that step', () => {
+      const r = go(['engineer', 'coder', 'code-reviewer', 'tester', 'coder']);
+      expect(statuses(r)).toEqual(['running', 'todo']);
+      expect(r.steps[0]!.rework).toBe(1);
+    });
+  });
+
   it('a done card finishes every step it carries, and a goal whose steps are all done is done', () => {
     const r = run(['engineer', 'coder', 'code-reviewer', 'tester', 'engineer', 'deployer', 'web-smoke-tester'], 'done');
     expect(statuses(r)).toEqual(['done', 'done', 'done', 'done', 'done']);

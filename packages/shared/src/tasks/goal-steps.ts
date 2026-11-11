@@ -73,7 +73,9 @@ function group(steps: readonly GoalStepSpec[], role: GoalCardRef): number[] {
 /**
  * Walks one card's holders over the steps that follow it. The pointer `furthest` is the furthest step any holder belonged to; `at` is the step of the CURRENT holder
  * (null when that holder belongs to no step: the Engineer between two steps, a person). A bot listed in two steps counts for the first one at or after `furthest`
- * (else the last one before it). Arriving at a step earlier than `furthest` is rework of that step.
+ * (else the last one before it). Rework of a step is counted in two cases: the card arrives at a step earlier than `furthest` (a reviewer in a later step sent it
+ * back, also through the Engineer), or it arrives at a bot of a step that comes earlier in the step's own list than a bot that already held it in that step
+ * (`[coder, code-reviewer]`: coder, reviewer, coder is one rework).
  */
 function walk(steps: readonly GoalStepSpec[], positions: readonly number[], card: GoalCardFacts): GoalStepState[] {
   const out: GoalStepState[] = positions.map(() => ({ status: 'todo' as GoalStepStatus, rework: 0 }));
@@ -81,6 +83,7 @@ function walk(steps: readonly GoalStepSpec[], positions: readonly number[], card
   if (card.state === 'done') return out.map(() => ({ status: 'done' as GoalStepStatus, rework: 0 }));
   let furthest = -1;
   let at: number | null = null;
+  const botFurthest: number[] = positions.map(() => -1); // the latest bot (by its place in the step's list) that held the card inside each step
   for (let i = 0; i < card.holders.length; i += 1) {
     const holder = card.holders[i] ?? null;
     if (i > 0 && holder === card.holders[i - 1]) continue; // the same holder twice in a row is one stay
@@ -94,7 +97,9 @@ function walk(steps: readonly GoalStepSpec[], positions: readonly number[], card
     }
     const forward = candidates.find((p) => p >= furthest);
     const place = forward ?? candidates[candidates.length - 1]!;
-    if (place < furthest) out[place]!.rework += 1;
+    const botIndex = steps[positions[place]!]?.bots.indexOf(holder as string) ?? -1;
+    if (place < furthest || (place === furthest && botIndex < botFurthest[place]!)) out[place]!.rework += 1;
+    botFurthest[place] = place < furthest ? botIndex : Math.max(botFurthest[place]!, botIndex);
     furthest = Math.max(furthest, place);
     at = place;
   }
@@ -109,6 +114,7 @@ function walk(steps: readonly GoalStepSpec[], positions: readonly number[], card
   // The card is with someone who is in no step (the Engineer, a person): the furthest step it reached is finished, unless the card waits on a person.
   for (let p = 0; p <= furthest; p += 1) out[p]!.status = 'done';
   if (waiting) out[furthest]!.status = 'waiting';
+  else if (blocked) out[furthest]!.status = 'blocked'; // a blocker on a card that sits with the Engineer still marks the step it came from
   return out;
 }
 
