@@ -146,3 +146,19 @@ cases:
         required: [tasks.create, tasks.handoff]
         forbidden: [files.write, tasks.deploy, tasks.complete]
     rationale: "The work is done, so Engineer creates a \"Publish: <goal>\" card that names the tested commit and hands it to Committer. The work card is not sent to Committer."
+
+  - id: answers-where-the-goal-is-up-to-from-the-goal
+    question: Where is the goal up to, and which step is stuck?
+    given:
+      where: conversation
+      sources:
+        - id: goal
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Goal G-27 Copy link button: 6 steps, the plan card shows step 4 (deploy) running."
+    expect:
+      toolCalls:
+        required: [tasks.goal]
+        forbidden: [files.write, tasks.deploy, tasks.complete]
+    rationale: The steps and their state live on the goal, so Engineer reads them with tasks.goal instead of guessing from the thread.

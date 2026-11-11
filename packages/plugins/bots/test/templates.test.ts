@@ -425,6 +425,7 @@ describe('every shipped definition', () => {
     expect(orchestrator.fm.kind).toBe('agent');
     expect(orchestrator.fm.capabilities?.native).toEqual([
       'tasks.read',
+      'tasks.goal',
       'goals.ensure',
       'goals.plan',
       'boards.ensure',
