@@ -91,7 +91,6 @@ const task = (over: Record<string, unknown> = {}): Task =>
     id: '00000000-0000-7000-8000-0000000000c1',
     workspaceId: WS,
     teamId: TEAM,
-    goalId: null,
     title: 'Fix the login redirect',
     description: '',
     state: 'open',
@@ -246,12 +245,11 @@ describe('the bot icon\u2019s words', () => {
 });
 
 describe('a board filter is read, not trusted', () => {
-  it('takes the three filter keys the list route knows and ignores anything else', () => {
-    const goal = '00000000-0000-7000-8000-0000000000e9';
-    expect(boardFilter(board({ filter: { goalId: goal, ownerId: ACTOR, kind: 'ops', colour: 'red' } }))).toEqual({ goalId: goal, ownerId: ACTOR, kind: 'ops' });
+  it('takes the two filter keys the list route knows and ignores anything else', () => {
+    expect(boardFilter(board({ filter: { ownerId: ACTOR, kind: 'ops', colour: 'red' } }))).toEqual({ ownerId: ACTOR, kind: 'ops' });
     expect(boardFilter(board({ filter: { kind: 'not-a-kind' } }))).toEqual({});
     // an id that is not a uuid is dropped too: the list route would refuse the query, and the board would show an error instead of cards
-    expect(boardFilter(board({ filter: { goalId: 'g1', ownerId: 'a1' } }))).toEqual({});
+    expect(boardFilter(board({ filter: { ownerId: 'a1' } }))).toEqual({});
     expect(boardFilter(board())).toEqual({});
   });
 });

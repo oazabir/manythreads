@@ -10,7 +10,6 @@ import { KAHF_WORKSPACE_ID, personas, TEAM_IDS } from './personas.ts';
  * here instead of repeating a string. Ids are uuidv7-shaped constants; the page and the contract are paths in the team's repository.
  */
 export const SEED_WORK = {
-  goal: '00000000-0000-7000-8000-0000000c0001',
   environment: { id: '00000000-0000-7000-8000-0000000c0010', name: 'production' },
   boards: {
     team: { id: '00000000-0000-7000-8000-0000000c0020', name: 'Engineering board' },
@@ -113,14 +112,14 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * Seed v6 (PLAN P6-11): what the phase 6 screens show in a seeded world, for the Engineering team. Written only where nothing is, so a second
  * run changes nothing and a person's later edit is never undone:
  *  - the `production` environment, protected, whose deploys need a person's approval;
- *  - a goal, a team board, and seven cards across the five columns (owned by people and by the `coder` bot), one of them a finished code card
+ *  - a team board, and seven cards across the five columns (owned by people and by the `coder` bot), one of them a finished code card
  *    with the commit that was tested; plus the channel "Bot Board" of #dev with one bot card;
  *  - a heartbeat and a weekly routine for `coder`, both **disabled** so a seeded site never starts a bot run on a timer, and two past runs
  *    (one done, one failed with its reason) for the run ledger;
  *  - the routine's contract `routines/weekly-deploy-health.yaml` and its output page `pages/reports/deploy-health.md`, committed through the
  *    repo writer (so history, authorship and events are the production ones). The pages plugin reads a page from git and makes its own
  *    `page_docs` row when somebody opens it, so none is seeded.
- * Seeded once: two commits in the team's history mark the parts as done (the report page: the board, cards, environment and goal; the routine
+ * Seeded once: two commits in the team's history mark the parts as done (the report page: the board, cards and environment; the routine
  * contract: the Bot Board, bot cards and scheduled jobs), so what a person later deletes or moves is never put back. A run that could not do the bot part
  * (no bot row yet, no #dev) does it on a later run. An environment, Bot Board or other row of the same name that a person made first is used, not duplicated.
  * Needs seed v3 and v4 first (the channel #dev, the `coder` bot placeholder). The bot's row is made by the running server from that file: this
@@ -139,7 +138,7 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
         (
           await tx.query<{ ok: boolean }>(
             `SELECT bool_and(to_regclass('app.' || n) IS NOT NULL) AS ok FROM unnest($1::text[]) AS n`,
-            [['tasks', 'environments', 'boards', 'goals', 'task_events', 'task_claims', 'scheduled_jobs', 'scheduled_job_runs', 'repos', 'repo_commits', 'bots', 'channels']],
+            [['tasks', 'environments', 'boards', 'task_events', 'task_claims', 'scheduled_jobs', 'scheduled_job_runs', 'repos', 'repo_commits', 'bots', 'channels']],
           )
         ).rows[0]?.ok === true,
       { pool, workspaceId: KAHF_WORKSPACE_ID },
@@ -201,12 +200,12 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
       const t = (k: number): string => new Date(new Date(at(c.hours)).getTime() + k * MIN).toISOString();
       const doneAt = c.state === 'done' ? t(steps) : null;
       const inserted = await tx.query(
-        `INSERT INTO app.tasks (id, workspace_id, team_id, goal_id, title, description, state, kind, priority, owner_id, branch, base_sha, tested_sha,
+        `INSERT INTO app.tasks (id, workspace_id, team_id, title, description, state, kind, priority, owner_id, branch, base_sha, tested_sha,
                                 environment_id, blocker_reason, board_id, created_by, created_at, updated_at, completed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::timestamptz, $19::timestamptz, $20::timestamptz)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::timestamptz, $18::timestamptz, $19::timestamptz)
          ON CONFLICT DO NOTHING`,
         [
-          c.id, KAHF_WORKSPACE_ID, team, c.board ? null : SEED_WORK.goal, c.title, c.description, c.state, c.kind, c.priority, c.owner, c.branch,
+          c.id, KAHF_WORKSPACE_ID, team, c.title, c.description, c.state, c.kind, c.priority, c.owner, c.branch,
           c.baseSha ?? null, c.testedSha ?? null, c.environment ?? null, c.blocker ?? '', c.board ?? null, c.createdBy, at(c.hours), t(steps), doneAt,
         ],
       );
@@ -239,18 +238,13 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
         async (tx) => {
           let n = 0;
           const rows = async (text: string, params: unknown[]): Promise<number> => (await tx.query(text, params)).rowCount ?? 0;
-          // An environment, goal or board a person made first (another id, same name) is the one the cards use: look the id up by its name.
+          // An environment or board a person made first (another id, same name) is the one the cards use: look the id up by its name.
           n += await rows(
             `INSERT INTO app.environments (id, workspace_id, team_id, name, protected, needs_approval, deploy_cap, auto_rollback, created_by, created_at, updated_at)
              VALUES ($1, $2, $3, $4, true, true, 3, true, $5, $6, $6) ON CONFLICT (team_id, name) DO NOTHING`,
             [SEED_WORK.environment.id, KAHF_WORKSPACE_ID, team, SEED_WORK.environment.name, omar, at(-2)],
           );
           const envId = (await tx.query<{ id: string }>(`SELECT id FROM app.environments WHERE team_id = $1 AND name = $2`, [team, SEED_WORK.environment.name])).rows[0]!.id;
-          n += await rows(
-            `INSERT INTO app.goals (id, workspace_id, team_id, title, description, created_by, created_at, updated_at)
-             VALUES ($1, $2, $3, 'Ship v2.14', 'Everything that has to land before the v2.14 release on Friday.', $4, $5, $5) ON CONFLICT DO NOTHING`,
-            [SEED_WORK.goal, KAHF_WORKSPACE_ID, team, omar, at(-2)],
-          );
           n += await rows(
             `INSERT INTO app.boards (id, workspace_id, team_id, name, columns, created_by, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $7) ON CONFLICT DO NOTHING`,

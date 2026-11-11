@@ -59,7 +59,7 @@ async function saveColumns(ctx: PluginContext, tx: PluginTx, row: BoardRow, colu
 
 /**
  * Cards per column of a board. Which cards: a channel board takes the cards filed on it; a team board takes the team's cards through the saved
- * filter (`goalId`, `ownerId`, `kind`). A card is in its place when it has one that still counts as its state, otherwise in the first column of
+ * filter (`ownerId`, `kind`). A card is in its place when it has one that still counts as its state, otherwise in the first column of
  * its state. Cards of a state the board has no column for are not counted. The most recent 2000 cards are looked at.
  */
 export async function countColumns(tx: PluginTx, row: BoardRow): Promise<Map<string, number>> {
@@ -68,7 +68,7 @@ export async function countColumns(tx: PluginTx, row: BoardRow): Promise<Map<str
   if (row.channel_id) where.push('t.board_id = $1::uuid');
   else {
     const filter = row.filter ?? {};
-    for (const [key, col, cast] of [['goalId', 't.goal_id', '::uuid'], ['ownerId', 't.owner_id', '::uuid'], ['kind', 't.kind', '']] as const) {
+    for (const [key, col, cast] of [['ownerId', 't.owner_id', '::uuid'], ['kind', 't.kind', '']] as const) {
       const v = filter[key];
       if (typeof v === 'string') {
         values.push(v);

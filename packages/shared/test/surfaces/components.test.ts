@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DIFF_MAX_CHARS, DIFF_MAX_LINES, SURFACE_BOT_REGISTRY, SURFACE_REGISTRY, applyBinding, describeSurfaceParts, isPlatformOnlyProblem, parseSurface, type SurfaceNode } from '../../src/index.ts';
+import { DIFF_MAX_CHARS, DIFF_MAX_LINES, SURFACE_BOT_REGISTRY, SURFACE_REGISTRY, describeSurfaceParts, isPlatformOnlyProblem, parseSurface, type SurfaceNode } from '../../src/index.ts';
 
 // The primitives and the manythreads parts (PLAN P9-05): each is checked by its own schema, through the same checker a bot's text goes through.
 
@@ -260,60 +260,5 @@ describe('Answer (P9-07)', () => {
     expect(describeSurfaceParts(SURFACE_BOT_REGISTRY)).not.toMatch(/Answer/);
     expect(describeSurfaceParts(SURFACE_REGISTRY)).not.toMatch(/Answer\(/);
     expect(describeSurfaceParts(SURFACE_BOT_REGISTRY)).toMatch(/Callout\(/);
-  });
-});
-
-describe('GoalCard (P22-03)', () => {
-  const goalId = '0190a000-0000-7000-8000-000000000011';
-  const plan = {
-    ref: 'G-27',
-    title: 'Ship the jump button',
-    chip: 'running',
-    spend: { usd: 1.61, budgetUsd: 12 },
-    steps: [
-      { title: 'Plan', bots: ['Planner'], status: 'done', dot: 'done', rework: 0 },
-      { title: 'Code', bots: ['Coder'], status: 'rework 1', dot: 'running', rework: 1 },
-    ],
-    stepNow: 2,
-    stepCount: 2,
-    board: { teamSlug: 'engineering', boardId: '0190a000-0000-7000-8000-000000000012' },
-    thread: { rootId: '0190a000-0000-7000-8000-000000000013', replies: 7, lastName: 'Tester', lastAt: '2026-11-11T10:00:00.000Z', faces: ['Tester', 'Coder'] },
-  };
-  const source = (bound: string): string =>
-    `root = GoalCard("${goalId}", "G-27 · Ship the jump button", null, {tool: "tasks.goal", args: {goalId: "${goalId}"}, into: {plan: "${bound}"}})\n`;
-  it('takes the goal, a title and the plan the binding fills in, in that order', () => {
-    expect(SURFACE_REGISTRY.get('GoalCard')!.args).toEqual(['goalId', 'title', 'plan', 'bind']);
-    expect(SURFACE_REGISTRY.get('GoalCard')!.bindable).toEqual(['plan']);
-    good('GoalCard', { goalId, title: 'G-27 · Ship the jump button' });
-    good('GoalCard', { goalId, title: 'G-27 · Ship the jump button', plan });
-    bad('GoalCard', { goalId: 'x', title: 'T' });
-    bad('GoalCard', { goalId, title: '' });
-    bad('GoalCard', { goalId, title: 'T', plan: { ...plan, chip: 'finished' } });
-    bad('GoalCard', { goalId, title: 'T', plan: { ...plan, steps: Array.from({ length: 13 }, () => plan.steps[0]) } });
-  });
-  it('is checked by the page and bound to tasks.goal; has no events', () => {
-    const tree = parseSurface(source('plan'), SURFACE_REGISTRY);
-    expect(tree.problems).toEqual([]);
-    expect(tree.root).toMatchObject({ kind: 'component', name: 'GoalCard', bind: { tool: 'tasks.goal', args: { goalId } } });
-    expect(Object.keys(SURFACE_REGISTRY.get('GoalCard')!.events)).toEqual([]);
-  });
-  it('is platform-only: a bot\'s own text with it is refused, and the help leaves it out', () => {
-    expect(SURFACE_REGISTRY.get('GoalCard')!.platformOnly).toBe(true);
-    const asBot = parseSurface(source('plan'), SURFACE_BOT_REGISTRY);
-    expect(asBot.problems.filter(isPlatformOnlyProblem)).toHaveLength(1);
-    expect(asBot.problems[0]!.message).toBe('GoalCard is drawn only by the platform; use Callout or Text for your own text');
-    expect(describeSurfaceParts(SURFACE_BOT_REGISTRY)).not.toMatch(/GoalCard/);
-    expect(describeSurfaceParts(SURFACE_REGISTRY)).not.toMatch(/GoalCard\(/);
-  });
-  it('fills the plan from the answer of tasks.goal as it comes, through its own schema', () => {
-    const tree = parseSurface(source('plan'), SURFACE_REGISTRY);
-    const part = tree.root!;
-    if (part.kind !== 'component' || part.bind === undefined) throw new Error('not bound');
-    const def = SURFACE_REGISTRY.get('GoalCard')!;
-    const ok = applyBinding(def, part.props, part.bind, { ok: true, plan });
-    expect(ok.state).toBe('ok');
-    if (ok.state === 'ok') expect(ok.props['plan']).toMatchObject({ ref: 'G-27', chip: 'running', board: { teamSlug: 'engineering' } });
-    // an answer that is not a plan never reaches the page as one
-    expect(applyBinding(def, part.props, part.bind, { ok: true, plan: { ref: 'G-27' } }).state).not.toBe('ok');
   });
 });

@@ -12,7 +12,7 @@ const servers: TestServer[] = [];
 const sqlOn = <T extends Record<string, unknown>>(s: TestServer, text: string, params: readonly unknown[] = []): Promise<T[]> => ownerSql<T>(s.db.ownerUrl, text, params);
 const sql = <T extends Record<string, unknown>>(text: string, params: readonly unknown[] = []): Promise<T[]> => sqlOn<T>(server, text, params);
 const options = { content: true, repo: true, work: true, workOptions: { botWaitMs: 60_000 } } as const;
-const TABLES = ['tasks', 'task_events', 'task_claims', 'boards', 'goals', 'environments', 'scheduled_jobs', 'scheduled_job_runs', 'repo_commits'] as const;
+const TABLES = ['tasks', 'task_events', 'task_claims', 'boards', 'environments', 'scheduled_jobs', 'scheduled_job_runs', 'repo_commits'] as const;
 const counts = async (s: TestServer): Promise<Record<string, number>> =>
   Object.fromEntries(await Promise.all(TABLES.map(async (t) => [t, Number((await sqlOn<{ n: number }>(s, `SELECT count(*)::int AS n FROM app.${t}`))[0]?.n)] as const)));
 

@@ -10,12 +10,9 @@ export async function eventTeamId(tx: PluginTx, channelId: string): Promise<stri
   return row !== undefined && row.kind === 'channel' && !row.private ? row.team_id : null;
 }
 
-/**
- * Tells everyone who can read the channel to read this surface again. Sent in the change's own transaction, so a viewer is told only about a change that was kept.
- * `reason: 'data'` (the plan card, PLAN P22-03) says the screen is the same and only what its bound parts read may have changed.
- */
-export async function pushChanged(ctx: PluginContext, tx: PluginTx, s: { channelId: string; surfaceId: string; version: number }, reason?: 'data'): Promise<void> {
+/** Tells everyone who can read the channel to read this surface again. Sent in the change's own transaction, so a viewer is told only about a change that was kept. */
+export async function pushChanged(ctx: PluginContext, tx: PluginTx, s: { channelId: string; surfaceId: string; version: number }): Promise<void> {
   const people = (await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_audience($1::uuid)', [s.channelId])).rows.map((r) => r.person_id);
   if (people.length === 0) return;
-  await ctx.realtime.pushToPeople(tx, people, WS_SURFACE_CHANGED, SurfaceChangedPush.parse({ channelId: s.channelId, surfaceId: s.surfaceId, version: s.version, ...(reason ? { reason } : {}) }));
+  await ctx.realtime.pushToPeople(tx, people, WS_SURFACE_CHANGED, SurfaceChangedPush.parse({ channelId: s.channelId, surfaceId: s.surfaceId, version: s.version }));
 }

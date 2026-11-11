@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ProjectName } from '../../entities/project.ts';
 import { Handoff, Task, TaskEvent, TaskKind, TaskPriority, TaskState } from '../../entities/task.ts';
-import { ActorId, BoardId, EnvironmentId, GoalId, TaskId } from '../../ids.ts';
+import { ActorId, BoardId, EnvironmentId, TaskId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
 // The task board API (SPEC §8, PLAN P6-02). Every route is scoped to a team slug: the team the caller may read is the team the
@@ -18,7 +18,6 @@ export const ListTasksQuery = z.strictObject({
   state: TaskState.optional(),
   kind: TaskKind.optional(),
   priority: TaskPriority.optional(),
-  goalId: GoalId.optional(),
   ownerId: ActorId.optional(),
   /** The cards filed on one channel board. */
   boardId: BoardId.optional(),
@@ -39,7 +38,6 @@ export const CreateTaskRequest = z.strictObject({
   kind: TaskKind.default('code'),
   priority: TaskPriority.default('normal'),
   branch: z.string().trim().min(1).max(200),
-  goalId: GoalId.optional(),
   environmentId: EnvironmentId.optional(),
   /** A board of the same team; a channel board needs read access to its channel. */
   boardId: BoardId.optional(),

@@ -70,7 +70,7 @@ describe('which parts can be bound', () => {
 
 describe('the tools a screen may bind', () => {
   it('are a short list of reads that this repository names', () => {
-    expect(SURFACE_BINDABLE_TOOLS.map((t) => t.name)).toEqual(['tasks.read', 'tasks.goal', 'messages.search', 'files.search']);
+    expect(SURFACE_BINDABLE_TOOLS.map((t) => t.name)).toEqual(['tasks.read', 'messages.search', 'files.search']);
     expect(bindableTool('tasks.read')).toBeDefined();
     for (const name of ['memory.recall', 'knowledge.search', 'inbox.read', 'tasks.create', 'surface.render', 'messages.post', '', 'tasks.']) expect(bindableTool(name), name).toBeUndefined();
   });
@@ -81,9 +81,6 @@ describe('the tools a screen may bind', () => {
     expect(bindableTool('messages.search')!.args.safeParse({ query: 'cache', limit: 21 }).success).toBe(false);
     expect(bindableTool('messages.search')!.args.safeParse({ query: 'cache', limit: 5 }).success).toBe(true);
     expect(bindableTool('files.search')!.args.safeParse({ query: 'cache', channelId: 'x' }).success).toBe(false);
-    const goal = '0190a3f0-7c1e-7b1a-9d2e-3c4f5a6b7c8d';
-    expect(bindableTool('tasks.goal')!.args.safeParse({ goalId: goal }).success).toBe(true);
-    for (const bad of [{}, { goalId: 'G-27' }, { goalId: goal, teamId: goal }, { goalId: goal, limit: 1 }]) expect(bindableTool('tasks.goal')!.args.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
   });
 });
 

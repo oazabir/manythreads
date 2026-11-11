@@ -16,10 +16,10 @@ async function cardOf(tx: PluginTx, taskId: string) {
   return row ? toTask(row) : null;
 }
 
-export type ActorLabel = { kind: string; name: string; slug: string | null };
+type ActorLabel = { kind: string; name: string; slug: string | null };
 
 /** Names for a list of actor ids (a person cannot read another actor's row, so this goes through the tasks door). */
-export async function actorLabels(tx: PluginTx, ids: string[]): Promise<Map<string, ActorLabel>> {
+async function actorLabels(tx: PluginTx, ids: string[]): Promise<Map<string, ActorLabel>> {
   if (ids.length === 0) return new Map();
   const res = await tx.query<{ o_actor_id: string; o_kind: string; o_name: string; o_slug: string | null }>(
     'SELECT o_actor_id, o_kind, o_name, o_slug FROM app.tasks_actor_labels($1::uuid[])',
@@ -77,10 +77,6 @@ export function registerCapabilities(ctx: PluginContext): void {
       )
     ).rows[0];
     if (!bot) return { ok: false, code: 'forbidden', message: 'only a bot of a team creates a card' };
-    if (body.goalId) {
-      const goal = await tx.query('SELECT 1 FROM app.goals WHERE id = $1::uuid AND team_id = $2::uuid', [body.goalId, bot.team_id]);
-      if (goal.rows.length === 0) return { ok: false, code: 'not_found', message: 'no such goal in this team' };
-    }
     if (body.environmentId) {
       const env = await tx.query('SELECT 1 FROM app.environments WHERE id = $1::uuid AND team_id = $2::uuid', [body.environmentId, bot.team_id]);
       if (env.rows.length === 0) return { ok: false, code: 'not_found', message: 'no such environment in this team' };
@@ -104,7 +100,6 @@ export function registerCapabilities(ctx: PluginContext): void {
       boardId,
       workspaceId: bot.workspace_id,
       teamId: bot.team_id,
-      goalId: body.goalId ?? null,
       title: body.title,
       description: body.description,
       kind: body.kind,

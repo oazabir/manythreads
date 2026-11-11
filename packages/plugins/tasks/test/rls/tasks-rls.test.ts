@@ -19,14 +19,13 @@ afterAll(async () => {
 });
 
 describe('task tables under RLS', () => {
-  it('shows a member of another team zero cards, goals, environments, boards and runners', async () => {
+  it('shows a member of another team zero cards, environments, boards and runners', async () => {
     const counts = await withActor(
       personaActor(sameera),
       async (tx) => {
         const one = async (table: string) => (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.${table} WHERE team_id = $1`, [TEAM])).rows[0]?.n ?? -1;
         return {
           tasks: await one('tasks'),
-          goals: await one('goals'),
           environments: await one('environments'),
           boards: await one('boards'),
           runners: await one('runners'),
@@ -38,7 +37,7 @@ describe('task tables under RLS', () => {
       },
       { pool: server.pools.app },
     );
-    expect(counts).toEqual({ tasks: 0, goals: 0, environments: 0, boards: 0, runners: 0, taskEvents: 0, claims: 0, handoffs: 0, deploys: 0 });
+    expect(counts).toEqual({ tasks: 0, environments: 0, boards: 0, runners: 0, taskEvents: 0, claims: 0, handoffs: 0, deploys: 0 });
   });
 
   it('shows Engineering its own cards and denies a cross-team insert and update', async () => {
@@ -63,7 +62,7 @@ describe('task tables under RLS', () => {
 
   it('answers 403 for an environment and a runner from another team through the API', async () => {
     const headers = { 'x-manythreads-dev-actor': JSON.stringify({ kind: 'person', id: sameera.actorId, workspaceId: KAHF_WORKSPACE_ID }), 'content-type': 'application/json' };
-    for (const path of ['/api/teams/engineering/environments', '/api/teams/engineering/boards', '/api/teams/engineering/runners', '/api/teams/engineering/goals']) {
+    for (const path of ['/api/teams/engineering/environments', '/api/teams/engineering/boards', '/api/teams/engineering/runners']) {
       const res = await fetch(`${server.url}${path}`, { headers });
       expect(res.status, path).toBe(403);
     }

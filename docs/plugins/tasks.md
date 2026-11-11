@@ -8,8 +8,6 @@ system role, and both the HTTP route and the `tasks.*` tool call the same door �
 
 | table | what it holds |
 |---|---|
-| `goals` | a team's goals; a card may point at one. Also a short `number` (shown `G-27`), a `budget_usd`, the `channel_id` and `thread_root_id` it was given in, and its `steps` (the plan). See "Goals and the plan" |
-| `goal_counters` | the last goal number given in each team; system only, written by the numbering trigger |
 | `tasks` | the cards: `state` (`open`/`in_progress`/`verify`/`waiting_on_person`/`done`), `kind` (`code`/`docs`/`review`/`other`), `priority`, owner, branch, `base_sha`, `tested_sha`, `blocker_reason`, `rework_count`, `handoff_count` |
 | `task_claims` | one row per claim; `released_at` null means live. A partial unique index on `(task_id) WHERE released_at IS NULL` is what makes one card have one owner |
 | `task_events` | the card's history, one row per change (`created`, `claimed`, `released`, `completed`, `reworked`, `handed_off`, `moved`); BRIN on `created_at` |
@@ -101,13 +99,12 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 
 | method | path | who |
 |---|---|---|
-| GET | `/tasks?state=&kind=&priority=&goalId=&ownerId=&limit=` | any team reader |
+| GET | `/tasks?state=&kind=&priority=&ownerId=&limit=` | any team reader |
 | POST | `/tasks` | team writer (lead or member with `write`) |
 | GET | `/tasks/:taskId`, `/tasks/:taskId/events` | any team reader |
 | PATCH | `/tasks/:taskId` | team writer |
 | POST | `/tasks/:taskId/tick` | a person who can post in the team (P14-19: ticks or unticks one `- [ ]` / `- [x]` box of the description) |
-| POST | `/tasks/:taskId/claim`, `/release`, `/complete`, `/rework`, `/handoff` | the owner (a lead may hand over or rework anyone's card; the creator of a card nobody owns may hand it over, since a bot that splits a goal creates cards and passes each on without ever holding one) |
-| GET/POST | `/goals` (POST may carry `budgetUsd`), PATCH `/goals/:goalId` | reader / writer; both answer the goal with its number, budget, place and steps |
+| POST | `/tasks/:taskId/claim`, `/release`, `/complete`, `/rework`, `/handoff` | the owner (a lead may hand over or rework anyone's card; the creator of a card nobody owns may hand it over, since a bot that splits a request creates cards and passes each on without ever holding one) |
 | GET/POST | `/environments`, PATCH `/environments/:environmentId` | reader / **lead** (manage) |
 | POST | `/environments/:environmentId/deploy` | team writer; protected environments ask a person |
 | GET/POST | `/boards`, GET `/boards/:boardId`, POST `/boards/:boardId/move` (`{taskId, columnId}`, or the older `{taskId, to}` = first column of that state) | reader / writer |
@@ -136,59 +133,6 @@ made are the same row with the same `created` history — and the MCP gateway on
 bot gets real tools, and a bot without the grant is never offered them. `tasks.create` writes in the calling bot's own team (a tool never names
 a team); there is no assign tool, because assignment is `tasks.handoff`. `tasks.handoff` on a bot enforces `mayTag` itself — the board's rule is
 not an HTTP-only rule.
-
-## Goals and the plan
-
-A goal is the line of work several cards point at. Since migration `0016_goal_plan.sql` it also carries what the plan card in a channel shows: a short number,
-a budget, the place it was given in and a plan. A step of the plan is **not** a card: the goal stores the steps, and which step is under way is worked out
-from the goal's cards and who held them, so the bots keep passing one card along the chain and nobody ticks a step off.
-
-- `number`: per team, given by the database (a trigger takes the next value of the team's row in `goal_counters`; the number a caller names is overwritten, and
-  neither the number nor the team of a goal can change afterwards). Shown as `G-27` (`goalRef`). A number is never reused; a goal insert that loses a race for its
-  thread may leave a gap. Existing goals were numbered by creation time.
-- `budget_usd`: shown beside the spend; nothing stops a run at the budget.
-- `channel_id`, `thread_root_id`: the team channel and the thread (its first message) of the run that made the goal. One goal per thread of a team (a unique index).
-- `steps`: up to 12 of `{title (120), bots: [slug] (1 to 3), cardRef?: plan|work|publish, done (300)}`.
-
-Tools (all for a bot of a team; a person gets `forbidden`):
-
-- `goals.ensure {title, description?, budgetUsd?}` gets or creates the goal of the thread the run answers in. The place comes from the run through
-  `app.tasks_run_thread()`, never from the model. A run that answers in no thread of a team channel (a direct message, a finished run, no reply place) gets
-  `no_thread`. It looks the goal up first, so asking again (a restarted run) returns the same goal and changes nothing; two runs racing end with one goal.
-  Answers `{ok, goalId, ref: "G-27", number, created}`.
-- `goals.plan {goalId, steps}` replaces the steps of a goal of the bot's team (1 to 12; a 13th, an empty list, a slug that is not a bot of the team, or a closed goal
-  is refused). Emits `tasks.goal.updated` with `change: "planned"` (ids and the step count only). `goals.ensure` emits it with `created`, and the goals PATCH route with `status`.
-- `tasks.goal {goalId}` reads the plan as the caller. It is also on the list of reads a screen may bind to a part. A goal the caller cannot read is `not_found`.
-
-The answer of `tasks.goal` (shared `TasksGoalAnswer`):
-
-```
-{ ok: true, plan: {
-    ref: "G-27", title,
-    chip: "planned" | "running" | "waiting for a person" | "done" | "stopped",
-    spend: { usd, budgetUsd | null } | null,
-    steps: [{ title, bots: [display names], status: "" | "done" | "running" | "rework 1" | "waiting" | "blocked", dot: "done" | "running" | "todo" | "blocked", rework }],
-    stepNow, stepCount,
-    board: { teamSlug, boardId } | null,
-    thread: { rootId, replies, lastName, lastAt, faces: [display names, at most 3] } | null } }
-```
-
-Bots appear by display name, never by slug. `board` is the board of the goal's newest filed card (else the Bot Board of the goal's channel) and is null when
-the caller cannot read it. `thread` is null when the goal has no thread or the caller cannot read its first message. `spend` is `app.tasks_goal_spend(goal)`: a
-definer door that answers only to a caller who reads the goal's team, takes nothing but the goal id, and sums the model gateway's `llm_spend` over the runs woken
-by a card of the goal or answering in its thread; it is null when the caller may not read the team or the ledger is not installed, and 0 when nothing was spent.
-Any writer of the team may file a card on any goal of the team (`tasks.create` with `goalId`), and the cost of that card's runs then shows in the goal's spend for
-everyone who reads the team; this is accepted, as the goal's cost is a team figure and no model ledger line is shown, only the sum.
-
-How a step is worked out (`goalSteps`, `packages/shared/src/tasks/goal-steps.ts`, a pure function with a test table): a goal has up to three kinds of card, found by title
-(`Plan: …` / `Plan review: …` is `plan`, `Publish: …` is `publish`, anything else `work`; the newest of each). A step follows the card named by its `cardRef`
-(default `work`). The holders of that card (its creator, the receiver of each applied handoff, its owner) are walked in order; a bot belongs to the step that lists
-it. The step of the current holder is `running` (`waiting` when the card waits on a person, `blocked` when it has a blocker and does not wait), steps before it are
-`done`, steps after it are not started. When the current holder is in no step (the Engineer between two steps, a person), every step up to the furthest one reached is
-`done`, and that step is `waiting` if the card waits on a person, or `blocked` if the card has a blocker and does not wait. A done card finishes all its steps.
-`rework` of a step counts how often the card came back to it: from a later step (also through the Engineer: reviewer, Engineer, coder is one), or, inside a step
-that lists several bots, to a bot listed earlier than one that already held it there (`[coder, code-reviewer]`: coder, reviewer, coder is one). The chip is `stopped` for a dropped goal, `done` for a done goal or when every step is done, `waiting for a person` when a step
-waits, `running` when a step runs, is blocked or is done, else `planned`.
 
 ## Channel boards and the Bot Board
 

@@ -10,8 +10,6 @@ import {
   CreateBoardResponse,
   CreateEnvironmentRequest,
   CreateEnvironmentResponse,
-  CreateGoalRequest,
-  CreateGoalResponse,
   CreateTaskRequest,
   CreateTaskResponse,
   DeployRequest,
@@ -23,8 +21,6 @@ import {
   ListBoardsResponse,
   ListChannelBoardsResponse,
   ListEnvironmentsResponse,
-  ListGoalsQuery,
-  ListGoalsResponse,
   ListRunnersResponse,
   ListTaskEventsResponse,
   ListTasksQuery,
@@ -43,8 +39,6 @@ import {
   TasksTaskClaimedEvent,
   UpdateEnvironmentRequest,
   UpdateEnvironmentResponse,
-  UpdateGoalRequest,
-  UpdateGoalResponse,
   UpdateRunnerRequest,
   UpdateRunnerResponse,
   UpdateTaskRequest,
@@ -53,7 +47,6 @@ import {
   completeTaskRoute,
   createBoardRoute,
   createEnvironmentRoute,
-  createGoalRoute,
   createTaskRoute,
   deployEnvironmentRoute,
   getBoardRoute,
@@ -62,7 +55,6 @@ import {
   listBoardsRoute,
   listChannelBoardsRoute,
   listEnvironmentsRoute,
-  listGoalsRoute,
   listRunnersRoute,
   listTaskEventsRoute,
   listTasksRoute,
@@ -71,7 +63,6 @@ import {
   releaseTaskRoute,
   reworkTaskRoute,
   updateEnvironmentRoute,
-  updateGoalRoute,
   updateRunnerRoute,
   updateTaskRoute,
   tickTaskRoute,
@@ -84,9 +75,9 @@ import { registerColumnRoutes } from './columns.ts';
 import { conflict, forbidden, json, notFound, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
-import { emitCompleted, emitGoalUpdated, emitHandedOff, emitUpdated } from './emit.ts';
+import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
 import { handoverAllowlist, handoverPeople, isCardCreator, mayHandoffToActor } from './handoff.ts';
-import { GOAL_COLUMNS, TASK_SELECT, actorOf, toBoard, toEnvironment, toGoal, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type GoalRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
+import { TASK_SELECT, actorOf, toBoard, toEnvironment, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
 
 /** The card of this team, or 404 (a card of another team and a missing one answer the same). */
 async function taskOf(tx: PluginTx, teamId: string, taskId: string): Promise<Task> {
@@ -120,7 +111,6 @@ export function registerRoutes(ctx: PluginContext): void {
       if (q.state) add('t.state = ?', q.state);
       if (q.kind) add('t.kind = ?', q.kind);
       if (q.priority) add('t.priority = ?', q.priority);
-      if (q.goalId) add('t.goal_id = ?::uuid', q.goalId);
       if (q.ownerId) add('t.owner_id = ?::uuid', q.ownerId);
       if (q.boardId) add('t.board_id = ?::uuid', q.boardId);
       const filter = where.join(' AND ');
@@ -141,10 +131,6 @@ export function registerRoutes(ctx: PluginContext): void {
       const { slug } = req.params as { slug: string };
       const team = await requireTeam(tx, slug);
       const body = CreateTaskRequest.parse(req.body);
-      if (body.goalId) {
-        const goal = await tx.query('SELECT 1 FROM app.goals WHERE id = $1::uuid AND team_id = $2::uuid', [body.goalId, team.id]);
-        if (goal.rows.length === 0) throw notFound('No such goal in this team');
-      }
       if (body.environmentId) {
         const env = await tx.query('SELECT 1 FROM app.environments WHERE id = $1::uuid AND team_id = $2::uuid', [body.environmentId, team.id]);
         if (env.rows.length === 0) throw notFound('No such environment in this team');
@@ -159,7 +145,6 @@ export function registerRoutes(ctx: PluginContext): void {
       const task = await insertCard(ctx, tx, {
         workspaceId: team.workspace_id,
         teamId: team.id,
-        goalId: body.goalId ?? null,
         title: body.title,
         description: body.description,
         kind: body.kind,
@@ -463,68 +448,6 @@ export function registerRoutes(ctx: PluginContext): void {
         await tx.query<TaskEventRow>('SELECT id, task_id, team_id, actor_id, type, data, created_at FROM app.task_events WHERE task_id = $1::uuid ORDER BY id ASC LIMIT 200', [taskId])
       ).rows;
       return json(ListTaskEventsResponse.parse({ items: rows.map(toTaskEvent) }));
-    }),
-  });
-
-  // Goals --------------------------------------------------------------------------------------------------
-  ctx.http.route({
-    ...listGoalsRoute,
-    schema: { query: ListGoalsQuery, response: ListGoalsResponse },
-    handler: route(async (req, tx) => {
-      const { slug } = req.params as { slug: string };
-      const team = await requireTeam(tx, slug);
-      const q = ListGoalsQuery.parse(req.query);
-      const rows = (
-        await tx.query<GoalRow>(
-          `SELECT ${GOAL_COLUMNS}
-             FROM app.goals WHERE team_id = $1::uuid AND ($2::text IS NULL OR status = $2::text)
-             ORDER BY created_at DESC LIMIT $3`,
-          [team.id, q.status ?? null, q.limit],
-        )
-      ).rows;
-      return json(ListGoalsResponse.parse({ items: rows.map(toGoal) }));
-    }),
-  });
-
-  ctx.http.route({
-    ...createGoalRoute,
-    schema: { body: CreateGoalRequest, response: CreateGoalResponse },
-    handler: route(async (req, tx) => {
-      const { slug } = req.params as { slug: string };
-      const team = await requireTeam(tx, slug);
-      const body = CreateGoalRequest.parse(req.body);
-      const row = (
-        await tx.query<GoalRow>(
-          `INSERT INTO app.goals (workspace_id, team_id, title, description, budget_usd, created_by)
-           VALUES ($1::uuid, $2::uuid, $3, $4, $5::numeric, $6::uuid)
-           RETURNING ${GOAL_COLUMNS}`,
-          [team.workspace_id, team.id, body.title, body.description, body.budgetUsd ?? null, tx.actor.id],
-        )
-      ).rows[0];
-      if (!row) throw conflict('Could not create the goal');
-      await emitGoalUpdated(ctx, tx, toGoal(row), 'created');
-      return json(CreateGoalResponse.parse({ goal: toGoal(row) }), 201);
-    }),
-  });
-
-  ctx.http.route({
-    ...updateGoalRoute,
-    schema: { body: UpdateGoalRequest, response: UpdateGoalResponse },
-    handler: route(async (req, tx) => {
-      const { slug, goalId } = req.params as { slug: string; goalId: string };
-      const team = await requireTeam(tx, slug);
-      const body = UpdateGoalRequest.parse(req.body ?? {});
-      const row = (
-        await tx.query<GoalRow>(
-          `UPDATE app.goals SET status = coalesce($3, status), updated_at = now()
-            WHERE id = $1::uuid AND team_id = $2::uuid
-            RETURNING ${GOAL_COLUMNS}`,
-          [goalId, team.id, body.status ?? null],
-        )
-      ).rows[0];
-      if (!row) throw notFound('No such goal');
-      if (body.status !== undefined) await emitGoalUpdated(ctx, tx, toGoal(row), 'status');
-      return json(UpdateGoalResponse.parse({ goal: toGoal(row) }));
     }),
   });
 

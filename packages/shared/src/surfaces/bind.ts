@@ -75,12 +75,6 @@ export const SURFACE_BINDABLE_TOOLS: readonly BindableTool[] = [
     args: z.strictObject({ taskId: z.uuid().optional() }),
   },
   {
-    name: 'tasks.goal',
-    summary:
-      'Where one goal of the person’s team stands. Select from plan: ref, title, chip, stepNow, stepCount, steps[].[title,status], spend.usd, spend.budgetUsd, thread.replies. Takes goalId.',
-    args: z.strictObject({ goalId: z.uuid() }),
-  },
-  {
     name: 'messages.search',
     summary: 'Messages the person may read that match some words (limit at most 20). Select from hits[]: id, snippet, authorId, createdAt, threadRootId. Takes query and limit.',
     args: SearchArgs,

@@ -55,7 +55,6 @@ import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
 import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
 import { TasksBoardCreatedEvent } from './tasks.board.created.ts';
 import { TasksBoardUpdatedEvent } from './tasks.board.updated.ts';
-import { TasksGoalUpdatedEvent } from './tasks.goal.updated.ts';
 import { TasksTaskCreatedEvent } from './tasks.task.created.ts';
 import { TasksTaskUpdatedEvent } from './tasks.task.updated.ts';
 import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
@@ -347,7 +346,6 @@ export const eventRegistry = {
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'tasks.board.created': { 1: TasksBoardCreatedEvent },
   'tasks.board.updated': { 1: TasksBoardUpdatedEvent },
-  'tasks.goal.updated': { 1: TasksGoalUpdatedEvent },
   'tasks.task.created': { 1: TasksTaskCreatedEvent },
   'tasks.task.updated': { 1: TasksTaskUpdatedEvent },
   'tasks.task.claimed': { 1: TasksTaskClaimedEvent },

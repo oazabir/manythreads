@@ -77,7 +77,7 @@ const createAndLink = (actor: string, runId: string | null): Promise<string | nu
   asBot(actor, runId, async (tx) => {
     const id = (
       await tx.query<{ id: string }>(
-        'SELECT id FROM app.tasks_create($1::uuid, $2::uuid, NULL, $3, $4, $5, $6, $7, NULL, $8::uuid)',
+        'SELECT id FROM app.tasks_create($1::uuid, $2::uuid, $3, $4, $5, $6, $7, NULL, $8::uuid)',
         [WS, ENG, 'Card', '', 'other', 'normal', `b/${randomUUID().slice(0, 8)}`, actor],
       )
     ).rows[0]!.id;
@@ -140,7 +140,7 @@ describe('a card created in a run is tied to the run\'s thread', () => {
     expect(await createAndLink(otherActor, run)).toBeNull();
     // a card made by a person, linked by the bot inside its run: not the bot's card
     const personCard = await withActor(personaActor(nadia), async (tx) =>
-      (await tx.query<{ id: string }>('SELECT id FROM app.tasks_create($1::uuid, $2::uuid, NULL, $3, $4, $5, $6, $7, NULL, $8::uuid)', [WS, ENG, 'P', '', 'other', 'normal', `p/${randomUUID().slice(0, 8)}`, nadia.actorId])).rows[0]!.id,
+      (await tx.query<{ id: string }>('SELECT id FROM app.tasks_create($1::uuid, $2::uuid, $3, $4, $5, $6, $7, NULL, $8::uuid)', [WS, ENG, 'P', '', 'other', 'normal', `p/${randomUUID().slice(0, 8)}`, nadia.actorId])).rows[0]!.id,
     { pool: server.pools.app });
     await asBot(botActor, run, (tx) => tx.query('SELECT app.tasks_link_run_thread($1::uuid)', [personCard]));
     const root = await sys(async (tx) => (await tx.query<{ thread_root_id: string | null }>('SELECT thread_root_id FROM app.tasks WHERE id = $1', [personCard])).rows[0]!.thread_root_id);

@@ -82,7 +82,7 @@ export const approvalsMigrationSource: MigrationSource = {
 };
 
 /**
- * Migrations of the tasks plugin (`goals`, `tasks`, `task_claims`, `task_events`, `handoffs`, `environments`, `deploy_requests`,
+ * Migrations of the tasks plugin (`tasks`, `task_claims`, `task_events`, `handoffs`, `environments`, `deploy_requests`,
  * `deploys`, `boards`, `runners`); pass it after `approvalsMigrationSource` (handoffs and the strict-handoff door reference approvals).
  */
 export const tasksMigrationSource: MigrationSource = {

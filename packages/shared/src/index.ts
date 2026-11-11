@@ -22,6 +22,5 @@ export * from './surfaces/bind.ts';
 export * from './surfaces/tools.ts';
 export * from './answer/index.ts';
 export * from './text/index.ts';
-export * from './tasks/index.ts';
 export * from './commands/index.ts';
 export * from './connectors/index.ts';

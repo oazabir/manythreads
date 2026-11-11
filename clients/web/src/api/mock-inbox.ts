@@ -326,7 +326,7 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
     const title = String(body['title'] ?? '').trim();
     if (title === '') h.fail(400, 'validation_failed', 'A card needs a title.');
     const task = Task.parse({
-      id: h.nextId(), workspaceId: h.workspaceId, teamId: team.id, goalId: null, title, description: String(body['description'] ?? ''), state: 'open',
+      id: h.nextId(), workspaceId: h.workspaceId, teamId: team.id, title, description: String(body['description'] ?? ''), state: 'open',
       kind: body['kind'] ?? 'code', priority: body['priority'] ?? 'normal', ownerId: null, branch: String(body['branch'] ?? 'main'), baseSha: null, testedSha: null,
       environmentId: null, boardId: null, threadRootId: null, pullRequest: null, blockerReason: '', reworkCount: 0, handoffCount: 0, createdBy: h.me().actorId,
       createdAt: h.now, updatedAt: h.now, completedAt: null,

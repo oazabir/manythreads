@@ -155,7 +155,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 19 | 11 | Mobile client | L | 10 | 0 of 10 built |
 | 20 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 2 of 8 built, 2 partly |
 | 21 | 13 | Screenshot UI review | M | 12 | 2 of 11 built, 2 partly |
-| 22 | 22 | The team builds a feature itself, seen from the channel | M | 6, 9, 19 | 0 of 5 built |
+| 22 | 22 | The team builds a feature itself, seen from the channel — **dropped 2026-11-11** (goals removed; the self-build run is on hold) | M | 6, 9, 19 | dropped |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -310,7 +310,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
 | P6-00 | Helm and controller skeleton: the chart renders, the controller reads … | Partly built | deploy/helm/manythreads/templates (chart renders); packages/plugins/hermes-pods/src/reconcile.ts (reads DB, creates Deployments) | no packages/controller (reconciler is the hermes-pods plugin); no nodeSelector placement |
-| P6-01 | Schema: goals, tasks (open/in_progress/verify/waiting_on_person/done … | Built | packages/plugins/tasks/migrations/0001_tasks.sql (goals, tasks, task_events BRIN, task_claims_live partial unique, handoffs) … | - (numbered 0001 in plugin, not 0040) |
+| P6-01 | Schema: tasks (open/in_progress/verify/waiting_on_person/done … | Built | packages/plugins/tasks/migrations/0001_tasks.sql (tasks, task_events BRIN, task_claims_live partial unique, handoffs) … | - (numbered 0001 in plugin, not 0040) |
 | P6-02 | tasks plugin: create, assign, claim, complete, handoff; claim … | Built | packages/plugins/tasks/src/capabilities.ts, jobs.ts (tasks.claim-timeout cron); gateway-mcp/src/catalog.ts; events.ts (runtime.task.not_woken) |  |
 | P6-03 | Handover: handoff_task moves ownership in one transaction, posts the … | Built | packages/plugins/tasks/src/handoff.ts, capabilities.ts (mayTag check before attempt); approvals/src/index.ts (4 sources); tasks events.ts |  |
 | P6-04 | Freshness (stale base_sha or tested_sha blocks publish and merge with … | Built | tasks migration 0001 tasks_complete (base_sha vs head, tested_sha_required), 0012_handoff_bound.sql; tasks/src/pull-requests.ts (merge at tested head) |  |
@@ -573,7 +573,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P18-08 | Onboarding and offboarding: a per-team checklist in TEAM.md, a buddy … | Not built |  | nothing exists for this row |
 | P18-09 | Answered before: in a channel a lead marks as help, the composer … | Not built |  | nothing exists for this row |
 | P18-10 | Translation: a preferred language per person; Translate on any … | Not built |  | no plugins/translate, no preferred-language setting or Translate action |
-| P18-11 | Goals: check-ins on the goals from P6-01, progress rolled up from … | Not built | packages/shared/src/api/tasks/goals.ts, packages/plugins/tasks (goals from P6-01) | no check-ins, progress roll-up, weekly goal digest or Brain goal answers; only the goals entity/API |
+| P18-11 | Goals: check-ins on the goals from P6-01, progress rolled up from … | Dropped | - | owner 2026-11-11: goals are removed from the product (tasks migration 0016_drop_goals.sql) |
 | P18-12 | Personal assistant (Hermes parity): each person may have their own … | Not built |  | no templates/personal, no per-person bot flow; bridges (P16-09) absent too |
 | P18-13 | Automation analytics: per recipe runs, failures, approval wait … | Not built |  | no plugins/analytics plugin |
 | P18-14 | Seed v18, event contracts, docs per recipe with every YAML tested … | Not built |  | nothing exists for this row |
@@ -650,15 +650,17 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P21-27 | The open thread goes full screen on a small window and back on a big one | Built | clients/web (right panel, window width); e2e/screens/task.verify-p21-26-28.shots.ts | live check 2026-11-05. Gaps: the side-by-side threshold is 888 px and the thread fills the area below it; the open-thread panel renders its fill layout synchronously on resize (flushSync) to avoid a one-frame squeeze that corrupted the channel's measured row heights |
 | P21-28 | The message box is twice as tall; the "Also send to #channel" tick leaves the thread editor | Built | clients/web composer; e2e/screens/task.verify-p21-26-28.shots.ts | live check 2026-11-05 (resting box 46 px in channel, DM and thread; no tick) |
 
-### Phase 22 · The team builds a feature itself, seen from the channel — 0 built, 0 partly, 5 not built
+### Phase 22 · The team builds a feature itself, seen from the channel — dropped (owner, 2026-11-11)
+
+**Dropped on 2026-11-11 at the owner's request: "we don't need goals".** The goal feature is out of the product, not only out of this phase: the `goals` table, the card's `goal_id`, the goal routes (`/api/teams/:slug/goals`), the `tasks.goal.updated` event and the goal argument of `tasks.create` are removed (tasks migration `0016_drop_goals.sql`; the unshipped Phase 22 work — goal plan, `goalSteps`, the plan card, the Planner bot and the Engineer text that used them — was taken out of the tree and never deployed). Bots split a request into cards on a board, as before. A person writes a request in a channel; nothing called a goal exists.
 
 | ID | Task | Status | Where | Gap |
 |---|---|---|---|---|
-| P22-01 | A Planner bot in the Engineering template that turns a goal into a plan and a todo list | Not built | - | added 2026-11-09 at the owner's request; Engineer plans on its own today, then hands the plan to Plan reviewer |
-| P22-02 | Engineer asks Planner first, and keeps the goal's todo list on the board | Not built | templates/engineering/bots/engineer/BOT.md | added 2026-11-09 |
-| P22-03 | One plan card in the parent channel of the working thread, kept up to date as the todo list changes | Not built | plugins/surfaces (surface.render/update, data binding P9-06), screens in clients/web/src/surfaces | added 2026-11-09; the surface tools post into the run's own thread today, not into the channel |
-| P22-04 | The self-build test: Engineer builds a small feature end to end and it is deployed to and checked on test.manythreads.kahf.to | Not built | tools/devbox/sync-engineering-bots.mjs, e2e/self-build | added 2026-11-09; the chain ran once for P14-10 (2026-10-28) by hand |
-| P22-05 | Seed v22, evals for Planner and Engineer, docs and retro | Not built | - | added 2026-11-09 |
+| P22-01 | A Planner bot in the Engineering template that turns a goal into a plan and a todo list | Dropped | - | owner 2026-11-11: no goals; Engineer plans on its own as before |
+| P22-02 | Engineer asks Planner first, and keeps the goal's todo list on the board | Dropped | - | owner 2026-11-11 |
+| P22-03 | One plan card in the parent channel of the working thread, kept up to date as the todo list changes | Dropped | - | owner 2026-11-11; the bound-data refresh and the `surfaces.changed` reason `data` written for it were taken out with it |
+| P22-04 | The self-build test: Engineer builds a small feature end to end and it is deployed to and checked on test.manythreads.kahf.to | On hold | tools/devbox/sync-engineering-bots.mjs | the owner still wants the proof that the Engineering team can build a feature of manythreads and ship it; it was designed around the plan card and needs a new design without goals before it is built; the chain ran once for P14-10 (2026-10-28) by hand |
+| P22-05 | Seed v22, evals for Planner and Engineer, docs and retro | Dropped | - | owner 2026-11-11 |
 
 ---
 
@@ -1215,7 +1217,7 @@ Refactor with tests green; write `docs/retro/phase-6.md`.
 | ID | Task | Where | Spec | Agent |
 |---|---|---|---|---|
 | P6-00 | Helm and controller skeleton: the chart renders, the controller reads the DB and creates Deployments (no NetworkPolicy yet); needed by P6-06's `nodeSelector` test and P8-03's Activepieces start | `deploy/helm`, `packages/controller` | D4, §2 | Sonnet; Haiku |
-| P6-01 | Schema: `goals`, `tasks` (`open`/`in_progress`/`verify`/`waiting_on_person`/`done`, `base_sha`, `tested_sha`), `task_events` (BRIN), `task_claims` with partial unique index (one active claim per branch), `handoffs` | `0040_tasks.sql`, `shared/entities/task.ts` | §8, §7.6 | Sonnet |
+| P6-01 | Schema: `tasks` (`open`/`in_progress`/`verify`/`waiting_on_person`/`done`, `base_sha`, `tested_sha`), `task_events` (BRIN), `task_claims` with partial unique index (one active claim per branch), `handoffs` | `0040_tasks.sql`, `shared/entities/task.ts` | §8, §7.6 | Sonnet |
 | P6-02 | `tasks` plugin: create, assign, claim, complete, handoff; claim timeouts by job; wake on `task.updated`; real `tasks.*` tools replace the stubs | `plugins/tasks`, `gateway-mcp` | §8 | Sonnet |
 | P6-03 | Handover: `handoff_task` moves ownership in one transaction, posts the `@mention` card, delivers `task.assigned` with a fresh worktree, ends the caller's turn; `mayTag` rejects before attempting; `dispatch: strict` sets `needsApproval` on handoff; the approvals handler now has all four sources (environment, dispatch, dlp, grant), grant being the base mechanism | `tasks`, `runtime-hermes`, `approvals` | §7.3, §7.6 | Sonnet |
 | P6-04 | Freshness (stale `base_sha` or `tested_sha` blocks publish and merge with a reason); rework, handoff and spend bounds | `tasks` | §8 | Sonnet |
@@ -2480,7 +2482,7 @@ Refactor with tests green; write `docs/retro/phase-18.md`.
 | P18-08 | **Onboarding and offboarding**: a per-team checklist in `TEAM.md`, a buddy, a first-week digest, Brain pinned for questions; offboarding reassigns cards and approvals, moves bot ownership and revokes connections (P16-11) | `plugins/teams`, `templates/recipes` | §5 | Sonnet |
 | P18-09 | **Answered before**: in a channel a lead marks as help, the composer suggests an earlier answer (memory, knowledge, a past thread the asker may read) before the question is posted; nothing is posted for them | `plugins/channels`, `answer` | §12 | Sonnet |
 | P18-10 | **Translation**: a preferred language per person; Translate on any message and transcript line (`fast` alias, or `local` under `air-gapped`); optional auto-translate per channel; right-to-left layout checked for Arabic and Urdu, Bangla script checked | `plugins/translate`, `clients/web` | §10.1 | Sonnet |
-| P18-11 | **Goals**: check-ins on the `goals` from P6-01, progress rolled up from cards, a weekly goal digest; Brain answers "are we on track for the Q4 goal?" with the cards it read | `plugins/tasks`, `answer` | §8 | Sonnet |
+| P18-11 | ~~**Goals**: check-ins on the `goals` from P6-01, progress rolled up from cards, a weekly goal digest; Brain answers "are we on track for the Q4 goal?" with the cards it read~~ **Dropped 2026-11-11 (owner): goals are removed from the product.** | - | §8 | - |
 | P18-12 | **Personal assistant (Hermes parity)**: each person may have their own bot in a DM with their own connections (mail, calendar), personal routines written in words ("every Monday at 9 summarise my unread mail"), reachable through bridges (P16-09). Its memory needs **owner decision D8** (below) *(Changed by D10, 2026-11-04: the workspace Brain of P20-07 with personal routines (P20-10) is the base; its memory is the person bank of P20-05, D8 approved.)* | `templates/personal`, `plugins/bots` | §7, §11 | Sonnet |
 | P18-13 | **Automation analytics**: per recipe runs, failures, approval wait, declared minutes saved per run × runs, the top repeated questions; pages in the `analytics` plugin | `plugins/analytics` | §10.1 | Sonnet |
 | P18-14 | Seed v18, event contracts, docs per recipe with every YAML tested, eval sets | `e2e/fixtures`, `docs`, `templates` | guide §6 | Sonnet; Haiku |
@@ -2806,51 +2808,11 @@ A person who has used Slack opens `#dev` and a thread, reacts, mentions a bot, f
 
 ---
 
-# Phase 22 · The team builds a feature itself, seen from the channel
+# Phase 22 · The team builds a feature itself, seen from the channel — dropped
 
-Goal (owner, 2026-11-09): **manythreads is used to build a feature of manythreads, from one message to a checked deployment, by the bots of the Engineering template**, and anyone in the channel can see how far the work is without opening the thread. Size M. Needs the tasks and boards of phase 6, the surfaces of phase 9 and the runners of phase 19. Earlier proofs: the chain ran by hand for P14-10 on 2026-10-28; the full-cycle test of 2026-10-25 is the ancestor of this phase.
+**Dropped by the owner on 2026-11-11 ("ignore the whole goal feature, remove it from the code base, we don't need goals").** The design (a goal with steps, a Planner bot, a plan card drawn with OpenUI in the parent channel, a self-build run in the order plan, plan card, work in a thread, deploy to test, browser check, pull request) is not built and is not kept as a plan. What stays of the idea is the owner's wish for a proof that the Engineering template's bots can build a feature of manythreads end to end and ship it (task P22-04, **on hold**): when it is picked up it is designed again without goals, probably around the card and the board that already exist, and the proof is the one the owner asked for on 2026-11-09 — the feature is built by the bots in a thread, deployed to `https://test.manythreads.kahf.to`, checked there with Playwright by Web smoke tester, committed and pushed by Committer, then pulled, deployed to `https://manythreads.kahf.to` and seen there by a person.
 
-**Words.** **Plan card**: one message in the channel, drawn with OpenUI (phase 9), that shows a goal's steps. **Working thread**: the thread under the message that gave the goal; the bots talk there.
-
-### 1 · Tasks
-
-| ID | Task | Where | Size |
-|---|---|---|---|
-| P22-01 | **Planner bot.** A new `planner` bot in `templates/engineering/bots/`: given a goal (and the repo and Brain's memory), it writes a plan of at most 12 steps, each with the bot that does it (`coder`, `code-reviewer`, `tester`, `committer`, `deployer`, `web-smoke-tester`), what done looks like and what it depends on; it sets the todo list as the **steps of the goal** through `goals.plan` (decision D1, 2026-11-10, docs/plans/phase-22-plan.md: a step is not a board card; the step states are worked out from the handoffs of the one work card, so no chain bot needs an extra step and Planner is not woken on every completion); it asks no question a person could answer from the repo. Evals (`planner.yaml`, min score 0.9): a plan always ends with deploy and a browser check when the goal changes the web client; it never plans a step for a bot the Engineer may not tag. | `templates/engineering`, `plugins/tasks` | Sonnet |
-| P22-02 | **Engineer asks Planner first.** On a goal Engineer hands the goal to Planner (`tasks.handoff`, `planner` joins `handover.mayTag`), reads back the plan and todo list, has Plan reviewer check it as today, then starts the first step. Whoever finishes a step (Engineer or any other bot) marks its card; Engineer is the one that adds a step the plan missed and says so in the thread. | `templates/engineering/bots/engineer` | Sonnet |
-| P22-03 | **The plan card on the channel.** When the plan is accepted Engineer posts **one** plan card in the parent channel of the working thread (the channel the goal was given in; for a goal given in a thread, that thread's channel) and never a second one for the same goal. It looks like the reference below: the goal id and name, a state chip (`planned`, `running`, `waiting for a person`, `done`, `stopped`), the spend against the goal's budget, one row per step (a dot for its state, the step in words with the bots on it, and `done`, `rework 1`, `waiting` or `blocked` on the right), a card link to the board, and the reply count of the working thread with the faces of the bots that wrote in it. The card **follows the board**: it is an OpenUI surface bound to the goal (data binding, P9-06) that refreshes when a task of the goal changes, so any bot's `tasks.complete` or `tasks.handoff` moves it with no extra step for that bot; Engineer posts and edits nothing by hand after the first post. Needs: a `surface.render` target that is the channel (today the tools post into the run's own thread), checked against the bot's right to write there, a goal-bound read in the data-binding allowlist, and a message kind that the message list draws (P9-04 mounted it). The card is shown to everyone who can read the channel and holds nothing a reader of the channel could not already see in the thread; on a phone it is one column; with no OpenUI support (an old client) the message body says "Goal G-27 · running · step 2 of 3". | `plugins/surfaces`, `plugins/tasks`, `gateway-mcp`, `clients/web/src/surfaces` | Opus plans, Sonnet |
-| P22-04 | **The self-build test (owner 2026-11-10: the order is plan, plan card, work in a thread with the card moving, deploy to test, Playwright check by Web smoke tester, then Committer's pull request; a person merges, pulls, deploys to manythreads.kahf.to and checks it is there; decision D3).** A scripted live test, `tools/self-build/run.sh` with `e2e/self-build/self-build.spec.ts`, run against `https://test.manythreads.kahf.to` (namespace `test-manythreads`, owned by Engineering): a person writes `@engineer Goal: <a small real feature, chosen from the not-built rows>` in `#dev`; Planner plans; Plan reviewer approves; Coder writes the code and tests; Code reviewer reviews (a rework round is allowed once); Tester builds and tests; Committer opens the pull request; the merge waits for a person's approval, given in the test through the page; Deployer deploys to `test-manythreads`; Web smoke tester signs in on `test.manythreads.kahf.to` with a test account and checks the feature in a browser, with screenshots. The test fails if any step is skipped, if the plan card is missing, doubled, or does not move through at least running → done, or if a bot did anything the Engineering template does not allow. It is run twice for the phase: on the Hermes pod runner and on the Claude Code runner. Nothing in it touches the live `manythreads` namespace. | `tools/self-build`, `e2e/self-build`, `tools/devbox/sync-engineering-bots.mjs` | Opus plans, Sonnet |
-| P22-05 | **Seed v22, evals, docs and retro.** Seed a team with the Engineering chain and a mapped project for stack tests; evals for Planner and the changed Engineer; `docs/plugins/tasks.md` and `surfaces.md` describe the plan card; `docs/retro/phase-22.md` records the measured time, spend and every manual step the run still needed. | `tools/seed`, `docs` | Sonnet |
-
-### 2 · UI references
-
-The plan card as the owner drew it (a message by the bot, with an agent tag, in the channel list): the goal line of text above, a bordered card under it with the title in bold (`G-27 · schedule migration`), a small `running` chip beside it and `£1.61 / £12.00` on the right; then one row per step, each with a coloured dot (green done, amber running or in rework, grey waiting) and the status at the right in mono; a footer row with the board card chip (`Board card G-27`) and `bots · boards` on the right; under the card the reply link `7 replies · Tester, 2m ago` with the faces of the bots in the thread. Mockup plate: `docs/spec/mockups-all.html` section `bots`, the Orchestrator message (grep `G-27`). W baselines (light, dark, 1440 and 390): `channel/plan-card-running`, `channel/plan-card-done`, `channel/plan-card-waiting`.
-
-### 3 · Acceptance criteria
-
-1. Given a goal, Engineer's first act is a handoff to Planner; no coder step starts before the plan has been reviewed.
-2. After the plan is accepted exactly one plan card is in the parent channel; asking Engineer for the same goal again, or restarting its run, does not post a second one.
-3. A step finished by Coder, Tester or Deployer changes that step's dot and text on the card within 10 seconds, with no message from Engineer.
-4. A rework round shows `rework 1` on its row; a step waiting for an approval shows `waiting`; the chip says `waiting for a person` while one is open and `done` at the end.
-5. A person who can read the channel but not the board sees the card's text but not a card link they cannot open; a person outside the team sees nothing.
-6. The self-build test passes twice (Hermes pod, Claude Code runner), and the feature it built can be used by a person on `test.manythreads.kahf.to`.
-7. The card is readable at 390 px and in dark mode; it passes the copy lint (no `tasks.handoff`, slug or internal id in its text).
-
-### 4 · Automated end-to-end tests
-
-| Spec | Steps → assertions |
-|---|---|
-| `e2e/surfaces/plan-card.spec.ts` | a goal's tasks change through the API; the card follows; one card only; hidden from a non-member; no link to a board the viewer cannot read |
-| `e2e/self-build/self-build.spec.ts` | the P22-04 chain on a stack with stand-in models and a fake GitHub; then the same on test.manythreads.kahf.to with the real runners (run by hand, twice) |
-| `e2e/bots/planner-evals.spec.ts` | the Planner and Engineer evals pass their minimum score |
-
-### 5 · Visual browser tests
-
-The W baselines above, in light and dark, at 1440×900 and 390×844.
-
-### 6 · Exit
-
-The owner writes one `@engineer Goal:` message in `#dev` and watches one card on the channel go from planned to done while a feature reaches `test.manythreads.kahf.to`, without opening the thread unless they want the detail.
+What was removed from the tree on 2026-11-11: the goal plan columns and `goals.ensure` / `goals.plan` / `tasks.goal` (never deployed); the original goals of P6-01 (`app.goals`, `app.tasks.goal_id`, the goal routes and API, `GoalId`, `Goal`, `GoalStatus`, `tasks.goal.updated`, the `goalId` of `tasks.create`, `tasks.task.created` and the board filter), by migration `0016_drop_goals.sql`; the Planner bot and its evals; the plan card (`GoalCard`) and its web view. The onboarding "first goal" (a first request sent to Brain, event `onboarding.goal.launched`) is a different thing and stays.
 
 ---
 
@@ -2947,7 +2909,7 @@ Starting point for phases 1–6 plus outbox, jobs and analytics. Phases refine i
 
 | Table | Purpose | Key columns | Indexes | RLS | Persist |
 |---|---|---|---|---|---|
-| `goals`, `tasks` | goals; task substrate | `team_id u`, `title t`, `status t`; `goal_id u?`, `state t` (`open`,`in_progress`,`verify`,`waiting_on_person`,`done`), `owner_id u?`, `branch_id u`, `base_sha t`, `tested_sha t`, `thread_root_id u`, `environment_id u?` | `(team_id, status)`; partial `(team_id, state) WHERE state <> 'done'`; `(owner_id) WHERE state IN ('open','in_progress')`; `(branch_id)` | T | L |
+| `tasks` | task substrate (the `goals` table of the first design was dropped 2026-11-11) | `team_id u`, `title t`, `status t`; `state t` (`open`,`in_progress`,`verify`,`waiting_on_person`,`done`), `owner_id u?`, `branch_id u`, `base_sha t`, `tested_sha t`, `thread_root_id u`, `environment_id u?` | `(team_id, status)`; partial `(team_id, state) WHERE state <> 'done'`; `(owner_id) WHERE state IN ('open','in_progress')`; `(branch_id)` | T | L |
 | `task_claims` | ownership | `task_id u`, `branch_id u`, `actor_id u`, `released_at tz?`, `expires_at tz` | **partial UNIQUE `(branch_id) WHERE released_at IS NULL`** | T | L |
 | `task_events`, `handoffs` | history; handover records | `task_id u`, `actor_id u`, `type t`, `data` **J**; `task_id u`, `from_actor u`, `to_actor u`, `note t`, `mode t` | `(task_id, id)`; BRIN `(created_at)`; `(to_actor)` | T | L |
 | `environments` | production, staging | `team_id u`, `name t`, `protected b`, `windows` **J**, `deploy_cap i`, `auto_rollback b`, `credential_ref t` | UNIQUE `(team_id, name)` | T read; leads write | L |

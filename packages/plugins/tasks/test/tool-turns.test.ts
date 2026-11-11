@@ -13,7 +13,7 @@ function harness(opts: { release?: string; owns?: boolean }) {
   const handlers = new Map<string, (input: Record<string, unknown>, tx: PluginTx) => Promise<Record<string, unknown>>>();
   const id = (n: number) => `01a16e30-0000-7000-8000-0000000000c${String(n)}`;
   const card = {
-    id: TASK, workspace_id: id(1), team_id: id(2), goal_id: null, title: 'Counter', description: 'count: 1', state: 'open', kind: 'other', priority: 'normal',
+    id: TASK, workspace_id: id(1), team_id: id(2), title: 'Counter', description: 'count: 1', state: 'open', kind: 'other', priority: 'normal',
     owner_id: null, branch: 'bench/counter', base_sha: null, tested_sha: null, environment_id: null, board_id: null, thread_root_id: null, blocker_reason: '',
     rework_count: 0, handoff_count: 0, created_by: ME, created_at: new Date(), updated_at: new Date(), completed_at: null,
     pull_request_project: null, pull_request_number: null, pull_request_url: null, pull_request_state: null, pull_request_merge_sha: null,

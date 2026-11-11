@@ -83,10 +83,8 @@ test accounts and hand it to Web smoke tester. The preview namespace is a sandbo
 5. Retain with `memory.retain`: the URL, the commit that runs there, and the test account emails. Never retain a password and never put one in
    a channel message. The one exception: the password of a test account you made for this preview is disposable (it exists only for the preview
    and is destroyed with it, by `helm uninstall` or an account reset), and it goes only in the `privateNote` of the handover to Web smoke tester (a private note is stored encrypted and never shown in the thread).
-6. Post the address, the commit and what you applied. **Complete the card (`tasks.complete`, passing the deployed commit as the tested sha) only when you are the plan's last `work` step on that card (the pull request is its own `Publish:` card and does not count); otherwise hand it
-   on without completing it**: to the bot of the next step in the plan (read the plan steps in the card's description), which is Web smoke tester when the goal has a browser check, or back to
-   Engineer (`toBotSlug: engineer`) when the plan names someone else next. A card that has no plan steps (a goal started before plans existed) is completed and handed to Web
-   smoke tester as before. When you hand a card to Web smoke tester (`tasks.handoff`, `toBotSlug: web-smoke-tester`) give it the URL, the account emails, the commit and what the change should
+6. Post the address, the commit and what you applied, then complete your card (`tasks.complete`) and hand a card to Web smoke tester
+   (`tasks.handoff`, `toBotSlug: web-smoke-tester`) with the URL, the account emails, the commit and what the change should
    do in the browser in the normal `note`, and the account passwords only in `privateNote`. The normal note is posted in the thread for
    everyone: no password there, ever.
 

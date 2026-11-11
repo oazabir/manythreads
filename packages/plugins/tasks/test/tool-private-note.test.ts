@@ -12,7 +12,7 @@ const ids = {
   channel: '01a16e30-0000-7000-8000-000000000007', message: '01a16e30-0000-7000-8000-000000000008', secret: '01a16e30-0000-7000-8000-000000000009',
 };
 const taskRow = (owner: string) => ({
-  id: ids.task, workspace_id: ids.ws, team_id: ids.team, goal_id: null, title: 'Fix the rota', description: '', state: 'in_progress', kind: 'other', priority: 'normal',
+  id: ids.task, workspace_id: ids.ws, team_id: ids.team, title: 'Fix the rota', description: '', state: 'in_progress', kind: 'other', priority: 'normal',
   owner_id: owner, branch: 'fix/rota', base_sha: null, tested_sha: null, environment_id: null, board_id: null, thread_root_id: null, blocker_reason: '', rework_count: 0,
   handoff_count: 0, created_by: ids.from, created_at: new Date(), updated_at: new Date(), completed_at: null,
 });

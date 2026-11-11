@@ -1,12 +1,11 @@
 import type { PluginTx } from '@manythreads/sdk';
-import { Board, Environment, Goal, GoalStep, Handoff, MAX_GOAL_STEPS, Runner, Task, TaskEvent, readStoredColumn } from '@manythreads/shared';
+import { Board, Environment, Handoff, Runner, Task, TaskEvent, readStoredColumn } from '@manythreads/shared';
 
 /** A row as the SQL columns come back; PostgreSQL returns timestamptz as Date. */
 export interface TaskRow extends Record<string, unknown> {
   id: string;
   workspace_id: string;
   team_id: string;
-  goal_id: string | null;
   title: string;
   description: string;
   state: string;
@@ -35,7 +34,7 @@ export interface TaskRow extends Record<string, unknown> {
 
 /** The columns every task read returns, in one place so a new column cannot be forgotten in half the routes. */
 export const TASK_SELECT = `
-  SELECT t.id, t.workspace_id, t.team_id, t.goal_id, t.title, t.description, t.state, t.kind, t.priority, t.owner_id,
+  SELECT t.id, t.workspace_id, t.team_id, t.title, t.description, t.state, t.kind, t.priority, t.owner_id,
          t.branch, t.base_sha, t.tested_sha, t.environment_id, t.board_id, t.thread_root_id, t.blocker_reason, t.rework_count,
          t.handoff_count, t.created_by, t.created_at, t.updated_at, t.completed_at,
          t.pull_request_project, t.pull_request_number, t.pull_request_url, t.pull_request_state, t.pull_request_merge_sha
@@ -49,7 +48,6 @@ export function toTask(r: TaskRow): Task {
     id: r.id,
     workspaceId: r.workspace_id,
     teamId: r.team_id,
-    goalId: r.goal_id,
     title: r.title,
     description: r.description,
     state: r.state,
@@ -73,60 +71,6 @@ export function toTask(r: TaskRow): Task {
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
     completedAt: iso(r.completed_at),
-  });
-}
-
-export interface GoalRow extends Record<string, unknown> {
-  id: string;
-  workspace_id: string;
-  team_id: string;
-  number: number;
-  title: string;
-  description: string;
-  status: string;
-  budget_usd: string | number | null;
-  channel_id: string | null;
-  thread_root_id: string | null;
-  steps: unknown;
-  created_by: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-/** The columns of a goal, in one place so the routes and the goal tools read the same row. */
-export const GOAL_COLUMNS = `id, workspace_id, team_id, number, title, description, status, budget_usd, channel_id, thread_root_id, steps, created_by, created_at, updated_at`;
-
-/**
- * The steps of a goal as stored. The column holds whatever an older or a hand-edited row holds, so an entry that is not a step is left out here rather than
- * failing the whole list of goals (the plan card then shows the steps it can read). `goals.plan` only ever writes valid steps.
- */
-export function readSteps(stored: unknown): GoalStep[] {
-  if (!Array.isArray(stored)) return [];
-  const out: GoalStep[] = [];
-  for (const entry of stored) {
-    const step = GoalStep.safeParse(entry);
-    if (step.success) out.push(step.data);
-  }
-  return out.slice(0, MAX_GOAL_STEPS);
-}
-
-export function toGoal(r: GoalRow): Goal {
-  return Goal.parse({
-    id: r.id,
-    workspaceId: r.workspace_id,
-    teamId: r.team_id,
-    number: r.number,
-    title: r.title,
-    description: r.description,
-    status: r.status,
-    // numeric(12,2) arrives as text
-    budgetUsd: r.budget_usd === null ? null : Number(r.budget_usd),
-    channelId: r.channel_id,
-    threadRootId: r.thread_root_id,
-    steps: readSteps(r.steps),
-    createdBy: r.created_by,
-    createdAt: iso(r.created_at),
-    updatedAt: iso(r.updated_at),
   });
 }
 

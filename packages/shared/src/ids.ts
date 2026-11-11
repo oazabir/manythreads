@@ -150,9 +150,6 @@ export type ApprovalId = z.infer<typeof ApprovalId>;
 
 // Phase 6: tasks, boards, scheduled jobs.
 
-export const GoalId = z.uuid().brand<'GoalId'>();
-export type GoalId = z.infer<typeof GoalId>;
-
 export const TaskClaimId = z.uuid().brand<'TaskClaimId'>();
 export type TaskClaimId = z.infer<typeof TaskClaimId>;
 

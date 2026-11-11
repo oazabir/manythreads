@@ -2,7 +2,6 @@ import {
   ActorId,
   BOT_BOARD_NAME,
   CreateTaskRequest,
-  GoalId,
   TASK_TRANSITIONS,
   TaskKind,
   type Board,
@@ -135,13 +134,11 @@ export function refusalText(err: unknown): string {
  * What a board's columns are read with. A channel board shows the cards filed on it (`boardId`); a team board applies its saved filter
  * (unknown keys are ignored, never sent).
  */
-export function boardFilter(board: Board): { goalId?: GoalId; ownerId?: ActorId; kind?: TaskKind; boardId?: BoardId } {
+export function boardFilter(board: Board): { ownerId?: ActorId; kind?: TaskKind; boardId?: BoardId } {
   if (board.channelId !== null) return { boardId: board.id };
-  const out: { goalId?: GoalId; ownerId?: ActorId; kind?: TaskKind } = {};
+  const out: { ownerId?: ActorId; kind?: TaskKind } = {};
   const f = board.filter;
   // The filter is open data (a saved view may grow a key later): a value that is not a valid id is dropped, never sent as a guess.
-  const goalId = GoalId.safeParse(f['goalId']);
-  if (goalId.success) out.goalId = goalId.data;
   const ownerId = ActorId.safeParse(f['ownerId']);
   if (ownerId.success) out.ownerId = ownerId.data;
   const kind = TaskKind.safeParse(f['kind']);

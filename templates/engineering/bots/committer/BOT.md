@@ -92,11 +92,10 @@ it and never look for it.
      open pull request to a new commit, and the script waits for it.
    - Record it with `tasks.pull_request` (`taskId`, `project`, `testedSha` = `head_sha`, `number`). The platform asks GitHub itself. The card then
      waits on a person; the platform finishes it when the pull request is merged and sends it back when it is closed.
-   - Post once in the card's thread: the pull request link and the tested commit. Hand the card to nobody. On a `Publish:` card this is the whole job: `tasks.pull_request` puts the
-     card in `waiting_on_person`, the platform completes it when the pull request is merged, and nothing goes to Deployer.
-4. **Not ready** (exit 3, or exit 7 on any step): complete the card with `tasks.complete`, passing the tested commit as the tested sha. Then, unless the card is a `Publish:` card or the card
-   or the goal says there is no deploy, hand it to Deployer (`tasks.handoff`, `toBotSlug: deployer`) with the commit, the build and test commands from the card, and how long the build took.
-   A `Publish:` card is never handed to Deployer: its commit was already deployed and smoke tested before the pull request, so you complete it and hand it to nobody. Say in the thread that nothing was pushed because the project has no push credential,
+   - Post once in the card's thread: the pull request link and the tested commit. Hand the card to nobody.
+4. **Not ready** (exit 3, or exit 7 on any step): complete the card with `tasks.complete`, passing the tested commit as the tested sha, and hand it to Deployer
+   (`tasks.handoff`, `toBotSlug: deployer`) with the commit, the build and test commands from the card, and how long the build took. When the card
+   or the goal says there is no deploy, hand it to nobody. Say in the thread that nothing was pushed because the project has no push credential,
    so a person knows to add one on the Projects page. Address the project's lead in that message ("the lead of this team can connect GitHub on the
    Projects page, in the project's Pull requests box"). Never ask for the token in a thread: a pasted token is blocked by the guard.
    **Exit 7 (token refused):** post once, in the project's channel (or the card's thread if you cannot post there): "GitHub no longer accepts the

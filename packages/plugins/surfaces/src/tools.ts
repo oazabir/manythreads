@@ -2,6 +2,7 @@ import { type MessageProvider, type PluginContext, type PluginTx } from '@manyth
 import {
   SURFACE_BOT_REGISTRY,
   SURFACE_EVENT_TOOL_MAX,
+  SURFACE_NODE_ID_MAX,
   SurfaceEventToolInput,
   SurfaceRenderInput,
   SurfaceUpdateInput,
@@ -14,9 +15,7 @@ import {
   type SurfaceProblem,
   type SurfaceRejectionCode,
 } from '@manythreads/shared';
-import { NOT_A_RUN, addLine, refuse, runContext, type Refusal } from './common.ts';
 import { allowCall } from './limits.ts';
-import { renderGoalCard } from './plan-card.ts';
 import { SURFACE_COLUMNS, type SurfaceRow } from './mappers.ts';
 import { eventTeamId, pushChanged } from './notify.ts';
 
@@ -27,6 +26,9 @@ import { eventTeamId, pushChanged } from './notify.ts';
 // and whose surface it is changing (a surface of some other bot is "not found", the same answer as one that does not exist). The text is checked by the same
 // checker the web page uses, so a part that would not be drawn is not stored as if it would be. Every answer is a result the model can read and act on,
 // never a transport error; a failure after something was written throws, so the whole call is rolled back.
+
+type Refusal = { ok: false; code: string; message: string; [k: string]: unknown };
+const refuse = (code: string, message: string, extra: Record<string, unknown> = {}): Refusal => ({ ok: false, code, message, ...extra });
 
 const MAX_PROBLEMS_SHOWN = 20;
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}...` : s);
@@ -41,7 +43,30 @@ const issues = (e: { issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; m
     .map((i) => `${i.path.map(String).join('.') || '(arguments)'}: ${i.message}`)
     .join('; ');
 
-/** `surface.render`: store a new screen and show it in the thread the run answers in; with a goal, post that goal's plan card in the channel. */
+type RunContext = {
+  run_id: string;
+  bot_id: string;
+  workspace_id: string;
+  team_id: string;
+  channel_id: string | null;
+  reply_root_id: string | null;
+}
+
+/** The live run of the calling bot and where it answers: the platform's own record, never an argument. */
+const runContext = async (tx: PluginTx): Promise<RunContext | null> =>
+  (await tx.query<RunContext>('SELECT run_id, bot_id, workspace_id, team_id, channel_id, reply_root_id FROM app.surface_run_context()')).rows[0] ?? null;
+
+const NOT_A_RUN = 'The screen tools work only inside a bot run.';
+
+async function addLine(tx: PluginTx, s: { id: string; workspace_id: string; channel_id: string }, kind: 'render' | 'update' | 'rejected', version: number, nodeId: string | null, payload: Record<string, unknown>): Promise<void> {
+  await tx.query(
+    `INSERT INTO app.surface_events (surface_id, workspace_id, channel_id, actor_id, kind, version, node_id, payload)
+     VALUES ($1::uuid, $2::uuid, $3::uuid, app.actor(), $4, $5, $6, $7::jsonb)`,
+    [s.id, s.workspace_id, s.channel_id, kind, version, nodeId !== null ? nodeId.slice(0, SURFACE_NODE_ID_MAX) : null, JSON.stringify(payload)],
+  );
+}
+
+/** `surface.render`: store a new screen and show it in the thread the run answers in. */
 export async function renderSurface(ctx: PluginContext, tx: PluginTx, input: Record<string, unknown>): Promise<Record<string, unknown>> {
   const parsed = SurfaceRenderInput.safeParse(input);
   if (!parsed.success) return refuse('invalid_arguments', issues(parsed.error));
@@ -51,11 +76,7 @@ export async function renderSurface(ctx: PluginContext, tx: PluginTx, input: Rec
     return refuse('no_place', 'This run was not started in a channel or a conversation, so there is nowhere to draw. Reply in text instead.');
   }
   if (!allowCall(tx.actor.id, 'render')) return refuse('rate_limited', 'You are drawing screens too fast. Wait a minute, and change the screen you have with surface.update instead of drawing a new one.');
-  // The plan card of a goal (PLAN P22-03): the platform writes the screen and posts it in the channel itself.
-  if (parsed.data.goalId !== undefined) return renderGoalCard(ctx, tx, run, parsed.data.goalId);
   const { title, source } = parsed.data;
-  // the schema has made sure both are here when there is no goalId
-  if (title === undefined || source === undefined) return refuse('invalid_arguments', 'Give a title and a source, or a goalId and target "channel"');
 
   // The same checker the page uses. A screen with no part to draw at its root is not stored: there would be nothing to show (and no history to hang the reason on).
   const tree = parseSurface(source, SURFACE_BOT_REGISTRY);
@@ -132,8 +153,6 @@ export async function updateSurface(ctx: PluginContext, tx: PluginTx, input: Rec
     await tx.query<SurfaceRow>(`SELECT ${SURFACE_COLUMNS} FROM app.surfaces s WHERE s.id = $1::uuid AND s.bot_id = $2::uuid FOR UPDATE`, [surfaceId, run.bot_id])
   ).rows[0];
   if (!row) return refuse('not_found', 'You have no screen with that id. Only the bot that drew a screen can change it.');
-  // The plan card of a goal is the platform's statement about the goal: it follows the goal by itself and nobody edits its text.
-  if (row.goal_id !== null) return refuse('forbidden', 'This is the plan card of a goal. It follows the goal on its own; change the goal\'s plan with goals.plan.');
   const line = { id: row.id, workspace_id: row.workspace_id, channel_id: row.channel_id };
   if (baseVersion !== undefined && baseVersion !== row.version) {
     return refuse('stale_version', `The screen is at version ${row.version}, not ${baseVersion}. Nothing was changed. Send the patch again with baseVersion ${row.version} if it still makes sense.`, { currentVersion: row.version });

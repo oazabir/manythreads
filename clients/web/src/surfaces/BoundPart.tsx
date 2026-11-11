@@ -18,13 +18,11 @@ export interface SurfaceData {
   version: number;
   /** Goes up by one each time the person's answer on this screen went through (for a binding with `refreshOn: ["answered"]`). */
   answered: number;
-  /** Goes up by one each time the server pushed "the data of this screen may have changed" (`reason: "data"`): every bound part reads again, once. */
-  dataTick: number;
   /** How a refused read is explained; the page knows its own error type. */
   explain: (e: unknown) => BoundFailure;
 }
 
-const NO_DATA: SurfaceData = { read: null, version: 0, answered: 0, dataTick: 0, explain: () => ({ message: 'Could not load this data.', code: 'unavailable' }) };
+const NO_DATA: SurfaceData = { read: null, version: 0, answered: 0, explain: () => ({ message: 'Could not load this data.', code: 'unavailable' }) };
 export const SurfaceDataContext = createContext<SurfaceData>(NO_DATA);
 
 export const BOUND_TEXT = {
@@ -102,15 +100,6 @@ function useBoundState(nodeId: string, bind: SurfaceBind, data: SurfaceData): Bo
     if (bind.refreshOn?.includes('answered')) controller.current?.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.answered, bindKey]);
-
-  // A push that says the data changed (the screen did not): read again, once, after a failure pause if there is one. No `refreshOn` is needed; the server pushes
-  // only to a screen that has something bound to the changed data.
-  const tickSeen = useRef(data.dataTick);
-  useEffect(() => {
-    if (data.dataTick === tickSeen.current) return;
-    tickSeen.current = data.dataTick;
-    controller.current?.dataChanged();
-  }, [data.dataTick]);
 
   return state;
 }

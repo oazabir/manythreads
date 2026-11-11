@@ -88,7 +88,7 @@ const botDirs = readdirSync(join(root, 'bots'), { withFileTypes: true }).filter(
 const oldOf = Object.fromEntries(Object.entries(RENAMED).map(([o, n]) => [n, o]));
 
 /** Only the chain moves; Brain, Alert triage and Standup relay keep the team's own copies. */
-const CHAIN = new Set(['engineer', 'planner', 'plan-reviewer', 'coder', 'code-reviewer', 'tester', 'committer', 'deployer', 'web-smoke-tester']);
+const CHAIN = new Set(['engineer', 'plan-reviewer', 'coder', 'code-reviewer', 'tester', 'committer', 'deployer', 'web-smoke-tester']);
 for (const slug of botDirs.filter((d) => CHAIN.has(d))) {
   const dir = join(root, 'bots', slug);
   const files = [join('BOT.md')];
@@ -142,6 +142,6 @@ if (dry || changes.length === 0) process.exit(0);
 const failed = await applyAll(
   team,
   changes,
-  'Engineering chain: engineer, planner, plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester (synced from the template)',
+  'Engineering chain: engineer, plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester (synced from the template)',
 );
 process.exit(failed === 0 ? 0 : 1);

@@ -60,7 +60,7 @@ function harness(opts: { door?: { o_outcome: string; o_reason: string }; credent
       return Promise.resolve({
         rows: [
           {
-            id: TASK, workspace_id: '01a16e30-0000-7000-8000-0000000000c1', team_id: TEAM, goal_id: null, title: 'Fix', description: '',
+            id: TASK, workspace_id: '01a16e30-0000-7000-8000-0000000000c1', team_id: TEAM, title: 'Fix', description: '',
             state: recorded ? 'waiting_on_person' : 'in_progress', kind: 'code', priority: 'normal', owner_id: opts.owner ?? ME, branch: BRANCH, base_sha: null,
             tested_sha: recorded ? SHA : null, environment_id: null, board_id: null, thread_root_id: null,
             blocker_reason: recorded ? 'Pull request waits for a person to merge it' : '', rework_count: 0, handoff_count: 0, created_by: ME, created_at: now, updated_at: now, completed_at: null,

@@ -123,7 +123,6 @@ export * from './approvals.approval.decided.ts';
 export * from './approvals.approval.resumed.ts';
 export * from './tasks.board.created.ts';
 export * from './tasks.board.updated.ts';
-export * from './tasks.goal.updated.ts';
 export * from './tasks.task.created.ts';
 export * from './tasks.task.updated.ts';
 export * from './tasks.task.claimed.ts';

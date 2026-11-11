@@ -259,7 +259,6 @@ describe('every shipped definition', () => {
         'engineering/deployer',
         'engineering/engineer',
         'engineering/plan-reviewer',
-        'engineering/planner',
         'engineering/standup-relay',
         'engineering/tester',
         'engineering/web-smoke-tester',
@@ -425,15 +424,12 @@ describe('every shipped definition', () => {
     expect(orchestrator.fm.kind).toBe('agent');
     expect(orchestrator.fm.capabilities?.native).toEqual([
       'tasks.read',
-      'tasks.goal',
-      'goals.ensure',
-      'goals.plan',
       'boards.ensure',
       'tasks.create',
       'tasks.handoff',
       'tasks.describe',
-      'surface.render',
       'messages.post',
+      'messages.update',
       'messages.search',
       'files.search',
       'knowledge.search',
@@ -444,7 +440,7 @@ describe('every shipped definition', () => {
     for (const forbidden of ['files.write', 'pages.write', 'tasks.deploy', 'tasks.complete']) {
       expect(orchestrator.fm.capabilities?.native, forbidden).not.toContain(forbidden);
     }
-    expect(orchestrator.fm.handover?.mayTag).toEqual(['planner', 'plan-reviewer', 'coder', 'code-reviewer', 'tester', 'committer', 'deployer', 'web-smoke-tester', 'brain', 'alert-triage']);
+    expect(orchestrator.fm.handover?.mayTag).toEqual(['plan-reviewer', 'coder', 'code-reviewer', 'tester', 'committer', 'deployer', 'web-smoke-tester', 'brain', 'alert-triage']);
     expect(orchestrator.fm.evals).toEqual({ set: 'engineer', minScore: 0.9 });
   });
 
@@ -506,16 +502,8 @@ describe('every shipped definition', () => {
     for (const slug of ['coder', 'tester', 'deployer']) {
       expect(shipped.find((s) => s.slug === slug)!.fm.limits?.timeoutSeconds, slug).toBeGreaterThanOrEqual(1800);
     }
-    // the Engineer shows the plan once as the plan card (surface.render) and keeps no checklist message of its own
-    const engineerBot = shipped.find((s) => s.slug === 'engineer')!;
-    expect(engineerBot.body).toContain('surface.render');
-    expect(engineerBot.fm.capabilities?.native).not.toContain('messages.update');
-    // Planner writes the plan and sets its steps; it reads, never builds or creates
-    const planner = shipped.find((s) => s.slug === 'planner')!;
-    expect(planner.fm.handover?.mayTag).toEqual(['engineer']);
-    expect(planner.fm.capabilities?.native).toContain('goals.plan');
-    for (const forbidden of ['files.write', 'pages.write', 'tasks.create', 'tasks.deploy', 'tasks.complete']) expect(planner.fm.capabilities?.native, forbidden).not.toContain(forbidden);
-    expect(planner.fm.evals).toEqual({ set: 'planner', minScore: 0.9 });
+    // the Engineer keeps one checklist current by editing its own message
+    expect(shipped.find((s) => s.slug === 'engineer')!.body).toContain('messages.update');
     // the plan is reviewed before any code: Plan reviewer holds no write tool and answers only to the Engineer
     const planReviewer = shipped.find((s) => s.slug === 'plan-reviewer')!;
     expect(planReviewer.fm.handover?.mayTag).toEqual(['engineer']);

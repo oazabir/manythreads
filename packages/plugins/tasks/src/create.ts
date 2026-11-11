@@ -11,7 +11,6 @@ import { toTask, type TaskRow } from './rows.ts';
 export interface NewCard {
   workspaceId: string;
   teamId: string;
-  goalId: string | null;
   title: string;
   description: string;
   kind: string;
@@ -25,10 +24,9 @@ export interface NewCard {
 
 export async function insertCard(ctx: PluginContext, tx: PluginTx, card: NewCard): Promise<Task> {
   const row = (
-    await tx.query<TaskRow>('SELECT * FROM app.tasks_create($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9::uuid, $10::uuid, $11::uuid)', [
+    await tx.query<TaskRow>('SELECT * FROM app.tasks_create($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10::uuid)', [
       card.workspaceId,
       card.teamId,
-      card.goalId,
       card.title,
       card.description,
       card.kind,
@@ -49,7 +47,6 @@ export async function insertCard(ctx: PluginContext, tx: PluginTx, card: NewCard
       workspaceId: task.workspaceId,
       teamId: task.teamId,
       taskId: task.id,
-      goalId: task.goalId,
       state: task.state,
       kind: task.kind,
       priority: task.priority,

@@ -39,7 +39,6 @@ describe('task events', () => {
       workspaceId: WS,
       teamId: TEAM,
       taskId: TASK,
-      goalId: null,
       state: 'open',
       kind: 'code',
       priority: 'normal',
