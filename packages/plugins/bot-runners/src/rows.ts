@@ -1,4 +1,4 @@
-import { BotRunner, type BotRunnerKind, type BotRunnerStatus, type BotRunnerTeam } from '@manythreads/shared';
+import { BotRunner, type BotRunnerAgent, type BotRunnerKind, type BotRunnerStatus, type BotRunnerTeam } from '@manythreads/shared';
 import type { PluginTx } from '@manythreads/sdk';
 
 // The one mapper of `app.bot_runners`: a row to the shared type. Nothing else converts rows. The key is never read here, only whether there is one.
@@ -10,6 +10,7 @@ export interface RunnerRow extends Record<string, unknown> {
   name: string;
   label: string;
   kind: BotRunnerKind;
+  agent: BotRunnerAgent;
   enabled: boolean;
   is_default: boolean;
   all_teams: boolean;
@@ -35,7 +36,7 @@ export interface RunnerRow extends Record<string, unknown> {
 }
 
 /** The columns, with the owner's display name. Use as `SELECT ${RUNNER_SELECT} WHERE ...`. */
-export const RUNNER_SELECT = `r.id, r.workspace_id, r.name, r.label, r.kind, r.enabled, r.is_default, r.all_teams, r.base_url, r.secret_id, r.profile_rule,
+export const RUNNER_SELECT = `r.id, r.workspace_id, r.name, r.label, r.kind, r.agent, r.enabled, r.is_default, r.all_teams, r.base_url, r.secret_id, r.profile_rule,
   r.node, r.model_alias, r.owner_actor_id, pe.display_name AS owner_name, r.plan_label, r.credentials_expires_at, r.uploaded_at, r.terms_accepted_by,
   r.terms_accepted_at, r.max_concurrent, r.status, r.paused_until, r.status_detail, r.last_checked_at, r.created_at, r.updated_at
   FROM app.bot_runners r
@@ -59,6 +60,7 @@ export function toBotRunner(r: RunnerRow, teams: readonly BotRunnerTeam[], botCo
     name: r.name,
     label: r.label,
     kind: r.kind,
+    agent: r.agent,
     enabled: r.enabled,
     isDefault: r.is_default,
     allTeams: r.all_teams,

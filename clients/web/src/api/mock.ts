@@ -742,8 +742,8 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     if (!r) throw new MockHttpError(404, 'not_found', 'No such runner.');
     return r;
   };
-  const newRunner = (init: { maxConcurrent?: number; name: string; label: string; kind: string; baseUrl?: unknown; profileRule?: unknown; modelAlias?: unknown; status?: string; teamIds?: string[]; allTeams?: boolean; botCount?: number }): MockRunner => ({
-    id: nextId('8'), workspaceId: WORKSPACE_ID, name: init.name, label: init.label, kind: init.kind, enabled: true, isDefault: false, allTeams: init.allTeams ?? false,
+  const newRunner = (init: { maxConcurrent?: number; name: string; label: string; kind: string; baseUrl?: unknown; profileRule?: unknown; agent?: unknown; modelAlias?: unknown; status?: string; teamIds?: string[]; allTeams?: boolean; botCount?: number }): MockRunner => ({
+    id: nextId('8'), workspaceId: WORKSPACE_ID, name: init.name, label: init.label, kind: init.kind, agent: init.kind === 'hermes_gateway' ? ((init.agent as string | undefined) ?? 'hermes') : 'hermes', enabled: true, isDefault: false, allTeams: init.allTeams ?? false,
     teamIds: init.teamIds ?? [], baseUrl: (init.baseUrl as string | undefined) ?? null, hasKey: init.kind === 'hermes_gateway', profileRule: (init.profileRule as string | undefined) ?? (init.kind === 'hermes_gateway' || init.kind === 'hermes_pod' ? '{bot}' : null),
     node: null, modelAlias: (init.modelAlias as string | undefined) ?? null, ownerActorId: null, ownerName: null, planLabel: null, credentialsExpiresAt: null, uploadedAt: null, termsAcceptedBy: null,
     termsAcceptedAt: null, maxConcurrent: init.maxConcurrent ?? null, status: init.status ?? 'not_set_up', statusDetail: null, pausedUntil: null, lastCheckedAt: null, botCount: init.botCount ?? 0, createdAt: NOW, updatedAt: NOW,
@@ -769,20 +769,20 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     requireAdmin();
     seedRunners();
     if (runners.some((r) => r.name === body['name'])) throw new MockHttpError(409, 'conflict', 'A runner with that name already exists. Names are used in bot files, so pick a different one.');
-    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], modelAlias: body['modelAlias'], ...(typeof body['maxConcurrent'] === 'number' ? { maxConcurrent: body['maxConcurrent'] } : {}), ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'claude_cli' || body['kind'] === 'codex_cli' ? 'waiting_for_sign_in' : body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
+    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], agent: body['agent'], modelAlias: body['modelAlias'], ...(typeof body['maxConcurrent'] === 'number' ? { maxConcurrent: body['maxConcurrent'] } : {}), ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'claude_cli' || body['kind'] === 'codex_cli' ? 'waiting_for_sign_in' : body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
     runners.push(r);
     return created({ runner: runnerBody(r) });
   });
   on(updateBotRunnerRoute, ({ params, body }) => {
     requireAdmin();
     const r = runnerOf(params.id);
-    const changed = (['label', 'baseUrl', 'profileRule', 'modelAlias', 'enabled'] as const).filter((k) => body[k] !== undefined && body[k] !== r[k]);
+    const changed = (['label', 'baseUrl', 'profileRule', 'agent', 'modelAlias', 'enabled'] as const).filter((k) => body[k] !== undefined && body[k] !== r[k]);
     if (body['apiKey'] !== undefined) changed.push('enabled');
     if (changed.length === 0) throw new MockHttpError(400, 'validation_failed', 'Nothing to change');
     if (body['enabled'] === false && r['isDefault']) throw new MockHttpError(409, 'conflict', 'This is the default runner. Make another runner the default (or none) before switching it off.');
-    for (const k of ['label', 'baseUrl', 'profileRule', 'modelAlias', 'enabled'] as const) if (body[k] !== undefined) r[k] = body[k];
+    for (const k of ['label', 'baseUrl', 'profileRule', 'agent', 'modelAlias', 'enabled'] as const) if (body[k] !== undefined) r[k] = body[k];
     if (body['apiKey'] !== undefined) r['hasKey'] = true;
-    if (body['baseUrl'] !== undefined || body['apiKey'] !== undefined) r['status'] = 'not_set_up';
+    if (body['baseUrl'] !== undefined || body['apiKey'] !== undefined || body['agent'] !== undefined) r['status'] = 'not_set_up';
     if (body['modelAlias'] !== undefined && r['kind'] === 'llm_gateway') r['status'] = MOCK_ALIASES.includes(String(body['modelAlias'])) ? 'ready' : 'not_set_up';
     return { runner: runnerBody(r) };
   });
@@ -800,7 +800,8 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   on(testBotRunnerRoute, ({ params, body }) => {
     requireAdmin();
     const r = runnerOf(params.id);
-    const ok = r['kind'] !== 'hermes_gateway' || body['profile'] === 'probe';
+    // the bridge is asked its health, not a Hermes profile (P19-14)
+    const ok = r['kind'] !== 'hermes_gateway' || r['agent'] !== 'hermes' || body['profile'] === 'probe';
     if (r['kind'] === 'hermes_gateway') {
       r['status'] = ok ? 'ready' : 'not_set_up';
       r['statusDetail'] = ok ? null : 'The gateway did not answer as a Hermes gateway for that profile.';

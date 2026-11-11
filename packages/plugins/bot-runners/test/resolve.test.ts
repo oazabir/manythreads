@@ -29,12 +29,12 @@ const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool
 let ctx: PluginContext;
 const KEY = 'resolver-key-0123456789abcdef';
 
-const insertRunner = (name: string, fields: { kind: string; enabled?: boolean; allTeams?: boolean; baseUrl?: string; secretId?: string | null; teams?: string[] }): Promise<string> =>
+const insertRunner = (name: string, fields: { kind: string; agent?: string; enabled?: boolean; allTeams?: boolean; baseUrl?: string; secretId?: string | null; teams?: string[] }): Promise<string> =>
   sys(async (tx) => {
     const id = (
       await tx.query<{ id: string }>(
-        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, base_url, secret_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ready') RETURNING id`,
-        [omar.workspaceId, name, `Label of ${name}`, fields.kind, fields.enabled ?? true, fields.allTeams ?? false, fields.baseUrl ?? null, fields.secretId ?? null],
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, base_url, secret_id, status, agent) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ready', $9) RETURNING id`,
+        [omar.workspaceId, name, `Label of ${name}`, fields.kind, fields.enabled ?? true, fields.allTeams ?? false, fields.baseUrl ?? null, fields.secretId ?? null, fields.agent ?? 'hermes'],
       )
     ).rows[0]!.id;
     for (const team of fields.teams ?? []) await tx.query('INSERT INTO app.bot_runner_teams (runner_id, team_id) VALUES ($1, $2)', [id, team]);
@@ -63,6 +63,23 @@ describe('resolveRunner', () => {
     await insertRunner('gw', { kind: 'hermes_gateway', baseUrl: 'http://hermes.example.test:8642', secretId, teams: [TEAM_IDS.Engineering] });
     const answer = await resolve('gw');
     expect(answer).toMatchObject({ ok: true, target: { runner: 'gw', kind: 'hermes_gateway', address: 'http://hermes.example.test:8642', key: KEY, agent: 'hermes', guard: true, profileRule: '{bot}', status: 'ready' } });
+  });
+
+  it('answers a gateway runner that fronts the agent bridge with that agent (claude-code or codex), still guarded and with its own key; a Hermes one says hermes (P19-14)', async () => {
+    const secretId = await sys((tx) => putSecret(tx, KEY));
+    for (const agent of ['claude-code', 'codex'] as const) {
+      await insertRunner(`bridge-${agent}`, { kind: 'hermes_gateway', agent, baseUrl: 'http://10.42.0.1:8650', secretId, teams: [TEAM_IDS.Engineering] });
+      expect(await resolve(`bridge-${agent}`)).toMatchObject({ ok: true, target: { kind: 'hermes_gateway', address: 'http://10.42.0.1:8650', key: KEY, agent, guard: true, profileRule: '{bot}' } });
+    }
+    expect(await resolve('gw')).toMatchObject({ ok: true, target: { agent: 'hermes' } });
+    // the refusals do not change with the agent, and still hold no address or key
+    expect(await resolve('bridge-codex', TEAM_IDS.Marketing)).toMatchObject({ ok: false, reason: 'not_available_to_team' });
+  });
+
+  it('only a gateway runner can name a bridge agent: the database refuses it on any other kind, and an unknown word on a gateway (P19-14)', async () => {
+    await expect(insertRunner('pod-codex', { kind: 'hermes_pod', agent: 'codex' })).rejects.toThrow(/bot_runners_agent_is_gateway/);
+    await expect(insertRunner('llm-claude', { kind: 'llm_gateway', agent: 'claude-code' })).rejects.toThrow(/bot_runners_agent_is_gateway/);
+    await expect(insertRunner('gw-other', { kind: 'hermes_gateway', agent: 'gemini' })).rejects.toThrow(/bot_runners_agent_check/);
   });
 
   it('refuses a runner outside the team\'s list, in words that hold no address or key', async () => {

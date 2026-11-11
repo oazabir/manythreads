@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Link } from 'react-router';
-import type { BotRunner, BotRunnerKind, ListRunnerNodesResponse, OldConnection } from '@manythreads/shared';
+import type { BotRunner, BotRunnerAgent, BotRunnerKind, ListRunnerNodesResponse, OldConnection } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
 import { useQuery } from '../../../app/useQuery';
 import { Dialog } from '../../../components/Dialog';
 import { Field } from '../../../components/ui';
 import { adoptOldConnection, createBotRunner, deleteBotRunner, fetchRunnerNodes, setBotRunnerTeams, setRunnerNode, testBotRunner, updateBotRunner } from './api';
 import {
+  AGENT_CHOICES,
+  agentHint,
+  isBridge,
   cardsFor,
   type KindCard,
   NODE_AUTO,
@@ -156,6 +159,7 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
           <>
             <Field label="Address" type="url" value={v.baseUrl} placeholder="https://hermes.example.com:8642" hint="Where the gateway answers. Addresses inside this cluster, on this machine and the cloud’s metadata address are refused." error={errors.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
             <Field label="Key" type="password" autoComplete="new-password" value={v.apiKey} hint="Stored once, encrypted. It is never shown again." error={errors.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+            <AgentPick value={v.agent} onChange={(agent) => set({ agent })} />
             <Field label="Profile name rule" className="mono" value={v.profileRule} hint="How a bot’s profile is named on the gateway. {bot} stands for the bot’s short name." error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
           </>
         ) : null}
@@ -184,6 +188,21 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
   );
 }
 
+/** "What runs the bot" on a gateway runner: Hermes, or the agent bridge running Claude Code or Codex (P19-14). */
+function AgentPick({ value, onChange }: { value: BotRunnerAgent; onChange: (v: BotRunnerAgent) => void }) {
+  return (
+    <div className="rn-field">
+      <div className="fld">
+        <label htmlFor="runner-agent">What runs the bot</label>
+        <select id="runner-agent" value={value} onChange={(e) => onChange(e.target.value as BotRunnerAgent)} aria-describedby="runner-agent-hint" data-testid="runner-agent">
+          {AGENT_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+        <div className="fld-hint" id="runner-agent-hint">{agentHint(value)}</div>
+      </div>
+    </div>
+  );
+}
+
 function AliasPick({ aliases, value, onChange, problem }: { aliases: readonly string[]; value: string; onChange: (v: string) => void; problem?: string | undefined }) {
   return (
     <div className="rn-field">
@@ -209,7 +228,7 @@ function AliasPick({ aliases, value, onChange, problem }: { aliases: readonly st
 // ---- edit ------------------------------------------------------------------------------------------------------
 
 export function EditRunnerDialog({ runner, aliases, onClose, onDone }: { runner: BotRunner; aliases: readonly string[]; onClose: () => void; onDone: (r: BotRunner, note: string) => void }) {
-  const [v, setV] = useState({ label: runner.label, baseUrl: runner.baseUrl ?? '', apiKey: '', profileRule: runner.profileRule ?? '{bot}', modelAlias: runner.modelAlias ?? '' });
+  const [v, setV] = useState({ label: runner.label, baseUrl: runner.baseUrl ?? '', apiKey: '', profileRule: runner.profileRule ?? '{bot}', agent: runner.agent, modelAlias: runner.modelAlias ?? '' });
   const [errors, setErrors] = useState<FormErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -229,7 +248,7 @@ export function EditRunnerDialog({ runner, aliases, onClose, onDone }: { runner:
     sending.current = true;
     setBusy(true);
     try {
-      const touchesConnection = checked.body.baseUrl !== undefined || checked.body.apiKey !== undefined;
+      const touchesConnection = checked.body.baseUrl !== undefined || checked.body.apiKey !== undefined || checked.body.agent !== undefined;
       const { runner: saved } = await updateBotRunner(runner.id, checked.body);
       onDone(saved, touchesConnection ? `${saved.label} was saved. Run Test again before bots use it.` : `${saved.label} was saved.`);
     } catch (err) {
@@ -265,6 +284,7 @@ export function EditRunnerDialog({ runner, aliases, onClose, onDone }: { runner:
           <>
             <Field label="Address" type="url" value={v.baseUrl} error={errors.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
             <Field label="New key" type="password" autoComplete="new-password" value={v.apiKey} placeholder={runner.hasKey ? 'A key is set' : 'No key yet'} hint="Leave empty to keep the key that is set. A new address or key needs a new Test." error={errors.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
+            <AgentPick value={v.agent} onChange={(agent) => set({ agent })} />
             <Field label="Profile name rule" className="mono" value={v.profileRule} error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
           </>
         ) : null}
@@ -319,20 +339,21 @@ export function TeamsDialog({ runner, teams, onClose, onDone }: { runner: BotRun
 
 export function TestDialog({ runner, onClose, onTested }: { runner: BotRunner; onClose: () => void; onTested: (r: BotRunner, ok: boolean, text: string) => void }) {
   const [profile, setProfile] = useState('');
+  const bridge = isBridge(runner);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function run(e: FormEvent): Promise<void> {
     e.preventDefault();
-    const p = testProfile(profile);
+    const p = bridge ? { ok: true as const } : testProfile(profile);
     if (!p.ok) return setError(p.error);
     setBusy(true);
     setError(null);
     setResult(null);
     try {
       const res = await testBotRunner(runner.id, p.profile === undefined ? {} : { profile: p.profile });
-      const text = res.ok ? 'The gateway answered. This runner is ready.' : (res.error ?? 'The runner is not ready.');
+      const text = res.ok ? (bridge ? 'The bridge answered. This runner is ready.' : 'The gateway answered. This runner is ready.') : (res.error ?? 'The runner is not ready.');
       setResult({ ok: res.ok, text });
       onTested(runner, res.ok, text);
     } catch (err) {
@@ -355,8 +376,14 @@ export function TestDialog({ runner, onClose, onTested }: { runner: BotRunner; o
       }
     >
       <form id="runner-test-form" className="rn-form" onSubmit={(e) => void run(e)} noValidate>
-        <p className="dlg-text">Asks the gateway whether it answers with the saved key. Nothing the gateway says back is shown here.</p>
-        <Field label="Profile to ask for (optional)" data-autofocus="" className="mono" value={profile} onChange={(e) => setProfile(e.target.value)} hint="Leave empty to ask the gateway’s default profile. Name a profile if your gateway has no default one." />
+        {bridge ? (
+          <p className="dlg-text">Asks the bridge whether it is up, with the saved key. Nothing the bridge says back is shown here.</p>
+        ) : (
+          <>
+            <p className="dlg-text">Asks the gateway whether it answers with the saved key. Nothing the gateway says back is shown here.</p>
+            <Field label="Profile to ask for (optional)" data-autofocus="" className="mono" value={profile} onChange={(e) => setProfile(e.target.value)} hint="Leave empty to ask the gateway’s default profile. Name a profile if your gateway has no default one." />
+          </>
+        )}
         <FormError text={error} />
         <div role="status" aria-live="polite" data-testid="runner-test-result" data-ok={result ? String(result.ok) : undefined}>
           {result ? <p className={`rn-result ${result.ok ? 'ok' : 'bad'}`}>{result.ok ? '✓ ' : '! '}{result.text}</p> : null}

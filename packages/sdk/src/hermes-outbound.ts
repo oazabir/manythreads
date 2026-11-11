@@ -261,3 +261,66 @@ export async function checkHermesGateway(
   if (!res.ok) return { ok: false, error: GATEWAY_CHECK_WORDS.notHermes, ...none };
   return { ok: true, error: null, ...none };
 }
+
+/** The fixed sentences a bridge check can answer with (never anything the remote side said). */
+export const BRIDGE_CHECK_WORDS = {
+  unreachable: "The bridge did not answer. Check the address and that the agent bridge is running and listening on it.",
+  refusedKey: "The bridge refused the key. Use the key the bridge was started with (AGENT_BRIDGE_API_KEY or its key file).",
+  notBridge: 'The address did not answer as an agent bridge.',
+} as const;
+
+const BRIDGE_HEALTH_MAX_BYTES = 16 * 1024;
+
+/**
+ * Ask an agent bridge (`tools/agent-bridge`, the Claude Code or Codex agent of a gateway runner) whether it is up: `GET /health` with the key. The bridge needs the
+ * key for every request, so a 200 with `{ "status": "ok" }` proves the address, the key and that the thing there is a bridge. No profile is asked for: a bridge
+ * may have no `default` profile (the run for a bot asks for the profile named by the runner's rule). Like the gateway check, the answer is one of three fixed
+ * sentences and never what the remote side said.
+ */
+export async function checkAgentBridge(
+  target: GatewayCheckTarget,
+  options: { fetch?: typeof fetch },
+): Promise<{ ok: boolean; error: string | null; tools: null; manythreadsTools: null }> {
+  const doFetch = options.fetch ?? (target.guarded === true ? guardedFetch : fetch);
+  const none = { tools: null, manythreadsTools: null } as const;
+  let res: Response;
+  try {
+    res = await doFetch(`${target.baseUrl.replace(/\/+$/, '')}/health`, {
+      headers: { authorization: `Bearer ${target.apiKey}` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS),
+    });
+  } catch {
+    return { ok: false, error: BRIDGE_CHECK_WORDS.unreachable, ...none };
+  }
+  if (res.status === 401 || res.status === 403) {
+    await res.body?.cancel().catch(() => undefined);
+    return { ok: false, error: BRIDGE_CHECK_WORDS.refusedKey, ...none };
+  }
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    return { ok: false, error: BRIDGE_CHECK_WORDS.notBridge, ...none };
+  }
+  // A small, bounded read: whatever sits at a typed address is not trusted with memory.
+  let text = '';
+  try {
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    let size = 0;
+    while (reader) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > BRIDGE_HEALTH_MAX_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false, error: BRIDGE_CHECK_WORDS.notBridge, ...none };
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null && (parsed as { status?: unknown }).status === 'ok') return { ok: true, error: null, ...none };
+  } catch {
+    // fall through: not a bridge
+  }
+  return { ok: false, error: BRIDGE_CHECK_WORDS.notBridge, ...none };
+}

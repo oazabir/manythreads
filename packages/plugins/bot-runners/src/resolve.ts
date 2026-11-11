@@ -62,7 +62,7 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
     if (runner.kind === 'hermes_gateway') {
       if (runner.base_url === null || runner.secret_id === null) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not set up yet. An admin has to give it an address and a key.`);
       const key = await ctx.secrets.get(tx, runner.secret_id);
-      const target: RunnerTarget = { ...base, kind: 'hermes_gateway', address: runner.base_url, key, agent: 'hermes', guard: true };
+      const target: RunnerTarget = { ...base, kind: 'hermes_gateway', address: runner.base_url, key, agent: runner.agent, guard: true };
       return { ok: true, target };
     }
     // A Claude Code runner is one pod for every team on its list (shared mode, spec section 10.3): the address is its Service and the key its bridge key, which only this resolver reads. No outbound

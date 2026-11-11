@@ -20,6 +20,7 @@ owners and admins can read or write.
 | `kind` | `hermes_gateway`, `hermes_pod`, `claude_cli`, `codex_cli` or `llm_gateway` (all five are allowed by the database; see below for which can be made now) |
 | `enabled`, `all_teams`, `is_default` | switched on; open to every team; the workspace default (at most one, enforced by a unique index) |
 | `base_url`, `secret_id`, `profile_rule` | for `hermes_gateway`: the address, the id of the encrypted key (the key itself is **not** a column) and the profile name rule (default `{bot}`) |
+| `agent` | `hermes` (default), `claude-code` or `codex` (P19-14, migration `0005_runner_agent.sql`): what answers at a `hermes_gateway` runner's address. See "A gateway runner that fronts the agent bridge". Always `hermes` for every other kind (a CHECK); the same three words as `app.hermes_connections.agent` (`HermesConnectionAgent`, exported as `BotRunnerAgent`). Admin only; **not** one of the eight fields a team sees |
 | `node` | for `hermes_pod`: the machine the team pods stand on (`kubernetes.io/hostname`), or empty for "the cluster chooses". Set only through `PUT …/node` (below); a create or a patch that carries it is refused. Admin only |
 | `model_alias`, `owner_actor_id`, `plan_label`, `credentials_expires_at`, `login_id`, `terms_*`, `max_concurrent` | for the kinds that come later (the LLM gateway and the Claude and Codex pods); not shown to teams |
 | `status` | `not_set_up`, `waiting_for_sign_in`, `starting`, `ready`, `needs_sign_in`, `waiting_for_node`, `moving`, `paused`, `off`, with `status_detail` and `last_checked_at` |
@@ -41,10 +42,10 @@ All admin routes require a workspace owner or admin (`403` "Only a workspace adm
 | route | what it does |
 |---|---|
 | `GET /api/admin/bot-runners` | every runner with its team list, `hasKey`, `botCount` and the names of the teams that have bots on it |
-| `POST /api/admin/bot-runners` | make a runner. `hermes_gateway` needs `baseUrl` (passes the outbound guard) and `apiKey` (at least 8 characters). `409` for a taken name, and for `claude_cli`/`codex_cli` when the pods plugin is not on |
-| `PATCH /api/admin/bot-runners/:id` | change label, address, key, profile rule, `enabled`. A new address or key marks the state `not_set_up` until a test passes. The default runner cannot be switched off |
+| `POST /api/admin/bot-runners` | make a runner. `hermes_gateway` needs `baseUrl` (passes the outbound guard) and `apiKey` (at least 8 characters), and may carry `agent` (`hermes`, `claude-code`, `codex`; left out is `hermes`; any other kind answers `400`). `409` for a taken name, and for `claude_cli`/`codex_cli` when the pods plugin is not on |
+| `PATCH /api/admin/bot-runners/:id` | change label, address, key, profile rule, `agent` (gateway only), `enabled`. A new address, key or agent marks the state `not_set_up` until a test passes. The default runner cannot be switched off |
 | `DELETE /api/admin/bot-runners/:id` | delete. Refused with `409` while bots are placed on it; the message says how many and in which teams |
-| `POST /api/admin/bot-runners/:id/test` | ask the runner whether it answers; the state becomes `ready` or stays `not_set_up`. Answers one of fixed sentences; nothing the remote side said comes back |
+| `POST /api/admin/bot-runners/:id/test` | ask the runner whether it answers; the state becomes `ready` or stays `not_set_up`. Answers one of fixed sentences; nothing the remote side said comes back. A Hermes gateway is asked `GET /v1/models` (for the optional `profile`); a gateway whose `agent` is `claude-code` or `codex` is asked `GET /health` with the key (`checkAgentBridge` in the SDK), and `profile` is ignored |
 | `PUT /api/admin/bot-runners/:id/teams` | `{ all: true }` or `{ teams: [ids] }` |
 | `PUT /api/admin/bot-runners/default` | `{ runnerId }` or `null`. The default must be enabled and of a kind that runs bots today |
 | `GET /api/admin/bot-runners/old-connections` | the connections team leads made before runners existed, listed as "Team-owned (old)" (see Adopting) |
@@ -78,7 +79,7 @@ A cluster can have several machines (Kubernetes calls each a **node**). A team's
 `{ runner, kind, address, key, agent, guard, profileRule, status, modelAlias }` or a refusal with a fixed reason: `unknown`, `disabled`, `not_available_to_team`, `not_runnable` (a kind that cannot run a bot yet), `not_set_up`, `not_ready`. The refusal words hold no address or key, and
 a team of another workspace gets `unknown`.
 
-- `hermes_gateway`: the address from the row, the key opened from the secret (only here, only for the call), `guard: true` so the outbound guard still runs on every request.
+- `hermes_gateway`: the address from the row, the key opened from the secret (only here, only for the call), `guard: true` so the outbound guard still runs on every request, and `agent` from the row (`hermes` unless an admin chose the bridge).
 - `hermes_pod`: the address of the team's own pod (the team's `managed` connection row), no key, `guard: false` because the platform registered that address.
 - `llm_gateway` (P19-10): no address and no key; the target carries `modelAlias`, the model alias the runner names (the answer is `not_set_up` when the runner has none). The run is a loop of model calls made through the platform's own gateway, see the model runtime below.
 
@@ -112,6 +113,20 @@ enough, and switching the runner off or taking the team off its list stops the r
 (for everyone, admins included; an admin uses the runner routes). Migration `runtime-hermes/0004_adopted_connections.sql` also tightens the table's own write policies to workspace admins and the system, so the same is true below the API. Listing
 connections still works for the team, but the address is shown only to workspace admins.
 
+## A gateway runner that fronts the agent bridge (P19-14)
+
+The agent bridge (`tools/agent-bridge`, [agent-bridge](../agent-bridge.md)) runs the Claude Code or Codex program of a machine the company owns, for each run, and speaks the same run protocol as a Hermes gateway. Before runners, a team lead made a connection with `agent: claude-code` or `codex` for it. Since P19-02 nobody but an admin can write a connection, and the Runners form had no way to say "this address is a bridge", so a bridge registered as a `hermes_gateway` runner resolved with `agent: 'hermes'` and the run job sent it no run token or tools address (it would have run the bot as plain chat). The runner's `agent` column is that missing word.
+
+- **One path, reused.** `resolveRunner` returns the row's `agent` in the target; `runtime-hermes` (`targetOfRunner`) hands it to the gateway call unchanged, and the call that already existed for a connection with an agent adds the `manythreads` object (the run's own token, the tools address, the bot's runtime grants, model, budget) **only** when the agent is not `hermes`. A run that has no tools address is refused with a plain line instead of starting without tools. Nothing about the token is widened: it is the same per-run token, with the same grants, a Hermes profile never sees.
+- **Who may set it.** A workspace admin, on create and patch, like every other field. A lead or member gets `403` for the route before the body is read. A pod or LLM gateway runner cannot have an agent (`400`, and the CHECK `bot_runners_agent_is_gateway` below it).
+- **A change needs a new Test.** The state goes back to `not_set_up` on a create, and on a patch that changes `agent`, because what the last Test asked ("is this a Hermes gateway" or "is this a bridge") no longer describes the runner. The event `bot_runner.runner.updated` lists `agent` among the changed settings (not its value); the workshop's reassessment treats it as a change that matters.
+- **Test = bridge health.** For `claude-code` and `codex` the Test asks `GET /health` with the key. The bridge needs the key for every request, so a `200` with `{"status":"ok"}` proves the address, the key and that a bridge is there; no Hermes profile is needed and the bridge need not have a `default` profile. The three answers are fixed sentences ("The bridge did not answer…", "The bridge refused the key…", "The address did not answer as an agent bridge.").
+- **What teams see.** Nothing new. The function `app.bot_runners_for_team` still returns its eight fields (`name`, `label`, `kind`, `status`, `is_default`, owner name, plan label, `shared_with`); `agent` is not among them, so a team learns the kind (`hermes_gateway`) and the label an admin wrote, and nothing about the program behind the address. `e2e/runners/visibility.spec.ts` seeds a bridge runner and searches every non-admin answer for it.
+- **Profiles.** The profile a run asks for is the runner's profile rule with the bot's short name (`{bot}`). `{team}` is replaced only for the pod runners, whose bridge names profiles `<team>--<bot>`.
+- **The Runners page.** Add or Change a Hermes gateway shows the select **What runs the bot** with **Hermes**, **Claude Code on the bridge** and **Codex on the bridge**; the list row says "Claude Code on the bridge" instead of "Hermes gateway" for a bridge; the Test dialog drops the Hermes profile field for a bridge.
+- **Setting one up on the machine that runs the cluster:** [runners-live.md, host bridge](../runbooks/runners-live.md#host-bridge).
+- **Adopting** an old bridge connection into a runner is still not offered (the Adopting section below). Make the runner by hand and move the bots with `placement.runs_on`.
+
 ## Adopting a connection
 
 `GET /api/admin/bot-runners/old-connections` lists the connections with no `runner_name`, with team, bot count and whether they can be adopted (only the agent `hermes`; Claude Code and Codex connections are not adoptable). `POST …/adopt` takes an optional `name` and
@@ -132,7 +147,7 @@ which runner (id and name); never an address, key, node or sign-in, and `updated
 - No address, key or node reaches a lead, a member, an error text, an event, an audit row or a log. (An admin reads the node in the runner list and the machine picker; that is all.)
 - Every outbound address passes the guard when it is saved and again when a call is made.
 - Plugin code never calls the database outside `ctx.db`; reading a key needs a system transaction.
-- Migrations are forward-only (`migrations/0001_bot_runners.sql`; `0002_runner_node.sql` first sets `node` to null on any row that breaks either rule, then adds two checks on `node`: a machine-name shape, and only on pod kinds. They are `NOT VALID`, which skips the old rows when the check is added but still judges a row again whenever it is updated, so without the clean-up an unrelated edit of a legacy row would fail with `23514`).
+- Migrations are forward-only (`migrations/0001_bot_runners.sql`; `0005_runner_agent.sql` adds `agent` with a default and two CHECKs; `0002_runner_node.sql` first sets `node` to null on any row that breaks either rule, then adds two checks on `node`: a machine-name shape, and only on pod kinds. They are `NOT VALID`, which skips the old rows when the check is added but still judges a row again whenever it is updated, so without the clean-up an unrelated edit of a legacy row would fail with `23514`).
 
 ## Tests
 

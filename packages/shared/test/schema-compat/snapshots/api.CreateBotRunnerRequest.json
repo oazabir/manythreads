@@ -36,6 +36,14 @@
       "maxLength": 80,
       "pattern": "^[A-Za-z0-9._{}-]+$"
     },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "hermes",
+        "claude-code",
+        "codex"
+      ]
+    },
     "modelAlias": {
       "type": "string",
       "minLength": 1,

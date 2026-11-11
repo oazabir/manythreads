@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { ActorId, BotRunnerId, TeamId, WorkspaceId } from '../ids.ts';
+import { HermesConnectionAgent } from './hermes.ts';
 
 // Bot runners (PLAN Phase 19, P19-02): the places a bot can run, set up by a workspace admin. Every enum matches a CHECK of the bot-runners migration
 // 0001_bot_runners.sql; the kernel's schema-enums test compares the two.
@@ -12,6 +13,15 @@ import { ActorId, BotRunnerId, TeamId, WorkspaceId } from '../ids.ts';
  */
 export const BotRunnerKind = z.enum(['hermes_gateway', 'hermes_pod', 'claude_cli', 'codex_cli', 'llm_gateway']);
 export type BotRunnerKind = z.infer<typeof BotRunnerKind>;
+
+/**
+ * What answers behind a `hermes_gateway` runner's address (P19-14): `hermes` is a Hermes gateway (the default), `claude-code` and `codex` are the agent
+ * bridge (`tools/agent-bridge`, docs/agent-bridge.md) on a machine of the company's, which runs that command-line tool for each run and gets the run's token
+ * and tools address in the request. The same three words as a Hermes connection's `agent` (and the same CHECK), so one definition serves both. Any other kind of
+ * runner is always `hermes` here: the pod kinds name their own agent by their kind.
+ */
+export const BotRunnerAgent = HermesConnectionAgent;
+export type BotRunnerAgent = z.infer<typeof BotRunnerAgent>;
 
 /** The kinds an admin can make today; the other two answer "not available yet" until the pod tasks of the phase are built. */
 export const CREATABLE_BOT_RUNNER_KINDS = ['hermes_gateway', 'hermes_pod', 'llm_gateway'] as const;
@@ -80,6 +90,8 @@ export const BotRunner = z.object({
   name: BotRunnerName,
   label: z.string(),
   kind: BotRunnerKind,
+  /** `hermes_gateway` only: what answers at the address (see `BotRunnerAgent`). `hermes` for every other kind. */
+  agent: BotRunnerAgent,
   enabled: z.boolean(),
   isDefault: z.boolean(),
   /** True: every team may use it. False: only `teams`. */

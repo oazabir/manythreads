@@ -3,7 +3,7 @@
 The agent bridge is a small program you run on your own machine (a laptop, a build server, a workstation). It lets a manythreads bot do its
 work with the **Claude Code** command-line tool (`claude`) or the **Codex** command-line tool (`codex`) instead of Hermes, the agent runtime
 the platform ships. The bridge speaks the same run protocol as a Hermes gateway (start a run, follow its events, stop it), so the manythreads
-server needs no extra protocol: you add the bridge as a connection and place a bot on it.
+server needs no extra protocol: a workspace admin adds the bridge under Runners (as a Hermes gateway runner that says what runs the bot) and a bot is placed on it.
 
 You need: Node 22, the command-line tool you want to use installed and already signed in on that machine, and the code of this repository
 (`tools/agent-bridge`). The bridge starts one process of the tool for each run, in a working folder you choose, and nothing else.
@@ -63,10 +63,13 @@ Security).
 
 ## Add it in manythreads
 
-1. A workspace admin adds it, not a team lead (the runner catalog, `docs/plugins/bot-runners.md`; Claude Code and Codex runners are not available there yet, so a connection made before keeps working and new ones wait for those tasks): **agent** `claude-code` or `codex`, **base URL** the address of the bridge (for example
-   `https://bridge.example.com:8650`, or whatever reaches it), and its **API key**.
-2. In the bot's `BOT.md`, set `placement.gateway.connection` to the connection's name. `placement.gateway.profile` is optional and picks a
-   profile of the config file.
+1. A workspace admin adds it, not a team lead: Settings > Workspace > Runners > Add a runner > **Hermes gateway** (the runner catalog, `docs/plugins/bot-runners.md`). The Claude Code and Codex cards on that page are for pods inside the cluster; a bridge on your own machine is a Hermes gateway runner with a different answer to **What runs the bot**:
+   - **Address**: where the bridge answers, for example `http://10.42.0.1:8650` for a bridge on the machine that runs the cluster (see [Run it on the machine that runs the cluster](runbooks/runners-live.md#host-bridge)), or `https://bridge.example.com:8650`. The address passes the same outbound guard as any gateway: loopback and link-local addresses are refused.
+   - **Key**: the bridge's API key. It is stored encrypted and never shown again.
+   - **What runs the bot**: **Claude Code on the bridge** or **Codex on the bridge** (stored as `agent` `claude-code` or `codex`; the default **Hermes** is a Hermes gateway). This is what makes the server send each run the run's own token and the address of its tools; with **Hermes** chosen the bridge would answer as plain chat with no platform tools. It changes nothing about what a token can do.
+   - **Profile name rule**: how a bot's profile is named on the bridge, `{bot}` for the bot's short name. Each name the rule makes must be a profile of the config file, or the bridge's `default` profile is used.
+   - Then choose the teams that may use it, and press **Test**. For a bridge, Test asks `GET /health` with the key (it needs no `default` profile); the answer is one of three fixed sentences.
+2. In the bot's `BOT.md`, set `placement.runs_on` to the runner's short name (for example `host-claude`). The old way, a team lead's connection with `placement.gateway.connection`, still runs for a connection made before runners existed; nobody can make a new one.
 
 The server then sends each run to the bridge. Several bots can share one bridge; use profiles to give them separate working folders.
 

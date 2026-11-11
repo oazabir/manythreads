@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   BotRunner,
+  BotRunnerAgent,
   BotRunnerKind,
   BotRunnerLabel,
   BotRunnerName,
@@ -58,6 +59,8 @@ export const CreateBotRunnerRequest = z.strictObject({
   /** Hermes gateway: its key. */
   apiKey: BotRunnerApiKey.optional(),
   profileRule: BotRunnerProfileRule.optional(),
+  /** Hermes gateway: what answers at the address; left out means `hermes`. `claude-code` and `codex` are the agent bridge (P19-14). Admin only, like every field here. */
+  agent: BotRunnerAgent.optional(),
   /** LLM gateway: the alias from the LLM page. */
   modelAlias: z.string().min(1).max(40).optional(),
   /** Claude Code: runs at once on this runner (1 to 4); left out means the install's default. */
@@ -76,6 +79,8 @@ export const UpdateBotRunnerRequest = z.strictObject({
   baseUrl: HermesBaseUrl.optional(),
   apiKey: BotRunnerApiKey.optional(),
   profileRule: BotRunnerProfileRule.optional(),
+  /** Hermes gateway only (P19-14): what answers at the address. A change needs a new Test. */
+  agent: BotRunnerAgent.optional(),
   modelAlias: z.string().min(1).max(40).optional(),
   enabled: z.boolean().optional(),
 });

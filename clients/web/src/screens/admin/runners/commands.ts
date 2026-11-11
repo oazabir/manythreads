@@ -7,6 +7,7 @@ import {
   inspectClaudeCredentials,
   inspectCodexCredentials,
   type BotRunner,
+  type BotRunnerAgent,
   type ClaudeRunnerUsageRow,
   type BotRunnerKind,
   type BotRunnerStatus,
@@ -80,6 +81,34 @@ const KIND_WORDS: Record<BotRunnerKind, string> = {
   llm_gateway: 'LLM gateway',
 };
 export const kindWords = (k: BotRunnerKind): string => KIND_WORDS[k];
+
+// ---- what runs the bot (a Hermes gateway runner, P19-14) --------------------------------------------------------
+
+/** The choices of "What runs the bot" on a gateway runner, in the words an admin reads. `hermes` is first and the default. */
+export const AGENT_CHOICES: ReadonlyArray<{ value: BotRunnerAgent; label: string; hint: string }> = [
+  { value: 'hermes', label: 'Hermes', hint: 'A Hermes gateway. The bot reaches this workspace with its own profile on the gateway.' },
+  {
+    value: 'claude-code',
+    label: 'Claude Code on the bridge',
+    hint: 'The agent bridge on one of your machines runs the Claude Code program for each run. The bot gets this workspace’s tools for that run only.',
+  },
+  {
+    value: 'codex',
+    label: 'Codex on the bridge',
+    hint: 'The agent bridge on one of your machines runs the Codex program for each run. The bot gets this workspace’s tools for that run only.',
+  },
+];
+export const agentHint = (a: BotRunnerAgent): string => AGENT_CHOICES.find((c) => c.value === a)?.hint ?? '';
+
+/** True when the runner is a gateway that answers as the agent bridge (Claude Code or Codex) rather than Hermes. */
+export const isBridge = (r: { kind?: BotRunnerKind; agent?: BotRunnerAgent | undefined }): boolean => (r.kind === undefined || r.kind === 'hermes_gateway') && r.agent !== undefined && r.agent !== 'hermes';
+
+/** What a runner is, for the list: the kind, and for a gateway that is the bridge, which program it runs. */
+export const runnerKindWords = (r: Pick<BotRunner, 'kind'> & { agent?: BotRunnerAgent | undefined }): string => {
+  if (r.kind === 'hermes_gateway' && r.agent === 'claude-code') return 'Claude Code on the bridge';
+  if (r.kind === 'hermes_gateway' && r.agent === 'codex') return 'Codex on the bridge';
+  return KIND_WORDS[r.kind];
+};
 
 // ---- state ----------------------------------------------------------------------------------------------------
 
@@ -208,11 +237,13 @@ export function teamOptions(loaded: ReadonlyArray<{ id: string; name: string }>,
 
 /** True when the edit form differs from the saved runner, so Save only shows when there is something to save. */
 export function editChanged(
-  current: Pick<BotRunner, 'kind' | 'label' | 'baseUrl' | 'profileRule' | 'modelAlias'>,
-  v: Pick<RunnerFormValues, 'label' | 'baseUrl' | 'apiKey' | 'profileRule' | 'modelAlias'>,
+  current: Pick<BotRunner, 'kind' | 'label' | 'baseUrl' | 'profileRule' | 'modelAlias'> & { agent?: BotRunnerAgent },
+  v: Pick<RunnerFormValues, 'label' | 'baseUrl' | 'apiKey' | 'profileRule' | 'modelAlias'> & { agent?: BotRunnerAgent },
 ): boolean {
   if (v.label.trim() !== current.label) return true;
-  if (current.kind === 'hermes_gateway') return v.baseUrl.trim() !== (current.baseUrl ?? '') || v.apiKey !== '' || v.profileRule.trim() !== (current.profileRule ?? DEFAULT_PROFILE_RULE);
+  if (current.kind === 'hermes_gateway') {
+    return v.baseUrl.trim() !== (current.baseUrl ?? '') || v.apiKey !== '' || v.profileRule.trim() !== (current.profileRule ?? DEFAULT_PROFILE_RULE) || (v.agent ?? current.agent ?? 'hermes') !== (current.agent ?? 'hermes');
+  }
   if (current.kind === 'llm_gateway') return v.modelAlias !== (current.modelAlias ?? '');
   return false;
 }
@@ -276,13 +307,15 @@ export type RunnerFormValues = {
   baseUrl: string;
   apiKey: string;
   profileRule: string;
+  /** Hermes gateway: what answers at the address (P19-14). */
+  agent: BotRunnerAgent;
   modelAlias: string;
   teams: TeamsChoice;
   /** Claude Code and Codex only: how many bot runs at once, 1 to 4. */
   maxConcurrent: number;
 };
 
-export const emptyForm = (): RunnerFormValues => ({ label: '', name: '', baseUrl: '', apiKey: '', profileRule: DEFAULT_PROFILE_RULE, modelAlias: '', teams: NO_TEAMS, maxConcurrent: 2 });
+export const emptyForm = (): RunnerFormValues => ({ label: '', name: '', baseUrl: '', apiKey: '', profileRule: DEFAULT_PROFILE_RULE, agent: 'hermes', modelAlias: '', teams: NO_TEAMS, maxConcurrent: 2 });
 
 type Checked = { ok: true; body: CreateBotRunnerRequest } | { ok: false; errors: FormErrors };
 
@@ -297,6 +330,8 @@ export function validateNew(kind: BotRunnerKind, v: RunnerFormValues): Checked {
     draft['baseUrl'] = v.baseUrl.trim();
     draft['apiKey'] = v.apiKey;
     draft['profileRule'] = v.profileRule.trim() === '' ? DEFAULT_PROFILE_RULE : v.profileRule.trim();
+    // Left out for Hermes, the server's default, so the request stays what it was before the field existed.
+    if (v.agent !== 'hermes') draft['agent'] = v.agent;
   }
   if (kind === 'claude_cli' || kind === 'codex_cli') draft['maxConcurrent'] = v.maxConcurrent;
   if (kind === 'llm_gateway') {
@@ -312,8 +347,8 @@ export function validateNew(kind: BotRunnerKind, v: RunnerFormValues): Checked {
 
 /** What an edit of a gateway changes. Only changed fields are sent; a blank key means "keep the key that is set". */
 export function validateEdit(
-  current: Pick<BotRunner, 'kind' | 'label' | 'baseUrl' | 'profileRule' | 'modelAlias'>,
-  v: Pick<RunnerFormValues, 'label' | 'baseUrl' | 'apiKey' | 'profileRule' | 'modelAlias'>,
+  current: Pick<BotRunner, 'kind' | 'label' | 'baseUrl' | 'profileRule' | 'modelAlias'> & { agent?: BotRunnerAgent },
+  v: Pick<RunnerFormValues, 'label' | 'baseUrl' | 'apiKey' | 'profileRule' | 'modelAlias'> & { agent?: BotRunnerAgent },
 ): { ok: true; body: UpdateBotRunnerRequest; changed: boolean } | { ok: false; errors: FormErrors } {
   const draft: Record<string, unknown> = {};
   if (v.label.trim() !== current.label) draft['label'] = v.label.trim();
@@ -321,6 +356,7 @@ export function validateEdit(
     if (v.baseUrl.trim() !== (current.baseUrl ?? '')) draft['baseUrl'] = v.baseUrl.trim();
     if (v.apiKey !== '') draft['apiKey'] = v.apiKey;
     if (v.profileRule.trim() !== (current.profileRule ?? DEFAULT_PROFILE_RULE)) draft['profileRule'] = v.profileRule.trim();
+    if ((v.agent ?? current.agent ?? 'hermes') !== (current.agent ?? 'hermes')) draft['agent'] = v.agent;
   }
   if (current.kind === 'llm_gateway' && v.modelAlias !== (current.modelAlias ?? '')) draft['modelAlias'] = v.modelAlias;
   const r = UpdateBotRunnerRequest.safeParse(draft);

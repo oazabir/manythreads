@@ -86,6 +86,18 @@ Today the Runners page on the live site shows the Claude Code and Codex cards sh
 - [ ] The Runners page now lets you add a Claude Code runner. Run `e2e/screens/task.verify-bundle-e.shots.ts` against live (read only) to see it: `MANYTHREADS_LIVE_URL=https://manythreads.kahf.to pnpm -C e2e exec playwright test -c screens/task.config.ts verify-bundle-e --retries=0 --workers=1`.
 - **Undo:** `claudePod.enabled: false`, deploy. Pods stop; volumes and Secrets stay until you delete the runners.
 
+### Host bridge
+
+The host's own `claude` and `codex` (already signed in for you) can run bots through the agent bridge (`tools/agent-bridge`), without any pod and without a second login. It is a Hermes gateway runner whose **What runs the bot** says "Claude Code on the bridge" or "Codex on the bridge" (P19-14). This subsection only tells you what to run; the measured details, the checks of the network path and the example unit are in [`docs/spikes/host-claude-codex-measured.md`](../spikes/host-claude-codex-measured.md#how-the-live-pods-can-reach-this-hosts-bridge-written-down-nothing-executed-on-live). Nothing here is done by the platform for you.
+
+- [ ] **Bind to the pod network only:** start the bridge with `--listen 10.42.0.1:8650` (the address the cluster's pods reach the host at). Never `0.0.0.0` and never the public address: the bridge starts processes that can write files. If a firewall is turned on later, allow `10.42.0.0/24` to `10.42.0.1` on tcp `8650` only.
+- [ ] **Key file, mode 0600:** make at least 24 random bytes in hex into a file only the bridge's user can read (`--key-file /etc/manythreads-bridge/api-key`, `chmod 600`); the bridge refuses a file others can read. The same key is typed into the runner's form and is stored encrypted.
+- [ ] **A config with one profile per bot name** (the runner's rule `{bot}` makes the profile name from the bot's short name), each with `agent` (`claude-code` or `codex`) and its own `workdir`, a clone and not the live checkout.
+- [ ] **A unit of its own,** run as a user that owns the `claude` and `codex` logins (see the example unit in the spike page; it uses `--config`, `--listen 10.42.0.1:8650` and `--key-file`). Do not copy the login file to a pod: two copies of one login sign each other out.
+- [ ] **Add the runner:** Settings > Workspace > Runners > Add a runner > Hermes gateway. Address `http://10.42.0.1:8650`, the key, **What runs the bot** = Claude Code on the bridge (or Codex on the bridge), profile rule `{bot}`, then choose the teams. **Test** asks the bridge's `/health` with the key and must say "The bridge answered. This runner is ready."
+- [ ] **Place one bot:** `placement.runs_on: <the runner's short name>` in its `BOT.md`, mention it in a thread, read the answer. The bot gets the platform tools for that run only; `journalctl -u <the unit>` shows one line per run, no texts.
+- **Undo:** delete the runner on the Runners page (refused while a bot is placed on it), stop the unit.
+
 ## 6. Other owner-blocked items from this bundle (listed so none is lost)
 
 - [ ] A bucket and keys for database WAL archiving, and the Barman Cloud plugin (`postgres.objectStore`, off by default). Until then the nightly `pg_dump` is the backup, and the System health page says "Replica lag: no standby" on a single-machine install.

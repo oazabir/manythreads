@@ -201,7 +201,7 @@ async function botsOnDefault(tx: PluginTx, workspaceId: string): Promise<BotTarg
 }
 
 /** The changes of a runner that matter to a bot running on it. A new label alone does not. */
-const RUNNER_CHANGES_THAT_MATTER = new Set(['address', 'key', 'profile_rule', 'node', 'model_alias', 'enabled']);
+const RUNNER_CHANGES_THAT_MATTER = new Set(['address', 'key', 'profile_rule', 'agent', 'node', 'model_alias', 'enabled']);
 
 export function registerReassessmentSubscribers(ctx: PluginContext): void {
   ctx.events.subscribe('knowledge.base.created', async (raw: PluginEvent, tx: PluginTx) => {

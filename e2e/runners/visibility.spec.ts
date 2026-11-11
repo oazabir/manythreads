@@ -17,15 +17,29 @@ test.setTimeout(300_000);
 let world: RunnersWorld;
 let ids = { runnerId: '', botId: '', slug: 'engineering', botSlug: 'code-helper' };
 let needles: string[] = [];
+const BRIDGE = { name: 'host-claude', url: 'http://10.42.0.1:8650', host: '10.42.0.1:8650', key: 'host-bridge-key-CANARY-P1914' } as const;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ playwright }) => {
   world = await startRunnersWorld();
   // Nadia is a plain member of Engineering in the seed; the lead of this proof is she, promoted (as the roster and placement specs do)
   await world.stack.sql("UPDATE app.team_members SET role = 'lead' WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf('nadia')]);
   const runner = (await world.stack.sql<{ id: string }>("SELECT id FROM app.bot_runners WHERE name = 'claude-shared'"))[0]!;
   const bot = (await world.stack.sql<{ id: string }>("SELECT b.id FROM app.bots b JOIN app.teams t ON t.id = b.team_id WHERE t.slug = 'engineering' AND b.slug = 'code-helper'"))[0]!;
   ids = { ...ids, runnerId: runner.id, botId: bot.id };
-  needles = [...SEED_VALUES, ...podNames(world.k8s)];
+  // P19-14: a gateway runner that fronts the agent bridge on the host (its address and key are as secret as any gateway's); made through the admin API like the seed's runners
+  const omar = await apiOn(playwright, world.stack, 'omar');
+  try {
+    const made = await omar.ctx.fetch('/api/admin/bot-runners', {
+      method: 'POST',
+      headers: { ...(await omar.headers()), 'content-type': 'application/json' },
+      data: JSON.stringify({ name: BRIDGE.name, label: 'Claude Code on the host', kind: 'hermes_gateway', baseUrl: BRIDGE.url, apiKey: BRIDGE.key, agent: 'claude-code', teams: { all: true } }),
+      failOnStatusCode: false,
+    });
+    expect(made.status(), await made.text()).toBe(201);
+  } finally {
+    await omar.ctx.dispose();
+  }
+  needles = [...SEED_VALUES, ...podNames(world.k8s), BRIDGE.url, BRIDGE.host, BRIDGE.key];
 });
 test.afterAll(async () => {
   await world?.stop();
@@ -125,4 +139,37 @@ test('the pages of a bot show a lead, a member and a guest nothing of the runner
       await context.close();
     }
   }
+});
+
+test('a gateway runner that fronts the bridge: only an admin sets or reads what runs behind it, and a team sees the same eight fields as for any runner', async ({ playwright }) => {
+  const omar = await apiOn(playwright, world.stack, 'omar');
+  try {
+    const list = await ask(omar, 'GET', '/api/admin/bot-runners');
+    expect(list.text, 'control: the admin sees it').toMatch(/"name":"host-claude"[^}]*"agent":"claude-code"|"agent":"claude-code"[^}]*"name":"host-claude"/);
+    expect(list.text).not.toContain(BRIDGE.key);
+  } finally {
+    await omar.ctx.dispose();
+  }
+  for (const who of ['nadia', 'rafi'] as const) {
+    const api = await apiOn(playwright, world.stack, who);
+    try {
+      const headers = { ...(await api.headers()), 'content-type': 'application/json' };
+      const create = await api.ctx.fetch('/api/admin/bot-runners', { method: 'POST', headers, data: JSON.stringify({ name: 'sneaky', label: 'x', kind: 'hermes_gateway', baseUrl: BRIDGE.url, apiKey: BRIDGE.key, agent: 'codex' }), failOnStatusCode: false });
+      expect(create.status(), `${who} create`).toBe(403);
+      const id = (await world.stack.sql<{ id: string }>("SELECT id FROM app.bot_runners WHERE name = 'host-claude'"))[0]!.id;
+      const patch = await api.ctx.fetch(`/api/admin/bot-runners/${id}`, { method: 'PATCH', headers, data: JSON.stringify({ agent: 'codex' }), failOnStatusCode: false });
+      expect(patch.status(), `${who} patch`).toBe(403);
+      const team = await ask(api, 'GET', '/api/teams/engineering/bot-runners');
+      expect(team.status, team.text).toBe(200);
+      const items = (JSON.parse(team.text) as { items: Array<Record<string, unknown>> }).items;
+      const mine = items.find((r) => r['name'] === 'host-claude');
+      expect(mine, `${who}: the runner is in the team's list by name`).toBeDefined();
+      expect(Object.keys(mine!).sort()).toEqual(['isDefault', 'kind', 'label', 'name', 'ownerName', 'planLabel', 'sharedWith', 'status']);
+      expect(team.text).not.toContain('claude-code');
+      expectNoLeak(team, needles);
+    } finally {
+      await api.ctx.dispose();
+    }
+  }
+  expect((await world.stack.sql<{ agent: string }>("SELECT agent FROM app.bot_runners WHERE name = 'host-claude'"))[0]!.agent).toBe('claude-code');
 });

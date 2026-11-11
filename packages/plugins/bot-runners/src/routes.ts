@@ -1,5 +1,5 @@
 import { conflict, forbidden, invalid, json, requireTeam, route, type ClaudePodsProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
-import { checkHermesGateway } from '@manythreads/sdk/hermes-outbound';
+import { checkAgentBridge, checkHermesGateway } from '@manythreads/sdk/hermes-outbound';
 import {
   BotRunnerPathParams,
   CreateBotRunnerRequest,
@@ -74,11 +74,12 @@ async function writeTeams(tx: PluginTx, runnerId: string, teams: BotRunnerTeams)
 }
 
 /** Which settings belong to which kind: a setting on the wrong kind is refused rather than stored and ignored. */
-function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown; profileRule?: unknown; modelAlias?: unknown; maxConcurrent?: unknown }): void {
+function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown; profileRule?: unknown; agent?: unknown; modelAlias?: unknown; maxConcurrent?: unknown }): void {
   const gateway = kind === 'hermes_gateway';
   const pod = kind === 'hermes_pod';
   if ((s.baseUrl !== undefined || s.apiKey !== undefined) && !gateway) throw invalid('An address and a key belong to a Hermes gateway runner only.');
   if (s.profileRule !== undefined && !gateway && !pod) throw invalid('A profile rule belongs to a Hermes runner only.');
+  if (s.agent !== undefined && !gateway) throw invalid('What answers at the address (Hermes, Claude Code or Codex on the bridge) belongs to a Hermes gateway runner only.');
   if (s.modelAlias !== undefined && kind !== 'llm_gateway') throw invalid('A model alias belongs to an LLM gateway runner only.');
   if (s.maxConcurrent !== undefined && !isPodCli(kind)) throw invalid('How many runs at once belongs to a Claude Code or Codex runner only.');
 }
@@ -134,8 +135,8 @@ export function registerRoutes(ctx: PluginContext): void {
         detail = 'Waiting for a sign-in file. Upload one to start this runner.';
       }
       const inserted = await tx.query<{ id: string }>(
-        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, base_url, secret_id, profile_rule, model_alias, status, status_detail, max_concurrent)
-         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11, $12) RETURNING id`,
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, base_url, secret_id, profile_rule, model_alias, status, status_detail, max_concurrent, agent)
+         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11, $12, $13) RETURNING id`,
         [
           workspaceId,
           body.name,
@@ -149,6 +150,7 @@ export function registerRoutes(ctx: PluginContext): void {
           status,
           detail,
           body.maxConcurrent ?? null,
+          body.agent ?? 'hermes',
         ],
       );
       const id = inserted.rows[0]?.id;
@@ -174,7 +176,7 @@ export function registerRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       const current = await loadRunner(tx, id);
       checkSettingsFit(current.kind, body);
-      const changed: Array<'label' | 'address' | 'key' | 'profile_rule' | 'model_alias' | 'enabled'> = [];
+      const changed: Array<'label' | 'address' | 'key' | 'profile_rule' | 'agent' | 'model_alias' | 'enabled'> = [];
       const sets: string[] = [];
       const values: unknown[] = [id];
       const set = (column: string, value: unknown): void => {
@@ -204,6 +206,12 @@ export function registerRoutes(ctx: PluginContext): void {
       if (body.profileRule !== undefined && body.profileRule !== current.profile_rule) {
         set('profile_rule', body.profileRule);
         changed.push('profile_rule');
+      }
+      if (body.agent !== undefined && body.agent !== current.agent) {
+        set('agent', body.agent);
+        changed.push('agent');
+        // What the last Test asked (a Hermes gateway or the bridge's health) no longer says whether this runner answers as what it now is.
+        resetCheck = true;
       }
       if (body.modelAlias !== undefined && body.modelAlias !== current.model_alias) {
         const alias = requireAlias(body.modelAlias);
@@ -306,7 +314,9 @@ export function registerRoutes(ctx: PluginContext): void {
           const secretId = current.secret_id;
           const key = await ctx.db.system((sys) => ctx.secrets.get(sys, secretId), { workspaceId: current.workspace_id });
           // The same check as a connection test: three fixed sentences, through the outbound guard, and never anything the remote side said.
-          const outcome = await checkHermesGateway({ baseUrl: current.base_url, apiKey: key, guarded: true }, body.profile, {});
+          // A bridge (Claude Code or Codex on a machine of the company's) is asked its health, not a Hermes profile: the bridge may have no `default` profile to list.
+          const target = { baseUrl: current.base_url, apiKey: key, guarded: true };
+          const outcome = current.agent === 'hermes' ? await checkHermesGateway(target, body.profile, {}) : await checkAgentBridge(target, {});
           ok = outcome.ok;
           error = outcome.error;
         }

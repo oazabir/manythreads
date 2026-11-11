@@ -10,7 +10,7 @@ export const BotRunnerUpdatedEvent = z.object({
   workspaceId: WorkspaceId,
   runnerId: BotRunnerId,
   name: BotRunnerName,
-  changed: z.array(z.enum(['label', 'address', 'key', 'profile_rule', 'node', 'model_alias', 'enabled'])).min(1),
+  changed: z.array(z.enum(['label', 'address', 'key', 'profile_rule', 'agent', 'node', 'model_alias', 'enabled'])).min(1),
   actorId: ActorId,
   at: IsoDateTime,
 });

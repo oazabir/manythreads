@@ -420,3 +420,68 @@ test('at 390 px nothing scrolls sideways, on the list, in the chooser and in a f
     await context.close();
   }
 });
+
+test('a gateway for the bridge: the form asks what runs the bot, the row says it, Test asks the bridge, and the phone width holds (P19-14)', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH);
+  try {
+    await page.getByTestId('runner-add').click();
+    await page.getByTestId('runner-kind-hermes_gateway').click();
+    const form = page.getByRole('dialog', { name: 'Add a runner: Hermes gateway' });
+    await expect(form).toBeVisible();
+    const pick = form.getByLabel('What runs the bot');
+    await expect(pick.locator('option')).toHaveText(['Hermes', 'Claude Code on the bridge', 'Codex on the bridge']);
+    await expect(pick).toHaveValue('hermes');
+    await form.getByLabel('Display name').fill('Claude on the host');
+    await form.getByLabel('Address', { exact: true }).fill(gateway.url);
+    await form.getByLabel('Key', { exact: true }).fill(KEY);
+    await pick.selectOption({ label: 'Claude Code on the bridge' });
+    await expect(form).toContainText('runs the Claude Code program for each run');
+    await page.getByTestId('runner-teams-one').check();
+    await page.getByTestId('runner-teams-select').selectOption({ label: 'Engineering' });
+    await page.screenshot({ path: process.env['MANYTHREADS_SHOTS_DIR'] ? `${process.env['MANYTHREADS_SHOTS_DIR']}/agent-form-1440.png` : test.info().outputPath('agent-form-1440.png') });
+    await page.getByTestId('runner-add-submit').click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const bridge = row(page, 'claude-on-the-host');
+    await expect(bridge).toBeVisible();
+    await expect(bridge).toContainText('Claude Code on the bridge');
+    await expect(bridge).not.toContainText('Hermes gateway');
+    expect((await runnersByApi(playwright)).length).toBeGreaterThan(0);
+
+    // Test asks the bridge's health: there is no profile to type
+    await bridge.getByTestId('runner-test').click();
+    const testDialog = page.getByRole('dialog', { name: 'Test Claude on the host' });
+    await expect(testDialog).toBeVisible();
+    await expect(testDialog.getByLabel('Profile to ask for (optional)')).toHaveCount(0);
+    await testDialog.getByTestId('runner-test-run').click();
+    await expect(testDialog.getByTestId('runner-test-result')).toContainText('The bridge answered. This runner is ready.');
+    await testDialog.getByRole('button', { name: 'Close' }).click();
+    await expect(bridge.getByTestId('runner-state')).toHaveAttribute('data-state', 'ready');
+
+    // changing it back to Hermes is something to save, and it needs a new Test
+    await bridge.getByRole('button', { name: 'Change Claude on the host' }).click();
+    const edit = page.getByRole('dialog', { name: 'Change Claude on the host' });
+    await expect(edit.getByLabel('What runs the bot')).toHaveValue('claude-code');
+    await expect(page.getByTestId('runner-edit-close')).toBeVisible();
+    await edit.getByLabel('What runs the bot').selectOption('codex');
+    await edit.getByTestId('runner-edit-submit').click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(bridge).toContainText('Codex on the bridge');
+    await expect(bridge.getByTestId('runner-state')).toHaveAttribute('data-state', 'not_set_up');
+    await expect(page.getByTestId('runner-status')).toContainText('Run Test again before bots use it');
+
+    // at the phone width the form and the select fit
+    await page.setViewportSize({ width: PHONE.width, height: PHONE.height });
+    await page.getByTestId('runner-add').click();
+    await page.getByTestId('runner-kind-hermes_gateway').click();
+    await expect(page.getByLabel('What runs the bot')).toBeVisible();
+    expect(await noSidewaysScroll(page)).toBe(true);
+    const box = await page.getByRole('dialog').boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(PHONE.width);
+    await page.screenshot({ path: process.env['MANYTHREADS_SHOTS_DIR'] ? `${process.env['MANYTHREADS_SHOTS_DIR']}/agent-form-390.png` : test.info().outputPath('agent-form-390.png') });
+    await page.keyboard.press('Escape');
+  } finally {
+    await context.close();
+  }
+});

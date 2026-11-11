@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { OldConnection, TeamId } from '@manythreads/shared';
 import {
+  AGENT_CHOICES,
   KIND_CARDS,
+  agentHint,
+  isBridge,
+  runnerKindWords,
   cardsFor,
   addedWords,
   editChanged,
@@ -226,6 +230,19 @@ describe('the Hermes gateway form', () => {
     expect(blank.ok && blank.body.profileRule).toBe('{bot}');
   });
 
+  it('says nothing of the agent for Hermes (the server default), and names claude-code or codex when the bridge is chosen (P19-14)', () => {
+    const hermes = validateNew('hermes_gateway', good);
+    expect(hermes.ok && 'agent' in hermes.body).toBe(false);
+    for (const agent of ['claude-code', 'codex'] as const) {
+      const r = validateNew('hermes_gateway', { ...good, agent });
+      expect(r.ok && r.body.agent).toBe(agent);
+    }
+    // a pod, which the server refuses an agent for, never gets one from the form
+    const pod = validateNew('hermes_pod', form({ teams: { mode: 'all' }, agent: 'codex' }));
+    expect(pod.ok && 'agent' in pod.body).toBe(false);
+    expect(emptyForm().agent).toBe('hermes');
+  });
+
   it('sends no key and no address for kinds that have none', () => {
     const r = validateNew('hermes_pod', form({ teams: { mode: 'all' } }));
     expect(r).toEqual({ ok: true, body: { name: 'office-hermes', label: 'Office Hermes', kind: 'hermes_pod', teams: { all: true } } });
@@ -254,6 +271,17 @@ describe('changing a runner', () => {
     expect(validateEdit(gateway, same)).toEqual({ ok: true, body: {}, changed: false });
     expect(validateEdit(gateway, { ...same, label: 'Home Hermes' })).toEqual({ ok: true, body: { label: 'Home Hermes' }, changed: true });
     expect(validateEdit(gateway, { ...same, baseUrl: 'https://other.example.com' })).toEqual({ ok: true, body: { baseUrl: 'https://other.example.com' }, changed: true });
+  });
+
+  it('sends the agent only when it changed, and an agent change alone is something to save (P19-14)', () => {
+    const bridge = { ...gateway, agent: 'claude-code' } as const;
+    expect(validateEdit(bridge, { ...same, agent: 'claude-code' })).toEqual({ ok: true, body: {}, changed: false });
+    expect(validateEdit(bridge, { ...same, agent: 'codex' })).toEqual({ ok: true, body: { agent: 'codex' }, changed: true });
+    expect(validateEdit({ ...gateway, agent: 'hermes' }, { ...same, agent: 'claude-code' })).toEqual({ ok: true, body: { agent: 'claude-code' }, changed: true });
+    expect(editChanged(bridge, { ...same, agent: 'codex' })).toBe(true);
+    expect(editChanged(bridge, { ...same, agent: 'claude-code' })).toBe(false);
+    // a runner from a server that does not send the field reads as Hermes
+    expect(editChanged(gateway, same)).toBe(false);
   });
 
   it('a blank key keeps the key; a typed one replaces it', () => {
@@ -418,5 +446,36 @@ describe('the machine a pod runner stands on (P19-08)', () => {
     expect(nodeSavedWords('Pods', 'worker-2', false)).toBe('Pods will run on worker-2.');
     expect(nodeSavedWords('Pods', 'worker-2', true)).toContain('made again there');
     expect(nodeSavedWords('Pods', null, false)).toContain('Pods already placed stay where they are');
+  });
+});
+
+describe('what runs the bot on a gateway runner (P19-14)', () => {
+  it('offers Hermes first, then the bridge with Claude Code and with Codex, in plain words', () => {
+    expect(AGENT_CHOICES.map((c) => [c.value, c.label])).toEqual([
+      ['hermes', 'Hermes'],
+      ['claude-code', 'Claude Code on the bridge'],
+      ['codex', 'Codex on the bridge'],
+    ]);
+    for (const c of AGENT_CHOICES) {
+      expect(agentHint(c.value)).toBe(c.hint);
+      expect(c.hint).not.toMatch(/MCP|token|bearer/i);
+    }
+  });
+
+  it('words a gateway row by what answers behind it, and every other kind as before', () => {
+    expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'hermes' })).toBe('Hermes gateway');
+    expect(runnerKindWords({ kind: 'hermes_gateway' })).toBe('Hermes gateway');
+    expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'claude-code' })).toBe('Claude Code on the bridge');
+    expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'codex' })).toBe('Codex on the bridge');
+    expect(runnerKindWords({ kind: 'hermes_pod', agent: 'hermes' })).toBe('Team Hermes pod');
+    expect(runnerKindWords({ kind: 'claude_cli', agent: 'hermes' })).toBe('Claude Code');
+  });
+
+  it('knows a bridge runner, so its Test asks the bridge and not a Hermes profile', () => {
+    expect(isBridge({ kind: 'hermes_gateway', agent: 'claude-code' })).toBe(true);
+    expect(isBridge({ kind: 'hermes_gateway', agent: 'codex' })).toBe(true);
+    expect(isBridge({ kind: 'hermes_gateway', agent: 'hermes' })).toBe(false);
+    expect(isBridge({ kind: 'hermes_gateway' })).toBe(false);
+    expect(isBridge({ kind: 'hermes_pod', agent: 'hermes' })).toBe(false);
   });
 });

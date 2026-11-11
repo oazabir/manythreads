@@ -46,6 +46,14 @@
             "llm_gateway"
           ]
         },
+        "agent": {
+          "type": "string",
+          "enum": [
+            "hermes",
+            "claude-code",
+            "codex"
+          ]
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -256,6 +264,7 @@
         "name",
         "label",
         "kind",
+        "agent",
         "enabled",
         "isDefault",
         "allTeams",

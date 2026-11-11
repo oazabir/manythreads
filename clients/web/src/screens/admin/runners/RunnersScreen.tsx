@@ -21,7 +21,7 @@ import {
   hasNodeChoice,
   isChangingPlacement,
   isSigninKind,
-  kindWords,
+  runnerKindWords,
   placementLine,
   stateLook,
   switchWords,
@@ -375,7 +375,7 @@ function RunnerRow({
           {r.isDefault ? <span className="rn-default-word">Default</span> : null}
         </div>
         <div className="rn-meta">
-          <span>{kindWords(r.kind)}</span>
+          <span>{runnerKindWords(r)}</span>
           <StateBadge runner={r} />
           <span data-testid="runner-teams" className={hasNoTeams(r) ? 'rn-warn' : undefined}>{hasNoTeams(r) ? 'No team can use it yet' : `Teams: ${describeTeams(r)}`}</span>
           <span data-testid="runner-bots">{countBots(r.botCount)}</span>

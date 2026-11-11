@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { putSecret, withSystem } from '@manythreads/kernel';
 import type { HermesProfilesProvider, JobInfo, PluginContext } from '@manythreads/sdk';
-import { ListMessagesResponse } from '@manythreads/shared';
+import { AgentBridgeRunExtension, ListMessagesResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway, type FakeHermesRun, type FakeRunStep } from '../../../../tools/fake-hermes-gateway/src/server.ts';
 import { startFakeHindsight, type FakeHindsight } from '../../../../tools/fake-hindsight/src/server.ts';
@@ -474,6 +474,49 @@ describe('a runner an admin made available to the team works as `gateway: <name>
     } finally {
       expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: true })).status).toBe(200);
     }
+  });
+});
+
+describe('a gateway runner whose agent is the bridge sends the run its token and tools address (P19-14)', () => {
+  let hermesBot: LoadedBot;
+  let bridgeBot: LoadedBot;
+  const answer = (text: string) => gw.setScript(() => [{ type: 'finish', output: text }]);
+  const ask = async (bot: LoadedBot, text: string): Promise<string> => {
+    const rootId = await post(text);
+    const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the reply');
+    return reply.body;
+  };
+  const bodyOf = (profile: string): Record<string, unknown> => gw.runs.filter((r) => r.profile === profile).at(-1)!.body as Record<string, unknown>;
+
+  it('a runner the admin made with agent claude-code gets the `manythreads` object; the same address as a Hermes runner does not', async () => {
+    const engineeringId = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id);
+    for (const [name, agent] of [['agent-plain', 'hermes'], ['agent-bridge', 'claude-code']] as const) {
+      const made = await w.call<{ runner: { id: string } }>(omar, 'POST', '/api/admin/bot-runners', { name, label: name, kind: 'hermes_gateway', baseUrl: gw.url, apiKey: API_KEY, agent, teams: { teams: [engineeringId] } });
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+      expect(made.body).toMatchObject({ runner: { agent } });
+    }
+    hermesBot = await loadBot('plain-agent-bot', ['  gateway:', '    connection: agent-plain', '    profile: plain-agent-bot'], 'plain-agent-bot', false);
+    bridgeBot = await loadBot('bridge-agent-bot', ['  gateway:', '    connection: agent-bridge', '    profile: bridge-agent-bot'], 'bridge-agent-bot', false);
+    answer('plain reply');
+    expect(await ask(hermesBot, '@plain-agent-bot hello')).toBe('plain reply');
+    expect(bodyOf('plain-agent-bot')).not.toHaveProperty('manythreads');
+    answer('bridge reply');
+    expect(await ask(bridgeBot, '@bridge-agent-bot hello')).toBe('bridge reply');
+    const body = bodyOf('bridge-agent-bot');
+    const ext = AgentBridgeRunExtension.parse(body['manythreads']);
+    expect(ext.bot).toBe('bridge-agent-bot');
+    expect(ext.mcp.url).toMatch(/\/mcp/);
+    expect(ext.mcp.token.length).toBeGreaterThan(10);
+    // the token is the run's own: it is in this one request body and nowhere else the Hermes runner reaches
+    expect(JSON.stringify(bodyOf('plain-agent-bot'))).not.toContain(ext.mcp.token);
+  });
+
+  it('the agent is read at the time of the run: set back to Hermes, the next run carries no token', async () => {
+    const bridge = (await w.call<{ items: { id: string; name: string }[] }>(omar, 'GET', '/api/admin/bot-runners')).body.items.find((r) => r.name === 'agent-bridge')!;
+    expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${bridge.id}`, { agent: 'hermes' })).status).toBe(200);
+    answer('hermes again');
+    expect(await ask(bridgeBot, '@bridge-agent-bot hello again')).toBe('hermes again');
+    expect(bodyOf('bridge-agent-bot')).not.toHaveProperty('manythreads');
   });
 });
 

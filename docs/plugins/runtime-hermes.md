@@ -529,7 +529,9 @@ one MCP address with a token that opens **only this run** and outlives the run's
 (`capabilities.runtime`), the model and effort it names, and its limits. The shape is `AgentBridgeRunExtension` in `@manythreads/shared`. A Hermes
 agent never receives this object or the run token, and a bridge run for a bot with no tools endpoint is refused with a clear message instead of
 starting without tools. A managed connection cannot be anything but `hermes`; set or change the agent with `agent` on the connection's create and
-update requests.
+update requests. (Since P19-02 only an adopted or old connection still carries an agent; **a new bridge is a `hermes_gateway` runner with its own `agent`**, P19-14:
+`resolveRunner` returns it in the target, `targetOfRunner` passes it on as it does for a pod runner's agent, and this same code adds the object. See
+[bot-runners](./bot-runners.md#a-gateway-runner-that-fronts-the-agent-bridge-p19-14).)
 
 ### The wire
 

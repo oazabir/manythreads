@@ -122,16 +122,16 @@ What the live product allows today, from the code:
   bridge cannot be one of those.
 - The kind that takes an address and a key typed by an admin is `hermes_gateway`. Its address passes the outbound guard on every request:
   10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16 are allowed, loopback and link-local never (unless `MANYTHREADS_HERMES_ALLOWED_HOSTS` lists them).
-- **Gap (found while writing this, needs a decision):** a `hermes_gateway` runner resolves with `agent: 'hermes'`
+- **Gap (closed by P19-14, 2026-11-11: the runner has an `agent` field; the text below is what was found):** a `hermes_gateway` runner resolved with `agent: 'hermes'`
   (`packages/plugins/bot-runners/src/resolve.ts`). The run job sends the `manythreads` object (run token, MCP address, tools, model) only for the
   agents `claude-code` and `codex`. So a bridge registered as a `hermes_gateway` runner would run the bot as plain chat with no platform tools
   (it could answer, not post, read or call tools). Since P19-02 the older team connection (which has an `agent` field) can no longer be written
   by anyone but a workspace admin through Runners, and Runners has no `agent` field. The smallest change: an `agent` field (`hermes`,
   `claude-code`, `codex`) on a `hermes_gateway` runner that sets `target.agent` in `resolveRunner` (and the profile rule for the bridge's
   profile names). That change belongs to the owner of `bot-runners` and `runtime-hermes`; it was not made here.
-- `docs/agent-bridge.md` still says "add the bridge as a connection"; after P19-02 that is "add it under Runners" and carries the gap above.
+- `docs/agent-bridge.md` said "add the bridge as a connection"; it now says "add it under Runners" with the `agent` field (P19-14).
 
-The steps, in order (each one only written down; run them on live only after the gap is decided):
+The steps, in order (each one only written down; the gap above is closed by P19-14, so step 7 can be done once that is deployed):
 
 1. **Network path.** On this host (k3s, node address `10.0.2.15`, bridge `cni0` at `10.42.0.1`, pod network `10.42.0.0/24`) pods reach the host at
    `10.42.0.1`, the same way the existing host Hermes gateway (`hermes-gateway.service`, `10.42.0.1:8642`) is reached today.
@@ -166,9 +166,9 @@ The steps, in order (each one only written down; run them on live only after the
    WantedBy=multi-user.target
    ```
 
-7. **Runner (admin form, Runners > Add).** Kind `hermes_gateway` (with the `agent` field from the gap above set to `claude-code` or `codex`),
+7. **Runner (admin form, Runners > Add).** Kind `hermes_gateway`, **What runs the bot** = "Claude Code on the bridge" or "Codex on the bridge" (the `agent` field, P19-14),
    name for example `host-claude`, base URL `http://10.42.0.1:8650`, the key from step 4, profile rule `{bot}`, open to the chosen teams. Then "Test":
-   it must answer `GET /health` with the key and list the profiles. Place a bot with `placement.runs_on: host-claude` in `BOT.md`.
+   it asks `GET /health` with the key and must say the bridge answered (it does not list or need a profile). Place a bot with `placement.runs_on: host-claude` in `BOT.md`.
 8. **Sharing the login.** The bridge on the host and a person using `claude` on the host share one login and one renewal of the access token. Two
    bridge runs at the same time are fine (the program does the renewing); do not also copy the file to a pod (two copies of one login sign each other out).
 9. **Check.** Mention the bot in a thread and read the answer; `journalctl -u manythreads-bridge` shows one line per run (no texts). Undo: delete the
