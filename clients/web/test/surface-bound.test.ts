@@ -14,7 +14,7 @@ const SOURCE = [
   'count = Stat("Cards", "none yet", null, null, {tool: "tasks.read", into: {value: "tasks.length"}})',
   '',
 ].join('\n');
-const WITH_READER: SurfaceData = { read: () => new Promise<SurfaceDataResponse>(() => undefined), version: 1, answered: 0, explain: () => ({ message: 'x', code: 'unavailable' }) };
+const WITH_READER: SurfaceData = { read: () => new Promise<SurfaceDataResponse>(() => undefined), version: 1, answered: 0, dataTick: 0, explain: () => ({ message: 'x', code: 'unavailable' }) };
 const draw = (source: string, data?: SurfaceData): string => {
   const el = createElement(Surface, { source, ended: true });
   return renderToStaticMarkup(data ? createElement(SurfaceDataContext.Provider, { value: data }, el) : el);

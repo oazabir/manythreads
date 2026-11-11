@@ -6,7 +6,9 @@ import { SURFACE_BIND_REFRESH_MIN_SECONDS, type SurfaceDataResponse } from '@man
 //     its interval;
 //   * a read in flight is never doubled up (a request that comes meanwhile is remembered and made once the first is back);
 //   * after a failure it waits longer before the next try (at least 30 s, 60 s when the server said it was asked too often), so a broken or busy server is not hammered;
-//   * a part with no `refreshSeconds` reads only when it appears or is told to: a failed read is not retried by itself.
+//   * a part with no `refreshSeconds` reads only when it appears or is told to: a failed read is not retried by itself;
+//   * a push that says the data may have changed (`dataChanged`, P22-03) is a refresh that also keeps the failure pause: after a failed read it waits out the pause
+//     first (once, however many pushes come), so a screen that is pushed at while its server is down does not read at every push.
 
 /** What a bound part is showing. `last` is the values of the last good read, kept while a later read fails so the part does not go blank. */
 export type BoundState =
@@ -46,6 +48,8 @@ export interface BoundController {
   start(): void;
   /** Read again as soon as possible: the data may have changed. */
   refresh(): void;
+  /** The data may have changed (a push): read again as soon as possible, but not before a failure pause is over. */
+  dataChanged(): void;
   /** Tell it the tab was hidden or shown. */
   visibilityChanged(): void;
   /** Stop for good: no timer, and a read still in flight is ignored when it comes back. */
@@ -125,6 +129,22 @@ export function createBoundController(refreshSeconds: number | undefined, deps: 
   return {
     start: () => void run(),
     refresh: () => void run(),
+    dataChanged() {
+      if (stopped) return;
+      const wait = lastReadAt !== null && pause > 0 && !inFlight ? lastReadAt + pause - deps.now() : 0;
+      if (wait > 0) {
+        // inside a failure pause: one read when it is over (any timer already set is replaced; a hidden tab reads when shown)
+        clear();
+        if (deps.visible()) {
+          timer = deps.setTimer(() => {
+            timer = null;
+            void run();
+          }, wait);
+        } else missed = true;
+        return;
+      }
+      void run();
+    },
     visibilityChanged() {
       if (stopped) return;
       if (!deps.visible()) {
@@ -149,4 +169,14 @@ export function failureOf(e: unknown, status: (e: unknown) => number | null): Bo
   if (s === 429) return { message: 'Too many reads at once. Trying again in a minute.', code: 'busy', retryMs: BUSY_PAUSE_MS };
   if (s === 403 || s === 404) return { message: 'This data is not available to you.', code: 'forbidden', retryMs: BUSY_PAUSE_MS };
   return { message: 'Could not load this data.', code: 'unavailable' };
+}
+
+/**
+ * What a `surfaces.changed` push asks of the page showing `surfaceId`: nothing (another screen, or not a push of this kind), `load` (the screen was drawn, changed or
+ * answered: fetch it again) or `data` (the screen is the same; only what its bound parts read may have changed: read those again, do not fetch the screen).
+ */
+export function surfacePushAction(parse: (payload: unknown) => { surfaceId: string; reason?: 'data' } | null, payload: unknown, surfaceId: string): 'none' | 'load' | 'data' {
+  const p = parse(payload);
+  if (p === null || p.surfaceId !== surfaceId) return 'none';
+  return p.reason === 'data' ? 'data' : 'load';
 }

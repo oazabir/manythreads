@@ -6,7 +6,7 @@ import { isMockMode } from '../api/setup';
 import { realtimeClient } from '../realtime';
 import { Surface } from './Surface';
 import { SurfaceDataContext, type SurfaceData } from './BoundPart';
-import { failureOf } from './bound';
+import { failureOf, surfacePushAction } from './bound';
 import { SurfaceActionsContext, type SurfaceActions } from './views';
 
 /*
@@ -40,6 +40,8 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
   const [answered, setAnswered] = useState<{ version: number; ids: ReadonlySet<string> }>({ version: 0, ids: NONE });
   // How many answers went through since the page opened: a bound part with `refreshOn: ["answered"]` reads again each time it goes up.
   const [answeredCount, setAnsweredCount] = useState(0);
+  // How many "the data changed" pushes came for this screen: every bound part reads again each time it goes up.
+  const [dataTick, setDataTick] = useState(0);
   const alive = useRef(true);
 
   const load = useCallback(async () => {
@@ -76,8 +78,16 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
     if (isMockMode()) return;
     return realtimeClient().onPush((push) => {
       if (push.type !== WS_SURFACE_CHANGED) return;
-      const parsed = SurfaceChangedPush.safeParse(push.payload);
-      if (parsed.success && parsed.data.surfaceId === surfaceId) void load();
+      const action = surfacePushAction(
+        (payload) => {
+          const parsed = SurfaceChangedPush.safeParse(payload);
+          return parsed.success ? parsed.data : null;
+        },
+        push.payload,
+        surfaceId,
+      );
+      if (action === 'load') void load();
+      else if (action === 'data') setDataTick((n) => n + 1);
     });
   }, [surfaceId, load]);
 
@@ -118,8 +128,8 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
     [channelId, surfaceId, version, load],
   );
   const dataValue: SurfaceData = useMemo(
-    () => ({ read: isMockMode() || version === 0 ? null : readData, version, answered: answeredCount, explain: (e) => failureOf(e, statusOf) }),
-    [readData, version, answeredCount],
+    () => ({ read: isMockMode() || version === 0 ? null : readData, version, answered: answeredCount, dataTick, explain: (e) => failureOf(e, statusOf) }),
+    [readData, version, answeredCount, dataTick],
   );
 
   if (surface === null) {
