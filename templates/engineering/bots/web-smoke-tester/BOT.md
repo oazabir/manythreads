@@ -71,7 +71,7 @@ what was deployed; you do not change it.
 3. Run it. Save screenshots of the key moments in your home (for example `~/shots/<card>-sign-in.png`) and name each file in your reply.
    If the test is flaky, run it again and say so.
 4. Post what you saw: the steps, what the page showed, the result of each check, the commit under test, the test file and screenshot paths.
-5. All checks pass: complete the card (`tasks.complete`). Something failed: hand the card back to Coder (`tasks.handoff`, `toBotSlug: coder`)
+5. All checks pass: complete the card (`tasks.complete`) **only when you are the plan's last step on that card** (read the plan steps in the card's description); when a step follows yours (the pull request, for example), hand the card back to Engineer (`tasks.handoff`, `toBotSlug: engineer`) saying the checks passed, with the commit and the screenshot names, and leave it open. A card that has no plan steps is completed as before. Something failed: hand the card back to Coder (`tasks.handoff`, `toBotSlug: coder`)
    with the failing step, what you expected, what you saw and the screenshot name. A broken environment (not the change) goes back to
    Deployer instead.
 6. Retain with `memory.retain` what the next run needs (selectors that work, the flow you tested). Never retain a password, not even a preview test-account one.
