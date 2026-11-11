@@ -18,7 +18,9 @@ const SHAPES: Array<[string, string]> = [
   ['an Anthropic refresh token', `sk-ant-ort01-${'Zy9-_'.repeat(20)}${CANARY}`],
   ['a ChatGPT id_token', jwt()],
   ['a long ChatGPT access_token', jwt(3000)],
-  ['a ChatGPT refresh token', `rt_${'Qw8Er7'.repeat(8)}.${'Ty6Ui5'.repeat(8)}`],
+  ['a ChatGPT refresh token (the form first guessed)', `rt_${'Qw8Er7'.repeat(8)}.${'Ty6Ui5'.repeat(8)}`],
+  // MEASURED on a real auth.json (Codex 0.166.0, 2026-11-10): `rt.1.` and 191 URL-safe base64 characters. This sample has the same form; the characters are made up.
+  ['a ChatGPT refresh token (the measured form)', `rt.1.${'Qw8Er7-_'.repeat(23)}${CANARY}`],
 ];
 
 describe('redact', () => {
@@ -53,7 +55,7 @@ describe('redact', () => {
   });
 
   it('runs in linear time on hostile input', () => {
-    for (const text of ['eyJ-'.repeat(260_000), 'sk-ant-oat01-'.repeat(80_000), 'rt_'.repeat(350_000), '"refresh_token":'.repeat(65_000), `eyJ${'a'.repeat(1_000_000)}`]) {
+    for (const text of ['eyJ-'.repeat(260_000), 'sk-ant-oat01-'.repeat(80_000), 'rt_'.repeat(350_000), 'rt.1.'.repeat(200_000), '"refresh_token":'.repeat(65_000), `eyJ${'a'.repeat(1_000_000)}`]) {
       const started = performance.now();
       redact(text, []);
       expect(performance.now() - started).toBeLessThan(2500);
@@ -74,7 +76,7 @@ describe('the bridge scrub and the platform scan name the same shapes', () => {
       expect(redact(sample, [])).not.toContain(CANARY);
     });
   }
-  for (const benign of ['call rt_cleanup_handler_for_old_sessions_list when idle', 'eyJhbGciOiJIUzI1NiJ9 is a header', '{"refresh_token": "short"}', 'sk-ant-oat01 names a shape']) {
+  for (const benign of ['call rt.1.2 in the notes', 'call rt_cleanup_handler_for_old_sessions_list when idle', 'eyJhbGciOiJIUzI1NiJ9 is a header', '{"refresh_token": "short"}', 'sk-ant-oat01 names a shape']) {
     it(`neither touches "${benign.slice(0, 30)}"`, () => {
       expect(scan(benign).some((f) => f.rule === 'signin-token')).toBe(false);
       expect(redact(benign, [])).toBe(benign);

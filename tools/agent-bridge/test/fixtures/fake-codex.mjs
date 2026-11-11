@@ -14,6 +14,18 @@ const resume = argv[1] === 'resume';
 if (resume && argv.includes('gone-thread')) { process.stderr.write('no rollout found for thread id gone-thread\n'); process.exit(1); }
 out({ type: 'thread.started', thread_id: resume ? argv[argv.length - 2] : 'thread-abc' });
 out({ type: 'turn.started' });
+// Real shapes (Codex 0.166.0, measured): a retry in progress is an `error` event ("Reconnecting... n/5 (...)"); a dead login ends with an `error`, a `turn.failed` and exit code 1.
+if (stdin.includes('RECONNECT')) {
+  out({ type: 'error', message: 'Reconnecting... 1/5 (stream disconnected before completion)' });
+  out({ type: 'error', message: 'Reconnecting... 2/5 (stream disconnected before completion)' });
+}
+if (stdin.includes('NOLOGIN')) {
+  const text = 'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, request id: req_x';
+  out({ type: 'error', message: `Reconnecting... 2/5 (${text})` });
+  out({ type: 'error', message: text });
+  out({ type: 'turn.failed', error: { message: text } });
+  process.exit(1);
+}
 out({ type: 'item.started', item: { id: 'i1', type: 'command_execution', command: 'ls', status: 'in_progress' } });
 out({ type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'ls', status: 'completed', exit_code: 0 } });
 out({ type: 'item.started', item: { id: 'i2', type: 'mcp_tool_call', server: 'manythreads', tool: 'post', status: 'in_progress' } });

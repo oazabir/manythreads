@@ -88,7 +88,7 @@ export function lastLine(text: string, secrets: readonly string[]): string {
 /**
  * The sign-in token shapes of a Claude or Codex runner (PLAN P19-12): the same ones the platform's data-protection step names `signin-token`
  * (packages/plugins/guardrails-dlp/src/dlp.ts; test/process.test.ts keeps the two together). The bridge is its own package and cannot import the plugin, so the patterns are
- * written out here. They are guesses until the real files are measured (P19-01, P19-13); the last one, the sign-in file's own field names, needs no guess about the value.
+ * written out here. They were measured on the host's real files on 2026-11-10 (docs/spikes/host-claude-codex-measured.md): the Anthropic and `eyJ` shapes were right, the refresh token is `rt.1.…`; the last one, the sign-in file's own field names, needs no guess about the value.
  * Linear time: every quantifier is bounded and a pattern starts only where a run of token characters starts (the look-behind).
  */
 const RUN_START = '(?<![A-Za-z0-9_-])';
@@ -97,12 +97,15 @@ const TOKEN_SHAPES: readonly RegExp[] = [
   new RegExp(`${RUN_START}eyJ[A-Za-z0-9_-]{8,4096}\\.eyJ[A-Za-z0-9_-]{8,4096}\\.[A-Za-z0-9_-]{8,4096}`, 'g'),
 ];
 const REFRESH_TOKEN = new RegExp(`${RUN_START}rt_[A-Za-z0-9_-]{20,200}(?:\\.[A-Za-z0-9_-]{20,200})?`, 'g');
+// The ChatGPT refresh token as measured in a real auth.json (Codex 0.166.0): `rt.1.` and about 190 URL-safe base64 characters.
+const REFRESH_TOKEN_V1 = new RegExp(`${RUN_START}rt\\.\\d{1,2}\\.[A-Za-z0-9_-]{40,512}`, 'g');
 const TOKEN_FIELD = /("(?:refresh_token|access_token|id_token|accessToken|refreshToken|idToken)"[ \t\r\n]{0,8}:[ \t\r\n]{0,8}")[^"\s]{16,4096}"/g;
 
 export function redact(text: string, secrets: readonly string[]): string {
   let out = text;
   for (const s of secrets) if (s.length >= 4) out = out.split(s).join('[hidden]');
   for (const shape of TOKEN_SHAPES) out = out.replace(shape, '[hidden]');
+  out = out.replace(REFRESH_TOKEN_V1, '[hidden]');
   out = out.replace(REFRESH_TOKEN, (m) => (/[0-9A-Z]/.test(m) ? '[hidden]' : m));
   out = out.replace(TOKEN_FIELD, '$1[hidden]"');
   // A Bearer token is cut whole (a JSON web token is longer than any cap the old rule had), so run it after the shapes above that cover a long token.

@@ -3,9 +3,8 @@ import { lastLine, redact } from '../process.ts';
 import { classifyFailure } from '../signin.ts';
 import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 
-// The Codex driver: one `codex exec --json` process per run. NOT TESTED AGAINST A REAL CODEX INSTALL: the flags and config keys come from
-// OpenAI's published Codex documentation (non-interactive mode, config reference, MCP page); the tests use a fake `codex` that prints
-// the documented JSON lines. The FLAGS (not the config keys, not the JSON lines) are checked against the program's own `--help` text in docs/spikes/codex-flags.md, and
+// The Codex driver: one `codex exec --json` process per run. RUN AGAINST A REAL CODEX 0.166.0 ON 2026-11-10 (docs/spikes/host-claude-codex-measured.md): a new thread, `exec resume`, the
+// sandbox, the platform's MCP tools and the JSON lines all work as written, with the two corrections marked MEASURED below. The tests use a fake `codex` that prints the same JSON lines. The FLAGS (not the config keys, not the JSON lines) are checked against the program's own `--help` text in docs/spikes/codex-flags.md, and
 // test/codex.test.ts keeps `codexArgs` and that page in step. `exec resume` has no `-C`, so a resumed thread gets its folder from the process's `cwd`.
 //
 //   codex exec --json --skip-git-repo-check -C <workdir> -c sandbox_mode="…" -c approval_policy="never"
@@ -53,6 +52,9 @@ export function codexArgs(job: DriverJob, resumeId: string | null, instructionsI
   if (instructionsInArg && job.request.instructions !== null) args.push('-c', `developer_instructions=${toml(job.request.instructions)}`);
   if (mt.mcp !== null) {
     args.push('-c', `mcp_servers.${MCP_NAME}.url=${toml(mt.mcp.url)}`, '-c', `mcp_servers.${MCP_NAME}.bearer_token_env_var=${toml('MANYTHREADS_RUN_TOKEN')}`);
+    // MEASURED (Codex 0.166.0): with `approval_policy="never"` an MCP tool call is refused ("MCP tool call requires approval, but approval policy is never") unless the server's tools are
+    // approved in the config. `approve` is the pre-approval of the platform's own tools, as `mcp__manythreads__*` is for Claude Code; the platform checks every call against the bot's permissions.
+    args.push('-c', `mcp_servers.${MCP_NAME}.default_tools_approval_mode=${toml('approve')}`);
   }
   const alias = mt.model.alias;
   const mapped = alias !== null && job.profile.modelAliases && Object.hasOwn(job.profile.modelAliases, alias) ? job.profile.modelAliases[alias] : undefined;
@@ -107,6 +109,8 @@ async function attempt(job: DriverJob, resumeId: string | null, token: string | 
   let lastMessage = '';
   let usage: Usage | null = null;
   let failure: string | null = null;
+  let lastError: string | null = null;
+  let completed = false;
 
   const startTool = (id: string, item: Record<string, unknown>): void => {
     const tool = toolOf(item);
@@ -159,6 +163,7 @@ async function attempt(job: DriverJob, resumeId: string | null, token: string | 
         break;
       }
       case 'turn.completed': {
+        completed = true;
         const u = ev['usage'];
         if (isRecord(u)) {
           const input = num(u['input_tokens']);
@@ -170,9 +175,13 @@ async function attempt(job: DriverJob, resumeId: string | null, token: string | 
       case 'turn.failed':
         failure = redact(isRecord(ev['error']) ? str(ev['error']['message']) : 'the turn failed', secrets).slice(0, 300);
         break;
-      case 'error':
-        failure ??= redact(str(ev['message']), secrets).slice(0, 300);
+      case 'error': {
+        // MEASURED (Codex 0.166.0): an `error` event is also how the tool reports a retry in progress ("Reconnecting... 2/5 (unexpected status 401 …)"); a run that recovers goes on to complete.
+        // So an `error` event alone does not fail the run: `turn.failed` or a non-zero exit does, and the last real `error` text is what a failed exit says.
+        const message = str(ev['message']);
+        if (!/^reconnecting\b/i.test(message.trim())) lastError = redact(message, secrets).slice(0, 300);
         break;
+      }
       default:
     }
   };
@@ -181,10 +190,11 @@ async function attempt(job: DriverJob, resumeId: string | null, token: string | 
   const end = await child.done;
   if (end.spawnError !== null) out.result = { ok: false, error: `could not start "${job.config.bin.codex}" (${end.spawnError})` };
   else if (failure !== null) out.result = { ok: false, error: failure };
+  else if (end.code === 0 && !completed && lastError !== null) out.result = { ok: false, error: lastError };
   else if (end.code === 0 && usage !== null) out.result = { ok: true, output: redact(lastMessage.trim(), secrets), usage };
   else if (end.code === 0) out.result = { ok: true, output: redact(lastMessage.trim(), secrets), usage: null };
   else {
-    const why = lastLine(end.stderrTail, secrets);
+    const why = lastError ?? lastLine(end.stderrTail, secrets);
     out.result = { ok: false, error: why !== '' ? why : `Codex exited with code ${String(end.code ?? end.signal)}` };
   }
   return out;

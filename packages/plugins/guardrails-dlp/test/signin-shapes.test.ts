@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DETECTOR_NAMES, inspect, scan, type DlpPolicySnapshot } from '../src/dlp.ts';
 
 // P19-12: the sign-in tokens of a Claude or Codex runner are named detectors, not only "something that looks like an sk- key". Every sample below is made up (the shape, a canary inside);
-// no real sign-in file is read. The shapes are guesses until the real files are measured (P19-01, P19-13), which is why the field-name finding (the file's own JSON) is tested apart.
+// no real sign-in file is read. The shapes were measured on the host's real files on 2026-11-10 (docs/spikes/host-claude-codex-measured.md); the field-name finding (the file's own JSON) is tested apart because it holds whatever the value looks like.
 
 const CANARY = 'CANARY-DLP-7b1e';
 const ZERO_WIDTH = String.fromCharCode(0x200b);
@@ -19,7 +19,9 @@ describe('the named sign-in token shapes', () => {
     ['an Anthropic refresh token', `sk-ant-ort01-${'Zy9-_'.repeat(20)}${CANARY}`],
     ['a ChatGPT id_token (a JSON web token)', idToken()],
     ['a ChatGPT access_token with a long body', idToken(1500)],
-    ['a ChatGPT refresh token', `rt_${'Qw8Er7'.repeat(8)}.${'Ty6Ui5'.repeat(8)}`],
+    ['a ChatGPT refresh token (the form first guessed)', `rt_${'Qw8Er7'.repeat(8)}.${'Ty6Ui5'.repeat(8)}`],
+    // MEASURED on a real auth.json (Codex 0.166.0, 2026-11-10): `rt.1.` and 191 URL-safe base64 characters; the characters here are made up.
+    ['a ChatGPT refresh token (the measured form)', `rt.1.${'Qw8Er7-_'.repeat(23)}${CANARY}`],
   ];
 
   for (const [label, token] of samples) {
@@ -78,6 +80,7 @@ describe('the named sign-in token shapes', () => {
 
   it('leaves ordinary text that only resembles the shapes alone', () => {
     expect(names('call rt_cleanup_handler_for_old_sessions_list when idle')).toEqual([]); // a snake_case word, no digit or capital
+    expect(names('call rt.1.2 in the notes')).toEqual([]);
     expect(names('the header eyJhbGciOiJIUzI1NiJ9 alone is a header, not a token')).toEqual([]);
     expect(names('sk-ant-oat01 is the name of the shape, and "refresh_token" is a field name: {"refresh_token": null}')).toEqual([]);
     expect(names('{"refresh_token": "short"}')).toEqual([]);
@@ -104,6 +107,7 @@ describe('the shapes run in linear time on hostile input', () => {
   });
   it('a megabyte of "rt_" starts and of field names with no value', () => {
     expect(timed('rt_'.repeat(350_000))).toBeLessThan(BUDGET_MS);
+    expect(timed('rt.1.'.repeat(200_000))).toBeLessThan(BUDGET_MS);
     expect(timed('"refresh_token":'.repeat(65_000))).toBeLessThan(BUDGET_MS);
   });
   it('a single huge run of token characters', () => {

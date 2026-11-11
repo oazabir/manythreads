@@ -99,7 +99,7 @@ const phoneOk = (matched: string): boolean => {
 
 /**
  * The sign-in tokens of a Claude or Codex runner (PLAN P19-12). A runner's sign-in file is a live login, so the shapes it holds are named and never let through, on top of the generic
- * `sk-` and `Bearer` findings: a refresh token is as good as the login itself. The shapes are GUESSES until the real files have been measured (P19-01, P19-13); the field-name finding
+ * `sk-` and `Bearer` findings: a refresh token is as good as the login itself. The shapes were measured on the host's real files (docs/spikes/host-claude-codex-measured.md, 2026-11-10): `sk-ant-oat01-`/`sk-ant-ort01-` and the `eyJ` JSON web tokens were right, the ChatGPT refresh token is `rt.1.…` (the `rt_` guess is kept as well); the field-name finding
  * (`"refresh_token": "…"`, `"accessToken": "…"`) does not depend on the shape of the value, so a token of a form nobody has seen is still caught when it sits in the file's own JSON.
  * The same shapes are in `tools/agent-bridge/src/process.ts` (the bridge's scrub of an answer); a test keeps the two together.
  *
@@ -112,7 +112,9 @@ const SIGNIN_TOKEN_DETECTORS: readonly Detector[] = [
   { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}sk-ant-o(?:at|rt)\\d{2}-[A-Za-z0-9_-]{16,512}`, 'g') },
   // A JSON web token: three dot-separated parts, the first two start with `eyJ` (a base64 `{"`). The ChatGPT sign-in's id_token and access_token are of this shape.
   { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}eyJ[A-Za-z0-9_-]{8,4096}\\.eyJ[A-Za-z0-9_-]{8,4096}\\.[A-Za-z0-9_-]{8,4096}`, 'g') },
-  // A ChatGPT refresh token as seen in `auth.json` (`rt_…`, maybe two parts). A snake_case word is not one: it must also hold a digit or a capital.
+  // A ChatGPT refresh token as MEASURED in a real `auth.json` (Codex 0.166.0, P19-13): `rt.1.` and then about 190 URL-safe base64 characters (`rt.<version>.<body>`), not the `rt_` form first guessed.
+  { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}rt\\.\\d{1,2}\\.[A-Za-z0-9_-]{40,512}`, 'g') },
+  // The earlier guess (`rt_…`, maybe two parts), kept: a token of that form is as good as the login. A snake_case word is not one: it must also hold a digit or a capital.
   { name: 'signin-token', pattern: new RegExp(`${TOKEN_RUN_START}rt_[A-Za-z0-9_-]{20,200}(?:\\.[A-Za-z0-9_-]{20,200})?`, 'g'), accept: (m) => /[0-9A-Z]/.test(m) },
   // The sign-in file's own fields, whatever the value looks like: the value is the finding, the field name stays readable.
   {

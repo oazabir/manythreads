@@ -39,6 +39,8 @@ describe('the codex driver', () => {
       expect(argv).toContain(`sandbox_mode="${sandbox}"`);
       expect(argv).toContain('mcp_servers.manythreads.url="https://example.test/mcp"');
       expect(argv).toContain('mcp_servers.manythreads.bearer_token_env_var="MANYTHREADS_RUN_TOKEN"');
+      // measured on a real Codex 0.166.0: without this the platform's tools are refused ("MCP tool call requires approval, but approval policy is never")
+      expect(argv).toContain('mcp_servers.manythreads.default_tools_approval_mode="approve"');
       expect(argv).toContain('developer_instructions="BOT body"');
       expect(argv.at(-1)).toBe('-');
       expect(argv.join(' ')).not.toContain(mcp.token);
@@ -49,6 +51,19 @@ describe('the codex driver', () => {
       expect(call['token']).toBe(mcp.token);
       expect(call['hasBridgeKey']).toBe(false);
     }
+  });
+
+  it('a retry in progress ("Reconnecting...") is not a failure when the run then completes (real Codex prints retries as error events)', async () => {
+    const { run_id } = (await (await start(h, { input: 'RECONNECT please' })).json()) as { run_id: string };
+    const last = (await events(h, run_id)).at(-1)!.data;
+    expect(last).toMatchObject({ event: 'run.completed', output: 'All done.' });
+  });
+
+  it('a dead login ends in run.failed with the words of the last real error, not of a retry', async () => {
+    const { run_id } = (await (await start(h, { input: 'NOLOGIN please' })).json()) as { run_id: string };
+    const last = (await events(h, run_id)).at(-1)!.data;
+    expect(last['event']).toBe('run.failed');
+    expect(String(last['error'])).toMatch(/^unexpected status 401 Unauthorized: Missing bearer or basic authentication/);
   });
 
   it('starts a thread, then resumes it by the id Codex gave', async () => {
