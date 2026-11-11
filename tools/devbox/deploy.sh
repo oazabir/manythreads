@@ -97,6 +97,12 @@ if [ -z "${TAG:-}" ]; then
 fi
 echo "deploying $(git rev-parse HEAD) as tag $TAG"
 
+# The disk guard (tools/devbox/disk-guard.sh): prints the disk use; above 65% it prunes what is safe and can be made again (build cache, unused
+# docker images, unused k3s images; never volumes, never an image a pod or container uses); above 70% it stops with what to clean, unless
+# DEPLOY_ALLOW_HIGH_DISK=1. A deploy peaked at 90% on 2026-11-09 and the kubelet evicted the database. The images of THIS deploy and the Hermes
+# base image (hours to rebuild) are never pruned.
+bash tools/devbox/disk-guard.sh check --keep "manythreads/server:$TAG" --keep "manythreads/web:$TAG" --keep-docker manythreads/hermes:stable || exit 1
+
 if [ "$BUILD" = "true" ]; then
   echo "--- build images"
   docker build -f deploy/docker/server.Dockerfile -t "manythreads/server:$TAG" .
@@ -244,7 +250,8 @@ for img in "${IMAGES[@]}"; do
     echo "$img is already in k3s"
   else
     echo "importing $img"
-    docker save "$img" | k3s ctr -n k8s.io images import - | tail -n 2
+    # (watched: the import is stopped when the disk reaches 88%, see disk-guard.sh)
+    bash tools/devbox/disk-guard.sh import "$img" || { echo "ERROR: importing $img into k3s failed or was stopped (see above); nothing was rolled out"; exit 1; }
   fi
   docker rmi "$img" >/dev/null 2>&1 || true
 done
