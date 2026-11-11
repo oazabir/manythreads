@@ -8,19 +8,25 @@ import { join } from 'node:path';
 export type SigninAgent = 'claude-code' | 'codex';
 
 /**
- * The words a CLI uses when it fails for a reason that is about the account, not the run. THE ONE TABLE: when the real texts are measured (P19-01 g, P19-13 owner test),
- * change these lines and nothing else. Each row is tried in order for the run's agent; `pattern` is matched against the CLI's error text, case-insensitively. The FAKE rows
- * are the stand-ins' own words (deploy/images/claude-pod-fake); the others are the CLIs' documented wording, unverified.
+ * The words a CLI uses when it fails for a reason that is about the account, not the run. THE ONE TABLE: when the texts change, change these lines and nothing else. Each row is tried
+ * in order for the run's agent; `pattern` is matched against the CLI's error text, case-insensitively (the tools capitalise: "Not logged in", "Invalid API key", "API Error: 401").
+ * The FAKE rows are the stand-ins' own words (deploy/images/claude-pod-fake).
+ *
+ * MEASURED 2026-11-10 on the host's real tools (docs/spikes/host-claude-codex-measured.md): Claude Code 2.1.319 printed "Not logged in · Please run /login", "Invalid API key · Fix external
+ * API key" and "Failed to authenticate. API Error: 401 OAuth access token is invalid."; Codex 0.166.0 printed "unexpected status 401 Unauthorized: Missing bearer or basic authentication in
+ * header". The limit and expiry words below come from the programs' own message strings (read with `strings`, not provoked): Claude "You've hit your 5-hour limit" / "weekly limit" / "Opus
+ * limit" / "Sonnet limit", "OAuth session expired and could not be refreshed", "OAuth token revoked", "this login reached its time limit"; Codex "Your access token could not be refreshed
+ * because your refresh token was already used / has expired / was revoked. Please log out and sign in again." and "You've hit your usage limit".
  */
 export const FAILURE_PATTERNS: ReadonlyArray<{ agents: readonly SigninAgent[]; kind: 'needs_sign_in' | 'plan_limit'; pattern: RegExp }> = [
   { agents: ['claude-code', 'codex'], kind: 'needs_sign_in', pattern: /FAKE401/ },
   { agents: ['claude-code', 'codex'], kind: 'plan_limit', pattern: /FAKELIMIT/ },
-  { agents: ['claude-code'], kind: 'needs_sign_in', pattern: /(?:api error|status(?: code)?|http|error)\W{0,3}401\b|authentication_error|invalid (api key|authentication|credentials)|oauth token (has )?(expired|revoked)|please run \/login|not logged in/ },
-  { agents: ['claude-code'], kind: 'plan_limit', pattern: /usage limit reached|rate limit reached|5-hour limit|weekly limit|limit will reset/ },
+  { agents: ['claude-code'], kind: 'needs_sign_in', pattern: /(?:api error|status(?: code)?|http|error)\W{0,3}401\b|authentication_(?:error|failed)|invalid (?:api key|authentication|credentials)|oauth (?:access )?(?:token|session) (?:has |is |was )?(?:been )?(?:expired|revoked|invalid)|login (?:has )?expired|login reached its time limit|please run \/login|not logged in/i },
+  { agents: ['claude-code'], kind: 'plan_limit', pattern: /usage limit reached|rate limit reached|you(?:'|\u2019)ve hit your [\w -]{0,40}limit|reached your (?:[\w -]{0,40} )?usage limit|(?:5-hour|weekly|opus|sonnet|fable|usage credit) limit|limit will reset/i },
   // Codex. A reused or expired refresh token is an account failure: it is never retried, because every retry presents the same dead token.
-  { agents: ['codex'], kind: 'needs_sign_in', pattern: /refresh_token_reused|refresh token (?:was |has )?(?:already )?(?:been )?(?:used|expired|revoked|invalidated)|could not be refreshed|failed to refresh (?:the )?token|invalid_grant|token_(?:expired|invalidated|revoked)|(?:log|sign) (?:out|in) and (?:log|sign) in again|(?:log|sign) in again|codex login|not logged in/ },
-  { agents: ['codex'], kind: 'plan_limit', pattern: /hit your usage limit|usage[_ ]limit(?:[_ ]reached)?|rate limit reached|try again in \d+\s*(?:days?|hours?|hrs?|minutes?|mins?)/ },
-  { agents: ['codex'], kind: 'needs_sign_in', pattern: /(?:unexpected )?status(?: code)?\W{0,3}401\b|\b401 unauthorized|authentication_error|invalid (api key|authentication|credentials)/ },
+  { agents: ['codex'], kind: 'needs_sign_in', pattern: /refresh_token_reused|refresh token (?:was |has )?(?:already )?(?:been )?(?:used|expired|revoked|invalidated)|could not be refreshed|failed to refresh (?:the )?token|invalid_grant|token_(?:expired|invalidated|revoked)|(?:log|sign) (?:out|in) and (?:log|sign) in again|(?:log|sign) in again|codex login|not logged in/i },
+  { agents: ['codex'], kind: 'plan_limit', pattern: /hit your usage limit|usage[_ ]limit(?:[_ ]reached)?|rate limit reached|try again in \d+\s*(?:days?|hours?|hrs?|minutes?|mins?)/i },
+  { agents: ['codex'], kind: 'needs_sign_in', pattern: /(?:unexpected )?status(?: code)?\W{0,3}401\b|\b401 unauthorized|missing bearer or basic authentication|authentication_error|invalid (?:api key|authentication|credentials)/i },
 ];
 
 export type AccountFailure = 'needs_sign_in' | 'plan_limit';
@@ -130,7 +136,10 @@ export type CheckResult = 'ok' | 'rejected' | 'expired' | 'no_scope' | 'limit';
 /** How long before the access token's expiry new runs queue behind one probe run that renews it. */
 export const REFRESH_WINDOW_MS = 20 * 60_000;
 
-/** Codex renews its tokens on its own when `last_refresh` is older than this (about eight days, from the CLI's documentation: unverified, P19-13 owner test). */
+/**
+ * Codex renews its tokens on its own when `last_refresh` is older than this (about eight days, from the CLI's documentation). MEASURED 2026-11-10 on Codex 0.166.0: the access token lives 10 days
+ * (`exp` - `iat`) and `last_refresh` equals `iat`; a run at 8.9 days did NOT renew (auth.json unchanged). So this hold is conservative: it serialises runs earlier than the tool renews.
+ */
 export const CODEX_RENEW_AFTER_MS = 8 * 86_400_000;
 
 /**

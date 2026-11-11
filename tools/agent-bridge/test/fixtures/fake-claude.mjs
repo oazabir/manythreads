@@ -28,7 +28,9 @@ const sid = flag('--session-id') ?? flag('--resume') ?? 'no-session';
 const marker = join(dir, `session-${sid}`);
 
 if (argv.includes('--resume') && !existsSync(marker)) {
+  // The real shape (Claude Code 2.1.319, measured): the words are on stderr AND in the `errors` list of a failed result that has no `result` text; exit code 1.
   process.stderr.write(`No conversation found with session ID: ${sid}\n`);
+  out({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, session_id: sid, errors: [`No conversation found with session ID: ${sid}`] });
   process.exit(1);
 }
 if (flag('--session-id')) writeFileSync(marker, '1');
@@ -60,6 +62,12 @@ if (cfg && existsSync(join(cfg, '.credentials.json'))) {
 if (stdin.includes('FAKE401')) {
   out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'API Error: 401 FAKE401', session_id: sid });
   process.exit(0);
+}
+if (stdin.includes('NOTLOGGEDIN')) {
+  // The real shape of a refused request (Claude Code 2.1.319, measured with no login): a synthetic assistant message with an `error` field, then a result whose subtype is still "success".
+  out({ type: 'assistant', error: 'authentication_failed', message: { model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: 'Not logged in \u00b7 Please run /login' }] }, session_id: sid });
+  out({ type: 'result', subtype: 'success', is_error: true, api_error_status: null, terminal_reason: 'api_error', result: 'Not logged in \u00b7 Please run /login', session_id: sid });
+  process.exit(1);
 }
 if (stdin.includes('FAKELIMIT')) {
   out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'Claude AI usage limit reached|1900000000 FAKELIMIT', session_id: sid });

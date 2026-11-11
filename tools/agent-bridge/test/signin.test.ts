@@ -42,6 +42,26 @@ describe('the failure table', () => {
     expect(limitResetsAt('usage limit reached|1900000000')).toBe(1900000000000);
     expect(limitResetsAt('nothing here')).toBeNull();
   });
+
+  // The words of the real tools. MEASURED on the host, 2026-11-10 (Claude Code 2.1.319, Codex 0.166.0), see docs/spikes/host-claude-codex-measured.md: the first four are what the tools
+  // printed (with a made-up key or no login at all); the others are the tools' own message strings, read from the programs (the limit and the expiry cannot be provoked).
+  it('classifies the texts the real Claude Code prints, with their capital letters', () => {
+    const c = (t: string) => classifyFailure(t, 'claude-code');
+    expect(c('Not logged in \u00b7 Please run /login')).toBe('needs_sign_in');
+    expect(c('Invalid API key \u00b7 Fix external API key')).toBe('needs_sign_in');
+    expect(c('Failed to authenticate. API Error: 401 OAuth access token is invalid.')).toBe('needs_sign_in');
+    expect(c('Failed to authenticate: OAuth session expired and could not be refreshed')).toBe('needs_sign_in');
+    expect(c('Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.')).toBe('needs_sign_in');
+    expect(c('Failed to authenticate: this login reached its time limit \u00b7 Sign in again to continue')).toBe('needs_sign_in');
+    expect(c("You've hit your 5-hour limit \u00b7 resets 3pm (UTC)")).toBe('plan_limit');
+    expect(c("You've hit your weekly limit \u00b7 resets Nov 14, 3pm")).toBe('plan_limit');
+    expect(c("You've hit your Opus limit \u00b7 resets 3pm")).toBe('plan_limit');
+    expect(c("You've hit your Sonnet limit")).toBe('plan_limit');
+    // not about the account: an unknown model, a lost conversation, an empty balance
+    expect(c("There's an issue with the selected model (not-a-real-model). It may not exist or you may not have access to it. Run --model to pick a different model.")).toBeNull();
+    expect(c('No conversation found with session ID: 11111111-2222-4333-8444-555555555555')).toBeNull();
+    expect(c('Credit balance is too low \u00b7 Add funds: https://platform.claude.com/settings/billing')).toBeNull();
+  });
 });
 
 describe('the sign-in check', () => {
@@ -78,6 +98,14 @@ describe('after a refused sign-in', () => {
     await new Promise((r) => setTimeout(r, 30));
     writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: 'fake-b', refreshToken: 'fake-r1', expiresAt: Date.now() + 3600_000, scopes: ['user:inference'] } }));
     expect(await run(h, 'hello')).toMatchObject({ event: 'run.completed' });
+  });
+  it('the real Claude Code words "Not logged in · Please run /login" count as a refused sign-in, and are not shown as something the bot said', async () => {
+    h = await harness({}, 'claude-code', { claudeConfigDir: signinDir(3600_000) });
+    const res = await start(h, { input: 'NOTLOGGEDIN please' });
+    const { run_id } = (await res.json()) as { run_id: string };
+    const frames = await events(h, run_id);
+    expect(frames.map((f) => f.data['event'])).toEqual(['run.failed']);
+    expect(frames[0]!.data).toMatchObject({ reason: 'needs_sign_in', error: 'Not logged in \u00b7 Please run /login' });
   });
   it('a plan limit carries its reset time and the next run is refused without a process', async () => {
     h = await harness({}, 'claude-code', { claudeConfigDir: signinDir(3600_000) });
@@ -178,6 +206,14 @@ describe('the Codex failure table', () => {
     expect(c('Please run `codex login` to sign in again')).toBe('needs_sign_in');
     expect(c("You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again in 2 days 3 hours 4 minutes.")).toBe('plan_limit');
     expect(c("You've hit your usage limit. Try again later (stand-in).")).toBe('plan_limit');
+    // MEASURED on the host (Codex 0.166.0, 2026-11-10): what the tool printed with no login, and its own sentences for the cases that cannot be provoked
+    expect(c('unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: x-HEL, request id: req_x')).toBe('needs_sign_in');
+    expect(c('Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.')).toBe('needs_sign_in');
+    expect(c('Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.')).toBe('needs_sign_in');
+    expect(c('Your authentication session could not be refreshed automatically. Please log out and sign in again.')).toBe('needs_sign_in');
+    expect(c('Usage limit reached. You\u2019ve reached your usage limit. Increase your limits to continue using codex.')).toBe('plan_limit');
+    expect(c("The 'not-a-real-model' model is not supported when using Codex with a ChatGPT account.")).toBeNull();
+    expect(c('Reconnecting... 2/5 (unexpected status 502 Bad Gateway)')).toBeNull();
     expect(c('FAKE401')).toBe('needs_sign_in');
     expect(c('FAKELIMIT')).toBe('plan_limit');
     // not about the account

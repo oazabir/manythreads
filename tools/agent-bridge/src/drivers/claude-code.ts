@@ -4,7 +4,7 @@ import { lastLine, redact } from '../process.ts';
 import { sessionUuid } from '../sessions.ts';
 import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 
-// The Claude Code driver: one `claude -p` process per run (flags checked against Claude Code 2.1.310's `--help`).
+// The Claude Code driver: one `claude -p` process per run (flags checked against Claude Code 2.1.310's `--help`; run against the real 2.1.319 on 2026-11-10, docs/spikes/host-claude-codex-measured.md).
 //
 //   claude -p --output-format stream-json --verbose --strict-mcp-config
 //          [--mcp-config <runDir>/mcp.json] [--append-system-prompt-file <runDir>/instructions.md]
@@ -126,6 +126,9 @@ async function attempt(job: DriverJob, mode: 'new' | 'resume' | 'none', uuid: st
         break;
       case 'assistant': {
         turns += 1;
+        // MEASURED (Claude Code 2.1.319): when the API refuses (not logged in, unknown model, 401) the tool writes the refusal as a synthetic assistant message with an `error` field
+        // (`authentication_failed`, `model_not_found`); that text is the failure, not something the bot said, and it comes again as the failed `result`.
+        if (typeof msg['error'] === 'string') break;
         for (const block of content) {
           if (!isRecord(block)) continue;
           if (block['type'] === 'text' && typeof block['text'] === 'string' && block['text'] !== '') {
@@ -154,7 +157,10 @@ async function attempt(job: DriverJob, mode: 'new' | 'resume' | 'none', uuid: st
         }
         break;
       case 'result': {
-        const text = typeof msg['result'] === 'string' ? msg['result'] : '';
+        // MEASURED: a failed result carries its words in `result` (an API refusal: `subtype` is still "success", `is_error` true, `api_error_status` the HTTP status) or, when the tool failed
+        // before any request ("No conversation found with session ID: …", subtype `error_during_execution`), in the `errors` list with no `result` at all.
+        const errors = Array.isArray(msg['errors']) ? (msg['errors'] as unknown[]).filter((e): e is string => typeof e === 'string').join(' ') : '';
+        const text = typeof msg['result'] === 'string' && msg['result'] !== '' ? msg['result'] : errors;
         const failed = msg['is_error'] === true || (typeof msg['subtype'] === 'string' && msg['subtype'] !== 'success');
         if (failed) {
           if (/no conversation found/i.test(text)) out.missingSession = true;

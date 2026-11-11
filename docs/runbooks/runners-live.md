@@ -61,6 +61,7 @@ Use a login made **for this**, not the one you work in: two copies of one login 
 - [ ] Look at the real refusal and limit texts the tool prints (`kubectl -n manythreads-bots logs deploy/claude-<runner> -c bridge`) and copy their exact words into the issue for P19-01, so `FAILURE_PATTERNS` can stop using stand-in texts. Do not paste the file.
 - [ ] Measure the shapes: do the access and refresh tokens begin `sk-ant-oat01-` and `sk-ant-ort01-`? If not, tell the session that owns `packages/plugins/guardrails-dlp/src/dlp.ts` and `tools/agent-bridge/src/process.ts`: the shapes are guesses until measured (the sign-in file's own field names are hidden whatever the value looks like, so a wrong guess is not a leak of those fields, but a token printed on its own in an answer would not be caught).
 - **Undo:** Remove sign-in on the runner's page (deletes the credentials Secret and the pod's state volume), then delete the runner.
+- 2026-11-11: measured against the host's own `claude` 2.1.319 (owner decision: no second login); real refusal texts, event shapes and token shapes are in `docs/spikes/host-claude-codex-measured.md`, and `FAILURE_PATTERNS` use them. The checklist items above that need a pod and a second login stay open.
 
 ## 4. The Codex test (P19-13, owner blocker 2)
 
@@ -72,6 +73,7 @@ Needs your go-ahead in the session that runs it, because the file is a real Chat
 - [ ] Note the model names for the alias map and the exact text for "refresh token reused" and "limit reached".
 - [ ] Measure the shapes: ChatGPT tokens are JSON web tokens (`eyJ...`) and the refresh token begins `rt_`; confirm, or tell the DLP owner.
 - **Undo:** delete the throwaway pod; Remove sign-in on the runner if one was made.
+- 2026-11-11: measured against the host's own `codex` 0.166.0 (owner decision); `auth.lock` exists, the refresh token begins `rt.1.` not `rt_` (DLP and bridge now match it), model names and the not-logged-in text are in `docs/spikes/host-claude-codex-measured.md`. A pod copy of `auth.json` was not made.
 
 ## 5. Switching the Claude and Codex runners on in the live site (owner blocker 4)
 
