@@ -1,5 +1,5 @@
 import type { PluginTx } from '@manythreads/sdk';
-import { Board, Environment, Goal, Handoff, Runner, Task, TaskEvent, readStoredColumn } from '@manythreads/shared';
+import { Board, Environment, Goal, GoalStep, Handoff, MAX_GOAL_STEPS, Runner, Task, TaskEvent, readStoredColumn } from '@manythreads/shared';
 
 /** A row as the SQL columns come back; PostgreSQL returns timestamptz as Date. */
 export interface TaskRow extends Record<string, unknown> {
@@ -96,6 +96,20 @@ export interface GoalRow extends Record<string, unknown> {
 /** The columns of a goal, in one place so the routes and the goal tools read the same row. */
 export const GOAL_COLUMNS = `id, workspace_id, team_id, number, title, description, status, budget_usd, channel_id, thread_root_id, steps, created_by, created_at, updated_at`;
 
+/**
+ * The steps of a goal as stored. The column holds whatever an older or a hand-edited row holds, so an entry that is not a step is left out here rather than
+ * failing the whole list of goals (the plan card then shows the steps it can read). `goals.plan` only ever writes valid steps.
+ */
+export function readSteps(stored: unknown): GoalStep[] {
+  if (!Array.isArray(stored)) return [];
+  const out: GoalStep[] = [];
+  for (const entry of stored) {
+    const step = GoalStep.safeParse(entry);
+    if (step.success) out.push(step.data);
+  }
+  return out.slice(0, MAX_GOAL_STEPS);
+}
+
 export function toGoal(r: GoalRow): Goal {
   return Goal.parse({
     id: r.id,
@@ -109,7 +123,7 @@ export function toGoal(r: GoalRow): Goal {
     budgetUsd: r.budget_usd === null ? null : Number(r.budget_usd),
     channelId: r.channel_id,
     threadRootId: r.thread_root_id,
-    steps: r.steps,
+    steps: readSteps(r.steps),
     createdBy: r.created_by,
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
