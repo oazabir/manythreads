@@ -177,14 +177,17 @@ Bots appear by display name, never by slug. `board` is the board of the goal's n
 the caller cannot read it. `thread` is null when the goal has no thread or the caller cannot read its first message. `spend` is `app.tasks_goal_spend(goal)`: a
 definer door that answers only to a caller who reads the goal's team, takes nothing but the goal id, and sums the model gateway's `llm_spend` over the runs woken
 by a card of the goal or answering in its thread; it is null when the caller may not read the team or the ledger is not installed, and 0 when nothing was spent.
+Any writer of the team may file a card on any goal of the team (`tasks.create` with `goalId`), and the cost of that card's runs then shows in the goal's spend for
+everyone who reads the team; this is accepted, as the goal's cost is a team figure and no model ledger line is shown, only the sum.
 
 How a step is worked out (`goalSteps`, `packages/shared/src/tasks/goal-steps.ts`, a pure function with a test table): a goal has up to three kinds of card, found by title
 (`Plan: …` / `Plan review: …` is `plan`, `Publish: …` is `publish`, anything else `work`; the newest of each). A step follows the card named by its `cardRef`
 (default `work`). The holders of that card (its creator, the receiver of each applied handoff, its owner) are walked in order; a bot belongs to the step that lists
 it. The step of the current holder is `running` (`waiting` when the card waits on a person, `blocked` when it has a blocker and does not wait), steps before it are
 `done`, steps after it are not started. When the current holder is in no step (the Engineer between two steps, a person), every step up to the furthest one reached is
-`done`, and that step is `waiting` if the card waits on a person. A done card finishes all its steps. `rework` of a step counts how often the card came back
-into its bots from a later point. The chip is `stopped` for a dropped goal, `done` for a done goal or when every step is done, `waiting for a person` when a step
+`done`, and that step is `waiting` if the card waits on a person, or `blocked` if the card has a blocker and does not wait. A done card finishes all its steps.
+`rework` of a step counts how often the card came back to it: from a later step (also through the Engineer: reviewer, Engineer, coder is one), or, inside a step
+that lists several bots, to a bot listed earlier than one that already held it there (`[coder, code-reviewer]`: coder, reviewer, coder is one). The chip is `stopped` for a dropped goal, `done` for a done goal or when every step is done, `waiting for a person` when a step
 waits, `running` when a step runs, is blocked or is done, else `planned`.
 
 ## Channel boards and the Bot Board

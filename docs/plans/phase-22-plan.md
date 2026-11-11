@@ -75,7 +75,7 @@ Step state rule (one pure function, `goalSteps` in `packages/shared/src/tasks/go
 steps are in order; each names bot slugs and optionally a `cardRef` (`plan`, `work`, `publish`; default `work`). For a step's card, walk its
 handoffs in order and keep a pointer `p` = the furthest step whose bots held the card. Steps before `p` are `done`; step `p` is `running`
 (`waiting` if the card is `waiting_on_person`, `blocked` if `blocker_reason` is set, `done` if the card is done or the card went back to a bot of
-no later step after a step bot held it); later steps are `todo` (grey). `rework N` = handoffs into the step's bots from a bot of a later step. Goal
+no later step after a step bot held it); later steps are `todo` (grey). `rework N` = times the card came back to the step: from a bot of a later step (also through the Engineer: reviewer, Engineer, coder counts), or, inside a step with several bots, to a bot listed before one that already held it there (coder, reviewer, coder in `[coder, code-reviewer]`). A blocker on a card that sits with the Engineer keeps the step it came from `blocked`. Goal
 chip: `stopped` (goal dropped) › `done` (goal done, or every step done) › `waiting for a person` (a step waiting) › `running` (a step running or done)
 › `planned`.
 
@@ -99,10 +99,10 @@ returns the new fields), `packages/shared/src/events/` + `registry.ts` (`tasks.g
   board: {teamSlug, boardId} | null, thread: {replies, lastName, lastAt, faces: [display names ≤3]} | null}}`. Bots by display name, never slug.
   `board` is null when the caller cannot read that board (RLS). Thread numbers read from the thread row as the caller (null when unreadable).
   Spend: a new SECURITY DEFINER function `app.tasks_goal_spend(goal uuid)` that answers the sum of `llm_spend.cost_usd` over runs whose `task_id`
-  is a card of the goal or whose `reply_root_id` is the goal's thread, only when `app.lookup_team_role` says the caller reads the team (Opus checks
+  is a card of the goal or whose `reply_root_id` is the goal's thread, only when `app.readable_team_ids('read')` says the caller reads the team (Opus checks
   the cross-plugin table read; when gateway-llm is absent answer null).
 - Tests: `packages/plugins/tasks/test/goals.test.ts` (ensure is idempotent across two runs; numbers per team; plan refuses a foreign slug, 13
-  steps), `test/rls/goals-plan.test.ts` (an outsider reads nothing; a channel reader who is not a team member gets `forbidden`), and
+  steps), `test/rls/goals-plan.test.ts` (an outsider reads nothing; a channel reader who is not a team member gets `not_found`, the same as a goal that does not exist, so the goal's existence is not told), and
   `packages/shared/test/goal-steps.test.ts` (chain, rework 1, waiting for merge, blocked, card back to Engineer, done). `pnpm test:rls`,
   `pnpm test:events`, `pnpm test:schema-compat`.
 
