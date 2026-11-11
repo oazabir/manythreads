@@ -1,4 +1,5 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerPlanCardFollower } from './plan-card.ts';
 import { registerRoutes } from './routes.ts';
 import { readSurfaceEvents, renderSurface, updateSurface } from './tools.ts';
 
@@ -15,19 +16,23 @@ export { DATA_IN_FLIGHT_PER_PERSON, resetDataCalls } from './data.ts';
 export default definePlugin({
   manifest: {
     name: 'surfaces',
-    version: '0.2.0',
+    version: '0.3.0',
     kind: 'server',
-    extends: ['event.emit'],
+    extends: ['event.emit', 'event.subscribe'],
     // Three tools a BOT.md grants by name (or `surface.*`). None is destructive: they add and change a screen in the bot's own thread, and every change is kept.
     capabilities: [
       { name: 'surface.render', destructive: false },
       { name: 'surface.update', destructive: false },
       { name: 'surface.event', destructive: false },
     ],
-    events: { emits: ['surfaces.surface.rendered', 'surfaces.surface.updated', 'surfaces.surface.event_posted'], consumes: [] },
+    // consumes: what moves a goal, so the plan card (P22-03) follows the board
+    events: {
+      emits: ['surfaces.surface.rendered', 'surfaces.surface.updated', 'surfaces.surface.event_posted'],
+      consumes: ['tasks.task.updated', 'tasks.task.handed_off', 'tasks.task.completed', 'tasks.goal.updated'],
+    },
     // channels: a surface belongs to a channel, is read through app.visible_channel_ids and announced by a message (the `messages` provider); bots: the bot and its
-    // run are foreign keys, and the run says where the bot draws.
-    dependsOn: ['channels', 'bots'],
+    // run are foreign keys, and the run says where the bot draws; tasks: the plan card of a goal (`goal_id`, migration 0003) points at `app.goals` and follows the cards.
+    dependsOn: ['channels', 'bots', 'tasks'],
     migrations: 'migrations',
   },
   register(ctx) {
@@ -35,5 +40,6 @@ export default definePlugin({
     ctx.capabilities.register('surface.update', (input, tx) => updateSurface(ctx, tx, input));
     ctx.capabilities.register('surface.event', (input, tx) => readSurfaceEvents(ctx, tx, input));
     registerRoutes(ctx);
+    registerPlanCardFollower(ctx);
   },
 });

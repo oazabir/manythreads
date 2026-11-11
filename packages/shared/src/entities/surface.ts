@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, BotId, ChannelId, MessageId, RunId, SurfaceEventId, SurfaceId, TeamId, WorkspaceId } from '../ids.ts';
+import { ActorId, BotId, ChannelId, GoalId, MessageId, RunId, SurfaceEventId, SurfaceId, TeamId, WorkspaceId } from '../ids.ts';
 
 // Surfaces (PLAN P9-01, SPEC §14, plugin `surfaces`): a screen a bot drew in OpenUI Lang, kept as the text it wrote plus a version number, and the history
 // of what happened to it. Enums match the SQL CHECKs in plugins/surfaces/migrations exactly (packages/kernel/test/schema-enums.test.ts compares both).
@@ -61,6 +61,10 @@ export const Surface = z.object({
   source: z.string().max(SURFACE_SOURCE_MAX),
   /** Starts at 1; goes up by one every time the source changes. */
   version: z.number().int().min(1),
+  /** The goal this surface is the plan card of (PLAN P22-03, one card per goal); null for an ordinary surface. */
+  goalId: GoalId.nullable(),
+  /** The channel message that shows it (so its text line can follow the goal); null until posted, and for an ordinary surface. */
+  messageId: MessageId.nullable(),
   /** The channel it is pinned to (the channel bar); null when it is not pinned. Today this can only be the surface's own channel. */
   pinnedChannelId: ChannelId.nullable(),
   pinnedBy: ActorId.nullable(),

@@ -66,6 +66,7 @@ describe('the registry the app uses', () => {
       'DiffView',
       'Divider',
       'EntityCard',
+      'GoalCard',
       'Grid',
       'Heading',
       'List',

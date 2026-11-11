@@ -5,6 +5,6 @@ import plugin from '../src/index.ts';
 describe('the surfaces plugin', () => {
   it('has a manifest the plugin host accepts, and owns its migrations folder', () => {
     const manifest = PluginManifest.parse(plugin.manifest);
-    expect(manifest).toMatchObject({ name: 'surfaces', migrations: 'migrations', dependsOn: ['channels', 'bots'] });
+    expect(manifest).toMatchObject({ name: 'surfaces', migrations: 'migrations', dependsOn: ['channels', 'bots', 'tasks'] });
   });
 });

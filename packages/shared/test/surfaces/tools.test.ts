@@ -25,6 +25,20 @@ describe('tool arguments', () => {
     expect(SurfaceRenderInput.safeParse({ title: 'T', source: SCREEN, channelId: crypto.randomUUID() }).success).toBe(false);
     expect(SurfaceRenderInput.safeParse({ title: 'two\nlines', source: SCREEN }).success).toBe(false);
     expect(SurfaceRenderInput.safeParse({ title: 'T', source: '' }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ title: 'T' }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ source: SCREEN }).success).toBe(false);
+  });
+  it('render can instead take a goal and the target channel, never both forms, never another target', () => {
+    const goalId = crypto.randomUUID();
+    expect(SurfaceRenderInput.safeParse({ goalId, target: 'channel' }).success).toBe(true);
+    expect(SurfaceRenderInput.safeParse({ goalId }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ target: 'channel' }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ goalId, target: 'thread' }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ goalId, target: 'channel', title: 'T', source: SCREEN }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ goalId: 'not-an-id', target: 'channel' }).success).toBe(false);
+    expect(SurfaceRenderInput.safeParse({ goalId, target: 'channel', channelId: crypto.randomUUID() }).success).toBe(false);
+    // the schema the model reads stays one flat object
+    expect(z.toJSONSchema(SurfaceRenderInput, { io: 'input' })).toMatchObject({ type: 'object', additionalProperties: false });
   });
   it('update names the screen and the patch; the version is optional and never a free number', () => {
     const id = crypto.randomUUID();

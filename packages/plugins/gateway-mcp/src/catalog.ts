@@ -356,7 +356,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'surface.render': {
     name: 'surface.render',
     description:
-      'Draw a screen in the thread you were asked in, instead of describing it in text: a small page the person can look at and press. Write it in OpenUI Lang, one statement per line, `name = Part(value, ...)`; the part named `root` is drawn first and a part is placed by naming it inside its parent. Parts: ' +
+      'Two uses. (1) To post the plan card of a goal in the channel, pass goalId (goals.ensure answered with it) and target "channel", and nothing else: the platform writes the card, you write no screen. It is posted in the channel itself (not the thread), once per goal; asking again answers the same surfaceId with created false and posts nothing. It follows the goal by itself, so never post it twice and change the plan with goals.plan. It works only in a team channel where you may post. (2) To draw a screen in the thread you were asked in, instead of describing it in text: a small page the person can look at and press; pass title and source. Write it in OpenUI Lang, one statement per line, `name = Part(value, ...)`; the part named `root` is drawn first and a part is placed by naming it inside its parent. Parts: ' +
       describeSurfaceParts(SURFACE_REGISTRY) +
       ' ' +
       describeSurfaceBinding() +

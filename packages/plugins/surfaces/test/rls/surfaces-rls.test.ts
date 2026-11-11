@@ -1,6 +1,7 @@
 import { createAppPool, createSystemPool, withActor, withSystem, type Actor, type Tx } from '@manythreads/kernel';
 import {
   TEAM_IDS,
+  approvalsMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
   createPersonas,
@@ -11,6 +12,7 @@ import {
   personaActor,
   personas,
   surfacesMigrationSource,
+  tasksMigrationSource,
   teamsMigrationSource,
   testClient,
   testKernelMigrationSource,
@@ -114,7 +116,7 @@ const botHistory = (b: { actor: string }, surface: string, kind: string, version
   );
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, surfacesMigrationSource] });
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, approvalsMigrationSource, tasksMigrationSource, surfacesMigrationSource] });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);
   sysPool = createSystemPool(db.systemUrl, 2);

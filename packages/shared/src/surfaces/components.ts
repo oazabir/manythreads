@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { TasksGoalPlan } from '../api/tasks/goals.ts';
 import { AnswerPayload } from '../entities/answer.ts';
+import { GoalId } from '../ids.ts';
 import { createSurfaceRegistry, defineSurfaceComponent } from './registry.ts';
 
 // The parts every client draws (PLAN P9-02, P9-05): the primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart, List, Badge, Button, Callout, Code,
@@ -239,6 +241,21 @@ export const AnswerComponent = defineSurfaceComponent({
   platformOnly: true,
 });
 
+/**
+ * The plan card of one goal (PLAN P22-03): the steps of a goal and where each stands, drawn in the channel. The platform writes it when a bot calls `surface.render`
+ * with a `goalId` (the bot writes no screen text), and its values come from the read `tasks.goal` bound as the person looking, so each viewer sees only what they
+ * may read (the spend and the board link are left out for a viewer who cannot read them). `plan` is the answer's `plan` as that tool gives it; the web client
+ * draws it and builds the board link from `plan.board`'s two ids, never from text.
+ */
+export const GoalCardComponent = defineSurfaceComponent({
+  name: 'GoalCard',
+  summary: 'The plan card of a goal, written by the platform when you call surface.render with a goalId and target channel; do not draw it by hand.',
+  args: ['goalId', 'title', 'plan'],
+  props: z.object({ goalId: GoalId, title: z.string().min(1).max(300), plan: TasksGoalPlan.nullable().optional() }),
+  bindable: ['plan'],
+  platformOnly: true,
+});
+
 /** Every part a surface may use. */
 export const SURFACE_COMPONENTS = [
   StackComponent,
@@ -261,10 +278,11 @@ export const SURFACE_COMPONENTS = [
   ApprovalCardComponent,
   DiffViewComponent,
   AnswerComponent,
+  GoalCardComponent,
 ] as const;
 
 /** The registry the web client and the server use. */
 export const SURFACE_REGISTRY = createSurfaceRegistry(SURFACE_COMPONENTS);
 
-/** The same parts, judged as a BOT's text: a part only the platform draws (the Answer) is refused. The surface tools check what a bot writes with this one. */
+/** The same parts, judged as a BOT's text: a part only the platform draws (the Answer, the GoalCard) is refused. The surface tools check what a bot writes with this one. */
 export const SURFACE_BOT_REGISTRY = createSurfaceRegistry(SURFACE_COMPONENTS, { botInput: true });

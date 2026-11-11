@@ -4,7 +4,7 @@ import { Surface, SurfaceEvent } from '@manythreads/shared';
 // caller's own transaction, so row-level security decides who sees what.
 
 export const SURFACE_COLUMNS = `s.id, s.workspace_id, s.team_id, s.channel_id, s.bot_id, s.run_id, s.thread_root_id, s.title, s.source, s.version,
-  s.pinned_channel_id, s.pinned_by, s.pinned_at, s.created_by, s.created_at, s.updated_at`;
+  s.goal_id, s.message_id, s.pinned_channel_id, s.pinned_by, s.pinned_at, s.created_by, s.created_at, s.updated_at`;
 
 export type SurfaceRow = {
   id: string;
@@ -17,6 +17,8 @@ export type SurfaceRow = {
   title: string;
   source: string;
   version: number;
+  goal_id: string | null;
+  message_id: string | null;
   pinned_channel_id: string | null;
   pinned_by: string | null;
   pinned_at: Date | null;
@@ -37,6 +39,8 @@ export function toSurface(r: SurfaceRow): Surface {
     title: r.title,
     source: r.source,
     version: r.version,
+    goalId: r.goal_id,
+    messageId: r.message_id,
     pinnedChannelId: r.pinned_channel_id,
     pinnedBy: r.pinned_by,
     pinnedAt: r.pinned_at ? r.pinned_at.toISOString() : null,

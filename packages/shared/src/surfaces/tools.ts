@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SURFACE_NODE_ID_MAX, SURFACE_SOURCE_MAX, SurfaceTitle } from '../entities/surface.ts';
-import { SurfaceEventId, SurfaceId } from '../ids.ts';
+import { GoalId, SurfaceEventId, SurfaceId } from '../ids.ts';
 import { createSurfaceStreamState, endSurface, feedSurface, parseSurface, type SurfaceNode, type SurfaceProblem, type SurfaceStatement } from './openui.ts';
 import type { SurfaceRegistry } from './registry.ts';
 
@@ -23,11 +23,30 @@ export const SURFACE_EVENT_TOOL_MAX = 50;
 // The three tools ------------------------------------------------------------------------------------------------------------------
 // The tools take no channel, thread, team or run: those are the run's own, read by the platform. A bot cannot draw somewhere it was not asked to.
 
-/** `surface.render`: draw a new screen in the place this run answers in. */
-export const SurfaceRenderInput = z.strictObject({
-  title: SurfaceTitle.describe('A short title in one line, shown above the screen and kept in the thread.'),
-  source: z.string().min(1).max(SURFACE_SOURCE_MAX).describe('The screen, written in OpenUI Lang: one statement per line, `name = Part(value, ...)`. The first part to draw is named `root`.'),
-});
+/**
+ * `surface.render`: draw a new screen in the place this run answers in, or (PLAN P22-03) post the plan card of a goal in the channel. Either `title` and `source`
+ * (the bot writes the screen, drawn in the thread the run answers in), or `goalId` and `target: "channel"` (the platform writes the screen: the plan card of the
+ * goal, one per goal, in the channel itself). Never both. Still one flat object, so the tool's JSON schema stays a plain object for every model.
+ */
+export const SurfaceRenderInput = z
+  .strictObject({
+    title: SurfaceTitle.optional().describe('A short title in one line, shown above the screen and kept in the thread. With source.'),
+    source: z.string().min(1).max(SURFACE_SOURCE_MAX).optional().describe('The screen, written in OpenUI Lang: one statement per line, `name = Part(value, ...)`. The first part to draw is named `root`. With title.'),
+    goalId: GoalId.optional().describe('Instead of title and source: the goal (goals.ensure answered with it) whose plan card to post in the channel. The platform writes the card. With target.'),
+    target: z.literal('channel').optional().describe('With goalId: "channel", the channel this run answers in (not the thread). Posting the card twice for one goal posts nothing the second time.'),
+  })
+  .superRefine((v, ctx) => {
+    const own = v.title !== undefined || v.source !== undefined;
+    const goal = v.goalId !== undefined || v.target !== undefined;
+    if (own && goal) ctx.addIssue({ code: 'custom', message: 'Give either title and source, or goalId and target, not both' });
+    else if (goal) {
+      if (v.goalId === undefined) ctx.addIssue({ code: 'custom', path: ['goalId'], message: 'Required with target' });
+      if (v.target === undefined) ctx.addIssue({ code: 'custom', path: ['target'], message: 'Required with goalId: "channel"' });
+    } else {
+      if (v.title === undefined) ctx.addIssue({ code: 'custom', path: ['title'], message: 'Required (or give goalId and target)' });
+      if (v.source === undefined) ctx.addIssue({ code: 'custom', path: ['source'], message: 'Required (or give goalId and target)' });
+    }
+  });
 export type SurfaceRenderInput = z.infer<typeof SurfaceRenderInput>;
 
 /** `surface.update`: change some parts of a screen you drew, by their names. */
