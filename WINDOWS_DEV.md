@@ -6,7 +6,7 @@ Linux-only (vitest against a real Postgres, Docker image builds, k3s, Helm) runs
 the devbox; Windows only edits files and forwards commands. No WSL is used or needed.
 
 ```
-Windows                                     devbox  (root@65.109.71.84:44033)
+Windows                                     devbox  (root@<devbox-address>:44033)
 C:\Users\omar\manythreads                   /root/manythreads
   edit · pnpm lint · pnpm typecheck
         │
@@ -68,7 +68,7 @@ Already done on this machine (2026-10-02); kept here to rebuild or copy elsewher
 4. **SSH access to the devbox** — `%USERPROFILE%\.ssh\config` must contain:
    ```
    Host devbox
-       HostName 65.109.71.84
+       HostName <devbox-address>
        User root
        Port 44033
        # ControlMaster multiplexing disabled: Windows OpenSSH has no unix-socket

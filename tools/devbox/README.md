@@ -18,7 +18,7 @@ sync rules, troubleshooting).
 | `hermes-live.mjs` | Runs the real Hermes CLI against a seeded stack and a real model (fake-llm forwards to the gateway), and checks nine bot journeys: mention, conversation, channel message, delegation, answer, approval, gate, task claim, refusal. See [runtime-hermes](../../docs/plugins/runtime-hermes.md#connecting-a-dev-box-real-hermes-a-real-model). |
 | `deploy.sh` | Runs on the devbox: build server+web images, import into k3s, prune old tags, `helm upgrade --install`, smoke-test the site. `--no-build` promotes a build that is already there. |
 
-Devbox: `root@65.109.71.84:44033` (SSH host `devbox`, see `~/.ssh/config`), checkout
+Devbox: `root@<devbox-address>:44033` (SSH host `devbox`, see `~/.ssh/config`), checkout
 `/root/manythreads`, k3s serves **https://manythreads.kahf.to** (namespace
 `manythreads`). Model: edit locally, sync over SSH, everything slow runs on the
 devbox — never deploy from Windows.
