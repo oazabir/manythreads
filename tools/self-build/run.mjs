@@ -2,6 +2,10 @@
 //
 //   node tools/self-build/run.mjs start <request-file> [--channel dev]   post "@engineer <request>" in the channel; prints the thread root id
 //   node tools/self-build/run.mjs watch <rootId> [--minutes 90]           follow the thread, print each new message (who + first lines), stop on quiet or time
+//   node tools/self-build/run.mjs say <rootId> <text>                     reply in the thread (e.g. to nudge a bot: @coder ...)
+//   node tools/self-build/run.mjs get <path>                              GET an API path as MT_USER and print the JSON (a project's credential status, a card)
+//   node tools/self-build/run.mjs post <path>                             POST an empty body (e.g. /api/workspace/llm/aliases/code/test, a project's push-credential/test)
+//   node tools/self-build/run.mjs put <path> '<json>'                     PUT a JSON body (e.g. save an LLM alias again with the same values)
 //   node tools/self-build/run.mjs shot <url> <out.png>                    screenshot a page with Playwright (the proof kept for each stage)
 //
 // Sign-in: MT_BASE (the site's address, required) and the person named by MT_USER (required: the <NAME> prefix of its two entries) in ~/manythreads.passwords.env
@@ -107,6 +111,20 @@ async function watch(rootId) {
   console.log(`watch ended: ${log.length} replies saved to ${OUT}/thread-${rootId}.json`);
 }
 
+async function say(rootId, text) {
+  const api = await login();
+  const id = await channelId(api, flag('channel', 'dev'));
+  const r = await api('POST', `/api/channels/${id}/messages`, { channelId: id, body: text, threadRootId: rootId });
+  if (r.status !== 201) throw new Error(`post failed: HTTP ${r.status} ${JSON.stringify(r.json).slice(0, 300)}`);
+  console.log(`posted ${r.json.id}`);
+}
+
+async function get(path, method = 'GET', body) {
+  const api = await login();
+  const r = await api(method, path, method === 'GET' ? undefined : body ?? {});
+  console.log(JSON.stringify({ status: r.status, json: r.json }, null, 2));
+}
+
 async function shot(url, out) {
   const { createRequire } = await import('node:module');
   const { chromium } = createRequire(new URL('../../e2e/package.json', import.meta.url))('@playwright/test');
@@ -123,8 +141,12 @@ const [cmd, a, b] = process.argv.slice(2);
 try {
   if (cmd === 'start' && a) await start(a);
   else if (cmd === 'watch' && a) await watch(a);
+  else if (cmd === 'say' && a && b) await say(a, b);
+  else if (cmd === 'get' && a) await get(a);
+  else if (cmd === 'post' && a) await get(a, 'POST');
+  else if (cmd === 'put' && a && b) await get(a, 'PUT', JSON.parse(b));
   else if (cmd === 'shot' && a && b) await shot(a, b);
-  else { console.error('usage: run.mjs start <file> | watch <rootId> | shot <url> <out.png>'); process.exit(2); }
+  else { console.error('usage: run.mjs start <file> | watch <rootId> | say <rootId> <text> | get <path> | shot <url> <out.png>'); process.exit(2); }
 } catch (e) {
   console.error(e instanceof Error ? e.message : String(e));
   process.exit(1);
