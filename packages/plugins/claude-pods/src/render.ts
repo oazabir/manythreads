@@ -124,8 +124,8 @@ export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = 
       : []),
     ...(mayPublish
       ? [
-          'To hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> "<title>"` (the pull request text on standard input).',
-          'It pushes that branch and opens the pull request. You never hold the push token and never push to the main branch yourself.',
+          'To hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> "<title>"` (the pull request or merge request text on standard input). When the card says whose name the commit carries (an author name and email), add them as the last two arguments, exactly as given.',
+          'It makes one commit of the whole change, pushes that branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.',
         ]
       : []),
   ].join('\n');

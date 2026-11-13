@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hands each project's GitHub token to the `repo` user and to nobody else. Runs as root, from mt-reconcile.sh.
+# Hands each project's git token (GitHub or GitLab) to the `repo` user and to nobody else. Runs as root, from mt-reconcile.sh.
 #   /etc/workbench-push/<project>   the Kubernetes Secret of the pod (root-only: the kubelet makes the files 0400 root)
 #   /run/mt-push/<project>          the copy mt-publish.sh reads: 0400 and owned by `repo`, in a directory only ROOT can write (0755, a memory
 #                                   volume): `repo` and the bots can neither plant a link there nor swap a file, and root's temp files are safe

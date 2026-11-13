@@ -14,7 +14,7 @@
       }
     },
     "data": {
-      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home\"\n      },\n      \"instructions\": \"You run on a shared Codex runner, not on a person's machine. Your working folder is /work/engineering/engineer.\\nThe team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.\\nDo not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner's sign-in and keys, which are not yours to use.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nTo hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> \\\"<title>\\\"` (the pull request text on standard input).\\nIt pushes that branch and opens the pull request. You never hold the push token and never push to the main branch yourself.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
+      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home\"\n      },\n      \"instructions\": \"You run on a shared Codex runner, not on a person's machine. Your working folder is /work/engineering/engineer.\\nThe team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.\\nDo not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner's sign-in and keys, which are not yours to use.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nTo hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> \\\"<title>\\\"` (the pull request or merge request text on standard input). When the card says whose name the commit carries (an author name and email), add them as the last two arguments, exactly as given.\\nIt makes one commit of the whole change, pushes that branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
       "repos.txt": "engineering engineer app main https://github.com/acme/app.git\n"
     }
   },
@@ -54,7 +54,7 @@
           },
           "annotations": {
             "manythreads.io/upload-id": "up-1",
-            "manythreads.io/profiles-sha": "8a5fd9f3dd197301"
+            "manythreads.io/profiles-sha": "c0cbd32f5ad062f1"
           }
         },
         "spec": {

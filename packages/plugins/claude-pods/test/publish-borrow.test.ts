@@ -62,7 +62,7 @@ afterAll(async () => {
 });
 
 describe("mt-publish.sh with a working clone", () => {
-  it("pushes from a private copy that borrows the clone’s objects and holds none of its own", async () => {
+  it("pushes from a private copy that borrows the clone’s objects and holds only the commit it made", async () => {
     const clone = join(root, "work/team-a/builder/widgets");
     mkdirSync(clone, { recursive: true });
     git(clone, "init", "-q", "-b", "main");
@@ -77,6 +77,8 @@ describe("mt-publish.sh with a working clone", () => {
     git(clone, "commit", "-q", "-m", "the change");
     const head = git(clone, "rev-parse", "HEAD");
     git(root, "init", "-q", "--bare", "-b", "main", "origin.git");
+    const main = git(clone, "rev-parse", "main");
+    git(clone, "push", "-q", join(root, "origin.git"), "main"); // the origin has the project's main branch
 
     const push = join(root, "push");
     mkdirSync(push, { mode: 0o700 });
@@ -128,11 +130,13 @@ describe("mt-publish.sh with a working clone", () => {
     );
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(
-      git(join(root, "origin.git"), "rev-parse", `refs/heads/${BRANCH}`),
-    ).toBe(head);
+    // the origin got ONE new commit on its main branch (the squash of the card), not the clone's own commit
+    const made = git(join(root, "origin.git"), "rev-parse", `refs/heads/${BRANCH}`);
+    expect(made).not.toBe(head);
+    expect(git(join(root, "origin.git"), "rev-parse", `${made}^`)).toBe(main);
     const [count, alternates] = readFileSync(seen, "utf8").trim().split("\n");
-    expect(Number(count)).toBe(0);
+    // the copy holds the objects it made itself (that one commit; the history is borrowed): never a copy of the 4 MiB the clone holds
+    expect(Number(count)).toBeLessThanOrEqual(2);
     expect(alternates).toBe(join(clone, ".git/objects"));
   });
 });

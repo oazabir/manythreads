@@ -223,6 +223,82 @@ describe('PushCredentials', () => {
     });
   });
 
+  describe('who the project publishes as', () => {
+    const BOT = { provider: 'gitlab', login: 'mt-bot', userId: '4242', commitAs: 'bot' } as const;
+    const GITLAB = 'https://gitlab.example.org/group/sub/widgets';
+    const doc = (k8s: Store, key: string) => parsed(dataOf(k8s)[key]!) as unknown as Record<string, unknown>;
+
+    it('writes the provider, login, user id and commit-as on the project’s own document, and reads them back as the identity', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await creds.put(TEAM, 'widgets', 'token-one-0123456789', GITLAB, 'main', BOT);
+      expect(doc(k8s, 'widgets')).toMatchObject({ provider: 'gitlab', login: 'mt-bot', userId: '4242', commitAs: 'bot', origin: GITLAB });
+      expect(await creds.read(TEAM, 'widgets')).toEqual({ token: 'token-one-0123456789', origin: GITLAB, branch: 'main', identity: BOT });
+    });
+
+    it('a document written before these fields existed reads with no identity', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await creds.put(TEAM, 'widgets', 'token-one-0123456789', ORIGIN, 'main');
+      const d = doc(k8s, 'widgets');
+      expect(d['provider']).toBeUndefined();
+      expect(d['commitAs']).toBeUndefined();
+      expect(await creds.read(TEAM, 'widgets')).toEqual({ token: 'token-one-0123456789', origin: ORIGIN, branch: 'main' });
+    });
+
+    it('a shared owner token: every listed project’s own document carries the identity, the owner document only the token', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await creds.putShared(TEAM, 'gitlab.example.org/group', 'owner-token-0123456789', [{ name: 'widgets', origin: GITLAB, branch: 'main' }, { name: 'gadgets', origin: 'https://gitlab.example.org/group/gadgets', branch: 'dev' }], [], BOT);
+      const owner = doc(k8s, '_owner.gitlab.example.org.group');
+      expect(Object.keys(owner).sort()).toEqual(['setAt', 'token']);
+      for (const p of ['widgets', 'gadgets']) expect(doc(k8s, p)).toMatchObject({ provider: 'gitlab', login: 'mt-bot', userId: '4242', commitAs: 'bot', via: '_owner.gitlab.example.org.group' });
+      expect(await creds.read(TEAM, 'gadgets')).toEqual({ token: 'owner-token-0123456789', origin: 'https://gitlab.example.org/group/gadgets', branch: 'dev', identity: BOT });
+    });
+
+    it('setCommitAs changes only that field of the project’s own document, serialised, and does nothing when absent or unchanged', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await creds.setCommitAs(TEAM, 'widgets', 'requester');
+      expect(k8s.calls).toEqual([]);
+      await creds.put(TEAM, 'widgets', 'token-one-0123456789', GITLAB, 'main', BOT);
+      const before = dataOf(k8s)['widgets'];
+      await creds.setCommitAs(TEAM, 'widgets', 'bot');
+      expect(dataOf(k8s)['widgets']).toBe(before);
+      await creds.setCommitAs(TEAM, 'widgets', 'requester');
+      expect(doc(k8s, 'widgets')).toMatchObject({ commitAs: 'requester', login: 'mt-bot', token: 'token-one-0123456789' });
+      expect((await creds.read(TEAM, 'widgets'))?.identity).toEqual({ ...BOT, commitAs: 'requester' });
+      // on an owner token the owner document is left alone
+      await creds.putShared(TEAM, 'gitlab.example.org/group', 'owner-token-0123456789', [{ name: 'gadgets', origin: 'https://gitlab.example.org/group/gadgets', branch: 'dev' }], [], BOT);
+      const owner = dataOf(k8s)['_owner.gitlab.example.org.group'];
+      await creds.setCommitAs(TEAM, 'gadgets', 'requester');
+      expect(dataOf(k8s)['_owner.gitlab.example.org.group']).toBe(owner);
+      expect((await creds.read(TEAM, 'gadgets'))?.identity?.commitAs).toBe('requester');
+      await expect(creds.setCommitAs(TEAM, 'widgets', 'someone' as 'bot')).rejects.toThrow('bad commit as');
+    });
+
+    it('refuses a bad provider, login, user id or commit-as before touching the cluster, with a message that does not hold the token', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      const tok = 'token-one-0123456789';
+      for (const [bad, why] of [
+        [{ ...BOT, provider: 'bitbucket' }, 'bad provider'],
+        [{ ...BOT, login: '-x' }, 'bad login'],
+        [{ ...BOT, login: 'a b' }, 'bad login'],
+        [{ ...BOT, login: 'a'.repeat(256) }, 'bad login'],
+        [{ ...BOT, userId: '12x' }, 'bad user id'],
+        [{ ...BOT, userId: '1'.repeat(21) }, 'bad user id'],
+        [{ ...BOT, commitAs: 'nobody' }, 'bad commit as'],
+      ] as const) {
+        const err = await creds.put(TEAM, 'widgets', tok, ORIGIN, 'main', bad as never).catch((e: unknown) => e as Error);
+        expect((err as Error).message).toBe(why);
+        expect((err as Error).message).not.toContain(tok);
+        await expect(creds.putShared(TEAM, 'github.com/acme', tok, [{ name: 'widgets', origin: ORIGIN, branch: 'main' }], [], bad as never)).rejects.toThrow(why);
+      }
+      expect(k8s.calls).toEqual([]);
+    });
+  });
+
   it('reports a cluster failure without the token in the message', async () => {
     const fake = await startFakeK8s();
     try {

@@ -153,8 +153,9 @@ describe('the rendered pod', () => {
 // ---- the publisher, run for real ----------------------------------------------------------------------------------------------------------------------------------------------------------
 
 const ME = userInfo().username;
+// fixed dates: the two teams' clones of the same project hold the same history (a real clone comes from the origin), so the main branch of one is the main branch of the other
 const git = (cwd: string, ...args: string[]): string => {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' } });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
   return r.stdout.trim();
 };
@@ -222,6 +223,7 @@ beforeEach(async () => {
   gh.calls.length = 0;
   git(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
   const a = makeClone(join(root, 'work/team-a/builder/widgets'));
+  git(join(root, 'work/team-a/builder/widgets'), 'push', '-q', join(root, 'origin.git'), 'main'); // the origin has the project's main branch: the publish builds on its tip
   headA = a.head;
   mainA = a.main;
   makeClone(join(root, 'work/team-b/builder/widgets'));
@@ -251,7 +253,11 @@ async function mtPublish(token: string | null, args: string[], input = 'Tested.\
   const code = await client(args, { ...(token === null ? {} : { MANYTHREADS_RUN_TOKEN: token }), MT_PUBLISH_SOCKET: socket }, Readable.from([input]), sink((s) => (out += s)), sink((s) => (err += s)));
   return { code, out, err };
 }
-const originRefs = (): string => spawnSync('git', ['-C', join(root, 'origin.git'), 'for-each-ref', '--format=%(refname) %(objectname)'], { encoding: 'utf8' }).stdout;
+/** What the origin holds besides its main branch (which stays where it was, and is checked on its own). */
+const originRefs = (): string => spawnSync('git', ['-C', join(root, 'origin.git'), 'for-each-ref', '--format=%(refname) %(objectname)'], { encoding: 'utf8' }).stdout.split('\n').filter((l) => l !== '' && !l.startsWith('refs/heads/main ')).map((l) => `${l}\n`).join('');
+const originMain = (): string => spawnSync('git', ['-C', join(root, 'origin.git'), 'rev-parse', 'refs/heads/main'], { encoding: 'utf8' }).stdout.trim();
+const squashed = (out: string): string => /head_sha=([0-9a-f]+)/.exec(out)![1]!;
+const log = (sha: string, format: string): string => git(join(root, 'origin.git'), 'log', '-1', `--format=${format}`, sha);
 
 describe('publishing through the publisher', () => {
   it('pushes the card branch and opens the pull request for a bot that may publish', async () => {
@@ -260,9 +266,12 @@ describe('publishing through the publisher', () => {
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/pull_request_number=\d+/);
-    expect(r.out).toContain(`head_sha=${headA}`);
-    // the origin got the card branch at the tested commit and nothing else
-    expect(originRefs().trim()).toBe(`refs/heads/${BRANCH} ${headA}`);
+    // the origin got the card branch as ONE commit on its main branch's tip (the squash), reported beside the tested commit; main did not move
+    expect(r.out).toContain(`tested_sha=${headA}`);
+    expect(r.out).toContain('provider=github');
+    expect(originRefs().trim()).toBe(`refs/heads/${BRANCH} ${squashed(r.out)}`);
+    expect(git(join(root, 'origin.git'), 'rev-list', '--count', `${mainA}..${squashed(r.out)}`)).toBe('1');
+    expect(originMain()).toBe(mainA);
     expect(JSON.parse(gh.calls.find((c) => c.method === 'POST')!.body)).toMatchObject({ title: 'Fix the widget', head: BRANCH, base: 'main' });
     expect(gh.calls.every((c) => c.authorized)).toBe(true);
   });
@@ -446,7 +455,7 @@ describe('a hostile clone', () => {
     const r = await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix']);
     expect(r.code, r.err).toBe(0);
     expect(existsSync(marker())).toBe(false);
-    expect(originRefs().trim()).toBe(`refs/heads/${BRANCH} ${headA}`);
+    expect(originRefs().trim()).toBe(`refs/heads/${BRANCH} ${squashed(r.out)}`);
     expect(spawnSync('git', ['-C', join(root, 'evil.git'), 'for-each-ref'], { encoding: 'utf8' }).stdout).toBe('');
   });
 
@@ -467,6 +476,56 @@ describe('a hostile clone', () => {
     const r = await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix']);
     expect(r.code).toBe(4);
     expect(originRefs()).toBe('');
+  });
+});
+
+describe('who signs a published commit, asked through the publisher', () => {
+  const who = (out: string): string => log(squashed(out), '%an <%ae>|%cn <%ce>');
+  const BOT = { login: 'mt-bot', userId: '4242' };
+  const NO_REPLY = 'mt-bot <4242+mt-bot@users.noreply.github.com>';
+  const setDoc = (commitAs: string): void => {
+    rmSync(join(root, 'push/team-a'), { recursive: true });
+    secretFolder('team-a', 'widgets', { branch: 'main', origin: ORIGIN, token: TOKEN_A, ...BOT, commitAs });
+  };
+
+  it('passes the requester’s name and email on, and the project that signs as the requester uses them (the committer stays the bot)', async () => {
+    setDoc('requester');
+    const r = await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix', 'Sameera Perera', 'sameera@example.org']);
+    expect(r.code, r.err).toBe(0);
+    expect(who(r.out)).toBe(`Sameera Perera <sameera@example.org>|${NO_REPLY}`);
+  });
+
+  it('a project that signs as the bot ignores them', async () => {
+    setDoc('bot');
+    const r = await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix', 'Sameera Perera', 'sameera@example.org']);
+    expect(r.code, r.err).toBe(0);
+    expect(who(r.out)).toBe(`${NO_REPLY}|${NO_REPLY}`);
+  });
+
+  it('a project that signs as the requester refuses a publish without them (exit 2) and pushes nothing', async () => {
+    setDoc('requester');
+    const r = await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix']);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("requester's name and email");
+    expect(originRefs()).toBe('');
+  });
+
+  it('checks the name and email itself before it runs anything, and takes both or neither', async () => {
+    setDoc('requester');
+    for (const [name, email] of [['', 'a@b.co'], ['x'.repeat(101), 'a@b.co'], ['A\nB', 'a@b.co'], ['A <B>', 'a@b.co'], ['A B', 'nope'], ['A B', 'a@b'], ['A B', 'a b@c.de'], ['A B', `${'a'.repeat(200)}@b.co`]]) {
+      expect((await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix', name!, email!])).code, `${name}|${email}`).toBe(2);
+    }
+    expect((await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix', 'Only A Name'])).code).toBe(2);
+    expect((await mtPublish(RUN_A, ['publish', 'widgets', CARD, headA, 'Fix', 'A', 'a@b.co', 'extra'])).code).toBe(2);
+    // a request made by hand (not through the client) with one of the two is refused by the publisher itself, before the script runs
+    const half = await handle({ op: 'publish', token: RUN_A, project: 'widgets', card: CARD, sha: headA, title: 'Fix', authorName: 'A B' }, { serverUrl: platformUrl, work: join(root, 'work'), pushRoot: join(root, 'push'), script: SCRIPT, repoUser: ME });
+    expect(half.code).toBe(2);
+    expect(half.err).toContain('together');
+    const bad = await handle({ op: 'publish', token: RUN_A, project: 'widgets', card: CARD, sha: headA, title: 'Fix', authorName: 'A B', authorEmail: 'nope' }, { serverUrl: platformUrl, work: join(root, 'work'), pushRoot: join(root, 'push'), script: SCRIPT, repoUser: ME });
+    expect(bad.code).toBe(2);
+    expect(bad.err).toContain('not an email');
+    expect(originRefs()).toBe('');
+    expect(gh.calls).toHaveLength(0);
   });
 });
 

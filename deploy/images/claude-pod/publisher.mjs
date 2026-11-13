@@ -1,16 +1,18 @@
-// The publisher (P19-09, docs/plugins/claude-pods.md): the one thing in a Claude or Codex pod that may push a branch and open a pull request.
+// The publisher (P19-09, docs/plugins/claude-pods.md): the one thing in a Claude or Codex pod that may push a branch and open a pull request (GitHub) or merge request (GitLab).
 //
 // A bot's run cannot hold a team's GitHub token: the run container has no token, no push Secret and no way to read the publisher's files. Instead the run calls the client
 // (`mt-publish`, this file with `client`) which hands one request, with the run's own token, to this server over a Unix socket in a folder the two containers share.
 // The server asks the platform `GET /api/runs/self` with that token and gets the run's team and bot and whether the bot's definition grants `tasks.pull_request`.
 // The folder to publish from is then /work/<team>/<bot>/<project>, built from the platform's answer and the (checked) project name, never from anything else the caller
 // said. The team's token is read from that team's Secret folder alone; another team's folder is never opened. The push itself is mt-publish.sh (the same script the Hermes
-// pods use) with MT_SOURCE_DIR set: branch `card-<8>`, never `main`, never a force push, the token passed to git and curl without a command line, masked in all output.
+// pods use) with MT_SOURCE_DIR set: ONE squashed commit on the origin's main branch tip, as branch `card-<8>`, never `main`, never a force push, the token passed to git and curl without a command line, masked in all output.
+// The optional author name and email (the person who asked, for a project that signs commits as the requester) are checked here, then passed on; the script ignores them when the project signs as the bot.
 //
 //   server:  node publisher.mjs serve
 //   client:  mt-publish check <project>
-//            mt-publish publish <project> <card id> <tested commit> <title>      (the pull request's text on standard input)
-//   exit codes are mt-publish.sh's: 0 done, 2 refused, 3 no credential, 4 the branch is not at the tested commit, 5 push refused, 6 GitHub or the platform did not answer, 7 token refused.
+//            mt-publish publish <project> <card id> <tested commit> <title> [<author name> <author email>]      (the request's text on standard input)
+//   exit codes are mt-publish.sh's: 0 done, 2 refused, 3 no credential, 4 the branch is not at the tested commit (or the main branch moved and the card must be rebuilt, or there is nothing to publish), 5 push refused,
+//   6 GitHub, GitLab or the platform did not answer, 7 token refused. The output lines are the script's: project, provider, pull_request_number, pull_request_url, head_sha (the squashed commit), tested_sha.
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
@@ -32,6 +34,14 @@ const OWNER_KEY = /^_owner\.[a-z0-9][a-z0-9.-]{0,200}$/;
 
 const noDots = (s) => !s.includes('..');
 const refuse = (message, code = 2) => ({ code, out: '', err: `${message}\n` });
+
+const AUTHOR_EMAIL = /^[^@<>\s]+@[^@<>\s]+\.[^@<>\s]+$/;
+/** The author's name and email as the script wants them (a name of 1 to 100 characters with no line break, < or >; one email address of at most 200 characters), or a reason. */
+export function checkAuthor(name, email) {
+  if (typeof name !== 'string' || name.length < 1 || name.length > 100 || /[\n\r<>]/.test(name)) return 'the author name is 1 to 100 characters without a line break, < or >';
+  if (typeof email !== 'string' || email.length > 200 || !AUTHOR_EMAIL.test(email)) return 'the author email is not an email address';
+  return null;
+}
 
 /** Asks the platform who the run is. Returns { ok: true, self } or { ok: false, result } (a ready answer for the client). */
 export async function whoIs(serverUrl, token, doFetch = fetch) {
@@ -130,13 +140,13 @@ function runScript(options, args, env, body) {
 }
 
 /**
- * One request: { op: 'check' | 'publish', token, project, card?, sha?, title?, body? } -> { code, out, err }.
+ * One request: { op: 'check' | 'publish', token, project, card?, sha?, title?, body?, authorName?, authorEmail? } -> { code, out, err }.
  * options: { serverUrl, work, pushRoot, script, repoUser, doFetch?, timeoutMs?, passEnv? }.
  */
 export async function handle(request, options) {
   if (request === null || typeof request !== 'object') return refuse('bad request');
   const { op, token, project } = request;
-  if (op !== 'check' && op !== 'publish') return refuse('usage: mt-publish check <project> | publish <project> <card id> <tested commit> <title>');
+  if (op !== 'check' && op !== 'publish') return refuse('usage: mt-publish check <project> | publish <project> <card id> <tested commit> <title> [<author name> <author email>]');
   if (typeof token !== 'string' || !RUN_TOKEN.test(token)) return refuse('publishing works only inside a run: there is no run token');
   if (typeof project !== 'string' || !PROJECT.test(project) || !noDots(project)) return refuse('bad project name');
   const asked = await whoIs(options.serverUrl, token, options.doFetch);
@@ -150,8 +160,16 @@ export async function handle(request, options) {
   let body = '';
   if (op === 'publish') {
     const { card, sha, title } = request;
-    if (typeof card !== 'string' || typeof sha !== 'string' || typeof title !== 'string') return refuse('usage: mt-publish publish <project> <card id> <tested commit> <title>');
+    const { authorName, authorEmail } = request;
+    if (typeof card !== 'string' || typeof sha !== 'string' || typeof title !== 'string') return refuse('usage: mt-publish publish <project> <card id> <tested commit> <title> [<author name> <author email>]');
+    // the two author words come together or not at all, and are checked before anything is run
+    if ((authorName === undefined) !== (authorEmail === undefined)) return refuse('pass the author name and the author email together, or neither');
+    if (authorName !== undefined) {
+      const bad = checkAuthor(authorName, authorEmail);
+      if (bad !== null) return refuse(bad);
+    }
     args.push(card, sha, title);
+    if (authorName !== undefined) args.push(authorName, authorEmail);
     body = typeof request.body === 'string' ? request.body.slice(0, MAX_BODY) : '';
   }
   const private_ = mkdtempSync(join(tmpdir(), 'push-'));
@@ -234,9 +252,9 @@ export function serve(options, log = console.log) {
 
 /** The client: one request, the answer printed, the exit code passed on. */
 export async function client(argv, env, stdin, stdout, stderr) {
-  const [op, project, card, sha, title] = argv;
-  const usage = 'usage: mt-publish check <project> | mt-publish publish <project> <card id> <tested commit> <title>   (the pull request text on standard input)';
-  if (op === 'check' ? argv.length !== 2 : op === 'publish' ? argv.length !== 5 : true) {
+  const [op, project, card, sha, title, authorName, authorEmail] = argv;
+  const usage = 'usage: mt-publish check <project> | mt-publish publish <project> <card id> <tested commit> <title> [<author name> <author email>]   (the pull request text on standard input)';
+  if (op === 'check' ? argv.length !== 2 : op === 'publish' ? argv.length !== 5 && argv.length !== 7 : true) {
     stderr.write(usage + '\n');
     return 2;
   }
@@ -247,7 +265,14 @@ export async function client(argv, env, stdin, stdout, stderr) {
   }
   let body = '';
   if (op === 'publish') body = await readSome(stdin, MAX_BODY, Number(env.MT_PUBLISH_STDIN_MS) || 5000);
-  const request = { op, token, project, ...(op === 'publish' ? { card, sha, title, body } : {}) };
+  if (op === 'publish' && argv.length === 7) {
+    const bad = checkAuthor(authorName, authorEmail);
+    if (bad !== null) {
+      stderr.write(bad + '\n');
+      return 2;
+    }
+  }
+  const request = { op, token, project, ...(op === 'publish' ? { card, sha, title, body, ...(argv.length === 7 ? { authorName, authorEmail } : {}) } : {}) };
   const socket = env.MT_PUBLISH_SOCKET || SOCKET;
   const answer = await new Promise((done) => {
     const conn = connect(socket);
@@ -312,7 +337,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
     // these come from the publisher's own environment, which only the pod's definition sets (a test double of GitHub, in the tests)
     const passEnv = {};
-    for (const k of ['MT_GITHUB_API', 'MT_PUSH_URL', 'MT_PR_TRIES', 'MT_PR_WAIT']) if (env[k]) passEnv[k] = env[k];
+    for (const k of ['MT_GITHUB_API', 'MT_GITLAB_API', 'MT_PUSH_URL', 'MT_PR_TRIES', 'MT_PR_WAIT']) if (env[k]) passEnv[k] = env[k];
     serve({
       socket: env.PUBLISHER_SOCKET || SOCKET,
       serverUrl,

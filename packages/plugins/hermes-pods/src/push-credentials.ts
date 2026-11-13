@@ -1,4 +1,4 @@
-import type { CredentialTeam, ProjectCredentialsProvider } from '@manythreads/sdk';
+import type { CredentialIdentity, CredentialTeam, ProjectCredentialsProvider } from '@manythreads/sdk';
 import { ProjectBranch, ProjectName, isPlainRepoUrl } from '@manythreads/shared';
 import type { K8s, K8sObject } from './k8s.ts';
 import { resolvePodNames } from './reconcile.ts';
@@ -11,7 +11,9 @@ import { labelsFor, type PodConfig } from './render.ts';
  *
  * A key is a project's name, or `_owner.<host>.<owner>` for a token the team keeps once for every project under one GitHub owner (a project name cannot
  * start with an underscore, so the two never collide). A project's own document then holds no token, only `via` (the owner key) beside the address and branch.
- * A document GitHub has turned down carries `refused: true` on the document that holds the token (`setRefused`); the pod's publish command and the server's pull-request
+ * Each project's own document also says which provider the token is for and who commits: `provider` (`github` or `gitlab`), the bot account's `login` and
+ * numeric `userId`, and `commitAs` (`bot`: the bot is the author of a published commit too; `requester`: the person who asked is). The owner-token document holds only the token. A document written before these
+ * fields existed has none of them: it counts as GitHub with no identity. A document GitHub has turned down carries `refused: true` on the document that holds the token (`setRefused`); the pod's publish command and the server's pull-request
  * sync stop using it, and saving a new token writes a fresh document without the mark.
  *
  * Changes to one team's Secret run one at a time IN THIS PROCESS (a promise chain: the server runs as a single replica, as the blob volume requires; two
@@ -23,7 +25,32 @@ const OWNER_KEY = /^[a-z0-9][a-z0-9.-]{0,200}\/[a-z0-9][a-z0-9-]{0,38}$/;
 const ownerSecretKey = (ownerKey: string): string => `_owner.${ownerKey.replace('/', '.')}`;
 const isOwnerSecretKey = (k: string): boolean => k.startsWith('_owner.');
 
+const PROVIDERS: ReadonlySet<string> = new Set(['github', 'gitlab']);
+const COMMIT_AS: ReadonlySet<string> = new Set(['bot', 'requester']);
+const LOGIN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
+const USER_ID = /^[0-9]{1,20}$/;
+/** Why an identity is not acceptable, or null. The messages name the field, never a value. */
+function identityProblem(identity: CredentialIdentity | undefined): string | null {
+  if (identity === undefined) return null;
+  if (typeof identity.provider !== 'string' || !PROVIDERS.has(identity.provider)) return 'bad provider';
+  if (typeof identity.login !== 'string' || !LOGIN.test(identity.login)) return 'bad login';
+  if (typeof identity.userId !== 'string' || !USER_ID.test(identity.userId)) return 'bad user id';
+  if (typeof identity.commitAs !== 'string' || !COMMIT_AS.has(identity.commitAs)) return 'bad commit as';
+  return null;
+}
+const identityFields = (identity: CredentialIdentity | undefined): Record<string, string> =>
+  identity === undefined ? {} : { commitAs: identity.commitAs, login: identity.login, provider: identity.provider, userId: identity.userId };
+/** The identity a document carries, or undefined when any part is missing or not valid (a document from before the fields existed). */
+function identityOf(doc: Doc): CredentialIdentity | undefined {
+  const identity = { provider: doc.provider, login: doc.login, userId: doc.userId, commitAs: doc.commitAs } as CredentialIdentity;
+  return identityProblem(identity) === null ? identity : undefined;
+}
+
 interface Doc {
+  provider?: unknown;
+  login?: unknown;
+  userId?: unknown;
+  commitAs?: unknown;
   token?: unknown;
   origin?: unknown;
   branch?: unknown;
@@ -76,22 +103,26 @@ export class PushCredentials implements ProjectCredentialsProvider {
     return { apiVersion: 'v1', kind: 'Secret', metadata: { name, namespace: this.cfg.namespace, labels: labelsFor(team) }, type: 'Opaque', data };
   }
 
-  put(team: CredentialTeam, projectName: string, token: string, origin: string, branch: string): Promise<void> {
+  put(team: CredentialTeam, projectName: string, token: string, origin: string, branch: string, identity?: CredentialIdentity): Promise<void> {
     if (!ProjectName.safeParse(projectName).success) return Promise.reject(new Error('bad project name'));
+    const problem = identityProblem(identity);
+    if (problem !== null) return Promise.reject(new Error(problem));
     if (token === '' || !/^[\x21-\x7e]+$/.test(token)) return Promise.reject(new Error('bad token'));
     if (!isPlainRepoUrl(origin)) return Promise.reject(new Error('bad origin'));
     if (!ProjectBranch.safeParse(branch).success) return Promise.reject(new Error('bad branch'));
     return this.serialized(async () => {
       const { name, data } = await this.load(team);
       // one JSON document per project: what mt-publish.sh reads with jq (the token for git and curl, the address it must match)
-      data[projectName] = encode({ branch, origin, setAt: new Date().toISOString(), token });
+      data[projectName] = encode({ ...identityFields(identity), branch, origin, setAt: new Date().toISOString(), token });
       dropUnreferencedOwners(data); // the project may have been on an owner token before
       await this.k8s().apply(this.secret(team, name, data));
     });
   }
 
-  putShared(team: CredentialTeam, ownerKey: string, token: string, projects: ReadonlyArray<{ name: string; origin: string; branch: string }>, drop: ReadonlyArray<string> = []): Promise<void> {
+  putShared(team: CredentialTeam, ownerKey: string, token: string, projects: ReadonlyArray<{ name: string; origin: string; branch: string }>, drop: ReadonlyArray<string> = [], identity?: CredentialIdentity): Promise<void> {
     if (!OWNER_KEY.test(ownerKey)) return Promise.reject(new Error('bad owner'));
+    const problem = identityProblem(identity);
+    if (problem !== null) return Promise.reject(new Error(problem));
     if (token === '' || !/^[\x21-\x7e]+$/.test(token)) return Promise.reject(new Error('bad token'));
     if (projects.length === 0) return Promise.reject(new Error('no projects'));
     for (const p of projects) {
@@ -106,7 +137,7 @@ export class PushCredentials implements ProjectCredentialsProvider {
       const via = ownerSecretKey(ownerKey);
       for (const d of drop) delete data[d]; // in the same change, so a failure leaves the Secret exactly as it was
       data[via] = encode({ setAt: now, token });
-      for (const p of projects) data[p.name] = encode({ branch: p.branch, origin: p.origin, setAt: now, via });
+      for (const p of projects) data[p.name] = encode({ ...identityFields(identity), branch: p.branch, origin: p.origin, setAt: now, via });
       dropUnreferencedOwners(data);
       await this.k8s().apply(this.secret(team, name, data));
     });
@@ -124,6 +155,17 @@ export class PushCredentials implements ProjectCredentialsProvider {
       if (refused) next['refused'] = true;
       else delete next['refused'];
       data[holder] = encode(next);
+      await this.k8s().apply(this.secret(team, name, data));
+    });
+  }
+
+  setCommitAs(team: CredentialTeam, projectName: string, commitAs: 'bot' | 'requester'): Promise<void> {
+    if (!COMMIT_AS.has(commitAs)) return Promise.reject(new Error('bad commit as'));
+    return this.serialized(async () => {
+      const { name, data } = await this.load(team);
+      const own = parseDoc(data[projectName]);
+      if (!own || own.commitAs === commitAs) return;
+      data[projectName] = encode({ ...own, commitAs });
       await this.k8s().apply(this.secret(team, name, data));
     });
   }
@@ -169,13 +211,14 @@ export class PushCredentials implements ProjectCredentialsProvider {
     });
   }
 
-  async read(team: CredentialTeam, projectName: string): Promise<{ token: string; origin: string; branch: string; refused?: boolean } | null> {
+  async read(team: CredentialTeam, projectName: string): Promise<{ token: string; origin: string; branch: string; refused?: boolean; identity?: CredentialIdentity } | null> {
     const { data } = await this.load(team);
     const doc = parseDoc(data[projectName]);
     if (!doc || typeof doc.origin !== 'string' || typeof doc.branch !== 'string') return null;
     // a project on an owner token holds the address and branch itself; the token (and the refused mark) are the owner's
     const holder = typeof doc.via === 'string' ? (isOwnerSecretKey(doc.via) ? parseDoc(data[doc.via]) : null) : doc;
     if (!holder || typeof holder.token !== 'string') return null;
-    return { token: holder.token, origin: doc.origin, branch: doc.branch, ...(holder.refused === true ? { refused: true } : {}) };
+    const identity = identityOf(doc);
+    return { token: holder.token, origin: doc.origin, branch: doc.branch, ...(holder.refused === true ? { refused: true } : {}), ...(identity ? { identity } : {}) };
   }
 }
