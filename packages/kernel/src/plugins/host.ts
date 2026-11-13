@@ -235,7 +235,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
   const capabilities = options.capabilities ?? new CapabilityRegistry();
   for (const p of ordered) {
     for (const c of p.manifest.capabilities) {
-      capabilities.register({ name: c.name, destructive: c.destructive, plugin: p.manifest.name });
+      capabilities.register({ name: c.name, destructive: c.destructive, ...(c.default === true ? { default: true } : {}), plugin: p.manifest.name });
     }
   }
 

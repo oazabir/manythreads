@@ -112,6 +112,11 @@ export type CapabilityName = z.infer<typeof CapabilityName>;
 export const CapabilityDeclaration = z.strictObject({
   name: CapabilityName,
   destructive: z.boolean(),
+  /**
+   * Every bot may use it without a line in its BOT.md (`approvals.ask`: asking a person must never need a grant, or a bot that was never told could only get stuck).
+   * It is not a way around anything else: the path guard, the destructive tag and a bot's own `needsApproval` entry for it still apply.
+   */
+  default: z.boolean().optional(),
 });
 export type CapabilityDeclaration = z.infer<typeof CapabilityDeclaration>;
 

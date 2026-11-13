@@ -8,10 +8,11 @@ import { JsonObject } from './kernel.ts';
 // matches a CHECK of the approvals plugin's migration 0001_approvals.sql, and the enum columns are listed in the kernel's schema-enums map.
 
 /**
- * Why a call is waiting. One mechanism, four ways of setting it (SPEC §7.3): an Environment with `protected: true`, `dispatch: strict`
- * in TEAM.md, the DLP `require_approval` outcome (SPEC §15) and the per-grant `needsApproval` flag (the base mechanism).
+ * Why a call is waiting. One mechanism, five ways of setting it (SPEC §7.3): an Environment with `protected: true`, `dispatch: strict`
+ * in TEAM.md, the DLP `require_approval` outcome (SPEC §15), the per-grant `needsApproval` flag (the base mechanism), and `agent`: the bot's own
+ * program stopped to ask a person (a command its shell wanted to run, or the `approvals.ask` tool; P24).
  */
-export const ApprovalSource = z.enum(['environment', 'dispatch', 'dlp', 'grant']);
+export const ApprovalSource = z.enum(['environment', 'dispatch', 'dlp', 'grant', 'agent']);
 export type ApprovalSource = z.infer<typeof ApprovalSource>;
 
 /** `pending` until a person decides (or it lapses: `expired`); `approved`, `denied` and `expired` are final. */
@@ -42,11 +43,11 @@ export const APPROVAL_RUN_TIMEOUT_MINUTES = 15;
 /** How long a pending approval may wait before the inbox calls it overdue: the age pill turns amber and the sidebar badge with it. One number for every team. */
 export const APPROVAL_OVERDUE_HOURS = 24;
 
-/** The default order the four sources are tried in (see `approvalSourceFor`). */
+/** The default order the four flag-set sources are tried (`agent` is a bot asking, not a flag) in (see `approvalSourceFor`). */
 export const APPROVAL_SOURCES_BY_PRECEDENCE: readonly ApprovalSource[] = ['environment', 'dispatch', 'dlp', 'grant'];
 
 /**
- * The single question every caller asks: does this call wait, and which of the four sources says so? Environment and dispatch are set by
+ * The single question every caller asks: does this call wait, and which of the four flag-set sources says so? Environment and dispatch are set by
  * phase 6 (the caller passes what it knows; absent means "not asked"), DLP and the grant by the gateways today. The first that applies
  * names the approval, so a call that is both protected and flagged is one approval, not two.
  */

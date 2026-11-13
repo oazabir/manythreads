@@ -459,6 +459,11 @@ export interface PluginRuns {
    * empty log, SPEC §12.1: no wider than the narrowest source read). Rejects when the two runs are not the same bot's. Answers how many lines were copied.
    */
   inheritSources(run: BotRunHandle, fromRunId: string): Promise<number>;
+  /**
+   * Keeps a run's endpoint usable for `seconds` more from now (never shorter than it already is, at most an hour): a run that waits for a person's answer
+   * (P24) outlives the budget its token was minted for. False when the run has ended or its token was revoked.
+   */
+  extend(runId: string, seconds: number): Promise<boolean>;
 }
 
 /**

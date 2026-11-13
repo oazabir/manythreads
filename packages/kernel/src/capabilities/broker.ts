@@ -121,6 +121,8 @@ export class CapabilityBroker {
       (isPersonScope && !capability.startsWith(PERSON_SCOPE_PREFIX)
         ? await this.grants.find(actor.id, `${PERSON_SCOPE_PREFIX}*`)
         : undefined);
+    // a capability every bot has (`approvals.ask`): no entry needed, though an entry of the bot's own (say, with `needsApproval`) still decides first
+    if (!grant && registered?.default === true) return { allowed: true, reason: 'offered to every bot', needsApproval: false };
     if (!grant) return deny(`no grant for "${capability}" in the actor's allowlist`);
     // a person already approved exactly this call (`ctx.runs.asApproved`): the flag has been answered, nothing else has been waived
     return { allowed: true, reason: 'granted', needsApproval: grant.needsApproval && actor.approvedCapability !== capability };

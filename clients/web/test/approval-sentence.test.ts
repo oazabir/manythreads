@@ -4,6 +4,17 @@ import { approvalAction, approvalSentence } from '../src/screens/approvals/sente
 
 const base = { source: 'grant' as const, botName: 'Support responder', requesterName: 'Nadia', summary: '', argsPreview: {} };
 
+describe('what a bot asks of a person (P24)', () => {
+  const agent = { ...base, source: 'agent' as const, requesterName: 'Nadia' };
+  it('a question the bot asked reads as the question, with the bot named', () => {
+    expect(approvalSentence({ ...agent, tool: 'approvals.ask', summary: 'May I delete the old release branches?' })).toBe('Support responder asks: May I delete the old release branches?');
+  });
+  it('a command the bot\'s program stopped at reads as the bot wanting to run one', () => {
+    expect(approvalSentence({ ...agent, requesterName: 'Support responder', tool: 'agent.command', summary: 'Run a command: rm -rf build' })).toBe('Support responder wants to run a command');
+    expect(approvalSentence({ ...agent, tool: 'agent.command', summary: 'Run a command: rm -rf build' })).toBe('Nadia asked Support responder to run a command');
+  });
+});
+
 describe('a request as one sentence', () => {
   it('names who asked, which bot and what for', () => {
     expect(approvalSentence({ ...base, tool: 'email.send', summary: 'email.send · reply to m.okafor', argsPreview: { to: 'm.okafor' } })).toBe('Nadia asked Support responder to send an email to m.okafor');

@@ -5,7 +5,7 @@ does: a **gate** (before any model call; P5-11) and an **approval** — a call w
 `needsApproval` is one mechanism with four ways of being set; every way ends in the same row, the same inbox and the same
 decision.
 
-## The four sources
+## The four sources (and a fifth, `agent`, below)
 
 | `source` | Set by | Wired |
 |---|---|---|
@@ -22,6 +22,19 @@ mechanism, a fifth value is a migration of one `CHECK` and one enum map; nothing
 `approvalSourceFor({ environmentProtected, dispatchStrict, dlpRequiresApproval, grantNeedsApproval })` (`@manythreads/shared`)
 is the question every caller asks; a call that is several things at once is **one** approval, named by the first source in that
 order. Phase 6 only has to pass what it knows; it adds no table, route or screen.
+
+## A fifth source: `agent` — a bot asks a person (P24)
+
+Not one of the four ways a call is flagged: here the **bot** stops and asks. Two things file one, both with `source: 'agent'` and `resume.kind = 'handoff'` (migration 0005 widens the `CHECK`):
+
+| `tool` | Filed by | What a decision does |
+|---|---|---|
+| `approvals.ask` | the bot itself, with the tool of the same name | the bot is woken in the same thread with the answer (runtime-hermes `wakeAfterAsk`) |
+| `agent.command` | runtime-hermes, when a Hermes run stops at a command its program thinks is risky (`approval.request` in the run's events) | the answer (`once` or `deny`, and the note) is passed to the waiting program, which goes on |
+
+**`approvals.ask` is a tool every bot has**, on every runtime, with no line in its `BOT.md`: the plugin declares it with `default: true` (`CapabilityDeclaration`), and the broker offers a `default` capability to every bot with no allowlist entry. A bot's own entry still decides first (`needsApproval` on it works as for any tool). Input: `question` (one sentence, ≤300) and `details` (what the person needs to read, ≤3000). It answers at once; the bot ends its turn. Asking again for the same question while it is pending is the same approval. The card reads as a question (the bot's name and question, Yes / No), in the thread and in the team's Approvals list, with a note box that goes back to the bot. Every bot's instructions say to use it (`output-style.ts`).
+
+The one who asked (the person whose message started the run) cannot answer for the bot; a run in a private conversation with nobody else who may decide is refused with the usual sentence. `ApprovalProvider.answerOf` reads the answer (status, note, who decided) for the plugin that waits.
 
 ## The handler: `ctx.providers.get<ApprovalProvider>('approvals')`
 

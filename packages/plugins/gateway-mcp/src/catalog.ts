@@ -74,6 +74,16 @@ const MEETINGS_SEARCH_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const APPROVALS_ASK_SCHEMA = {
+  type: 'object',
+  properties: {
+    question: { type: 'string', minLength: 3, maxLength: 300, description: 'One sentence a person can answer with yes or no: what you want to do, or what you need decided.' },
+    details: { type: 'string', maxLength: 3000, description: 'What the person needs to read to decide: the command, the file, the consequence, the alternative. Never a key or a password.' },
+  },
+  required: ['question'],
+  additionalProperties: false,
+} as const;
+
 const MESSAGES_POST_SCHEMA = {
   type: 'object',
   properties: {
@@ -316,6 +326,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
       if (typeof answer.personBank === 'string') lines.push({ sourceType: 'memory', sourceRef: `bank:${answer.personBank}`, scope: 'person' });
       return lines;
     },
+  },
+  'approvals.ask': {
+    name: 'approvals.ask',
+    description:
+      'Ask a person to say yes or no before you go on. Use it whenever you need a person’s decision or permission — a risky command, a choice only they can make, something you were told to confirm — instead of waiting on a prompt of your own program: nothing shows such a prompt to anyone, so it only hangs. The question appears as a card in this thread and in the team’s Approvals list. The call answers at once: end your turn with one line saying what you are waiting for. When a person answers you are woken in this same thread with their yes or no and what they wrote.',
+    inputSchema: APPROVALS_ASK_SCHEMA,
+    kind: 'write',
   },
   'memory.retain': {
     name: 'memory.retain',

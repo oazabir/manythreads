@@ -17,6 +17,7 @@ const RISK: Record<ApprovalSource, Risk> = {
   dlp: { label: 'Sensitive data', tone: 'warn', hint: 'The guard found something sensitive in what the bot was about to send.' },
   dispatch: { label: 'Strict hand-off', tone: 'neutral', hint: 'This team asks a person to approve every hand-off.' },
   grant: { label: 'Needs approval', tone: 'warn', hint: 'This tool is set to ask a person first.' },
+  agent: { label: 'Bot asks', tone: 'warn', hint: 'The bot stopped to ask a person before going on.' },
 };
 
 /** Used when a newer server names a source this build does not know: the tag still reads, and nothing throws. */

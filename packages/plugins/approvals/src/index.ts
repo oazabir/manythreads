@@ -1,4 +1,5 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerAsk } from './ask.ts';
 import { createApprovalProvider } from './provider.ts';
 import { registerResumeJob } from './resume.ts';
 import { registerRoutes } from './routes.ts';
@@ -27,10 +28,14 @@ export default definePlugin({
     },
     // approvals reference bots, bot_runs and channels
     dependsOn: ['bots', 'channels'],
+    // `approvals.ask`: every bot has it with no BOT.md line (`default`): a bot that needs a person must always be able to ask one (P24-03).
+    capabilities: [{ name: 'approvals.ask', destructive: false, default: true }],
     migrations: 'migrations',
   },
   register(ctx) {
-    ctx.providers.register('approvals', createApprovalProvider(ctx));
+    const provider = createApprovalProvider(ctx);
+    ctx.providers.register('approvals', provider);
+    registerAsk(ctx, provider);
     registerRoutes(ctx);
     registerResumeJob(ctx);
   },

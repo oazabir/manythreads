@@ -166,6 +166,18 @@ export type BotRuntimeEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string; input: unknown }
   | { type: 'tool_result'; name: string; ok: boolean; reason?: string | undefined }
+  /**
+   * The bot's own program stopped inside the run to ask a person (P24): its shell wants to run a command it thinks is risky. The run is paused until `answer` is
+   * called; the stream carries on only after that. `choices` are the answers the program accepts (`once`, `session`, `always`, `deny`). `answer` resolves false when the
+   * program no longer waits (the run ended, or the question was already answered).
+   */
+  | {
+      type: 'approval';
+      command: string;
+      description: string;
+      choices: readonly string[];
+      answer(choice: 'once' | 'session' | 'deny', note?: string): Promise<boolean>;
+    }
   | {
       type: 'result';
       text: string;

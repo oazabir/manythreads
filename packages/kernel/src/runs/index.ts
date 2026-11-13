@@ -273,6 +273,19 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       }, system);
     },
 
+    async extend(runId: string, seconds: number): Promise<boolean> {
+      const ttl = Math.min(Math.max(Math.floor(seconds), 30), MAX_RUN_TTL_SECONDS);
+      return withSystem(async (tx) => {
+        const res = await tx.query(
+          `UPDATE app.mcp_run_tokens t SET expires_at = greatest(t.expires_at, now() + make_interval(secs => $2))
+             FROM app.bot_runs r
+            WHERE t.run_id = $1::uuid AND t.revoked_at IS NULL AND r.id = t.run_id AND r.status = 'running'`,
+          [runId, ttl],
+        );
+        return (res.rowCount ?? 0) > 0;
+      }, system);
+    },
+
     async close(runId: string, status: 'done' | 'failed' | 'stopped'): Promise<boolean> {
       return withSystem(async (tx) => {
         const ended = await tx.query<{ workspace_id: string; team_id: string; bot_id: string; trigger_type: string }>(

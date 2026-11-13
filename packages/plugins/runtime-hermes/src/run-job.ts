@@ -33,6 +33,7 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
+import { settleAgentApproval } from './agent-approval.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
 import { applyChatAlias, recordRunFacts, recordStopped, streamsLive } from './chat-run.ts';
@@ -912,6 +913,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             frames?.looking(event.name);
             job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
           }
+          // The bot's program stopped to ask a person (a command it wants to run): file it, wait for the decision, and tell the program (agent-approval.ts).
+          if (event.type === 'approval') await settleAgentApproval({ ctx, job, run, question: event, approvers, stopped: () => liveEntry?.stopped === true });
           if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
           if (event.type !== 'result') continue;
           reply = event.text;

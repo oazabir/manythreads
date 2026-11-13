@@ -295,16 +295,44 @@ export async function runOnGateway(
       () => undefined,
     ));
 
+  /** Answers the question the run asked (`POST /runs/<id>/approval`), then passes on what the person wrote so the model reads it (`/steer`, best effort). */
+  const answerRemote = async (choice: 'once' | 'session' | 'deny', requestId: string | null, note?: string): Promise<boolean> => {
+    try {
+      const res = await call(`/runs/${encodeURIComponent(remoteId)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }), headers: { 'content-type': 'application/json' } }, 15_000);
+      void res.body?.cancel().catch(() => undefined);
+      if (!res.ok) return false;
+    } catch {
+      return false;
+    }
+    const text = (note ?? '').trim();
+    if (text !== '') {
+      const line = choice === 'deny' ? `The person declined that command and wrote: ${text}` : `The person allowed that command and wrote: ${text}`;
+      try {
+        const res = await call(`/runs/${encodeURIComponent(remoteId)}/steer`, { method: 'POST', body: JSON.stringify({ input: line }), headers: { 'content-type': 'application/json' } }, 15_000);
+        void res.body?.cancel().catch(() => undefined);
+      } catch {
+        /* the answer itself went through; the note is a courtesy */
+      }
+    }
+    return true;
+  };
+
   // The platform's own ceiling: the budget plus the grace. Past it the run is stopped, and the stream given a moment to say so.
   let timedOut = false;
   const abort = new AbortController();
-  const ceiling = setTimeout(() => {
-    timedOut = true;
-    scope.log(`runtime-hermes: run ${runId} exceeded ${Math.round(budgetMs / 1000) + options.killGraceSeconds}s and was stopped`);
-    void stop();
-    setTimeout(() => abort.abort(), 5000).unref?.();
-  }, budgetMs + options.killGraceSeconds * 1000);
-  ceiling.unref?.();
+  let ceiling: ReturnType<typeof setTimeout>;
+  /** Starts the run's clock again for `ms`: the budget when the run starts, what was left of it when a person has answered a question the run asked. */
+  const armCeiling = (ms: number): void => {
+    clearTimeout(ceiling);
+    ceiling = setTimeout(() => {
+      timedOut = true;
+      scope.log(`runtime-hermes: run ${runId} exceeded ${Math.round(budgetMs / 1000) + options.killGraceSeconds}s and was stopped`);
+      void stop();
+      setTimeout(() => abort.abort(), 5000).unref?.();
+    }, ms);
+    ceiling.unref?.();
+  };
+  armCeiling(budgetMs + options.killGraceSeconds * 1000);
 
   /** The events of the run, until a terminal one: the stream, reopened where it dropped; then the status endpoint when the stream will not stay. */
   async function* terminalAware(): AsyncGenerator<{ kind: 'event'; event: Record<string, unknown> } | { kind: 'end'; terminal: Terminal | null }> {
@@ -408,6 +436,25 @@ export async function runOnGateway(
         } else if (name === 'tool.completed') {
           const failed = event['error'] === true;
           yield { type: 'tool_result', name: String(event['tool'] ?? 'tool'), ok: !failed, ...(failed ? { reason: 'the tool reported an error' } : {}) };
+        } else if (name === 'approval.request') {
+          // Hermes is waiting inside the run for a person. The run's clock stops while a person decides (the run job re-arms it by answering).
+          const pausedAt = Date.now();
+          clearTimeout(ceiling);
+          const requestId = typeof event['request_id'] === 'string' ? event['request_id'] : null;
+          const choices = Array.isArray(event['choices']) ? event['choices'].filter((c): c is string => typeof c === 'string') : ['once', 'deny'];
+          yield {
+            type: 'approval',
+            command: typeof event['command'] === 'string' ? event['command'] : '',
+            description: typeof event['description'] === 'string' ? event['description'] : '',
+            choices,
+            answer: async (choice, note) => {
+              const sent = await answerRemote(choice, requestId, note);
+              // What was left of the budget when the run stopped to ask, and the grace again: the answer does not eat the time the work needs.
+              const left = Math.max(60_000, budgetMs - (pausedAt - startedAt));
+              if (!finished) armCeiling(left + options.killGraceSeconds * 1000);
+              return sent;
+            },
+          };
         }
       }
       // A pod evicted mid-run leaves Hermes' record of that execution as "unknown", and the session of the thread is reused, so every later

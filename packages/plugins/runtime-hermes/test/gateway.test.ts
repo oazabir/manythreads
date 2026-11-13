@@ -465,3 +465,52 @@ describe('a stale Hermes session of the thread', () => {
     expect(posts()).toHaveLength(2);
   });
 });
+
+describe('a run that stops to ask a person (P24-02)', () => {
+  const askAndFinish = (answered: Array<{ choice: string; steered: string[] }>) => () =>
+    [
+      { type: 'delta' as const, text: 'Let me look. ' },
+      { type: 'approval' as const, command: 'rm -rf build', description: 'delete files recursively', onAnswer: (a: { choice: string; steered: string[] }) => void answered.push(a) },
+      { type: 'finish' as const, output: 'done' },
+    ];
+
+  it('surfaces the question as an event and goes on only when it is answered', async () => {
+    const answered: Array<{ choice: string; steered: string[] }> = [];
+    gw.setScript(askAndFinish(answered));
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    const seen: BotRuntimeEvent[] = [];
+    for await (const event of handle.events) {
+      seen.push(event);
+      if (event.type === 'approval') {
+        expect(event).toMatchObject({ command: 'rm -rf build', description: 'delete files recursively', choices: ['once', 'session', 'deny'] });
+        expect(answered).toHaveLength(0); // the program is still waiting
+        expect(await event.answer('once', 'yes, in the build folder only')).toBe(true);
+      }
+    }
+    expect(answered).toEqual([{ choice: 'once', steered: ['The person allowed that command and wrote: yes, in the build folder only'] }]);
+    expect(resultOf(seen)).toMatchObject({ ok: true, text: 'done' });
+  });
+
+  it('tells the program "deny" with what the person wrote', async () => {
+    const answered: Array<{ choice: string; steered: string[] }> = [];
+    gw.setScript(askAndFinish(answered));
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    for await (const event of handle.events) if (event.type === 'approval') await event.answer('deny', 'not that folder');
+    expect(answered).toEqual([{ choice: 'deny', steered: ['The person declined that command and wrote: not that folder'] }]);
+  });
+
+  it('does not count the wait against the run\'s time limit', async () => {
+    gw.setScript(askAndFinish([]));
+    // a one-second budget with a one-second grace: the person takes three seconds, and the run is still not stopped
+    const handle = await runOnGateway(options(), input({}, 1), scope, { connection: 'managed' });
+    const seen: BotRuntimeEvent[] = [];
+    for await (const event of handle.events) {
+      seen.push(event);
+      if (event.type === 'approval') {
+        await new Promise((r) => setTimeout(r, 3000));
+        await event.answer('once');
+      }
+    }
+    expect(resultOf(seen)).toMatchObject({ ok: true });
+  }, 15_000);
+});

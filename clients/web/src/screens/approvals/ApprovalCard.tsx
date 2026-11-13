@@ -7,7 +7,7 @@ import { announceApprovalsChanged } from './live';
 import { AgePill } from './AgePill';
 import { AskerAvatar } from './Asker';
 import { riskClass, riskOf } from './risk';
-import { approvalSentence } from './sentence';
+import { approvalSentence, ASK_TOOL } from './sentence';
 import { ShareApprovalPreview } from './ShareApprovalPreview';
 import { isShareApproval, shareKind, shareOutcomeLine } from './shareApproval';
 import { callOverdue } from './state';
@@ -28,6 +28,11 @@ export function approversLabel(approvers: Approval['approvers']): string {
 /** What became of an approved call, in one sentence. */
 function outcomeLine(a: Approval): string {
   if (isShareApproval(a)) return shareOutcomeLine(a);
+  // a bot's own question or command (P24): the answer goes back to the bot, which carries on from it
+  if (a.source === 'agent') {
+    if (a.status === 'expired') return 'Nobody answered in time, so the bot was told no.';
+    return a.status === 'approved' ? 'The bot has been told yes and goes on.' : 'The bot has been told no.';
+  }
   if (a.status === 'denied') return 'Denied. The call was not made.';
   if (a.status === 'expired') return 'Nobody decided it in time, so it lapsed. The call was not made.';
   if (callOverdue(a)) return 'Approved, but no result came back. It may or may not have run; check before asking again.';
@@ -49,6 +54,25 @@ function Preview({ preview, testId = 'approval-preview' }: { preview: Approval['
         </div>
       ))}
     </dl>
+  );
+}
+
+/** What a bot's own question or command shows: the command in a code block, the bot's reason and details as text. */
+function AgentPreview({ approval }: { approval: Approval }) {
+  const p = approval.argsPreview as Record<string, unknown>;
+  const text = (k: string): string => (typeof p[k] === 'string' ? (p[k] as string) : '');
+  const command = text('command');
+  const why = text('why');
+  const details = text('details');
+  if (command === '' && why === '' && details === '') return <Preview preview={approval.argsPreview} />;
+  return (
+    <div className="apr-agent" data-testid="approval-agent">
+      {command !== '' ? (
+        <pre className="apr-command" data-testid="approval-command"><code>{command}</code></pre>
+      ) : null}
+      {why !== '' ? <p className="apr-why" data-testid="approval-why">{why}</p> : null}
+      {details !== '' ? <pre className="apr-details" data-testid="approval-details">{details}</pre> : null}
+    </div>
   );
 }
 
@@ -102,13 +126,17 @@ export function ApprovalCard({
   const share = isShareApproval(approval);
   const risk = riskOf(approval);
   const needsFull = approval.argsTruncated && full === undefined;
+  const agent = approval.source === 'agent';
+  // a bot's question is answered yes or no; the bot's program that stopped at a command is told to run it once, or not
+  const yes = !agent ? 'Approve' : approval.tool === ASK_TOOL ? 'Yes' : 'Allow once';
+  const no = !agent ? 'Deny' : approval.tool === ASK_TOOL ? 'No' : 'Deny';
   const buttons = (
     <>
       <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
-        {busy === 'approve' ? 'Approving…' : 'Approve'}
+        {busy === 'approve' ? 'Sending…' : yes}
       </button>
       <button type="button" className="btn" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-deny">
-        {busy === 'deny' ? 'Denying…' : 'Deny'}
+        {busy === 'deny' ? 'Sending…' : no}
       </button>
     </>
   );
@@ -143,7 +171,7 @@ export function ApprovalCard({
         {share ? ` · ${shareKind(approval.tool)}` : null}
       </p>
       <p className="apr-raw" data-testid="approval-summary">{approval.summary}</p>
-      {share ? <ShareApprovalPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
+      {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
       {approval.argsTruncated ? (
         <div className="apr-truncated" data-testid="approval-truncated">
           <p className="apr-blocked">This preview is cut short.{approval.canDecide ? ' Open the full call before you decide.' : ''}</p>
@@ -160,9 +188,13 @@ export function ApprovalCard({
         approval.canDecide ? (
           <div className="apr-actions">
             {variant === 'detail' ? (
-              <input className="apr-note" type="text" placeholder="Add a note (optional)" aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" />
+              <input className="apr-note" type="text" placeholder={agent ? 'Tell the bot more (optional)' : 'Add a note (optional)'} aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" />
             ) : (
-              buttons
+              <>
+                {/* what is written here goes back to the bot with the answer, so a question card keeps the box in the thread too */}
+                {agent ? <input className="apr-note" type="text" placeholder="Tell the bot more (optional)" aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" /> : null}
+                {buttons}
+              </>
             )}
           </div>
         ) : (

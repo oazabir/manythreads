@@ -390,6 +390,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           logIntercept: refuse('logIntercept'),
           logDecision: refuse('logDecision'),
           inheritSources: refuse('inheritSources'),
+          extend: refuse('extend'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);
       }
@@ -418,6 +419,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           logIntercept: refuse('logIntercept'),
           logDecision: refuse('logDecision'),
           inheritSources: refuse('inheritSources'),
+          extend: refuse('extend'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);
       }
@@ -453,6 +455,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           logIntercept: refuse('logIntercept'),
           logDecision: refuse('logDecision'),
           inheritSources: refuse('inheritSources'),
+          extend: refuse('extend'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);
       }

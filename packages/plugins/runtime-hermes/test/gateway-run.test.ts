@@ -309,6 +309,102 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
     await until(async () => (await runsOf(bot.botId)).length === before + 1 && (await closedRun(bot.botId)).status === 'done', 15_000, 'the run to be done');
   });
 
+  describe('a command the bot\'s program asks about (P24-02)', () => {
+    const ask = (answered: Array<{ choice: string; steered: string[] }>): FakeRunStep[] => [
+      { type: 'tool', name: 'terminal' },
+      { type: 'approval', command: 'rm -rf build', description: 'delete files recursively', onAnswer: (a) => void answered.push(a) },
+      { type: 'finish', output: 'Cleaned up.' },
+    ];
+    const pending = async (rootId: string): Promise<any> =>
+      until(async () => ((await w.call<{ items: any[] }>(omar, 'GET', `/api/threads/${rootId}/approvals`)).body.items ?? []).find((a) => a.status === 'pending'), 30_000, 'the approval card');
+
+    it('is a card in the thread and the team\'s list, the run waits, and a person\'s yes goes back to the program', async () => {
+      const answered: Array<{ choice: string; steered: string[] }> = [];
+      gw.setScript(() => ask(answered));
+      const rootId = await post('@ext-bot please clean the build folder');
+      const card = await pending(rootId);
+      expect(card).toMatchObject({ source: 'agent', tool: 'agent.command', status: 'pending', threadRootId: rootId, argsPreview: { command: 'rm -rf build', why: 'delete files recursively' } });
+      expect(card.summary).toMatch(/^Run a command: rm -rf build/);
+      const listed = await w.call<{ items: any[] }>(omar, 'GET', '/api/teams/engineering/approvals?status=pending');
+      expect(listed.body.items.map((a) => a.id)).toContain(card.id);
+      expect(answered).toHaveLength(0); // the program is still waiting: nobody has decided
+
+      const decided = await w.call<any>(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, { note: 'only the build folder' });
+      expect(decided.status, JSON.stringify(decided.body)).toBe(200);
+      await until(async () => answered.length === 1, 30_000, 'the answer to reach the program');
+      expect(answered[0]).toEqual({ choice: 'once', steered: ['The person allowed that command and wrote: only the build folder'] });
+      const reply = await until(async () => (await messagesBy(rootId, (await w.system(async (tx) => (await tx.query<{ actor_id: string }>(`SELECT a.id AS actor_id FROM app.actors a JOIN app.bots b ON b.id = a.ref_id WHERE b.slug = 'ext-bot'`)).rows[0]!.actor_id))))[0], 30_000, 'the reply');
+      expect(reply.body).toBe('Cleaned up.');
+      const run = await closedRun(bot.botId);
+      expect(run.status).toBe('done');
+    });
+
+    it('a no goes back as "deny" with what the person wrote, and the run still ends by itself', async () => {
+      const answered: Array<{ choice: string; steered: string[] }> = [];
+      gw.setScript(() => ask(answered));
+      const rootId = await post('@ext-bot clean it again');
+      const card = await pending(rootId);
+      const decided = await w.call<any>(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/deny`, { note: 'leave the build alone' });
+      expect(decided.status).toBe(200);
+      await until(async () => answered.length === 1, 30_000, 'the answer to reach the program');
+      expect(answered[0]).toEqual({ choice: 'deny', steered: ['The person declined that command and wrote: leave the build alone'] });
+    });
+
+    it('the person who asked cannot answer for the bot', async () => {
+      gw.setScript(() => ask([]));
+      const rootId = await post('@ext-bot and once more');
+      const card = await pending(rootId);
+      expect((await w.call(nadia, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, {})).status).toBe(403);
+      await w.call(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/deny`, {});
+    });
+  });
+
+  describe('a question the bot asks with the tool every bot has (P24-03)', () => {
+    const pending = async (rootId: string): Promise<any> =>
+      until(async () => ((await w.call<{ items: any[] }>(omar, 'GET', `/api/threads/${rootId}/approvals`)).body.items ?? []).find((a) => a.status === 'pending'), 30_000, 'the approval card');
+    const botReplies = async (rootId: string): Promise<string[]> => {
+      const actor = await w.system(async (tx) => (await tx.query<{ id: string }>(`SELECT a.id FROM app.actors a JOIN app.bots b ON b.id = a.ref_id WHERE b.slug = 'ext-bot'`)).rows[0]!.id);
+      return (await messagesBy(rootId, actor)).map((m) => m.body);
+    };
+    const script = (asked: Array<{ ok: boolean; body: any }>): ((run: FakeHermesRun) => FakeRunStep[]) => (run) => {
+      const input = String(run.body['input']);
+      if (/said (YES|NO) to your question/.test(input)) return [{ type: 'finish', output: input.includes('said YES') ? 'Going ahead.' : 'Leaving it.' }];
+      return [
+        { type: 'mcp', tool: 'approvals.ask', args: { question: 'May I delete the old release branches?', details: 'git push origin --delete release/1 release/2' }, onResult: (r) => void asked.push(r) },
+        { type: 'finish', output: 'Waiting for an answer.' },
+      ];
+    };
+
+    it('needs no line in the BOT.md: it is a card in the thread and the team list, and a yes wakes the bot in the same thread with the answer', async () => {
+      const asked: Array<{ ok: boolean; body: any }> = [];
+      gw.setScript(script(asked));
+      const rootId = await post('@ext-bot tidy the release branches');
+      const card = await pending(rootId);
+      expect(asked[0]?.ok, JSON.stringify(asked[0])).toBe(true);
+      expect(card).toMatchObject({ source: 'agent', tool: 'approvals.ask', status: 'pending', threadRootId: rootId, summary: 'May I delete the old release branches?' });
+      expect(card.argsPreview).toMatchObject({ question: 'May I delete the old release branches?', details: 'git push origin --delete release/1 release/2' });
+      await until(async () => (await botReplies(rootId)).includes('Waiting for an answer.'), 30_000, 'the bot to end its turn');
+
+      expect((await w.call(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, { note: 'only release/1' })).status).toBe(200);
+      await until(async () => (await botReplies(rootId)).includes('Going ahead.'), 30_000, 'the woken bot to answer');
+      const woken = gw.runs.map((r) => String(r.body['input'])).find((i) => i.includes('said YES'))!;
+      expect(woken).toContain('May I delete the old release branches?');
+      expect(woken).toContain('only release/1');
+      // the answer wakes the bot once
+      expect(gw.runs.filter((r) => String(r.body['input']).includes('said YES'))).toHaveLength(1);
+    });
+
+    it('a no wakes the bot too, with what the person wrote', async () => {
+      const asked: Array<{ ok: boolean; body: any }> = [];
+      gw.setScript(script(asked));
+      const rootId = await post('@ext-bot tidy the release branches again');
+      const card = await pending(rootId);
+      expect((await w.call(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/deny`, { note: 'keep them' })).status).toBe(200);
+      await until(async () => (await botReplies(rootId)).includes('Leaving it.'), 30_000, 'the woken bot to answer');
+      expect(gw.runs.map((r) => String(r.body['input'])).some((i) => i.includes('said NO') && i.includes('keep them'))).toBe(true);
+    });
+  });
+
   it('a gateway that is down says so in the thread, in the fixed words, and the run fails', async () => {
     const dead = await startFakeHermesGateway({ profiles: {} });
     const deadUrl = dead.url;

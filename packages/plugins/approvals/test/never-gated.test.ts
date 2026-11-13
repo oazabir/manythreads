@@ -60,6 +60,7 @@ describe('requestToolApproval turns the provider’s refusal into an answer for 
       request: () => Promise.reject(new NeverApprovalGatedError('memory.retain')),
       pendingForRun: () => Promise.resolve(0),
       claim: () => Promise.resolve(null),
+      answerOf: () => Promise.resolve(null),
     } as ApprovalProvider;
     const ctx = {
       providers: { get: () => provider },
@@ -92,6 +93,7 @@ describe('requestToolApproval turns the provider’s refusal into an answer for 
       request: () => Promise.reject(new RunEndedError('r')),
       pendingForRun: () => Promise.resolve(0),
       claim: () => Promise.resolve(null),
+      answerOf: () => Promise.resolve(null),
     } as ApprovalProvider;
     const ctx = {
       providers: { get: () => provider },

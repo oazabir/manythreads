@@ -70,6 +70,18 @@ export interface ApprovalProvider extends ProviderImpl {
    * null. System transaction only (an event consumer's own); anything else gets null.
    */
   claim(tx: PluginTx, approvalId: string, expect: { botId: string; source: ApprovalSource }): Promise<Record<string, unknown> | null>;
+  /**
+   * Where an approval of this bot stands, for the run that is waiting inside its own process for the answer (P24: a command its shell wants to run).
+   * `pending` until a person decides; `expired` once its time is up undecided. Null when there is no such approval of this bot. System transaction only.
+   */
+  answerOf(tx: PluginTx, approvalId: string, expect: { botId: string }): Promise<ApprovalAnswer | null>;
+}
+
+/** What `answerOf` reports. `note` is what the person wrote with the decision (empty when nothing); `deciderName` is who decided. */
+export interface ApprovalAnswer {
+  status: 'pending' | 'approved' | 'denied' | 'expired';
+  note: string;
+  deciderName: string | null;
 }
 
 /** Arguments in a stable text form (keys sorted), so the same call always has the same key. */

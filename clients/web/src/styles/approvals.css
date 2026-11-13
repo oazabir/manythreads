@@ -120,6 +120,34 @@
   white-space: pre-wrap;
 }
 
+.apr-agent {
+  display: grid;
+  gap: 6px;
+}
+
+.apr-command,
+.apr-details {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--table-head);
+  color: var(--txt);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.apr-command {
+  font-family: var(--mono);
+}
+
+.apr-why {
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
 .apr-share {
   display: grid;
   gap: 6px;

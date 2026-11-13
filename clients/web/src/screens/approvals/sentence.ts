@@ -9,6 +9,11 @@ import { isShareApproval } from './shareApproval';
 
 type Preview = Approval['argsPreview'];
 
+/** The tool every bot has to ask a person something (P24-03); a question is not an action to describe. */
+export const ASK_TOOL = 'approvals.ask';
+/** The bot's own program stopped at a command and asks whether to run it (P24-02). */
+export const COMMAND_TOOL = 'agent.command';
+
 /** The first non-empty text among these keys of the preview, trimmed to one short line. */
 function pick(preview: Preview, keys: readonly string[]): string {
   if (typeof preview !== 'object' || preview === null) return '';
@@ -44,6 +49,7 @@ const PHRASES: Record<string, Phrase> = {
   'jira.comment': (p) => (pick(p, ['issue', 'key']) ? `comment on Jira issue ${pick(p, ['issue', 'key'])}` : 'comment on a Jira issue'),
   'ssh.exec': (p) => (pick(p, ['host', 'server']) ? `run a command on ${pick(p, ['host', 'server'])}` : 'run a command on a server'),
   'llm.call': () => 'send a message to the model',
+  'agent.command': () => 'run a command',
 };
 
 /** The action alone, as a verb phrase ("send an email to m.okafor"). */
@@ -62,6 +68,8 @@ export function approvalAction(a: Pick<Approval, 'tool' | 'summary' | 'argsPrevi
 export function approvalSentence(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source' | 'botName' | 'requesterName'>): string {
   if (isShareApproval(a)) return `${a.requesterName} asked: ${a.summary}`;
   const bot = a.botName ?? 'a bot';
+  // a bot's own question (`approvals.ask`) reads as the question; the bot's program stopping at a command reads as the bot wanting to run it
+  if (a.tool === ASK_TOOL && typeof a.summary === 'string' && a.summary.trim() !== '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} asks: ${a.summary.trim()}`;
   const action = approvalAction(a);
   const asker = typeof a.requesterName === 'string' ? a.requesterName : '';
   if (asker === bot || asker.trim() === '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} wants to ${action}`;

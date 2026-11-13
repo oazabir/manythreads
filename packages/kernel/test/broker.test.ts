@@ -42,6 +42,22 @@ function setup(granted: string[] = [], approval: string[] = []) {
   return { registry, broker, denials };
 }
 
+describe('broker: a capability every bot has (default)', () => {
+  it('is allowed with no allowlist entry, for a bot on any trigger; a bot entry of its own still decides (needsApproval)', async () => {
+    const registry = new CapabilityRegistry();
+    registry.register({ name: 'approvals.ask', destructive: false, default: true, plugin: 'test' });
+    registry.register({ name: 'tasks.claim', destructive: false, plugin: 'test' });
+    let entry: { needsApproval: boolean; constraints: Record<string, unknown> } | undefined = undefined;
+    const broker = new CapabilityBroker({ registry, grants: { find: (_a, c) => Promise.resolve(c === 'approvals.ask' ? entry : undefined) }, audit: () => undefined });
+    expect(await broker.check(bot('routine'), 'approvals.ask')).toMatchObject({ allowed: true, needsApproval: false });
+    expect(await broker.authorize(bot('mention'), 'approvals.ask')).toMatchObject({ allowed: true, needsApproval: false });
+    // the flag opens only the one capability: every other still needs its entry
+    expect((await broker.check(bot('mention'), 'tasks.claim')).allowed).toBe(false);
+    entry = { needsApproval: true, constraints: {} };
+    expect(await broker.check(bot('mention'), 'approvals.ask')).toMatchObject({ allowed: true, needsApproval: true });
+  });
+});
+
 describe('broker: path guard (bot actors)', () => {
   const all = ['files.write', 'files.delete', 'files.move', 'pages.write'];
   const guarded = [

@@ -675,6 +675,18 @@ Owner request 2026-11-13: "Build a proper Projects sidebar where github, gitlab,
 | P23-05 | The pod's publish command makes one commit, signs it as the setting says and opens the pull or merge request on GitHub or GitLab | Built | hermes-pods `push-credentials.ts`, `mt-publish.sh`; claude-pods `publisher.mjs` | rework after a first publish is refused (exit 5), by design for now |
 | P23-06 | Seen live: a project added for each provider on the deployed site | Not built | - | needs deploy; a real GitLab host must be in `hermesPods.repoOriginAllow` |
 
+### Phase 24 · A bot that needs a person asks through the platform, and the answer comes back (owner, 2026-11-13)
+
+Owner request 2026-11-13: "Approval prompts or any interactive prompt seems to be getting stuck. They should be coming back to the UI and a nice approval open UI specification formatted output should be shown in the message thread and based on users response the bot should be getting the response. Introduce some tool call for any approval need so that the approvals can be properly shown on threads and also can be shown on the side where approval list." Then: "this approval.request tool should be by default given to all bots and all integrations e.g. hermes, claude, codex etc."
+
+| ID | Task | Status | Where | Gap |
+|---|---|---|---|---|
+| P24-01 | A fifth approval source `agent` (a bot asks, no grant flag set it); `ctx.runs.extend` keeps a waiting run's tools alive; `ApprovalProvider.answerOf` reads the answer | Built | approvals migration 0005, shared `ApprovalSource`, kernel `runs/index.ts`, sdk | - |
+| P24-02 | A command the bot's own program stops at (Hermes `approval.request`) becomes an approval card; the run waits (the wait is not counted against its time budget); a person's yes or no, with a note, goes back to the program | Built | runtime-hermes `gateway.ts`, `agent-approval.ts`, `run-job.ts`, `gateway-profile.ts` (`approvals.timeout`), fake gateway | seen only against the fake gateway until deployed |
+| P24-03 | `approvals.ask`: a tool every bot has (no BOT.md line; a capability declared `default`), on every runtime; files an `agent` approval and answers at once; a decision wakes the bot in the same thread with the answer | Built | approvals `ask.ts`, kernel broker/registry (`default`), gateway-mcp catalog, runtime-hermes `wakeAfterAsk`, `output-style.ts` (tells every bot to use it) | Claude and Codex through the agent bridge use the same endpoint; not yet run live |
+| P24-04 | The card reads as a question: the bot's name and question, the command in a code block, Yes / No or Allow once / Deny, a note box that goes to the bot, in the thread and in the Approvals list | Built | clients/web `ApprovalCard.tsx`, `sentence.ts`, `risk.ts`, `approvals.css` | not yet seen live |
+| P24-05 | Seen live: a bot asks, the card shows in the thread and the list, a person answers, the bot goes on | Not built | - | needs deploy |
+
 ---
 
 # Phase 1 · Foundations

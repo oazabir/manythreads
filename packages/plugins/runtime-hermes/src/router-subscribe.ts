@@ -388,6 +388,7 @@ async function noteDepthCap(
 export function registerApprovalResume(ctx: PluginContext): void {
   ctx.events.subscribe('approvals.approval.decided', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ApprovalsApprovalDecidedEvent.parse(raw);
+    if (event.botId !== null && event.source === 'agent' && event.tool === 'approvals.ask') return wakeAfterAsk(ctx, tx, event.approvalId, event.botId);
     if (event.decision !== 'approved' || event.source !== 'dlp' || event.botId === null) return;
     const approvals = ctx.providers.get<ApprovalProvider>('approvals');
     if (!approvals) return;
@@ -399,4 +400,53 @@ export function registerApprovalResume(ctx: PluginContext): void {
     if (!parsed.success) return;
     await ctx.jobs.enqueue(tx, RUN_QUEUE, parsed.data, { dedupeKey: `runtime-hermes:approval:${event.approvalId}` });
   });
+}
+
+/**
+ * A person answered a bot's `approvals.ask` (P24-03): the bot is woken in the same thread with the answer, whichever agent it runs on (Hermes, Claude, Codex — they all
+ * run through this plugin). A yes claims the question's handoff once (a replayed event wakes nobody twice); the thread, channel and asker come from the question's own row
+ * and the run that filed it, so the new run answers where the old one asked.
+ */
+async function wakeAfterAsk(ctx: PluginContext, tx: PluginTx, approvalId: string, botId: string): Promise<void> {
+  const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+  if (!approvals) return;
+  const answer = await approvals.answerOf(tx, approvalId, { botId });
+  if (!answer || (answer.status !== 'approved' && answer.status !== 'denied')) return;
+  // a yes is claimed (the handoff is taken once); a no has nothing to claim, and the job's dedupe key below is what stops a replayed event waking the bot twice
+  if (answer.status === 'approved') {
+    const payload = await approvals.claim(tx, approvalId, { botId, source: 'agent' });
+    if (!payload || payload['kind'] !== 'ask') return;
+  }
+  const row = (
+    await tx.query<{ workspace_id: string; team_id: string; channel_id: string | null; thread_root_id: string | null; summary: string; asker_id: string | null }>(
+      `SELECT a.workspace_id, a.team_id, a.channel_id, a.thread_root_id, a.summary, r.asker_id
+         FROM app.approvals a LEFT JOIN app.bot_runs r ON r.id = a.run_id
+        WHERE a.id = $1::uuid`,
+      [approvalId],
+    )
+  ).rows[0];
+  if (!row || row.channel_id === null) {
+    console.warn(`runtime-hermes: the answer to approval ${approvalId} has no thread to go back to; the bot is not woken`);
+    return;
+  }
+  const who = answer.deciderName ?? 'A person';
+  const verdict = answer.status === 'approved' ? 'said YES' : 'said NO';
+  const note = answer.note.trim() === '' ? 'They wrote nothing else.' : `They wrote: ${answer.note.trim()}`;
+  const prompt = `${who} ${verdict} to your question: “${row.summary}”. ${note} Go on from that answer in this thread, and tell the people here what you did.`;
+  const parsed = RunPayload.safeParse({
+    workspaceId: row.workspace_id,
+    botId,
+    teamId: row.team_id,
+    channelId: row.channel_id,
+    trigger: 'mention',
+    askerActorId: row.asker_id,
+    replyRootId: row.thread_root_id,
+    runThreadId: row.thread_root_id,
+    prompt,
+  });
+  if (!parsed.success) {
+    console.warn(`runtime-hermes: the answer to approval ${approvalId} could not be turned into a run: ${parsed.error.issues[0]?.message ?? 'invalid'}`);
+    return;
+  }
+  await ctx.jobs.enqueue(tx, RUN_QUEUE, parsed.data, { dedupeKey: `runtime-hermes:ask-answer:${approvalId}` });
 }

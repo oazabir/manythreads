@@ -234,3 +234,5 @@ A Hermes reads a bot's tool list once, when its profile is served; a change of t
   profile last listed a different set than the bot has now, which a Hermes that holds the stream never shows for more than a moment.
 * **The ingress** must pass the stream unbuffered: the response carries `X-Accel-Buffering: no`, and the read timeout in front must be over 30 minutes (Helm
   `web.mcpStreamTimeout`; see `docs/deploy.md`).
+
+**`approvals.ask` is offered to every bot** (P24-03): its capability is declared `default`, so `tools/list` includes it with no line in the BOT.md and a call needs no grant. It is a `write` in the catalog (held back in a rehearsal, like any write that is not the reply). See [approvals](./approvals.md#a-fifth-source-agent--a-bot-asks-a-person-p24).

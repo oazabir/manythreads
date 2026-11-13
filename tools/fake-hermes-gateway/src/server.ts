@@ -30,6 +30,11 @@ export type FakeRunStep =
   /** Call a manythreads tool over the profile's MCP server (a JSON-RPC `tools/call`); the answer text goes to `onResult`. */
   | { type: 'mcp'; tool: string; args: Record<string, unknown>; onResult?: (result: { ok: boolean; status: number; body: unknown }) => void }
   | { type: 'wait'; ms: number }
+  /**
+   * Ask a person, as Hermes' shell does for a risky command: emit `approval.request` and wait until `POST /v1/runs/<id>/approval` answers it (or the run is stopped, or `ms` pass,
+   * which is Hermes' own timeout: the answer is then `timeout`). `onAnswer` gets the choice and whatever `POST .../steer` sent after it.
+   */
+  | { type: 'approval'; command: string; description?: string; ms?: number; onAnswer?: (answer: { choice: string; steered: string[] }) => void }
   /** Wait until the run is stopped (or `ms` pass), then end cancelled. */
   | { type: 'hang'; ms?: number }
   | { type: 'finish'; output?: string; usage?: { input_tokens: number; output_tokens: number; total_tokens: number; cost?: number } }
@@ -85,6 +90,9 @@ export interface FakeHermesGateway {
 }
 
 interface RunState {
+  /** The question the run asks right now (an `approval` step): `answer` settles it. */
+  pending?: { requestId: string; answer: (choice: string) => void };
+  steered?: string[];
   run: FakeHermesRun;
   events: Array<{ seq: number; data: Record<string, unknown> }>;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
@@ -155,6 +163,17 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
           emitEvent(state, 'message.delta', { delta: step.text });
         } else if (step.type === 'wait') {
           await new Promise((r) => setTimeout(r, step.ms));
+        } else if (step.type === 'approval') {
+          const requestId = `req-${state.events.length}`;
+          state.steered = [];
+          const choice = await new Promise<string>((resolve) => {
+            const timer = setTimeout(() => resolve('timeout'), step.ms ?? 30_000);
+            wakeHang = () => resolve('cancelled');
+            state.pending = { requestId, answer: (c) => { clearTimeout(timer); resolve(c); } };
+            emitEvent(state, 'approval.request', { request_id: requestId, command: step.command, description: step.description ?? 'a risky command', choices: ['once', 'session', 'deny'] });
+          });
+          state.pending = undefined;
+          step.onAnswer?.({ choice, steered: state.steered });
         } else if (step.type === 'hang') {
           await new Promise<void>((r) => {
             wakeHang = r;
@@ -262,7 +281,7 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
       return send(res, 202, { run_id: runId, status: 'started' });
     }
 
-    const runMatch = /^\/v1\/runs\/([^/]+)(\/events|\/stop)?$/.exec(path);
+    const runMatch = /^\/v1\/runs\/([^/]+)(\/events|\/stop|\/approval|\/steer)?$/.exec(path);
     if (runMatch) {
       const state = runs.get(runMatch[1]!);
       if (!state || state.run.profile !== profile) return send(res, 404, errorBody(`run not found: ${runMatch[1]}`, 'run_not_found'));
@@ -270,6 +289,18 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
       if (req.method === 'POST' && tail === '/stop') {
         state.stop();
         return send(res, 200, { object: 'hermes.run.stop', run_id: state.run.runId, status: state.status === 'running' ? 'stopping' : state.status });
+      }
+      if (req.method === 'POST' && (tail === '/approval' || tail === '/steer')) {
+        const body = (json ?? {}) as Record<string, unknown>;
+        if (tail === '/approval') {
+          if (!state.pending) return send(res, 409, errorBody(`Run has no pending approval: ${state.run.runId}`, 'approval_not_pending'));
+          const choice = String(body['choice'] ?? '');
+          if (!['once', 'session', 'always', 'deny'].includes(choice)) return send(res, 400, errorBody('Invalid approval choice', 'invalid_approval_choice'));
+          state.pending.answer(choice);
+          return send(res, 200, { object: 'hermes.run.approval_response', run_id: state.run.runId, choice, resolved: 1 });
+        }
+        state.steered?.push(String(body['input'] ?? ''));
+        return send(res, 200, { object: 'hermes.run.steer', run_id: state.run.runId, status: 'accepted' });
       }
       if (req.method === 'GET' && tail === undefined) {
         return send(res, 200, { run_id: state.run.runId, status: state.status, output: state.output, usage: state.usage, error: state.error });

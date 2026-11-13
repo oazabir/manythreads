@@ -77,6 +77,19 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
       return res.rows[0]?.n ?? 0;
     },
 
+    async answerOf(tx: PluginTx, approvalId: string, expect) {
+      if (tx.actor.kind !== 'system') return null;
+      const res = await tx.query<{ status: 'pending' | 'approved' | 'denied' | 'expired'; lapsed: boolean; note: string | null; decider_name: string | null }>(
+        `SELECT a.status, (a.status = 'pending' AND a.expires_at <= now()) AS lapsed, d.note, d.decider_name
+           FROM app.approvals a LEFT JOIN app.approval_decisions d ON d.approval_id = a.id
+          WHERE a.id = $1::uuid AND a.bot_id = $2::uuid`,
+        [approvalId, expect.botId],
+      );
+      const row = res.rows[0];
+      if (!row) return null;
+      return { status: row.lapsed ? 'expired' : row.status, note: row.note ?? '', deciderName: row.decider_name };
+    },
+
     async claim(tx: PluginTx, approvalId: string, expect) {
       // Only an event consumer's or a job's own (system) transaction takes a call back; the request role has no UPDATE on the table at all.
       if (tx.actor.kind !== 'system') return null;

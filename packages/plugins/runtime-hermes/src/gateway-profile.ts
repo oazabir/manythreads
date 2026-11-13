@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { AGENT_APPROVAL_WAIT_MS } from './agent-approval.ts';
 import { MODEL_PROVIDER_ADDRESS, type BotRuntimeDefinition } from '@manythreads/sdk';
 import { hermesToolsets } from './toolsets.ts';
 
@@ -114,6 +115,9 @@ export function renderGatewayProfile(definition: BotRuntimeDefinition, input: Ga
     'agent:',
     ...(effort ? [`  reasoning_effort: ${scalar(effort)}`] : []),
     `  disabled_toolsets: [${toolsets.disabled.map(scalar).join(', ')}]`,
+    // How long the program waits for a person to answer a command it asked about (the platform's own wait, agent-approval.ts, is shorter, so it ends first and says why).
+    'approvals:',
+    `  timeout: ${Math.round(AGENT_APPROVAL_WAIT_MS / 1000) + 300}`,
     // Without this Hermes shows MCP tools only through a search tool, and the model never calls the manythreads tools directly.
     'tools:',
     '  tool_search:',

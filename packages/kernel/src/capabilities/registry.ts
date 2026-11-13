@@ -7,6 +7,8 @@ export class CapabilityError extends Error {
 export interface RegisteredCapability {
   name: string;
   destructive: boolean;
+  /** Offered to every bot with no allowlist entry (see `CapabilityDeclaration.default`). */
+  default?: boolean;
   /** Plugin that declared it (or `kernel`). */
   plugin: string;
 }

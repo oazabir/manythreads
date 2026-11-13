@@ -372,6 +372,12 @@ the same. Test: `test/rehearsal.test.ts`; the whole path is `conversations/test/
   the approvals plugin the hold is a refusal.
 * Runs record where they answer (`bot_runs.channel_id`, `reply_root_id`, bots 0009) so the card lands in that thread.
 
+## A command the bot's program stops at, and a question the bot asks (P24)
+
+**Hermes stops at a risky command** and waits, inside the run, for a person (`approval.request` in the run's event stream; answered by `POST /v1/runs/<id>/approval` with `once`, `session` or `deny`). It used to be unanswered: five minutes, then refused. Now `gateway.ts` hands it to the run job as a `BotRuntimeEvent` of type `approval` (the command is redacted before anyone reads it); `agent-approval.ts` files an approval of source `agent` (tool `agent.command`) in the thread and the team list, keeps the run's tools token alive (`ctx.runs.extend`) and polls for the answer every three seconds. A yes answers `once`, a no, an expiry, 30 minutes of silence, a Stop, or any failure answers `deny`; a note goes to the program as a steer ("The person allowed that command and wrote: …"). The pod profile's `approvals.timeout` is set longer than the wait so the platform's refusal comes first. **The wait is not counted against the run's time budget** (the ceiling is stopped while it waits and re-armed with what was left).
+
+**A bot asks with `approvals.ask`** (the tool every bot has; see [approvals](./approvals.md#a-fifth-source-agent--a-bot-asks-a-person-p24)). On `approvals.approval.decided` for it, `registerApprovalResume` puts a run on the queue in the same thread (`wakeAfterAsk`): its prompt says who said yes or no to which question and what they wrote. Claude and Codex bots run through this plugin too (the agent bridge), so one path serves all of them.
+
 ## The gate (P5-11)
 
 SPEC §7.3: before any model call, on a gate-list topic, in two stages. `runtime-hermes/src/gate.ts` is the code; the run job calls it after the run opens and before the pre-call check
