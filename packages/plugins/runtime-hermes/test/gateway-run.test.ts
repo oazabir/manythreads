@@ -350,12 +350,16 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
       expect(answered[0]).toEqual({ choice: 'deny', steered: ['The person declined that command and wrote: leave the build alone'] });
     });
 
-    it('the person who asked cannot answer for the bot', async () => {
-      gw.setScript(() => ask([]));
+    it('the person the bot is working for can answer it: the one who started the thread is not locked out (migration 0006)', async () => {
+      const answered: Array<{ choice: string; steered: string[] }> = [];
+      gw.setScript(() => ask(answered));
       const rootId = await post('@ext-bot and once more');
       const card = await pending(rootId);
-      expect((await w.call(nadia, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, {})).status).toBe(403);
-      await w.call(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/deny`, {});
+      const asker = await w.call<{ items: any[] }>(nadia, 'GET', `/api/threads/${rootId}/approvals`);
+      expect(asker.body.items.find((a) => a.id === card.id)).toMatchObject({ canDecide: true });
+      expect((await w.call(nadia, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, { note: 'go on' })).status).toBe(200);
+      await until(async () => answered.length === 1, 30_000, 'the answer to reach the program');
+      expect(answered[0]!.choice).toBe('once');
     });
   });
 

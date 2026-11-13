@@ -183,6 +183,27 @@ describe('approvals and approval_decisions (P5-20)', () => {
     expect(await reason(omar, '00000000-0000-7000-8000-00000000ffff')).toBe('not_found');
   });
 
+  it('a bot\'s own question (source agent) may be answered by the person the bot works for, as well as by its approvers (migration 0006)', async () => {
+    const reason = (p: Persona, id: string): Promise<string | null> =>
+      as(p, async (tx) => (await tx.query<{ r: string | null }>('SELECT app.approvals_block_reason($1) AS r', [id])).rows[0]!.r);
+    const asked = await sys(
+      async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id)
+             VALUES ($1, $2, 'agent', 'approvals.ask', 'May I?', '{"question":"May I?"}', '{"kind":"handoff","payload":{"kind":"ask"}}', $3, $4) RETURNING id`,
+            [omar.workspaceId, ENG, JSON.stringify({ roles: [], people: [], leads: true }), nadia.actorId],
+          )
+        ).rows[0]!.id,
+    );
+    expect(await reason(nadia, asked)).toBeNull(); // the person it asked: not a lead, and the requester, yet they decide
+    expect(await reason(omar, asked)).toBeNull(); // the lead too
+    expect(await reason(rafi, asked)).toBe('not_approver'); // nobody else
+    expect(await reason(sameera, asked)).toBe('not_found');
+    // every other source keeps the rule: whoever asked never decides it
+    expect(await reason(nadia, engApproval)).toBe('requester');
+  });
+
   it('a decision is written by the door only, once, and approving queues the stopped action', async () => {
     const decide = (p: Persona, id: string, decision: string) => as(p, (tx) => tx.query('SELECT app.approvals_decide($1, $2, $3)', [id, decision, 'ok']));
     expect(await code(decide(nadia, engApproval, 'approved'))).toBe('42501'); // the requester

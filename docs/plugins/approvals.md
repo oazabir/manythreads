@@ -34,7 +34,7 @@ Not one of the four ways a call is flagged: here the **bot** stops and asks. Two
 
 **`approvals.ask` is a tool every bot has**, on every runtime, with no line in its `BOT.md`: the plugin declares it with `default: true` (`CapabilityDeclaration`), and the broker offers a `default` capability to every bot with no allowlist entry. A bot's own entry still decides first (`needsApproval` on it works as for any tool). Input: `question` (one sentence, ≤300) and `details` (what the person needs to read, ≤3000). It answers at once; the bot ends its turn. Asking again for the same question while it is pending is the same approval. The card reads as a question (the bot's name and question, Yes / No), in the thread and in the team's Approvals list, with a note box that goes back to the bot. Every bot's instructions say to use it (`output-style.ts`).
 
-The one who asked (the person whose message started the run) cannot answer for the bot; a run in a private conversation with nobody else who may decide is refused with the usual sentence. `ApprovalProvider.answerOf` reads the answer (status, note, who decided) for the plugin that waits.
+**The person the bot is working for may answer it** (migration 0006: for `agent` only, `approvals_block_reasons` does not refuse the requester, a guest excepted), next to the named approvers or the team's leads. For every other source the requester still never decides their own request. For the same reason a run in a private conversation is not refused when only that person could decide an `agent` question. `ApprovalProvider.answerOf` reads the answer (status, note, who decided) for the plugin that waits.
 
 ## The handler: `ctx.providers.get<ApprovalProvider>('approvals')`
 
