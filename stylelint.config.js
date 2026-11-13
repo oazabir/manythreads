@@ -1,6 +1,6 @@
 export default {
   extends: ['stylelint-config-standard'],
-  ignoreFiles: ['.claude/**', 'data/**', '**/node_modules/**', '**/dist/**', '**/coverage/**', 'docs/spec/**', 'clients/desktop/src-tauri/target/**', 'clients/desktop/src-tauri/gen/**', '**/playwright-report/**', '**/test-results/**'],
+  ignoreFiles: ['.claude/**', 'data/**', '**/node_modules/**', '**/dist/**', '**/dist-canary/**', '**/coverage/**', 'docs/spec/**', 'clients/desktop/src-tauri/target/**', 'clients/desktop/src-tauri/gen/**', '**/playwright-report/**', '**/test-results/**'],
   rules: {
     'color-no-hex': true,
     // P21-21: a colour is a token. rgb() and hsl() are written in tokens.css only, and a dark colour comes from a token, never from a per-screen `[data-theme]` rule
