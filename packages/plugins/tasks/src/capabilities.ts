@@ -224,17 +224,17 @@ export function registerCapabilities(ctx: PluginContext): void {
       const field = issue?.path.map(String).join('.') || 'input';
       return { ok: false, code: 'invalid_input', message: `${field}: ${issue?.message ?? 'invalid'}` };
     }
-    const { taskId, project, testedSha, number } = parsed.data;
+    const { taskId, project, testedSha, publishedSha, number } = parsed.data;
     const before = await cardOf(tx, taskId);
     if (!before) return { ok: false, code: 'not_found', message: 'no such card' };
     if (before.ownerId !== tx.actor.id) return { ok: false, code: 'not_owner', message: 'only the owner can record a pull request on this card' };
     const slug = (await tx.query<{ slug: string }>('SELECT slug FROM app.teams WHERE id = $1::uuid', [before.teamId])).rows[0]?.slug;
     if (!slug) return { ok: false, code: 'not_found', message: 'no such card' };
-    const checked = await verifyPullRequest(pullRequestDeps(ctx), { team: { id: before.teamId, slug }, taskId, project, testedSha, number });
+    const checked = await verifyPullRequest(pullRequestDeps(ctx), { team: { id: before.teamId, slug }, taskId, project, testedSha, ...(publishedSha ? { publishedSha } : {}), number });
     if (!checked.ok) return { ok: false, code: checked.code, message: checked.message };
     const res = (
-      await tx.query<{ o_outcome: string; o_reason: string }>('SELECT * FROM app.tasks_record_pull_request($1::uuid, $2, $3, $4::integer, $5, $6, $7, $8, $9)', [
-        taskId, testedSha, project, number, checked.url, checked.origin, checked.headRef, checked.headSha, checked.baseRef,
+      await tx.query<{ o_outcome: string; o_reason: string }>('SELECT * FROM app.tasks_record_pull_request($1::uuid, $2, $3, $4::integer, $5, $6, $7, $8, $9, $10::boolean)', [
+        taskId, testedSha, project, number, checked.url, checked.origin, checked.headRef, checked.headSha, checked.baseRef, checked.squashed,
       ])
     ).rows[0];
     if (!res) return { ok: false, code: 'not_found', message: 'no such card' };
@@ -242,6 +242,28 @@ export function registerCapabilities(ctx: PluginContext): void {
     const after = (await cardOf(tx, taskId)) ?? before;
     await emitUpdated(ctx, tx, before, after);
     return { ok: true, taskId, number, state: after.state, blockerReason: after.blockerReason };
+  });
+
+  // Whose name the published commit carries. The Committer asks before it runs `mt-publish`: the project says `bot` (nothing more is needed: the publish
+  // command signs as the project's bot account) or `requester` (the person who started the work: their display name and account email, to pass to the
+  // publish command). Only the card's owner (or a lead) can ask, through the one SQL door that also checks the card belongs to that project.
+  ctx.capabilities.register('tasks.commit_identity', async (input, tx) => {
+    const taskId = String(input['taskId'] ?? '');
+    const project = String(input['project'] ?? '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId)) return { ok: false, code: 'invalid_input', message: 'taskId must be the card id (a uuid) from tasks.read' };
+    if (!/^[a-z0-9][a-z0-9._-]{0,60}$/.test(project)) return { ok: false, code: 'invalid_input', message: 'project is the project name `mt-publish` was run for' };
+    const res = (await tx.query<{ o_outcome: string; o_commit_as: string | null; o_name: string | null; o_email: string | null }>('SELECT * FROM app.tasks_commit_identity($1::uuid, $2)', [taskId, project])).rows[0];
+    if (!res) return { ok: false, code: 'not_found', message: 'no such card' };
+    const messages: Record<string, string> = {
+      not_found: 'no such card',
+      not_owner: 'only the owner of the card (or a lead) can ask how its commit is signed',
+      wrong_project: 'this card is not about that project',
+      no_requester: 'this project signs commits with the requester\u2019s name, but no person started this work (it was started by a bot); hand the card back and say so, do not publish',
+    };
+    if (res.o_outcome !== 'ok') return { ok: false, code: res.o_outcome, message: messages[res.o_outcome] ?? res.o_outcome };
+    return res.o_commit_as === 'requester'
+      ? { ok: true, commitAs: 'requester', authorName: res.o_name, authorEmail: res.o_email }
+      : { ok: true, commitAs: 'bot' };
   });
 
   ctx.capabilities.register('tasks.handoff', async (input, tx) => {

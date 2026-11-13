@@ -1,7 +1,8 @@
-import { isRepoOriginAllowed, parseGithubRepo, parseRepoOriginAllow, type GithubRepo } from '@manythreads/shared';
+import { isRepoOriginAllowed, parseGitRepo, parseRepoOriginAllow, pullRequestUrlFor, type GitRepo } from '@manythreads/shared';
 import type { PluginContext, PluginTx, ProjectCredentialsProvider } from '@manythreads/sdk';
 import { emitCompleted, emitUpdated } from './emit.ts';
-import { getPull, type GithubOptions, type PullInfo } from './github.ts';
+import { getPull, type GithubOptions, type PullAnswer, type PullInfo } from './github.ts';
+import { getMergeRequest } from './gitlab.ts';
 import { TASK_SELECT, toTask, type TaskRow } from './rows.ts';
 
 /**
@@ -29,6 +30,8 @@ export interface PullRequestDeps extends GithubOptions {
   originAllow: readonly string[];
   /** Tests only: ask this API instead of the origin's own (a local double of GitHub). */
   apiBaseOverride?: string;
+  /** Tests only: the same for a GitLab origin (a local double of GitLab). */
+  gitlabApiOverride?: string;
 }
 
 export function pullRequestDeps(ctx: PluginContext): PullRequestDeps {
@@ -37,30 +40,42 @@ export function pullRequestDeps(ctx: PluginContext): PullRequestDeps {
     originAllow: parseRepoOriginAllow(process.env['MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW']),
     // Test seam, ignored outside NODE_ENV=test: ask a local double of GitHub instead of the origin's own API.
     ...(process.env['NODE_ENV'] === 'test' && process.env['MANYTHREADS_TEST_GITHUB_API'] ? { apiBaseOverride: process.env['MANYTHREADS_TEST_GITHUB_API'] } : {}),
+    ...(process.env['NODE_ENV'] === 'test' && process.env['MANYTHREADS_TEST_GITLAB_API'] ? { gitlabApiOverride: process.env['MANYTHREADS_TEST_GITLAB_API'] } : {}),
   };
 }
 
-const repoName = (r: GithubRepo): string => `${r.owner}/${r.repo}`.toLowerCase();
+const repoName = (r: GitRepo): string => r.path.toLowerCase();
 
-/** The address of a pull request, made from the repository's own address and its number. */
-export const pullRequestUrl = (origin: string, number: number): string | null => {
-  const r = parseGithubRepo(origin);
-  return r ? `https://${r.host}/${r.owner}/${r.repo}/pull/${number}` : null;
+/** The provider a stored credential was issued by: a document written before GitLab was supported has no identity and is GitHub's. */
+const providerOf = (cred: { identity?: { provider: 'github' | 'gitlab' } }): 'github' | 'gitlab' => cred.identity?.provider ?? 'github';
+
+/** Ask the project's own provider for the request `number`. */
+function getRequest(deps: PullRequestDeps, repo: GitRepo, token: string, number: number, failures: number): Promise<PullAnswer> {
+  const common = { fetch: deps.fetch, now: deps.now } as GithubOptions;
+  return repo.provider === 'github'
+    ? getPull({ ...common, apiBase: deps.apiBaseOverride ?? repo.apiBase, token, owner: repo.owner, repo: repo.repo, number, failures })
+    : getMergeRequest({ ...common, apiBase: deps.gitlabApiOverride ?? repo.apiBase, token, path: repo.path, number, failures });
+}
+
+/** The address of a pull request (GitHub) or merge request (GitLab), made from the repository's own address and its number. */
+export const pullRequestUrl = (origin: string, number: number, provider: 'github' | 'gitlab' = 'github'): string | null => {
+  const r = parseGitRepo(origin, provider);
+  return r ? pullRequestUrlFor(r, number) : null;
 };
 
 /** What a bot is told when GitHub turned the project's token down; the lead replaces it on the Projects page (a bot never asks for it in a thread). */
 export const TOKEN_REFUSED_MESSAGE = "GitHub no longer accepts this project's token, so nothing was recorded. A lead of the team must save a new one on the Projects page; do not ask for it in a thread";
 
-export type Verified = { ok: true; origin: string; headRef: string; headSha: string; baseRef: string; url: string } | { ok: false; code: string; message: string };
+export type Verified = { ok: true; origin: string; headRef: string; headSha: string; baseRef: string; url: string; squashed: boolean } | { ok: false; code: string; message: string };
 
 /** Everything the server insists on before a card may wait on a pull request. */
 export async function verifyPullRequest(
   deps: PullRequestDeps,
-  input: { team: { id: string; slug: string }; taskId: string; project: string; testedSha: string; number: number },
+  input: { team: { id: string; slug: string }; taskId: string; project: string; testedSha: string; publishedSha?: string; number: number },
 ): Promise<Verified> {
   const provider = deps.credentials();
   if (!provider) return { ok: false, code: 'no_credential', message: 'this server holds no push credentials' };
-  let cred: { token: string; origin: string; branch: string; refused?: boolean } | null;
+  let cred: Awaited<ReturnType<ProjectCredentialsProvider['read']>>;
   try {
     cred = await provider.read(input.team, input.project);
   } catch {
@@ -68,28 +83,32 @@ export async function verifyPullRequest(
   }
   if (!cred) return { ok: false, code: 'no_credential', message: 'this project has no push credential' };
   if (cred.refused) return { ok: false, code: 'token_refused', message: TOKEN_REFUSED_MESSAGE };
-  const repo = isRepoOriginAllowed(cred.origin, deps.originAllow) ? parseGithubRepo(cred.origin) : null;
+  const repo = isRepoOriginAllowed(cred.origin, deps.originAllow) ? parseGitRepo(cred.origin, providerOf(cred)) : null;
   if (!repo) return { ok: false, code: 'no_credential', message: "this project's address cannot be published to" };
-  const answer = await getPull({ ...deps, apiBase: deps.apiBaseOverride ?? repo.apiBase, token: cred.token, owner: repo.owner, repo: repo.repo, number: input.number, failures: 0 });
+  const answer = await getRequest(deps, repo, cred.token, input.number, 0);
+  const what = repo.provider === 'github' ? 'pull request' : 'merge request';
   if (answer.kind === 'retry' && answer.refused) {
     // remembered in the pod's Secret, so the publish command and the sync stop using the token; the projects plugin shows the project as needing a new one
     await provider.setRefused(input.team, input.project, true).catch(() => undefined);
     return { ok: false, code: 'token_refused', message: TOKEN_REFUSED_MESSAGE };
   }
-  if (answer.kind === 'retry') return { ok: false, code: 'github_unreachable', message: `GitHub could not be asked about the pull request (${answer.why}); try again in a moment` };
+  if (answer.kind === 'retry') return { ok: false, code: 'github_unreachable', message: `${repo.provider === 'github' ? 'GitHub' : 'GitLab'} could not be asked about the ${what} (${answer.why}); try again in a moment` };
   const p = answer.pull;
   const branch = `card-${input.taskId.slice(0, 8)}`;
   const mine = repoName(repo);
-  if (p.state !== 'open' || p.merged) return { ok: false, code: 'not_open', message: `pull request #${input.number} is not open` };
-  if (p.headRef !== branch) return { ok: false, code: 'wrong_branch', message: `pull request #${input.number} does not come from this card's branch ${branch}` };
-  if (p.baseRef !== cred.branch) return { ok: false, code: 'wrong_base', message: `pull request #${input.number} is aimed at ${p.baseRef ?? 'an unknown branch'}, not at the project's main branch ${cred.branch}` };
-  if (p.baseRepo !== mine || p.headRepo !== mine) return { ok: false, code: 'wrong_repository', message: `pull request #${input.number} is not between branches of ${mine}` };
-  if (p.headSha === null || !p.headSha.startsWith(input.testedSha.toLowerCase())) {
-    return { ok: false, code: 'sha_mismatch', message: `pull request #${input.number} is at ${p.headSha?.slice(0, 12) ?? 'an unknown commit'}, not at the tested commit ${input.testedSha.slice(0, 12)}` };
+  if (p.state !== 'open' || p.merged) return { ok: false, code: 'not_open', message: `${what} #${input.number} is not open` };
+  if (p.headRef !== branch) return { ok: false, code: 'wrong_branch', message: `${what} #${input.number} does not come from this card's branch ${branch}` };
+  if (p.baseRef !== cred.branch) return { ok: false, code: 'wrong_base', message: `${what} #${input.number} is aimed at ${p.baseRef ?? 'an unknown branch'}, not at the project's main branch ${cred.branch}` };
+  if (p.baseRepo !== mine || p.headRepo !== mine) return { ok: false, code: 'wrong_repository', message: `${what} #${input.number} is not between branches of ${mine}` };
+  // One commit per card: the request is at the squashed commit the publish command printed (`publishedSha`), made from the tested tree; without it the
+  // request must be at the tested commit itself, as before.
+  const expected = (input.publishedSha ?? input.testedSha).toLowerCase();
+  if (p.headSha === null || !p.headSha.startsWith(expected)) {
+    return { ok: false, code: 'sha_mismatch', message: `${what} #${input.number} is at ${p.headSha?.slice(0, 12) ?? 'an unknown commit'}, not at ${input.publishedSha ? 'the published' : 'the tested'} commit ${expected.slice(0, 12)}` };
   }
-  const url = pullRequestUrl(cred.origin, input.number);
+  const url = pullRequestUrlFor(repo, input.number);
   if (!url) return { ok: false, code: 'no_credential', message: "this project's address cannot be published to" };
-  return { ok: true, origin: cred.origin, headRef: branch, headSha: p.headSha, baseRef: cred.branch, url };
+  return { ok: true, origin: cred.origin, headRef: branch, headSha: p.headSha, baseRef: cred.branch, url, squashed: input.publishedSha !== undefined && !p.headSha.startsWith(input.testedSha.toLowerCase()) };
 }
 
 interface Due extends Record<string, unknown> {
@@ -135,7 +154,7 @@ async function markChecked(tx: PluginTx, taskId: string): Promise<void> {
 }
 
 /** Why a merged pull request is not a merge of what was recorded; null when it is. */
-function divergence(d: Due, repo: GithubRepo, p: PullInfo): string | null {
+function divergence(d: Due, repo: GitRepo, p: PullInfo): string | null {
   if (p.headRef !== d.head_ref || p.baseRef !== d.base_ref || p.baseRepo !== repoName(repo) || p.headRepo !== repoName(repo)) return `Pull request #${d.number} is no longer the one recorded for this card (branch, target branch or repository changed)`;
   if (p.headSha !== d.head_sha) return `Pull request #${d.number} was merged at ${p.headSha?.slice(0, 12) ?? 'another commit'}, not at the tested commit ${d.head_sha.slice(0, 12)}: test it again`;
   return null;
@@ -145,7 +164,7 @@ export async function syncPullRequests(ctx: PluginContext, deps: PullRequestDeps
   const out: SyncResult = { checked: 0, merged: 0, closed: 0, skipped: 0, failed: 0 };
   const now = deps.now ?? Date.now;
   const due = await dueList(ctx);
-  const tokens = new Map<string, { token: string; origin: string; branch: string; refused?: boolean } | null>();
+  const tokens = new Map<string, Awaited<ReturnType<ProjectCredentialsProvider['read']>>>();
   for (const d of due) {
     const key = `${d.team_id}/${d.project}`;
     const wait = backoff.get(key);
@@ -153,9 +172,8 @@ export async function syncPullRequests(ctx: PluginContext, deps: PullRequestDeps
       out.skipped++;
       continue;
     }
-    const repo = isRepoOriginAllowed(d.origin, deps.originAllow) ? parseGithubRepo(d.origin) : null;
     const provider = deps.credentials();
-    if (!repo || !provider) {
+    if (!provider || !isRepoOriginAllowed(d.origin, deps.originAllow)) {
       // An address this server may not call, or no credentials held here: nothing to ask.
       out.skipped++;
       await ctx.db.system((tx) => markChecked(tx, d.task_id));
@@ -178,13 +196,20 @@ export async function syncPullRequests(ctx: PluginContext, deps: PullRequestDeps
       await ctx.db.system((tx) => markChecked(tx, d.task_id));
       continue;
     }
+    // the provider comes with the credential (a document kept before GitLab was supported is GitHub's)
+    const repo = parseGitRepo(d.origin, providerOf(cred));
+    if (!repo) {
+      out.skipped++;
+      await ctx.db.system((tx) => markChecked(tx, d.task_id));
+      continue;
+    }
     // A token GitHub turned down is not tried again (the projects plugin marks it after it asked GitHub itself): the card waits until a lead saves a new one.
     if (cred.refused) {
       out.skipped++;
       await ctx.db.system((tx) => markChecked(tx, d.task_id));
       continue;
     }
-    const answer = await getPull({ ...deps, apiBase: deps.apiBaseOverride ?? repo.apiBase, token: cred.token, owner: repo.owner, repo: repo.repo, number: d.number, failures: backoff.get(key)?.failures ?? 0 });
+    const answer = await getRequest(deps, repo, cred.token, d.number, backoff.get(key)?.failures ?? 0);
     out.checked++;
     if (answer.kind === 'retry' && answer.refused) await provider.setRefused({ id: d.team_id, slug: d.team_slug }, d.project, true).catch(() => undefined);
     if (answer.kind === 'retry') {

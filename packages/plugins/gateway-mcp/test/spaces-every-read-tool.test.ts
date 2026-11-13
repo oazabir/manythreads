@@ -23,6 +23,7 @@ const CLASS = {
   'inbox.read': 'run_scoped',
   'tasks.read': 'asker_policies',
   'tasks.private_note': 'asker_policies',
+  'tasks.commit_identity': 'asker_policies',
 } as const satisfies Record<string, 'team_argument' | 'run_scoped' | 'asker_policies'>;
 
 const TEAM = '00000000-0000-7000-8000-0000000b0001';

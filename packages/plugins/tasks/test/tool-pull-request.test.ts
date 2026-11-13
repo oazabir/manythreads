@@ -42,7 +42,7 @@ async function openPull(over: { head?: string; sha?: string; headRepo?: string; 
   return ((await r.json()) as { number: number }).number;
 }
 
-function harness(opts: { door?: { o_outcome: string; o_reason: string }; credential?: { token: string; origin: string; branch: string; refused?: boolean } | null; owner?: string; refusals?: string[] } = {}) {
+function harness(opts: { door?: { o_outcome: string; o_reason: string }; credential?: { token: string; origin: string; branch: string; refused?: boolean } | null; owner?: string; refusals?: string[]; identity?: { o_outcome: string; o_commit_as: string | null; o_name: string | null; o_email: string | null } } = {}) {
   const door = opts.door ?? { o_outcome: 'recorded', o_reason: '' };
   const sql: { text: string; params: unknown[] }[] = [];
   const emitted: unknown[] = [];
@@ -54,6 +54,7 @@ function harness(opts: { door?: { o_outcome: string; o_reason: string }; credent
       recorded = door.o_outcome === 'recorded';
       return Promise.resolve({ rows: [door] });
     }
+    if (text.includes('app.tasks_commit_identity')) return Promise.resolve({ rows: opts.identity ? [opts.identity] : [] });
     if (text.includes('FROM app.teams')) return Promise.resolve({ rows: [{ slug: 'engineering' }] });
     if (text.includes('FROM app.tasks t')) {
       const now = new Date('2026-10-27T10:00:00Z');
@@ -78,6 +79,7 @@ function harness(opts: { door?: { o_outcome: string; o_reason: string }; credent
     put: async () => undefined,
     putShared: async () => undefined,
     setRefused: async (_team, project, refused) => void (refused && opts.refusals?.push(project)),
+    setCommitAs: async () => undefined,
     remove: async () => undefined,
     read: async () => (opts.credential === undefined ? { token: TOKEN, origin: ORIGIN, branch: 'main' } : opts.credential),
   };
@@ -87,7 +89,7 @@ function harness(opts: { door?: { o_outcome: string; o_reason: string }; credent
     providers: { get: () => credentials },
   } as unknown as PluginContext;
   registerCapabilities(ctx);
-  return { sql, emitted, run: (input: Record<string, unknown>) => handlers.get('tasks.pull_request')!(input, tx) };
+  return { sql, emitted, run: (input: Record<string, unknown>) => handlers.get('tasks.pull_request')!(input, tx), identity: (input: Record<string, unknown>) => handlers.get('tasks.commit_identity')!(input, tx) };
 }
 
 const asked = (n: number) => ({ taskId: TASK, project: 'widgets', testedSha: SHA, number: n });
@@ -98,7 +100,7 @@ describe('tasks.pull_request', () => {
     const h = harness();
     expect(await h.run(asked(n))).toMatchObject({ ok: true, taskId: TASK, number: n, state: 'waiting_on_person' });
     const door = h.sql.find((s) => s.text.includes('tasks_record_pull_request'))!;
-    expect(door.params).toEqual([TASK, SHA, 'widgets', n, `${ORIGIN}/pull/${n}`, ORIGIN, BRANCH, SHA, 'main']);
+    expect(door.params).toEqual([TASK, SHA, 'widgets', n, `${ORIGIN}/pull/${n}`, ORIGIN, BRANCH, SHA, 'main', false]);
     expect(h.emitted[0]).toMatchObject({ type: 'tasks.task.updated', taskId: TASK, state: 'waiting_on_person', fromState: 'in_progress', testedSha: SHA });
     expect(gh.calls.at(-1)).toMatchObject({ method: 'GET', authorized: true });
   });
@@ -178,5 +180,50 @@ describe('tasks.pull_request', () => {
       expect(h.sql).toEqual([]);
     }
     expect(gh.calls.length).toBe(before);
+  });
+});
+
+// One commit per card: the publish command makes a new commit from the tested tree, so the request is at that commit (`publishedSha`), not at the tested one.
+describe('tasks.pull_request, a squashed commit', () => {
+  const PUBLISHED = 'a'.repeat(40);
+
+  it('accepts a request at the published commit, tells the door the commit was squashed, and keeps the tested commit on the card', async () => {
+    const n = await openPull({ sha: PUBLISHED });
+    const h = harness();
+    expect(await h.run({ ...asked(n), publishedSha: PUBLISHED })).toMatchObject({ ok: true, taskId: TASK, number: n });
+    const door = h.sql.find((s) => s.text.includes('tasks_record_pull_request'))!;
+    expect(door.params).toEqual([TASK, SHA, 'widgets', n, `${ORIGIN}/pull/${n}`, ORIGIN, BRANCH, PUBLISHED, 'main', true]);
+  });
+
+  it('refuses a request at some other commit than the published one, and never lets the published commit stand in for no tested commit', async () => {
+    const n = await openPull({ sha: 'b'.repeat(40) });
+    const h = harness();
+    expect(await h.run({ ...asked(n), publishedSha: PUBLISHED })).toMatchObject({ ok: false, code: 'sha_mismatch' });
+    expect(h.sql.some((x) => x.text.includes('tasks_record_pull_request'))).toBe(false);
+    expect(await harness().run({ taskId: TASK, project: 'widgets', publishedSha: PUBLISHED, number: n })).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(await harness().run({ ...asked(n), publishedSha: 'not-a-sha' })).toMatchObject({ ok: false, code: 'invalid_input' });
+  });
+});
+
+// `tasks.commit_identity`: whose name the commit carries, asked of the one SQL door.
+describe('tasks.commit_identity', () => {
+  const ask = { taskId: TASK, project: 'widgets' };
+
+  it('answers bot, or the requester’s name and email for the publish command', async () => {
+    expect(await harness({ identity: { o_outcome: 'ok', o_commit_as: 'bot', o_name: null, o_email: null } }).identity(ask)).toEqual({ ok: true, commitAs: 'bot' });
+    expect(await harness({ identity: { o_outcome: 'ok', o_commit_as: 'requester', o_name: 'Rafi Khan', o_email: 'rafi@example.org' } }).identity(ask)).toEqual({
+      ok: true, commitAs: 'requester', authorName: 'Rafi Khan', authorEmail: 'rafi@example.org',
+    });
+  });
+
+  it('answers each refusal of the door as data, and malformed input before the database is asked', async () => {
+    for (const outcome of ['not_found', 'not_owner', 'wrong_project', 'no_requester']) {
+      expect(await harness({ identity: { o_outcome: outcome, o_commit_as: null, o_name: null, o_email: null } }).identity(ask), outcome).toMatchObject({ ok: false, code: outcome });
+    }
+    for (const input of [{ taskId: 'card-1', project: 'widgets' }, { taskId: TASK, project: '../x' }, {}]) {
+      const h = harness();
+      expect(await h.identity(input)).toMatchObject({ ok: false, code: 'invalid_input' });
+      expect(h.sql).toEqual([]);
+    }
   });
 });

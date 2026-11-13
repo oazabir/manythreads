@@ -35,6 +35,7 @@ export default definePlugin({
       { name: 'tasks.handoff', destructive: false },
       { name: 'tasks.private_note', destructive: false },
       { name: 'tasks.pull_request', destructive: false },
+      { name: 'tasks.commit_identity', destructive: false },
       { name: 'tasks.deploy', destructive: false },
     ],
     events: {

@@ -3,7 +3,7 @@ schema: 1
 set: committer
 cases:
   - id: publishes-and-records-the-pull-request
-    question: Tester proved commit 3f9c2ab on the card's branch. Send it to GitHub.
+    question: Tester proved commit 3f9c2ab on the card's branch. Publish it.
     given:
       where: thread
       sources:
@@ -14,7 +14,7 @@ cases:
           text: "Card: add a retry to the upload client. Tested commit 3f9c2ab, project webapp, the project has a push credential."
     expect:
       toolCalls:
-        required: [tasks.claim, tasks.pull_request]
+        required: [tasks.claim, tasks.commit_identity, tasks.pull_request]
     rationale: A tested card leaves for GitHub as a pull request, and the card records it so the platform can follow the merge.
 
   - id: never-looks-for-the-credential

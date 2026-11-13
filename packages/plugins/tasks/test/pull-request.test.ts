@@ -221,7 +221,7 @@ describe('the push credential of a project', () => {
   });
 
   it('does not accept an address this server may not call, and a failing cluster is a 409 that says nothing about the token', async () => {
-    const odd = await call(person(omar), 'POST', '/api/teams/engineering/projects', { name: 'elsewhere', repoUrl: 'https://gitlab.example/acme/widgets' });
+    const odd = await call(person(omar), 'POST', '/api/teams/engineering/projects', { name: 'elsewhere', repoUrl: 'https://gitlab.example/acme/widgets', provider: 'github' });
     const oddId = (odd.body['project'] as { id: string }).id;
     expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${oddId}/push-credential`, { username: 'octocat', token: TOKEN })).status).toBe(400);
     expect(k8s.secrets.get(SECRET_KEY)?.data).not.toHaveProperty('elsewhere');
@@ -357,6 +357,30 @@ describe('a card that waits on a pull request', () => {
     expect(await eventsOf('tasks.task.completed', c.id)).toBe(0);
   });
 
+  it('records a request at the squashed commit only when the door is told so, and the merge of that commit finishes the card', async () => {
+    const PUBLISHED = 'f'.repeat(40);
+    const id = await ownedCard('Squashed card');
+    const n = await openPull(id, PUBLISHED);
+    expect(await recordSquashed(bot, id, SHA, PUBLISHED, n, false)).toMatchObject({ o_outcome: 'sha_mismatch' });
+    expect(await recordSquashed(bot, id, SHA, PUBLISHED, n, true)).toMatchObject({ o_outcome: 'recorded' });
+    // the card carries the commit the request is at (the one commit made from the tested tree)
+    expect(await card(id)).toMatchObject({ state: 'waiting_on_person', testedSha: PUBLISHED, pullRequest: { number: n, state: 'open' } });
+    gh.merge(n, 'e'.repeat(40));
+    await runSync();
+    expect(await card(id)).toMatchObject({ state: 'done', pullRequest: { state: 'merged', mergeSha: 'e'.repeat(40) } });
+  });
+
+  it('does not finish it when more commits were pushed after the squashed commit was recorded', async () => {
+    const PUBLISHED = 'f'.repeat(40);
+    const id = await ownedCard('Squashed then moved');
+    const n = await openPull(id, PUBLISHED);
+    expect(await recordSquashed(bot, id, SHA, PUBLISHED, n, true)).toMatchObject({ o_outcome: 'recorded' });
+    gh.pulls.get(n)!.headSha = '1'.repeat(40);
+    gh.merge(n, '2'.repeat(40));
+    await runSync();
+    const t = await card(id);
+    expect(t.state).not.toBe('done');
+  });
   it('stops following a card that moved on by another door: a person moving it on closes out the tracking, and a later merge changes nothing and adds no second completion', async () => {
     const c = await recorded('Moved on by a person meanwhile');
     const moved = await call(person(omar), 'PATCH', `/api/teams/engineering/tasks/${c.id}`, { state: 'in_progress' });
@@ -524,3 +548,48 @@ describe('a card that waits on a pull request', () => {
     expect(await dbText()).not.toContain(TOKEN);
   });
 });
+
+/** The door with the squashed flag, as `tasks.pull_request` calls it for a card published as one commit. */
+const recordSquashed = (who: { actorId: string }, task: string, tested: string, published: string, n: number, squashed = true) =>
+  withActor(
+    { kind: 'bot', id: who.actorId, workspaceId: KAHF_WORKSPACE_ID } as unknown as Parameters<typeof withActor>[0],
+    async (tx) =>
+      (
+        await tx.query<{ o_outcome: string; o_reason: string }>('SELECT * FROM app.tasks_record_pull_request($1::uuid, $2, $3, $4::integer, $5, $6, $7, $8, $9, $10)', [
+          task, tested, 'widgets', n, `${ORIGIN}/pull/${n}`, ORIGIN, `card-${task.slice(0, 8)}`, published, 'main', squashed,
+        ])
+      ).rows[0]!,
+    { pool: server.pools.app },
+  );
+
+describe('whose name the commit of a card carries', () => {
+  const identity = (who: { actorId: string }, task: string, project = 'widgets') =>
+    withActor(
+      { kind: 'bot', id: who.actorId, workspaceId: KAHF_WORKSPACE_ID } as unknown as Parameters<typeof withActor>[0],
+      async (tx) => (await tx.query<{ o_outcome: string; o_commit_as: string | null; o_name: string | null; o_email: string | null }>('SELECT * FROM app.tasks_commit_identity($1::uuid, $2)', [task, project])).rows[0]!,
+      { pool: server.pools.app },
+    );
+
+  it('is the bot unless the project says the requester, who is the person that made the card, with their name and account email', async () => {
+    const id = await ownedCard('Whose commit');
+    expect(await identity(bot, id)).toEqual({ o_outcome: 'ok', o_commit_as: 'bot', o_name: null, o_email: null });
+    const set = await call(person(omar), 'PATCH', `/api/teams/engineering/projects/${projectId}`, { commitAs: 'requester' });
+    expect(set.status, set.text).toBe(200);
+    const nadiaRow = (await ownerSql<{ display_name: string; primary_email: string }>(server.db.ownerUrl, `SELECT pe.display_name, pe.primary_email FROM app.actors a JOIN app.people pe ON pe.id = a.ref_id WHERE a.id = $1`, [nadia.actorId]))[0]!;
+    expect(await identity(bot, id)).toEqual({ o_outcome: 'ok', o_commit_as: 'requester', o_name: nadiaRow.display_name, o_email: nadiaRow.primary_email });
+    // only the owner of the card (or a lead) may ask, and only about the card's own project
+    expect(await identity(other, id)).toMatchObject({ o_outcome: 'not_owner' });
+    expect(await identity(bot, id, 'no-such-project')).toMatchObject({ o_outcome: 'wrong_project' });
+    expect(await identity(bot, randomUUID())).toMatchObject({ o_outcome: 'not_found' });
+  });
+
+  it('says there is nobody to sign for when a bot started the work, and goes back to the bot with the setting', async () => {
+    const id = await ownedCard('Started by a bot');
+    await ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET created_by = $2 WHERE id = $1', [id, other.actorId]);
+    expect(await identity(bot, id)).toMatchObject({ o_outcome: 'no_requester' });
+    const set = await call(person(omar), 'PATCH', `/api/teams/engineering/projects/${projectId}`, { commitAs: 'bot' });
+    expect(set.status, set.text).toBe(200);
+    expect(await identity(bot, id)).toMatchObject({ o_outcome: 'ok', o_commit_as: 'bot' });
+  });
+});
+

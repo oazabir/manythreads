@@ -557,19 +557,35 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'tasks.pull_request': {
     name: 'tasks.pull_request',
     description:
-      'Record the pull request you opened for your card with `mt-publish` (its `project` and `pull_request_number` lines, and the commit it published as `testedSha`). The platform asks GitHub itself and refuses a pull request that is not open, not from the card\u2019s branch, not at that commit or not in the project\u2019s repository. The card then waits on a person to merge it in GitHub; the platform watches the pull request and finishes the card when it is merged, or sends it back to you if it is closed. Use it instead of `tasks.complete` when the project has a push credential. You must own the card.',
+      'Record the pull request (GitHub) or merge request (GitLab) you opened for your card with `mt-publish` (its `project` and `pull_request_number` lines, the commit you tested as `testedSha` and, when it printed one that differs, the commit it made as `publishedSha`: its `head_sha` line). The platform asks the provider itself and refuses a request that is not open, not from the card\u2019s branch, not at that commit or not in the project\u2019s repository. The card then waits on a person to merge it; the platform watches the request and finishes the card when it is merged, or sends it back to you if it is closed. Use it instead of `tasks.complete` when the project has a push credential. You must own the card.',
     inputSchema: {
       type: 'object',
       properties: {
         taskId: { type: 'string', description: 'The card the pull request is for.' },
         project: { type: 'string', description: 'The project (repository) name, as `mt-publish` printed it.' },
-        testedSha: { type: 'string', description: 'The commit that was tested and published (the `head_sha` line).' },
-        number: { type: 'integer', minimum: 1, description: 'The pull request number.' },
+        testedSha: { type: 'string', description: 'The commit that was tested (the head of the card branch you gave `mt-publish`; its `tested_sha` line).' },
+        publishedSha: { type: 'string', description: 'The commit the request is at, from the `head_sha` line of `mt-publish`. Give it always; it is the squashed commit made from the tested tree.' },
+        number: { type: 'integer', minimum: 1, description: 'The pull request or merge request number.' },
       },
       required: ['taskId', 'project', 'testedSha', 'number'],
       additionalProperties: false,
     },
     kind: 'write',
+  },
+  'tasks.commit_identity': {
+    name: 'tasks.commit_identity',
+    description:
+      'Ask whose name the commit you publish carries, before you run `mt-publish` for your card. When the project signs as its bot account the answer is `commitAs: "bot"` and you give `mt-publish` nothing more. When it signs as the requester (the person who started the work) the answer holds `authorName` and `authorEmail`: pass them to `mt-publish` as its last two arguments, exactly as given. Never invent or change them. You must own the card.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'The card you are publishing.' },
+        project: { type: 'string', description: 'The project (repository) name you are publishing to.' },
+      },
+      required: ['taskId', 'project'],
+      additionalProperties: false,
+    },
+    kind: 'read',
   },
   'tasks.handoff': {
     name: 'tasks.handoff',
