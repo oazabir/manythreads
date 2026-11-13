@@ -81,28 +81,46 @@ bot's own git settings**. The hook refuses any push to `refs/heads/main` (or `ma
 too. Someone with access to the `repo` account (an operator via `kubectl exec`, or the platform) merges into main. A bot may create more repositories:
 `sudo -u repo mt-repo-create.sh <name> [https-origin-url]`. The ConfigMap's list comes from `hermesPods.repos` (`"name"` or `"name=https://…"`) plus the team's [projects](projects.md): each project is added as a repository named after it, cloned from its address, within about thirty seconds of the change. An address is cloned only if it starts with one of the prefixes in `hermesPods.repoOriginAllow`; a project on any other address gets no copy.
 
-## Publishing a tested branch as a pull request
+## Publishing a tested branch as a pull request or merge request
 
-When a project has a GitHub token (set by a team lead on the Projects page, see [projects](projects.md)), the committer bot can publish a card's tested
-branch to the project's origin and open a pull request there; a person merges it in GitHub, and that is the approval.
+When a project has a token (GitHub or GitLab, set by a team lead on the Projects page, see [projects](projects.md)), the committer bot can publish a card's tested
+branch to the project's origin and open a pull request (GitHub) or merge request (GitLab) there; a person merges it, and that is the approval. GitLab can be gitlab.com or a self-hosted host.
 
 - **The token's journey.** The server writes it into the Secret `hermes-<team>-push` (one key per project name) through the `project.credentials`
   provider this plugin registers, using the same Kubernetes client as the rest of the controller (the controller's role also needs `delete` on secrets, so
   the last token's Secret can be removed). The workbench mounts the Secret read-only at `/etc/workbench-push`, readable by root only. Every few seconds
-  `mt-push-sync.sh` (run by the reconcile loop as root) copies each entry (a JSON document: the token, the repository address and the main branch it was issued for, and when it was set; a project on an owner's shared token holds a pointer `via` to the entry `_owner.<host>.<owner>`, which holds the token, and either may carry `refused: true` once GitHub has answered 401) to
+  `mt-push-sync.sh` (run by the reconcile loop as root) copies each entry to
   `/run/mt-push/<project>`: mode 0400, owned by the `repo` user, in a directory only root can write (0755, on a memory volume), so neither `repo` nor a bot
   can plant a link or swap a file there; copies whose key has left the Secret are deleted. The Secret volume is optional, so a team with no token has no Secret and the pod runs as before.
+- **What a project's entry holds.** Each entry is a JSON document: the token, the repository address and the main branch it was issued for, and when it was set. It also says
+  `provider` (`github` or `gitlab`), the bot account's `login` and numeric `userId` on that provider, and `commitAs` (`bot` or `requester`: whose name the published commit carries as its author).
+  A project on an owner's shared token holds a pointer `via` to the entry `_owner.<host>.<owner>`, which holds only the token; the project's own entry still carries the provider, login, id and `commitAs`.
+  Either may carry `refused: true` once the provider has answered 401. The server checks the values when it writes them (provider is one of the two; login is letters, digits, dot, dash and underscore; the id is digits;
+  `commitAs` is one of the two) and a refusal never repeats the token. An entry written before these fields existed has none of them: it counts as GitHub, signed by `manythreads-bot`, as the bot.
+  `setCommitAs` changes only `commitAs` of the project's own entry (one change at a time, like `setRefused`) and does nothing when the project has no entry or the value is the same.
 - **Who may publish.** Only bots whose definition grants `tasks.pull_request` (the engineering Committer): the controller marks them `publisher` in the bots
   ConfigMap and the reconcile loop keeps exactly them in the Unix group `publishers`, the only group sudo lets run `mt-publish.sh`. Other bots cannot push
   branches or open pull requests.
-- **`mt-publish.sh`**, run as `sudo -u repo /usr/local/bin/mt-publish.sh …` (the sudoers file names exactly these two shapes), so a bot never reads the token:
-  - `check <project>` prints `ready` (exit 0) when the project has a plain https GitHub origin and a token issued for that very origin, exits 3 when not, and exits 7 when the token is marked refused (GitHub answered 401). `publish` exits 7 the same way, and when the push or the API answers with a bad-credentials refusal. The script only returns 7; the mark itself is written by the server (the job and the pull-request sync).
-  - `publish <project> <card id> <tested commit> <title>` (the pull request's text on standard input) refuses unless the branch `card-<first 8 characters
-    of the card id>` of the repository of record is at exactly that commit (exit 4), pushes that one branch to the origin (a plain push of the exact
-    commit: never the main line, never forced, so an origin branch that holds other work refuses it, exit 5), opens the pull request against the project's main branch (as the token was issued for it) (or finds the open one for that branch, so running it twice is safe; an open one that is not at the tested commit is refused, exit 4, after waiting up to a minute for GitHub to move it to the pushed commit) and prints `pull_request_number=`, `pull_request_url=` and
-    `head_sha=`. Exit 6 means GitHub refused or did not answer.
-  - The token reaches git through `GIT_ASKPASS` (`mt-askpass.sh`, which reads the token file) and reaches curl as a header read from standard input, never
+- **`mt-publish.sh`**, run as `sudo -u repo /usr/local/bin/mt-publish.sh …` (the sudoers file allows only `check` and `publish` of this script, for names that start like a project name; the script itself checks every argument), so a bot never reads the token:
+  - `check <project>` prints `ready` (exit 0) when the project has a plain https origin of its provider and a token issued for that very origin, exits 3 when not, and exits 7 when the token is marked refused (the provider answered 401). `publish` exits 7 the same way, and when the push or the API answers with a bad-credentials refusal. The script only returns 7; the mark itself is written by the server (the job and the pull-request sync). Its messages say GitHub or GitLab as the entry says.
+  - `publish <project> <card id> <tested commit> <title> [<author name> <author email>]` (the request's text on standard input) refuses unless the branch `card-<first 8 characters
+    of the card id>` of the repository of record is at exactly that commit (exit 4). The two author words come together or not at all (exit 2).
+  - **One commit per card.** Many small commits on the card branch become one on the pull request. The script fetches the origin's main branch (signed in like the push), merges the tested branch onto that tip in memory
+    (`git merge-tree`), and makes one commit whose parent is the main tip and whose tree is the merge. Its message is the title, a blank line, the text on standard input (at most 8000 bytes) and the line `Card: <card id>`.
+    If the main branch moved in a way that does not merge cleanly, the exit is 4 and the message says the card must be rebuilt on the new main; if the main branch already holds the work, exit 4 "nothing to publish"; if the
+    main branch cannot be read from the origin, exit 6. The commit's dates are the tested commit's committer date, so publishing the same card twice makes the same commit: the second push changes nothing and the open request is found. (If the main branch moved between two publishes
+    of one card, the second commit is a different one and the origin refuses the push to the card branch, exit 5: never forced.)
+  - It pushes that one commit as the branch `card-<8>` (a plain push: never the main line, never forced, so an origin branch that holds other work refuses it, exit 5), opens the request against the project's main branch (as the token was issued for it)
+    (or finds the open one for that branch, so running it twice is safe; an open one that is not at the published commit is refused, exit 4, after waiting up to a minute for the provider to move it to the pushed commit). For GitHub that is a pull request on `<api>/repos/<owner>/<repo>/pulls`;
+    for GitLab a merge request on `https://<host>/api/v4/projects/<url-encoded group/subgroup/repo>/merge_requests` (the source branch removed on merge, no squash on merge: the commit is already one). A GitLab address may nest groups, 2 to 20 segments.
+    Exit 6 means the provider refused or did not answer.
+  - **Who signs.** The committer is always the bot account: its name is the login and its address the provider's no-reply address (GitHub: `<id>+<login>@users.noreply.github.com`, on a GitHub Enterprise host `<login>@noreply.<host>`; GitLab: `<id>-<login>@users.noreply.<host>`).
+    The author is the bot too when the entry says `commitAs: bot`; any author words given are then ignored, never trusted. When it says `requester`, the author words are required (exit 2 "this project signs commits with the requester's name and email: pass them" without them) and are checked: a name of 1 to 100 characters with no line break, `<` or `>`, and one email address of at most 200 characters.
+    The identity goes to git in environment variables of the one commit call, never in a config file.
+  - It prints `project=`, `provider=`, `pull_request_number=` (on GitLab the merge request's number in the project), `pull_request_url=`, `head_sha=` (the new commit, which the request is at) and `tested_sha=` (the commit that was tested).
+  - The token reaches git through `GIT_ASKPASS` (`mt-askpass.sh`, which reads the token file; the user name is `x-access-token` for GitHub and `oauth2` for GitLab, chosen by the script) and reaches curl as a header read from standard input (`Authorization: Bearer` for GitHub, `PRIVATE-TOKEN` for GitLab), never
     in a command line (other users of the pod can read command lines from `/proc`). Everything the script prints is masked for the token.
+  - Test hooks, which a bot cannot set (sudo clears the environment): `MT_REPOS_DIR`, `MT_PUSH_DIR`, `MT_REPO_USER`, `MT_PUSH_URL` (a local origin, also where the main branch is fetched from), `MT_GITHUB_API` and `MT_GITLAB_API` (a local double of each provider's API), `MT_PR_TRIES` and `MT_PR_WAIT`.
 - The controller removes, every minute, a token whose project row never got the "token set" flag (a request that failed to commit after writing the Secret) once it is two minutes old.
 - Changes to a team's Secret are serialised inside the server process only: the server runs as one replica (the blob volume requires it). Two replicas would need a cluster-side lock.
 - The bot then records the pull request on the card with the `tasks.pull_request` tool ([tasks](tasks.md)), and the platform follows it.

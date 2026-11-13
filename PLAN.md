@@ -662,6 +662,19 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P22-04 | The self-build test: Engineer builds a small feature end to end and it is deployed to and checked on test.manythreads.kahf.to | On hold | tools/devbox/sync-engineering-bots.mjs | the owner still wants the proof that the Engineering team can build a feature of manythreads and ship it; it was designed around the plan card and needs a new design without goals before it is built; the chain ran once for P14-10 (2026-10-28) by hand |
 | P22-05 | Seed v22, evals for Planner and Engineer, docs and retro | Dropped | - | owner 2026-11-11 |
 
+### Phase 23 · Projects: GitHub, GitLab and a team's own GitLab, a bot account for each, and whose name the commits carry (owner, 2026-11-13)
+
+Owner request 2026-11-13: "Build a proper Projects sidebar where github, gitlab, custom user's gitlab installation can be managed. Ask for a bot username and token for each project. Offer a checkbox if commits should be made using bot's name or the requester user's name and email. Ensure the committer bot follows this setting." Decisions: one squashed commit per card (the committer is always the bot account; the author is the bot or the requester); the requester is the person who started the card's thread, shown with a warning that the email becomes public in the repository's history.
+
+| ID | Task | Status | Where | Gap |
+|---|---|---|---|---|
+| P23-01 | A project has a provider (github, gitlab, or a chosen one for another host), a bot account and `commitAs`; GitLab tokens are checked before they are kept | Built | shared entities/api, projects migration 0006, `gitlab-check.ts`, `provider-check.ts`, routes | tests: projects `providers.test.ts`; not yet seen live |
+| P23-02 | The Projects sidebar section and a Projects page that manages all three kinds, with the bot username, token and the commit checkbox | Built | clients/web `ProjectsSection.tsx`, `ProjectsScreen.tsx` | not yet seen live |
+| P23-03 | GitLab merge requests are read like pull requests; a card published as one squashed commit is recorded and finished | Built | tasks migration 0017, `gitlab.ts`, `pull-requests.ts` | needs a real GitLab to prove |
+| P23-04 | `tasks.commit_identity`: the Committer asks whose name the commit carries and follows the project's setting | Built | tasks migration 0017, `capabilities.ts`, Committer BOT.md | not yet run by the bots live |
+| P23-05 | The pod's publish command makes one commit, signs it as the setting says and opens the pull or merge request on GitHub or GitLab | Built | hermes-pods `push-credentials.ts`, `mt-publish.sh`; claude-pods `publisher.mjs` | rework after a first publish is refused (exit 5), by design for now |
+| P23-06 | Seen live: a project added for each provider on the deployed site | Not built | - | needs deploy; a real GitLab host must be in `hermesPods.repoOriginAllow` |
+
 ---
 
 # Phase 1 · Foundations

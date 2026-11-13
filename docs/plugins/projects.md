@@ -16,6 +16,27 @@ wants the team's agent pod to hold a copy. You need a team, a channel to tie the
   Changes reach the pod within about thirty seconds. Removing a project does not delete the copy on the pod.
 - **The channel shows it.** A channel tied to a project shows `Project: <name>` beside its title.
 
+## GitHub, GitLab and a team's own GitLab
+
+A project is on one **provider**: `github` or `gitlab`. `https://github.com/…` is GitHub and `https://gitlab.com/…` is GitLab, decided by the address.
+Any other host (GitHub Enterprise, or a GitLab the team runs itself) needs a lead to choose the provider when adding the project (`provider` in the
+request, the provider choice on the Projects page); without it the request is refused with a 400. The host must also start with a prefix in the chart value
+`hermesPods.repoOriginAllow` before the pod copies it or publishes to it. A GitHub address is `<host>/<owner>/<repo>`; a GitLab address may sit inside
+nested groups (`<host>/<group>/<subgroup>/<project>`, 2 to 20 segments). GitLab is reached at `https://<host>/api/v4` with the token as `PRIVATE-TOKEN`.
+Changing the provider of a project drops its token (set it again for the new provider).
+
+**The bot account.** For each project the lead gives the **bot username** and a **token** of that account (GitHub: a fine-grained token with write access to
+contents and pull requests; GitLab: a project or personal access token with `api` scope and the Developer role or more on the project). The provider is
+asked before anything is kept: the token must belong to that username, must be able to write to the project, and must not be refused; the check also
+learns the account's numeric id and the token's expiry. A project can be added without the bot account and have it set later.
+
+**Whose name the commits carry.** The project has a checkbox, `commitAs` (`bot`: the default, or `requester`). The publishing bot makes **one commit
+per card** (the card's whole change, squashed from the tested tree). Its **committer** is always the bot account. Its **author** is the bot account
+when `commitAs` is `bot`; when it is `requester`, the author is the person who started the card (the writer of the first message of the card's thread,
+else the card's creator), with their display name and account email, which become public in the repository's history (the page says so beside the box).
+Changing the box takes effect at once, without touching the token; the pod is told too, and the change is refused with a 409 when the pod cannot be
+reached. The Committer bot asks `tasks.commit_identity` before it publishes and passes the answer to `mt-publish.sh` (see [tasks](tasks.md)).
+
 ## Pull requests: publishing a tested branch
 
 A project can also hold a **GitHub token** so that finished work reaches GitHub for a person to approve. With a token set, the bot that tested a card's
@@ -65,8 +86,9 @@ without a token behaves as before: the committer completes the card and nothing 
 
 ## The page
 
-`/t/<team>/projects` (linked from the Agents page) lists the team's projects. Everyone on the team can read it. A team lead or a workspace admin can
-add a project (name, repository address, branch, channel), change the address, branch or channel, set or remove its GitHub token, and remove it. The name cannot be changed, because it is
+`/t/<team>/projects` lists the team's projects; the **Projects** section of the sidebar lists them too (with a GitHub or GitLab tag, each one a link to
+`/t/<team>/projects/<id>`, which opens the page on that project) and refreshes when a project is added, changed or removed. Everyone on the team can read it. A team lead or a workspace admin can
+add a project (name, repository address, branch, channel), change the address, branch or channel, set or remove its bot account and token, choose whose name its commits carry, and remove it. The name cannot be changed, because it is
 also the folder name on the pod; remove the project and add it again to rename it.
 
 ## Rules
@@ -83,10 +105,10 @@ also the folder name on the pod; remove the project and add it again to rename i
 | Method and path | Who | What |
 | --- | --- | --- |
 | `GET /api/teams/:slug/projects` | team members | the team's projects, by name |
-| `POST /api/teams/:slug/projects` | lead or admin | add one: `name`, `repoUrl`, optional `defaultBranch`, optional `channelId` |
-| `PATCH /api/teams/:slug/projects/:projectId` | lead or admin | change `repoUrl`, `defaultBranch` or `channelId` (send `null` to clear the channel) |
+| `POST /api/teams/:slug/projects` | lead or admin | add one: `name`, `repoUrl`, optional `defaultBranch`, `channelId`, `provider` (`github` or `gitlab`; required for a host other than github.com and gitlab.com), `commitAs` (`bot` or `requester`, default `bot`) |
+| `PATCH /api/teams/:slug/projects/:projectId` | lead or admin | change `repoUrl`, `defaultBranch`, `channelId` (send `null` to clear the channel), `provider` (drops the token) or `commitAs` |
 | `DELETE /api/teams/:slug/projects/:projectId` | lead or admin | remove it (and its token) |
-| `PUT /api/teams/:slug/projects/:projectId/push-credential` | lead or admin | set or replace the GitHub token (`{ "username", "token", "shareWithOwner"? }`, token 20 to 255 characters of letters, digits, `_`, `-`, `.`); answers the project and the names of the other projects it also connected (`alsoConnected`) or could not (`notConnected`), never the token |
+| `PUT /api/teams/:slug/projects/:projectId/push-credential` | lead or admin | set or replace the GitHub or GitLab token (`{ "username", "token", "shareWithOwner"? }`, token 20 to 255 characters of letters, digits, `_`, `-`, `.`); answers the project and the names of the other projects it also connected (`alsoConnected`) or could not (`notConnected`), never the token |
 | `DELETE /api/teams/:slug/projects/:projectId/push-credential` | lead or admin | remove the token |
 
 Errors: 403 for someone who may not (or cannot see the team), 404 for an unknown project, 409 for a name already used or a channel that already has a
@@ -95,7 +117,7 @@ be published to.
 
 ## Data and events
 
-Table `app.projects` (with `push_credential_set_at`, never the token; team-scoped; row-level security lets team members read and team leads and workspace admins write). Each change writes an
+Table `app.projects` (with `provider`, `commit_as`, `push_credential_set_at` and the bot's numeric id `push_user_id`, never the token; team-scoped; row-level security lets team members read and team leads and workspace admins write). Each change writes an
 event: `project.project.created`, `project.project.updated` or `project.project.deleted`, with the project's id, team, name and, except on delete,
 address, branch and channel.
 

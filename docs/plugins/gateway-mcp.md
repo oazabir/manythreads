@@ -123,6 +123,7 @@ what a call does beyond asking the broker:
 | `tasks.release` | write | gives back a card the run owns, so the next claimer can take it (the release route's door) |
 | `tasks.describe` | write | replaces the description of a card the run owns; where a bot keeps a card's working state, such as a running count |
 | `tasks.handoff` | write | moves a card to another bot or person in one transaction; a bot reaches only the targets its `tasks.handoff` grant's `mayTag` names (the same allowlist the board enforces), and a `dispatch: strict` handover can wait in Approvals |
+| `tasks.commit_identity` | read | whose name a published commit carries: the project's bot account, or the requester's display name and email for a project set to sign as the requester |
 | `tasks.deploy` | write | asks for a release to one of the team's environments; the environment decides (a protected one waits for a person who is not the requester, a change window or the daily cap can refuse), and the answer carries the outcome rather than a promise |
 | `knowledge.search` | read | the `knowledge` plugin's passages from the bases the bot lists (all of its team's when it lists none), ranked, each with document, version, section and place; runs as the asker; logs a `knowledge` and a `page` source per hit ([knowledge.md](./knowledge.md)) |
 
