@@ -6,6 +6,7 @@ import { ChannelGroups } from './ChannelGroups';
 import { useShell } from './context';
 import { DirectMessages } from './DirectMessages';
 import { NAV_ICONS } from './icons';
+import { ProjectsSection } from './ProjectsSection';
 import { GUEST_SLUG } from './messageLink';
 import { CORE_NAV, navCount, navHref, navTone, visibleNav } from './nav';
 import { Pill } from './Pill';
@@ -69,6 +70,8 @@ export function Sidebar() {
           <ChannelGroups key={item.id} slug={slug} guest={guest} />
         ) : item.id === 'direct-messages' ? (
           <DirectMessages key={item.id} item={item} slug={slug} />
+        ) : item.id === 'projects' ? (
+          <ProjectsSection key={item.id} item={item} slug={slug} />
         ) : item.id === 'bots' ? (
           <BotsSection key={item.id} item={item} slug={slug} />
         ) : item.kind === 'header' ? (

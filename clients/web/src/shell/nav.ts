@@ -2,7 +2,7 @@ import { NavContribution, sortNav } from '@manythreads/shared';
 
 /*
  * The sidebar contract (SPEC section 3): Chat (5) · Files (10) · Boards (20) · Org chart (23) · Jobs (26) · Threads (30) · Approvals (35) ·
- * channel groups (40) · Direct messages (45) · Bots (50). The entries are a declarative `surface.nav` contribution list sorted by `order`;
+ * channel groups (40) · Direct messages (45) · Projects (48) · Bots (50). The entries are a declarative `surface.nav` contribution list sorted by `order`;
  * a plugin adds its own entry the same way. Entries whose plugin is not loaded yet show their empty state.
  */
 export const CORE_NAV: NavContribution[] = [
@@ -15,6 +15,7 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
   { id: 'direct-messages', order: 45, label: 'Direct messages', kind: 'header', emptyState: 'No conversations yet' },
+  { id: 'projects', order: 48, label: 'Projects', kind: 'header', path: '/projects', emptyState: 'No projects yet' },
   { id: 'bots', order: 50, label: 'Bots', kind: 'header', path: '/bots', emptyState: 'No bots yet' },
 ].map((c) => NavContribution.parse(c));
 
@@ -45,7 +46,7 @@ export function navTone(item: NavContribution, counts: Readonly<Record<string, n
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['chat', 'threads', 'dms', 'activity', 'files', 'boards', 'org', 'jobs', 'approvals', 'bots', 'recipes', 'memory', 'knowledge'] as const;
+const SECTIONS = ['chat', 'threads', 'dms', 'activity', 'files', 'boards', 'org', 'jobs', 'approvals', 'projects', 'bots', 'recipes', 'memory', 'knowledge'] as const;
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {

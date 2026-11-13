@@ -7,13 +7,13 @@ const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Chat, Files, Boards, Org chart, Jobs, Threads, Approvals, channel groups, Direct messages, Bots in orders 5 10 20 23 26 30 35 40 45 50', () => {
+  it('is exactly Chat, Files, Boards, Org chart, Jobs, Threads, Approvals, channel groups, Direct messages, Projects, Bots in orders 5 10 20 23 26 30 35 40 45 48 50', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
       [5, 'Chat'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [30, 'Threads'], [35, 'Approvals'], [40, 'Channels'],
-      [45, 'Direct messages'], [50, 'Bots'],
+      [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
     ]);
-    expect(sorted.map((i) => i.kind)).toEqual(['item', 'item', 'item', 'item', 'item', 'item', 'item', 'group-list', 'header', 'header']);
+    expect(sorted.map((i) => i.kind)).toEqual(['item', 'item', 'item', 'item', 'item', 'item', 'item', 'group-list', 'header', 'header', 'header']);
   });
 
   it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
@@ -53,7 +53,7 @@ describe('sidebar contract', () => {
 
   it('the guest shell keeps only the channel groups', () => {
     expect(visibleNav(CORE_NAV, { guest: true }).map((i) => i.id)).toEqual(['channels']);
-    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(10);
+    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(11);
   });
 });
 

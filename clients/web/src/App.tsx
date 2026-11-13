@@ -143,6 +143,7 @@ function AppRoutes() {
             <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
             <Route path="/t/:team/agents" element={<RequireTeam><AgentsScreen /></RequireTeam>} />
             <Route path="/t/:team/projects" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />
+            <Route path="/t/:team/projects/:projectId" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />
             <Route path="/t/:team/bots/new" element={<RequireTeam><SetupScreen /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />
             <Route path="/t/:team/recipes" element={<RequireTeam><RecipesScreen /></RequireTeam>} />

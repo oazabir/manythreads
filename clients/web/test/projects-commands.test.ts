@@ -3,11 +3,11 @@ import type { ChannelId, Project, ProjectId } from '@manythreads/shared';
 import { createMockTransport } from '../src/api/mock';
 import { setTransport } from '../src/api/client';
 import { createProject, deleteProject, fetchProjects, setPushCredential, updateProject } from '../src/screens/projects/api';
-import { describeShare, describeToken, headerTopic, ownerOfRepo, podPath, projectOfChannel, validateEdit, validateNew } from '../src/screens/projects/commands';
+import { describeShare, describeToken, headerTopic, needsProviderChoice, ownerOfRepo, podPath, providerOfAddress, projectOfChannel, requestWord, stripItem, validateEdit, validateNew } from '../src/screens/projects/commands';
 
 const C1 = '00000000-0000-4000-8000-000000000001' as ChannelId;
 const project = (over: Partial<Project> = {}): Project => ({
-  id: 'p1', workspaceId: 'w', teamId: 't', name: 'manythreads', repoUrl: 'https://github.com/oazabir/manythreads', defaultBranch: 'main',
+  id: 'p1', workspaceId: 'w', teamId: 't', name: 'manythreads', repoUrl: 'https://github.com/oazabir/manythreads', defaultBranch: 'main', provider: 'github', commitAs: 'bot',
   channelId: null, createdBy: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', ...over,
 }) as unknown as Project;
 
@@ -16,7 +16,7 @@ describe('Projects page checks', () => {
 
   it('accepts a plain https address, leaves the branch to the server default and sends no channel as null', () => {
     const v = validateNew(ok);
-    expect(v.ok && v.body).toEqual({ name: 'manythreads', repoUrl: ok.repoUrl, defaultBranch: undefined, channelId: null });
+    expect(v.ok && v.body).toEqual({ name: 'manythreads', repoUrl: ok.repoUrl, defaultBranch: undefined, channelId: null, commitAs: 'bot' });
   });
 
   it('refuses addresses with a password, a query, or a scheme other than https, and says why in plain words', () => {
@@ -47,6 +47,42 @@ describe('Projects page checks', () => {
     expect(headerTopic(undefined, 'Ship it')).toBe('Ship it');
     expect(headerTopic(undefined, null)).toBeNull();
     expect(podPath('manythreads')).toBe('/workspace/repos/manythreads.git');
+  });
+});
+
+describe('Projects on GitHub, GitLab and your own GitLab', () => {
+  const base = { name: 'widgets', defaultBranch: '', channelId: '' };
+
+  it('knows github.com and gitlab.com by themselves and asks about any other host', () => {
+    expect(providerOfAddress('https://github.com/a/b')).toBe('github');
+    expect(providerOfAddress('https://GitLab.com/a/b/c')).toBe('gitlab');
+    expect(providerOfAddress('https://git.example.org/a/b')).toBeNull();
+    expect(needsProviderChoice('https://git.example.org/a/b')).toBe(true);
+    expect(needsProviderChoice('https://gitlab.com/a/b')).toBe(false);
+    expect(needsProviderChoice('')).toBe(false);
+  });
+
+  it('refuses a self-hosted address until a provider is chosen, then sends it (never for github.com or gitlab.com)', () => {
+    const url = 'https://git.example.org/team/sub/widgets';
+    const none = validateNew({ ...base, repoUrl: url });
+    expect(!none.ok && none.errors.provider).toMatch(/GitHub \(Enterprise\) or GitLab/);
+    const v = validateNew({ ...base, repoUrl: url, provider: 'gitlab', commitAs: 'requester' });
+    expect(v.ok && v.body).toMatchObject({ repoUrl: url, provider: 'gitlab', commitAs: 'requester' });
+    const own = validateNew({ ...base, repoUrl: 'https://gitlab.com/team/widgets', provider: 'github' });
+    expect(own.ok && 'provider' in own.body).toBe(false);
+  });
+
+  it('sends the provider on edit only when it differs, and the words follow the provider', () => {
+    const p = project({ repoUrl: 'https://git.example.org/team/widgets', provider: 'gitlab' });
+    const same = validateEdit(p, { repoUrl: p.repoUrl, defaultBranch: 'main', channelId: '', provider: 'gitlab' });
+    expect(same).toMatchObject({ ok: true, changed: false });
+    const moved = validateEdit(p, { repoUrl: p.repoUrl, defaultBranch: 'main', channelId: '', provider: 'github' });
+    expect(moved.ok && moved.body).toEqual({ provider: 'github' });
+    expect(requestWord('gitlab')).toBe('merge request');
+    expect(describeToken({ pushUsername: 'bot', pushCredentialExpiresAt: null, pushCredentialStatus: 'needs_replacing', provider: 'gitlab' }).line).toMatch(/GitLab no longer accepts/);
+    expect(stripItem({ ...project({ provider: 'gitlab' }), pushUsername: 'bot', pushCredentialSetAt: '2026-01-01T00:00:00.000Z', pushCredentialExpiresAt: null, pushCredentialStatus: 'ok' }).word).toBe('Can send merge requests');
+    expect(ownerOfRepo('https://gitlab.com/team/widgets', 'gitlab')).toBeNull();
+    expect(ownerOfRepo('https://github.com/team/widgets')).toBe('team');
   });
 });
 

@@ -976,6 +976,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     freeChannel(t, body.channelId, null);
     const pr = {
       id: nextId('f'), workspaceId: uuid('a', 1), teamId: t.id, name: String(body.name), repoUrl: String(body.repoUrl), defaultBranch: body.defaultBranch ?? 'main',
+      provider: body.provider ?? (/^https:\/\/gitlab\.com\//.test(String(body.repoUrl)) ? 'gitlab' : 'github'), commitAs: body.commitAs ?? 'bot',
       channelId: body.channelId ?? null, createdBy: me().id, pushCredentialSetAt: null, pushUsername: null, pushCredentialExpiresAt: null, pushCredentialStatus: null, pushCredentialShared: false, createdAt: NOW, updatedAt: NOW,
     };
     list.push(pr);
@@ -986,7 +987,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     manage(t);
     const pr = projectOf(t, params.projectId);
     if (body.channelId !== undefined) freeChannel(t, body.channelId, pr['id']);
-    for (const k of ['repoUrl', 'defaultBranch', 'channelId'] as const) if (body[k] !== undefined) pr[k] = body[k];
+    for (const k of ['repoUrl', 'defaultBranch', 'channelId', 'provider', 'commitAs'] as const) if (body[k] !== undefined) pr[k] = body[k];
     pr['updatedAt'] = NOW;
     return { project: pr };
   });

@@ -6,7 +6,7 @@ import { useCallback, useState } from 'react';
  * `!id` marks a section the person opened on purpose, so a "starts folded" default (Bots with more than five bots) no longer applies.
  */
 
-export type FoldId = 'dm' | 'bots';
+export type FoldId = 'dm' | 'bots' | 'projects';
 export type FoldState = readonly string[];
 
 const KEY = (personId: string, slug: string): string => `mt.sidebar.fold:${personId}:${slug}`;

@@ -1,7 +1,7 @@
 import { PageHeader } from '../../components/PageHeader';
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router';
-import type { NavChannel, Project } from '@manythreads/shared';
+import { Link, useParams } from 'react-router';
+import type { NavChannel, Project, ProjectProvider } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
@@ -10,7 +10,8 @@ import { Alert, Field, Notice } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
 import { useBotPerms } from '../bots/store';
 import { createProject, deleteProject, fetchProjects, removePushCredential, setPushCredential, testPushCredential, updateProject } from './api';
-import { describeShare, describeToken, ownerOfRepo, podPath, stripItem, validateEdit, validateNew, type FormErrors } from './commands';
+import { PROVIDER_NAME, TOKEN_HELP, describeShare, describeToken, hostOf, needsProviderChoice, ownerOfRepo, podPath, providerOfAddress, requestWord, stripItem, validateEdit, validateNew, type FormErrors } from './commands';
+import { announceProjectsChanged } from './changed';
 
 /*
  * Projects: the git repositories a team works on. Each one is tied to a channel; a bot asked in that channel is told which repository it
@@ -34,25 +35,90 @@ function ChannelSelect({ id, value, onChange, channels }: { id: string; value: s
   );
 }
 
-function AddForm({ slug, channels, onDone }: { slug: string; channels: NavChannel[]; onDone: () => void }) {
+/** For an address that is neither github.com nor gitlab.com: which kind of server it is. The two public hosts need no choice. */
+function ProviderSelect({ id, repoUrl, value, onChange, error }: { id: string; repoUrl: string; value: ProjectProvider | ''; onChange: (v: ProjectProvider | '') => void; error?: string | undefined }) {
+  if (!needsProviderChoice(repoUrl)) {
+    const own = providerOfAddress(repoUrl);
+    return own ? <div className="d pj-provider" data-testid="projects-provider-auto">{PROVIDER_NAME[own]} (from the address)</div> : null;
+  }
+  return (
+    <div className="fld" data-testid="projects-provider">
+      <label htmlFor={id}>What runs at {hostOf(repoUrl)}</label>
+      <select id={id} className="pj-select" value={value} onChange={(e) => onChange(e.target.value as ProjectProvider | '')} aria-invalid={error ? true : undefined}>
+        <option value="">Choose…</option>
+        <option value="gitlab">GitLab (your own installation)</option>
+        <option value="github">GitHub Enterprise</option>
+      </select>
+      <div className="fld-hint">{error ?? 'This address is not github.com or gitlab.com, so say which kind of server it is. It decides how the token is checked and how a merge request or pull request is opened.'}</div>
+    </div>
+  );
+}
+
+/** Whose name the published commit carries: the bot account's (off) or the requester's (on). */
+function CommitAsField({ requester, onChange, disabled }: { requester: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <div className="pj-commitas" data-testid="projects-commit-as">
+      <label className="pj-share">
+        <input type="checkbox" checked={requester} disabled={disabled} onChange={(e) => onChange(e.target.checked)} data-testid="projects-commit-as-requester" />
+        <span>Sign commits with the name and email of the person who asked for the work, not the bot&apos;s</span>
+      </label>
+      <div className="fld-hint">
+        One commit is made for each card. Off: the bot account is its author. On: the person who started the thread is its author; the bot account is still the committer.
+        {requester ? <strong data-testid="projects-commit-as-warning"> Their account email becomes public in the repository&apos;s history and cannot be taken back.</strong> : null}
+      </div>
+    </div>
+  );
+}
+
+/** The bot account of a project: its username and token, for the provider the address belongs to. */
+function BotFields({ repoUrl, provider, username, token, onUsername, onToken, optional }: { repoUrl: string; provider: ProjectProvider | null; username: string; token: string; onUsername: (v: string) => void; onToken: (v: string) => void; optional?: boolean }) {
+  if (provider === null) return null;
+  const help = TOKEN_HELP[provider];
+  const name = PROVIDER_NAME[provider];
+  return (
+    <>
+      <Field label={`Bot username on ${name}${optional ? ' (optional now)' : ''}`} value={username} onChange={(e) => onUsername(e.target.value)} autoComplete="off" placeholder={provider === 'github' ? 'octocat' : 'mybot'}
+        hint={`The ${name} account the bots publish as. It becomes the committer of every commit.`} data-testid="projects-bot-username" />
+      <Field label={`Bot token${optional ? ' (optional now)' : ''}`} type="password" value={token} onChange={(e) => onToken(e.target.value)} autoComplete="off" placeholder={help.placeholder}
+        hint={`${help.hint} ${name} is asked about it before it is kept. Kept in the team pod only; nobody can read it back.`} data-testid="projects-bot-token" />
+      <a className="btn s" href={help.page(hostOf(repoUrl))} target="_blank" rel="noreferrer noopener">Open {name}&apos;s token page</a>
+    </>
+  );
+}
+
+function AddForm({ slug, channels, onDone }: { slug: string; channels: NavChannel[]; onDone: (note?: string) => void }) {
   const [name, setName] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
   const [defaultBranch, setDefaultBranch] = useState('main');
   const [channelId, setChannelId] = useState('');
+  const [provider, setProvider] = useState<ProjectProvider | ''>('');
+  const [botUsername, setBotUsername] = useState('');
+  const [botToken, setBotToken] = useState('');
+  const [requester, setRequester] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const effective = providerOfAddress(repoUrl) ?? (provider === '' ? null : provider);
+  const wantsToken = botToken.trim() !== '';
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const v = validateNew({ name, repoUrl, defaultBranch, channelId });
+    const v = validateNew({ name, repoUrl, defaultBranch, channelId, provider, commitAs: requester ? 'requester' : 'bot' });
     setErrors(v.ok ? {} : v.errors);
     if (!v.ok) return;
+    if (wantsToken && botUsername.trim() === '') return setError('Enter the bot account\'s username with its token.');
     setBusy(true);
     setError(null);
     try {
-      await createProject(slug, v.body);
-      onDone();
+      const created = await createProject(slug, v.body);
+      if (!wantsToken) return onDone();
+      // the project exists now; a token that is refused is told apart and can be saved again on the project
+      try {
+        await setPushCredential(slug, created.project.id, botUsername.trim(), botToken.trim());
+        onDone();
+      } catch (err) {
+        onDone(`${name} was added, but its token was not saved: ${message(err)} Save it again on the project.`);
+      }
     } catch (err) {
       setError(message(err));
     } finally {
@@ -66,14 +132,17 @@ function AddForm({ slug, channels, onDone }: { slug: string; channels: NavChanne
       {error ? <Alert>{error}</Alert> : null}
       <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="manythreads" autoComplete="off"
         hint={errors.name ?? 'Also the name of the repository folder on the team pod. It cannot be changed later.'} aria-invalid={errors.name ? true : undefined} />
-      <Field label="Repository address" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/your-org/your-repo" autoComplete="off"
-        hint={errors.repoUrl ?? 'An https address. The pod copies it only if the operator allowed that address.'} aria-invalid={errors.repoUrl ? true : undefined} />
+      <Field label="Repository address" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://github.com/your-org/your-repo or https://gitlab.example.com/group/repo" autoComplete="off"
+        hint={errors.repoUrl ?? 'An https address: GitHub, GitLab or your own GitLab installation. The pod copies it only if the operator allowed that address.'} aria-invalid={errors.repoUrl ? true : undefined} />
       <Field label="Branch" value={defaultBranch} onChange={(e) => setDefaultBranch(e.target.value)} autoComplete="off"
         hint={errors.defaultBranch ?? 'The branch the work starts from.'} aria-invalid={errors.defaultBranch ? true : undefined} />
+      <ProviderSelect id="pj-new-provider" repoUrl={repoUrl} value={provider} onChange={setProvider} error={errors.provider} />
       <ChannelSelect id="pj-new-channel" value={channelId} onChange={setChannelId} channels={channels} />
+      <BotFields repoUrl={repoUrl} provider={effective} username={botUsername} token={botToken} onUsername={setBotUsername} onToken={setBotToken} optional />
+      <CommitAsField requester={requester} onChange={setRequester} />
       <div className="form-actions">
-        <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Adding…' : 'Add project'}</button>
-        <button type="button" className="btn" onClick={onDone}>Cancel</button>
+        <button type="submit" className="btn primary" disabled={busy}>{busy ? (wantsToken ? 'Adding and checking…' : 'Adding…') : 'Add project'}</button>
+        <button type="button" className="btn" onClick={() => onDone()}>Cancel</button>
       </div>
     </form>
   );
@@ -83,13 +152,14 @@ function EditForm({ slug, p, channels, onDone }: { slug: string; p: Project; cha
   const [repoUrl, setRepoUrl] = useState(p.repoUrl);
   const [defaultBranch, setDefaultBranch] = useState(p.defaultBranch);
   const [channelId, setChannelId] = useState(p.channelId ?? '');
+  const [provider, setProvider] = useState<ProjectProvider | ''>(providerOfAddress(p.repoUrl) === null ? p.provider : '');
   const [errors, setErrors] = useState<FormErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const v = validateEdit(p, { repoUrl, defaultBranch, channelId });
+    const v = validateEdit(p, { repoUrl, defaultBranch, channelId, provider });
     setErrors(v.ok ? {} : v.errors);
     if (!v.ok) return;
     if (!v.changed) return onDone();
@@ -113,6 +183,10 @@ function EditForm({ slug, p, channels, onDone }: { slug: string; p: Project; cha
       {error ? <Alert>{error}</Alert> : null}
       <Field label="Repository address" value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} autoComplete="off" hint={errors.repoUrl} aria-invalid={errors.repoUrl ? true : undefined} />
       <Field label="Branch" value={defaultBranch} onChange={(e) => setDefaultBranch(e.target.value)} autoComplete="off" hint={errors.defaultBranch} aria-invalid={errors.defaultBranch ? true : undefined} />
+      <ProviderSelect id={`pj-provider-${p.id}`} repoUrl={repoUrl} value={provider} onChange={setProvider} error={errors.provider} />
+      {p.pushCredentialSetAt !== null && (repoUrl.trim() !== p.repoUrl || defaultBranch.trim() !== p.defaultBranch || (provider !== '' && provider !== p.provider)) ? (
+        <Notice tone="warn">A token is for one repository, branch and provider: changing any of them removes this project&apos;s token, and you save a new one.</Notice>
+      ) : null}
       <ChannelSelect id={`pj-channel-${p.id}`} value={channelId} onChange={setChannelId} channels={choices} />
       <div className="form-actions">
         <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
@@ -123,16 +197,18 @@ function EditForm({ slug, p, channels, onDone }: { slug: string; p: Project; cha
 }
 
 /**
- * Publishing: with a GitHub username and token set, the bot that tested a card's branch pushes it to this repository and opens a pull request, and a person
- * merges it in GitHub. GitHub is asked about the token before it is kept (whose it is, whether it may write here, when it expires). The token goes to the
- * team pod's secret store and is never shown again (not here, not to the bots, not in the database).
+ * Publishing: with the bot account's username and token set, the bot that tested a card's branch publishes it to this repository as one commit and opens a
+ * pull request (GitHub) or merge request (GitLab), and a person merges it there. The provider is asked about the token before it is kept (whose it is, whether
+ * it may write here, when it expires). The token goes to the team pod's secret store and is never shown again (not here, not to the bots, not in the database).
+ * The "sign as the requester" box says whose name the commit carries and is saved at once, with or without a token.
  */
 function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onChanged: () => void }) {
   const [username, setUsername] = useState(p.pushUsername ?? '');
   const [token, setToken] = useState('');
   const [share, setShare] = useState(p.pushCredentialShared);
   const [replacing, setReplacing] = useState(false);
-  const owner = ownerOfRepo(p.repoUrl);
+  const owner = ownerOfRepo(p.repoUrl, p.provider);
+  const name = PROVIDER_NAME[p.provider];
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -155,8 +231,8 @@ function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onCha
   const test = () =>
     run(async () => {
       const r = await testPushCredential(slug, p.id);
-      if (r.ok) setNote(`GitHub accepts the token (${r.login ?? ''}).`);
-      else setError(r.message ?? 'GitHub does not accept this token.');
+      if (r.ok) setNote(`${name} accepts the token (${r.login ?? ''}).`);
+      else setError(r.message ?? `${name} does not accept this token.`);
     });
 
   const set = p.pushCredentialSetAt !== null;
@@ -164,12 +240,13 @@ function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onCha
   const showForm = !set || p.pushCredentialStatus === 'needs_replacing' || replacing;
   return (
     <div className="pj-publish" data-testid="projects-publishing">
-      <div className="pj-publish-h">Pull requests</div>
+      <div className="pj-publish-h">{p.provider === 'github' ? 'Pull requests' : 'Merge requests'}</div>
       {error ? <Alert>{error}</Alert> : null}
       {note ? <Notice tone="ok">{note}</Notice> : null}
+      <CommitAsField requester={p.commitAs === 'requester'} disabled={busy} onChange={(v) => void run(() => updateProject(slug, p.id, { commitAs: v ? 'requester' : 'bot' }))} />
       {set ? (
         <div className="pj-publish-set">
-          <span data-testid="projects-credential-set" data-tone={state.tone}>{state.line}. A tested branch is sent to GitHub as a pull request, and a person merges it there.</span>
+          <span data-testid="projects-credential-set" data-tone={state.tone}>{state.line}. A tested change is sent to {name} as a {requestWord(p.provider)}, and a person merges it there.</span>
           {p.pushCredentialShared && owner ? <span className="d" data-testid="projects-credential-shared">The same token serves every project of this team under {owner}.</span> : null}
           <button type="button" className="btn s" disabled={busy} onClick={() => void test()} data-testid="projects-credential-test">Test connection</button>
           {!showForm ? <button type="button" className="btn s" disabled={busy} onClick={() => setReplacing(true)} data-testid="projects-credential-replace">Replace token</button> : null}
@@ -187,17 +264,13 @@ function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onCha
             });
           }}
         >
-          <Field label="GitHub username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" placeholder="octocat"
-            hint="The GitHub account the token belongs to." />
-          <Field label="GitHub token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" placeholder="github_pat_…"
-            hint="A token with write access to this one repository: contents and pull requests. GitHub is asked about it before it is kept. Kept in the team pod only; nobody can read it back." />
+          <BotFields repoUrl={p.repoUrl} provider={p.provider} username={username} token={token} onUsername={setUsername} onToken={setToken} />
           {owner ? (
             <label className="pj-share" data-testid="projects-credential-share">
               <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
               <span>Use for every project of this team that lives under <span className="mono">{owner}</span>. The token is kept once and each project is checked against GitHub. Only projects that exist now are covered, and one that already has a token of its own is left as it is.</span>
             </label>
           ) : null}
-          <a className="btn s" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer noopener">Open GitHub&apos;s token page</a>
           <button type="submit" className="btn s primary" disabled={busy || token.trim().length < 20 || username.trim() === ''}>{busy ? 'Checking…' : 'Check and save'}</button>
           {replacing ? <button type="button" className="btn s" onClick={() => setReplacing(false)}>Cancel</button> : null}
         </form>
@@ -230,7 +303,7 @@ function ProjectRow({ slug, p, channels, canManage, onChanged }: { slug: string;
   return (
     <div className="pj-row" data-testid="projects-row" data-project={p.name}>
       <div className="pj-main">
-        <div className="pj-name"><span className="mono">{p.name}</span> <span className="pj-branch">branch {p.defaultBranch}</span></div>
+        <div className="pj-name"><span className="mono">{p.name}</span> <span className="pj-branch" data-testid="projects-provider-tag">{PROVIDER_NAME[p.provider]}</span> <span className="pj-branch">branch {p.defaultBranch}</span></div>
         <div className="pj-addr mono" data-vt-mask>{p.repoUrl}</div>
         <div className="pj-meta d">
           {p.channelId === null ? 'No channel yet.' : channel ? (
@@ -240,7 +313,7 @@ function ProjectRow({ slug, p, channels, canManage, onChanged }: { slug: string;
         </div>
         {error ? <Alert>{error}</Alert> : null}
         {editing ? <EditForm slug={slug} p={p} channels={channels} onDone={() => { setEditing(false); onChanged(); }} /> : null}
-        {canManage ? <PublishingBox slug={slug} p={p} onChanged={onChanged} /> : p.pushCredentialSetAt ? <div className="pj-meta d">Tested branches are sent to GitHub as pull requests.</div> : null}
+        {canManage ? <PublishingBox slug={slug} p={p} onChanged={onChanged} /> : p.pushCredentialSetAt ? <div className="pj-meta d">Tested changes are sent to {PROVIDER_NAME[p.provider]} as {requestWord(p.provider)}s.</div> : null}
       </div>
       {canManage ? (
         <div className="pj-act">
@@ -260,41 +333,54 @@ function ProjectRow({ slug, p, channels, canManage, onChanged }: { slug: string;
 
 export function ProjectsScreen() {
   const { slug, canEdit } = useBotPerms();
+  const { projectId } = useParams();
   const projects = useQuery(`projects:${slug}`, () => fetchProjects(slug));
   const feed = useChannelFeed(slug);
   const channels = feed.groups.flatMap((g) => g.channels);
   const [adding, setAdding] = useState(false);
-  const reload = () => projects.reload();
+  const [flash, setFlash] = useState<string | null>(null);
+  // every change on this page tells the sidebar's Projects section to ask again
+  const reload = () => {
+    projects.reload();
+    announceProjectsChanged();
+  };
 
   return (
     <div className="projects-screen" data-landmark="projects">
       <PageHeader
         title="Projects"
-        description="The git repositories this team works on, each tied to one of its channels."
+        description="The git repositories this team works on (GitHub, GitLab or your own GitLab), each tied to one of its channels, with the bot account that publishes to it."
         actions={canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="projects-add-open">Add project</button> : null}
       />
       <QueryView q={projects}>
-        {({ items }) => (
-          <>
-            <StatusStrip label="Project status" testId="projects-strip" items={items.map((p) => stripItem(p))} empty="No repository is connected yet." />
-            {!canEdit ? <p className="d pj-note" data-testid="projects-note">Only a team lead or a workspace admin can change these. You can see what is set.</p> : null}
-            {adding ? <AddForm slug={slug} channels={channels} onDone={() => { setAdding(false); reload(); }} /> : null}
-            <section className="box pj-list" aria-labelledby="pj-list-h" data-landmark="projects-list">
-              <h2 className="box-h" id="pj-list-h">Repositories</h2>
-              {items.length === 0 ? <p className="d" data-testid="projects-empty">No projects yet. Add one to tell the team&apos;s bots what code they work on.</p> : null}
-              {items.map((p) => (
-                <ProjectRow key={p.id} slug={slug} p={p} channels={channels} canManage={canEdit} onChanged={reload} />
-              ))}
-            </section>
-          </>
-        )}
+        {({ items }) => {
+          const shown = projectId ? items.filter((p) => p.id === projectId) : items;
+          return (
+            <>
+              <StatusStrip label="Project status" testId="projects-strip" items={items.map((p) => stripItem(p))} empty="No repository is connected yet." />
+              {!canEdit ? <p className="d pj-note" data-testid="projects-note">Only a team lead or a workspace admin can change these. You can see what is set.</p> : null}
+              {flash ? <Alert>{flash}</Alert> : null}
+              {adding ? <AddForm slug={slug} channels={channels} onDone={(note) => { setAdding(false); setFlash(note ?? null); reload(); }} /> : null}
+              <section className="box pj-list" aria-labelledby="pj-list-h" data-landmark="projects-list">
+                <h2 className="box-h" id="pj-list-h">{projectId ? 'Project' : 'Repositories'}</h2>
+                {projectId ? <p className="d"><Link to={`/t/${slug}/projects`} data-testid="projects-all">All projects</Link></p> : null}
+                {items.length === 0 ? <p className="d" data-testid="projects-empty">No projects yet. Add one to tell the team&apos;s bots what code they work on.</p> : null}
+                {projectId && shown.length === 0 && items.length > 0 ? <p className="d" data-testid="projects-missing">There is no such project in this team.</p> : null}
+                {shown.map((p) => (
+                  <ProjectRow key={p.id} slug={slug} p={p} channels={channels} canManage={canEdit} onChanged={reload} />
+                ))}
+              </section>
+            </>
+          );
+        }}
       </QueryView>
       <details className="box pj-fold" data-landmark="projects-how" data-testid="projects-how-fold">
         <summary className="pj-fold-h">How to connect</summary>
         <ol className="pj-how">
-          <li>Press <strong>Add project</strong>. Give it a name, the https address of the repository and the branch the work starts from.</li>
+          <li>Press <strong>Add project</strong>. Give it a name, the https address of the repository (GitHub, GitLab, or your own GitLab: say which for an address that is not github.com or gitlab.com) and the branch the work starts from.</li>
           <li>Pick the channel the team works on it in. A bot asked in that channel is told which repository and branch it works on, and the team&apos;s agent pod keeps a copy for the bots to work in.</li>
-          <li>To let a bot send tested work to GitHub as a pull request, save a GitHub token on the project. A person still merges it on GitHub.</li>
+          <li>To let a bot send tested work to the repository, give the project a bot account: its username and a token. The bot publishes one commit for each card as a pull request or merge request, and a person still merges it there.</li>
+          <li>Choose whose name the commits carry: the bot account&apos;s, or the name and email of the person who asked for the work. The second makes that person&apos;s email public in the repository&apos;s history.</li>
         </ol>
       </details>
     </div>

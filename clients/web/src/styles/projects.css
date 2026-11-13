@@ -136,6 +136,17 @@
   color: var(--ink);
 }
 
+.pj-commitas {
+  display: grid;
+  gap: 4px;
+  max-width: 460px;
+  margin: 6px 0;
+}
+
+.pj-provider {
+  margin: 2px 0 6px;
+}
+
 .pj-share input {
   margin-top: 2px;
 }
