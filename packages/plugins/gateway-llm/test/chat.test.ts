@@ -157,7 +157,8 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     const rows = await spendOf(r.runId!);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ bot_id: botId, team_id: ENG, alias: 'smart', prompt_tokens: 12, completion_tokens: 7, session_id: r.runId });
-    expect(Number(rows[0]!.cost_usd)).toBe(0);
+    // priced from its tokens (a model the table does not list costs the default price, never zero): 12 in at $5 + 7 out at $25 per million
+    expect(Number(rows[0]!.cost_usd)).toBeCloseTo(0.000235, 9);
   });
 
   it('with tracing on, the turn is an `llm.chat` span of ids only and the call to the proxy carries the trace parent; with it off no header is added', async () => {

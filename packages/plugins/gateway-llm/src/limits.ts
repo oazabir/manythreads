@@ -9,6 +9,7 @@ import {
 } from '@manythreads/shared';
 import { decide, windowStart, type LlmCallDecision, type LlmScopeSnapshot } from './budget.ts';
 import { loadEgress, type EgressTarget } from './egress-targets.ts';
+import { costOfCall } from './pricing.ts';
 import type { RateHit } from './rate-limit.ts';
 
 export { decide, windowStart } from './budget.ts';
@@ -176,8 +177,28 @@ export interface LlmSpendRecord {
   purpose?: string | null;
 }
 
-/** Append one line to the ledger. Nothing enforces here: the pre-call check is the gate, this is the record. */
+/**
+ * The cost of a call whose caller did not price it: tokens times the model's price (pricing.ts), zero when the alias runs inside this deployment
+ * (the `local` alias, or a provider the admin marked local). The model is the one the call reports, else the one the alias is bound to.
+ */
+async function pricedCost(tx: PluginTx, record: LlmSpendRecord): Promise<number> {
+  if (record.costUsd > 0) return record.costUsd;
+  if (record.promptTokens + record.completionTokens === 0) return 0;
+  // The `local` alias is the model that runs inside this deployment: it costs nothing.
+  if (record.alias === 'local') return 0;
+  const row = (
+    await tx.query<{ model: string; local: boolean | null; provider_id: string | null }>(
+      'SELECT a.model, p.local, a.provider_id FROM app.llm_aliases a LEFT JOIN app.llm_providers p ON p.id = a.provider_id WHERE a.workspace_id = $1 AND a.alias = $2',
+      [record.workspaceId, record.alias],
+    )
+  ).rows[0];
+  if (!row || row.local === true) return 0;
+  return costOfCall(record.model ?? row.model, record.promptTokens, record.completionTokens);
+}
+
+/** Append one line to the ledger, priced from its tokens when the caller gave no cost. Nothing enforces here: the pre-call check is the gate, this is the record. */
 export async function recordSpend(tx: PluginTx, record: LlmSpendRecord): Promise<string> {
+  const costUsd = await pricedCost(tx, record);
   const res = await tx.query<{ id: string }>(
     `INSERT INTO app.llm_spend (workspace_id, team_id, bot_id, session_id, run_id, alias, model, prompt_tokens, completion_tokens, cost_usd, occurred_at, purpose)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, now()), $12) RETURNING id`,
@@ -191,7 +212,7 @@ export async function recordSpend(tx: PluginTx, record: LlmSpendRecord): Promise
       record.model,
       record.promptTokens,
       record.completionTokens,
-      record.costUsd,
+      costUsd,
       record.occurredAt ?? null,
       record.purpose ?? null,
     ],

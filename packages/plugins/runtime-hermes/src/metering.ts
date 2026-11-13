@@ -3,8 +3,8 @@ import { BotRunnerName, LlmAliasName } from '@manythreads/shared';
 
 // Every model call of a Hermes pod goes through the platform's model gateway (P19-10, PLAN decision 10). The run job checks that, after each pod run: the
 // usage the pod reported becomes one line in the spend ledger (`app.llm_spend`, under the bot and the run), and an ok run that ends with no line at all raises
-// one `bot_runner.run.unmetered` event (and an audit row). The platform never prices a call, so the line holds tokens and a cost of zero, like every other
-// platform call; the check proves the run was counted, not what it cost.
+// one `bot_runner.run.unmetered` event (and an audit row). The cost is left at zero here and the ledger prices the line from its tokens
+// (`recordSpend` in gateway-llm, pricing.ts), so a budget sees what the run cost.
 
 /** The part of the gateway door this file needs; `gateway-llm` registers the full door and a plugin cannot import another plugin's types. */
 interface SpendDoor {

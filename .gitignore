@@ -28,3 +28,4 @@ clients/web/dist-*/
 
 # Review rounds and the precheck report (tools/review)
 /review/
+self-build-out/
