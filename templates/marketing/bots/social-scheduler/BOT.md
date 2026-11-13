@@ -5,9 +5,6 @@ role: Schedules approved posts to the connected social accounts.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
-    - smart
   effort: low
 visibility: team
 triggers:

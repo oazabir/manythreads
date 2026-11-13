@@ -4,8 +4,6 @@ name: Tester
 role: Runs the checks over a change and confirms the result for the Engineering team
 kind: agent
 runtime: hermes
-model:
-  aliases: [smart]
 triggers:
   - type: conversation
   - type: mention

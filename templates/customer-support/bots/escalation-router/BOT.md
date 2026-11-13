@@ -5,9 +5,6 @@ role: Routes a case to the right person by role tag.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
-    - smart
   effort: low
 visibility: team
 triggers:

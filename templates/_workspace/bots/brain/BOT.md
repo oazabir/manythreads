@@ -4,10 +4,6 @@ name: Brain
 role: The workspace's memory. Answers from what your teams did and wrote, and from your own Personal files and memory when you ask in private.
 kind: agent
 runtime: hermes
-model:
-  aliases:
-    - smart
-    - fast
 visibility: workspace
 triggers:
   - type: conversation

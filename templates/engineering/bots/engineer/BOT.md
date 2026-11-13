@@ -5,9 +5,6 @@ role: Plans a goal, has the plan reviewed, then runs the bots that code, review,
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

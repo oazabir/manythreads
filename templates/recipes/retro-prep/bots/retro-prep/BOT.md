@@ -5,9 +5,6 @@ role: Prepares a retrospective page from the period's record.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

@@ -99,7 +99,7 @@ describe('every template ships Brain', () => {
       expect(b.fm.handover, b.template.id).toBeUndefined();
       expect(b.fm.approvals, b.template.id).toEqual({ needsApproval: [] });
       expect(b.fm.guard, b.template.id).toEqual({ preset: 'standard' });
-      expect(b.fm.model?.aliases, b.template.id).toEqual(['smart', 'fast']);
+      expect(b.fm.model?.aliases, b.template.id).toBeUndefined();
       // the bank is the platform's to derive from the team, and the template cannot know the slug of the team made from it
       expect(b.fm.memory?.grants, b.template.id).toBeUndefined();
       expect(b.fm.memory, b.template.id).toMatchObject({ file: 'memory.md', maxLines: 2000, people: 'people/<id>.md' });
@@ -322,6 +322,13 @@ describe('every shipped definition', () => {
 
   it('names no approver tag: a named tag is exactly its holders and a new team has defined it with none, so leads and admins decide', () => {
     for (const s of shipped) expect(s.fm.approvals?.approvers, `${s.template.id}/${s.slug}`).toBeUndefined();
+  });
+
+  it('names no model: no alias and no fallback in any shipped definition, so the gateway picks the default', () => {
+    for (const s of shipped) {
+      expect(s.fm.model?.aliases, `${s.template.id}/${s.slug}`).toBeUndefined();
+      expect(s.fm.model?.fallbacks, `${s.template.id}/${s.slug}`).toBeUndefined();
+    }
   });
 
   it('names only aliases of the closed set, channels the template has, tags it defines and bots it lists', () => {
@@ -887,7 +894,7 @@ describe('the Scribe, in every template', () => {
   it('holds exactly meetings.read, memory.recall and meetings.write_notes, and no way to post, send or write memory', () => {
     for (const a of scribes()) {
       expect(a.fm.capabilities, a.template.id).toEqual({ native: ['meetings.read', 'memory.recall', 'meetings.write_notes'] });
-      expect(a.fm.model?.aliases, a.template.id).toEqual(['smart', 'fast']);
+      expect(a.fm.model?.aliases, a.template.id).toBeUndefined();
       expect(a.fm.placement?.gateway, a.template.id).toEqual({ connection: 'managed' });
       expect(a.fm.evals, a.template.id).toEqual({ set: 'scribe', minScore: 1 });
     }
@@ -950,7 +957,7 @@ describe('the note-taker, in every template', () => {
   it('holds the reading tools and no way to post, send or write memory', () => {
     for (const a of takers()) {
       expect(a.fm.capabilities, a.template.id).toEqual({ native: ['meetings.read', 'meetings.search', 'messages.search', 'memory.recall', 'meetings.write_notes'] });
-      expect(a.fm.model?.aliases, a.template.id).toEqual(['smart', 'fast']);
+      expect(a.fm.model?.aliases, a.template.id).toBeUndefined();
       expect(a.fm.evals, a.template.id).toEqual({ set: 'note-taker', minScore: 0.75 });
     }
   });

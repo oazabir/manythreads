@@ -5,9 +5,6 @@ role: Writes the weekly on-call hand-off page.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

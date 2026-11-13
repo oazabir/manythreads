@@ -5,9 +5,6 @@ role: Writes the notes of a team's meeting from its transcript, with a summary, 
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

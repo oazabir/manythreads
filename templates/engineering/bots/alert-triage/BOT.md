@@ -5,9 +5,6 @@ role: Groups and classifies alerts, pages the on-call person.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - fast
-    - smart
   effort: low
 visibility: team
 triggers:

@@ -108,10 +108,10 @@ describe('definitionAliases', () => {
     expect(await definitionAliases(ctx, tx, bot(shaOf(text)))).toBeNull();
   });
 
-  it('answers an empty list for a definition that names no model', async () => {
+  it('answers the default alias for a hermes definition that names no model', async () => {
     const text = md('[]').replace(/model:\n {2}aliases: \[\]\n/, '');
     const { ctx, tx } = rig(() => ({ content: Buffer.from(text) }));
-    expect(await definitionAliases(ctx, tx, bot(shaOf(text)))).toEqual([]);
+    expect(await definitionAliases(ctx, tx, bot(shaOf(text)))).toEqual(['smart']);
   });
 
   it('reads the workspace Brain from the stored definitions, not from a team repo', async () => {

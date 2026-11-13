@@ -5,9 +5,6 @@ role: "Reads the support mailbox, posts each new email into #support-inbox for t
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

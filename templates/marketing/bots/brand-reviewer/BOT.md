@@ -5,9 +5,6 @@ role: Checks drafts against the brand guidelines before they go out.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

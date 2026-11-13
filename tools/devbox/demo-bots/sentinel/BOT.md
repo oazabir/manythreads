@@ -4,8 +4,6 @@ name: Sentinel
 role: Demonstrates the pre-model gate on sensitive topics for the Engineering team
 kind: agent
 runtime: hermes
-model:
-  aliases: [smart]
 triggers:
   - type: conversation
   - type: mention

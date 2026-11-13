@@ -1,5 +1,5 @@
 import { traceHeaders, traceSpan, type BotRuntimeEvent, type BotRuntimeHandle, type BotRuntimeInput, type BotRuntimeScope } from '@manythreads/sdk';
-import { AGENT_BRIDGE_RUN_KEY, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
+import { AGENT_BRIDGE_RUN_KEY, modelAliasesOfDefinition, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
 import { guardedFetch } from './outbound.ts';
 import { withOutputStyle } from './output-style.ts';
 import { refusedRun, runnerRefusedRun } from './refused.ts';
@@ -227,7 +227,7 @@ export async function runOnGateway(
   // including the token of this one run. A Hermes agent never gets the token: it reaches the platform with its profile's own credential.
   if (target.agent !== 'hermes') {
     if (input.endpoint === null) return refusedRun(`bot ${input.bot.slug} has no tools endpoint for this run, which the ${target.agent} agent on "${placement.connection}" needs`);
-    const alias = input.definition.frontmatter.model?.aliases?.[0];
+    const alias = modelAliasesOfDefinition(input.definition.frontmatter)[0];
     const effort = input.definition.frontmatter.model?.effort;
     const extension: AgentBridgeRunExtension = {
       bot: input.bot.slug,

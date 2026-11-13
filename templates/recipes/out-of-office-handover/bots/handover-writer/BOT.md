@@ -5,9 +5,6 @@ role: Writes a hand-over page for people who are about to be away.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

@@ -5,8 +5,6 @@ role: Asks the team for an update each morning and gathers the replies into one 
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { BOT_SECTIONS, BotFrontmatter, BotSection, botFrontmatterJsonSchema } from '../src/index.ts';
+import { BOT_SECTIONS, BotFrontmatter, BotSection, DEFAULT_MODEL_ALIAS, botFrontmatterJsonSchema, modelAliasesOfDefinition } from '../src/index.ts';
 
 // SPEC §7.1 example, verbatim.
 const coder = {
@@ -67,9 +67,9 @@ describe('BotFrontmatter', () => {
     expect(nested.error?.issues[0]?.path).toEqual(['limits']);
   });
 
-  it('rejects bad enum values and a model with neither or both of aliases/subscription', () => {
+  it('rejects bad enum values and a model with both aliases and subscription (neither is fine: the default alias applies)', () => {
     expect(BotFrontmatter.safeParse({ ...coder, kind: 'robot' }).success).toBe(false);
-    expect(BotFrontmatter.safeParse({ ...coder, model: { effort: 'low' } }).success).toBe(false);
+    expect(BotFrontmatter.safeParse({ ...coder, model: { effort: 'low' } }).success).toBe(true);
     expect(BotFrontmatter.safeParse({ ...coder, model: { aliases: ['code'], subscription: 'codex' } }).success).toBe(false);
     expect(BotFrontmatter.safeParse({ ...coder, model: { subscription: 'claude-code' } }).success).toBe(true);
   });
@@ -165,5 +165,15 @@ describe('BotFrontmatter JSON Schema', () => {
 
   it('committed file matches the Zod schema (re-run gen:json-schema if this fails)', () => {
     expect(botFrontmatterJsonSchema).toEqual(JSON.parse(JSON.stringify(z.toJSONSchema(BotFrontmatter, { io: 'input' }))));
+  });
+});
+
+describe('modelAliasesOfDefinition', () => {
+  it('names no model by default: a hermes bot gets the default alias, other runtimes and subscriptions get none', () => {
+    expect(modelAliasesOfDefinition({ runtime: 'hermes' })).toEqual([DEFAULT_MODEL_ALIAS]);
+    expect(modelAliasesOfDefinition({ runtime: 'hermes', model: { effort: 'low' } })).toEqual([DEFAULT_MODEL_ALIAS]);
+    expect(modelAliasesOfDefinition({ runtime: 'hermes', model: { aliases: ['code'] } })).toEqual(['code']);
+    expect(modelAliasesOfDefinition({ runtime: 'hermes', model: { subscription: 'claude-code' } })).toEqual([]);
+    expect(modelAliasesOfDefinition({ runtime: 'claude-code' })).toEqual([]);
   });
 });

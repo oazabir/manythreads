@@ -5,9 +5,6 @@ role: Summarises campaign and channel performance on a schedule.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

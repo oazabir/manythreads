@@ -4,8 +4,6 @@ name: Orchestrator
 role: Plans demo work and hands each step to coder, then tester
 kind: agent
 runtime: hermes
-model:
-  aliases: [smart]
 triggers:
   - type: conversation
   - type: mention

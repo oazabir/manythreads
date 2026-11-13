@@ -4,10 +4,6 @@ name: Content drafter
 role: Drafts posts, emails and pages in the team's voice.
 kind: agent
 runtime: hermes
-model:
-  aliases:
-    - smart
-    - fast
 visibility: team
 triggers:
   - type: mention

@@ -5,9 +5,6 @@ role: Finds new papers on the team's topics and posts the relevant ones.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

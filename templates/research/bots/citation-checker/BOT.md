@@ -5,9 +5,6 @@ role: Checks that cited sources exist and say what the draft claims.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

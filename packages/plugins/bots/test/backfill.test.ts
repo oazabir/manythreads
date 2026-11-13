@@ -139,17 +139,17 @@ describe('the model_aliases backfill', () => {
     expect(emitted).toHaveLength(0);
   });
 
-  it('leaves a bot whose file moved on to the loader, and one whose file names no model alone', async () => {
+  it('leaves a bot whose file moved on to the loader alone, and gives one whose file names no model the default alias', async () => {
     const moved = await legacyBot('moved-bot', definition('model:\n  aliases: [smart]\n'), { definitionSha: 'f'.repeat(64) });
     const modelless = await legacyBot('modelless-bot', definition(''));
     const missing = await legacyBot('missing-bot', definition('model:\n  aliases: [smart]\n'));
     files.delete('bots/missing-bot/BOT.md');
 
-    expect(await run()).toBe(0);
+    expect(await run()).toBe(1); // only the model-less bot is written
     expect(await aliasesOf(moved)).toEqual([]); // main is newer than the row: the loader's event is the one that rewrites it
-    expect(await aliasesOf(modelless)).toEqual([]);
+    expect(await aliasesOf(modelless)).toEqual(['smart']); // no model named: the default alias, so its key can reach it
     expect(await aliasesOf(missing)).toEqual([]);
-    expect(emitted).toHaveLength(0);
+    expect(emitted).toHaveLength(1);
   });
 
   it('only touches active hermes bots', async () => {

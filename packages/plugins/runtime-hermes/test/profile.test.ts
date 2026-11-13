@@ -1,4 +1,4 @@
-import { parseBotMd } from '@manythreads/shared';
+import { DEFAULT_MODEL_ALIAS, parseBotMd } from '@manythreads/shared';
 import type { BotRuntimeInput } from '@manythreads/sdk';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -98,10 +98,16 @@ describe('renderProfile', () => {
     expect(profileHome(input())).toBe('coder-77777777-7777-7777-7777-777777777777');
   });
 
-  it('refuses to render without an alias, a gateway or the run endpoint', () => {
+  it('names no model in the definition: the default alias is the profile model', () => {
+    const noneNamed = input();
+    noneNamed.definition.frontmatter = { ...noneNamed.definition.frontmatter, model: undefined };
+    expect(renderConfig(noneNamed)).toContain(`default: "${DEFAULT_MODEL_ALIAS}"`);
+  });
+
+  it('refuses to render without an alias (a subscription definition), a gateway or the run endpoint', () => {
     const noAlias = input();
-    noAlias.definition.frontmatter = { ...noAlias.definition.frontmatter, model: undefined };
-    expect(() => renderConfig(noAlias)).toThrow(/needs model.aliases\[0\]/);
+    noAlias.definition.frontmatter = { ...noAlias.definition.frontmatter, model: { subscription: 'claude-code' } };
+    expect(() => renderConfig(noAlias)).toThrow(/needs a model/);
     expect(() => renderConfig(input({ gateway: null }))).toThrow(/no LLM gateway/);
     expect(() => renderConfig(input({ endpoint: null }))).toThrow(/needs the run's own MCP endpoint/);
   });

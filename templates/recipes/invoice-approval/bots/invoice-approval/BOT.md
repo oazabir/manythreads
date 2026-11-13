@@ -5,9 +5,6 @@ role: Lists invoices posted for payment and files an approval card for each.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

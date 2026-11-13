@@ -1,5 +1,5 @@
 import type { ApprovalProvider, BotRunHandle, BotRuntimeScope, PersonalFilesProvider, PluginContext, PluginLogger, PluginTx } from '@manythreads/sdk';
-import { ACTION_ITEMS_PATH, RuntimeScheduledJobFinishedEvent, RuntimeScheduledJobStartedEvent, clip, reviewActionItemsRewrite } from '@manythreads/shared';
+import { ACTION_ITEMS_PATH, RuntimeScheduledJobFinishedEvent, RuntimeScheduledJobStartedEvent, clip, modelAliasesOfDefinition, reviewActionItemsRewrite } from '@manythreads/shared';
 import { ApprovalPending, type LoadedDefinition, type RunPayload } from './run-job.ts';
 
 // What a run does differently when a schedule started it (PLAN P6-08; SPEC §6.4, §6.5). The ledger of firings belongs to the `scheduled-jobs` plugin; a
@@ -19,16 +19,17 @@ type ScheduledJob = NonNullable<RunPayload['scheduledJob']>;
 export function scheduledJobOverrideProblem(definition: LoadedDefinition, scheduledJob: ScheduledJob): string | null {
   if (scheduledJob.modelAlias === null) return null;
   const model = definition.frontmatter.model;
-  const allowed = [...(model?.aliases ?? []), ...(model?.fallbacks ?? [])];
+  const allowed = [...modelAliasesOfDefinition(definition.frontmatter), ...(model?.fallbacks ?? [])];
   return allowed.includes(scheduledJob.modelAlias) ? null : `The model alias ${scheduledJob.modelAlias} is not one this bot may use.`;
 }
 
 /** Apply the scheduled job's `model` / `effort` overrides to the definition the run executes (SPEC §6.5). The loaded definition is a copy per run. */
 export function applyScheduledJobOverrides(definition: LoadedDefinition, scheduledJob: ScheduledJob): void {
   const model = definition.frontmatter.model;
-  if (scheduledJob.modelAlias !== null && model?.aliases !== undefined) {
+  const own = modelAliasesOfDefinition(definition.frontmatter);
+  if (scheduledJob.modelAlias !== null && own.length > 0) {
     definition.alias = scheduledJob.modelAlias;
-    definition.frontmatter = { ...definition.frontmatter, model: { ...model, aliases: [scheduledJob.modelAlias, ...model.aliases.filter((a) => a !== scheduledJob.modelAlias)] } };
+    definition.frontmatter = { ...definition.frontmatter, model: { ...model, aliases: [scheduledJob.modelAlias, ...own.filter((a) => a !== scheduledJob.modelAlias)] } };
   }
   if (scheduledJob.effort !== null && definition.frontmatter.model !== undefined) {
     definition.frontmatter = { ...definition.frontmatter, model: { ...definition.frontmatter.model, effort: scheduledJob.effort } };

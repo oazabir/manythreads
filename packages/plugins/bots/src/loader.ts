@@ -210,7 +210,7 @@ async function applyDefinition(ctx: PluginContext, tx: PluginTx, target: Target,
       JSON.stringify(triggers),
       JSON.stringify(native),
       // The aliases the definition may ask for, then its own fallbacks: what the gateway limits the bot's key to.
-      modelAliasesOf(fm.model),
+      modelAliasesOf(fm),
       // who may decide this bot's approvals (`role:<tag>` / `person:<id>`); empty means the team's leads
       fm.approvals?.approvers ?? [],
       // BOT.md `limits.timeoutSeconds`: what the stale-run reaper measures a run against

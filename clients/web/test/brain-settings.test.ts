@@ -73,7 +73,6 @@ describe('the words of the Brain page', () => {
   it('shows what each model name it asks for is bound to, and null when the names could not be read', () => {
     expect(modelLines([{ alias: 'smart', model: 'anthropic/claude-sonnet-4' }])).toEqual([
       { name: 'smart', bound: 'anthropic/claude-sonnet-4' },
-      { name: 'fast', bound: null },
     ]);
     expect(modelLines(null)).toBeNull();
     // plain words, no model names or version hashes on the page

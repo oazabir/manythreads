@@ -4,10 +4,6 @@ name: Brain
 role: Team memory. Answers from what the team did and wrote, and keeps per-person notes.
 kind: agent
 runtime: hermes
-model:
-  aliases:
-    - smart
-    - fast
 visibility: team
 triggers:
   - type: conversation

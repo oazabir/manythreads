@@ -28,6 +28,7 @@ import {
   LlmAliasName,
   botMdPath,
   mcpUrlOf,
+  modelAliasesOfDefinition,
   parseBotMd,
 } from '@manythreads/shared';
 import { z } from 'zod';
@@ -333,7 +334,7 @@ export async function loadDefinition(ctx: PluginContext, tx: PluginTx, bot: RunB
   return {
     frontmatter: parsed.frontmatter,
     body: parsed.body,
-    alias: parsed.frontmatter.model?.aliases?.[0] ?? null,
+    alias: modelAliasesOfDefinition(parsed.frontmatter)[0] ?? null,
     holdOnDetection: parsed.frontmatter.guard?.rules?.includes(GUARD_RULE_DLP_APPROVAL) ?? false,
     approvers: parsed.frontmatter.approvals?.approvers ?? [],
   };

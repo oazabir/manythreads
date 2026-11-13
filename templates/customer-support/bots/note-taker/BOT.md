@@ -5,9 +5,6 @@ role: Sits in a call to write its notes for the person who started it, and answe
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

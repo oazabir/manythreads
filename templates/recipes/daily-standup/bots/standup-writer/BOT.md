@@ -5,8 +5,6 @@ role: Writes the daily stand-up from the board and the channels.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

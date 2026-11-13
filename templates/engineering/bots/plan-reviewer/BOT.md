@@ -5,9 +5,6 @@ role: Reads a plan before any code is written and approves it or sends it back.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - code
   effort: high
 visibility: team
 triggers:

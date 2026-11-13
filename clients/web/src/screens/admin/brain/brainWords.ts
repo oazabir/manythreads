@@ -9,8 +9,8 @@ import type { BotRunner, BotSummary, LlmAlias, TeamSummary } from '@manythreads/
 
 export const BRAIN_SLUG = 'brain';
 
-/** The model names the shipped Brain definition (`templates/_workspace/bots/brain/BOT.md`) asks for. The page shows what each one is bound to; it cannot read the stored definition. */
-export const BRAIN_MODEL_NAMES = ['smart', 'fast'] as const;
+/** The model name the shipped Brain runs on: its definition (`templates/_workspace/bots/brain/BOT.md`) names none, so the default alias answers. The page shows what it is bound to; it cannot read the stored definition. */
+export const BRAIN_MODEL_NAMES = ['smart'] as const;
 
 /** The one Brain of the workspace in a team's roster: scope `workspace`, slug `brain`. Null when the roster has none (not set up yet). */
 export function findWorkspaceBrain(bots: readonly BotSummary[]): BotSummary | null {

@@ -1,4 +1,5 @@
 import type { PluginLogger, PluginTx } from '@manythreads/sdk';
+import { modelAliasesOfDefinition } from '@manythreads/shared';
 import type { LoadedDefinition, RunPayload } from './run-job.ts';
 
 // What a run in a person's Chat conversation does beyond any other run (PLAN P20-16): it may use the model the person picked for the message, it notes on its
@@ -13,13 +14,14 @@ export const streamsLive = (payload: RunPayload): payload is RunPayload & { aske
 export function applyChatAlias(definition: LoadedDefinition, picked: string | undefined, log: PluginLogger): string | null {
   const model = definition.frontmatter.model;
   if (picked === undefined || picked === definition.alias) return definition.alias;
-  const allowed = [...(model?.aliases ?? []), ...(model?.fallbacks ?? [])];
-  if (model?.aliases === undefined || !allowed.includes(picked)) {
+  const own = modelAliasesOfDefinition(definition.frontmatter);
+  const allowed = [...own, ...(model?.fallbacks ?? [])];
+  if (own.length === 0 || !allowed.includes(picked)) {
     log.warn(`runtime-hermes: the model "${picked}" picked for this message is not one the bot's definition lists; the bot answers with its first`);
     return definition.alias;
   }
   definition.alias = picked;
-  definition.frontmatter = { ...definition.frontmatter, model: { ...model, aliases: [picked, ...model.aliases.filter((a) => a !== picked)] } };
+  definition.frontmatter = { ...definition.frontmatter, model: { ...model, aliases: [picked, ...own.filter((a) => a !== picked)] } };
   return picked;
 }
 

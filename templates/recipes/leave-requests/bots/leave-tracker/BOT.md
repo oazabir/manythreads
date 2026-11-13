@@ -5,8 +5,6 @@ role: Collects time-off posts into a team calendar page and flags clashes.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

@@ -5,9 +5,6 @@ role: Keeps the incident timeline and drafts the postmortem.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

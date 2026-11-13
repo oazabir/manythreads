@@ -84,9 +84,9 @@ describe('the setup checklist', () => {
   it('does not count a model that answers on an alias Brain does not use', () => {
     const codeOnly = { ...base, llmProviders: 1, boundAliases: ['code'], tests: [{ alias: 'code' as const, outcome: 'ok' as const, current: true }] };
     expect(step(codeOnly, 'models').done).toBe(false);
-    expect(step(codeOnly, 'models').hint).toContain('Brain uses smart and fast');
-    const fast = { ...codeOnly, boundAliases: ['fast'], tests: [{ alias: 'fast' as const, outcome: 'ok' as const, current: true }] };
-    expect(step(fast, 'models').done).toBe(true);
+    expect(step(codeOnly, 'models').hint).toContain('Brain uses smart');
+    const smart = { ...codeOnly, boundAliases: ['smart'], tests: [{ alias: 'smart' as const, outcome: 'ok' as const, current: true }] };
+    expect(step(smart, 'models').done).toBe(true);
   });
 
   it('marks teams done with one team, and sends the bots step to that team', () => {

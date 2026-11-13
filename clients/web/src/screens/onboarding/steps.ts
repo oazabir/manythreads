@@ -59,8 +59,8 @@ export interface OnboardingSummary {
   brainChat: string | null;
 }
 
-/** The aliases the shipped Brain asks for (`model.aliases` in the templates' BOT.md): a model that answers on another alias does not make Brain able to answer. */
-const BRAIN_ALIASES: readonly string[] = ['smart', 'fast'];
+/** The alias the shipped Brain runs on: its definition names no model, so the default alias answers. A model on another alias does not make Brain able to answer. */
+const BRAIN_ALIASES: readonly string[] = ['smart'];
 
 const markOf = (state: OnboardingState, step: string) => state.marks.find((m) => m.step === step);
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
@@ -92,7 +92,7 @@ export function onboardingSteps(input: OnboardingInput): OnboardingSummary {
   const modelsHint = (): string => {
     const forBrain = passing.filter((a) => BRAIN_ALIASES.includes(a));
     if (forBrain.length > 0) return `${forBrain.join(', ')} answered a test call.`;
-    if (passing.length > 0) return `${passing.join(', ')} answered, but Brain uses smart and fast. Connect and test one of those.`;
+    if (passing.length > 0) return `${passing.join(', ')} answered, but Brain uses smart. Connect and test that one.`;
     if (input.llmProviders === 0) return 'Add a model provider and its key first. Bots cannot answer without one.';
     if (input.boundAliases.length === 0) return 'Connect the smart alias to a model, then test it.';
     if (failing.length > 0) return `The last test of ${failing.join(', ')} failed. The cause is shown below.`;

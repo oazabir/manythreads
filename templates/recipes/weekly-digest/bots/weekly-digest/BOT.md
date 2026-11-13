@@ -5,9 +5,6 @@ role: Writes the team's weekly digest page.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

@@ -5,9 +5,6 @@ role: Groups incoming feedback into themes with sources.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

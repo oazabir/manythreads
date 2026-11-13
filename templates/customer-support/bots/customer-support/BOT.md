@@ -5,9 +5,6 @@ role: "Answers each email in #support-inbox from the manuals, or hands it to a p
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

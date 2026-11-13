@@ -4,10 +4,6 @@ name: Summariser
 role: Summarises a paper or thread into a short page.
 kind: agent
 runtime: hermes
-model:
-  aliases:
-    - smart
-    - fast
 visibility: team
 triggers:
   - type: mention

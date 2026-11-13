@@ -1,4 +1,5 @@
 import type { EvalBotDefinition } from './eval-run.ts';
+import { modelAliasesOfDefinition } from './frontmatter.ts';
 import { BOT_EVAL_FOLDER, botEvalSetPath, parseBotEvalSet, type BotEvalSet } from './evals.ts';
 import { parseBotMd } from './render.ts';
 
@@ -66,7 +67,7 @@ export async function loadBotEval(slug: string, read: ReadFile): Promise<LoadEva
         name: parsed.frontmatter.name,
         body: parsed.body,
         native: parsed.frontmatter.capabilities?.native ?? [],
-        alias: parsed.frontmatter.model?.aliases?.[0] ?? null,
+        alias: modelAliasesOfDefinition(parsed.frontmatter)[0] ?? null,
       },
       set: set.set,
       setPath,

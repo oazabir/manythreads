@@ -5,9 +5,6 @@ role: Files what lands in the memory inbox as short, linked notes in the team's 
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

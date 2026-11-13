@@ -5,8 +5,6 @@ role: Lists unanswered questions and passed promises from public channels.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

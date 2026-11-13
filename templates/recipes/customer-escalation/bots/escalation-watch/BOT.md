@@ -5,9 +5,6 @@ role: Files an escalation card when a customer problem needs a person now.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

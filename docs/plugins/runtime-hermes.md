@@ -99,7 +99,7 @@ to the contract's page with `pages.write` and a "wrote <page> · diff" line foll
 
 * **`SOUL.md`** — the `BOT.md` body, followed by the output style (below). The behaviour of a bot is its file's prose, versioned in the team repo.
 * **`config.yaml`** — the model and the tools, and nothing else:
-  * `model.provider: manythreads` + `model.default: <aliases[0]>`, with a named custom provider pointing at the workspace's
+  * `model.provider: manythreads` + `model.default: <the definition's first alias, or `smart` when it names none: no shipped definition names a model>`, with a named custom provider pointing at the workspace's
     LiteLLM gateway (`MANYTHREADS_LITELLM_URL`) using the bot's **own virtual key** (`provider.llm`'s `botKey`). Aliases,
     fallbacks, budgets, rate limits and the pre-call DLP hook all live behind that one URL (SPEC §10.1–10.2).
   * `mcp_servers.manythreads.url` — the platform's one MCP address, `https://<this server>/mcp` — the URL holds no credential — with the **run's own token**

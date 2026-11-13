@@ -110,7 +110,7 @@ included):
 
 | Method and path | What it does |
 |---|---|
-| `GET .../bots/:botSlug/conversations/models` | The model menu: the aliases the bot's definition lists (`model.aliases`, read at the sha the roster row was loaded from), each with a plain label and whether the workspace has a model behind it (`available`, `reason`). |
+| `GET .../bots/:botSlug/conversations/models` | The model menu: the aliases the bot's definition lists (`model.aliases`; a definition that names none offers the default alias `smart`, read at the sha the roster row was loaded from), each with a plain label and whether the workspace has a model behind it (`available`, `reason`). |
 | `POST .../conversations/send` | `{ body, threadRootId \| null, attachments?, modelAlias? }`: posts into the caller's conversation channel through the `messages` provider (with the files) and files the pick (`app.message_model_picks`, bots migration 0025) in the same transaction; 422 with one plain sentence for an alias the definition does not name or that has no model behind it. |
 | `GET .../conversations/:threadRootId/state` | Turns with their variants, the caller's own thumbs, the title, pin, the conversation's model, and `liveRunId` for a screen opened while a run is answering. |
 | `PATCH .../conversations/:threadRootId` | `{ title?, pinned?, modelAlias? }` (a title is `manual` from then on and the model never replaces it; emits `conversations.conversation.renamed`). |

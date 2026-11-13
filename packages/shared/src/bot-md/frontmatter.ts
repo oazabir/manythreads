@@ -98,11 +98,28 @@ export const BotModelConfig = z
     /** Binds a subscription runtime (SPEC §10.3) instead of gateway aliases. */
     subscription: z.enum(['claude-code', 'codex']).optional(),
   })
-  .refine((m) => (m.aliases === undefined) !== (m.subscription === undefined), {
-    message: 'set either aliases or subscription, not both and not neither',
+  // Neither is fine: a definition that names no model uses the workspace's default alias (`DEFAULT_MODEL_ALIAS`), which the model gateway maps to the model an admin chose.
+  .refine((m) => m.aliases === undefined || m.subscription === undefined, {
+    message: 'set either aliases or subscription, not both',
     path: ['aliases'],
   });
 export type BotModelConfig = z.infer<typeof BotModelConfig>;
+
+/**
+ * The alias a bot uses when its definition names no model. A BOT.md says no model at all (owner, 2026-11-13: "remove mention of any model name from bot
+ * definition, let litellm pick the default model"): the workspace binds this one alias to the model it wants, and every bot without its own list follows it.
+ */
+export const DEFAULT_MODEL_ALIAS = 'smart';
+
+/**
+ * The gateway aliases a definition asks for, in order: its own `model.aliases`, else the default alias for a bot that talks to the gateway (runtime `hermes`)
+ * and nothing for one that does not (a rules bot, or one on a subscription runtime). `fallbacks` are not part of it.
+ */
+export function modelAliasesOfDefinition(fm: { runtime?: string; model?: { aliases?: readonly string[]; subscription?: string; effort?: string } | undefined }): string[] {
+  if (fm.model?.aliases !== undefined && fm.model.aliases.length > 0) return [...fm.model.aliases];
+  if (fm.model?.subscription !== undefined) return [];
+  return fm.runtime === 'hermes' ? [DEFAULT_MODEL_ALIAS] : [];
+}
 
 /**
  * True when a `native` entry already grants `tool`: the same name, or the namespace wildcard (`email.*` covers `email.send`). The broker looks a grant up by

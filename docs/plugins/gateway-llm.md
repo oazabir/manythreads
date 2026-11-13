@@ -112,7 +112,7 @@ fallbacks switched off (so the result is about this alias, not about whichever o
 The subscriber only enqueues: an event subscriber runs inside the outbox transaction, and a network call has no business
 there. The job mints a caller-chosen key (`sk-` + 24 random bytes, base64url), stores it through `ctx.secrets`, records
 `key_prefix`, and registers it with the proxy (`POST /key/generate`) limited to **the aliases the bot's own `BOT.md` names** (`model.aliases` and
-`model.fallbacks`, kept on `bots.model_aliases` by the loader) that the workspace has bound, plus their fallback chains — never
+`model.fallbacks`, kept on `bots.model_aliases` by the loader; a Hermes bot that names none gets the default alias `smart`, `modelAliasesOfDefinition` in `packages/shared/src/bot-md/frontmatter.ts`) that the workspace has bound, plus their fallback chains — never
 the whole workspace set, and never an empty list (a bot with nothing bound has no key until one is: every config push re-syncs
 the workspace's keys, `/key/update` when the set moved, a revoke when it emptied; `llm_keys.models` remembers what the proxy was told). Revoking goes
 the other way: `POST /key/delete`, then the secret and the row go. Both are idempotent, so an event replay or a job retry

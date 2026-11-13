@@ -5,8 +5,6 @@ role: Posts design file changes to the channel.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

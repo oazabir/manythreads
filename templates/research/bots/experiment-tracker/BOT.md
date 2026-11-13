@@ -5,9 +5,6 @@ role: Records experiment parameters and results and keeps the board current.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - fast
-    - smart
   effort: low
 visibility: team
 triggers:

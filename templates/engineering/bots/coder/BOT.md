@@ -5,9 +5,6 @@ role: Owns a task's branch and writes the change.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - code
-    - smart
   effort: medium
 visibility: team
 triggers:

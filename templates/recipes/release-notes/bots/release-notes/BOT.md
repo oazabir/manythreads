@@ -5,9 +5,6 @@ role: Drafts release notes from finished cards and the release channel.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

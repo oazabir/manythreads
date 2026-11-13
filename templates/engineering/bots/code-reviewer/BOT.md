@@ -5,9 +5,6 @@ role: Reviews the code of a change and sends it back to Coder up to three times.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - code
   effort: high
 visibility: team
 triggers:

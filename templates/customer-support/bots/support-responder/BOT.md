@@ -4,10 +4,6 @@ name: Support responder
 role: Drafts answers from the manuals knowledge base; sending email needs approval.
 kind: agent
 runtime: hermes
-model:
-  aliases:
-    - smart
-    - fast
 visibility: team
 triggers:
   - type: mention

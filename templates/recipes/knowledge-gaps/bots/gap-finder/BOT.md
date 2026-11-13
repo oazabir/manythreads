@@ -5,9 +5,6 @@ role: Finds questions answered again and again and drafts a manual page for each
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

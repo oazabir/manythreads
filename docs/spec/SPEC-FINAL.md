@@ -178,7 +178,7 @@ name: Coder
 role: Owns a task's branch
 kind: agent                        # agent | automation
 runtime: hermes                    # hermes | rules; hermes may bind a subscription (§10.3)
-model: { aliases: [code, fast], effort: medium }
+model: { effort: medium }   # no model named: the gateway picks its default alias (smart); aliases: [...] is optional
 visibility: team                   # team | workspace
 triggers:
   - { type: task_assigned }
@@ -215,7 +215,7 @@ You own a task until you hand it over…
 | Capabilities | one allowlist: native, runtime, connection tools; `person:*` means "the asking person's own connections". Memory tools: `memory.recall`, `memory.retain`, `memory.write` (an OKF concept, validated and stamped by the platform), `inbox.drop` (into the bot's own team), `inbox.read` (only the item of the current `drop` run). `bots/`, `TEAM.md`, `skills/`, `routines/` are never bot-writable — changes arrive only as an approved proposal |
 | Knowledge | bases; `answer_only_from` |
 | Memory | private file with `maxLines`; per-person notes; one team-bank grant (Hindsight, `team:<slug>`); team memory concepts only through `memory.write` (§12.1) |
-| Model | aliases, effort, fallbacks, budgets, rate limit; or a subscription binding |
+| Model | optional: a definition names no model and the LiteLLM default (`smart`) answers; or aliases, fallbacks, budgets, rate limit; effort; or a subscription binding |
 | Guard | preset; bot rules; gate list |
 | Approvals | connection tools flagged `needsApproval`; who approves |
 | Handover | `mayTag`, hand-to-person targets, escalation |

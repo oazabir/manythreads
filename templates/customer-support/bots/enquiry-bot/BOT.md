@@ -5,9 +5,6 @@ role: Classifies an email, extracts a typed lead, drafts a reply and opens a boa
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: low
 visibility: team
 triggers:

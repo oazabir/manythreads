@@ -5,9 +5,6 @@ role: Adds the week's decisions to the team's running decision page.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

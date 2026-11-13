@@ -5,9 +5,6 @@ role: Reviews a design against the team's principles and gives specific notes.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

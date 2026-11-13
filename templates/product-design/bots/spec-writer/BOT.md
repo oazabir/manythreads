@@ -5,9 +5,6 @@ role: Turns a goal and a discussion into a written spec.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

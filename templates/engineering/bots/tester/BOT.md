@@ -5,9 +5,6 @@ role: Writes automated tests for a reviewed change, runs the tests that cover it
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - code
   effort: medium
 visibility: team
 triggers:

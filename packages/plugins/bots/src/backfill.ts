@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
-import { parseBotMd } from '@manythreads/shared';
+import { modelAliasesOfDefinition, parseBotMd } from '@manythreads/shared';
 
 // The model_aliases backfill (review of P5-10, finding 2). Migration 0008 added `bots.model_aliases` with an empty default and
 // no way to fill it from SQL: the column is the loader's projection of one *file*, and the file lives in git. A bot loaded
@@ -17,8 +17,8 @@ import { parseBotMd } from '@manythreads/shared';
 export const BACKFILL_QUEUE = 'bots.backfill-model-aliases';
 
 /** The aliases a definition may ask for, then its own fallbacks: the same list the loader writes on every load. */
-export const modelAliasesOf = (model: { aliases?: readonly string[]; fallbacks?: readonly string[] } | undefined): string[] => [
-  ...new Set([...(model?.aliases ?? []), ...(model?.fallbacks ?? [])]),
+export const modelAliasesOf = (fm: { runtime?: string; model?: { aliases?: readonly string[]; fallbacks?: readonly string[]; subscription?: string } | undefined }): string[] => [
+  ...new Set([...modelAliasesOfDefinition(fm), ...(fm.model?.fallbacks ?? [])]),
 ];
 
 /**
@@ -81,7 +81,7 @@ export async function backfillModelAliases(ctx: PluginContext, tx: PluginTx, log
       if (createHash('sha256').update(content).digest('hex') !== row.definition_sha) return;
       const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
       if (!parsed.ok) return;
-      const aliases = modelAliasesOf(parsed.frontmatter.model);
+      const aliases = modelAliasesOf(parsed.frontmatter);
       if (aliases.length === 0) return;
 
       const updated = await tx.query<{ id: string }>(

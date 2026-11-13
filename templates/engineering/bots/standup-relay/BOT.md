@@ -5,8 +5,6 @@ role: Collects updates and posts the daily standup.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
-import { botMdPath, parseBotMd, type ChatModelOption } from '@manythreads/shared';
+import { botMdPath, modelAliasesOfDefinition, parseBotMd, type ChatModelOption } from '@manythreads/shared';
 
 // The model menu of the Chat screen (PLAN P20-16): exactly the aliases the bot's own definition lists (`model.aliases` of BOT.md, the first one is the
 // default), each marked with whether the workspace has a model behind it. A person never sees a model or a provider name, only Smart / Fast and a hint.
@@ -28,7 +28,7 @@ export async function definitionAliases(ctx: PluginContext, tx: PluginTx, bot: {
       )
     ).rows[0];
     const parsed = row ? parseBotMd(row.content) : null;
-    return parsed?.ok ? [...(parsed.frontmatter.model?.aliases ?? [])] : null;
+    return parsed?.ok ? modelAliasesOfDefinition(parsed.frontmatter) : null;
   }
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) return null;
@@ -39,7 +39,7 @@ export async function definitionAliases(ctx: PluginContext, tx: PluginTx, bot: {
     await tx.query('RELEASE SAVEPOINT conversation_models');
     if (createHash('sha256').update(file.content).digest('hex') !== bot.definitionSha) return null;
     const parsed = parseBotMd(Buffer.from(file.content).toString('utf8'));
-    return parsed.ok ? [...(parsed.frontmatter.model?.aliases ?? [])] : null;
+    return parsed.ok ? modelAliasesOfDefinition(parsed.frontmatter) : null;
   } catch {
     await tx.query('ROLLBACK TO SAVEPOINT conversation_models');
     await tx.query('RELEASE SAVEPOINT conversation_models');

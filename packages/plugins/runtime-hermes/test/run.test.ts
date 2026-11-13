@@ -398,20 +398,14 @@ describe('a hermes run, end to end', () => {
     expect((await runsOf(bot.botId)).every((r) => r.asker_id === null)).toBe(true);
   });
 
-  it('a definition that names no model fails the run and starts no process', async () => {
+  it('a definition that names no model runs on the default alias', async () => {
     const bot = await loadBot('hermes-no-model', botMd({ name: 'HermesNoModel', capabilities: 'messages.post' }));
-    const before = spoolLines().length;
-
-    const rootId = await post('@hermes-no-model are you there?');
+    await post('@hermes-no-model are you there?');
     const run = await until(async () => {
       const row = await runOf(bot.botId);
       return row && row.status !== 'running' ? row : null;
-    }, 30_000, 'the failed run row');
-
-    expect(run.status).toBe('failed');
-    expect(spoolLines()).toHaveLength(before);
-    // it was granted messages.post, so the asker is told (a reason category only)
-    expect((await messagesBy(rootId, bot.actorId)).map((m) => m.body)).toEqual([FAILURE_NOTICE.other]);
+    }, 30_000, 'the run row');
+    expect(run.status).toBe('done');
   });
 });
 

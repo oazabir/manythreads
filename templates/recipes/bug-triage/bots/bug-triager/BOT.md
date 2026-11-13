@@ -5,9 +5,6 @@ role: Turns bug reports into cards with steps and severity, and flags duplicates
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

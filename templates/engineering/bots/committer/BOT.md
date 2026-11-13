@@ -5,9 +5,6 @@ role: Publishes a tested change to GitHub or GitLab as one commit in a pull requ
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - fast
-    - smart
   effort: low
 visibility: team
 triggers:

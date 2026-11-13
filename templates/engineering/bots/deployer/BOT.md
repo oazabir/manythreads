@@ -5,9 +5,6 @@ role: Deploys a tested commit into the team's preview namespace in k3s and gets 
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - code
   effort: medium
 visibility: team
 triggers:

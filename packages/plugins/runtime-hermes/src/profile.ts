@@ -1,5 +1,6 @@
 import type { BotRuntimeInput, BotRuntimeProfile } from '@manythreads/sdk';
 import { hermesChatArgs } from '@manythreads/sdk/process';
+import { modelAliasesOfDefinition } from '@manythreads/shared';
 import { hermesToolsets } from './toolsets.ts';
 import { withOutputStyle } from './output-style.ts';
 
@@ -37,19 +38,19 @@ export function profileHome(input: BotRuntimeInput): string {
 }
 
 /**
- * The Hermes `config.yaml` for one run. `alias` is the first of the definition's `model.aliases` (the gateway's ordered
+ * The Hermes `config.yaml` for one run. `alias` is the first of the definition's `model.aliases`, or the workspace's default alias when it names none (the gateway's ordered
  * fallbacks take over from there); `effort` becomes `agent.reasoning_effort`. Both are absent for a rules-only definition,
  * which `runtime-hermes` never renders — a bot whose runtime is `rules` has no profile here at all.
  */
 export function renderConfig(input: BotRuntimeInput): string {
-  const alias = input.definition.frontmatter.model?.aliases?.[0];
+  const alias = modelAliasesOfDefinition(input.definition.frontmatter)[0];
   const effort = input.definition.frontmatter.model?.effort;
   const gateway = input.gateway;
   const endpoint = input.endpoint;
   // The Hermes provider is the only runtime that starts a process, so it is the only one that renders `config.yaml`; a `rules` bot is
   // never handed to it (the job resolves the provider by the definition's runtime), and this says so where the file is written.
   if (input.bot.runtime !== 'hermes') throw new Error(`bot ${input.bot.slug}: only a "hermes" runtime renders a profile (got ${input.bot.runtime})`);
-  if (!alias) throw new Error(`bot ${input.bot.slug}: a hermes run needs model.aliases[0] in its BOT.md`);
+  if (!alias) throw new Error(`bot ${input.bot.slug}: a hermes run needs a model, and this definition is on a subscription runtime`);
   if (!gateway) throw new Error(`bot ${input.bot.slug}: no LLM gateway is configured for this workspace`);
   if (!endpoint) throw new Error(`bot ${input.bot.slug}: a hermes run needs the run's own MCP endpoint`);
 

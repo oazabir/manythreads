@@ -5,9 +5,6 @@ role: Finds gaps and stale pages in the manuals and proposes edits.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

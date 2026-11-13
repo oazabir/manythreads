@@ -4,8 +4,6 @@ name: Brain
 role: Answers workspace questions from the team's memory bank
 kind: agent
 runtime: hermes
-model:
-  aliases: [smart]
 triggers:
   - type: conversation
   - type: mention

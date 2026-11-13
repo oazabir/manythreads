@@ -5,9 +5,6 @@ role: Writes a one-page brief before a recurring meeting.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

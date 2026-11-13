@@ -5,8 +5,6 @@ role: Keeps the content calendar page up to date.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

@@ -4,8 +4,6 @@ name: Coder
 role: Writes small changes with tests and shows the diff for the Engineering team
 kind: agent
 runtime: hermes
-model:
-  aliases: [smart]
 triggers:
   - type: conversation
   - type: mention

@@ -5,8 +5,6 @@ role: Lists support work that went quiet, with a next step for each.
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:

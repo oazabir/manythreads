@@ -5,9 +5,6 @@ role: Prepares a first-week page for new members from the team's own files.
 kind: agent
 runtime: hermes
 model:
-  aliases:
-    - smart
-    - fast
   effort: medium
 visibility: team
 triggers:

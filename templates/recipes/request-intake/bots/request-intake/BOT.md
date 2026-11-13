@@ -5,8 +5,6 @@ role: "Turns requests posted in #requests into board cards."
 kind: automation
 runtime: hermes
 model:
-  aliases:
-    - fast
   effort: low
 visibility: team
 triggers:
