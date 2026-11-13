@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
-import { Project, ProjectBranch, ProjectName, ProjectRepoUrl } from '../../entities/project.ts';
+import { Project, ProjectBranch, ProjectCommitAs, ProjectName, ProjectProvider, ProjectRepoUrl } from '../../entities/project.ts';
 import { ChannelId, ProjectId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
@@ -19,6 +19,10 @@ export const CreateProjectRequest = z.strictObject({
   /** Omitted: `main`. */
   defaultBranch: ProjectBranch.optional(),
   channelId: ChannelId.nullable().optional(),
+  /** Omitted: the provider the address names by itself (github.com, gitlab.com); another host must say which. */
+  provider: ProjectProvider.optional(),
+  /** Omitted: `bot`. */
+  commitAs: ProjectCommitAs.optional(),
 });
 export type CreateProjectRequest = z.infer<typeof CreateProjectRequest>;
 export const CreateProjectResponse = z.object({ project: Project });
@@ -30,6 +34,9 @@ export const UpdateProjectRequest = z.strictObject({
   repoUrl: ProjectRepoUrl.optional(),
   defaultBranch: ProjectBranch.optional(),
   channelId: ChannelId.nullable().optional(),
+  /** A new provider drops the project's token (it was issued by the old one). */
+  provider: ProjectProvider.optional(),
+  commitAs: ProjectCommitAs.optional(),
 });
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
 export const UpdateProjectResponse = z.object({ project: Project });
@@ -41,16 +48,16 @@ export type DeleteProjectResponse = z.infer<typeof DeleteProjectResponse>;
 export const deleteProjectRoute = { method: 'DELETE', path: '/api/teams/:slug/projects/:projectId' } as const;
 
 /**
- * A GitHub token the team's pod uses to push a tested branch and open a pull request (a fine-grained token with contents and pull request write
- * access to this one repository). Write-only: no response ever carries it.
+ * A token of the project's bot account that the team's pod uses to push a tested branch and open a pull request (GitHub) or merge request (GitLab): a fine-grained GitHub token with contents and pull request write
+ * access to this one repository, or a GitLab project or personal access token with the `api` scope and at least the Developer role. Write-only: no response ever carries it.
  */
 export const PushCredentialToken = z
   .string()
   .min(20)
   .max(255)
   .regex(/^[A-Za-z0-9_\-.]+$/, 'letters, digits, "_", "-" and "." only');
-/** A GitHub login: letters, digits and single hyphens, up to 39 characters, not starting with a hyphen. */
-export const GithubUsername = z.string().trim().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, 'a GitHub username: letters, digits and "-", up to 39 characters');
+/** The bot account's login: GitHub's rule (letters, digits and single hyphens, up to 39 characters) or GitLab's (also "." and "_", up to 255). */
+export const GithubUsername = z.string().trim().regex(/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,254})$/, 'a username: letters, digits, ".", "_" and "-"');
 export const SetPushCredentialRequest = z.strictObject({
   username: GithubUsername,
   token: PushCredentialToken,

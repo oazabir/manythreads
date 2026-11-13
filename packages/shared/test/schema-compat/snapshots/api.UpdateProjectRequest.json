@@ -21,6 +21,20 @@
           "type": "null"
         }
       ]
+    },
+    "provider": {
+      "type": "string",
+      "enum": [
+        "github",
+        "gitlab"
+      ]
+    },
+    "commitAs": {
+      "type": "string",
+      "enum": [
+        "bot",
+        "requester"
+      ]
     }
   },
   "additionalProperties": false

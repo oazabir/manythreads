@@ -26,16 +26,18 @@ import {
   deleteProjectRoute,
   isRepoOriginAllowed,
   listProjectsRoute,
-  parseGithubRepo,
+  parseGitRepo,
   parseRepoOriginAllow,
+  providerOfHost,
   removePushCredentialRoute,
   setPushCredentialRoute,
   testPushCredentialRoute,
   updateProjectRoute,
 } from '@manythreads/shared';
 
-import { PROBLEM_MESSAGE, apiBaseFor, checkGithubToken, fetchTokenUser, type TokenCheck } from './github-check.ts';
-import { COLUMNS, ownerKeyOf, toProject, type ProjectRow } from './rows.ts';
+import type { TokenCheck } from './github-check.ts';
+import { checkTokenFor, fetchUserOf, problemMessage } from './provider-check.ts';
+import { COLUMNS, ownerKeyOf, repoOf, toProject, type ProjectRow } from './rows.ts';
 import { recordCheck } from './credential-status.ts';
 
 // Projects: a team's git repositories, each tied to at most one channel of the team. The team reads; a lead or workspace admin writes.
@@ -58,6 +60,20 @@ async function requireFreeChannel(tx: PluginTx, channelId: string, exceptProject
 
 /** Most other projects of an owner that one save checks against GitHub; the rest are left out and named, so a save cannot run for minutes. */
 const MAX_SHARED_SIBLINGS = 25;
+
+/**
+ * The provider of an address: github.com and gitlab.com name it themselves (and a different choice for them is refused); any other host is the one the lead
+ * chose (GitHub Enterprise or a self-hosted GitLab), and a lead who chose nothing is asked to.
+ */
+function requireProvider(repoUrl: string, chosen: 'github' | 'gitlab' | undefined): 'github' | 'gitlab' {
+  const host = /^https:\/\/([^/]+)\//.exec(repoUrl)?.[1]?.toLowerCase() ?? '';
+  const own = providerOfHost(host);
+  if (own !== null && chosen !== undefined && chosen !== own) throw invalid(`${host} is a ${own === 'github' ? 'GitHub' : 'GitLab'} address; choose that provider or another address`);
+  const provider = own ?? chosen;
+  if (!provider) throw invalid('This address is not github.com or gitlab.com: choose whether it is GitHub (Enterprise) or GitLab (self-hosted)');
+  if (!parseGitRepo(repoUrl, provider)) throw invalid(provider === 'github' ? 'A GitHub address looks like https://<host>/<owner>/<repo>' : 'A GitLab address looks like https://<host>/<group>/<repo> (subgroups allowed)');
+  return provider;
+}
 
 export function registerProjectRoutes(ctx: PluginContext): void {
   const credentialsProvider = (): ProjectCredentialsProvider | undefined => ctx.providers.get<ProjectCredentialsProvider>('project.credentials');
@@ -84,6 +100,7 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
       if (team.archived_at) throw conflict('This team is archived; unarchive it first');
+      const provider = requireProvider(body.repoUrl, body.provider);
       const channelId = body.channelId ?? null;
       if (channelId !== null) {
         await requireTeamChannel(tx, team.id, channelId);
@@ -99,9 +116,9 @@ export function registerProjectRoutes(ctx: PluginContext): void {
         }
       }
       const inserted = await tx.query<ProjectRow>(
-        `INSERT INTO app.projects (workspace_id, team_id, name, repo_url, default_branch, channel_id, created_by)
-         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid) RETURNING ${COLUMNS}`,
-        [team.workspace_id, team.id, body.name, body.repoUrl, body.defaultBranch ?? 'main', channelId, tx.actor.id],
+        `INSERT INTO app.projects (workspace_id, team_id, name, repo_url, default_branch, provider, commit_as, channel_id, created_by)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $9::uuid) RETURNING ${COLUMNS}`,
+        [team.workspace_id, team.id, body.name, body.repoUrl, body.defaultBranch ?? 'main', provider, body.commitAs ?? 'bot', channelId, tx.actor.id],
       );
       const row = inserted.rows[0];
       if (!row) throw new Error('the project insert answered no row');
@@ -129,9 +146,12 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       const body = UpdateProjectRequest.parse(req.body);
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      if (body.repoUrl === undefined && body.defaultBranch === undefined && body.channelId === undefined) throw invalid('Nothing to change');
+      if (body.repoUrl === undefined && body.defaultBranch === undefined && body.channelId === undefined && body.provider === undefined && body.commitAs === undefined) throw invalid('Nothing to change');
       const current = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid`, [projectId, team.id])).rows[0];
       if (!current) throw notFound('No such project');
+      const nextUrl = body.repoUrl ?? current.repo_url;
+      // the provider is re-decided only when the address or the provider is touched; an unchanged project is never re-checked against the host rules
+      const nextProvider = body.repoUrl !== undefined || body.provider !== undefined ? requireProvider(nextUrl, body.provider ?? (body.repoUrl === undefined ? current.provider : providerOfHost(/^https:\/\/([^/]+)\//.exec(nextUrl)?.[1]?.toLowerCase() ?? '') ?? current.provider)) : current.provider;
       // A channel left as it was is not checked again: a project may keep a channel that has since been archived.
       if (body.channelId !== undefined && body.channelId !== null && body.channelId !== current.channel_id) {
         await requireTeamChannel(tx, team.id, body.channelId);
@@ -139,7 +159,7 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       }
       const channelGiven = body.channelId !== undefined;
       // A token is for one repository and its main branch: pointing the project at another address or branch drops it (set it again for the new one).
-      const addressChanged = (body.repoUrl !== undefined && body.repoUrl !== current.repo_url) || (body.defaultBranch !== undefined && body.defaultBranch !== current.default_branch);
+      const addressChanged = (body.repoUrl !== undefined && body.repoUrl !== current.repo_url) || (body.defaultBranch !== undefined && body.defaultBranch !== current.default_branch) || nextProvider !== current.provider;
       const dropToken = addressChanged && current.push_credential_set_at !== null;
       if (dropToken) {
         try {
@@ -150,18 +170,27 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       }
       const updated = await tx.query<ProjectRow>(
         `UPDATE app.projects SET
-           repo_url = coalesce($3, repo_url), default_branch = coalesce($4, default_branch),
+           repo_url = coalesce($3, repo_url), default_branch = coalesce($4, default_branch), provider = $8, commit_as = coalesce($9, commit_as),
            channel_id = CASE WHEN $5::boolean THEN $6::uuid ELSE channel_id END,
            push_credential_set_at = CASE WHEN $7::boolean THEN NULL ELSE push_credential_set_at END,
            push_username = CASE WHEN $7::boolean THEN NULL ELSE push_username END,
+           push_user_id = CASE WHEN $7::boolean THEN NULL ELSE push_user_id END,
            push_credential_expires_at = CASE WHEN $7::boolean THEN NULL ELSE push_credential_expires_at END,
            push_credential_status = CASE WHEN $7::boolean THEN NULL ELSE push_credential_status END,
            push_credential_shared = CASE WHEN $7::boolean THEN false ELSE push_credential_shared END, updated_at = now()
          WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
-        [projectId, team.id, body.repoUrl ?? null, body.defaultBranch ?? null, channelGiven, body.channelId ?? null, dropToken],
+        [projectId, team.id, body.repoUrl ?? null, body.defaultBranch ?? null, channelGiven, body.channelId ?? null, dropToken, nextProvider, body.commitAs ?? null],
       );
       const row = updated.rows[0];
       if (!row) throw forbidden('You do not have permission to do that');
+      // the pod's publish command enforces the choice, so it is told too (the token is not touched); a pod that cannot be reached rolls the change back
+      if (body.commitAs !== undefined && body.commitAs !== current.commit_as && row.push_credential_set_at !== null) {
+        try {
+          await credentialsProvider()?.setCommitAs({ id: team.id, slug }, row.name, body.commitAs);
+        } catch {
+          throw conflict('The team pod could not be reached to change how commits are signed; try again in a moment');
+        }
+      }
       await ctx.audit.emit(tx, {
         type: 'project.project.updated',
         workspaceId: team.workspace_id,
@@ -218,31 +247,30 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       await requireManage(tx, team);
       const current = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid`, [projectId, team.id])).rows[0];
       if (!current) throw notFound('No such project');
-      // Publishing needs a GitHub address this server may call (the same allowlist that limits what a pod clones).
+      // Publishing needs an address this server may call (the same allowlist that limits what a pod clones).
       const allow = parseRepoOriginAllow(process.env['MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW']);
-      if (!parseGithubRepo(current.repo_url) || !isRepoOriginAllowed(current.repo_url, allow)) {
-        throw invalid('Publishing needs a GitHub repository address (https://<host>/<owner>/<repo>) that this server is allowed to use');
+      const repo = repoOf(current);
+      if (!repo || !isRepoOriginAllowed(current.repo_url, allow)) {
+        throw invalid('Publishing needs a repository address that this server is allowed to use; an administrator adds this host to the allowed addresses');
       }
       const provider = credentialsProvider();
       if (!provider) throw conflict('This server keeps no team pods, so it has nowhere to keep a token');
-      // GitHub is asked before anything is kept: a token of another account, one that cannot write here and one GitHub refuses are each told apart.
-      const github = parseGithubRepo(current.repo_url)!;
-      const apiBase = apiBaseFor(github.apiBase);
-      const user = await fetchTokenUser({ apiBase, token: body.token });
-      const checked = await checkGithubToken({ apiBase, token: body.token, username: body.username, owner: github.owner, repo: github.repo, user });
-      if (!checked.ok) throw checked.problem === 'unreachable' ? conflict(PROBLEM_MESSAGE.unreachable) : invalid(PROBLEM_MESSAGE[checked.problem]);
+      // The provider is asked before anything is kept: a token of another account, one that cannot write here and one it refuses are each told apart.
+      const user = await fetchUserOf(repo, body.token);
+      const checked = await checkTokenFor(repo, { token: body.token, username: body.username, user });
+      if (!checked.ok) throw checked.problem === 'unreachable' ? conflict(problemMessage(repo.provider, 'unreachable')) : invalid(problemMessage(repo.provider, checked.problem));
 
       // "Use for every project of this team under this owner": each other project under the same owner is asked about too. One the token cannot write to is
       // left without it (and named in the answer); one that has a token of its own (possibly of another account) is left as it is (and named); GitHub not
       // answering stops the whole save, so the result is never a guess. More than MAX_SHARED_SIBLINGS other projects are refused, not cut short.
-      const ownerKey = body.shareWithOwner ? ownerKeyOf(current.repo_url) : null;
-      if (body.shareWithOwner && ownerKey === null) throw invalid('Sharing a token needs a GitHub repository address (https://<host>/<owner>/<repo>)');
+      const ownerKey = body.shareWithOwner ? ownerKeyOf(current.repo_url, current.provider) : null;
+      if (body.shareWithOwner && ownerKey === null) throw invalid('Sharing a token needs a GitHub repository address (https://<host>/<owner>/<repo>); a GitLab project keeps its own token');
       const siblings: ProjectRow[] = [];
       const dropped: ProjectRow[] = [];
       const keptOwn: ProjectRow[] = [];
       if (ownerKey !== null) {
         const others = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE team_id = $1::uuid AND id <> $2::uuid ORDER BY name`, [team.id, projectId])).rows.filter(
-          (r) => ownerKeyOf(r.repo_url) === ownerKey,
+          (r) => ownerKeyOf(r.repo_url, r.provider) === ownerKey,
         );
         if (others.length > MAX_SHARED_SIBLINGS) {
           throw conflict(
@@ -254,10 +282,10 @@ export function registerProjectRoutes(ctx: PluginContext): void {
             keptOwn.push(r);
             continue;
           }
-          const g = parseGithubRepo(r.repo_url)!;
-          const c: TokenCheck | null = isRepoOriginAllowed(r.repo_url, allow) ? await checkGithubToken({ apiBase: apiBaseFor(g.apiBase), token: body.token, username: body.username, owner: g.owner, repo: g.repo, ...(g.apiBase === github.apiBase ? { user } : {}) }) : null;
+          const g = repoOf(r)!;
+          const c: TokenCheck | null = isRepoOriginAllowed(r.repo_url, allow) ? await checkTokenFor(g, { token: body.token, username: body.username, ...(g.apiBase === repo.apiBase ? { user } : {}) }) : null;
           if (c?.ok) siblings.push(r);
-          else if (c && c.problem === 'unreachable') throw conflict(PROBLEM_MESSAGE.unreachable);
+          else if (c && c.problem === 'unreachable') throw conflict(problemMessage(repo.provider, 'unreachable'));
           else dropped.push(r);
         }
       }
@@ -284,17 +312,17 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       // The rows first, the pod's Secret last: the Secret is the final step before the request commits, so a failure anywhere earlier leaves no token behind.
       const updatedRows = (
         await tx.query<ProjectRow>(
-          `UPDATE app.projects SET push_credential_set_at = now(), push_username = $3, push_credential_expires_at = $4::timestamptz, push_credential_status = 'ok',
+          `UPDATE app.projects SET push_credential_set_at = now(), push_username = $3, push_user_id = $6, push_credential_expires_at = $4::timestamptz, push_credential_status = 'ok',
                   push_credential_shared = $5::boolean, push_credential_checked_at = now(), updated_at = now()
            WHERE team_id = $1::uuid AND id = ANY ($2::uuid[]) RETURNING ${COLUMNS}`,
-          [team.id, group.map((r) => r.id), checked.login, checked.expiresAt, ownerKey !== null],
+          [team.id, group.map((r) => r.id), checked.login, checked.expiresAt, ownerKey !== null, checked.userId],
         )
       ).rows;
       const updated = updatedRows.find((r) => r.id === projectId);
       if (!updated || updatedRows.length !== group.length) throw forbidden('You do not have permission to do that');
       if (gone.length > 0) {
         await tx.query(
-          `UPDATE app.projects SET push_credential_set_at = NULL, push_username = NULL, push_credential_expires_at = NULL, push_credential_status = NULL,
+          `UPDATE app.projects SET push_credential_set_at = NULL, push_username = NULL, push_user_id = NULL, push_credential_expires_at = NULL, push_credential_status = NULL,
                   push_credential_shared = false, updated_at = now()
            WHERE team_id = $1::uuid AND id = ANY ($2::uuid[])`,
           [team.id, gone.map((r) => r.id)],
@@ -312,12 +340,13 @@ export function registerProjectRoutes(ctx: PluginContext): void {
           channelId: row.channel_id,
         });
       }
+      const identity = { provider: repo.provider, login: checked.login, userId: checked.userId, commitAs: current.commit_as };
       try {
         if (ownerKey !== null) {
           // one change of the Secret: the owner's token, the pointers and the removals together, so a failure leaves the pod as it was (and the rows roll back)
-          await provider.putShared({ id: team.id, slug }, ownerKey, body.token, updatedRows.map((r) => ({ name: r.name, origin: r.repo_url, branch: r.default_branch })), gone.map((r) => r.name));
+          await provider.putShared({ id: team.id, slug }, ownerKey, body.token, updatedRows.map((r) => ({ name: r.name, origin: r.repo_url, branch: r.default_branch })), gone.map((r) => r.name), identity);
         } else {
-          await provider.put({ id: team.id, slug }, current.name, body.token, current.repo_url, current.default_branch);
+          await provider.put({ id: team.id, slug }, current.name, body.token, current.repo_url, current.default_branch, identity);
         }
       } catch {
         // the reason is not echoed: it could name the Secret, and must never hold the token; throwing rolls the rows back
@@ -348,16 +377,16 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       const current = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid`, [projectId, team.id])).rows[0];
       if (!current) throw notFound('No such project');
       const provider = credentialsProvider();
-      const github = parseGithubRepo(current.repo_url);
+      const github = repoOf(current);
       if (!provider || !github || !current.push_credential_set_at || !current.push_username) throw conflict('This project has no token to test');
       const cred = await provider.read({ id: team.id, slug }, current.name).catch(() => null);
       if (!cred) throw conflict('The token could not be read from the team pod; save it again');
-      const checked = await checkGithubToken({ apiBase: apiBaseFor(github.apiBase), token: cred.token, username: current.push_username, owner: github.owner, repo: github.repo });
-      if (!checked.ok && checked.problem === 'unreachable') throw conflict(PROBLEM_MESSAGE.unreachable);
+      const checked = await checkTokenFor(github, { token: cred.token, username: current.push_username });
+      if (!checked.ok && checked.problem === 'unreachable') throw conflict(problemMessage(github.provider, 'unreachable'));
       const updated = await recordCheck(tx, provider, { id: team.id, slug }, current, checked, { podRefused: cred.refused === true });
       if (!updated) throw forbidden('You do not have permission to do that');
       // Answered 200 either way: a refusal has to be kept (the status above), which a thrown error would roll back.
-      return json(TestPushCredentialResponse.parse({ project: toProject(updated), ok: checked.ok, login: checked.ok ? checked.login : null, expiresAt: checked.ok ? checked.expiresAt : updated.push_credential_expires_at?.toISOString() ?? null, message: checked.ok ? null : PROBLEM_MESSAGE[checked.problem] }));
+      return json(TestPushCredentialResponse.parse({ project: toProject(updated), ok: checked.ok, login: checked.ok ? checked.login : null, expiresAt: checked.ok ? checked.expiresAt : updated.push_credential_expires_at?.toISOString() ?? null, message: checked.ok ? null : problemMessage(github.provider, checked.problem) }));
     }),
   });
 
@@ -384,7 +413,7 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       }
       const updated = (
         await tx.query<ProjectRow>(
-          `UPDATE app.projects SET push_credential_set_at = NULL, push_username = NULL, push_credential_expires_at = NULL, push_credential_status = NULL, push_credential_shared = false, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
+          `UPDATE app.projects SET push_credential_set_at = NULL, push_username = NULL, push_user_id = NULL, push_credential_expires_at = NULL, push_credential_status = NULL, push_credential_shared = false, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
           [projectId, team.id],
         )
       ).rows[0];

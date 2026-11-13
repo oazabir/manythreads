@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, ProjectCredentialsProvider } from '@manythreads/sdk';
-import { isRepoOriginAllowed, parseGithubRepo, parseRepoOriginAllow } from '@manythreads/shared';
+import { isRepoOriginAllowed, parseRepoOriginAllow } from '@manythreads/shared';
 import { recordCheck } from './credential-status.ts';
-import { apiBaseFor, checkGithubToken, fetchTokenUser, type TokenUser } from './github-check.ts';
-import { COLUMNS, type ProjectRow } from './rows.ts';
+import type { TokenUser } from './github-check.ts';
+import { apiBaseOf, checkTokenFor, fetchUserOf } from './provider-check.ts';
+import { COLUMNS, repoOf, type ProjectRow } from './rows.ts';
 
 /**
  * `projects.credential-check`: every fifteen minutes the server asks GitHub about the tokens it holds, a few at a time, least recently asked first, so a
@@ -54,7 +55,7 @@ export async function checkStoredTokens(ctx: PluginContext, log: (line: string) 
   for (const row of due) {
     const team = { id: row.team_id, slug: row.team_slug };
     try {
-      const github = parseGithubRepo(row.repo_url);
+      const github = repoOf(row);
       if (!github || !isRepoOriginAllowed(row.repo_url, allow) || !row.push_username) {
         out.skipped++;
         continue;
@@ -65,14 +66,14 @@ export async function checkStoredTokens(ctx: PluginContext, log: (line: string) 
         out.skipped++;
         continue;
       }
-      const apiBase = apiBaseFor(github.apiBase);
+      const apiBase = apiBaseOf(github);
       const key = `${apiBase}|${createHash('sha256').update(cred.token).digest('hex')}`;
       let user = users.get(key);
       if (!user) {
-        user = fetchTokenUser({ apiBase, token: cred.token });
+        user = fetchUserOf(github, cred.token);
         users.set(key, user);
       }
-      const checked = await checkGithubToken({ apiBase, token: cred.token, username: row.push_username, owner: github.owner, repo: github.repo, user: await user });
+      const checked = await checkTokenFor(github, { token: cred.token, username: row.push_username, user: await user });
       if (!checked.ok && checked.problem === 'unreachable') {
         out.skipped++;
         continue;

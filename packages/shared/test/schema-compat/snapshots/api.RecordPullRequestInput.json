@@ -15,6 +15,10 @@
       "type": "string",
       "pattern": "^[0-9a-f]{7,64}$"
     },
+    "publishedSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,64}$"
+    },
     "number": {
       "type": "integer",
       "exclusiveMinimum": 0,

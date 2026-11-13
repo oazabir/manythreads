@@ -56,3 +56,50 @@ export function parseGithubRepo(value: string): GithubRepo | null {
   if (!m || m[2] === '.' || m[2] === '..') return null;
   return { host, owner: m[1]!, repo: m[2]!, apiBase: host === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3` };
 }
+
+/** A repository on GitHub or GitLab, as a project's address names it. GitLab paths nest (`group/subgroup/repo`); GitHub's are `owner/repo`. */
+export interface GitRepo {
+  provider: 'github' | 'gitlab';
+  host: string;
+  /** Everything before the repository's own name: `owner` on GitHub, `group[/subgroup...]` on GitLab. */
+  owner: string;
+  repo: string;
+  /** `owner/repo` or `group/subgroup/repo`, no `.git`. */
+  path: string;
+  /** GitHub: `https://api.github.com` or `https://<host>/api/v3`; GitLab: `https://<host>/api/v4`. */
+  apiBase: string;
+}
+
+/** The provider an address names by itself: github.com and gitlab.com. Any other host needs the provider chosen by a person (null here). */
+export function providerOfHost(host: string): 'github' | 'gitlab' | null {
+  const h = host.toLowerCase();
+  return h === 'github.com' ? 'github' : h === 'gitlab.com' ? 'gitlab' : null;
+}
+
+const GITLAB_SEGMENT = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,254})$/;
+
+/** The repository a plain https address names on `provider` (GitLab accepts nested groups), or null. */
+export function parseGitRepo(value: string, provider: 'github' | 'gitlab'): GitRepo | null {
+  if (provider === 'github') {
+    const g = parseGithubRepo(value);
+    return g ? { provider, host: g.host, owner: g.owner, repo: g.repo, path: `${g.owner}/${g.repo}`, apiBase: g.apiBase } : null;
+  }
+  if (!isPlainRepoUrl(value)) return null;
+  const rest = value.slice('https://'.length);
+  const slash = rest.indexOf('/');
+  if (slash <= 0) return null;
+  const host = rest.slice(0, slash).toLowerCase();
+  const segments = rest.slice(slash + 1).replace(/\/$/, '').split('/');
+  if (segments.length < 2 || segments.length > 20) return null;
+  const last = (segments[segments.length - 1] ?? '').replace(/\.git$/, '');
+  const parts = [...segments.slice(0, -1), last];
+  if (!parts.every((x) => GITLAB_SEGMENT.test(x) && x !== '.' && x !== '..')) return null;
+  const repo = parts[parts.length - 1]!;
+  const owner = parts.slice(0, -1).join('/');
+  return { provider, host, owner, repo, path: `${owner}/${repo}`, apiBase: `https://${host}/api/v4` };
+}
+
+/** The address of a pull request (GitHub) or merge request (GitLab) from the repository's address and its number. */
+export function pullRequestUrlFor(repo: GitRepo, number: number): string {
+  return repo.provider === 'github' ? `https://${repo.host}/${repo.path}/pull/${number}` : `https://${repo.host}/${repo.path}/-/merge_requests/${number}`;
+}

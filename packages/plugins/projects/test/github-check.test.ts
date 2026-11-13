@@ -20,8 +20,8 @@ describe('checkGithubToken', () => {
       return new Response(JSON.stringify({ permissions: { push: true } }), { status: 200 });
     }) as unknown as typeof fetch;
     const base = { apiBase: 'http://x', token: TOKEN, owner: 'acme', repo: 'widgets', fetch: fetcher };
-    expect(await checkGithubToken({ ...base, username: 'octocat', user: { ok: true, login: 'OctoCat', expiresAt: null } })).toEqual({ ok: true, login: 'OctoCat', expiresAt: null });
+    expect(await checkGithubToken({ ...base, username: 'octocat', user: { ok: true, login: 'OctoCat', userId: '1', expiresAt: null } })).toEqual({ ok: true, login: 'OctoCat', userId: '1', expiresAt: null });
     expect(seen).toEqual(['http://x/repos/acme/widgets']);
-    expect(await checkGithubToken({ ...base, username: 'someone', user: { ok: true, login: 'octocat', expiresAt: null } })).toEqual({ ok: false, problem: 'wrong_owner' });
+    expect(await checkGithubToken({ ...base, username: 'someone', user: { ok: true, login: 'octocat', userId: '1', expiresAt: null } })).toEqual({ ok: false, problem: 'wrong_owner' });
   });
 });

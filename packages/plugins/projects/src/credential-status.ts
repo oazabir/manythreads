@@ -25,12 +25,12 @@ export async function recordCheck(
   checked: TokenCheck,
   opts: { podRefused?: boolean } = {},
 ): Promise<ProjectRow | undefined> {
-  const ownerKey = current.push_credential_shared ? ownerKeyOf(current.repo_url) : null;
+  const ownerKey = current.push_credential_shared ? ownerKeyOf(current.repo_url, current.provider) : null;
   const tokenDead = !checked.ok && checked.problem === 'rejected';
   let mates: string[] = [];
   if (ownerKey !== null && (checked.ok || tokenDead)) {
     const sharing = await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE team_id = $1::uuid AND push_credential_shared AND id <> $2::uuid`, [team.id, current.id]);
-    mates = sharing.rows.filter((r) => ownerKeyOf(r.repo_url) === ownerKey).map((r) => r.id);
+    mates = sharing.rows.filter((r) => ownerKeyOf(r.repo_url, r.provider) === ownerKey).map((r) => r.id);
   }
   if (checked.ok) {
     await tx.query(

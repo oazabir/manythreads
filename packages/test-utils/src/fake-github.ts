@@ -69,7 +69,7 @@ export async function startFakeGithub(options: { token: string; owner?: string; 
       if (!authorized) return send(401, { message: 'Bad credentials' });
       // who the token belongs to, and the expiry GitHub reports for a token that has one
       if (req.method === 'GET' && url.pathname === '/user') {
-        return send(200, { login: options.login ?? 'octocat' }, options.expires ? { 'github-authentication-token-expiration': options.expires } : {});
+        return send(200, { login: options.login ?? 'octocat', id: 1001 }, options.expires ? { 'github-authentication-token-expiration': options.expires } : {});
       }
       const repoOnly = /^\/repos\/([^/]+)\/([^/]+)$/.exec(url.pathname);
       if (req.method === 'GET' && repoOnly) {

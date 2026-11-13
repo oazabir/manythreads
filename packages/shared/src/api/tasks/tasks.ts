@@ -89,6 +89,8 @@ export const RecordPullRequestInput = z.strictObject({
   taskId: TaskId,
   project: ProjectName,
   testedSha: z.string().regex(/^[0-9a-f]{7,64}$/),
+  /** The commit the request is at, when `mt-publish` made one squashed commit from the tested tree (its `head_sha` line); omitted: the request is at the tested commit. */
+  publishedSha: z.string().regex(/^[0-9a-f]{7,64}$/).optional(),
   number: z.number().int().positive(),
 });
 export type RecordPullRequestInput = z.infer<typeof RecordPullRequestInput>;

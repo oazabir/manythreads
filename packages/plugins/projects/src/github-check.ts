@@ -3,7 +3,7 @@
 // one of four problems only.
 import type { PushCredentialProblem } from '@manythreads/shared';
 
-export type TokenCheck = { ok: true; login: string; expiresAt: string | null } | { ok: false; problem: PushCredentialProblem };
+export type TokenCheck = { ok: true; login: string; userId: string; expiresAt: string | null } | { ok: false; problem: PushCredentialProblem };
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -18,7 +18,7 @@ export function parseExpiry(header: string | null): string | null {
 }
 
 /** Who a token belongs to, as GitHub says it (asked once per token, however many repositories are checked with it). */
-export type TokenUser = { ok: true; login: string; expiresAt: string | null } | { ok: false; problem: 'rejected' | 'unreachable' };
+export type TokenUser = { ok: true; login: string; userId: string; expiresAt: string | null } | { ok: false; problem: 'rejected' | 'unreachable' };
 
 const headersFor = (token: string): Record<string, string> => ({
   authorization: `Bearer ${token}`,
@@ -50,13 +50,16 @@ export async function fetchTokenUser(opts: { apiBase: string; token: string; fet
     return { ok: false, problem: 'unreachable' };
   }
   let login = '';
+  let userId = '';
   try {
-    login = String(((await who.json()) as { login?: unknown }).login ?? '');
+    const body = (await who.json()) as { login?: unknown; id?: unknown };
+    login = String(body.login ?? '');
+    userId = String(body.id ?? '');
   } catch {
     return { ok: false, problem: 'unreachable' };
   }
   if (login === '') return { ok: false, problem: 'unreachable' };
-  return { ok: true, login, expiresAt: parseExpiry(who.headers.get('github-authentication-token-expiration')) };
+  return { ok: true, login, userId, expiresAt: parseExpiry(who.headers.get('github-authentication-token-expiration')) };
 }
 
 /** `user` is the answer of `fetchTokenUser` for this token when the caller already has it (the repository is still asked about). */
@@ -86,7 +89,7 @@ export async function checkGithubToken(opts: { apiBase: string; token: string; u
   } catch {
     return { ok: false, problem: 'unreachable' };
   }
-  return canPush ? { ok: true, login: who.login, expiresAt: who.expiresAt } : { ok: false, problem: 'no_write' };
+  return canPush ? { ok: true, login: who.login, userId: who.userId, expiresAt: who.expiresAt } : { ok: false, problem: 'no_write' };
 }
 
 /** What the page tells the person for each problem. */

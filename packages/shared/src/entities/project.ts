@@ -30,6 +30,17 @@ export const ProjectBranch = z
   .refine((v) => !v.includes('..') && !v.endsWith('/') && !v.endsWith('.lock'), 'not a valid branch name');
 export type ProjectBranch = z.infer<typeof ProjectBranch>;
 
+/** Where a project's repository lives: GitHub (github.com or a GitHub Enterprise host) or GitLab (gitlab.com or a self-hosted installation). The host comes from the address. */
+export const ProjectProvider = z.enum(['github', 'gitlab']);
+export type ProjectProvider = z.infer<typeof ProjectProvider>;
+
+/**
+ * Whose name the published commit carries as its author: the project's bot account (`bot`), or the person who asked for the work (`requester`: the
+ * author of the thread's first message, with their display name and account email). The committer is always the bot account.
+ */
+export const ProjectCommitAs = z.enum(['bot', 'requester']);
+export type ProjectCommitAs = z.infer<typeof ProjectCommitAs>;
+
 export const Project = z.object({
   id: ProjectId,
   workspaceId: WorkspaceId,
@@ -37,6 +48,10 @@ export const Project = z.object({
   name: ProjectName,
   repoUrl: ProjectRepoUrl,
   defaultBranch: ProjectBranch,
+  /** GitHub or GitLab; github.com and gitlab.com say it themselves, any other host is the provider the lead chose. */
+  provider: ProjectProvider,
+  /** Whose name the published commit carries as its author (see `ProjectCommitAs`). */
+  commitAs: ProjectCommitAs,
   /** The team channel this project is worked on in; null until one is chosen. At most one project per channel. */
   channelId: ChannelId.nullable(),
   createdBy: ActorId.nullable(),

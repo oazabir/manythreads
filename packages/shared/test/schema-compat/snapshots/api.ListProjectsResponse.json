@@ -34,6 +34,20 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$"
           },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "github",
+              "gitlab"
+            ]
+          },
+          "commitAs": {
+            "type": "string",
+            "enum": [
+              "bot",
+              "requester"
+            ]
+          },
           "channelId": {
             "anyOf": [
               {
@@ -123,6 +137,8 @@
           "name",
           "repoUrl",
           "defaultBranch",
+          "provider",
+          "commitAs",
           "channelId",
           "createdBy",
           "pushCredentialSetAt",
