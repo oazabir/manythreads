@@ -212,7 +212,10 @@ describe('the Hermes gateway form', () => {
     expect(Object.keys(r.errors).sort()).toEqual(['apiKey', 'baseUrl', 'label', 'name', 'profileRule', 'teams']);
     expect(r.errors.name).toMatch(/lowercase letters/);
     expect(r.errors.baseUrl).toMatch(/http or https/);
-    expect(r.errors.profileRule).toContain('{bot}');
+    expect(r.errors.profileRule).toBe('The rule must contain {bot}');
+    const malformed = validateNew('hermes_gateway', { ...good, profileRule: 'x!{bot}' });
+    expect(malformed.ok).toBe(false);
+    if (!malformed.ok) expect(malformed.errors.profileRule).toMatch(/letters, digits/);
     for (const text of Object.values(r.errors)) expect(text).not.toMatch(/zod|schema|invalid_|expected/i);
   });
 
