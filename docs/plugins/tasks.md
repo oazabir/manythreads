@@ -135,6 +135,29 @@ bot gets real tools, and a bot without the grant is never offered them. `tasks.c
 a team); there is no assign tool, because assignment is `tasks.handoff`. `tasks.handoff` on a bot enforces `mayTag` itself — the board's rule is
 not an HTTP-only rule.
 
+## The thread to-do list: `tasks.todo` (P25-10)
+
+A bot that works a request in a thread keeps one checklist for it. `tasks.todo` is a default capability (manifest `default: true`, like `approvals.ask`): every bot is offered it, and a call needs no grant. It is a `write` in the MCP catalogue (`gateway-mcp`), so a rehearsal holds it back.
+
+| call | input | what it does |
+|---|---|---|
+| `set` | `{action:'set', title?, items:[{id, text, status, taskId?}]}` (1 to 30 items; `text` up to 200 characters; `title` up to 120; `status` is `waiting`, `working`, `done` or `blocked`; `id` is the bot's own, 1 to 40 characters) | replaces the whole list |
+| `update` | `{action:'update', id, status}` | changes the status of one item, under the row lock, so two runs of the bot never lose each other's change |
+
+Both answer `{ ok, version, counts, message }` or a plain refusal: `no_thread` (the run is not in a thread), `invalid_input`, `no_list`, `no_item`, `not_owner` (another bot made this thread's list: a list belongs to one bot).
+
+**What is kept.** One row per thread in `app.thread_todos` (migration 0018, `thread_root_id` is the key and cascades with the message): the channel, the team, the bot's actor, the title, the items (jsonb, at most 30 and 24000 bytes), a `version` that goes up on every change, and the id of the thread message that shows it. Readable by whoever can read the channel (`channel_id = ANY(app.visible_channel_ids('read'))`); `manythreads_app` holds SELECT only. Every write goes through three doors owned by the system role: `app.todo_run_context()` (the calling bot's live run and the thread root, read from `bot_runs.reply_root_id`; nothing is taken from arguments), `app.todo_write` and `app.todo_set_status`. So a bot can write only its own list, in the thread its own run answers in.
+
+**One message.** The first `set` posts one thread message carrying `meta.todoRef` (the thread root's id) and rewrites it in place afterwards: the message body is the title (or "To-do list") and is edited only when the title changes; the progress lives in the row, not in the text. A deleted message is posted again. `meta.todoRef` is accepted only from a bot acting inside a run, and the door checks that the message is the bot's own, in the same thread, and carries that ref. If the door refuses after the post, the message rolls back with the transaction.
+
+**Items that follow cards.** An item with a `taskId` follows the card (the card must be one the run may read). `set` takes the owner and the done state from the card; `tasks.task.handed_off` makes the item `working` with `ownerId` set to the new owner (never undoing `done`), and `tasks.task.completed` makes it `done`. The follower locks the row, bumps the version and pushes.
+
+**Words that leave the server.** The title and the item texts go through the `pre_egress` hook (destination `approval`, preset `standard`) before they are kept, so a secret a bot pasted into an item is redacted (the manifest therefore extends `hook.pre_egress`); without a DLP plugin the text becomes a placeholder, never raw.
+
+**Read and push.** `GET /api/threads/:rootId/todo` (read only) answers `{ todo }`: `{ rootId, channelId, messageId | null, botActorId, title, items:[{id, text, status, taskId?, ownerId?}], version, updatedAt }`, or `{ todo: null }` for no list or a list in a channel the caller cannot read. After each change the plugin pushes `todo.changed` `{ channelId, rootId, version }` (no items) to the channel's audience; the web reads again when the version is newer than the one it holds (`clients/web/src/todo/`, `useThreadTodo(rootId)`). There is no separate bus event and no per-change history line. The card that draws the list is P25-11.
+
+Tests: `test/todo.test.ts` (default offer, one message rewritten in place, invalid input, `no_item` and `no_list`, secret redaction, another bot's list, no thread and an ended run, who may read and write, repost after a delete, items following a handoff and a completion).
+
 ## Channel boards and the Bot Board
 
 A board may belong to one channel (`boards.channel_id`). Such a board shows the cards filed on it (`tasks.board_id`) instead of a saved filter,

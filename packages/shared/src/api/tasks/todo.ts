@@ -1,0 +1,77 @@
+import { z } from 'zod';
+import { IsoDateTime } from '../../common/time.ts';
+import { ActorId, ChannelId, MessageId, TaskId } from '../../ids.ts';
+import type { ApiRoute } from '../client/route.ts';
+
+// The to-do list of a thread (PLAN P25-10, docs/plans/acp.md section 4.5). One list per thread, kept by the bot that works the request: a title and at most thirty
+// items, each waiting, working, done or blocked. It is not the agent's plan of one run (that is `run_view.plan`) and not the team's board. An item may name a card
+// (`taskId`); it then follows the card by itself (a handover sets it working with the card's owner, a finished card ticks it). Whoever can read the thread reads the
+// list; only the bot that made it changes it, and a person cannot tick it.
+
+export const TODO_MAX_ITEMS = 30;
+export const TODO_TEXT_MAX = 200;
+export const TODO_TITLE_MAX = 120;
+
+export const TodoStatus = z.enum(['waiting', 'working', 'done', 'blocked']);
+export type TodoStatus = z.infer<typeof TodoStatus>;
+
+/** The bot's own name for an item, stable across `set` calls so `update` can find it. */
+export const TodoItemId = z.string().regex(/^[A-Za-z0-9_.:-]{1,40}$/, 'an id of 1 to 40 letters, digits and . _ : -');
+
+/** What a bot sends for one item. */
+export const TodoItemInput = z.strictObject({
+  id: TodoItemId,
+  text: z.string().trim().min(1).max(TODO_TEXT_MAX),
+  status: TodoStatus,
+  taskId: TaskId.optional(),
+});
+export type TodoItemInput = z.infer<typeof TodoItemInput>;
+
+/** `tasks.todo` with `action: "set"`: make or replace the thread's list. */
+export const TodoSetInput = z.strictObject({
+  action: z.literal('set'),
+  title: z.string().trim().max(TODO_TITLE_MAX).optional(),
+  items: z.array(TodoItemInput).min(1).max(TODO_MAX_ITEMS),
+});
+/** `tasks.todo` with `action: "update"`: change the status of one item. */
+export const TodoUpdateInput = z.strictObject({ action: z.literal('update'), id: TodoItemId, status: TodoStatus });
+export const TodoToolInput = z.discriminatedUnion('action', [TodoSetInput, TodoUpdateInput]);
+export type TodoToolInput = z.infer<typeof TodoToolInput>;
+
+/** One item as it is kept and shown. `ownerId` is the owner of the card the item follows, set by the platform. */
+export const TodoItem = z.object({
+  id: TodoItemId,
+  text: z.string().max(TODO_TEXT_MAX),
+  status: TodoStatus,
+  taskId: TaskId.optional(),
+  ownerId: ActorId.optional(),
+});
+export type TodoItem = z.infer<typeof TodoItem>;
+
+export const ThreadTodo = z.object({
+  /** The thread's root message. */
+  rootId: MessageId,
+  channelId: ChannelId,
+  /** The message in the thread that carries the list (`meta.todoRef`); null when it was deleted and not yet posted again. */
+  messageId: MessageId.nullable(),
+  /** The bot that made the list. */
+  botActorId: ActorId,
+  title: z.string().max(TODO_TITLE_MAX),
+  items: z.array(TodoItem).max(TODO_MAX_ITEMS),
+  /** Goes up by one on every change; a client keeps the newer of two answers. */
+  version: z.number().int().min(1),
+  updatedAt: IsoDateTime,
+});
+export type ThreadTodo = z.infer<typeof ThreadTodo>;
+
+export const ThreadTodoPathParams = z.object({ rootId: MessageId });
+export type ThreadTodoPathParams = z.infer<typeof ThreadTodoPathParams>;
+/** `todo` is null when the thread has no list, and also when the caller cannot read the thread: the two are not told apart. */
+export const GetThreadTodoResponse = z.object({ todo: ThreadTodo.nullable() });
+export type GetThreadTodoResponse = z.infer<typeof GetThreadTodoResponse>;
+export const getThreadTodoRoute = { method: 'GET', path: '/api/threads/:rootId/todo' } as const satisfies ApiRoute;
+
+/** The live push to everyone who can read the thread: the list changed, read it again. A hint only (a push is small): it carries the version, never the items. */
+export const WS_TODO_CHANGED = 'todo.changed';
+export const TodoChangedPush = z.object({ channelId: ChannelId, rootId: MessageId, version: z.number().int().min(1) });
+export type TodoChangedPush = z.infer<typeof TodoChangedPush>;

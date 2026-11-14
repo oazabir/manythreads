@@ -5,6 +5,7 @@ import { registerTurnCapabilities } from './capabilities-turns.ts';
 import { registerApprovalSubscriber, registerNotWokenSubscriber } from './events.ts';
 import { registerJobs } from './jobs.ts';
 import { registerPullRequestSync } from './pull-requests.ts';
+import { registerTodo } from './todo.ts';
 import { registerRoutes } from './routes.ts';
 
 export { CLAIM_SWEEP_QUEUE } from './jobs.ts';
@@ -21,7 +22,7 @@ export default definePlugin({
     name: 'tasks',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit', 'event.subscribe', 'job.register', 'secret.seal'],
+    extends: ['event.emit', 'event.subscribe', 'job.register', 'secret.seal', 'hook.pre_egress'],
     // Not destructive: every one changes a card's own state, and `destructive` here means "can never be granted to a bot" (files.delete).
     // What a destructive tool would mean elsewhere — a deploy — is bounded by the environment's approval, not by the grant door.
     capabilities: [
@@ -37,10 +38,12 @@ export default definePlugin({
       { name: 'tasks.pull_request', destructive: false },
       { name: 'tasks.commit_identity', destructive: false },
       { name: 'tasks.deploy', destructive: false },
+      // The thread's to-do list (P25-10): every bot has it with no BOT.md line, like `approvals.ask`. It changes only the bot's own list in the thread it answers in.
+      { name: 'tasks.todo', destructive: false, default: true },
     ],
     events: {
       emits: ['tasks.board.created', 'tasks.board.updated', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
-      consumes: ['approvals.approval.decided', 'runtime.task.not_woken', 'bots.run.opened', 'bots.run.closed'],
+      consumes: ['approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'runtime.task.not_woken', 'bots.run.opened', 'bots.run.closed'],
     },
     dependsOn: ['approvals', 'channels', 'projects'],
     migrations: 'migrations',
@@ -54,5 +57,6 @@ export default definePlugin({
     registerApprovalSubscriber(ctx);
     registerNotWokenSubscriber(ctx);
     registerActivitySubscribers(ctx);
+    registerTodo(ctx);
   },
 });

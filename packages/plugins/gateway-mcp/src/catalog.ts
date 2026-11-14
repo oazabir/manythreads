@@ -84,6 +84,35 @@ const APPROVALS_ASK_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const TASKS_TODO_SCHEMA = {
+  type: 'object',
+  properties: {
+    action: { type: 'string', enum: ['set', 'update'], description: '"set" makes or replaces the whole list of this thread; "update" changes the status of one item.' },
+    title: { type: 'string', maxLength: 120, description: 'With "set": the name of the list, a few words. Left out: "To-do list".' },
+    items: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 30,
+      description: 'With "set": every item of the list, in order. Send the whole list each time.',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', maxLength: 40, description: 'Your own short name for the item (letters, digits and . _ : -). Keep it the same when you send the list again, so "update" can find it.' },
+          text: { type: 'string', maxLength: 200, description: 'What the item is, in one line. Never a key or a password.' },
+          status: { type: 'string', enum: ['waiting', 'working', 'done', 'blocked'] },
+          taskId: { type: 'string', description: 'The card (tasks.create) this item is about. The item then follows the card by itself: it turns to working when the card is handed over and to done when the card is finished.' },
+        },
+        required: ['id', 'text', 'status'],
+        additionalProperties: false,
+      },
+    },
+    id: { type: 'string', maxLength: 40, description: 'With "update": the id of the item.' },
+    status: { type: 'string', enum: ['waiting', 'working', 'done', 'blocked'], description: 'With "update": the new status.' },
+  },
+  required: ['action'],
+  additionalProperties: false,
+} as const;
+
 const MESSAGES_POST_SCHEMA = {
   type: 'object',
   properties: {
@@ -332,6 +361,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     description:
       'Ask a person to say yes or no before you go on. Use it whenever you need a person’s decision or permission — a risky command, a choice only they can make, something you were told to confirm — instead of waiting on a prompt of your own program: nothing shows such a prompt to anyone, so it only hangs. The question appears as a card in this thread and in the team’s Approvals list. The call answers at once: end your turn with one line saying what you are waiting for. When a person answers you are woken in this same thread with their yes or no and what they wrote.',
     inputSchema: APPROVALS_ASK_SCHEMA,
+    kind: 'write',
+  },
+  'tasks.todo': {
+    name: 'tasks.todo',
+    description:
+      'Keep one to-do list for the thread you were asked in, when the request has several steps. It appears in the thread as one card that changes in place; nobody is notified when it changes. Use action "set" with the whole list (up to 30 items, each with an id of your own, a one-line text and a status: waiting, working, done or blocked) to make or replace it, and action "update" with an item id and a status to change one item as you go. Give an item a taskId when it is a card from tasks.create: it then follows the card by itself (working when the card is handed over, done when it is finished) and you need not update it. This is your overview of the whole request; your own plan for the step you are on is a different thing and is shown separately. A person cannot tick the list, and only the bot that made it can change it.',
+    inputSchema: TASKS_TODO_SCHEMA,
     kind: 'write',
   },
   'memory.retain': {

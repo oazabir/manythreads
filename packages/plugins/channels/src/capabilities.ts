@@ -134,6 +134,8 @@ const ProviderMeta = z.strictObject({
   handoff: z.strictObject({ taskId: z.uuid() }).optional(),
   /** The surface a bot drew in its run (surfaces plugin, P9-04): the client draws that surface in this message. Only a bot inside a run may set it. */
   surfaceRef: z.uuid().optional(),
+  /** The thread whose to-do list this message carries (tasks plugin, P25-10): the thread's root message. Only a bot inside a run may set it. */
+  todoRef: z.uuid().optional(),
   /** The card a note-taker's nudge draws (meetings plugin, P15-21): the meeting whose notes the message is about. The client reads the notes through the meeting's own routes, which decide who may. */
   meetingNotes: z.strictObject({ meetingId: z.uuid() }).optional(),
   /** The chat app a message came across from (bridges plugin, P16-09). Only a plugin posting through the `messages` provider can set it: no bot capability carries `meta`, so a bot cannot claim it. */
@@ -339,7 +341,7 @@ export function registerMessageProvider(deps: Deps): void {
           throw invalid('copyOf: a copy of an answer carries meta.answer and no runId');
         }
         await checkAnswerCopy(tx, input.copyOf, meta.data.answer, body.data);
-      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined || meta.data.runFailure !== undefined || meta.data.surfaceRef !== undefined)) {
+      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined || meta.data.runFailure !== undefined || meta.data.surfaceRef !== undefined || meta.data.todoRef !== undefined)) {
         const here = (
           await tx.query<{ run_id: string | null; bot_id: string | null }>(
             `SELECT app.run_id()::text AS run_id,
@@ -348,6 +350,7 @@ export function registerMessageProvider(deps: Deps): void {
         ).rows[0];
         const run = here?.run_id ?? null;
         if (meta.data.surfaceRef !== undefined && (run === null || here?.bot_id == null)) throw forbidden('meta.surfaceRef is for a bot acting inside a run');
+        if (meta.data.todoRef !== undefined && (run === null || here?.bot_id == null)) throw forbidden('meta.todoRef is for a bot acting inside a run');
         if (meta.data.runFailure !== undefined && meta.data.runId === undefined) throw invalid('meta.runId: a failure notice names the run it is about');
         if (meta.data.runId !== undefined && (run === null || meta.data.runId !== run)) {
           throw forbidden('meta.runId is the run this transaction acts for, and no other');

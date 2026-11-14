@@ -913,6 +913,9 @@
               "surfaceRef": {
                 "type": "string"
               },
+              "todoRef": {
+                "type": "string"
+              },
               "attachments": {
                 "maxItems": 10,
                 "type": "array",
