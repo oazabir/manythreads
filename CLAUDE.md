@@ -18,8 +18,10 @@ manythreads is a self-hosted team collaboration platform where people and bots w
 - Look and copy: `docs/spec/mockups-all.html` (huge — never read it whole; grep the section id: onboarding app teams bots botgeneric
   setup workshop email surfaces connections cabinet brain).
 - Build, pipeline, deploy and the live site: `docs/engineering/devbox.md`, `docs/deploy.md`, `docs/testing.md`, `WINDOWS_DEV.md`.
+- Drive the live site or the Engineering bots from a terminal (post, nudge a bot, read an API path, screenshot): `tools/self-build/run.mjs` (its header lists the commands; set `MT_BASE` and `MT_USER`; sign-ins come from `~/manythreads.passwords.env`, never printed). Deploy with `bash tools/devbox/deploy.sh`; give each monitor a fresh log file, an old one still says "exit 0".
 
 ## Every change
+- A bot, or a runtime, that has to wait for a person must have something that answers: file it as an approval (`approvals.ask` is offered to every bot) and check on the deployed site that a person can press the button. Read `MISTAKES.md` for the three ways this failed.
 - `pnpm lint` and `pnpm typecheck` stay green; run the tests of what you touched.
 - Commit messages start with the task id (`P1-03: migration runner`).
 - Never write the previous product name; never commit a secret.
