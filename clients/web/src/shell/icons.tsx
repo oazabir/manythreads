@@ -13,6 +13,7 @@ import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, Ho
 import { EyeIcon, EyeOffIcon } from '@proicons/react';
 import { BarChartIcon, CodeSquareIcon, MoreHorizontalIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
 import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
+import { AlertTriangleIcon, CircleIcon, CircleSmallIcon, DocumentIcon, FlagIcon, HandIcon, LightbulbIcon, TerminalIcon, GlobeIcon as ProGlobe } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -185,3 +186,18 @@ export const ConnectedAppsIcon = proIcon(LinkIcon, 16);
 export const ChatAppsIcon = proIcon(ChatIcon, 16);
 export const ConnectionsShieldIcon = proIcon(ShieldIcon, 16);
 export const OffboardPersonIcon = proIcon(PersonIcon, 16);
+
+/** The run card and the to-do card (P25-11): one icon per kind of step and per state of an item. */
+export const StepReadIcon = proIcon(DocumentIcon, 14);
+export const StepEditIcon = proIcon(ProPencil, 14);
+export const StepRunIcon = proIcon(TerminalIcon, 14);
+export const StepSearchIcon = proIcon(ProSearch, 14);
+export const StepWebIcon = proIcon(ProGlobe, 14);
+export const StepThinkIcon = proIcon(LightbulbIcon, 14);
+export const StepRemoveIcon = proIcon(DeleteIcon, 14);
+export const StepMoveIcon = proIcon(ArrowRightIcon, 14);
+export const StepOtherIcon = proIcon(CircleSmallIcon, 14);
+export const StepFailedIcon = proIcon(AlertTriangleIcon, 14);
+export const StepAskIcon = proIcon(HandIcon, 14);
+export const ItemWaitingIcon = proIcon(CircleIcon, 16);
+export const ItemBlockedIcon = proIcon(FlagIcon, 16);

@@ -1,0 +1,188 @@
+/*
+ * The to-do card (PLAN P25-11, docs/plans/acp.md section 5.3): the bot's list for a thread, as a card in place of its message, and one quiet bar at the top of the thread
+ * panel while anything is open. Every class is prefixed `td`. Tokens only; the pulse moves under `no-preference` (motion.css) and is a still dot without it.
+ */
+
+.td {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+  padding: 10px 12px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--fs-small);
+}
+
+.td[data-all-done="true"] {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+}
+
+.tdHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tdTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tdCount {
+  margin-left: auto;
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+
+.tdPinBtn .tdCount {
+  margin-left: 0;
+}
+
+.td[data-all-done="true"] .tdCount {
+  color: var(--ok-ink);
+  font-weight: 600;
+}
+
+.tdBar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--hover);
+}
+
+.tdBar > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.tdList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tdItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  min-width: 0;
+}
+
+.tdMark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--faint);
+}
+
+.tdItem[data-status="done"] .tdMark {
+  color: var(--ok);
+}
+
+.tdItem[data-status="blocked"] .tdMark {
+  color: var(--alert);
+}
+
+.tdPulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--agent);
+}
+
+.tdText {
+  min-width: 0;
+  flex: 1;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.tdItem[data-status="done"] .tdText {
+  color: var(--mute);
+  text-decoration: line-through;
+}
+
+.tdTag {
+  padding: 0 6px;
+  border: 1px solid var(--alert-border);
+  border-radius: var(--radius-pill);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.tdLink {
+  color: var(--human);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+
+/* the bar: one line at the top of the thread, kept while the list has open items */
+.tdPin {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 0 6px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.tdPin[data-tone="blocked"] {
+  border-color: var(--alert-border);
+}
+
+.tdPinBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tdPinTitle {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tdPinNow {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--mute);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tdPin .tdList {
+  padding: 0 10px 8px;
+}

@@ -9,6 +9,7 @@ import { estimateItem, buildListItems, dayAt, messageKey, UNREAD_KEY, type ListI
 import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
 import { lastEditableOwn } from '../channels/messageActions';
 import { usePeople, useTimeline, useTyping } from '../channels/hooks';
+import { useChannelRuns } from '../runs/useThreadRuns';
 import { channelKey, channelStore } from '../channels/store';
 import { firstUnreadIndex } from '../channels/timeline';
 import { isApiError } from '../api/client';
@@ -89,6 +90,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const botBoard = boards.status === 'ok' ? botBoardOf(boards.data.items) : undefined;
   const headerSlot = useHeaderActionsSlot();
   const tl = useTimeline(channelKey(channelId));
+  // the "Coder is working" chips under thread roots (P25-11): read once and kept live by the pushes
+  useChannelRuns(channelId);
   // The orchestrator makes the board while the channel may already be open: until there is one, look again whenever the channel moves.
   const reloadBoards = boards.reload;
   const waitingForBoard = boards.status === 'ok' && botBoard === undefined && !dm;

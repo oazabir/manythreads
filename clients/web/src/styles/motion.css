@@ -26,6 +26,23 @@
   .msg.hl {
     animation: mt-msg-glow 1.6s ease-out;
   }
+
+  /* the run card and the to-do card (P25-11): the dot of a step or an item that is being worked on breathes; nothing else moves */
+  .rcPulse,
+  .tdPulse {
+    animation: mt-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes mt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @keyframes mt-pop-in {

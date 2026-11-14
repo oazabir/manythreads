@@ -9,7 +9,10 @@ import { AttachmentCard } from '../../channels/MessageRow';
 import { usePeople, useTimeline } from '../../channels/hooks';
 import { splitAttachments } from '../../channels/images';
 import { channelStore, threadKey } from '../../channels/store';
+import { placeRuns } from '../../channels/run-card/place';
+import { RunCard, RunEnd } from '../../channels/run-card/RunCard';
 import { Avatar } from '../../components/ui';
+import { useThreadRuns } from '../../runs/useThreadRuns';
 import { sayToast } from '../../kernel/toast';
 import { RegenerateIcon, StopIcon } from '../../shell/icons';
 import { chooseVariant, giveFeedback, regenerateTurn } from './api';
@@ -132,6 +135,10 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
     void channelStore.loadThread(root, channelId);
   }, [root, channelId]);
 
+  // the run card (P25-11): what the bot is doing while it works, and the folded line under its answer after; the person's own Stop button stays the one by the box
+  const runState = useThreadRuns(root);
+  const placed = useMemo(() => placeRuns(tl.items, runState.runs), [tl.items, runState.runs]);
+  const liveRun = placed.live.at(-1);
   const rows = useMemo(() => buildRows(tl.root, tl.items, state, selfActor), [tl.root, tl.items, state, selfActor]);
   const newest = tl.items.at(-1)?.id ?? tl.root?.id ?? null;
   const live = previewLive(preview) || (state?.liveRunId ?? null) !== null;
@@ -271,6 +278,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               onVote={(v, reason) => void vote(m.id, v, reason)}
             />
           ) : null}
+          {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
         </div>
       </div>
     );
@@ -314,10 +322,14 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
             <div className="ch-msg bot live" data-testid="chat-live">
               <span className="ch-avatar"><Avatar name={botName} kind="agent" avatar={botAvatar ?? null} /></span>
               <div className="ch-body">
-                <LookedAt labels={preview.ended === null ? preview.looking : []} />
+                {liveRun !== undefined ? (
+                  <RunCard head={liveRun} answer={undefined} rootId={root} slug={team} people={people} hideStop />
+                ) : (
+                  <LookedAt labels={preview.ended === null ? preview.looking : []} />
+                )}
                 {preview.text !== '' && preview.ended === null ? (
                   <div className="ch-text streaming" data-testid="chat-streaming"><Markdown source={preview.text} teamSlug={team} /></div>
-                ) : (
+                ) : liveRun !== undefined ? null : (
                   <p className="ch-thinking" data-testid="chat-thinking"><span className="ch-dots" aria-hidden="true" />{botName} is working on it…</p>
                 )}
               </div>

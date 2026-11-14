@@ -1,0 +1,524 @@
+/*
+ * The run card (PLAN P25-11, docs/plans/acp.md section 5): what a bot and its helpers are doing, in the thread where the run answers. Every class is prefixed `rc`.
+ * Colours come from tokens.css only (text is `--ink`, `--mute` or an `*-ink` on its own wash; `--faint` is for icons only, so the contrast lint covers every pair).
+ * Motion is in motion.css, under `no-preference`: without it the pulse is a still dot. 390 px: nothing here sets a width wider than its box.
+ */
+
+.rc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--radius-md);
+  background: var(--agent-wash);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  min-width: 0;
+}
+
+.rc[data-state="waiting"] {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+}
+
+.rc[data-state="failed"] {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+}
+
+.rcHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rcName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcState {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--agent-ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rc[data-state="waiting"] .rcState {
+  color: var(--warn-ink);
+}
+
+.rc[data-state="failed"] .rcState {
+  color: var(--alert-ink);
+}
+
+.rcTime {
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+
+.rcActs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.rcPulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--agent);
+}
+
+.rcIconBtn,
+.rcStop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.rcIconBtn {
+  width: 28px;
+  padding: 0;
+}
+
+.rcStop {
+  border-color: var(--alert-border);
+  background: var(--surface);
+  color: var(--alert-ink);
+  font-weight: 600;
+}
+
+.rcStop:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rcIconBtn:hover,
+.rcStop:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.rcView {
+  position: relative;
+}
+
+.rcMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+}
+
+.rcMenuItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rcMenuItem small {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rcMenuItem:hover {
+  background: var(--hover);
+}
+
+.rcMenuItem[aria-checked="true"] {
+  background: var(--human-wash);
+}
+
+/* the one line that says what is happening now: one line, cut with an ellipsis, never wraps the card taller */
+.rcNow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+}
+
+.rcNowText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcMono {
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcError {
+  margin: 0;
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+/* a fold: a line of words and a caret; a real button, as tall as a finger */
+.rcFold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rcFoldLine {
+  min-height: 24px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rcFoldLine:hover {
+  color: var(--ink);
+}
+
+.rcFoldText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcLead {
+  font-weight: 600;
+}
+
+.rcNum {
+  font-family: var(--mono);
+}
+
+.rcCurrent {
+  color: var(--ink);
+}
+
+.rcChev {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+  color: var(--faint);
+}
+
+.rcDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--agent-border);
+}
+
+.rcList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rcStep {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 6px;
+  min-height: 24px;
+  font-size: var(--fs-caption);
+}
+
+.rcNone {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rcStep > .rcFold {
+  grid-column: 2 / 4;
+}
+
+.rcInner,
+.rcStep > .rcNone {
+  grid-column: 2 / -1;
+}
+
+.rcInner {
+  margin: 2px 0 2px 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--agent-border);
+}
+
+.rcIc {
+  display: inline-flex;
+  justify-content: center;
+  color: var(--faint);
+}
+
+.rcText {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcThought .rcText {
+  color: var(--mute);
+}
+
+.rcFile {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: var(--fs-tiny);
+}
+
+.rcMeta {
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: var(--fs-tiny);
+  white-space: nowrap;
+}
+
+.rcTag {
+  color: var(--agent-ink);
+  font-weight: 600;
+}
+
+.rcSt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 14px;
+  justify-content: center;
+}
+
+.rcStDone {
+  color: var(--ok);
+}
+
+.rcStFailed {
+  color: var(--alert-ink);
+  font-size: var(--fs-caption);
+}
+
+.rcStep[data-status="failed"] .rcText {
+  color: var(--alert-ink);
+}
+
+
+.rcAsk[data-outcome="denied"] .rcText {
+  color: var(--alert-ink);
+}
+
+.rcMore {
+  align-self: flex-start;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--human);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.rcMore:hover {
+  text-decoration: underline;
+}
+
+.rcSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.rcPlanItem {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  min-height: 24px;
+  font-size: var(--fs-caption);
+}
+
+.rcPlanItem[data-status="completed"] .rcText {
+  color: var(--mute);
+  text-decoration: line-through;
+}
+
+.rcPlanMark {
+  display: inline-flex;
+  justify-content: center;
+  color: var(--ok);
+}
+
+/* the answer as it is written: the last lines, faded */
+.rcPreview {
+  max-height: 3.4em;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  mask-image: linear-gradient(to bottom, transparent, var(--ink) 60%);
+}
+
+.rcPreview p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcQs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rcQs .apr-card {
+  max-width: none;
+  margin: 0;
+}
+
+/* after the run: one quiet line under the bot's last message */
+.rcEnd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 6px 40px;
+  min-width: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rcEndLine {
+  min-height: 24px;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.rcEndLine.rcFold {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.rcEndLine.rcFold:hover {
+  color: var(--ink);
+}
+
+.rcEndLine.rcFold .rcChev {
+  margin-left: 0;
+}
+
+.rcEndText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcEnd[data-tone="failed"] .rcEndText {
+  color: var(--alert-ink);
+}
+
+.rcWho {
+  margin: 0;
+  color: var(--mute);
+}
+
+.rcEnd .rcDetails {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* a thread root in the channel: who is working on it now */
+.rcChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--agent-wash);
+  border: 1px solid var(--agent-border);
+  color: var(--agent-ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.rcChipNum {
+  font-family: var(--mono);
+  font-weight: 400;
+}
+
+@media (width <= 480px) {
+  .rcEnd {
+    margin-left: 0;
+  }
+
+  .rcTime {
+    display: none;
+  }
+
+  .rcMenu {
+    right: -40px;
+  }
+}

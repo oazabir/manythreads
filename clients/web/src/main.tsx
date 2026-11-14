@@ -19,6 +19,8 @@ import './styles/projects.css';
 import './styles/bots.css';
 import './styles/savebar.css';
 import './styles/approvals.css';
+import './styles/run-card.css';
+import './styles/todo-card.css';
 import './styles/conversations.css';
 import './styles/chat.css';
 import './styles/answer.css';

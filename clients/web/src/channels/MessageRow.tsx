@@ -6,6 +6,8 @@ import { Avatar } from '../components/ui';
 import { AuthorLine } from '../components/AuthorLine';
 import { MessageVia } from './MessageVia';
 import { RunOriginCard } from './RunOriginCard';
+import { RootChip } from './run-card/RootChip';
+import { TodoMessage } from './todo-card/TodoMessage';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
 import { ReactionPill } from './ReactionPill';
@@ -162,7 +164,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     return () => clearTimeout(t);
   }, [done]);
   // measured once per text, when the row is drawn (never on hover): taller than six lines is cut
-  const plainText = !deleted && editing === null && !m.meta.answer && !m.meta.surfaceRef && !m.poll;
+  const plainText = !deleted && editing === null && !m.meta.answer && !m.meta.surfaceRef && !m.meta.todoRef && !m.poll;
   useLayoutEffect(() => {
     const el = txt.current;
     if (el && plainText) setTall(el.scrollHeight > CLAMP_LINES * LINE_PX + 2);
@@ -427,6 +429,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : m.meta.surfaceRef ? (
           // a screen a bot drew (P9-04): read from the server by its id, answered with data only
           <SurfaceMessage channelId={m.channelId} surfaceId={m.meta.surfaceRef} canPost={canPost} />
+        ) : m.meta.todoRef ? (
+          // the bot's to-do list for this thread: the card replaces the text (P25-11)
+          <TodoMessage rootId={m.meta.todoRef} body={m.body} teamSlug={teamSlug} people={people} botName={name} />
         ) : m.poll ? (
           // a poll: the card replaces the text (the text is still stored, for search and for bots)
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
@@ -465,6 +470,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             ) : null}
           </div>
         ) : null}
+        {!inThread && !deleted ? <RootChip rootId={m.id} /> : null}
         {!inThread && m.replyCount > 0 ? (
           <button type="button" className="replies" onClick={() => actions.openThread?.(m.id)}>
             {m.replyAuthors && m.replyAuthors.length > 0 ? <ReplyAvatars authors={m.replyAuthors} people={people} /> : null}

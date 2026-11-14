@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useMatch } from 'react-router';
 import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -8,6 +8,11 @@ import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
 import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
+import { useThreadRuns } from '../runs/useThreadRuns';
+import { useThreadTodo } from '../todo/useThreadTodo';
+import { placeRuns } from './run-card/place';
+import { asksOf, RunCard, RunEnd } from './run-card/RunCard';
+import { TodoPin } from './todo-card/TodoCard';
 import { CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
@@ -86,6 +91,12 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const canVote = info.status === 'ok' && info.data !== null && info.data.channel.archivedAt === null;
   const canManage = info.status === 'ok' && info.data !== null && info.data.canManage;
   const newestReply = tl.items.at(-1)?.id ?? null;
+  // the runs answering in this thread (their cards) and the bot's to-do list for it (P25-11)
+  const runState = useThreadRuns(rootId);
+  const todoState = useThreadTodo(rootId);
+  const placed = useMemo(() => placeRuns(tl.items, runState.runs), [tl.items, runState.runs]);
+  const waitingRuns = useMemo(() => runState.runs.filter((r) => r.state === 'waiting'), [runState.runs]);
+  const hideAsked = useCallback((a: Parameters<typeof asksOf>[0]) => waitingRuns.some((r) => asksOf(a, r)), [waitingRuns]);
   usePanelSub(variant === 'panel' && channelName ? `# ${channelName}` : null);
 
   // Mark the replies read while the thread is open and on screen.
@@ -198,6 +209,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
+        {todoState.todo !== null ? <TodoPin todo={todoState.todo} slug={slug ?? null} people={people} /> : null}
         <div className="root">
           <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
           {variant === 'panel' ? followRow : null}
@@ -208,11 +220,18 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             {tl.loadingOlder ? 'Loading…' : 'Earlier replies'}
           </button>
         ) : null}
-        {tl.items.length === 0 && tl.pending.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
+        {placed.atRoot.map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
+        {tl.items.length === 0 && tl.pending.length === 0 && placed.live.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
         {tl.items.map((m, i) => (
-          <MessageRow key={m.id} message={m} continued={continuesRun(tl.items[i - 1], m)} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+          <Fragment key={m.id}>
+            <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+            {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
+          </Fragment>
         ))}
-        <ThreadApprovals rootId={rootId} slug={slug ?? null} />
+        {placed.live.map((r) => (
+          <RunCard key={r.runId} head={r} answer={runState.answers[r.runId]} rootId={rootId} slug={slug ?? null} people={people} hidePlan={todoState.todo !== null && r.botActorId === todoState.todo.botActorId} />
+        ))}
+        <ThreadApprovals rootId={rootId} slug={slug ?? null} hide={hideAsked} />
         {waiting ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
         {tl.pending.map((p) => (
           <PendingRow
