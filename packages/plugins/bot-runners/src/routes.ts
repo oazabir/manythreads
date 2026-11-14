@@ -79,7 +79,7 @@ function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown
   const pod = kind === 'hermes_pod';
   if ((s.baseUrl !== undefined || s.apiKey !== undefined) && !gateway) throw invalid('An address and a key belong to a Hermes gateway runner only.');
   if (s.profileRule !== undefined && !gateway && !pod) throw invalid('A profile rule belongs to a Hermes runner only.');
-  if (s.agent !== undefined && !gateway) throw invalid('What answers at the address (Hermes, Claude Code or Codex on the bridge) belongs to a Hermes gateway runner only.');
+  if (s.agent !== undefined && !gateway) throw invalid('What answers at the address (Hermes, or an agent on the bridge) belongs to a Hermes gateway runner only.');
   if (s.modelAlias !== undefined && kind !== 'llm_gateway') throw invalid('A model alias belongs to an LLM gateway runner only.');
   if (s.maxConcurrent !== undefined && !isPodCli(kind)) throw invalid('How many runs at once belongs to a Claude Code or Codex runner only.');
 }

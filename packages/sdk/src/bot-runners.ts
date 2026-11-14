@@ -9,8 +9,8 @@ import type { PluginTx, ProviderImpl } from './types.ts';
 //
 // Address, key and node never leave the server through this: a BOT.md, a bot API answer and a log carry the runner's NAME only.
 
-/** The agent that answers behind a runner's address: `hermes` is a Hermes gateway, `claude-code` and `codex` are the agent bridge. */
-export type RunnerAgent = 'hermes' | 'claude-code' | 'codex';
+/** The agent that answers behind a runner's address: `hermes` is a Hermes gateway; the others are the agent bridge (`hermes-acp` and `opencode` through ACP, P25-05). */
+export type RunnerAgent = 'hermes' | 'claude-code' | 'codex' | 'hermes-acp' | 'opencode';
 
 /** Where a run goes. Treat `key` as a secret: never log it. */
 export interface RunnerTarget {

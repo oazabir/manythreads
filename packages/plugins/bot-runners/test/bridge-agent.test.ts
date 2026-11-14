@@ -135,3 +135,47 @@ describe('the agent of a gateway runner', () => {
     expect(text).not.toContain(bridge.url);
   });
 });
+
+// P25-05: Hermes and OpenCode started by the bridge through ACP are two more words. They are stored by the widened CHECKs of bot-runners 0006 (on both tables
+// that carry the word), tested like any bridge runner, and a team never reads them.
+describe('the ACP agent words (P25-05)', () => {
+  it('are stored on a gateway runner, shown to the admin, tested as a bridge, and changed between each other', async () => {
+    const hermes = await adminCreate({ name: 'acp-hermes', label: 'Hermes over ACP', kind: 'hermes_gateway', baseUrl: bridge.url, apiKey: BRIDGE_KEY, agent: 'hermes-acp' });
+    expect(hermes.status, JSON.stringify(hermes.body)).toBe(201);
+    expect(hermes.body.runner).toMatchObject({ kind: 'hermes_gateway', agent: 'hermes-acp', status: 'not_set_up' });
+    const opencode = await adminCreate({ name: 'acp-opencode', label: 'OpenCode', kind: 'hermes_gateway', baseUrl: bridge.url, apiKey: BRIDGE_KEY, agent: 'opencode' });
+    expect(opencode.status, JSON.stringify(opencode.body)).toBe(201);
+    const rows = await w.system(async (tx) => (await tx.query<{ name: string; agent: string }>(`SELECT name, agent FROM app.bot_runners WHERE name IN ('acp-hermes', 'acp-opencode') ORDER BY name`)).rows);
+    expect(rows).toEqual([{ name: 'acp-hermes', agent: 'hermes-acp' }, { name: 'acp-opencode', agent: 'opencode' }]);
+
+    // the Test asks the bridge (health), not a Hermes profile
+    expect((await w.call<any>(omar, 'POST', `/api/admin/bot-runners/${hermes.body.runner.id}/test`, {})).body).toMatchObject({ ok: true, status: 'ready' });
+
+    const changed = await w.call<{ runner: any }>(omar, 'PATCH', `/api/admin/bot-runners/${hermes.body.runner.id}`, { agent: 'opencode' });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(changed.body.runner).toMatchObject({ agent: 'opencode', status: 'not_set_up' });
+
+    // a team lead sees the runner without the word
+    const view = await w.call<{ items: any[] }>(tariq, 'GET', '/api/teams/marketing/bot-runners');
+    expect(JSON.stringify(view.body)).not.toMatch(/hermes-acp|opencode/);
+    for (const r of [hermes, opencode]) expect((await w.call(omar, 'DELETE', `/api/admin/bot-runners/${r.body.runner.id}`)).status).toBeLessThan(300);
+  });
+
+  it('are accepted by the same CHECK on the old connections table, in the order the schema-enums test reads', async () => {
+    const defs = await w.system(async (tx) =>
+      (await tx.query<{ conname: string; def: string }>(
+        `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname IN ('bot_runners_agent_check', 'hermes_connections_agent_check') ORDER BY conname`,
+      )).rows,
+    );
+    expect(defs.map((d) => d.conname)).toEqual(['bot_runners_agent_check', 'hermes_connections_agent_check']);
+    for (const d of defs) {
+      const words = [...d.def.matchAll(/'([a-z-]+)'::text/g)].map((m) => m[1]);
+      expect(words, d.conname).toEqual(['hermes', 'claude-code', 'codex', 'hermes-acp', 'opencode']);
+    }
+  });
+
+  it('are refused on an unknown word and for the kinds that are not a gateway', async () => {
+    expect((await adminCreate({ name: 'acp-bad', label: 'x', kind: 'hermes_gateway', baseUrl: bridge.url, apiKey: BRIDGE_KEY, agent: 'opencode-acp' })).status).toBe(400);
+    expect((await adminCreate({ name: 'acp-pod', label: 'x', kind: 'hermes_pod', agent: 'hermes-acp' })).status).toBe(400);
+  });
+});

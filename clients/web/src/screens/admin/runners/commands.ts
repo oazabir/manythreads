@@ -97,16 +97,28 @@ export const AGENT_CHOICES: ReadonlyArray<{ value: BotRunnerAgent; label: string
     label: 'Codex on the bridge',
     hint: 'The agent bridge on one of your machines runs the Codex program for each run. The bot gets this workspace’s tools for that run only.',
   },
+  {
+    value: 'hermes-acp',
+    label: 'Hermes over ACP on the bridge',
+    hint: 'The agent bridge on one of your machines starts Hermes for each run and talks to it over the Agent Client Protocol. This is not a Hermes gateway: the bot gets this workspace’s tools for that run only.',
+  },
+  {
+    value: 'opencode',
+    label: 'OpenCode on the bridge',
+    hint: 'The agent bridge on one of your machines starts the OpenCode program for each run. The bot gets this workspace’s tools for that run only.',
+  },
 ];
 export const agentHint = (a: BotRunnerAgent): string => AGENT_CHOICES.find((c) => c.value === a)?.hint ?? '';
 
-/** True when the runner is a gateway that answers as the agent bridge (Claude Code or Codex) rather than Hermes. */
+/** True when the runner is a gateway that answers as the agent bridge (Claude Code, Codex, Hermes over ACP or OpenCode) rather than a Hermes gateway. */
 export const isBridge = (r: { kind?: BotRunnerKind; agent?: BotRunnerAgent | undefined }): boolean => (r.kind === undefined || r.kind === 'hermes_gateway') && r.agent !== undefined && r.agent !== 'hermes';
 
 /** What a runner is, for the list: the kind, and for a gateway that is the bridge, which program it runs. */
 export const runnerKindWords = (r: Pick<BotRunner, 'kind'> & { agent?: BotRunnerAgent | undefined }): string => {
   if (r.kind === 'hermes_gateway' && r.agent === 'claude-code') return 'Claude Code on the bridge';
   if (r.kind === 'hermes_gateway' && r.agent === 'codex') return 'Codex on the bridge';
+  if (r.kind === 'hermes_gateway' && r.agent === 'hermes-acp') return 'Hermes over ACP on the bridge';
+  if (r.kind === 'hermes_gateway' && r.agent === 'opencode') return 'OpenCode on the bridge';
   return KIND_WORDS[r.kind];
 };
 
@@ -386,7 +398,7 @@ export const boundAliases = (aliases: ReadonlyArray<{ alias: string }>): string[
 
 /** One line about an old connection: whose it is, what it is, and how many bots depend on it. */
 export function describeOld(c: Pick<OldConnection, 'teamName' | 'kind' | 'agent' | 'botCount'>): string {
-  const what = c.kind === 'managed' ? "the team's own Hermes pod" : c.agent === 'hermes' ? 'a Hermes gateway' : c.agent === 'claude-code' ? 'a Claude Code connection' : 'a Codex connection';
+  const what = c.kind === 'managed' ? "the team's own Hermes pod" : c.agent === 'hermes' ? 'a Hermes gateway' : c.agent === 'claude-code' ? 'a Claude Code connection' : c.agent === 'codex' ? 'a Codex connection' : c.agent === 'hermes-acp' ? 'a Hermes over ACP connection' : 'an OpenCode connection';
   return `${c.teamName} · ${what} · ${countBots(c.botCount)}`;
 }
 

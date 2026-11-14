@@ -15,7 +15,8 @@ import {
   AGENT_CHOICES,
   agentLabel,
   bridgeCommand,
-  BRIDGE_CONFIG,
+  BRIDGE_PROGRAM,
+  bridgeConfigFor,
   botsOnConnection,
   hermesProfileYaml,
   kindLabel,
@@ -64,8 +65,8 @@ export function HowToConnect({ agent, origin, listen }: { agent: HermesConnectio
       </div>
     );
   }
-  const cli = agent === 'claude-code' ? 'Claude Code' : 'Codex';
-  const config = agent === 'codex' ? BRIDGE_CONFIG.replace('claude-code', 'codex') : BRIDGE_CONFIG;
+  const cli = BRIDGE_PROGRAM[agent];
+  const config = bridgeConfigFor(agent);
   return (
     <div className="ag-how" data-agent={agent} data-testid="agents-how">
       <ol>

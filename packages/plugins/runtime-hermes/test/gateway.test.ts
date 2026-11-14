@@ -101,7 +101,7 @@ describe('a shared Claude Code runner (P19-07)', () => {
 });
 
 describe('what a run carries to the gateway', () => {
-  const external = (agent: 'hermes' | 'claude-code' | 'codex') => ({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent }) });
+  const external = (agent: 'hermes' | 'claude-code' | 'codex' | 'hermes-acp' | 'opencode') => ({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent }) });
   const bodyOf = (): Record<string, unknown> => gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!.body as Record<string, unknown>;
 
   it('sends the definition body as instructions on every connection, the team’s own pod included (a pod’s SOUL.md is frozen per thread, instructions are not)', async () => {
@@ -127,6 +127,19 @@ describe('what a run carries to the gateway', () => {
       budgetSeconds: 30,
       maxTurns: null,
     });
+  });
+
+  it('treats the ACP words as bridge agents: Hermes over ACP is not a gateway and gets the run token like Claude Code does (P25-05)', async () => {
+    for (const agent of ['hermes-acp', 'opencode'] as const) {
+      gw.calls.length = 0;
+      const withToken = input({ endpoint: { runId: RUN_ID, url: 'https://mt.example/mcp', token: 'run-token-abc' } });
+      await collect((await runOnGateway(options(external(agent)), withToken, scope, { connection: 'host', profile: 'mt-coder' })).events);
+      expect(AgentBridgeRunExtension.parse(bodyOf()['manythreads']).mcp).toEqual({ url: 'https://mt.example/mcp', token: 'run-token-abc' });
+      gw.calls.length = 0;
+      const none = resultOf(await collect((await runOnGateway(options(external(agent)), input({ endpoint: null }), scope, { connection: 'host', profile: 'mt-coder' })).events));
+      expect(none.ok, agent).toBe(false);
+      expect(gw.calls.some((c) => c.method === 'POST'), agent).toBe(false);
+    }
   });
 
   it('never puts the run token in the body of a Hermes agent', async () => {

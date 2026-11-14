@@ -328,6 +328,8 @@ describe('the old connections', () => {
     expect(describeOld(external)).toBe('Marketing · a Hermes gateway · No bots');
     expect(describeOld({ ...external, agent: 'claude-code' })).toContain('a Claude Code connection');
     expect(describeOld({ ...external, agent: 'codex' })).toContain('a Codex connection');
+    expect(describeOld({ ...external, agent: 'hermes-acp' })).toContain('a Hermes over ACP connection');
+    expect(describeOld({ ...external, agent: 'opencode' })).toContain('an OpenCode connection');
   });
 
   it('says what adopting does and that bots are not touched', () => {
@@ -450,11 +452,13 @@ describe('the machine a pod runner stands on (P19-08)', () => {
 });
 
 describe('what runs the bot on a gateway runner (P19-14)', () => {
-  it('offers Hermes first, then the bridge with Claude Code and with Codex, in plain words', () => {
+  it('offers Hermes first, then the bridge with Claude Code, Codex, Hermes over ACP and OpenCode, in plain words', () => {
     expect(AGENT_CHOICES.map((c) => [c.value, c.label])).toEqual([
       ['hermes', 'Hermes'],
       ['claude-code', 'Claude Code on the bridge'],
       ['codex', 'Codex on the bridge'],
+      ['hermes-acp', 'Hermes over ACP on the bridge'],
+      ['opencode', 'OpenCode on the bridge'],
     ]);
     for (const c of AGENT_CHOICES) {
       expect(agentHint(c.value)).toBe(c.hint);
@@ -467,6 +471,8 @@ describe('what runs the bot on a gateway runner (P19-14)', () => {
     expect(runnerKindWords({ kind: 'hermes_gateway' })).toBe('Hermes gateway');
     expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'claude-code' })).toBe('Claude Code on the bridge');
     expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'codex' })).toBe('Codex on the bridge');
+    expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'hermes-acp' })).toBe('Hermes over ACP on the bridge');
+    expect(runnerKindWords({ kind: 'hermes_gateway', agent: 'opencode' })).toBe('OpenCode on the bridge');
     expect(runnerKindWords({ kind: 'hermes_pod', agent: 'hermes' })).toBe('Team Hermes pod');
     expect(runnerKindWords({ kind: 'claude_cli', agent: 'hermes' })).toBe('Claude Code');
   });
@@ -474,6 +480,8 @@ describe('what runs the bot on a gateway runner (P19-14)', () => {
   it('knows a bridge runner, so its Test asks the bridge and not a Hermes profile', () => {
     expect(isBridge({ kind: 'hermes_gateway', agent: 'claude-code' })).toBe(true);
     expect(isBridge({ kind: 'hermes_gateway', agent: 'codex' })).toBe(true);
+    expect(isBridge({ kind: 'hermes_gateway', agent: 'hermes-acp' })).toBe(true);
+    expect(isBridge({ kind: 'hermes_gateway', agent: 'opencode' })).toBe(true);
     expect(isBridge({ kind: 'hermes_gateway', agent: 'hermes' })).toBe(false);
     expect(isBridge({ kind: 'hermes_gateway' })).toBe(false);
     expect(isBridge({ kind: 'hermes_pod', agent: 'hermes' })).toBe(false);

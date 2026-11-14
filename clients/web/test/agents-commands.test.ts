@@ -3,7 +3,7 @@ import type { BotSummary } from '@manythreads/shared';
 import { createMockTransport } from '../src/api/mock';
 import { setTransport } from '../src/api/client';
 import { createConnection, deleteConnection, fetchConnections, testConnection } from '../src/screens/agents/api';
-import { botsOnConnection, bridgeCommand, bridgeSwitchWarning, hermesProfileYaml, mcpAddress, statusLine, validateEdit, validateNew } from '../src/screens/agents/commands';
+import { botsOnConnection, bridgeCommand, bridgeConfigFor, BRIDGE_PROGRAM, bridgeSwitchWarning, hermesProfileYaml, mcpAddress, statusLine, validateEdit, validateNew } from '../src/screens/agents/commands';
 
 const bot = (slug: string, gateway?: { connection: string; profile?: string }) => ({ id: slug, slug, name: slug, placement: gateway ? { gateway } : null }) as unknown as BotSummary;
 
@@ -36,10 +36,22 @@ describe('Agents page text and checks', () => {
   it('asks for a confirm only when Hermes becomes a command-line agent', () => {
     expect(bridgeSwitchWarning('hermes', 'claude-code', 'https://b.example')).toMatch(/one-run MCP token.*agent bridge/);
     expect(bridgeSwitchWarning('hermes', 'codex', '')).toMatch(/agent bridge/);
+    expect(bridgeSwitchWarning('hermes', 'hermes-acp', 'https://b.example')).toMatch(/agent bridge/);
+    expect(bridgeSwitchWarning('hermes', 'opencode', 'https://b.example')).toMatch(/agent bridge/);
+    expect(bridgeSwitchWarning('hermes-acp', 'opencode', 'https://b.example')).toBeNull();
     expect(bridgeSwitchWarning('claude-code', 'codex', 'https://b.example')).toBeNull();
     expect(bridgeSwitchWarning('codex', 'hermes', 'https://b.example')).toBeNull();
     expect(bridgeSwitchWarning('hermes', 'hermes', 'https://b.example')).toBeNull();
   });
+  it('writes the bridge profile and the program name for every bridge agent word', () => {
+    for (const agent of ['claude-code', 'codex', 'hermes-acp', 'opencode'] as const) {
+      expect(JSON.parse(bridgeConfigFor(agent)).profiles.default.agent).toBe(agent);
+      expect(BRIDGE_PROGRAM[agent]).not.toBe('');
+    }
+    expect(BRIDGE_PROGRAM['hermes-acp']).toBe('Hermes');
+    expect(BRIDGE_PROGRAM.opencode).toBe('OpenCode');
+  });
+
   it('lists the bots placed on a connection and nothing else', () => {
     const bots = [bot('a', { connection: 'ours', profile: 'a' }), bot('b', { connection: 'managed' }), bot('c')];
     expect(botsOnConnection(bots, 'ours').map((b) => b.slug)).toEqual(['a']);

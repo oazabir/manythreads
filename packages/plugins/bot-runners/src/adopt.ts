@@ -2,6 +2,7 @@ import { conflict, invalid, json, notFound, route, type PluginContext, type Plug
 import {
   AdoptConnectionRequest,
   AdoptConnectionResponse,
+  type HermesConnectionAgent,
   BotRunnerName,
   ListOldConnectionsResponse,
   OldConnection,
@@ -29,7 +30,7 @@ interface OldRow extends Record<string, unknown> {
   team_name: string;
   name: string;
   kind: 'external' | 'managed';
-  agent: 'hermes' | 'claude-code' | 'codex';
+  agent: HermesConnectionAgent;
   base_url: string | null;
   secret_id: string | null;
   status: string;
@@ -40,7 +41,7 @@ const OLD_SELECT = `SELECT c.id, c.workspace_id, c.team_id, t.slug AS team_slug,
        (SELECT count(*)::int FROM app.bots b WHERE b.team_id = c.team_id AND b.status IN ('active', 'disabled') AND b.placement -> 'gateway' ->> 'connection' = c.name) AS bot_count
   FROM app.hermes_connections c JOIN app.teams t ON t.id = c.team_id`;
 
-const NOT_ADOPTABLE = 'This connection runs Claude Code or Codex. Those become runners with the Claude and Codex runner tasks of the plan; until then it stays as it is.';
+const NOT_ADOPTABLE = 'This connection runs an agent on the bridge (Claude Code, Codex, Hermes over ACP or OpenCode). Those become runners with the Claude and Codex runner tasks of the plan; until then it stays as it is.';
 
 const toOld = (r: OldRow): OldConnection =>
   OldConnection.parse({

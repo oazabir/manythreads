@@ -188,7 +188,7 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
   );
 }
 
-/** "What runs the bot" on a gateway runner: Hermes, or the agent bridge running Claude Code or Codex (P19-14). */
+/** "What runs the bot" on a gateway runner: Hermes, or the agent bridge running Claude Code, Codex, Hermes over ACP or OpenCode (P19-14, P25-05). */
 function AgentPick({ value, onChange }: { value: BotRunnerAgent; onChange: (v: BotRunnerAgent) => void }) {
   return (
     <div className="rn-field">

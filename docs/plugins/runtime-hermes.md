@@ -527,7 +527,7 @@ instructions come with each request.` (Hermes freezes `SOUL.md` for the life of 
 | Agent | What answers | What the run request adds |
 |---|---|---|
 | `hermes` | A Hermes gateway (the team's pod is always this) | nothing beyond `input`, `session_id` and `instructions` |
-| `claude-code`, `codex` | The agent bridge (`tools/agent-bridge`), which starts one Claude Code or Codex command-line process per run | a `manythreads` object (below) |
+| `claude-code`, `codex`, `hermes-acp`, `opencode` | The agent bridge (`tools/agent-bridge`), which starts one Claude Code, Codex, Hermes (`hermes acp`, not a gateway) or OpenCode process per run (the last two and the ACP driver: P25-03, P25-05) | a `manythreads` object (below) |
 
 The bridge keeps no profile and no bot credential: each process lives for one run. So the start request also carries
 `manythreads: { bot, runId, mcp: { url, token }, tools, model: { alias, effort }, budgetSeconds, maxTurns }` — the bot's slug, the run's id, the

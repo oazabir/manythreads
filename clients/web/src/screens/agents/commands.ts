@@ -12,6 +12,8 @@ export const AGENT_CHOICES: ReadonlyArray<{ id: HermesConnectionAgent; label: st
   { id: 'hermes', label: 'Hermes gateway', hint: 'A Hermes server you run. Each bot is one profile on it, and Hermes keeps its own models and tools.' },
   { id: 'claude-code', label: 'Claude Code CLI', hint: 'The Claude Code command-line tool, started fresh for every run by a small bridge program on your machine.' },
   { id: 'codex', label: 'Codex CLI', hint: 'The Codex command-line tool, started fresh for every run by the same bridge program.' },
+  { id: 'hermes-acp', label: 'Hermes over ACP', hint: 'Hermes started fresh for every run by the same bridge program, which talks to it over the Agent Client Protocol. It is not a Hermes server you run.' },
+  { id: 'opencode', label: 'OpenCode CLI', hint: 'The OpenCode command-line tool, started fresh for every run by the same bridge program.' },
 ];
 
 export const agentLabel = (a: HermesConnectionAgent): string => AGENT_CHOICES.find((c) => c.id === a)?.label ?? a;
@@ -89,7 +91,7 @@ export function validateEdit(current: Pick<HermesConnection, 'baseUrl' | 'agent'
 
 /** Switching a connection from Hermes to a command-line agent: the confirm text to show first, or null when nothing needs confirming. */
 export function bridgeSwitchWarning(from: HermesConnectionAgent, to: HermesConnectionAgent, baseUrl: string): string | null {
-  if (from !== 'hermes' || (to !== 'claude-code' && to !== 'codex')) return null;
+  if (from !== 'hermes' || to === 'hermes') return null;
   const where = baseUrl.trim() === '' ? 'the address' : baseUrl.trim();
   return `From now on ${where} receives a one-run MCP token (a key that lets the agent call the platform's tools for that run) with every run. It must be the agent bridge you run yourself, not a Hermes server or anything else.`;
 }
@@ -109,6 +111,12 @@ export function hermesProfileYaml(origin: string): string {
 }
 
 export const BRIDGE_CONFIG = '{"profiles":{"default":{"agent":"claude-code","workdir":"/srv/bots"}}}';
+
+/** The program a bridge profile starts for each agent word, as a person says it. */
+export const BRIDGE_PROGRAM: Readonly<Record<Exclude<HermesConnectionAgent, 'hermes'>, string>> = { 'claude-code': 'Claude Code', codex: 'Codex', 'hermes-acp': 'Hermes', opencode: 'OpenCode' };
+
+/** The bridge.json text for one agent word. */
+export const bridgeConfigFor = (agent: HermesConnectionAgent): string => BRIDGE_CONFIG.replace('claude-code', agent);
 
 export function bridgeCommand(listen: string): string {
   return `tsx tools/agent-bridge/src/main.ts --config bridge.json --listen ${listen}`;

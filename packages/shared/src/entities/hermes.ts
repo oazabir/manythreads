@@ -13,8 +13,10 @@ export type HermesConnectionKind = z.infer<typeof HermesConnectionKind>;
  * The agent behind a connection. Every kind speaks the same HTTP API (Hermes' run API): `hermes` is a Hermes gateway; `claude-code` and
  * `codex` are the agent bridge (`tools/agent-bridge`), which serves that API and runs each request with the Claude Code or Codex CLI. The
  * server sends the bridge kinds a token for the one run (they start a new process per run); a Hermes profile keeps its own bot token.
+ * `hermes-acp` and `opencode` (P25-05) are bridge kinds too: Hermes and OpenCode started by the bridge through the Agent Client Protocol, one process per
+ * run. `hermes-acp` is not a gateway: it takes the run's token like Claude Code does. The order is the order of the CHECK in bot-runners 0006.
  */
-export const HermesConnectionAgent = z.enum(['hermes', 'claude-code', 'codex']);
+export const HermesConnectionAgent = z.enum(['hermes', 'claude-code', 'codex', 'hermes-acp', 'opencode']);
 export type HermesConnectionAgent = z.infer<typeof HermesConnectionAgent>;
 
 /** What the last check found: `unknown` before the first one. */

@@ -151,7 +151,7 @@ export const OldConnection = z.object({
   name: z.string(),
   /** `external` is a gateway a lead typed; `managed` is the team's own Hermes pod. */
   kind: z.enum(['external', 'managed']),
-  agent: z.enum(['hermes', 'claude-code', 'codex']),
+  agent: HermesConnectionAgent,
   baseUrl: z.string().nullable(),
   /** False for a connection to the Claude Code or Codex command-line tool: those become runners with the pod tasks of the phase. */
   adoptable: z.boolean(),
