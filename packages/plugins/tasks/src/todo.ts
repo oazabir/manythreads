@@ -35,15 +35,15 @@ const DEFAULT_BODY = 'To-do list';
 type Refusal = { ok: false; code: string; message: string };
 const refuse = (code: string, message: string): Refusal => ({ ok: false, code, message });
 
-interface Context {
+type Context = {
   o_workspace_id: string;
   o_team_id: string | null;
   o_channel_id: string;
   o_root_id: string;
   o_actor_id: string;
-}
+};
 
-interface TodoRow {
+type TodoRow = {
   thread_root_id: string;
   channel_id: string;
   message_id: string | null;
@@ -52,7 +52,7 @@ interface TodoRow {
   items: unknown;
   version: number;
   updated_at: Date;
-}
+};
 
 const COLUMNS = 'thread_root_id, channel_id, message_id, bot_actor_id, title, items, version, updated_at';
 

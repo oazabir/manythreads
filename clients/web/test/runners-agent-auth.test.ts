@@ -62,10 +62,10 @@ describe('polling and answering', () => {
     expect(answerProblem(key, 'sk-long-enough-key')).toBeNull();
     expect(answerProblem(paste, '  ')).toMatch(/Paste the code/);
     expect(answerProblem(paste, 'a\nb')).toMatch(/one line/);
-    expect(answerProblem(paste, 'abc#def')).toBeNull();
+    expect(answerProblem(paste, 'abc.def')).toBeNull();
     expect(answerProblem(null, 'x')).toMatch(/nothing to answer/);
     expect(answerBody(key, ' sk-long-enough-key ')).toEqual({ attemptId: 'a1', apiKey: 'sk-long-enough-key' });
-    expect(answerBody(paste, ' abc#def ')).toEqual({ attemptId: 'a1', code: 'abc#def' });
+    expect(answerBody(paste, ' abc.def ')).toEqual({ attemptId: 'a1', code: 'abc.def' });
   });
 });
 

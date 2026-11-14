@@ -236,6 +236,7 @@ export function classifyMethod(flavor: Flavor, method: Record<string, unknown>):
   return null;
 }
 
+// eslint-disable-next-line no-control-regex -- stripping control characters is the point
 const text = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : '');
 
 function methodViews(flavor: Flavor, init: Record<string, unknown>): Array<AuthMethodView & { args: string[] }> {
@@ -443,7 +444,7 @@ export class AuthService {
           kind = last.kind === 'none' ? null : last.kind;
         }
       }
-      view = { agent, state, kind, canLogout: hasLogout(adapter.init) || flavor === 'claude', methods: found.map(({ args: _args, ...m }) => m), attempt: null, note: null };
+      view = { agent, state, kind, canLogout: hasLogout(adapter.init) || flavor === 'claude', methods: found.map((m) => ({ id: m.id, name: m.name, description: m.description, how: m.how })), attempt: null, note: null };
     } catch (err) {
       this.log(`sign-in status failed: ${err instanceof Error ? err.name : 'error'}`);
       view = { agent, state: 'unknown', kind: null, canLogout: false, methods: [], attempt: null, note: err instanceof AdapterEnded && err.spawnError === 'ENOENT' ? AUTH_WORDS.noAdapter : 'The agent did not answer. Try again in a moment.' };
@@ -686,5 +687,6 @@ export class AuthService {
 export function cleanSecret(v: unknown, min: number, max: number): string | null {
   if (typeof v !== 'string') return null;
   const t = v.trim();
+  // eslint-disable-next-line no-control-regex -- refusing control characters in an answer is the point
   return t.length >= min && t.length <= max && !/[\u0000-\u001f\u007f\s]/.test(t) ? t : null;
 }

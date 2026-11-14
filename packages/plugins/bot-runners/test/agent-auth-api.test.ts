@@ -198,7 +198,7 @@ describe('Claude: the pasted code', () => {
     expect(status.body.auth.methods.map((m: any) => m.how)).toEqual(['paste_code', 'paste_code']);
     const started = await w.call<{ attempt: any }>(omar, 'POST', auth(id, '/login'), { methodId: 'claude-ai-login' });
     expect(started.body.attempt).toMatchObject({ state: 'needs_input', action: { type: 'paste_code', url: 'https://claude.example.test/cai/oauth/authorize?code=true&client_id=fake' } });
-    const code = 'PASTED-CODE-xyz789#abc';
+    const code = 'PASTED-CODE-xyz789.abc';
     const answered = await w.call<any>(omar, 'POST', auth(id, '/answer'), { attemptId: started.body.attempt.id, code });
     expect(answered.status, JSON.stringify(answered.body)).toBe(200);
     const done = await poll(id, (a) => a.attempt?.state === 'done');

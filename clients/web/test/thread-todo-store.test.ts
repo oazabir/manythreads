@@ -27,7 +27,7 @@ const flush = async (): Promise<void> => {
 };
 
 function make(answers: Array<GetThreadTodoResponse | Promise<GetThreadTodoResponse>>) {
-  const read = vi.fn(async (_rootId: string) => {
+  const read = vi.fn(async () => {
     const next = answers.shift();
     if (!next) throw new Error('no more answers');
     return next;

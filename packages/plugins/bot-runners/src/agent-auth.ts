@@ -49,7 +49,7 @@ interface Target {
 }
 
 const BridgeError = z.object({ error: z.object({ message: z.string().max(2000), code: z.string().max(80) }) });
-const printable = (s: string): string => s.replace(/[^\x20-\x7e -￿]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+const printable = (s: string): string => s.replace(/[^\x20-\x7e\u00a0-\uffff]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
 
 export function registerAgentAuthRoutes(ctx: PluginContext): void {
   const now = (): string => ctx.runtime.now().toISOString();
@@ -76,7 +76,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      throw new HttpError(502, 'bridge_unreachable', err instanceof OutboundBlockedError ? 'That address cannot be used: it is not allowed from this server.' : WORDS.unreachable);
+      throw new HttpError(502, 'internal', err instanceof OutboundBlockedError ? 'That address cannot be used: it is not allowed from this server.' : WORDS.unreachable);
     }
     let text = '';
     try {
@@ -94,26 +94,26 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
         text += decoder.decode(value, { stream: true });
       }
     } catch {
-      throw new HttpError(502, 'bridge_unreadable', WORDS.unreadable);
+      throw new HttpError(502, 'internal', WORDS.unreadable);
     }
-    if (res.status === 401 || res.status === 403) throw new HttpError(502, 'bridge_refused_key', WORDS.refusedKey);
+    if (res.status === 401 || res.status === 403) throw new HttpError(502, 'internal', WORDS.refusedKey);
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new HttpError(502, 'bridge_unreadable', WORDS.unreadable);
+      throw new HttpError(502, 'internal', WORDS.unreadable);
     }
     if (!res.ok) {
       // The bridge's own plain sentence for what went wrong with the sign-in (it never holds a code, a key or the account); shown cleaned and clipped.
       const refused = BridgeError.safeParse(parsed);
       // The route itself is unknown to a bridge that predates the sign-in routes.
-      if (res.status === 404 && refused.success && refused.data.error.code === 'not_found') throw new HttpError(502, 'bridge_old', WORDS.old);
+      if (res.status === 404 && refused.success && refused.data.error.code === 'not_found') throw new HttpError(502, 'internal', WORDS.old);
       const message = refused.success ? printable(refused.data.error.message) : WORDS.unreadable;
       const status = res.status === 400 ? 400 : res.status === 404 ? 404 : res.status === 409 ? 409 : 502;
-      throw new HttpError(status, status === 400 ? 'validation_failed' : status === 404 ? 'not_found' : status === 409 ? 'conflict' : 'bridge_failed', message === '' ? WORDS.unreadable : message);
+      throw new HttpError(status, status === 400 ? 'validation_failed' : status === 404 ? 'not_found' : status === 409 ? 'conflict' : 'internal', message === '' ? WORDS.unreadable : message);
     }
     const ok = schema.safeParse(parsed);
-    if (!ok.success) throw new HttpError(502, 'bridge_unreadable', WORDS.unreadable);
+    if (!ok.success) throw new HttpError(502, 'internal', WORDS.unreadable);
     return ok.data;
   }
 
