@@ -123,7 +123,7 @@ The list route takes `q` (title and message text, own list only) and `pinned=onl
 not a failure notice) is recorded by `src/replies.ts` as variant *n* of the turn the run answered (`bot_runs.turn_message_id`); the newest is chosen. The first
 answer of a conversation enqueues job `conversations.title` (`src/title.ts`): the `fast` alias names it in at most six words through the gateway's `evalComplete`
 (`purpose: 'title'`); with no model behind `fast` the title stays empty and lists show the first words of the first message. **Stop and streaming** are the Hermes
-runtime's (`POST /api/runs/:runId/stop`, pushes `run.delta`, `run.looking`, `run.ended` to the asker; see [runtime-hermes](./runtime-hermes.md)).
+runtime's (`POST /api/runs/:runId/stop`, pushes `run.delta`, `run.looking`, `run.ended` to the asker; see [runtime-hermes](./runtime-hermes.md)). A conversation run also keeps its activity (`run_view`, `run_activity`), readable by its asker alone, and its `run.activity` push goes only to the asker (P25-06/07).
 New tables: `app.conversation_variants` (person own, system writes) and `app.conversation_feedback` (person only, in both directions).
 
 ## Events
