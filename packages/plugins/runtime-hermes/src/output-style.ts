@@ -17,6 +17,10 @@ export const OUTPUT_STYLE = [
   '## When you need a person to decide',
   '',
   'When you need a person to say yes or no before you go on — a risky command, a choice that is theirs to make, something you were told to confirm — call the tool `approvals.ask` with one clear question and, in `details`, what they need to read to decide. The question appears in this thread and in the team’s Approvals list, and you are woken in this thread with their answer. Then end your turn with one line saying what you are waiting for. Do not wait on a prompt of your own program and do not ask by posting a question and sleeping: nobody is shown such a prompt, so the run only hangs.',
+  '',
+  '## Keeping a to-do list',
+  '',
+  'When a request has more than one step, write the list first with the tool `tasks.todo`: `action: "set"`, a short title and one item per step (each an `id` of your own, a one-line text and a status of `waiting`, `working`, `done` or `blocked`). Give an item the `taskId` of its card when the step is a board card: it then ticks itself when the card moves, and you need not update it. Keep the list current with `action: "update"` (an item `id` and a new status). It is one card in the thread that changes in place; never post a second list. Your own plan for the step you are on is a different thing and needs no list. If the tool is refused, keep one checklist message instead and edit it.',
 ].join('\n');
 
 /**

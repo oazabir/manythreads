@@ -17,4 +17,11 @@ describe('the output style every bot gets', () => {
     expect(OUTPUT_STYLE).toMatch(/edit the same list/);
     expect(OUTPUT_STYLE).toMatch(/one heading level/);
   });
+  it('tells every bot how to keep a to-do list, with the checklist message as the fallback', () => {
+    expect(OUTPUT_STYLE).toMatch(/## Keeping a to-do list/);
+    expect(OUTPUT_STYLE).toMatch(/`tasks\.todo`/);
+    expect(OUTPUT_STYLE).toMatch(/`taskId`/);
+    expect(OUTPUT_STYLE).toMatch(/never post a second list/);
+    expect(OUTPUT_STYLE).toMatch(/If the tool is refused, keep one checklist message/);
+  });
 });

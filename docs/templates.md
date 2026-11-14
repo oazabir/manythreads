@@ -245,9 +245,9 @@ so a team made from the template needs no gateway of its own. The flow, asked in
 
 0. **Engineer** writes the plan, posts it, and hands a `Plan review: <goal>` card (the plan is its description) to **Plan reviewer**, who
    completes the card to approve it or hands it back with numbered objections; up to three rounds, then the Engineer goes on with the
-   open objections written at the top of the checklist (or asks a person when one is about safety, data or credentials).
-1. **Engineer** creates the work cards (`tasks.create`), posts one checklist message in the thread (each step, owner, status) and keeps it
-   current with `messages.update` whenever a card is done or handed back (an edit wakes nobody, so it hands cards over with `tasks.handoff`).
+   open objections written in the first item of the to-do list (or asks a person when one is about safety, data or credentials).
+1. **Engineer** creates the work cards (`tasks.create`), writes the thread's to-do list with `tasks.todo` (P25-13: each step with its card's `taskId`, owner, status; one card in the thread that changes in place and ticks itself as cards move) and keeps it
+   current with `tasks.todo` whenever a card is done or handed back (a change wakes nobody, so it hands cards over with `tasks.handoff`). Only when the tool is refused it posts one checklist message and keeps it with `messages.update`.
    It records decisions with `memory.retain` and ends with a summary. It may hand to every bot of the team. A card comes back to it only when
    a limit is reached (three review rounds, three test failures); it decides or asks a person.
 2. **Coder** writes the change and its test on the card's branch in `~/<project>` (the pod's repository of record is
