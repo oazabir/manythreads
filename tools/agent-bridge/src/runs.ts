@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { profileFor, type BridgeConfig } from './config.ts';
+import { acpDriver } from './drivers/acp.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
 import type { Driver, DriverJob } from './drivers/types.ts';
@@ -36,6 +37,10 @@ export class Run {
   stopRequested = false;
   failReason: string | null = null;
   killTimer: NodeJS.Timeout | undefined;
+  /** Set by a driver that ends gracefully (ACP): called on a stop instead of an immediate SIGTERM. */
+  stopHandler: { run: () => void; graceSeconds: number } | null = null;
+  approvalHandler: ((requestId: string | null, choice: string) => boolean) | null = null;
+  steerHandler: ((text: string) => Promise<boolean>) | null = null;
 
   constructor(
     readonly id: string,
@@ -82,13 +87,15 @@ export interface RunManagerOptions {
   log: (line: string) => void;
 }
 
-const drivers: Record<string, Driver> = { 'claude-code': claudeCodeDriver, codex: codexDriver };
+const drivers: Record<string, Driver> = { 'claude-code': claudeCodeDriver, codex: codexDriver, acp: acpDriver };
 
 // What a child may inherit from the bridge's own environment. Everything else (GITHUB_TOKEN, cloud keys, ...) stays behind.
 const ENV_COMMON = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LC_[A-Z_]+|TERM|TMPDIR|TZ|XDG_[A-Z_]+|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE)$/;
 const ENV_BY_AGENT: Record<string, RegExp> = {
   'claude-code': /^(CLAUDE_CONFIG_DIR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)$/,
   codex: /^(CODEX_HOME|OPENAI_API_KEY)$/,
+  'hermes-acp': /^(HERMES_HOME)$/,
+  opencode: /^(OPENCODE_[A-Z_]+)$/,
 };
 
 /**
@@ -171,17 +178,24 @@ export class RunManager {
   /** Ask a run to stop: SIGTERM to its process group, SIGKILL after the grace. The run ends as cancelled (or failed with `reason`). */
   stop(run: Run, reason: string | null = null): void {
     if (run.status !== 'running') return;
+    const already = run.stopRequested;
     run.stopRequested = true;
     if (reason !== null) run.failReason ??= reason;
+    if (run.stopHandler !== null) {
+      // A graceful driver (ACP) cancels the turn itself and ends its process; the kill comes only if it has not finished after its grace.
+      if (!already) run.stopHandler.run();
+      this.armKill(run, run.stopHandler.graceSeconds);
+      return;
+    }
     for (const c of run.children) c.signal('SIGTERM');
     this.armKill(run);
   }
 
-  private armKill(run: Run): void {
+  private armKill(run: Run, extraSeconds = 0): void {
     clearTimeout(run.killTimer);
     run.killTimer = setTimeout(() => {
       for (const c of run.children) c.signal('SIGKILL');
-    }, this.opts.config.killGraceSeconds * 1000);
+    }, (this.opts.config.killGraceSeconds + extraSeconds) * 1000);
     run.killTimer.unref();
   }
 
@@ -199,6 +213,14 @@ export class RunManager {
     const started = Date.now();
     const budgetS = request.manythreads.budgetSeconds ?? config.defaultBudgetSeconds;
     let budgetTimer: NodeJS.Timeout | undefined;
+    let budgetEndsAt = 0;
+    let holds = 0;
+    const armBudget = (ms: number): void => {
+      clearTimeout(budgetTimer);
+      budgetEndsAt = Date.now() + ms;
+      budgetTimer = setTimeout(() => this.stop(run, 'budget exceeded'), ms);
+      budgetTimer.unref();
+    };
     let runDir: string | null = null;
     try {
       if (run.stopRequested) {
@@ -207,8 +229,7 @@ export class RunManager {
       }
       mkdirSync(profile.workdir, { recursive: true });
       runDir = mkdtempSync(join(this.opts.tmpRoot ?? tmpdir(), 'agent-bridge-run-'));
-      budgetTimer = setTimeout(() => this.stop(run, 'budget exceeded'), (budgetS + config.budgetGraceSeconds) * 1000);
-      budgetTimer.unref();
+      armBudget((budgetS + config.budgetGraceSeconds) * 1000);
 
       const job: DriverJob = {
         runId: run.id,
@@ -238,8 +259,30 @@ export class RunManager {
         stopped: () => run.stopRequested,
         abort: (reason) => this.stop(run, reason),
         baseEnv: () => childEnv(profile),
+        onStop: (handler, graceSeconds) => {
+          run.stopHandler = { run: handler, graceSeconds };
+        },
+        onApproval: (handler) => {
+          run.approvalHandler = handler;
+        },
+        onSteer: (handler) => {
+          run.steerHandler = handler;
+        },
+        holdBudget: () => {
+          // What was left of the budget when the run stopped to ask, and at least a minute again: the answer does not eat the time the work needs.
+          const left = Math.max(60_000, budgetEndsAt - Date.now());
+          holds += 1;
+          clearTimeout(budgetTimer);
+          let released = false;
+          return () => {
+            if (released) return;
+            released = true;
+            holds -= 1;
+            if (holds === 0 && run.status === 'running') armBudget(left);
+          };
+        },
       };
-      const gate = profile.agent === 'claude-code' ? this.opts.gate : this.opts.codexGate;
+      const gate = profile.agent === 'claude-code' ? this.opts.gate : profile.agent === 'codex' ? this.opts.codexGate : undefined;
       const standing = gate?.standing() ?? null;
       if (standing !== null) {
         // A refused sign-in or a plan limit is already known: no process is started and nothing is retried.
@@ -248,7 +291,7 @@ export class RunManager {
         this.finish(run, 'failed', 'run.failed', { error, reason: standing.kind, ...(standing.until !== null ? { resets_at: standing.until } : {}) });
         return;
       }
-      const driver = (this.opts.drivers ?? drivers)[profile.agent]!;
+      const driver = (this.opts.drivers ?? drivers)[profile.driver === 'acp' ? 'acp' : profile.agent]!;
       const result = gate ? await gate.run(() => driver.run(job)) : await driver.run(job);
       if (run.stopRequested) {
         if (run.failReason !== null) {
@@ -258,10 +301,10 @@ export class RunManager {
       } else if (result.ok) {
         run.output = result.output;
         run.usage = result.usage;
-        this.finish(run, 'completed', 'run.completed', { output: result.output, usage: result.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 } });
+        this.finish(run, 'completed', 'run.completed', { output: result.output, usage: result.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 }, ...(result.extra ?? {}) });
       } else {
         run.error = result.error;
-        const account = gate ? classifyFailure(result.error, profile.agent) : null;
+        const account = gate && (profile.agent === 'claude-code' || profile.agent === 'codex') ? classifyFailure(result.error, profile.agent) : null;
         if (account !== null) gate!.noteFailure(account, result.error);
         const resets = account === 'plan_limit' ? limitResetsAt(result.error) : null;
         this.finish(run, 'failed', 'run.failed', { error: result.error, ...(account !== null ? { reason: account } : {}), ...(resets !== null ? { resets_at: resets } : {}) });

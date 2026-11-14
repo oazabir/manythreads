@@ -394,7 +394,7 @@ describe('the Codex child never gets an API key in a pod', () => {
 
   it('on a host (no flag) it is passed as before, and a Claude child is not touched', () => {
     expect(childEnv(profile(), from)['OPENAI_API_KEY']).toBe('sk-made-up');
-    expect(childEnv({ agent: 'claude-code', workdir: '/w', env: { OPENAI_API_KEY: 'kept' } } as Parameters<typeof childEnv>[0], { MANYTHREADS_BRIDGE_IN_POD: '1' })['OPENAI_API_KEY']).toBe('kept');
+    expect(childEnv({ agent: 'claude-code', driver: 'cli', workdir: '/w', env: { OPENAI_API_KEY: 'kept' } } as Parameters<typeof childEnv>[0], { MANYTHREADS_BRIDGE_IN_POD: '1' })['OPENAI_API_KEY']).toBe('kept');
   });
 
   it('end to end: the process the bridge starts has no OPENAI_API_KEY in its environment', async () => {

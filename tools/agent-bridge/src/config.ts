@@ -12,10 +12,25 @@ import { readFileSync } from 'node:fs';
 //
 // A profile is the name a manythreads bot puts in its URL (`/p/<profile>/v1`). A profile that is not listed uses `default`.
 
-export type AgentKind = 'claude-code' | 'codex';
+export type AgentKind = 'claude-code' | 'codex' | 'hermes-acp' | 'opencode';
+const AGENT_KINDS: readonly AgentKind[] = ['claude-code', 'codex', 'hermes-acp', 'opencode'];
+
+/** How a profile's agent is driven: `cli` (the tool's own stream-json / exec mode) or `acp` (the Agent Client Protocol over an adapter process, P25-03). */
+export type DriverKind = 'cli' | 'acp';
+
+/** The adapter process of an `acp` profile. Versions are pinned by what the operator installs; the bridge never runs `npx`. */
+export interface AcpConfig {
+  /** The adapter's program. Default by agent: `claude-agent-acp`, `codex-acp`, `hermes`, `opencode`. */
+  command?: string | undefined;
+  /** Its arguments. Default by agent: none, none, `acp`, `acp`. */
+  args?: string[] | undefined;
+}
 
 export interface ProfileConfig {
   agent: AgentKind;
+  /** `cli` (default) starts the tool's own CLI; `acp` starts its ACP adapter. `hermes-acp` and `opencode` only exist as `acp`. */
+  driver: DriverKind;
+  acp?: AcpConfig | undefined;
   /** The folder the agent works in. Created when missing. */
   workdir: string;
   /** The model passed to the CLI when the bot does not pick one the bridge knows. */
@@ -47,8 +62,12 @@ export interface BridgeConfig {
   keepFinishedSeconds: number;
   /** Used when a run states no budget. */
   defaultBudgetSeconds: number;
-  /** Where the CLIs are found. Default: `claude` and `codex` on PATH. */
+  /** Where the CLIs are found. Default: `claude` and `codex` on PATH. An ACP adapter for Claude or Codex is pointed at these (`CLAUDE_CODE_EXECUTABLE`, `CODEX_PATH`) when they are paths. */
   bin: { claude: string; codex: string };
+  /** Seconds an ACP run is given to end after `session/cancel` before its process group is stopped. */
+  cancelGraceSeconds: number;
+  /** Seconds an ACP run waits for a person to answer a permission request before it is refused ("silence is not consent"). */
+  approvalWaitSeconds: number;
   /** Claude Code: write the run token into the 0600 mcp file instead of expanding `${MANYTHREADS_RUN_TOKEN}` from the child's environment. */
   mcpTokenInFile: boolean;
 }
@@ -72,7 +91,23 @@ export function parseConfig(raw: unknown): BridgeConfig {
   for (const [name, p] of Object.entries(profilesRaw)) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) throw new Error(`config: profile name "${name}" is not valid (letters, digits, . _ -)`);
     if (!isRecord(p)) throw new Error(`config: profile "${name}" must be an object`);
-    if (p['agent'] !== 'claude-code' && p['agent'] !== 'codex') throw new Error(`config: profile "${name}": agent must be "claude-code" or "codex"`);
+    const agent = AGENT_KINDS.find((k) => k === p['agent']);
+    if (agent === undefined) throw new Error(`config: profile "${name}": agent must be one of ${AGENT_KINDS.map((k) => `"${k}"`).join(', ')}`);
+    const onlyAcp = agent === 'hermes-acp' || agent === 'opencode';
+    const driverRaw = p['driver'];
+    if (driverRaw !== undefined && driverRaw !== 'cli' && driverRaw !== 'acp') throw new Error(`config: profile "${name}": driver must be "cli" or "acp"`);
+    const driver: DriverKind = driverRaw ?? (onlyAcp ? 'acp' : 'cli');
+    if (onlyAcp && driver !== 'acp') throw new Error(`config: profile "${name}": agent "${agent}" is only driven through ACP`);
+    const acpRaw = p['acp'];
+    let acp: AcpConfig | undefined;
+    if (acpRaw !== undefined) {
+      if (!isRecord(acpRaw)) throw new Error(`config: profile "${name}": acp must be an object`);
+      const cmd = acpRaw['command'];
+      const argv = acpRaw['args'];
+      if (cmd !== undefined && (typeof cmd !== 'string' || cmd === '')) throw new Error(`config: profile "${name}": acp.command must be a program name or path`);
+      if (argv !== undefined && (!Array.isArray(argv) || argv.some((x) => typeof x !== 'string'))) throw new Error(`config: profile "${name}": acp.args must be a list of strings`);
+      acp = { command: cmd as string | undefined, args: argv as string[] | undefined };
+    }
     if (typeof p['workdir'] !== 'string' || p['workdir'] === '') throw new Error(`config: profile "${name}": workdir is required`);
     const aliases = p['modelAliases'];
     if (aliases !== undefined && (!isRecord(aliases) || Object.values(aliases).some((x) => typeof x !== 'string'))) {
@@ -93,7 +128,9 @@ export function parseConfig(raw: unknown): BridgeConfig {
     const notes = p['instructions'];
     if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error(`config: profile "${name}": instructions must be text of at most 20000 characters`);
     profiles[name] = {
-      agent: p['agent'],
+      agent,
+      driver,
+      ...(acp !== undefined ? { acp } : {}),
       workdir: p['workdir'],
       ...(typeof p['model'] === 'string' && p['model'] !== '' ? { model: p['model'] } : {}),
       ...(aliases !== undefined ? { modelAliases: aliases as Record<string, string> } : {}),
@@ -115,6 +152,8 @@ export function parseConfig(raw: unknown): BridgeConfig {
       claude: typeof binRaw['claude'] === 'string' ? binRaw['claude'] : 'claude',
       codex: typeof binRaw['codex'] === 'string' ? binRaw['codex'] : 'codex',
     },
+    cancelGraceSeconds: positive(raw['cancelGraceSeconds'], 10, 'cancelGraceSeconds'),
+    approvalWaitSeconds: positive(raw['approvalWaitSeconds'], 35 * 60, 'approvalWaitSeconds'),
     mcpTokenInFile: raw['mcpTokenInFile'] === true,
   };
 }

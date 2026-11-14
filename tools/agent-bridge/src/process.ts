@@ -6,13 +6,18 @@ import { spawn, type ChildProcess } from 'node:child_process';
 export interface SpawnOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
-  stdin: string;
+  /** The text the process reads, then end of input. `null` keeps the pipe open for the caller to write lines (an ACP adapter talks over it). */
+  stdin: string | null;
   onLine: (line: string) => void;
 }
 
 export interface ChildHandle {
   /** Send a signal to the whole process group. */
   signal(sig: NodeJS.Signals): void;
+  /** Write to the process's stdin (only for a child started with `stdin: null`). False when it can no longer be read. */
+  write(text: string): boolean;
+  /** End the process's stdin (end of input). */
+  endInput(): void;
   /** Resolves when the process has ended and every line of stdout has been delivered. */
   done: Promise<{ code: number | null; signal: NodeJS.Signals | null; stderrTail: string; spawnError: string | null }>;
 }
@@ -28,7 +33,7 @@ export function startChild(bin: string, args: string[], opts: SpawnOptions): Chi
   let dropping = false;
 
   child.stdin?.on('error', () => undefined); // the child may exit before reading its prompt
-  child.stdin?.end(opts.stdin);
+  if (opts.stdin !== null) child.stdin?.end(opts.stdin);
 
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
@@ -62,6 +67,18 @@ export function startChild(bin: string, args: string[], opts: SpawnOptions): Chi
   });
 
   return {
+    write: (text) => {
+      const stdin = child.stdin;
+      if (!stdin || stdin.destroyed || stdin.writableEnded) return false;
+      return stdin.write(text) || true; // back-pressure is the adapter's own business: its messages are small
+    },
+    endInput: () => {
+      try {
+        child.stdin?.end();
+      } catch {
+        /* already closed */
+      }
+    },
     signal: (sig) => {
       const pid = child.pid;
       if (pid === undefined) return;

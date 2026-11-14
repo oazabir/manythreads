@@ -37,10 +37,11 @@ interface Session {
   title: string;
   updatedAt: string;
   history: SessionUpdate[];
+  /** Config options a client set (model, effort), kept so a test can read what the bridge chose. */
+  options?: Record<string, string>;
 }
 
 interface LiveSession extends Session {
-  /** Config options a client set (model, effort); the mode is `mode`. */
   options: Record<string, string>;
   /** The notes steering put to a running turn, in order (a script can read them with `{{steered}}`). */
   steered: string[];
@@ -170,8 +171,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     const file = sessionFile(s.id);
     if (!file || !script.stateDir) return;
     mkdirSync(join(script.stateDir, 'sessions'), { recursive: true });
-    const { id, cwd, mode, mcpServers, turns, cost, used, planCalls, title, updatedAt, history } = s;
-    writeFileSync(file, JSON.stringify({ id, cwd, mode, mcpServers, turns, cost, used, planCalls, title, updatedAt, history } satisfies Session));
+    const { id, cwd, mode, mcpServers, turns, cost, used, planCalls, title, updatedAt, history, options } = s;
+    writeFileSync(file, JSON.stringify({ id, cwd, mode, mcpServers, turns, cost, used, planCalls, title, updatedAt, history, options } satisfies Session));
   };
   const findSession = (id: string): LiveSession | undefined => {
     const live = sessions.get(id);
@@ -180,7 +181,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     if (!file) return undefined;
     try {
       const stored = JSON.parse(readFileSync(file, 'utf8')) as Session;
-      const revived: LiveSession = { ...stored, options: {}, steered: [], abort: null, queue: Promise.resolve() };
+      const revived: LiveSession = { ...stored, options: stored.options ?? {}, steered: [], abort: null, queue: Promise.resolve() };
       sessions.set(id, revived);
       return revived;
     } catch {

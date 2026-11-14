@@ -15,6 +15,8 @@ import { SigninGate } from './signin.ts';
 //   GET  /p/<profile>/v1/runs/<id>          -> { run_id, status, output, usage, error }
 //   GET  /p/<profile>/v1/runs/<id>/events   server-sent events, resumable with ?last_seq= or Last-Event-ID
 //   POST /p/<profile>/v1/runs/<id>/stop
+//   POST /p/<profile>/v1/runs/<id>/approval { choice: "once" | "session" | "deny", request_id? }   answers an `approval.request` frame (ACP runs); 404 when nothing waits
+//   POST /p/<profile>/v1/runs/<id>/steer    { input }                                         a person's note for the agent (ACP runs); 409 when the agent cannot take one
 //   PUT  /internal/repos                    { repos: [{ team, bot, project, branch, origin }] }  -> { ok, count }   (only with `reposFile`, a pod's repo list; see repos.ts)
 //
 // Every request carries `Authorization: Bearer <key>`.
@@ -218,7 +220,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
       return send(res, 200, { object: 'list', data: [{ id: chosen.profile.agent, object: 'model', owned_by: 'agent-bridge' }] });
     }
 
-    const m = /^\/p\/([^/]+)\/v1\/runs(?:\/([^/]+)(\/events|\/stop)?)?$/.exec(path);
+    const m = /^\/p\/([^/]+)\/v1\/runs(?:\/([^/]+)(\/events|\/stop|\/approval|\/steer)?)?$/.exec(path);
     if (!m) return fail(res, 404, 'not found', 'not_found');
     let profile: string;
     try {
@@ -267,6 +269,37 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     if (tail === '/stop' && method === 'POST') {
       manager.stop(run);
       return send(res, 200, { run_id: run.id, status: run.status === 'running' ? 'stopping' : run.status });
+    }
+    if ((tail === '/approval' || tail === '/steer') && method === 'POST') {
+      let raw: string;
+      try {
+        raw = await readBody(req, bodyTimeoutMs);
+      } catch (err) {
+        if (err instanceof BodyTooLarge) return fail(res, 413, 'the request body is over 1 MB', 'too_large', { connection: 'close' });
+        if (err instanceof BodyTimeout) return fail(res, 408, 'the request body took too long', 'request_timeout', { connection: 'close' });
+        throw err;
+      }
+      let body: unknown;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return fail(res, 400, 'the body is not JSON', 'bad_request');
+      }
+      const fields = typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+      if (fields === null) return fail(res, 400, 'the body must be a JSON object', 'bad_request');
+      if (tail === '/approval') {
+        const choice = fields['choice'];
+        const requestId = fields['request_id'];
+        if (choice !== 'once' && choice !== 'session' && choice !== 'deny') return fail(res, 400, '"choice" must be once, session or deny', 'bad_request');
+        if (requestId !== undefined && requestId !== null && typeof requestId !== 'string') return fail(res, 400, '"request_id" must be a string', 'bad_request');
+        if (run.status !== 'running' || run.approvalHandler === null || !run.approvalHandler(typeof requestId === 'string' ? requestId : null, choice)) return fail(res, 404, 'no such question is waiting', 'no_such_question');
+        return send(res, 200, { ok: true });
+      }
+      const text = fields['input'];
+      if (typeof text !== 'string' || text.trim() === '') return fail(res, 400, '"input" must be a non-empty string', 'bad_request');
+      if (run.status !== 'running') return fail(res, 404, 'the run has ended', 'run_ended');
+      if (run.steerHandler === null || !(await run.steerHandler(text.slice(0, 8000)))) return fail(res, 409, 'this agent cannot take a note while it works', 'steer_unsupported');
+      return send(res, 200, { ok: true });
     }
     if (tail === undefined && method === 'GET') return send(res, 200, status(run));
     return fail(res, 405, 'method not allowed', 'method_not_allowed');

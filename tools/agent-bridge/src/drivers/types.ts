@@ -11,7 +11,8 @@ export interface Usage {
   cost?: number;
 }
 
-export type DriverResult = { ok: true; output: string; usage: Usage | null } | { ok: false; error: string };
+/** `extra` is merged into the `run.completed` frame (an ACP run adds `stop_reason`). */
+export type DriverResult = { ok: true; output: string; usage: Usage | null; extra?: Record<string, unknown> } | { ok: false; error: string };
 
 /** What a driver is given for one run. */
 export interface DriverJob {
@@ -33,6 +34,17 @@ export interface DriverJob {
   abort(reason: string): void;
   /** The environment a child starts with: an allowlist of the bridge's own plus the profile's `env` and `passEnv`. */
   baseEnv(): NodeJS.ProcessEnv;
+  /**
+   * A driver that can end its work gracefully (an ACP run: `session/cancel`) registers here. On a stop the bridge calls `handler` instead of SIGTERM at once, and
+   * only after `graceSeconds` plus the kill grace does it SIGKILL the children. The driver ends its own process when it is done cancelling.
+   */
+  onStop(handler: () => void, graceSeconds: number): void;
+  /** Answers a person's choice for the permission request `requestId` (`POST /v1/runs/:id/approval`); true when it was waiting. Set once. */
+  onApproval(handler: (requestId: string | null, choice: string) => boolean): void;
+  /** Passes a person's note to the agent (`POST /v1/runs/:id/steer`); resolves false when the agent cannot take one. Set once. */
+  onSteer(handler: (text: string) => Promise<boolean>): void;
+  /** The run's clock (its budget) stops while a person decides; call the result when the answer is in and it starts again with what was left (at least 60 s). */
+  holdBudget(): () => void;
 }
 
 export interface Driver {

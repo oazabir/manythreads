@@ -47,7 +47,7 @@ key it does not start. Every request, including `GET /health`, must carry `Autho
 ```
 
 A **profile** is the name that appears in the bridge's URL (`/p/<profile>/v1`). A bot placed on a connection without a profile name, or with a name
-that is not listed, uses `default`. Per profile: `agent` (`claude-code` or `codex`), `workdir` (created when missing; the tool runs there),
+that is not listed, uses `default`. Per profile: `agent` (`claude-code`, `codex`, `hermes-acp` or `opencode`), `workdir` (created when missing; the tool runs there),
 `model` (passed to the tool), `modelAliases` (the alias a bot's definition names, mapped to the tool's own model name; aliases not listed are ignored),
 `extraAllowedTools` (Claude Code only: extra tools pre-approved for every run of the profile). `instructions` (a note about this machine, appended after the bot's BOT.md under "Where you run" in every run: where the
 repositories are, what is installed, what the bot must leave alone — the bot's definition says who it is, this says where it runs).
@@ -60,6 +60,22 @@ Other keys: `maxConcurrentRuns` (over it, a start gets 429 with `Retry-After`; t
 SIGTERM and SIGKILL), `budgetGraceSeconds` and `defaultBudgetSeconds` (a run is killed at its budget plus the grace and ends as failed with "budget
 exceeded"), `keepFinishedSeconds` (how long a finished run stays readable, default one hour), `bin` (where the tools are), `mcpTokenInFile` (see
 Security).
+
+### Agents driven through ACP (Phase 25)
+
+A profile can run its agent through the Agent Client Protocol instead of the tool's own command line: `"driver": "acp"` (the default is `cli` for `claude-code`
+and `codex`; `hermes-acp` and `opencode` are only driven this way). One adapter process runs per run, in the profile's folder, and ends with the run. The
+adapter is the operator's to install and pin; the bridge does not fetch it. `acp` names it: `{"command": "claude-agent-acp", "args": []}`. The defaults are
+`claude-agent-acp`, `codex-acp`, `hermes acp` and `opencode acp`. With `bin.claude` or `bin.codex` set to a path, the adapter runs that same tool (one version, one
+sign-in). Two more keys: `cancelGraceSeconds` (default 10: how long an adapter has to end after a stop before its process group is ended) and
+`approvalWaitSeconds` (default 2100: how long a run waits for a person to answer a permission request before it is refused; the run's time budget is held
+meanwhile).
+
+What the adapter does is shown live: the stream carries `tool.started`/`step.update`/`tool.completed` (each with a `step_id`, a kind, a short title and the paths
+inside the project; a diff is counts of lines only), `agent.update` for helpers, `plan.update`, `thinking`, and `run.completed` with `stop_reason` and `cost`.
+What an adapter leaks (the command, the arguments, the output, the text of a file) is never read. A permission request is an `approval.request` frame
+(`request_id`, `command` (the step's title), `choices`: `once` and `deny`); `POST /runs/<id>/approval {choice, request_id?}` answers it (`session` is one Yes, never
+a standing rule; 404 when nothing waits), and `POST /runs/<id>/steer {input}` puts a note to the agent while it works (409 when the adapter cannot take one).
 
 ## Add it in manythreads
 

@@ -1,0 +1,366 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { resolve as resolvePath } from 'node:path';
+import { client as createClient, methods, RequestError } from '@agentclientprotocol/sdk';
+import type { DriverJob, DriverResult, Usage } from '../drivers/types.ts';
+import { MCP_SERVER_NAME } from '../drivers/claude-code.ts';
+import { lastLine } from '../process.ts';
+import { adapterCommand, adapterEnv, desiredMode, flavorOf, mcpServers, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from './adapter.ts';
+import { clipText, Frames, KIND_WORDS, mcpServerOf, viewOf } from './frames.ts';
+
+// One run on an ACP adapter (P25-03, docs/plans/acp.md §2): start the adapter process, `initialize`, open the thread's session (resume, else load, else new, as measured
+// per adapter), put it in the mode the bot's grants need, send ONE prompt, fold the updates into frames, answer permission requests through the P24 card, and end the
+// process. The agent works in the profile's folder with its own tools; the bridge advertises no `fs` and no `terminal`.
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+class AdapterExit extends Error {
+  constructor(readonly code: number | null, readonly signal: string | null, readonly stderrTail: string, readonly spawnError: string | null) {
+    super('the adapter ended');
+  }
+}
+
+/** The thread's ACP session id is kept under this key (`sessions.json`), apart from the CLI drivers' keys. */
+export function acpSessionKey(job: Pick<DriverJob, 'profileName' | 'profile' | 'request'>): string {
+  return `acp:${job.profile.agent}:${createHash('sha1').update(`${job.profileName}\0${job.request.sessionId ?? ''}`).digest('hex')}`;
+}
+
+/**
+ * A session the adapter no longer has. Measured: Claude answers -32002 "Resource not found", Codex -32603 with `data.details` "no rollout found for thread id";
+ * Hermes answers success (see `isFound`).
+ */
+export function isMissingSession(err: unknown): boolean {
+  if (!(err instanceof RequestError)) return false;
+  if (err.code === -32002) return true;
+  const details = isRecord(err.data) && typeof err.data['details'] === 'string' ? err.data['details'] : '';
+  return /no rollout found|resource not found|unknown session|no such session|session not found|not found/i.test(`${err.message} ${details}`);
+}
+
+/** Hermes answers success for an unknown id; a session that exists carries `_meta.hermes.sessionProvenance`. Others: an answer is a found session. */
+export function isFound(flavor: string, answer: unknown): boolean {
+  if (flavor !== 'hermes') return true;
+  const meta = isRecord(answer) && isRecord(answer['_meta']) ? answer['_meta'] : {};
+  return isRecord(meta['hermes']) && isRecord(meta['hermes']['sessionProvenance']);
+}
+
+interface Pending {
+  id: string;
+  options: readonly PermissionOption[];
+  settle(outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' }): void;
+}
+
+function errorText(err: unknown, secrets: readonly string[]): string {
+  if (err instanceof RequestError) {
+    const details = isRecord(err.data) && typeof err.data['details'] === 'string' ? ` ${err.data['details']}` : '';
+    return clipText(`${err.message}${details}`, 300, secrets);
+  }
+  return clipText(err instanceof Error ? err.message : String(err), 300, secrets);
+}
+
+export async function runAcp(job: DriverJob): Promise<DriverResult> {
+  const token = job.request.manythreads.mcp?.token ?? null;
+  const secrets = token === null ? [] : [token];
+  const flavor = flavorOf(job.profile.agent);
+  const cwd = resolvePath(job.profile.workdir);
+  const mode = desiredMode(job);
+  const { command, args } = adapterCommand(job.profile);
+  const frames = new Frames({ cwd, secrets, emit: (event, fields) => job.emit(event, fields) });
+
+  // The adapter's stdio as an ACP stream: lines in, lines out. The adapter is started like any bridge child (its own process group, killed with the run).
+  let inbound!: ReadableStreamDefaultController<never>;
+  const readable = new ReadableStream<never>({
+    start(c) {
+      inbound = c;
+    },
+  });
+  let readableOpen = true;
+  const closeInbound = (): void => {
+    if (!readableOpen) return;
+    readableOpen = false;
+    try {
+      inbound.close();
+    } catch {
+      /* already closed */
+    }
+  };
+  const child = job.start(command, args, {
+    cwd,
+    env: adapterEnv(job, mode),
+    stdin: null,
+    onLine: (line) => {
+      const t = line.trim();
+      if (t === '' || t[0] !== '{' || !readableOpen) return;
+      try {
+        (inbound as unknown as ReadableStreamDefaultController<unknown>).enqueue(JSON.parse(t));
+      } catch {
+        /* a line that is not JSON (an adapter's log line on stdout) carries nothing we read */
+      }
+    },
+  });
+  const writable = new WritableStream<never>({
+    write(message) {
+      if (!child.write(`${JSON.stringify(message)}\n`)) throw new Error('the adapter no longer reads');
+    },
+    close() {
+      child.endInput();
+    },
+  });
+  const exited = child.done.then((end) => {
+    closeInbound();
+    return end;
+  });
+  const gone = exited.then((end) => {
+    throw new AdapterExit(end.code, end.signal, end.stderrTail, end.spawnError);
+  });
+  gone.catch(() => undefined);
+  /** A request that also fails when the adapter ends under it (the SDK would wait for ever). */
+  const race = <T>(p: Promise<T>): Promise<T> => Promise.race([p, gone]);
+
+  let sessionId: string | null = null;
+  let accepting = false;
+  let promptRunning = false;
+  let stopping = false;
+  let steering = false;
+  const pending = new Map<string, Pending>();
+  let permissionCounter = 0;
+
+  const answerAll = (): void => {
+    for (const p of [...pending.values()]) p.settle({ outcome: 'cancelled' });
+  };
+
+  const handlePermission = async (params: { toolCall: unknown; options: PermissionOption[]; _meta?: unknown }): Promise<{ outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } }> => {
+    const options = params.options;
+    const view = viewOf(params.toolCall, { cwd, secrets });
+    // Codex puts the flag on the request itself (beside `toolCall`), not in the tool call (measured).
+    const meta = isRecord(params._meta) ? params._meta : {};
+    if (stopping) return { outcome: { outcome: 'cancelled' } };
+    // Codex asks before every MCP call. The platform's own tools are covered by the bot's grants (the platform checks each call), so they are answered at once.
+    const known = view === null ? undefined : frames.step(view.id);
+    if (flavor === 'codex' && meta['is_mcp_tool_approval'] === true && known?.mcp === true && mcpServerOf(known.tool) === MCP_SERVER_NAME) {
+      const o = sessionOption(options);
+      if (o) return { outcome: { outcome: 'selected', optionId: o.optionId } };
+    }
+    const once = optionFor(options, 'once');
+    const deny = optionFor(options, 'deny');
+    const requestId = `perm-${++permissionCounter}-${randomUUID().slice(0, 8)}`;
+    const kind = known?.kind ?? view?.kind ?? 'other';
+    const title = known?.title ?? view?.title ?? KIND_WORDS[kind];
+    const paths = known?.paths.length ? known.paths : (view?.paths ?? []);
+    const diff = known?.diff ?? view?.diff ?? null;
+    frames.settle();
+    job.emit('approval.request', {
+      request_id: requestId,
+      command: title,
+      description: KIND_WORDS[kind],
+      choices: [...(once ? ['once'] : []), ...(deny || !once ? ['deny'] : [])],
+      kind,
+      paths,
+      ...(diff !== null ? { diff } : {}),
+      ...(view !== null && frames.step(view.id) ? { step_id: view.id } : {}),
+      // Hermes and Claude answer a note through steering only where they advertise it; the card hides its note box otherwise.
+      note_ok: steering,
+    });
+    const release = job.holdBudget();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => entry.settle(deny ? { outcome: 'selected', optionId: deny.optionId } : { outcome: 'cancelled' }), job.config.approvalWaitSeconds * 1000);
+      timer.unref();
+      const entry: Pending = {
+        id: requestId,
+        options,
+        settle: (outcome) => {
+          if (!pending.delete(requestId)) return;
+          clearTimeout(timer);
+          release();
+          resolve({ outcome });
+        },
+      };
+      pending.set(requestId, entry);
+    });
+  };
+
+  job.onApproval((requestId, choice) => {
+    const entry = requestId === null ? pending.values().next().value : pending.get(requestId);
+    if (!entry) return false;
+    // "Always" is never granted: a session answer is one "Yes", and a standing rule belongs in the BOT.md.
+    const o = optionFor(entry.options, choice === 'deny' ? 'deny' : 'once');
+    entry.settle(o ? { outcome: 'selected', optionId: o.optionId } : { outcome: 'cancelled' });
+    return true;
+  });
+
+  const app = createClient({ name: 'manythreads-bridge' })
+    .onNotification(methods.client.session.update, ({ params }) => {
+      if (accepting && params.sessionId === sessionId) frames.update(params.update);
+    })
+    .onRequest(methods.client.session.requestPermission, ({ params }) => handlePermission(params as unknown as { toolCall: unknown; options: PermissionOption[]; _meta?: unknown }))
+    // Questions with choices are asked through `approvals.ask`, the one way (plan §4.2): a form from the agent is declined.
+    .onRequest(methods.client.elicitation.create, () => ({ action: 'cancel' as const }))
+    .onNotification('*', () => undefined);
+  const connection = app.connect({ readable, writable } as never);
+  const agent = connection.agent;
+
+  /** Ends the adapter and everything it started. */
+  const shutdown = async (): Promise<void> => {
+    connection.close();
+    child.endInput();
+    child.signal('SIGTERM');
+    const kill = setTimeout(() => child.signal('SIGKILL'), Math.max(1, job.config.killGraceSeconds) * 1000);
+    kill.unref();
+    await Promise.race([exited, sleep(Math.max(1, job.config.killGraceSeconds) * 1000 + 500)]);
+    clearTimeout(kill);
+  };
+
+  const stopRun = (): void => {
+    if (stopping) return;
+    stopping = true;
+    answerAll();
+    if (sessionId !== null && promptRunning) void agent.notify('session/cancel', { sessionId }).catch(() => undefined);
+    // Not ended 10 s later: the whole process group goes (as the CLI drivers' stop does).
+    const timer = setTimeout(() => child.signal('SIGTERM'), job.config.cancelGraceSeconds * 1000);
+    timer.unref();
+    void exited.then(() => clearTimeout(timer));
+    if (sessionId === null || !promptRunning) child.signal('SIGTERM');
+  };
+  job.onStop(stopRun, job.config.cancelGraceSeconds);
+  if (job.stopped()) stopRun();
+
+  try {
+    const initialized = await race(
+      agent.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'manythreads-bridge', version: '1' } }),
+    );
+    const init = initialized as unknown as Record<string, unknown>;
+    const caps = isRecord(init['agentCapabilities']) ? init['agentCapabilities'] : {};
+    const sessionCaps = isRecord(caps['sessionCapabilities']) ? caps['sessionCapabilities'] : {};
+    const initMeta = isRecord(init['_meta']) ? init['_meta'] : {};
+    const capsMeta = isRecord(caps['_meta']) ? caps['_meta'] : {};
+    steering = [initMeta, capsMeta].some((m) => isRecord(m['steering']) && m['steering']['supported'] === true);
+    const mcpCaps = isRecord(caps['mcpCapabilities']) ? caps['mcpCapabilities'] : null;
+    const servers = mcpServers(job);
+    // Hermes advertises no `mcpCapabilities` and takes an HTTP server with its header anyway (measured); an adapter that says it cannot is not given the token.
+    if (servers.length > 0 && mcpCaps !== null && mcpCaps['http'] !== true) return { ok: false, error: "This agent's adapter cannot take the platform's tools over HTTP." };
+
+    const meta = sessionMeta(job);
+    const base = { cwd, mcpServers: servers, ...(meta !== undefined ? { _meta: meta } : {}) };
+    const key = acpSessionKey(job);
+    const known = job.request.sessionId === null ? undefined : job.sessions.get(key);
+    let opened: Record<string, unknown> | null = null;
+    if (known !== undefined) {
+      try {
+        // Updates are not accepted until the prompt is sent, so what a load or a Hermes resume replays is dropped.
+        const method = isRecord(sessionCaps['resume']) ? 'session/resume' : caps['loadSession'] === true ? 'session/load' : null;
+        if (method !== null) {
+          const answer = await race(agent.request(method, { sessionId: known, ...base } as never));
+          if (isFound(flavor, answer)) {
+            sessionId = known;
+            opened = isRecord(answer) ? (answer as Record<string, unknown>) : {};
+          }
+        }
+      } catch (err) {
+        if (err instanceof AdapterExit || !isMissingSession(err)) throw err;
+      }
+      if (sessionId === null) job.sessions.delete(key); // the adapter lost it: one new session, as the CLI drivers do
+    }
+    if (sessionId === null) {
+      const answer = (await race(agent.request('session/new', base as never))) as unknown as Record<string, unknown>;
+      if (typeof answer['sessionId'] !== 'string' || answer['sessionId'] === '') return { ok: false, error: 'The agent did not open a session.' };
+      sessionId = answer['sessionId'];
+      opened = answer;
+    }
+    if (job.request.sessionId !== null) job.sessions.set(key, sessionId);
+
+    // The mode is the grant (measured): Claude starts in `auto`, Codex in "Auto review".
+    const modes = isRecord(opened?.['modes']) ? opened['modes'] : null;
+    const configOptions = Array.isArray(opened?.['configOptions']) ? (opened['configOptions'] as unknown[]) : null;
+    if (mode !== null) {
+      const available = modes !== null && Array.isArray(modes['availableModes']) ? (modes['availableModes'] as unknown[]).map((m) => (isRecord(m) ? m['id'] : null)) : null;
+      if (available !== null && !available.includes(mode)) return { ok: false, error: `This agent has no "${mode}" mode, so its tools cannot be limited to what the bot may do.` };
+      if (modes === null || modes['currentModeId'] !== mode) {
+        try {
+          await race(agent.request('session/set_mode', { sessionId, modeId: mode }));
+        } catch (err) {
+          if (err instanceof AdapterExit) throw err;
+          try {
+            await race(agent.request('session/set_config_option', { sessionId, configId: 'mode', value: mode } as never));
+          } catch (err2) {
+            if (err2 instanceof AdapterExit) throw err2;
+            return { ok: false, error: `Could not put the agent in "${mode}" mode (${errorText(err2, secrets)}).` };
+          }
+        }
+      }
+    }
+    const optionIds = configOptions === null ? null : configOptions.map((o) => (isRecord(o) ? o['id'] : null));
+    for (const want of wantedOptions(job)) {
+      if (optionIds !== null && !optionIds.includes(want.configId)) continue;
+      try {
+        await race(agent.request('session/set_config_option', { sessionId, ...want } as never));
+      } catch (err) {
+        if (err instanceof AdapterExit) throw err;
+        /* a model or effort the adapter does not know: the run goes on with its own */
+      }
+    }
+
+    job.onSteer(async (text) => {
+      if (!steering || sessionId === null || !promptRunning) return false;
+      try {
+        await race(agent.request('_session/steering', { sessionId, prompt: [{ type: 'text', text }], _meta: { steering: { idleBehavior: 'promptRequired' } } }));
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    if (stopping || job.stopped()) {
+      await shutdown();
+      return { ok: false, error: 'stopped' };
+    }
+    const instructions = job.request.instructions;
+    // The instructions travel with the prompt: no adapter takes them the same way (not measured), and the server sends them on every run so an edit reaches old threads too.
+    const text = instructions === null ? job.request.input : `${instructions}\n\n---\n\n${job.request.input}`;
+    accepting = true;
+    promptRunning = true;
+    let answer: Record<string, unknown>;
+    try {
+      answer = (await race(agent.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] }))) as unknown as Record<string, unknown>;
+    } finally {
+      promptRunning = false;
+    }
+    const stopReason = typeof answer['stopReason'] === 'string' ? answer['stopReason'] : 'end_turn';
+    accepting = false;
+    // Let the notifications still in the SDK's queue arrive before the answer is read.
+    await new Promise<void>((r) => setImmediate(r));
+    frames.finish(stopReason === 'cancelled');
+    if (stopping) {
+      // Codex ends a prompt `cancelled` in 15 ms and leaves its command running (measured): the process group is ended after a cancel, always.
+      await shutdown();
+      return { ok: false, error: 'stopped' };
+    }
+    await shutdown();
+    if (stopReason === 'refusal') return { ok: false, error: 'The agent refused the request.' };
+    if (stopReason === 'cancelled') return { ok: false, error: 'The agent ended the turn before it was done.' };
+    const u = isRecord(answer['usage']) ? answer['usage'] : null;
+    const cost = frames.cost();
+    let usage: Usage | null = null;
+    if (u !== null) {
+      const input = num(u['inputTokens']) + num(u['cachedReadTokens']) + num(u['cachedWriteTokens']);
+      const output = num(u['outputTokens']);
+      usage = { input_tokens: input, output_tokens: output, total_tokens: input + output, ...(cost !== null ? { cost: cost.amount } : {}) };
+    } else if (cost !== null) usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, cost: cost.amount };
+    return { ok: true, output: frames.answer(), usage, extra: { stop_reason: stopReason, ...(cost !== null ? { cost } : {}) } };
+  } catch (caught) {
+    let err: unknown = caught;
+    frames.finish(stopping);
+    answerAll();
+    await shutdown();
+    // The SDK fails a waiting request with "connection closed" when the adapter's output ends, which can come before the process's own end: the end is the better word.
+    if (!(err instanceof AdapterExit) && /connection closed/i.test(err instanceof Error ? err.message : '')) {
+      const end = await Promise.race([exited, sleep(1000)]);
+      if (end) err = new AdapterExit(end.code, end.signal, end.stderrTail, end.spawnError);
+    }
+    if (err instanceof AdapterExit) {
+      if (err.spawnError !== null) return { ok: false, error: `could not start "${command}" (${err.spawnError})` };
+      const why = lastLine(err.stderrTail, secrets);
+      return { ok: false, error: why !== '' ? why : `The agent's adapter ended (${String(err.code ?? err.signal)}).` };
+    }
+    return { ok: false, error: errorText(err, secrets) };
+  }
+}

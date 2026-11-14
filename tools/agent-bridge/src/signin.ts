@@ -21,6 +21,8 @@ export type SigninAgent = 'claude-code' | 'codex';
 export const FAILURE_PATTERNS: ReadonlyArray<{ agents: readonly SigninAgent[]; kind: 'needs_sign_in' | 'plan_limit'; pattern: RegExp }> = [
   { agents: ['claude-code', 'codex'], kind: 'needs_sign_in', pattern: /FAKE401/ },
   { agents: ['claude-code', 'codex'], kind: 'plan_limit', pattern: /FAKELIMIT/ },
+  // ACP adapters (P25-03): an adapter that is not signed in answers `session/prompt` with -32000 "Authentication required" (Codex: "Sign-in did not complete").
+  { agents: ['claude-code', 'codex'], kind: 'needs_sign_in', pattern: /authentication required|sign-in did not complete/i },
   { agents: ['claude-code'], kind: 'needs_sign_in', pattern: /(?:api error|status(?: code)?|http|error)\W{0,3}401\b|authentication_(?:error|failed)|invalid (?:api key|authentication|credentials)|oauth (?:access )?(?:token|session) (?:has |is |was )?(?:been )?(?:expired|revoked|invalid)|login (?:has )?expired|login reached its time limit|please run \/login|not logged in/i },
   { agents: ['claude-code'], kind: 'plan_limit', pattern: /usage limit reached|rate limit reached|you(?:'|\u2019)ve hit your [\w -]{0,40}limit|reached your (?:[\w -]{0,40} )?usage limit|(?:5-hour|weekly|opus|sonnet|fable|usage credit) limit|limit will reset/i },
   // Codex. A reused or expired refresh token is an account failure: it is never retried, because every retry presents the same dead token.

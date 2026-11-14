@@ -13,6 +13,10 @@
   "devDependencies": {
     "@manythreads/sdk": "workspace:*",
     "@manythreads/shared": "workspace:*",
+    "@manythreads/tools-fake-acp-agent": "workspace:*",
     "tsx": "^4"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.7.0"
   }
 }
