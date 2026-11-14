@@ -9,7 +9,7 @@ import { barLine, currentItem, isOpen, progressText, todoProgress } from '../src
 
 const counts = (over: Partial<RunCounts> = {}): RunCounts => ({ steps: 0, failed: 0, commands: 0, filesChanged: 0, added: 0, removed: 0, helpers: 0, thinkingSeconds: 0, omitted: 0, ...over });
 const now = (over: Partial<RunNow> = {}): RunNow => ({ kind: 'read', title: null, paths: [], helper: null, count: 1, ...over });
-const head = (over: Partial<RunHead> = {}): RunHead =>
+const head = (over: Partial<Record<keyof RunHead, unknown>> = {}): RunHead =>
   ({
     runId: 'r1',
     botId: 'b1',

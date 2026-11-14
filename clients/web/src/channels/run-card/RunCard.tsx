@@ -36,6 +36,14 @@ function useQuestions(rootId: string | null, enabled: boolean): { pending: Appro
 /** Which of a thread's runs are waiting for a person: the thread's own list of approvals hides the ones the run card shows. */
 export const asksOf = (a: Approval, head: Pick<RunHead, 'botId'>): boolean => a.status === 'pending' && a.source === 'agent' && a.botId === head.botId;
 
+/** Who is expected to answer a question the viewer cannot: the one person it names, else the team's leads (a person cannot answer their own request). */
+export function whoAnswers(a: Approval | undefined, people: People): string | null {
+  if (a === undefined) return null;
+  const named = a.approvers.people.length === 1 ? people.byPerson(a.approvers.people[0]!)?.name : undefined;
+  if (named !== undefined) return named;
+  return a.approvers.leads ? 'a team lead' : null;
+}
+
 function Pulse() {
   return <span className="rcPulse" aria-hidden="true" />;
 }
@@ -113,7 +121,7 @@ export function RunCard({ head, answer, rootId, slug, people, hidePlan = false, 
   const mine = useMemo(() => pending.filter((a) => asksOf(a, head)), [pending, head]);
   const ctx: WaitingContext = {
     viewerCanAnswer: mine.some((a) => a.canDecide),
-    waitingFor: mine[0]?.requesterName ?? (head.askerActorId !== null ? (people.byActor(head.askerActorId)?.name ?? null) : null),
+    waitingFor: whoAnswers(mine[0], people),
   };
   const word = stateWord(head.state, ctx);
   // the now line moves at most once a second: a screen reader hears each change once, and a person can read it

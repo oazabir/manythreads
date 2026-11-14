@@ -240,3 +240,13 @@ and an LLM gateway runner in turn and read the stand-in's answer (screenshots in
 `MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL` / `_KEY` (see [claude-pods](plugins/claude-pods.md)). The team-pod kind has no seam and is proved on the stage
 (`tools/devbox/stage-runners-probe.sh`, [runners-live](runbooks/runners-live.md)). Run one spec file at a time:
 `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test runners/<name>.spec.ts --project=desktop --workers=1 --retries=0`.
+
+## The run card and the to-do card (P25-11, P25-12)
+`e2e/runs/run-card.spec.ts` runs on the `runs` stack (seed v25: seed v19 plus the Engineering bots `run-demo`, `run-lead` and `run-helper`, placed on the seeded Claude Code runner;
+`packages/test-utils/src/seed-runs.ts`). `e2e/runs/support.ts` starts a real agent bridge in the test process whose profiles (`engineering--<bot>`) start `tools/fake-acp-agent`, and points
+the stack at it through the test seam of claude-pods; `e2e/runs/scripts.ts` holds what the fake agent does in each run (set with `world.script(...)` before a person asks). The spec
+covers: working, a helper, a plan, a question, Yes, done and folded, then a reload (the record is read from the server); Stop (and "Stopped by" after a reload); a failed run;
+and a to-do list written by the orchestrator through its own `tasks.todo` endpoint, an item that follows a card (handed on, then done by a person), All done, and the "is working"
+chip in the channel. The fake agent has no MCP client, so the list is written by the spec with the bot's own token while the bot's run is open (it is attributed to that run, as in
+production). Screenshots (light, dark, 390 px) go to `temp/screenshots/p25-12` (git-ignored). Run it alone:
+`flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test runs/run-card.spec.ts --project=desktop --workers=1 --retries=0` (the web client must be built: `pnpm --filter @manythreads/web build`).

@@ -19,6 +19,7 @@
 //                                (only the people, like the shared api server) or `none` (empty: the first-admin link is printed)
 //                                `runners` (seed v3 and v4 plus seed v19, opt-in: a populated Runners page - host, team pod, two Claude runners, an LLM gateway runner and a Codex runner
 //                                waiting for sign-in, all with made-up sign-ins - see packages/test-utils/src/seed-runners.ts)
+//                                `runs` (seed v19 plus seed v25, opt-in: three Engineering bots - run-demo, run-lead, run-helper - placed on the seeded Claude Code runner, for the run card and the to-do card - see packages/test-utils/src/seed-runs.ts)
 //   MANYTHREADS_STACK_SNAPSHOT   `day-1` or `week-2` (P12-02): restore the saved database and folders (tools/seed/src/restore.ts) instead of running a seed; the seed modes then do nothing.
 //   MANYTHREADS_STACK_WEB_DIST   a folder with another web build to serve instead of clients/web/dist (the canary run)
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
@@ -39,7 +40,7 @@ import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedConnectors, seedFinishedSetup, seedMeetings, seedPolish, seedRunners, SEED_CONNECTORS, startFakeK8s, withClusterLock, type FakeK8s, type SeedConnectorsResult } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedConnectors, seedFinishedSetup, seedMeetings, seedPolish, seedRunners, seedRuns, SEED_CONNECTORS, startFakeK8s, withClusterLock, type FakeK8s, type SeedConnectorsResult } from '@manythreads/test-utils';
 import type { FakeSaas } from '../../tools/fake-saas/src/index.ts';
 import { restoreSnapshot } from '../../tools/seed/src/restore.ts';
 import { seedWorld } from './seed.ts';
@@ -121,7 +122,7 @@ await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
 const seedMode = process.env['MANYTHREADS_STACK_SEED'] ?? 'world';
-if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'meetings', 'connectors', 'runners', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'polish', 'meetings', 'connectors', 'runners', 'runs', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
 // The meeting stand-ins (see the header): set before the server starts, because the plugins read them when they register.
 const meetingsStack = seedMode === 'meetings' || process.env['MANYTHREADS_STACK_MEETINGS'] === '1';
 const fallbackEnv = (key: string, value: string): void => {
@@ -151,9 +152,9 @@ if (connectorsStack) {
 }
 // The `runners` seed (P19-11) makes its runners through the real routes, so it needs the dev actor header, and its two Claude Code runners need the claude-pods plugin, which a test
 // server loads when `MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL` points at a stand-in of the Kubernetes API (set before the server starts: the plugin reads it when it registers).
-if (seedMode === 'runners') fallbackEnv('MANYTHREADS_STACK_DEV_AUTH', '1');
+if (seedMode === 'runners' || seedMode === 'runs') fallbackEnv('MANYTHREADS_STACK_DEV_AUTH', '1');
 let k8s: FakeK8s | null = null;
-if (seedMode === 'runners' && process.env['MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL'] === undefined) {
+if ((seedMode === 'runners' || seedMode === 'runs') && process.env['MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL'] === undefined) {
   k8s = await startFakeK8s();
   process.env['MANYTHREADS_CLAUDE_PODS_TEST_K8S_URL'] = k8s.url;
 }
@@ -229,9 +230,13 @@ else if (seedMode === 'meetings') {
 // `connectors` is seed v16 (P16-12): seed v3 and v4, then the planned room, the sealed sign-ins, the work-app address, Telegram and the handbook folder, made through the real routes of this
 // server against the stand-ins of tools/fake-saas. Opt-in: no other mode has them.
 // `runners` is seed v19 (P19-11): seed v3 and v4, then the Runners page's runners, made through the real routes of this server. Opt-in: no other mode has them.
-if (snapshot === '' && seedMode === 'runners') {
+if (snapshot === '' && (seedMode === 'runners' || seedMode === 'runs')) {
   await seedWorld(db, { content: true, repo: true });
   await seedRunners({ url: `http://127.0.0.1:${server.port}`, db, log: (line) => process.stderr.write(`seed runners: ${line}\n`) });
+}
+// `runs` is seed v25 (P25-12): seed v19 plus the three bots of the run card proofs, placed on the seeded Claude Code runner. Opt-in: no other mode has them.
+if (snapshot === '' && seedMode === 'runs') {
+  await seedRuns({ url: `http://127.0.0.1:${server.port}`, db, log: (line) => process.stderr.write(`seed runs: ${line}\n`) });
 }
 let seeded: SeedConnectorsResult | null = null;
 if (snapshot === '' && connectorsStack) {
