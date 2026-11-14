@@ -23,6 +23,13 @@ type Question = Extract<BotRuntimeEvent, { type: 'approval' }>;
 
 const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/** Waits `ms`, but looks at `stopped` every half second, so a Stop is not noticed three seconds late. */
+async function sleepUnless(ms: number, stopped: (() => boolean) | undefined): Promise<void> {
+  for (let left = ms; left > 0; left -= 500) {
+    if (stopped?.() === true) return;
+    await sleep(Math.min(500, left));
+  }
+}
 
 /** How much of the command or the plan the card keeps: the bridge sends up to about 2000 characters, ending in a cut mark when it was longer. */
 export const COMMAND_PREVIEW_CHARS = 2100;
@@ -46,17 +53,26 @@ export interface AgentApprovalInput {
   pollMs?: number;
 }
 
+/** What the program was told, or `ended`: the run was stopped while the question waited, so the program (being stopped) was told nothing and the card was closed. */
+export type ApprovalOutcome = 'once' | 'session' | 'deny' | 'ended';
+
 /**
  * Files the question, waits for a person, and answers the program. Never throws: whatever goes wrong, the program is told "deny" so the run can end by itself.
  * Returns what the program was told.
  */
-export async function settleAgentApproval(input: AgentApprovalInput): Promise<'once' | 'session' | 'deny'> {
+export async function settleAgentApproval(input: AgentApprovalInput): Promise<ApprovalOutcome> {
   const { ctx, job, run, question } = input;
   const log = (line: string): void => job.log.info(`runtime-hermes: run ${run.runId}: ${line}`);
-  const answer = async (choice: 'once' | 'session' | 'deny', note: string): Promise<'once' | 'session' | 'deny'> => {
+  const answer = async (choice: 'once' | 'session' | 'deny', note: string): Promise<ApprovalOutcome> => {
     const delivered = await question.answer(choice, note).catch(() => false);
     if (!delivered) log(`the answer (${choice}) could not be delivered: the program no longer waits`);
     return choice;
+  };
+  /** The run was stopped while the question waited: the program is being killed, so it is not answered (a "denied" would be a lie about what a person decided); the card is closed so nobody decides it for nothing. */
+  const ended = async (approvals: ApprovalProvider, approvalId: string): Promise<ApprovalOutcome> => {
+    log('the run was stopped while the question waited; the approval is withdrawn');
+    await job.transaction((tx) => approvals.withdraw(tx, approvalId, { botId: run.botId })).catch((err: unknown) => job.log.warn(`runtime-hermes: run ${run.runId}: the approval could not be withdrawn: ${err instanceof Error ? err.message : String(err)}`));
+    return 'ended';
   };
   try {
     const approvals = ctx.providers.get<ApprovalProvider>('approvals');
@@ -86,6 +102,9 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<'o
     }
     log(`waiting for a person to decide approval ${approvalId} (a command the program wants to run)`);
 
+    // The run was stopped while the question was being filed: nobody is going to read the answer.
+    if (input.stopped?.() === true) return await ended(approvals, approvalId);
+
     const waitMs = input.waitMs ?? AGENT_APPROVAL_WAIT_MS;
     const pollMs = input.pollMs ?? POLL_MS;
     const startedAt = Date.now();
@@ -96,9 +115,9 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<'o
         await ctx.runs.extend(run.runId, KEEP_ALIVE_SECONDS).catch(() => false);
       }
       // The program ended the question itself (the bridge cuts its wait and says so): nobody waits for an answer any more, so the run goes on with it refused.
-      const ended = question.expired?.() ?? null;
-      if (ended !== null) {
-        log(`the program ended the question itself: ${ended}`);
+      const expiredNote = question.expired?.() ?? null;
+      if (expiredNote !== null) {
+        log(`the program ended the question itself: ${expiredNote}`);
         return 'deny';
       }
       const state = await job.transaction((tx) => approvals.answerOf(tx, approvalId, { botId: run.botId }));
@@ -110,9 +129,9 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<'o
       }
       if (state.status === 'denied') return await answer('deny', state.note);
       if (state.status === 'expired') return await answer('deny', 'The approval expired without an answer, so the command was not run.');
-      if (input.stopped?.() === true) return await answer('deny', 'The run was stopped.');
+      if (input.stopped?.() === true) return await ended(approvals, approvalId);
       if (Date.now() - startedAt >= waitMs) return await answer('deny', 'Nobody answered in time, so the command was not run.');
-      await sleep(pollMs);
+      await sleepUnless(pollMs, input.stopped);
     }
   } catch (err) {
     job.log.warn(`runtime-hermes: run ${run.runId}: the approval of a command failed: ${err instanceof Error ? err.message : String(err)}`);

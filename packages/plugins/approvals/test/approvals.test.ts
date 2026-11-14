@@ -604,6 +604,22 @@ describe('a hand-back approval', () => {
     await request(run, 'pages/waits.md');
     expect(await w.system((tx) => provider.pendingForRun(tx as unknown as PluginTx, run.runId))).toBe(1);
   });
+
+  it('withdraw takes a question back when its run was stopped: only a system transaction, only the bot\'s own, only while it is pending', async () => {
+    const run = await openRun(scoped, nadia);
+    const id = (await request(run, 'pages/withdrawn.md')).approvalId;
+    const withdraw = (botId: string) => w.system((tx) => provider.withdraw(tx as unknown as PluginTx, id, { botId }));
+    // another bot cannot withdraw it, a person's transaction cannot either
+    expect(await withdraw(leadsOnly.botId)).toBe(false);
+    expect(await withActor(personaActor(rafi), (tx) => provider.withdraw(tx as unknown as PluginTx, id, { botId: scoped.botId }), { pool: appPool })).toBe(false);
+    expect(await rowOf(id)).toMatchObject({ status: 'pending' });
+    expect(await withdraw(scoped.botId)).toBe(true);
+    expect(await rowOf(id)).toMatchObject({ status: 'expired' });
+    // nothing is left for the run to wait on, and a second withdraw (or a late answer) finds nothing pending
+    expect(await w.system((tx) => provider.pendingForRun(tx as unknown as PluginTx, run.runId))).toBe(0);
+    expect(await withdraw(scoped.botId)).toBe(false);
+    expect((await decide(rafi, id, 'approve')).status).toBe(409);
+  });
 });
 
 describe('a long call', () => {

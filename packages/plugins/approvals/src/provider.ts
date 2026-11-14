@@ -90,6 +90,19 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
       return { status: row.lapsed ? 'expired' : row.status, note: row.note ?? '', deciderName: row.decider_name };
     },
 
+    async withdraw(tx: PluginTx, approvalId: string, expect) {
+      if (tx.actor.kind !== 'system') return false;
+      // the same state a lapsed approval takes (the sweep does exactly this), so no screen needs to know a new word
+      const res = await tx.query<{ id: string }>(
+        `UPDATE app.approvals SET status = 'expired', decided_at = now()
+          WHERE id = $1::uuid AND bot_id = $2::uuid AND status = 'pending' RETURNING id`,
+        [approvalId, expect.botId],
+      );
+      if (res.rows.length === 0) return false;
+      await pushChanged(ctx, tx, approvalId);
+      return true;
+    },
+
     async claim(tx: PluginTx, approvalId: string, expect) {
       // Only an event consumer's or a job's own (system) transaction takes a call back; the request role has no UPDATE on the table at all.
       if (tx.actor.kind !== 'system') return null;

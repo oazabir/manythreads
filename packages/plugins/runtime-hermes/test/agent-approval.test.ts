@@ -38,3 +38,54 @@ describe('a wait the program ended by itself', () => {
     expect(filed[0]!['argsTruncated']).toBe(false);
   });
 });
+
+describe('a wait that the Stop ends (M3)', () => {
+  const setup = (status: 'pending' | 'approved' = 'pending') => {
+    const withdrawn: Array<{ id: string; botId: string }> = [];
+    const approvals = {
+      request: async () => ({ approvalId: 'a1' }),
+      answerOf: async () => ({ status, note: 'ok', deciderName: 'Rafi' }),
+      claim: async () => null,
+      withdraw: vi.fn(async (_tx: unknown, id: string, by: { botId: string }) => (withdrawn.push({ id, botId: by.botId }), true)),
+    } as unknown as ApprovalProvider;
+    const ctx = { providers: { get: () => approvals }, runs: { asBot: async (_r: unknown, fn: (tx: unknown) => unknown) => fn({}), extend: async () => true } } as unknown as PluginContext;
+    const warns: string[] = [];
+    const job = { log: { info: () => undefined, warn: (m: string) => warns.push(m) }, transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn({}) };
+    const answer = vi.fn(async () => true);
+    const question: Question = { type: 'approval', command: 'rm x', description: 'why', choices: ['once', 'deny'], answer };
+    const run = { runId: 'r1', workspaceId: 'w1', botId: 'b1' } as unknown as BotRunHandle;
+    return { approvals, ctx, job, answer, question, run, withdrawn, warns };
+  };
+
+  it('ends as "ended": the program is not answered (no false "denied"), and the card is withdrawn for the run\'s bot', async () => {
+    const s = setup();
+    let stopped = false;
+    setTimeout(() => (stopped = true), 50);
+    const told = await settleAgentApproval({ ctx: s.ctx, job: s.job as never, run: s.run, question: s.question, approvers: ['p1'], pollMs: 20, waitMs: 5000, stopped: () => stopped });
+    expect(told).toBe('ended');
+    expect(s.answer).not.toHaveBeenCalled();
+    expect(s.withdrawn).toEqual([{ id: 'a1', botId: 'b1' }]);
+  });
+
+  it('a Stop that was already asked while the question was being filed ends at once', async () => {
+    const s = setup();
+    const told = await settleAgentApproval({ ctx: s.ctx, job: s.job as never, run: s.run, question: s.question, approvers: ['p1'], pollMs: 20, waitMs: 5000, stopped: () => true });
+    expect(told).toBe('ended');
+    expect(s.withdrawn).toHaveLength(1);
+  });
+
+  it('a person who had already approved is still answered: the Stop does not undo a decision that came first', async () => {
+    const s = setup('approved');
+    const told = await settleAgentApproval({ ctx: s.ctx, job: s.job as never, run: s.run, question: s.question, approvers: ['p1'], pollMs: 20, waitMs: 5000, stopped: () => false });
+    expect(told).toBe('once');
+    expect(s.withdrawn).toEqual([]);
+  });
+
+  it('a withdraw that fails is logged and the run still ends', async () => {
+    const s = setup();
+    (s.approvals.withdraw as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('db down'));
+    const told = await settleAgentApproval({ ctx: s.ctx, job: s.job as never, run: s.run, question: s.question, approvers: ['p1'], pollMs: 20, waitMs: 5000, stopped: () => true });
+    expect(told).toBe('ended');
+    expect(s.warns.some((w) => w.includes('could not be withdrawn'))).toBe(true);
+  });
+});

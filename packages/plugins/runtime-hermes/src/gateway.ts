@@ -169,6 +169,12 @@ const tokensOf = (usage: unknown): { input: number; output: number; total: numbe
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The most frames the job's read-ahead queue holds before the words of the answer are joined (a frame is small; the answer's words are most of the traffic). */
+const EAGER_QUEUE_MAX = 2000;
+
+/** How long the run is given to end once a stop request did not take (more of it is the kill grace). */
+const STOP_RETRY_MS = 20_000;
+
 export async function runOnGateway(
   options: GatewayRuntimeOptions,
   input: BotRuntimeInput,
@@ -288,13 +294,28 @@ export async function runOnGateway(
 
   let stopping: Promise<void> | undefined;
   let finished = false;
-  const stop = (): Promise<void> =>
-    finished
-      ? Promise.resolve()
-      : (stopping ??= call(`/runs/${encodeURIComponent(remoteId)}/stop`, { method: 'POST' }, 10_000).then(
-      (r) => void r.body?.cancel().catch(() => undefined),
-      () => undefined,
-    ));
+  /**
+   * Asks the gateway to stop the run. One request at a time, and one that took (the gateway answered ok) is not asked again. A request that did not take (the gateway did
+   * not answer, or refused) is forgotten, so the next call asks again, and the run's clock is shortened: whatever the gateway does, the run does not outlive that.
+   */
+  const stop = (): Promise<void> => {
+    if (finished) return Promise.resolve();
+    stopping ??= (async () => {
+      let took = false;
+      try {
+        const r = await call(`/runs/${encodeURIComponent(remoteId)}/stop`, { method: 'POST' }, 10_000);
+        took = r.ok;
+        void r.body?.cancel().catch(() => undefined);
+      } catch {
+        took = false;
+      }
+      if (!took) {
+        stopping = undefined;
+        if (!finished && !abort.signal.aborted) armCeiling(options.killGraceSeconds * 1000 + STOP_RETRY_MS * (retryUnitMs / 1000));
+      }
+    })();
+    return stopping;
+  };
 
   /** Answers the question the run asked (`POST /runs/<id>/approval`), then passes on what the person wrote so the model reads it (`/steer`, best effort). */
   const answerRemote = async (choice: 'once' | 'session' | 'deny', requestId: string | null, note?: string, what = 'that command'): Promise<boolean> => {
@@ -398,12 +419,19 @@ export async function runOnGateway(
     yield { kind: 'end', terminal: null };
   }
 
-  /** Questions the program ended by itself (`approval.expired {request_id, message}`), by request id; and the last one's words for a question that has no id. */
+  /**
+   * Questions the program ended by itself (`approval.expired {request_id, message}`), by request id. A question that has no id is told apart by its place in the stream:
+   * each `approval.request` is numbered as it is read, and an `approval.expired` without an id belongs to the newest question read before it, so the end of one question is never
+   * taken for the end of the next.
+   */
   const expiredQuestions = new Map<string, string>();
-  let lastExpired: string | null = null;
+  const expiredByNumber = new Map<number, string>();
+  const numberOf = new WeakMap<object, number>();
   /**
    * Reads the stream ahead of the run job. The run job stops reading while it waits for a person to answer a question, and the program may end that
-   * question on its own meanwhile; reading ahead is how the wait hears of it. What is read is queued, in order, for the job.
+   * question on its own meanwhile; reading ahead is how the wait hears of it. What is read is queued, in order, for the job. The queue is bounded: past `EAGER_QUEUE_MAX`
+   * the words of the answer (`message.delta`) are joined into the one before them, so a run that talks while the job waits cannot fill the memory; the questions, their ends
+   * and the end of the run are never joined or dropped.
    */
   async function* eagerly<T extends { kind: string; event?: Record<string, unknown> }>(source: AsyncGenerator<T>): AsyncGenerator<T> {
     const queue: T[] = [];
@@ -411,6 +439,7 @@ export async function runOnGateway(
     let closed = false;
     let failure: unknown = null;
     let wake: (() => void) | null = null;
+    let questions = 0;
     const poke = (): void => {
       const w = wake;
       wake = null;
@@ -420,10 +449,27 @@ export async function runOnGateway(
       try {
         for await (const item of source) {
           if (closed) break;
-          if (item.kind === 'event' && item.event !== undefined && item.event['event'] === 'approval.expired') {
+          const name = item.kind === 'event' && item.event !== undefined ? item.event['event'] : undefined;
+          if (item.event !== undefined && name === 'approval.request') {
+            questions += 1;
+            numberOf.set(item.event, questions);
+          } else if (item.event !== undefined && name === 'approval.expired') {
             const note = typeof item.event['message'] === 'string' && item.event['message'].trim() !== '' ? item.event['message'].trim().slice(0, 300) : 'The question ended without an answer, so it was refused.';
             if (typeof item.event['request_id'] === 'string') expiredQuestions.set(item.event['request_id'], note);
-            lastExpired = note;
+            else if (questions > 0) expiredByNumber.set(questions, note);
+          }
+          const last = queue[queue.length - 1];
+          if (
+            queue.length >= EAGER_QUEUE_MAX &&
+            name === 'message.delta' &&
+            typeof item.event?.['delta'] === 'string' &&
+            last?.event !== undefined &&
+            last.event['event'] === 'message.delta' &&
+            typeof last.event['delta'] === 'string'
+          ) {
+            last.event = { ...last.event, delta: last.event['delta'] + item.event['delta'] };
+            poke();
+            continue;
           }
           queue.push(item);
           poke();
@@ -516,7 +562,7 @@ export async function runOnGateway(
             choices,
             ...approvalExtras(event),
             // The program ended the question itself (the bridge cuts a wait at its limit and sends `approval.expired`): the run job stops waiting and refuses.
-            expired: () => (requestId !== null ? (expiredQuestions.get(requestId) ?? null) : lastExpired),
+            expired: () => (requestId !== null ? (expiredQuestions.get(requestId) ?? null) : (expiredByNumber.get(numberOf.get(event) ?? -1) ?? null)),
             answer: async (choice, note) => {
               const sent = await answerRemote(choice, requestId, note, event['kind'] === 'switch_mode' ? 'that plan' : 'that command');
               // What was left of the budget when the run stopped to ask, and the grace again: the answer does not eat the time the work needs.

@@ -61,6 +61,7 @@ describe('requestToolApproval turns the provider’s refusal into an answer for 
       pendingForRun: () => Promise.resolve(0),
       claim: () => Promise.resolve(null),
       answerOf: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve(false),
     } as ApprovalProvider;
     const ctx = {
       providers: { get: () => provider },
@@ -94,6 +95,7 @@ describe('requestToolApproval turns the provider’s refusal into an answer for 
       pendingForRun: () => Promise.resolve(0),
       claim: () => Promise.resolve(null),
       answerOf: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve(false),
     } as ApprovalProvider;
     const ctx = {
       providers: { get: () => provider },

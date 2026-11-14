@@ -47,14 +47,38 @@ import { scheduledJobOverrideProblem, applyScheduledJobOverrides, emitScheduledJ
 /** The answer of a run the asker stopped before it had written a word. */
 const STOPPED_BEFORE_ANSWER = 'Stopped before an answer was written.';
 
+/** A person's name as it may stand in a line of markdown the bot posts: no control characters, no markup, one line, at most 60 characters. */
+export function stopperName(name: string | undefined): string | undefined {
+  if (name === undefined) return undefined;
+  const clean = name.replace(/[\p{C}\p{Z}]+/gu, ' ').replace(/[`*_~[\]<>\\|#!]/g, '').replace(/\s+/g, ' ').trim();
+  return clean === '' ? 'Someone' : [...clean].slice(0, 60).join('');
+}
+
+/** If the text ends inside a fenced code block, the fence that closes it ("```"), else ''. A line that follows would otherwise be part of the code. */
+export function openFence(text: string): string {
+  let open: { ch: string; n: number } | null = null;
+  for (const line of text.split('\n')) {
+    const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (m === null) continue;
+    const mark = m[1] as string;
+    if (open === null) open = { ch: mark[0] as string, n: mark.length };
+    else if (mark[0] === open.ch && mark.length >= open.n && (m[2] as string).trim() === '') open = null;
+  }
+  return open === null ? '' : open.ch.repeat(open.n);
+}
+
 /**
  * What a run that was stopped posts as its answer. A person's own conversation says it as it always has; a run in a thread says who stopped it ("Stopped by Rafi"), after
- * whatever had been written.
+ * whatever had been written (a code block the answer left open is closed first, and the name is one plain line).
  */
 export function stoppedReply(written: string, conversation: boolean, by: string | undefined): string {
-  const label = by === undefined ? 'Stopped' : `Stopped by ${by}`;
+  const who = stopperName(by);
+  const label = who === undefined ? 'Stopped' : `Stopped by ${who}`;
   if (written.trim() === '') return conversation ? STOPPED_BEFORE_ANSWER : `${label} before an answer was written.`;
-  return conversation ? written : `${written.trimEnd()}\n\n_${label}._`;
+  if (conversation) return written;
+  const body = written.trimEnd();
+  const fence = openFence(body);
+  return `${fence === '' ? body : `${body}\n${fence}`}\n\n_${label}._`;
 }
 
 /** The job queue one run executes in. */
@@ -914,7 +938,16 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
                 { runId: run.runId, channelId: payload.channelId, threadRootId: threadRoot, askerActorId: payload.askerActorId },
                 job.log,
                 Date.now,
-                { audience: watchersOf(threadRoot), sendEnded: false, sendLooking: false },
+                {
+                  audience: watchersOf(threadRoot, payload.channelId),
+                  sendEnded: false,
+                  sendLooking: false,
+                  // the words of the answer go to people who did not ask: through the same check as an approval's preview
+                  redact: async (tx, text) => {
+                    const safe = await previewText(ctx, tx, payload.workspaceId, text);
+                    return safe.startsWith('[the message is not shown') ? null : safe;
+                  },
+                },
               )
             : undefined;
         // Not in the transaction that opened the run: a hold or a close in that transaction goes through the run's own door on another connection, which would wait for this row's lock.

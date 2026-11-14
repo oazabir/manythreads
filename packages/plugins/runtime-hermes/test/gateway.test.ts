@@ -231,6 +231,20 @@ describe('a run on a gateway', () => {
     expect(resultOf(events)).toMatchObject({ ok: false, error: 'the run was stopped' });
   });
 
+  it('a stop the gateway did not take is asked for again by the next stop (M2), and the run then ends as stopped', async () => {
+    gw.setScript(() => [{ type: 'hang' }]);
+    gw.failNextStops(1);
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    const pending = collect(handle.events);
+    await new Promise((r) => setTimeout(r, 100));
+    await handle.stop(); // refused with a 500: the call comes back, nothing is thrown, and the stop can be asked again
+    expect(gw.calls.filter((c) => c.path.endsWith('/stop'))).toHaveLength(1);
+    await handle.stop();
+    expect(gw.calls.filter((c) => c.path.endsWith('/stop'))).toHaveLength(2);
+    const events = await pending;
+    expect(resultOf(events)).toMatchObject({ ok: false, error: 'the run was stopped' });
+  });
+
   it('the ceiling stops a run that outlives its budget and reports a timeout', async () => {
     gw.setScript(() => [{ type: 'hang' }]);
     const handle = await runOnGateway(options({ killGraceSeconds: 0 }), input({}, 0.2), scope, { connection: 'managed' });
@@ -549,6 +563,28 @@ describe('a question the program ended itself (approval.expired)', () => {
     }
     expect(words).toBe('Nobody answered in time, so it was refused.');
     expect(resultOf(seen)).toMatchObject({ ok: true, text: 'done anyway' });
+  });
+
+  it('knows each question apart (M4): the end of the first is not the end of the second, with ids or without', async () => {
+    gw.setScript(() => [
+      { type: 'frame', event: 'approval.request', fields: { command: 'one', description: '', choices: ['once', 'deny'] } },
+      { type: 'frame', event: 'approval.expired', fields: { message: 'First timed out.' } },
+      { type: 'frame', event: 'approval.request', fields: { command: 'two', description: '', choices: ['once', 'deny'] } },
+      { type: 'frame', event: 'approval.request', fields: { request_id: 'q3', command: 'three', description: '', choices: ['once', 'deny'] } },
+      { type: 'frame', event: 'approval.request', fields: { request_id: 'q4', command: 'four', description: '', choices: ['once', 'deny'] } },
+      { type: 'frame', event: 'approval.expired', fields: { request_id: 'q3', message: 'Third timed out.' } },
+      { type: 'finish', output: 'ok' },
+    ]);
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    const asked: Array<{ command: string; expired: () => string | null | undefined }> = [];
+    for await (const event of handle.events) {
+      if (event.type === 'approval') {
+        asked.push({ command: event.command, expired: () => event.expired?.() });
+        await new Promise((r) => setTimeout(r, 300)); // the frames after it are read meanwhile
+      }
+    }
+    const byCommand = Object.fromEntries(asked.map((q) => [q.command, q.expired()]));
+    expect(byCommand).toEqual({ one: 'First timed out.', two: null, three: 'Third timed out.', four: null });
   });
 
   it('is still standing (null) when nothing ended it', async () => {

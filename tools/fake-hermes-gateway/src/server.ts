@@ -83,6 +83,8 @@ export interface FakeHermesGateway {
   setScript(script: FakeRunScript): void;
   /** Answer the next `n` run creations with 429. */
   rejectNextRuns(n: number): void;
+  /** Answer the next `n` stop requests with 500 and stop nothing (a gateway that is struggling). */
+  failNextStops(n: number): void;
   /** Drop the next `n` event-stream connections after the first frame (a flaky network). */
   dropNextStreams(n: number): void;
   /** The highest number of runs that were live at once. */
@@ -129,6 +131,7 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
   let script: FakeRunScript =
     options.script ?? ((run) => [{ type: 'delta', text: 'echo: ' }, { type: 'finish', output: `echo: ${String(run.body['input'] ?? '')}` }]);
   let rejectRuns = 0;
+  let failStops = 0;
   let dropStreams = 0;
   let live = 0;
   let peak = 0;
@@ -292,6 +295,10 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
       if (!state || state.run.profile !== profile) return send(res, 404, errorBody(`run not found: ${runMatch[1]}`, 'run_not_found'));
       const tail = runMatch[2];
       if (req.method === 'POST' && tail === '/stop') {
+        if (failStops > 0) {
+          failStops -= 1;
+          return send(res, 500, errorBody('the gateway could not stop the run', 'stop_failed'));
+        }
         state.stop();
         return send(res, 200, { object: 'hermes.run.stop', run_id: state.run.runId, status: state.status === 'running' ? 'stopping' : state.status });
       }
@@ -369,6 +376,9 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
     },
     rejectNextRuns(n) {
       rejectRuns = n;
+    },
+    failNextStops(n) {
+      failStops = n;
     },
     dropNextStreams(n) {
       dropStreams = n;

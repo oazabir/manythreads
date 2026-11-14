@@ -63,6 +63,10 @@ BEGIN
   IF v_state IS NULL OR v_state IN ('done', 'failed', 'stopped') THEN
     RETURN 'ended';
   END IF;
+  -- the run's own row is the truth: a run that was closed (by the reaper, a crash, the end of its job) is over even if its folded row has not heard of it yet
+  IF EXISTS (SELECT 1 FROM app.bot_runs r WHERE r.id = p_run_id AND r.status <> 'running') THEN
+    RETURN 'ended';
+  END IF;
   IF v_prior IS NOT NULL THEN
     RETURN 'already';
   END IF;

@@ -75,6 +75,12 @@ export interface ApprovalProvider extends ProviderImpl {
    * `pending` until a person decides; `expired` once its time is up undecided. Null when there is no such approval of this bot. System transaction only.
    */
   answerOf(tx: PluginTx, approvalId: string, expect: { botId: string }): Promise<ApprovalAnswer | null>;
+  /**
+   * The run that asked ended (it was stopped) while its approval still waited: nobody can use an answer now, so the card is closed instead of left for a person to decide
+   * for nothing. A pending approval of this bot becomes `expired` (the same state a lapsed one takes), and the team's list and push are told. True when it was pending and is
+   * now closed; false when it was already decided or is not this bot's. System transaction only.
+   */
+  withdraw(tx: PluginTx, approvalId: string, expect: { botId: string }): Promise<boolean>;
 }
 
 /** What `answerOf` reports. `note` is what the person wrote with the decision (empty when nothing); `deciderName` is who decided. */
