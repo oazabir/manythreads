@@ -26,6 +26,8 @@ export interface DriverJob {
   sessions: SessionStore;
   /** Add an event to the run's stream. */
   emit(event: string, fields?: Record<string, unknown>): void;
+  /** One line for the bridge's own log (no prompt, no token, no output text). */
+  log(line: string): void;
   /** Start a process that the bridge can stop (it is killed with its whole group on stop or budget). */
   start(bin: string, args: string[], opts: SpawnOptions): ChildHandle;
   /** True once a stop, a budget kill or a turn limit was requested. */

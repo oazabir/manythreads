@@ -183,12 +183,15 @@ export class RunManager {
     if (reason !== null) run.failReason ??= reason;
     if (run.stopHandler !== null) {
       // A graceful driver (ACP) cancels the turn itself and ends its process; the kill comes only if it has not finished after its grace.
-      if (!already) run.stopHandler.run();
-      this.armKill(run, run.stopHandler.graceSeconds);
+      // A second stop changes nothing: it must not push the kill back.
+      if (!already) {
+        run.stopHandler.run();
+        this.armKill(run, run.stopHandler.graceSeconds);
+      }
       return;
     }
     for (const c of run.children) c.signal('SIGTERM');
-    this.armKill(run);
+    if (!already) this.armKill(run);
   }
 
   private armKill(run: Run, extraSeconds = 0): void {
@@ -215,6 +218,8 @@ export class RunManager {
     let budgetTimer: NodeJS.Timeout | undefined;
     let budgetEndsAt = 0;
     let holds = 0;
+    /** What was left of the budget when the first of the overlapping questions began, and at least a minute: the clock starts again with that when the last is answered. */
+    let heldLeft = 0;
     const armBudget = (ms: number): void => {
       clearTimeout(budgetTimer);
       budgetEndsAt = Date.now() + ms;
@@ -242,6 +247,7 @@ export class RunManager {
         emit: (event, fields) => {
           if (run.status === 'running') run.emit(event, fields);
         },
+        log: (line) => this.opts.log(`run ${run.id} ${line}`),
         start: (bin, args, o) => {
           const child = startChild(bin, args, o);
           run.children.add(child);
@@ -270,7 +276,8 @@ export class RunManager {
         },
         holdBudget: () => {
           // What was left of the budget when the run stopped to ask, and at least a minute again: the answer does not eat the time the work needs.
-          const left = Math.max(60_000, budgetEndsAt - Date.now());
+          // Taken once, when the first question begins: a second question that overlaps the first would read a clock that is no longer running.
+          if (holds === 0) heldLeft = Math.max(60_000, budgetEndsAt - Date.now());
           holds += 1;
           clearTimeout(budgetTimer);
           let released = false;
@@ -278,7 +285,7 @@ export class RunManager {
             if (released) return;
             released = true;
             holds -= 1;
-            if (holds === 0 && run.status === 'running') armBudget(left);
+            if (holds === 0 && run.status === 'running') armBudget(heldLeft);
           };
         },
       };
@@ -304,7 +311,7 @@ export class RunManager {
         this.finish(run, 'completed', 'run.completed', { output: result.output, usage: result.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 }, ...(result.extra ?? {}) });
       } else {
         run.error = result.error;
-        const account = gate && (profile.agent === 'claude-code' || profile.agent === 'codex') ? classifyFailure(result.error, profile.agent) : null;
+        const account = gate && (profile.agent === 'claude-code' || profile.agent === 'codex') ? classifyFailure(result.error, profile.agent, profile.driver) : null;
         if (account !== null) gate!.noteFailure(account, result.error);
         const resets = account === 'plan_limit' ? limitResetsAt(result.error) : null;
         this.finish(run, 'failed', 'run.failed', { error: result.error, ...(account !== null ? { reason: account } : {}), ...(resets !== null ? { resets_at: resets } : {}) });

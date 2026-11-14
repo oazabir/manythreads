@@ -118,6 +118,13 @@ const REFRESH_TOKEN = new RegExp(`${RUN_START}rt_[A-Za-z0-9_-]{20,200}(?:\\.[A-Z
 const REFRESH_TOKEN_V1 = new RegExp(`${RUN_START}rt\\.\\d{1,2}\\.[A-Za-z0-9_-]{40,512}`, 'g');
 const TOKEN_FIELD = /("(?:refresh_token|access_token|id_token|accessToken|refreshToken|idToken)"[ \t\r\n]{0,8}:[ \t\r\n]{0,8}")[^"\s]{16,4096}"/g;
 
+// What a command line or a log line holds that is a secret without being one of the token shapes above (P25 review): `NAME_TOKEN=value`, `--password value`, `Authorization: Basic ...`,
+// and the user and password of a URL (`https://user:secret@host`). Every quantifier is bounded.
+const SECRET_ASSIGN = /\b([A-Za-z_][A-Za-z0-9_.-]{0,60}?(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?|AUTHORIZATION|AUTH_?TOKEN)[A-Za-z0-9_]{0,20})(=|:\s?)("[^"\n]{0,2000}"|'[^'\n]{0,2000}'|[^\s"';&|]{1,2000})/gi;
+const SECRET_FLAG = /(--?(?:password|passwd|pass|pwd|token|secret|api-?key|apikey|auth|authorization|access-?token|client-?secret|private-?key|bearer)(?:=|\s+))("[^"\n]{0,2000}"|'[^'\n]{0,2000}'|[^\s"';&|]{1,2000})/gi;
+const AUTH_HEADER = /\b(authorization|x-api-key|x-auth-token|proxy-authorization)(\s*[:=]\s*(?:(?:basic|bearer|token)\s+)?)[^\s"';&|]{4,2000}/gi;
+const URL_USERINFO = /\b([a-z][a-z0-9+.-]{1,10}:\/\/)[^\s/@"'<>]{1,200}@/gi;
+
 export function redact(text: string, secrets: readonly string[]): string {
   let out = text;
   for (const s of secrets) if (s.length >= 4) out = out.split(s).join('[hidden]');
@@ -125,6 +132,10 @@ export function redact(text: string, secrets: readonly string[]): string {
   out = out.replace(REFRESH_TOKEN_V1, '[hidden]');
   out = out.replace(REFRESH_TOKEN, (m) => (/[0-9A-Z]/.test(m) ? '[hidden]' : m));
   out = out.replace(TOKEN_FIELD, '$1[hidden]"');
+  out = out.replace(URL_USERINFO, '$1[hidden]@');
+  out = out.replace(AUTH_HEADER, '$1$2[hidden]');
+  out = out.replace(SECRET_ASSIGN, (m, name: string, sep: string, value: string) => (value === '[hidden]' ? m : `${name}${sep}[hidden]`));
+  out = out.replace(SECRET_FLAG, '$1[hidden]');
   // A Bearer token is cut whole (a JSON web token is longer than any cap the old rule had), so run it after the shapes above that cover a long token.
   return out.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g, 'Bearer [hidden]');
 }

@@ -24,7 +24,15 @@ export interface AcpConfig {
   command?: string | undefined;
   /** Its arguments. Default by agent: none, none, `acp`, `acp`. */
   args?: string[] | undefined;
+  /**
+   * Hermes only: what the operator's Hermes home lets its agent do (its `platform_toolsets.acp`), as the bot grant groups `files`, `shell`, `web`, `browser`, `vision`.
+   * Hermes cannot be held to a bot's grants by the bridge (its toolsets come from its home, not from the session), so a run is refused when the bot's grants are narrower
+   * than this. Default: all five (Hermes' own default coding toolset).
+   */
+  gives?: string[] | undefined;
 }
+
+export const HERMES_GROUPS = ['files', 'shell', 'web', 'browser', 'vision'] as const;
 
 export interface ProfileConfig {
   agent: AgentKind;
@@ -106,7 +114,11 @@ export function parseConfig(raw: unknown): BridgeConfig {
       const argv = acpRaw['args'];
       if (cmd !== undefined && (typeof cmd !== 'string' || cmd === '')) throw new Error(`config: profile "${name}": acp.command must be a program name or path`);
       if (argv !== undefined && (!Array.isArray(argv) || argv.some((x) => typeof x !== 'string'))) throw new Error(`config: profile "${name}": acp.args must be a list of strings`);
-      acp = { command: cmd as string | undefined, args: argv as string[] | undefined };
+      const gives = acpRaw['gives'];
+      if (gives !== undefined && (!Array.isArray(gives) || gives.some((x) => !(HERMES_GROUPS as readonly unknown[]).includes(x)))) {
+        throw new Error(`config: profile "${name}": acp.gives must be a list of ${HERMES_GROUPS.join(', ')}`);
+      }
+      acp = { command: cmd as string | undefined, args: argv as string[] | undefined, ...(gives !== undefined ? { gives: gives as string[] } : {}) };
     }
     if (typeof p['workdir'] !== 'string' || p['workdir'] === '') throw new Error(`config: profile "${name}": workdir is required`);
     const aliases = p['modelAliases'];

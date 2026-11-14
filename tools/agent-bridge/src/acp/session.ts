@@ -4,8 +4,8 @@ import { client as createClient, methods, RequestError } from '@agentclientproto
 import type { DriverJob, DriverResult, Usage } from '../drivers/types.ts';
 import { MCP_SERVER_NAME } from '../drivers/claude-code.ts';
 import { lastLine } from '../process.ts';
-import { adapterCommand, adapterEnv, desiredMode, flavorOf, mcpServers, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from './adapter.ts';
-import { clipText, Frames, KIND_WORDS, mcpServerOf, viewOf } from './frames.ts';
+import { adapterCommand, adapterEnv, desiredMode, flavorOf, hermesGrantProblem, mcpServers, OPENCODE_REFUSAL, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from './adapter.ts';
+import { approvalOf, clipText, Frames, KIND_WORDS, mcpServerOf, viewOf } from './frames.ts';
 
 // One run on an ACP adapter (P25-03, docs/plans/acp.md §2): start the adapter process, `initialize`, open the thread's session (resume, else load, else new, as measured
 // per adapter), put it in the mode the bot's grants need, send ONE prompt, fold the updates into frames, answer permission requests through the P24 card, and end the
@@ -14,6 +14,16 @@ import { clipText, Frames, KIND_WORDS, mcpServerOf, viewOf } from './frames.ts';
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const tick = (): Promise<void> => new Promise((r) => setImmediate(r));
+/** Lets the notifications still in the SDK's queue arrive before the next step (a replay before the prompt, the last updates after it). */
+const drain = async (): Promise<void> => {
+  await tick();
+  await tick();
+};
+
+/** Hermes denies a request nobody answered after its own `approvals.timeout` (default 300 s); the bridge gives up first, so it can say so. */
+export const HERMES_APPROVAL_CAP_SECONDS = 290;
+export const approvalWaitFor = (flavor: string, configuredSeconds: number): number => (flavor === 'hermes' ? Math.min(configuredSeconds, HERMES_APPROVAL_CAP_SECONDS) : configuredSeconds);
 
 class AdapterExit extends Error {
   constructor(readonly code: number | null, readonly signal: string | null, readonly stderrTail: string, readonly spawnError: string | null) {
@@ -27,14 +37,16 @@ export function acpSessionKey(job: Pick<DriverJob, 'profileName' | 'profile' | '
 }
 
 /**
- * A session the adapter no longer has. Measured: Claude answers -32002 "Resource not found", Codex -32603 with `data.details` "no rollout found for thread id";
- * Hermes answers success (see `isFound`).
+ * A session the adapter no longer has, and nothing else. Measured: Claude answers -32002 "Resource not found", Codex -32603 with `data.details` "no rollout found for
+ * thread id"; Hermes answers success (see `isFound`). Any other failure of a resume (a model that is not there, a refused folder) is not a lost session: the run fails
+ * and the thread keeps its session for the next try.
  */
 export function isMissingSession(err: unknown): boolean {
   if (!(err instanceof RequestError)) return false;
-  if (err.code === -32002) return true;
+  if (err.code === -32002) return /resource not found/i.test(err.message);
+  if (err.code !== -32603) return false;
   const details = isRecord(err.data) && typeof err.data['details'] === 'string' ? err.data['details'] : '';
-  return /no rollout found|resource not found|unknown session|no such session|session not found|not found/i.test(`${err.message} ${details}`);
+  return /no rollout found/i.test(details);
 }
 
 /** Hermes answers success for an unknown id; a session that exists carries `_meta.hermes.sessionProvenance`. Others: an answer is a found session. */
@@ -62,6 +74,12 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
   const token = job.request.manythreads.mcp?.token ?? null;
   const secrets = token === null ? [] : [token];
   const flavor = flavorOf(job.profile.agent);
+  // The adapters that cannot be held to the bot's grants are refused before any process starts.
+  if (flavor === 'opencode') return { ok: false, error: OPENCODE_REFUSAL };
+  if (flavor === 'hermes') {
+    const problem = hermesGrantProblem(job);
+    if (problem !== null) return { ok: false, error: problem };
+  }
   const cwd = resolvePath(job.profile.workdir);
   const mode = desiredMode(job);
   const { command, args } = adapterCommand(job.profile);
@@ -122,6 +140,8 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
   let promptRunning = false;
   let stopping = false;
   let steering = false;
+  let turnLimitHit = false;
+  const maxTurns = job.request.manythreads.maxTurns;
   const pending = new Map<string, Pending>();
   let permissionCounter = 0;
 
@@ -145,13 +165,15 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     const deny = optionFor(options, 'deny');
     const requestId = `perm-${++permissionCounter}-${randomUUID().slice(0, 8)}`;
     const kind = known?.kind ?? view?.kind ?? 'other';
-    const title = known?.title ?? view?.title ?? KIND_WORDS[kind];
+    // What the person is shown is what will run (the command, the plan), not the step's one-line title.
+    const shown = approvalOf(params.toolCall, { cwd, secrets });
+    const title = shown.label ?? known?.title ?? view?.title ?? KIND_WORDS[kind];
     const paths = known?.paths.length ? known.paths : (view?.paths ?? []);
     const diff = known?.diff ?? view?.diff ?? null;
     frames.settle();
     job.emit('approval.request', {
       request_id: requestId,
-      command: title,
+      command: shown.text !== '' ? shown.text : title,
       title,
       description: KIND_WORDS[kind],
       choices: [...(once ? ['once'] : []), ...(deny || !once ? ['deny'] : [])],
@@ -164,7 +186,11 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     });
     const release = job.holdBudget();
     return new Promise((resolve) => {
-      const timer = setTimeout(() => entry.settle(deny ? { outcome: 'selected', optionId: deny.optionId } : { outcome: 'cancelled' }), job.config.approvalWaitSeconds * 1000);
+      const timer = setTimeout(() => {
+        // Silence is not consent: the request is refused, and the person is told it ran out.
+        job.emit('approval.expired', { request_id: requestId, message: 'Nobody answered in time, so the request was refused.' });
+        entry.settle(deny ? { outcome: 'selected', optionId: deny.optionId } : { outcome: 'cancelled' });
+      }, approvalWaitFor(flavor, job.config.approvalWaitSeconds) * 1000);
       timer.unref();
       const entry: Pending = {
         id: requestId,
@@ -191,7 +217,13 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
 
   const app = createClient({ name: 'manythreads-bridge' })
     .onNotification(methods.client.session.update, ({ params }) => {
-      if (accepting && params.sessionId === sessionId) frames.update(params.update);
+      if (!accepting || params.sessionId !== sessionId) return;
+      frames.update(params.update);
+      // The CLI driver counts the model's replies against `maxTurns`; this is the same count over the steps and the text (Frames.turns).
+      if (maxTurns !== null && !turnLimitHit && frames.turns > maxTurns) {
+        turnLimitHit = true;
+        job.abort('turn limit exceeded');
+      }
     })
     .onRequest(methods.client.session.requestPermission, ({ params }) => handlePermission(params as unknown as { toolCall: unknown; options: PermissionOption[]; _meta?: unknown }))
     // Questions with choices are asked through `approvals.ask`, the one way (plan §4.2): a form from the agent is declined.
@@ -246,20 +278,25 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     const known = job.request.sessionId === null ? undefined : job.sessions.get(key);
     let opened: Record<string, unknown> | null = null;
     if (known !== undefined) {
-      try {
-        // Updates are not accepted until the prompt is sent, so what a load or a Hermes resume replays is dropped.
-        const method = isRecord(sessionCaps['resume']) ? 'session/resume' : caps['loadSession'] === true ? 'session/load' : null;
-        if (method !== null) {
+      // Updates are not accepted until the prompt is sent, so what a load or a Hermes resume replays is dropped.
+      const method = isRecord(sessionCaps['resume']) ? 'session/resume' : caps['loadSession'] === true ? 'session/load' : null;
+      let lost = false;
+      if (method !== null) {
+        try {
           const answer = await race(agent.request(method, { sessionId: known, ...base } as never));
           if (isFound(flavor, answer)) {
             sessionId = known;
             opened = isRecord(answer) ? (answer as Record<string, unknown>) : {};
-          }
+          } else lost = true;
+        } catch (err) {
+          // Only "that session does not exist" starts a new one; any other failure fails the run and the thread keeps its session.
+          if (err instanceof AdapterExit || !isMissingSession(err)) throw err;
+          lost = true;
         }
-      } catch (err) {
-        if (err instanceof AdapterExit || !isMissingSession(err)) throw err;
+        // The replay of a load (or a Hermes resume) may still be in the SDK's queue: it must arrive before updates are accepted.
+        await drain();
       }
-      if (sessionId === null) job.sessions.delete(key); // the adapter lost it: one new session, as the CLI drivers do
+      if (lost) job.sessions.delete(key);
     }
     if (sessionId === null) {
       const answer = (await race(agent.request('session/new', base as never))) as unknown as Record<string, unknown>;
@@ -291,12 +328,18 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     }
     const optionIds = configOptions === null ? null : configOptions.map((o) => (isRecord(o) ? o['id'] : null));
     for (const want of wantedOptions(job)) {
-      if (optionIds !== null && !optionIds.includes(want.configId)) continue;
+      const what = want.configId === 'model' ? 'model' : 'effort';
+      if (optionIds !== null && !optionIds.includes(want.configId)) {
+        if (want.pinned) return { ok: false, error: `This agent does not let its ${what} be chosen, but the profile pins "${clipText(want.value, 60, secrets)}".` };
+        job.log(`acp: the agent offers no "${want.configId}" option; the run keeps its own ${what}`);
+        continue;
+      }
       try {
-        await race(agent.request('session/set_config_option', { sessionId, ...want } as never));
+        await race(agent.request('session/set_config_option', { sessionId, configId: want.configId, value: want.value } as never));
       } catch (err) {
         if (err instanceof AdapterExit) throw err;
-        /* a model or effort the adapter does not know: the run goes on with its own */
+        if (want.pinned) return { ok: false, error: `The agent did not take the ${what} "${clipText(want.value, 60, secrets)}" that the profile pins (${errorText(err, secrets)}).` };
+        job.log(`acp: the agent did not take ${want.configId} "${clipText(want.value, 40, secrets)}": ${errorText(err, secrets)}; the run keeps its own ${what}`);
       }
     }
 
@@ -326,9 +369,10 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
       promptRunning = false;
     }
     const stopReason = typeof answer['stopReason'] === 'string' ? answer['stopReason'] : 'end_turn';
+    // The updates that came before the answer may still be in the SDK's queue: they are taken first, and only then are updates no longer accepted.
+    await drain();
     accepting = false;
-    // Let the notifications still in the SDK's queue arrive before the answer is read.
-    await new Promise<void>((r) => setImmediate(r));
+    answerAll(); // a question still open when the turn ended is over
     frames.finish(stopReason === 'cancelled');
     if (stopping) {
       // Codex ends a prompt `cancelled` in 15 ms and leaves its command running (measured): the process group is ended after a cancel, always.
@@ -349,7 +393,8 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     return { ok: true, output: frames.answer(), usage, extra: { stop_reason: stopReason, ...(cost !== null ? { cost } : {}) } };
   } catch (caught) {
     let err: unknown = caught;
-    frames.finish(stopping);
+    accepting = false;
+    frames.finish(stopping, !stopping);
     answerAll();
     await shutdown();
     // The SDK fails a waiting request with "connection closed" when the adapter's output ends, which can come before the process's own end: the end is the better word.

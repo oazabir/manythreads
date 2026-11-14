@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import { redact } from '../process.ts';
 
 // What an ACP adapter says (P25-03), turned into the frames the bridge sends the server (docs/plans/acp.md §3.1).
@@ -6,8 +7,10 @@ import { redact } from '../process.ts';
 // several places (`rawInput`, `rawOutput`, `_meta.claudeCode.toolResponse`, `_meta.terminal_output_delta`, `_meta.terminal_exit`, `content` text);
 // none of them is read here, so none can be forwarded. The fields read are (docs/spikes/acp-measured.md): `toolCallId`, `title`, `kind`, `status`,
 // `locations[].path`, the `diff` blocks of `content` (as counts only), `_meta.claudeCode.{toolName, parentToolUseId}` and `_meta.is_mcp_tool_call`.
-// The only place `rawInput` is opened is Hermes' `todo_list` step, whose items ARE the agent's plan (`rawInput.todos`, measured on Hermes 0.21.5);
-// they are clipped and redacted like a title. Reasoning text is counted in time and dropped.
+// `rawInput` is opened in two places only: Hermes' `todo_list` step, whose items ARE the agent's plan (`rawInput.todos`, measured on Hermes 0.21.5), and
+// `approvalOf`, for the one request a person is asked to approve (the command, or the plan to implement, so the card shows what will run). Both are clipped
+// and redacted. A step's own title carries no command line: an `execute` step is "Running <program>", a link has no user, password or query, and a path outside
+// the run's folder is not named. Reasoning text is counted in time and dropped.
 
 export type Sink = (event: string, fields: Record<string, unknown>) => void;
 
@@ -32,17 +35,86 @@ export function clipText(text: string, max: number, secrets: readonly string[]):
   return chars.length <= max ? one : `${chars.slice(0, max - 1).join('')}…`;
 }
 
+export const MAX_APPROVAL_CHARS = 2000;
+const PRE_CUT_BLOCK = 20_000;
+
+/**
+ * Several lines kept as lines (what a person approves: a command, a plan), secrets out first, then cut with a marker that says it was cut and by how much.
+ * The text is cut at `PRE_CUT_BLOCK` before the removal and at `max` after it, so a cut never leaves half a secret in what is shown.
+ */
+export function clipBlock(text: string, max: number, secrets: readonly string[]): string {
+  const clean = redact(text.slice(0, PRE_CUT_BLOCK), secrets)
+    .replace(/\r\n?/g, '\n')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .trim();
+  const chars = Array.from(clean);
+  if (chars.length <= max && text.length <= PRE_CUT_BLOCK) return clean;
+  const more = chars.length - max + Math.max(0, text.length - PRE_CUT_BLOCK);
+  return `${chars.slice(0, max).join('').trimEnd()}\n… [cut: ${text.length > PRE_CUT_BLOCK ? 'more than ' : ''}${Math.max(1, more)} more characters not shown]`;
+}
+
 export const OUTSIDE = 'a file outside the project';
 
-/** A path as the run's folder sees it: relative inside it, "a file outside the project" outside it. */
+/** A path as the run's folder sees it: relative inside it, "a file outside the project" outside it (also when `..` leads out of it). */
 export function relativePath(path: string, cwd: string): string {
-  const base = cwd.replace(/\/+$/, '');
-  if (path === base) return '.';
-  if (path.startsWith(`${base}/`)) return path.slice(base.length + 1);
-  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('~')) return OUTSIDE;
-  if (path.split('/').includes('..')) return OUTSIDE;
-  return path;
+  if (path.startsWith('~') || /^[A-Za-z]:[\\/]/.test(path)) return OUTSIDE;
+  const base = posix.normalize(cwd).replace(/\/+$/, '');
+  const n = posix.normalize(path);
+  if (n === base) return '.';
+  if (n.startsWith(`${base}/`)) return n.slice(base.length + 1);
+  if (n.startsWith('/')) return OUTSIDE;
+  if (n === '..' || n.startsWith('../')) return OUTSIDE;
+  return n;
 }
+
+// A link in a title: the user, the password, the query and the fragment are not kept (they carry tokens and what was searched for).
+const LINK = /\b[a-z][a-z0-9+.-]{1,10}:\/\/[^\s"'<>)\]]{1,2000}/gi;
+const cleanLink = (link: string): string => {
+  const m = /^([a-z][a-z0-9+.-]*:\/\/)(?:[^/?#]*@)?([^?#]*)/i.exec(link);
+  return m ? `${m[1]!}${m[2]!}` : 'a link';
+};
+// A path in a title: relative inside the run's folder, not named outside it.
+const ABS_PATH = /(?<![\w./:~@%+=-])\/[\w.@%+=~/-]{1,500}/g;
+const HOME_PATH = /(?<![\w.])~\/[\w.@%+=~/-]{0,500}/g;
+const WIN_PATH = /(?<![\w])[A-Za-z]:[\\/][^\s"'<>|]{1,500}/g;
+const DOTDOT_PATH = /(?<![\w.])\.\.\/[\w.@%+=~/-]{0,500}/g;
+
+/** One line of free text for a title: secrets, links and paths made safe, the folder's own path left out. */
+function scrubTitle(text: string, cx: ViewContext): string {
+  // Links first: what follows a `?` or an `@` goes whole, before the secrets are looked for (a `[hidden]` mark would end the link early).
+  let t = redact(text.slice(0, PRE_CUT).replace(LINK, cleanLink), cx.secrets);
+  // A folder that is not an absolute path (the recorded sessions write it `<cwd>`) is cut out as written.
+  const base = cx.cwd.replace(/\/+$/, '');
+  if (base !== '' && !base.startsWith('/')) t = t.split(`${base}/`).join('').split(base).join('.');
+  t = t.replace(ABS_PATH, (p) => {
+    const trail = /[.,]+$/.exec(p)?.[0] ?? '';
+    return relativePath(trail === '' ? p : p.slice(0, -trail.length), cx.cwd) + trail;
+  });
+  return t.replace(HOME_PATH, OUTSIDE).replace(WIN_PATH, OUTSIDE).replace(DOTDOT_PATH, OUTSIDE);
+}
+
+/** The program a command line starts: `git status` and `/usr/bin/git status` and `FOO=1 git status` are `git`; null when it is not a plain program name. */
+export function programOf(command: string): string | null {
+  let t = command.trim();
+  t = t.replace(/^[A-Za-z_][\w-]{0,30}:\s+/, (m) => (/^(terminal|bash|shell|sh|execute|run|command)/i.test(m) ? '' : m));
+  const wrap = /^(?:\S*\/)?(?:ba|z|da|k)?sh\s+-[a-z]*c\s+(.+)$/is.exec(t);
+  if (wrap) t = wrap[1]!.trim().replace(/^["']/, '');
+  const tokens = t.split(/\s+/);
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i]!)) i += 1;
+  // `cd dir && git status` is about `git`.
+  if (tokens[i] === 'cd' && tokens.length > i + 2 && /^(&&|;)$/.test(tokens[i + 2]!)) i += 3;
+  const first = (tokens[i] ?? '').replace(/^[("'`]+/, '');
+  const name = first.slice(first.lastIndexOf('/') + 1);
+  return /^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$/.test(name) ? name : null;
+}
+
+/** The words a step shows for a command: what kind of thing runs, never the line itself (it may hold a token, a password or a person's data). */
+export const runningLabel = (command: string): string => {
+  const program = /^(terminal|bash|shell|run command|command|execute)$/i.test(command.trim()) ? null : programOf(command);
+  return program === null ? 'Running a command' : `Running ${program}`;
+};
 
 /** Added and removed line counts of a diff block: lines that appear on one side only (an unchanged line of context counts for neither). */
 export function diffCounts(oldText: string | null | undefined, newText: string): { added: number; removed: number } {
@@ -98,7 +170,8 @@ export interface ViewContext {
   secrets: readonly string[];
 }
 
-export function viewOf(raw: unknown, cx: ViewContext): StepView | null {
+/** `known`: the kind this step was announced with (Claude's refining update carries a title and no kind, and the title of a command must still be read as one). */
+export function viewOf(raw: unknown, cx: ViewContext, known: StepKind | null = null): StepView | null {
   if (!isRecord(raw)) return null;
   const id = str(raw['toolCallId']);
   if (id === '') return null;
@@ -127,10 +200,11 @@ export function viewOf(raw: unknown, cx: ViewContext): StepView | null {
   }
   const diff = hasDiff ? { added: diffAdded, removed: diffRemoved } : null;
   const rawTitle = str(raw['title']);
+  const kind = typeof raw['kind'] === 'string' ? kindOf(raw['kind']) : null;
   return {
     id,
-    title: rawTitle === '' ? null : cleanTitle(rawTitle, cx),
-    kind: typeof raw['kind'] === 'string' ? kindOf(raw['kind']) : null,
+    title: rawTitle === '' ? null : titleOf(rawTitle, kind ?? known, cx),
+    kind,
     status: typeof raw['status'] === 'string' ? raw['status'] : null,
     paths,
     diff,
@@ -141,10 +215,29 @@ export function viewOf(raw: unknown, cx: ViewContext): StepView | null {
   };
 }
 
-function cleanTitle(title: string, cx: ViewContext): string {
-  const base = cx.cwd.replace(/\/+$/, '');
-  const inRun = base === '' ? title : title.split(`${base}/`).join('').split(base).join('.');
-  return clipText(inRun, MAX_TITLE_CHARS, cx.secrets);
+/** A step's title: "Running <program>" for a command, else the adapter's own words with secrets, link details and outside paths taken out, on one line, cut. */
+function titleOf(title: string, kind: StepKind | null, cx: ViewContext): string {
+  if (kind === 'execute' && !MCP_TITLE.test(title)) return runningLabel(title);
+  return clipText(scrubTitle(title, cx), MAX_TITLE_CHARS, cx.secrets);
+}
+/** Codex and Hermes title a call of an MCP tool as `mcp.server.tool` or `mcp__server__tool: arguments`; `mcpToolOf` handles those (the arguments are dropped). */
+const MCP_TITLE = /^mcp(?:\.|__)/;
+
+/**
+ * What a person is shown to approve one request (the one place besides `todo_list` where `rawInput` is read): the command itself for a command, the plan for a
+ * plan to implement, else the title. Several lines, secrets out, up to 2000 characters, with a mark where it was cut. `label` is the short title of the card.
+ */
+export function approvalOf(toolCall: unknown, cx: ViewContext): { text: string; label: string | null } {
+  const raw = isRecord(toolCall) ? toolCall : {};
+  const input = isRecord(raw['rawInput']) ? raw['rawInput'] : {};
+  const kind = typeof raw['kind'] === 'string' ? kindOf(raw['kind']) : null;
+  const title = str(raw['title']);
+  if (kind === 'switch_mode' && typeof input['plan'] === 'string' && input['plan'].trim() !== '') return { text: clipBlock(input['plan'], MAX_APPROVAL_CHARS, cx.secrets), label: title === '' ? null : clipText(title, MAX_TITLE_CHARS, cx.secrets) };
+  if (kind === 'execute') {
+    const command = typeof input['command'] === 'string' && input['command'].trim() !== '' ? input['command'] : title;
+    if (command.trim() !== '' && !MCP_TITLE.test(command)) return { text: clipBlock(command, MAX_APPROVAL_CHARS, cx.secrets), label: runningLabel(command) };
+  }
+  return { text: title === '' ? '' : clipBlock(title, MAX_APPROVAL_CHARS, cx.secrets), label: null };
 }
 
 /** `mcp.manythreads.mt_note` (Codex) and `mcp__manythreads__mt_note: hi` (Hermes) both name a tool of an MCP server; the arguments in a title are never kept. */
@@ -236,6 +329,14 @@ export class Frames {
   private costCurrency = 'USD';
   /** Steps that were started (not hidden, not helpers) and the files they touched: the run's own tally. */
   stepCount = 0;
+  /**
+   * The model's turns as far as the stream shows them: each tool call of the agent itself (a helper's own steps are not counted) and each stretch of text that
+   * follows one. The CLI driver counts the model's replies; this is the same count, and a little high where a reply made several calls at once.
+   */
+  turns = 0;
+  /** A step started since the last text: the next text starts a new paragraph. */
+  private afterStep = false;
+  private inText = false;
 
   constructor(private readonly o: FramesOptions) {
     this.now = o.now ?? Date.now;
@@ -267,8 +368,21 @@ export class Frames {
 
   // ---- the answer text ------------------------------------------------------------------------------------------------------------------
 
-  private pushText(chunk: string): void {
+  private pushText(raw: string): void {
     this.endThinking();
+    let chunk = raw;
+    if (this.afterStep) {
+      // Text before a step and text after it are two stretches of the answer: the adapters send them with nothing between ("Let me look.Done.").
+      this.afterStep = false;
+      if (this.text !== '' && !/\n\s*$/.test(this.text)) {
+        this.text = this.text.replace(/[ \t]+$/, '');
+        chunk = `\n\n${chunk.replace(/^[ \t]+/, '')}`;
+      }
+    }
+    if (!this.inText) {
+      this.inText = true;
+      this.turns += 1;
+    }
     this.text += chunk;
     this.pending += chunk;
     const cut = Math.max(this.pending.lastIndexOf(' '), this.pending.lastIndexOf('\n'), this.pending.lastIndexOf('\t'));
@@ -334,7 +448,8 @@ export class Frames {
       case 'tool_call':
       case 'tool_call_update': {
         this.endThinking();
-        const view = viewOf(raw, this.o);
+        const id = raw['toolCallId'];
+        const view = viewOf(raw, this.o, typeof id === 'string' ? (this.steps.get(id)?.kind ?? null) : null);
         // An update for a step never announced and with nothing to show (Codex ends its "Implement this plan?" request like that) is not a step.
         const orphan = raw['sessionUpdate'] === 'tool_call_update' && view !== null && !this.steps.has(view.id) && view.rawTitle === '' && view.kind === null;
         if (view && !orphan) this.onStep(view, raw);
@@ -363,7 +478,7 @@ export class Frames {
     const list: PlanEntry[] = [];
     for (const e of entries.slice(0, MAX_PLAN_ITEMS)) {
       if (!isRecord(e)) continue;
-      const content = clipText(str(e['content']), MAX_PLAN_CHARS, this.o.secrets);
+      const content = clipText(scrubTitle(str(e['content']), this.o), MAX_PLAN_CHARS, this.o.secrets);
       if (content !== '') list.push({ content, status: planStatus(e['status']) });
     }
     this.sendPlan(list);
@@ -387,7 +502,7 @@ export class Frames {
       if (!isRecord(t)) continue;
       const key = str(t['id']) || String(this.hermesTodos.size);
       const prior = this.hermesTodos.get(key);
-      const content = typeof t['content'] === 'string' ? clipText(t['content'], MAX_PLAN_CHARS, this.o.secrets) : (prior?.content ?? '');
+      const content = typeof t['content'] === 'string' ? clipText(scrubTitle(t['content'], this.o), MAX_PLAN_CHARS, this.o.secrets) : (prior?.content ?? '');
       if (content === '') continue;
       this.hermesTodos.set(key, { content, status: t['status'] === undefined ? (prior?.status ?? 'pending') : planStatus(t['status']) });
     }
@@ -400,6 +515,9 @@ export class Frames {
   private onStep(view: StepView, raw: Record<string, unknown>): void {
     const existing = this.steps.get(view.id);
     if (!existing) {
+      this.afterStep = true;
+      this.inText = false;
+      if (view.parentId === null) this.turns += 1;
       const hidden = isHiddenStep(view);
       const helper = helperOf(view);
       const mcpTool = mcpToolOf(view);
@@ -506,7 +624,7 @@ export class Frames {
   // ---- helpers (subagents) --------------------------------------------------------------------------------------------------------------
 
   private helperName(step: Step, view: StepView): string {
-    const clean = (s: string): string => clipText(s, MAX_TITLE_CHARS, this.o.secrets);
+    const clean = (s: string): string => clipText(scrubTitle(s, this.o), MAX_TITLE_CHARS, this.o.secrets);
     switch (step.helper) {
       case 'codex-start':
         return clean(view.rawTitle.replace(/^Start subagent /, '').replace(/[\s_-]+/g, ' '));
@@ -572,8 +690,8 @@ export class Frames {
 
   // ---- the end --------------------------------------------------------------------------------------------------------------------------
 
-  /** The turn is over: the answer's last word, a thinking burst, and whatever the adapter left open (Codex leaves a cancelled step `in_progress` for ever). */
-  finish(cancelled: boolean): void {
+  /** The turn is over: the answer's last word, a thinking burst, and whatever the adapter left open (Codex leaves a cancelled step `in_progress` for ever; a step still open when the run failed is failed). */
+  finish(cancelled: boolean, failed = false): void {
     this.endThinking();
     this.flushText();
     for (const step of this.steps.values()) {
@@ -582,7 +700,7 @@ export class Frames {
       if (step.helper !== null) {
         if (step.helper === 'claude' || step.helper === 'hermes') {
           const h = this.helpers.get(step.id);
-          if (h) this.finishHelper(h, cancelled);
+          if (h) this.finishHelper(h, cancelled || failed);
         }
         continue;
       }
@@ -591,11 +709,11 @@ export class Frames {
         tool: step.tool,
         step_id: step.id,
         duration: Math.round(((this.now() - step.startedAt) / 1000) * 10) / 10,
-        error: false,
+        error: failed && !cancelled,
         ...(cancelled ? { interrupted: true } : {}),
         ...(step.diff !== null ? { diff: step.diff } : {}),
       });
     }
-    for (const h of this.helpers.values()) if (h.status === 'working') this.finishHelper(h, cancelled);
+    for (const h of this.helpers.values()) if (h.status === 'working') this.finishHelper(h, cancelled || failed);
   }
 }

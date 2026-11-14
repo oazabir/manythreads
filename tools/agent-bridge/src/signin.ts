@@ -18,11 +18,11 @@ export type SigninAgent = 'claude-code' | 'codex';
  * limit" / "Sonnet limit", "OAuth session expired and could not be refreshed", "OAuth token revoked", "this login reached its time limit"; Codex "Your access token could not be refreshed
  * because your refresh token was already used / has expired / was revoked. Please log out and sign in again." and "You've hit your usage limit".
  */
-export const FAILURE_PATTERNS: ReadonlyArray<{ agents: readonly SigninAgent[]; kind: 'needs_sign_in' | 'plan_limit'; pattern: RegExp }> = [
+export const FAILURE_PATTERNS: ReadonlyArray<{ agents: readonly SigninAgent[]; kind: 'needs_sign_in' | 'plan_limit'; pattern: RegExp; /** Only for a run through an ACP adapter (its words are not the CLI's). */ acpOnly?: true }> = [
   { agents: ['claude-code', 'codex'], kind: 'needs_sign_in', pattern: /FAKE401/ },
   { agents: ['claude-code', 'codex'], kind: 'plan_limit', pattern: /FAKELIMIT/ },
   // ACP adapters (P25-03): an adapter that is not signed in answers `session/prompt` with -32000 "Authentication required" (Codex: "Sign-in did not complete").
-  { agents: ['claude-code', 'codex'], kind: 'needs_sign_in', pattern: /authentication required|sign-in did not complete/i },
+  { agents: ['claude-code', 'codex'], kind: 'needs_sign_in', pattern: /authentication required|sign-in did not complete/i, acpOnly: true },
   { agents: ['claude-code'], kind: 'needs_sign_in', pattern: /(?:api error|status(?: code)?|http|error)\W{0,3}401\b|authentication_(?:error|failed)|invalid (?:api key|authentication|credentials)|oauth (?:access )?(?:token|session) (?:has |is |was )?(?:been )?(?:expired|revoked|invalid)|login (?:has )?expired|login reached its time limit|please run \/login|not logged in/i },
   { agents: ['claude-code'], kind: 'plan_limit', pattern: /usage limit reached|rate limit reached|you(?:'|\u2019)ve hit your [\w -]{0,40}limit|reached your (?:[\w -]{0,40} )?usage limit|(?:5-hour|weekly|opus|sonnet|fable|usage credit) limit|limit will reset/i },
   // Codex. A reused or expired refresh token is an account failure: it is never retried, because every retry presents the same dead token.
@@ -33,9 +33,9 @@ export const FAILURE_PATTERNS: ReadonlyArray<{ agents: readonly SigninAgent[]; k
 
 export type AccountFailure = 'needs_sign_in' | 'plan_limit';
 
-/** Which account-level failure `text` is for `agent`, or null. */
-export function classifyFailure(text: string, agent: SigninAgent = 'claude-code'): AccountFailure | null {
-  for (const row of FAILURE_PATTERNS) if (row.agents.includes(agent) && row.pattern.test(text)) return row.kind;
+/** Which account-level failure `text` is for `agent` run through `driver` (the ACP adapters' words count only for `acp`), or null. */
+export function classifyFailure(text: string, agent: SigninAgent = 'claude-code', driver: 'cli' | 'acp' = 'cli'): AccountFailure | null {
+  for (const row of FAILURE_PATTERNS) if (row.agents.includes(agent) && (row.acpOnly !== true || driver === 'acp') && row.pattern.test(text)) return row.kind;
   return null;
 }
 

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { acpHarness, post, runToEnd, startRun, watch, type AcpHarness, type Flavor, type Frame } from './acp-support.ts';
-import { waitFor } from './support.ts';
+import { acpHarness, post, runToEnd, startRun, status, watch, type AcpHarness, type Flavor, type Frame } from './acp-support.ts';
 
 // The acp driver end to end: the bridge's HTTP face, a run, the fake ACP agent as a child process (its frames follow the recorded fixtures; the real adapters are
 // not run here). Mapping details over the fixtures themselves are in acp-frames.test.ts.
@@ -16,7 +15,7 @@ const names = (frames: Frame[]): string[] => frames.map((f) => f['event'] as str
 const last = (frames: Frame[]): Frame => frames.at(-1)!;
 
 /** A script with one scenario of our own (the fake's tags `[[name]]` pick among them). */
-const script = (flavor: Flavor, scenarios: Record<string, unknown[]>): Record<string, unknown> => ({ flavor, scenarios, default: Object.keys(scenarios)[0] });
+const script = (flavor: Flavor, scenarios: Record<string, unknown[]>, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ flavor, scenarios, default: Object.keys(scenarios)[0], ...extra });
 
 describe('a run on each adapter', () => {
   for (const flavor of ['claude', 'codex', 'hermes'] as const) {
@@ -63,10 +62,12 @@ describe('what a person sees of the work', () => {
     h = await acpHarness({ flavor: 'claude' });
     const frames = await runToEnd(h, { input: 'go [[work]]' });
     const started = frames.filter((f) => f['event'] === 'tool.started');
-    expect(started.map((f) => f['title'])).toEqual(expect.arrayContaining(['Read File', 'Terminal']));
+    expect(started.map((f) => f['title'])).toEqual(expect.arrayContaining(['Read File', 'Running a command']));
     expect(started.every((f) => typeof f['step_id'] === 'string' && Array.isArray(f['paths']))).toBe(true);
     const refined = frames.filter((f) => f['event'] === 'step.update');
     expect(refined.some((f) => f['title'] === 'Read package.json' && (f['paths'] as string[]).includes('package.json'))).toBe(true);
+    // the command's step says what runs, never the command line the adapter refined its title to
+    expect(refined.some((f) => f['title'] === 'Running pnpm')).toBe(true);
     expect(frames.filter((f) => f['event'] === 'plan.update').length).toBeGreaterThan(0);
     expect(frames.find((f) => f['event'] === 'tool.completed' && f['diff'])).toMatchObject({ diff: { added: 1, removed: 1 } });
     const helper = frames.filter((f) => f['event'] === 'agent.update');
@@ -102,10 +103,10 @@ describe('questions to a person (approval.request)', () => {
     const id = await startRun(h, { input: 'ask [[permission]]' });
     const w = watch(h, id);
     const ask = await w.until((f) => f['event'] === 'approval.request');
-    expect(ask).toMatchObject({ command: 'touch spike-a.txt', title: 'touch spike-a.txt', choices: ['once', 'deny'], kind: 'execute', paths: ['spike-a.txt'] });
+    expect(ask).toMatchObject({ command: 'touch spike-a.txt', title: 'Running touch', choices: ['once', 'deny'], kind: 'execute', paths: ['spike-a.txt'] });
     expect(typeof ask['request_id']).toBe('string');
     // the run is waiting: it is not over, and its time budget is held
-    await new Promise((r) => setTimeout(r, 200));
+    expect((await status(h, id))['status']).toBe('running');
     expect(names(w.frames)).not.toContain('run.completed');
     expect(await post(h, id, 'approval', { choice: 'once', request_id: ask['request_id'] })).toMatchObject({ status: 200 });
     await w.done;
@@ -306,7 +307,6 @@ describe('a thread across runs', () => {
     await post(h, id, 'approval', { choice: 'once', request_id: ask['request_id'] });
     await w.done;
     expect(last(w.frames)['event']).toBe('run.completed');
-    await waitFor(() => true);
   });
 });
 

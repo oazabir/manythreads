@@ -1,4 +1,4 @@
-import type { AgentKind, ProfileConfig } from '../config.ts';
+import { HERMES_GROUPS, type AgentKind, type ProfileConfig } from '../config.ts';
 import type { DriverJob } from '../drivers/types.ts';
 import { claudeToolFlags, MCP_SERVER_NAME } from '../drivers/claude-code.ts';
 
@@ -86,21 +86,47 @@ export function mcpServers(job: DriverJob): Array<Record<string, unknown>> {
 
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
+export interface WantedOption {
+  configId: string;
+  value: string;
+  /** Set by the profile (its model, or an alias mapped by it): the run fails when the adapter cannot take it. The bot's own effort is only asked for. */
+  pinned: boolean;
+}
+
 /** The model and effort of the run as `session/set_config_option` values (the model is a config option in stable v1). */
-export function wantedOptions(job: DriverJob): Array<{ configId: string; value: string }> {
+export function wantedOptions(job: DriverJob): WantedOption[] {
   const mt = job.request.manythreads;
   const alias = mt.model.alias;
   const mapped = alias !== null && job.profile.modelAliases && Object.hasOwn(job.profile.modelAliases, alias) ? job.profile.modelAliases[alias] : undefined;
   const model = mapped ?? job.profile.model;
-  const out: Array<{ configId: string; value: string }> = [];
-  if (model !== undefined && flavorOf(job.profile.agent) !== 'hermes') out.push({ configId: 'model', value: model });
+  const flavor = flavorOf(job.profile.agent);
+  const out: WantedOption[] = [];
+  // Hermes has no model option (its model is the home's setting): a model the profile pins cannot be set, and the run says so.
+  if (model !== undefined) out.push({ configId: 'model', value: model, pinned: true });
   if (mt.model.effort !== null && EFFORTS.has(mt.model.effort)) {
-    const flavor = flavorOf(job.profile.agent);
-    if (flavor === 'codex') out.push({ configId: 'reasoning_effort', value: mt.model.effort });
-    else if (flavor === 'claude') out.push({ configId: 'effort', value: mt.model.effort });
+    if (flavor === 'codex') out.push({ configId: 'reasoning_effort', value: mt.model.effort, pinned: false });
+    else if (flavor === 'claude') out.push({ configId: 'effort', value: mt.model.effort, pinned: false });
   }
   return out;
 }
+
+const GROUP_WORDS: Record<string, string> = { files: 'read and change files', shell: 'run commands', web: 'use the web', browser: 'use a browser', vision: 'look at images' };
+
+/**
+ * Hermes takes its toolsets from its home (`platform_toolsets.acp`), not from the session, so the bridge cannot narrow them per run (checked in Hermes' source: a session
+ * has no toolset parameter, and a copy of the home does not run). A run is therefore allowed only when the bot may use everything the profile's Hermes can do
+ * (`acp.gives`, default all of Hermes' coding tools). Returns the plain-words refusal, or null.
+ */
+export function hermesGrantProblem(job: DriverJob): string | null {
+  const gives = job.profile.acp?.gives ?? [...HERMES_GROUPS];
+  const tools = job.request.manythreads.tools.map((t) => (t === 'web-search' ? 'web' : t));
+  const missing = gives.filter((g) => !tools.includes(g));
+  if (missing.length === 0) return null;
+  return `This Hermes profile lets its agent ${missing.map((g) => GROUP_WORDS[g] ?? g).join(', ')}, which this bot is not allowed to do, and Hermes cannot be limited to less per run. Give the bot those tools, or narrow the Hermes profile (acp.gives).`;
+}
+
+/** OpenCode has not been measured: how it would be held to the bot's grants is not known, so no run starts on it. */
+export const OPENCODE_REFUSAL = 'OpenCode cannot run yet: it has not been checked that its tools can be limited to what the bot may do.';
 
 export interface PermissionOption {
   optionId: string;

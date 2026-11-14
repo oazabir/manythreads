@@ -23,6 +23,8 @@ export interface AcpHarness {
   config: BridgeConfig;
   /** What the fake agent kept of its sessions (mode, config options, the MCP servers it was given, the prompts). */
   sessions(): Array<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  /** The bridge's own log lines. */
+  logs: string[];
   close(): Promise<void>;
 }
 
@@ -32,6 +34,8 @@ export interface AcpOptions {
   script?: Record<string, unknown>;
   profile?: Record<string, unknown>;
   config?: Record<string, unknown>;
+  /** The `acp.gives` of a Hermes profile (what its home lets the agent do); default none, so a bot with no tools may run on it. */
+  gives?: string[];
 }
 
 const PASS = ['FAKE_ACP_SCRIPT_JSON', 'FAKE_ACP_FLAVOR', 'FAKE_ACP_STATE_DIR'];
@@ -52,7 +56,7 @@ export async function acpHarness(o: AcpOptions = {}): Promise<AcpHarness> {
         driver: 'acp',
         workdir: join(dir, 'work'),
         passEnv: PASS,
-        acp: { command: process.execPath, args: ['--import', TSX, FAKE_CLI] },
+        acp: { command: process.execPath, args: ['--import', TSX, FAKE_CLI], ...(flavor === 'hermes' ? { gives: o.gives ?? [] } : {}) },
         ...o.profile,
       },
     },
@@ -61,9 +65,11 @@ export async function acpHarness(o: AcpOptions = {}): Promise<AcpHarness> {
     cancelGraceSeconds: 2,
     ...o.config,
   });
-  const bridge = await startBridge({ config, apiKey: KEY, stateDir: join(dir, 'state'), port: 0, log: () => undefined, tmpRoot: dir });
+  const logs: string[] = [];
+  const bridge = await startBridge({ config, apiKey: KEY, stateDir: join(dir, 'state'), port: 0, log: (line) => logs.push(line), tmpRoot: dir });
   return {
     bridge,
+    logs,
     dir,
     stateDir,
     config,
@@ -130,4 +136,23 @@ export async function runToEnd(h: AcpHarness, body: Record<string, unknown>): Pr
   const w = watch(h, id);
   await w.done;
   return w.frames;
+}
+
+/** A run as the status endpoint tells it. */
+export async function status(h: AcpHarness, runId: string): Promise<Frame> {
+  return (await (await fetch(`${h.bridge.url}/p/default/v1/runs/${runId}`, { headers: auth })).json()) as Frame;
+}
+
+/** The fake agent's script for the NEXT adapter process the bridge starts (a process reads it when it starts). */
+export function nextScript(script: Record<string, unknown>): void {
+  process.env['FAKE_ACP_SCRIPT_JSON'] = JSON.stringify(script);
+}
+
+/** Polls a condition (instead of a fixed sleep). */
+export async function until(cond: () => boolean | Promise<boolean>, ms = 10_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > end) throw new Error('timed out waiting for a condition');
+    await new Promise((r) => setTimeout(r, 15));
+  }
 }

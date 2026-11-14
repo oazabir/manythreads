@@ -283,16 +283,16 @@ describe('the adapter module', () => {
 
   it('the model and the effort are config options, by each adapter\'s own ids', () => {
     expect(wantedOptions(jobOf('codex', { model: 'gpt-5.4' }, { manythreads: { model: { alias: null, effort: 'high' } } }))).toEqual([
-      { configId: 'model', value: 'gpt-5.4' },
-      { configId: 'reasoning_effort', value: 'high' },
+      { configId: 'model', value: 'gpt-5.4', pinned: true },
+      { configId: 'reasoning_effort', value: 'high', pinned: false },
     ]);
     expect(wantedOptions(jobOf('claude-code', { model: 'sonnet' }, { manythreads: { model: { alias: null, effort: 'low' } } }))).toEqual([
-      { configId: 'model', value: 'sonnet' },
-      { configId: 'effort', value: 'low' },
+      { configId: 'model', value: 'sonnet', pinned: true },
+      { configId: 'effort', value: 'low', pinned: false },
     ]);
-    expect(wantedOptions(jobOf('claude-code', { model: 'sonnet', modelAliases: { fast: 'haiku' } }, { manythreads: { model: { alias: 'fast', effort: null } } }))).toEqual([{ configId: 'model', value: 'haiku' }]);
-    // Hermes takes its model from its own home; an unknown effort is not sent
-    expect(wantedOptions(jobOf('hermes-acp', { model: 'x' }, { manythreads: { model: { alias: null, effort: 'high' } } }))).toEqual([]);
+    expect(wantedOptions(jobOf('claude-code', { model: 'sonnet', modelAliases: { fast: 'haiku' } }, { manythreads: { model: { alias: 'fast', effort: null } } }))).toEqual([{ configId: 'model', value: 'haiku', pinned: true }]);
+    // Hermes takes its model from its own home: a model the profile pins is still wanted (and the run fails, as the adapter offers no such option); an unknown effort is not sent
+    expect(wantedOptions(jobOf('hermes-acp', { model: 'x' }, { manythreads: { model: { alias: null, effort: 'high' } } }))).toEqual([{ configId: 'model', value: 'x', pinned: true }]);
     expect(wantedOptions(jobOf('codex', {}, { manythreads: { model: { alias: null, effort: 'enormous' } } }))).toEqual([]);
   });
 });
