@@ -6,6 +6,7 @@ import { liveRooms } from '../meetings/store';
 import { refreshDmsIfUsed } from '../dms/store';
 import { notificationStore } from '../notifications/store';
 import { noteActivity, refreshDirectories } from '../shell/channelFeed';
+import { threadRunsStore } from '../runs/store';
 import { sidebarPrefsStore } from '../shell/sidebarPrefsStore';
 import { RealtimeClient, browserDeps, type RealtimeStatus } from './socket';
 
@@ -27,6 +28,7 @@ export function useRealtime(): void {
     channelStore.attach(rt);
     notificationStore.attach(rt);
     linkPreviewStore.attach(rt);
+    threadRunsStore.attach(rt);
     const rooms = liveRooms();
     rooms.attach(rt);
     const offHook = channelStore.onResync(() => {
