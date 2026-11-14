@@ -203,3 +203,147 @@ describe('POST /api/runs/:runId/stop', () => {
     await expect(route.handler({ params: { runId: RUN } }, txOf([{ status: 'running' }]))).rejects.toMatchObject({ status: 500, message: expect.stringContaining('could not be stopped') as unknown as string });
   });
 });
+
+// ---- a run in a thread (P25-07): frames to the watchers of the thread --------------------------------------------------------------------
+
+describe('LiveFrames with an audience (a run in a thread)', () => {
+  function threadRig(watchers: () => string[], options: { sendEnded?: boolean; sendLooking?: boolean } = { sendEnded: false, sendLooking: false }) {
+    const pushed: Array<{ ids: readonly string[]; type: string; payload: Record<string, unknown> }> = [];
+    const clock = { now: 1_000_000 };
+    const asked = { n: 0 };
+    const tx = {};
+    const ctx = {
+      realtime: {
+        pushToPeople: async (_tx: unknown, ids: readonly string[], type: string, body: Record<string, unknown>): Promise<void> => {
+          pushed.push({ ids, type, payload: body });
+        },
+        pushToPerson: async (): Promise<void> => {
+          throw new Error('a thread run must not push to the asker alone');
+        },
+      },
+    } as unknown as PluginContext;
+    const job = { transaction: async <T>(fn: (t: typeof tx) => Promise<T>): Promise<T> => fn(tx) } as unknown as JobInfo;
+    const log = { info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined } as unknown as PluginLogger;
+    const audience = async (): Promise<string[]> => {
+      asked.n += 1;
+      return watchers();
+    };
+    const frames = new LiveFrames(ctx, job, { runId: RUN, channelId: CHANNEL, threadRootId: THREAD, askerActorId: ASKER }, log, () => clock.now, { audience, ...options });
+    return { frames, pushed, clock, asked };
+  }
+
+  it('sends the words to the people who have the thread open, with the same offsets as a conversation', async () => {
+    const { frames, pushed, clock } = threadRig(() => [PERSON, 'p2']);
+    frames.text('Hello ');
+    clock.now += 100;
+    frames.text('world');
+    await frames.end('done');
+    expect(pushed.map((p) => p.type)).toEqual(['run.delta', 'run.delta']);
+    expect(pushed[0]!.ids).toEqual([PERSON, 'p2']);
+    expect(pushed.map((p) => [p.payload['offset'], p.payload['text']])).toEqual([[0, 'Hello '], [6, 'world']]);
+    expect(frames.full).toBe('Hello world');
+  });
+
+  it('sends no run.ended and no run.looking when told not to (the recorder ends the run for the channel)', async () => {
+    const { frames, pushed } = threadRig(() => [PERSON]);
+    frames.looking('memory.search');
+    await frames.end('stopped');
+    expect(pushed).toEqual([]);
+  });
+
+  it('can still send run.ended when asked to', async () => {
+    const { frames, pushed } = threadRig(() => [PERSON], { sendEnded: true });
+    await frames.end('failed');
+    expect(pushed.map((p) => [p.type, p.payload['status']])).toEqual([['run.ended', 'failed']]);
+  });
+
+  it('a thread nobody has open costs one look, not one per frame; a watcher who arrives is found again after a moment', async () => {
+    let people: string[] = [];
+    const { frames, pushed, clock, asked } = threadRig(() => people);
+    frames.text('a');
+    await frames.end('done').catch(() => undefined);
+    const first = asked.n;
+    expect(first).toBe(1);
+    clock.now += 100;
+    frames.text('b');
+    clock.now += 100;
+    frames.text('c');
+    await frames.end('done');
+    expect(asked.n).toBe(first);
+    expect(pushed).toEqual([]);
+    people = [PERSON];
+    clock.now += 2_000;
+    frames.text('d');
+    await frames.end('done');
+    expect(pushed.map((p) => p.payload['text'])).toEqual(['d']);
+    expect(asked.n).toBeGreaterThan(first);
+  });
+});
+
+// ---- Stop as a fact on the run (P25-08) ----------------------------------------------------------------------------------------------------
+
+function sqlTx(answers: { stop?: string; view?: { stopped_by_actor: string | null; stopped_by_name: string | null } | null; mine?: Array<{ status: string }> }): { tx: PluginTx; asked: string[] } {
+  const asked: string[] = [];
+  const tx = {
+    query: async (sql: string) => {
+      asked.push(sql);
+      if (sql.includes('run_stop_request')) return { rows: answers.stop === undefined ? [] : [{ r: answers.stop }] };
+      if (sql.includes('FROM app.run_view')) return { rows: answers.view ? [answers.view] : [] };
+      if (sql.includes('FROM app.bot_runs')) return { rows: answers.mine ?? [] };
+      return { rows: [] };
+    },
+  } as unknown as PluginTx;
+  return { tx, asked };
+}
+
+describe('POST /api/runs/:runId/stop as a flag on the run', () => {
+  const PERSON_ACTOR = '00000000-0000-7000-8000-0000000d0003';
+  const view = { stopped_by_actor: PERSON_ACTOR, stopped_by_name: 'Rafi' };
+
+  it('a first ask stops the run this server holds at once and remembers who asked', async () => {
+    const route = stopRoute();
+    const stop = vi.fn(async () => undefined);
+    const entry = trackRun(RUN, ASKER);
+    entry.handle = { stop, events: (async function* () {})() } as never;
+    const { tx } = sqlTx({ stop: 'requested', view });
+    const res = await route.handler({ params: { runId: RUN } }, tx);
+    expect(JSON.stringify(res.body ?? res)).toContain('"stopped":true');
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(entry.stopped).toBe(true);
+    expect(entry.stoppedBy).toEqual({ actorId: PERSON_ACTOR, name: 'Rafi' });
+  });
+
+  it('a run another server holds is "stopped" too: the flag is on the row and that server\'s job sees it', async () => {
+    const route = stopRoute();
+    const { tx } = sqlTx({ stop: 'requested', view });
+    expect(JSON.stringify(await route.handler({ params: { runId: RUN } }, tx))).toContain('"stopped":true');
+    expect(JSON.stringify(await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'already', view }).tx))).toContain('"stopped":true');
+  });
+
+  it('a run that has ended says false', async () => {
+    const route = stopRoute();
+    expect(JSON.stringify(await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'ended' }).tx))).toContain('"stopped":false');
+  });
+
+  it('a caller who may not stop it, with no run of their own, gets the one 404', async () => {
+    const route = stopRoute();
+    await expect(route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'denied', mine: [] }).tx)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('a run with no folded row is still stopped by its asker, the old way', async () => {
+    const route = stopRoute();
+    const stop = vi.fn(async () => undefined);
+    const entry = trackRun(RUN, ASKER);
+    entry.handle = { stop, events: (async function* () {})() } as never;
+    const res = await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'denied', mine: [{ status: 'running' }] }).tx);
+    expect(JSON.stringify(res.body ?? res)).toContain('"stopped":true');
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers 500 with a plain sentence when the process will not stop', async () => {
+    const route = stopRoute();
+    const entry = trackRun(RUN, ASKER);
+    entry.handle = { stop: async () => { throw new Error('kill failed'); }, events: (async function* () {})() } as never;
+    await expect(route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'requested', view }).tx)).rejects.toMatchObject({ status: 500, message: expect.stringContaining('could not be stopped') as unknown as string });
+  });
+});

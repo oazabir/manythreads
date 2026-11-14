@@ -7,6 +7,7 @@ import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
 import { registerConnectionRoutes, resolveRunnerTarget, resolveTarget } from './connections.ts';
 import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
 import { registerProfileChanges } from './profile-changes.ts';
+import { registerActivityRoutes } from './activity-routes.ts';
 import { registerStopRoute } from './live.ts';
 import { registerChatRouter } from './router-chat.ts';
 import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
@@ -108,6 +109,7 @@ export default definePlugin({
     registerRouter(ctx);
     registerChatRouter(ctx);
     registerStopRoute(ctx);
+    registerActivityRoutes(ctx);
     registerApprovalResume(ctx);
     registerRunJob(ctx);
   },

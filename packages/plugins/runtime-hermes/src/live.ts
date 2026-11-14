@@ -18,8 +18,11 @@ import {
 //    the asker only, as WebSocket pushes (`ctx.realtime.pushToPerson`, delivered when the short transaction that queued them commits). They are previews: the
 //    answer is the message the run posts, so a lost or late frame costs a word of the preview and nothing else. At most one frame per 80 ms, each under 4000
 //    characters (a push is capped near 7 KB).
-//  * Stop. `POST /api/runs/:runId/stop` is the asker's alone (404 for anybody else). The handle of a live run is held in this process, so a server with
-//    several replicas answers `{ stopped: false }` when the run is on another one (Helm runs one). A stopped run posts what it had written as its answer.
+//  * Stop. `POST /api/runs/:runId/stop` is a fact on the run's row (`app.run_stop_request`, P25-08): the asker, the person who started the thread, a lead of the
+//    team and a workspace admin may press it (a run in a conversation: its asker alone). The server that holds the run stops it at once; the run job on any other
+//    replica sees the flag within a couple of seconds (`RunRecorder.watchStop`). A stopped run posts what it had written as its answer.
+//  * A run in a thread (P25-07) streams the words of its answer too, to the people who have that thread open (`thread_watchers`) instead of the asker alone, and
+//    sends no `run.ended` from here: the recorder (run-recorder.ts) tells every reader of the channel when the run is over.
 
 export const FRAME_MS = 80;
 export const FRAME_CHARS = 3000;
@@ -38,17 +41,24 @@ export function takePiece(pending: string): string {
   return pending.slice(0, n);
 }
 
+export interface StoppedBy {
+  actorId: string | null;
+  name: string;
+}
+
 interface LiveEntry {
-  askerActorId: string;
+  askerActorId: string | null;
   handle: BotRuntimeHandle | undefined;
   stopped: boolean;
+  /** Who pressed Stop, when it was pressed on this server. */
+  stoppedBy: StoppedBy | undefined;
 }
 
 /** The runs this process is running for a person in a conversation, by run id. */
 const live = new Map<string, LiveEntry>();
 
-export function trackRun(runId: string, askerActorId: string): LiveEntry {
-  const entry: LiveEntry = { askerActorId, handle: undefined, stopped: false };
+export function trackRun(runId: string, askerActorId: string | null): LiveEntry {
+  const entry: LiveEntry = { askerActorId, handle: undefined, stopped: false, stoppedBy: undefined };
   live.set(runId, entry);
   return entry;
 }
@@ -71,8 +81,27 @@ export interface FrameTarget {
   runId: string;
   channelId: string;
   threadRootId: string;
-  askerActorId: string;
+  /** Who the frames go to when there is no `audience` (the person in the conversation). */
+  askerActorId: string | null;
 }
+
+export interface FrameOptions {
+  /** The people to send each frame to, asked inside the transaction that sends it (a thread's watchers). Without it, the asker alone. */
+  audience?: (tx: PluginTx) => Promise<string[]>;
+  /** Send `run.ended` from `end()` (default true); a run in a thread is ended for the channel by the recorder instead. */
+  sendEnded?: boolean;
+  /** Send `run.looking` (default true): a thread run's card has the folded state instead. */
+  sendLooking?: boolean;
+}
+
+/** The people who have a thread open right now (leases the open panel renews, `app.thread_watchers`). */
+export const watchersOf =
+  (rootId: string) =>
+  async (tx: PluginTx): Promise<string[]> =>
+    (await tx.query<{ person_id: string }>('SELECT person_id FROM app.thread_watchers WHERE root_id = $1::uuid AND expires_at > now()', [rootId])).rows.map((r) => r.person_id);
+
+/** How long an empty audience is trusted: a thread nobody has open does not cost a transaction per frame. */
+const EMPTY_AUDIENCE_MS = 1500;
 
 /** Sends the frames of one run, in order, at most one per `FRAME_MS`. Never throws: a frame that cannot be sent is dropped (and logged once). */
 export class LiveFrames {
@@ -83,6 +112,7 @@ export class LiveFrames {
   private chain: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private warned = false;
+  private emptyAt = -Infinity;
   /** Everything the run has written so far. */
   full = '';
 
@@ -92,6 +122,7 @@ export class LiveFrames {
     private readonly target: FrameTarget,
     private readonly log: PluginLogger,
     private readonly now: () => number = Date.now,
+    private readonly options: FrameOptions = {},
   ) {}
 
   /** A piece of the answer. Sent now when the last frame was long enough ago, else held and sent by the timer. */
@@ -104,6 +135,7 @@ export class LiveFrames {
   }
 
   looking(tool: string): void {
+    if (this.options.sendLooking === false) return;
     const payload = RunLookingPush.parse({ runId: this.target.runId, channelId: this.target.channelId, threadRootId: this.target.threadRootId, label: lookingLabel(tool), tool: tool.slice(0, 80) });
     this.send(WS_RUN_LOOKING, payload);
   }
@@ -113,7 +145,9 @@ export class LiveFrames {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     this.drain();
-    this.send(WS_RUN_ENDED, RunEndedPush.parse({ runId: this.target.runId, channelId: this.target.channelId, threadRootId: this.target.threadRootId, status }));
+    if (this.options.sendEnded !== false) {
+      this.send(WS_RUN_ENDED, RunEndedPush.parse({ runId: this.target.runId, channelId: this.target.channelId, threadRootId: this.target.threadRootId, status }));
+    }
     await this.chain;
   }
 
@@ -133,6 +167,16 @@ export class LiveFrames {
   private send(type: string, payload: Record<string, unknown>): void {
     this.chain = this.chain.then(async () => {
       try {
+        const audience = this.options.audience;
+        if (audience !== undefined) {
+          if (this.now() - this.emptyAt < EMPTY_AUDIENCE_MS) return;
+          await this.job.transaction(async (tx) => {
+            const ids = await audience(tx);
+            if (ids.length === 0) this.emptyAt = this.now();
+            else await this.ctx.realtime.pushToPeople(tx, ids, type, payload);
+          });
+          return;
+        }
         const personId = await this.resolvePerson();
         if (personId === null) return;
         await this.job.transaction((tx) => this.ctx.realtime.pushToPerson(tx, personId, type, payload));
@@ -147,14 +191,21 @@ export class LiveFrames {
 
   private async resolvePerson(): Promise<string | null> {
     if (this.personId !== undefined) return this.personId;
+    const actor = this.target.askerActorId;
+    if (actor === null) return (this.personId = null);
     this.personId = await this.job.transaction(
-      async (tx) => (await tx.query<{ ref_id: string }>("SELECT ref_id FROM app.actors WHERE id = $1::uuid AND kind = 'person'", [this.target.askerActorId])).rows[0]?.ref_id ?? null,
+      async (tx) => (await tx.query<{ ref_id: string }>("SELECT ref_id FROM app.actors WHERE id = $1::uuid AND kind = 'person'", [actor])).rows[0]?.ref_id ?? null,
     );
     return this.personId;
   }
 }
 
-/** `POST /api/runs/:runId/stop`: the asker stops their own run. */
+/**
+ * `POST /api/runs/:runId/stop`. The first Stop is written to the run's row (`app.run_stop_request`, which decides who may: the asker, the person who started the thread, a
+ * lead of the team, a workspace admin; a run in a conversation, its asker alone), so a run job on any replica sees it. The server that holds the run stops it now. A run with
+ * no folded row (it began before runs were kept, or its record could not be opened) is stopped the old way, by its asker, on the server that holds it.
+ * `{ stopped: true }` means the Stop is on its way (or was already); anybody who may not stop it, and a run that does not exist, are one 404.
+ */
 export function registerStopRoute(ctx: PluginContext): void {
   ctx.http.route({
     method: stopRunRoute.method,
@@ -163,7 +214,19 @@ export function registerStopRoute(ctx: PluginContext): void {
     schema: { response: RunStopResponse },
     handler: route(async (req, tx: PluginTx) => {
       const { runId } = RunStopPathParams.parse(req.params);
-      // the asker reads their own runs (`bot_runs_select`); anybody else's run, a run that does not exist and a run of nobody are all one 404
+      const asked = (await tx.query<{ r: string }>('SELECT app.run_stop_request($1::uuid) AS r', [runId])).rows[0]?.r;
+      if (asked === 'ended') return json(RunStopResponse.parse({ stopped: false }));
+      if (asked === 'requested' || asked === 'already') {
+        const by = (await tx.query<{ stopped_by_actor: string | null; stopped_by_name: string | null }>('SELECT stopped_by_actor, stopped_by_name FROM app.run_view WHERE run_id = $1::uuid', [runId])).rows[0];
+        try {
+          // a run another server holds is stopped by that server's job within a few seconds, from the flag
+          await stopTracked(runId, by === undefined ? undefined : { actorId: by.stopped_by_actor, name: by.stopped_by_name ?? 'Someone' });
+        } catch (err) {
+          throw new HttpError(500, 'internal', `The run could not be stopped: ${err instanceof Error ? err.message : 'unknown error'}`);
+        }
+        return json(RunStopResponse.parse({ stopped: true }));
+      }
+      // no folded row, or not this caller's to stop: the asker reads their own runs (`bot_runs_select`); anybody else's run, a run that does not exist and a run of nobody are all one 404
       const mine = await tx.query<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1::uuid AND asker_id = app.actor()', [runId]);
       if (mine.rows.length === 0) throw notFound('No such run');
       if (mine.rows[0]?.status !== 'running') return json(RunStopResponse.parse({ stopped: false }));
@@ -177,13 +240,14 @@ export function registerStopRoute(ctx: PluginContext): void {
 }
 
 /**
- * The asker's Stop for a run this process holds: marks it stopped and stops its process if it has one yet (a run that is still starting stops the moment it has one).
- * False when this process does not hold the run.
+ * A Stop for a run this process holds: marks it stopped and stops its process if it has one yet (a run that is still starting stops the moment it has one).
+ * False when this process does not hold the run (its own job finds the flag on the row).
  */
-export async function stopTracked(runId: string): Promise<boolean> {
+export async function stopTracked(runId: string, by?: StoppedBy): Promise<boolean> {
   const entry = live.get(runId);
   if (!entry) return false;
   entry.stopped = true;
+  if (by !== undefined) entry.stoppedBy ??= by;
   await entry.handle?.stop();
   return true;
 }

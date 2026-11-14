@@ -37,7 +37,8 @@ import { settleAgentApproval } from './agent-approval.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
 import { applyChatAlias, recordRunFacts, recordStopped, streamsLive } from './chat-run.ts';
-import { LiveFrames, trackRun, untrackRun } from './live.ts';
+import { LiveFrames, stopTracked, trackRun, untrackRun, watchersOf } from './live.ts';
+import { RunRecorder } from './run-recorder.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
 import { meterPodRun } from './metering.ts';
 import { rehearsalBlocker, withRehearsalNote } from './rehearsal.ts';
@@ -45,6 +46,16 @@ import { scheduledJobOverrideProblem, applyScheduledJobOverrides, emitScheduledJ
 
 /** The answer of a run the asker stopped before it had written a word. */
 const STOPPED_BEFORE_ANSWER = 'Stopped before an answer was written.';
+
+/**
+ * What a run that was stopped posts as its answer. A person's own conversation says it as it always has; a run in a thread says who stopped it ("Stopped by Rafi"), after
+ * whatever had been written.
+ */
+export function stoppedReply(written: string, conversation: boolean, by: string | undefined): string {
+  const label = by === undefined ? 'Stopped' : `Stopped by ${by}`;
+  if (written.trim() === '') return conversation ? STOPPED_BEFORE_ANSWER : `${label} before an answer was written.`;
+  return conversation ? written : `${written.trimEnd()}\n\n_${label}._`;
+}
 
 /** The job queue one run executes in. */
 export const RUN_QUEUE = 'runtime-hermes.run';
@@ -718,6 +729,10 @@ export async function settleEarlierAttempt(ctx: PluginContext, log: PluginLogger
       await job.transaction((tx) => reportFailure({ ctx, tx, log, run: open, payload, botId: payload.botId, category: 'other' })).catch(() => undefined);
     }
     await ctx.runs.close(earlier.id, 'failed');
+    // the card of that run must not say "working" for ever
+    await job
+      .transaction((tx) => tx.query("UPDATE app.run_view SET state = 'failed', ended_at = coalesce(ended_at, now()), updated_at = now() WHERE run_id = $1::uuid AND ended_at IS NULL", [earlier.id]))
+      .catch(() => undefined);
   }
   return true;
 }
@@ -745,6 +760,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
       // The live frames of a run that streams; ended after its answer is posted (so the screen never sees "ended" before the answer), and on any failure (so it
       // never waits for an end that will not come).
       let frames: LiveFrames | undefined;
+      // What the run did, kept and pushed to the people looking (run-recorder.ts); closed on every way out.
+      let recorder: RunRecorder | undefined;
       try {
         // 1. Read, open the run, gate, pre-call check (one short transaction).
         const result = await job.transaction(async (tx): Promise<PreparedRun | null> => {
@@ -882,20 +899,48 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         const { bot, provider, run, input, scope, alias: runAlias } = prepared;
         // A person's conversation streams: the asker gets the words as they are written, and can stop the run (live.ts). Anyone else's run does neither.
         // Tracked from here, not from the moment the process exists, so a Stop pressed while the run is starting is kept and applied the moment it has one.
-        const liveEntry = streamsLive(payload) ? trackRun(run.runId, payload.askerActorId) : undefined;
-        frames = streamsLive(payload)
+        // Every run is tracked, so a Stop reaches it: this server's route stops it at once, another server's flag is seen by the recorder's poll.
+        const liveEntry = trackRun(run.runId, payload.askerActorId);
+        // A person's conversation streams to its asker; a run in a thread streams to the people who have the thread open and ends for the whole channel (recorder).
+        const conversation = streamsLive(payload);
+        const threadRoot = payload.replyRootId;
+        const inThread = !conversation && threadRoot !== null && payload.scheduledJob === undefined;
+        frames = conversation
           ? new LiveFrames(ctx, job, { runId: run.runId, channelId: payload.channelId, threadRootId: payload.replyRootId, askerActorId: payload.askerActorId }, job.log)
-          : undefined;
+          : inThread
+            ? new LiveFrames(
+                ctx,
+                job,
+                { runId: run.runId, channelId: payload.channelId, threadRootId: threadRoot, askerActorId: payload.askerActorId },
+                job.log,
+                Date.now,
+                { audience: watchersOf(threadRoot), sendEnded: false, sendLooking: false },
+              )
+            : undefined;
         // Not in the transaction that opened the run: a hold or a close in that transaction goes through the run's own door on another connection, which would wait for this row's lock.
         await job.transaction((tx) => recordRunFacts(tx, run.runId, payload, runAlias));
+        recorder = new RunRecorder(ctx, job, {
+          runId: run.runId,
+          workspaceId: payload.workspaceId,
+          teamId: payload.teamId,
+          channelId: payload.channelId,
+          threadRootId: payload.replyRootId,
+          botId: bot.id,
+          botName: bot.name,
+          askerActorId: payload.askerActorId,
+          conversation,
+        }, job.log);
+        await recorder.start();
 
         // 2. The model turn: no transaction held.
         let toolCalls = 0;
         handle = await provider.run(input, scope);
-        if (liveEntry) {
-          liveEntry.handle = handle;
-          if (liveEntry.stopped) await handle.stop();
-        }
+        liveEntry.handle = handle;
+        if (liveEntry.stopped) await handle.stop();
+        // A Stop another server took is on the run's row: look for it while the agent works.
+        recorder.watchStop(async (by) => {
+          await stopTracked(run.runId, by);
+        });
         let reply = '';
         let ok = false;
         let error: string | undefined;
@@ -905,6 +950,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let viaClaude: Extract<BotRuntimeEvent, { type: 'result' }>['viaClaude'];
         let tokens: { input: number; output: number; total: number } | null | undefined;
         for await (const event of handle.events) {
+          recorder.event(event);
           if (event.type === 'text') frames?.text(event.text);
           // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
           // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
@@ -914,7 +960,10 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
           }
           // The bot's program stopped to ask a person (a command it wants to run): file it, wait for the decision, and tell the program (agent-approval.ts).
-          if (event.type === 'approval') await settleAgentApproval({ ctx, job, run, question: event, approvers, stopped: () => liveEntry?.stopped === true });
+          if (event.type === 'approval') {
+            const told = await settleAgentApproval({ ctx, job, run, question: event, approvers, stopped: () => liveEntry.stopped });
+            recorder.settle(told);
+          }
           if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
           if (event.type !== 'result') continue;
           reply = event.text;
@@ -929,15 +978,16 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
         }
         await handle.stop();
-        // The asker pressed Stop: what had been written is the answer (a killed process ends with an error that is not the asker's to read).
-        const stoppedByAsker = liveEntry?.stopped === true;
-        if (stoppedByAsker) {
+        // Somebody pressed Stop: what had been written is the answer (a killed process ends with an error that is not the asker's to read).
+        const wasStopped = liveEntry.stopped;
+        const by = wasStopped ? (liveEntry.stoppedBy ?? recorder.stopAsked) : undefined;
+        if (wasStopped) {
           ok = true;
           error = undefined;
           failure = undefined;
-          reply = frames !== undefined && frames.full.trim() !== '' ? frames.full : STOPPED_BEFORE_ANSWER;
+          reply = stoppedReply(frames?.full ?? '', conversation, by?.name);
         }
-        if (liveEntry) untrackRun(run.runId);
+        untrackRun(run.runId);
 
         // 2b. A run the team's pod served is counted at the model gateway: one spend line under the bot, or the `bot_runner.run.unmetered` event (P19-10).
         if (viaPod) {
@@ -966,15 +1016,19 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             if (!ok && refusal) await recordRunnerRefusal(ctx, tx, run, bot.id, refusal, job.log);
             await finishScheduledJobRun({ ctx, tx, log: job.log, run, payload, scope, reply, ok, ...(!ok && refusal ? { failureReason: refusal.line } : {}) });
           });
+          await recorder.end(wasStopped ? 'stopped' : ok ? 'done' : 'failed');
           return;
         }
         // committed first: the reply is posted through the run's own door, and the conversations plugin reads this fact when that message's event arrives
-        if (stoppedByAsker) await job.transaction((tx) => recordStopped(tx, run.runId));
+        if (wasStopped && (conversation || by?.actorId === payload.askerActorId)) await job.transaction((tx) => recordStopped(tx, run.runId));
         await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure, refusal } }));
-        await frames?.end(stoppedByAsker ? 'stopped' : ok ? 'done' : 'failed');
+        const status = wasStopped ? 'stopped' : ok ? 'done' : 'failed';
+        await frames?.end(status);
+        await recorder.end(status);
       } catch (err) {
         untrackRun(opened?.runId ?? '');
         await frames?.end('failed').catch(() => undefined);
+        await recorder?.end(err instanceof ApprovalPending ? 'stopped' : 'failed').catch(() => undefined);
         if (!opened) {
           // Nothing started: let the queue retry. A scheduled run that keeps failing before it opens (a missing BOT.md, no repo) settles its firing
           // on the third attempt, with the reason, instead of leaving it queued.
