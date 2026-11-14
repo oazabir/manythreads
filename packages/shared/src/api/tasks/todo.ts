@@ -6,11 +6,14 @@ import type { ApiRoute } from '../client/route.ts';
 // The to-do list of a thread (PLAN P25-10, docs/plans/acp.md section 4.5). One list per thread, kept by the bot that works the request: a title and at most thirty
 // items, each waiting, working, done or blocked. It is not the agent's plan of one run (that is `run_view.plan`) and not the team's board. An item may name a card
 // (`taskId`); it then follows the card by itself (a handover sets it working with the card's owner, a finished card ticks it). Whoever can read the thread reads the
-// list; only the bot that made it changes it, and a person cannot tick it.
+// list; the bot that made it replaces it (another bot may, when the owner has no live run in the thread), any bot with a live run in the thread may change one item's
+// status, and a person cannot tick it.
 
 export const TODO_MAX_ITEMS = 30;
 export const TODO_TEXT_MAX = 200;
 export const TODO_TITLE_MAX = 120;
+/** The most the items of one list may weigh as JSON (UTF-8 bytes): thirty items of 200 four-byte characters fit, a follower's owner ids still have room under the table's own check. */
+export const TODO_ITEMS_MAX_BYTES = 32_000;
 
 export const TodoStatus = z.enum(['waiting', 'working', 'done', 'blocked']);
 export type TodoStatus = z.infer<typeof TodoStatus>;
