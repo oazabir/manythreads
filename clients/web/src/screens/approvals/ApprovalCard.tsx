@@ -7,7 +7,7 @@ import { announceApprovalsChanged } from './live';
 import { AgePill } from './AgePill';
 import { AskerAvatar } from './Asker';
 import { riskClass, riskOf } from './risk';
-import { approvalSentence, ASK_TOOL } from './sentence';
+import { approvalAction, approvalSentence, ASK_TOOL, COMMAND_TOOL } from './sentence';
 import { ShareApprovalPreview } from './ShareApprovalPreview';
 import { isShareApproval, shareKind, shareOutcomeLine } from './shareApproval';
 import { callOverdue } from './state';
@@ -58,11 +58,12 @@ function Preview({ preview, testId = 'approval-preview' }: { preview: Approval['
 }
 
 /** What a bot's own question or command shows: the command in a code block, the bot's reason and details as text. */
-function AgentPreview({ approval }: { approval: Approval }) {
+function AgentPreview({ approval, terse = false }: { approval: Approval; terse?: boolean }) {
   const p = approval.argsPreview as Record<string, unknown>;
   const text = (k: string): string => (typeof p[k] === 'string' ? (p[k] as string) : '');
   const command = text('command');
-  const why = text('why');
+  // in a run card the question already says it is a command: a reason that only repeats that is left out
+  const why = terse && /^(run|running) a command\.?$/i.test(text('why').trim()) ? '' : text('why');
   const details = text('details');
   if (command === '' && why === '' && details === '') return <Preview preview={approval.argsPreview} />;
   return (
@@ -76,6 +77,16 @@ function AgentPreview({ approval }: { approval: Approval }) {
   );
 }
 
+/**
+ * The question as a run card asks it (variant `run`): the card already says which bot and that it waits, so this is only what it wants to do. A command reads "May it run this
+ * command?" over the command itself; a bot's own question is the question; anything else "May it <action>?".
+ */
+export function runQuestion(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source'>): string {
+  if (a.tool === ASK_TOOL && typeof a.summary === 'string' && a.summary.trim() !== '') return a.summary.trim();
+  if (a.tool === COMMAND_TOOL) return 'May it run this command?';
+  return `May it ${approvalAction(a)}?`;
+}
+
 export function ApprovalCard({
   approval,
   slug,
@@ -85,7 +96,7 @@ export function ApprovalCard({
   approval: Approval;
   slug: string;
   onDecided?: (approval: Approval) => void;
-  variant?: 'detail' | 'thread';
+  variant?: 'detail' | 'thread' | 'run';
 }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
@@ -142,6 +153,26 @@ export function ApprovalCard({
   );
   // In the inbox the two buttons sit in the header of the detail, where the eye lands; under a thread's replies they stay at the foot of the card.
   const inHeader = variant === 'detail' && pending && approval.canDecide;
+  if (variant === 'run') {
+    // inside a run card: the question, what it would do, and the answer; who and when are in the card's own header
+    return (
+      <article className="apr-card apr-card-run" data-testid="approval-card" data-approval={approval.id} data-status={approval.status} aria-label={`Question: ${runQuestion(approval)}`}>
+        <p className="apr-run-q" data-testid="approval-sentence" dir="auto">{runQuestion(approval)}</p>
+        {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} terse /> : <Preview preview={approval.argsPreview} />}
+        {pending && approval.canDecide ? (
+          <div className="apr-actions">
+            {agent ? <input className="apr-note" type="text" placeholder="Tell the bot more (optional)" aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" /> : null}
+            {buttons}
+          </div>
+        ) : pending ? (
+          <p className="apr-blocked" data-testid="approval-blocked" data-reason={approval.blockReason ?? ''}>
+            {approval.blockReason === 'requester' ? 'You asked for this, so someone else has to decide it.' : `Waiting for ${approversLabel(approval.approvers)} to answer.`}
+          </p>
+        ) : null}
+        {error ? <p className="apr-error" role="alert" data-testid="approval-error">{error}</p> : null}
+      </article>
+    );
+  }
   return (
     <article
       className={`apr-card ${variant === 'thread' ? 'apr-card-thread' : ''}`}

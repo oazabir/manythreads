@@ -29,6 +29,8 @@ export type People = {
   byPerson(personId: string): Person | undefined;
   /** The picture a bot of this team has (by its actor id, the author of its messages); undefined for an actor that is not a known bot. */
   botAvatar(actorId: string): string | null | undefined;
+  /** A bot's name by its actor id (the team's bots only); undefined when unknown. */
+  botName?(actorId: string): string | undefined;
   /** The same, by the bot's slug in this team. */
   botAvatarBySlug(slug: string): string | null | undefined;
   /** Whether an @handle names one of the team's bots (its chip is drawn in the bot's colour). */
@@ -70,10 +72,11 @@ export function useLoadPeople(teamSlug: string | null): People {
     const byActor = new Map(list.map((p) => [p.actorId, p]));
     const botByActor = new Map((botList ?? []).filter((b) => b.actorId !== null).map((b) => [b.actorId as string, b.avatar]));
     const botBySlug = new Map((botList ?? []).map((b) => [b.slug, b.avatar]));
+    const botNameByActor = new Map((botList ?? []).filter((b) => b.actorId !== null).map((b) => [b.actorId as string, b.name]));
     const byPerson = new Map(list.map((p) => [p.personId, p]));
     const me = byPerson.get(session.person.id);
     const admin = session.role === 'owner' || session.role === 'admin';
-    return { loaded: members !== undefined, settled, list, bots: (botList ?? []).filter((b) => b.mentionable).map((b) => ({ slug: b.slug, name: b.name, avatar: b.avatar })), byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), botAvatar: (id) => botByActor.get(id), botAvatarBySlug: (s) => botBySlug.get(s), isBotHandle: (h) => botBySlug.has(h.toLowerCase()), me, canModerate: admin || me?.role === 'lead' };
+    return { loaded: members !== undefined, settled, list, bots: (botList ?? []).filter((b) => b.mentionable).map((b) => ({ slug: b.slug, name: b.name, avatar: b.avatar })), byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), botAvatar: (id) => botByActor.get(id), botName: (id) => botNameByActor.get(id), botAvatarBySlug: (s) => botBySlug.get(s), isBotHandle: (h) => botBySlug.has(h.toLowerCase()), me, canModerate: admin || me?.role === 'lead' };
   }, [members, botList, settled, session.person.id, session.person.avatar, session.role]);
   useEffect(() => {
     channelStore.setSelf(value.me?.actorId ?? null);

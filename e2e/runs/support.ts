@@ -47,6 +47,7 @@ export async function startRunsWorld(): Promise<RunsWorld> {
   const world = await startRunnersWorld({
     NODE_ENV: 'test',
     MANYTHREADS_STACK_SEED: 'runs',
+    // the runners seed under this one (v19) places a Hermes gateway runner at this address; the allow-list keeps it valid
     MANYTHREADS_HERMES_ALLOWED_HOSTS: '127.0.0.1,192.168.50.20',
     MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL: bridge.url,
     MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY: BRIDGE_KEY,
@@ -63,7 +64,7 @@ export async function startRunsWorld(): Promise<RunsWorld> {
       return { id: row!.id, actorId: row!.actor };
     },
     close: async () => {
-      delete process.env['FAKE_ACP_SCRIPT_JSON'];
+      for (const k of PASS) delete process.env[k];
       await world.stop();
       await bridge.close();
       rmSync(dir, { recursive: true, force: true });

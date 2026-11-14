@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { isMockMode } from '../api/setup';
 import { threadTodoStore } from './store';
 import type { ThreadTodoState } from './threadTodo';
@@ -11,8 +11,6 @@ export function useThreadTodo(rootId: string | null): ThreadTodoState {
     if (rootId === null || isMockMode()) return;
     return threadTodoStore.open(rootId);
   }, [rootId]);
-  return useSyncExternalStore(
-    (onChange) => (rootId === null ? () => undefined : threadTodoStore.subscribe(rootId, onChange)),
-    () => (rootId === null ? NO_STATE : threadTodoStore.stateOf(rootId)),
-  );
+  const subscribe = useCallback((onChange: () => void) => (rootId === null ? () => undefined : threadTodoStore.subscribe(rootId, onChange)), [rootId]);
+  return useSyncExternalStore(subscribe, () => (rootId === null ? NO_STATE : threadTodoStore.stateOf(rootId)));
 }

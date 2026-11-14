@@ -323,7 +323,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               <span className="ch-avatar"><Avatar name={botName} kind="agent" avatar={botAvatar ?? null} /></span>
               <div className="ch-body">
                 {liveRun !== undefined ? (
-                  <RunCard head={liveRun} answer={undefined} rootId={root} slug={team} people={people} hideStop />
+                  <RunCard head={liveRun} rootId={root} slug={team} people={people} hideStop hidePreview continued />
                 ) : (
                   <LookedAt labels={preview.ended === null ? preview.looking : []} />
                 )}

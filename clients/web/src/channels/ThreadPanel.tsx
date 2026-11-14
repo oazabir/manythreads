@@ -8,10 +8,11 @@ import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
 import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
-import { useThreadRuns } from '../runs/useThreadRuns';
+import { useThreadRunHeads } from '../runs/useThreadRuns';
 import { useThreadTodo } from '../todo/useThreadTodo';
 import { placeRuns } from './run-card/place';
-import { asksOf, RunCard, RunEnd } from './run-card/RunCard';
+import { RunCard, RunEnd } from './run-card/RunCard';
+import { useShownQuestions } from './run-card/shownQuestions';
 import { TodoPin } from './todo-card/TodoCard';
 import { CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
@@ -92,11 +93,17 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const canManage = info.status === 'ok' && info.data !== null && info.data.canManage;
   const newestReply = tl.items.at(-1)?.id ?? null;
   // the runs answering in this thread (their cards) and the bot's to-do list for it (P25-11)
-  const runState = useThreadRuns(rootId);
+  const runState = useThreadRunHeads(rootId);
   const todoState = useThreadTodo(rootId);
   const placed = useMemo(() => placeRuns(tl.items, runState.runs), [tl.items, runState.runs]);
-  const waitingRuns = useMemo(() => runState.runs.filter((r) => r.state === 'waiting'), [runState.runs]);
-  const hideAsked = useCallback((a: Parameters<typeof asksOf>[0]) => waitingRuns.some((r) => asksOf(a, r)), [waitingRuns]);
+  // A question is asked in one place: the strip leaves out the ones a run card draws (only those: one the card could not load stays here), and a bot's answered questions of a
+  // run in this thread, which that run's step list keeps ("Asked to run pnpm · Allowed").
+  const shownQuestions = useShownQuestions(rootId);
+  const runBots = useMemo(() => new Set<string>(runState.runs.map((r) => r.botId)), [runState.runs]);
+  const hideAsked = useCallback(
+    (a: { id: string; status: string; source: string; botId?: string | null }) => shownQuestions.has(a.id) || (a.source === 'agent' && a.status !== 'pending' && a.botId != null && runBots.has(a.botId)),
+    [shownQuestions, runBots],
+  );
   usePanelSub(variant === 'panel' && channelName ? `# ${channelName}` : null);
 
   // Mark the replies read while the thread is open and on screen.
@@ -209,7 +216,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {todoState.todo !== null ? <TodoPin todo={todoState.todo} slug={slug ?? null} people={people} /> : null}
+        {todoState.todo !== null ? <TodoPin todo={todoState.todo} slug={slug ?? null} people={people} rootId={rootId} /> : null}
         <div className="root">
           <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
           {variant === 'panel' ? followRow : null}
@@ -228,11 +235,19 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
           </Fragment>
         ))}
-        {placed.live.map((r) => (
-          <RunCard key={r.runId} head={r} answer={runState.answers[r.runId]} rootId={rootId} slug={slug ?? null} people={people} hidePlan={todoState.todo !== null && r.botActorId === todoState.todo.botActorId} />
+        {placed.live.map((r, i) => (
+          <RunCard
+            key={r.runId}
+            head={r}
+            rootId={rootId}
+            slug={slug ?? null}
+            people={people}
+            hidePlan={todoState.todo !== null && r.botActorId === todoState.todo.botActorId}
+            continued={i === 0 && tl.pending.length === 0 && r.botActorId !== null && tl.items.at(-1)?.authorId === r.botActorId}
+          />
         ))}
         <ThreadApprovals rootId={rootId} slug={slug ?? null} hide={hideAsked} />
-        {waiting ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
+        {waiting && placed.live.length === 0 ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
         {tl.pending.map((p) => (
           <PendingRow
             key={p.localId}

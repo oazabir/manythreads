@@ -431,7 +431,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           <SurfaceMessage channelId={m.channelId} surfaceId={m.meta.surfaceRef} canPost={canPost} />
         ) : m.meta.todoRef ? (
           // the bot's to-do list for this thread: the card replaces the text (P25-11)
-          <TodoMessage rootId={m.meta.todoRef} body={m.body} teamSlug={teamSlug} people={people} botName={name} />
+          <TodoMessage rootId={m.meta.todoRef} messageId={m.id} body={m.body} teamSlug={teamSlug} people={people} />
         ) : m.poll ? (
           // a poll: the card replaces the text (the text is still stored, for search and for bots)
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />

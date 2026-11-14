@@ -298,8 +298,12 @@ A run is one card at the bottom of the thread, in the place its answer will take
 - A subagent is one line ("Helper · Reviewing the e2e test · 6 steps · done"); its steps are under it, folded. At most 3 helpers shown, then "+2 more".
 - Long lists show the last 8 with "Show all 43"; the list is virtual beyond 200 (the thread's `VirtualList`).
 - "Thought for 12 s" lines stand where the agent thought, greyed, with no text to open.
-- The thread header's switch (mockup: summary / progress / trace) sets the default for that viewer: **Summary** (cards folded to one line, the default for
-  everyone), **Progress** (the card of §5.1), **Trace** (step lists open). Kept per person in the browser.
+- A viewer picks how much every card shows: **Summary** (the header and the now line only), **Progress** (the card of §5.1) and **Trace** (step lists open). Kept per person
+  in the browser. The choice sits behind a quiet "more" button on the card (shown when the card is pointed at or focused, always on a touch screen), not in the thread
+  header: a panel header has no room for it, and it is set once and rarely touched.
+- **Decided (P25-11 polish): Progress is the default for everyone**, not Summary. Progress is still calm (one live now line, then two folded lines of counts that never
+  grow), and the counts are what tells a person who does not read code that work is moving ("7 steps · 1 file changed · 1 helper"); Summary hides that, so a long run looks
+  stuck. Engineers who want every step pick Trace; anyone who wants less picks Summary.
 
 ### 5.3 When the run ends
 
@@ -316,12 +320,15 @@ when the agent can read a note. The thread's approvals strip (`ThreadApprovals`)
 
 ### 5.5 The thread's to-do card, and how it relates to run cards
 
-- The to-do card is the request's list, drawn where its message was posted and **pinned as one line at the top of the thread panel while any item is open**:
+- The to-do card is the request's list, drawn where its message was posted and **pinned as one line at the top of the thread panel while any item is open** (and only
+  while the card's own head is scrolled out of sight, so the list is never on screen twice; a list of 9 or more folds its finished items into one "12 done" line):
   "To do · 3 of 5 · Coder is working on Add the button ▸". Opened: the title, one row per item with a status icon, the owner's avatar (the bot holding the card),
   and a link to the card's thread. When every item is done it says "All done" and unpins itself.
 - In an engineering chain, each card is worked on in **its own thread** (the handover announcement's thread, router-tasks). So the request thread shows the to-do
   card and the Engineer's short messages; the item of a card that is being worked on shows the live run's head on a second line ("Coder · working · plan 3 of 5")
   and opens that card's thread, where the run card is. One list per level: the request's list in the request thread, the agent's plan inside its run card.
+  Built (P25-11 polish): the second line says who holds the item's card while it is worked on ("Coder is on it"), and the item's words link to the card. The live run of
+  that card runs in another thread, which this thread's reader does not follow live, so its plan count is not repeated here.
 - The orchestrator's own run card never shows its plan when the same bot keeps a to-do card in that thread: the to-do card is its plan.
 
 ### 5.6 Elsewhere

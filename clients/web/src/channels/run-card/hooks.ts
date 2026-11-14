@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { RunStartedPush } from '@manythreads/shared';
 import { threadRunsStore } from '../../runs/store';
 
@@ -37,8 +37,6 @@ export function useSteady<T>(value: T, gap = 1000): T {
 
 /** The runs working on a thread root now, for its chip in the channel: known to every reader of the channel from the live pushes, open thread or not. */
 export function useWorkingOn(rootId: string): readonly RunStartedPush[] {
-  return useSyncExternalStore(
-    (onChange) => threadRunsStore.subscribe(rootId, onChange),
-    () => threadRunsStore.workingOn(rootId),
-  );
+  const subscribe = useCallback((onChange: () => void) => threadRunsStore.subscribe(rootId, onChange), [rootId]);
+  return useSyncExternalStore(subscribe, () => threadRunsStore.workingOn(rootId));
 }

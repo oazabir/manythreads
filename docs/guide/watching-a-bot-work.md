@@ -40,13 +40,13 @@ In a private conversation with a bot, only you can stop it.
 
 ### When a bot asks you something
 
-Sometimes a bot needs a yes or no before it goes on (for example, before a risky command). The card says **Waiting for you** and shows the question with **Yes** and **No**.
+Sometimes a bot needs a yes or no before it goes on (for example, before a risky command). The card says **Waiting for you** and shows the question with **Yes** and **No** (for a command: the command itself, with **Allow once** and **Deny**).
 The same question also shows in the Approvals list; answering in either place clears both. If the question is for someone else, the card says "Waiting for" and their name,
 and you cannot answer it.
 
 ### When the run is over
 
-The card folds into one quiet line under the bot's answer, for example "Work log · 4 min · 14 steps · 2 files changed · 1 helper". Press it to open the steps again.
+The card folds into one quiet line under the bot's answer, for example "Worked 4 min · 14 steps · 2 files changed · 1 helper". Press it to open the steps again; a step that waited for your yes says so on its own line ("Ran pnpm · Allowed").
 A run with no steps shows no line.
 
 - **Stopped** runs say who stopped them and after how long.
@@ -55,7 +55,7 @@ A run with no steps shows no line.
 
 ### On a phone
 
-The card is as wide as the screen, the lines wrap, the step list opens as a sheet, and **Stop** stays in the top line.
+The card is as wide as the screen, the work counts wrap, the step list opens in place, and **Stop** and the three-dot button stay in the top line.
 
 ## The to-do card
 
@@ -63,9 +63,9 @@ When a request has several steps, a bot that manages the work (the Engineer in a
 in the thread. It changes in place; you are not notified for each change, and no second list is posted.
 
 - **Each item** has a status you can read as a word and an icon: **To do**, **Working on it**, **Done** or **Blocked**. Items that are work cards on the team's board show the bot
-  that holds the card ("Coder is on it") and link to that card's thread. They tick themselves as the card moves; nobody has to remember to update them.
-- **The bar at the top of the thread:** while anything is open, the list is pinned as one line, for example "To do · 3 of 5 · Coder is working on Add the button".
-  Press it to open the list. When everything is done it says **All done** and the bar goes away; the card stays in the thread.
+  that holds the card ("Coder is on it"), and their words open the card on the board. They tick themselves as the card moves; nobody has to remember to update them.
+- **The bar at the top of the thread:** while anything is open and the card itself has scrolled out of sight, the list is pinned as one line, for example
+  "Release 2.4 · 3 of 5 · Coder is working on Add the button". Press it to open the list. A long list folds its finished items into one line ("12 done"). When everything is done it says **All done** and the bar goes away; the card stays in the thread.
 - **A long list** folds its finished items into one line such as "12 done".
 - **You cannot tick items.** The list is the bot's view of the request. To move work yourself, use the team's board.
 - **In the channel,** the thread's first message shows a small chip: "Coder is working" or "To do 3 of 5". Press it to open the thread.

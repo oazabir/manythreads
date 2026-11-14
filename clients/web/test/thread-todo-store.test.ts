@@ -123,6 +123,52 @@ describe('the push', () => {
   });
 });
 
+describe('a list made again, and a version the server does not have yet', () => {
+  it('takes a list made again (versions from 1) instead of holding the old one forever', async () => {
+    const { store, read } = make([{ todo: todo(5, { updatedAt: '2026-11-14T10:00:00.000Z' }) }, { todo: todo(1, { updatedAt: '2026-11-14T11:00:00.000Z', title: 'Again' }) }]);
+    store.open(ROOT);
+    await flush();
+    store.handlePush(push(ROOT, 6));
+    await flush();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(store.stateOf(ROOT).todo).toMatchObject({ version: 1, title: 'Again' });
+  });
+
+  it('backs off and stops after a few reads that stay older than the push named', async () => {
+    vi.useFakeTimers();
+    try {
+      const { store, read } = make(Array.from({ length: 10 }, () => ({ todo: todo(1) })));
+      store.open(ROOT);
+      await vi.runAllTimersAsync();
+      store.handlePush(push(ROOT, 9));
+      await vi.runAllTimersAsync();
+      // the open's read, the push's read, then three more spaced out, and no more
+      expect(read).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('a burst of pushes', () => {
+  it('reads at most eight times before the list catches up, however many pushes come', async () => {
+    vi.useFakeTimers();
+    try {
+      const { store, read } = make(Array.from({ length: 40 }, () => ({ todo: todo(1) })));
+      store.open(ROOT);
+      await vi.runAllTimersAsync();
+      for (let v = 2; v < 30; v += 1) {
+        store.handlePush(push(ROOT, v));
+        await vi.advanceTimersByTimeAsync(50);
+      }
+      await vi.runAllTimersAsync();
+      expect(read.mock.calls.length).toBeLessThanOrEqual(9);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('a reconnect', () => {
   it('reads every open thread again', async () => {
     const { store, read } = make([{ todo: todo(1) }, { todo: todo(1, { rootId: OTHER }) }, { todo: todo(2) }, { todo: todo(3, { rootId: OTHER }) }]);

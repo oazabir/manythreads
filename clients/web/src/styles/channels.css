@@ -166,6 +166,11 @@
   height: var(--av-size);
 }
 
+/* the avatar (and its corner badge) stays by the first line: a grid item would stretch to the row, and a bot's badge would sit at the foot of a tall message */
+.msg > .av-wrap {
+  align-self: start;
+}
+
 .msg-main {
   min-width: 0;
 }

@@ -1,9 +1,10 @@
 import type { RunActivityItem, RunCounts, RunHead, RunNow } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { placeRuns } from '../src/channels/run-card/place';
-import { buildRows, foldRows, type Row, type StepRow } from '../src/channels/run-card/steps';
-import { elapsedText, endLine, nowLine, planLine, previewLines, runElapsedMs, showsEndLine, stateWord, workParts } from '../src/channels/run-card/words';
-import { barLine, currentItem, isOpen, progressText, todoProgress } from '../src/channels/todo-card/words';
+import { buildRows, foldRows, helpersToHide, type Row, type StepRow } from '../src/channels/run-card/steps';
+import { forgetShownQuestions, leaveHandoff, setShownQuestions, shownNow, takeHandoff } from '../src/channels/run-card/shownQuestions';
+import { commandOf, elapsedText, endLine, nowLine, planLine, previewLines, runElapsedMs, showsEndLine, stateWord, workParts } from '../src/channels/run-card/words';
+import { barLine, currentItem, foldDone, isOpen, progressText, todoProgress } from '../src/channels/todo-card/words';
 
 // The words of the run card and the to-do card (P25-11): plain language, never a raw tool name, a long path or JSON; and where each run's line sits in a thread.
 
@@ -46,7 +47,7 @@ describe('words of the run card', () => {
   it('says what it is doing now without a raw path or tool name', () => {
     expect(nowLine(now({ paths: ['/srv/app/clients/web/src/ThreadPanel.tsx'] }), 'working').text).toBe('Reading ThreadPanel.tsx');
     expect(nowLine(now({ kind: 'read', count: 4 }), 'working').text).toBe('Reading 4 files');
-    expect(nowLine(now({ kind: 'execute', title: 'pnpm test' }), 'working')).toMatchObject({ text: 'Running a command', code: 'pnpm test' });
+    expect(nowLine(now({ kind: 'execute', title: 'pnpm test' }), 'working')).toMatchObject({ text: 'Running', code: 'pnpm test' });
     expect(nowLine(now({ kind: 'search' }), 'working').text).toBe('Searching the code');
     expect(nowLine(null, 'starting').text).toBe('Getting ready');
   });
@@ -59,7 +60,8 @@ describe('words of the run card', () => {
 
   it('counts the work in words a person can read', () => {
     expect(workParts(counts())).toEqual([]);
-    expect(workParts(counts({ steps: 14, filesChanged: 2, added: 48, removed: 6, commands: 3, helpers: 2, failed: 1 }))).toEqual(['14 steps', '2 files changed (+48 −6)', '3 commands', '2 helpers', '1 failed']);
+    expect(workParts(counts({ steps: 14, filesChanged: 2, added: 48, removed: 6, commands: 3, helpers: 2, failed: 1 }))).toEqual(['14 steps', '2 files changed (+48 −6)', '2 helpers', '1 failed']);
+    expect(workParts(counts({ steps: 3, commands: 3 }))).toEqual(['3 steps', '3 commands']);
     expect(workParts(counts({ steps: 1, helpers: 1 }))).toEqual(['1 step', '1 helper']);
   });
 
@@ -77,9 +79,9 @@ describe('words of the run card', () => {
 
   it('says how a run ended, and who stopped it', () => {
     const done = head({ state: 'done', endedAt: '2026-11-14T10:04:00.000Z', counts: counts({ steps: 14, helpers: 2 }) });
-    expect(endLine(done)).toEqual({ lead: 'Worked 4 min', parts: ['14 steps', '2 helpers'], tone: 'done' });
-    expect(endLine(head({ state: 'stopped', stoppedBy: 'Omar', endedAt: '2026-11-14T10:02:00.000Z' })).lead).toBe('Stopped by Omar after 2 min');
-    expect(endLine(head({ state: 'failed', endedAt: '2026-11-14T10:00:40.000Z' })).lead).toBe('Failed after 40 s');
+    expect(endLine(done, 0)).toEqual({ lead: 'Worked 4 min', parts: ['14 steps', '2 helpers'], tone: 'done' });
+    expect(endLine(head({ state: 'stopped', stoppedBy: 'Omar', endedAt: '2026-11-14T10:02:00.000Z' }), 0).lead).toBe('Stopped by Omar after 2 min');
+    expect(endLine(head({ state: 'failed', endedAt: '2026-11-14T10:00:40.000Z' }), 0).lead).toBe('Failed after 40 s');
   });
 
   it('draws no end line for a quick run that did nothing, always for a stopped or failed one', () => {
@@ -137,7 +139,7 @@ describe('steps of a run', () => {
   });
 
   it('foldRows leaves a short run of steps alone', () => {
-    const one: StepRow = { type: 'step', id: 'a', kind: 'read', text: 'Read a', mono: false, files: [], status: 'done', seconds: null, diff: null };
+    const one: StepRow = { type: 'step', id: 'a', kind: 'read', text: 'Read a', code: null, files: [], status: 'done', seconds: null, diff: null };
     expect(foldRows([one, { ...one, id: 'b' }])).toHaveLength(2);
   });
 });
@@ -189,6 +191,113 @@ describe('words of the to-do card', () => {
 
   it('writes the bar line', () => {
     const todo = { title: '', items } as Parameters<typeof barLine>[0];
-    expect(barLine(todo)).toEqual({ text: 'Build it', progress: '1 of 4', tone: 'working' });
+    expect(barLine(todo)).toEqual({ text: 'Working on Build it', progress: '1 of 4', tone: 'working' });
+  });
+});
+
+describe('polish of the run card (P25-11 review)', () => {
+  const rowsOf = (helpers: Array<[string, 'working' | 'done' | 'failed']>): Row[] => helpers.map(([id, status]) => ({ type: 'helper', id, name: id, status, stepCount: 1, rows: [] }));
+
+  it('says a command once: "Running" and the program, never "Running a command Running pnpm"', () => {
+    expect(nowLine(now({ kind: 'execute', title: 'Running pnpm' }), 'working')).toMatchObject({ text: 'Running', code: 'pnpm' });
+    expect(nowLine(now({ kind: 'execute', title: 'Running a command' }), 'working')).toMatchObject({ text: 'Running a command', code: null });
+    expect(nowLine(now({ kind: 'execute', title: null }), 'working')).toMatchObject({ text: 'Running a command', code: null });
+    expect(commandOf('Terminal')).toBeNull();
+  });
+
+  it('does not repeat the state word on the now line', () => {
+    expect(nowLine(null, 'working').text).toBe('Thinking');
+  });
+
+  it('a finished command reads "Ran" and the program; a question and its answer are one row, even when the answer names no step', () => {
+    const rows = buildRows([
+      tool(0, 'c1', 'execute', { title: 'Running pnpm' }),
+      result(1, 'c1', true, { seconds: 6 }),
+      { seq: 2, at: '2026-11-14T10:00:00.000Z', payload: { kind: 'approval', outcome: 'asked', stepId: 'p1', stepKind: 'execute', title: 'Running pnpm' } } as RunActivityItem,
+      { seq: 3, at: '2026-11-14T10:00:05.000Z', payload: { kind: 'approval', outcome: 'approved' } } as RunActivityItem,
+    ]);
+    expect(rows[0]).toMatchObject({ type: 'step', text: 'Ran', code: 'pnpm' });
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ type: 'question', outcome: 'approved', text: 'Run', code: 'pnpm' });
+  });
+
+  it('a step that asked first says the answer on its own line', () => {
+    const rows = buildRows([
+      tool(0, 'c1', 'execute', { title: 'Running pnpm' }),
+      { seq: 1, at: '2026-11-14T10:00:00.000Z', payload: { kind: 'approval', outcome: 'asked', stepId: 'c1', stepKind: 'execute', title: 'Running pnpm' } } as RunActivityItem,
+      { seq: 2, at: '2026-11-14T10:00:05.000Z', payload: { kind: 'approval', outcome: 'approved' } } as RunActivityItem,
+      result(3, 'c1', true, { seconds: 3 }),
+    ]);
+    expect(rows).toEqual([expect.objectContaining({ type: 'step', text: 'Ran', code: 'pnpm', answer: 'approved' })]);
+  });
+
+  it('never folds steps of the kind "other": each has its own title', () => {
+    const lines = [1, 2, 3].flatMap((n) => [tool(n * 2, `o${n}`, 'other', { title: `Handed card ${n}` }), result(n * 2 + 1, `o${n}`)]);
+    expect(buildRows(lines).map((r) => r.type)).toEqual(['step', 'step', 'step']);
+  });
+
+  it('folds the oldest finished helpers beyond three, never one that is working or failed', () => {
+    const hidden = helpersToHide(rowsOf([['a', 'done'], ['b', 'done'], ['c', 'failed'], ['d', 'done'], ['e', 'done'], ['f', 'working']]));
+    expect([...hidden].sort()).toEqual(['a', 'b', 'd']);
+    expect(helpersToHide(rowsOf([['a', 'done'], ['b', 'done'], ['c', 'done']])).size).toBe(0);
+    expect(helpersToHide(rowsOf([['a', 'working'], ['b', 'working'], ['c', 'working'], ['d', 'working']])).size).toBe(0);
+  });
+
+  it('never says "Worked 0 s" while the server has not said when the run ended', () => {
+    const ended = head({ state: 'done', endedAt: null, counts: counts({ steps: 2 }) });
+    expect(endLine(ended, Date.parse('2026-11-14T10:01:30.000Z')).lead).toBe('Worked 1 min');
+  });
+
+  it('keeps the folded line short: no commands and no line counts; a stopped run lists no failure', () => {
+    const c = counts({ steps: 8, filesChanged: 1, added: 1, commands: 1, helpers: 1, failed: 1 });
+    expect(endLine(head({ state: 'done', endedAt: '2026-11-14T10:00:10.000Z', counts: c }), 0).parts).toEqual(['8 steps', '1 file changed', '1 helper', '1 failed']);
+    expect(endLine(head({ state: 'stopped', endedAt: '2026-11-14T10:00:10.000Z', counts: c }), 0).parts).toEqual(['8 steps', '1 file changed', '1 helper']);
+  });
+
+  it('a run under a second says no time', () => {
+    expect(endLine(head({ state: 'failed', endedAt: '2026-11-14T10:00:00.400Z' }), 0).lead).toBe('Failed');
+    expect(endLine(head({ state: 'done', endedAt: '2026-11-14T10:00:00.400Z' }), 0).lead).toBe('Done');
+  });
+
+  it('long elapsed times read in hours', () => {
+    expect(elapsedText((2 * 60 + 5) * 60_000)).toBe('2 h 5 min');
+    expect(elapsedText(3 * 3_600_000)).toBe('3 h');
+  });
+});
+
+describe('the to-do card, polished', () => {
+  it('the pin says who is on the item, or what is next, or what is blocked', () => {
+    const todo = { title: 'Run card', items: [{ id: 'a', text: 'Build', status: 'working', ownerId: 'x' }, { id: 'b', text: 'Ship', status: 'waiting' }] } as unknown as Parameters<typeof barLine>[0];
+    expect(barLine(todo, () => 'Coder').text).toBe('Coder is working on Build');
+    expect(barLine(todo).text).toBe('Working on Build');
+    const next = { title: '', items: [{ id: 'b', text: 'Ship', status: 'waiting' }] } as unknown as Parameters<typeof barLine>[0];
+    expect(barLine(next).text).toBe('Next: Ship');
+  });
+
+  it('a long list folds its finished items into one line; a short one shows them all', () => {
+    const long = Array.from({ length: 30 }, (_, i) => ({ status: i < 12 ? ('done' as const) : ('waiting' as const) }));
+    expect(foldDone(long)).toBe(12);
+    expect(foldDone(long.slice(0, 5))).toBe(0);
+  });
+});
+
+describe('the questions a run card draws', () => {
+  it('hides in the strip exactly the questions a card drew, and forgets them when the card goes', () => {
+    forgetShownQuestions();
+    setShownQuestions('root', 'run1', ['q1']);
+    setShownQuestions('root', 'run2', ['q2']);
+    setShownQuestions('other', 'run3', ['q3']);
+    const seen = new Set<string>();
+    // read through the same store the hook reads
+    for (const id of ['q1', 'q2', 'q3']) if (shownNow('root').has(id)) seen.add(id);
+    expect([...seen]).toEqual(['q1', 'q2']);
+    setShownQuestions('root', 'run1', []);
+    expect(shownNow('root').has('q1')).toBe(false);
+  });
+
+  it('hands the focus and the open list of a card to the folded line, once', () => {
+    leaveHandoff('r9', { focus: true, open: true });
+    expect(takeHandoff('r9')).toEqual({ focus: true, open: true });
+    expect(takeHandoff('r9')).toBeUndefined();
   });
 });

@@ -1,5 +1,5 @@
 import type { RunActivityItem, RunDiff, RunStepKind } from '@manythreads/shared';
-import { baseName, clip, plural, STEP_VERB } from './words';
+import { baseName, clip, commandOf, plural, STEP_VERB } from './words';
 
 /*
  * The step list of a run (PLAN P25-11, docs/plans/acp.md section 5.2): the kept lines folded into what a person reads.
@@ -18,13 +18,15 @@ export interface StepRow {
   kind: RunStepKind;
   /** The sentence of the step (its title, or a verb and a file). */
   text: string;
-  /** Titles of commands read better in mono. */
-  mono: boolean;
+  /** The program of a command, drawn in mono after the sentence ("Ran" + "pnpm"). */
+  code: string | null;
   /** File names to show as chips, not already in the text. */
   files: string[];
   status: StepStatus;
   seconds: number | null;
   diff: RunDiff | null;
+  /** The step waited for a person's yes or no: its answer, said on the step's own line (one line per step, not a second row). */
+  answer?: QuestionRow['outcome'];
 }
 
 export interface GroupRow {
@@ -55,7 +57,10 @@ export interface QuestionRow {
   type: 'question';
   id: string;
   outcome: 'asked' | 'approved' | 'denied' | 'ended';
+  /** What it asked to do, as a verb phrase ("Run", "Edit ThreadPanel.tsx"). */
   text: string;
+  /** The program of a command it asked to run, in mono. */
+  code: string | null;
 }
 
 export type Row = StepRow | GroupRow | HelperRow | ThinkingRow | QuestionRow;
@@ -63,7 +68,8 @@ export type Row = StepRow | GroupRow | HelperRow | ThinkingRow | QuestionRow;
 /** Steps in a row of the same kind fold from this many. */
 export const FOLD_FROM = 3;
 
-const FOLDABLE: ReadonlySet<RunStepKind> = new Set(['read', 'search', 'edit', 'execute', 'fetch', 'other']);
+// `other` steps never fold: each has its own title ("Handed the card to Code reviewer"), and "3 other steps" would hide what they did
+const FOLDABLE: ReadonlySet<RunStepKind> = new Set(['read', 'search', 'edit', 'execute', 'fetch']);
 
 /** "Read 6 files", "Ran 3 commands": what a folded group says. */
 export function groupText(kind: RunStepKind, n: number): string {
@@ -101,6 +107,7 @@ interface Draft {
   status: StepStatus;
   seconds: number | null;
   diff: RunDiff | null;
+  answer?: QuestionRow['outcome'];
 }
 
 interface Agent {
@@ -111,9 +118,22 @@ interface Agent {
 }
 
 function toRow(d: Draft): StepRow {
-  const text = sentence(d.kind, d.title, d.paths);
+  // a command reads "Ran pnpm" (or "Running pnpm" while it runs): the program in mono, said once
+  const code = d.kind === 'execute' ? commandOf(d.title) : null;
+  const text = d.kind === 'execute' ? (d.status === 'working' ? (code !== null ? 'Running' : 'Running a command') : code !== null ? 'Ran' : 'Ran a command') : sentence(d.kind, d.title, d.paths);
   const files = d.paths.map(baseName).filter((f, i, all) => f !== '' && all.indexOf(f) === i && !text.includes(f)).slice(0, 3);
-  return { type: 'step', id: d.id, kind: d.kind, text, mono: d.kind === 'execute' && d.title !== undefined && d.title.trim() !== '', files, status: d.status, seconds: d.seconds, diff: d.diff };
+  return { type: 'step', id: d.id, kind: d.kind, text, code, files, status: d.status, seconds: d.seconds, diff: d.diff, ...(d.answer !== undefined ? { answer: d.answer } : {}) };
+}
+
+/** What a question asked to do: "Run" and the program, or its title as a phrase. */
+function asked(title: string | undefined, kind: RunStepKind | undefined): { text: string; code: string | null } {
+  const t = title?.trim() ?? '';
+  if (kind === 'execute' || /^running\s/i.test(t)) {
+    const code = commandOf(t);
+    return { text: code !== null ? 'Run' : 'Run a command', code };
+  }
+  if (t !== '') return { text: clip(t, 120), code: null };
+  return { text: kind !== undefined ? (STEP_VERB[kind] ?? 'A step') : 'A step', code: null };
 }
 
 /** Folds a run of consecutive finished steps of one kind into a group; every other row stays as it is. */
@@ -146,6 +166,8 @@ export function buildRows(items: readonly RunActivityItem[]): Row[] {
   /** The order things began in: step ids, agent ids, and line markers for thinking and questions. */
   const order: Array<{ key: string; at: number }> = [];
   const loose = new Map<string, Row>();
+  /** The newest question with no answer yet: an answer line that does not name its step answers it. */
+  let openAsk: string | null = null;
   items.forEach((item, at) => {
     const p = item.payload;
     switch (p.kind) {
@@ -187,10 +209,26 @@ export function buildRows(items: readonly RunActivityItem[]): Row[] {
       }
       case 'approval': {
         // a question and its answer are two lines of the same step; the answer replaces the question in its place
-        const key = p.stepId !== undefined ? `q:${p.stepId}` : `q:${item.seq}`;
-        const text = p.title !== undefined && p.title.trim() !== '' ? clip(p.title, 120) : p.stepKind !== undefined ? (STEP_VERB[p.stepKind] ?? 'A step') : 'A step';
+        // a question about a step that is in the list is said on that step's line
+        const onStep = p.stepId !== undefined ? steps.get(p.stepId) : undefined;
+        if (onStep !== undefined) {
+          onStep.answer = p.outcome;
+          openAsk = p.outcome === 'asked' ? `d:${p.stepId}` : openAsk === `d:${p.stepId}` ? null : openAsk;
+          return;
+        }
+        if (p.outcome !== 'asked' && p.stepId === undefined && openAsk?.startsWith('d:')) {
+          const d = steps.get(openAsk.slice(2));
+          if (d !== undefined) d.answer = p.outcome;
+          openAsk = null;
+          return;
+        }
+        let key = p.stepId !== undefined ? `q:${p.stepId}` : `q:${item.seq}`;
+        if (p.outcome !== 'asked' && !loose.has(key) && openAsk !== null) key = openAsk;
+        const prior = loose.get(key);
+        const words = p.title !== undefined && p.title.trim() !== '' ? asked(p.title, p.stepKind) : prior?.type === 'question' ? { text: prior.text, code: prior.code } : asked(undefined, p.stepKind);
         if (!loose.has(key)) order.push({ key, at });
-        loose.set(key, { type: 'question', id: key, outcome: p.outcome, text });
+        loose.set(key, { type: 'question', id: key, outcome: p.outcome, ...words });
+        openAsk = p.outcome === 'asked' ? key : openAsk === key ? null : openAsk;
         return;
       }
       case 'plan':
@@ -231,3 +269,25 @@ export const PAGE_ROWS = 100;
 
 /** "6 steps" for a helper's row. */
 export const helperSteps = (n: number): string => plural(n, 'step', 'steps');
+
+/** The most helpers drawn before "+N more helpers". */
+export const HELPERS_SHOWN = 3;
+
+/**
+ * Which helpers fold behind "+N more": the oldest finished ones beyond the first `HELPERS_SHOWN`. A helper that is working or failed is always drawn (it is what a person looks
+ * for), and so are the newest. Returns the ids to hide.
+ */
+export function helpersToHide(rows: readonly Row[], shown = HELPERS_SHOWN): Set<string> {
+  const helpers = rows.filter((r): r is HelperRow => r.type === 'helper');
+  const pinned = helpers.filter((h) => h.status !== 'done').length;
+  let room = Math.max(0, shown - pinned);
+  const keep = new Set<string>();
+  for (const h of [...helpers].reverse()) {
+    if (h.status !== 'done') keep.add(h.id);
+    else if (room > 0) {
+      keep.add(h.id);
+      room -= 1;
+    }
+  }
+  return new Set(helpers.filter((h) => !keep.has(h.id)).map((h) => h.id));
+}

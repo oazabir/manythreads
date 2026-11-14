@@ -1,31 +1,38 @@
 /*
  * The run card (PLAN P25-11, docs/plans/acp.md section 5): what a bot and its helpers are doing, in the thread where the run answers. Every class is prefixed `rc`.
  * Colours come from tokens.css only (text is `--ink`, `--mute` or an `*-ink` on its own wash; `--faint` is for icons only, so the contrast lint covers every pair).
- * Motion is in motion.css, under `no-preference`: without it the pulse is a still dot. 390 px: nothing here sets a width wider than its box.
+ * Numbers use the UI face with tabular figures (a time that ticks does not jiggle); mono is only for a program name or a file name.
+ * Motion is in motion.css, under `no-preference`: without it the pulse is a still dot. 390 px: nothing here sets a width wider than its box. Logical properties only, so a
+ * right-to-left reader gets the same card mirrored.
  */
 
 .rc {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   margin: 8px 0;
-  padding: 10px 12px;
+  padding: 8px 10px 8px 12px;
   border: 1px solid var(--agent-border);
   border-radius: var(--radius-md);
   background: var(--agent-wash);
   color: var(--ink);
   font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
   min-width: 0;
+}
+
+/* the same bot's message is just above: the card continues it, under its text */
+.rc.rcCont {
+  margin-block-start: 2px;
+  margin-inline-start: calc(var(--gutter-w) + 11px);
+}
+
+.ch-body .rc.rcCont {
+  margin-inline-start: 0;
 }
 
 .rc[data-state="waiting"] {
   border-color: var(--warn-border);
-  background: var(--warn-wash);
-}
-
-.rc[data-state="failed"] {
-  border-color: var(--alert-border);
-  background: var(--alert-wash);
 }
 
 .rcHead {
@@ -33,23 +40,33 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  min-height: 28px;
+}
+
+.rcHead > .av {
+  width: 20px;
+  height: 20px;
+  font-size: var(--fs-tiny);
 }
 
 .rcName {
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 3ch;
   overflow: hidden;
   font-size: var(--fs-small);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rcState {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--agent-ink);
   font-size: var(--fs-caption);
   font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -57,22 +74,24 @@
   color: var(--warn-ink);
 }
 
-.rc[data-state="failed"] .rcState {
-  color: var(--alert-ink);
-}
-
 .rcTime {
+  flex: none;
   color: var(--mute);
-  font-family: var(--mono);
   font-size: var(--fs-caption);
   white-space: nowrap;
 }
 
+.rcTime::before {
+  content: "·";
+  margin-inline-end: 8px;
+}
+
 .rcActs {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 4px;
-  margin-left: auto;
+  gap: 2px;
+  margin-inline-start: auto;
 }
 
 .rcPulse {
@@ -89,7 +108,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 5px;
   min-height: 28px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -106,21 +125,44 @@
   padding: 0;
 }
 
+.rcIconBtn:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* the "how much to show" button stays out of the way until the card is pointed at or focused; on a touch screen it is always there */
+.rcView .rcIconBtn {
+  opacity: 0;
+}
+
+.rc:hover .rcView .rcIconBtn,
+.rc:focus-within .rcView .rcIconBtn,
+.rcView .rcIconBtn[aria-expanded="true"] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .rcView .rcIconBtn {
+    opacity: 1;
+  }
+}
+
+/* Stop is small and quiet: a plain button that turns to the alert colour only under the pointer */
 .rcStop {
-  border-color: var(--alert-border);
+  border-color: var(--rule);
   background: var(--surface);
-  color: var(--alert-ink);
+  color: var(--ink);
   font-weight: 600;
 }
 
-.rcStop:disabled {
-  opacity: 0.6;
+.rcStop[aria-disabled="true"] {
+  color: var(--mute);
   cursor: default;
 }
 
-.rcIconBtn:hover,
-.rcStop:hover:not(:disabled) {
-  background: var(--hover);
+.rcStop:hover:not([aria-disabled="true"]) {
+  border-color: var(--alert-border);
+  color: var(--alert-ink);
 }
 
 .rcView {
@@ -130,27 +172,49 @@
 .rcMenu {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  inset-inline-end: 0;
   z-index: 5;
   display: flex;
   flex-direction: column;
+  width: max-content;
   min-width: 220px;
+  max-width: calc(100vw - 32px);
   padding: 4px;
+}
+
+.rcMenuHead {
+  margin: 0;
+  padding: 4px 10px 2px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
 }
 
 .rcMenuItem {
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: 8px;
   padding: 6px 10px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
+}
+
+.rcMenuMark {
+  display: inline-flex;
+  width: 12px;
+  flex: none;
+  padding-top: 3px;
+  color: var(--agent-ink);
+}
+
+.rcMenuWords {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .rcMenuItem small {
@@ -162,14 +226,10 @@
   background: var(--hover);
 }
 
-.rcMenuItem[aria-checked="true"] {
-  background: var(--human-wash);
-}
-
 /* the one line that says what is happening now: one line, cut with an ellipsis, never wraps the card taller */
 .rcNow {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
   margin: 0;
@@ -178,20 +238,22 @@
 
 .rcNowText {
   min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rcMono {
+/* a program or a file name: the only mono on the card */
+.rcCode {
   min-width: 0;
   overflow: hidden;
-  padding: 1px 5px;
+  padding: 0 4px;
   border-radius: var(--radius-sm);
   background: var(--hover);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: var(--fs-caption);
+  font-size: 0.92em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -200,6 +262,16 @@
   margin: 0;
   color: var(--alert-ink);
   font-size: var(--fs-caption);
+}
+
+.rcRetry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--human);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* a fold: a line of words and a caret; a real button, as tall as a finger */
@@ -213,7 +285,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -234,12 +306,13 @@
   white-space: nowrap;
 }
 
-.rcLead {
-  font-weight: 600;
+/* the counts may wrap to a second line in a narrow panel rather than lose the end of what they say */
+.rcFoldText.rcWraps {
+  white-space: normal;
 }
 
-.rcNum {
-  font-family: var(--mono);
+.rcLead {
+  font-weight: 600;
 }
 
 .rcCurrent {
@@ -249,7 +322,7 @@
 .rcChev {
   display: inline-flex;
   flex: none;
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--faint);
 }
 
@@ -264,7 +337,7 @@
 .rcList {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -272,10 +345,10 @@
 
 .rcStep {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
   align-items: center;
-  column-gap: 6px;
-  min-height: 24px;
+  column-gap: 8px;
+  min-height: 26px;
   font-size: var(--fs-caption);
 }
 
@@ -287,6 +360,7 @@
 
 .rcStep > .rcFold {
   grid-column: 2 / 4;
+  gap: 8px;
 }
 
 .rcInner,
@@ -294,16 +368,22 @@
   grid-column: 2 / -1;
 }
 
+/* a helper's steps, and a folded group's, sit under it, indented behind a thin line */
 .rcInner {
-  margin: 2px 0 2px 4px;
-  padding-left: 10px;
-  border-left: 2px solid var(--agent-border);
+  margin-block: 2px;
+  margin-inline-start: -16px;
+  padding-inline-start: 14px;
+  border-inline-start: 2px solid var(--agent-border);
 }
 
 .rcIc {
   display: inline-flex;
   justify-content: center;
   color: var(--faint);
+}
+
+.rcIc[data-kind="helper"] {
+  color: var(--agent);
 }
 
 .rcText {
@@ -319,8 +399,8 @@
 }
 
 .rcFile {
-  margin-left: 6px;
-  padding: 0 5px;
+  margin-inline-start: 6px;
+  padding: 0 4px;
   border-radius: var(--radius-sm);
   background: var(--hover);
   color: var(--mute);
@@ -330,9 +410,20 @@
 
 .rcMeta {
   color: var(--mute);
-  font-family: var(--mono);
-  font-size: var(--fs-tiny);
+  font-size: var(--fs-caption);
   white-space: nowrap;
+}
+
+.rcStep > .rcFold > .rcText {
+  flex: 0 1 auto;
+}
+
+.rcStep > .rcFold > .rcMeta {
+  margin-inline-start: auto;
+}
+
+.rcStep > .rcFold > .rcChev {
+  margin-inline-start: 0;
 }
 
 .rcTag {
@@ -340,12 +431,27 @@
   font-weight: 600;
 }
 
+.rcAskLead {
+  color: var(--mute);
+}
+
+.rcAnswer[data-outcome="asked"],
+.rcAsk[data-outcome="asked"] .rcAnswer {
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+.rcAnswer[data-outcome="denied"],
+.rcAsk[data-outcome="denied"] .rcAnswer {
+  color: var(--alert-ink);
+}
+
 .rcSt {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   min-width: 14px;
-  justify-content: center;
 }
 
 .rcStDone {
@@ -358,11 +464,6 @@
 }
 
 .rcStep[data-status="failed"] .rcText {
-  color: var(--alert-ink);
-}
-
-
-.rcAsk[data-outcome="denied"] .rcText {
   color: var(--alert-ink);
 }
 
@@ -390,11 +491,16 @@
   overflow: auto;
 }
 
+.rcSteps:focus-visible {
+  outline: 2px solid var(--human-border);
+  outline-offset: 2px;
+}
+
 .rcPlanItem {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
-  column-gap: 6px;
+  column-gap: 8px;
   min-height: 24px;
   font-size: var(--fs-caption);
 }
@@ -404,19 +510,26 @@
   text-decoration: line-through;
 }
 
+.rcTodoDot {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--faint);
+  border-radius: var(--radius-pill);
+}
+
 .rcPlanMark {
   display: inline-flex;
   justify-content: center;
   color: var(--ok);
 }
 
-/* the answer as it is written: the last lines, faded */
+/* the answer as it is written: the last lines, the older one fainter */
 .rcPreview {
-  max-height: 3.4em;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-top: 2px;
   color: var(--mute);
   font-size: var(--fs-caption);
-  mask-image: linear-gradient(to bottom, transparent, var(--ink) 60%);
 }
 
 .rcPreview p {
@@ -426,15 +539,15 @@
   white-space: nowrap;
 }
 
+.rcPreview[data-lines="2"] p:first-child {
+  opacity: 0.6;
+}
+
 .rcQs {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.rcQs .apr-card {
-  max-width: none;
-  margin: 0;
+  padding-top: 2px;
 }
 
 /* after the run: one quiet line under the bot's last message */
@@ -442,13 +555,18 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 2px 0 6px 40px;
   min-width: 0;
+  margin-block: 0 6px;
+  margin-inline-start: calc(var(--gutter-w) + 11px);
   color: var(--mute);
   font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
 }
 
 .rcEndLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-height: 24px;
   margin: 0;
   color: var(--mute);
@@ -465,15 +583,26 @@
 }
 
 .rcEndLine.rcFold .rcChev {
-  margin-left: 0;
+  margin-inline-start: 0;
+}
+
+.rcEndIc {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+}
+
+.rcEnd[data-tone="done"] .rcEndIc {
+  color: var(--ok);
 }
 
 .rcEndText {
   min-width: 0;
   overflow-wrap: anywhere;
-  text-align: left;
+  text-align: start;
 }
 
+.rcEnd[data-tone="failed"] .rcEndIc,
 .rcEnd[data-tone="failed"] .rcEndText {
   color: var(--alert-ink);
 }
@@ -484,8 +613,9 @@
 }
 
 .rcEnd .rcDetails {
+  padding: 4px 0 0 10px;
   border-top: 0;
-  padding-top: 0;
+  border-inline-start: 2px solid var(--rule);
 }
 
 /* a thread root in the channel: who is working on it now */
@@ -494,30 +624,27 @@
   align-items: center;
   gap: 6px;
   margin: 6px 0 0;
-  padding: 2px 10px;
+  padding: 1px 10px;
+  border: 1px solid var(--agent-border);
   border-radius: var(--radius-pill);
   background: var(--agent-wash);
-  border: 1px solid var(--agent-border);
   color: var(--agent-ink);
   font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 
 .rcChipNum {
-  font-family: var(--mono);
   font-weight: 400;
 }
 
 @media (width <= 480px) {
+  .rc.rcCont,
   .rcEnd {
-    margin-left: 0;
+    margin-inline-start: 0;
   }
 
-  .rcTime {
-    display: none;
-  }
-
-  .rcMenu {
-    right: -40px;
+  .rcStep {
+    min-height: 32px;
   }
 }

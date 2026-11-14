@@ -10,7 +10,7 @@ import {
 import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon } from '@proicons/react';
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
-import { EyeIcon, EyeOffIcon } from '@proicons/react';
+import { EyeIcon, EyeOffIcon, OpenIcon, RecordStopIcon } from '@proicons/react';
 import { BarChartIcon, CodeSquareIcon, MoreHorizontalIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
 import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { AlertTriangleIcon, CircleIcon, CircleSmallIcon, DocumentIcon, FlagIcon, HandIcon, LightbulbIcon, TerminalIcon, GlobeIcon as ProGlobe } from '@proicons/react';
@@ -199,5 +199,9 @@ export const StepMoveIcon = proIcon(ArrowRightIcon, 14);
 export const StepOtherIcon = proIcon(CircleSmallIcon, 14);
 export const StepFailedIcon = proIcon(AlertTriangleIcon, 14);
 export const StepAskIcon = proIcon(HandIcon, 14);
+export const StepHelperIcon = proIcon(SparkleIcon, 14);
+export const StepDoneIcon = proIcon(CheckmarkCircleIcon, 14);
+export const StepStoppedIcon = proIcon(RecordStopIcon, 14);
+export const OpenCardIcon = proIcon(OpenIcon, 12);
 export const ItemWaitingIcon = proIcon(CircleIcon, 16);
 export const ItemBlockedIcon = proIcon(FlagIcon, 16);

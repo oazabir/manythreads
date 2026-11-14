@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Browser, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
 import { apiOn, channelsOf, noSidewaysScroll, openOn, PHONE, postAs, type StackApi } from '../support/stack-browser.ts';
-import { FAILS, JOURNEY, ORCHESTRATE, SLOW } from './scripts.ts';
+import { EDGE, FAILS, JOURNEY, ORCHESTRATE, SLOW } from './scripts.ts';
 import { cardText, startRunsWorld, type RunsWorld } from './support.ts';
 
 /*
@@ -61,7 +61,13 @@ async function ask(browser: Browser, playwright: PlaywrightWorkerArgs['playwrigh
 }
 
 /** The same view three ways, for the gallery: light, dark and a 390 px phone. The page is left as it was. */
-async function shoot(browser: Browser, playwright: PlaywrightWorkerArgs['playwright'], page: Page, rootId: string, name: string, who = 'nadia'): Promise<void> {
+/** Every picture on the page has loaded (a bot's picture is lazy: a screenshot taken too soon shows an empty frame). */
+async function picturesLoaded(page: Page): Promise<void> {
+  await page.waitForFunction(() => [...document.querySelectorAll('img')].every((i) => i.complete), undefined, { timeout: 10_000 }).catch(() => undefined);
+}
+
+async function shoot(browser: Browser, playwright: PlaywrightWorkerArgs['playwright'], page: Page, rootId: string, name: string, who = 'nadia', phoneTo?: (p: Page) => Promise<void>): Promise<void> {
+  await picturesLoaded(page);
   await page.emulateMedia({ colorScheme: 'light' });
   await page.screenshot({ path: join(SHOTS, `${name}.light.png`) });
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -71,6 +77,10 @@ async function shoot(browser: Browser, playwright: PlaywrightWorkerArgs['playwri
   try {
     await expect(phone.page.locator('[data-testid="run-card"], [data-testid="run-end"], [data-testid="todo-card"], [data-testid="todo-pin"]').first()).toBeVisible({ timeout: 20_000 });
     expect(await noSidewaysScroll(phone.page), `${name}: nothing scrolls sideways at 390 px`).toBe(true);
+    if (phoneTo) await phoneTo(phone.page);
+    // the team's bots (and their pictures) come with the page; wait for them rather than shoot the initials
+    await phone.page.locator('[data-testid="run-card"] .av.pic img, [data-testid="todo-card"]').first().waitFor({ timeout: 5_000 }).catch(() => undefined);
+    await picturesLoaded(phone.page);
     await phone.page.screenshot({ path: join(SHOTS, `${name}.390.png`) });
   } finally {
     await phone.context.close();
@@ -160,15 +170,20 @@ test('Stop: one press, it says Stopping, and the line under the thread says who 
   const nadia = await ask(browser, playwright, 'run-demo', 'run the whole test suite');
   try {
     const card = nadia.page.getByTestId('run-card');
-    await expect(card.getByTestId('run-now')).toContainText(/command/i, { timeout: 60_000 });
+    // the command is said once: "Running" and the program
+    await expect(card.getByTestId('run-now')).toHaveText(/^Running\s*pnpm$/, { timeout: 60_000 });
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'working');
-    await card.getByTestId('run-stop').click();
-    await expect(nadia.page.getByTestId('run-end')).toContainText(/Stopped by .+ after/, { timeout: 60_000 });
+    const stop = card.getByTestId('run-stop');
+    await stop.click();
+    // one press is enough; a second press while it stops does nothing, and the button keeps the focus
+    await expect(stop).toHaveText(/Stopping…/, { timeout: 10_000 }).catch(() => undefined);
+    if ((await stop.count()) > 0) await stop.click({ timeout: 2_000 }).catch(() => undefined);
+    await expect(nadia.page.getByTestId('run-end')).toContainText(/Stopped by Nadia\b/, { timeout: 60_000 });
     await expect(nadia.page.getByTestId('run-card')).toHaveCount(0);
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'stopped');
     // the record says the same after a reload
     await nadia.page.reload();
-    await expect(nadia.page.getByTestId('run-end')).toContainText(/Stopped by .+ after/, { timeout: 30_000 });
+    await expect(nadia.page.getByTestId('run-end')).toContainText(/Stopped by Nadia\b/, { timeout: 30_000 });
   } finally {
     await nadia.close();
   }
@@ -180,16 +195,14 @@ test('a run that fails says so in plain words, and says who can fix it', async (
   try {
     const end = nadia.page.getByTestId('run-end');
     await expect(end, await cardText(nadia.page)).toBeVisible({ timeout: 90_000 });
-    await expect(end).toContainText(/Failed after/);
+    await expect(end).toContainText(/^Failed\b/);
     await expect(end).toHaveAttribute('data-tone', 'failed');
     // the cause is one sentence of the bot's own, in the thread, with the run's id on it; the card does not say it twice
+    // a person was waiting on this run, so the platform leaves its notice in the thread
     const notices = await world.stack.sql<{ body: string }>(`SELECT body FROM app.messages WHERE thread_root_id = $1 AND meta ? 'runFailure'`, [nadia.rootId]);
-    if (notices.length > 0) {
-      await expect(nadia.page.getByText(notices[0]!.body.slice(0, 40), { exact: false }).first()).toBeVisible();
-      await expect(end.getByTestId('run-who')).toHaveCount(0);
-    } else {
-      await expect(end.getByTestId('run-who')).toContainText('tell a workspace admin');
-    }
+    expect(notices, 'the failure notice of the run').toHaveLength(1);
+    await expect(nadia.page.getByText(notices[0]!.body.slice(0, 40), { exact: false }).first()).toBeVisible();
+    await expect(end.getByTestId('run-who')).toHaveCount(0);
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'failed');
   } finally {
     await nadia.close();
@@ -242,11 +255,13 @@ test('the to-do card: kept by the orchestrator, an item follows its card, and it
     await expect(card).toBeVisible({ timeout: 30_000 });
     await expect(card.getByTestId('todo-progress')).toHaveText('1 of 4');
     await expect(card.getByTestId('todo-item')).toHaveCount(4);
-    const pin = nadia.page.getByTestId('todo-pin');
-    await expect(pin).toBeVisible();
-    await expect(pin).toContainText('1 of 4');
-    // the orchestrator's own plan is not drawn twice
+    // the line at the top of the panel stands in for the card only while the card's head is out of sight (the long list below shows it)
+    await expect(nadia.page.getByTestId('todo-pin')).toHaveCount(0);
+    // the orchestrator made a plan of its own, but its card does not draw it: the to-do card is its plan
+    await expect(nadia.page.getByTestId('run-card').getByTestId('run-work')).toBeVisible({ timeout: 30_000 });
     await expect(nadia.page.getByTestId('run-plan-fold')).toHaveCount(0);
+    // the run card continues the bot's own message: no second picture and name
+    await expect(nadia.page.getByTestId('run-card')).toHaveClass(/rcCont/);
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'todo-open');
 
     // the card is handed to the helper: the item is being worked on, with the helper as its owner
@@ -254,6 +269,7 @@ test('the to-do card: kept by the orchestrator, an item follows its card, and it
     await nadia.api.post(`/api/teams/engineering/tasks/${cardId}/handoff`, { toActorId: helper.actorId, mode: 'bot', note: 'build it' });
     await expect(card.getByTestId('todo-item').nth(1)).toHaveAttribute('data-status', 'working', { timeout: 30_000 });
     await expect(card.getByTestId('todo-item').nth(1).getByRole('link')).toHaveAttribute('href', new RegExp(`/boards\\?.*card=${cardId}`));
+    await expect(card.getByTestId('todo-item').nth(1)).toContainText('is on it');
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'todo-working');
 
     // the other card is claimed and finished by a person: its item ticks by itself
@@ -287,6 +303,115 @@ test('the to-do card: kept by the orchestrator, an item follows its card, and it
     } finally {
       await channel.context.close();
     }
+    await stopRun(nadia.page);
+  } finally {
+    await omar.ctx.dispose();
+    await nadia.close();
+  }
+});
+
+/** Ends the run whose card is on the page (its step would outlast the test), and waits for its folded line. */
+async function stopRun(page: Page): Promise<void> {
+  const card = page.getByTestId('run-card');
+  if ((await card.count()) === 0) return;
+  await card.getByTestId('run-stop').click();
+  await expect(page.getByTestId('run-card')).toHaveCount(0, { timeout: 60_000 });
+}
+
+test('edge cases: starting, Arabic and long words, five helpers, a failed step, the step list open, Trace, and two hours in', async ({ browser, playwright }) => {
+  world.script(EDGE);
+  const nadia = await ask(browser, playwright, 'run-demo', 'راجع بطاقة التشغيل وتأكد من أن النص العربي يظهر بشكل صحيح في كل مكان');
+  try {
+    const page = nadia.page;
+    const card = page.getByTestId('run-card');
+    // no step yet: it says it is starting, and what that means
+    await expect(card.getByTestId('run-state')).toHaveText('Starting…', { timeout: 60_000 });
+    await shoot(browser, playwright, page, nadia.rootId, 'starting');
+
+    // the work goes on: five helpers, one step failed, the plan's current item is long, and the answer so far is partly Arabic
+    await expect(card.getByTestId('run-work')).toContainText('5 helpers', { timeout: 60_000 });
+    await expect(card.getByTestId('run-work')).toContainText('1 failed');
+    await expect(card.getByTestId('run-now')).toHaveText(/^Running\s*pnpm$/, { timeout: 60_000 });
+    await shoot(browser, playwright, page, nadia.rootId, 'busy');
+
+    // the step list: helpers past the third fold behind "+2 more", a failed step says so in words
+    await card.getByTestId('run-work-fold').click();
+    const steps = card.getByTestId('run-steps');
+    await expect(steps).toContainText('+2 more helpers');
+    await expect(steps).toContainText('Failed');
+    await card.getByTestId('run-plan-fold').click();
+    await expect(card.getByTestId('run-plan')).toContainText('مراجعة النص العربي');
+    await shoot(browser, playwright, page, nadia.rootId, 'busy-open', 'nadia', async (p) => {
+      await p.getByTestId('run-work-fold').click();
+    });
+
+    // the view menu: Trace opens every card's step list, for every run; Progress folds it again
+    await card.hover();
+    await card.getByTestId('run-view').click();
+    await page.getByRole('menuitemradio', { name: /Trace/ }).click();
+    await expect(card.getByTestId('run-work-fold')).toHaveAttribute('aria-expanded', 'true');
+    await card.getByTestId('run-view').click();
+    await page.getByRole('menuitemradio', { name: /Summary/ }).click();
+    await expect(card.getByTestId('run-work-fold')).toHaveCount(0);
+    await expect(card.getByTestId('run-now')).toBeVisible();
+    await page.screenshot({ path: join(SHOTS, 'summary.light.png') });
+    await card.getByTestId('run-view').click();
+    await page.getByRole('menuitemradio', { name: /Progress/ }).click();
+    await expect(card.getByTestId('run-work-fold')).toHaveAttribute('aria-expanded', 'false');
+
+    // two hours in: the time reads in hours, in the same face as the words
+    await page.clock.install();
+    await page.reload();
+    await expect(page.getByTestId('run-card')).toBeVisible({ timeout: 30_000 });
+    await page.clock.fastForward('02:05:00');
+    await expect(page.getByTestId('run-card').locator('.rcTime')).toContainText(/\d h/, { timeout: 10_000 });
+    await picturesLoaded(page);
+    await page.screenshot({ path: join(SHOTS, 'hours.light.png') });
+
+    await stopRun(page);
+    await expect(page.getByTestId('run-end')).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await nadia.close();
+  }
+});
+
+test('a long to-do list: the finished items fold, and the line at the top stands in for the card once it scrolls away', async ({ browser, playwright }) => {
+  world.script(ORCHESTRATE);
+  // the orchestrator again (its earlier run was stopped): run-helper may still be on the card it was handed in the test before
+  const bot = await world.bot('run-lead');
+  const nadia = await ask(browser, playwright, 'run-lead', 'plan the release');
+  const omar = await apiOn(playwright, world.stack, 'omar');
+  try {
+    await expect(nadia.page.getByTestId('run-card')).toBeVisible({ timeout: 60_000 });
+    const minted = await omar.post<{ token: string }>('/api/teams/engineering/bots/run-lead/pairing-tokens', {});
+    const items = Array.from({ length: 30 }, (_, i) => ({
+      id: `i${i}`,
+      text: i === 13 ? 'تحديث الوثائق للإصدار الجديد ومراجعة الترجمة' : i === 14 ? `Check that ${'every screen of the release works on a phone and on a wide screen, '.repeat(2)}in light and dark` : `Step ${i + 1} of the release`,
+      status: i < 12 ? 'done' : i === 12 ? 'working' : i === 15 ? 'blocked' : 'waiting',
+    }));
+    const call = await fetch(`${world.stack.origin}/api/mcp/bots/${bot.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${minted.token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tasks.todo', arguments: { action: 'set', title: 'Release 2.4', items } } }),
+    });
+    expect(JSON.stringify(await call.json())).not.toContain('"isError":true');
+    const card = nadia.page.getByTestId('todo-card');
+    await expect(card.getByTestId('todo-progress')).toHaveText('12 of 30', { timeout: 30_000 });
+    // the twelve finished items are one line; the open ones are what a person reads
+    await expect(card.getByTestId('todo-done-fold')).toContainText('12 done');
+    await expect(card.getByTestId('todo-item')).toHaveCount(18);
+    await shoot(browser, playwright, nadia.page, nadia.rootId, 'todo-long', 'nadia', async (p) => {
+      await p.getByTestId('thread-view').locator('.rpb').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    });
+    // scrolled to the newest: the card's head is out of sight, so the line at the top says where the list is
+    await nadia.page.getByTestId('thread-view').locator('.rpb').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    const pin = nadia.page.getByTestId('todo-pin');
+    await expect(pin).toBeVisible({ timeout: 10_000 });
+    await expect(pin).toContainText('12 of 30');
+    await expect(pin).toContainText('Working on Step 13');
+    await pin.getByRole('button').first().click();
+    await nadia.page.screenshot({ path: join(SHOTS, 'todo-pin-open.light.png') });
+    await stopRun(nadia.page);
   } finally {
     await omar.ctx.dispose();
     await nadia.close();

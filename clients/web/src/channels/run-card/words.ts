@@ -87,10 +87,22 @@ export interface NowLine {
 
 const firstFile = (now: Pick<RunNow, 'paths'>): string | null => (now.paths[0] !== undefined ? baseName(now.paths[0]) : null);
 
+/**
+ * The program a command step names, for a short mono chip: the bridge titles a command "Running pnpm" (the program only, never the line, which may hold a secret) or
+ * "Running a command" when it cannot tell. Another title (an agent that names the command itself) is kept, clipped. Null when there is nothing worth showing.
+ */
+export function commandOf(title: string | null | undefined): string | null {
+  const t = (title ?? '').replace(/\s+/g, ' ').trim();
+  if (t === '' || /^(running a command|ran a command|terminal|bash|shell|command|execute|run command)$/i.test(t)) return null;
+  const named = /^(?:running|ran|run)\s+(.+)$/i.exec(t);
+  return clip(named ? named[1]! : t, 40);
+}
+
 /** What the run is doing, in one plain line. Never a raw tool name, never JSON, never a long path. */
 export function nowLine(now: RunNow | null, state: RunViewState): NowLine {
   if (now === null) {
-    return { text: state === 'starting' ? 'Getting ready' : state === 'waiting' ? 'Waiting for an answer' : state === 'stopping' ? 'Stopping' : 'Working', code: null, helper: null };
+    // the header already says the state: the line says what that means now, not the same word again
+    return { text: state === 'starting' ? 'Getting ready' : state === 'waiting' ? 'Waiting for an answer' : state === 'stopping' ? 'Finishing the step it is on' : 'Thinking', code: null, helper: null };
   }
   const file = firstFile(now);
   const many = now.count > 1;
@@ -119,8 +131,9 @@ export function nowLine(now: RunNow | null, state: RunViewState): NowLine {
       text = 'Searching the code';
       break;
     case 'execute':
-      text = many ? `Running ${now.count} commands` : 'Running a command';
-      if (!many && now.title !== null && now.title.trim() !== '') code = clip(now.title, 44);
+      // said once: "Running" and the program in mono ("Running pnpm"), or "Running a command" when the program is not known
+      code = many ? null : commandOf(now.title);
+      text = many ? `Running ${now.count} commands` : code !== null ? 'Running' : 'Running a command';
       break;
     case 'fetch':
       text = 'Reading the web';
@@ -147,17 +160,22 @@ export function planLine(plan: RunProgress['plan']): { done: number; total: numb
   return plan.total > 0 ? { done: Math.min(plan.done, plan.total), total: plan.total, current: plan.current } : null;
 }
 
-/** "14 steps · 2 files changed (+48 −6) · 3 commands · 2 helpers · 1 failed": counts a person who does not read code can read. */
-export function workParts(counts: RunCounts): string[] {
+/**
+ * "14 steps · 2 files changed (+48 −6) · 3 commands · 2 helpers · 1 failed": counts a person who does not read code can read. `compact` (the folded line under a finished
+ * run) keeps what matters after the fact: steps, files changed, helpers and failures; the commands are among the steps and the lines changed are in the step list.
+ * `failed: false` leaves the failures out (a stopped run's last step fails because it was stopped, which is not a failure to report).
+ */
+export function workParts(counts: RunCounts, opts: { compact?: boolean; failed?: boolean } = {}): string[] {
   const parts: string[] = [];
   if (counts.steps > 0) parts.push(plural(counts.steps, 'step', 'steps'));
   if (counts.filesChanged > 0) {
-    const delta = counts.added > 0 || counts.removed > 0 ? ` (+${counts.added} −${counts.removed})` : '';
+    const delta = !opts.compact && (counts.added > 0 || counts.removed > 0) ? ` (+${counts.added} −${counts.removed})` : '';
     parts.push(`${plural(counts.filesChanged, 'file', 'files')} changed${delta}`);
   }
-  if (counts.commands > 0) parts.push(plural(counts.commands, 'command', 'commands'));
+  // commands are steps too: they are counted on their own only when they are all the run did besides reading (a run of commands reads "3 steps · 3 commands")
+  if (!opts.compact && counts.commands > 0 && counts.filesChanged === 0 && counts.helpers === 0) parts.push(plural(counts.commands, 'command', 'commands'));
   if (counts.helpers > 0) parts.push(plural(counts.helpers, 'helper', 'helpers'));
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`);
+  if (opts.failed !== false && counts.failed > 0) parts.push(`${counts.failed} failed`);
   return parts;
 }
 
@@ -180,13 +198,18 @@ export interface EndLine {
   tone: 'done' | 'stopped' | 'failed';
 }
 
-/** The one quiet line under the bot's last message once a run has ended. */
-export function endLine(head: RunHead): EndLine {
-  const took = elapsedText(runElapsedMs(head, 0));
-  const parts = workParts(head.counts);
-  if (head.state === 'stopped') return { lead: head.stoppedBy !== null ? `Stopped by ${head.stoppedBy} after ${took}` : `Stopped after ${took}`, parts, tone: 'stopped' };
-  if (head.state === 'failed') return { lead: `Failed after ${took}`, parts, tone: 'failed' };
-  return { lead: `Worked ${took}`, parts, tone: 'done' };
+/**
+ * The one quiet line under the bot's last message once a run has ended. `now` stands in for the end while the server has not said when it ended yet (the push that ends a
+ * run can come before its record), so the line never says "Worked 0 s".
+ */
+export function endLine(head: RunHead, now: number): EndLine {
+  const ms = runElapsedMs(head, now);
+  // under a second says no time at all ("Failed after 0 s" reads as a fault of its own)
+  const after = ms < 1000 ? '' : ` after ${elapsedText(ms)}`;
+  const parts = workParts(head.counts, { compact: true, failed: head.state !== 'stopped' });
+  if (head.state === 'stopped') return { lead: head.stoppedBy !== null ? `Stopped by ${head.stoppedBy}${after}` : `Stopped${after}`, parts, tone: 'stopped' };
+  if (head.state === 'failed') return { lead: `Failed${after}`, parts, tone: 'failed' };
+  return { lead: ms < 1000 ? 'Done' : `Worked ${elapsedText(ms)}`, parts, tone: 'done' };
 }
 
 /** Is there a reason to draw the folded line at all? A finished run with no steps shows none; a stopped or failed one always does. */

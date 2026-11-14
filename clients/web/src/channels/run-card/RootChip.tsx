@@ -12,11 +12,13 @@ function Chip({ rootId }: { rootId: string }) {
   if (working.length === 0) return null;
   const names = [...new Set(working.map((w) => w.botName))];
   const who = names.length === 1 ? names[0]! : `${names[0]} and ${names.length - 1} more`;
-  const progress = todo !== null && todo.items.length > 0 ? progressText(todoProgress(todo.items)) : null;
+  // "· 3 of 5" from the thread's list while it has open items; a finished list says nothing more here (the bot is still writing its answer)
+  const p = todo !== null && todo.items.length > 0 ? todoProgress(todo.items) : null;
+  const progress = p !== null && !p.allDone ? progressText(p) : null;
   return (
     <p className="rcChip" data-testid="run-chip" role="status">
       <span className="rcPulse" aria-hidden="true" />
-      <span>{who} {names.length === 1 ? 'is' : 'are'} working</span>
+      <span dir="auto">{who} {names.length === 1 ? 'is' : 'are'} working</span>
       {progress !== null ? <span className="rcChipNum"> · {progress}</span> : null}
     </p>
   );

@@ -48,9 +48,21 @@ export function currentItem(items: readonly TodoItem[]): TodoItem | null {
 /** Whether the sticky bar shows: while something is open. A finished list stays in the thread as its card, and does not pin. */
 export const isOpen = (items: readonly Pick<TodoItem, 'status'>[]): boolean => items.length > 0 && items.some((i) => i.status !== 'done');
 
-/** The bar's line: "Write the e2e test · 3 of 5", or "Blocked: ..." when something waits on a person or a card. */
-export function barLine(todo: ThreadTodo): { text: string; progress: string; tone: 'working' | 'blocked' | 'waiting' | 'done' } {
+/**
+ * The bar's line: "Coder is working on Write the e2e test" (or "Working on ..." when the owner is not known), "Blocked: ..." when something waits on a person or a card, "Next: ..."
+ * when nothing is being worked on. `ownerName` names the holder of an item's card.
+ */
+export function barLine(todo: ThreadTodo, ownerName: (actorId: string) => string | undefined = () => undefined): { text: string; progress: string; tone: 'working' | 'blocked' | 'waiting' | 'done' } {
   const p = todoProgress(todo.items);
   const cur = currentItem(todo.items);
-  return { text: cur !== null ? cur.text : todoTitle(todo), progress: progressText(p), tone: cur === null ? 'done' : cur.status === 'done' ? 'done' : cur.status };
+  if (cur === null) return { text: todoTitle(todo), progress: progressText(p), tone: 'done' };
+  const owner = cur.ownerId !== undefined ? ownerName(cur.ownerId) : undefined;
+  const text = cur.status === 'working' ? (owner !== undefined ? `${owner} is working on ${cur.text}` : `Working on ${cur.text}`) : cur.status === 'blocked' ? `Blocked: ${cur.text}` : `Next: ${cur.text}`;
+  return { text, progress: progressText(p), tone: cur.status === 'done' ? 'done' : cur.status };
+}
+
+/** How many finished items a long list folds into one "12 done" line: none on a short list, where every item reads at a glance. */
+export function foldDone(items: readonly Pick<TodoItem, 'status'>[], longFrom = 9, atLeast = 3): number {
+  const done = items.filter((i) => i.status === 'done').length;
+  return items.length >= longFrom && done >= atLeast ? done : 0;
 }

@@ -29,7 +29,18 @@ interface Opened {
   seen: number;
   reading: boolean;
   again: boolean;
+  /** Reads in a row that came back older than a push named: they back off, and stop after a few (the next push or reconnect reads again). */
+  stale: number;
+  /** Reads since the list last caught up with the newest version a push named: a burst of pushes reads at most `BURST_READS` times. */
+  burst: number;
+  /** When the burst began: a push ten seconds later starts a new one. */
+  burstAt: number;
 }
+
+/** At most this many reads in a row for a version a push named and the server does not have yet. */
+const STALE_TRIES = 3;
+/** At most this many reads for one burst of pushes before the list has caught up; the next reconnect reads again. */
+const BURST_READS = 8;
 
 export class ThreadTodoStore {
   private readonly opened = new Map<string, Opened>();
@@ -42,7 +53,7 @@ export class ThreadTodoStore {
   open(rootId: string): () => void {
     let entry = this.opened.get(rootId);
     if (!entry) {
-      entry = { refs: 0, state: EMPTY, seen: 0, reading: false, again: false };
+      entry = { refs: 0, state: EMPTY, seen: 0, reading: false, again: false, stale: 0, burst: 0, burstAt: 0 };
       this.opened.set(rootId, entry);
     }
     entry.refs += 1;
@@ -88,12 +99,17 @@ export class ThreadTodoStore {
     const entry = this.opened.get(rootId);
     if (!entry) return;
     entry.seen = Math.max(entry.seen, version);
+    entry.stale = 0;
+    if (Date.now() - entry.burstAt > 10_000) entry.burst = 0;
     if ((entry.state.todo?.version ?? 0) < version) void this.read(rootId);
   }
 
   /** The socket was down: what changed meanwhile is unknown. */
   resync(): void {
-    for (const rootId of this.opened.keys()) void this.read(rootId);
+    for (const [rootId, entry] of this.opened) {
+      entry.burst = 0;
+      void this.read(rootId);
+    }
   }
 
   private emit(rootId: string): void {
@@ -108,26 +124,48 @@ export class ThreadTodoStore {
       entry.again = true;
       return;
     }
+    if (entry.burst >= BURST_READS) return;
+    if (entry.burst === 0) entry.burstAt = Date.now();
+    entry.burst += 1;
     entry.reading = true;
     try {
       const { todo } = await this.deps.read(rootId);
       const now = this.opened.get(rootId);
       if (now !== entry) return;
-      const held = entry.state.todo?.version ?? 0;
+      const heldTodo = entry.state.todo;
+      const held = heldTodo?.version ?? 0;
+      // another list (made again after the first was removed) starts its versions at 1: it is newer however small its number is
+      const another = heldTodo !== null && todo !== null && (todo.messageId !== heldTodo.messageId || Date.parse(todo.updatedAt) > Date.parse(heldTodo.updatedAt)) && todo.version < held;
+      if (another) entry.seen = todo.version;
       // a read that finished late must not bring an older list back
-      if (todo === null || todo.version >= held) {
+      if (todo === null || todo.version >= held || another) {
         entry.state = { loaded: true, todo };
         this.emit(rootId);
       }
-      // a push named a newer version than this read brought (the read began before the write finished): read once more
-      if (todo !== null && entry.seen > todo.version) entry.again = true;
+      // a push named a newer version than this read brought (the read began before the write finished): read again, a little later each time, a few times at most
+      if (todo !== null && entry.seen > todo.version) {
+        entry.stale += 1;
+        if (entry.stale <= STALE_TRIES && !entry.again) {
+          const wait = 250 * 2 ** (entry.stale - 1);
+          setTimeout(() => {
+            if (this.opened.get(rootId) === entry) void this.read(rootId);
+          }, wait);
+        }
+      } else entry.stale = 0;
+      if (todo === null || entry.seen <= todo.version) entry.burst = 0;
     } catch {
       // the list stays as it was; the next push or reconnect reads again
     } finally {
       entry.reading = false;
       if (entry.again && this.opened.get(rootId) === entry) {
         entry.again = false;
-        void this.read(rootId);
+        // the read a push asked for during this one: at once, unless reads keep coming back stale, then with the same growing wait
+        const wait = entry.stale > 1 ? 250 * 2 ** Math.min(entry.stale - 1, STALE_TRIES) : 0;
+        if (wait === 0) void this.read(rootId);
+        else
+          setTimeout(() => {
+            if (this.opened.get(rootId) === entry) void this.read(rootId);
+          }, wait);
       }
     }
   }

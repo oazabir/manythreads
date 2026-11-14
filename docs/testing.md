@@ -248,5 +248,9 @@ the stack at it through the test seam of claude-pods; `e2e/runs/scripts.ts` hold
 covers: working, a helper, a plan, a question, Yes, done and folded, then a reload (the record is read from the server); Stop (and "Stopped by" after a reload); a failed run;
 and a to-do list written by the orchestrator through its own `tasks.todo` endpoint, an item that follows a card (handed on, then done by a person), All done, and the "is working"
 chip in the channel. The fake agent has no MCP client, so the list is written by the spec with the bot's own token while the bot's run is open (it is attributed to that run, as in
-production). Screenshots (light, dark, 390 px) go to `temp/screenshots/p25-12` (git-ignored). Run it alone:
+production). The look's edge cases have their own runs: `EDGE` (Starting before the first step, Arabic and long words, five helpers with two folded behind "+2 more", a failed
+step, the step list and the plan open, the view menu's Trace and Summary, and the page's clock moved two hours on) and a 30-item list (finished items folded, the pin once the card
+scrolls away). Screenshots (light, dark, 390 px) go to `temp/screenshots/p25-12` (git-ignored). Run it alone:
 `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test runs/run-card.spec.ts --project=desktop --workers=1 --retries=0` (the web client must be built: `pnpm --filter @manythreads/web build`).
+The spec starts its own stack, so the shared servers and sign-ins of the main config's global setup are not needed: a config of a few lines with `testMatch: 'runs/run-card.spec.ts'`,
+one `desktop` project and no `webServer` or `globalSetup` runs it in about half the time.

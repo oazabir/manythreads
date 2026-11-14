@@ -397,3 +397,25 @@
     padding: 14px 14px 24px;
   }
 }
+
+/* a question inside a run card (P25-11): the run card says who and when; this is the question, what it would do, and the answer */
+.apr-card-run {
+  gap: 8px;
+  max-width: none;
+  margin: 0;
+  padding: 10px 12px;
+  border-color: var(--warn-border);
+  background: var(--surface);
+}
+
+/* the note has its own line, so the two buttons stay side by side even in a narrow panel */
+.apr-card-run .apr-note {
+  flex-basis: 100%;
+}
+
+.apr-run-q {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
