@@ -1703,6 +1703,23 @@
   overflow-y: auto;
 }
 
+/* the panel's reply list and its "Jump to latest" pill: the pill sits over the bottom of the list, outside the scroller */
+.thread .rpb-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+/* centred by its own width, so it stays in the middle in either direction (the channel's pill is moved by half its width to the left) */
+.jump.thread-jump {
+  inset-inline: 0;
+  inline-size: fit-content;
+  margin-inline: auto;
+  transform: none;
+}
+
 .thread .msg {
   margin-bottom: 6px;
 }

@@ -58,7 +58,8 @@ test('the thread sheet matches the Phone plate (P-loose)', async ({ browser }, t
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 602,
-      liveMasks: ['.av'],
+      // scrolled to the root, the thread shows its "Jump to latest" pill, which the plate does not draw
+      liveMasks: ['.av', '[data-testid="thread-jump-latest"]'],
       order: ['panel-header', 'panel-body'],
     });
   } finally {
