@@ -11,6 +11,8 @@
 -- paths to team members who cannot read that channel. A run in a person's own conversation is read by its asker alone (as `bot_runs`). A bot reads its own run. Both
 -- tables are written only by the run job, as the system role.
 --
+-- Both tables go with their run (ON DELETE CASCADE from `bot_runs`), so the run-log retention of the retention plugin prunes them with it and no second clock is kept.
+--
 -- Each row carries the channel (and for a conversation, the asker) of its run, so the policy is one hoisted set per statement (kernel 0011) and never a join.
 
 CREATE TABLE app.run_view (
@@ -44,6 +46,9 @@ CREATE TABLE app.run_view (
 );
 CREATE INDEX run_view_thread ON app.run_view (thread_root_id, started_at) WHERE thread_root_id IS NOT NULL;
 CREATE INDEX run_view_channel ON app.run_view (channel_id);
+-- the runs that are still going: the stale sweep (by the last sign of life) and the "who is working in this channel" read
+CREATE INDEX run_view_active_updated ON app.run_view (updated_at) WHERE ended_at IS NULL;
+CREATE INDEX run_view_active_channel ON app.run_view (channel_id, started_at) WHERE ended_at IS NULL;
 COMMENT ON TABLE app.run_view IS 'rls: team — T: the folded state of a run (now, counts, plan, helpers, who stopped it), read by whoever can read the run''s channel (a conversation run: its asker alone; a bot: its own run); written only by the run job (system).';
 
 CREATE TABLE app.run_activity (
@@ -64,11 +69,14 @@ COMMENT ON TABLE app.run_activity IS 'rls: team — T: the lines of a run''s wor
 
 ALTER TABLE app.run_view ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.run_view FORCE ROW LEVEL SECURITY;
+-- A bot reads only the run it is running (`run_id`); the channel branches are a person's (a bot's `visible_channel_ids` holds the public channels of its team, which
+-- would show it every run there). The asker of a conversation run reads it only while they still can read that conversation.
 CREATE POLICY run_view_select ON app.run_view FOR SELECT USING (
   (SELECT app.is_system())
   OR run_id = (SELECT app.run_id())
-  OR (conversation AND asker_id = (SELECT app.actor()))
-  OR (NOT conversation AND channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[])));
+  OR ((SELECT app.person_id()) IS NOT NULL AND (
+        (conversation AND asker_id = (SELECT app.actor()) AND channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[]))
+     OR (NOT conversation AND channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[])))));
 CREATE POLICY run_view_system ON app.run_view FOR ALL USING ((SELECT app.is_system())) WITH CHECK ((SELECT app.is_system()));
 GRANT SELECT ON app.run_view TO manythreads_app;
 
@@ -77,7 +85,8 @@ ALTER TABLE app.run_activity FORCE ROW LEVEL SECURITY;
 CREATE POLICY run_activity_select ON app.run_activity FOR SELECT USING (
   (SELECT app.is_system())
   OR run_id = (SELECT app.run_id())
-  OR (conversation AND asker_id = (SELECT app.actor()))
-  OR (NOT conversation AND channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[])));
+  OR ((SELECT app.person_id()) IS NOT NULL AND (
+        (conversation AND asker_id = (SELECT app.actor()) AND channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[]))
+     OR (NOT conversation AND channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[])))));
 CREATE POLICY run_activity_system ON app.run_activity FOR ALL USING ((SELECT app.is_system())) WITH CHECK ((SELECT app.is_system()));
 GRANT SELECT ON app.run_activity TO manythreads_app;

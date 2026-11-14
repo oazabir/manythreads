@@ -9,6 +9,7 @@ import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
 import { registerProfileChanges } from './profile-changes.ts';
 import { registerActivityRoutes } from './activity-routes.ts';
 import { registerStopRoute } from './live.ts';
+import { registerRunViewSweep } from './run-sweep.ts';
 import { registerChatRouter } from './router-chat.ts';
 import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
 
@@ -62,7 +63,7 @@ export default definePlugin({
         // the webhook trigger tells a lead once a minute when a bot cannot post in the endpoint's channel or is over its hourly cap (the webhooks plugin owns the type and the other reasons)
         'webhooks.provider_event.refused',
       ],
-      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed', 'conversations.turn.regenerated', 'webhooks.provider_event.received'],
+      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed', 'conversations.turn.regenerated', 'webhooks.provider_event.received', 'bots.run.closed'],
     },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
@@ -110,6 +111,7 @@ export default definePlugin({
     registerChatRouter(ctx);
     registerStopRoute(ctx);
     registerActivityRoutes(ctx);
+    registerRunViewSweep(ctx);
     registerApprovalResume(ctx);
     registerRunJob(ctx);
   },

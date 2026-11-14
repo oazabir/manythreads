@@ -175,9 +175,11 @@ subagents and their state, the latest plan, `plan_version`, started, ended, stop
 Today's live frames (P20-16: `run.delta`, `run.looking`, `run.ended`) go only to the asker of a conversation. Thread runs need the people who have the thread open.
 Sockets are kept per person and delivered through `pg_notify` on every replica, and a socket cannot say what it is looking at today (the hub has only `ping`), so:
 
-- **A watch lease, not socket state.** `PUT /api/threads/:rootId/watch` (the open thread panel calls it every 30 s; it expires after 60 s; closing the panel calls
-  `DELETE`). It writes an UNLOGGED table `app.thread_watchers (root_id, person_id, expires_at)`, like `app.typing`. It works on any number of replicas, needs no
-  kernel change, and the run job reads the watchers when it pushes (cached for 5 s).
+- **A watch lease, not socket state.** `PUT /api/threads/:rootId/watch/:leaseId` (the open thread panel calls it every 20 s; it expires after 60 s; closing the panel calls
+  `DELETE` on the same path). The lease id is a UUID each browser tab makes up, so one tab closing never ends another tab's lease. It writes an UNLOGGED table
+  `app.thread_watchers (root_id, person_id, lease_id, channel_id, expires_at)`, like `app.typing`, guarded by a trigger (the channel is the root's channel; at most 50 open leases a
+  person, then 429). It works on any number of replicas, needs no kernel change, and the run job reads the watchers when it pushes, joined with the channel's audience at that moment
+  (cached for 3 s), so a person who lost the channel stops receiving at once.
 - `run.activity` pushes the card's head only: `{runId, seq, state, now, counts, plan: {done, total, current}, planVersion, helpers}` (well under the 7 KB push cap).
   The card fetches `GET /api/runs/:runId/activity?after=seq` only for what is open on screen (the step list) and the plan only when `planVersion` changes.
 - `run.delta` (answer text) to the same watchers, with today's limits (80 ms, 4500 bytes).

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunActivityResponse, ListThreadRunsResponse, ListMessagesResponse } from '@manythreads/shared';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway, type FakeRunStep } from '../../../../tools/fake-hermes-gateway/src/server.ts';
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
@@ -178,21 +179,121 @@ describe('what a run kept, and who reads it (P25-06)', () => {
   });
 });
 
+const LEASE_A = '00000000-0000-4000-8000-0000000a0001';
+const LEASE_B = '00000000-0000-4000-8000-0000000a0002';
+const leaseRows = (rootId: string): Promise<number> => w.system(async (tx) => (await tx.query(`SELECT 1 FROM app.thread_watchers WHERE root_id = $1`, [rootId])).rows.length);
+
 describe('the watch lease (P25-07)', () => {
   it('a reader of the thread holds a lease that is renewed, and ends it; a thread nobody can read is a 404', async () => {
     const rootId = await post(nadia, 'plain message, no bot');
-    const put = await w.call<{ expiresAt: string }>(rafi, 'PUT', `/api/threads/${rootId}/watch`, {});
+    const put = await w.call<{ expiresAt: string }>(rafi, 'PUT', `/api/threads/${rootId}/watch/${LEASE_A}`, {});
     expect(put.status, JSON.stringify(put.body)).toBe(200);
     const first = Date.parse(put.body.expiresAt);
     expect(first).toBeGreaterThan(Date.now());
     expect(first).toBeLessThan(Date.now() + 61_000);
-    const again = await w.call<{ expiresAt: string }>(rafi, 'PUT', `/api/threads/${rootId}/watch`, {});
+    const again = await w.call<{ expiresAt: string }>(rafi, 'PUT', `/api/threads/${rootId}/watch/${LEASE_A}`, {});
     expect(again.status).toBe(200);
     expect(Date.parse(again.body.expiresAt)).toBeGreaterThanOrEqual(first);
-    expect(await w.system(async (tx) => (await tx.query(`SELECT 1 FROM app.thread_watchers WHERE root_id = $1`, [rootId])).rows.length)).toBe(1);
-    expect((await w.call(rafi, 'DELETE', `/api/threads/${rootId}/watch`)).status).toBe(200);
-    expect(await w.system(async (tx) => (await tx.query(`SELECT 1 FROM app.thread_watchers WHERE root_id = $1`, [rootId])).rows.length)).toBe(0);
-    expect((await w.call(rafi, 'PUT', `/api/threads/00000000-0000-4000-8000-000000000000/watch`, {})).status).toBe(404);
+    expect(await leaseRows(rootId)).toBe(1);
+    expect((await w.call(rafi, 'DELETE', `/api/threads/${rootId}/watch/${LEASE_A}`)).status).toBe(200);
+    expect(await leaseRows(rootId)).toBe(0);
+    expect((await w.call(rafi, 'PUT', `/api/threads/00000000-0000-4000-8000-000000000000/watch/${LEASE_A}`, {})).status).toBe(404);
+    expect((await w.call(rafi, 'PUT', `/api/threads/${rootId}/watch/not-a-uuid`, {})).status).toBe(400);
+  });
+
+  it('two tabs of one person hold two leases; closing one leaves the other', async () => {
+    const rootId = await post(nadia, 'a thread open in two tabs');
+    expect((await w.call(rafi, 'PUT', `/api/threads/${rootId}/watch/${LEASE_A}`, {})).status).toBe(200);
+    expect((await w.call(rafi, 'PUT', `/api/threads/${rootId}/watch/${LEASE_B}`, {})).status).toBe(200);
+    expect(await leaseRows(rootId)).toBe(2);
+    expect((await w.call(rafi, 'DELETE', `/api/threads/${rootId}/watch/${LEASE_A}`)).status).toBe(200);
+    expect(await leaseRows(rootId)).toBe(1);
+    expect((await w.call(rafi, 'DELETE', `/api/threads/${rootId}/watch/${LEASE_B}`)).status).toBe(200);
+  });
+
+  it('a person holds at most 50 open leases (the 51st is a 429) and a renewal is never refused for it', async () => {
+    const rootId = await post(nadia, 'a thread with too many tabs');
+    const id = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.thread_watchers (root_id, person_id, lease_id, channel_id, expires_at)
+         SELECT $1, $2, gen_random_uuid(), $3, now() + interval '1 minute' FROM generate_series(1, 50)`,
+        [rootId, personas.omar.personId, channelId],
+      ),
+    );
+    const refused = await w.call(omar, 'PUT', `/api/threads/${rootId}/watch/${id(51)}`, {});
+    expect(refused.status, JSON.stringify(refused.body)).toBe(429);
+    const held = await w.system(async (tx) => (await tx.query<{ lease_id: string }>(`SELECT lease_id FROM app.thread_watchers WHERE person_id = $1 LIMIT 1`, [personas.omar.personId])).rows[0]!.lease_id);
+    expect((await w.call(omar, 'PUT', `/api/threads/${rootId}/watch/${held}`, {})).status).toBe(200);
+    await w.system((tx) => tx.query(`DELETE FROM app.thread_watchers WHERE person_id = $1`, [personas.omar.personId]));
+  });
+});
+
+describe('the channel\'s active runs and who is pushed to (reviews H1, M1)', () => {
+  let listener: pg.Client;
+  const seen: Array<{ personId: string; type: string; payload: Record<string, any> }> = [];
+
+  beforeAll(async () => {
+    listener = new pg.Client({ connectionString: w.server.db.systemUrl });
+    await listener.connect();
+    listener.on('notification', (m) => {
+      if (m.payload) seen.push(JSON.parse(m.payload));
+    });
+    await listener.query('LISTEN manythreads_realtime');
+  });
+  afterAll(async () => {
+    await listener?.end();
+  });
+
+  const to = (type: string, runId: string): string[] => seen.filter((m) => m.type === type && m.payload['runId'] === runId).map((m) => m.personId);
+
+  it('lists the runs that are going in a channel while they go, and not after; run.activity goes to the people who hold a lease and run.started to every reader', async () => {
+    gw.setScript(() => work({ type: 'hang', ms: 60_000 }));
+    const rootId = await post(nadia, '@act-bot who is looking');
+    expect((await w.call(rafi, 'PUT', `/api/threads/${rootId}/watch/${LEASE_A}`, {})).status).toBe(200);
+    const open = await runOfThread(rootId);
+    await until(async () => (await viewOf(open.id))?.counts?.steps >= 1, 20_000, 'the first line');
+    await until(async () => (to('run.activity', open.id).length > 0 ? true : null), 10_000, 'a run.activity push');
+
+    const active = await w.call<{ runs: Array<{ runId: string; threadRootId: string }> }>(rafi, 'GET', `/api/channels/${channelId}/active-runs`);
+    expect(active.status, JSON.stringify(active.body)).toBe(200);
+    expect(active.body.runs.map((r) => r.runId)).toContain(open.id);
+    expect(active.body.runs.find((r) => r.runId === open.id)).toMatchObject({ threadRootId: rootId });
+    // somebody who cannot read the channel sees nothing of it
+    const outsider = await w.call<{ runs: unknown[] }>(personas.lena, 'GET', `/api/channels/${channelId}/active-runs`);
+    expect(outsider.status === 200 ? outsider.body.runs : []).toEqual([]);
+
+    // the steps went to the one who holds a lease; the chip to everybody who reads the channel
+    expect(new Set(to('run.activity', open.id))).toEqual(new Set([rafi.personId]));
+    expect(to('run.started', open.id).length).toBeGreaterThan(1);
+    expect(to('run.started', open.id)).toEqual(expect.arrayContaining([rafi.personId, nadia.personId, omar.personId]));
+
+    // a person who has left the team stops being pushed to at once, with their lease still alive (the membership is put back at the end)
+    const owner = new pg.Client({ connectionString: w.server.db.ownerUrl });
+    await owner.connect();
+    const memberships = (await owner.query(`SELECT * FROM app.team_members WHERE actor_id = $1`, [rafi.actorId])).rows;
+    await owner.query(`DELETE FROM app.team_members WHERE actor_id = $1`, [rafi.actorId]);
+    let after: string[] = [];
+    try {
+      expect((await w.call(omar, 'PUT', `/api/threads/${rootId}/watch/${LEASE_B}`, {})).status).toBe(200);
+      // the audience is reused for a few seconds
+      await new Promise((r) => setTimeout(r, 3500));
+      const before = seen.length;
+      // the end of the run is one more push to the watchers that are left
+      await w.call(omar, 'POST', `/api/runs/${open.id}/stop`, {});
+      await closedRunOf(rootId);
+      await until(async () => (seen.slice(before).some((m) => m.type === 'run.activity' && m.payload['runId'] === open.id) ? true : null), 15_000, 'the push after the change');
+      after = seen.slice(before).filter((m) => m.type === 'run.activity' && m.payload['runId'] === open.id).map((m) => m.personId);
+    } finally {
+      await owner.query(`INSERT INTO app.team_members SELECT * FROM json_populate_recordset(NULL::app.team_members, $1::json)`, [JSON.stringify(memberships)]);
+      await owner.end();
+    }
+    expect(after).not.toContain(rafi.personId);
+    expect(after).toContain(omar.personId);
+    // and the run is over for the list
+    const done = await w.call<{ runs: Array<{ runId: string }> }>(omar, 'GET', `/api/channels/${channelId}/active-runs`);
+    expect(done.body.runs.map((r) => r.runId)).not.toContain(open.id);
+    await w.system((tx) => tx.query(`DELETE FROM app.thread_watchers WHERE root_id = $1`, [rootId]));
   });
 });
 

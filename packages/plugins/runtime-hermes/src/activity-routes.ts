@@ -1,16 +1,21 @@
-import { forbidden, json, notFound, route } from '@manythreads/sdk';
+import { HttpError, forbidden, json, notFound, route } from '@manythreads/sdk';
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
+  ActiveChannelRunsResponse,
+  ChannelRunsPathParams,
   ListThreadRunsResponse,
   RunActivityPathParams,
   RunActivityQuery,
+  RunActivityItem,
   RunActivityResponse,
   RunHead,
+  THREAD_WATCH_MAX_PER_PERSON,
   THREAD_WATCH_TTL_SECONDS,
   ThreadRunsPathParams,
   ThreadUnwatchResponse,
   ThreadWatchPathParams,
   ThreadWatchResponse,
+  activeChannelRunsRoute,
   listThreadRunsRoute,
   runActivityRoute,
   unwatchThreadRoute,
@@ -64,7 +69,8 @@ export function runHeadOf(row: ViewRow, canStop: boolean): RunHead {
     planVersion: row.plan_version,
     helpers: row.helpers.slice(-5),
     seq: row.last_seq,
-    stoppedBy: row.stopped_by_name,
+    // who stopped it matters only while a stop is going on or done (a run that ended on its own has nobody to name)
+    stoppedBy: row.state === 'stopping' || row.state === 'stopped' ? row.stopped_by_name : null,
     runId: row.run_id,
     botId: row.bot_id,
     botActorId: row.bot_actor_id,
@@ -107,7 +113,11 @@ export function registerActivityRoutes(ctx: PluginContext): void {
         RunActivityResponse.parse({
           run: runHeadOf(view, can.has(runId)),
           plan: view.plan,
-          items: lines.slice(0, limit).map((l) => ({ seq: l.seq, at: l.at.toISOString(), payload: l.payload })),
+          items: lines.slice(0, limit).flatMap((l) => {
+            // one stored line that no longer parses (an old shape, a bad write) is left out; it must not turn the whole read into a 500
+            const item = RunActivityItem.safeParse({ seq: l.seq, at: l.at.toISOString(), payload: l.payload });
+            return item.success ? [item.data] : [];
+          }),
           hasMore: lines.length > limit,
         }),
       );
@@ -128,36 +138,78 @@ export function registerActivityRoutes(ctx: PluginContext): void {
     }),
   });
 
-  // PUT /api/threads/:rootId/watch: "I have this thread open" (renewed every 30 s, held 60 s)
+  // GET /api/channels/:channelId/active-runs: the runs going in the threads of a channel (a page that was just opened missed their `run.started`). The table's policy decides
+  // what the caller sees (a conversation run is its asker's alone), and a run that ended is not listed; one that was lost (no end, no sign of life) is closed by the sweep.
+  ctx.http.route({
+    ...activeChannelRunsRoute,
+    schema: { response: ActiveChannelRunsResponse },
+    handler: route(async (req, tx) => {
+      const { channelId } = ChannelRunsPathParams.parse(req.params);
+      const rows = (
+        await tx.query<ViewRow>(
+          `SELECT ${VIEW_COLUMNS} FROM app.run_view
+            WHERE channel_id = $1::uuid AND ended_at IS NULL AND thread_root_id IS NOT NULL AND NOT conversation
+            ORDER BY started_at DESC, run_id DESC LIMIT 100`,
+          [channelId],
+        )
+      ).rows;
+      return json(
+        ActiveChannelRunsResponse.parse({
+          runs: rows.map((r) => ({
+            runId: r.run_id,
+            channelId: r.channel_id,
+            threadRootId: r.thread_root_id,
+            botId: r.bot_id,
+            botActorId: r.bot_actor_id,
+            botName: r.bot_name,
+            startedAt: r.started_at.toISOString(),
+          })),
+        }),
+      );
+    }),
+  });
+
+  // PUT /api/threads/:rootId/watch/:leaseId: "this panel has this thread open" (a lease per open panel of each tab, renewed every 20 s, held 60 s)
   ctx.http.route({
     ...watchThreadRoute,
-    rateLimit: { limit: 120, windowMs: 60_000 },
+    rateLimit: { limit: 240, windowMs: 60_000 },
     schema: { response: ThreadWatchResponse },
     handler: route(async (req, tx) => {
-      const { rootId } = ThreadWatchPathParams.parse(req.params);
+      const { rootId, leaseId } = ThreadWatchPathParams.parse(req.params);
       // the root is read through the messages policy: a thread the caller cannot read is a 404, as everywhere
       const root = (await tx.query<{ channel_id: string }>('SELECT channel_id FROM app.messages WHERE id = $1::uuid AND thread_root_id IS NULL AND deleted_at IS NULL', [rootId])).rows[0];
       if (root === undefined) throw notFound('No such thread');
       const person = (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0]?.id ?? null;
       if (person === null) throw forbidden('Only a person can watch a thread');
+      // a person's own lapsed leases go first, so they never count against the cap; then a new lease (not a renewal) is refused above the cap, before the table's own trigger would
+      await tx.query('DELETE FROM app.thread_watchers WHERE person_id = $1::uuid AND expires_at < now()', [person]);
+      const mine = (
+        await tx.query<{ held: boolean; n: string }>(
+          'SELECT bool_or(root_id = $1::uuid AND lease_id = $2::uuid) AS held, count(*)::text AS n FROM app.thread_watchers WHERE person_id = $3::uuid',
+          [rootId, leaseId, person],
+        )
+      ).rows[0];
+      if (mine?.held !== true && Number(mine?.n ?? 0) >= THREAD_WATCH_MAX_PER_PERSON) {
+        throw new HttpError(429, 'rate_limited', 'Too many threads are open at once. Close one and try again.', { 'retry-after': '20' });
+      }
       const lease = await tx.query<{ expires_at: Date }>(
-        `INSERT INTO app.thread_watchers (root_id, person_id, channel_id, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() + make_interval(secs => $4))
-         ON CONFLICT (root_id, person_id) DO UPDATE SET expires_at = EXCLUDED.expires_at, channel_id = EXCLUDED.channel_id
+        `INSERT INTO app.thread_watchers (root_id, person_id, lease_id, channel_id, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, now() + make_interval(secs => $5))
+         ON CONFLICT (root_id, person_id, lease_id) DO UPDATE SET expires_at = EXCLUDED.expires_at, channel_id = EXCLUDED.channel_id
          RETURNING expires_at`,
-        [rootId, person, root.channel_id, THREAD_WATCH_TTL_SECONDS],
+        [rootId, person, leaseId, root.channel_id, THREAD_WATCH_TTL_SECONDS],
       );
       return json(ThreadWatchResponse.parse({ expiresAt: lease.rows[0]!.expires_at.toISOString() }));
     }),
   });
 
-  // DELETE /api/threads/:rootId/watch: the panel closed
+  // DELETE /api/threads/:rootId/watch/:leaseId: this panel closed (only its own lease ends)
   ctx.http.route({
     ...unwatchThreadRoute,
-    rateLimit: { limit: 120, windowMs: 60_000 },
+    rateLimit: { limit: 240, windowMs: 60_000 },
     schema: { response: ThreadUnwatchResponse },
     handler: route(async (req, tx) => {
-      const { rootId } = ThreadWatchPathParams.parse(req.params);
-      await tx.query('DELETE FROM app.thread_watchers WHERE root_id = $1::uuid AND person_id = app.person_id()', [rootId]);
+      const { rootId, leaseId } = ThreadWatchPathParams.parse(req.params);
+      await tx.query('DELETE FROM app.thread_watchers WHERE root_id = $1::uuid AND lease_id = $2::uuid AND person_id = app.person_id()', [rootId, leaseId]);
       return json(ThreadUnwatchResponse.parse({ ok: true }));
     }),
   });

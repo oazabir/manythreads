@@ -12,12 +12,15 @@ import type { RunActivityKind, RunActivityPayload, RunCost, RunCounts, RunHelper
 
 /** A run keeps at most this many lines; after that steps are counted in the folded state only. */
 export const MAX_ROWS = 2000;
+// Every limit of a word is in UTF-8 BYTES, not characters: the table's CHECKs bound the size of the stored jsonb (`pg_column_size`), and Arabic is two bytes a letter,
+// Chinese three. A title of 400 bytes, five paths of 300 and a helper's name of 100 keep `now_step` under 2500 bytes; thirty plan lines of 400 keep `plan` under 16000.
 const MAX_TITLE = 400;
 const MAX_PATH = 300;
 const MAX_PATHS = 5;
 const MAX_PLAN = 30;
 const MAX_PLAN_TEXT = 400;
 const MAX_NAME = 100;
+const MAX_ID = 200;
 /** The helpers kept in the folded state (the newest); a push shows the newest five. */
 const MAX_HELPERS_KEPT = 12;
 const MAX_HELPERS_PUSHED = 5;
@@ -36,9 +39,22 @@ export type SlimEvent =
   | { t: 'plan'; entries: BotPlanEntry[] }
   | { t: 'thinking'; seconds: number }
   | { t: 'answering' }
-  | { t: 'approval'; phase: 'asked' | 'approved' | 'denied'; stepId?: string; kind?: BotStepKind; title?: string; paths?: string[]; diff?: BotStepDiff };
+  | { t: 'approval'; phase: 'asked' | 'approved' | 'denied' | 'ended'; stepId?: string; kind?: BotStepKind; title?: string; paths?: string[]; diff?: BotStepDiff };
 
-const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) : s);
+/** At most `n` UTF-8 bytes of `s`, never ending in the middle of a character (nor of a surrogate pair), and never holding a lone surrogate (which Postgres refuses in a jsonb). */
+export function clip(s: string, n: number): string {
+  const text = s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD').replaceAll('\u0000', '');
+  if (text.length * 3 <= n || Buffer.byteLength(text) <= n) return text;
+  let out = '';
+  let used = 0;
+  for (const ch of text) {
+    const size = Buffer.byteLength(ch);
+    if (used + size > n) break;
+    out += ch;
+    used += size;
+  }
+  return out;
+}
 /** One line: line breaks and runs of spaces become one space. */
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 const cleanTitle = (v: unknown): string | undefined => (typeof v === 'string' && oneLine(v) !== '' ? clip(oneLine(v), MAX_TITLE) : undefined);
@@ -123,6 +139,33 @@ export function slimOf(event: BotRuntimeEvent): SlimEvent | null {
     }
     default:
       return null;
+  }
+}
+
+/**
+ * The words of a slim event cut to the limits again, by bytes. A redaction can make a word longer ("[redacted:...]") or a gateway's word can be anything, so the fold does not
+ * trust what it is handed: whatever reaches the table is within its CHECKs.
+ */
+export function bound(event: SlimEvent): SlimEvent {
+  const defined = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
+  const one = (t: string | undefined, n: number): string | undefined => (t === undefined || clip(oneLine(t), n) === '' ? undefined : clip(oneLine(t), n));
+  const id = (t: string | undefined): string | undefined => (t === undefined ? undefined : clip(t, MAX_ID));
+  const list = (p: string[] | undefined): string[] | undefined => (p === undefined ? undefined : cleanPaths(p));
+  switch (event.t) {
+    case 'tool':
+      return defined({ ...event, stepId: id(event.stepId), parentStepId: id(event.parentStepId), title: one(event.title, MAX_TITLE), paths: list(event.paths) }) as SlimEvent;
+    case 'step':
+      return defined({ ...event, stepId: clip(event.stepId, MAX_ID), title: one(event.title, MAX_TITLE), paths: list(event.paths) }) as SlimEvent;
+    case 'approval':
+      return defined({ ...event, stepId: id(event.stepId), title: one(event.title, MAX_TITLE), paths: list(event.paths) }) as SlimEvent;
+    case 'result':
+      return event.stepId === undefined ? event : { ...event, stepId: clip(event.stepId, MAX_ID) };
+    case 'agent':
+      return { ...event, agentId: clip(event.agentId, MAX_ID), name: clip(oneLine(event.name), MAX_NAME) || 'Helper', ...(event.parentStepId === undefined ? {} : { parentStepId: clip(event.parentStepId, MAX_ID) }) };
+    case 'plan':
+      return { ...event, entries: event.entries.slice(0, MAX_PLAN).map((e) => ({ ...e, content: clip(oneLine(e.content), MAX_PLAN_TEXT) })).filter((e) => e.content !== '') };
+    default:
+      return event;
   }
 }
 
@@ -215,8 +258,9 @@ export class ActivityFold {
   constructor(private readonly maxRows: number = MAX_ROWS) {}
 
   /** Take one slim event; answers the lines to write down for it (none, one, or two). */
-  apply(ev: SlimEvent): FoldRow[] {
+  apply(raw: SlimEvent): FoldRow[] {
     if (this.ended !== null) return [];
+    const ev = bound(raw);
     this.started = true;
     switch (ev.t) {
       case 'answering':
@@ -311,7 +355,7 @@ export class ActivityFold {
   }
 
   /** A person's question was answered (or the run went on): the run is no longer waiting. */
-  settle(outcome: 'approved' | 'denied'): FoldRow[] {
+  settle(outcome: 'approved' | 'denied' | 'ended'): FoldRow[] {
     if (this.ended !== null) return [];
     this.waiting = false;
     return this.row('approval', { kind: 'approval', outcome });
@@ -342,34 +386,15 @@ export class ActivityFold {
   get lastSeq(): number {
     return this.seq;
   }
-  get stoppedBy(): string | null {
-    return this.stopper;
-  }
-  get endedState(): RunViewState | null {
-    return this.ended;
-  }
-  /** The text of the answer has begun. */
-  get answering(): boolean {
-    return this.phase === 'answering';
-  }
 
   counts(): RunCounts {
     return { ...this.c, filesChanged: this.changed.size };
-  }
-  planEntries(): RunPlanEntry[] {
-    return this.plan;
   }
   planSummary(): RunPlanSummary {
     return summarizePlan(this.plan);
   }
   helpers(): RunHelper[] {
     return [...this.helperMap.values()];
-  }
-  costOf(): RunCost | null {
-    return this.cost;
-  }
-  stopReasonOf(): string | null {
-    return this.stopReason;
   }
 
   /** What the run is doing right now, in one line. */
@@ -397,7 +422,8 @@ export class ActivityFold {
       planVersion: this.planVersion,
       helpers: this.helpers().slice(-MAX_HELPERS_PUSHED),
       seq: this.seq,
-      stoppedBy: this.stopper,
+      // only a run that is stopping or was stopped says who asked: a run that ended by itself before the Stop took effect was not stopped by anybody
+      stoppedBy: this.state === 'stopping' || this.ended === 'stopped' ? this.stopper : null,
     };
   }
 

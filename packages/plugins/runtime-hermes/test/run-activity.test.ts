@@ -1,7 +1,7 @@
 import type { BotRuntimeEvent } from '@manythreads/sdk';
 import { RunActivityPayload, RunProgress } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { ActivityFold, fitPush, mapWords, MAX_ROWS, PUSH_BUDGET_BYTES, slimOf, type SlimEvent } from '../src/run-activity.ts';
+import { ActivityFold, bound, clip, fitPush, mapWords, MAX_ROWS, PUSH_BUDGET_BYTES, slimOf, type SlimEvent } from '../src/run-activity.ts';
 
 const feed = (fold: ActivityFold, ...events: BotRuntimeEvent[]) =>
   events.flatMap((e) => {
@@ -177,7 +177,7 @@ describe('ActivityFold: the folded state', () => {
     expect(fold.state).toBe('working');
     fold.markStopping('Rafi');
     expect(fold.state).toBe('stopping');
-    expect(fold.stoppedBy).toBe('Rafi');
+    expect(fold.progress().stoppedBy).toBe('Rafi');
     fold.finish('stopped', { stopReason: 'cancelled', cost: { amount: 0.4, currency: 'USD' } });
     expect(fold.state).toBe('stopped');
     expect(fold.progress().now).toBeNull();
@@ -197,7 +197,6 @@ describe('ActivityFold: the folded state', () => {
     expect(fold.now()?.kind).toBe('thinking');
     feed(fold, { type: 'text', text: 'Here is' });
     expect(fold.now()?.kind).toBe('answering');
-    expect(fold.answering).toBe(true);
   });
 
   it('names the helper a step belongs to', () => {
@@ -240,7 +239,14 @@ describe('fitPush: a push stays under the budget', () => {
     feed(fold, { type: 'plan', entries: [{ content: long, status: 'in_progress' }] });
     for (let i = 0; i < 8; i += 1) feed(fold, { type: 'agent', agentId: `h${i}`, name: long, status: 'working', steps: 1 });
     feed(fold, { type: 'tool', name: 'x', input: null, kind: 'read', title: long, paths: [long, long, long, long, long].map((p, i) => `${i}${p}`) });
-    return fold.progress();
+    // the fold keeps every word within its byte limit, so a push this big cannot come from it any more: this one is made fat by hand, as a backstop for a limit that is raised
+    const p = fold.progress();
+    return {
+      ...p,
+      now: p.now === null ? null : { ...p.now, title: long, paths: [long, long, long, long, long].map((x, i) => `${i}${x}`) },
+      helpers: p.helpers.map((h) => ({ ...h, name: long })),
+      plan: { ...p.plan, current: long },
+    };
   };
 
   it('leaves a small one alone', () => {
@@ -259,5 +265,71 @@ describe('fitPush: a push stays under the budget', () => {
     expect(fitted.seq).toBe(p.seq);
     expect(fitted.plan.total).toBe(1);
     expect(RunProgress.safeParse(fitted).success).toBe(true);
+  });
+});
+
+const bytes = (s: string): number => Buffer.byteLength(s);
+
+describe('clip: bytes, not characters (H2)', () => {
+  it('keeps Arabic (2 bytes a letter) and CJK (3 bytes) within the byte limit and never cuts a character', () => {
+    const arabic = 'مرحبا'.repeat(200);
+    const cjk = '長い名前'.repeat(200);
+    for (const text of [arabic, cjk, '😀'.repeat(300)]) {
+      const out = clip(text, 400);
+      expect(bytes(out)).toBeLessThanOrEqual(400);
+      expect(bytes(out)).toBeGreaterThan(396 - 4);
+      expect(text.startsWith(out)).toBe(true);
+      expect(out).not.toContain('\uFFFD');
+    }
+    expect(clip('abc', 400)).toBe('abc');
+  });
+
+  it('strips what a jsonb cannot hold: NUL and a lone surrogate', () => {
+    expect(clip('a\u0000b', 100)).toBe('ab');
+    expect(clip('x\uD800y', 100)).toBe('x\uFFFDy');
+    expect(clip('\uDC00', 100)).toBe('\uFFFD');
+    expect(clip('ok 😀', 100)).toBe('ok 😀');
+  });
+
+  it('a title, a path and a helper name of Arabic or CJK fit the columns once folded', () => {
+    const fold = new ActivityFold();
+    const arabic = 'ملف'.repeat(500);
+    const cjk = '長'.repeat(900);
+    const rows = feed(
+      fold,
+      tool('s1', 'read', arabic, { paths: [arabic, cjk] }),
+      { type: 'agent', agentId: 'h1', name: cjk, status: 'working', steps: 1 },
+      { type: 'plan', entries: [{ content: cjk, status: 'in_progress' }] },
+    );
+    for (const row of rows) expect(bytes(JSON.stringify(row.payload))).toBeLessThan(4000);
+    const view = fold.viewColumns();
+    expect(bytes(JSON.stringify(view.now_step))).toBeLessThanOrEqual(2500);
+    expect(bytes(JSON.stringify(view.helpers))).toBeLessThanOrEqual(6000);
+    expect(bytes(JSON.stringify(view.plan))).toBeLessThanOrEqual(16000);
+  });
+
+  it('bound() clips an event that was built by hand, the same way', () => {
+    const b = bound({ t: 'tool', name: 'x', kind: 'read', title: '長'.repeat(900), paths: ['長'.repeat(900)] });
+    expect(bytes((b as { title: string }).title)).toBeLessThanOrEqual(400);
+    expect(bytes((b as { paths: string[] }).paths[0]!)).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('the end of a wait and who stopped (M3)', () => {
+  it('an approval that ended with the run says "ended", not approved', () => {
+    const fold = new ActivityFold();
+    feed(fold, { type: 'approval', command: 'x', description: 'y', choices: [], answer: () => Promise.resolve(true) });
+    expect(fold.settle('ended')[0]!.payload).toEqual({ kind: 'approval', outcome: 'ended' });
+    expect(fold.state).toBe('working');
+  });
+
+  it('the name of who stopped is shown only while the run is stopping or stopped', () => {
+    const fold = new ActivityFold();
+    feed(fold, tool('s1', 'read', 'Read'));
+    fold.markStopping('Rafi');
+    expect(fold.progress().stoppedBy).toBe('Rafi');
+    fold.finish('done', { stopReason: null, cost: null });
+    expect(fold.progress().stoppedBy).toBeNull();
+    expect(fold.viewColumns()).toMatchObject({ state: 'done' });
   });
 });

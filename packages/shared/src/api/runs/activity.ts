@@ -146,7 +146,8 @@ export const RunPlanLine = z.object({ kind: z.literal('plan'), entries: z.array(
 export const RunThinkingLine = z.object({ kind: z.literal('thinking'), seconds: z.number().nonnegative() });
 export const RunApprovalLine = z.object({
   kind: z.literal('approval'),
-  outcome: z.enum(['asked', 'approved', 'denied']),
+  /** `ended`: the run was stopped (or ended) while the question waited, so nobody answered it. */
+  outcome: z.enum(['asked', 'approved', 'denied', 'ended']),
   stepId: z.string().max(200).optional(),
   stepKind: RunStepKind.optional(),
   title: z.string().max(400).optional(),
@@ -191,20 +192,45 @@ export const ListThreadRunsResponse = z.object({ runs: z.array(RunHead).max(100)
 export type ListThreadRunsResponse = z.infer<typeof ListThreadRunsResponse>;
 export const listThreadRunsRoute = { method: 'GET', path: '/api/threads/:rootId/runs' } as const satisfies ApiRoute;
 
+// ---- who is working in a channel ------------------------------------------------------------------------------------------------
+
+/** The runs that are going in a channel's threads, for the "Coder is working" chips of a page that was just opened (a run that began before the page loaded sent its `run.started` to nobody). */
+export const ChannelRunsPathParams = z.object({ channelId: ChannelId });
+export type ChannelRunsPathParams = z.infer<typeof ChannelRunsPathParams>;
+export const ActiveChannelRun = z.object({
+  runId: RunId,
+  channelId: ChannelId,
+  threadRootId: MessageId,
+  botId: BotId,
+  botActorId: ActorId.nullable(),
+  botName: z.string().max(200),
+  startedAt: IsoDateTime,
+});
+export type ActiveChannelRun = z.infer<typeof ActiveChannelRun>;
+export const ActiveChannelRunsResponse = z.object({ runs: z.array(ActiveChannelRun).max(100) });
+export type ActiveChannelRunsResponse = z.infer<typeof ActiveChannelRunsResponse>;
+export const activeChannelRunsRoute = { method: 'GET', path: '/api/channels/:channelId/active-runs' } as const satisfies ApiRoute;
+
 // ---- watching a thread ------------------------------------------------------------------------------------------------------------
 
 /** How long a watch lasts without being renewed; the open thread panel renews it every `THREAD_WATCH_RENEW_SECONDS`. */
 export const THREAD_WATCH_TTL_SECONDS = 60;
-export const THREAD_WATCH_RENEW_SECONDS = 30;
+export const THREAD_WATCH_RENEW_SECONDS = 20;
+/** The most open thread panels one person holds at once (all their tabs together); the next watch is a 429. */
+export const THREAD_WATCH_MAX_PER_PERSON = 50;
 
-export const ThreadWatchPathParams = z.object({ rootId: MessageId });
+/**
+ * One lease per open panel: each browser tab names its own `leaseId` (a UUID it makes up), so closing a tab ends only that tab's lease and never one that another tab of
+ * the same person still holds.
+ */
+export const ThreadWatchPathParams = z.object({ rootId: MessageId, leaseId: z.uuid() });
 export type ThreadWatchPathParams = z.infer<typeof ThreadWatchPathParams>;
 export const ThreadWatchResponse = z.object({ expiresAt: IsoDateTime });
 export type ThreadWatchResponse = z.infer<typeof ThreadWatchResponse>;
 export const ThreadUnwatchResponse = z.object({ ok: z.literal(true) });
 export type ThreadUnwatchResponse = z.infer<typeof ThreadUnwatchResponse>;
-export const watchThreadRoute = { method: 'PUT', path: '/api/threads/:rootId/watch' } as const satisfies ApiRoute;
-export const unwatchThreadRoute = { method: 'DELETE', path: '/api/threads/:rootId/watch' } as const satisfies ApiRoute;
+export const watchThreadRoute = { method: 'PUT', path: '/api/threads/:rootId/watch/:leaseId' } as const satisfies ApiRoute;
+export const unwatchThreadRoute = { method: 'DELETE', path: '/api/threads/:rootId/watch/:leaseId' } as const satisfies ApiRoute;
 
 // ---- the live pushes of a run in a thread (WebSocket envelope `{ type, id, payload }`; ephemeral, never in the event log) ----------------
 
