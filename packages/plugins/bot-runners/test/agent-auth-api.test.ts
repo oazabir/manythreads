@@ -24,7 +24,7 @@ const TSX = bridgeRequire.resolve('tsx/esm');
 const PASS = ['FAKE_ACP_SCRIPT_JSON', 'FAKE_ACP_FLAVOR', 'FAKE_ACP_STATE_DIR'];
 
 const saved: Record<string, string | undefined> = {};
-const ENV = ['MANYTHREADS_HERMES_ALLOWED_HOSTS', 'FAKE_ACP_SCRIPT_JSON', 'FAKE_ACP_FLAVOR', 'FAKE_ACP_STATE_DIR'];
+const ENV = ['MANYTHREADS_AGENT_AUTH_WAIT_SCALE', 'MANYTHREADS_HERMES_ALLOWED_HOSTS', 'FAKE_ACP_SCRIPT_JSON', 'FAKE_ACP_FLAVOR', 'FAKE_ACP_STATE_DIR'];
 let w: World;
 let bridge: Bridge;
 let dir: string;
@@ -153,11 +153,12 @@ describe('Codex: device code', () => {
 
     const events = await eventsOf();
     const mine = events.filter((e) => e.name === 'dc-codex').map((e) => e.change);
-    expect(mine).toEqual(['login_started', 'signed_out']);
+    // the second start (refused with 409) left its line before the bridge was asked, and a second line saying it was refused
+    expect(mine).toEqual(['login_started', 'login_started', 'login_started', 'login_succeeded', 'signed_out']);
     expect(JSON.stringify(events)).not.toContain('WXYZ');
     const auditRows = () => w.system(async (tx) => (await tx.query<{ action: string; reason: string | null }>("SELECT action, reason FROM app.audit_events WHERE action = 'bot_runner.agent_sign_in_changed' ORDER BY id")).rows);
     // the audit plugin makes the rows from the events, a moment later
-    await expect.poll(async () => (await auditRows()).map((r) => r.reason), { timeout: 15_000 }).toEqual(expect.arrayContaining(['login started', 'signed out']));
+    await expect.poll(async () => (await auditRows()).map((r) => r.reason), { timeout: 15_000 }).toEqual(expect.arrayContaining(['login started', 'login succeeded, device code', 'signed out']));
   });
 
   it('cancel ends a sign-in; a method the agent does not offer is refused', async () => {
@@ -198,7 +199,7 @@ describe('Claude: the pasted code', () => {
     expect(status.body.auth.methods.map((m: any) => m.how)).toEqual(['paste_code', 'paste_code']);
     const started = await w.call<{ attempt: any }>(omar, 'POST', auth(id, '/login'), { methodId: 'claude-ai-login' });
     expect(started.body.attempt).toMatchObject({ state: 'needs_input', action: { type: 'paste_code', url: 'https://claude.example.test/cai/oauth/authorize?code=true&client_id=fake' } });
-    const code = 'PASTED-CODE-xyz789.abc';
+    const code = 'PASTED-CODE-xyz789#state9';
     const answered = await w.call<any>(omar, 'POST', auth(id, '/answer'), { attemptId: started.body.attempt.id, code });
     expect(answered.status, JSON.stringify(answered.body)).toBe(200);
     const done = await poll(id, (a) => a.attempt?.state === 'done');
@@ -207,5 +208,100 @@ describe('Claude: the pasted code', () => {
     expect(logs.join('\n')).not.toContain('PASTED');
     const out = await w.call<{ auth: any }>(omar, 'POST', auth(id, '/logout'));
     expect(out.body.auth.state).toBe('signed_out');
+  });
+});
+
+describe('what the audit says, and when', () => {
+  const linesOf = async (name: string) => (await eventsOf()).filter((e) => e.name === name);
+
+  it('a sign-in that ends is audited once, when a page sees it end, with its kind and its outcome and no code; a wrong code is a failed one', async () => {
+    fake('claude', { signedIn: false });
+    const id = await make('audit-claude', 'claude-code');
+    const started = await w.call<{ attempt: any }>(omar, 'POST', auth(id, '/login'), { methodId: 'claude-ai-login' });
+    expect(started.body.attempt).toMatchObject({ how: 'paste_code', state: 'needs_input' });
+    const wrong = 'WRONG-CODE-zzz999';
+    const answered = await w.call<any>(omar, 'POST', auth(id, '/answer'), { attemptId: started.body.attempt.id, code: wrong });
+    expect(answered.status, JSON.stringify(answered.body)).toBe(200);
+    const ended = await poll(id, (a) => a.attempt?.state === 'failed');
+    expect(ended.attempt.message).toBe('The sign-in was refused. Check the code or key and start again.');
+    await poll(id, (a) => a.attempt?.state === 'failed'); // a second look at the same ending
+    const lines = await linesOf('audit-claude');
+    expect(lines.map((e) => [e.change, e.how ?? null, e.answerKind ?? null, e.refused ?? null])).toEqual([
+      ['login_started', null, null, null],
+      ['answer_given', null, 'code', null],
+      ['login_failed', 'paste_code', null, null],
+    ]);
+    expect(JSON.stringify(lines)).not.toContain('WRONG');
+    expect(JSON.stringify(ended) + logs.join('\n')).not.toMatch(/person@example\.test|sk-ant-oat01/);
+    // the audit plugin turns them into rows: the failed one is marked failed
+    await expect.poll(async () => w.system(async (tx) => (await tx.query<{ reason: string | null; outcome: string | null }>("SELECT reason, outcome FROM app.audit_events WHERE action = 'bot_runner.agent_sign_in_changed' AND reason LIKE 'login failed%'")).rows), { timeout: 15_000 }).toEqual(
+      expect.arrayContaining([expect.objectContaining({ reason: 'login failed, paste code', outcome: 'failed' })]),
+    );
+  });
+
+  it('the line of a request is written before the bridge is asked, and a request the bridge refuses leaves a second line saying so', async () => {
+    const html = await make('audit-html', 'codex', notBridgeUrl);
+    const refused = await w.call<any>(omar, 'POST', auth(html, '/login'), { methodId: 'chat-gpt-device-code' });
+    expect(refused.status).toBe(502);
+    expect((await linesOf('audit-html')).map((e) => [e.change, e.refused ?? null])).toEqual([
+      ['login_started', null],
+      ['login_started', true],
+    ]);
+    fake('codex', { signedIn: false, pendingMs: 60_000 });
+    const real = await make('audit-busy', 'codex');
+    await w.call(omar, 'POST', auth(real, '/login'), { methodId: 'chat-gpt-device-code' });
+    expect((await w.call(omar, 'POST', auth(real, '/login'), { methodId: 'chat-gpt-device-code' })).status).toBe(409);
+    expect((await linesOf('audit-busy')).map((e) => [e.change, e.refused ?? null])).toEqual([
+      ['login_started', null],
+      ['login_started', null],
+      ['login_started', true],
+    ]);
+    await w.call(omar, 'POST', auth(real, '/cancel'), {});
+  });
+
+  it('a bridge that does not answer in time is a plain 502 and a refused line; the wait is the scaled one', async () => {
+    const slow = createServer(() => undefined);
+    await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve));
+    process.env['MANYTHREADS_AGENT_AUTH_WAIT_SCALE'] = '0.03';
+    try {
+      const id = await make('audit-slow', 'codex', `http://127.0.0.1:${(slow.address() as AddressInfo).port}`);
+      const started = Date.now();
+      const out = await w.call<any>(omar, 'POST', auth(id, '/logout'));
+      expect(out.status).toBe(502);
+      expect(JSON.stringify(out.body)).toContain('did not answer');
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect((await linesOf('audit-slow')).map((e) => [e.change, e.refused ?? null])).toEqual([
+        ['signed_out', null],
+        ['signed_out', true],
+      ]);
+    } finally {
+      delete process.env['MANYTHREADS_AGENT_AUTH_WAIT_SCALE'];
+      slow.closeAllConnections();
+      await new Promise<void>((resolve) => slow.close(() => resolve()));
+    }
+  });
+
+  it('a person who is not an admin is told no before anything is read: a body that would be refused is a 403, not a 400', async () => {
+    fake('codex', { signedIn: false });
+    const id = await make('audit-who', 'codex');
+    for (const [tail, body] of [['/login', { nonsense: 1 }], ['/answer', { code: 5 }], ['/cancel', { attemptId: 7 }]] as const) {
+      expect((await w.call(nadia, 'POST', auth(id, tail), body)).status, tail).toBe(403);
+      expect((await w.call(omar, 'POST', auth(id, tail), body)).status, tail).toBe(400);
+    }
+    expect(await linesOf('audit-who')).toEqual([]);
+  });
+});
+
+describe('what the page is told about the sign-in', () => {
+  it('whose sign-in it is (the profile, and the machine\'s shared folder or its own), the kind of attempt, and a long page address whole', async () => {
+    const url = `https://claude.example.test/cai/oauth/authorize?code=true&state=${'q'.repeat(1400)}`;
+    fake('claude', { signedIn: false, url });
+    const id = await make('page-claude', 'claude-code');
+    const status = await w.call<{ auth: any }>(omar, 'GET', auth(id));
+    expect(status.body.auth).toMatchObject({ profile: 'claude', home: 'shared', state: 'signed_out' });
+    const started = await w.call<{ attempt: any }>(omar, 'POST', auth(id, '/login'), { methodId: 'claude-ai-login' });
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    expect(started.body.attempt).toMatchObject({ how: 'paste_code', action: { type: 'paste_code', url } });
+    await w.call(omar, 'POST', auth(id, '/cancel'), {});
   });
 });

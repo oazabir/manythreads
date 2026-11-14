@@ -189,6 +189,17 @@ describe('the audited event types', () => {
     expect(outcome('proposals.proposal.applied')).toBeUndefined(); // undefined means ok
   });
 
+  it('says what was done to an agent sign-in with fixed words (the kind, and code or key), marks a failed or refused one, and carries no code', () => {
+    const row = (extra: Record<string, unknown>) =>
+      MAPPERS['bot_runner.agent_auth.changed']!(parseEvent({ type: 'bot_runner.agent_auth.changed', schemaVersion: 1, workspaceId: W, ...FIXTURES['bot_runner.agent_auth.changed'], ...extra }) as unknown as Record<string, unknown>)!;
+    expect(row({}).reason).toBe('login started');
+    expect(row({}).outcome).toBeUndefined();
+    expect(row({ change: 'answer_given', answerKind: 'code' }).reason).toBe('answer given, code');
+    expect(row({ change: 'login_succeeded', how: 'paste_code' }).reason).toBe('login succeeded, paste code');
+    expect(row({ change: 'login_failed', how: 'device_code' }).outcome).toBe('failed');
+    expect(row({ refused: true }).outcome).toBe('failed');
+  });
+
   it('leaves out what is routine: an allowed model call, an answer with nothing dropped, a direct-message channel', () => {
     expect(MAPPERS['llm.guard.decided']!({ outcome: 'allow', botId: id(60) })).toBeNull();
     expect(MAPPERS['answer.answer.posted']!({ ...FIXTURES['answer.answer.posted'], droppedCount: 0 })).toBeNull();

@@ -34,6 +34,40 @@ export function statusWords(auth: AgentAuth): string {
   }
 }
 
+/** The machine a runner's bridge runs on, as the address names it (host and port), for the sentences that say whose sign-in is meant. */
+export function machineOf(baseUrl: string | null): string {
+  if (!baseUrl) return 'the bridge machine';
+  try {
+    return new URL(baseUrl).host || 'the bridge machine';
+  } catch {
+    return 'the bridge machine';
+  }
+}
+
+/** Whose sign-in this is: the folder the agent keeps it in is this profile's own, or the machine's shared one. Empty for an agent with no sign-in of its own. */
+export function homeWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'>): string {
+  const name = AGENT_NAME[auth.agent];
+  if (auth.home === 'dedicated') return `This sign-in belongs to the bridge profile "${auth.profile}" alone. It has its own sign-in folder on ${machineOf(runner.baseUrl)}.`;
+  if (auth.home === 'shared') return `This sign-in is the one every user of ${name} on ${machineOf(runner.baseUrl)} shares, including anyone who uses it from a terminal there.`;
+  return '';
+}
+
+/** What signing out asks the person to confirm: the machine, and who else loses the sign-in when the folder is shared. */
+export function logoutWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'>): string {
+  const name = AGENT_NAME[auth.agent];
+  const machine = machineOf(runner.baseUrl);
+  if (auth.home === 'dedicated') return `Sign ${name} out on ${machine}? Only the bridge profile "${auth.profile}" uses this sign-in. Bots that use this runner stop until it is signed in again.`;
+  return `Sign ${name} out on ${machine}? That signs out every user of ${name} on that machine, not only this runner, and bots that use it stop until it is signed in again.`;
+}
+
+/** What starting a new sign-in asks the person to confirm while one is already in place. */
+export function replaceWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'>): string {
+  const name = AGENT_NAME[auth.agent];
+  const machine = machineOf(runner.baseUrl);
+  if (auth.home === 'dedicated') return `${name} is already signed in. A new sign-in replaces the account on ${machine} for the bridge profile "${auth.profile}".`;
+  return `${name} is already signed in. A new sign-in replaces that account for every user of ${name} on ${machine}, not only this runner.`;
+}
+
 /** The label of one method's button: the agent's own name for it. */
 export const methodLabel = (m: AgentAuthMethod): string => m.name;
 

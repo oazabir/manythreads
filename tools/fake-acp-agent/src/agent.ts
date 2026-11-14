@@ -16,6 +16,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk';
 import type { Action, AuthScript, FakeScript, Flavor, HelperAction, PermissionAction, PlanEntryInput, StepAction } from './script.ts';
+import { writePid } from './login.ts';
 
 /*
  * A fake ACP agent (P25-02): the agent side of the protocol, built on `@agentclientprotocol/sdk`, that plays a script instead of
@@ -833,6 +834,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
 
   app.onRequest(methods.agent.authenticate, async ({ params, client, signal, requestId }) => {
     record('authenticate', params);
+    writePid(script.stateDir, 'adapter');
     const methodId = params.methodId;
     if (methodId === 'chat-gpt-device-code') {
       const elicitationId = randomUUID();
@@ -845,6 +847,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
         elicitationId,
       });
       if (reply.action !== 'accept') throw new RequestError(-32000, 'Authentication required: Sign-in did not complete');
+      if (authScript.dieAfterAcceptMs !== undefined) setTimeout(() => process.exit(3), authScript.dieAfterAcceptMs);
       const pending = authScript.pendingMs === undefined ? 0 : authScript.pendingMs;
       if (pending === null) {
         await new Promise<void>((resolve, reject) => {
@@ -864,6 +867,10 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       await pushAuthStatus(client);
       return {};
     }
+    if (methodId === 'api-key' && authScript.acceptKey !== undefined) {
+      const given = process.env['CODEX_API_KEY'] ?? '';
+      if (given !== authScript.acceptKey) throw new RequestError(-32000, `Authentication failed: the key ${given} was refused for person@example.test (token sk-ant-oat01-FAKEFAKEFAKEFAKE)`); // secret-scan:ignore a made-up fixture
+    }
     if (methodId === 'custom' || methodId === 'api-key' || methodId === 'chat-gpt') {
       writeAuth({ signedIn: true, kind: 'account' });
       await pushAuthStatus(client);
@@ -875,6 +882,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
   if (flavor !== 'hermes' && faults.noLogout !== true) {
     app.onRequest(methods.agent.logout, async ({ params, client }) => {
       record('logout', params);
+      if (faults.logoutFails === true) throw new RequestError(-32000, 'Logout failed: could not remove the sign-in of person@example.test (token sk-ant-oat01-FAKEFAKEFAKEFAKE)'); // secret-scan:ignore a made-up fixture
       writeAuth({ signedIn: false, kind: 'none' });
       await pushAuthStatus(client);
       return {};

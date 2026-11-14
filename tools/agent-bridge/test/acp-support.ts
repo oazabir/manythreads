@@ -36,6 +36,10 @@ export interface AcpOptions {
   config?: Record<string, unknown>;
   /** The `acp.gives` of a Hermes profile (what its home lets the agent do); default none, so a bot with no tools may run on it. */
   gives?: string[];
+  /** More profiles driven by the same fake (same command and environment), by name. */
+  extraProfiles?: Record<string, Record<string, unknown>>;
+  /** The sign-in service's waits and hooks (`startBridge`'s `auth`). */
+  auth?: NonNullable<Parameters<typeof startBridge>[0]['auth']>;
 }
 
 const PASS = ['FAKE_ACP_SCRIPT_JSON', 'FAKE_ACP_FLAVOR', 'FAKE_ACP_STATE_DIR'];
@@ -49,16 +53,17 @@ export async function acpHarness(o: AcpOptions = {}): Promise<AcpHarness> {
   process.env['FAKE_ACP_STATE_DIR'] = stateDir;
   if (o.script) process.env['FAKE_ACP_SCRIPT_JSON'] = JSON.stringify(o.script);
   else delete process.env['FAKE_ACP_SCRIPT_JSON'];
+  const base = (): Record<string, unknown> => ({
+    agent: AGENT[flavor],
+    driver: 'acp',
+    workdir: join(dir, 'work'),
+    passEnv: PASS,
+    acp: { command: process.execPath, args: ['--import', TSX, FAKE_CLI], ...(flavor === 'hermes' ? { gives: o.gives ?? [] } : {}) },
+  });
   const config = parseConfig({
     profiles: {
-      default: {
-        agent: AGENT[flavor],
-        driver: 'acp',
-        workdir: join(dir, 'work'),
-        passEnv: PASS,
-        acp: { command: process.execPath, args: ['--import', TSX, FAKE_CLI], ...(flavor === 'hermes' ? { gives: o.gives ?? [] } : {}) },
-        ...o.profile,
-      },
+      default: { ...base(), ...o.profile },
+      ...Object.fromEntries(Object.entries(o.extraProfiles ?? {}).map(([name, own]) => [name, { ...base(), ...own }])),
     },
     killGraceSeconds: 0.5,
     budgetGraceSeconds: 0.2,
@@ -66,7 +71,7 @@ export async function acpHarness(o: AcpOptions = {}): Promise<AcpHarness> {
     ...o.config,
   });
   const logs: string[] = [];
-  const bridge = await startBridge({ config, apiKey: KEY, stateDir: join(dir, 'state'), port: 0, log: (line) => logs.push(line), tmpRoot: dir });
+  const bridge = await startBridge({ config, apiKey: KEY, stateDir: join(dir, 'state'), port: 0, log: (line) => logs.push(line), tmpRoot: dir, ...(o.auth ? { auth: o.auth } : {}) });
   return {
     bridge,
     logs,

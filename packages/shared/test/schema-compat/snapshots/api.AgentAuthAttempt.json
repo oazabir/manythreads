@@ -12,6 +12,14 @@
       "minLength": 1,
       "maxLength": 80
     },
+    "how": {
+      "type": "string",
+      "enum": [
+        "device_code",
+        "paste_code",
+        "api_key"
+      ]
+    },
     "state": {
       "type": "string",
       "enum": [
@@ -37,7 +45,7 @@
                 },
                 "url": {
                   "type": "string",
-                  "pattern": "^https:\\/\\/[^\\s\"'<>]{1,500}$"
+                  "pattern": "^https:\\/\\/[^\\s\"'<>]{1,2000}$"
                 },
                 "code": {
                   "type": "string",
@@ -59,7 +67,7 @@
                 },
                 "url": {
                   "type": "string",
-                  "pattern": "^https:\\/\\/[^\\s\"'<>]{1,500}$"
+                  "pattern": "^https:\\/\\/[^\\s\"'<>]{1,2000}$"
                 }
               },
               "required": [
@@ -76,7 +84,7 @@
                 },
                 "url": {
                   "type": "string",
-                  "pattern": "^https:\\/\\/[^\\s\"'<>]{1,500}$"
+                  "pattern": "^https:\\/\\/[^\\s\"'<>]{1,2000}$"
                 }
               },
               "required": [
@@ -118,6 +126,7 @@
   "required": [
     "id",
     "methodId",
+    "how",
     "state",
     "action",
     "message"

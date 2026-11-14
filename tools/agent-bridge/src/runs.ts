@@ -98,6 +98,9 @@ const ENV_BY_AGENT: Record<string, RegExp> = {
   opencode: /^(OPENCODE_[A-Z_]+)$/,
 };
 
+/** The variable that tells a tool where its own sign-in lives; null for a tool without a sign-in of its own. */
+export const authHomeVariable = (agent: string): 'CLAUDE_CONFIG_DIR' | 'CODEX_HOME' | null => (agent === 'claude-code' ? 'CLAUDE_CONFIG_DIR' : agent === 'codex' ? 'CODEX_HOME' : null);
+
 /**
  * The environment a child starts with: the allowlist above, the profile's `passEnv` names, then the profile's `env` values. In a pod (`MANYTHREADS_BRIDGE_IN_POD=1`) a Codex child
  * never gets `OPENAI_API_KEY`, however it was asked for: an API key would go around the workspace's model gateway (PLAN P19-13).
@@ -109,6 +112,9 @@ export function childEnv(profile: BridgeConfig['profiles'][string], from: NodeJS
     if (v === undefined) continue;
     if (ENV_COMMON.test(k) || own?.test(k) === true || profile.passEnv?.includes(k) === true) env[k] = v;
   }
+  // A profile with its own sign-in home (`authHome`) gets the tool's variable for it, unless its `env` names one explicitly.
+  const homeVar = authHomeVariable(profile.agent);
+  if (profile.authHome !== undefined && homeVar !== null) env[homeVar] = profile.authHome;
   for (const [k, v] of Object.entries(profile.env ?? {})) env[k] = v;
   if (profile.agent === 'codex' && from['MANYTHREADS_BRIDGE_IN_POD'] === '1') delete env['OPENAI_API_KEY'];
   return env;

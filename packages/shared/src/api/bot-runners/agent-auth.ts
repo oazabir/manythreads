@@ -26,7 +26,9 @@ export const AgentAuthMethod = z.object({
 });
 export type AgentAuthMethod = z.infer<typeof AgentAuthMethod>;
 
-const SignInPage = z.string().regex(/^https:\/\/[^\s"'<>]{1,500}$/, 'a page address starting with https://');
+/** The real Claude sign-in address is about 470 characters; the bound leaves room for longer ones and stops a flood. The bridge uses the same number. */
+export const SIGN_IN_PAGE_MAX = 2000;
+const SignInPage = z.string().regex(new RegExp(`^https://[^\\s"'<>]{1,${SIGN_IN_PAGE_MAX}}$`), 'a page address starting with https://');
 
 /** What the person must do now. */
 export const AgentAuthAction = z.discriminatedUnion('type', [
@@ -47,6 +49,8 @@ export type AgentAuthAttemptState = z.infer<typeof AgentAuthAttemptState>;
 export const AgentAuthAttempt = z.object({
   id: z.string().min(1).max(80),
   methodId: z.string().min(1).max(80),
+  /** What kind of sign-in it is (the audit line says it, never the code or the key). */
+  how: AgentAuthHow,
   state: AgentAuthAttemptState,
   action: AgentAuthAction.nullable(),
   /** One plain sentence: what to do, or why it failed. */
@@ -54,8 +58,16 @@ export const AgentAuthAttempt = z.object({
 });
 export type AgentAuthAttempt = z.infer<typeof AgentAuthAttempt>;
 
+/** Whose sign-in a sign-in or sign-out here changes: `dedicated` (the bridge profile has a sign-in folder of its own) or `shared` (the machine's own, used by everyone who runs the tool there). */
+export const AgentAuthHome = z.enum(['dedicated', 'shared']);
+export type AgentAuthHome = z.infer<typeof AgentAuthHome>;
+
 export const AgentAuth = z.object({
   agent: AgentAuthAgent,
+  /** The bridge profile the answer is about. */
+  profile: z.string().max(64),
+  /** Null for an agent with no sign-in of its own. */
+  home: AgentAuthHome.nullable(),
   state: AgentAuthState,
   /** How the agent is signed in, as it words it (`account`, `gateway`, ...); no e-mail, no organization. */
   kind: z.string().max(24).nullable(),

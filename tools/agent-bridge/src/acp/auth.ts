@@ -3,10 +3,10 @@ import { mkdirSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { client as createClient, methods, RequestError } from '@agentclientprotocol/sdk';
 import { profileFor, type AgentKind, type BridgeConfig, type ProfileConfig } from '../config.ts';
-import { redact, startChild } from '../process.ts';
-import { childEnv } from '../runs.ts';
+import { startChild } from '../process.ts';
+import { authHomeVariable, childEnv } from '../runs.ts';
 import { adapterCommand, flavorOf, type Flavor } from './adapter.ts';
-import { lastTerminalLine, ptySupported, startPty, type PtyHandle } from './pty.ts';
+import { ptySupported, startPty, type PtyHandle } from './pty.ts';
 
 // Sign-in and sign-out of an agent through its ACP adapter (P25-09, docs/plans/acp.md section 4.1, docs/spikes/acp-measured.md "Sign-in and sign-out").
 //
@@ -18,14 +18,18 @@ import { lastTerminalLine, ptySupported, startPty, type PtyHandle } from './pty.
 //  * `auth/status` (Claude) and `_auth/status_update` (Claude, Codex) carry the account's e-mail and organization: only the state and the kind are read from them, the rest
 //    is dropped here, and nothing the adapter sends about the account is ever returned or logged.
 //
-// A person's code or key goes from the page to this module and on to the program; it is never logged, never stored, and removed from every line this module keeps.
-// A sign-in belongs to the tool, not to a profile (the profiles of one tool share its config folder), so there is one attempt at a time per tool.
+// A person's code or key goes from the page to this module and on to the program; it is never logged, never stored, and never part of anything this module hands on. Nothing a
+// program or an adapter prints about a failure is handed on either: a failure is one of the fixed sentences in `AUTH_WORDS`, chosen by what the text means (`failureWords`).
+// A sign-in belongs to a tool's sign-in folder, not to a profile: the profiles of one tool share the machine's folder unless one has its own (`authHome`), so there is one attempt at
+// a time per folder, and a sign-in or sign-out acts on that folder for every user of the tool on the machine (the status says which: `home`).
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export type AuthState = 'signed_in' | 'signed_out' | 'unknown' | 'not_needed';
 export type HowToSignIn = 'device_code' | 'paste_code' | 'api_key';
+/** `dedicated`: the profile has a sign-in folder of its own (`authHome`, or `CLAUDE_CONFIG_DIR` / `CODEX_HOME` in its `env`). `shared`: the machine's own folder, used by everyone who runs the tool there. */
+export type AuthHome = 'dedicated' | 'shared';
 export type LoginAction = { type: 'enter_code'; url: string; code: string } | { type: 'open_url'; url: string } | { type: 'paste_code'; url: string } | { type: 'give_key' };
 export type AttemptState = 'starting' | 'waiting' | 'needs_input' | 'checking' | 'done' | 'failed' | 'cancelled';
 
@@ -39,6 +43,8 @@ export interface AuthMethodView {
 export interface AttemptView {
   id: string;
   methodId: string;
+  /** What kind of sign-in it is: a code typed on a page, a code pasted back, an API key. */
+  how: HowToSignIn;
   state: AttemptState;
   action: LoginAction | null;
   /** One plain sentence for the person: what to do, or why it failed. Never a code, a key or a token. */
@@ -47,6 +53,10 @@ export interface AttemptView {
 
 export interface AuthView {
   agent: AgentKind;
+  /** The bridge profile this answer is about (a sign-in belongs to its folder; see `home`). */
+  profile: string;
+  /** Whose sign-in a sign-in or sign-out here changes: the profile's own, or the machine's shared one. Null for an agent with no sign-in of its own. */
+  home: AuthHome | null;
   state: AuthState;
   /** How the agent is signed in (`account`, `gateway`, `none`, ...), as the adapter words it; null when it did not say. Never an e-mail or an organization. */
   kind: string | null;
@@ -77,11 +87,17 @@ export interface AuthServiceOptions {
   deviceTimeoutMs?: number; // 15 min: a device code's life
   pasteTimeoutMs?: number; // 10 min: how long a pasted-code login waits
   keepFinishedMs?: number; // 10 min: how long a finished attempt can still be read
-  stepTimeoutMs?: number; // 30 s: initialize, authenticate with a key, logout
+  stepTimeoutMs?: number; // 20 s: initialize, authenticate with a key, logout. A request's worst case is three steps (a sign-out: initialize, logout, the fallback program) = 60 s, which the server's waits (70 s and more) stay above
+  checkTimeoutMs?: number; // 60 s: how long a pasted code or key may stay `checking`
+  /** Test hook: whether this machine can run a program under a pseudo-terminal. */
+  ptySupported?: () => boolean;
 }
 
 const TERMINAL: ReadonlySet<AttemptState> = new Set(['done', 'failed', 'cancelled']);
+/** How many keys a person may try in one sign-in (a wrong key leaves the sign-in waiting for another; the terminal login ends at the first wrong code, so it has one try). */
 const MAX_ANSWERS = 5;
+/** The longest sign-in page address taken (the real Claude one is about 470 characters). */
+export const MAX_URL = 2000;
 
 /** The words the page shows for the failures a person can act on. One table, so the sentences cannot drift. */
 export const AUTH_WORDS = {
@@ -94,6 +110,12 @@ export const AUTH_WORDS = {
   cancelled: 'The sign-in was cancelled.',
   busy: 'A sign-in is already in progress. Finish it or cancel it first.',
   noLogout: 'This agent has no sign-out. Remove its sign-in on the machine itself.',
+  signOutFailed: 'The sign-out did not work. Try again, or sign out on the machine itself.',
+  badUrl: 'The agent printed a sign-in page address this page cannot use. Sign in on the machine itself, in a terminal.',
+  checkTimeout: 'The agent did not answer in time. Start the sign-in again.',
+  network: "The agent could not reach its sign-in service. Check the machine's internet connection and start again.",
+  underWay: 'A sign-in is under way. This page shows it below.',
+  badAdapter: 'The agent did not answer. Try again in a moment.',
   hermes: "This agent uses the workspace's model gateway. There is nothing to sign in.",
   opencode: 'Sign-in for this agent has not been checked yet.',
 } as const;
@@ -257,15 +279,39 @@ const hasLogout = (init: Record<string, unknown>): boolean => {
   return isRecord(caps['auth']) && caps['auth']['logout'] !== undefined;
 };
 
-const failureText = (err: unknown, secrets: readonly string[]): string => {
+/**
+ * What a failure means, as one of the fixed sentences of `AUTH_WORDS`. Nothing the program or the adapter printed is passed on: it can hold the code that was typed (a terminal
+ * echoes), an account's e-mail or a token, so only the MEANING of the text picks the sentence. Every pattern is linear (no nested quantifier), over a clipped text.
+ */
+export function failureWords(text: string, fallback: string = AUTH_WORDS.notFinished): string {
+  const t = text.slice(0, 4000);
+  if (/wasn'?t accepted|not accepted|invalid (?:code|key|api)|incorrect|rejected|unauthori[sz]ed|\b401\b|denied|refused|bad (?:code|key)/i.test(t)) return AUTH_WORDS.refused;
+  if (/ENOTFOUND|ECONN|EAI_AGAIN|ETIMEDOUT|network|offline|getaddrinfo|fetch failed|could not (?:reach|connect)|timed out/i.test(t)) return AUTH_WORDS.network;
+  if (/expired|ran out/i.test(t)) return AUTH_WORDS.expired;
+  return /cancel|did not complete/i.test(t) ? AUTH_WORDS.notFinished : fallback;
+}
+
+const failureText = (err: unknown): string => {
   if (err instanceof AdapterEnded) return err.spawnError === 'ENOENT' ? AUTH_WORDS.noAdapter : AUTH_WORDS.notFinished;
-  if (err instanceof RequestError) {
-    const joined = `${err.message} ${isRecord(err.data) && typeof err.data['details'] === 'string' ? err.data['details'] : ''}`;
-    if (/did not complete|cancel/i.test(joined)) return AUTH_WORDS.notFinished;
-    return `The sign-in was refused: ${redact(err.message, secrets).slice(0, 160)}`;
-  }
+  if (err instanceof RequestError) return failureWords(`${err.message} ${isRecord(err.data) && typeof err.data['details'] === 'string' ? err.data['details'] : ''}`, AUTH_WORDS.refused);
+  if (err instanceof Error && /did not answer in time/.test(err.message)) return AUTH_WORDS.checkTimeout;
   return AUTH_WORDS.notFinished;
 };
+
+/**
+ * The sign-in page in what a login program printed. `null`: not yet (nothing printed, or the address is not finished: it counts as finished only after the character that ends it,
+ * so half an address that arrived split is never shown). `unusable`: an address that is too long or too short to be one.
+ */
+export function findSignInPage(text: string): string | 'unusable' | null {
+  const at = text.indexOf('https://');
+  if (at < 0) return null;
+  const rest = text.slice(at);
+  const end = rest.search(/[\s"'<>]/);
+  if (end < 0) return rest.length > MAX_URL ? 'unusable' : null;
+  return end >= 12 && end <= MAX_URL ? rest.slice(0, end) : 'unusable';
+}
+
+const PAGE_OK = new RegExp(`^https://[^\\s"'<>]{1,${MAX_URL}}$`);
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------
 // One attempt
@@ -277,6 +323,11 @@ class Attempt {
   message: string | null = null;
   finishedAt: number | null = null;
   answers = 0;
+  /** A hold on the place (while the adapter starts, or a sign-out runs): it blocks a second sign-in and is never shown to the page. */
+  hidden = false;
+  /** The sign-in folder this attempt is for (`AuthService.keyOf`). */
+  key = '';
+  checkTimer: NodeJS.Timeout | undefined;
   /** Set by the flow: takes what the person typed. Returns false when the attempt is not waiting for it. */
   answer: ((value: { code?: string; apiKey?: string }) => Promise<boolean>) | null = null;
   private stops: Array<() => void | Promise<void>> = [];
@@ -289,7 +340,7 @@ class Attempt {
   ) {}
 
   view(): AttemptView {
-    return { id: this.id, methodId: this.methodId, state: this.state, action: this.action, message: this.message };
+    return { id: this.id, methodId: this.methodId, how: this.how, state: this.state, action: this.action, message: this.message };
   }
 
   get over(): boolean {
@@ -304,6 +355,7 @@ class Attempt {
   set(state: AttemptState, patch: { action?: LoginAction | null; message?: string | null } = {}): void {
     if (this.over) return;
     this.state = state;
+    if (state !== 'checking') clearTimeout(this.checkTimer);
     if (patch.action !== undefined) this.action = patch.action;
     if (patch.message !== undefined) this.message = patch.message;
     if (this.over) {
@@ -321,6 +373,7 @@ class Attempt {
   }
 
   async cleanup(): Promise<void> {
+    clearTimeout(this.checkTimer);
     const fns = this.stops;
     this.stops = [];
     for (const fn of fns) {
@@ -333,12 +386,26 @@ class Attempt {
   }
 }
 
+/** The profile a request is for, with the name it was asked by. */
+export interface AuthTarget {
+  name: string;
+  profile: ProfileConfig;
+}
+
+/** Whose sign-in a profile's sign-in or sign-out changes. */
+export function homeOf(profile: ProfileConfig): AuthHome | null {
+  const variable = authHomeVariable(profile.agent);
+  if (variable === null) return null;
+  return profile.authHome !== undefined || profile.env?.[variable] !== undefined ? 'dedicated' : 'shared';
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------------------
 
 export class AuthService {
-  private readonly attempts = new Map<AgentKind, Attempt>();
-  private readonly cache = new Map<AgentKind, { at: number; view: AuthView }>();
-  private readonly probing = new Map<AgentKind, Promise<AuthView>>();
+  // Attempts, cached answers and running probes are kept per sign-in folder (`keyOf`), not per tool: two profiles of one tool with folders of their own sign in separately.
+  private readonly attempts = new Map<string, Attempt>();
+  private readonly cache = new Map<string, { at: number; view: AuthView }>();
+  private readonly probing = new Map<string, Promise<AuthView>>();
   private readonly o: Required<Omit<AuthServiceOptions, 'config' | 'log'>>;
   private readonly config: BridgeConfig;
   private readonly log: (line: string) => void;
@@ -354,12 +421,14 @@ export class AuthService {
       deviceTimeoutMs: opts.deviceTimeoutMs ?? 15 * 60_000,
       pasteTimeoutMs: opts.pasteTimeoutMs ?? 10 * 60_000,
       keepFinishedMs: opts.keepFinishedMs ?? 10 * 60_000,
-      stepTimeoutMs: opts.stepTimeoutMs ?? 30_000,
+      stepTimeoutMs: opts.stepTimeoutMs ?? 20_000,
+      checkTimeoutMs: opts.checkTimeoutMs ?? 60_000,
+      ptySupported: opts.ptySupported ?? ptySupported,
     };
   }
 
   /** The profile a sign-in request is for: named, else the first of the asked-for tool (the `default` profile first), else the default profile. */
-  resolve(profileName: string | undefined, agent: string | undefined): { name: string; profile: ProfileConfig } | null {
+  resolve(profileName: string | undefined, agent: string | undefined): AuthTarget | null {
     if (profileName !== undefined) return profileFor(this.config, profileName);
     if (agent !== undefined) {
       const entries = Object.entries(this.config.profiles).filter(([, p]) => p.agent === agent);
@@ -374,43 +443,61 @@ export class AuthService {
     for (const a of this.attempts.values()) a.set('cancelled', { message: AUTH_WORDS.cancelled });
   }
 
-  private current(agent: AgentKind): Attempt | null {
-    const a = this.attempts.get(agent);
+  /** The key of a profile's sign-in folder: the tool and the folder its child is told about (empty: the machine's own). */
+  private keyOf(profile: ProfileConfig): string {
+    const variable = authHomeVariable(profile.agent);
+    return `${profile.agent}|${variable === null ? '' : (authEnv(this.config, profile)[variable] ?? '')}`;
+  }
+
+  private current(key: string): Attempt | null {
+    const a = this.attempts.get(key);
     if (a === undefined) return null;
     if (a.over && a.finishedAt !== null && Date.now() - a.finishedAt > this.o.keepFinishedMs) {
-      this.attempts.delete(agent);
+      this.attempts.delete(key);
       return null;
     }
     return a;
   }
 
-  // ---- status -----------------------------------------------------------------------------------------------------------------------------
-
-  async status(profile: ProfileConfig): Promise<AuthView> {
-    const agent = profile.agent;
-    const attempt = this.current(agent);
-    const active = attempt !== null && !attempt.over;
-    const base = await this.probe(profile, active);
-    return { ...base, attempt: attempt === null ? null : attempt.view() };
+  /** Arms the wait for the program's or the adapter's answer to a code or a key. */
+  private checking(attempt: Attempt, message: string): void {
+    attempt.set('checking', { message });
+    clearTimeout(attempt.checkTimer);
+    attempt.checkTimer = setTimeout(() => {
+      if (attempt.state === 'checking') attempt.set('failed', { message: AUTH_WORDS.checkTimeout });
+    }, this.o.checkTimeoutMs);
+    attempt.checkTimer.unref();
   }
 
-  private async probe(profile: ProfileConfig, reuseOnly: boolean): Promise<AuthView> {
+  // ---- status -----------------------------------------------------------------------------------------------------------------------------
+
+  async status(target: AuthTarget): Promise<AuthView> {
+    const { profile } = target;
+    const key = this.keyOf(profile);
+    const attempt = this.current(key);
+    const active = attempt !== null && !attempt.over;
+    const base = await this.probe(key, profile, active);
+    return { ...base, profile: target.name, home: homeOf(profile), attempt: attempt === null || attempt.hidden ? null : attempt.view() };
+  }
+
+  private async probe(key: string, profile: ProfileConfig, reuseOnly: boolean): Promise<AuthView> {
     const agent = profile.agent;
     const flavor = flavorOf(agent);
-    if (flavor === 'hermes') return { agent, state: 'not_needed', kind: null, canLogout: false, methods: [], attempt: null, note: AUTH_WORDS.hermes };
-    if (flavor === 'opencode') return { agent, state: 'unknown', kind: null, canLogout: false, methods: [], attempt: null, note: AUTH_WORDS.opencode };
-    const cached = this.cache.get(agent);
+    const bare = { agent, profile: '', home: null, kind: null, canLogout: false, methods: [], attempt: null };
+    if (flavor === 'hermes') return { ...bare, state: 'not_needed', note: AUTH_WORDS.hermes };
+    if (flavor === 'opencode') return { ...bare, state: 'unknown', note: AUTH_WORDS.opencode };
+    const cached = this.cache.get(key);
     // While a sign-in is under way the last answer stands (the adapter is busy with it); otherwise it is reused for a few seconds.
     if (cached && (reuseOnly || Date.now() - cached.at < this.o.statusTtlMs)) return cached.view;
-    if (reuseOnly) return { agent, state: 'unknown', kind: null, canLogout: false, methods: [], attempt: null, note: null };
-    const running = this.probing.get(agent);
+    if (reuseOnly) return { ...bare, state: 'unknown', note: AUTH_WORDS.underWay };
+    const running = this.probing.get(key);
     if (running) return running;
-    const p = this.probeNow(profile).finally(() => this.probing.delete(agent));
-    this.probing.set(agent, p);
+    const p = this.probeNow(key, profile).finally(() => this.probing.delete(key));
+    this.probing.set(key, p);
     return p;
   }
 
-  private async probeNow(profile: ProfileConfig): Promise<AuthView> {
+  private async probeNow(key: string, profile: ProfileConfig): Promise<AuthView> {
     const agent = profile.agent;
     const flavor = flavorOf(agent);
     let adapter: Opened | null = null;
@@ -444,45 +531,50 @@ export class AuthService {
           kind = last.kind === 'none' ? null : last.kind;
         }
       }
-      view = { agent, state, kind, canLogout: hasLogout(adapter.init) || flavor === 'claude', methods: found.map((m) => ({ id: m.id, name: m.name, description: m.description, how: m.how })), attempt: null, note: null };
+      view = { agent, profile: '', home: null, state, kind, canLogout: hasLogout(adapter.init) || flavor === 'claude', methods: found.map((m) => ({ id: m.id, name: m.name, description: m.description, how: m.how })), attempt: null, note: null };
     } catch (err) {
       this.log(`sign-in status failed: ${err instanceof Error ? err.name : 'error'}`);
-      view = { agent, state: 'unknown', kind: null, canLogout: false, methods: [], attempt: null, note: err instanceof AdapterEnded && err.spawnError === 'ENOENT' ? AUTH_WORDS.noAdapter : 'The agent did not answer. Try again in a moment.' };
+      view = { agent, profile: '', home: null, state: 'unknown', kind: null, canLogout: false, methods: [], attempt: null, note: err instanceof AdapterEnded && err.spawnError === 'ENOENT' ? AUTH_WORDS.noAdapter : AUTH_WORDS.badAdapter };
     } finally {
       if (adapter) await adapter.close();
     }
     // A failed probe is not remembered: the next look asks again.
-    if (view.note === null) this.cache.set(agent, { at: Date.now(), view });
+    if (view.note === null) this.cache.set(key, { at: Date.now(), view });
     return view;
   }
 
   // ---- login ------------------------------------------------------------------------------------------------------------------------------
 
-  async login(profile: ProfileConfig, methodId: string): Promise<AttemptView> {
+  async login(target: AuthTarget, methodId: string): Promise<AttemptView> {
     if (this.closed) throw new AuthRefused(503, 'shutting_down', 'The bridge is shutting down.');
+    const { profile } = target;
     const agent = profile.agent;
     const flavor = flavorOf(agent);
     if (flavor !== 'claude' && flavor !== 'codex') throw new AuthRefused(409, 'no_sign_in', flavor === 'hermes' ? AUTH_WORDS.hermes : AUTH_WORDS.opencode);
-    const existing = this.current(agent);
+    const key = this.keyOf(profile);
+    const existing = this.current(key);
     if (existing !== null && !existing.over) throw new AuthRefused(409, 'sign_in_busy', AUTH_WORDS.busy);
-    this.cache.delete(agent);
+    this.cache.delete(key);
 
-    // A placeholder holds the place while the adapter starts, so two logins cannot both pass the check above.
+    // A placeholder holds the place while the adapter starts, so two logins (or a login and a sign-out) cannot both pass the check above.
     const placeholder = new Attempt(agent, methodId, 'device_code');
-    this.attempts.set(agent, placeholder);
+    placeholder.hidden = true;
+    this.attempts.set(key, placeholder);
     let adapter: Opened | null = null;
     try {
+      if (profile.authHome !== undefined) mkdirSync(profile.authHome, { recursive: true, mode: 0o700 });
       let elicit: ((p: Record<string, unknown>) => Promise<{ action: 'accept' | 'cancel' }>) | null = null;
       adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async (p) => (elicit ? elicit(p) : { action: 'cancel' }));
       const method = methodViews(flavor, adapter.init).find((m) => m.id === methodId);
       if (method === undefined) {
         placeholder.set('cancelled');
-        this.attempts.delete(agent);
+        this.attempts.delete(key);
         await adapter.close();
         throw new AuthRefused(400, 'unknown_method', 'That way of signing in is not offered by this agent.');
       }
       const attempt = new Attempt(agent, method.id, method.how);
-      this.attempts.set(agent, attempt);
+      attempt.key = key;
+      this.attempts.set(key, attempt);
       placeholder.set('cancelled');
       const opened = adapter;
       attempt.onCleanup(() => opened.close());
@@ -492,13 +584,13 @@ export class AuthService {
         attempt.onCleanup(() => clearTimeout(timer));
       };
       this.log(`sign-in started: ${agent}`);
-      if (method.how === 'device_code') this.deviceFlow(profile, attempt, opened, method.id, (fn) => (elicit = fn), cancelTimer);
+      if (method.how === 'device_code') this.deviceFlow(attempt, opened, method.id, (fn) => (elicit = fn), cancelTimer);
       else if (method.how === 'paste_code') {
         await opened.close();
-        this.pasteFlow(profile, attempt, method.args, cancelTimer);
+        this.pasteFlow(target, attempt, method.args, cancelTimer);
       } else {
         await opened.close();
-        this.keyFlow(profile, attempt, method.id);
+        this.keyFlow(target, attempt, method.id);
       }
       // The first thing to do is ready in a moment (the adapter prints it, or asks for it); the page polls for it after this.
       const until = Date.now() + this.o.startWaitMs;
@@ -508,20 +600,22 @@ export class AuthService {
       if (adapter && !(err instanceof AuthRefused)) await adapter.close();
       if (!(err instanceof AuthRefused)) {
         placeholder.set('failed');
-        if (this.attempts.get(agent) === placeholder) this.attempts.delete(agent);
+        if (this.attempts.get(key) === placeholder) this.attempts.delete(key);
         this.log(`sign-in could not start: ${err instanceof Error ? err.name : 'error'}`);
-        throw new AuthRefused(502, 'adapter_unavailable', failureText(err, []));
+        throw new AuthRefused(502, 'adapter_unavailable', failureText(err));
       }
       throw err;
     }
   }
 
   /** Codex: `authenticate` stays open while the person enters the code; the adapter's process is held for that. */
-  private deviceFlow(profile: ProfileConfig, attempt: Attempt, adapter: Opened, methodId: string, setElicit: (fn: (p: Record<string, unknown>) => Promise<{ action: 'accept' | 'cancel' }>) => void, timer: (ms: number) => void): void {
-    void profile;
+  private deviceFlow(attempt: Attempt, adapter: Opened, methodId: string, setElicit: (fn: (p: Record<string, unknown>) => Promise<{ action: 'accept' | 'cancel' }>) => void, timer: (ms: number) => void): void {
     setElicit(async (p) => {
       const url = typeof p['url'] === 'string' ? p['url'] : '';
-      if (p['mode'] !== 'url' || !/^https:\/\/[^\s"'<>]{1,500}$/.test(url)) return { action: 'cancel' };
+      if (p['mode'] !== 'url' || !PAGE_OK.test(url)) {
+        attempt.set('failed', { message: AUTH_WORDS.badUrl });
+        return { action: 'cancel' };
+      }
       const message = typeof p['message'] === 'string' ? p['message'] : '';
       // The code is only in the message's own text (measured): "Sign in to ChatGPT and enter this code: ABCD-12345".
       const code = /\b([A-Z0-9]{3,6}-[A-Z0-9]{3,8})\b/.exec(message)?.[1] ?? null;
@@ -532,29 +626,34 @@ export class AuthService {
     adapter
       .race(adapter.agent.request('authenticate', { methodId } as never), this.o.deviceTimeoutMs)
       .then(() => {
-        this.cache.delete(attempt.agent);
+        this.cache.delete(attempt.key);
         attempt.set('done', { message: 'Signed in.' });
       })
-      .catch((err: unknown) => attempt.set('failed', { message: failureText(err, []) }));
+      .catch((err: unknown) => attempt.set('failed', { message: failureText(err) }));
   }
 
-  /** Claude: the adapter's own login program under a pseudo-terminal: it prints a page to open and waits for the code the page gives. */
-  private pasteFlow(profile: ProfileConfig, attempt: Attempt, methodArgs: string[], timer: (ms: number) => void): void {
-    if (!ptySupported()) return attempt.set('failed', { message: AUTH_WORDS.noPty });
+  /** Claude: the adapter's own login program under a pseudo-terminal: it prints a page to open and waits for the code the page gives. It takes one code and ends, right or wrong (measured). */
+  private pasteFlow(target: AuthTarget, attempt: Attempt, methodArgs: string[], timer: (ms: number) => void): void {
+    const { profile } = target;
+    if (!this.o.ptySupported()) return attempt.set('failed', { message: AUTH_WORDS.noPty });
     const { command, args } = adapterCommand(profile);
     let seen = '';
-    let secret: string[] = [];
     let pty: PtyHandle;
     try {
       pty = startPty(command, [...args, ...methodArgs], {
         cwd: resolvePath(profile.workdir),
         env: authEnv(this.config, profile),
         onText: (chunk) => {
-          seen = (seen + chunk).slice(-8000);
+          seen = (seen + chunk).slice(-12_000);
           if (attempt.state !== 'starting') return;
-          const url = /https:\/\/[^\s"'<>]{8,2000}/.exec(seen)?.[0];
-          if (url === undefined) return;
-          attempt.set('needs_input', { action: { type: 'paste_code', url }, message: 'Open the page, sign in, and paste the code it shows below.' });
+          const page = findSignInPage(seen);
+          if (page === null) {
+            // The prompt without an address before it: nothing to show.
+            if (/Paste code/i.test(seen)) attempt.set('failed', { message: AUTH_WORDS.badUrl });
+            return;
+          }
+          if (page === 'unusable') return attempt.set('failed', { message: AUTH_WORDS.badUrl });
+          attempt.set('needs_input', { action: { type: 'paste_code', url: page }, message: 'Open the page, sign in, and paste the code it shows below.' });
         },
       });
     } catch {
@@ -567,32 +666,28 @@ export class AuthService {
     });
     attempt.answer = async ({ code }) => {
       if (attempt.state !== 'needs_input' || code === undefined) return false;
-      attempt.answers += 1;
-      if (attempt.answers > MAX_ANSWERS) {
-        attempt.set('failed', { message: AUTH_WORDS.tooManyTries });
-        return true;
-      }
-      secret = [code];
-      attempt.set('checking', { message: 'Checking the code…' });
-      return pty.writeLine(code);
+      if (!pty.writeLine(code)) return false;
+      this.checking(attempt, 'Checking the code…');
+      return true;
     };
     timer(this.o.pasteTimeoutMs);
     void pty.done.then((end) => {
       if (attempt.over) return;
       if (end.spawnError !== null) return attempt.set('failed', { message: end.spawnError === 'ENOENT' ? AUTH_WORDS.noPty : AUTH_WORDS.notFinished });
       if (end.code === 0) {
-        this.cache.delete(attempt.agent);
+        this.cache.delete(attempt.key);
         return attempt.set('done', { message: 'Signed in.' });
       }
-      // Only the program's last line, with the pasted code taken out of it (the terminal echoes what was typed).
-      const why = lastTerminalLine(seen, secret);
-      attempt.set('failed', { message: why !== '' ? `The sign-in did not work: ${why}` : AUTH_WORDS.refused });
+      // What the program printed is read for its meaning only, never shown (it can repeat the typed code, an account or a token).
+      attempt.set('failed', { message: failureWords(seen) });
     });
   }
 
-  /** Codex with a key: nothing to do until the key is given; then the adapter is started with it in its environment, for this one call. */
-  private keyFlow(profile: ProfileConfig, attempt: Attempt, methodId: string): void {
-    attempt.set('needs_input', { action: { type: 'give_key' }, message: 'Paste the API key below. It is passed to the agent once and is not kept here.' });
+  /** Codex with a key: nothing to do until the key is given; then the adapter is started with it in its environment, for this one call. A wrong key leaves the sign-in waiting for another. */
+  private keyFlow(target: AuthTarget, attempt: Attempt, methodId: string): void {
+    const { profile } = target;
+    const ask = 'Paste the API key below. It is passed to the agent once and is not kept here.';
+    attempt.set('needs_input', { action: { type: 'give_key' }, message: ask });
     attempt.answer = async ({ apiKey }) => {
       if (attempt.state !== 'needs_input' || apiKey === undefined) return false;
       attempt.answers += 1;
@@ -600,16 +695,20 @@ export class AuthService {
         attempt.set('failed', { message: AUTH_WORDS.tooManyTries });
         return true;
       }
-      attempt.set('checking', { message: 'Checking the key…' });
+      this.checking(attempt, 'Checking the key…');
       void (async () => {
         let adapter: Opened | null = null;
+        attempt.onCleanup(() => adapter?.close());
         try {
           adapter = await openAdapter(this.config, profile, { CODEX_API_KEY: apiKey, OPENAI_API_KEY: apiKey }, this.o.stepTimeoutMs, async () => ({ action: 'cancel' }));
           await adapter.race(adapter.agent.request('authenticate', { methodId } as never));
-          this.cache.delete(attempt.agent);
+          this.cache.delete(attempt.key);
           attempt.set('done', { message: 'Signed in.' });
         } catch (err) {
-          attempt.set('failed', { message: failureText(err, [apiKey]) });
+          const words = failureText(err);
+          // The adapter said no to this key: the person may try another. Anything else ends the sign-in.
+          if (err instanceof RequestError && attempt.state === 'checking' && attempt.answers < MAX_ANSWERS) attempt.set('needs_input', { action: { type: 'give_key' }, message: `${words} ${ask}` });
+          else attempt.set('failed', { message: err instanceof RequestError && attempt.answers >= MAX_ANSWERS ? AUTH_WORDS.tooManyTries : words });
         } finally {
           if (adapter) await adapter.close();
         }
@@ -618,10 +717,10 @@ export class AuthService {
     };
   }
 
-  /** The person's code or key. `false`: nothing is waiting for it. */
-  async answer(profile: ProfileConfig, attemptId: string, value: { code?: string; apiKey?: string }): Promise<AttemptView> {
-    const attempt = this.current(profile.agent);
-    if (attempt === null || attempt.id !== attemptId || attempt.over || attempt.answer === null) throw new AuthRefused(404, 'no_such_sign_in', 'No sign-in is waiting for that.');
+  /** The person's code or key. */
+  async answer(target: AuthTarget, attemptId: string, value: { code?: string; apiKey?: string }): Promise<AttemptView> {
+    const attempt = this.current(this.keyOf(target.profile));
+    if (attempt === null || attempt.hidden || attempt.id !== attemptId || attempt.over || attempt.answer === null) throw new AuthRefused(404, 'no_such_sign_in', 'No sign-in is waiting for that.');
     const taken = await attempt.answer(value);
     if (!taken) throw new AuthRefused(409, 'not_waiting', 'The sign-in is not waiting for that right now.');
     // The program decides within a moment; the page polls for the rest.
@@ -630,56 +729,70 @@ export class AuthService {
     return attempt.view();
   }
 
-  cancel(profile: ProfileConfig, attemptId: string | undefined): AttemptView | null {
-    const attempt = this.current(profile.agent);
-    if (attempt === null || (attemptId !== undefined && attempt.id !== attemptId)) return null;
+  cancel(target: AuthTarget, attemptId: string | undefined): AttemptView | null {
+    const attempt = this.current(this.keyOf(target.profile));
+    if (attempt === null || attempt.hidden || (attemptId !== undefined && attempt.id !== attemptId)) return null;
     attempt.set('cancelled', { message: AUTH_WORDS.cancelled });
     return attempt.view();
   }
 
   // ---- logout -----------------------------------------------------------------------------------------------------------------------------
 
-  async logout(profile: ProfileConfig): Promise<AuthView> {
+  async logout(target: AuthTarget): Promise<AuthView> {
+    const { profile } = target;
     const agent = profile.agent;
     const flavor = flavorOf(agent);
     if (flavor !== 'claude' && flavor !== 'codex') throw new AuthRefused(409, 'no_sign_out', flavor === 'hermes' ? AUTH_WORDS.hermes : AUTH_WORDS.opencode);
-    const existing = this.current(agent);
+    const key = this.keyOf(profile);
+    const existing = this.current(key);
     if (existing !== null && !existing.over) throw new AuthRefused(409, 'sign_in_busy', AUTH_WORDS.busy);
+    // A hold on the place for as long as the sign-out runs: a sign-in cannot start in the middle of it, and what this removes at the end is only this hold and the finished attempt it replaced.
+    const hold = new Attempt(agent, 'logout', 'device_code');
+    hold.hidden = true;
+    this.attempts.set(key, hold);
     let adapter: Opened | null = null;
+    let signedOut = false;
     try {
       adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async () => ({ action: 'cancel' }));
       let done = false;
+      let refused = false;
       if (hasLogout(adapter.init)) {
         try {
           await adapter.race(adapter.agent.request('logout', {} as never));
           done = true;
         } catch (err) {
           if (err instanceof AdapterEnded) throw err;
-          // The method is advertised but refused: the measured fallback below.
+          // The method is advertised but refused: the measured fallback below (Claude), else a failure.
+          refused = true;
         }
       }
       if (!done) {
         // The fallback (Claude): the adapter's own program, `--cli auth logout`, which removes the same sign-in.
-        if (flavor !== 'claude' || !ptySupported()) throw new AuthRefused(409, 'no_sign_out', AUTH_WORDS.noLogout);
+        if (flavor !== 'claude' || !this.o.ptySupported()) throw new AuthRefused(refused ? 502 : 409, refused ? 'sign_out_failed' : 'no_sign_out', refused ? AUTH_WORDS.signOutFailed : AUTH_WORDS.noLogout);
         const { command, args } = adapterCommand(profile);
-        let out = '';
-        const pty = startPty(command, [...args, '--cli', 'auth', 'logout'], { cwd: resolvePath(profile.workdir), env: authEnv(this.config, profile), onText: (t) => void (out = (out + t).slice(-2000)) });
+        const pty = startPty(command, [...args, '--cli', 'auth', 'logout'], { cwd: resolvePath(profile.workdir), env: authEnv(this.config, profile), onText: () => undefined });
         const timeout = setTimeout(() => pty.signal('SIGTERM'), this.o.stepTimeoutMs);
         timeout.unref();
         const end = await pty.done;
         clearTimeout(timeout);
-        if (end.spawnError !== null || end.code !== 0) throw new AuthRefused(502, 'sign_out_failed', `The sign-out did not work: ${lastTerminalLine(out, []) || 'the program failed'}`);
+        if (end.spawnError !== null || end.code !== 0) throw new AuthRefused(502, 'sign_out_failed', AUTH_WORDS.signOutFailed);
       }
+      signedOut = true;
     } catch (err) {
       if (err instanceof AuthRefused) throw err;
-      throw new AuthRefused(502, 'sign_out_failed', failureText(err, []));
+      throw new AuthRefused(502, 'sign_out_failed', err instanceof AdapterEnded ? failureText(err) : AUTH_WORDS.signOutFailed);
     } finally {
       if (adapter) await adapter.close();
+      hold.set('cancelled');
+      // Only our own hold is taken away (a sign-in cannot have replaced it, but a close of the service might have). A failed sign-out puts back the finished attempt it replaced.
+      if (this.attempts.get(key) === hold) {
+        if (!signedOut && existing !== null) this.attempts.set(key, existing);
+        else this.attempts.delete(key);
+      }
     }
     this.log(`signed out: ${agent}`);
-    this.cache.delete(agent);
-    this.attempts.delete(agent);
-    return this.status(profile);
+    this.cache.delete(key);
+    return this.status(target);
   }
 }
 

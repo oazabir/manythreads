@@ -1,4 +1,4 @@
-import { conflict, HttpError, invalid, json, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { conflict, HttpError, invalid, json, route, type HttpRequest, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { guardedFetch, OutboundBlockedError } from '@manythreads/sdk/hermes-outbound';
 import {
   AgentAuth,
@@ -16,6 +16,7 @@ import {
   getAgentAuthRoute,
   startAgentLoginRoute,
   type AgentAuthAgent,
+  type AgentAuthAttempt,
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { loadRunner, requireWorkspaceAdmin } from './common.ts';
@@ -26,11 +27,25 @@ import type { RunnerRow } from './rows.ts';
 //   * the bridge's address and key are read as the system actor (as a run's are) and never leave this file;
 //   * a code or an API key the admin types goes to the bridge in one request and is not stored, logged, audited or returned; the audit line says "an answer was given" only;
 //   * every reply is parsed against the shared schema, which keeps only bounded fields, so a bridge cannot hand the page free text, a secret or the agent's account;
-//   * the request goes through the outbound guard like the runner test does, with no redirects and a bounded read.
+//   * the request goes through the outbound guard like the runner test does, with no redirects and a bounded read;
+//   * the audit line of a request is written BEFORE the bridge is asked, in a transaction of its own that commits whatever the bridge then answers (a request that fails still leaves
+//     its line, with `refused` on a second one), and how a sign-in ended is audited when a page first sees it end (`done` or `failed`): the kind of sign-in and the outcome, never the secret;
+//   * the admin check is the first thing a handler does, before the body is read: a person who is not an admin learns nothing about the shape of a request;
+//   * the route's own transaction is open while the bridge is asked (the HTTP layer opens it before the handler runs, and a handler cannot give it back), but it has only read, so
+//     it holds no row lock; the waits below are bounded (the bridge's own worst case is 60 s, so these stay above it) so the connection is held for a short time at the worst.
 // A pod runner (`claude_cli`, `codex_cli`) signs in with its file (P19-06) and is refused here; its pod's bridge is not an address this server can reach (P25-14).
 
 const BRIDGE_AGENTS: ReadonlySet<string> = new Set(['claude-code', 'codex']);
 const MAX_REPLY_BYTES = 64 * 1024;
+/** How long the server waits for the bridge, per request. The bridge's slowest answer is three steps of 20 s (a sign-out); these are above that and under a minute and a half. */
+const WAITS = { status: 70_000, login: 70_000, answer: 45_000, cancel: 20_000, logout: 75_000 } as const;
+/** `MANYTHREADS_AGENT_AUTH_WAIT_SCALE` (a number above 0 and up to 1) shortens every wait: for tests of a bridge that does not answer, never set in production. */
+const waitOf = (key: keyof typeof WAITS): number => {
+  const scale = Number(process.env['MANYTHREADS_AGENT_AUTH_WAIT_SCALE']);
+  return Number.isFinite(scale) && scale > 0 && scale <= 1 ? Math.max(100, Math.round(WAITS[key] * scale)) : WAITS[key];
+};
+/** How many finished sign-ins are remembered as already audited (per server process). */
+const REMEMBER_FINISHED = 500;
 
 const WORDS = {
   notBridge: 'Signing in from this page works for a Claude Code or Codex runner on an agent bridge. A pod runner signs in with its sign-in file.',
@@ -117,8 +132,39 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     return ok.data;
   }
 
-  const audit = (t: Target, tx: PluginTx, actorId: string, change: 'login_started' | 'answer_given' | 'login_cancelled' | 'signed_out') =>
-    ctx.audit.emit(tx, { type: 'bot_runner.agent_auth.changed', workspaceId: t.runner.workspace_id, runnerId: t.runner.id, name: t.runner.name, agent: t.agent, change, actorId, at: now() });
+  type Line = { change: 'login_started' | 'answer_given' | 'login_cancelled' | 'signed_out' | 'login_succeeded' | 'login_failed'; how?: AgentAuthAttempt['how']; answerKind?: 'code' | 'key'; refused?: true };
+
+  /** One audit line in a transaction of its own, so it is kept whatever the route then answers. */
+  const audit = (req: HttpRequest, t: Target, line: Line): Promise<void> =>
+    ctx.db.as(req.caller, (own) =>
+      ctx.audit.emit(own, { type: 'bot_runner.agent_auth.changed', workspaceId: t.runner.workspace_id, runnerId: t.runner.id, name: t.runner.name, agent: t.agent, ...line, actorId: own.actor.id, at: now() }),
+    );
+
+  /** Asks the bridge after the audit line is written; when the bridge does not carry it out, a second line says so. */
+  async function asked<R>(req: HttpRequest, t: Target, line: Line, call: () => Promise<R>): Promise<R> {
+    await audit(req, t, line);
+    try {
+      return await call();
+    } catch (err) {
+      await audit(req, t, { ...line, refused: true }).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  // A sign-in that ended is audited once, when a page first sees it end (the polling does not stop being how the end is learned: nothing here runs on its own).
+  const finished = new Set<string>();
+  async function noteEnd(req: HttpRequest, t: Target, attempt: AgentAuthAttempt | null): Promise<void> {
+    if (attempt === null || (attempt.state !== 'done' && attempt.state !== 'failed')) return;
+    const id = `${t.runner.id}:${attempt.id}`;
+    if (finished.has(id)) return;
+    finished.add(id);
+    if (finished.size > REMEMBER_FINISHED) finished.delete(finished.values().next().value as string);
+    try {
+      await audit(req, t, { change: attempt.state === 'done' ? 'login_succeeded' : 'login_failed', how: attempt.how });
+    } catch {
+      finished.delete(id);
+    }
+  }
 
   const Auth = z.object({ auth: AgentAuth });
   const Attempt = AgentLoginResponse;
@@ -131,7 +177,9 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
       const t = await target(tx, id);
-      return json(GetAgentAuthResponse.parse(await ask(t, 'GET', '/v1/auth/status', undefined, Auth, 40_000)));
+      const out = GetAgentAuthResponse.parse(await ask(t, 'GET', '/v1/auth/status', undefined, Auth, waitOf('status')));
+      await noteEnd(req, t, out.auth.attempt);
+      return json(out);
     }),
   });
 
@@ -139,13 +187,13 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     method: startAgentLoginRoute.method,
     path: startAgentLoginRoute.path,
     rateLimit: abuseLimit(startAgentLoginRoute.method, startAgentLoginRoute.path),
-    schema: { body: StartAgentLoginRequest, response: AgentLoginResponse },
+    schema: { response: AgentLoginResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
+      const t = await target(tx, id); // the admin check comes before the body is looked at
       const body = StartAgentLoginRequest.parse(req.body);
-      const t = await target(tx, id);
-      const out = await ask(t, 'POST', '/v1/auth/login', { methodId: body.methodId }, Attempt, 30_000);
-      await audit(t, tx, tx.actor.id, 'login_started');
+      const out = await asked(req, t, { change: 'login_started' }, () => ask(t, 'POST', '/v1/auth/login', { methodId: body.methodId }, Attempt, waitOf('login')));
+      await noteEnd(req, t, out.attempt);
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -154,14 +202,16 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     method: answerAgentLoginRoute.method,
     path: answerAgentLoginRoute.path,
     rateLimit: abuseLimit(answerAgentLoginRoute.method, answerAgentLoginRoute.path),
-    schema: { body: AnswerAgentLoginRequest, response: AgentLoginResponse },
+    schema: { response: AgentLoginResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const body = AnswerAgentLoginRequest.parse(req.body);
       const t = await target(tx, id);
-      // The code or the key is in this one request to the bridge and in nothing else here: the audit line below carries neither.
-      const out = await ask(t, 'POST', '/v1/auth/login/answer', { attemptId: body.attemptId, ...(body.code !== undefined ? { code: body.code } : { apiKey: body.apiKey }) }, Attempt, 30_000);
-      await audit(t, tx, tx.actor.id, 'answer_given');
+      const body = AnswerAgentLoginRequest.parse(req.body);
+      // The code or the key is in this one request to the bridge and in nothing else here: the audit line says only which of the two it was.
+      const out = await asked(req, t, { change: 'answer_given', answerKind: body.code !== undefined ? 'code' : 'key' }, () =>
+        ask(t, 'POST', '/v1/auth/login/answer', { attemptId: body.attemptId, ...(body.code !== undefined ? { code: body.code } : { apiKey: body.apiKey }) }, Attempt, waitOf('answer')),
+      );
+      await noteEnd(req, t, out.attempt);
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -170,13 +220,12 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     method: cancelAgentLoginRoute.method,
     path: cancelAgentLoginRoute.path,
     rateLimit: abuseLimit(cancelAgentLoginRoute.method, cancelAgentLoginRoute.path),
-    schema: { body: CancelAgentLoginRequest, response: AgentLoginResponse },
+    schema: { response: AgentLoginResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const body = CancelAgentLoginRequest.parse(req.body ?? {});
       const t = await target(tx, id);
-      const out = await ask(t, 'POST', '/v1/auth/login/cancel', body.attemptId !== undefined ? { attemptId: body.attemptId } : {}, Attempt, 15_000);
-      await audit(t, tx, tx.actor.id, 'login_cancelled');
+      const body = CancelAgentLoginRequest.parse(req.body ?? {});
+      const out = await asked(req, t, { change: 'login_cancelled' }, () => ask(t, 'POST', '/v1/auth/login/cancel', body.attemptId !== undefined ? { attemptId: body.attemptId } : {}, Attempt, waitOf('cancel')));
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -189,8 +238,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
       const t = await target(tx, id);
-      const out = await ask(t, 'POST', '/v1/auth/logout', {}, Auth, 60_000);
-      await audit(t, tx, tx.actor.id, 'signed_out');
+      const out = await asked(req, t, { change: 'signed_out' }, () => ask(t, 'POST', '/v1/auth/logout', {}, Auth, waitOf('logout')));
       return json(AgentLogoutResponse.parse(out));
     }),
   });

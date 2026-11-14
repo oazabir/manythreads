@@ -185,17 +185,39 @@ describe('the terminal sign-in program (Claude: --cli auth login --claudeai)', (
     const stateDir = tmp();
     const script: FakeScript = { ...DEFAULT_SCRIPT, stateDir, auth: { signedIn: false, url: 'https://claude.example.test/oauth/authorize?x=1' } };
     expect(createFakeAcpAgent(script).isSignedIn()).toBe(false);
-    const { out, io: terminal } = io(['pasted-code-123']);
+    const { out, io: terminal } = io(['pasted-code-123#state456']);
     await expect(runTerminalAuth(['auth', 'login', '--claudeai'], script, terminal)).resolves.toBe(0);
     const text = out.join('');
     expect(text).toContain('Opening browser to sign in');
-    expect(text).toContain("If the browser didn't open, visit: https://claude.example.test/oauth/authorize?x=1");
+    // the page is a hyperlink as the real program prints it: the address in the escape, then once as the visible text
+    expect(text).toContain(`${String.fromCharCode(27)}]8;;https://claude.example.test/oauth/authorize?x=1${String.fromCharCode(27)}[94mhttps://claude.example.test/oauth/authorize?x=1`);
     expect(text).toContain('Paste code here if prompted >');
     expect(text).not.toContain('pasted-code-123');
     expect(JSON.parse(readFileSync(join(stateDir, 'auth.json'), 'utf8'))).toMatchObject({ signedIn: true });
     expect(createFakeAcpAgent(script).isSignedIn()).toBe(true);
     await expect(runTerminalAuth(['auth', 'logout'], script, io([]).io)).resolves.toBe(0);
     expect(createFakeAcpAgent(script).isSignedIn()).toBe(false);
+  });
+
+  it('refuses a wrong code the way the real program does: one try, a fixed line (that repeats the code and names an account), exit 1, nothing signed in', async () => {
+    const stateDir = tmp();
+    const script: FakeScript = { ...DEFAULT_SCRIPT, stateDir, auth: { signedIn: false } };
+    const { out, io: terminal } = io(['WRONG-CODE']);
+    await expect(runTerminalAuth(['auth', 'login', '--claudeai'], script, terminal)).resolves.toBe(1);
+    expect(out.join('')).toContain("Login failed: That code wasn't accepted");
+    expect(createFakeAcpAgent(script).isSignedIn()).toBe(false);
+    const exact: FakeScript = { ...script, auth: { signedIn: false, code: 'exactly-this' } };
+    await expect(runTerminalAuth(['auth', 'login', '--claudeai'], exact, io(['exactly-that']).io)).resolves.toBe(1);
+    await expect(runTerminalAuth(['auth', 'login', '--claudeai'], exact, io(['exactly-this']).io)).resolves.toBe(0);
+  });
+
+  it('prints the page in pieces when asked, and logout can be made to fail', async () => {
+    const stateDir = tmp();
+    const script: FakeScript = { ...DEFAULT_SCRIPT, stateDir, auth: { signedIn: false, url: 'https://claude.example.test/abcdefghijkl', urlSplitMs: 1 }, faults: { logoutFails: true } };
+    const { out, io: terminal } = io(['']);
+    await runTerminalAuth(['auth', 'login', '--claudeai'], script, { ...terminal, sleep: async () => undefined });
+    expect(out.length).toBeGreaterThan(4);
+    await expect(runTerminalAuth(['auth', 'logout'], script, io([]).io)).resolves.toBe(1);
   });
 
   it('exits 1 without signing in when nothing is pasted', async () => {

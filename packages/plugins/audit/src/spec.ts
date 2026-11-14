@@ -494,7 +494,9 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     action: 'bot_runner.agent_sign_in_changed',
     who: actor(e['actorId']),
     target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
-    reason: words(e['change']) ?? undefined,
+    // What was done, with the kind of sign-in and whether a code or a key was given: fixed words only, never the code or the key.
+    reason: [words(e['change']), words(e['how']), words(e['answerKind'])].filter((x): x is string => x !== null).join(', ') || undefined,
+    outcome: e['change'] === 'login_failed' || e['refused'] === true ? 'failed' : undefined,
   }),
   'bot_runner.availability.changed': (e) => ({
     action: 'bot_runner.availability_changed',

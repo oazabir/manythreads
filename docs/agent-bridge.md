@@ -82,13 +82,16 @@ a standing rule; 404 when nothing waits), and `POST /runs/<id>/steer {input}` pu
 An agent driven through ACP can be signed in from the Runners page, so nobody has to log in on the machine by hand. The bridge asks the adapter which ways it
 offers and says, in plain fields, what the person must do. These routes need the bridge key like every other; they are also under `/p/<profile>/`.
 
-- `GET /v1/auth/status` answers `{ state, kind, can_logout, methods: [{id, name, description, how}], attempt, note }`. `state` is `signed_in`, `signed_out`, `unknown`
-  or `not_needed`. It carries no account e-mail and no organization: the adapter reports them and the bridge drops them. The answer is kept for 15 seconds.
-- `POST /v1/auth/login {methodId}` starts a sign-in and answers the attempt `{id, methodId, state, action, message}`. `action` is `enter_code {url, code}` (Codex device
+- `GET /v1/auth/status` answers `{ profile, home, state, kind, can_logout, methods: [{id, name, description, how}], attempt, note }`. `profile` is the profile the answer is about and `home` is
+  `dedicated` (the profile has its own sign-in folder: `authHome`, or its own `CLAUDE_CONFIG_DIR` / `CODEX_HOME` in `env`) or `shared` (the tool's folder of this user on the machine, which every
+  profile and every terminal session of that user also uses); it is null for an agent with no sign-in of its own. `state` is `signed_in`, `signed_out`, `unknown`
+  or `not_needed`. While a sign-in is under way and the answer is not known yet (for example after the bridge restarted), the state is `unknown` with a note that says so. It carries no account e-mail and no organization: the adapter reports them and the bridge drops them. The answer is kept for 15 seconds.
+- `POST /v1/auth/login {methodId}` starts a sign-in and answers the attempt `{id, methodId, how, state, action, message}` (`how` is `device_code`, `paste_code` or `api_key`). `action` is `enter_code {url, code}` (Codex device
   code: open the page and type the code), `paste_code {url}` (Claude: open the page, sign in, paste the code it shows), `open_url {url}` or `give_key` (an API key). A
   second login while one is under way is `409`. An unknown method is `400`.
 - `POST /v1/auth/login/answer {attemptId, code | apiKey}` gives the code or the key. It goes to the agent and nowhere else: not to a log, not to a frame, and the
-  answer does not echo it. At most five answers per attempt.
+  answer does not echo it. At most five answers per attempt: a wrong Codex key goes back to asking for another one (with a sentence), and the fifth ends the attempt. A wrong Claude
+  code ends the attempt at once (the program takes one try). A code or key that is not accepted within 60 seconds ends it as failed (`checking` timeout).
 - `POST /v1/auth/login/cancel {attemptId?}` ends the attempt.
 - `POST /v1/auth/logout` signs the agent out. An adapter with no logout answers `409` with a plain sentence (Hermes has none; a Claude adapter that does not offer it falls
   back to the login program's own `auth logout`).
@@ -98,6 +101,30 @@ server image; no native module is added), reads the page address from what it pr
 code method: the adapter asks to open a page, the code is in its message, and the sign-in ends when the person has finished there. An API key is offered on the host
 only; in a pod (`MANYTHREADS_BRIDGE_IN_POD=1`) it is hidden, because the pod's own sign-in file is the way. The sign-in always uses the profile's own configuration
 folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), so a test never touches the machine's real one.
+
+**One sign-in folder per profile (recommended).** Without `authHome`, a profile uses the tool's folder of the service user (`~/.claude`, `~/.codex`). Signing in or out from the Runners
+page then changes that one account for every profile that uses the same folder, and for anyone who uses the tool in a terminal on that machine. Give each profile its own folder:
+
+```json
+"office": { "agent": "claude-code", "workdir": "/srv/work/office", "authHome": "/var/lib/manythreads-bridge/auth/office" }
+```
+
+`authHome` is an absolute path (claude-code and codex only; the bridge creates it with mode 0700). It sets `CLAUDE_CONFIG_DIR` or `CODEX_HOME` for the agent's runs and for the sign-in, and
+an `env` entry of the same name still wins. Sign-in state, attempts and the 15-second cache are kept per tool and per folder, so two profiles with their own folders sign in and out
+independently, and two profiles that share a folder share one sign-in (a second login while one runs is `409`). The Runners page says which of the two a runner has, and names the
+machine in the confirm for a sign-out ("signs out every user of that tool on that machine") and for a new sign-in over an account that is in place ("replaces the account").
+
+**Failure texts never reach the page.** What the program or adapter prints or throws when a sign-in fails can hold the code, an e-mail or a token. The bridge reads it only to choose one of a
+fixed list of sentences (refused, expired, network, the program did not start, the address was unusable, the check timed out, and so on). The page address must be `https://` and at most
+2000 characters; it is taken from the program's output only after something ends it (a space, a quote or a line end), so a half-printed address is never shown, and an address that is too
+long or too short is a failed attempt with its own sentence.
+
+**Time limits.** The adapter steps (start, key check, sign-out) wait 20 seconds each, so one request answers within 60 seconds at the most (a sign-out may start the adapter, ask it, then
+fall back to the program); a Codex device code lives 15 minutes, a Claude paste 10 minutes. The server's waits for the bridge are longer than that (70 seconds for a status or a start).
+
+**The pseudo-terminal.** `script -q -e -f -c` on Linux (`-e` so the program's own exit code comes back: without it a wrong code or a failed sign-out looks like success), `script -q /dev/null` on
+macOS. The program runs in the same session as its own shell, so a cancel ends the whole process group, not only `script`. The pasted line is the text, a 100 ms pause and a carriage return
+(measured against the real login, docs/spikes/acp-measured.md).
 
 ## Add it in manythreads
 

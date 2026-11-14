@@ -80,7 +80,25 @@ Codex (with and without our capabilities):
 - **Claude, terminal method under a pseudo-terminal.** Run as the adapter's own command (`node dist/index.js --cli auth login --claudeai`, with an empty
   `CLAUDE_CONFIG_DIR`, inside `script -qfc`). It prints "Opening browser to sign in…", "If the browser didn't open, visit: <a claude.com/cai/oauth/authorize URL>"
   and "Paste code here if prompted >", then waits. So a page can show the URL and pass back a pasted code. It writes only `.claude.json` into the config folder
-  before the code is pasted. Not completed (it would sign in a real account). **Not tested:** whether it also works with no pseudo-terminal at all, and the paste.
+  before the code is pasted. Not completed (it would sign in a real account). **Not tested:** whether it also works with no pseudo-terminal at all.
+- **Claude's paste step, measured later (P25-09 review S-1, 2026-11-14, `claude` 2.1.323).** Run as `claude auth login --claudeai` under a pseudo-terminal with a scratch `HOME` and a scratch
+  `CLAUDE_CONFIG_DIR` (the real `~/.claude` was never touched), and a made-up code, never a real one.
+  - *Terminal mode:* the program puts the terminal in raw mode (no line mode, no echo, no carriage-return to line-feed change). It does not turn on bracketed paste.
+  - *What it prints:* "Opening browser to sign in…", then "If the browser didn't open, visit: " and the address as an OSC 8 hyperlink: `ESC ] 8 ; ; <address>` (no terminator), the address in
+    blue (`ESC [94m` ... `ESC [39m`), then `ESC ] 8 ; ; BEL`. Then a line end and "Paste code here if prompted > " with no line end. The address is about 465 to 468 characters, and is
+    not wrapped at 80 or at 500 columns. A plain "remove the escape sequences" step that ends an OSC only at BEL leaves the hyperlink's own copy of the address in the text and the printed
+    address after it, one long string of 937 characters; an OSC 8 here ends at the next escape. The bridge cuts an OSC at BEL, at ESC + backslash, or at the next ESC, and holds a cut-off
+    escape sequence over to the next chunk.
+  - *What submits the pasted line:* every one of these did: the text and a line feed; the text and a carriage return; the text, a pause of 100 ms, then a carriage return; a bracketed
+    paste then a carriage return after 100 ms; a bracketed paste then a line feed; the text, a pause, then a line feed. The bridge writes the text, waits 100 ms, then writes a carriage
+    return, which is what a keyboard does.
+  - *A wrong code:* it prints "Login failed: That code wasn't accepted. It may be incomplete, expired, already used, or from an earlier sign-in attempt. Sign in again to get a new code."
+    and exits with code 1. It takes one try only: a second code needs a new login. The bridge's page never shows that text (it can hold a code, an e-mail or a token on other
+    versions); it reads it and shows one of its own fixed sentences.
+  - *The exit code:* `script` (util-linux) ends with code 0 whatever the program did, unless it is started with `-e`. With `-e` it ends with the program's own code (1 for the wrong
+    code, 0 for a good login). Without `-e` a failed sign-in or sign-out looks like a good one. The bridge uses `script -q -e -f -c`.
+  - *Only `.claude.json` and `backups` were written to the scratch config folder.* Through the bridge's own pty helper (`startPty` and `findSignInPage`) against the same real program with the
+    scratch folders: the page was found once (465 characters), `writeLine` returned true, the exit code was 1, and the failure sentence was the "refused" one.
 - Claude's host sign-in is `~/.claude/.credentials.json`; Codex's is `~/.codex/auth.json` (file names only; the contents were never read).
 - **Claude `auth/status`** answers `{state, accounts[{label, active, email, organization, _meta.claudeCode{kind, plan}}]}`; the same arrives as `_auth/status_update`
   and `auth/status_update` pushes after `initialize`, after `session/new` and at the start of a prompt. The e-mail and organization are in it: the bridge must
@@ -266,5 +284,5 @@ The proof is what the agent lists and refuses, not the config written.
 - **P25-04 (events):** a Hermes plan from `rawInput.todos`; a helper's steps for Claude only; Hermes and Codex helpers are one line with no children.
 - **P25-09 (sign-in):** Codex device code is a URL plus a code in one message, and `accept` keeps `authenticate` waiting; Claude's terminal method works under a pseudo-terminal; Claude's `auth/status` gives the state.
 - **P25-14 (pods):** a Hermes home takes about 60 s and 1.6 GB the first time; bake it into the image. Gateway runs were not measured end to end.
-- **Not measured** (budget or safety): Hermes permission request on the wire, Hermes edit step, Hermes refusal of a tool outside its toolset, an unanswered Codex request, Claude's paste step and no-pseudo-terminal login,
+- **Not measured** (budget or safety): Hermes permission request on the wire, Hermes edit step, Hermes refusal of a tool outside its toolset, an unanswered Codex request, Claude's no-pseudo-terminal login (the paste step was measured, see Sign-in and sign-out),
   `logout` against a real sign-in, a prompt through a gateway, whether a Hermes helper's report arrives inside the same prompt.

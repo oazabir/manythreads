@@ -37,8 +37,28 @@
         "login_started",
         "answer_given",
         "login_cancelled",
-        "signed_out"
+        "signed_out",
+        "login_succeeded",
+        "login_failed"
       ]
+    },
+    "how": {
+      "type": "string",
+      "enum": [
+        "device_code",
+        "paste_code",
+        "api_key"
+      ]
+    },
+    "answerKind": {
+      "type": "string",
+      "enum": [
+        "code",
+        "key"
+      ]
+    },
+    "refused": {
+      "type": "boolean"
     },
     "actorId": {
       "type": "string",

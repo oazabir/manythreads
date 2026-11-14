@@ -433,3 +433,24 @@ describe('a token canary in the sign-in file', () => {
     expect(text(dir)).toContain(CANARY);
   });
 });
+
+describe('a profile with its own sign-in folder (authHome)', () => {
+  const base = { workdir: '/w' };
+  it('is read from the config, absolute only, and only for the tools that sign in', async () => {
+    const { parseConfig } = await import('../src/config.ts');
+    expect(parseConfig({ profiles: { a: { ...base, agent: 'claude-code', authHome: '/srv/claude-a' } } }).profiles['a']?.authHome).toBe('/srv/claude-a');
+    expect(() => parseConfig({ profiles: { a: { ...base, agent: 'claude-code', authHome: 'relative/dir' } } })).toThrow(/authHome/);
+    expect(() => parseConfig({ profiles: { a: { ...base, agent: 'claude-code', authHome: 5 } } })).toThrow(/authHome/);
+    expect(() => parseConfig({ profiles: { a: { ...base, agent: 'hermes-acp', driver: 'acp', authHome: '/srv/h' } } })).toThrow(/authHome/);
+  });
+
+  it('becomes the tool\'s own variable in the child, the machine\'s own is not used, and the profile env still wins', () => {
+    const from = { PATH: '/bin', CLAUDE_CONFIG_DIR: '/home/shared/.claude', CODEX_HOME: '/home/shared/.codex' };
+    const claude = { agent: 'claude-code' as const, ...base, authHome: '/srv/claude-a' } as Parameters<typeof childEnv>[0];
+    const codex = { agent: 'codex' as const, ...base, authHome: '/srv/codex-a' } as Parameters<typeof childEnv>[0];
+    expect(childEnv(claude, from)['CLAUDE_CONFIG_DIR']).toBe('/srv/claude-a');
+    expect(childEnv(codex, from)['CODEX_HOME']).toBe('/srv/codex-a');
+    expect(childEnv({ ...claude, env: { CLAUDE_CONFIG_DIR: '/elsewhere' } }, from)['CLAUDE_CONFIG_DIR']).toBe('/elsewhere');
+    expect(childEnv({ agent: 'claude-code', ...base } as Parameters<typeof childEnv>[0], from)['CLAUDE_CONFIG_DIR']).toBe('/home/shared/.claude');
+  });
+});

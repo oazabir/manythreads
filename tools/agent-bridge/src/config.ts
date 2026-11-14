@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 
 // The bridge's config file: which agent CLI serves which profile.
 //
@@ -49,6 +50,11 @@ export interface ProfileConfig {
   extraAllowedTools?: string[] | undefined;
   /** Variables set in the child's environment for this profile, e.g. `{ "KUBECONFIG": "/home/bridge/.kube/deployer" }`. */
   env?: Record<string, string> | undefined;
+  /**
+   * A folder that holds this profile's own sign-in (Claude Code: becomes `CLAUDE_CONFIG_DIR`; Codex: `CODEX_HOME`), so signing in or out from the Runners page changes this profile and
+   * nobody else on the machine. Without it (or the same variable in `env`) the profile uses the machine's shared sign-in: the one in the service user's home folder. An absolute path.
+   */
+  authHome?: string | undefined;
   /** Names of the bridge's own environment variables handed on to the child (beyond the built-in allowlist). */
   passEnv?: string[] | undefined;
   /**
@@ -137,6 +143,11 @@ export function parseConfig(raw: unknown): BridgeConfig {
     if (pass !== undefined && (!Array.isArray(pass) || pass.some((x) => typeof x !== 'string' || !ENV_NAME.test(x) || RESERVED_ENV.has(x)))) {
       throw new Error(`config: profile "${name}": passEnv must be a list of variable names (not ${[...RESERVED_ENV].join(' or ')})`);
     }
+    const authHome = p['authHome'];
+    if (authHome !== undefined && (typeof authHome !== 'string' || !isAbsolute(authHome) || [...authHome].some((c) => c.charCodeAt(0) < 32))) {
+      throw new Error(`config: profile "${name}": authHome must be an absolute folder path`);
+    }
+    if (authHome !== undefined && agent !== 'claude-code' && agent !== 'codex') throw new Error(`config: profile "${name}": authHome is only for claude-code and codex profiles`);
     const notes = p['instructions'];
     if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error(`config: profile "${name}": instructions must be text of at most 20000 characters`);
     profiles[name] = {
@@ -149,6 +160,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
       ...(extra !== undefined ? { extraAllowedTools: extra as string[] } : {}),
       ...(envMap !== undefined ? { env: envMap as Record<string, string> } : {}),
       ...(pass !== undefined ? { passEnv: pass as string[] } : {}),
+      ...(typeof authHome === 'string' ? { authHome } : {}),
       ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}),
     };
   }

@@ -99,6 +99,16 @@ export interface AuthScript {
   deviceCode?: string;
   /** After the person accepts, how long until the sign-in finishes: 0 at once, a number of ms, or `null` until `completeSignIn()`. */
   pendingMs?: number | null;
+  /** The one code the terminal login accepts (default: any code shaped like the real one, `<letters>#<state>`); any other is refused like the real program does. */
+  code?: string;
+  /** The terminal login prints its page address in three pieces, this many ms apart (a long address that arrives split). */
+  urlSplitMs?: number;
+  /** The terminal login takes the code and then never answers (a program that hangs while it checks). */
+  hangAfterCode?: boolean;
+  /** The API key the `api-key` method accepts (default: any); another is refused with a message that repeats it and names an account. */
+  acceptKey?: string;
+  /** The adapter process ends this many ms after the person accepted the device code (it dies in the middle of a sign-in). */
+  dieAfterAcceptMs?: number;
   /** What `auth/status` and `_auth/status_update` report as the account (they carry an e-mail, which the bridge must never forward). */
   account?: { label?: string; plan?: string; email?: string; organization?: string };
 }
@@ -113,6 +123,8 @@ export interface FaultScript {
   open?: { code: number; message: string; data?: unknown };
   /** The adapter does not advertise `session/resume` (a client has to use `session/load`). */
   noResume?: boolean;
+  /** `logout` (the adapter's and the program's `auth logout`) fails, with a message that names an account and a token. */
+  logoutFails?: boolean;
   /** The adapter does not advertise `logout` (a client falls back to the adapter's own `--cli auth logout` program). Claude and Codex flavors. */
   noLogout?: boolean;
   /** `mcpCapabilities.http` is false (Claude and Codex flavors; Hermes advertises none). */

@@ -9,8 +9,8 @@ import { answerBody, answerProblem, attemptWords, hasAgentSignin, isLive, needsA
  */
 
 const RUNNER = '00000000-0000-7000-8000-0000000d0001';
-const attempt = (over: Partial<AgentAuthAttempt> = {}): AgentAuthAttempt => ({ id: 'a1', methodId: 'm', state: 'waiting', action: null, message: null, ...over });
-const auth = (over: Partial<AgentAuth> = {}): AgentAuth => ({ agent: 'codex', state: 'signed_out', kind: null, canLogout: true, methods: [], attempt: null, note: null, ...over });
+const attempt = (over: Partial<AgentAuthAttempt> = {}): AgentAuthAttempt => ({ id: 'a1', methodId: 'm', how: 'device_code', state: 'waiting', action: null, message: null, ...over });
+const auth = (over: Partial<AgentAuth> = {}): AgentAuth => ({ agent: 'codex', profile: 'codex', home: 'shared', state: 'signed_out', kind: null, canLogout: true, methods: [], attempt: null, note: null, ...over });
 
 describe('which runners sign in this way', () => {
   it('only a gateway whose address answers as a Claude Code or Codex bridge', () => {

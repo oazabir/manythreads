@@ -270,14 +270,14 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
       const expected = what === 'status' ? 'GET' : 'POST';
       if (method !== expected || (sub !== undefined && what !== 'login')) return fail(res, 405, 'method not allowed', 'method_not_allowed', { allow: expected });
       try {
-        if (what === 'status') return send(res, 200, { auth: await authService.status(chosen.profile) });
+        if (what === 'status') return send(res, 200, { auth: await authService.status(chosen) });
         const body = await readJsonObject(req, res, bodyTimeoutMs);
         if (body === null) return;
-        if (what === 'logout') return send(res, 200, { auth: await authService.logout(chosen.profile) });
+        if (what === 'logout') return send(res, 200, { auth: await authService.logout(chosen) });
         if (sub === 'cancel') {
           const id = body['attemptId'];
           if (id !== undefined && typeof id !== 'string') return fail(res, 400, '"attemptId" must be a string', 'bad_request');
-          const attempt = authService.cancel(chosen.profile, id);
+          const attempt = authService.cancel(chosen, id);
           return attempt ? send(res, 200, { attempt }) : fail(res, 404, 'no such sign-in', 'no_such_sign_in');
         }
         if (sub === 'answer') {
@@ -288,11 +288,11 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
           if (code === null || apiKey === null || (code === undefined && apiKey === undefined) || (code !== undefined && apiKey !== undefined)) {
             return fail(res, 400, 'give "code" (one line) or "apiKey" (8 to 500 characters, no spaces)', 'bad_request');
           }
-          return send(res, 200, { attempt: await authService.answer(chosen.profile, id, { ...(code !== undefined ? { code } : {}), ...(apiKey !== undefined ? { apiKey } : {}) }) });
+          return send(res, 200, { attempt: await authService.answer(chosen, id, { ...(code !== undefined ? { code } : {}), ...(apiKey !== undefined ? { apiKey } : {}) }) });
         }
         const methodId = body['methodId'];
         if (typeof methodId !== 'string' || methodId === '' || methodId.length > 80) return fail(res, 400, '"methodId" must be a string', 'bad_request');
-        return send(res, 200, { attempt: await authService.login(chosen.profile, methodId) });
+        return send(res, 200, { attempt: await authService.login(chosen, methodId) });
       } catch (err) {
         // The message is one of this module's own plain sentences; nothing the adapter said about an account goes into it.
         if (err instanceof AuthRefused) return fail(res, err.status, err.message, err.code);

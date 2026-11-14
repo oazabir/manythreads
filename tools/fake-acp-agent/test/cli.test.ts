@@ -120,8 +120,8 @@ describe('--cli auth login', () => {
     login.stdout.on('data', (d: Buffer) => (out += d.toString()));
     const exited = new Promise<number | null>((resolve) => login.on('exit', resolve));
     for (let i = 0; i < 300 && !out.includes('Paste code here'); i++) await new Promise((r) => setTimeout(r, 50));
-    expect(out).toContain('visit: https://claude.example.test/authorize');
-    login.stdin.write('the-code\n');
+    expect(out).toContain('https://claude.example.test/authorize');
+    login.stdin.write('the-code#state1\n');
     await expect(exited).resolves.toBe(0);
     expect(out).toContain('Login successful');
     expect(JSON.parse(readFileSync(join(stateDir, 'auth.json'), 'utf8'))).toMatchObject({ signedIn: true });
@@ -131,5 +131,47 @@ describe('--cli auth login', () => {
     await client.call('initialize', { protocolVersion: 1, clientCapabilities: {} });
     const status = await client.call('auth/status', {});
     expect(status.result).toMatchObject({ state: 'authenticated' });
+  });
+});
+
+describe('--cli auth login under a terminal', () => {
+  const script = (stateDir: string): string => {
+    const file = join(stateDir, 'script.json');
+    writeFileSync(file, JSON.stringify({ flavor: 'claude', stateDir, auth: { signedIn: false }, scenarios: { a: [{ do: 'text', text: 'x' }] } }));
+    return file;
+  };
+  const underTerminal = (args: string[]): ChildProcessWithoutNullStreams => {
+    const child = spawn('script', ['-q', '-e', '-f', '-c', `${process.execPath} --import tsx ${CLI} ${args.join(' ')}`, '/dev/null'], { env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    children.push(child);
+    return child;
+  };
+
+  it('is in raw mode (no echo of what is pasted) and ends the line at a carriage return, as the real program does', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'fake-acp-'));
+    dirs.push(stateDir);
+    const login = underTerminal([`--script=${script(stateDir)}`, '--cli', 'auth', 'login', '--claudeai']);
+    let out = '';
+    login.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    const exited = new Promise<number | null>((resolve) => login.on('exit', resolve));
+    for (let i = 0; i < 300 && !out.includes('Paste code here'); i++) await new Promise((r) => setTimeout(r, 50));
+    login.stdin.write('SECRET-pasted-code#state9');
+    await new Promise((r) => setTimeout(r, 100));
+    login.stdin.write('\r');
+    await expect(exited).resolves.toBe(0);
+    expect(out).toContain('Login successful');
+    expect(out).not.toContain('SECRET-pasted-code');
+  });
+
+  it('refuses a wrong code with exit 1', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'fake-acp-'));
+    dirs.push(stateDir);
+    const login = underTerminal([`--script=${script(stateDir)}`, '--cli', 'auth', 'login', '--claudeai']);
+    let out = '';
+    login.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    const exited = new Promise<number | null>((resolve) => login.on('exit', resolve));
+    for (let i = 0; i < 300 && !out.includes('Paste code here'); i++) await new Promise((r) => setTimeout(r, 50));
+    login.stdin.write('nope\n');
+    await expect(exited).resolves.toBe(1);
+    expect(out).toContain("That code wasn't accepted");
   });
 });

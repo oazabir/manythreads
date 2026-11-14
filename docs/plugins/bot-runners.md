@@ -138,8 +138,21 @@ The five `agent-auth` routes above are a proxy: the server reads the runner's ke
 (`guardedFetch`) and passes on only fields the shared schema bounds (`packages/shared/src/api/bot-runners/agent-auth.ts`). The agent's account (e-mail,
 organization) never gets this far. The server stores nothing: a code or an API key is passed once, and the bridge's own sentences are cleaned and clipped before they
 reach the page. `login`, `answer`, `cancel` and `logout` have abuse limits per person (20, 10, 20 and 10 a minute). Each change emits
-`bot_runner.agent_auth.changed` (`change`: `login_started`, `answer_given`, `login_cancelled` or `signed_out`; ids, the runner name, the agent word and the actor,
-never a code, key or address), which the audit plugin records as `bot_runner.agent_sign_in_changed`. A bridge from before P25-09 answers `404`; the page then says
+`bot_runner.agent_auth.changed` (`change`: `login_started`, `answer_given`, `login_cancelled`, `signed_out`, `login_succeeded` or `login_failed`; ids, the runner name, the agent word
+and the actor, and where it applies `how` (`device_code`, `paste_code` or `api_key`), `answerKind` (`code` or `key`) and `refused` (true when the bridge turned the request away or did not
+answer); never a code, key or address), which the audit plugin records as `bot_runner.agent_sign_in_changed` with a reason made of fixed words ("login started", "answer given, code",
+"login succeeded, paste code") and the outcome `failed` for `login_failed` and for a refused request.
+
+*Order of events.* The route checks that the person is an admin first (a non-admin gets 403 before the body is read, so a malformed body is not told apart), then writes the audit line
+in a separate, committed transaction, then asks the bridge. A bridge that is down or does not answer in time therefore still leaves the line saying who tried, followed by a second line
+with `refused: true` (and the 502 the page sees). The route's own transaction (opened by the framework before the handler) only reads and holds no lock during the bridge call; it cannot
+be released earlier, so it stays open for that call. The end of a sign-in (`login_succeeded` or `login_failed`) is written when a status, start or answer call first sees it, once per attempt,
+by whoever looked first: it is the person's page polling, not a background job. The server's waits are above the bridge's own limits: 70 seconds for a status or a start, 45 for an answer,
+20 for a cancel and 75 for a sign-out. A test can scale them with `MANYTHREADS_AGENT_AUTH_WAIT_SCALE` (0 to 1, at least 100 ms each); no deployment sets it.
+
+The answer carries `profile` and `home` (`dedicated` or `shared`) beside the state, and each attempt carries `how`, as the bridge reports them (docs/agent-bridge.md). The dialog says whose
+sign-in it is and names the runner's machine in two confirms: before a sign-out ("signs out every user of that tool on that machine", or only the profile when its folder is its own) and
+before a new sign-in over an account that is in place ("replaces the account"). A bridge from before P25-09 answers `404`; the page then says
 the bridge must be updated. Runners on a pod (P25-14) are not covered. On the Runners page a gateway runner with an agent shows a **Sign-in** button: the dialog
 shows the status, one button per method with the agent's own name, the page link and the code, a field for a pasted code or key (cleared the moment it is sent),
 polls every few seconds while a sign-in is under way, and asks before **Sign out**.
