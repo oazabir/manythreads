@@ -40,18 +40,20 @@ A `tool_call` carries `toolCallId`, `title` (the adapter's one line, e.g. the co
 `fetch`, `switch_mode`, `other`), `status` (`pending`, `in_progress`, `completed`, `failed`), `locations` (files) and `content` (text, a `diff`, or a terminal).
 Subagents are **not** in stable v1: an unstable `subagent_update` exists behind a client capability, and adapters fall back to marking a child's tool calls in `_meta`.
 
-What the adapters' code says today (read, not run):
+What the adapters' code said, as corrected by the P25-01 measurements (`docs/spikes/acp-measured.md`, raw lines in `tools/agent-bridge/test/fixtures/acp/`):
 
 | | Hermes (`hermes acp`, 0.21.5) | Claude (`@agentclientprotocol/claude-agent-acp` 0.107.0) | Codex (`@agentclientprotocol/codex-acp` 2.6.0) |
 |---|---|---|---|
-| resume / load | both, plus `fork`, `list` | both, plus `close`, `list`, `fork` | both |
-| HTTP MCP with headers | accepted, but `mcpCapabilities` not advertised (must be measured) | yes (`http`, `sse`) | yes (`http` only) |
-| sign-in methods | `agent`: the provider already configured (our LiteLLM key); `terminal`: `hermes acp --setup` | only `terminal` methods (`--cli auth login --claudeai` / `--console`; on a server `claude /login` with a pasted code), offered only when the client advertises `auth.terminal`; a `gateway` method when the client advertises `auth._meta.gateway` | `api-key` (from `CODEX_API_KEY`/`OPENAI_API_KEY`), `chat-gpt` (local browser; hidden by `NO_BROWSER`), `chat-gpt-device-code` (a URL and a code through `elicitation/create` url mode, only when the client advertises URL elicitation), `gateway` |
-| logout | not advertised | yes (runs the CLI's logout, clears the gateway) | yes |
-| plan updates | yes (its `todo` tool becomes `plan`) | yes (TodoWrite) | yes (plan tool) |
-| subagents | `delegate_task` is a tool call; children unknown | without the unstable capability: the `Task` call, and each child step carries `_meta.claudeCode.parentToolUseId` | native child sessions after negotiation, "a legacy tool-call fallback otherwise" |
-| permission options | `allow_once`, `allow_session` (kind `allow_always`), `allow_always`, `deny` (kind `reject_once`), `deny_always`; edits: `allow_once`, `deny` | asks for tools not pre-approved; `AskUserQuestion` goes through form elicitation, and is disabled when the client has none | follows its approval mode (`read-only`, `workspace-write`, `agent`, `agent-full-access`) |
+| resume / load | both, plus `fork`, `list`. Measured: `resume` **replays** the history (2.0 s), and an unknown id is **not an error** (resume answers as if new, load answers an empty result) | both, plus `close`, `list`, `fork`. `resume` 0.47 s, no replay; unknown id: error -32002 | both. `resume` 0.38 s, no replay; unknown id: error -32603 "no rollout found" |
+| HTTP MCP with headers | works although `mcpCapabilities` is not advertised (6 of 6 requests carried the header); the token is in no log | yes (`http`, `sse`) | yes (`http` only) |
+| sign-in methods | `agent`: the provider already configured (our LiteLLM key); `terminal`: `hermes acp --setup` | only `terminal` methods (`--cli auth login --claudeai` / `--console`; on a server `claude /login` with a pasted code), offered only when the client advertises `auth.terminal`; a `gateway` method when the client advertises `auth._meta.gateway` | `api-key` (from `CODEX_API_KEY`/`OPENAI_API_KEY`), `chat-gpt` (local browser; offered without `NO_BROWSER` too), `chat-gpt-device-code` (the URL in `elicitation/create` url mode and the code **inside its message text**; `accept` keeps `authenticate` waiting, `cancel` fails it with -32000; only when the client advertises URL elicitation), `gateway` |
+| logout | not advertised | yes (runs the CLI's logout, clears the gateway); also an `auth/status` request and push (it carries the e-mail: never forward) | yes; `_auth/status_update` push only |
+| plan updates | **none on 0.21.5**: its tool is `todo_list`, the adapter converts only `todo`; the list is in the step's `rawInput.todos` (the bridge builds the plan) | yes, the whole list each time, from `TaskCreate`/`TaskUpdate`/`TaskList` (**no `TodoWrite`** in an SDK session) | none seen in any run (plan mode gives a `switch_mode` request instead) |
+| subagents | `delegate_task` is one step that returns at once (background); no child steps arrive | the `Agent` tool (titled "Task"); each child step carries `_meta.claudeCode.parentToolUseId`; the child ends with a `SubagentHandback` step | stable fallback: steps "Start subagent X", "wait", "Complete subagent X"; no child steps, no marker |
+| permission options | `allow_once`, `allow_session` (kind `allow_always`), `allow_always`, `deny` (kind `reject_once`), `deny_always`; the request's `toolCallId` is `perm-check-N`, **not** the step's id; an unanswered one is denied after 300 s (source; not seen, no request occurred) | `allow-once` ("Yes") and `reject` ("No", kind `reject_once`); an unanswered one waits for ever; `AskUserQuestion` is disabled when the client has no form elicitation | follows its approval mode (`read-only`, `workspace-write`, `agent` = "Auto review", `agent-full-access`); MCP calls ask every time (`allow_once`, `allow_session`, `allow_always`, `cancel` = No); the step id is the request's id |
 | model gateway | its own provider config (LiteLLM, as today) | `gateway` auth method (Anthropic protocol), or `providers/set` (unstable) | `gateway` auth method (OpenAI protocol), `MODEL_PROVIDER`, `CODEX_CONFIG` |
+| cancel | prompt ends `cancelled` in 4.0 s; the command is stopped | 28 ms; the command is killed; the session stays usable | 15 to 18 ms; **the command keeps running** until the process exits |
+| step statuses | no status at start, then `completed` (never `failed`) | `pending`, then no status, then `completed`/`failed` (**never `in_progress`**) | `in_progress`, then `completed` |
 | binary | the installed `hermes` | bundles the Claude Agent SDK; `CLAUDE_CODE_EXECUTABLE` points it at the host's `claude` | bundles `@openai/codex` ^0.166; `CODEX_PATH` points it at the host's `codex` |
 | mid-turn notes | - | `_session/steering` extension (advertised in `_meta`) | `_session/steering` extension |
 
@@ -69,10 +71,10 @@ shared subscription, Hermes on LiteLLM with the cheapest alias and one-line prom
 - whether `session/new` takes the HTTP MCP server with an `Authorization` header (Hermes without the advertised capability), whether the token shows up in the
   adapter's own logs (`APP_SERVER_LOGS`, Claude's debug log, Hermes' log), and what our tools look like in `tool_call` (title, `name`).
 - how each adapter is held to the bot's tool grants (today: Claude `--restricted --tools --allowedTools`, Codex `sandbox_mode` + `approval_policy="never"`): for Claude,
-  `_meta.claudeCode.options` with `settingSources: []`, `tools`, `allowedTools`, `extraArgs: {restricted: null}`, `allowDangerouslySkipPermissions: false`; for
+  `_meta.claudeCode.options` with `settingSources: []`, `tools`, `allowedTools`, `extraArgs: {restricted: null, "strict-mcp-config": null}` (measured: without `strict-mcp-config` the signed-in account's claude.ai connectors leak into the session), `allowDangerouslySkipPermissions: false`; for
   Codex, `INITIAL_AGENT_MODE` and `CODEX_CONFIG`; for Hermes, the profile's toolsets. The proof is the tools the agent lists and refuses, not the config we wrote
   (MISTAKES P6-06).
-- a subagent (Claude `Task`, Codex's child, Hermes `delegate_task`): the parent marker, whether the child's steps arrive, how they end.
+- a subagent (Claude `Agent`, Codex's child, Hermes `delegate_task`): the parent marker, whether the child's steps arrive, how they end.
 - which permission requests each adapter sends under the policy above (the aim is: few), the options offered, and what happens when no answer comes.
 - `session/cancel` during a tool call: time until `cancelled`, and whether the process can take the next prompt.
 - `session/resume` and `session/load` in a new process: does the thread's memory survive, how long a load's replay takes, and whether `cwd` must be the same folder.
@@ -113,9 +115,9 @@ shared subscription, Hermes on LiteLLM with the cheapest alias and one-line prom
 - **Resume.** The bridge keeps the thread's ACP session id in `sessions.json` (as it does for Codex). A run in a thread that has one calls `session/resume` when
   advertised (no replay to throw away), else `session/load` (the replay is dropped until the call resolves), else `session/new` with the server's thread context
   as the memory (as today). The `cwd` is the profile's `workdir` (or the pod's repo clone), never the per-run temp folder, so a resumed session finds its folder.
-  An unknown session id (state lost) falls back once to `session/new`, as the Claude driver does today.
+  An unknown session id (state lost) falls back once to `session/new`, as the Claude driver does today. Measured: Claude answers -32002 and Codex -32603 ("no rollout found"); **Hermes answers success** for an unknown id (a fresh state), so for Hermes the bridge must check the answer (`_meta.hermes.sessionProvenance`) or its own session list, and its `resume` replays the history, so updates before the call resolves are dropped like a load's.
 - **Stop.** The bridge's stop becomes `session/cancel`, answers any pending permission with `cancelled`, and kills the process group if the prompt has not ended
-  10 s later (as today). §4.6 says who may press it.
+  10 s later (as today). Measured: Codex's `session/cancel` ends the prompt in 15 ms but leaves its running command alive, so for Codex the process group is always ended after `cancelled`. §4.6 says who may press it.
 - **A bridge restart ends its runs.** Runs live in the bridge's memory. When the bridge restarts, the server's event stream gets a 404 and the run fails with one
   plain line ("The runner restarted while Coder was working. Ask again to continue."). The agent's own session is on disk, so the next run in the thread resumes it.
 
@@ -131,11 +133,18 @@ shared subscription, Hermes on LiteLLM with the cheapest alias and one-line prom
 | `tool` (exists, fields added) | `tool_call` (`tool.started` with `step_id`) | + `stepId`, `parentStepId` (a subagent's step), `kind` (the ACP kind), `title`, `paths` |
 | `tool_result` (exists, fields added) | `tool_call_update` to `completed`/`failed` (`tool.completed`) | + `stepId`, `diff` (`{added, removed}` counts only), `seconds` |
 | `step` (new) | `tool_call_update` that only changes title, paths or status to `in_progress` (`step.update`) | `stepId`, the changed fields |
-| `agent` (new) | a step the spike shows is a subagent (Claude `Task`, Codex child, Hermes `delegate_task`) (`agent.update`) | `agentId` (= its `stepId`), `name` (its description), `status` |
+| `agent` (new) | a step the spike shows is a subagent (Claude `Agent`, Codex's "Start subagent" step, Hermes `delegate_task`; only Claude has child steps) (`agent.update`) | `agentId` (= its `stepId`), `name` (its description), `status` |
 | `plan` (new) | `plan` (`plan.update`) | the whole list each time: `{content, status}[]` (priority dropped: nobody needs it on screen) |
 | `thinking` (new) | `agent_thought_chunk` (`thinking`, one frame per burst, no text) | `seconds`; **the reasoning text never leaves the bridge** |
 | `approval` (exists) | `session/request_permission` (`approval.request`) | as P24; `choices` from the options' kinds |
 | `result` (exists) | the prompt's answer (`run.completed`) | + `stopReason`, + `cost` from `usage_update` when the adapter gives one |
+
+Measured differences that change the table (`docs/spikes/acp-measured.md`): Claude never sends `in_progress` (a step is `pending`, then refined by updates with no
+status, then `completed` or `failed`, usually 3 to 5 updates for title and paths); Hermes' first `tool_call` has no status and it never sends `failed`; Codex sends
+`in_progress` then `completed`. A `plan` frame is built by the bridge for Hermes from the `todo_list` step's `rawInput.todos` (the adapter sends none), and Codex has none.
+Steps the bridge hides: Hermes `tool_search` and `tool_describe`, Claude `SubagentHandback`, Codex `Guardian Review`. Every adapter also puts the step's input and output in
+`rawInput`, `_meta.claudeCode.toolResponse`, `_meta.terminal_output_delta`, `_meta.terminal_exit` and `content`: the frame builder copies only the whitelisted fields, so
+none of these can leave. Claude's `auth/status` and `_auth/status_update` carry the account's e-mail and organization: the bridge keeps the state only.
 
 `mode`, `session_info_update`, `available_commands_update` and `notice` are not shown (nothing on screen needs them). The Hermes gateway runtime sends only
 `tool.started`/`tool.completed` with a tool name; the server maps the name to a kind (`lookingLabel` already does this) so its card looks the same with less detail.
