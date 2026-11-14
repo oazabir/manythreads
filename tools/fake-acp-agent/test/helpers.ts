@@ -13,7 +13,7 @@ export interface Harness {
 
 export interface HarnessOptions {
   /** What the client answers to a permission request: an option kind, `cancelled`, or `hang` (never). */
-  permission?: 'allow_once' | 'reject_once' | 'cancelled' | 'hang';
+  permission?: 'allow_once' | 'reject_once' | 'cancelled' | 'hang' | 'unknown_id';
   /** What the client answers to an elicitation: accept, cancel, or `hang`. */
   elicitation?: 'accept' | 'cancel';
 }
@@ -34,6 +34,7 @@ export function harness(script: FakeScript, options: HarnessOptions = {}): Harne
     .onRequest(methods.client.session.requestPermission, async ({ params }) => {
       permissions.push({ toolCall: params.toolCall as unknown as Record<string, unknown>, options: params.options });
       if (options.permission === 'hang') return new Promise<never>(() => undefined);
+      if (options.permission === 'unknown_id') return { outcome: { outcome: 'selected', optionId: 'allow' } };
       if (options.permission === 'cancelled') return { outcome: { outcome: 'cancelled' } };
       const wanted = options.permission ?? 'allow_once';
       const option = params.options.find((o) => o.kind === wanted);

@@ -40,6 +40,10 @@ interface Session {
 }
 
 interface LiveSession extends Session {
+  /** Config options a client set (model, effort); the mode is `mode`. */
+  options: Record<string, string>;
+  /** The notes steering put to a running turn, in order (a script can read them with `{{steered}}`). */
+  steered: string[];
   abort: AbortController | null;
   /** Prompts of one session run one after another. */
   queue: Promise<unknown>;
@@ -88,6 +92,14 @@ const MODES: Record<Flavor, { current: string; list: Array<[string, string]> }> 
     ],
   },
 };
+
+const EFFORT_VALUES: Array<[string, string]> = [
+  ['low', 'Low'],
+  ['medium', 'Medium'],
+  ['high', 'High'],
+  ['xhigh', 'Extra high'],
+  ['max', 'Max'],
+];
 
 const ID_PREFIX: Record<Flavor, string> = { claude: 'toolu_fake_', codex: 'call_fake_', hermes: 'tc-fake' };
 const HERMES_CANCEL_TEXT = '[Tool execution cancelled — terminal was abandoned: explicit stop requested]';
@@ -168,7 +180,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     if (!file) return undefined;
     try {
       const stored = JSON.parse(readFileSync(file, 'utf8')) as Session;
-      const revived: LiveSession = { ...stored, abort: null, queue: Promise.resolve() };
+      const revived: LiveSession = { ...stored, options: {}, steered: [], abort: null, queue: Promise.resolve() };
       sessions.set(id, revived);
       return revived;
     } catch {
@@ -195,6 +207,27 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     currentModeId: current ?? MODES[flavor].current,
     availableModes: MODES[flavor].list.map(([id, name]) => ({ id, name })),
   });
+
+  /** What `session/new`, `resume` and `load` return as `configOptions` (mode always; model and effort where the real adapter has them). */
+  const configOptions = (s: LiveSession): Meta[] => {
+    const select = (id: string, name: string, category: string, current: string, values: Array<[string, string]>): Meta => ({
+      id,
+      name,
+      category,
+      type: 'select',
+      currentValue: current,
+      options: values.map(([value, label]) => ({ value, name: label })),
+    });
+    const out: Meta[] = [select('mode', 'Mode', 'mode', s.mode, MODES[flavor].list)];
+    if (flavor === 'claude') {
+      out.push(select('model', 'Model', 'model', s.options['model'] ?? 'sonnet', [['default', 'Default'], ['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']]));
+      out.push(select('effort', 'Effort', 'thought_level', s.options['effort'] ?? 'medium', EFFORT_VALUES));
+    } else if (flavor === 'codex') {
+      out.push(select('model', 'Model', 'model', s.options['model'] ?? 'gpt-5.5', [['gpt-5.5', 'GPT-5.5'], ['gpt-5.4', 'GPT-5.4']]));
+      out.push(select('reasoning_effort', 'Reasoning effort', 'thought_level', s.options['reasoning_effort'] ?? 'medium', EFFORT_VALUES));
+    }
+    return out;
+  };
 
   const unknownSession = (id: string): RequestError => {
     if (flavor === 'codex') return new RequestError(-32603, 'Internal error', { details: `no rollout found for thread id ${id}` });
@@ -371,7 +404,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
         title: s.title,
         kind,
         status: 'in_progress',
-        locations: locations(env, s),
+        locations: s.diff ? [] : locations(env, s),
         ...(leak && kind === 'execute' && s.input !== undefined ? { rawInput: s.input } : {}),
         ...(diffContent(env, s) ? { content: diffContent(env, s) } : {}),
       });
@@ -400,10 +433,12 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
         ...(outcome === 'rejected' ? { nonExecutionKind: 'permission-rule' } : {}),
         ...(outcome === 'cancelled' ? { nonExecutionKind: 'user-rejected' } : {}),
       };
+      if (leak) await emit(env, { sessionUpdate: 'tool_call_update', toolCallId: id, _meta: claudeMeta(s, parent, extra) });
       await emit(env, {
         sessionUpdate: 'tool_call_update',
         toolCallId: id,
         status: failed ? 'failed' : 'completed',
+        ...(leak ? { rawOutput: s.response ?? s.output ?? '' } : {}),
         ...(outcome === 'failed' ? { content: textContent(failText) } : outcome === 'completed' && leak && s.output && !s.diff ? { content: textContent(s.output) } : {}),
         _meta: claudeMeta(s, parent, extra),
       });
@@ -414,6 +449,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
         sessionUpdate: 'tool_call_update',
         toolCallId: id,
         status: outcome === 'completed' ? 'completed' : 'failed',
+        ...(leak ? { rawOutput: { output: s.output ?? '', exit_code: outcome === 'completed' ? 0 : 1 } } : {}),
         ...(execute
           ? {
               _meta: {
@@ -587,6 +623,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       return 'cancelled';
     }
     const chosen = permissionOptions(p).find((o) => o.optionId === (answer.outcome as { optionId: string }).optionId);
+    // A real adapter does not take an id it did not offer as a "Yes": the prompt fails.
+    if (!chosen) throw RequestError.invalidParams({ optionId: (answer.outcome as { optionId: string }).optionId }, 'Unknown permission option');
     if (chosen?.kind === 'reject_once' || chosen?.kind === 'reject_always') {
       await endStep(env, s, id, 'rejected');
       // Like the model after a "No": it says what it makes of that and the turn ends.
@@ -618,7 +656,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       .replaceAll('{{prompt}}', env.prompt)
       .replaceAll('{{turn}}', String(env.session.turns))
       .replaceAll('{{sessionId}}', env.session.id)
-      .replaceAll('{{cwd}}', env.session.cwd);
+      .replaceAll('{{cwd}}', env.session.cwd)
+      .replaceAll('{{steered}}', env.session.steered.join(' | '));
 
   const runActions = async (env: Env, actions: Action[]): Promise<'ok' | 'cancelled'> => {
     for (const a of actions) {
@@ -728,6 +767,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       agentCapabilities: agentCapabilities() as never,
       agentInfo: { name, title: `Fake ${flavor}`, version: '0.0.0-fake' },
       authMethods: authMethods(clientCaps),
+      ...(flavor !== 'hermes' ? { _meta: { steering: { supported: true } } } : {}),
     };
   });
 
@@ -817,6 +857,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       title: '',
       updatedAt: new Date().toISOString(),
       history: [],
+      options: {},
+      steered: [],
       abort: null,
       queue: Promise.resolve(),
     };
@@ -828,7 +870,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
   app.onRequest(methods.agent.session.new, ({ params }) => {
     record('session/new', params);
     const s = newSession(randomUUID(), params.cwd, (params.mcpServers ?? []) as unknown[]);
-    return { sessionId: s.id, modes: modeState(s.mode) };
+    return { sessionId: s.id, modes: modeState(s.mode), configOptions: configOptions(s) as never };
   });
 
   app.onRequest(methods.agent.session.resume, async ({ params, client }) => {
@@ -837,12 +879,12 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     if (!s) {
       if (flavor !== 'hermes') throw unknownSession(params.sessionId);
       s = newSession(params.sessionId, params.cwd, []); // Hermes: an unknown id is not an error
-      return { modes: modeState(s.mode) } as never;
+      return { modes: modeState(s.mode), configOptions: configOptions(s) } as never;
     }
     s.cwd = params.cwd;
     s.mcpServers = (params.mcpServers ?? []) as unknown[];
     if (flavor === 'hermes') await replay(client, s, 'all');
-    return { ...(flavor === 'claude' ? { sessionId: s.id } : {}), modes: modeState(s.mode), ...(flavor === 'hermes' ? { _meta: hermesMeta(s.id) } : {}) } as never;
+    return { ...(flavor === 'claude' ? { sessionId: s.id } : {}), modes: modeState(s.mode), configOptions: configOptions(s), ...(flavor === 'hermes' ? { _meta: hermesMeta(s.id) } : {}) } as never;
   });
 
   app.onRequest(methods.agent.session.load, async ({ params, client }) => {
@@ -855,7 +897,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     s.cwd = params.cwd;
     s.mcpServers = (params.mcpServers ?? []) as unknown[];
     await replay(client, s, flavor === 'hermes' ? 'all' : 'messages');
-    return { modes: modeState(s.mode), ...(flavor === 'hermes' ? { _meta: hermesMeta(s.id) } : {}) } as never;
+    return { modes: modeState(s.mode), configOptions: configOptions(s), ...(flavor === 'hermes' ? { _meta: hermesMeta(s.id) } : {}) } as never;
   });
 
   app.onRequest(methods.agent.session.list, ({ params }) => {
@@ -886,13 +928,23 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     record('session/set_mode', params);
     const s = findSession(params.sessionId);
     if (!s) throw unknownSession(params.sessionId);
+    if (!MODES[flavor].list.some(([id]) => id === params.modeId)) throw RequestError.invalidParams({ modeId: params.modeId }, 'Unknown mode');
     s.mode = params.modeId;
     return {};
   });
 
   app.onRequest(methods.agent.session.setConfigOption, ({ params }) => {
     record('session/set_config_option', params);
-    return { configOptions: [] };
+    const s = findSession(params.sessionId);
+    if (!s) throw unknownSession(params.sessionId);
+    const id = (params as { configId: string }).configId;
+    const value = String((params as { value: unknown }).value);
+    const option = configOptions(s).find((o) => o['id'] === id);
+    if (!option) throw RequestError.invalidParams({ configId: id }, 'Unknown config option');
+    if (!(option['options'] as Array<{ value: string }>).some((o) => o.value === value)) throw RequestError.invalidParams({ configId: id, value }, 'Unknown value');
+    if (id === 'mode') s.mode = value;
+    else s.options[id] = value;
+    return { configOptions: configOptions(s) } as never;
   });
 
   app.onRequest(methods.agent.session.prompt, ({ params, client }) => {
@@ -903,6 +955,22 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     s.queue = run.catch(() => undefined);
     return run;
   });
+
+  if (flavor !== 'hermes') {
+    // Steering: a note put to the turn that is running (`_session/steering`, advertised in the initialize result's `_meta.steering`).
+    app.onRequest(
+      '_session/steering',
+      (params: unknown) => params as { sessionId: string; prompt: Array<{ type: string; text?: string }>; _meta?: unknown },
+      ({ params }) => {
+        record('_session/steering', params);
+        const s = findSession(params.sessionId);
+        if (!s) throw unknownSession(params.sessionId);
+        if (!s.abort) throw new RequestError(-32602, 'No turn is running to steer');
+        s.steered.push(promptText(params.prompt));
+        return {};
+      },
+    );
+  }
 
   app.onNotification(methods.agent.session.cancel, ({ params }) => {
     record('session/cancel', params);

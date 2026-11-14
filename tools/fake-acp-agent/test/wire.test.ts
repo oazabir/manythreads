@@ -34,10 +34,13 @@ describe('claude flavor: a worked prompt', () => {
     );
     expect(read).toMatchObject({ status: 'pending', title: 'Read File', kind: 'read', locations: [] });
     const frames = byId(h.updates, read?.toolCallId);
-    expect(frames).toHaveLength(3);
+    // pending, the refined title and paths, a status-less update carrying the tool response, then the end
+    expect(frames).toHaveLength(4);
     expect(frames[1]).toMatchObject({ sessionUpdate: 'tool_call_update', title: 'Read package.json', locations: [{ path: `${CWD}/package.json` }] });
     expect(frames[1]).not.toHaveProperty('status');
-    expect(frames[2]).toMatchObject({ status: 'completed' });
+    expect(frames[2]).not.toHaveProperty('status');
+    expect(frames[3]).toMatchObject({ status: 'completed' });
+    expect(frames[3]).toHaveProperty('rawOutput');
     expect(h.updates.some((u) => u.status === 'in_progress')).toBe(false);
   });
 
@@ -346,5 +349,47 @@ describe('codex and hermes flavors', () => {
     const { h } = await prompt(script, 'x');
     expect(JSON.stringify(h.updates)).not.toContain('secret');
     expect(JSON.stringify(h.updates)).not.toContain('"out"');
+  });
+});
+
+describe('what the measured adapters answer that the first fake did not', () => {
+  it('claude and codex advertise steering at the top of the initialize result; hermes does not', async () => {
+    for (const flavor of ['claude', 'codex', 'hermes'] as const) {
+      const h = harness({ ...DEFAULT_SCRIPT, flavor });
+      const init = await h.run((agent) => agent.request('initialize', { protocolVersion: 1, clientCapabilities: OURS }));
+      expect(((init as { _meta?: { steering?: { supported?: boolean } } })._meta?.steering?.supported) === true).toBe(flavor !== 'hermes');
+    }
+  });
+
+  it('returns configOptions with the mode, and set_config_option changes the mode and refuses an unknown value', async () => {
+    const h = harness({ ...DEFAULT_SCRIPT, flavor: 'codex' });
+    await h.run(async (agent) => {
+      await agent.request('initialize', { protocolVersion: 1, clientCapabilities: OURS });
+      const created = (await agent.request('session/new', { cwd: CWD, mcpServers: [] })) as unknown as { sessionId: string; configOptions: Array<{ id: string }> };
+      expect(created.configOptions.map((o) => o.id)).toEqual(['mode', 'model', 'reasoning_effort']);
+      const set = (await agent.request('session/set_config_option', { sessionId: created.sessionId, configId: 'mode', value: 'read-only' })) as unknown as {
+        configOptions: Array<{ id: string; currentValue: string }>;
+      };
+      expect(set.configOptions.find((o) => o.id === 'mode')?.currentValue).toBe('read-only');
+      await expect(agent.request('session/set_config_option', { sessionId: created.sessionId, configId: 'model', value: 'nope' })).rejects.toThrow();
+    });
+  });
+
+  it('codex edits carry no locations, only the diff block', async () => {
+    const { h } = await prompt({ ...DEFAULT_SCRIPT, flavor: 'codex' }, '[[work]]');
+    const edit = h.updates.find((u) => u.sessionUpdate === 'tool_call' && Array.isArray(u.content) && (u.content as Array<{ type: string }>)[0]?.type === 'diff');
+    expect(edit).toBeDefined();
+    expect(edit?.locations).toEqual([]);
+  });
+
+  it('refuses a permission answer whose option id it did not offer (it is not read as a Yes)', async () => {
+    const h = harness({ ...DEFAULT_SCRIPT, flavor: 'claude' }, { permission: 'unknown_id' });
+    await expect(
+      h.run(async (agent) => {
+        await agent.request('initialize', { protocolVersion: 1, clientCapabilities: OURS });
+        const session = await agent.request('session/new', { cwd: CWD, mcpServers: [] });
+        return agent.request('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text: '[[permission]]' }] });
+      }),
+    ).rejects.toThrow();
   });
 });
