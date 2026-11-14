@@ -157,6 +157,15 @@ the bridge must be updated. Runners on a pod (P25-14) are not covered. On the Ru
 shows the status, one button per method with the agent's own name, the page link and the code, a field for a pasted code or key (cleared the moment it is sent),
 polls every few seconds while a sign-in is under way, and asks before **Sign out**.
 
+### Adding an ACP runner, in short (P25-15)
+
+For an admin: the machine-side steps (adapters at pinned versions, the config with `driver: "acp"` and `authHome`, the unit, the key) are in [agent-bridge](../agent-bridge.md#set-up-an-acp-runner-on-the-host-step-by-step-p25-15). On the Runners page they end as: Add a runner, Hermes gateway, address and key, **What runs the bot** (Claude Code, Codex, Hermes over ACP or OpenCode on the bridge), profile rule, teams, **Test**, then **Sign-in**. A bot is placed on it with `placement.runs_on`. What people then see in the thread is [Watching a bot work](../guide/watching-a-bot-work.md); the data under it is in [runtime-hermes](./runtime-hermes.md#what-a-run-keeps-who-watches-it-and-who-may-stop-it-p25-06-p25-07-p25-08).
+
+- **Sign-in and sign-out** are the `agent-auth` routes above. Claude Code: open the page the dialog shows, sign in, paste the code back (one try). Codex: open the page, type the code, wait. Hermes: nothing to sign in (the model key is in its home). Sign-out asks first, and names the machine when the profile has no sign-in folder of its own. Every step is audited; no code, key or address is kept.
+- **Stop** is not a runner setting: any run a person can see has a Stop button for the person who asked, the thread's starter, the team's leads and workspace admins ([runtime-hermes](./runtime-hermes.md#what-a-run-keeps-who-watches-it-and-who-may-stop-it-p25-06-p25-07-p25-08)).
+- **OpenCode** can be added as a runner, but a run on it is refused with "OpenCode cannot run yet" until it has been measured (owner decision 2026-11-14; `docs/engineering/conventions.md`).
+- **A signed-out agent** makes its runs fail; the thread's failure notice says who can fix it when the bridge reports a refused sign-in, otherwise the run card shows one generic line. Signing in again from this page is enough; nothing about the bot changes.
+
 ## Adopting a connection
 
 `GET /api/admin/bot-runners/old-connections` lists the connections with no `runner_name`, with team, bot count and whether they can be adopted (only the agent `hermes`; Claude Code and Codex connections are not adoptable). `POST …/adopt` takes an optional `name` and

@@ -1,8 +1,9 @@
 # Agent bridge
 
 The agent bridge is a small program you run on your own machine (a laptop, a build server, a workstation). It lets a manythreads bot do its
-work with the **Claude Code** command-line tool (`claude`) or the **Codex** command-line tool (`codex`) instead of Hermes, the agent runtime
-the platform ships. The bridge speaks the same run protocol as a Hermes gateway (start a run, follow its events, stop it), so the manythreads
+work with the **Claude Code** command-line tool (`claude`), the **Codex** command-line tool (`codex`) or **Hermes over ACP** (`hermes acp`) instead of a
+Hermes gateway, the agent runtime the platform ships. The bridge can drive each through its own command line or through the Agent Client Protocol (ACP, below);
+ACP is what lets a person watch the run as a card in the thread. The bridge speaks the same run protocol as a Hermes gateway (start a run, follow its events, stop it), so the manythreads
 server needs no extra protocol: a workspace admin adds the bridge under Runners (as a Hermes gateway runner that says what runs the bot) and a bot is placed on it.
 
 You need: Node 22, the command-line tool you want to use installed and already signed in on that machine, and the code of this repository
@@ -126,12 +127,137 @@ fall back to the program); a Codex device code lives 15 minutes, a Claude paste 
 macOS. The program runs in the same session as its own shell, so a cancel ends the whole process group, not only `script`. The pasted line is the text, a 100 ms pause and a carriage return
 (measured against the real login, docs/spikes/acp-measured.md).
 
+### Set up an ACP runner on the host, step by step (P25-15)
+
+This is the order that was used on the devbox. Do one agent at a time and look at the Runners page after each. Everything runs as the unprivileged service user that
+owns the agent's sign-in (see "Security notes"); none of it needs root except the unit file.
+
+**Versions this was measured with** (`docs/spikes/acp-measured.md`; a change of any version means recording the fixtures again):
+
+| Part | Version | Where it comes from |
+| --- | --- | --- |
+| Node | 22 or later | the adapters need it (`engines.node >= 22`) |
+| `@agentclientprotocol/claude-agent-acp` | **0.107.0** | npm, installed by you, exact version |
+| `@agentclientprotocol/codex-acp` | **2.6.0** | npm, installed by you, exact version |
+| `@agentclientprotocol/sdk` | 2.7.0 | already a dependency of the bridge (`tools/agent-bridge/package.json`) |
+| `claude` (Claude Code) | 2.1.323 | already on the host, signed in |
+| `codex` (Codex) | 0.166.0 | already on the host, signed in with ChatGPT |
+| `hermes` | 0.21.5 | already on the host |
+| `opencode` | not measured | see step 7: refused at run time |
+
+**1. Install the two adapters, once, in a folder of their own** (not in the repository, and never with a range such as `^0.107`):
+
+```bash
+sudo install -d -o bridge -g bridge /opt/manythreads-acp
+cd /opt/manythreads-acp
+npm init -y >/dev/null
+npm install --save-exact @agentclientprotocol/claude-agent-acp@0.107.0 @agentclientprotocol/codex-acp@2.6.0
+ls node_modules/.bin/claude-agent-acp node_modules/.bin/codex-acp     # both must exist
+```
+
+The bridge never fetches an adapter. To change a version, install the new one here, run the bridge's tests, and record the fixtures again
+(`tools/agent-bridge/spike`, `docs/spikes/acp-measured.md`).
+
+**2. Check the programs the adapters sit on.** The bridge points an adapter at the host's own tool when `bin.claude` or `bin.codex` is a path, so there is one version
+and one sign-in per tool:
+
+```bash
+command -v claude codex hermes       # note the three paths
+claude --version; codex --version; hermes --version
+```
+
+**3. Write the config.** One profile per bot name (the runner's rule `{bot}`), or one profile per agent. Each profile has its own folder, its own `authHome`
+(Claude and Codex) and `"driver": "acp"`:
+
+```json
+{
+  "profiles": {
+    "claude": {
+      "agent": "claude-code", "driver": "acp",
+      "workdir": "/srv/work/claude",
+      "authHome": "/var/lib/manythreads-bridge/auth/claude",
+      "acp": { "command": "/opt/manythreads-acp/node_modules/.bin/claude-agent-acp" }
+    },
+    "codex": {
+      "agent": "codex", "driver": "acp",
+      "workdir": "/srv/work/codex",
+      "authHome": "/var/lib/manythreads-bridge/auth/codex",
+      "acp": { "command": "/opt/manythreads-acp/node_modules/.bin/codex-acp" }
+    },
+    "hermes": {
+      "agent": "hermes-acp",
+      "workdir": "/srv/work/hermes",
+      "env": { "HERMES_HOME": "/home/bridge/.hermes" },
+      "acp": { "command": "/home/bridge/.local/bin/hermes", "args": ["acp"], "gives": ["files", "shell", "web"] }
+    }
+  },
+  "bin": { "claude": "/home/bridge/.local/bin/claude", "codex": "/home/bridge/.local/bin/codex" },
+  "maxConcurrentRuns": 4
+}
+```
+
+- `hermes-acp` has no `driver` line: it is only driven through ACP. `acp.gives` lists what that Hermes can do (`files`, `shell`, `web`, `browser`, `vision`; the default is all five).
+  Hermes cannot be held to less per run, so a run is **refused in plain words** unless the bot is allowed everything its profile gives: narrow `gives` to what the Hermes home
+  really offers, or give the bot those tools.
+- A new `HERMES_HOME` takes about a minute to start the first time (Hermes installs its Python parts, 1.6 GB), and a Hermes home cannot be copied to another path. Use the
+  one the host's Hermes already works in, and make sure its model setting is the one you want (Hermes has no per-run model).
+- Leave out `model` and `modelAliases` to use each agent's own default, or set them (`"model": "sonnet"`; a model the adapter does not know fails the run with a plain sentence).
+
+**4. Make the key and the unit.** The key is at least 24 random bytes in hex, in a file only the service user can read (`chmod 600`), and the same key goes into the Runners form.
+Use the unit under "Run it as a service" below, with `--listen 10.42.0.1:8650` for a cluster on the same machine, and make sure the unit's `PATH` holds the folders of `claude`,
+`codex` and `hermes`. `ReadWritePaths` must list every `workdir`, every `authHome` and the Hermes home.
+
+**5. Start it and look.**
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now manythreads-bridge
+journalctl -u manythreads-bridge -n 20 --no-pager
+curl -s -H "Authorization: Bearer $(sudo cat /etc/manythreads-bridge/api-key)" http://10.42.0.1:8650/health
+```
+
+`/health` must answer `{"status":"ok"}`. A config error is printed once and the unit stops.
+
+**6. Add one runner per agent, then sign in.** As a workspace admin: Settings > Workspace > Runners > Add a runner > Hermes gateway, with the address, the key, the profile rule
+(the profile's name, for example `claude`, or `{bot}`), and **What runs the bot**:
+
+| Agent | Choose |
+| --- | --- |
+| Claude Code | Claude Code on the bridge |
+| Codex | Codex on the bridge |
+| Hermes | Hermes over ACP on the bridge |
+
+Press **Test** (it asks `/health`). Then open the runner's **Sign-in** button:
+
+- **Claude Code**: press the Claude method; open the page it shows, sign in with the account meant for the bridge, copy the code the page gives, paste it into the dialog. It takes one
+  try: a wrong code ends the attempt and you start again. Use a login made for the bridge, not the one you work in (two copies of one login can sign each other out).
+- **Codex**: press the device-code method; open the page, type the code shown, and wait: the dialog says when it is done. Sign in with ChatGPT; an API key is offered on the host only.
+- **Hermes**: nothing to sign in; the model key is in its home. The dialog says so.
+
+With an `authHome` per profile, signing in or out changes only that profile. Without it the tool's folder of the service user is shared by every profile and every terminal session
+of that user, and the confirm names the machine.
+
+**7. OpenCode is not enabled.** A profile `{"agent": "opencode"}` is accepted by the config and by the runner form, and a run on it is **refused** with "OpenCode cannot run yet: it
+has not been checked that its tools can be limited to what the bot may do." Do not install it for a bot to use before it has been measured like the others
+(`docs/plans/acp.md` section 8, `docs/engineering/conventions.md`). Its Sign-in button answers that sign-in has not been checked.
+
+**8. Place a bot and read the card.** In the bot's definition set `placement.runs_on` to the runner's short name, mention the bot in a thread, and watch the run card
+([Watching a bot work](guide/watching-a-bot-work.md)). One run with a file edit and one with a question to a person (a command the grants do not cover) prove the live steps and the Yes
+or No card.
+
+**9. Stop and sign-out checks.** Press **Stop** on a long run: the card says "Stopping…", then "Stopped by <you> after <time>", and `ps` shows no adapter process of that run afterwards.
+Sign-out is on the same dialog and asks before it signs out.
+
+**If it does not work.** A run that fails at once usually means a program is missing: the adapter path in `acp.command`, or `claude`, `codex` or `hermes` not on the unit's `PATH`. Run the same command by hand as the service user.
+`journalctl -u manythreads-bridge` shows one line per run (id, profile, status, seconds, event count) and never a prompt or a token.
+
+To go back, set `"driver": "cli"` on a Claude Code or Codex profile (the stream-json drivers stay until P25-17), restart the unit, and press **Test** again.
+
 ## Add it in manythreads
 
 1. A workspace admin adds it, not a team lead: Settings > Workspace > Runners > Add a runner > **Hermes gateway** (the runner catalog, `docs/plugins/bot-runners.md`). The Claude Code and Codex cards on that page are for pods inside the cluster; a bridge on your own machine is a Hermes gateway runner with a different answer to **What runs the bot**:
    - **Address**: where the bridge answers, for example `http://10.42.0.1:8650` for a bridge on the machine that runs the cluster (see [Run it on the machine that runs the cluster](runbooks/runners-live.md#host-bridge)), or `https://bridge.example.com:8650`. The address passes the same outbound guard as any gateway: loopback and link-local addresses are refused.
    - **Key**: the bridge's API key. It is stored encrypted and never shown again.
-   - **What runs the bot**: **Claude Code on the bridge** or **Codex on the bridge** (stored as `agent` `claude-code` or `codex`; the default **Hermes** is a Hermes gateway). This is what makes the server send each run the run's own token and the address of its tools; with **Hermes** chosen the bridge would answer as plain chat with no platform tools. It changes nothing about what a token can do.
+   - **What runs the bot**: **Claude Code on the bridge**, **Codex on the bridge**, **Hermes over ACP on the bridge** or **OpenCode on the bridge** (stored as `agent` `claude-code`, `codex`, `hermes-acp` or `opencode`; the default **Hermes** is a Hermes gateway). Which program drives it, the command line or ACP, is the profile's `driver`, not a choice on the page. OpenCode is refused at run time until it is measured. This is what makes the server send each run the run's own token and the address of its tools; with **Hermes** chosen the bridge would answer as plain chat with no platform tools. It changes nothing about what a token can do.
    - **Profile name rule**: how a bot's profile is named on the bridge, `{bot}` for the bot's short name. Each name the rule makes must be a profile of the config file, or the bridge's `default` profile is used.
    - Then choose the teams that may use it, and press **Test**. For a bridge, Test asks `GET /health` with the key (it needs no `default` profile); the answer is one of three fixed sentences.
 2. In the bot's `BOT.md`, set `placement.runs_on` to the runner's short name (for example `host-claude`). The old way, a team lead's connection with `placement.gateway.connection`, still runs for a connection made before runners existed; nobody can make a new one.

@@ -66,7 +66,12 @@ The binding rules every change follows: how data, events, plugins and screens ar
 Voice and video are no longer forbidden: the owner lifted that non-goal on 2026-10-24 (PLAN.md D7 — on-device transcription first, phases 14–18;
 amended 2026-10-27: a note-taker bot may listen to a call and transcribe on the server, but a bot never speaks in a call).
 Bots run on Hermes (a customer's own gateway, or the team's managed Hermes pod) or, by owner request, on the Claude Code / Codex CLI
-through `tools/agent-bridge`; every bot calls the one MCP address `https://<host>/mcp`. No other agent runtime.
+through `tools/agent-bridge`; every bot calls the one MCP address `https://<host>/mcp`. The bridge drives an agent either through its own
+command line (`driver: cli`, Claude Code and Codex) or through the Agent Client Protocol (`driver: acp`): Claude Code, Codex, Hermes
+(`hermes acp`) and, by owner decision of 2026-11-14, **OpenCode** (`opencode acp`). OpenCode is allowed as a bridge profile only: it is
+**refused at run time** ("OpenCode cannot run yet") until it has been measured the way the other three were (`docs/spikes/acp-measured.md`:
+how its tools are held to the bot's grants, its sign-in, its steps); it is then enabled in the bridge, never in a bot's definition. An ACP
+adapter is installed by the operator at a pinned version and never fetched by the bridge. No other agent runtime.
 Pipeline designer; bot "mode" field; any agent runtime beyond the above; Kubernetes CRDs of our own;
 attachments committed to git; a bot choosing its own memory bank; run-time loading of third-party JS
 client plugins; E2E encryption; plugin marketplace with payments; browser extension.
