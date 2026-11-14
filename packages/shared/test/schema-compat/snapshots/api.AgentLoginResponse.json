@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "methodId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "waiting",
+            "needs_input",
+            "checking",
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "action": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "enter_code"
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https:\\/\\/[^\\s\"'<>]{1,500}$"
+                    },
+                    "code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9-]{3,20}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "url",
+                    "code"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "open_url"
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https:\\/\\/[^\\s\"'<>]{1,500}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "url"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "paste_code"
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https:\\/\\/[^\\s\"'<>]{1,500}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "url"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "give_key"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 400
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "methodId",
+        "state",
+        "action",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "attempt"
+  ]
+}

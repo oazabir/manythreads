@@ -113,6 +113,8 @@ export interface FaultScript {
   open?: { code: number; message: string; data?: unknown };
   /** The adapter does not advertise `session/resume` (a client has to use `session/load`). */
   noResume?: boolean;
+  /** The adapter does not advertise `logout` (a client falls back to the adapter's own `--cli auth logout` program). Claude and Codex flavors. */
+  noLogout?: boolean;
   /** `mcpCapabilities.http` is false (Claude and Codex flavors; Hermes advertises none). */
   noHttp?: boolean;
 }

@@ -377,3 +377,34 @@ p.rn-place {
 .rn-usage td {
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- agent sign-in dialog (P25-09) ---- */
+.rn-auth-attempt {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.rn-auth-attempt.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+}
+
+.rn-auth-code {
+  margin: 0;
+  font-size: var(--fs-h2);
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+
+.rn-auth-methods {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

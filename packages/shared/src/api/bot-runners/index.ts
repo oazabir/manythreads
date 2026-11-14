@@ -20,6 +20,7 @@ import { TeamSlug } from '../teams/common.ts';
 
 export * from './credentials.ts';
 export * from './codex-credentials.ts';
+export * from './agent-auth.ts';
 
 export const BotRunnerPathParams = z.object({ id: BotRunnerId });
 export const TeamBotRunnersPathParams = z.object({ slug: TeamSlug });

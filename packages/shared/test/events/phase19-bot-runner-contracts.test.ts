@@ -13,6 +13,7 @@ const samples = {
   'bot_runner.runner.updated': { ...base, type: 'bot_runner.runner.updated', runnerId: uuid(2), name: 'host', changed: ['address', 'key'], actorId: uuid(4) },
   'bot_runner.runner.deleted': { ...base, type: 'bot_runner.runner.deleted', runnerId: uuid(2), name: 'host', kind: 'hermes_pod', actorId: uuid(4) },
   'bot_runner.runner.tested': { ...base, type: 'bot_runner.runner.tested', runnerId: uuid(2), name: 'host', ok: true, actorId: uuid(4) },
+  'bot_runner.agent_auth.changed': { ...base, type: 'bot_runner.agent_auth.changed', runnerId: uuid(2), name: 'host', agent: 'codex', change: 'login_started', actorId: uuid(4) },
   'bot_runner.availability.changed': { ...base, type: 'bot_runner.availability.changed', runnerId: uuid(2), name: 'host', enabled: true, allTeams: false, teamCount: 3, actorId: uuid(4) },
   'bot_runner.default.changed': { ...base, type: 'bot_runner.default.changed', runnerId: uuid(2), previousRunnerId: null, actorId: uuid(4) },
   'bot_runner.node.changed': { ...base, type: 'bot_runner.node.changed', runnerId: uuid(2), name: 'team-pod', wasPinned: false, isPinned: true, recreatesWorkVolume: true, actorId: uuid(4) },

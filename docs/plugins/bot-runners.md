@@ -52,6 +52,11 @@ All admin routes require a workspace owner or admin (`403` "Only a workspace adm
 | `POST /api/admin/bot-runners/old-connections/:connectionId/adopt` | make a runner from one |
 | `GET /api/admin/bot-runners/nodes` | the machines of the cluster the operator allows, for the machine picker (P19-08; see "The machine a pod runner stands on"). `?runnerId=` adds, for that pod runner, where its work volume is and where its pods stand |
 | `PUT /api/admin/bot-runners/:id/node` | `{ node }`: a machine name, or `null` to let the cluster choose. Pod runners only; the name must be on the operator's list and Ready. Answers `{ runner, recreatesWorkVolume }` |
+| `GET /api/admin/bot-runners/:id/agent-auth` | P25-09. For a gateway runner whose `agent` is `claude-code` or `codex`: whether the agent is signed in, the ways it offers (its own names), and the sign-in under way. Asks the bridge (`GET /v1/auth/status`) with the runner's key. Any other runner is `400`; a bridge that does not answer is `502` in a fixed sentence |
+| `POST /api/admin/bot-runners/:id/agent-auth/login` | `{ methodId }`: start a sign-in. Answers `{ attempt }` with what the person must do (`enter_code`, `paste_code`, `open_url`, `give_key`). `409` while one is under way |
+| `POST /api/admin/bot-runners/:id/agent-auth/answer` | `{ attemptId, code }` or `{ attemptId, apiKey }`. Goes to the bridge once; kept nowhere, in no answer, event or log |
+| `POST /api/admin/bot-runners/:id/agent-auth/cancel` | `{ attemptId? }` |
+| `POST /api/admin/bot-runners/:id/agent-auth/logout` | sign the agent out. Answers `{ auth }` |
 | `GET /api/teams/:slug/bot-runners` | for team members: the short list above (eight fields: the seven plus `sharedWith`) |
 
 **The delete guard.** A runner that a bot still runs on cannot be deleted. The count is every bot with `placement.runs_on` naming it (status `active` or `disabled`) plus every bot placed through an adopted connection. The `409` text names the count and the
@@ -127,6 +132,18 @@ The agent bridge (`tools/agent-bridge`, [agent-bridge](../agent-bridge.md)) runs
 - **Setting one up on the machine that runs the cluster:** [runners-live.md, host bridge](../runbooks/runners-live.md#host-bridge).
 - **Adopting** an old bridge connection into a runner is still not offered (the Adopting section below). Make the runner by hand and move the bots with `placement.runs_on`.
 
+### Signing an agent in from the Runners page (P25-09)
+
+The five `agent-auth` routes above are a proxy: the server reads the runner's key with the system role, calls the bridge through the outbound guard
+(`guardedFetch`) and passes on only fields the shared schema bounds (`packages/shared/src/api/bot-runners/agent-auth.ts`). The agent's account (e-mail,
+organization) never gets this far. The server stores nothing: a code or an API key is passed once, and the bridge's own sentences are cleaned and clipped before they
+reach the page. `login`, `answer`, `cancel` and `logout` have abuse limits per person (20, 10, 20 and 10 a minute). Each change emits
+`bot_runner.agent_auth.changed` (`change`: `login_started`, `answer_given`, `login_cancelled` or `signed_out`; ids, the runner name, the agent word and the actor,
+never a code, key or address), which the audit plugin records as `bot_runner.agent_sign_in_changed`. A bridge from before P25-09 answers `404`; the page then says
+the bridge must be updated. Runners on a pod (P25-14) are not covered. On the Runners page a gateway runner with an agent shows a **Sign-in** button: the dialog
+shows the status, one button per method with the agent's own name, the page link and the code, a field for a pasted code or key (cleared the moment it is sent),
+polls every few seconds while a sign-in is under way, and asks before **Sign out**.
+
 ## Adopting a connection
 
 `GET /api/admin/bot-runners/old-connections` lists the connections with no `runner_name`, with team, bot count and whether they can be adopted (only the agent `hermes`; Claude Code and Codex connections are not adoptable). `POST …/adopt` takes an optional `name` and
@@ -138,7 +155,7 @@ The agent bridge (`tools/agent-bridge`, [agent-bridge](../agent-bridge.md)) runs
 
 ## Events and audit
 
-`bot_runner.runner.created|updated|deleted|tested`, `bot_runner.node.changed` (the machine was set or cleared; it holds ids, the runner name, whether a machine was set before and is set now, and whether the change recreates a work volume, **never the machine's name**; audited as `bot_runner.node_changed`), `bot_runner.availability.changed`, `bot_runner.default.changed`, `bot_runner.terms.accepted`, and `bot_runner.run.refused` (emitted by runtime-hermes, not by this plugin: a run was turned away at its start; it holds ids, the runner name and one reason word from `unknown|disabled|not_available_to_team|not_runnable|not_set_up|not_ready`) and `bot_runner.run.unmetered` (also runtime-hermes: a run on a Hermes pod ended well and left no line in the spend ledger, so a model call may have gone around the gateway; it holds ids and the runner name, audited as a failed `bot_runner.run_unmetered` row). Event names have three parts, so they differ from the shorter names in the plan. They say that something happened and to
+`bot_runner.runner.created|updated|deleted|tested`, `bot_runner.agent_auth.changed` (see "Signing an agent in"), `bot_runner.node.changed` (the machine was set or cleared; it holds ids, the runner name, whether a machine was set before and is set now, and whether the change recreates a work volume, **never the machine's name**; audited as `bot_runner.node_changed`), `bot_runner.availability.changed`, `bot_runner.default.changed`, `bot_runner.terms.accepted`, and `bot_runner.run.refused` (emitted by runtime-hermes, not by this plugin: a run was turned away at its start; it holds ids, the runner name and one reason word from `unknown|disabled|not_available_to_team|not_runnable|not_set_up|not_ready`) and `bot_runner.run.unmetered` (also runtime-hermes: a run on a Hermes pod ended well and left no line in the spend ledger, so a model call may have gone around the gateway; it holds ids and the runner name, audited as a failed `bot_runner.run_unmetered` row). Event names have three parts, so they differ from the shorter names in the plan. They say that something happened and to
 which runner (id and name); never an address, key, node or sign-in, and `updated` lists the names of the settings that changed from a fixed list. The audit plugin records each as a `settings` row with the actor and the runner name
 (see [audit](./audit.md)). `bot_runner.terms.accepted` is emitted by the Claude sign-in upload. The Claude events are `claude_pod.credentials.uploaded|replaced|removed` (ids, runner name, actor, time; never the file) and `claude_pod.runner.paused` (reason `plan_limit` or `needs_sign_in`, and until when).
 

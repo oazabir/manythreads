@@ -80,6 +80,11 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('PUT', '/api/admin/bot-runners/:id/credentials', 20, 'person'),
   r('DELETE', '/api/admin/bot-runners/:id/credentials', 20, 'person'),
   r('POST', '/api/admin/bot-runners/:id/check', 20, 'person'),
+  // Signing an agent runner in and out (P25-09): a code or an API key is passed to the agent bridge once and never kept. The bridge ends an attempt after five answers.
+  r('POST', '/api/admin/bot-runners/:id/agent-auth/login', 20, 'person'),
+  r('POST', '/api/admin/bot-runners/:id/agent-auth/answer', 10, 'person', 'the code or key goes to the agent, which decides; the bridge ends a sign-in after 5 answers'),
+  r('POST', '/api/admin/bot-runners/:id/agent-auth/cancel', 20, 'person'),
+  r('POST', '/api/admin/bot-runners/:id/agent-auth/logout', 10, 'person'),
   r('PUT', '/api/admin/bot-runners/default', 30, 'person'),
   r('POST', '/api/admin/bot-runners/old-connections/:connectionId/adopt', 20, 'person'),
   // Connections (P8-06): a workspace admin adds a team's connection and puts its credential in; the value is sealed and never read back.

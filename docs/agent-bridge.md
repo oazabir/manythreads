@@ -77,6 +77,28 @@ What an adapter leaks (the command, the arguments, the output, the text of a fil
 (`request_id`, `command` (the step's title), `choices`: `once` and `deny`); `POST /runs/<id>/approval {choice, request_id?}` answers it (`session` is one Yes, never
 a standing rule; 404 when nothing waits), and `POST /runs/<id>/steer {input}` puts a note to the agent while it works (409 when the adapter cannot take one).
 
+### Signing the agent in and out (P25-09)
+
+An agent driven through ACP can be signed in from the Runners page, so nobody has to log in on the machine by hand. The bridge asks the adapter which ways it
+offers and says, in plain fields, what the person must do. These routes need the bridge key like every other; they are also under `/p/<profile>/`.
+
+- `GET /v1/auth/status` answers `{ state, kind, can_logout, methods: [{id, name, description, how}], attempt, note }`. `state` is `signed_in`, `signed_out`, `unknown`
+  or `not_needed`. It carries no account e-mail and no organization: the adapter reports them and the bridge drops them. The answer is kept for 15 seconds.
+- `POST /v1/auth/login {methodId}` starts a sign-in and answers the attempt `{id, methodId, state, action, message}`. `action` is `enter_code {url, code}` (Codex device
+  code: open the page and type the code), `paste_code {url}` (Claude: open the page, sign in, paste the code it shows), `open_url {url}` or `give_key` (an API key). A
+  second login while one is under way is `409`. An unknown method is `400`.
+- `POST /v1/auth/login/answer {attemptId, code | apiKey}` gives the code or the key. It goes to the agent and nowhere else: not to a log, not to a frame, and the
+  answer does not echo it. At most five answers per attempt.
+- `POST /v1/auth/login/cancel {attemptId?}` ends the attempt.
+- `POST /v1/auth/logout` signs the agent out. An adapter with no logout answers `409` with a plain sentence (Hermes has none; a Claude adapter that does not offer it falls
+  back to the login program's own `auth logout`).
+
+**Claude** has only a terminal login: the bridge runs the adapter's `--cli auth login --claudeai` under a pseudo-terminal made by `script` (util-linux or BSD, on every common
+server image; no native module is added), reads the page address from what it prints and types the pasted code into it. **Codex** starts `authenticate` with the device
+code method: the adapter asks to open a page, the code is in its message, and the sign-in ends when the person has finished there. An API key is offered on the host
+only; in a pod (`MANYTHREADS_BRIDGE_IN_POD=1`) it is hidden, because the pod's own sign-in file is the way. The sign-in always uses the profile's own configuration
+folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), so a test never touches the machine's real one.
+
 ## Add it in manythreads
 
 1. A workspace admin adds it, not a team lead: Settings > Workspace > Runners > Add a runner > **Hermes gateway** (the runner catalog, `docs/plugins/bot-runners.md`). The Claude Code and Codex cards on that page are for pods inside the cluster; a bridge on your own machine is a Hermes gateway runner with a different answer to **What runs the bot**:

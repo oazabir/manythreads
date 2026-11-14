@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "how": {
+      "type": "string",
+      "enum": [
+        "device_code",
+        "paste_code",
+        "api_key"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "how"
+  ]
+}

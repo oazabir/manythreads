@@ -30,6 +30,7 @@ import {
   type BotRunnerTeams,
 } from '@manythreads/shared';
 import { registerAdoptionRoutes } from './adopt.ts';
+import { registerAgentAuthRoutes } from './agent-auth.ts';
 import { registerNodeRoutes } from './nodes.ts';
 import { registerSigninRoutes } from './signin.ts';
 import { agentOfKind, isPodCli, loadRunner, presentOne, presentRunners, requireAllowedAddress, requireWorkspaceAdmin } from './common.ts';
@@ -398,4 +399,5 @@ export function registerRoutes(ctx: PluginContext): void {
   registerAdoptionRoutes(ctx);
   registerNodeRoutes(ctx);
   registerSigninRoutes(ctx);
+  registerAgentAuthRoutes(ctx);
 }

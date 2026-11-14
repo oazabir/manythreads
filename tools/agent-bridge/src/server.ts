@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { BridgeConfig } from './config.ts';
 import { profileFor } from './config.ts';
+import { AuthRefused, AuthService, cleanSecret, type AuthServiceOptions } from './acp/auth.ts';
 import { parseRepoList, writeRepoList } from './repos.ts';
 import { parseRunRequest } from './request.ts';
 import { IdempotencyConflict, RunManager, TooManyRuns, UnknownProfile, type Run } from './runs.ts';
@@ -17,6 +18,11 @@ import { SigninGate } from './signin.ts';
 //   POST /p/<profile>/v1/runs/<id>/stop
 //   POST /p/<profile>/v1/runs/<id>/approval { choice: "once" | "session" | "deny", request_id? }   answers an `approval.request` frame (ACP runs); 404 when nothing waits
 //   POST /p/<profile>/v1/runs/<id>/steer    { input }                                         a person's note for the agent (ACP runs); 409 when the agent cannot take one
+//   GET  /v1/auth/status?agent=claude-code|codex           the agent's sign-in: state, the ways to sign in, a sign-in under way (also /p/<profile>/v1/auth/status)
+//   POST /v1/auth/login          { methodId }                -> { attempt }   starts a sign-in; the attempt says what the person must do (open a page, enter or paste a code, give a key)
+//   POST /v1/auth/login/answer   { attemptId, code? | apiKey? }  the pasted code or the key; never stored or logged
+//   POST /v1/auth/login/cancel   { attemptId? }
+//   POST /v1/auth/logout                                     -> { auth }   signs the agent out (the adapter's own logout, or its program's `auth logout`)
 //   PUT  /internal/repos                    { repos: [{ team, bot, project, branch, origin }] }  -> { ok, count }   (only with `reposFile`, a pod's repo list; see repos.ts)
 //
 // Every request carries `Authorization: Bearer <key>`.
@@ -42,6 +48,8 @@ export interface BridgeOptions {
   reposFile?: string;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: import('./runs.ts').RunManagerOptions['drivers'];
+  /** Test hook: the sign-in service's waits (P25-09). */
+  auth?: Partial<Omit<AuthServiceOptions, 'config' | 'log'>>;
 }
 
 export interface Bridge {
@@ -98,6 +106,31 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
 const fail = (res: ServerResponse, status: number, message: string, code: string, headers: Record<string, string> = {}): void =>
   send(res, status, { error: { message, code } }, headers);
 
+/** The request body as a JSON object, or null after the answer (413, 408, 400) has been sent. */
+async function readJsonObject(req: IncomingMessage, res: ServerResponse, timeoutMs: number): Promise<Record<string, unknown> | null> {
+  let raw: string;
+  try {
+    raw = await readBody(req, timeoutMs);
+  } catch (err) {
+    if (err instanceof BodyTooLarge) fail(res, 413, 'the request body is over 1 MB', 'too_large', { connection: 'close' });
+    else if (err instanceof BodyTimeout) fail(res, 408, 'the request body took too long', 'request_timeout', { connection: 'close' });
+    else throw err;
+    return null;
+  }
+  let body: unknown;
+  try {
+    body = raw.trim() === '' ? {} : JSON.parse(raw);
+  } catch {
+    fail(res, 400, 'the body is not JSON', 'bad_request');
+    return null;
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    fail(res, 400, 'the body must be a JSON object', 'bad_request');
+    return null;
+  }
+  return body as Record<string, unknown>;
+}
+
 export async function startBridge(options: BridgeOptions): Promise<Bridge> {
   if (options.apiKey.length < 16) throw new Error('the API key must be at least 16 characters');
   const log = options.log ?? ((line: string) => console.log(line));
@@ -113,6 +146,8 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     ...(codexGate ? { codexGate } : {}),
     ...(options.drivers ? { drivers: options.drivers } : {}),
   });
+
+  const authService = new AuthService({ config: options.config, log, ...(options.auth ?? {}) });
 
   // A pod holds one sign-in; a bridge started with both answers with the first that is not fine.
   const signinCheck = (): string => [gate?.check(), codexGate?.check()].find((r) => r !== undefined && r !== 'ok') ?? 'ok';
@@ -218,6 +253,51 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
       const chosen = named === undefined ? profileFor(options.config, 'default') : profileFor(options.config, named);
       if (!chosen) return fail(res, 404, 'no such profile and no default', 'profile_not_found');
       return send(res, 200, { object: 'list', data: [{ id: chosen.profile.agent, object: 'model', owned_by: 'agent-bridge' }] });
+    }
+
+    // Sign-in and sign-out of the agent (P25-09). The sign-in belongs to the tool, so the profile is only a way to name the tool.
+    const authRoute = /^(?:\/p\/([^/]+))?\/v1\/auth\/(status|login|logout)(?:\/(answer|cancel))?$/.exec(path);
+    if (authRoute) {
+      let named: string | undefined;
+      try {
+        named = authRoute[1] === undefined ? undefined : decodeURIComponent(authRoute[1]);
+      } catch {
+        return fail(res, 400, 'bad profile name', 'bad_request');
+      }
+      const chosen = authService.resolve(named, url.searchParams.get('agent') ?? undefined);
+      if (!chosen) return fail(res, 404, 'no such profile and no default', 'profile_not_found');
+      const [, , what, sub] = authRoute;
+      const expected = what === 'status' ? 'GET' : 'POST';
+      if (method !== expected || (sub !== undefined && what !== 'login')) return fail(res, 405, 'method not allowed', 'method_not_allowed', { allow: expected });
+      try {
+        if (what === 'status') return send(res, 200, { auth: await authService.status(chosen.profile) });
+        const body = await readJsonObject(req, res, bodyTimeoutMs);
+        if (body === null) return;
+        if (what === 'logout') return send(res, 200, { auth: await authService.logout(chosen.profile) });
+        if (sub === 'cancel') {
+          const id = body['attemptId'];
+          if (id !== undefined && typeof id !== 'string') return fail(res, 400, '"attemptId" must be a string', 'bad_request');
+          const attempt = authService.cancel(chosen.profile, id);
+          return attempt ? send(res, 200, { attempt }) : fail(res, 404, 'no such sign-in', 'no_such_sign_in');
+        }
+        if (sub === 'answer') {
+          const id = body['attemptId'];
+          if (typeof id !== 'string') return fail(res, 400, '"attemptId" must be a string', 'bad_request');
+          const code = body['code'] === undefined ? undefined : cleanSecret(body['code'], 1, 2000);
+          const apiKey = body['apiKey'] === undefined ? undefined : cleanSecret(body['apiKey'], 8, 500);
+          if (code === null || apiKey === null || (code === undefined && apiKey === undefined) || (code !== undefined && apiKey !== undefined)) {
+            return fail(res, 400, 'give "code" (one line) or "apiKey" (8 to 500 characters, no spaces)', 'bad_request');
+          }
+          return send(res, 200, { attempt: await authService.answer(chosen.profile, id, { ...(code !== undefined ? { code } : {}), ...(apiKey !== undefined ? { apiKey } : {}) }) });
+        }
+        const methodId = body['methodId'];
+        if (typeof methodId !== 'string' || methodId === '' || methodId.length > 80) return fail(res, 400, '"methodId" must be a string', 'bad_request');
+        return send(res, 200, { attempt: await authService.login(chosen.profile, methodId) });
+      } catch (err) {
+        // The message is one of this module's own plain sentences; nothing the adapter said about an account goes into it.
+        if (err instanceof AuthRefused) return fail(res, err.status, err.message, err.code);
+        throw err;
+      }
     }
 
     const m = /^\/p\/([^/]+)\/v1\/runs(?:\/([^/]+)(\/events|\/stop|\/approval|\/steer)?)?$/.exec(path);
@@ -327,6 +407,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     port,
     close: async () => {
       clearInterval(sweepFailures);
+      authService.close();
       manager.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

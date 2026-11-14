@@ -65,6 +65,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'bot_runner.runner.updated': { runnerId: id(73), name: 'host', changed: ['address', 'key'], actorId: id(13), at: AT },
   'bot_runner.runner.deleted': { runnerId: id(73), name: 'host', kind: 'hermes_gateway', actorId: id(13), at: AT },
   'bot_runner.runner.tested': { runnerId: id(73), name: 'host', ok: false, actorId: id(13), at: AT },
+  'bot_runner.agent_auth.changed': { runnerId: id(73), name: 'host', agent: 'codex', change: 'login_started', actorId: id(13), at: AT },
   'bot_runner.availability.changed': { runnerId: id(73), name: 'host', enabled: true, allTeams: false, teamCount: 2, actorId: id(13), at: AT },
   'bot_runner.default.changed': { runnerId: id(73), previousRunnerId: null, actorId: id(13), at: AT },
   'bot_runner.node.changed': { runnerId: id(73), name: 'team-pod', wasPinned: false, isPinned: true, recreatesWorkVolume: true, actorId: id(13), at: AT },

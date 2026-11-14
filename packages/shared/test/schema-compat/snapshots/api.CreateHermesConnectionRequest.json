@@ -21,7 +21,9 @@
       "enum": [
         "hermes",
         "claude-code",
-        "codex"
+        "codex",
+        "hermes-acp",
+        "opencode"
       ]
     }
   },

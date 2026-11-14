@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "signed_in",
+    "signed_out",
+    "unknown",
+    "not_needed"
+  ]
+}

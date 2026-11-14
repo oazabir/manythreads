@@ -103,6 +103,7 @@ import { SurfacesSurfaceRenderedEvent } from './surfaces.surface.rendered.ts';
 import { SurfacesSurfaceUpdatedEvent } from './surfaces.surface.updated.ts';
 import { SurfacesSurfaceEventPostedEvent } from './surfaces.surface.event_posted.ts';
 import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
+import { BotRunnerAgentAuthChangedEvent } from './bot_runner.agent_auth.changed.ts';
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
 import { BotRunnerNodeChangedEvent } from './bot_runner.node.changed.ts';
@@ -380,6 +381,7 @@ export const eventRegistry = {
   'bot_runner.runner.deleted': { 1: BotRunnerDeletedEvent },
   'connections.connection.changed': { 1: ConnectionsConnectionChangedEvent },
   'bot_runner.runner.tested': { 1: BotRunnerTestedEvent },
+  'bot_runner.agent_auth.changed': { 1: BotRunnerAgentAuthChangedEvent },
   'bot_runner.availability.changed': { 1: BotRunnerAvailabilityChangedEvent },
   'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },
   'bot_runner.node.changed': { 1: BotRunnerNodeChangedEvent },

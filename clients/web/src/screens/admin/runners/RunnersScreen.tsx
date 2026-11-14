@@ -31,6 +31,8 @@ import {
 } from './commands';
 import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
 import { CredentialsDialog } from './CredentialsCard';
+import { AgentSignInDialog } from './AgentSignInDialog';
+import { hasAgentSignin } from './agent-auth';
 import { StarIcon } from '../../../shell/icons';
 
 /*
@@ -49,6 +51,7 @@ type Dialogs =
   | { kind: 'teams'; runner: BotRunner }
   | { kind: 'node'; runner: BotRunner }
   | { kind: 'signin'; runner: BotRunner }
+  | { kind: 'agent-signin'; runner: BotRunner }
   | { kind: 'test'; runner: BotRunner }
   | { kind: 'delete'; runner: BotRunner }
   | { kind: 'adopt'; connection: OldConnection }
@@ -179,7 +182,7 @@ export function RunnersScreen() {
                       onEdit={() => setDialog({ kind: 'edit', runner: r })}
                       onTeams={() => setDialog({ kind: 'teams', runner: r })}
                       onNode={() => setDialog({ kind: 'node', runner: r })}
-                      onSignin={() => setDialog({ kind: 'signin', runner: r })}
+                      onSignin={() => setDialog({ kind: hasAgentSignin(r) ? 'agent-signin' : 'signin', runner: r })}
                       onDelete={() => setDialog({ kind: 'delete', runner: r })}
                       onSwitch={(on) => void act(r.id, async () => switchWords((await updateBotRunner(r.id, { enabled: on })).runner, on))}
                       onDefault={() =>
@@ -250,6 +253,16 @@ export function RunnersScreen() {
                 runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
                 onClose={close}
                 onChanged={(_r, text) => {
+                  say(text);
+                  q.reload();
+                }}
+              />
+            ) : null}
+            {dialog?.kind === 'agent-signin' ? (
+              <AgentSignInDialog
+                runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
+                onClose={close}
+                onChanged={(text) => {
                   say(text);
                   q.reload();
                 }}
@@ -393,8 +406,8 @@ function RunnerRow({
         </span>
         <button type="button" className="btn sm" onClick={onTest} disabled={busy} data-testid="runner-test" aria-label={`Test ${r.label}`}>Test</button>
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
-        {isSigninKind(r.kind) ? (
-          <button type="button" className="btn sm" onClick={onSignin} disabled={busy} data-testid="runner-signin-open" aria-label={`Sign-in for ${r.label}`}>Sign-in</button>
+        {isSigninKind(r.kind) || hasAgentSignin(r) ? (
+          <button type="button" className="btn sm" onClick={onSignin} disabled={busy} data-testid={hasAgentSignin(r) ? 'runner-agent-signin-open' : 'runner-signin-open'} aria-label={`Sign-in for ${r.label}`}>Sign-in</button>
         ) : null}
         {hasNodeChoice(r) ? (
           <button type="button" className="btn sm" onClick={onNode} disabled={busy} data-testid="runner-node-open" aria-label={`Machine for ${r.label}`}>Machine</button>

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "attemptId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "apiKey": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "attemptId"
+  ],
+  "additionalProperties": false
+}

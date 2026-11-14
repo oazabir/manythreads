@@ -26,6 +26,7 @@ export default definePlugin({
         'bot_runner.runner.updated',
         'bot_runner.runner.deleted',
         'bot_runner.runner.tested',
+        'bot_runner.agent_auth.changed',
         'bot_runner.availability.changed',
         'bot_runner.default.changed',
         'bot_runner.node.changed',

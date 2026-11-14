@@ -26,7 +26,8 @@
             "environment",
             "dispatch",
             "dlp",
-            "grant"
+            "grant",
+            "agent"
           ]
         },
         "status": {

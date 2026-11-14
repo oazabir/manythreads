@@ -1,5 +1,16 @@
 import {
   AdoptConnectionRequest,
+  AgentLoginResponse,
+  AgentLogoutResponse,
+  AnswerAgentLoginRequest,
+  CancelAgentLoginRequest,
+  GetAgentAuthResponse,
+  StartAgentLoginRequest,
+  agentLogoutRoute,
+  answerAgentLoginRoute,
+  cancelAgentLoginRoute,
+  getAgentAuthRoute,
+  startAgentLoginRoute,
   CheckClaudeSigninResponse,
   CODEX_PLAN_LABEL_HEADER,
   ClaudeRunnerUsageResponse,
@@ -99,3 +110,17 @@ export const removeClaudeCredentials = (id: string) => call(removeClaudeCredenti
 export const checkClaudeSignin = (id: string) => call(checkClaudeSigninRoute, { response: CheckClaudeSigninResponse }, undefined, { id });
 
 export const fetchClaudeUsage = () => call(claudeRunnerUsageRoute, { response: ClaudeRunnerUsageResponse });
+
+// The sign-in of an agent behind a gateway runner (P25-09): the bridge asks the agent's own adapter. The code or key of an answer goes up once and is kept nowhere.
+export const fetchAgentAuth = (id: string) => call(getAgentAuthRoute, { response: GetAgentAuthResponse }, undefined, { id });
+
+export const startAgentLogin = (id: string, methodId: string) =>
+  call(startAgentLoginRoute, { request: StartAgentLoginRequest, response: AgentLoginResponse }, { methodId }, { id });
+
+export const answerAgentLogin = (id: string, body: AnswerAgentLoginRequest) =>
+  call(answerAgentLoginRoute, { request: AnswerAgentLoginRequest, response: AgentLoginResponse }, body, { id });
+
+export const cancelAgentLogin = (id: string, attemptId?: string) =>
+  call(cancelAgentLoginRoute, { request: CancelAgentLoginRequest, response: AgentLoginResponse }, attemptId ? { attemptId } : {}, { id });
+
+export const agentLogout = (id: string) => call(agentLogoutRoute, { response: AgentLogoutResponse }, undefined, { id });

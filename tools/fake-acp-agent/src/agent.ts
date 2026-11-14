@@ -302,7 +302,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       return {
         ...common,
         mcpCapabilities: { http, sse: true },
-        auth: { logout: {}, status: {} },
+        auth: faults.noLogout === true ? { status: {} } : { logout: {}, status: {} },
         sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, options: {}, ...resume, status: {}, title: {} },
         _meta: { claudeCode: { promptQueueing: true }, authStatus: {} },
       };
@@ -311,7 +311,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       return {
         ...common,
         mcpCapabilities: { http, sse: false },
-        auth: { logout: {} },
+        auth: faults.noLogout === true ? {} : { logout: {} },
         sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, ...resume, title: {}, subagents: {} },
         _meta: { steering: { supported: true } },
       };
@@ -872,7 +872,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     throw RequestError.invalidParams({ methodId }, 'This method is run by the client in a terminal, not through authenticate');
   });
 
-  if (flavor !== 'hermes') {
+  if (flavor !== 'hermes' && faults.noLogout !== true) {
     app.onRequest(methods.agent.logout, async ({ params, client }) => {
       record('logout', params);
       writeAuth({ signedIn: false, kind: 'none' });

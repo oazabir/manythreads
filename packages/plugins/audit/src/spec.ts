@@ -490,6 +490,12 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
     outcome: e['ok'] === true ? undefined : 'failed',
   }),
+  'bot_runner.agent_auth.changed': (e) => ({
+    action: 'bot_runner.agent_sign_in_changed',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason: words(e['change']) ?? undefined,
+  }),
   'bot_runner.availability.changed': (e) => ({
     action: 'bot_runner.availability_changed',
     who: actor(e['actorId']),

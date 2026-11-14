@@ -3,6 +3,8 @@
   "type": "string",
   "enum": [
     "claude-code",
-    "codex"
+    "codex",
+    "hermes-acp",
+    "opencode"
   ]
 }
