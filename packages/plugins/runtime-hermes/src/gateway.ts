@@ -1,5 +1,6 @@
 import { traceHeaders, traceSpan, type BotRuntimeEvent, type BotRuntimeHandle, type BotRuntimeInput, type BotRuntimeScope } from '@manythreads/sdk';
 import { AGENT_BRIDGE_RUN_KEY, modelAliasesOfDefinition, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
+import { agentFromFrame, approvalExtras, endOfTurn, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from './activity.ts';
 import { guardedFetch } from './outbound.ts';
 import { withOutputStyle } from './output-style.ts';
 import { refusedRun, runnerRefusedRun } from './refused.ts';
@@ -430,12 +431,22 @@ export async function runOnGateway(
           deltas.push(event['delta']);
           yield { type: 'text', text: event['delta'] };
         } else if (name === 'tool.started') {
-          const tool = String(event['tool'] ?? 'tool');
-          tools.set(tool, (tools.get(tool) ?? 0) + 1);
-          yield { type: 'tool', name: tool, input: event['preview'] ?? null };
+          const started = toolFromFrame(event);
+          tools.set(started.name, (tools.get(started.name) ?? 0) + 1);
+          yield started;
         } else if (name === 'tool.completed') {
-          const failed = event['error'] === true;
-          yield { type: 'tool_result', name: String(event['tool'] ?? 'tool'), ok: !failed, ...(failed ? { reason: 'the tool reported an error' } : {}) };
+          yield toolResultFromFrame(event);
+        } else if (name === 'step.update') {
+          const step = stepFromFrame(event);
+          if (step !== null) yield step;
+        } else if (name === 'agent.update') {
+          const agent = agentFromFrame(event);
+          if (agent !== null) yield agent;
+        } else if (name === 'plan.update') {
+          const plan = planFromFrame(event);
+          if (plan !== null) yield plan;
+        } else if (name === 'thinking') {
+          yield thinkingFromFrame(event);
         } else if (name === 'approval.request') {
           // Hermes is waiting inside the run for a person. The run's clock stops while a person decides (the run job re-arms it by answering).
           const pausedAt = Date.now();
@@ -447,6 +458,7 @@ export async function runOnGateway(
             command: typeof event['command'] === 'string' ? event['command'] : '',
             description: typeof event['description'] === 'string' ? event['description'] : '',
             choices,
+            ...approvalExtras(event),
             answer: async (choice, note) => {
               const sent = await answerRemote(choice, requestId, note);
               // What was left of the budget when the run stopped to ask, and the grace again: the answer does not eat the time the work needs.
@@ -501,7 +513,7 @@ export async function runOnGateway(
     const f = terminal.fields;
     if (terminal.event === 'run.completed') {
       const output = typeof f['output'] === 'string' && f['output'].trim() !== '' ? f['output'] : streamed;
-      yield { type: 'result', text: output, ok: true, tokens: tokensOf(f['usage']), ...claudeMark(f) };
+      yield { type: 'result', text: output, ok: true, tokens: tokensOf(f['usage']), ...endOfTurn(f), ...claudeMark(f) };
       return;
     }
     const error =

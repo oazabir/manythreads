@@ -161,11 +161,52 @@ export type ModelTurnResult =
   /** `refused`: a budget, a rate limit or a guardrail said no. `unbound`: the alias is not bound to a model here. `unavailable`: the model did not answer. `timeout`: the clock ran out. */
   | { ok: false; reason: 'refused' | 'unbound' | 'unavailable' | 'timeout'; detail: string };
 
-/** One event off a run's stream. `result` is the terminal one and carries the final text. */
+/** What a step of a run is, in the words of ACP (docs/plans/acp.md §3.1). A runtime that only knows a tool's name gets the kind its name suggests. */
+export type BotStepKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other';
+
+/** A line count of an edit. Counts only: the text of a change never leaves the runner. */
+export interface BotStepDiff {
+  added: number;
+  removed: number;
+}
+
+/** One item of the plan an agent keeps. The whole list is sent each time it changes. */
+export interface BotPlanEntry {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+/**
+ * One event off a run's stream. `result` is the terminal one and carries the final text.
+ *
+ * The first five kinds are older than ACP. `tool` and `tool_result` have gained optional fields a runner that shows its work fills in (every one of them
+ * is already redacted and clipped by the runner: no tool input, no tool output, no file text, no reasoning); a runtime that does not know them leaves them out.
+ */
 export type BotRuntimeEvent =
   | { type: 'text'; text: string }
-  | { type: 'tool'; name: string; input: unknown }
-  | { type: 'tool_result'; name: string; ok: boolean; reason?: string | undefined }
+  | {
+      type: 'tool';
+      name: string;
+      input: unknown;
+      /** The step's id, the same on its `step` updates and its `tool_result`. */
+      stepId?: string | undefined;
+      /** The step of the helper (`agent`) this step belongs to. */
+      parentStepId?: string | undefined;
+      kind?: BotStepKind | undefined;
+      /** A short line saying what the step does ("pnpm test --filter web"), at most 160 characters. */
+      title?: string | undefined;
+      /** Files the step touches, relative to the project, at most 5. */
+      paths?: readonly string[] | undefined;
+    }
+  | { type: 'tool_result'; name: string; ok: boolean; reason?: string | undefined; stepId?: string | undefined; diff?: BotStepDiff | undefined; seconds?: number | undefined }
+  /** A step changed its title or paths, or began to run. Only what changed is given. */
+  | { type: 'step'; stepId: string; title?: string | undefined; paths?: readonly string[] | undefined; status?: 'in_progress' | undefined }
+  /** A helper agent the run started (`agentId` is the id of the step that started it). `steps` counts the steps it has taken. */
+  | { type: 'agent'; agentId: string; name: string; status: 'working' | 'done' | 'failed'; steps: number; parentStepId?: string | undefined }
+  /** The agent's plan, as a whole list each time. */
+  | { type: 'plan'; entries: readonly BotPlanEntry[] }
+  /** The agent was reasoning for `seconds`. The text of the reasoning never leaves the runner. */
+  | { type: 'thinking'; seconds: number }
   /**
    * The bot's own program stopped inside the run to ask a person (P24): its shell wants to run a command it thinks is risky. The run is paused until `answer` is
    * called; the stream carries on only after that. `choices` are the answers the program accepts (`once`, `session`, `always`, `deny`). `answer` resolves false when the
@@ -176,6 +217,14 @@ export type BotRuntimeEvent =
       command: string;
       description: string;
       choices: readonly string[];
+      /** From a runner that drives its agent through ACP (P25): what the step is, so the card can show it like a step of the activity list. */
+      kind?: BotStepKind | undefined;
+      title?: string | undefined;
+      paths?: readonly string[] | undefined;
+      diff?: BotStepDiff | undefined;
+      stepId?: string | undefined;
+      /** The agent takes a person's note with the answer (steering). Absent or false: the card has no note box. */
+      canNote?: boolean | undefined;
       answer(choice: 'once' | 'session' | 'deny', note?: string): Promise<boolean>;
     }
   | {
@@ -189,6 +238,10 @@ export type BotRuntimeEvent =
       refusal?: { runner: string; reason: string; line: string };
       /** What the model reported for this turn, when the runtime knows (a Hermes `result` record carries it). */
       tokens?: { input: number; output: number; total: number } | null;
+      /** Why the agent's turn ended (`end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`), from a runner that drives its agent through ACP. */
+      stopReason?: string | undefined;
+      /** What the agent says the run cost, when it says (Claude does): the adapter's own figure, in `currency`. Not a price; the run job's spend lines are the money. */
+      cost?: { amount: number; currency: string } | undefined;
       /**
        * Set when the run was served by a team's Hermes pod: every model call of a pod goes through the platform's model gateway, so the run job expects a spend
        * line for it (and raises `bot_runner.run.unmetered` when there is none). `runner` is the pod runner's name.

@@ -37,7 +37,10 @@ export type FakeRunStep =
   | { type: 'approval'; command: string; description?: string; ms?: number; onAnswer?: (answer: { choice: string; steered: string[] }) => void }
   /** Wait until the run is stopped (or `ms` pass), then end cancelled. */
   | { type: 'hang'; ms?: number }
-  | { type: 'finish'; output?: string; usage?: { input_tokens: number; output_tokens: number; total_tokens: number; cost?: number } }
+  /** Any one frame, as the agent bridge sends it (`step.update`, `agent.update`, `plan.update`, `thinking`, a `tool.started` with `step_id`, ...). */
+  | { type: 'frame'; event: string; fields?: Record<string, unknown> }
+  /** `extra`: more fields on the terminal frame, as the agent bridge adds (`stop_reason`, `cost`). */
+  | { type: 'finish'; output?: string; usage?: { input_tokens: number; output_tokens: number; total_tokens: number; cost?: number }; extra?: Record<string, unknown> }
   /** `extra`: more fields on the terminal frame, as the agent bridge adds (`reason`, `resets_at`). */
   | { type: 'fail'; error: string; extra?: Record<string, unknown> };
 
@@ -161,6 +164,8 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
         } else if (step.type === 'delta') {
           deltas += step.text;
           emitEvent(state, 'message.delta', { delta: step.text });
+        } else if (step.type === 'frame') {
+          emitEvent(state, step.event, step.fields ?? {});
         } else if (step.type === 'wait') {
           await new Promise((r) => setTimeout(r, step.ms));
         } else if (step.type === 'approval') {
@@ -208,7 +213,7 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
         } else if (step.type === 'finish') {
           state.output = step.output ?? deltas;
           state.usage = step.usage ?? { input_tokens: 10, output_tokens: 5, total_tokens: 15 };
-          finish('completed', { output: state.output, usage: state.usage, runtime: { provider: 'fake', model: 'fake' } });
+          finish('completed', { output: state.output, usage: state.usage, runtime: { provider: 'fake', model: 'fake' }, ...(step.extra ?? {}) });
           return;
         }
       }

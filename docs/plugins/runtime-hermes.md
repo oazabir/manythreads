@@ -549,6 +549,11 @@ Measured on Hermes 0.21.5; `tools/fake-hermes-gateway` reproduces it for tests.
 | watch | `GET /p/<profile>/v1/runs/<id>/events` (server-sent events): `tool.started`, `tool.completed`, `message.delta`, then `run.completed` (with `output`, `usage`) or `run.failed` / `run.cancelled` |
 | stop | `POST /p/<profile>/v1/runs/<id>/stop` |
 
+* An agent that shows its work (the agent bridge on ACP, P25) sends more frames, each read into one event of the SDK (`src/activity.ts`): `tool.started` and `tool.completed` with
+  `step_id`, `parent_step_id`, `kind`, `title`, `paths`, `diff` (counts) and `duration`; `step.update` (a changed title or path); `agent.update` (a helper and its status); `plan.update`
+  (the whole list); `thinking` (seconds only); `approval.request` with `kind`, `title`, `paths`, `diff`, `step_id`, `note_ok`; and `run.completed` with `stop_reason` and `cost`. A
+  gateway that sends only a tool's name (Hermes' own) still gets a `kind`, from the name. A field of the wrong shape is left out and every length is bounded; no tool input,
+  output, file text or reasoning is ever part of a frame.
 * The idempotency key is our run id, so a start repeated after a lost answer returns the run that exists; there is never a second one.
 * `session_id` is `<bot id>:<thread root id>`: a thread is one Hermes session, and the bot remembers the thread's earlier turns on its side.
 * A dropped stream is reopened where it stopped (`Last-Event-ID`); if it will not stay, the run's status is polled until it says how it ended.

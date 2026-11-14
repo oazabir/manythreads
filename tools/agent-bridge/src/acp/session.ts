@@ -152,6 +152,7 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     job.emit('approval.request', {
       request_id: requestId,
       command: title,
+      title,
       description: KIND_WORDS[kind],
       choices: [...(once ? ['once'] : []), ...(deny || !once ? ['deny'] : [])],
       kind,

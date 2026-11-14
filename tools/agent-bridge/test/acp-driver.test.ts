@@ -102,7 +102,7 @@ describe('questions to a person (approval.request)', () => {
     const id = await startRun(h, { input: 'ask [[permission]]' });
     const w = watch(h, id);
     const ask = await w.until((f) => f['event'] === 'approval.request');
-    expect(ask).toMatchObject({ command: 'touch spike-a.txt', choices: ['once', 'deny'], kind: 'execute', paths: ['spike-a.txt'] });
+    expect(ask).toMatchObject({ command: 'touch spike-a.txt', title: 'touch spike-a.txt', choices: ['once', 'deny'], kind: 'execute', paths: ['spike-a.txt'] });
     expect(typeof ask['request_id']).toBe('string');
     // the run is waiting: it is not over, and its time budget is held
     await new Promise((r) => setTimeout(r, 200));
