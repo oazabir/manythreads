@@ -33,3 +33,11 @@ export function useRunLines(runId: string | null, seq: number): RunLines {
     () => (runId === null ? NO_LINES : threadRunsStore.linesOf(runId)),
   );
 }
+
+/** Reads the active runs of a channel while a page shows its "working" chips, and again after a reconnect. `null` (no channel) and mock mode hold nothing. */
+export function useChannelRuns(channelId: string | null): void {
+  useEffect(() => {
+    if (channelId === null || isMockMode()) return;
+    return threadRunsStore.trackChannel(channelId);
+  }, [channelId]);
+}

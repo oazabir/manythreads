@@ -11,7 +11,11 @@ const PERSON = '00000000-0000-7000-8000-0000000e0001';
 const CHANNEL = '00000000-0000-7000-8000-000000000002';
 const THREAD = '00000000-0000-7000-8000-000000000003';
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  flag.visible = true;
+  flag.looks = 0;
+});
 afterEach(() => {
   vi.useRealTimers();
   untrackRun(RUN);
@@ -150,9 +154,18 @@ interface Route {
   rateLimit?: { limit: number; windowMs: number };
 }
 
+/** `flag.visible` says whether the Stop that was asked for can be seen by another transaction yet (the request's own has committed). */
+const flag = { visible: true, looks: 0 };
+
 function stopRoute(): Route {
   let found: Route | null = null;
-  const ctx = { http: { route: (r: Route) => { found = r; } } } as unknown as PluginContext;
+  const sys = {
+    query: async () => {
+      flag.looks += 1;
+      return { rows: flag.visible ? [{ '?column?': 1 }] : [] };
+    },
+  } as unknown as PluginTx;
+  const ctx = { http: { route: (r: Route) => { found = r; } }, db: { system: async <T>(fn: (tx: PluginTx) => Promise<T>) => fn(sys) } } as unknown as PluginContext;
   registerStopRoute(ctx);
   return found as unknown as Route;
 }
@@ -190,24 +203,31 @@ describe('POST /api/runs/:runId/stop', () => {
     entry.handle = { stop, events: (async function* () {})() } as never;
     const held = await route.handler({ params: { runId: RUN } }, txOf([{ status: 'running' }]));
     expect(JSON.stringify(held.body ?? held)).toContain('"stopped":true');
+    await vi.advanceTimersByTimeAsync(5);
     expect(stop).toHaveBeenCalledTimes(1);
     untrackRun(RUN);
     const elsewhere = await route.handler({ params: { runId: RUN } }, txOf([{ status: 'running' }]));
     expect(JSON.stringify(elsewhere.body ?? elsewhere)).toContain('"stopped":false');
   });
 
-  it('answers 500 with a plain sentence when the process will not stop', async () => {
+  it('a process that will not stop does not fail the request: the Stop is on the row and the run job asks again', async () => {
     const route = stopRoute();
     const entry = trackRun(RUN, ASKER);
     entry.handle = { stop: async () => { throw new Error('kill failed'); }, events: (async function* () {})() } as never;
-    await expect(route.handler({ params: { runId: RUN } }, txOf([{ status: 'running' }]))).rejects.toMatchObject({ status: 500, message: expect.stringContaining('could not be stopped') as unknown as string });
+    const res = await route.handler({ params: { runId: RUN } }, txOf([{ status: 'running' }]));
+    expect(JSON.stringify(res.body ?? res)).toContain('"stopped":true');
+    const written = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    await vi.advanceTimersByTimeAsync(5);
+    expect(written).toHaveBeenCalledWith(expect.stringContaining('could not be stopped'));
+    written.mockRestore();
+    expect(entry.stopped).toBe(true);
   });
 });
 
 // ---- a run in a thread (P25-07): frames to the watchers of the thread --------------------------------------------------------------------
 
 describe('LiveFrames with an audience (a run in a thread)', () => {
-  function threadRig(watchers: () => string[], options: { sendEnded?: boolean; sendLooking?: boolean } = { sendEnded: false, sendLooking: false }) {
+  function threadRig(watchers: () => string[], options: { sendEnded?: boolean; sendLooking?: boolean; redact?: (tx: PluginTx, text: string) => Promise<string | null> } = { sendEnded: false, sendLooking: false }) {
     const pushed: Array<{ ids: readonly string[]; type: string; payload: Record<string, unknown> }> = [];
     const clock = { now: 1_000_000 };
     const asked = { n: 0 };
@@ -255,6 +275,66 @@ describe('LiveFrames with an audience (a run in a thread)', () => {
     const { frames, pushed } = threadRig(() => [PERSON], { sendEnded: true });
     await frames.end('failed');
     expect(pushed.map((p) => [p.type, p.payload['status']])).toEqual([['run.ended', 'failed']]);
+  });
+
+  it('an audience that was found is reused for a few seconds, then asked again (a person who left stops receiving within that time)', async () => {
+    let people = [PERSON];
+    const { frames, pushed, clock, asked } = threadRig(() => people);
+    frames.text('a');
+    clock.now += 400;
+    frames.text('b');
+    clock.now += 400;
+    frames.text('c');
+    await frames.end('done');
+    expect(asked.n).toBe(1);
+    expect(pushed.length).toBeGreaterThanOrEqual(3);
+    people = [];
+    clock.now += 3_500;
+    frames.text('d');
+    await frames.end('done');
+    expect(asked.n).toBe(2); // asked again: the person who left gets nothing
+    expect(pushed.map((p) => p.payload['text'])).not.toContain('d');
+  });
+
+  it('for people other than the asker the words go through the redaction first, and the frame says how much of the answer it covers (span)', async () => {
+    const redact = async (_tx: PluginTx, text: string): Promise<string | null> => text.replace(/sk-[a-z0-9]{10,}/g, '[redacted:api-key]');
+    const { frames, pushed, clock } = threadRig(() => [PERSON], { sendEnded: false, sendLooking: false, redact });
+    frames.text('The key is sk-abcdefghijklmnop ok');
+    clock.now += 1_000;
+    frames.text(' and more');
+    await frames.end('done');
+    const first = pushed[0]!.payload;
+    expect(first['text']).toBe('The key is [redacted:api-key] ok');
+    expect(first['span']).toBe('The key is sk-abcdefghijklmnop ok'.length);
+    expect(JSON.stringify(pushed)).not.toContain('sk-abcdefghijklmnop');
+    // the next piece starts where the covered part ended, not where the shorter text ended
+    expect(pushed[1]!.payload['offset']).toBe(first['span']);
+  });
+
+  it('a piece the chain cannot vouch for ends the preview: nothing after it is sent, so no hole is left to be filled with raw words', async () => {
+    let n = 0;
+    const redact = async (_tx: PluginTx, text: string): Promise<string | null> => ((n += 1) === 2 ? null : text);
+    const { frames, pushed, clock } = threadRig(() => [PERSON], { sendEnded: false, sendLooking: false, redact });
+    frames.text('one ');
+    clock.now += 1_000;
+    frames.text('two ');
+    clock.now += 1_000;
+    frames.text('three');
+    await frames.end('done');
+    expect(pushed.map((p) => p.payload['text'])).toEqual(['one ']);
+    expect(frames.full).toBe('one two three'); // the run itself keeps the whole answer for the message
+  });
+
+  it('a redacted piece that grew past the push size ends the preview too', async () => {
+    const redact = async (_tx: PluginTx, text: string): Promise<string | null> => (text.includes('big') ? 'x'.repeat(7000) : text);
+    const { frames, pushed, clock } = threadRig(() => [PERSON], { sendEnded: false, sendLooking: false, redact });
+    frames.text('small ');
+    clock.now += 1_000;
+    frames.text('big');
+    clock.now += 1_000;
+    frames.text(' after');
+    await frames.end('done');
+    expect(pushed.map((p) => p.payload['text'])).toEqual(['small ']);
   });
 
   it('a thread nobody has open costs one look, not one per frame; a watcher who arrives is found again after a moment', async () => {
@@ -308,9 +388,41 @@ describe('POST /api/runs/:runId/stop as a flag on the run', () => {
     const { tx } = sqlTx({ stop: 'requested', view });
     const res = await route.handler({ params: { runId: RUN } }, tx);
     expect(JSON.stringify(res.body ?? res)).toContain('"stopped":true');
+    // never inside the request's own transaction: nothing has been stopped when the handler returns
+    expect(stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5);
     expect(stop).toHaveBeenCalledTimes(1);
     expect(entry.stopped).toBe(true);
     expect(entry.stoppedBy).toEqual({ actorId: PERSON_ACTOR, name: 'Rafi' });
+  });
+
+  it('waits until the Stop is visible to others, and stops nothing if the request was rolled back', async () => {
+    const route = stopRoute();
+    const stop = vi.fn(async () => undefined);
+    const entry = trackRun(RUN, ASKER);
+    entry.handle = { stop, events: (async function* () {})() } as never;
+    flag.visible = false;
+    await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'requested', view }).tx);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(stop).not.toHaveBeenCalled();
+    expect(entry.stopped).not.toBe(true);
+    expect(flag.looks).toBeGreaterThan(2);
+    flag.visible = true; // the transaction committed
+    await vi.advanceTimersByTimeAsync(100);
+    expect(stop).toHaveBeenCalledTimes(1);
+    // and a request that never commits is given up on after a few seconds
+    untrackRun(RUN);
+    const again = trackRun(RUN, ASKER);
+    const stop2 = vi.fn(async () => undefined);
+    again.handle = { stop: stop2, events: (async function* () {})() } as never;
+    flag.visible = false;
+    flag.looks = 0;
+    await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'requested', view }).tx);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const looked = flag.looks;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(flag.looks).toBe(looked);
+    expect(stop2).not.toHaveBeenCalled();
   });
 
   it('a run another server holds is "stopped" too: the flag is on the row and that server\'s job sees it', async () => {
@@ -337,13 +449,23 @@ describe('POST /api/runs/:runId/stop as a flag on the run', () => {
     entry.handle = { stop, events: (async function* () {})() } as never;
     const res = await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'denied', mine: [{ status: 'running' }] }).tx);
     expect(JSON.stringify(res.body ?? res)).toContain('"stopped":true');
+    await vi.advanceTimersByTimeAsync(5);
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
-  it('answers 500 with a plain sentence when the process will not stop', async () => {
+  it('a process that will not stop does not fail the request, and a later Stop tries again', async () => {
     const route = stopRoute();
+    const stop = vi.fn<() => Promise<void>>().mockRejectedValueOnce(new Error('kill failed')).mockResolvedValue(undefined);
     const entry = trackRun(RUN, ASKER);
-    entry.handle = { stop: async () => { throw new Error('kill failed'); }, events: (async function* () {})() } as never;
-    await expect(route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'requested', view }).tx)).rejects.toMatchObject({ status: 500, message: expect.stringContaining('could not be stopped') as unknown as string });
+    entry.handle = { stop, events: (async function* () {})() } as never;
+    const written = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const res = await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'requested', view }).tx);
+    expect(JSON.stringify(res.body ?? res)).toContain('"stopped":true');
+    await vi.advanceTimersByTimeAsync(5);
+    expect(written).toHaveBeenCalledWith(expect.stringContaining('could not be stopped'));
+    written.mockRestore();
+    await route.handler({ params: { runId: RUN } }, sqlTx({ stop: 'already', view }).tx);
+    await vi.advanceTimersByTimeAsync(5);
+    expect(stop).toHaveBeenCalledTimes(2);
   });
 });

@@ -182,7 +182,15 @@ export const WS_RUN_LOOKING = 'run.looking';
 export const WS_RUN_ENDED = 'run.ended';
 
 /** A piece of the answer so far. `offset` is how many characters came before it, so a screen can drop a repeat and notice a gap. */
-export const RunDeltaPush = z.object({ runId: RunId, channelId: ChannelId, threadRootId: MessageId, offset: z.number().int().nonnegative(), text: z.string() });
+export const RunDeltaPush = z.object({
+  runId: RunId,
+  channelId: ChannelId,
+  threadRootId: MessageId,
+  offset: z.number().int().nonnegative(),
+  text: z.string(),
+  /** How many characters of the answer this piece covers, when that is not the length of `text` (a piece that was redacted for other people than the asker): the next piece starts at `offset + span`. */
+  span: z.number().int().positive().optional(),
+});
 export type RunDeltaPush = z.infer<typeof RunDeltaPush>;
 /** What the bot is reading right now ("Searching memory", "3 knowledge hits"): fixed words and counts, never a document's text. */
 export const RunLookingPush = z.object({ runId: RunId, channelId: ChannelId, threadRootId: MessageId, label: z.string().max(80), tool: z.string().max(80) });
