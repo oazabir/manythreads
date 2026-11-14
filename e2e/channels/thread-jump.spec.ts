@@ -9,6 +9,25 @@ const distance = (list: Locator): Promise<number> => list.evaluate((el) => el.sc
 const scrollUp = (list: Locator): Promise<void> => list.evaluate((el) => { el.scrollTop = 0; });
 const scrollDown = (list: Locator): Promise<void> => list.evaluate((el) => { el.scrollTop = el.scrollHeight; });
 
+/**
+ * Scrolls the reply list to the top and waits for that scroll's own event (and a frame) to land. A store update that renders between the
+ * jump and its event re-pins a list that was at the bottom (the panel's pin effect), so the jump is tried again until it holds.
+ */
+async function leaveBottom(list: Locator): Promise<void> {
+  await expect(async () => {
+    const d = await list.evaluate(
+      (el) =>
+        new Promise<number>((resolve) => {
+          const left = (): number => el.scrollHeight - el.scrollTop - el.clientHeight;
+          if (el.scrollTop === 0) return resolve(left());
+          el.addEventListener('scroll', () => requestAnimationFrame(() => resolve(left())), { once: true });
+          el.scrollTop = 0;
+        }),
+    );
+    expect(d).toBeGreaterThan(40);
+  }).toPass({ timeout: 10_000 });
+}
+
 /** The pill's middle and the reply list's middle, across the reading direction. */
 async function centres(pill: Locator, list: Locator): Promise<{ pill: number; list: number }> {
   const [p, l] = await Promise.all([pill.boundingBox(), list.boundingBox()]);
@@ -37,7 +56,7 @@ test('scrolled up in a thread, "Jump to latest" counts the replies of others and
     await expect(pill).toHaveCount(0);
 
     // scrolled up: "Jump to latest", no count
-    await scrollUp(list);
+    await leaveBottom(list);
     await expect(pill).toBeVisible();
     await expect(pill).toHaveText('Jump to latest');
     await expect(pill).toHaveAccessibleName('Jump to latest');
@@ -64,14 +83,14 @@ test('scrolled up in a thread, "Jump to latest" counts the replies of others and
     await expect(list).toBeFocused();
 
     // up again, one reply: "1 new reply"; scrolling down by hand clears it, and the next time up there is no count
-    await scrollUp(list);
+    await leaveBottom(list);
     await expect(pill).toHaveText('Jump to latest');
     await postMessage(nadiaApi, id, 'Flag flipped.', root.id);
     await expect(messages(thread)).toHaveCount(29);
     await expect(pill).toHaveText('1 new reply');
     await scrollDown(list);
     await expect(pill).toHaveCount(0);
-    await scrollUp(list);
+    await leaveBottom(list);
     await expect(pill).toHaveText('Jump to latest');
 
     // Omar's own reply while scrolled up: the list goes to it and the pill goes away
