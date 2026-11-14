@@ -1,0 +1,19 @@
+{
+  "name": "@manythreads/tools-fake-acp-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.7.0"
+  },
+  "devDependencies": {
+    "tsx": "^4"
+  }
+}
