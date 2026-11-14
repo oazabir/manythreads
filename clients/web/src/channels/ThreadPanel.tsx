@@ -14,7 +14,7 @@ import { placeRuns } from './run-card/place';
 import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
 import { TodoPin } from './todo-card/TodoCard';
-import { CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
+import { ArrowDownIcon, CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -23,6 +23,7 @@ import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRo
 import { lastEditableOwn } from './messageActions';
 import { ScheduledStrip } from './ScheduledStrip';
 import { channelStore, threadKey } from './store';
+import { atBottom, jumpAriaLabel, jumpLabel, newReplyCount } from './threadJump';
 
 /** The right-panel entry `thread:<root message id>`. */
 export function ThreadPanel({ entry }: { entry: PanelEntry }) {
@@ -75,7 +76,19 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const names = useMemo(() => feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, ''))), [feed.groups]);
   const typing = useTyping(threadKey(rootId));
   const scroller = useRef<HTMLDivElement>(null);
-  const stuck = useRef(true);
+  // Whether the reader is at the newest reply. The ref is read by the pin effect; the state draws the "Jump to latest" pill. One setter
+  // keeps them together and bails out when nothing changed, so scrolling does not re-render the thread per frame.
+  const stuckRef = useRef(true);
+  const [stuck, setStuckState] = useState(true);
+  // The newest reply the reader had in view when they left the bottom: replies after it are "new" on the pill.
+  const newestRef = useRef<string | null>(null);
+  const [seenUpTo, setSeenUpTo] = useState<string | null>(null);
+  const setStuck = useCallback((next: boolean) => {
+    if (stuckRef.current === next) return;
+    stuckRef.current = next;
+    if (!next) setSeenUpTo(newestRef.current);
+    setStuckState(next);
+  }, []);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -118,10 +131,11 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   // leaving the thread: a "Mark unread from here" stops holding it unread
   useEffect(() => () => channelStore.releaseUnreadHold('thread', rootId), [rootId]);
 
-  // Stay at the newest reply while the reader is there.
+  // Stay at the newest reply while the reader is there; the watermark follows it until they scroll away.
   useLayoutEffect(() => {
+    if (stuckRef.current) newestRef.current = newestReply;
     const el = scroller.current;
-    if (el && stuck.current) el.scrollTop = el.scrollHeight;
+    if (el && stuckRef.current) el.scrollTop = el.scrollHeight;
   });
 
   const rootActions = useMemo<RowActions | null>(
@@ -150,10 +164,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const send = useCallback(
     (body: string, { attachments, confirmBroadcast, voice }: SendOptions) => {
       if (!channelId) return;
-      stuck.current = true;
+      setStuck(true);
       void channelStore.send(channelId, rootId, body, attachments, false, confirmBroadcast === true, voice);
     },
-    [channelId, rootId],
+    [channelId, rootId, setStuck],
   );
 
   if (tl.status === 'error' && !root) {
@@ -192,6 +206,69 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const waiting =
     awaiting !== null && self !== null && tl.pending.length === 0 && newestMessage.authorId === self && Date.now() - Date.parse(newestMessage.createdAt) < AWAIT_REPLY_MS;
 
+  const list = (
+    <div
+      className="rpb"
+      ref={scroller}
+      tabIndex={variant === 'panel' ? -1 : undefined}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        setStuck(atBottom(el.scrollHeight - el.scrollTop - el.clientHeight));
+      }}
+    >
+      {todoState.todo !== null ? <TodoPin todo={todoState.todo} slug={slug ?? null} people={people} rootId={rootId} /> : null}
+      <div className="root">
+        <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
+        {variant === 'panel' ? followRow : null}
+        {variant === 'panel' ? <Linked rootId={rootId} /> : null}
+      </div>
+      {tl.cursor ? (
+        <button type="button" className="btn s load-earlier" disabled={tl.loadingOlder} onClick={() => void channelStore.loadOlder(threadKey(rootId), channelId, rootId)}>
+          {tl.loadingOlder ? 'Loading…' : 'Earlier replies'}
+        </button>
+      ) : null}
+      {placed.atRoot.map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
+      {tl.items.length === 0 && tl.pending.length === 0 && placed.live.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
+      {tl.items.map((m, i) => (
+        <Fragment key={m.id}>
+          <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+          {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
+        </Fragment>
+      ))}
+      {placed.live.map((r, i) => (
+        <RunCard
+          key={r.runId}
+          head={r}
+          rootId={rootId}
+          slug={slug ?? null}
+          people={people}
+          hidePlan={todoState.todo !== null && r.botActorId === todoState.todo.botActorId}
+          continued={i === 0 && tl.pending.length === 0 && r.botActorId !== null && tl.items.at(-1)?.authorId === r.botActorId}
+        />
+      ))}
+      <ThreadApprovals rootId={rootId} slug={slug ?? null} hide={hideAsked} />
+      {waiting && placed.live.length === 0 ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
+      {tl.pending.map((p) => (
+        <PendingRow
+          key={p.localId}
+          pending={p}
+          name={people.me?.name ?? 'You'}
+          onRetry={(confirm) => void channelStore.retry(channelId, rootId, p.localId, confirm === true)}
+          onDiscard={() => channelStore.discard(channelId, rootId, p.localId)}
+        />
+      ))}
+      {typing ? <p className="typing" aria-live="polite">{typing}</p> : null}
+    </div>
+  );
+  // Scrolled up in the panel: a pill above the composer goes back to the newest reply and counts the replies of others since (P25-16).
+  const newCount = stuck ? 0 : newReplyCount(tl.items, seenUpTo, self);
+  const jumpToLatest = (): void => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    el.focus({ preventScroll: true });
+  };
+
   return (
     <div className={`thread ${variant}`} data-testid="thread-view" data-root-id={rootId}>
       {variant === 'main' ? (
@@ -208,58 +285,20 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           </div>
         </div>
       ) : null}
-      <div
-        className="rpb"
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-        }}
-      >
-        {todoState.todo !== null ? <TodoPin todo={todoState.todo} slug={slug ?? null} people={people} rootId={rootId} /> : null}
-        <div className="root">
-          <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
-          {variant === 'panel' ? followRow : null}
-          {variant === 'panel' ? <Linked rootId={rootId} /> : null}
+      {variant === 'panel' ? (
+        <div className="rpb-wrap">
+          {list}
+          {!stuck ? (
+            <button type="button" className="jump thread-jump" data-testid="thread-jump-latest" aria-label={jumpAriaLabel(newCount)} onClick={jumpToLatest}>
+              <ArrowDownIcon />
+              <span>{jumpLabel(newCount)}</span>
+            </button>
+          ) : null}
         </div>
-        {tl.cursor ? (
-          <button type="button" className="btn s load-earlier" disabled={tl.loadingOlder} onClick={() => void channelStore.loadOlder(threadKey(rootId), channelId, rootId)}>
-            {tl.loadingOlder ? 'Loading…' : 'Earlier replies'}
-          </button>
-        ) : null}
-        {placed.atRoot.map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
-        {tl.items.length === 0 && tl.pending.length === 0 && placed.live.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
-        {tl.items.map((m, i) => (
-          <Fragment key={m.id}>
-            <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
-            {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
-          </Fragment>
-        ))}
-        {placed.live.map((r, i) => (
-          <RunCard
-            key={r.runId}
-            head={r}
-            rootId={rootId}
-            slug={slug ?? null}
-            people={people}
-            hidePlan={todoState.todo !== null && r.botActorId === todoState.todo.botActorId}
-            continued={i === 0 && tl.pending.length === 0 && r.botActorId !== null && tl.items.at(-1)?.authorId === r.botActorId}
-          />
-        ))}
-        <ThreadApprovals rootId={rootId} slug={slug ?? null} hide={hideAsked} />
-        {waiting && placed.live.length === 0 ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
-        {tl.pending.map((p) => (
-          <PendingRow
-            key={p.localId}
-            pending={p}
-            name={people.me?.name ?? 'You'}
-            onRetry={(confirm) => void channelStore.retry(channelId, rootId, p.localId, confirm === true)}
-            onDiscard={() => channelStore.discard(channelId, rootId, p.localId)}
-          />
-        ))}
-        {typing ? <p className="typing" aria-live="polite">{typing}</p> : null}
-      </div>
-      {info.status === 'ok' && !canReply ? <p className="read-only">You can read this thread but not reply.</p> : null}
+      ) : (
+        list
+      )}
+      {info.status === 'ok' && !canReply ?<p className="read-only">You can read this thread but not reply.</p> : null}
       {canReply && replyBlocked !== null ? (
         <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>
       ) : canReply ? (
