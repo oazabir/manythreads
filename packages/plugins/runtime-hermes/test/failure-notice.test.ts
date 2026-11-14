@@ -11,6 +11,14 @@ describe('classifyFailure', () => {
     expect(classifyFailure('HTTP 403: no model grant in the allowlist')).toBe('gateway');
     expect(classifyFailure('the run may not call "messages.post": no grant for "messages.post" in the actor\'s allowlist')).toBe('other');
   });
+  it("reads the agent bridge's plain refusals and its turn limit (P25)", () => {
+    expect(classifyFailure('OpenCode cannot run yet: it has not been checked that its tools can be limited to what the bot may do.')).toBe('runner_refused');
+    expect(classifyFailure('This Hermes profile lets its agent run commands, which this bot is not allowed to do, and Hermes cannot be limited to less per run. Give the bot those tools.')).toBe('runner_refused');
+    expect(classifyFailure('The agent did not take the model "gpt-x" that the profile pins (unknown model).')).toBe('runner_refused');
+    expect(classifyFailure('This agent has no "plan" mode, so its tools cannot be limited to what the bot may do.')).toBe('runner_refused');
+    expect(classifyFailure('turn limit exceeded')).toBe('steps');
+    expect(classifyFailure('something else entirely')).toBe('other');
+  });
   it('keeps the other categories', () => {
     expect(classifyFailure('x', 'timeout')).toBe('timeout');
     expect(classifyFailure('boom')).toBe('other');

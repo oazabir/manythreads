@@ -26,6 +26,13 @@ describe('a tool by its name: the kind a Hermes gateway frame gets', () => {
       ['move_file', 'move'],
       ['mcp__manythreads__mt_note', 'other'],
       ['todo', 'other'],
+      ['readFile', 'read'],
+      ['tools', 'other'],
+      ['locate', 'other'],
+      ['catalog', 'other'],
+      ['preview_widget', 'other'],
+      ['Bash', 'execute'],
+      ['list_files', 'read'],
     ];
     for (const [tool, kind] of cases) expect(kindOfTool(tool), tool).toBe(kind);
   });

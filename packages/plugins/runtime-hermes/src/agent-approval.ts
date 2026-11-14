@@ -24,10 +24,13 @@ type Question = Extract<BotRuntimeEvent, { type: 'approval' }>;
 const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** One line of the command for the list: its first line, clipped. */
-export function commandSummary(command: string): string {
+/** How much of the command or the plan the card keeps: the bridge sends up to about 2000 characters, ending in a cut mark when it was longer. */
+export const COMMAND_PREVIEW_CHARS = 2100;
+
+/** One line of what is asked for the list: its first line, clipped. A plan to approve (Codex asks to leave plan mode) is not "a command". */
+export function commandSummary(command: string, kind?: string): string {
   const first = (command.split('\n').find((l) => l.trim() !== '') ?? command).replace(/\s+/g, ' ').trim();
-  return `Run a command: ${clip(first, 200)}`;
+  return `${kind === 'switch_mode' ? 'Approve a plan' : 'Run a command'}: ${clip(first, 200)}`;
 }
 
 export interface AgentApprovalInput {
@@ -68,9 +71,9 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<'o
           runId: run.runId,
           source: 'agent',
           tool: 'agent.command',
-          summary: commandSummary(shown),
-          argsPreview: { command: clip(shown, 1500), why: clip(question.description, 300) },
-          argsTruncated: shown.length > 1500,
+          summary: commandSummary(shown, question.kind),
+          argsPreview: { command: clip(shown, COMMAND_PREVIEW_CHARS), why: clip(question.description, 300) },
+          argsTruncated: shown.length > COMMAND_PREVIEW_CHARS,
           resume: { kind: 'handoff', payload: { kind: 'command', runId: run.runId } },
           approvers: input.approvers,
           dedupeKey: `agent.command:${createHash('sha256').update(question.command).digest('hex').slice(0, 24)}`,
@@ -91,6 +94,12 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<'o
       if (Date.now() - lastKeepAlive >= KEEP_ALIVE_MS) {
         lastKeepAlive = Date.now();
         await ctx.runs.extend(run.runId, KEEP_ALIVE_SECONDS).catch(() => false);
+      }
+      // The program ended the question itself (the bridge cuts its wait and says so): nobody waits for an answer any more, so the run goes on with it refused.
+      const ended = question.expired?.() ?? null;
+      if (ended !== null) {
+        log(`the program ended the question itself: ${ended}`);
+        return 'deny';
       }
       const state = await job.transaction((tx) => approvals.answerOf(tx, approvalId, { botId: run.botId }));
       if (state === null) return await answer('deny', 'The approval could not be found, so the command was not run.');

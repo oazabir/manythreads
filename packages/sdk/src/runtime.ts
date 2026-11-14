@@ -225,6 +225,8 @@ export type BotRuntimeEvent =
       stepId?: string | undefined;
       /** The agent takes a person's note with the answer (steering). Absent or false: the card has no note box. */
       canNote?: boolean | undefined;
+      /** Asked while the run waits for a person: the words the program gave when it ended the question itself (a wait it cut, `approval.expired`), or null while the question stands. */
+      expired?: (() => string | null) | undefined;
       answer(choice: 'once' | 'session' | 'deny', note?: string): Promise<boolean>;
     }
   | {

@@ -25,16 +25,22 @@ const count = (v: unknown): number | undefined => (typeof v === 'number' && Numb
  * for its phrase. The order matters: `read_file` is a read, `web_search` a fetch of the web, `search_files` a search.
  */
 export function kindOfTool(tool: string): BotStepKind {
-  const name = tool.toLowerCase();
-  if (name.startsWith('mcp__') || name.startsWith('mcp.')) return 'other';
-  if (/(^|[_.\-\s])(terminal|shell|bash|exec|execute|run|command|process)([_.\-\s]|$)/.test(name)) return 'execute';
-  if (/web|browse|fetch|http|url|download/.test(name)) return 'fetch';
-  if (/search|grep|glob|find|query|lookup/.test(name)) return 'search';
-  if (/delete|remove|unlink|rm$/.test(name)) return 'delete';
-  if (/move|rename/.test(name)) return 'move';
-  if (/write|edit|patch|apply|create|save|replace/.test(name)) return 'edit';
-  if (/read|view|open|cat|list|ls|get_file|file|page|repo|memory|knowledge/.test(name)) return 'read';
-  if (/think|reason/.test(name)) return 'think';
+  if (/^mcp(__|\.)/i.test(tool)) return 'other';
+  // Whole words only: `tools` is not `ls`, `locate` is not `cat`. A name is cut at every mark and at every capital (`readFile`), and a plural counts as its word.
+  const words = tool
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w !== '');
+  const has = (...list: string[]): boolean => words.some((w) => list.includes(w) || (w.length > 3 && w.endsWith('s') && list.includes(w.slice(0, -1))));
+  if (has('terminal', 'shell', 'bash', 'exec', 'execute', 'run', 'command', 'process')) return 'execute';
+  if (has('web', 'browse', 'browser', 'fetch', 'http', 'https', 'url', 'download')) return 'fetch';
+  if (has('search', 'grep', 'glob', 'find', 'query', 'lookup')) return 'search';
+  if (has('delete', 'remove', 'unlink', 'rm')) return 'delete';
+  if (has('move', 'rename')) return 'move';
+  if (has('write', 'edit', 'patch', 'apply', 'create', 'save', 'replace')) return 'edit';
+  if (has('read', 'view', 'open', 'cat', 'list', 'ls', 'file', 'page', 'repo', 'memory', 'knowledge')) return 'read';
+  if (has('think', 'thinking', 'reason', 'reasoning')) return 'think';
   return 'other';
 }
 
@@ -156,4 +162,19 @@ export function approvalExtras(f: Record<string, unknown>): Omit<Extract<BotRunt
     ...(stepId !== undefined ? { stepId } : {}),
     ...(f['note_ok'] === true ? { canNote: true } : {}),
   };
+}
+
+/**
+ * A run of the agent bridge that failed with one of its own plain sentences (the bridge's words, not a remote program's): the runner will not take this bot
+ * (OpenCode, a Hermes that cannot be limited to the bot's tools, an agent with no way to limit its tools, a model the profile pins that the agent did not take),
+ * or the run used up its turns. Read off the text; only the category leaves.
+ */
+export function bridgeFailureOf(error: string | undefined): 'runner_refused' | 'steps' | null {
+  if (error === undefined) return null;
+  if (/turn limit exceeded/i.test(error)) return 'steps';
+  if (
+    /OpenCode cannot run yet|cannot be limited to (less|what the bot may do)|tools cannot be limited|does not let its .* be chosen|did not take the .* that the profile pins|cannot take the platform's tools over HTTP/i.test(error)
+  )
+    return 'runner_refused';
+  return null;
 }

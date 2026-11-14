@@ -1,4 +1,5 @@
 import { authorizeContext, type BotRunHandle, type BotRuntimeFailure, type MessageProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { bridgeFailureOf } from './activity.ts';
 import type { RunPayload } from './run-job.ts';
 
 // When a run that answers a message ends without an answer, the person who asked would otherwise wait for a reply that never comes. This
@@ -46,6 +47,8 @@ export function looksLikeRejectedKey(error: string | undefined): boolean {
 export function classifyFailure(error: string | undefined, failure?: BotRuntimeFailure): FailureCategory {
   if (failure !== undefined) return failure;
   const text = error ?? '';
+  const bridge = bridgeFailureOf(text);
+  if (bridge !== null) return bridge;
   if (looksLikeRejectedKey(text) || /\b(403|429|5\d\d)\b|litellm|proxy server|model gateway|rate.?limit|overloaded|api[ _-]?error|connection error/i.test(text)) return 'gateway';
   if (/timed? ?out|time limit|exceeded .*budget|was stopped \(SIG/i.test(text)) return 'timeout';
   if (/runner/i.test(text)) return 'runner_offline';

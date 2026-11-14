@@ -527,3 +527,35 @@ describe('a run that stops to ask a person (P24-02)', () => {
     expect(resultOf(seen)).toMatchObject({ ok: true });
   }, 15_000);
 });
+
+describe('a question the program ended itself (approval.expired)', () => {
+  it('is known to the event while the job is still waiting on it, and the stream was read on to the end meanwhile', async () => {
+    gw.setScript(() => [
+      { type: 'frame', event: 'approval.request', fields: { request_id: 'q1', command: 'touch a\ntouch b', description: 'two files', choices: ['once', 'deny'], title: 'Running touch' } },
+      { type: 'frame', event: 'approval.expired', fields: { request_id: 'q1', message: 'Nobody answered in time, so it was refused.' } },
+      { type: 'finish', output: 'done anyway' },
+    ]);
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    const seen: BotRuntimeEvent[] = [];
+    let words: string | null | undefined;
+    for await (const event of handle.events) {
+      seen.push(event);
+      if (event.type === 'approval') {
+        expect(event).toMatchObject({ command: 'touch a\ntouch b', title: 'Running touch' });
+        // the job is "waiting for a person" here; the frames after the question are read and queued meanwhile
+        await new Promise((r) => setTimeout(r, 400));
+        words = event.expired?.();
+      }
+    }
+    expect(words).toBe('Nobody answered in time, so it was refused.');
+    expect(resultOf(seen)).toMatchObject({ ok: true, text: 'done anyway' });
+  });
+
+  it('is still standing (null) when nothing ended it', async () => {
+    gw.setScript(() => [{ type: 'frame', event: 'approval.request', fields: { request_id: 'q2', command: 'ls', description: '', choices: ['once', 'deny'] } }, { type: 'finish', output: 'ok' }]);
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    let words: string | null | undefined = 'unset';
+    for await (const event of handle.events) if (event.type === 'approval') words = event.expired?.();
+    expect(words).toBeNull();
+  });
+});

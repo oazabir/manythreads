@@ -1,6 +1,6 @@
 import { traceHeaders, traceSpan, type BotRuntimeEvent, type BotRuntimeHandle, type BotRuntimeInput, type BotRuntimeScope } from '@manythreads/sdk';
 import { AGENT_BRIDGE_RUN_KEY, modelAliasesOfDefinition, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
-import { agentFromFrame, approvalExtras, endOfTurn, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from './activity.ts';
+import { agentFromFrame, approvalExtras, bridgeFailureOf, endOfTurn, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from './activity.ts';
 import { guardedFetch } from './outbound.ts';
 import { withOutputStyle } from './output-style.ts';
 import { refusedRun, runnerRefusedRun } from './refused.ts';
@@ -297,7 +297,7 @@ export async function runOnGateway(
     ));
 
   /** Answers the question the run asked (`POST /runs/<id>/approval`), then passes on what the person wrote so the model reads it (`/steer`, best effort). */
-  const answerRemote = async (choice: 'once' | 'session' | 'deny', requestId: string | null, note?: string): Promise<boolean> => {
+  const answerRemote = async (choice: 'once' | 'session' | 'deny', requestId: string | null, note?: string, what = 'that command'): Promise<boolean> => {
     try {
       const res = await call(`/runs/${encodeURIComponent(remoteId)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }), headers: { 'content-type': 'application/json' } }, 15_000);
       void res.body?.cancel().catch(() => undefined);
@@ -307,7 +307,7 @@ export async function runOnGateway(
     }
     const text = (note ?? '').trim();
     if (text !== '') {
-      const line = choice === 'deny' ? `The person declined that command and wrote: ${text}` : `The person allowed that command and wrote: ${text}`;
+      const line = choice === 'deny' ? `The person declined ${what} and wrote: ${text}` : `The person allowed ${what} and wrote: ${text}`;
       try {
         const res = await call(`/runs/${encodeURIComponent(remoteId)}/steer`, { method: 'POST', body: JSON.stringify({ input: line }), headers: { 'content-type': 'application/json' } }, 15_000);
         void res.body?.cancel().catch(() => undefined);
@@ -398,6 +398,62 @@ export async function runOnGateway(
     yield { kind: 'end', terminal: null };
   }
 
+  /** Questions the program ended by itself (`approval.expired {request_id, message}`), by request id; and the last one's words for a question that has no id. */
+  const expiredQuestions = new Map<string, string>();
+  let lastExpired: string | null = null;
+  /**
+   * Reads the stream ahead of the run job. The run job stops reading while it waits for a person to answer a question, and the program may end that
+   * question on its own meanwhile; reading ahead is how the wait hears of it. What is read is queued, in order, for the job.
+   */
+  async function* eagerly<T extends { kind: string; event?: Record<string, unknown> }>(source: AsyncGenerator<T>): AsyncGenerator<T> {
+    const queue: T[] = [];
+    let done = false;
+    let closed = false;
+    let failure: unknown = null;
+    let wake: (() => void) | null = null;
+    const poke = (): void => {
+      const w = wake;
+      wake = null;
+      w?.();
+    };
+    void (async () => {
+      try {
+        for await (const item of source) {
+          if (closed) break;
+          if (item.kind === 'event' && item.event !== undefined && item.event['event'] === 'approval.expired') {
+            const note = typeof item.event['message'] === 'string' && item.event['message'].trim() !== '' ? item.event['message'].trim().slice(0, 300) : 'The question ended without an answer, so it was refused.';
+            if (typeof item.event['request_id'] === 'string') expiredQuestions.set(item.event['request_id'], note);
+            lastExpired = note;
+          }
+          queue.push(item);
+          poke();
+        }
+      } catch (err) {
+        failure = err;
+      } finally {
+        done = true;
+        poke();
+      }
+    })();
+    try {
+      for (;;) {
+        const next = queue.shift();
+        if (next !== undefined) {
+          yield next;
+          continue;
+        }
+        if (done) break;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          if (queue.length > 0 || done) poke();
+        });
+      }
+      if (failure !== null) throw failure;
+    } finally {
+      closed = true;
+    }
+  }
+
   /** The words the bridge gives for an account-level failure (`reason`) and when the plan comes back (`resets_at`, ms since the epoch). */
   const accountFailureOf = (f: Record<string, unknown>): { failure: 'plan_limit' | 'needs_sign_in'; resetsAt: string | null } | null => {
     if (f['reason'] !== 'plan_limit' && f['reason'] !== 'needs_sign_in') return null;
@@ -420,7 +476,7 @@ export async function runOnGateway(
     let retried = false;
     try {
       for (;;) {
-      for await (const item of terminalAware()) {
+      for await (const item of eagerly(terminalAware())) {
         if (item.kind === 'end') {
           terminal = item.terminal;
           break;
@@ -459,8 +515,10 @@ export async function runOnGateway(
             description: typeof event['description'] === 'string' ? event['description'] : '',
             choices,
             ...approvalExtras(event),
+            // The program ended the question itself (the bridge cuts a wait at its limit and sends `approval.expired`): the run job stops waiting and refuses.
+            expired: () => (requestId !== null ? (expiredQuestions.get(requestId) ?? null) : lastExpired),
             answer: async (choice, note) => {
-              const sent = await answerRemote(choice, requestId, note);
+              const sent = await answerRemote(choice, requestId, note, event['kind'] === 'switch_mode' ? 'that plan' : 'that command');
               // What was left of the budget when the run stopped to ask, and the grace again: the answer does not eat the time the work needs.
               const left = Math.max(60_000, budgetMs - (pausedAt - startedAt));
               if (!finished) armCeiling(left + options.killGraceSeconds * 1000);
@@ -530,12 +588,14 @@ export async function runOnGateway(
       yield { type: 'result', text: streamed, ok: false, error: line, failure: 'runner_refused', refusal: { runner: claudeRunner!, reason: account.failure, line }, tokens: null, ...claudeMark(f) };
       return;
     }
+    // The agent bridge's own plain sentences (our code, not a remote program) say why in a way the notice can use; its text is shown nowhere.
+    const bridgeFailure = claudeRunner !== undefined && terminal.event === 'run.failed' ? bridgeFailureOf(typeof f['error'] === 'string' ? f['error'] : undefined) : null;
     yield {
       type: 'result',
       text: streamed,
       ok: false,
       error,
-      ...(timedOut ? { failure: 'timeout' as const } : terminal.event === 'run.interrupted' ? { failure: 'hermes_unreachable' as const } : {}),
+      ...(timedOut ? { failure: 'timeout' as const } : terminal.event === 'run.interrupted' ? { failure: 'hermes_unreachable' as const } : bridgeFailure !== null ? { failure: bridgeFailure } : {}),
       tokens: tokensOf(f['usage']),
       ...claudeMark(f),
     };
