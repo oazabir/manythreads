@@ -35,6 +35,11 @@ export interface StepAction {
   fail?: boolean | string;
   /** Put the adapter's leaks (`rawInput`, `toolResponse`, ...) on the wire. Default true: the real adapters do. */
   leak?: boolean;
+  /**
+   * Starts a real child process in the adapter's own process group when the step begins (a command the adapter runs) and writes its pid to this file. Claude and Hermes end
+   * it when the turn is cancelled; Codex does not (measured: the command was still running 12 s after `session/cancel`), so only a stop of the process group ends it.
+   */
+  spawn?: string;
 }
 
 export interface HelperAction {
@@ -56,6 +61,8 @@ export interface PermissionAction {
   mcp?: boolean;
   /** Actions that run when the person said no; the turn ends after them. */
   onReject?: Action[];
+  /** The request is sent and waited for even when a cancel came first (an adapter already inside the call does that). Default false. */
+  ignoreCancel?: boolean;
 }
 
 export interface PlanEntryInput {
@@ -74,7 +81,8 @@ export type Action =
   | PermissionAction
   /** A `usage_update`; `cost` (USD) is added to the session's cumulative cost, and only the Claude flavor sends it. */
   | { do: 'usage'; used?: number; size?: number; cost?: number }
-  | { do: 'sleep'; ms: number }
+  /** `uninterruptible`: a `session/cancel` does not end the sleep (a tool that does not look at the cancel). */
+  | { do: 'sleep'; ms: number; uninterruptible?: boolean }
   /** Ends the prompt with a JSON-RPC error. */
   | { do: 'fail'; message: string; code?: number; data?: unknown }
   /** Ends the prompt with this stop reason (default `end_turn`). */
@@ -95,11 +103,26 @@ export interface AuthScript {
   account?: { label?: string; plan?: string; email?: string; organization?: string };
 }
 
+/** Things an adapter does wrong or does not offer, for a test of the client's answer to them. */
+export interface FaultScript {
+  /** `session/set_mode` answers an error (the client then tries `set_config_option`). */
+  setMode?: boolean;
+  /** `session/set_config_option` refuses these config ids with an error. */
+  setConfig?: string[];
+  /** `session/resume` and `session/load` of a session that exists answer this error. */
+  open?: { code: number; message: string; data?: unknown };
+  /** The adapter does not advertise `session/resume` (a client has to use `session/load`). */
+  noResume?: boolean;
+  /** `mcpCapabilities.http` is false (Claude and Codex flavors; Hermes advertises none). */
+  noHttp?: boolean;
+}
+
 export interface FakeScript {
   flavor?: Flavor;
   /** Where sessions and the sign-in are kept, so a second process can resume or load them. Default: in memory only. */
   stateDir?: string;
   auth?: AuthScript;
+  faults?: FaultScript;
   /** Named scenarios. A prompt that contains `[[name]]` plays that one; else `default`; else the first. */
   scenarios: Record<string, Action[]>;
   default?: string;

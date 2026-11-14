@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
@@ -48,6 +49,8 @@ interface LiveSession extends Session {
   abort: AbortController | null;
   /** Prompts of one session run one after another. */
   queue: Promise<unknown>;
+  /** Counts the `session/cancel` notifications: a prompt that was received before one and had not started when it came is cancelled at its start. */
+  cancelEpoch: number;
 }
 
 /** What a client sent, in order (for a test to look at: `_meta`, `mcpServers`, the prompt). */
@@ -133,6 +136,7 @@ function splitChunks(text: string, chunks = 1): string[] {
 export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
   const flavor: Flavor = script.flavor ?? 'claude';
   const authScript: AuthScript = script.auth ?? {};
+  const faults = script.faults ?? {};
   const received: Received[] = [];
   const sessions = new Map<string, LiveSession>();
   let idCounter = 0;
@@ -181,7 +185,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     if (!file) return undefined;
     try {
       const stored = JSON.parse(readFileSync(file, 'utf8')) as Session;
-      const revived: LiveSession = { ...stored, options: stored.options ?? {}, steered: [], abort: null, queue: Promise.resolve() };
+      const revived: LiveSession = { ...stored, options: stored.options ?? {}, steered: [], abort: null, queue: Promise.resolve(), cancelEpoch: 0 };
       sessions.set(id, revived);
       return revived;
     } catch {
@@ -292,25 +296,27 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
 
   const agentCapabilities = (): Meta => {
     const common = { loadSession: true, promptCapabilities: { image: true, embeddedContext: true } };
+    const http = faults.noHttp !== true;
+    const resume = faults.noResume === true ? {} : { resume: {} };
     if (flavor === 'claude') {
       return {
         ...common,
-        mcpCapabilities: { http: true, sse: true },
+        mcpCapabilities: { http, sse: true },
         auth: { logout: {}, status: {} },
-        sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, options: {}, resume: {}, status: {}, title: {} },
+        sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, options: {}, ...resume, status: {}, title: {} },
         _meta: { claudeCode: { promptQueueing: true }, authStatus: {} },
       };
     }
     if (flavor === 'codex') {
       return {
         ...common,
-        mcpCapabilities: { http: true, sse: false },
+        mcpCapabilities: { http, sse: false },
         auth: { logout: {} },
-        sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, resume: {}, title: {}, subagents: {} },
+        sessionCapabilities: { additionalDirectories: {}, close: {}, delete: {}, fork: {}, list: {}, ...resume, title: {}, subagents: {} },
         _meta: { steering: { supported: true } },
       };
     }
-    return { ...common, sessionCapabilities: { fork: {}, list: {}, resume: {} } };
+    return { ...common, sessionCapabilities: { fork: {}, list: {}, ...resume } };
   };
 
   /** The `_auth/status_update` push (Claude also sends `auth/status_update`). It carries an e-mail on purpose. */
@@ -343,6 +349,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     signal: AbortSignal;
     prompt: string;
     usageSent: boolean;
+    /** Commands a step started (a `spawn` step), in the adapter's own process group. */
+    children: ChildProcess[];
   }
 
   const emit = async (env: Env, update: Record<string, unknown>, replayable = true): Promise<void> => {
@@ -375,13 +383,14 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
   const startStep = async (env: Env, s: StepSpec, id: string, parent?: string): Promise<void> => {
     const leak = s.leak !== false;
     const kind = s.kind ?? 'other';
+    const title = shownTitle(env, s);
     if (flavor === 'claude') {
       await emit(env, {
         sessionUpdate: 'tool_call',
         toolCallId: id,
         name: s.toolName,
         status: 'pending',
-        title: s.genericTitle ?? s.title,
+        title: s.genericTitle ?? title,
         kind,
         content: [],
         locations: [],
@@ -391,8 +400,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       await emit(env, {
         sessionUpdate: 'tool_call_update',
         toolCallId: id,
-        title: s.title,
-        kind,
+        title,
         locations: locations(env, s),
         ...(leak && s.input !== undefined ? { rawInput: s.input } : {}),
         ...(diffContent(env, s) ? { content: diffContent(env, s) } : {}),
@@ -402,7 +410,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       await emit(env, {
         sessionUpdate: 'tool_call',
         toolCallId: id,
-        title: s.title,
+        title,
         kind,
         status: 'in_progress',
         locations: s.diff ? [] : locations(env, s),
@@ -413,7 +421,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       await emit(env, {
         sessionUpdate: 'tool_call',
         toolCallId: id,
-        title: s.title,
+        title,
         kind,
         locations: locations(env, s),
         ...(leak && s.input !== undefined ? { rawInput: s.input } : {}),
@@ -421,12 +429,22 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     }
   };
 
+  /**
+   * The title the adapter ends up showing. A command's step is titled with the command itself (measured: Claude refines "Terminal" to the command in its next update,
+   * Codex and Hermes start with it; Hermes prefixes the tool name), which is exactly what a client must not pass on.
+   */
+  const shownTitle = (env: Env, s: StepSpec): string => {
+    const input = s.input as { command?: unknown } | undefined;
+    if (s.kind === 'execute' && s.leak !== false && typeof input?.command === 'string') return flavor === 'hermes' ? `terminal: ${withToken(env, input.command)}` : withToken(env, input.command);
+    return fill(env, s.title);
+  };
+
   type Outcome = 'completed' | 'failed' | 'rejected' | 'cancelled';
 
   /** The last frame of a step. What each adapter does on a stop differs: Codex sends nothing, Claude marks it failed, Hermes says completed. */
   const endStep = async (env: Env, s: StepSpec, id: string, outcome: Outcome, parent?: string): Promise<void> => {
     const leak = s.leak !== false;
-    const failText = typeof s.fail === 'string' ? s.fail : 'The tool failed';
+    const failText = typeof s.fail === 'string' ? fill(env, s.fail) : 'The tool failed';
     if (flavor === 'claude') {
       const failed = outcome !== 'completed';
       const extra: Meta = {
@@ -467,17 +485,34 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
   };
 
   /** A step that runs for `ms` (a stop interrupts it). */
+  const startCommand = (env: Env, s: StepSpec): void => {
+    if (!s.spawn) return;
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: env.session.cwd, stdio: 'ignore' });
+    env.children.push(child);
+    mkdirSync(env.session.cwd, { recursive: true });
+    writeFileSync(absolute(env, s.spawn), String(child.pid));
+  };
+  /** Claude and Hermes end the command when the turn is cancelled; Codex does not (measured). */
+  const endCommands = (env: Env): void => {
+    if (flavor === 'codex') return;
+    for (const c of env.children) c.kill('SIGKILL');
+  };
+
   const runStep = async (env: Env, s: StepSpec, parent?: string): Promise<'ok' | 'cancelled'> => {
     const id = s.id ?? nextId();
     await startStep(env, s, id, parent);
+    startCommand(env, s);
     if (s.ms && !(await sleep(s.ms, env.signal))) {
+      endCommands(env);
       await endStep(env, s, id, 'cancelled', parent);
       return 'cancelled';
     }
     if (env.signal.aborted) {
+      endCommands(env);
       await endStep(env, s, id, 'cancelled', parent);
       return 'cancelled';
     }
+    endCommands(env);
     await endStep(env, s, id, s.fail ? 'failed' : 'completed', parent);
     return 'ok';
   };
@@ -589,6 +624,11 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     const id = s.id ?? nextId();
     await startStep(env, s, id);
     const input = (s.input ?? {}) as { command?: string; description?: string };
+    // Already cancelled: an adapter sends no new question after a cancel (unless it was already inside the call: `ignoreCancel`).
+    if (env.signal.aborted && !p.ignoreCancel) {
+      await endStep(env, s, id, 'cancelled');
+      return 'cancelled';
+    }
     const toolCall: Meta =
       flavor === 'hermes'
         ? {
@@ -604,7 +644,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
               toolCallId: id,
               ...(flavor === 'claude' ? { name: s.toolName } : {}),
               status: 'pending',
-              title: s.title,
+              title: shownTitle(env, s),
               kind: s.kind ?? 'execute',
               rawInput: s.input ?? {},
               content: textContent(input.description),
@@ -616,7 +656,12 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       options: permissionOptions(p),
       ...(flavor === 'codex' && p.mcp ? { _meta: { is_mcp_tool_approval: true } } : {}),
     });
-    const aborted = new Promise<'aborted'>((resolve) => env.signal.addEventListener('abort', () => resolve('aborted'), { once: true }));
+    // The race has to look at the signal first: an abort that came while the request was being made would never fire the listener.
+    const aborted = new Promise<'aborted'>((resolve) => {
+      if (p.ignoreCancel) return;
+      if (env.signal.aborted) resolve('aborted');
+      else env.signal.addEventListener('abort', () => resolve('aborted'), { once: true });
+    });
     const answer = await Promise.race([request, aborted]);
     request.catch(() => undefined);
     if (answer === 'aborted' || answer.outcome.outcome === 'cancelled') {
@@ -652,8 +697,16 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     );
   };
 
+  /** The run's own MCP token as the client gave it to this session (`{{mcpToken}}` in a script puts it in a title, a message or an error, as a careless adapter might). */
+  const withToken = (env: Env, text: string): string => {
+    const header = env.session.mcpServers
+      .flatMap((m) => ((m as { headers?: Array<{ name?: string; value?: string }> }).headers ?? []))
+      .find((h) => h.name === 'Authorization');
+    return text.replaceAll('{{mcpToken}}', header?.value?.replace(/^Bearer /, '') ?? '');
+  };
+
   const fill = (env: Env, text: string): string =>
-    text
+    withToken(env, text)
       .replaceAll('{{prompt}}', env.prompt)
       .replaceAll('{{turn}}', String(env.session.turns))
       .replaceAll('{{sessionId}}', env.session.id)
@@ -662,7 +715,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
 
   const runActions = async (env: Env, actions: Action[]): Promise<'ok' | 'cancelled'> => {
     for (const a of actions) {
-      if (env.signal.aborted) return 'cancelled';
+      if (env.signal.aborted && !(a.do === 'permission' && a.ignoreCancel)) return 'cancelled';
       let result: 'ok' | 'cancelled' = 'ok';
       switch (a.do) {
         case 'text':
@@ -687,10 +740,11 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
           await sendUsage(env, a);
           break;
         case 'sleep':
-          if (!(await sleep(a.ms, env.signal))) return 'cancelled';
+          if (a.uninterruptible) await new Promise((r) => setTimeout(r, a.ms));
+          else if (!(await sleep(a.ms, env.signal))) return 'cancelled';
           break;
         case 'fail':
-          throw new RequestError(a.code ?? -32603, a.message, a.data);
+          throw new RequestError(a.code ?? -32603, fill(env, a.message), a.data);
         case 'stop':
           throw new StopSignal(a.reason);
       }
@@ -711,15 +765,20 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       .map((b) => b.text ?? '')
       .join('\n');
 
-  const runPrompt = async (client: AgentContext, session: LiveSession, blocks: Array<{ type: string; text?: string }>): Promise<PromptResponse> => {
+  const runPrompt = async (client: AgentContext, session: LiveSession, blocks: Array<{ type: string; text?: string }>, epoch: number): Promise<PromptResponse> => {
     if (authScript.requireSignIn && !readAuth().signedIn) throw new RequestError(-32000, 'Authentication required');
+    // A `session/cancel` that came after this prompt was received and before it started (it was queued behind another) takes effect: the turn ends cancelled at once.
+    if (session.cancelEpoch !== epoch) {
+      if (script.cancelDelayMs) await new Promise((r) => setTimeout(r, script.cancelDelayMs));
+      return { stopReason: 'cancelled', usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } } as PromptResponse;
+    }
     const abort = new AbortController();
     session.abort = abort;
     session.turns += 1;
     session.updatedAt = new Date().toISOString();
     const prompt = promptText(blocks);
     session.history.push({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: prompt } } as SessionUpdate);
-    const env: Env = { client, session, signal: abort.signal, prompt, usageSent: false };
+    const env: Env = { client, session, signal: abort.signal, prompt, usageSent: false, children: [] };
     let stopReason: StopReason = 'end_turn';
     try {
       const outcome = await runActions(env, pickScenario(prompt));
@@ -862,6 +921,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       steered: [],
       abort: null,
       queue: Promise.resolve(),
+      cancelEpoch: 0,
     };
     sessions.set(id, s);
     persist(s);
@@ -882,6 +942,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       s = newSession(params.sessionId, params.cwd, []); // Hermes: an unknown id is not an error
       return { modes: modeState(s.mode), configOptions: configOptions(s) } as never;
     }
+    if (faults.open) throw new RequestError(faults.open.code, faults.open.message, faults.open.data);
     s.cwd = params.cwd;
     s.mcpServers = (params.mcpServers ?? []) as unknown[];
     if (flavor === 'hermes') await replay(client, s, 'all');
@@ -895,6 +956,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       if (flavor === 'hermes') return {};
       throw unknownSession(params.sessionId);
     }
+    if (faults.open) throw new RequestError(faults.open.code, faults.open.message, faults.open.data);
     s.cwd = params.cwd;
     s.mcpServers = (params.mcpServers ?? []) as unknown[];
     await replay(client, s, flavor === 'hermes' ? 'all' : 'messages');
@@ -929,6 +991,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     record('session/set_mode', params);
     const s = findSession(params.sessionId);
     if (!s) throw unknownSession(params.sessionId);
+    if (faults.setMode) throw new RequestError(-32603, 'Internal error', { details: 'set_mode is not available' });
     if (!MODES[flavor].list.some(([id]) => id === params.modeId)) throw RequestError.invalidParams({ modeId: params.modeId }, 'Unknown mode');
     s.mode = params.modeId;
     return {};
@@ -940,6 +1003,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     if (!s) throw unknownSession(params.sessionId);
     const id = (params as { configId: string }).configId;
     const value = String((params as { value: unknown }).value);
+    if (faults.setConfig?.includes(id)) throw new RequestError(-32603, 'Internal error', { details: `${id} cannot be changed` });
     const option = configOptions(s).find((o) => o['id'] === id);
     if (!option) throw RequestError.invalidParams({ configId: id }, 'Unknown config option');
     if (!(option['options'] as Array<{ value: string }>).some((o) => o.value === value)) throw RequestError.invalidParams({ configId: id, value }, 'Unknown value');
@@ -952,7 +1016,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     record('session/prompt', params);
     const s = findSession(params.sessionId);
     if (!s) throw unknownSession(params.sessionId);
-    const run = s.queue.then(() => runPrompt(client, s, params.prompt as Array<{ type: string; text?: string }>));
+    const epoch = s.cancelEpoch;
+    const run = s.queue.then(() => runPrompt(client, s, params.prompt as Array<{ type: string; text?: string }>, epoch));
     s.queue = run.catch(() => undefined);
     return run;
   });
@@ -975,7 +1040,10 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
 
   app.onNotification(methods.agent.session.cancel, ({ params }) => {
     record('session/cancel', params);
-    sessions.get(params.sessionId)?.abort?.abort();
+    const s = sessions.get(params.sessionId);
+    if (!s) return;
+    s.cancelEpoch += 1;
+    s.abort?.abort();
   });
 
   return {

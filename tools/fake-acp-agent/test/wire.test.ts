@@ -46,7 +46,7 @@ describe('claude flavor: a worked prompt', () => {
 
   it('puts the leaks on the wire that the bridge has to drop', async () => {
     const { h } = await prompt(DEFAULT_SCRIPT, '[[work]]');
-    const bash = h.updates.find((u) => u.sessionUpdate === 'tool_call_update' && u.title === 'Run the tests');
+    const bash = h.updates.find((u) => u.sessionUpdate === 'tool_call_update' && u.title === 'pnpm test');
     expect(bash).toMatchObject({ rawInput: { command: 'pnpm test' } });
     const last = h.updates.filter((u) => u.toolCallId === bash?.toolCallId).at(-1);
     expect(last).toMatchObject({ status: 'completed', _meta: { claudeCode: { toolName: 'Bash', toolResponse: '3 passed' } } });
@@ -292,7 +292,7 @@ describe('a slow step and session/cancel', () => {
 describe('codex and hermes flavors', () => {
   it('codex: in_progress then completed, a terminal leak on commands, a diff in the first frame, helper as three flat steps, no plan, no cost', async () => {
     const { h } = await prompt({ ...DEFAULT_SCRIPT, flavor: 'codex' }, '[[work]]');
-    const run = h.updates.find((u) => u.sessionUpdate === 'tool_call' && u.title === 'Run the tests');
+    const run = h.updates.find((u) => u.sessionUpdate === 'tool_call' && u.title === 'pnpm test');
     expect(run).toMatchObject({ status: 'in_progress', rawInput: { command: 'pnpm test' } });
     expect(byId(h.updates, run?.toolCallId).at(-1)).toMatchObject({
       status: 'completed',
