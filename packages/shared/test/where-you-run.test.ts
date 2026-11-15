@@ -35,11 +35,18 @@ describe('where you run', () => {
     }
   });
 
-  it('uses mt-git for Claude on a pod and plain git for the others', () => {
-    expect(whereYouRun({ place: 'agent_pod', agent: 'claude', ...base })).toContain('`mt-git record-push <branch>`');
-    expect(whereYouRun({ place: 'agent_pod', agent: 'codex', ...base })).toContain('`git push origin <branch>`');
+  it('uses mt-git for everything with Claude, and for the repository of record only with the others, away from the Hermes pod', () => {
+    for (const place of ['agent_pod', 'server'] as const) {
+      expect(whereYouRun({ place, agent: 'claude', ...base })).toContain('For git, use `mt-git` in place of `git`');
+      for (const agent of ['codex', 'hermes'] as const) {
+        const text = whereYouRun({ place, agent, ...base });
+        expect(text).toContain('`mt-git record-push <branch>`');
+        expect(text).toContain('`mt-git record-fetch`');
+        expect(text).not.toContain('For git, use `mt-git`');
+      }
+    }
     expect(whereYouRun({ place: 'hermes_pod', agent: 'hermes', ...base })).toContain('`git push origin <branch>`');
-    expect(whereYouRun({ place: 'agent_pod', agent: 'codex', ...base })).not.toContain('mt-git');
+    expect(whereYouRun({ place: 'hermes_pod', agent: 'hermes', ...base })).not.toContain('mt-git');
   });
 
   it('gives the deployer its kube context and the 45-minute budget, and nobody else', () => {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PodAgent, PodRunnerInfo } from '@manythreads/sdk';
+import { whereYouRun } from '@manythreads/shared';
 import { HOSTNAME_LABEL, isNodeLabelValue, MOVE_HELD_ANNOTATION, MOVING_ANNOTATION, NODE_ANNOTATION, type K8sObject } from '@manythreads/sdk/pods';
 import type { ClaudePodConfig } from './config.ts';
 
@@ -131,28 +132,22 @@ export interface InstructionOptions {
 }
 
 export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = false, agent: PodAgent = 'claude', extra: InstructionOptions = {}): string {
+  // The one "Where you run" text (shared with the servers' bridge and the Hermes run prompt): the folders, the repository of record, `mt-git` or git, `mt-publish`, the deployer's kube context.
+  const where = whereYouRun({
+    place: 'agent_pod',
+    agent,
+    teamSlug,
+    botSlug,
+    mayPublish,
+    kubeconfig: typeof extra.kubeconfig === 'string' ? extra.kubeconfig : null,
+    browser: extra.acp === true,
+  });
   return [
-    `You run on ${AGENTS[agent].title}, not on a person's machine. Your working folder is /work/${teamSlug}/${botSlug}.`,
-    'The team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.',
-    'Do not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner\'s sign-in and keys, which are not yours to use.',
+    `Your runner is ${AGENTS[agent].title}.`,
+    where,
     'Post your answer and reports with the manythreads tools, not by writing files for people to find.',
-    ...(agent === 'claude'
-      ? ['For git, use `mt-git` in place of `git`: `mt-git status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>` and `branch --show-current`, inside the project folder. Plain `git` is not available to you, and `mt-git` refuses any other command or option.']
-      : []),
-    ...(extra.acp === true
-      ? [
-          `Each project also has a shared repository of record at /work/${teamSlug}/repos/<project>.git, which every bot of this pod can reach. Share a branch with the others with \`mt-git record-push <branch>\` (never main) and bring theirs in with \`mt-git record-fetch\`: their branches appear as refs/record/<branch> (start your own from one with \`mt-git checkout -b <branch> refs/record/<branch>\`).`,
-          `Install packages with \`pnpm install --frozen-lockfile\`; the pod keeps one package store for all clones. A browser (Chromium) is installed for Playwright checks. There is no database in this pod, so run only tests that need none.`,
-        ]
-      : []),
+    ...(extra.acp === true ? ['Install packages with `pnpm install --frozen-lockfile`; the pod keeps one package store for all clones. There is no database in this pod, so run only tests that need none.'] : []),
     ...(extra.fullAccess === true ? ['Your commands run without a question in this pod (the pod is the sandbox): the pod reaches the platform and the internet on port 443 and no other address in the cluster. Still keep to your own folders, and never touch /state, /etc/bridge or the environment.'] : []),
-    ...(typeof extra.kubeconfig === 'string' ? [`You are this team's deployer: \`kubectl\` and \`helm\` already use your kubeconfig (${extra.kubeconfig}), which can change the team's test namespace and nothing else. Do not print the file.`] : []),
-    ...(mayPublish
-      ? [
-          'To hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> "<title>"` (the pull request or merge request text on standard input). When the card says whose name the commit carries (an author name and email), add them as the last two arguments, exactly as given.',
-          'It makes one commit of the whole change, pushes that branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.',
-        ]
-      : []),
   ].join('\n');
 }
 

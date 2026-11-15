@@ -18,12 +18,18 @@ export const DEPLOYER_MIN_RUN_SECONDS = DEPLOYER_MIN_RUN_MINUTES * 60;
 /** The command every bot that may publish uses, in every place: it asks the place's publisher to push the card branch and open the pull request. The bot never holds the token. */
 export const PUBLISH_COMMAND = 'mt-publish';
 
+/** Where an enrolled server's bridge keeps its folders when the installer made them (the bridge's `server.root`). */
+export const SERVER_ROOT = '/var/lib/manythreads-bridge';
+
 /** Where a team's repository of record lies, per place (the same relative place everywhere: `<root>/repos/<project>.git`). */
 export const RECORD_ROOTS: Readonly<Record<RunPlace, (teamSlug: string) => string>> = {
   hermes_pod: () => '/workspace/repos',
   agent_pod: (teamSlug) => `/work/${teamSlug}/repos`,
-  server: (teamSlug) => `/var/lib/manythreads-bridge/work/${teamSlug}/repos`,
+  server: (teamSlug) => `${SERVER_ROOT}/work/${teamSlug}/repos`,
 };
+
+/** The team's repository of record for a place; a server whose bridge has another root says so (`serverRoot`). */
+const recordRoot = (w: { place: RunPlace; serverRoot?: string | undefined }, team: string): string => (w.place === 'server' && w.serverRoot !== undefined ? `${w.serverRoot}/work/${team}/repos` : RECORD_ROOTS[w.place](team));
 
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,60}$/;
 const safe = (value: string, what: string): string => {
@@ -44,39 +50,46 @@ export interface WhereYouRun {
   kubeconfig?: string | null | undefined;
   /** The browser (Chromium with Playwright) is installed in this place. */
   browser?: boolean | undefined;
+  /** A server only: the bridge's root folder when it is not the installer's (`/var/lib/manythreads-bridge`). */
+  serverRoot?: string | undefined;
 }
 
 /** Where a bot's own folder lies. */
-export function workFolder(w: Pick<WhereYouRun, 'place' | 'teamSlug' | 'botSlug'>): string {
+export function workFolder(w: Pick<WhereYouRun, 'place' | 'teamSlug' | 'botSlug' | 'serverRoot'>): string {
   const team = safe(w.teamSlug, 'team');
   const bot = safe(w.botSlug, 'bot');
   if (w.place === 'hermes_pod') return `~`;
   if (w.place === 'agent_pod') return `/work/${team}/${bot}`;
-  return `/var/lib/manythreads-bridge/work/${team}/${bot}`;
+  return `${w.serverRoot ?? SERVER_ROOT}/work/${team}/${bot}`;
 }
 
 /** The sentence that names a project's repository of record and the bot's clone of it, for one place. */
-export function repositoryLine(w: Pick<WhereYouRun, 'place' | 'teamSlug' | 'botSlug'>, project: string): string {
+export function repositoryLine(w: Pick<WhereYouRun, 'place' | 'teamSlug' | 'botSlug' | 'serverRoot'>, project: string): string {
   const p = safe(project, 'project');
-  const record = `${RECORD_ROOTS[w.place](safe(w.teamSlug, 'team'))}/${p}.git`;
+  const record = `${recordRoot(w, safe(w.teamSlug, 'team'))}/${p}.git`;
   if (w.place === 'hermes_pod') return `On the team's Hermes pod its repository of record is ${record} and your clone is ~/${p}.`;
   const place = w.place === 'agent_pod' ? "On the team's agent pod" : 'On the server you run on';
   return `${place} its repository of record is ${record} and your clone is ${workFolder(w)}/${p}.`;
 }
 
-/** How a branch moves between the bots of a team: plain git on the Hermes pod and on a Hermes server, `mt-git` where plain git is not offered (Claude). */
+/**
+ * How a branch moves between the bots of a team: plain git on the Hermes pod (a clone's origin there is the repository of record). In an agent pod and on a server a clone's origin is the
+ * project's public address and the repository of record is a second, local one, which only `mt-git record-push` and `record-fetch` reach, so those two are named for every agent; Claude has no
+ * plain `git` that is not asked about, so it also uses `mt-git` for everything else.
+ */
 function shareLines(w: WhereYouRun): string[] {
-  const git = w.place === 'hermes_pod' || w.agent !== 'claude' ? 'git' : 'mt-git';
+  const card = 'Every card is worked on its own branch, `card-` plus the first eight characters of the card id.';
   if (w.place === 'hermes_pod') {
-    return ['Every card is worked on its own branch, `card-` plus the first eight characters of the card id. Share it with `git push origin <branch>` (never `main`); read somebody else\'s with `git fetch origin` and `git switch --detach <commit sha>`.'];
+    return [`${card} Share it with \`git push origin <branch>\` (never \`main\`); read somebody else's with \`git fetch origin\` and \`git switch --detach <commit sha>\`.`];
   }
-  if (git === 'mt-git') {
+  const record = `Share it with \`mt-git record-push <branch>\` (never \`main\`) and bring the others' in with \`mt-git record-fetch\`: their branches appear as \`refs/record/<branch>\` (start your own from one with \`mt-git checkout -b <branch> refs/record/<branch>\`).`;
+  if (w.agent === 'claude') {
     return [
-      'For git, use `mt-git` in place of `git`: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>` and `branch --show-current`, inside the project folder.',
-      'Every card is worked on its own branch, `card-` plus the first eight characters of the card id. Share it with `mt-git record-push <branch>` (never `main`) and bring the others\' in with `mt-git record-fetch`: their branches appear as `refs/record/<branch>`.',
+      'For git, use `mt-git` in place of `git`: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>` and `branch --show-current`, inside the project folder. Plain `git` is not available to you, and `mt-git` refuses any other command or option.',
+      `${card} ${record}`,
     ];
   }
-  return ['Every card is worked on its own branch, `card-` plus the first eight characters of the card id. Share it with `git push origin <branch>` (never `main`); read somebody else\'s with `git fetch origin` and `git switch --detach <commit sha>`.'];
+  return [`${card} Commit with plain \`git\` in the project folder. ${record}`];
 }
 
 /** The notes a Codex run needs (P25-16): found by a run of the real chain, not by guessing. */
@@ -97,14 +110,14 @@ export function whereYouRun(w: WhereYouRun): string {
   const team = safe(w.teamSlug, 'team');
   const bot = safe(w.botSlug, 'bot');
   const place = w.place === 'hermes_pod' ? "the team's Hermes pod" : w.place === 'agent_pod' ? "the team's agent pod" : 'a server your workspace enrolled';
-  const folder = workFolder({ place: w.place, teamSlug: team, botSlug: bot });
+  const folder = workFolder({ place: w.place, teamSlug: team, botSlug: bot, serverRoot: w.serverRoot });
   const lines: string[] = [
     `You run on ${place}, not on a person's machine. Your working folder is ${folder}; work inside it only.`,
-    `The team's repository of record for each project is ${RECORD_ROOTS[w.place](team)}/<project>.git: one shared copy per team, which every bot of the team reaches. Your own clone of a project is ${folder}/<project>.`,
+    `The team's repository of record for each project is ${recordRoot(w, team)}/<project>.git: one shared copy per team, which every bot of the team reaches. Your own clone of a project is ${folder}/<project>.`,
   ];
-  if (w.project !== undefined) lines.push(repositoryLine({ place: w.place, teamSlug: team, botSlug: bot }, w.project));
+  if (w.project !== undefined) lines.push(repositoryLine({ place: w.place, teamSlug: team, botSlug: bot, serverRoot: w.serverRoot }, w.project));
   lines.push(...shareLines(w));
-  lines.push('Do not read, copy or print anything that holds a sign-in or a key (the runner\'s state folders, `/etc/bridge`, the environment): it is not yours to use.');
+  lines.push(`Do not read, copy or print anything that holds a sign-in or a key (the runner's state folders, \`${w.place === 'server' ? '/etc/manythreads-bridge' : '/etc/bridge'}\`, the environment): it is not yours to use.`);
   if (w.mayPublish === true) {
     lines.push(
       `To publish a tested card, run \`${PUBLISH_COMMAND} check <project>\` and then \`${PUBLISH_COMMAND} publish <project> <card id> <tested commit> "<title>"\` with the request's text on standard input. The title starts with the task id the card or the request names (for example \`ENG-42: fix the rota\`); when neither names one, it is the card's title. When the card names whose name the commit carries, add the author name and email as the last two arguments, exactly as given.`,

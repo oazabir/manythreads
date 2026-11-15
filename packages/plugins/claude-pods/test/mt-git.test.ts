@@ -84,7 +84,7 @@ describe('the allowed tool strings', () => {
     expect(profiles['eng--reviewer'].extraAllowedTools).toEqual([...GIT_TOOLS]);
     // the bot is told to use the wrapper (a Claude run), and the Codex instructions are unchanged
     expect(instructionsFor('eng', 'builder')).toContain('`mt-git`');
-    expect(instructionsFor('eng', 'builder', false, 'codex')).not.toContain('mt-git');
+    expect(instructionsFor('eng', 'builder', false, 'codex')).not.toContain('use `mt-git` in place of `git`');
   });
 
   it('are installed in both pod images, and the shim runs the script with the bot-settable node variables removed', () => {
