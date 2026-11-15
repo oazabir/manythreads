@@ -141,7 +141,7 @@ const ProviderMeta = z.strictObject({
   /** The chat app a message came across from (bridges plugin, P16-09). Only a plugin posting through the `messages` provider can set it: no bot capability carries `meta`, so a bot cannot claim it. */
   via: z.strictObject({ provider: z.enum(['telegram', 'whatsapp', 'slack', 'teams']) }).optional(),
   /** The category of the short notice a failed run leaves in the thread (runtime-hermes): at most one per run, found again by this key. */
-  runFailure: z.enum(['gateway', 'runner_offline', 'runner_refused', 'hermes_unreachable', 'timeout', 'limit', 'steps', 'too_long', 'approval', 'not_allowed', 'not_on_team', 'other']).optional(),
+  runFailure: z.enum(['gateway', 'runner_offline', 'runner_refused', 'hermes_unreachable', 'timeout', 'limit', 'steps', 'too_long', 'approval', 'denied', 'not_allowed', 'not_on_team', 'other']).optional(),
 });
 
 /**
