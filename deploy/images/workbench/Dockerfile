@@ -28,8 +28,8 @@ RUN apt-get update \
     && groupadd --gid 3000 bots && groupadd --gid 3001 repo && groupadd --gid 3002 publishers && useradd --uid 3001 --gid 3001 --no-create-home --shell /usr/sbin/nologin repo
 COPY sshd_config /etc/ssh/sshd_config
 COPY hooks/update /usr/local/share/workbench/hooks/update
-COPY mt-reconcile.sh mt-lockdown.sh mt-repo-create.sh mt-receive-pack.sh mt-publish.sh mt-push-sync.sh mt-askpass.sh entrypoint.sh /usr/local/bin/
-RUN chmod 0755 /usr/local/bin/mt-reconcile.sh /usr/local/bin/mt-lockdown.sh /usr/local/bin/mt-repo-create.sh /usr/local/bin/mt-receive-pack.sh /usr/local/bin/mt-publish.sh /usr/local/bin/mt-push-sync.sh /usr/local/bin/mt-askpass.sh /usr/local/bin/entrypoint.sh /usr/local/share/workbench/hooks/update \
+COPY mt-reconcile.sh mt-lockdown.sh mt-repo-create.sh mt-receive-pack.sh mt-publish.sh mt-publish mt-push-sync.sh mt-askpass.sh entrypoint.sh /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/mt-reconcile.sh /usr/local/bin/mt-lockdown.sh /usr/local/bin/mt-repo-create.sh /usr/local/bin/mt-receive-pack.sh /usr/local/bin/mt-publish.sh /usr/local/bin/mt-publish /usr/local/bin/mt-push-sync.sh /usr/local/bin/mt-askpass.sh /usr/local/bin/entrypoint.sh /usr/local/share/workbench/hooks/update \
     && printf '%s\n' '%bots ALL=(repo) NOPASSWD: /usr/local/bin/mt-repo-create.sh [a-z0-9]*, /usr/local/bin/mt-receive-pack.sh /workspace/repos/*.git' '%publishers ALL=(repo) NOPASSWD: /usr/local/bin/mt-publish.sh check [a-z0-9]*, /usr/local/bin/mt-publish.sh publish [a-z0-9]*' > /etc/sudoers.d/mt-repo \
     && chmod 0440 /etc/sudoers.d/mt-repo \
     # safe.directory entries are added per repository of record by mt-reconcile.sh (never the wildcard)

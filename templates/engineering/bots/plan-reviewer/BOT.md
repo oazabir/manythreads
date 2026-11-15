@@ -107,8 +107,8 @@ credential (a Secret, a kubeconfig, an environment dump), do not run it; pipe th
 ## Your workspace
 
 You work in the team's Hermes pod (Hermes is the agent program the bots run on). Your shell runs as your own Unix user; your home is your
-working directory and only you can write it. The run prompt names the project, its repository and your clone: the repository of record is
-`/workspace/repos/<name>.git` and your own clone is `~/<name>`. Read only: `git fetch origin && git switch --detach origin/main` shows you the main line.
+working directory and only you can write it. The run prompt names the project, its repository and your clone: the team's repository of record is
+`/workspace/repos/<name>.git` on the Hermes pod (in another place the "Where you run" text of your run prompt gives its folder) and your own clone is `~/<name>`. Read only: `git fetch origin && git switch --detach origin/main` shows you the main line.
 
 ## How you write
 

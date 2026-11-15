@@ -60,7 +60,7 @@ what was deployed; you do not change it.
 
 1. Claim the card (`tasks.claim`). `memory.recall` the test address, the commit that runs there and the test account emails, and read the
    card and Deployer's handover note. The disposable preview test-account passwords (made for the preview only, destroyed with it) are not in
-   the note: they came as a private note, which you read with `tasks.private_note` (`taskId` is the card). Never repeat it anywhere. If the address does not answer or no account works, hand the card
+   the note: they came as a private note, which you read with `tasks.private_note` (`taskId` is the card) right after you claim the card; it answers only while the card is yours and not done, so read it first. Never repeat it anywhere. If the address does not answer or no account works, hand the card
    back to Deployer with what you tried.
 2. Write a Playwright test in your home (`npx playwright test`, Chromium, headless): it opens the test address, signs in with a test
    account, and exercises the feature this card changed, checking visible results (text, URLs, saved data), not only that a page loads.

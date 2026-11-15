@@ -1,0 +1,121 @@
+/*
+ * "Where you run" (P26-05, docs/plans/agents-anywhere.md section 5.6): the one block of plain text that tells a bot where it works, whichever place that is. A bot's BOT.md must not
+ * care whether it runs in the team's Hermes pod, in an agent pod (Claude or Codex over ACP) or on a server a lead enrolled: the BOT.md says "the team's repository of record" and
+ * "`mt-publish`", and this text names the folders and the commands of the place. It is pure text (no clock, no file, no network), so a pod renderer, a server's bridge and the
+ * Hermes run prompt call the same function and cannot drift apart.
+ */
+
+/** The three places a bot's agent runs. */
+export type RunPlace = 'hermes_pod' | 'agent_pod' | 'server';
+
+/** The agent program of a pod or server run; only the notes that agent needs differ. */
+export type RunAgent = 'hermes' | 'claude' | 'codex';
+
+/** A kube deploy needs a kaniko build of 10 to 25 minutes (`kubectl wait --timeout=40m`): a deployer's run must be allowed at least this long. */
+export const DEPLOYER_MIN_RUN_MINUTES = 45;
+export const DEPLOYER_MIN_RUN_SECONDS = DEPLOYER_MIN_RUN_MINUTES * 60;
+
+/** The command every bot that may publish uses, in every place: it asks the place's publisher to push the card branch and open the pull request. The bot never holds the token. */
+export const PUBLISH_COMMAND = 'mt-publish';
+
+/** Where a team's repository of record lies, per place (the same relative place everywhere: `<root>/repos/<project>.git`). */
+export const RECORD_ROOTS: Readonly<Record<RunPlace, (teamSlug: string) => string>> = {
+  hermes_pod: () => '/workspace/repos',
+  agent_pod: (teamSlug) => `/work/${teamSlug}/repos`,
+  server: (teamSlug) => `/var/lib/manythreads-bridge/work/${teamSlug}/repos`,
+};
+
+const SLUG = /^[a-z0-9][a-z0-9._-]{0,60}$/;
+const safe = (value: string, what: string): string => {
+  if (!SLUG.test(value) || value.includes('..')) throw new Error(`where-you-run: ${what} "${value.slice(0, 40)}" is not a plain name`);
+  return value;
+};
+
+export interface WhereYouRun {
+  place: RunPlace;
+  agent: RunAgent;
+  teamSlug: string;
+  botSlug: string;
+  /** The team's project this run is about, when it has one (the channel's project). */
+  project?: string | undefined;
+  /** The bot may publish (its definition grants `tasks.pull_request`). */
+  mayPublish?: boolean | undefined;
+  /** The bot is the team's deployer: a kube context is mounted for it. The path of the kubeconfig, or null when it has none. */
+  kubeconfig?: string | null | undefined;
+  /** The browser (Chromium with Playwright) is installed in this place. */
+  browser?: boolean | undefined;
+}
+
+/** Where a bot's own folder lies. */
+export function workFolder(w: Pick<WhereYouRun, 'place' | 'teamSlug' | 'botSlug'>): string {
+  const team = safe(w.teamSlug, 'team');
+  const bot = safe(w.botSlug, 'bot');
+  if (w.place === 'hermes_pod') return `~`;
+  if (w.place === 'agent_pod') return `/work/${team}/${bot}`;
+  return `/var/lib/manythreads-bridge/work/${team}/${bot}`;
+}
+
+/** The sentence that names a project's repository of record and the bot's clone of it, for one place. */
+export function repositoryLine(w: Pick<WhereYouRun, 'place' | 'teamSlug' | 'botSlug'>, project: string): string {
+  const p = safe(project, 'project');
+  const record = `${RECORD_ROOTS[w.place](safe(w.teamSlug, 'team'))}/${p}.git`;
+  if (w.place === 'hermes_pod') return `On the team's Hermes pod its repository of record is ${record} and your clone is ~/${p}.`;
+  const place = w.place === 'agent_pod' ? "On the team's agent pod" : 'On the server you run on';
+  return `${place} its repository of record is ${record} and your clone is ${workFolder(w)}/${p}.`;
+}
+
+/** How a branch moves between the bots of a team: plain git on the Hermes pod and on a Hermes server, `mt-git` where plain git is not offered (Claude). */
+function shareLines(w: WhereYouRun): string[] {
+  const git = w.place === 'hermes_pod' || w.agent !== 'claude' ? 'git' : 'mt-git';
+  if (w.place === 'hermes_pod') {
+    return ['Every card is worked on its own branch, `card-` plus the first eight characters of the card id. Share it with `git push origin <branch>` (never `main`); read somebody else\'s with `git fetch origin` and `git switch --detach <commit sha>`.'];
+  }
+  if (git === 'mt-git') {
+    return [
+      'For git, use `mt-git` in place of `git`: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>` and `branch --show-current`, inside the project folder.',
+      'Every card is worked on its own branch, `card-` plus the first eight characters of the card id. Share it with `mt-git record-push <branch>` (never `main`) and bring the others\' in with `mt-git record-fetch`: their branches appear as `refs/record/<branch>`.',
+    ];
+  }
+  return ['Every card is worked on its own branch, `card-` plus the first eight characters of the card id. Share it with `git push origin <branch>` (never `main`); read somebody else\'s with `git fetch origin` and `git switch --detach <commit sha>`.'];
+}
+
+/** The notes a Codex run needs (P25-16): found by a run of the real chain, not by guessing. */
+const CODEX_NOTES: readonly string[] = [
+  "The platform's tools (the card, the thread, memory) are not all listed up front: when you need one and do not see it, search for it by name with your tool search before you decide it is missing.",
+  'A command that takes a long time (a build, a deploy, a test run) is waited for in the same turn: start it, then poll it until it has ended. Never end your turn to wait for it, because nothing wakes you again.',
+  'Do not leave a process running in the background when you finish; a build or a server you started ends with your turn.',
+];
+
+/** What every agent needs, whatever the place: a long command is polled to its end (Hermes shells block, the others must be told). */
+const POLL_NOTE = 'A command that takes a long time is waited for in the same turn: poll it until it has ended before you answer.';
+
+/**
+ * The whole block, as the lines of the "Where you run" paragraph. Plain sentences, the commands in backticks; no secret, no address of the live site, nothing that
+ * differs between two runs of the same bot in the same place.
+ */
+export function whereYouRun(w: WhereYouRun): string {
+  const team = safe(w.teamSlug, 'team');
+  const bot = safe(w.botSlug, 'bot');
+  const place = w.place === 'hermes_pod' ? "the team's Hermes pod" : w.place === 'agent_pod' ? "the team's agent pod" : 'a server your workspace enrolled';
+  const folder = workFolder({ place: w.place, teamSlug: team, botSlug: bot });
+  const lines: string[] = [
+    `You run on ${place}, not on a person's machine. Your working folder is ${folder}; work inside it only.`,
+    `The team's repository of record for each project is ${RECORD_ROOTS[w.place](team)}/<project>.git: one shared copy per team, which every bot of the team reaches. Your own clone of a project is ${folder}/<project>.`,
+  ];
+  if (w.project !== undefined) lines.push(repositoryLine({ place: w.place, teamSlug: team, botSlug: bot }, w.project));
+  lines.push(...shareLines(w));
+  lines.push('Do not read, copy or print anything that holds a sign-in or a key (the runner\'s state folders, `/etc/bridge`, the environment): it is not yours to use.');
+  if (w.mayPublish === true) {
+    lines.push(
+      `To publish a tested card, run \`${PUBLISH_COMMAND} check <project>\` and then \`${PUBLISH_COMMAND} publish <project> <card id> <tested commit> "<title>"\` with the request's text on standard input. The title starts with the task id the card or the request names (for example \`ENG-42: fix the rota\`); when neither names one, it is the card's title. When the card names whose name the commit carries, add the author name and email as the last two arguments, exactly as given.`,
+      `\`${PUBLISH_COMMAND}\` makes one commit of the whole change, pushes the card's branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.`,
+    );
+  }
+  if (typeof w.kubeconfig === 'string' && w.kubeconfig !== '') {
+    lines.push(`You are this team's deployer: \`kubectl\` and \`helm\` already use your kubeconfig (${w.kubeconfig}), which can change the team's test namespace and nothing else. Do not print the file.`);
+    lines.push(`A build in the cluster takes 10 to 25 minutes: wait for it in the same turn (\`kubectl wait --timeout=40m\`), and your run may last at least ${DEPLOYER_MIN_RUN_MINUTES} minutes.`);
+  }
+  if (w.browser === true) lines.push('A browser (Chromium) is installed for Playwright checks; run it headless, there is no display.');
+  lines.push(w.agent === 'codex' ? CODEX_NOTES.join('\n') : POLL_NOTE);
+  return lines.join('\n');
+}

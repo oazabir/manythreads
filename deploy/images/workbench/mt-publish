@@ -1,0 +1,14 @@
+#!/bin/sh
+# `mt-publish` on a bot's PATH (P26-05): the one publish command of every place a bot runs (the agent pod has its publisher client, a server its own publisher, and the Hermes
+# workbench this wrapper). It only asks the `repo` user to run `mt-publish.sh`; the sudoers file allows nothing else, and the script checks every argument itself, so the bot
+# never reads the push credential.
+#   mt-publish check <project>
+#   mt-publish publish <project> <card id> <tested commit> <title> [<author name> <author email>]      (the request's text on standard input)
+case "${1:-}" in
+  check | publish) ;;
+  *)
+    echo "usage: mt-publish check <project> | mt-publish publish <project> <card id> <tested commit> <title> [<author name> <author email>]" >&2
+    exit 2
+    ;;
+esac
+exec sudo -n -u repo /usr/local/bin/mt-publish.sh "$@"

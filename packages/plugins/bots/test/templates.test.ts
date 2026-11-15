@@ -468,7 +468,7 @@ describe('every shipped definition', () => {
     expect(tester.body).toContain('the commit you tested');
     // The tester proves a commit and returns the card to the engineer; it never publishes.
     expect(tester.fm.capabilities?.native).not.toContain('tasks.pull_request');
-    expect(tester.body).not.toContain('mt-publish.sh');
+    expect(tester.body).not.toContain('mt-publish');
     expect(tester.body).toContain('toBotSlug: engineer');
     // Only the committer publishes: a project with a push credential gets a pull request that a person merges; any other project is completed as before.
     for (const s of shipped.filter((x) => x.slug !== 'committer')) expect(s.fm.capabilities?.native ?? [], s.slug).not.toContain('tasks.pull_request');
@@ -481,8 +481,13 @@ describe('every shipped definition', () => {
     expect(committer.fm.handover?.mayTag).toEqual(['tester', 'coder', 'deployer', 'engineer']);
     expect(committer.fm.placement?.gateway).toEqual({ connection: 'managed' });
     expect(committer.fm.evals).toEqual({ set: 'committer', minScore: 0.9 });
-    expect(committer.body).toContain('mt-publish.sh check');
-    expect(committer.body).toContain('mt-publish.sh publish');
+    // one command in every place (P26-05); the script behind it and sudo are the workbench's business, not the bot's text
+    expect(committer.body).toContain('mt-publish check');
+    expect(committer.body).toContain('mt-publish publish');
+    expect(committer.body).not.toContain('mt-publish.sh');
+    expect(committer.body).not.toContain('sudo');
+    expect(committer.body).toContain('starts with the task id');
+    expect(committer.body).toContain("team's repository of record");
     expect(committer.body).toContain('tasks.pull_request');
     expect(committer.body).toContain('Not ready');
     expect(committer.body).toContain('never see');
@@ -497,7 +502,11 @@ describe('every shipped definition', () => {
     const deployer = shipped.find((s) => s.slug === 'deployer')!;
     expect(deployer.fm.capabilities?.native).not.toContain('tasks.deploy');
     expect(deployer.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
-    expect(deployer.fm.limits?.timeoutSeconds).toBe(2400);
+    // the kaniko build takes 10 to 25 minutes: the run may last at least the 45 minutes the shared "Where you run" text promises (P26-05)
+    expect(deployer.fm.limits?.timeoutSeconds).toBe(2700);
+    // the private note reaches Web smoke tester only if the card is handed over whole, not completed first (P26-03)
+    expect(deployer.body).toContain('Do not call `tasks.complete` on the card first');
+    expect(shipped.find((s) => s.slug === 'web-smoke-tester')!.fm.capabilities?.native).toContain('tasks.private_note');
     expect(deployer.fm.handover?.mayTag).toEqual(['web-smoke-tester', 'tester', 'coder', 'engineer']);
     expect(deployer.fm.evals).toEqual({ set: 'deployer', minScore: 0.9 });
     expect(deployer.body).toContain('deploy/preview/README.md');
