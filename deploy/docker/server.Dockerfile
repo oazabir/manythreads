@@ -10,7 +10,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
+# The installer the site serves at /install/ (the bridge as one bundle, its script and its manifest; docs/plans/agents-anywhere.md section 5.2) is made here, from the same sources.
 RUN pnpm install --frozen-lockfile --prod=false \
+    && node tools/agent-bridge/install/build.mjs \
     && chown -R node:node /app
 USER node
 ENV PORT=3000
