@@ -106,6 +106,44 @@ describe('the list', () => {
   });
 });
 
+describe('trouble that must not end the bridge (P26 review M6)', () => {
+  it('a list that cannot be written (the state folder is a file) is a logged failure, not an unhandled rejection, and the next poll tries again', async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (e: unknown): void => void rejections.push(e);
+    process.on('unhandledRejection', onRejection);
+    try {
+      answer.body = { repos: [REPO] };
+      const { root, tools, stateDir } = setup(KEEPER);
+      // the folder of the list is made unwritable by putting a file where the list must go
+      mkdirSync(join(stateDir, 'repos.txt'));
+      sync = startServerRepos({ siteUrl: base, key: () => KEY, toolsDir: tools, root, stateDir, intervalMs: 20, log: (l) => logs.push(l) });
+      await until(() => logs.some((l) => l.includes('could not be written')));
+      expect(await sync.poll()).toBe(false);
+      expect(logs.filter((l) => l.includes('could not be written'))).toHaveLength(1);
+      // the trouble goes away: the list is written
+      rmSync(join(stateDir, 'repos.txt'), { recursive: true });
+      await until(() => existsSync(join(stateDir, 'repos.txt')) && readFileSync(join(stateDir, 'repos.txt'), 'utf8') !== '');
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+  });
+
+  it('two polls at once are one request, and a list longer than the limit is refused without being kept', async () => {
+    const { root, tools, stateDir } = setup(KEEPER);
+    sync = startServerRepos({ siteUrl: base, key: () => KEY, toolsDir: tools, root, stateDir, intervalMs: 60_000, log: (l) => logs.push(l) });
+    await until(() => existsSync(join(stateDir, 'sync', 'started')));
+    const before = answer.calls;
+    const both = await Promise.all([sync.poll(), sync.poll(), sync.poll()]);
+    expect(both).toEqual([true, true, true]);
+    expect(answer.calls - before).toBe(1);
+    // 3 MiB of list: more than the bridge reads
+    answer.body = { repos: [], pad: 'x'.repeat(3 * 1024 * 1024) } as never;
+    expect(await sync.poll()).toBe(false);
+    expect(logs.some((l) => l.includes('was refused'))).toBe(true);
+  });
+});
+
 describe('the sync step', () => {
   it('is started again when it ends, and ended with its children when the bridge stops', async () => {
     const { root, tools, stateDir } = setup('echo x >> "$REPO_SYNC_SCRATCH/runs"\nif [ "$(wc -l < "$REPO_SYNC_SCRATCH/runs")" -lt 2 ]; then exit 3; fi\necho "$$" > "$REPO_SYNC_SCRATCH/pid"\nexec sleep 300\n');

@@ -33,6 +33,32 @@ export interface ServerRepos {
 }
 
 const RESTART_MS = 5_000;
+/** The list is a few hundred lines at most; a site (or a proxy in front of it) that sends more is not trusted with memory. */
+const MAX_LIST_BYTES = 2 * 1024 * 1024;
+
+/** The body as JSON, read up to a limit; null when it is longer, cut off, or not JSON. */
+async function readJson(res: Response): Promise<unknown> {
+  try {
+    const reader = res.body?.getReader();
+    if (!reader) return null;
+    const decoder = new TextDecoder();
+    let size = 0;
+    let text = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_LIST_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return JSON.parse(text + decoder.decode());
+  } catch {
+    return null;
+  }
+}
 
 export function startServerRepos(options: ServerReposOptions): ServerRepos {
   const doFetch = options.fetch ?? fetch;
@@ -50,7 +76,21 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
     complained = what;
   };
 
-  const poll = async (): Promise<boolean> => {
+  // One poll at a time: the interval and the first poll can overlap when the site is slow, and two of them would both write the file.
+  let inflight: Promise<boolean> | null = null;
+  const poll = (): Promise<boolean> => {
+    inflight ??= pollOnce()
+      .catch(() => {
+        complain('the list could not be read or written; it stays as it was');
+        return false;
+      })
+      .finally(() => {
+        inflight = null;
+      });
+    return inflight;
+  };
+
+  const pollOnce = async (): Promise<boolean> => {
     let res: Response;
     try {
       res = await doFetch(`${options.siteUrl.replace(/\/+$/, '')}/api/bridge/repos`, { headers: { authorization: `Bearer ${options.key()}`, accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(20_000) });
@@ -63,24 +103,38 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
       complain(res.status === 401 ? 'the site does not accept this key; the list stays as it was' : `the site answered ${res.status}; the list stays as it was`);
       return false;
     }
-    const parsed = parseRepoList(await res.json().catch(() => null));
+    const parsed = parseRepoList(await readJson(res));
     if (!parsed.ok) {
       complain(`the site's list was refused (${parsed.error})`);
       return false;
     }
-    complained = '';
     const text = toLines(parsed.repos);
     if (text !== last) {
-      writeRepoList(listFile, parsed.repos);
+      try {
+        writeRepoList(listFile, parsed.repos);
+      } catch {
+        // a full disk or a folder nobody may write: the sync step keeps the list it has, and the next poll tries again
+        complain('the list could not be written (disk full or no permission); it stays as it was');
+        return false;
+      }
       last = text;
+      complained = '';
       options.log(`repo sync: ${parsed.repos.length} repositor${parsed.repos.length === 1 ? 'y' : 'ies'} on the list`);
     }
+    complained = '';
     return true;
   };
 
   const startChild = (): void => {
     if (closed) return;
-    mkdirSync(scratch, { recursive: true });
+    try {
+      mkdirSync(scratch, { recursive: true });
+    } catch {
+      options.log('repo sync: the scratch folder could not be made; trying again');
+      restart = setTimeout(startChild, options.restartMs ?? RESTART_MS);
+      restart.unref();
+      return;
+    }
     const env: NodeJS.ProcessEnv = {
       PATH: process.env['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
       HOME: scratch,
@@ -115,11 +169,15 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
       try {
         readFileSync(listFile);
       } catch {
-        writeRepoList(listFile, []);
+        try {
+          writeRepoList(listFile, []);
+        } catch {
+          // no list and none can be written: the sync step starts and finds nothing to do until a poll succeeds
+        }
       }
     }
     startChild();
-  })();
+  })().catch(() => options.log('repo sync: the sync step could not be started'));
   const timer = setInterval(() => void poll(), options.intervalMs ?? 30_000);
   timer.unref();
 
