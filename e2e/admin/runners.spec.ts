@@ -462,7 +462,7 @@ test('a gateway for the bridge: the form asks what runs the bot, the row says it
     await bridge.getByRole('button', { name: 'Change Claude on the host' }).click();
     const edit = page.getByRole('dialog', { name: 'Change Claude on the host' });
     await expect(edit.getByLabel('What runs the bot')).toHaveValue('claude-code');
-    await expect(edit.getByText("The name of the profile in the bridge's config file. It must contain {bot}, for example claude-{bot}: a bot called coder then uses the profile claude-coder.")).toBeVisible();
+    await expect(edit.getByText("The name of the profile in the bridge’s config file. It must contain {bot}, for example claude-{bot}: a bot called coder then uses the profile claude-coder.")).toBeVisible();
     await expect(page.getByTestId('runner-edit-close')).toBeVisible();
     await edit.getByLabel('What runs the bot').selectOption('codex');
     await edit.getByTestId('runner-edit-submit').click();
