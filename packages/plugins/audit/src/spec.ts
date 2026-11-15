@@ -172,7 +172,7 @@ const changedParts = (e: Fields): string | null => {
   return parts.length === 0 ? null : `Changed: ${parts.join(' and ')}`;
 };
 
-const RUNNER_SETTINGS: Readonly<Record<string, string>> = { label: 'name', address: 'address', key: 'key', profile_rule: 'profile rule', node: 'node', model_alias: 'model alias', enabled: 'on/off switch' };
+const RUNNER_SETTINGS: Readonly<Record<string, string>> = { label: 'name', address: 'address', key: 'key', profile_rule: 'profile rule', node: 'node', model_alias: 'model alias', enabled: 'on/off switch', agent: 'agent', full_access: 'full access' };
 /** The settings of a runner that changed, by fixed name (the event carries names, never values). */
 const runnerChanged = (e: Fields): string | null => {
   const list = Array.isArray(e['changed']) ? e['changed'].map((c) => (typeof c === 'string' ? RUNNER_SETTINGS[c] : undefined)).filter((c): c is string => c !== undefined) : [];

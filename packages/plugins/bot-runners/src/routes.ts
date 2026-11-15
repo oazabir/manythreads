@@ -74,6 +74,15 @@ async function writeTeams(tx: PluginTx, runnerId: string, teams: BotRunnerTeams)
   return unique.length;
 }
 
+/** A Codex runner: a Codex pod runner, or one Codex agent on an enrolled server. Only these can have full access (the database says the same, bot-runners 0007). */
+export const isCodexRunner = (r: { kind: string; agent: string }): boolean => r.kind === 'codex_cli' || (r.kind === 'server_agent' && r.agent === 'codex');
+
+const FULL_ACCESS_ONE_TEAM = 'Full access lets Codex run any command without asking, so the runner may serve one team only. Choose that one team for this runner first.';
+const FULL_ACCESS_STAYS_ONE_TEAM = 'This runner has full access, so it serves one team only. Switch full access off first to open it to more teams.';
+
+/** The teams a runner serves are exactly one: a list of one team, never "every team". */
+export const isOneTeam = (teams: BotRunnerTeams): boolean => !('all' in teams) && new Set(teams.teams).size === 1;
+
 /** Which settings belong to which kind: a setting on the wrong kind is refused rather than stored and ignored. */
 function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown; profileRule?: unknown; agent?: unknown; modelAlias?: unknown; maxConcurrent?: unknown }): void {
   const gateway = kind === 'hermes_gateway';
@@ -113,7 +122,12 @@ export function registerRoutes(ctx: PluginContext): void {
       const body = CreateBotRunnerRequest.parse(req.body);
       await requireWorkspaceAdmin(tx);
       if (isPodCli(body.kind) && !ctx.providers.get('claude.pods')) throw conflict(body.kind === 'codex_cli' ? NO_CODEX_PODS : NO_CLAUDE_PODS);
+      if (body.kind === 'server_agent') throw invalid('A server runner is made when a server is enrolled, not here.');
       checkSettingsFit(body.kind, body);
+      if (body.fullAccess === true && body.kind !== 'codex_cli') throw invalid('Full access belongs to a Codex runner only.');
+      // A Codex pod runner starts with full access (the pod is the sandbox) unless the admin says otherwise or asked for more than one team in the same request.
+      const fullAccess = body.kind === 'codex_cli' && (body.fullAccess ?? (body.teams === undefined || isOneTeam(body.teams)));
+      if (fullAccess && body.teams !== undefined && !isOneTeam(body.teams)) throw conflict(FULL_ACCESS_ONE_TEAM);
       const workspaceId = tx.actor.workspaceId;
       if ((await tx.query('SELECT 1 FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [workspaceId, body.name])).rows.length > 0) {
         throw conflict('A runner with that name already exists. Names are used in bot files, so pick a different one.');
@@ -136,8 +150,8 @@ export function registerRoutes(ctx: PluginContext): void {
         detail = 'Waiting for a sign-in file. Upload one to start this runner.';
       }
       const inserted = await tx.query<{ id: string }>(
-        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, base_url, secret_id, profile_rule, model_alias, status, status_detail, max_concurrent, agent)
-         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11, $12, $13) RETURNING id`,
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, base_url, secret_id, profile_rule, model_alias, status, status_detail, max_concurrent, agent, full_access)
+         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
         [
           workspaceId,
           body.name,
@@ -152,6 +166,7 @@ export function registerRoutes(ctx: PluginContext): void {
           detail,
           body.maxConcurrent ?? null,
           body.agent ?? 'hermes',
+          fullAccess,
         ],
       );
       const id = inserted.rows[0]?.id;
@@ -177,7 +192,7 @@ export function registerRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       const current = await loadRunner(tx, id);
       checkSettingsFit(current.kind, body);
-      const changed: Array<'label' | 'address' | 'key' | 'profile_rule' | 'agent' | 'model_alias' | 'enabled'> = [];
+      const changed: Array<'label' | 'address' | 'key' | 'profile_rule' | 'agent' | 'model_alias' | 'enabled' | 'full_access'> = [];
       const sets: string[] = [];
       const values: unknown[] = [id];
       const set = (column: string, value: unknown): void => {
@@ -221,6 +236,15 @@ export function registerRoutes(ctx: PluginContext): void {
         set('status', state.status);
         set('status_detail', state.detail);
         changed.push('model_alias');
+      }
+      if (body.fullAccess !== undefined && body.fullAccess !== current.full_access) {
+        if (body.fullAccess) {
+          if (!isCodexRunner(current)) throw invalid('Full access belongs to a Codex runner only.');
+          const teamCount = current.all_teams ? -1 : (await tx.query('SELECT 1 FROM app.bot_runner_teams WHERE runner_id = $1::uuid', [id])).rows.length;
+          if (teamCount !== 1) throw conflict(FULL_ACCESS_ONE_TEAM);
+        }
+        set('full_access', body.fullAccess);
+        changed.push('full_access');
       }
       if (body.enabled !== undefined && body.enabled !== current.enabled) {
         if (!body.enabled && current.is_default) throw conflict('This is the default runner. Make another runner the default (or none) before switching it off.');
@@ -345,6 +369,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const body = SetBotRunnerTeamsRequest.parse(req.body);
       await requireWorkspaceAdmin(tx);
       const current = await loadRunner(tx, id);
+      if (current.full_access && ('all' in body || new Set(body.teams).size > 1)) throw conflict(FULL_ACCESS_STAYS_ONE_TEAM);
       const teamCount = await writeTeams(tx, id, body);
       await ctx.audit.emit(tx, { type: 'bot_runner.availability.changed', workspaceId: current.workspace_id, runnerId: id, name: current.name, enabled: current.enabled, allTeams: 'all' in body, teamCount, actorId: tx.actor.id, at: now(ctx) });
       return json(SetBotRunnerTeamsResponse.parse({ runner: await presentOne(ctx, tx, id) }));

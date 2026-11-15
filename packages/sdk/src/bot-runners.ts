@@ -77,6 +77,8 @@ export interface PodRunnerInfo {
   node: string | null;
   /** Runs at once; null = the controller's default. */
   maxConcurrent: number | null;
+  /** Codex only: full access is on (bot-runners 0007). The controller writes it into the bridge's profiles; always false for a Claude Code runner. */
+  fullAccess?: boolean;
   /** The teams on the runner's list (the list is the permission); empty with `allTeams` true means every team. */
   teams: { id: string; slug: string }[];
   allTeams: boolean;

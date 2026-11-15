@@ -198,8 +198,8 @@ export async function podNodesByTeam(
 export async function podRunners(ctx: PluginContext, query: { kind: 'claude_cli' | 'codex_cli' }): Promise<PodRunnerInfo[]> {
   return ctx.db.system(async (tx) => {
     const runners = (
-      await tx.query<{ id: string; workspace_id: string; name: string; enabled: boolean; all_teams: boolean; node: string | null; max_concurrent: number | null }>(
-        'SELECT id, workspace_id, name, enabled, all_teams, node, max_concurrent FROM app.bot_runners WHERE kind = $1 ORDER BY workspace_id, name',
+      await tx.query<{ id: string; workspace_id: string; name: string; enabled: boolean; all_teams: boolean; node: string | null; max_concurrent: number | null; full_access: boolean }>(
+        'SELECT id, workspace_id, name, enabled, all_teams, node, max_concurrent, full_access FROM app.bot_runners WHERE kind = $1 ORDER BY workspace_id, name',
         [query.kind],
       )
     ).rows;
@@ -225,7 +225,7 @@ export async function podRunners(ctx: PluginContext, query: { kind: 'claude_cli'
                 [teams.map((t) => t.id), r.name],
               )
             ).rows.map((b) => ({ teamId: b.team_id, teamSlug: b.team_slug, botSlug: b.bot_slug }));
-      out.push({ id: r.id, workspaceId: r.workspace_id, name: r.name, enabled: r.enabled, node: r.node, maxConcurrent: r.max_concurrent, teams, allTeams: r.all_teams, bots });
+      out.push({ id: r.id, workspaceId: r.workspace_id, name: r.name, enabled: r.enabled, node: r.node, maxConcurrent: r.max_concurrent, fullAccess: r.full_access, teams, allTeams: r.all_teams, bots });
     }
     return out;
   });
