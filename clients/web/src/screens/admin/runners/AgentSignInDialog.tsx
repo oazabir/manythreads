@@ -3,7 +3,7 @@ import type { AgentAuth, AgentAuthAttempt, BotRunner } from '@manythreads/shared
 import { isApiError } from '../../../api/client';
 import { Dialog } from '../../../components/Dialog';
 import { agentLogout, answerAgentLogin, cancelAgentLogin, fetchAgentAuth, startAgentLogin } from './api';
-import { AGENT_NAME, answerBody, answerProblem, attemptWords, homeWords, isLive, logoutWords, methodLabel, needsAnswer, pollDelayMs, replaceWords, signedInDoneWords, signedOutWords, statusWords } from './agent-auth';
+import { AGENT_NAME, agentOf, answerBody, isPodAgent, answerProblem, attemptWords, homeWords, isLive, logoutWords, methodLabel, needsAnswer, pollDelayMs, replaceWords, signedInDoneWords, signedOutWords, statusWords } from './agent-auth';
 
 /*
  * Sign an agent runner in or out (PLAN P25-09, docs/plans/acp.md section 4.1). The bridge tells what the person must do: open a page and enter a code, open a page and
@@ -16,9 +16,9 @@ import { AGENT_NAME, answerBody, answerProblem, attemptWords, homeWords, isLive,
 
 const message = (e: unknown): string => (isApiError(e) ? e.message : e instanceof Error ? e.message : 'Something went wrong. Try again.');
 
-type Props = { runner: BotRunner; onClose: () => void; onChanged: (text: string) => void };
+type Props = { runner: BotRunner; onClose: () => void; onChanged: (text: string) => void; onUseFile?: () => void };
 
-export function AgentSignInDialog({ runner, onClose, onChanged }: Props) {
+export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Props) {
   const [auth, setAuth] = useState<AgentAuth | null>(null);
   const [attempt, setAttempt] = useState<AgentAuthAttempt | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +144,7 @@ export function AgentSignInDialog({ runner, onClose, onChanged }: Props) {
         onCancel={() => void cancel()}
         onAskSignOut={setConfirmOut}
         onSignOut={() => void signOut()}
+        {...(onUseFile ? { onUseFile } : {})}
       />
     </Dialog>
   );
@@ -166,11 +167,14 @@ type ViewProps = {
   onCancel: () => void;
   onAskSignOut: (ask: boolean) => void;
   onSignOut: () => void;
+  /** A pod runner only: the older way, a sign-in file the admin uploads. Kept behind this one button for the runners that still use it. */
+  onUseFile?: () => void;
 };
 
 /** What the dialog shows for one state of the sign-in. No state of its own, so a test renders each state with props. */
-export function AgentSignInView({ runner, auth, attempt, error, busy, text, confirmOut, confirmStart, onText, onStart, onStartConfirmed, onStartDeclined, onSend, onCancel, onAskSignOut, onSignOut }: ViewProps) {
-  const name = runner.agent === 'claude-code' || runner.agent === 'codex' ? AGENT_NAME[runner.agent] : 'The agent';
+export function AgentSignInView({ runner, auth, attempt, error, busy, text, confirmOut, confirmStart, onText, onStart, onStartConfirmed, onStartDeclined, onSend, onCancel, onAskSignOut, onSignOut, onUseFile }: ViewProps) {
+  const which = agentOf(runner);
+  const name = which === null ? 'The agent' : AGENT_NAME[which];
   const live = isLive(attempt);
   const asking = needsAnswer(attempt);
   const problem = answerProblem(attempt, text);
@@ -268,6 +272,13 @@ export function AgentSignInView({ runner, auth, attempt, error, busy, text, conf
             <button type="button" className="btn sm" onClick={() => onAskSignOut(true)} disabled={busy} data-testid="agent-auth-logout">Sign out</button>
           )}
         </div>
+      ) : null}
+
+      {onUseFile && isPodAgent(runner) && !live && !asking ? (
+        <p className="fld-hint">
+          Older way: a sign-in file made on another machine can be uploaded instead.{' '}
+          <button type="button" className="btn sm" onClick={onUseFile} disabled={busy} data-testid="agent-auth-use-file">Use a sign-in file</button>
+        </p>
       ) : null}
 
       {error ? <p className="dlg-error" role="alert" data-testid="agent-auth-error">{error}</p> : null}

@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
+import { expect, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
 import { personaEmail, type PersonaKey } from './env.ts';
 
@@ -121,4 +121,18 @@ export async function applyGuarded(
     sha = null;
   }
   return { status: res.status(), text, sha };
+}
+
+/**
+ * Opens the sign-in FILE dialog of a pod runner's row. A pod runner that has no uploaded file signs in from the page (the agent dialog); the older way, a file, is one button inside it.
+ * A runner that already has a file opens the file dialog directly.
+ */
+export async function openFileSignin(row: Locator): Promise<void> {
+  const direct = row.getByTestId('runner-signin-open');
+  if ((await direct.count()) > 0) {
+    await direct.click();
+    return;
+  }
+  await row.getByTestId('runner-agent-signin-open').click();
+  await row.page().getByTestId('agent-auth-use-file').click();
 }

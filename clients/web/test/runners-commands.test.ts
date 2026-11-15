@@ -22,6 +22,8 @@ import {
   describeOld,
   describeTeams,
   emptyForm,
+  FULL_ACCESS_WORDS,
+  hasFullAccessChoice,
   hasNoTeams,
   hasNodeChoice,
   moveWarning,
@@ -488,5 +490,20 @@ describe('what runs the bot on a gateway runner (P19-14)', () => {
     expect(isBridge({ kind: 'hermes_gateway', agent: 'hermes' })).toBe(false);
     expect(isBridge({ kind: 'hermes_gateway' })).toBe(false);
     expect(isBridge({ kind: 'hermes_pod', agent: 'hermes' })).toBe(false);
+  });
+});
+
+describe('Codex full access (P26-06)', () => {
+  it('is offered for a Codex pod runner only', () => {
+    expect(hasFullAccessChoice({ kind: 'codex_cli' })).toBe(true);
+    for (const kind of ['claude_cli', 'hermes_gateway', 'hermes_pod', 'llm_gateway'] as const) expect(hasFullAccessChoice({ kind }), kind).toBe(false);
+  });
+
+  it('says in plain words what it is, where it is held and who may turn it on', () => {
+    expect(FULL_ACCESS_WORDS.what).toBe('Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.');
+    expect(FULL_ACCESS_WORDS.who).toContain('workspace admin');
+    expect(FULL_ACCESS_WORDS.who).toContain('one team');
+    expect(FULL_ACCESS_WORDS.doneOn('Codex pod')).toBe('Codex pod now has full access. Its pod restarts to take it.');
+    expect(FULL_ACCESS_WORDS.doneOff('Codex pod')).toContain('no longer has full access');
   });
 });

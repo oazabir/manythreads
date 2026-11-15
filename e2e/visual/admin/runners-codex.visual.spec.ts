@@ -1,7 +1,7 @@
 import { startFakeK8s, type FakeK8s } from '@manythreads/test-utils';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../../fixtures/stack.ts';
-import { apiOn } from '../../support/stack-browser.ts';
+import { apiOn, openFileSignin } from '../../support/stack-browser.ts';
 import { SIZES, THEMES, openPage, settle } from '../support/vt.ts';
 
 /*
@@ -51,7 +51,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
         await expect(page).toHaveScreenshot(`runners-codex-chooser-${size}-${theme}.png`, { maxDiffPixelRatio: 0.002, animations: 'disabled', caret: 'hide' });
         await page.keyboard.press('Escape');
         const row = page.locator('[data-testid="runner-row"][data-runner="codex-visual"]');
-        await row.getByTestId('runner-signin-open').click();
+        await openFileSignin(row);
         const dialog = page.getByRole('dialog', { name: 'Sign-in for Codex visual' });
         await dialog.getByTestId('runner-signin-file').setInputFiles({ name: 'auth.json', mimeType: 'application/json', buffer: Buffer.from(FILE) });
         await expect(dialog.getByTestId('runner-signin-preview')).toBeVisible();

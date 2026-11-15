@@ -25,6 +25,7 @@ import {
   deleteWarning,
   editChanged,
   emptyForm,
+  FULL_ACCESS_WORDS,
   kindWords,
   nameProblem,
   suggestName,
@@ -582,6 +583,46 @@ export function AdoptDialog({ connection, onClose, onDone }: { connection: OldCo
         )}
         <FormError text={error} />
       </form>
+    </Dialog>
+  );
+}
+
+// ---- full access (Codex pod runner) -----------------------------------------------------------------------------
+
+/** Turn Codex's full access on or off for one pod runner. Turning it on says what it means first; turning it off asks nothing more. The server refuses it for a runner that serves two teams. */
+export function FullAccessDialog({ runner, onClose, onDone }: { runner: BotRunner; onClose: () => void; onDone: (r: BotRunner, text: string) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const on = runner.fullAccess;
+
+  async function change(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await updateBotRunner(runner.id, { fullAccess: !on });
+      onDone(res.runner, on ? FULL_ACCESS_WORDS.doneOff(runner.label) : FULL_ACCESS_WORDS.doneOn(runner.label));
+    } catch (err) {
+      setError(message(err));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title={FULL_ACCESS_WORDS.title(runner.label)}
+      onClose={onClose}
+      testId="runner-full-access-dialog"
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>{error ? 'Close' : 'Cancel'}</button>
+          <button type="button" className={on ? 'btn' : 'btn danger'} onClick={() => void change()} disabled={busy} data-testid="runner-full-access-confirm">{on ? FULL_ACCESS_WORDS.turnOff : FULL_ACCESS_WORDS.turnOn}</button>
+        </>
+      }
+    >
+      <p className="dlg-text" data-testid="runner-full-access-state">{on ? 'Full access is on.' : FULL_ACCESS_WORDS.off}</p>
+      <p className="dlg-text" data-testid="runner-full-access-words">{FULL_ACCESS_WORDS.what}</p>
+      <p className="fld-hint">{FULL_ACCESS_WORDS.who}</p>
+      <FormError text={error} />
     </Dialog>
   );
 }

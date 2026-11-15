@@ -429,7 +429,7 @@ test('a gateway for the bridge: the form asks what runs the bot, the row says it
     const form = page.getByRole('dialog', { name: 'Add a runner: Hermes gateway' });
     await expect(form).toBeVisible();
     const pick = form.getByLabel('What runs the bot');
-    await expect(pick.locator('option')).toHaveText(['Hermes', 'Claude Code on the bridge', 'Codex on the bridge']);
+    await expect(pick.locator('option')).toHaveText(['Hermes', 'Claude Code on the bridge', 'Codex on the bridge', 'Hermes over ACP on the bridge', 'OpenCode on the bridge']);
     await expect(pick).toHaveValue('hermes');
     await form.getByLabel('Display name').fill('Claude on the host');
     await form.getByLabel('Address', { exact: true }).fill(gateway.url);

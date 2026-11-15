@@ -1,7 +1,7 @@
 import { startFakeK8s, type FakeK8s } from '@manythreads/test-utils';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { apiOn, noSidewaysScroll, openOn, PHONE } from '../support/stack-browser.ts';
+import { apiOn, noSidewaysScroll, openFileSignin, openOn, PHONE } from '../support/stack-browser.ts';
 
 /*
  * Workspace → Runners → Claude Code sign-in (PLAN P19-06) end to end, with no real cluster and no real login. A local double of the Kubernetes API
@@ -64,7 +64,7 @@ test('with Claude pods on, the Claude Code card can be picked and a new runner w
     const row = page.locator('[data-testid="runner-row"][data-runner="claude-a"]');
     await expect(row).toBeVisible();
     await expect(row.getByTestId('runner-state')).toHaveText(/Waiting for sign-in/);
-    await expect(row.getByTestId('runner-signin-open')).toBeVisible();
+    await expect(row.getByTestId('runner-agent-signin-open')).toBeVisible();
     runnerAId = (await stack.sql<{ id: string }>("SELECT id FROM app.bot_runners WHERE name = 'claude-a'"))[0]!.id;
   } finally {
     await context.close();
@@ -75,7 +75,7 @@ test('the upload form names what is missing, takes a good file as it is, and the
   const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH);
   try {
     const row = page.locator('[data-testid="runner-row"][data-runner="claude-a"]');
-    await row.getByTestId('runner-signin-open').click();
+    await openFileSignin(row);
     const dialog = page.getByRole('dialog', { name: 'Sign-in for Claude A' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId('runner-signin-none')).toBeVisible();
@@ -133,7 +133,7 @@ test('a second runner cannot take the same login; Remove puts the runner back to
   const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH);
   try {
     const b = page.locator('[data-testid="runner-row"][data-runner="claude-b"]');
-    await b.getByTestId('runner-signin-open').click();
+    await openFileSignin(b);
     const dialog = page.getByRole('dialog', { name: 'Sign-in for Claude B' });
     await dialog.getByTestId('runner-signin-file').setInputFiles({ name: '.credentials.json', mimeType: 'application/json', buffer: Buffer.from(fileText('a')) });
     await dialog.getByTestId('runner-signin-terms').check();
@@ -144,7 +144,7 @@ test('a second runner cannot take the same login; Remove puts the runner back to
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     const a = page.locator('[data-testid="runner-row"][data-runner="claude-a"]');
-    await a.getByTestId('runner-signin-open').click();
+    await openFileSignin(a);
     const first = page.getByRole('dialog', { name: 'Sign-in for Claude A' });
     await first.getByTestId('runner-signin-remove').click();
     await first.getByTestId('runner-signin-remove-yes').click();
@@ -167,7 +167,7 @@ test('a second runner cannot take the same login; Remove puts the runner back to
 test('the sign-in dialog fits a phone', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH, { viewport: PHONE, mobile: true });
   try {
-    await page.locator('[data-testid="runner-row"][data-runner="claude-a"]').getByTestId('runner-signin-open').click();
+    await openFileSignin(page.locator('[data-testid="runner-row"][data-runner="claude-a"]'));
     await expect(page.getByRole('dialog', { name: 'Sign-in for Claude A' })).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
   } finally {

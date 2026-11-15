@@ -776,11 +776,15 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   on(updateBotRunnerRoute, ({ params, body }) => {
     requireAdmin();
     const r = runnerOf(params.id);
-    const changed = (['label', 'baseUrl', 'profileRule', 'agent', 'modelAlias', 'enabled'] as const).filter((k) => body[k] !== undefined && body[k] !== r[k]);
+    const changed: string[] = (['label', 'baseUrl', 'profileRule', 'agent', 'modelAlias', 'enabled'] as const).filter((k) => body[k] !== undefined && body[k] !== r[k]);
     if (body['apiKey'] !== undefined) changed.push('enabled');
+    if (body['fullAccess'] !== undefined) {
+      if (r['kind'] !== 'codex_cli') throw new MockHttpError(400, 'validation_failed', 'Full access is for a Codex runner only.');
+      changed.push('fullAccess');
+    }
     if (changed.length === 0) throw new MockHttpError(400, 'validation_failed', 'Nothing to change');
     if (body['enabled'] === false && r['isDefault']) throw new MockHttpError(409, 'conflict', 'This is the default runner. Make another runner the default (or none) before switching it off.');
-    for (const k of ['label', 'baseUrl', 'profileRule', 'agent', 'modelAlias', 'enabled'] as const) if (body[k] !== undefined) r[k] = body[k];
+    for (const k of ['label', 'baseUrl', 'profileRule', 'agent', 'modelAlias', 'enabled', 'fullAccess'] as const) if (body[k] !== undefined) r[k] = body[k];
     if (body['apiKey'] !== undefined) r['hasKey'] = true;
     if (body['baseUrl'] !== undefined || body['apiKey'] !== undefined || body['agent'] !== undefined) r['status'] = 'not_set_up';
     if (body['modelAlias'] !== undefined && r['kind'] === 'llm_gateway') r['status'] = MOCK_ALIASES.includes(String(body['modelAlias'])) ? 'ready' : 'not_set_up';

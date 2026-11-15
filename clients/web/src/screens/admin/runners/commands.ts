@@ -615,3 +615,20 @@ export function usageLines(rows: ReadonlyArray<ClaudeRunnerUsageRow>, runnerId: 
     .sort((a, b) => b.runs - a.runs || a.team.localeCompare(b.team))
     .map((e) => ({ team: e.team, runs: e.runs, minutes: Math.round(e.seconds / 60), cost: e.cost > 0 ? e.cost.toFixed(2) : null }));
 }
+
+// ---- Codex full access (P26-06) -------------------------------------------------------------------------------
+
+/** Only a Codex pod runner has the switch: Claude Code has its own list of approved commands and no "run without asking" mode here. */
+export const hasFullAccessChoice = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'codex_cli';
+
+export const FULL_ACCESS_WORDS = {
+  what: 'Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.',
+  who: 'Only a workspace admin can turn it on, only while the runner serves one team, and every change is in the audit log.',
+  off: 'Codex asks before it runs a command that is not on its approved list.',
+  title: (label: string): string => `Full access for ${label}`,
+  turnOn: 'Turn on full access',
+  turnOff: 'Turn off full access',
+  doneOn: (label: string): string => `${label} now has full access. Its pod restarts to take it.`,
+  doneOff: (label: string): string => `${label} no longer has full access. Its pod restarts to take it.`,
+  badge: 'Full access',
+} as const;

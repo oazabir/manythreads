@@ -5,8 +5,16 @@ import type { AgentAuth, AgentAuthAttempt, AgentAuthMethod, BotRunner } from '@m
  * never shows an account e-mail (the server does not send one), and a code or an API key typed here goes up once and is cleared from the page the moment it is sent.
  */
 
-/** Whether this runner is a gateway whose address answers as a Claude Code or Codex bridge: the only runners that sign in this way. */
-export const hasAgentSignin = (r: Pick<BotRunner, 'kind' | 'agent'>): boolean => r.kind === 'hermes_gateway' && (r.agent === 'claude-code' || r.agent === 'codex');
+/** A Claude Code or Codex runner in a pod (P26-09). Its agent is signed in inside the pod, from this page, unless a sign-in file was uploaded for it (the older way, kept for those runners). */
+export const isPodAgent = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'claude_cli' || r.kind === 'codex_cli';
+
+/** Whether this runner signs in from this page: a gateway whose address answers as a Claude Code or Codex bridge, or a pod runner with no uploaded sign-in file */
+export const hasAgentSignin = (r: Pick<BotRunner, 'kind' | 'agent'> & { uploadedAt?: BotRunner['uploadedAt'] }): boolean =>
+  (r.kind === 'hermes_gateway' && (r.agent === 'claude-code' || r.agent === 'codex')) || (isPodAgent(r) && r.uploadedAt === null);
+
+/** The agent a runner drives: a pod runner's kind says it, a bridge runner's agent field does. */
+export const agentOf = (r: Pick<BotRunner, 'kind' | 'agent'>): 'claude-code' | 'codex' | null =>
+  r.kind === 'claude_cli' ? 'claude-code' : r.kind === 'codex_cli' ? 'codex' : r.agent === 'claude-code' || r.agent === 'codex' ? r.agent : null;
 
 export const AGENT_NAME: Record<'claude-code' | 'codex', string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
 
@@ -45,24 +53,27 @@ export function machineOf(baseUrl: string | null): string {
 }
 
 /** Whose sign-in this is: the folder the agent keeps it in is this profile's own, or the machine's shared one. Empty for an agent with no sign-in of its own. */
-export function homeWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'>): string {
+export function homeWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'> & { kind?: BotRunner['kind'] }): string {
   const name = AGENT_NAME[auth.agent];
+  if (isPodAgent({ kind: runner.kind ?? 'hermes_gateway' })) return `This sign-in lives in the pod of ${name} for this runner only. Nothing else uses it, and it is deleted with the pod's state volume.`;
   if (auth.home === 'dedicated') return `This sign-in belongs to the bridge profile "${auth.profile}" alone. It has its own sign-in folder on ${machineOf(runner.baseUrl)}.`;
   if (auth.home === 'shared') return `This sign-in is the one every user of ${name} on ${machineOf(runner.baseUrl)} shares, including anyone who uses it from a terminal there.`;
   return '';
 }
 
 /** What signing out asks the person to confirm: the machine, and who else loses the sign-in when the folder is shared. */
-export function logoutWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'>): string {
+export function logoutWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'> & { kind?: BotRunner['kind'] }): string {
   const name = AGENT_NAME[auth.agent];
+  if (isPodAgent({ kind: runner.kind ?? 'hermes_gateway' })) return `Sign ${name} out in its pod? Bots that use this runner stop until it is signed in again.`;
   const machine = machineOf(runner.baseUrl);
   if (auth.home === 'dedicated') return `Sign ${name} out on ${machine}? Only the bridge profile "${auth.profile}" uses this sign-in. Bots that use this runner stop until it is signed in again.`;
   return `Sign ${name} out on ${machine}? That signs out every user of ${name} on that machine, not only this runner, and bots that use it stop until it is signed in again.`;
 }
 
 /** What starting a new sign-in asks the person to confirm while one is already in place. */
-export function replaceWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'>): string {
+export function replaceWords(auth: AgentAuth, runner: Pick<BotRunner, 'baseUrl'> & { kind?: BotRunner['kind'] }): string {
   const name = AGENT_NAME[auth.agent];
+  if (isPodAgent({ kind: runner.kind ?? 'hermes_gateway' })) return `${name} is already signed in in its pod. A new sign-in replaces that account for every team that uses this runner.`;
   const machine = machineOf(runner.baseUrl);
   if (auth.home === 'dedicated') return `${name} is already signed in. A new sign-in replaces the account on ${machine} for the bridge profile "${auth.profile}".`;
   return `${name} is already signed in. A new sign-in replaces that account for every user of ${name} on ${machine}, not only this runner.`;

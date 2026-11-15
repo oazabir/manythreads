@@ -17,6 +17,8 @@ import {
   describeGateway,
   describeOld,
   describeTeams,
+  FULL_ACCESS_WORDS,
+  hasFullAccessChoice,
   hasNoTeams,
   hasNodeChoice,
   isChangingPlacement,
@@ -29,10 +31,10 @@ import {
   teamsSavedWords,
   testWords,
 } from './commands';
-import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
+import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, FullAccessDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
 import { CredentialsDialog } from './CredentialsCard';
 import { AgentSignInDialog } from './AgentSignInDialog';
-import { hasAgentSignin } from './agent-auth';
+import { hasAgentSignin, isPodAgent } from './agent-auth';
 import { StarIcon } from '../../../shell/icons';
 
 /*
@@ -52,6 +54,7 @@ type Dialogs =
   | { kind: 'node'; runner: BotRunner }
   | { kind: 'signin'; runner: BotRunner }
   | { kind: 'agent-signin'; runner: BotRunner }
+  | { kind: 'full-access'; runner: BotRunner }
   | { kind: 'test'; runner: BotRunner }
   | { kind: 'delete'; runner: BotRunner }
   | { kind: 'adopt'; connection: OldConnection }
@@ -110,7 +113,10 @@ export function RunnersScreen() {
 
   // A pod that waits or moves is changing: look again every few seconds while any is, so the state line does not go stale.
   // Only while one is changing by itself (a pod that waits for the admin's word is not), and not while the tab is hidden: the page looks again when it comes back.
-  const changing = listed !== null && Object.values(listed.placements).some(isChangingPlacement);
+  // A pod runner without an uploaded file that waits for a sign-in is also looked at again: the pod's own pass says "signed in" a moment after the admin finished the sign-in here.
+  const changing =
+    listed !== null &&
+    (Object.values(listed.placements).some(isChangingPlacement) || listed.runners.some((r) => isPodAgent(r) && r.uploadedAt === null && r.status === 'waiting_for_sign_in'));
   const reload = q.reload;
   useEffect(() => {
     if (!changing) return undefined;
@@ -182,6 +188,7 @@ export function RunnersScreen() {
                       onEdit={() => setDialog({ kind: 'edit', runner: r })}
                       onTeams={() => setDialog({ kind: 'teams', runner: r })}
                       onNode={() => setDialog({ kind: 'node', runner: r })}
+                      onFullAccess={() => setDialog({ kind: 'full-access', runner: r })}
                       onSignin={() => setDialog({ kind: hasAgentSignin(r) ? 'agent-signin' : 'signin', runner: r })}
                       onDelete={() => setDialog({ kind: 'delete', runner: r })}
                       onSwitch={(on) => void act(r.id, async () => switchWords((await updateBotRunner(r.id, { enabled: on })).runner, on))}
@@ -261,8 +268,23 @@ export function RunnersScreen() {
             {dialog?.kind === 'agent-signin' ? (
               <AgentSignInDialog
                 runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
-                onClose={close}
+                onClose={() => {
+                  close();
+                  q.reload(); // the runner's state moves when the page sees the agent signed in or out, which can be after the last change it was told of
+                }}
                 onChanged={(text) => {
+                  say(text);
+                  q.reload();
+                }}
+                onUseFile={() => setDialog({ kind: 'signin', runner: dialog.runner })}
+              />
+            ) : null}
+            {dialog?.kind === 'full-access' ? (
+              <FullAccessDialog
+                runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
+                onClose={close}
+                onDone={(_r, text) => {
+                  close();
                   say(text);
                   q.reload();
                 }}
@@ -343,6 +365,7 @@ function RunnerRow({
   onEdit,
   onTeams,
   onNode,
+  onFullAccess,
   onSignin,
   onDelete,
   onSwitch,
@@ -355,6 +378,7 @@ function RunnerRow({
   onEdit: () => void;
   onTeams: () => void;
   onNode: () => void;
+  onFullAccess: () => void;
   onSignin: () => void;
   onDelete: () => void;
   onSwitch: (on: boolean) => void;
@@ -390,6 +414,7 @@ function RunnerRow({
         <div className="rn-meta">
           <span>{runnerKindWords(r)}</span>
           <StateBadge runner={r} />
+          {r.fullAccess ? <span className="rn-warn" data-testid="runner-full-access-badge">{FULL_ACCESS_WORDS.badge}</span> : null}
           <span data-testid="runner-teams" className={hasNoTeams(r) ? 'rn-warn' : undefined}>{hasNoTeams(r) ? 'No team can use it yet' : `Teams: ${describeTeams(r)}`}</span>
           <span data-testid="runner-bots">{countBots(r.botCount)}</span>
         </div>
@@ -408,6 +433,9 @@ function RunnerRow({
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
         {isSigninKind(r.kind) || hasAgentSignin(r) ? (
           <button type="button" className="btn sm" onClick={onSignin} disabled={busy} data-testid={hasAgentSignin(r) ? 'runner-agent-signin-open' : 'runner-signin-open'} aria-label={`Sign-in for ${r.label}`}>Sign-in</button>
+        ) : null}
+        {hasFullAccessChoice(r) ? (
+          <button type="button" className="btn sm" onClick={onFullAccess} disabled={busy} data-testid="runner-full-access-open" aria-label={`Full access for ${r.label}`}>Full access</button>
         ) : null}
         {hasNodeChoice(r) ? (
           <button type="button" className="btn sm" onClick={onNode} disabled={busy} data-testid="runner-node-open" aria-label={`Machine for ${r.label}`}>Machine</button>

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { AgentAuth, AgentAuthAttempt } from '@manythreads/shared';
 import { setTransport, type TransportRequest } from '../src/api/client';
 import { agentLogout, answerAgentLogin, cancelAgentLogin, fetchAgentAuth, startAgentLogin } from '../src/screens/admin/runners/api';
-import { answerBody, answerProblem, attemptWords, hasAgentSignin, isLive, needsAnswer, pollDelayMs, statusWords } from '../src/screens/admin/runners/agent-auth';
+import { agentOf, answerBody, answerProblem, attemptWords, hasAgentSignin, homeWords, isLive, logoutWords, replaceWords, needsAnswer, pollDelayMs, statusWords } from '../src/screens/admin/runners/agent-auth';
 
 /*
  * The agent sign-in on the Runners page (P25-09): which runners get the button, the words of each state, what blocks Send, and the exact calls that leave the browser.
@@ -18,6 +18,15 @@ describe('which runners sign in this way', () => {
     expect(hasAgentSignin({ kind: 'hermes_gateway', agent: 'claude-code' })).toBe(true);
     expect(hasAgentSignin({ kind: 'hermes_gateway', agent: 'hermes' })).toBe(false);
     expect(hasAgentSignin({ kind: 'claude_cli', agent: 'hermes' })).toBe(false);
+    // P26-09: a pod runner signs in from this page unless a sign-in file was uploaded for it (the older way stays for those runners)
+    expect(hasAgentSignin({ kind: 'claude_cli', agent: 'hermes', uploadedAt: null })).toBe(true);
+    expect(hasAgentSignin({ kind: 'codex_cli', agent: 'hermes', uploadedAt: null })).toBe(true);
+    expect(hasAgentSignin({ kind: 'codex_cli', agent: 'hermes', uploadedAt: '2026-11-06T10:00:00.000Z' })).toBe(false);
+    expect(hasAgentSignin({ kind: 'llm_gateway', agent: 'hermes', uploadedAt: null })).toBe(false);
+    expect(agentOf({ kind: 'claude_cli', agent: 'hermes' })).toBe('claude-code');
+    expect(agentOf({ kind: 'codex_cli', agent: 'hermes' })).toBe('codex');
+    expect(agentOf({ kind: 'hermes_gateway', agent: 'codex' })).toBe('codex');
+    expect(agentOf({ kind: 'hermes_gateway', agent: 'hermes' })).toBeNull();
   });
 });
 
@@ -104,5 +113,21 @@ describe('the calls reach the routes the plugin mounts', () => {
     setTransport(async () => ({ status: 200, body: { auth: auth({ methods: [{ id: 'm', name: 'Sign in with ChatGPT', description: '', how: 'device_code' }] }) } }));
     const res = await fetchAgentAuth(RUNNER);
     expect(res.auth.methods[0]?.name).toBe('Sign in with ChatGPT');
+  });
+});
+
+describe('the words for a pod runner', () => {
+  const signedIn = { agent: 'codex', state: 'signed_in', kind: 'account', home: 'dedicated', profile: 'default', methods: [], canLogout: true, attempt: null } as unknown as AgentAuth;
+  const pod = { kind: 'codex_cli' as const, baseUrl: null };
+  const bridge = { kind: 'hermes_gateway' as const, baseUrl: 'http://10.0.0.5:8650' };
+
+  it('say the pod, not a machine, and keep the machine words for a bridge runner', () => {
+    for (const text of [homeWords(signedIn, pod), logoutWords(signedIn, pod), replaceWords(signedIn, pod)]) {
+      expect(text).toContain('pod');
+      expect(text).not.toContain('bridge machine');
+      expect(text).not.toContain('terminal');
+    }
+    expect(logoutWords(signedIn, bridge)).toContain('10.0.0.5:8650');
+    expect(homeWords(signedIn, bridge)).toContain('10.0.0.5:8650');
   });
 });

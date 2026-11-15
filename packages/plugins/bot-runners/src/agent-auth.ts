@@ -1,4 +1,4 @@
-import { conflict, HttpError, invalid, json, route, type HttpRequest, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { conflict, HttpError, invalid, json, route, type ClaudePodsProvider, type HttpRequest, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { guardedFetch, OutboundBlockedError } from '@manythreads/sdk/hermes-outbound';
 import {
   AgentAuth,
@@ -19,7 +19,7 @@ import {
   type AgentAuthAttempt,
 } from '@manythreads/shared';
 import { z } from 'zod';
-import { loadRunner, requireWorkspaceAdmin } from './common.ts';
+import { agentOfKind, isPodCli, loadRunner, requireWorkspaceAdmin } from './common.ts';
 import type { RunnerRow } from './rows.ts';
 
 // Signing a bridge runner's agent in and out from the Runners page (P25-09, docs/plans/acp.md section 4.1). The server is a thin, admin-only proxy to the runner's agent bridge
@@ -33,7 +33,8 @@ import type { RunnerRow } from './rows.ts';
 //   * the admin check is the first thing a handler does, before the body is read: a person who is not an admin learns nothing about the shape of a request;
 //   * the route's own transaction is open while the bridge is asked (the HTTP layer opens it before the handler runs, and a handler cannot give it back), but it has only read, so
 //     it holds no row lock; the waits below are bounded (the bridge's own worst case is 60 s, so these stay above it) so the connection is held for a short time at the worst.
-// A pod runner (`claude_cli`, `codex_cli`) signs in with its file (P19-06) and is refused here; its pod's bridge is not an address this server can reach (P25-14).
+// A pod runner (`claude_cli`, `codex_cli`, P26-10) is signed in here too: its pod's bridge sits inside the cluster, so its address and key come from the claude-pods controller (never typed by a person)
+// and are asked with a plain request (the outbound guard refuses cluster names on purpose). The sign-in lives in the pod's state volume; the older upload of a sign-in file stays beside it.
 
 const BRIDGE_AGENTS: ReadonlySet<string> = new Set(['claude-code', 'codex']);
 const MAX_REPLY_BYTES = 64 * 1024;
@@ -48,7 +49,10 @@ const waitOf = (key: keyof typeof WAITS): number => {
 const REMEMBER_FINISHED = 500;
 
 const WORDS = {
-  notBridge: 'Signing in from this page works for a Claude Code or Codex runner on an agent bridge. A pod runner signs in with its sign-in file.',
+  notBridge: 'Signing in from this page works for a Claude Code or Codex runner, in a pod or on an agent bridge.',
+  podsOff: 'Pods are not turned on here, so this runner has no pod to sign in.',
+  podNotUp: 'This runner has no pod yet, or the cluster did not answer. Wait a minute for the pod to start, then try again.',
+  podUnreachable: 'The pod did not answer. It may still be starting: wait a minute, then try again.',
   notSetUp: 'This runner has no address or key yet.',
   unreachable: "The bridge did not answer. Check the address and that the agent bridge is running, then try again.",
   refusedKey: 'The bridge refused the key. Update the runner with the key the bridge was started with.',
@@ -59,6 +63,8 @@ const WORDS = {
 interface Target {
   runner: RunnerRow;
   agent: AgentAuthAgent;
+  /** The runner is a pod runner: the address is the pod's own, inside the cluster. */
+  pod?: true;
   baseUrl: string;
   key: string;
 }
@@ -72,6 +78,14 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
   async function target(tx: PluginTx, id: string): Promise<Target> {
     await requireWorkspaceAdmin(tx);
     const runner = await loadRunner(tx, id);
+    if (isPodCli(runner.kind)) {
+      const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
+      if (!pods) throw conflict(WORDS.podsOff);
+      const which = agentOfKind(runner.kind);
+      const found = await pods.bridge({ runnerName: runner.name, agent: which }).catch(() => null);
+      if (!found) throw conflict(WORDS.podNotUp);
+      return { runner, agent: which === 'codex' ? 'codex' : 'claude-code', baseUrl: found.address, key: found.key, pod: true };
+    }
     if (runner.kind !== 'hermes_gateway' || !BRIDGE_AGENTS.has(runner.agent)) throw invalid(WORDS.notBridge);
     if (runner.base_url === null || runner.secret_id === null) throw conflict(WORDS.notSetUp);
     const secretId = runner.secret_id;
@@ -83,7 +97,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
   async function ask<T extends z.ZodType>(t: Target, method: 'GET' | 'POST', path: string, body: Record<string, unknown> | undefined, schema: T, timeoutMs: number): Promise<z.infer<T>> {
     let res: Response;
     try {
-      res = await guardedFetch(`${t.baseUrl}${path}${path.includes('?') ? '&' : '?'}agent=${encodeURIComponent(t.agent)}`, {
+      res = await (t.pod ? fetch : guardedFetch)(`${t.baseUrl}${path}${path.includes('?') ? '&' : '?'}agent=${encodeURIComponent(t.agent)}`, {
         method,
         headers: { authorization: `Bearer ${t.key}`, ...(body ? { 'content-type': 'application/json' } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {}),
@@ -91,7 +105,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      throw new HttpError(502, 'internal', err instanceof OutboundBlockedError ? 'That address cannot be used: it is not allowed from this server.' : WORDS.unreachable);
+      throw new HttpError(502, 'internal', err instanceof OutboundBlockedError ? 'That address cannot be used: it is not allowed from this server.' : t.pod ? WORDS.podUnreachable : WORDS.unreachable);
     }
     let text = '';
     try {
@@ -166,6 +180,23 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
     }
   }
 
+  /**
+   * A pod runner is ready when its agent is signed in inside the pod, and waits for a sign-in when it is not. The controller finds that out on its own next pass; this lets the page
+   * say it as soon as the page itself has seen the bridge say it. Only a runner in the one state the change leaves is touched.
+   */
+  async function followPodSignIn(t: Target, state: string): Promise<void> {
+    if (t.pod !== true || (state !== 'signed_in' && state !== 'signed_out')) return;
+    const [from, to, detail] = state === 'signed_in' ? ['waiting_for_sign_in', 'ready', null] : ['ready', 'waiting_for_sign_in', 'Waiting for a sign-in. Choose Sign in on this runner.'];
+    await ctx.db
+      .system(async (sys) => {
+        await sys.query(
+          `UPDATE app.bot_runners SET status = $3, status_detail = $4, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid AND kind IN ('claude_cli', 'codex_cli') AND status = $2`,
+          [t.runner.id, from, to, detail],
+        );
+      })
+      .catch(() => undefined);
+  }
+
   const Auth = z.object({ auth: AgentAuth });
   const Attempt = AgentLoginResponse;
 
@@ -178,6 +209,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
       const { id } = AgentAuthPathParams.parse(req.params);
       const t = await target(tx, id);
       const out = GetAgentAuthResponse.parse(await ask(t, 'GET', '/v1/auth/status', undefined, Auth, waitOf('status')));
+      await followPodSignIn(t, out.auth.state);
       await noteEnd(req, t, out.auth.attempt);
       return json(out);
     }),
@@ -194,6 +226,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
       const body = StartAgentLoginRequest.parse(req.body);
       const out = await asked(req, t, { change: 'login_started' }, () => ask(t, 'POST', '/v1/auth/login', { methodId: body.methodId }, Attempt, waitOf('login')));
       await noteEnd(req, t, out.attempt);
+      if (out.attempt?.state === 'done') await followPodSignIn(t, 'signed_in');
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -212,6 +245,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
         ask(t, 'POST', '/v1/auth/login/answer', { attemptId: body.attemptId, ...(body.code !== undefined ? { code: body.code } : { apiKey: body.apiKey }) }, Attempt, waitOf('answer')),
       );
       await noteEnd(req, t, out.attempt);
+      if (out.attempt?.state === 'done') await followPodSignIn(t, 'signed_in');
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -239,6 +273,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext): void {
       const { id } = AgentAuthPathParams.parse(req.params);
       const t = await target(tx, id);
       const out = await asked(req, t, { change: 'signed_out' }, () => ask(t, 'POST', '/v1/auth/logout', {}, Auth, waitOf('logout')));
+      await followPodSignIn(t, out.auth.state);
       return json(AgentLogoutResponse.parse(out));
     }),
   });

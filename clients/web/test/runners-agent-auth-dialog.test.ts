@@ -123,3 +123,22 @@ describe('the dialog renders', () => {
     expect(failed).toContain('The sign-in was refused.');
   });
 });
+
+describe('a pod runner (P26-09)', () => {
+  const pod = { id: '00000000-0000-7000-8000-0000000d0002', label: 'Codex pod', kind: 'codex_cli', agent: 'hermes', baseUrl: null, uploadedAt: null } as unknown as BotRunner;
+  const method = { id: 'chat-gpt-device-code', name: 'ChatGPT device code', description: 'Opens a page, then you enter a code.', how: 'device_code' as const };
+
+  it('names the agent from the runner kind, offers its methods and says the sign-in lives in the pod', () => {
+    const html = view({ runner: pod, auth: auth({ agent: 'codex', profile: 'default', home: 'dedicated', state: 'signed_out', methods: [method] }) });
+    expect(html).toContain('Codex is not signed in.');
+    expect(html).toContain('data-method="chat-gpt-device-code"');
+    expect(html).toContain('in the pod of Codex');
+    expect(html).not.toContain('bridge machine');
+  });
+
+  it('asks before a signed-out in the pod and names the pod, not a machine', () => {
+    const html = view({ runner: pod, auth: auth({ agent: 'codex', profile: 'default', home: 'dedicated' }), confirmOut: true });
+    expect(html).toContain('out in its pod');
+    expect(html).not.toContain('bridge machine');
+  });
+});
