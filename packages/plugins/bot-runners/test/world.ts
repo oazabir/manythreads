@@ -23,8 +23,8 @@ const header = (who: Persona | null): Record<string, string> =>
   who ? { 'x-manythreads-dev-actor': JSON.stringify({ kind: 'person', id: who.actorId, workspaceId: who.workspaceId }) } : {};
 
 /** A migrated database with every plugin, the seed world (workspace, the seven personas, the three teams) and a server on a random port with dev auth on. */
-export async function createWorld(): Promise<World> {
-  const server = await startTestServer();
+export async function createWorld(options: Parameters<typeof startTestServer>[0] = {}): Promise<World> {
+  const server = await startTestServer(options);
   await seedWorld(server.db);
   const systemPool: pg.Pool = createSystemPool(server.db.systemUrl, 2);
   return {
