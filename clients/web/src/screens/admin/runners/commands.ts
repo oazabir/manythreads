@@ -352,6 +352,7 @@ export function validateNew(kind: BotRunnerKind, v: RunnerFormValues): Checked {
   }
   const r = CreateBotRunnerRequest.safeParse(draft);
   if (!r.success) Object.assign(errors, errorsOf(r.error.issues));
+  if (kind === 'hermes_gateway' && errors.profileRule) errors.profileRule = profileRuleProblem(String(draft['profileRule'])) ?? FRIENDLY.profileRule;
   if (kind === 'hermes_gateway' && v.apiKey === '') errors.apiKey = 'Type the gateway’s key.';
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return r.success ? { ok: true, body: r.data } : { ok: false, errors };
@@ -372,14 +373,18 @@ export function validateEdit(
   }
   if (current.kind === 'llm_gateway' && v.modelAlias !== (current.modelAlias ?? '')) draft['modelAlias'] = v.modelAlias;
   const r = UpdateBotRunnerRequest.safeParse(draft);
-  if (!r.success) return { ok: false, errors: errorsOf(r.error.issues) };
+  if (!r.success) {
+    const errors = errorsOf(r.error.issues);
+    if (errors.profileRule) errors.profileRule = profileRuleProblem(String(draft['profileRule'])) ?? FRIENDLY.profileRule;
+    return { ok: false, errors };
+  }
   return { ok: true, body: r.data, changed: Object.keys(draft).length > 0 };
 }
 
 /** The checks that need no server: label, name and rule on their own, for a live hint under a field. */
 export const labelProblem = (label: string): string | null => (BotRunnerLabel.safeParse(label).success ? null : FRIENDLY.label);
 export const nameProblem = (name: string): string | null => (BotRunnerName.safeParse(name.trim()).success ? null : FRIENDLY.name);
-export const profileRuleProblem = (rule: string): string | null => (BotRunnerProfileRule.safeParse(rule.trim()).success ? null : FRIENDLY.profileRule);
+export const profileRuleProblem = (rule: string): string | null => (!rule.includes('{bot}') ? 'The rule must contain {bot}' : BotRunnerProfileRule.safeParse(rule.trim()).success ? null : FRIENDLY.profileRule);
 
 /** The profile for a test, or an error sentence when what was typed is not a profile name. */
 export function testProfile(typed: string): { ok: true; profile?: string } | { ok: false; error: string } {

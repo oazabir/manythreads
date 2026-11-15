@@ -160,7 +160,7 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
             <Field label="Address" type="url" value={v.baseUrl} placeholder="https://hermes.example.com:8642" hint="Where the gateway answers. Addresses inside this cluster, on this machine and the cloud’s metadata address are refused." error={errors.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
             <Field label="Key" type="password" autoComplete="new-password" value={v.apiKey} hint="Stored once, encrypted. It is never shown again." error={errors.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
             <AgentPick value={v.agent} onChange={(agent) => set({ agent })} />
-            <Field label="Profile name rule" className="mono" value={v.profileRule} hint="How a bot’s profile is named on the gateway. {bot} stands for the bot’s short name." error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
+            <Field label="Profile name rule" className="mono" value={v.profileRule} hint={v.agent === 'hermes' ? "How a bot’s profile is named on the gateway. {bot} stands for the bot’s short name." : "The name of the profile in the bridge's config file. It must contain {bot}, for example claude-{bot}: a bot called coder then uses the profile claude-coder."} error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
           </>
         ) : null}
 
@@ -285,7 +285,7 @@ export function EditRunnerDialog({ runner, aliases, onClose, onDone }: { runner:
             <Field label="Address" type="url" value={v.baseUrl} error={errors.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
             <Field label="New key" type="password" autoComplete="new-password" value={v.apiKey} placeholder={runner.hasKey ? 'A key is set' : 'No key yet'} hint="Leave empty to keep the key that is set. A new address or key needs a new Test." error={errors.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
             <AgentPick value={v.agent} onChange={(agent) => set({ agent })} />
-            <Field label="Profile name rule" className="mono" value={v.profileRule} error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
+            <Field label="Profile name rule" className="mono" value={v.profileRule} hint={v.agent === 'hermes' ? "How a bot’s profile is named on the gateway. {bot} stands for the bot’s short name." : "The name of the profile in the bridge's config file. It must contain {bot}, for example claude-{bot}: a bot called coder then uses the profile claude-coder."} error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
           </>
         ) : null}
         {runner.kind === 'llm_gateway' ? <AliasPick aliases={aliases.includes(v.modelAlias) || v.modelAlias === '' ? aliases : [v.modelAlias, ...aliases]} value={v.modelAlias} onChange={(modelAlias) => set({ modelAlias })} problem={errors.modelAlias} /> : null}
