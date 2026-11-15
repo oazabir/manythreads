@@ -168,7 +168,8 @@ describe('a broken recipe is refused with the file and the field', () => {
   });
 
   it('an alias a workspace does not have', async () => {
-    const err = await broken((d) => edit(bot(d), '    - fast', '    - turbo'));
+    // shipped definitions name no model (P23-07), so the test adds one that no workspace has
+    const err = await broken((d) => edit(bot(d), 'model:\n  effort: low', 'model:\n  aliases:\n    - turbo\n  effort: low'));
     expect(err.message).toContain('turbo');
   });
 
