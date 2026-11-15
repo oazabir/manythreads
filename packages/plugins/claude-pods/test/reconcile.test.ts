@@ -91,7 +91,7 @@ describe('claude-pods objects', () => {
     expect(d.spec.template.spec.containers.map((c: { name: string }) => c.name)).toEqual(['bridge', 'keeper', 'repo-sync']);
     for (const c of [...d.spec.template.spec.containers, ...d.spec.template.spec.initContainers]) expect(c.resources.limits.memory).toBeTruthy();
     const claims = [...k8s.store.values()].filter((o) => o.kind === 'PersistentVolumeClaim').map((o) => [o.metadata.name, (o.spec as any).resources.requests.storage]);
-    expect(claims.sort()).toEqual([['claude-claude-test-state', '256Mi'], ['claude-claude-test-work', '10Gi']]);
+    expect(claims.sort()).toEqual([['claude-claude-test-state', '256Mi'], ['claude-claude-test-work', '20Gi']]);
   });
 
   it('gives the keeper its own identity: a Role for its one Secret, and a token only the keeper container mounts', async () => {
@@ -132,24 +132,40 @@ describe('claude-pods objects', () => {
     expect(Buffer.from((sec!.data as Record<string, string>)['api-key']!, 'base64').toString()).toBe('key-1');
   });
 
-  it('runs no pod without a sign-in, a bot, or while the runner is off', async () => {
+  it('runs a pod for a runner with no uploaded sign-in file (it is signed in from the page), and none while the runner is off or an uploaded-file runner has no bot', async () => {
+    // no uploaded file: the pod starts so the admin can sign in from the Runners page; until the bridge says signed in, the runner waits for it
     const a = setup([runner('a')]);
     await a.r.reconcileAll();
-    expect(replicas(a.k8s, 'a')).toBe(0);
+    expect(replicas(a.k8s, 'a')).toBe(1);
     expect(a.reports.at(-1)?.status).toBe('waiting_for_sign_in');
+    expect([...a.k8s.store.keys()].some((k) => k.startsWith('Role/'))).toBe(false); // no keeper, no Role: nothing for it to write
+    const dA = dep(a.k8s, 'a') as any;
+    expect(dA.spec.template.spec.containers.map((c: { name: string }) => c.name)).toEqual(['bridge', 'repo-sync']);
+
+    // an uploaded file and a bot: the old flow, with the keeper
     signIn(a.k8s, 'a');
     await a.r.reconcileAll();
     expect(replicas(a.k8s, 'a')).toBe(1);
+    expect((dep(a.k8s, 'a') as any).spec.template.spec.containers.map((c: { name: string }) => c.name)).toEqual(['bridge', 'keeper', 'repo-sync']);
 
+    // an uploaded file and no bot: nothing to run
     const b = setup([runner('b', { bots: [] })]);
     signIn(b.k8s, 'b');
     await b.r.reconcileAll();
     expect(replicas(b.k8s, 'b')).toBe(0);
 
+    // no file and no bot: the pod still runs, with a placeholder profile, so the sign-in works before any bot is placed
+    const d = setup([runner('d', { bots: [] })]);
+    await d.r.reconcileAll();
+    expect(replicas(d.k8s, 'd')).toBe(1);
+
     const c = setup([runner('c', { enabled: false })]);
     signIn(c.k8s, 'c');
     await c.r.reconcileAll();
     expect(replicas(c.k8s, 'c')).toBe(0);
+    const c2 = setup([runner('c2', { enabled: false })]);
+    await c2.r.reconcileAll();
+    expect(replicas(c2.k8s, 'c2')).toBe(0);
   });
 
   it('two runners make two disjoint sets of objects, and a Hermes object is never touched', async () => {

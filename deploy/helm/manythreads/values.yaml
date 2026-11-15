@@ -333,7 +333,7 @@ botRunners:
 
 # Claude Code runner pods (docs/plugins/claude-pods.md): one pod per Claude Code runner an admin makes on the Runners page, signed in with a file the admin uploads.
 # OFF here and in values-live.yaml until the owner decides (PLAN P19-05). Needs hermesPods.enabled (the same namespace and Role). The image is built by tools/devbox/deploy.sh
-# (deploy/images/claude-pod) and imported into k3s. `useFake` swaps in the stand-in image (a script that prints a canned reply) for a check without a real sign-in: turn it on for
+# (deploy/images/agent-pod) and imported into k3s. `useFake` swaps in the stand-in image (a script that prints a canned reply) for a check without a real sign-in: turn it on for
 # a short window only.
 #   egress.mode  public443   the pod reaches the public internet on port 443 (the Claude service and git hosts), like the Hermes pods; no private address
 #                serverOnly  the pod reaches only DNS and the platform's server (the stand-in image needs nothing else)
@@ -342,12 +342,16 @@ claudePod:
   image: manythreads/claude-pod:1
   fakeImage: manythreads/claude-pod-fake:1
   useFake: false
-  workSize: 10Gi
+  # The work volume holds the clones, the repository of record of each team and one pnpm store (20Gi for the agent pods: a monorepo install is several GB).
+  workSize: 20Gi
   stateSize: 256Mi
+  # `/dev/shm` of the run container (a browser needs more than the 64 MB a container gets).
+  shmSize: 1Gi
   defaultConcurrency: 2
+  # 4Gi limit: the agent, a build and a browser together.
   resources:
     requests: { cpu: 250m, memory: 512Mi }
-    limits: { memory: 2Gi }
+    limits: { memory: 4Gi }
   egress:
     mode: public443
   # The third container of a pod that publishes a branch for a bot allowed to open a pull request (Bundle E, decision E2). templates/server.yaml passes `enabled` and `resources` to the controller (MANYTHREADS_CLAUDE_PODS_PUBLISHER, _PUBLISHER_RESOURCES).

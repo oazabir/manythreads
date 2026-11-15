@@ -14,7 +14,7 @@
       }
     },
     "data": {
-      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home\"\n      },\n      \"instructions\": \"You run on a shared Codex runner, not on a person's machine. Your working folder is /work/engineering/engineer.\\nThe team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.\\nDo not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner's sign-in and keys, which are not yours to use.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nTo hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> \\\"<title>\\\"` (the pull request or merge request text on standard input). When the card says whose name the commit carries (an author name and email), add them as the last two arguments, exactly as given.\\nIt makes one commit of the whole change, pushes that branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
+      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"driver\": \"acp\",\n      \"acp\": {\n        \"command\": \"codex-acp\"\n      },\n      \"authHome\": \"/state/codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home\",\n        \"npm_config_store_dir\": \"/work/.pnpm-store\",\n        \"PLAYWRIGHT_BROWSERS_PATH\": \"/ms-playwright\"\n      },\n      \"instructions\": \"You run on a shared Codex runner, not on a person's machine. Your working folder is /work/engineering/engineer.\\nThe team projects are cloned next to it, in the folder /work/<team>/<bot>/<project>; work inside your own folder only.\\nDo not read, copy or print anything under /state, /etc/bridge or the environment: they hold the runner's sign-in and keys, which are not yours to use.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nEach project also has a shared repository of record at /work/engineering/repos/<project>.git, which every bot of this pod can reach. Share a branch with the others with `mt-git record-push <branch>` (never main) and bring theirs in with `mt-git record-fetch`: their branches appear as refs/record/<branch> (start your own from one with `mt-git checkout -b <branch> refs/record/<branch>`).\\nInstall packages with `pnpm install --frozen-lockfile`; the pod keeps one package store for all clones. A browser (Chromium) is installed for Playwright checks. There is no database in this pod, so run only tests that need none.\\nTo hand your work in, commit it on a branch named card-<the first 8 characters of the card id>, then run `mt-publish publish <project> <card id> <the commit> \\\"<title>\\\"` (the pull request or merge request text on standard input). When the card says whose name the commit carries (an author name and email), add them as the last two arguments, exactly as given.\\nIt makes one commit of the whole change, pushes that branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
       "repos.txt": "engineering engineer app main https://github.com/acme/app.git\n"
     }
   },
@@ -50,11 +50,12 @@
             "app.kubernetes.io/managed-by": "manythreads-claude-pods",
             "manythreads.io/runner": "team-codex",
             "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
-            "manythreads.io/pod": "codex-team-codex"
+            "manythreads.io/pod": "codex-team-codex",
+            "manythreads.io/kube-api": "true"
           },
           "annotations": {
             "manythreads.io/upload-id": "up-1",
-            "manythreads.io/profiles-sha": "c0cbd32f5ad062f1"
+            "manythreads.io/profiles-sha": "3f3368bf916a3176"
           }
         },
         "spec": {
@@ -78,7 +79,7 @@
               "command": [
                 "sh",
                 "-c",
-                "install -d -o 1000 -g 1000 -m 0700 /state/codex /state/home /state/bridge && install -d -o 1000 -g 1000 -m 0755 /work && if [ -f /creds/auth.json ] && { [ ! -f /state/codex/auth.json ] || [ \"$(cat /creds/upload-id 2>/dev/null)\" != \"$(cat /state/codex/.upload-id 2>/dev/null)\" ]; }; then install -o 1000 -g 1000 -m 0600 /creds/auth.json /state/codex/auth.json && install -o 1000 -g 1000 -m 0600 /creds/upload-id /state/codex/.upload-id; fi"
+                "install -d -o 1000 -g 1000 -m 0700 /state/codex /state/home /state/bridge && install -d -o 1000 -g 1000 -m 0755 /work /work/.pnpm-store && if [ -f /creds/auth.json ] && { [ ! -f /state/codex/auth.json ] || [ \"$(cat /creds/upload-id 2>/dev/null)\" != \"$(cat /state/codex/.upload-id 2>/dev/null)\" ]; }; then install -o 1000 -g 1000 -m 0600 /creds/auth.json /state/codex/auth.json && install -o 1000 -g 1000 -m 0600 /creds/upload-id /state/codex/.upload-id; fi"
               ],
               "securityContext": {
                 "runAsNonRoot": false,
@@ -204,7 +205,7 @@
                   "memory": "512Mi"
                 },
                 "limits": {
-                  "memory": "2Gi"
+                  "memory": "4Gi"
                 }
               },
               "volumeMounts": [
@@ -219,6 +220,10 @@
                 {
                   "name": "tmp",
                   "mountPath": "/tmp"
+                },
+                {
+                  "name": "dshm",
+                  "mountPath": "/dev/shm"
                 },
                 {
                   "name": "config",
@@ -449,7 +454,7 @@
             {
               "name": "tmp",
               "emptyDir": {
-                "sizeLimit": "512Mi"
+                "sizeLimit": "2Gi"
               }
             },
             {
@@ -490,6 +495,13 @@
                 "secretName": "hermes-engineering-push",
                 "defaultMode": 292,
                 "optional": true
+              }
+            },
+            {
+              "name": "dshm",
+              "emptyDir": {
+                "medium": "Memory",
+                "sizeLimit": "1Gi"
               }
             },
             {
@@ -576,7 +588,7 @@
       "storageClassName": "local-path",
       "resources": {
         "requests": {
-          "storage": "10Gi"
+          "storage": "20Gi"
         }
       }
     }

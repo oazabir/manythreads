@@ -26,11 +26,18 @@ export interface ClaudePodConfig {
   serverUrl: string;
   /** The publisher: the third container, the only one that holds a team's push token (P19-09, docs/plugins/claude-pods.md). */
   publisher: { enabled: boolean; resources: { requests?: Record<string, string>; limits?: Record<string, string> } };
+  /** How the agents are driven: `acp` (the real image: each agent through its ACP adapter) or `cli` (the stand-in image's scripts, which only speak the CLI's own stream). */
+  driver: 'acp' | 'cli';
+  /** The bot slug that gets the team's deployer kubeconfig (the Hermes pods' rule, `hermesPods.deployerBot`). Empty: no bot does. */
+  deployerBot: string;
+  /** Size of the shared-memory folder (`/dev/shm`) of the run container; a browser needs more than the 64 MB a container gets by default. */
+  shmSize: string;
   /** The pods' RuntimeClass (gVisor where the cluster has one; the chart's `claudePod.runtimeClassName`, decision E22). Empty or absent: the cluster's default runtime. */
   runtimeClassName?: string;
 }
 
-const DEFAULT_RESOURCES = { requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '2Gi' } };
+// 4Gi: a browser, a build and the agent together (the proof pods of Phase 26); the chart's `claudePod.resources` overrides it
+const DEFAULT_RESOURCES = { requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '4Gi' } };
 const DEFAULT_ALIASES = { smart: 'opus', fast: 'haiku', default: 'sonnet' };
 const DEFAULT_PUBLISHER_RESOURCES = { requests: { cpu: '50m', memory: '64Mi' }, limits: { memory: '256Mi' } };
 
@@ -55,7 +62,7 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
     namespace: get('NAMESPACE', get('HERMES_NAMESPACE', 'manythreads-bots')),
     image: get('IMAGE', 'manythreads/claude-pod:1'),
     storageClass: get('STORAGE_CLASS', 'local-path'),
-    workSize: get('WORK_SIZE', '10Gi'),
+    workSize: get('WORK_SIZE', '20Gi'),
     stateSize: get('STATE_SIZE', '256Mi'),
     defaultConcurrency: Number.isFinite(conc) && conc >= 1 && conc <= 4 ? conc : 2,
     resources: parseJson(env['MANYTHREADS_CLAUDE_PODS_RESOURCES'], DEFAULT_RESOURCES),
@@ -69,6 +76,9 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
       enabled: !['0', 'false', 'off'].includes((env['MANYTHREADS_CLAUDE_PODS_PUBLISHER'] ?? '').trim().toLowerCase()),
       resources: parseJson(env['MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES'], DEFAULT_PUBLISHER_RESOURCES),
     },
+    driver: get('DRIVER', 'acp') === 'cli' ? 'cli' : 'acp',
+    deployerBot: (env['MANYTHREADS_CLAUDE_PODS_DEPLOYER_BOT'] ?? env['MANYTHREADS_HERMES_PODS_DEPLOYER_BOT'] ?? 'deployer').trim(),
+    shmSize: get('SHM_SIZE', '1Gi'),
     runtimeClassName: runtimeClassOf(get('RUNTIME_CLASS_NAME', '')),
   };
 }

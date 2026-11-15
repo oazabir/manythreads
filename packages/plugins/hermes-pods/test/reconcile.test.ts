@@ -197,6 +197,33 @@ describe('reconcileTeam', () => {
     for (const [k, o] of k8s.store) if (!k.includes('deployer')) expect(JSON.stringify(o)).not.toContain('TOKEN-DEPLOYER');
   });
 
+  it('hands an agent pod the team\'s deployer kubeconfig on request (P26-11): the same Secret, made once, only when the team has a login', async () => {
+    const k8s = new FakeK8s();
+    const r = new Reconciler(k8s, CFG, source([spec('dev'), spec('deployer')]), LOG, () => 'KEY');
+    // no token yet, no deploy target: nothing to hand over, and nothing is made
+    expect(await r.ensureDeployerSecret(TEAM)).toBeNull();
+    expect(await r.deployerKubeconfigs(TEAM)).toBeNull();
+    expect(k8s.store.has('Secret/manythreads/hermes-engineering-deployer')).toBe(false);
+
+    seedDeployerToken(k8s);
+    const made = await r.ensureDeployerSecret(TEAM);
+    expect(made).toEqual({ secret: 'hermes-engineering-deployer', hasHostFile: false });
+    const secret = k8s.store.get('Secret/manythreads/hermes-engineering-deployer')!;
+    expect(((secret['stringData'] ?? {}) as any)['deployer.kubeconfig']).toContain('"TOKEN-DEPLOYER"');
+    // asked again, it is the same object: nothing changes
+    const before = JSON.stringify(secret);
+    await r.ensureDeployerSecret(TEAM);
+    expect(JSON.stringify(k8s.store.get('Secret/manythreads/hermes-engineering-deployer'))).toBe(before);
+
+    const texts = await r.deployerKubeconfigs(TEAM);
+    expect(texts?.inCluster).toContain('"TOKEN-DEPLOYER"');
+    expect(texts?.host).toBeNull();
+    // it is the team's login, in the team's Secret only: another team gets its own name and none of this token
+    const other = await r.ensureDeployerSecret({ id: '22222222-2222-4222-8222-222222222222', slug: 'marketing' });
+    expect(other).toBeNull();
+    for (const [k, o] of k8s.store) if (!k.includes('deployer')) expect(JSON.stringify(o)).not.toContain('TOKEN-DEPLOYER');
+  });
+
   it('adds one kubeconfig context per deploy target of the team and leaves the current context alone', async () => {
     const k8s = new FakeK8s();
     seedDeployerToken(k8s);

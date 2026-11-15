@@ -222,7 +222,7 @@ describe('the repository list reaches the pod within seconds of a project change
 
 // ---- repo-sync.sh against a local bare origin ---------------------------------------------------------------------------------------------------------------------------------------
 
-const SYNC = fileURLToPath(new URL('../../../../deploy/images/claude-pod/repo-sync.sh', import.meta.url));
+const SYNC = fileURLToPath(new URL('../../../../deploy/images/agent-pod/repo-sync.sh', import.meta.url));
 const git = (cwd: string, ...args: string[]): string => {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
@@ -367,6 +367,7 @@ describe('repo-sync.sh', () => {
     writeFileSync(s.list, 'engineering builder missing main https://example.test/missing.git\n');
     s.start({ REPO_SYNC_INTERVAL: '1', REPO_SYNC_RETRY_AFTER: '100' });
     await new Promise((r) => setTimeout(r, 4500));
-    expect(s.gitCalls().filter((c) => c.includes(' clone ') || c.startsWith('clone ')).length).toBe(1);
+    // one try for the bot's clone and one for the repository of record, and no second round of either
+    expect(s.gitCalls().filter((c) => c.includes(' clone ') || c.startsWith('clone ')).length).toBe(2);
   }, 20_000);
 });

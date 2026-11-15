@@ -35,6 +35,26 @@ describe.skipIf(!haveHelm)('the chart (P19-05)', () => {
     expect(docsOf(r.out, 'NetworkPolicy').find((d) => d.includes('name: manythreads-hermes-pods'))).toContain('app.kubernetes.io/component: hermes-pod');
   });
 
+  it('opens the cluster API only for a pod that carries the kube-api label: a second policy, and not in the main one', () => {
+    const r = render(['--set', 'claudePod.enabled=true']);
+    expect(r.code, r.out).toBe(0);
+    const policies = docsOf(r.out, 'NetworkPolicy');
+    const main = policies.find((d) => /name: manythreads-claude-pods$/m.test(d))!;
+    const api = policies.find((d) => d.includes('name: manythreads-claude-pods-api'))!;
+    expect(api).toBeDefined();
+    // the label is what selects the pod: a pod without it is in the main policy only
+    expect(api).toContain('app.kubernetes.io/component: claude-pod');
+    expect(api).toContain('manythreads.io/kube-api: "true"');
+    expect(api).toMatch(/Egress/);
+    const port = /port: (\d+), protocol: TCP/.exec(api)?.[1];
+    expect(port).toBeDefined();
+    expect(api).not.toContain('port: 443');
+    // the main policy no longer lets every pod reach the API address and port
+    expect(main).not.toContain(`port: ${port},`);
+    expect(main).not.toContain('kube-api');
+    expect(docsOf(r.out, 'NetworkPolicy').filter((d) => d.includes('manythreads-claude-pods')).length).toBe(2);
+  });
+
   it('adds one namespaced Role for the keeper identity, and nothing cluster-wide', () => {
     const base = render([]);
     const on = render(['--set', 'claudePod.enabled=true']);
@@ -51,8 +71,13 @@ describe.skipIf(!haveHelm)('the chart (P19-05)', () => {
     const real = render(['--set', 'claudePod.enabled=true']).out;
     expect(real).toContain('name: MANYTHREADS_CLAUDE_PODS, value: "1"');
     expect(real).toContain('name: MANYTHREADS_CLAUDE_PODS_IMAGE, value: "manythreads/claude-pod:1"');
+    // the pod drives its agents over ACP, memory for the browser, and the team's deployer bot is the one named in the Hermes pods' values
+    expect(real).toContain('name: MANYTHREADS_CLAUDE_PODS_DRIVER, value: "acp"');
+    expect(real).toContain('name: MANYTHREADS_CLAUDE_PODS_DEPLOYER_BOT, value: "deployer"');
+    expect(real).toContain('name: MANYTHREADS_CLAUDE_PODS_SHM_SIZE, value: "1Gi"');
     const fake = render(['--set', 'claudePod.enabled=true', '--set', 'claudePod.useFake=true']).out;
     expect(fake).toContain('name: MANYTHREADS_CLAUDE_PODS_IMAGE, value: "manythreads/claude-pod-fake:1"');
+    expect(fake).toContain('name: MANYTHREADS_CLAUDE_PODS_DRIVER, value: "cli"');
   });
 
   it('refuses to render without the Hermes pods and with an unknown egress mode', () => {

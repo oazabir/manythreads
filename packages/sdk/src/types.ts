@@ -79,6 +79,8 @@ export const PROVIDER_KINDS = [
   'runner.nodes',
   /** Where the Claude Code runners' pods stand, and the admin's confirmation of a move (claude-pods): `ClaudePodsProvider` in ./claude-pods.ts. */
   'claude.pods',
+  /** The team's deployer kubeconfig: which Secret holds it, and its text for a machine that cannot mount it (hermes-pods): `DeployKubeconfigProvider` in ./deploy-kubeconfig.ts. */
+  'deploy.kubeconfig',
   /** Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): `InboxDistiller` in ./inbox.ts. */
   'inbox.distiller',
   /** Checks a received bundle and files it under memory/shared/ (memory-share, P8-25): `InboxImporter` in ./inbox.ts. */

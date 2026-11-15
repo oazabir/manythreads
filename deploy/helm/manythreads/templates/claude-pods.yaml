@@ -8,6 +8,8 @@
 # secrets, configmaps, volume claims and pods in the namespace. The one addition is the Role below, for the keeper's identity (owner decision O2). The policy selects only `claude-pod`, so a Hermes pod keeps its own.
 #   ingress  only the server pod, on the bridge port (8650)
 #   egress   DNS, the server (the MCP address and the API), and, with egress.mode=public443, the public internet on port 443 with no private, link-local or CGNAT address
+# A second policy (`manythreads-claude-pods-api`, P26-09) opens the cluster's API address and port for the pods that carry the label `manythreads.io/kube-api: "true"` and for no other: the pod of a runner with a
+# keeper (it patches its sign-in Secret) and the pod that mounts the team's deployer kubeconfig (the deployer bot runs kubectl and helm). A pod with neither has no way to the cluster API.
 # The publisher (P19-09, values claudePod.publisher) is a third container of the pod: the only one that mounts a team's push Secret (`hermes-<team>-push`, filled by the Hermes pods' controller), and
 # the only one that pushes a branch and opens a pull request. It asks the server (the egress rule below) which team and bot a run belongs to, and reaches GitHub on 443 (egress.mode=public443;
 # with serverOnly it can only say "refused"). It needs no Role of its own: a Secret volume is mounted by the kubelet, and the pod has no Kubernetes token for it. It takes the server's address from
@@ -64,19 +66,6 @@ spec:
           podSelector: { matchLabels: { app.kubernetes.io/component: server } }
       ports:
         - { port: {{ .Values.server.port }}, protocol: TCP }
-    {{- /* The keeper patches the sign-in Secret through the Kubernetes API. The cluster sends kubernetes.default.svc to the node's API address (10.0.2.15:6443 on the
-         devbox), which the rule below shuts (a private address, not port 443): without this rule a renewed sign-in never reaches its Secret, and after a restart the pod starts
-         from a dead refresh token. The same address as the Hermes pods' rule (hermesPods.apiServer). Only the keeper container holds a Kubernetes token. */}}
-    {{- $api := .Values.hermesPods.apiServer }}
-    {{- $cidr := $api.cidr }}
-    {{- if not $cidr }}
-      {{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" }}
-      {{- if and $ep $ep.subsets }}{{ $cidr = printf "%s/32" (index (index $ep.subsets 0).addresses 0).ip }}{{ else }}{{ fail "hermesPods.apiServer.cidr is required: the chart could not look up the Kubernetes API address (helm template has no cluster); set it, e.g. 10.0.2.15/32" }}{{ end }}
-    {{- end }}
-    - to:
-        - ipBlock: { cidr: {{ $cidr }} }
-      ports:
-        - { port: {{ $api.port }}, protocol: TCP }
     {{- if eq .Values.claudePod.egress.mode "public443" }}
     - to:
         - ipBlock:
@@ -85,4 +74,30 @@ spec:
       ports:
         - { port: 443, protocol: TCP }
     {{- end }}
+---
+{{- /* The Kubernetes API (P26-11). The cluster sends kubernetes.default.svc to the node's API address (10.0.2.15:6443 on the devbox), which the public rule above shuts (a private address, not
+     port 443). Only two kinds of pod need that address, and only they carry the label `manythreads.io/kube-api: "true"` (the controller sets it): a pod with a keeper (it patches its
+     sign-in Secret; without the keeper a renewed sign-in never reaches its Secret and, after a restart, the pod starts from a dead refresh token) and a pod whose team's deployer bot has a
+     kubeconfig (kubectl and helm into the team's test namespace). Every other pod of this component, and every Hermes pod, cannot open a connection to the API. The address is the one of
+     the Hermes pods' rule (hermesPods.apiServer). */}}
+{{- $api := .Values.hermesPods.apiServer }}
+{{- $cidr := $api.cidr }}
+{{- if not $cidr }}
+  {{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" }}
+  {{- if and $ep $ep.subsets }}{{ $cidr = printf "%s/32" (index (index $ep.subsets 0).addresses 0).ip }}{{ else }}{{ fail "hermesPods.apiServer.cidr is required: the chart could not look up the Kubernetes API address (helm template has no cluster); set it, e.g. 10.0.2.15/32" }}{{ end }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-claude-pods-api
+  namespace: {{ $bots }}
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: claude-pod, manythreads.io/kube-api: "true" }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: {{ $cidr }} }
+      ports:
+        - { port: {{ $api.port }}, protocol: TCP }
 {{- end }}

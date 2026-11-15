@@ -156,10 +156,11 @@ describe('the objects of a Codex runner', () => {
     expect(p.instructions).toContain('mt-publish');
   });
 
-  it('a Codex runner without a sign-in file runs no pod and says so', async () => {
-    const { r } = setup([runner('team-codex', 'codex')]);
+  it('a Codex runner without a sign-in file runs a pod with no keeper (it is signed in from the Runners page) and says it waits for a sign-in', async () => {
+    const { k8s, r } = setup([runner('team-codex', 'codex')]);
     const res = await r.reconcileAll();
-    expect(res[0]).toMatchObject({ replicas: 0, state: 'waiting_for_sign_in', pod: 'codex-team-codex' });
+    expect(res[0]).toMatchObject({ replicas: 1, state: 'waiting_for_sign_in', pod: 'codex-team-codex' });
+    expect(depOf(k8s, 'team-codex', 'codex').spec.template.spec.containers.map((c: any) => c.name)).toEqual(['bridge', 'repo-sync', 'publisher']);
   });
 
   it('the Claude pod of a Claude runner is unchanged: still claude-…, .credentials.json, CLAUDE_CONFIG_DIR, no in-pod switch', async () => {

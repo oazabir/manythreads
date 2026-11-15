@@ -125,6 +125,73 @@ export class Reconciler {
     return { logins: out, failed };
   }
 
+  /**
+   * The team's deployer kubeconfig as a Secret object (nothing is applied here): the login of its apps namespace plus its deploy targets. `withDeployer` is true when a kubeconfig exists
+   * or the last one is kept (a deploy target could not be read this tick: `secret` is then null and the one in the cluster stays). Used by the team's own pod and, through the
+   * `deploy.kubeconfig` provider, by an agent pod whose deployer bot is not a Hermes bot.
+   */
+  async deployerSecretFor(team: Team, names: Names): Promise<{ withDeployer: boolean; secret: K8sObject | null }> {
+    const { cfg, k8s } = this;
+    let withDeployer = false;
+    let deployerSecret: K8sObject | null = null;
+    const appsNs = appsNamespaceFor(cfg, team);
+    let tok: K8sObject | null = null;
+    try {
+      tok = await k8s.get('Secret', appsNs, 'deployer-token');
+    } catch (err) {
+      this.log.warn(`hermes-pods: cannot read the deployer token of ${appsNs}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const data = (tok?.data ?? {}) as Record<string, string>;
+    const token = b64(data['token']);
+    const ca = b64(data['ca.crt']);
+    if (token !== '' && ca !== '') {
+      const { logins: targets, failed } = await this.deployTargetLogins(team);
+      // a read error on a deploy target is usually momentary: keep the kubeconfig written last tick (it still has that context) and try again next tick
+      const previous = failed ? await k8s.get('Secret', cfg.namespace, names.deployer).catch(() => null) : null;
+      if (previous) this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
+      else deployerSecret = buildDeployerSecretFor(cfg, team, names, { token, caPem: ca, appsNamespace: appsNs, appsRouting: cfg.appsRouting, appUrlPattern: appUrlPattern(cfg, team), targets });
+      withDeployer = true;
+    } else {
+      // No apps namespace (the team is not in hermesPods.appTeams): its deploy targets alone still make a kubeconfig.
+      const { logins: targets, failed } = await this.deployTargetLogins(team);
+      const ca = targets.find((t) => t.caPem)?.caPem ?? '';
+      const previous = failed ? await k8s.get('Secret', cfg.namespace, names.deployer).catch(() => null) : null;
+      if (previous) {
+        this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
+        withDeployer = true;
+      } else if (targets.length > 0 && ca !== '') {
+        deployerSecret = buildDeployerSecretFor(cfg, team, names, { token: null, caPem: ca, appsNamespace: appsNs, targets });
+        withDeployer = true;
+      } else {
+        this.log.warn(`hermes-pods: there is no ready deployer token in ${appsNs} and no deploy target (add the team to hermesPods.appTeams); the deployer bot of ${team.slug} has no kubeconfig`);
+      }
+    }
+    return { withDeployer, secret: deployerSecret };
+  }
+
+  /**
+   * Makes sure the team's deployer kubeconfig Secret exists (applied the same way the team's pod does) and says where it is. Null when the team has no deploy target and no apps
+   * namespace token. The file is `deployer.kubeconfig` (and `deployer.host.kubeconfig` when the chart names the host's API address).
+   */
+  async ensureDeployerSecret(team: Team): Promise<{ secret: string; hasHostFile: boolean } | null> {
+    const names = await this.resolveNames(team);
+    const { withDeployer, secret } = await this.deployerSecretFor(team, names);
+    if (!withDeployer) return null;
+    if (secret) await this.k8s.apply(secret);
+    return { secret: names.deployer, hasHostFile: (this.cfg.hostApiServer ?? '').trim() !== '' };
+  }
+
+  /** The kubeconfig text of the team's deployer (for a bot on a machine outside the cluster, which cannot mount the Secret), or null. */
+  async deployerKubeconfigs(team: Team): Promise<{ inCluster: string; host: string | null } | null> {
+    const names = await this.resolveNames(team);
+    const { secret } = await this.deployerSecretFor(team, names);
+    const data = (secret?.stringData ?? null) as Record<string, string> | null;
+    const current = data ? null : await this.k8s.get('Secret', this.cfg.namespace, names.deployer);
+    const get = (key: string): string | null => data?.[key] ?? (current?.data ? b64((current.data as Record<string, string>)[key]) || null : null);
+    const inCluster = get('deployer.kubeconfig');
+    return inCluster === null ? null : { inCluster, host: get('deployer.host.kubeconfig') };
+  }
+
   async reconcileTeam(team: Team, profilesOverride?: GatewayProfileSpec[]): Promise<TeamResult> {
     const { cfg, k8s } = this;
     // A profile that names a model provider's key or address is left out: a Hermes pod reaches models only through the platform's gateway (P19-10).
@@ -159,42 +226,7 @@ export class Reconciler {
     if (storedProxy !== null && proxy === null) this.log.warn(`hermes-pods: ${team.slug}: the team's proxy address is not usable (it must be http(s)://host[:port], with no sign-in, path or loopback address), so the pod is started without a proxy`);
 
     // the deployer credential, for the deployer bot only
-    let withDeployer = false;
-    let deployerSecret: K8sObject | null = null;
-    if (users.some((u) => u.deployer)) {
-      const appsNs = appsNamespaceFor(cfg, team);
-      let tok: K8sObject | null = null;
-      try {
-        tok = await k8s.get('Secret', appsNs, 'deployer-token');
-      } catch (err) {
-        this.log.warn(`hermes-pods: cannot read the deployer token of ${appsNs}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      const data = (tok?.data ?? {}) as Record<string, string>;
-      const token = b64(data['token']);
-      const ca = b64(data['ca.crt']);
-      if (token !== '' && ca !== '') {
-        const { logins: targets, failed } = await this.deployTargetLogins(team);
-        // a read error on a deploy target is usually momentary: keep the kubeconfig written last tick (it still has that context) and try again next tick
-        const previous = failed ? await k8s.get('Secret', cfg.namespace, names.deployer).catch(() => null) : null;
-        if (previous) this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
-        else deployerSecret = buildDeployerSecretFor(cfg, team, names, { token, caPem: ca, appsNamespace: appsNs, appsRouting: cfg.appsRouting, appUrlPattern: appUrlPattern(cfg, team), targets });
-        withDeployer = true;
-      } else {
-        // No apps namespace (the team is not in hermesPods.appTeams): its deploy targets alone still make a kubeconfig.
-        const { logins: targets, failed } = await this.deployTargetLogins(team);
-        const ca = targets.find((t) => t.caPem)?.caPem ?? '';
-        const previous = failed ? await k8s.get('Secret', cfg.namespace, names.deployer).catch(() => null) : null;
-        if (previous) {
-          this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
-          withDeployer = true;
-        } else if (targets.length > 0 && ca !== '') {
-          deployerSecret = buildDeployerSecretFor(cfg, team, names, { token: null, caPem: ca, appsNamespace: appsNs, targets });
-          withDeployer = true;
-        } else {
-          this.log.warn(`hermes-pods: there is no ready deployer token in ${appsNs} and no deploy target (add the team to hermesPods.appTeams); the deployer bot of ${team.slug} has no kubeconfig`);
-        }
-      }
-    }
+    const { withDeployer, secret: deployerSecret } = users.some((u) => u.deployer) ? await this.deployerSecretFor(team, names) : { withDeployer: false, secret: null };
 
     // an existing claim keeps the machine it is really on; a new one gets the machine chosen
     const stampOf = (claim: string): string | null => (claim in plan.stamp ? (plan.stamp[claim] ?? null) : node);

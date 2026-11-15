@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url';
 import type { PodRunnerInfo } from '@manythreads/sdk';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain JavaScript file that ships in the image
-import { client, handle, serve } from '../../../../deploy/images/claude-pod/publisher.mjs';
+import { client, handle, serve } from '../../../../deploy/images/agent-pod/publisher.mjs';
 import { startFakeGithub, type FakeGithub } from '../../../test-utils/src/fake-github.ts';
 import { configFrom, type ClaudePodConfig } from '../src/config.ts';
-import { buildBridgeConfig, buildDeployment, GIT_TOOLS, namesFor, PUBLISH_TOOL, publisherKey, pushSecretName } from '../src/render.ts';
+import { buildBridgeConfig, buildDeployment, GIT_TOOLS, namesFor, PUBLISH_TOOL, publisherKey, pushSecretName, RECORD_TOOLS } from '../src/render.ts';
 
 // P19-09: publishing from a Claude pod. Two halves. The rendered objects: the run container has no push token, no push Secret and no way to reach one; only the publisher container mounts a team's
 // Secret. And the publisher itself, run for real (its server, its client, mt-publish.sh, git, a local double of GitHub and of the platform): a push to main is refused, a bot of team A cannot publish
@@ -90,7 +90,7 @@ describe('the rendered pod', () => {
     // the only environment of the run container: the bridge key (from its Secret), HOME and the sign-in folder
     expect(containers(d).bridge.env.map((e: any) => e.name).sort()).toEqual(['AGENT_BRIDGE_API_KEY', 'CLAUDE_CONFIG_DIR', 'HOME']);
     // what it mounts for publishing: the socket folder, nothing that holds a token
-    expect(containers(d).bridge.volumeMounts.map((m: any) => m.mountPath).sort()).toEqual(['/etc/bridge', '/run/publish', '/run/repos', '/state', '/tmp', '/work']);
+    expect(containers(d).bridge.volumeMounts.map((m: any) => m.mountPath).sort()).toEqual(['/dev/shm', '/etc/bridge', '/run/publish', '/run/repos', '/state', '/tmp', '/work']);
     // the repo-sync container, which clones with no credential, mounts no publish folder and no Secret either
     expect(JSON.stringify(containers(d)['repo-sync'])).not.toMatch(/publish|push|secret/i);
     // the whole Deployment names a team's push Secret only in volumes, and only the publisher mounts them
@@ -132,9 +132,12 @@ describe('the rendered pod', () => {
   it('allows each bot the git commands, and the publish command only a bot whose definition grants tasks.pull_request', () => {
     const publishers = new Set([publisherKey('engineering', 'builder')]);
     const profiles = JSON.parse(buildBridgeConfig(CFG, runner(), publishers)).profiles;
-    expect(profiles['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS, PUBLISH_TOOL]);
-    expect(profiles['engineering--reviewer'].extraAllowedTools).toEqual([...GIT_TOOLS]);
-    expect(profiles['marketing--writer'].extraAllowedTools).toEqual([...GIT_TOOLS]);
+    expect(profiles['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS, PUBLISH_TOOL]);
+    expect(profiles['engineering--reviewer'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
+    expect(profiles['marketing--writer'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
+    // the older command-line driver has no repository of record: no record commands
+    const cli = JSON.parse(buildBridgeConfig({ ...CFG, driver: 'cli' }, runner(), publishers)).profiles;
+    expect(cli['engineering--reviewer'].extraAllowedTools).toEqual([...GIT_TOOLS]);
     // the same bot name in another team is not a publisher
     const other = JSON.parse(buildBridgeConfig(CFG, runner(), new Set([publisherKey('marketing', 'builder')]))).profiles;
     expect(other['engineering--builder'].extraAllowedTools).not.toContain(PUBLISH_TOOL);
@@ -142,7 +145,7 @@ describe('the rendered pod', () => {
     expect(profiles['engineering--reviewer'].instructions).not.toContain('mt-publish');
     // no publisher container: no publish command for anyone
     const none = JSON.parse(buildBridgeConfig({ ...CFG, serverUrl: '' }, runner(), publishers)).profiles;
-    expect(none['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS]);
+    expect(none['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
   });
 
   it('lists no git command that reaches the network or rewrites history', () => {

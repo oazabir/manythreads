@@ -8,10 +8,10 @@ import { buildBridgeConfig, GIT_TOOLS, instructionsFor, PUBLISH_TOOL } from '../
 
 // P19-09 security review: every Claude pod bot could run `git diff:*`, `git log:*`, `git add:*` ... without a question, and the open-ended prefix reached files outside the
 // project (`git diff --no-index <file> /dev/null`, `git log --output=<path>`, `git add --pathspec-from-file`) and, through a hook or a config line written into `.git`, ran any
-// command. The pod now approves `mt-git <subcommand>` only. These tests run the wrapper (deploy/images/claude-pod/mt-git.mjs) with real git, against made-up files that hold a
+// command. The pod now approves `mt-git <subcommand>` only. These tests run the wrapper (deploy/images/agent-pod/mt-git.mjs) with real git, against made-up files that hold a
 // canary string; none of them reads a real sign-in file.
 
-const IMAGE = fileURLToPath(new URL('../../../../deploy/images/claude-pod/', import.meta.url));
+const IMAGE = fileURLToPath(new URL('../../../../deploy/images/agent-pod/', import.meta.url));
 const MT_GIT = join(IMAGE, 'mt-git.mjs');
 const CANARY = 'CANARY-not-a-real-login-9f3a1c';
 
@@ -88,7 +88,7 @@ describe('the allowed tool strings', () => {
   });
 
   it('are installed in both pod images, and the shim runs the script with the bot-settable node variables removed', () => {
-    for (const image of ['claude-pod', 'claude-pod-fake']) {
+    for (const image of ['agent-pod', 'claude-pod-fake']) {
       const docker = readFileSync(join(IMAGE, '..', image, 'Dockerfile'), 'utf8');
       expect(docker, image).toMatch(/COPY mt-git\.mjs \/opt\/claude-pod\/mt-git\.mjs/);
       expect(docker, image).toMatch(/COPY mt-git\.sh \/usr\/local\/bin\/mt-git/);

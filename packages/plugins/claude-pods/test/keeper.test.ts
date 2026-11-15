@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain JavaScript file that ships in the image
-import { lookOnce, STABLE_MS } from '../../../../deploy/images/claude-pod/keeper.mjs';
+import { lookOnce, STABLE_MS } from '../../../../deploy/images/agent-pod/keeper.mjs';
 
 // P19-06: the keeper copies a renewed sign-in file back, exactly, once it has held still.
 

@@ -17,6 +17,7 @@ import {
 import type { ClaudePodConfig } from './config.ts';
 import {
   BRIDGE_PORT,
+  AGENTS,
   buildBridgeConfig,
   buildConfigMap,
   buildDeployment,
@@ -31,6 +32,7 @@ import {
   publisherOn,
   pushSecretName,
   reposFor,
+  type DeployPlan,
   type Names,
   type PodRunner,
   type RepoToSync,
@@ -44,6 +46,11 @@ export interface RunnerSource {
   reposForTeams?(teamIds: readonly string[]): Promise<(ProjectRepo & { teamSlug: string })[]>;
   /** The bots of these teams whose definition grants `tasks.pull_request`: only they are allowed the `mt-publish` command. Absent in a test that needs none. */
   publishersForTeams?(teamIds: readonly string[]): Promise<{ teamSlug: string; botSlug: string }[]>;
+  /**
+   * The team's deployer kubeconfig Secret (the `deploy.kubeconfig` provider of hermes-pods), or null when the team has none or the provider is not loaded. Only asked for a pod of one team
+   * that has the deployer bot. Absent in a test that needs none.
+   */
+  deployerKubeconfig?(team: { id: string; slug: string }): Promise<{ secret: string; key: string } | null>;
   /** Tell the catalog how the pod is doing. */
   report?(state: PodRunnerState): Promise<void>;
 }
@@ -66,13 +73,17 @@ export interface RunnerResult {
   state: PodRunnerState['status'];
 }
 
-/** The decision of what to report, from facts only: a pod is never "ready" before it has a sign-in file and a running container. */
-export function stateFor(input: { hasCredentials: boolean; hasBots: boolean; enabled: boolean; moving: boolean; held: string | null; pending: boolean; unschedulable: boolean; running: boolean }): { status: PodRunnerState['status']; detail: string | null } {
+/**
+ * The decision of what to report, from facts only: a pod is never "ready" before it holds a sign-in and has a running container. The sign-in is either an uploaded file
+ * (`hasCredentials`: the old way) or one the bridge reports as signed in (`signedIn`: the Runners page signed the agent in inside the pod).
+ */
+export function stateFor(input: { hasCredentials: boolean; signedIn?: boolean; hasBots: boolean; enabled: boolean; moving: boolean; held: string | null; pending: boolean; unschedulable: boolean; running: boolean }): { status: PodRunnerState['status']; detail: string | null } {
+  const signed = input.hasCredentials || input.signedIn === true;
   if (input.moving) return { status: 'moving', detail: 'Moving to the machine you chose. The work volume is being made again.' };
-  if (!input.hasCredentials) return { status: 'waiting_for_sign_in', detail: 'Waiting for a sign-in file. Upload one to start this runner.' };
+  if (!signed && !input.running) return { status: 'waiting_for_sign_in', detail: input.enabled ? 'Waiting for a sign-in. Choose Sign in on this runner once its pod is up.' : 'Waiting for a sign-in. This runner is off.' };
   if (input.held !== null) return { status: 'waiting_for_node', detail: 'The machine changed, but the move is not confirmed. The pod stays where its data is.' };
   if (input.pending && input.unschedulable) return { status: 'waiting_for_node', detail: 'Waiting for its machine: the pod cannot be placed there yet.' };
-  if (input.running) return { status: 'ready', detail: null };
+  if (input.running) return signed ? { status: 'ready', detail: null } : { status: 'waiting_for_sign_in', detail: 'Waiting for a sign-in. Choose Sign in on this runner.' };
   if (!input.enabled || !input.hasBots) return { status: 'starting', detail: input.enabled ? 'No bot is placed on this runner yet, so its pod is stopped.' : null };
   return { status: 'starting', detail: 'The pod is starting.' };
 }
@@ -134,6 +145,48 @@ export class Reconciler {
     }
   }
 
+  /**
+   * Whether the agent in this pod is signed in, as its bridge says (`GET /v1/auth/status`): the sign-in made from the Runners page lives in the pod's state volume, so the bridge is the only
+   * one who knows. Any failure reads as "not signed in" and is tried again on the next pass.
+   */
+  async signedInBridge(runner: PodRunner, names: Names, apiKey: string): Promise<boolean> {
+    try {
+      const res = await this.doFetch(`${this.bridgeUrl(names)}/v1/auth/status?agent=${AGENTS[names.agent].profileAgent}`, { headers: { authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) return false;
+      const body = (await res.json()) as { auth?: { state?: unknown } };
+      return body.auth?.state === 'signed_in';
+    } catch {
+      this.log.info(`claude-pods: ${runner.name}: the bridge did not answer the sign-in question yet; it is asked again on the next pass`);
+      return false;
+    }
+  }
+
+  /**
+   * The deployer's kubeconfig for the pod: only a pod of ONE team gets it, and only for that team's bot named `deployerBot`. Every bot of a pod runs as one user and can read what the run
+   * container mounts, so a second team's bots would be handed the first team's deploy login; that pod gets none and the log says why.
+   */
+  private async deployPlan(runner: PodRunner): Promise<DeployPlan> {
+    const none: DeployPlan = { bots: new Set(), mounts: [] };
+    const deployer = this.cfg.deployerBot;
+    if (deployer === '' || !this.source.deployerKubeconfig) return none;
+    const mine = runner.bots.filter((b) => b.botSlug === deployer);
+    if (mine.length === 0) return none;
+    const teams = new Map(runner.bots.map((b) => [b.teamId, b.teamSlug]));
+    if (teams.size !== 1) {
+      this.log.warn(`claude-pods: ${runner.name}: the pod serves more than one team, so its deployer bot gets no kubeconfig (every bot of the pod could read it)`);
+      return none;
+    }
+    const [teamId, teamSlug] = [...teams.entries()][0]!;
+    try {
+      const ref = await this.source.deployerKubeconfig({ id: teamId, slug: teamSlug });
+      if (!ref) return none;
+      return { bots: new Set(mine.map((b) => publisherKey(b.teamSlug, b.botSlug))), mounts: [{ teamSlug, secret: ref.secret, key: ref.key }] };
+    } catch (err) {
+      this.log.warn(`claude-pods: ${runner.name}: no deployer kubeconfig this pass: ${err instanceof Error ? err.message : String(err)}`);
+      return none;
+    }
+  }
+
   async reconcileRunner(runner: PodRunner): Promise<RunnerResult> {
     const { cfg, k8s } = this;
     const names = namesFor(runner.name, runner.agent);
@@ -164,33 +217,42 @@ export class Reconciler {
       if (teams.length > 0 && this.source.publishersForTeams) for (const p of await this.source.publishersForTeams(teams.map((t) => t.id))) publishers.add(publisherKey(p.teamSlug, p.botSlug));
       for (const t of teams) pushSecrets.push({ teamSlug: t.slug, secret: await this.pushSecretOf(t) });
     }
-    const profilesSha = createHash('sha256').update(buildBridgeConfig(cfg, runner, publishers)).digest('hex').slice(0, 16);
+    const deploy = await this.deployPlan(runner);
+    const profilesSha = createHash('sha256').update(buildBridgeConfig(cfg, runner, publishers, deploy)).digest('hex').slice(0, 16);
+    // A claim that is being deleted (a sign-in removed) is let go first: the pod stops, the claim is freed, and the next pass makes it again.
+    const stateClaim = await k8s.get('PersistentVolumeClaim', cfg.namespace, names.state);
+    const claimGoing = stateClaim !== null && isTerminating(stateClaim);
 
     const stampOf = (claim: string): string | null => (claim in plan.stamp ? (plan.stamp[claim] ?? null) : node);
-    const replicas = runner.enabled && runner.bots.length > 0 && hasCredentials && !moving ? 1 : 0;
+    // A runner signed in through the Runners page has its sign-in inside the pod, so the pod runs before there is a sign-in (and, with no bot yet, so that an admin can sign in first).
+    const replicas = runner.enabled && (runner.bots.length > 0 || !hasCredentials) && !moving && !claimGoing ? 1 : 0;
     const objects: K8sObject[] = [
       // While a move is under way the claims are left alone (a claim that is being deleted must not be applied again).
-      ...(moving ? [] : [buildPvc(cfg, runner, names.state, cfg.stateSize, stampOf(names.state)), buildPvc(cfg, runner, names.work, cfg.workSize, stampOf(names.work))]),
-      ...buildKeeperRbac(cfg, runner, names),
+      ...(moving ? [] : [...(claimGoing ? [] : [buildPvc(cfg, runner, names.state, cfg.stateSize, stampOf(names.state))]), buildPvc(cfg, runner, names.work, cfg.workSize, stampOf(names.work))]),
+      // the keeper and its rights exist only for a runner with an uploaded sign-in file
+      ...(hasCredentials ? buildKeeperRbac(cfg, runner, names) : []),
       buildKeySecret(cfg, runner, names, apiKey),
-      buildConfigMap(cfg, runner, names, repos, publishers),
+      buildConfigMap(cfg, runner, names, repos, publishers, deploy),
       buildService(cfg, runner, names),
-      buildDeployment(cfg, runner, names, { replicas, node, moving, held: plan.held, uploadId, pushSecrets, profilesSha }),
+      buildDeployment(cfg, runner, names, { replicas, node, moving, held: plan.held, uploadId, pushSecrets, profilesSha, keeper: hasCredentials, deployMounts: deploy.mounts }),
     ];
     for (const obj of objects) await k8s.apply(obj);
     if (moving && plan.stale.length > 0) await this.finishMove(runner, names, plan.stale);
 
     const pods = await k8s.list('Pod', cfg.namespace, `manythreads.io/pod=${names.base}`);
     const phase = (p: K8sObject): string => String((p.status as { phase?: string } | undefined)?.phase ?? '');
+    const running = pods.some((p) => phase(p) === 'Running');
+    const signedIn = !hasCredentials && running ? await this.signedInBridge(runner, names, apiKey) : false;
     const state = stateFor({
       hasCredentials,
+      signedIn,
       hasBots: runner.bots.length > 0,
       enabled: runner.enabled,
       moving,
       held: plan.held,
       pending: pods.some((p) => phase(p) === 'Pending'),
       unschedulable: pods.some((p) => unschedulable(p)),
-      running: pods.some((p) => phase(p) === 'Running'),
+      running,
     });
     // a pod that is up takes the repository list now; a pod that is not up starts from the ConfigMap's copy
     if (state.status === 'ready') await this.pushRepos(runner, names, apiKey, repos);

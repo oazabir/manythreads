@@ -1,4 +1,4 @@
-import { definePlugin, type BotRunnersProvider, type GatewayProfileSpec, type HermesProfilesProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
+import { definePlugin, type BotRunnersProvider, type DeployKubeconfigProvider, type GatewayProfileSpec, type HermesProfilesProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
 import { configFrom } from './config.ts';
 import { HttpK8s, type K8s } from './k8s.ts';
 import { createRunnerNodesProvider } from './nodes.ts';
@@ -24,7 +24,8 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     // `provider.runner.nodes`: the cluster's machines and where the pods stand on them, for the admin's node picker (bot-runners; P19-08).
-    extends: ['provider.project.credentials', 'provider.runner.nodes'],
+    // `provider.deploy.kubeconfig`: the team's deployer login for an agent pod's deployer bot (P26-11).
+    extends: ['provider.project.credentials', 'provider.runner.nodes', 'provider.deploy.kubeconfig'],
     events: { emits: [], consumes: [] },
     dependsOn: ['teams', 'projects'],
   },
@@ -210,6 +211,25 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
     }
     return reconciler;
   };
+
+  // The deployer's kubeconfig for an agent pod (claude-pods, P26-11): the same Secret the team's own pod mounts, made on request. Registered with the controller, so it exists only where the Hermes pods are on.
+  if (!fixed) {
+    const reconcilerOrThrow = (): Reconciler => {
+      const r = ensure();
+      if (!r) throw new Error('the Kubernetes API is not reachable from here');
+      return r;
+    };
+    const teamOf = (t: { id: string; slug: string }): Team => ({ id: t.id, slug: t.slug });
+    const provider: DeployKubeconfigProvider = {
+      id: 'deploy.kubeconfig',
+      ensure: async ({ team }) => {
+        const made = await serialized(() => reconcilerOrThrow().ensureDeployerSecret(teamOf(team)));
+        return made === null ? null : { secret: made.secret, key: 'deployer.kubeconfig' };
+      },
+      texts: ({ team }) => serialized(() => reconcilerOrThrow().deployerKubeconfigs(teamOf(team))),
+    };
+    ctx.providers.register('deploy.kubeconfig', provider);
+  }
 
   const pass = async (): Promise<void> => {
     const r = ensure();

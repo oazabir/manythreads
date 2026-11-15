@@ -1,4 +1,4 @@
-import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
+import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type DeployKubeconfigProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
 import { HttpK8s, confirmMark, type K8s, type ProjectRepo } from '@manythreads/sdk/pods';
 import { configFrom, type ClaudePodConfig } from './config.ts';
 import { Reconciler, type RunnerSource } from './reconcile.ts';
@@ -75,6 +75,8 @@ export function platformSource(ctx: PluginContext): RunnerSource {
       return [...claude.map((r): PodRunner => ({ ...r, agent: 'claude' })), ...codex.map((r): PodRunner => ({ ...r, agent: 'codex' }))];
     },
     report: (state) => runnersProvider().reportPodState(state),
+    // the deployer's login, made by the Hermes pods (P26-11); without that plugin's controller there is none and a deployer bot of an agent pod gets no kubeconfig
+    deployerKubeconfig: async (team) => ctx.providers.get<DeployKubeconfigProvider>('deploy.kubeconfig')?.ensure({ team }) ?? null,
     publishersForTeams: (teamIds) =>
       ctx.db.system(async (tx) => {
         // the same question the Hermes pods ask: which bots of these teams hold a tasks.pull_request grant

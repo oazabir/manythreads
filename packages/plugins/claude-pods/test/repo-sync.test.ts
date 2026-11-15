@@ -10,11 +10,11 @@ import { buildDeployment, namesFor, REPO_SYNC_SCRATCH } from '../src/render.ts';
 
 // P19-09 security review: the repo-sync container of a Claude or Codex pod fetches into a clone the BOT can write (same /work, same /tmp, same user). `git -C <clone> fetch`
 // reads that clone's own .git/config and .git/hooks, so a bot that had written `remote.origin.uploadpack`, `core.sshCommand`, an `include`, a `url.*.insteadOf`, a hooks folder
-// or a hook file had a command run in the container that has the network (or a fetch from another address). These tests run deploy/images/claude-pod/repo-sync.sh with real git
+// or a hook file had a command run in the container that has the network (or a fetch from another address). These tests run deploy/images/agent-pod/repo-sync.sh with real git
 // and a local bare repository as the origin (REPO_SYNC_ALLOW_FILE lets the test use a file:// address; the pod sets none of the REPO_SYNC_* hooks). Each attack is first run as
 // plain `git fetch` (the control: it really starts the program), then through the script (nothing runs, the right address is fetched).
 
-const SCRIPT = fileURLToPath(new URL('../../../../deploy/images/claude-pod/repo-sync.sh', import.meta.url));
+const SCRIPT = fileURLToPath(new URL('../../../../deploy/images/agent-pod/repo-sync.sh', import.meta.url));
 
 let root: string;
 let origin: string; // the bare repository the project list names

@@ -42,6 +42,8 @@ export const EXTENSION_POINTS = [
   'provider.runner.nodes',
   // Where the Claude Code runners' pods stand and the admin's confirmation of a move (claude-pods, P19-05): read by bot-runners, which never talks to the cluster itself.
   'provider.claude.pods',
+  // The team's deployer kubeconfig for an agent pod or a server agent whose deployer bot is not a Hermes bot (hermes-pods, P26-11): read by claude-pods and the server agent code.
+  'provider.deploy.kubeconfig',
   // Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): read by memory-inbox, which has a plain fallback while no plugin provides it.
   'provider.inbox.distiller',
   // Checks a received bundle (another team's digest, or an OKF bundle) and files it under memory/shared/ without a model (memory-share, P8-25): read by memory-inbox.

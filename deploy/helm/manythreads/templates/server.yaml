@@ -173,6 +173,10 @@ spec:
             {{- /* The publisher container (P19-09): "0" leaves it out of the pod; its resources are JSON like the two above. */}}
             - { name: MANYTHREADS_CLAUDE_PODS_PUBLISHER, value: {{ ternary "1" "0" (.publisher.enabled | default false) | quote }} }
             - { name: MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES, value: {{ .publisher.resources | toJson | quote }} }
+            {{- /* The real image is driven through the ACP adapters; the stand-in image only has the CLI-style scripts (P26-09). */}}
+            - { name: MANYTHREADS_CLAUDE_PODS_DRIVER, value: {{ ternary "cli" "acp" (.useFake | default false) | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_DEPLOYER_BOT, value: {{ $.Values.hermesPods.deployerBot | quote }} }
+            - { name: MANYTHREADS_CLAUDE_PODS_SHM_SIZE, value: {{ .shmSize | default "1Gi" | quote }} }
             - { name: MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW, value: {{ join "," $.Values.hermesPods.repoOriginAllow | quote }} }
             - { name: MANYTHREADS_CLAUDE_PODS_RUNTIME_CLASS_NAME, value: {{ include "manythreads.runtimeClass" (dict "root" $ "value" .runtimeClassName "key" "claudePod.runtimeClassName") | quote }} }
             {{- end }}
