@@ -9,12 +9,13 @@
 // The optional author name and email (the person who asked, for a project that signs commits as the requester) are checked here, then passed on; the script ignores them when the project signs as the bot.
 //
 //   server:  node publisher.mjs serve
+//            (an enrolled server runs it as its own unit with PUBLISHER_CREDENTIAL_FROM_SITE=1: the push document is asked of the site per publish, GET /api/runs/self/push-credential)
 //   client:  mt-publish check <project>
 //            mt-publish publish <project> <card id> <tested commit> <title> [<author name> <author email>]      (the request's text on standard input)
 //   exit codes are mt-publish.sh's: 0 done, 2 refused, 3 no credential, 4 the branch is not at the tested commit (or the main branch moved and the card must be rebuilt, or there is nothing to publish), 5 push refused,
 //   6 GitHub, GitLab or the platform did not answer, 7 token refused. The output lines are the script's: project, provider, pull_request_number, pull_request_url, head_sha (the squashed commit), tested_sha.
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -116,6 +117,37 @@ export function copyPushFiles(teamFolder, project, into) {
   return secrets;
 }
 
+/**
+ * An enrolled server has no Kubernetes Secret to copy from: the push document of ONE project is asked of the site over HTTPS with the run's own token (`GET /api/runs/self/push-credential`; the
+ * site checks the run, the bot's `tasks.pull_request` grant and that the project is the run's team's) and written into the private folder as the same kind of file the pod's Secret holds. The
+ * answer's token is returned to scrub the output with and is never logged. Returns { ok: true, secrets } (a 404 is "no credential": no file is written and the script says so itself) or { ok: false, result }.
+ */
+export async function fetchPushFile(serverUrl, token, project, into, doFetch = fetch) {
+  let res;
+  try {
+    res = await doFetch(`${serverUrl.replace(/\/+$/, '')}/api/runs/self/push-credential?project=${encodeURIComponent(project)}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) });
+  } catch {
+    return { ok: false, result: refuse('the platform did not answer; try again in a moment', 6) };
+  }
+  if (res.status === 404) return { ok: true, secrets: [] };
+  if (res.status === 401) return { ok: false, result: refuse('this run is not valid any more, so it may not publish') };
+  if (res.status === 403) return { ok: false, result: refuse('this bot may not publish: its definition does not grant tasks.pull_request') };
+  if (res.status === 429) return { ok: false, result: refuse('too many requests; wait a moment and try again') };
+  if (!res.ok) return { ok: false, result: refuse('the platform did not answer; try again in a moment', 6) };
+  let doc;
+  try {
+    doc = await res.json();
+  } catch {
+    return { ok: false, result: refuse('the platform gave an answer that is not understood', 6) };
+  }
+  if (doc === null || typeof doc !== 'object' || typeof doc.token !== 'string' || doc.token === '' || doc.project !== project) {
+    return { ok: false, result: refuse('the platform gave an answer that is not understood', 6) };
+  }
+  const { project: _name, ...fields } = doc;
+  writeFileSync(join(into, project), JSON.stringify(fields), { mode: 0o400 });
+  return { ok: true, secrets: [doc.token] };
+}
+
 const scrub = (text, secrets) => secrets.reduce((t, s) => (s.length >= 8 ? t.split(s).join('***') : t), text);
 
 /** Runs mt-publish.sh for one checked request. */
@@ -141,7 +173,8 @@ function runScript(options, args, env, body) {
 
 /**
  * One request: { op: 'check' | 'publish', token, project, card?, sha?, title?, body?, authorName?, authorEmail? } -> { code, out, err }.
- * options: { serverUrl, work, pushRoot, script, repoUser, doFetch?, timeoutMs?, passEnv? }.
+ * options: { serverUrl, work, pushRoot, script, repoUser, doFetch?, timeoutMs?, passEnv?, credentialFromSite? }. With `credentialFromSite` (an enrolled server) the push document is asked
+ * of the site per publish instead of being copied from a team's Secret folder (`pushRoot` is then unused).
  */
 export async function handle(request, options) {
   if (request === null || typeof request !== 'object') return refuse('bad request');
@@ -176,8 +209,14 @@ export async function handle(request, options) {
   chmodSync(private_, 0o700);
   const secrets = [];
   try {
-    // an absent team folder (no token was ever saved for the team) is "no push credential", answered by the script itself
-    if (existsSync(teamFolder)) secrets.push(...copyPushFiles(teamFolder, project, private_));
+    if (options.credentialFromSite === true) {
+      const got = await fetchPushFile(options.serverUrl, token, project, private_, options.doFetch);
+      if (!got.ok) return got.result;
+      secrets.push(...got.secrets);
+    } else if (existsSync(teamFolder)) {
+      // an absent team folder (no token was ever saved for the team) is "no push credential", answered by the script itself
+      secrets.push(...copyPushFiles(teamFolder, project, private_));
+    }
     const env = {
       PATH: '/usr/local/bin:/usr/bin:/bin',
       HOME: private_,
@@ -244,8 +283,9 @@ export function serve(options, log = console.log) {
     });
   });
   server.listen(options.socket, () => {
-    // any process of the run container may connect: what it can do is decided by the run token it presents, not by who it is
-    chmodSync(options.socket, 0o666);
+    // any process of the run container may connect: what it can do is decided by the run token it presents, not by who it is. On a server the socket is 0660 and its group is the bridge's:
+    // only the user the bots run as may open it.
+    chmodSync(options.socket, options.socketMode ?? 0o666);
   });
   return server;
 }
@@ -346,6 +386,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       script: env.PUBLISHER_SCRIPT || '/opt/claude-pod/mt-publish.sh',
       repoUser,
       passEnv,
+      // an enrolled server: the push document comes from the site, and the socket is for the bridge's group only
+      ...(env.PUBLISHER_CREDENTIAL_FROM_SITE === '1' ? { credentialFromSite: true } : {}),
+      ...(env.PUBLISHER_SOCKET_MODE ? { socketMode: parseInt(env.PUBLISHER_SOCKET_MODE, 8) } : {}),
     });
     console.log('publisher: listening');
   } else {
