@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- these tests read JSON documents of many shapes */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { relaxedRateLimiter } from '@manythreads/test-utils';
 import { createWorld, personas, type World } from './world.ts';
