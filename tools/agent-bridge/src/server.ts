@@ -49,8 +49,12 @@ export interface BridgeOptions {
   codexHome?: string;
   /** The file the pod's repo-sync step reads (`PUT /internal/repos` rewrites it). Not given: that route answers 404. */
   reposFile?: string;
+  /** An enrolled server (server mode): the site's address, so each run's profile can ask it who the run is (server-run.ts). */
+  siteUrl?: string;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: import('./runs.ts').RunManagerOptions['drivers'];
+  /** Test hook: the `fetch` the per-run questions to the site go through. */
+  siteFetch?: typeof fetch;
   /** Test hook: the sign-in service's waits (P25-09). */
   auth?: Partial<Omit<AuthServiceOptions, 'config' | 'log'>>;
 }
@@ -148,6 +152,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     ...(gate ? { gate } : {}),
     ...(codexGate ? { codexGate } : {}),
     ...(options.drivers ? { drivers: options.drivers } : {}),
+    ...(options.siteUrl !== undefined ? { serverRun: { siteUrl: options.siteUrl, ...(options.siteFetch ? { fetch: options.siteFetch } : {}) } } : {}),
   });
 
   const authService = new AuthService({ config: options.config, log, ...(options.auth ?? {}) });

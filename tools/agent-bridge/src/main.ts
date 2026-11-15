@@ -76,7 +76,7 @@ if (config.server !== undefined) {
   }
   const internalKey = newInternalKey();
   const socketPath = join(stateRoot, 'bridge.sock');
-  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath });
+  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site });
   const cfg = config;
   const tunnel = startTunnel({
     siteUrl: values.site,

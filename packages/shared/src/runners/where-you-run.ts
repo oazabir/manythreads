@@ -18,6 +18,31 @@ export const DEPLOYER_MIN_RUN_SECONDS = DEPLOYER_MIN_RUN_MINUTES * 60;
 /** The command every bot that may publish uses, in every place: it asks the place's publisher to push the card branch and open the pull request. The bot never holds the token. */
 export const PUBLISH_COMMAND = 'mt-publish';
 
+/**
+ * Git commands every bot may run without a question (decision E5, hardened in the P19-09 security review): enough to look, commit on a branch of its own and nothing that
+ * reaches the network or rewrites history. They are `mt-git <subcommand>` and never plain `git`: a pre-approved `git diff:*` also allowed `git diff --no-index <any file> /dev/null`
+ * (reads the shared sign-in under /state), `git log --output=<path>` (overwrites a file), `git add --pathspec-from-file` (leaks a file in its error text) and, with a hook or
+ * a `core.fsmonitor` line written into `.git`, any command. `mt-git` (deploy/images/agent-pod/mt-git.mjs) accepts a fixed list of subcommands and options, keeps to the
+ * project folder, refuses a repository config that could start a program and runs git with a clean environment.
+ */
+export const GIT_WRAPPER = 'mt-git';
+export const GIT_TOOLS: readonly string[] = [
+  `Bash(${GIT_WRAPPER} status:*)`,
+  `Bash(${GIT_WRAPPER} diff:*)`,
+  `Bash(${GIT_WRAPPER} log:*)`,
+  `Bash(${GIT_WRAPPER} show:*)`,
+  `Bash(${GIT_WRAPPER} rev-parse:*)`,
+  `Bash(${GIT_WRAPPER} add:*)`,
+  `Bash(${GIT_WRAPPER} commit:*)`,
+  `Bash(${GIT_WRAPPER} switch:*)`,
+  `Bash(${GIT_WRAPPER} checkout -b:*)`,
+  `Bash(${GIT_WRAPPER} branch --show-current)`,
+];
+/** The two commands that move a branch between the bots of a pod through the team's repository of record (mt-git.mjs). */
+export const RECORD_TOOLS: readonly string[] = [`Bash(${GIT_WRAPPER} record-push:*)`, `Bash(${GIT_WRAPPER} record-fetch)`];
+/** The one extra command of a bot whose definition grants `tasks.pull_request`: the client of the pod's publisher. */
+export const PUBLISH_TOOL = 'Bash(mt-publish:*)';
+
 /** Where an enrolled server's bridge keeps its folders when the installer made them (the bridge's `server.root`). */
 export const SERVER_ROOT = '/var/lib/manythreads-bridge';
 

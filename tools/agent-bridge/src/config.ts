@@ -96,6 +96,10 @@ export interface ServerModeConfig {
   agents: Partial<Record<'claude' | 'codex' | 'hermes', ServerAgentTemplate>>;
   /** Appended after the bot's BOT.md in every run (where it runs); `{team}`, `{bot}`, `{workdir}`, `{repos}` are filled in. */
   instructions?: string | undefined;
+  /** The folder with `mt-git`, `mt-publish` and `repo-sync.sh` (the installer makes it inside the release). It goes first on every run's PATH, and the repo-sync step is started from it. */
+  toolsDir?: string | undefined;
+  /** Where the server's publisher listens (its own systemd unit, its own user). Absent: no publisher is installed and no bot is told it may publish. */
+  publisherSocket?: string | undefined;
 }
 
 export interface BridgeConfig {
@@ -166,7 +170,18 @@ function parseServerMode(raw: unknown): ServerModeConfig | undefined {
   }
   const notes = raw['instructions'];
   if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error('config: server.instructions must be text of at most 20000 characters');
-  return { root, agents, ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}) };
+  const toolsDir = raw['toolsDir'];
+  const publisherSocket = raw['publisherSocket'];
+  for (const [what, v] of [['toolsDir', toolsDir], ['publisherSocket', publisherSocket]] as const) {
+    if (v !== undefined && (typeof v !== 'string' || !isAbsolute(v) || [...v].some((c) => c.charCodeAt(0) < 32 || c === ':'))) throw new Error(`config: server.${what} must be an absolute path`);
+  }
+  return {
+    root,
+    agents,
+    ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}),
+    ...(typeof toolsDir === 'string' ? { toolsDir } : {}),
+    ...(typeof publisherSocket === 'string' ? { publisherSocket } : {}),
+  };
 }
 
 export function parseConfig(raw: unknown): BridgeConfig {
@@ -278,12 +293,20 @@ export function loadConfig(path: string): BridgeConfig {
 
 const profilesMade = new WeakMap<BridgeConfig, Map<string, ProfileConfig>>();
 
+/** The parts of a server-mode profile name (`claude--team--bot`), or null when the name does not have the form. */
+export function parseServerProfileName(name: string): { agentKey: 'claude' | 'codex' | 'hermes'; team: string; bot: string } | null {
+  if (!SERVER_PROFILE.test(name)) return null;
+  const [agentKey, team, bot, ...rest] = name.split('--') as [ServerAgentKey, string, string, ...string[]];
+  if (rest.length > 0 || !SLUG.test(team) || !SLUG.test(bot)) return null;
+  return { agentKey, team, bot };
+}
+
 /** The profile of a server-mode name (`claude--team--bot`), made from the template and remembered; null when the name does not have the form or the agent has no template. */
 export function serverProfile(config: BridgeConfig, name: string): ProfileConfig | null {
   const server = config.server;
-  if (server === undefined || !SERVER_PROFILE.test(name)) return null;
-  const [agentKey, team, bot, ...rest] = name.split('--') as [ServerAgentKey, string, string, ...string[]];
-  if (rest.length > 0 || !SLUG.test(team) || !SLUG.test(bot)) return null;
+  const parts = server === undefined ? null : parseServerProfileName(name);
+  if (server === undefined || parts === null) return null;
+  const { agentKey, team, bot } = parts;
   const tmpl = server.agents[agentKey];
   if (tmpl === undefined) return null;
   let cache = profilesMade.get(config);

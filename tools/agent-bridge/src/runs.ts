@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { profileFor, type BridgeConfig } from './config.ts';
+import { prepareServerRun, type ServerRunSupport } from './server-run.ts';
 import { acpDriver } from './drivers/acp.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
@@ -84,6 +85,8 @@ export interface RunManagerOptions {
   codexGate?: SigninGate;
   /** Test hook: replaces the drivers by agent name. */
   drivers?: Record<string, Driver>;
+  /** An enrolled server: the site's address, from which each run's profile is made (server-run.ts). Absent for every other bridge. */
+  serverRun?: Omit<ServerRunSupport, 'log'>;
   log: (line: string) => void;
 }
 
@@ -216,9 +219,10 @@ export class RunManager {
     run.emit(event, fields);
   }
 
-  private async drive(run: Run, profileName: string, profile: BridgeConfig['profiles'][string], given: RunRequest): Promise<void> {
+  private async drive(run: Run, profileName: string, baseProfile: BridgeConfig['profiles'][string], given: RunRequest): Promise<void> {
     const { config } = this.opts;
-    const request = withProfileInstructions(given, profile.instructions);
+    let profile = baseProfile;
+    let request = withProfileInstructions(given, profile.instructions);
     const started = Date.now();
     const budgetS = request.manythreads.budgetSeconds ?? config.defaultBudgetSeconds;
     let budgetTimer: NodeJS.Timeout | undefined;
@@ -234,6 +238,15 @@ export class RunManager {
     };
     let runDir: string | null = null;
     try {
+      if (run.stopRequested) {
+        this.finish(run, 'cancelled', 'run.cancelled', {});
+        return;
+      }
+      if (this.opts.serverRun !== undefined) {
+        // an enrolled server: this run's copy of the profile (where-you-run text, tools, kubeconfig, Hermes home), made with the run's own token
+        profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`) });
+        request = withProfileInstructions(given, profile.instructions);
+      }
       if (run.stopRequested) {
         this.finish(run, 'cancelled', 'run.cancelled', {});
         return;

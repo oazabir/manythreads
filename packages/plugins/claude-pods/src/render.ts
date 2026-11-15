@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PodAgent, PodRunnerInfo } from '@manythreads/sdk';
-import { whereYouRun } from '@manythreads/shared';
+import { GIT_TOOLS, GIT_WRAPPER, PUBLISH_TOOL, RECORD_TOOLS, whereYouRun } from '@manythreads/shared';
 import { HOSTNAME_LABEL, isNodeLabelValue, MOVE_HELD_ANNOTATION, MOVING_ANNOTATION, NODE_ANNOTATION, type K8sObject } from '@manythreads/sdk/pods';
 import type { ClaudePodConfig } from './config.ts';
 
@@ -151,30 +151,8 @@ export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = 
   ].join('\n');
 }
 
-/**
- * Git commands every bot may run without a question (decision E5, hardened in the P19-09 security review): enough to look, commit on a branch of its own and nothing that
- * reaches the network or rewrites history. They are `mt-git <subcommand>` and never plain `git`: a pre-approved `git diff:*` also allowed `git diff --no-index <any file> /dev/null`
- * (reads the shared sign-in under /state), `git log --output=<path>` (overwrites a file), `git add --pathspec-from-file` (leaks a file in its error text) and, with a hook or
- * a `core.fsmonitor` line written into `.git`, any command. `mt-git` (deploy/images/agent-pod/mt-git.mjs) accepts a fixed list of subcommands and options, keeps to the
- * project folder, refuses a repository config that could start a program and runs git with a clean environment.
- */
-export const GIT_WRAPPER = 'mt-git';
-export const GIT_TOOLS: readonly string[] = [
-  `Bash(${GIT_WRAPPER} status:*)`,
-  `Bash(${GIT_WRAPPER} diff:*)`,
-  `Bash(${GIT_WRAPPER} log:*)`,
-  `Bash(${GIT_WRAPPER} show:*)`,
-  `Bash(${GIT_WRAPPER} rev-parse:*)`,
-  `Bash(${GIT_WRAPPER} add:*)`,
-  `Bash(${GIT_WRAPPER} commit:*)`,
-  `Bash(${GIT_WRAPPER} switch:*)`,
-  `Bash(${GIT_WRAPPER} checkout -b:*)`,
-  `Bash(${GIT_WRAPPER} branch --show-current)`,
-];
-/** The two commands that move a branch between the bots of a pod through the team's repository of record (mt-git.mjs). */
-export const RECORD_TOOLS: readonly string[] = [`Bash(${GIT_WRAPPER} record-push:*)`, `Bash(${GIT_WRAPPER} record-fetch)`];
-/** The one extra command of a bot whose definition grants `tasks.pull_request`: the client of the pod's publisher. */
-export const PUBLISH_TOOL = 'Bash(mt-publish:*)';
+// GIT_WRAPPER, GIT_TOOLS, RECORD_TOOLS and PUBLISH_TOOL are the shared ones (packages/shared/src/runners/where-you-run.ts), also used by a server's bridge.
+export { GIT_WRAPPER, GIT_TOOLS, RECORD_TOOLS, PUBLISH_TOOL };
 
 /** The pod has a publisher container: it is turned on and the platform's address is known. */
 export const publisherOn = (cfg: ClaudePodConfig): boolean => cfg.publisher.enabled && cfg.serverUrl !== '';
