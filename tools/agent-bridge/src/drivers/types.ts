@@ -11,8 +11,8 @@ export interface Usage {
   cost?: number;
 }
 
-/** `extra` is merged into the `run.completed` frame (an ACP run adds `stop_reason`). */
-export type DriverResult = { ok: true; output: string; usage: Usage | null; extra?: Record<string, unknown> } | { ok: false; error: string };
+/** `extra` is merged into the `run.completed` frame (an ACP run adds `stop_reason`), or into the `run.failed` frame (`reason: 'denied'` and the `step` that was refused). */
+export type DriverResult = { ok: true; output: string; usage: Usage | null; extra?: Record<string, unknown> } | { ok: false; error: string; extra?: Record<string, unknown> };
 
 /** What a driver is given for one run. */
 export interface DriverJob {
@@ -47,6 +47,8 @@ export interface DriverJob {
   onSteer(handler: (text: string) => Promise<boolean>): void;
   /** The run's clock (its budget) stops while a person decides; call the result when the answer is in and it starts again with what was left (at least 60 s). */
   holdBudget(): () => void;
+  /** Milliseconds left of the run's budget now (what a driver checks before it asks the agent for more work). */
+  budgetLeftMs(): number;
 }
 
 export interface Driver {

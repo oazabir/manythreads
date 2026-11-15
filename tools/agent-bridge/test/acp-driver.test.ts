@@ -326,3 +326,106 @@ describe('the routes on a run that is not on ACP', () => {
     }
   });
 });
+
+describe('a No ends the run in its own words (P26-02)', () => {
+  const deniedScript = (after: unknown[]): Record<string, unknown> =>
+    script('claude', {
+      ask: [
+        { do: 'permission', step: { title: 'git push origin card-1a2b3c4d', kind: 'execute', toolName: 'Bash', input: { command: 'git push origin card-1a2b3c4d' } }, onReject: after },
+        { do: 'text', text: 'Pushed.' },
+      ],
+    });
+
+  it('a run that ends cancelled after a person said No is marked denied and keeps the step title', async () => {
+    h = await acpHarness({ flavor: 'claude', script: deniedScript([{ do: 'stop', reason: 'cancelled' }]) });
+    const id = await startRun(h, { input: '[[ask]]' });
+    const w = watch(h, id);
+    const ask = await w.until((f) => f['event'] === 'approval.request');
+    await post(h, id, 'approval', { choice: 'deny', request_id: ask['request_id'] });
+    await w.done;
+    expect(last(w.frames)).toMatchObject({ event: 'run.failed', reason: 'denied', step: 'Running git' });
+  });
+
+  it('no answer in time is a refusal too, and marks the run the same way', async () => {
+    h = await acpHarness({ flavor: 'claude', config: { approvalWaitSeconds: 0.4 }, script: deniedScript([{ do: 'stop', reason: 'cancelled' }]) });
+    const frames = await runToEnd(h, { input: '[[ask]]' });
+    expect(last(frames)).toMatchObject({ event: 'run.failed', reason: 'denied', step: 'Running git' });
+  });
+
+  it('a No that the agent answers in its own words and ends normally stays a finished run', async () => {
+    h = await acpHarness({ flavor: 'claude', script: deniedScript([{ do: 'text', text: 'Understood, I will not push.' }]) });
+    const id = await startRun(h, { input: '[[ask]]' });
+    const w = watch(h, id);
+    const ask = await w.until((f) => f['event'] === 'approval.request');
+    await post(h, id, 'approval', { choice: 'deny', request_id: ask['request_id'] });
+    await w.done;
+    expect(last(w.frames)).toMatchObject({ event: 'run.completed' });
+    expect(last(w.frames)['reason']).toBeUndefined();
+  });
+
+  it('a Yes clears an earlier No: a later cancelled turn is the plain failure', async () => {
+    h = await acpHarness({
+      flavor: 'claude',
+      script: script('claude', {
+        ask: [
+          { do: 'permission', step: { title: 'first', kind: 'execute', toolName: 'Bash', input: { command: 'first' } }, onReject: [{ do: 'text', text: 'Declined.' }] },
+          { do: 'stop', reason: 'cancelled' },
+        ],
+      }),
+    });
+    const id = await startRun(h, { input: '[[ask]]' });
+    const w = watch(h, id);
+    const ask = await w.until((f) => f['event'] === 'approval.request');
+    await post(h, id, 'approval', { choice: 'once', request_id: ask['request_id'] });
+    await w.done;
+    expect(last(w.frames)).toMatchObject({ event: 'run.failed', error: 'The agent ended the turn before it was done.' });
+    expect(last(w.frames)['reason']).toBeUndefined();
+  });
+});
+
+describe('Codex keeps going when a turn ends early (P26-07)', () => {
+  const mcp = (tool: string): unknown => ({ do: 'step', title: `mcp.manythreads.${tool}`, kind: 'execute', input: { server: 'manythreads', tool, arguments: {} } });
+  const early = script('codex', {
+    early: [mcp('tasks_claim'), { do: 'text', text: 'Started the build.' }],
+    finish: [mcp('tasks_handoff'), { do: 'text', text: 'Handed off.' }, { do: 'text', text: '\nALL DONE' }],
+    stuck: [mcp('tasks_claim'), { do: 'text', text: 'Still going. ' }],
+    handed: [mcp('tasks_claim'), mcp('tasks_handoff'), { do: 'text', text: 'Done.' }],
+    chat: [mcp('memory_recall'), { do: 'text', text: 'Here is the answer.' }],
+  });
+  const prompts = (): string[] =>
+    h!
+      .sessions()
+      .flatMap((s) => (s['history'] as Array<Record<string, any>>).filter((u) => u['sessionUpdate'] === 'user_message_chunk').map((u) => String(u['content']['text']))); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  it('one continue prompt after a turn that claimed the card and ended; the done mark is not part of the answer', async () => {
+    h = await acpHarness({ flavor: 'codex', script: { ...early, default: 'finish' } });
+    const frames = await runToEnd(h, { input: 'work [[early]]' });
+    expect(last(frames)).toMatchObject({ event: 'run.completed', continues: 1 });
+    expect(last(frames)['output']).toContain('Started the build.');
+    expect(last(frames)['output']).toContain('Handed off.');
+    expect(last(frames)['output']).not.toContain('ALL DONE');
+    expect(prompts()).toHaveLength(2);
+    expect(prompts()[1]).toContain('has not been handed off or completed');
+    expect(h.logs.some((l) => l.includes('continued 1 time(s)'))).toBe(true);
+  });
+
+  it('at most three continues, then the run ends with what it has', async () => {
+    h = await acpHarness({ flavor: 'codex', script: { ...early, default: 'stuck' } });
+    const frames = await runToEnd(h, { input: 'work [[stuck]]' });
+    expect(last(frames)).toMatchObject({ event: 'run.completed', continues: 3 });
+    expect(prompts()).toHaveLength(4);
+  });
+
+  it('no continue when the card was handed off, when the run only chatted, or when the budget is nearly spent', async () => {
+    h = await acpHarness({ flavor: 'codex', script: { ...early, default: 'finish' } });
+    expect(last(await runToEnd(h, { input: '[[handed]]' }))['continues']).toBeUndefined();
+    expect(last(await runToEnd(h, { input: '[[chat]]' }))['continues']).toBeUndefined();
+    expect(last(await runToEnd(h, { input: '[[early]]', manythreads: { budgetSeconds: 60 } }))['continues']).toBeUndefined();
+    expect(prompts()).toHaveLength(3);
+  });
+
+  it('only Codex is continued', async () => {
+    h = await acpHarness({ flavor: 'claude', script: script('claude', { early: [{ do: 'step', title: 'mcp__manythreads__tasks_claim', toolName: 'mcp__manythreads__tasks_claim', kind: 'other' }, { do: 'text', text: 'Started.' }] }) });
+    expect(last(await runToEnd(h, { input: '[[early]]' }))['continues']).toBeUndefined();
+  });
+});

@@ -13,6 +13,15 @@ import { approvalOf, clipText, Frames, KIND_WORDS, mcpServerOf, viewOf } from '.
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+type UsageFields = Record<string, unknown>;
+const usageOf = (v: unknown): UsageFields | null => (isRecord(v) ? v : null);
+/** The token counts of two turns added, so a run that was continued reports what all of its turns used. */
+const addUsage = (a: UsageFields | null, b: UsageFields | null): UsageFields | null => {
+  if (a === null || b === null) return a ?? b;
+  const out: UsageFields = { ...a };
+  for (const key of ['inputTokens', 'cachedReadTokens', 'cachedWriteTokens', 'outputTokens']) out[key] = num(a[key]) + num(b[key]);
+  return out;
+};
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r));
 /** Lets the notifications still in the SDK's queue arrive before the next step (a replay before the prompt, the last updates after it). */
@@ -24,6 +33,42 @@ const drain = async (): Promise<void> => {
 /** Hermes denies a request nobody answered after its own `approvals.timeout` (default 300 s); the bridge gives up first, so it can say so. */
 export const HERMES_APPROVAL_CAP_SECONDS = 290;
 export const approvalWaitFor = (flavor: string, configuredSeconds: number): number => (flavor === 'hermes' ? Math.min(configuredSeconds, HERMES_APPROVAL_CAP_SECONDS) : configuredSeconds);
+
+/**
+ * Codex ends its turn after one step of a long job and the run would end there, the card neither handed off nor completed (P25-16, P26-07). A run of a Codex bot that
+ * worked on a card (it called a `tasks` tool of the platform) and ended a turn with no hand-off, completion, post or question gets one more prompt, up to three in all,
+ * while the run has at least this much of its budget left.
+ */
+export const MAX_CONTINUES = 3;
+export const CONTINUE_MIN_BUDGET_MS = 120_000;
+/** What the agent says to end the extra turn when there is nothing left to do; it is removed from the run's answer. */
+export const CONTINUE_DONE = 'ALL DONE';
+export const CONTINUE_PROMPT = `You ended your turn, but this card has not been handed off or completed yet. Carry on from where you stopped: finish the step you are on, run a long command in this same turn and check it until it ends (never leave it in the background), then hand the card off (tasks.handoff), complete it (tasks.complete), or post the result (messages.post). If everything is already done, reply with the single line ${CONTINUE_DONE}.`;
+
+/** The answer without the closing `ALL DONE` line of an extra turn (the agent's own words before it stay). */
+export function withoutDoneMark(answer: string): string {
+  const text = answer.trimEnd();
+  const bare = text.endsWith('.') ? text.slice(0, -1) : text;
+  return bare.endsWith(CONTINUE_DONE) ? bare.slice(0, -CONTINUE_DONE.length).trimEnd() : text;
+}
+
+/** The platform's tools that end a bot's part of the work: a hand-off, a completion, a post, a question to a person. */
+const ENDING_TOOLS = new Set(['tasks_handoff', 'tasks_complete', 'messages_post', 'approvals_ask']);
+const platformTool = (tool: string): string | null => {
+  const m = /^mcp__manythreads__(.+)$/.exec(tool);
+  return m ? m[1]!.replaceAll('.', '_') : null;
+};
+/** True when the agent worked on a card (called a `tasks` tool of the platform) and has not ended it with a hand-off, completion, post or question. */
+export function endedEarly(mcpTools: Iterable<string>): boolean {
+  let onCard = false;
+  for (const tool of mcpTools) {
+    const name = platformTool(tool);
+    if (name === null) continue;
+    if (ENDING_TOOLS.has(name)) return false;
+    if (name.startsWith('tasks_')) onCard = true;
+  }
+  return onCard;
+}
 
 class AdapterExit extends Error {
   constructor(readonly code: number | null, readonly signal: string | null, readonly stderrTail: string, readonly spawnError: string | null) {
@@ -58,6 +103,8 @@ export function isFound(flavor: string, answer: unknown): boolean {
 
 interface Pending {
   id: string;
+  /** What the person was asked about (the step's title), kept so a run that ends after a No can say which step it was. */
+  title: string;
   options: readonly PermissionOption[];
   settle(outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' }): void;
 }
@@ -144,6 +191,9 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
   const maxTurns = job.request.manythreads.maxTurns;
   const pending = new Map<string, Pending>();
   let permissionCounter = 0;
+  // The step of the latest question that was refused (a person's No, or no answer in time), or null once a later question was allowed. A run that ends not done right
+  // after a refusal is marked `denied` (P26-02): the agent stopped because of the No, and the platform says so in the person's words.
+  let refusedStep: string | null = null;
 
   const answerAll = (): void => {
     for (const p of [...pending.values()]) p.settle({ outcome: 'cancelled' });
@@ -189,11 +239,13 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
       const timer = setTimeout(() => {
         // Silence is not consent: the request is refused, and the person is told it ran out.
         job.emit('approval.expired', { request_id: requestId, message: 'Nobody answered in time, so the request was refused.' });
+        refusedStep = title;
         entry.settle(deny ? { outcome: 'selected', optionId: deny.optionId } : { outcome: 'cancelled' });
       }, approvalWaitFor(flavor, job.config.approvalWaitSeconds) * 1000);
       timer.unref();
       const entry: Pending = {
         id: requestId,
+        title,
         options,
         settle: (outcome) => {
           if (!pending.delete(requestId)) return;
@@ -211,6 +263,7 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     if (!entry) return false;
     // "Always" is never granted: a session answer is one "Yes", and a standing rule belongs in the BOT.md.
     const o = optionFor(entry.options, choice === 'deny' ? 'deny' : 'once');
+    refusedStep = choice === 'deny' ? entry.title : null;
     entry.settle(o ? { outcome: 'selected', optionId: o.optionId } : { outcome: 'cancelled' });
     return true;
   });
@@ -361,14 +414,30 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     // The instructions travel with the prompt: no adapter takes them the same way (not measured), and the server sends them on every run so an edit reaches old threads too.
     const text = instructions === null ? job.request.input : `${instructions}\n\n---\n\n${job.request.input}`;
     accepting = true;
-    promptRunning = true;
-    let answer: Record<string, unknown>;
-    try {
-      answer = (await race(agent.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] }))) as unknown as Record<string, unknown>;
-    } finally {
-      promptRunning = false;
+    const sendPrompt = async (body: string): Promise<Record<string, unknown>> => {
+      promptRunning = true;
+      try {
+        return (await race(agent.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: body }] }))) as unknown as Record<string, unknown>;
+      } finally {
+        promptRunning = false;
+      }
+    };
+    let answer = await sendPrompt(text);
+    let stopReason = typeof answer['stopReason'] === 'string' ? answer['stopReason'] : 'end_turn';
+    // A Codex turn that ended early is followed by one "continue" (P26-07). Each turn's last updates are taken first, so the platform's calls of that turn are all seen.
+    let continues = 0;
+    let usageSoFar = usageOf(answer['usage']);
+    while (flavor === 'codex' && stopReason === 'end_turn' && refusedStep === null && continues < MAX_CONTINUES && !stopping && !job.stopped() && job.budgetLeftMs() >= CONTINUE_MIN_BUDGET_MS) {
+      await drain();
+      if (!endedEarly(frames.mcpTools)) break;
+      frames.settle();
+      continues += 1;
+      job.log(`acp: codex ended a turn before the card was handed off or completed; asking it to continue (${continues} of ${MAX_CONTINUES})`);
+      answer = await sendPrompt(CONTINUE_PROMPT);
+      stopReason = typeof answer['stopReason'] === 'string' ? answer['stopReason'] : 'end_turn';
+      usageSoFar = addUsage(usageSoFar, usageOf(answer['usage']));
     }
-    const stopReason = typeof answer['stopReason'] === 'string' ? answer['stopReason'] : 'end_turn';
+    if (continues > 0) job.log(`acp: codex run continued ${continues} time(s)`);
     // The updates that came before the answer may still be in the SDK's queue: they are taken first, and only then are updates no longer accepted.
     await drain();
     accepting = false;
@@ -380,9 +449,11 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
       return { ok: false, error: 'stopped' };
     }
     await shutdown();
+    // Codex ends its turn `cancelled` after a No (MISTAKES P25-16): the run is marked `denied` and keeps the step's title, so the thread can say whose No it was.
+    if (refusedStep !== null && stopReason !== 'end_turn') return { ok: false, error: 'The agent stopped after a request was refused.', extra: { reason: 'denied', step: refusedStep } };
     if (stopReason === 'refusal') return { ok: false, error: 'The agent refused the request.' };
     if (stopReason === 'cancelled') return { ok: false, error: 'The agent ended the turn before it was done.' };
-    const u = isRecord(answer['usage']) ? answer['usage'] : null;
+    const u = usageSoFar;
     const cost = frames.cost();
     let usage: Usage | null = null;
     if (u !== null) {
@@ -390,7 +461,8 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
       const output = num(u['outputTokens']);
       usage = { input_tokens: input, output_tokens: output, total_tokens: input + output, ...(cost !== null ? { cost: cost.amount } : {}) };
     } else if (cost !== null) usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0, cost: cost.amount };
-    return { ok: true, output: frames.answer(), usage, extra: { stop_reason: stopReason, ...(cost !== null ? { cost } : {}) } };
+    const output = continues > 0 ? withoutDoneMark(frames.answer()) : frames.answer();
+    return { ok: true, output, usage, extra: { stop_reason: stopReason, ...(continues > 0 ? { continues } : {}), ...(cost !== null ? { cost } : {}) } };
   } catch (caught) {
     let err: unknown = caught;
     accepting = false;

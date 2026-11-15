@@ -280,6 +280,7 @@ export class RunManager {
         onSteer: (handler) => {
           run.steerHandler = handler;
         },
+        budgetLeftMs: () => (holds > 0 ? heldLeft : Math.max(0, budgetEndsAt - Date.now())),
         holdBudget: () => {
           // What was left of the budget when the run stopped to ask, and at least a minute again: the answer does not eat the time the work needs.
           // Taken once, when the first question begins: a second question that overlaps the first would read a clock that is no longer running.
@@ -320,7 +321,7 @@ export class RunManager {
         const account = gate && (profile.agent === 'claude-code' || profile.agent === 'codex') ? classifyFailure(result.error, profile.agent, profile.driver) : null;
         if (account !== null) gate!.noteFailure(account, result.error);
         const resets = account === 'plan_limit' ? limitResetsAt(result.error) : null;
-        this.finish(run, 'failed', 'run.failed', { error: result.error, ...(account !== null ? { reason: account } : {}), ...(resets !== null ? { resets_at: resets } : {}) });
+        this.finish(run, 'failed', 'run.failed', { error: result.error, ...(result.extra ?? {}), ...(account !== null ? { reason: account } : {}), ...(resets !== null ? { resets_at: resets } : {}) });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

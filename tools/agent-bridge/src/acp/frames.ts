@@ -334,6 +334,8 @@ export class Frames {
    * follows one. The CLI driver counts the model's replies; this is the same count, and a little high where a reply made several calls at once.
    */
   turns = 0;
+  /** The names of the MCP tools the agent called (`mcp__<server>__<tool>`), in the order they were first seen. */
+  readonly mcpTools = new Set<string>();
   /** A step started since the last text: the next text starts a new paragraph. */
   private afterStep = false;
   private inText = false;
@@ -539,6 +541,7 @@ export class Frames {
         done: false,
       };
       this.steps.set(view.id, step);
+      if (mcpTool !== null) this.mcpTools.add(mcpTool);
       if (step.todo) {
         step.hidden = true;
         this.onHermesTodos(raw);
@@ -567,6 +570,7 @@ export class Frames {
       existing.title = view.title;
       changed['title'] = view.title;
     }
+    if (mcpTool !== null) this.mcpTools.add(mcpTool);
     if (mcpTool !== null && !existing.mcp) {
       existing.mcp = true;
       existing.tool = mcpTool;
