@@ -408,3 +408,55 @@ p.rn-place {
   padding: 0;
   list-style: none;
 }
+
+/* Servers part of the page (PLAN P26-13). */
+.sv-agents {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sv-agents li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: var(--fs-caption);
+}
+
+.sv-cmd {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 8px 0;
+}
+
+.sv-pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--shell);
+  color: var(--ink);
+  font-size: var(--fs-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.sv-more {
+  margin: 10px 0;
+}
+
+.sv-more summary {
+  cursor: pointer;
+  color: var(--mute);
+}
+
+.sv-wait {
+  margin-top: 12px;
+}
