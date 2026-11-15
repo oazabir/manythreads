@@ -12,12 +12,14 @@
 # installs Chromium for browser checks; writes the bridge's config; enrols (one call to this site, which answers a key kept in /etc/manythreads-bridge/key, mode 0600);
 # starts `manythreads-bridge.service` and waits until the site says it is connected. It does not use the sign-ins of anyone on this machine: each agent has a sign-in
 # folder of its own under /var/lib/manythreads-bridge/auth, and you sign in from the Runners page.
+# A second service, `manythreads-publisher.service`, runs as its own user (`manythreads-publisher`) on a socket only the bridge's user can open. `mt-publish` talks to it, so a bot
+# that publishes never holds the push token: the publisher asks this site for it, per publish, with the run's own token. `git` and `jq` should be installed (the repository sync needs them).
 #
 #   --enrol CODE|-      the one-time code from the Runners page ("-" asks for it)
 #   --update            install the bundle this site serves now, keep the key (no code needed)
 #   --uninstall         stop and remove the service and the program, and tell the site (--purge also removes the work folders and the user)
 #   --allow-full-access this machine's half of Codex "full access" (the other half is the switch on the Runners page)
-#   --no-hermes --no-claude --no-codex --no-browser   leave one out
+#   --no-hermes --no-claude --no-codex --no-browser --no-publisher   leave one out (without the publisher no bot on this machine can publish)
 #
 # The hash of this script is shown on the Runners page. It is checked against the same site, so it guards against a broken download, not against a site that was taken over.
 
@@ -34,8 +36,9 @@ main() {
 
   local PREFIX=/opt/manythreads-bridge ETC=/etc/manythreads-bridge DATA=/var/lib/manythreads-bridge SVC_USER=manythreads-bridge UNIT=manythreads-bridge.service
   local UNIT_FILE=/etc/systemd/system/manythreads-bridge.service
+  local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock
 
-  local mode='' code='' allow_full=0 want_hermes=1 want_claude=1 want_codex=1 want_browser=1 purge=0 insecure=0
+  local mode='' code='' allow_full=0 want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
@@ -47,8 +50,9 @@ main() {
       --no-claude) want_claude=0 ;;
       --no-codex) want_codex=0 ;;
       --no-browser) want_browser=0 ;;
+      --no-publisher) want_publisher=0 ;;
       --insecure-for-tests) insecure=1 ;;
-      -h|--help) sed -n '2,30p' "$0" 2>/dev/null || true; return 0 ;;
+      -h|--help) sed -n '2,34p' "$0" 2>/dev/null || true; return 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
     shift
@@ -63,6 +67,7 @@ main() {
   case "$(uname -m)" in x86_64|amd64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) die "this machine's processor ($(uname -m)) is not supported (x86_64 and arm64 are)" ;; esac
   local c
   for c in curl tar sha256sum gzip; do command -v "$c" >/dev/null 2>&1 || die "$c is needed and was not found"; done
+  for c in git jq; do command -v "$c" >/dev/null 2>&1 || warn "$c was not found: the team's repositories and publishing need it (on Debian or Ubuntu: apt-get install git jq)"; done
   case "$SITE" in https://*) ;; http://*) [ "$insecure" -eq 1 ] || die "the site address is not https: $SITE" ;; *) die "this copy of the script has no site address; download it from the Runners page" ;; esac
 
   if [ "$mode" = uninstall ]; then uninstall_all "$purge"; return 0; fi
@@ -130,6 +135,8 @@ main() {
     chmod -R go-w "$release"
     touch "$release/.complete"
   fi
+  # the two commands a bot runs, written at every run so they name this machine's Node (and the release's own files, never the caller's PATH or NODE_OPTIONS)
+  write_shims "$release/tools" "$node"
   ln -sfn "$release" "$PREFIX/current.new"
   mv -T "$PREFIX/current.new" "$PREFIX/current"
 
@@ -137,9 +144,13 @@ main() {
   if ! id "$SVC_USER" >/dev/null 2>&1; then
     useradd --system --home-dir "$DATA/home" --no-create-home --shell /usr/sbin/nologin --user-group "$SVC_USER"
   fi
+  if [ "$want_publisher" -eq 1 ] && ! id "$PUB_USER" >/dev/null 2>&1; then
+    useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin --user-group "$PUB_USER"
+  fi
   mkdir -p "$ETC" "$DATA/state" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/hermes" "$DATA/work" "$DATA/home"
   chown -R "$SVC_USER:$SVC_USER" "$DATA"
-  chmod 0700 "$DATA/auth" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/state"
+  # what the publisher's user must not read: the sign-ins, the bridge's key and state, the Hermes homes and the deployer's login
+  chmod 0700 "$DATA/auth" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/state" "$DATA/hermes"
   chmod 0755 "$ETC"
 
   # ---- what this machine has (reported; the bridge runs the pinned copies, never these) ---------------------------------------------------------------------
@@ -176,7 +187,9 @@ main() {
   # ---- the config ------------------------------------------------------------------------------------------------------------------------------------------
   local playwright_env=''
   [ "$want_browser" -eq 1 ] && playwright_env="$browsers"
-  CFG_DATA="$DATA" CFG_CLAUDE_ACP="$claude_acp" CFG_CODEX_ACP="$codex_acp" CFG_CLAUDE_BIN="$claude_bin" CFG_CODEX_BIN="$codex_bin" CFG_HERMES_BIN="$hermes_bin" \
+  local pub_socket=''
+  [ "$want_publisher" -eq 1 ] && pub_socket="$PUB_SOCKET"
+  CFG_TOOLS="$PREFIX/current/tools" CFG_PUB_SOCKET="$pub_socket" CFG_DATA="$DATA" CFG_CLAUDE_ACP="$claude_acp" CFG_CODEX_ACP="$codex_acp" CFG_CLAUDE_BIN="$claude_bin" CFG_CODEX_BIN="$codex_bin" CFG_HERMES_BIN="$hermes_bin" \
     CFG_WANT_CLAUDE="$want_claude" CFG_WANT_CODEX="$want_codex" CFG_FULL="$allow_full" CFG_BROWSERS="$playwright_env" \
     "$node" -e '
       const e = process.env;
@@ -197,13 +210,7 @@ main() {
       }
       if (Object.keys(profiles).length === 0 && !agents.hermes) { console.error("no agent is left to run"); process.exit(2); }
       if (Object.keys(profiles).length === 0) profiles["hermes-placeholder"] = { agent: "hermes-acp", driver: "acp", workdir: root + "/work/.signin", acp: { command: e.CFG_HERMES_BIN, args: ["acp"] } };
-      const instructions = [
-        "You run on a server of your own team, not in the platform. Your working folder is {workdir}. The repository of record of your team is {repos}: clone from it, branch from it, and",
-        "hand finished work to the platform with the publish command, as your instructions say. Install what you need inside your folder; do not change the rest of the machine.",
-        e.CFG_BROWSERS ? "A Chromium browser is installed for browser checks (Playwright finds it through PLAYWRIGHT_BROWSERS_PATH)." : "No browser is installed on this server.",
-        "A long command must be polled in the same turn; do not leave a process running in the background when you finish.",
-      ].join("\n");
-      const config = { profiles, bin: { claude: e.CFG_CLAUDE_BIN || "claude", codex: e.CFG_CODEX_BIN || "codex" }, maxConcurrentRuns: 4, mcpTokenInFile: true, server: { root, agents, instructions } };
+      const config = { profiles, bin: { claude: e.CFG_CLAUDE_BIN || "claude", codex: e.CFG_CODEX_BIN || "codex" }, maxConcurrentRuns: 4, mcpTokenInFile: true, server: { root, agents, toolsDir: e.CFG_TOOLS, ...(e.CFG_PUB_SOCKET ? { publisherSocket: e.CFG_PUB_SOCKET } : {}) } };
       process.stdout.write(JSON.stringify(config, null, 2) + "\n");
     ' >"$ETC/config.json.new" || die "could not write the config"
   chmod 0644 "$ETC/config.json.new"
@@ -253,6 +260,7 @@ User=$SVC_USER
 Group=$SVC_USER
 LoadCredential=key:$ETC/key
 Environment=HOME=$DATA/home
+Environment=PATH=$npm_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
 Environment=DISABLE_AUTOUPDATER=1
 ExecStart=$node $PREFIX/current/bridge.mjs --config $ETC/config.json --state-dir $DATA/state --site $SITE$insecure_flag
@@ -270,9 +278,55 @@ RestrictSUIDSGID=true
 [Install]
 WantedBy=multi-user.target
 EOF
+  if [ "$want_publisher" -eq 1 ]; then
+    # The publisher: its own user, a socket in a folder only the bridge's group can enter, and no way to read the bridge's key, sign-ins or state (0700). Per publish it asks this site
+    # for the push document of one project, with the run's own token, and runs the same mt-publish.sh the pods use. (It names the release folder, not `current`: Node checks its own path.)
+    cat >"$PUB_UNIT_FILE" <<EOF
+[Unit]
+Description=manythreads publisher (pushes a bot's branch and opens the pull request)
+Documentation=$SITE
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=$PUB_USER
+Group=$SVC_USER
+RuntimeDirectory=manythreads-publisher
+RuntimeDirectoryMode=0750
+UMask=0007
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PUBLISHER_SERVER_URL=$SITE
+Environment=PUBLISHER_SOCKET=$PUB_SOCKET
+Environment=PUBLISHER_SOCKET_MODE=660
+Environment=PUBLISHER_CREDENTIAL_FROM_SITE=1
+Environment=PUBLISHER_WORK=$DATA/work
+Environment=PUBLISHER_SCRIPT=$release/tools/mt-publish.sh
+Environment=PUBLISHER_REPO_USER=$PUB_USER
+ExecStart=$node $release/tools/publisher.mjs serve
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  else
+    systemctl disable --now "$PUB_UNIT" >/dev/null 2>&1 || true
+    rm -f "$PUB_UNIT_FILE"
+  fi
   systemctl daemon-reload
   systemctl enable "$UNIT" >/dev/null 2>&1
-  if [ "$mode" = update ]; then systemctl restart "$UNIT"; else systemctl restart "$UNIT"; fi
+  systemctl restart "$UNIT"
+  if [ "$want_publisher" -eq 1 ]; then
+    systemctl enable "$PUB_UNIT" >/dev/null 2>&1
+    systemctl restart "$PUB_UNIT"
+  fi
 
   say "waiting for the site to see this machine"
   local status
@@ -305,6 +359,15 @@ check_disk() {
 run_as() {
   local user="$1"; shift
   if command -v runuser >/dev/null 2>&1; then runuser -u "$user" -- "$@"; else su -s /bin/sh "$user" -c "$(printf '%q ' "$@")"; fi
+}
+
+# `mt-git` and `mt-publish`, the two commands a bot runs: small scripts that name this machine's Node and the release's own files
+write_shims() {
+  local dir="$1" node="$2"
+  [ -d "$dir" ] || die "the bundle has no tools folder"
+  printf '#!/bin/sh\nexec env -u NODE_OPTIONS -u NODE_PATH %q %q "$@"\n' "$node" "$dir/mt-git.mjs" >"$dir/mt-git"
+  printf '#!/bin/sh\nexec env -u NODE_OPTIONS -u NODE_PATH %q %q client "$@"\n' "$node" "$dir/publisher.mjs" >"$dir/mt-publish"
+  chmod 0755 "$dir/mt-git" "$dir/mt-publish" "$dir/mt-publish.sh" "$dir/mt-askpass.sh" "$dir/repo-sync.sh"
 }
 
 # is a program on the PATH of root or of the person who ran sudo?
@@ -356,14 +419,15 @@ uninstall_all() {
     printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' <"$key_file")" | curl -sS --max-time 20 --config - -X POST "$site/api/bridge/uninstall" >/dev/null 2>&1 \
       || warn "the site could not be told; remove the server on the Runners page"
   fi
-  systemctl disable --now manythreads-bridge.service >/dev/null 2>&1 || true
-  rm -f /etc/systemd/system/manythreads-bridge.service
+  systemctl disable --now manythreads-bridge.service manythreads-publisher.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/manythreads-bridge.service /etc/systemd/system/manythreads-publisher.service
   systemctl daemon-reload || true
   rm -rf "$PREFIX" "$ETC"
   if [ "$purge" -eq 1 ]; then
     rm -rf "$DATA"
     userdel manythreads-bridge >/dev/null 2>&1 || true
-    say "removed the bridge, its service, its user and its work folders"
+    userdel manythreads-publisher >/dev/null 2>&1 || true
+    say "removed the bridge, its services, its users and its work folders"
   else
     say "removed the bridge and its service; $DATA/work is kept (run with --uninstall --purge to remove it too)"
   fi
