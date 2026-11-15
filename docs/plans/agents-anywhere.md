@@ -299,6 +299,8 @@ Limits and the cases a live run will hit:
 
 ### 5.6 The same bot texts on a pod and on a server
 
+*As built (P26-15):* the publisher is its own unit and user on a socket for the bridge's group (`manythreads-publisher`), asking the site for the push document per publish (`GET /api/runs/self/push-credential`); the deployer's login comes from `GET /api/runs/self/kubeconfig`; the repository list from `GET /api/bridge/repos`; the per-run profile is made in `tools/agent-bridge/src/server-run.ts` and the repository sync is supervised by `server-repos.ts`. Details: `docs/agent-bridge.md` (enrolled server). The container test of the installer is `tools/agent-bridge/install/container-test/run.sh`.
+
 A bot's text must not care where it runs. Three changes:
 - **One publish command, `mt-publish`, everywhere.** The workbench gets `/usr/local/bin/mt-publish` (it calls `sudo -u repo mt-publish.sh`), the agent pod has its
   publisher client, and an enrolled server gets a publisher of its own: a second unit, user `manythreads-publisher`, listening on a Unix socket only the bridge's

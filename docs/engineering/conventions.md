@@ -62,6 +62,15 @@ The binding rules every change follows: how data, events, plugins and screens ar
 - Screens carry `data-testid="app-frame"`; dynamic regions `data-vt-mask`; landmarks `data-landmark`.
 - Commit messages start with the task id, e.g. `P1-03: migration runner`.
 
+## Full access for Codex (where it is allowed)
+"Full access" means Codex runs commands without asking and without a sandbox. It is allowed in exactly two places, and nowhere else (no Claude Code, no Hermes, no host bridge):
+- **An agent pod:** on by default for a runner that serves one team; an admin can switch it off. The pod itself is the sandbox (it reaches the site and port 443, no other address in the cluster).
+- **An enrolled server:** off by default; it needs **two keys**: the machine's owner installs with `--allow-full-access` (written into the bridge's own config; the site can never widen a machine's sandbox)
+  and an admin switches the runner's `full_access` on, after a confirm that names the machine. The site sends `manythreads.fullAccess` only for a runner whose switch is on; the bridge honours it only when its config says `allowed`.
+- A full-access runner serves **one team** (checked on save); on a server that is every runner of that server, because all agents there run as one user who can read the bridge key and the sign-in folders.
+- Never give the host bridge on the devbox full access: it runs as root with the host's secrets.
+Code: `packages/plugins/bot-runners/src/resolve.ts` (the site's half), `tools/agent-bridge/src/acp/adapter.ts` and `config.ts` (the bridge's half). Plan: `docs/plans/agents-anywhere.md` section 4.
+
 ## Forbidden (spec §20 non-goals)
 Voice and video are no longer forbidden: the owner lifted that non-goal on 2026-10-24 (PLAN.md D7 — on-device transcription first, phases 14–18;
 amended 2026-10-27: a note-taker bot may listen to a call and transcribe on the server, but a bot never speaks in a call).

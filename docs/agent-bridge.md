@@ -371,14 +371,45 @@ checks it against the SHA-256 in the manifest; runs `npm ci --omit=dev --ignore-
 installs Chromium with its libraries; installs Hermes with its pinned official installer only when the machine already has Hermes; writes the config, detects the
 agents, calls `POST /api/bridge/enrol` once, keeps the answer's key in `/etc/manythreads-bridge/key` (mode 0600, passed to the service as a systemd credential),
 writes `manythreads-bridge.service` (hardened) and waits up to 90 seconds for the site to say it is connected. Also: `--update` (same command, new bundle),
-`--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`.
+`--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`,
+`--no-publisher`. It also writes the two commands a bot runs, `mt-git` and `mt-publish` (small scripts that name this machine's Node, in `/opt/manythreads-bridge/current/tools`),
+and a second hardened service, `manythreads-publisher.service` (below). It warns when `git` or `jq` is missing: the repository sync needs both. The bridge's unit has a `PATH`
+that starts with the folder of the Node the installer chose, so a bot's shell finds `node` and `npm`. A container test runs the real script (Debian image, a stand-in site, `systemctl`
+replaced by a recorder): `bash tools/agent-bridge/install/container-test/run.sh` (about two minutes; needs docker and a network that reaches nodejs.org and the npm registry).
+
+**The publisher (P26-15).** A bot that may publish (its definition grants `tasks.pull_request`) runs `mt-publish check|publish <project> ...`, exactly as in a pod. On a server the command
+talks to `manythreads-publisher.service`, which runs as its own user `manythreads-publisher` on the Unix socket `/run/manythreads-publisher/publisher.sock` (folder 0750, socket 0660, group
+`manythreads-bridge`: only the bots' user can open it). The publisher is the pod's own `publisher.mjs` and `mt-publish.sh`, unchanged, in a mode where the push document is **asked of the
+site per publish**: `GET /api/runs/self/push-credential?project=<name>` with the run's own token (`MANYTHREADS_RUN_TOKEN`). It checks who the run is (`GET /api/runs/self`: team, bot, whether
+it may publish), finds the bot's clone at `<root>/work/<team>/<bot>/<project>`, writes the push document to a private temporary folder for that one call, runs the script and scrubs the
+token from the answer. The push token is therefore never on the machine's disk and never in a bot's environment; the publisher's user cannot read the bridge's key, state, sign-ins or
+Hermes homes (those folders are 0700 for the bridge's user). Without `--no-publisher` it is always installed; with it, no bot on the machine is told it may publish.
+
+**What a run gets on a server (P26-15).** Before every run the bridge asks the site, with the run's own token, the same questions a pod's containers ask, and builds a copy of the bot's profile
+for that run (`tools/agent-bridge/src/server-run.ts`):
+- the "Where you run" text from the same function the pod renderer uses (`whereYouRun` in `@manythreads/shared`, place `server`): the working folder, the repository of record, `mt-git record-push`
+  and `record-fetch` after each commit, whether the bot may publish, the deployer's login, the browser. It goes before the bot's own instructions; the config's `server.instructions` key is gone
+  (a config that still has it keeps working: it is appended after this text).
+- the folder of `mt-git` and `mt-publish` first on `PATH` (`server.toolsDir`), and for Claude Code the git and record commands pre-approved (and `mt-publish` for a bot that may publish).
+- `MT_PUBLISH_SOCKET` and `MANYTHREADS_RUN_TOKEN` in the run's environment for a bot that may publish and for Hermes only (the ACP adapters are started without the token; the platform's tools
+  get it in the session's MCP header).
+- **The deployer's kubeconfig:** `GET /api/runs/self/kubeconfig` answers the team's deployer login only to the team's deployer bot (404 for any other bot). The bridge writes it to
+  `<root>/kube/<team>--<bot>/config` (folder 0700, file 0600, replaced on every run, removed when the answer turns into 404) and sets `KUBECONFIG` in that bot's run only.
+- **Hermes:** its own home per bot, `<root>/hermes/<team>--<bot>` (never `~/.hermes`), with one static `config.yaml` written when it differs. The file names the model's address, key and name as
+  `${MANYTHREADS_LLM_URL}`, `${MANYTHREADS_RUN_TOKEN}` and `${MANYTHREADS_LLM_MODEL}`; each run sets them to the site's run proxy (`/api/llm/runs/<runId>/v1`), the run's token and the model from
+  `/v1/models` (the bot's alias when its key may call it, else the first listed). The spend is on the workspace ledger and the server holds no model key.
+- **The repository sync (P26-15):** `GET /api/bridge/repos` (bridge key) lists the projects of the teams placed on this server's runners, each with an https address. The bridge's
+  poller (`server-repos.ts`) writes them as list lines and keeps the pod's `repo-sync.sh` running as its child; it clones the repository of record to
+  `<root>/work/<team>/repos/<project>.git` and each bot's clone beside it, and `mt-git record-push` / `record-fetch` move work between a bot's clone and the record. Addresses other than https are refused.
+- **Full access:** the site sends `manythreads.fullAccess` for a Codex run on a server only when the runner's switch is on; the bridge applies it only when the installer was run with
+  `--allow-full-access` (`conventions.md`, "Full access for Codex").
 
 **What the site then shows.** One runner per agent found, named `<server>-claude`, `<server>-codex`, `<server>-hermes`, kind `server_agent`, shared with teams like any
 runner. Each agent with its own sign-in has a Sign-in button; the sign-in goes through the tunnel and lands in `/var/lib/manythreads-bridge/auth/<agent>`, never in a
 person's own home. Rotate key sends a new key down the open connection; Remove server closes the connection, refuses the key from then on and deletes the runners
 (refused while a bot is placed on one of them).
 
-**Server mode of the bridge.** The config has a `server` section (`root`, a template per agent, `instructions`) and the bridge answers a profile name of the form
+**Server mode of the bridge.** The config has a `server` section (`root`, a template per agent, `toolsDir`, `publisherSocket`) and the bridge answers a profile name of the form
 `<agent>--<team>--<bot>` by making the profile from the template: workdir `<root>/work/<team>/<bot>`, the team's repositories in `<root>/work/<team>/repos`, a
 Hermes home per bot. Each part of the name is a slug (lower case, digits, single `-`; no `..`, `/` or `--`; at most 63 characters); anything else is 404. There is
 no `default` profile in server mode. The bridge listens on a Unix socket (`<state>/bridge.sock`, mode 0600) with a random in-process key, not on a port.

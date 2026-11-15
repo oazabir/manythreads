@@ -22,9 +22,15 @@ command on it. The machine connects **out** to manythreads, so you open no port 
 
 ## What the installer changes on the machine
 
-It creates a user `manythreads-bridge`, a service `manythreads-bridge`, and the folders `/opt/manythreads-bridge`, `/etc/manythreads-bridge` and
-`/var/lib/manythreads-bridge`. Nothing else is touched. Run the same command with `--update` for a new version, and `--uninstall` (with `--purge` to also delete the work
+It creates two users and two services: `manythreads-bridge` (runs the bots) and `manythreads-publisher` (pushes a bot's finished branch and opens the pull request, so the
+bots never hold the push token), and the folders `/opt/manythreads-bridge`, `/etc/manythreads-bridge` and `/var/lib/manythreads-bridge`. Nothing else is touched. Install `git` and `jq`
+first (`apt-get install git jq` on Debian or Ubuntu): the installer warns when they are missing, and the team's repositories are copied to the machine with them. Run the same command with `--update` for a new version, and `--uninstall` (with `--purge` to also delete the work
 folders) to take it away.
+
+## What a bot does there
+A bot on a server works like a bot in a pod: it gets a working folder per team and bot, the team's repositories (copied to the machine; each commit is also saved to a repository of record
+with `mt-git`), the same "Where you run" text, and, if its definition lets it publish, the `mt-publish` command. The team's deployer bot also gets the team's deploy login for that run only. Hermes
+uses the site's model gateway, so the server needs no model key.
 
 ## Safety
 
