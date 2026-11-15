@@ -67,8 +67,8 @@ const PENDING_ROUTE_FILES: Record<string, string> = {
   'screens/AdminOnly.tsx': 'a route guard, draws no heading',
   'screens/account/AccountIndex.tsx': 'a redirect to the right Account page, draws no heading',
 };
-/** Files whose heading comes from a shared module they import instead of PageHeader. */
-const HEADING_MODULES = ['components/PageHeader', 'components/frames', './UsageReport'];
+/** Files whose heading comes from a shared module they import instead of PageHeader (RunnersPage wraps RunnersScreen, which draws it). */
+const HEADING_MODULES = ['components/PageHeader', 'components/frames', './UsageReport', './RunnersScreen'];
 
 /** Every screen module that App.tsx routes to (its `./screens/...` imports). */
 const ROUTE_FILES: string[] = [...new Set([...readFileSync(join(__dirname, '../src/App.tsx'), 'utf8').matchAll(/'\.\/(screens\/[^']+)'/g)].map((m) => `${m[1]}.tsx`))].sort();
