@@ -143,7 +143,8 @@ export async function fetchPushFile(serverUrl, token, project, into, doFetch = f
   if (doc === null || typeof doc !== 'object' || typeof doc.token !== 'string' || doc.token === '' || doc.project !== project) {
     return { ok: false, result: refuse('the platform gave an answer that is not understood', 6) };
   }
-  const { project: _name, ...fields } = doc;
+  const fields = { ...doc };
+  delete fields.project;
   writeFileSync(join(into, project), JSON.stringify(fields), { mode: 0o400 });
   return { ok: true, secrets: [doc.token] };
 }
