@@ -35,6 +35,11 @@ export interface GatewayTarget {
   runner?: string;
   /** Set when the target is a shared Claude Code or Codex runner (P19-07, P19-13): the run's result then carries `viaClaude` so the run job can count it and pause the runner. */
   claudeRunner?: string;
+  /**
+   * Set for an agent on an enrolled server: a `fetch` that sends each request through the server's open connection to its bridge (the base address is a placeholder; only the path and query
+   * travel). Used when the caller gave none. Never a reason to skip the checks on what comes back: the bridge is trusted no further than any other gateway.
+   */
+  fetch?: typeof fetch;
 }
 
 /**
@@ -199,7 +204,7 @@ export async function runOnGateway(
   }
   // The profile a bot runs as: the one its BOT.md names (mode A), else on a runner the runner's naming rule (`{bot}` by default), else `mt-<slug>` on the team's own pod.
   const profile = placement.profile ?? (target.profileRule !== undefined ? target.profileRule.split('{bot}').join(input.bot.slug) : profileFor(input.bot.slug, placement));
-  const doFetch = options.fetch ?? (target.guarded === true ? guardedFetch : fetch);
+  const doFetch = options.fetch ?? target.fetch ?? (target.guarded === true ? guardedFetch : fetch);
   const base = `${target.baseUrl.replace(/\/+$/, '')}/p/${encodeURIComponent(profile)}/v1`;
   const headers = { authorization: `Bearer ${target.apiKey}` };
   // The trace parent goes only to the platform's own gateways (a managed pod, a Claude or Codex runner). An address a team lead typed (`guarded`) is a third party's: no trace id leaves the install.

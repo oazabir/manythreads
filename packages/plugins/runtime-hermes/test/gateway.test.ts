@@ -107,6 +107,26 @@ describe('a shared Claude Code runner (P19-07)', () => {
   });
 });
 
+describe('an agent on an enrolled server (P26-15)', () => {
+  it('every call of the run goes through the target\'s own fetch, to the profile the rule named', async () => {
+    gw.setProfile('claude--engineering--coder', { apiKey: KEY });
+    gw.setScript(() => [{ type: 'finish', output: 'done on the server' }]);
+    const seen: string[] = [];
+    // stands in for the server's open connection: the real gateway answers, and each address that was asked for is noted
+    const viaTunnel = ((url: string | URL | Request, init?: RequestInit) => {
+      seen.push(String(url));
+      return fetch(String(url).replace('http://server.invalid', gw.url), init);
+    }) as typeof fetch;
+    const server = options({
+      resolve: async () => ({ baseUrl: 'http://server.invalid', apiKey: KEY, kind: 'external' as const, agent: 'claude-code' as const, claudeRunner: 'box-claude', fetch: viaTunnel }),
+    });
+    const r = resultOf(await collect((await runOnGateway(server, input(), scope, { connection: 'box-claude', profile: 'claude--engineering--coder' })).events));
+    expect(r).toMatchObject({ ok: true, viaClaude: { runner: 'box-claude' } });
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.every((u) => u.startsWith('http://server.invalid/p/claude--engineering--coder/v1'))).toBe(true);
+  });
+});
+
 describe('what a run carries to the gateway', () => {
   const external = (agent: 'hermes' | 'claude-code' | 'codex' | 'hermes-acp' | 'opencode') => ({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent }) });
   const bodyOf = (): Record<string, unknown> => gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!.body as Record<string, unknown>;

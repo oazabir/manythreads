@@ -118,6 +118,24 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
     if (!slug) return cannot('but the bot\'s team could not be found.');
     return { baseUrl: target.address, apiKey: target.key, guarded: false, kind: 'external', agent: target.kind === 'codex_cli' ? 'codex' : 'claude-code', profileRule: target.profileRule.split('{team}').join(slug), runner, claudeRunner: runner };
   }
+  if (target.kind === 'server_agent') {
+    // One agent on an enrolled server: the run goes through the server's open connection (`target.fetch`). The bridge's profile is `<agent>--<team>--<bot>`, made from a template there,
+    // so the team's slug is put into the rule here. Claude Code and Codex are counted and paused on a plan limit like a pod runner; Hermes has no plan of its own.
+    if (!target.fetch) return cannot('whose server is not connected.');
+    const slug = (await ctx.db.system(async (tx) => (await tx.query<{ slug: string }>('SELECT slug FROM app.teams WHERE id = $1::uuid', [teamId])).rows[0]))?.slug;
+    if (!slug) return cannot('but the bot\'s team could not be found.');
+    return {
+      baseUrl: target.address,
+      apiKey: target.key ?? 'tunnel',
+      guarded: false,
+      kind: 'external',
+      agent: target.agent,
+      profileRule: target.profileRule.split('{team}').join(slug),
+      runner,
+      fetch: target.fetch,
+      ...(target.agent === 'hermes-acp' ? {} : { claudeRunner: runner }),
+    };
+  }
   if (target.kind === 'hermes_pod') {
     if (!bot) return cannot('but the bot could not be found on this team.');
     const secrets = await ensureProfileSecrets(ctx, bot);
