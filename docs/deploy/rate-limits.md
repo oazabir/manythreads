@@ -134,6 +134,8 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/slack/auth.test` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
 | `GET /api/slack/auth.test` | none | 30 per 300 s | 300 s | failures | same lock as the line above |
 
+The two bridge locks (wrong enrolment codes, wrong bridge keys) are counted in memory in one site process: with several site replicas each keeps its own count, so the allowance is ten per replica.
+
 Also locked, though not a route in the table: `POST /api/test/session` (only mounted on a throwaway test server that sets
 `MANYTHREADS_TEST_AUTH_TOKEN`): 10 wrong tokens per address in 15 min lock the address 15 min; a right token never counts.
 

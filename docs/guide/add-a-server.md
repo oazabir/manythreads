@@ -37,7 +37,8 @@ uses the site's model gateway, so the server needs no model key.
 - A bot on a server can reach everything the user `manythreads-bridge` can reach on that machine: its folders, its network and the key it uses to talk to this site.
   Put only teams you trust together on one server, and do not put a server on a network that holds things the bots must not see.
 - Codex can be given full access (no sandbox) only when you start the installer with `--allow-full-access` **and** switch it on for one team on the Runners page.
-- **Rotate key** gives the server a new key over its open connection. **Remove server** ends the connection, refuses the key and deletes its runners; move bots off
+- Several teams may share one server and its runners today. They share one Unix user too, so there is no isolation between them on the machine yet (separate users and pods per team are planned): put only teams that trust each other on one server.
+- **Rotate key** gives the server a new key over its open connection (one at a time: wait until the server has taken the key, or 15 minutes). **Remove server** ends the connection, refuses the key and deletes its runners; move bots off
   them first.
 
 ## If it does not connect

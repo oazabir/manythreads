@@ -360,8 +360,9 @@ dials **out** to the site. It needs no open port and no address the site can rea
 curl -fsSL https://<site>/install/bridge.sh | sudo bash -s -- --enrol <code>
 ```
 
-The code works once and for 15 minutes; the site keeps only its hash. `--enrol -` makes the script read the code from `/dev/tty`, so it is in neither the shell
-history nor `ps`. The careful way (download, read, check the SHA-256 shown on the page, run) is on the page too; the hash comes from the same site, so it guards
+The code works once and for 15 minutes; the site keeps only its hash. `--enrol -` makes the script read the code from `/dev/tty`, and `--code-file <path>` reads it from the first line of a file, so it is in neither the shell
+history nor `ps` (a code given as `--enrol <code>` still works and the script warns that `ps` shows it for the length of the run). The script checks that its site address is `https://` before it
+looks at anything else on the machine (`--insecure-for-tests` is the only way round it); the key and the code travel to that address. The careful way (download, read, check the SHA-256 shown on the page, run) is on the page too; the hash comes from the same site, so it guards
 against a broken download, not against a site that was taken over.
 
 **What the script does** (`tools/agent-bridge/install/bridge.sh`, one function `main`, shellchecked): checks root, systemd, architecture, 3 GB free; uses the
@@ -394,7 +395,8 @@ for that run (`tools/agent-bridge/src/server-run.ts`):
 - `MT_PUBLISH_SOCKET` and `MANYTHREADS_RUN_TOKEN` in the run's environment for a bot that may publish and for Hermes only (the ACP adapters are started without the token; the platform's tools
   get it in the session's MCP header).
 - **The deployer's kubeconfig:** `GET /api/runs/self/kubeconfig` answers the team's deployer login only to the team's deployer bot (404 for any other bot). The bridge writes it to
-  `<root>/kube/<team>--<bot>/config` (folder 0700, file 0600, replaced on every run, removed when the answer turns into 404) and sets `KUBECONFIG` in that bot's run only.
+  `<root>/kube/<team>--<bot>/<runId>/config` (one folder per run, folder 0700, file 0600) and sets `KUBECONFIG` in that bot's run only. The folder is deleted when the run ends, whatever way it ends, and
+  the bridge empties the whole `kube` folder when it starts, so a login never outlives its run on the disk. The run token is never written to a file. The route answers only a run placed on a server runner (404 for a pod, a run with no runner or an unknown runner).
 - **Hermes:** its own home per bot, `<root>/hermes/<team>--<bot>` (never `~/.hermes`), with one static `config.yaml` written when it differs. The file names the model's address, key and name as
   `${MANYTHREADS_LLM_URL}`, `${MANYTHREADS_RUN_TOKEN}` and `${MANYTHREADS_LLM_MODEL}`; each run sets them to the site's run proxy (`/api/llm/runs/<runId>/v1`), the run's token and the model from
   `/v1/models` (the bot's alias when its key may call it, else the first listed). The spend is on the workspace ledger and the server holds no model key.
@@ -406,7 +408,7 @@ for that run (`tools/agent-bridge/src/server-run.ts`):
 
 **What the site then shows.** One runner per agent found, named `<server>-claude`, `<server>-codex`, `<server>-hermes`, kind `server_agent`, shared with teams like any
 runner. Each agent with its own sign-in has a Sign-in button; the sign-in goes through the tunnel and lands in `/var/lib/manythreads-bridge/auth/<agent>`, never in a
-person's own home. Rotate key sends a new key down the open connection; Remove server closes the connection, refuses the key from then on and deletes the runners
+person's own home. Rotate key sends a new key down the open connection (the old key keeps opening the server until the bridge answers `rotated` or connects with the new one; a second Rotate while the first waits is refused with 409, and a first one that was never answered is replaced after 15 minutes; the site keeps `pending_key_at` for that); Remove server closes the connection, refuses the key from then on and deletes the runners
 (refused while a bot is placed on one of them).
 
 **Server mode of the bridge.** The config has a `server` section (`root`, a template per agent, `toolsDir`, `publisherSocket`) and the bridge answers a profile name of the form
@@ -415,11 +417,11 @@ Hermes home per bot. Each part of the name is a slug (lower case, digits, single
 no `default` profile in server mode. The bridge listens on a Unix socket (`<state>/bridge.sock`, mode 0600) with a random in-process key, not on a port.
 
 **The tunnel.** One WebSocket from the bridge to `GET /api/bridge/connect` (https only; `--insecure-for-tests` allows `ws://` in tests), `Authorization: Bearer <key>`.
-Frames are JSON text: `hello`, `welcome`, `beat`, `beat_ack`, `request`, `head`, `data` (base64, at most 64 KiB), `end`, `error`, `cancel`, `rotate`, `rotated`. The site
+Frames are JSON text: `hello`, `welcome`, `beat`, `beat_ack`, `request`, `head`, `data` (base64, at most 64 KiB of bytes: about 87 KB of text, so the socket's frame limit on the site is 128 KiB, `TUNNEL_MAX_FRAME_BYTES`, set for this one route by `wsMaxPayload`; every other socket of the site keeps 64 KiB), `end`, `error`, `cancel`, `rotate`, `rotated`. The site
 turns a call to a server runner into a `request` frame; the bridge hands it to its own socket and answers with `head`, `data` and `end`. A beat every 20 seconds, and
 three silent beats end the connection. A dropped connection has a 60 second grace before its running streams fail with "disconnected"; the bridge reconnects with
 exponential back-off. Limits: 64 open streams, 1 MiB request body, 8 MiB unread per connection. A new connection from the same server replaces the old one. A refused key
-closes with code 1008 and the bridge then waits five minutes before trying again. Bodies, keys and codes are never logged; the audit has `bot_server.changed` events
+closes with code 1008 and the bridge then waits five minutes before trying again. The key is read from `<state>/key` first (a rotation writes it there), then the installer's `/etc/manythreads-bridge/key`; the installer's status check and `--uninstall` use the same order, and `--uninstall` removes `<state>/key` even without `--purge`. The enrolment and key lockouts (10 wrong in 15 minutes per address) are kept in memory in one site process: with more than one site replica the allowance multiplies by the number of replicas. Bodies, keys and codes are never logged; the audit has `bot_server.changed` events
 (code_minted, enrolled, connected, disconnected, key_rotated, removed).
 
 **What a bot on the server can reach.** Everything the user `manythreads-bridge` can reach on that machine: its folders, its network, the key it uses to talk to

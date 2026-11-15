@@ -255,7 +255,7 @@ anyone who wants it.
 
 Limits and the cases a live run will hit:
 - **Size:** a request body at most 1 MiB (the bridge's own `MAX_BODY_BYTES`); a response is sent as many frames of at most 64 KiB, so a long event stream or a
-  large status answer is never one frame. A stream whose unread frames on the site pass 8 MiB is closed (a reader that stopped reading).
+  large status answer is never one frame (as built: the site's socket limit for this route is 128 KiB, `wsMaxPayload` on the route, because a 64 KiB chunk in base64 is about 87 KB of text; the review found the site-wide 64 KiB limit cut the tunnel at the first big answer, and `tunnel-site.test.ts` now sends 1.5 MiB through the real site). A stream whose unread frames on the site pass 8 MiB is closed (a reader that stopped reading).
 - **Streams:** at most 64 open per server (one run holds two: its event stream and, briefly, an approval answer or a stop).
 - **Cancel:** when the site aborts a request (`AbortSignal`, e.g. the run job gives up on the event stream), the tunnel sends a `cancel` frame and the bridge
   closes that request as if the client went away, so the run's subscriber is dropped (`req.on('close')` in `server.ts`). Stopping a run stays its own
@@ -278,7 +278,7 @@ Limits and the cases a live run will hit:
   match the form is a 404, as today. So adding a bot or a team needs nothing on the machine.
 - Sign-in: the same dialog and routes as a pod. The page says "This server's own sign-in folder for Claude Code; your account on that machine is not touched."
   The script never reuses the host's logins (owner rule).
-- **Rotate key** on the page sends a new key over the open socket, the bridge writes it and reconnects with it, then the old hash is dropped. **Remove server** revokes
+- **Rotate key** on the page sends a new key over the open socket, the bridge writes it and reconnects with it, then the old hash is dropped. A second Rotate while one waits is a 409; one waiting more than 15 minutes (`pending_key_at`) is replaced. **Remove server** revokes
   the key, closes the socket, and is refused while bots are placed on its runners (the delete guard).
 
 ### 5.5 Security
