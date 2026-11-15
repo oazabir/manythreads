@@ -532,7 +532,7 @@
               "name": "creds",
               "secret": {
                 "secretName": "codex-team-codex-credentials",
-                "defaultMode": 292,
+                "defaultMode": 256,
                 "optional": true
               }
             }

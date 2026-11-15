@@ -503,7 +503,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
                     },
                   },
                   // optional: the Secret exists only once an admin has uploaded a sign-in file
-                  { name: 'creds', secret: { secretName: names.credentials, defaultMode: 0o444, optional: true } },
+                  { name: 'creds', secret: { secretName: names.credentials, defaultMode: 0o400, optional: true } },
                 ]
               : []),
           ],

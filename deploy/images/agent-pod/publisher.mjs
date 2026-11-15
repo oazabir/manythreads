@@ -149,7 +149,10 @@ export async function fetchPushFile(serverUrl, token, project, into, doFetch = f
   return { ok: true, secrets: [doc.token] };
 }
 
-const scrub = (text, secrets) => secrets.reduce((t, s) => (s.length >= 8 ? t.split(s).join('***') : t), text);
+/** The user:password part of a web address (`https://x-access-token:ghp_...@host/...`), which git prints in some errors, whatever the secret in it is. */
+const USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@]*@/gi;
+/** Text that may be shown: each known secret and any address with a login in it are blanked. */
+export const scrub = (text, secrets) => secrets.reduce((t, s) => (s.length >= 8 ? t.split(s).join('***') : t), text).replace(USERINFO, '$1***@');
 
 /** Runs mt-publish.sh for one checked request. */
 function runScript(options, args, env, body) {

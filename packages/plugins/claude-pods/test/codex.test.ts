@@ -111,6 +111,31 @@ describe('the objects of a Codex runner', () => {
     expect(k8s.snapshot()).toBe(first);
   });
 
+  it('mounts every Secret in as few containers as it can, with the narrowest file mode its reader allows (P26 review M4)', async () => {
+    const { k8s, r } = setup([runner('team-codex', 'codex')]);
+    signIn(k8s, 'team-codex', 'codex');
+    await r.reconcileAll();
+    const spec = depOf(k8s, 'team-codex', 'codex').spec.template.spec;
+    const readers = (volume: string): string[] =>
+      [...spec.initContainers, ...spec.containers].filter((c: any) => (c.volumeMounts ?? []).some((m: any) => m.name === volume)).map((c: any) => `${c.name}:${c.securityContext?.runAsUser ?? spec.securityContext.runAsUser}`);
+    const secrets = spec.volumes.filter((v: any) => v.secret);
+    expect(secrets.length).toBeGreaterThan(0);
+    for (const v of secrets) {
+      const who = readers(v.name);
+      // a Secret volume is read by one container; its mode is the narrowest that reader can use
+      expect(who, v.name).toHaveLength(1);
+      if (v.name === 'creds') {
+        // the sign-in file is copied by the root init step (it reads whatever the mode); nobody else gets to open it
+        expect(who[0]).toMatch(/:0$/);
+        expect(v.secret.defaultMode).toBe(0o400);
+      } else {
+        // a push Secret is read by the publisher alone, as a user of its own that is not the file's owner: it needs "other" read, and no other container has the volume
+        expect(who[0]).toMatch(/^publisher:/);
+        expect(v.secret.defaultMode).toBe(0o444);
+      }
+    }
+  });
+
   it('puts the Codex pieces where the plan says: CODEX_HOME, the in-pod switch, auth.json in the init step and the keeper, profile agent codex, no Claude variable', async () => {
     const { k8s, r } = setup([runner('team-codex', 'codex')]);
     signIn(k8s, 'team-codex', 'codex');

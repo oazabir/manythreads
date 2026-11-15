@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // @ts-expect-error -- plain JavaScript file that ships in the image and in the server bundle
-import { client, serve } from '../../../../deploy/images/agent-pod/publisher.mjs';
+import { client, scrub, serve } from '../../../../deploy/images/agent-pod/publisher.mjs';
 import { startFakeGithub, type FakeGithub } from '../../../test-utils/src/fake-github.ts';
 
 // P26-15: the publisher of an enrolled server (docs/plans/agents-anywhere.md section 5.6). It is the pod's publisher with one difference: the push document is asked of the site over HTTPS
@@ -155,5 +155,24 @@ describe('the publisher of an enrolled server', () => {
     expect((await mtPublish(RUN, ['check', 'widgets'])).code).toBe(2);
     credentialStatus = 401;
     expect((await mtPublish(RUN, ['check', 'widgets'])).code).toBe(2);
+  });
+});
+
+describe('what the publisher may show of git\'s own words (P26 review L10)', () => {
+  it('blanks the known secrets and the login in any web address, even one the publisher was never given', () => {
+    const text = [
+      'fatal: unable to access \'https://x-access-token:ghp_NeverSeenBefore0123456789abc@github.com/acme/widgets.git/\': The requested URL returned error: 403', // secret-scan:ignore a made-up fixture
+      'remote: see https://oauth2:glpat-short@gitlab.example/acme/w.git and http://user@host/x',
+      'plain https://github.com/acme/widgets.git stays; so does https://example.org/p?mail=a@b',
+      `and the known one ${TOKEN}`,
+    ].join('\n');
+    const shown = scrub(text, [TOKEN]) as string;
+    expect(shown).not.toContain('NeverSeenBefore');
+    expect(shown).not.toContain('glpat');
+    expect(shown).not.toContain(TOKEN);
+    expect(shown).toContain('https://***@github.com/acme/widgets.git/');
+    expect(shown).toContain('https://***@gitlab.example/acme/w.git');
+    expect(shown).toContain('plain https://github.com/acme/widgets.git stays');
+    expect(shown).toContain('https://example.org/p?mail=a@b');
   });
 });
