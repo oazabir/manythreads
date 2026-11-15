@@ -1,0 +1,41 @@
+# Add a server
+
+A **server** is a machine of your own (a build box, a workstation, a cloud machine) where Claude Code, Codex or Hermes can do the work of your bots. You paste one
+command on it. The machine connects **out** to manythreads, so you open no port and give no address. This page is for the workspace admin.
+
+## Before you start
+
+- A Linux machine with systemd (x64 or arm64) and a user who may use `sudo`. About 3 GB of free disk.
+- The agents you want. The installer adds Claude Code, Codex and a browser for checks. It installs Hermes only if the machine already has it.
+- A login for each paid agent (see `runner-signin-files.md` for which login to use). You sign in from this site later, so nothing is typed on the machine.
+
+## Steps
+
+1. Workspace settings, **Runners**, scroll to **Servers**, press **Add a server**.
+2. Give it a display name and a short name (lower case; the short name cannot change). Press **Make the command**.
+3. Copy the command and run it on the machine. The code in it works once and for 15 minutes.
+   - To keep the code out of your shell history, use the second command in the dialog; the script asks for the code on the keyboard.
+   - To read the script first, use "The careful way": download it, read it, check the hash, run it.
+4. The dialog says "Waiting for <name> to connect…" and then lists the machine and the agents it found.
+5. Press **Sign-in** next to each agent and follow the steps. The agent signs in to a folder of its own on the server; your own account on that machine is not touched.
+6. The agents are now runners named `<name>-claude`, `<name>-codex` and `<name>-hermes` on the Runners page. Share them with teams and place bots on them like any runner.
+
+## What the installer changes on the machine
+
+It creates a user `manythreads-bridge`, a service `manythreads-bridge`, and the folders `/opt/manythreads-bridge`, `/etc/manythreads-bridge` and
+`/var/lib/manythreads-bridge`. Nothing else is touched. Run the same command with `--update` for a new version, and `--uninstall` (with `--purge` to also delete the work
+folders) to take it away.
+
+## Safety
+
+- A bot on a server can reach everything the user `manythreads-bridge` can reach on that machine: its folders, its network and the key it uses to talk to this site.
+  Put only teams you trust together on one server, and do not put a server on a network that holds things the bots must not see.
+- Codex can be given full access (no sandbox) only when you start the installer with `--allow-full-access` **and** switch it on for one team on the Runners page.
+- **Rotate key** gives the server a new key over its open connection. **Remove server** ends the connection, refuses the key and deletes its runners; move bots off
+  them first.
+
+## If it does not connect
+
+- "Waiting" for more than a minute: the machine cannot reach the site over https. Check its clock, its proxy and its firewall for outgoing connections.
+- "Not connected" after it worked: the service stopped or the machine is off. `journalctl -u manythreads-bridge` shows why.
+- The code expired: press **New code** and run the command again.

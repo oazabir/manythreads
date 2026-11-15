@@ -349,6 +349,51 @@ WantedBy=multi-user.target
 
 The service user must have the tool signed in (its own home folder holds the sign-in) and write access to every profile's working folder.
 
+## An enrolled server: one command, no open port (Phase 26)
+
+Instead of running the bridge by hand, an admin can put it on any Linux machine (systemd, x64 or arm64, root through `sudo`) with one command, and the machine then
+dials **out** to the site. It needs no open port and no address the site can reach. Plan: `docs/plans/agents-anywhere.md` section 5; guide: `docs/guide/add-a-server.md`.
+
+**What the admin does.** Runners page, "Add a server": a display name and a short name (lower case, never changes). The page shows
+
+```
+curl -fsSL https://<site>/install/bridge.sh | sudo bash -s -- --enrol <code>
+```
+
+The code works once and for 15 minutes; the site keeps only its hash. `--enrol -` makes the script read the code from `/dev/tty`, so it is in neither the shell
+history nor `ps`. The careful way (download, read, check the SHA-256 shown on the page, run) is on the page too; the hash comes from the same site, so it guards
+against a broken download, not against a site that was taken over.
+
+**What the script does** (`tools/agent-bridge/install/bridge.sh`, one function `main`, shellchecked): checks root, systemd, architecture, 3 GB free; uses the
+host's Node 22 or later, otherwise a pinned Node with a pinned checksum under `/opt/manythreads-bridge/node`; downloads the bridge bundle `bridge-<version>.tgz` and
+checks it against the SHA-256 in the manifest; runs `npm ci --omit=dev --ignore-scripts` from a lock file for the pinned agent programs (claude-agent-acp, codex-acp,
+`codex`, Playwright; `claude` comes from the SDK's platform package); creates the user `manythreads-bridge` with its home under `/var/lib/manythreads-bridge`;
+installs Chromium with its libraries; installs Hermes with its pinned official installer only when the machine already has Hermes; writes the config, detects the
+agents, calls `POST /api/bridge/enrol` once, keeps the answer's key in `/etc/manythreads-bridge/key` (mode 0600, passed to the service as a systemd credential),
+writes `manythreads-bridge.service` (hardened) and waits up to 90 seconds for the site to say it is connected. Also: `--update` (same command, new bundle),
+`--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`.
+
+**What the site then shows.** One runner per agent found, named `<server>-claude`, `<server>-codex`, `<server>-hermes`, kind `server_agent`, shared with teams like any
+runner. Each agent with its own sign-in has a Sign-in button; the sign-in goes through the tunnel and lands in `/var/lib/manythreads-bridge/auth/<agent>`, never in a
+person's own home. Rotate key sends a new key down the open connection; Remove server closes the connection, refuses the key from then on and deletes the runners
+(refused while a bot is placed on one of them).
+
+**Server mode of the bridge.** The config has a `server` section (`root`, a template per agent, `instructions`) and the bridge answers a profile name of the form
+`<agent>--<team>--<bot>` by making the profile from the template: workdir `<root>/work/<team>/<bot>`, the team's repositories in `<root>/work/<team>/repos`, a
+Hermes home per bot. Each part of the name is a slug (lower case, digits, single `-`; no `..`, `/` or `--`; at most 63 characters); anything else is 404. There is
+no `default` profile in server mode. The bridge listens on a Unix socket (`<state>/bridge.sock`, mode 0600) with a random in-process key, not on a port.
+
+**The tunnel.** One WebSocket from the bridge to `GET /api/bridge/connect` (https only; `--insecure-for-tests` allows `ws://` in tests), `Authorization: Bearer <key>`.
+Frames are JSON text: `hello`, `welcome`, `beat`, `beat_ack`, `request`, `head`, `data` (base64, at most 64 KiB), `end`, `error`, `cancel`, `rotate`, `rotated`. The site
+turns a call to a server runner into a `request` frame; the bridge hands it to its own socket and answers with `head`, `data` and `end`. A beat every 20 seconds, and
+three silent beats end the connection. A dropped connection has a 60 second grace before its running streams fail with "disconnected"; the bridge reconnects with
+exponential back-off. Limits: 64 open streams, 1 MiB request body, 8 MiB unread per connection. A new connection from the same server replaces the old one. A refused key
+closes with code 1008 and the bridge then waits five minutes before trying again. Bodies, keys and codes are never logged; the audit has `bot_server.changed` events
+(code_minted, enrolled, connected, disconnected, key_rotated, removed).
+
+**What a bot on the server can reach.** Everything the user `manythreads-bridge` can reach on that machine: its folders, its network, the key it uses to talk to
+the site. The Runners page says so. Put only teams you trust together on one server.
+
 ## The protocol
 
 All paths are under `/p/<profile>/v1`, plus `GET /health`.
