@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { loadConfig } from './config.ts';
 import { startBridge } from './server.ts';
 import { helloFor, keyFiles, readServerKey, storeServerKey } from './server-mode.ts';
+import { startServerRepos } from './server-repos.ts';
 import { newInternalKey, startTunnel } from './tunnel.ts';
 
 // tsx tools/agent-bridge/src/main.ts --config <file> [--listen 127.0.0.1:8650] [--state-dir ~/.manythreads-bridge] [--key-file <file>] [--repos-file <file>]
@@ -88,9 +89,13 @@ if (config.server !== undefined) {
     insecure: values['insecure-for-tests'] === true,
     log: (line) => console.log(line),
   });
+  // the repositories of the teams on this server's runners: the list from the site, and the sync step that clones them (needs the bundle's tools folder)
+  const repos = cfg.server?.toolsDir !== undefined
+    ? startServerRepos({ siteUrl: values.site, key: () => readServerKey(files), toolsDir: cfg.server.toolsDir, root: cfg.server.root, stateDir, syncSeconds: 10, log: (line) => console.log(line) })
+    : undefined;
   console.log(`agent-bridge (server mode) dialing ${new URL(values.site).origin}; profiles are made from the "server" section`);
   const stop = (): void => {
-    void tunnel.close().then(() => bridge.close()).then(() => process.exit(0));
+    void tunnel.close().then(() => repos?.close()).then(() => bridge.close()).then(() => process.exit(0));
   };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
