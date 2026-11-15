@@ -31,6 +31,20 @@ function windowed(limit: number): (key: string) => boolean {
   };
 }
 
+/**
+ * Is the run's bot placed on a runner of an enrolled server (`kind = 'server_agent'`)? The two credential doors below exist for the publisher and the bridge of such a server, which
+ * have no Kubernetes Secret to read; a run in an agent pod gets its login from the pod's own mounts and must not be able to fetch another variant (the host's) with its token.
+ */
+async function placedOnServer(tx: { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }, botId: string): Promise<boolean> {
+  const row = (
+    await tx.query<{ kind: string }>(
+      `SELECT r.kind FROM app.bots b JOIN app.bot_runners r ON r.workspace_id = b.workspace_id AND r.name = b.placement ->> 'runs_on' WHERE b.id = $1::uuid`,
+      [botId],
+    )
+  ).rows[0];
+  return row?.kind === 'server_agent';
+}
+
 export function registerRunsSelfRoute(ctx: PluginContext): void {
   const tooManyFailures = windowed(FAILURES_PER_ADDRESS_PER_MINUTE);
   const tooManyCalls = windowed(CALLS_PER_RUN_PER_MINUTE);
@@ -92,11 +106,13 @@ export function registerRunsSelfRoute(ctx: PluginContext): void {
             [run.teamId, run.botId, run.botActorId, MAY_PUBLISH, project],
           )
         ).rows[0];
-        return row ?? null;
+        return row ? { ...row, onServer: await placedOnServer(tx, run.botId) } : null;
       });
       if (found === null) throw refuse(req.ip);
       if (!found.may_publish) throw new HttpError(403, 'forbidden', 'This bot may not publish: its definition does not grant tasks.pull_request');
       if (found.project === null) throw new HttpError(404, 'not_found', 'This team has no such project');
+      // a run that is not on an enrolled server's runner has no use for this door: the same answer as "no credential", whatever the bot may do
+      if (!found.onServer) throw new HttpError(404, 'not_found', 'No push credential is kept for this run');
       const provider = ctx.providers.get<ProjectCredentialsProvider>('project.credentials');
       if (!provider) throw new HttpError(404, 'not_found', 'No push credential is kept on this site');
       const team: CredentialTeam = { id: run.teamId, slug: found.team_slug };
@@ -132,12 +148,13 @@ export function registerRunsSelfRoute(ctx: PluginContext): void {
             [run.teamId, run.botId],
           )
         ).rows[0];
-        return row ?? null;
+        return row ? { ...row, onServer: await placedOnServer(tx, run.botId) } : null;
       });
       if (found === null) throw refuse(req.ip);
       const deployer = (process.env['MANYTHREADS_CLAUDE_PODS_DEPLOYER_BOT'] ?? process.env['MANYTHREADS_HERMES_PODS_DEPLOYER_BOT'] ?? 'deployer').trim();
       const none = new HttpError(404, 'not_found', 'There is no deploy login for this bot');
-      if (deployer === '' || found.bot_slug !== deployer) throw none;
+      // the host variant is for a run on an enrolled server only: a pod's deployer has the pod variant mounted, and its token must not fetch the host's
+      if (deployer === '' || found.bot_slug !== deployer || !found.onServer) throw none;
       const provider = ctx.providers.get<DeployKubeconfigProvider>('deploy.kubeconfig');
       if (!provider) throw none;
       const texts = await provider.texts({ team: { id: run.teamId, slug: found.team_slug } }).catch(() => null);

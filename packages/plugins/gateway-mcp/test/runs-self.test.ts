@@ -35,13 +35,16 @@ async function makeBot(team: keyof typeof slugs, publisher: boolean): Promise<vo
 
 /** A run opened in-process like the router does; the token is returned once. */
 async function openRun(team: keyof typeof slugs): Promise<{ runId: string; token: string }> {
+  return openRunOf(ids[team]!);
+}
+
+async function openRunOf(b: { botId: string; teamId: string }): Promise<{ runId: string; token: string }> {
   const appPool = createAppPool(world.server.db.appUrl);
   const systemPool = createSystemPool(world.server.db.systemUrl, 2);
   try {
     const registry = new CapabilityRegistry();
     const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
     const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
-    const b = ids[team]!;
     const { run, token } = await service.open({ botId: b.botId, teamId: b.teamId, workspaceId: omar.workspaceId, trigger: 'drop' });
     return { runId: run.runId, token };
   } finally {
@@ -193,6 +196,85 @@ describe('GET /api/runs/self/push-credential and /kubeconfig', () => {
     const { token } = await openRun('engineering');
     const res = await get('/api/runs/self/kubeconfig', token);
     expect(res.status, res.text).toBe(404);
+  });
+});
+
+// M1 of the Phase 26 review: the two doors answer a run that is placed on a runner of an enrolled server, and nothing else. A pod's deployer has its own login mounted, and its token must not
+// fetch the host variant (or a push token) from here. The providers are registered into the running server's own registry, as the pods plugins do where a controller runs.
+describe('where the run is placed decides who is answered', () => {
+  const HOST_KUBE = 'apiVersion: v1\nkind: Config\n# host variant\n';
+  const get = async (path: string, bearer: string): Promise<{ status: number; text: string }> => {
+    const res = await fetch(`${world.server.url}${path}`, { headers: { authorization: `Bearer ${bearer}` } });
+    return { status: res.status, text: await res.text() };
+  };
+  const placed: Record<string, { botId: string; teamId: string }> = {};
+
+  async function deployerBot(slug: string, runsOn: string | null): Promise<{ botId: string; teamId: string }> {
+    const teamId = ids['engineering']!.teamId;
+    return world.system(async (tx) => {
+      const placement = runsOn === null ? '{}' : JSON.stringify({ runs_on: runsOn });
+      const bot = await tx.query<{ id: string }>(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement)
+         VALUES ($1, $2, $3, $3, 'Deploys', 'agent', 'hermes', 'team', repeat('b', 64), 'active', $4::jsonb) RETURNING id`,
+        [omar.workspaceId, teamId, slug, placement],
+      );
+      const botId = bot.rows[0]!.id;
+      const actor = await tx.query<{ id: string }>(`INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id`, [omar.workspaceId, botId]);
+      await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')`, [teamId, actor.rows[0]!.id, omar.workspaceId]);
+      for (const capability of ['messages.post', 'tasks.pull_request']) {
+        await tx.query(`INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, $3, false, '{}')`, [teamId, actor.rows[0]!.id, capability]);
+      }
+      return { botId, teamId };
+    });
+  }
+
+  beforeAll(async () => {
+    const server = world.server.host.registries;
+    server.providers['deploy.kubeconfig'].add('test', { id: 'deploy.kubeconfig', ensure: async () => null, texts: async () => ({ host: HOST_KUBE, pod: 'apiVersion: v1\n# pod variant\n' }) } as never);
+    server.providers['project.credentials'].add('test', {
+      id: 'project.credentials',
+      read: async () => ({ origin: 'https://github.com/acme/site', branch: 'main', token: 'ghp_made_up_push_token_for_the_test_0123456789' }), // secret-scan:ignore a made-up fixture
+    } as never);
+    await world.system(async (tx) => {
+      const srv = await tx.query<{ id: string }>(`INSERT INTO app.bot_servers (workspace_id, name, label) VALUES ($1, 'm1-box', 'M1 box') RETURNING id`, [omar.workspaceId]);
+      await tx.query(
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, agent, server_id, status) VALUES ($1, 'm1-box-claude', 'M1 box Claude', 'server_agent', 'claude-code', $2, 'ready')`,
+        [omar.workspaceId, srv.rows[0]!.id],
+      );
+      await tx.query(`INSERT INTO app.bot_runners (workspace_id, name, label, kind, status) VALUES ($1, 'm1-pod', 'M1 pod', 'hermes_pod', 'ready')`, [omar.workspaceId]);
+    });
+    placed['onServer'] = await deployerBot('deployer', 'm1-box-claude');
+  });
+
+  it('a deployer run placed on a server runner gets the host kubeconfig, and its push credential', async () => {
+    const { token } = await openRunOf(placed['onServer']!);
+    const kube = await get('/api/runs/self/kubeconfig', token);
+    expect(kube.status, kube.text).toBe(200);
+    expect(JSON.parse(kube.text)).toEqual({ kubeconfig: HOST_KUBE });
+    const push = await get('/api/runs/self/push-credential?project=site', token);
+    expect(push.status, push.text).toBe(200);
+    expect(JSON.parse(push.text)).toMatchObject({ project: 'site', origin: 'https://github.com/acme/site' });
+  });
+
+  it('the same bot placed on a pod runner, on no runner or on a runner that does not exist gets 404 from both doors, and no token or kubeconfig text', async () => {
+    await world.system((tx) => tx.query(`DELETE FROM app.bots WHERE id = $1`, [placed['onServer']!.botId]));
+    for (const [label, runsOn] of [['pod', 'm1-pod'], ['none', null], ['gone', 'no-such-runner']] as const) {
+      const bot = await deployerBot('deployer', runsOn);
+      const { token } = await openRunOf(bot);
+      const kube = await get('/api/runs/self/kubeconfig', token);
+      const push = await get('/api/runs/self/push-credential?project=site', token);
+      expect([label, kube.status, push.status], `${kube.text} ${push.text}`).toEqual([label, 404, 404]);
+      expect(kube.text + push.text).not.toContain('apiVersion');
+      expect(kube.text + push.text).not.toContain('ghp_');
+      await world.system((tx) => tx.query(`DELETE FROM app.bots WHERE id = $1`, [bot.botId]));
+    }
+  });
+
+  it('a bot on a server runner that is not the deployer still gets no kubeconfig', async () => {
+    const bot = await deployerBot('not-the-deployer', 'm1-box-claude');
+    const { token } = await openRunOf(bot);
+    expect((await get('/api/runs/self/kubeconfig', token)).status).toBe(404);
+    await world.system((tx) => tx.query(`DELETE FROM app.bots WHERE id = $1`, [bot.botId]));
   });
 });
 
