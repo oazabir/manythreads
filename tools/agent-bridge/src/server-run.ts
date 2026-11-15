@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { GIT_TOOLS, PUBLISH_TOOL, RECORD_TOOLS, whereYouRun } from '@manythreads/shared';
@@ -18,6 +19,8 @@ export interface ServerRunSupport {
   siteUrl: string;
   fetch?: typeof fetch;
   log: (line: string) => void;
+  /** Registers something to do when the run is over, whatever way it ended (the run manager calls each in its `finally`): the run's kubeconfig is deleted this way. */
+  onEnd?: (cleanup: () => void) => void;
 }
 
 const TIMEOUT_MS = 15_000;
@@ -46,8 +49,14 @@ export const HERMES_SEED = [
   '',
 ].join('\n');
 
-/** The kubeconfig of one bot's profile on this machine: a private folder of its own, mode 0600, written again at every run that is answered with one. */
-export const kubeconfigFile = (root: string, team: string, bot: string): string => join(root, 'kube', `${team}--${bot}`, 'config');
+/** The folder that holds every run's kubeconfig (`<root>/kube`). Nothing in it outlives its run: the bridge empties it when it starts. */
+export const kubeFolder = (root: string): string => join(root, 'kube');
+
+/** The kubeconfig of ONE RUN of one bot: a private folder of its own, mode 0600, deleted when the run is over. Another run of the same bot has its own file. */
+export const kubeconfigFile = (root: string, team: string, bot: string, run: string): string => join(kubeFolder(root), `${team}--${bot}`, run, 'config');
+
+/** A run's id as a folder name: what the site's ids are made of, or else a random name (a run id is not trusted as a path). */
+const runFolder = (runId: string | null): string => (runId !== null && /^[A-Za-z0-9_-]{1,64}$/.test(runId) ? runId : randomBytes(8).toString('hex'));
 
 async function ask(url: string, token: string, doFetch: typeof fetch): Promise<{ status: number; json: unknown }> {
   const res = await doFetch(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -98,7 +107,9 @@ export async function prepareServerRun(config: BridgeConfig, name: string, profi
 
   let mayPublish = false;
   let kubeconfig: string | null = null;
-  const file = kubeconfigFile(server.root, who.team, who.bot);
+  const file = kubeconfigFile(server.root, who.team, who.bot, runFolder(request.manythreads.runId));
+  // The deployer's login is the cluster's, not this run's: it never stays on the disk. The folder goes when the run ends, whatever way it ended.
+  support.onEnd?.(() => rmSync(dirname(file), { recursive: true, force: true }));
   if (token !== null) {
     try {
       const self = await ask(`${site}/api/runs/self`, token, doFetch);
@@ -111,9 +122,6 @@ export async function prepareServerRun(config: BridgeConfig, name: string, profi
       if (kube.status === 200 && isRecord(kube.json) && typeof kube.json['kubeconfig'] === 'string' && kube.json['kubeconfig'] !== '') {
         writePrivate(file, kube.json['kubeconfig'], 0o600);
         kubeconfig = file;
-      } else if (kube.status === 404) {
-        // not the team's deployer (any more): a login written for an earlier run is removed
-        rmSync(file, { force: true });
       }
     } catch {
       support.log('server run: could not ask the site for a kubeconfig');

@@ -4,10 +4,10 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GIT_TOOLS, PUBLISH_TOOL, RECORD_TOOLS } from '@manythreads/shared';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseConfig, profileFor } from '../src/config.ts';
 import { parseRunRequest } from '../src/request.ts';
-import { HERMES_SEED, kubeconfigFile, prepareServerRun } from '../src/server-run.ts';
+import { HERMES_SEED, kubeconfigFile, kubeFolder, prepareServerRun } from '../src/server-run.ts';
 
 // What a run on an enrolled server is given (P26-15): the site answers the three questions with the run's own token, and the bridge builds the run's copy of the bot's profile.
 
@@ -145,11 +145,11 @@ describe('the run\'s copy of a bot\'s profile', () => {
 });
 
 describe('the deployer\'s kubeconfig', () => {
-  it('is written 0600 in a private folder of the bot, named in KUBECONFIG of this run\'s profile only, and its text is not in the instructions', async () => {
+  it('is written 0600 in a private folder of this run, named in KUBECONFIG of this run\'s profile only, and its text is not in the instructions', async () => {
     state.deployer = true;
     const { root, config } = setup();
     const p = await prepare(config, 'claude--eng--deployer');
-    const file = kubeconfigFile(root, 'eng', 'deployer');
+    const file = kubeconfigFile(root, 'eng', 'deployer', 'run-1');
     expect(p.env?.['KUBECONFIG']).toBe(file);
     expect(readFileSync(file, 'utf8')).toBe(KUBE);
     expect(statSync(file).mode & 0o777).toBe(0o600);
@@ -160,10 +160,44 @@ describe('the deployer\'s kubeconfig', () => {
     state.deployer = false;
     const other = await prepare(config, 'claude--eng--builder');
     expect(other.env?.['KUBECONFIG']).toBeUndefined();
-    expect(existsSync(kubeconfigFile(root, 'eng', 'builder'))).toBe(false);
-    // the same bot when it stops being the deployer: the old file goes
-    await prepare(config, 'claude--eng--deployer');
+    expect(filesUnder(kubeFolder(root)).filter((f) => f.includes('--builder'))).toEqual([]);
+  });
+
+  it('is removed when the run is over, and a run\'s id is never used as a path', async () => {
+    state.deployer = true;
+    const { root, config } = setup();
+    const ends: Array<() => void> = [];
+    const withEnd = (req: ReturnType<typeof requestWith>) =>
+      prepareServerRun(config, 'claude--eng--deployer', profileFor(config, 'claude--eng--deployer')!.profile, req, { siteUrl: base, log: () => undefined, onEnd: (fn) => ends.push(fn) });
+    const p = await withEnd(requestWith());
+    const file = p.env?.['KUBECONFIG'] ?? '';
+    expect(existsSync(file)).toBe(true);
+    for (const fn of ends.splice(0)) fn();
     expect(existsSync(file)).toBe(false);
+    expect(existsSync(join(file, '..'))).toBe(false);
+    // a run id that is a path goes to a random folder inside the bot's own, never outside it
+    const hostile = await withEnd(requestWith(TOKEN, { runId: '../../../etc' }));
+    const hostileFile = hostile.env?.['KUBECONFIG'] ?? '';
+    expect(hostileFile.startsWith(`${kubeFolder(root)}/eng--deployer/`)).toBe(true);
+    expect(hostileFile).not.toContain('..');
+    for (const fn of ends.splice(0)) fn();
+    expect(filesUnder(kubeFolder(root))).toEqual([]);
+  });
+
+  it('two runs of the same bot at once have two files: the end of one leaves the other\'s', async () => {
+    state.deployer = true;
+    const { config } = setup();
+    const endsA: Array<() => void> = [];
+    const mk = (runId: string, ends: Array<() => void>) =>
+      prepareServerRun(config, 'claude--eng--deployer', profileFor(config, 'claude--eng--deployer')!.profile, requestWith(TOKEN, { runId }), { siteUrl: base, log: () => undefined, onEnd: (fn) => ends.push(fn) });
+    const endsB: Array<() => void> = [];
+    const a = (await mk('run-a', endsA)).env?.['KUBECONFIG'] ?? '';
+    const b = (await mk('run-b', endsB)).env?.['KUBECONFIG'] ?? '';
+    expect(a).not.toBe(b);
+    for (const fn of endsA) fn();
+    expect(existsSync(a)).toBe(false);
+    expect(existsSync(b)).toBe(true);
+    for (const fn of endsB) fn();
   });
 });
 
@@ -230,12 +264,15 @@ describe('the run manager on a server', () => {
     });
     const req = requestWith();
     const { run } = manager.create('claude--eng--deployer', req, JSON.stringify(req), null);
-    for (let i = 0; i < 200 && run.status === 'running'; i += 1) await new Promise((r) => setTimeout(r, 25));
+    await vi.waitFor(() => expect(run.status).not.toBe('running'), { timeout: 10_000, interval: 10 });
     manager.close();
     expect(run.status).toBe('completed');
     expect(seen?.instructions).toContain('## Where you run');
     expect(seen?.instructions).toContain(`${root}/work/eng/deployer`);
-    expect(seen?.env['KUBECONFIG']).toBe(kubeconfigFile(root, 'eng', 'deployer'));
+    expect(seen?.env['KUBECONFIG']).toBe(kubeconfigFile(root, 'eng', 'deployer', 'run-1'));
+    // the run is over: neither the deployer's login nor the run's token is left on the disk
+    await vi.waitFor(() => expect(filesUnder(kubeFolder(root))).toEqual([]), { timeout: 5000, interval: 10 });
+    for (const f of filesUnder(root)) expect(readFileSync(f, 'utf8'), f).not.toContain(TOKEN);
     expect(seen?.env['MANYTHREADS_RUN_TOKEN']).toBe(TOKEN);
     expect(seen?.tools).toContain(PUBLISH_TOOL);
   });

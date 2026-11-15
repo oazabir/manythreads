@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -6,6 +6,7 @@ import { loadConfig } from './config.ts';
 import { startBridge } from './server.ts';
 import { helloFor, keyFiles, readServerKey, storeServerKey } from './server-mode.ts';
 import { startServerRepos } from './server-repos.ts';
+import { kubeFolder } from './server-run.ts';
 import { newInternalKey, startTunnel } from './tunnel.ts';
 
 // tsx tools/agent-bridge/src/main.ts --config <file> [--listen 127.0.0.1:8650] [--state-dir ~/.manythreads-bridge] [--key-file <file>] [--repos-file <file>]
@@ -75,6 +76,8 @@ if (config.server !== undefined) {
   } catch (err) {
     fatal(err instanceof Error ? err.message : String(err));
   }
+  // A run that was cut short by a crash or a restart left its kubeconfig: no run survives a restart, so the folder is emptied.
+  rmSync(kubeFolder(config.server.root), { recursive: true, force: true });
   const internalKey = newInternalKey();
   const socketPath = join(stateRoot, 'bridge.sock');
   const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site });

@@ -237,6 +237,8 @@ export class RunManager {
       budgetTimer.unref();
     };
     let runDir: string | null = null;
+    /** What the run left on this machine that must go with it (the deployer's kubeconfig). */
+    const cleanups: Array<() => void> = [];
     try {
       if (run.stopRequested) {
         this.finish(run, 'cancelled', 'run.cancelled', {});
@@ -244,7 +246,7 @@ export class RunManager {
       }
       if (this.opts.serverRun !== undefined) {
         // an enrolled server: this run's copy of the profile (where-you-run text, tools, kubeconfig, Hermes home), made with the run's own token
-        profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`) });
+        profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`), onEnd: (fn) => cleanups.push(fn) });
         request = withProfileInstructions(given, profile.instructions);
       }
       if (run.stopRequested) {
@@ -343,6 +345,13 @@ export class RunManager {
     } finally {
       clearTimeout(budgetTimer);
       if (runDir !== null) rmSync(runDir, { recursive: true, force: true });
+      for (const fn of cleanups) {
+        try {
+          fn();
+        } catch {
+          this.opts.log(`run ${run.id} could not remove a file the run made`);
+        }
+      }
       // No prompt, no token, no output text: only what a person debugging needs.
       this.opts.log(
         `run ${run.id} profile=${profileName} agent=${profile.agent} status=${run.status} seconds=${Math.round((Date.now() - started) / 100) / 10} events=${run.nextSeq}`,
