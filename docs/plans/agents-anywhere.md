@@ -471,6 +471,34 @@ proof row (three threads of 1 to 3 hours each, plus the clean-up between them). 
 - q8 sign-ins: **the owner's own Claude and ChatGPT accounts**. To keep the owner's steps to four, the P26-01 spike measures inside the signed-in agent pods (after P26-10), not in a separate container with its own sign-ins.
 - The rest follow the recommendations: q2 (a) the publisher; q3 as written; q4 (a) the managed Hermes pod; q5 one live deploy after all six; q9 the operator picks six small fixes; q10 yes, under 4 GB free only.
 
+## 9b. Shared runners: many teams on one server and one runner (owner, 2026-11-15)
+
+The owner's rule: **several teams reuse the same server and the same runner**, for example Engineering and Marketing both run on one Claude Code sign-in (one
+subscription). This replaces every "one team per runner / per server" rule above (§4 decision on full access, §5.5, §8 risks, q3): a runner's team list may hold
+any number of teams, with full access on or off. Teams are kept apart by the machine, not by forbidding the sharing:
+
+- **The runner is the sign-in.** One runner = one agent (Claude Code, Codex or Hermes) with one sign-in, shared by every team placed on it. That sharing is the
+  point and is accepted: every team's runs use the same subscription and its limits (the Runners page says so next to the team list).
+- **Pods: one pod per (runner, team).** The controller makes `claude-<runner>-<team>` (and `codex-…`) for each team of the runner. Every team pod mounts the
+  runner's one `state` volume (the sign-in; all of them on the runner's node, so the local volume can be shared) and its own `work` volume, its own bridge key, its own
+  profiles (only that team's bots), its own deploy login (that team's deployer) and its own NetworkPolicy. A bot of one team never shares a pod, a uid's files or a
+  token with another team's bot. Full access applies per team pod. Sign-in happens once per runner (through any of its pods: they share the state volume); the
+  Runners page shows the runner ready when the sign-in is good. Token renewal by two pods at once is what one pod with two sessions already does (the CLIs lock
+  their own file; Codex's `auth.lock` is on the shared volume).
+- **Servers: one Unix user per team.** The bridge runs each team's runs as `mt-team-<team slug>` (created on the first run of that team by a small root helper the
+  installer adds, with a sudoers rule that allows exactly: create `mt-team-*` users, and start the fixed run launcher as one of them). Each team user has its own
+  home (0700) with that team's work folders, repository of record, per-run kubeconfig and Hermes homes; run tokens live only in that user's processes. The agents'
+  sign-in folders are group `mt-agents` (0770: the CLIs renew tokens in place), every team user is in that group; nothing else of the bridge (its key, its state,
+  the publisher's socket folder) is readable by a team user. Full access on a server applies per team user: a team's Codex can read its own team's files and the shared
+  sign-in, never another team's.
+- **The one rule left:** the deploy login and a full-access agent are per team (pod or user), never shared.
+
+Tasks: **P26-21** pods per (runner, team) sharing the sign-in volume (claude-pods reconcile/render, sign-in through any team pod, runner status from the shared
+sign-in, migration only if a column is needed, tests incl. two teams on one runner); **P26-22** servers with one Unix user per team (bridge.sh helper and sudoers rule,
+the bridge's launcher per team, group-shared sign-in folders, container test with two teams proving team A cannot read team B's files or tokens); **P26-23** the
+Runners page and docs (team list on any runner, the shared-subscription note, conventions.md and claude-pods.md and agent-bridge.md updated, MISTAKES.md); proofs
+P26-18/19 place Engineering and Marketing on the same runner and show a Marketing bot answering on it.
+
 ---
 
 ## Review changes (2026-11-15, independent review against the code)

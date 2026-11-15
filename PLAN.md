@@ -159,7 +159,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 23 | 23 | Projects: GitHub, GitLab and a team's own GitLab, a bot account for each, whose name the commits carry (owner, 2026-11-13) | M | 6, 19 | 6 of 7 built (P23-06 not seen live) |
 | 24 | 24 | A bot that needs a person asks through the platform (`approvals.ask`, stuck command prompts become cards) (owner, 2026-11-13) | M | 5, 19 | 5 of 5 built, live; the card's look and a real-pod command question not seen |
 | 25 | 25 | Agents driven through ACP (Hermes, Claude Code, Codex, OpenCode), their work shown live in the thread, a to-do card (owner, 2026-11-14) | XL | 19, 24 | 0 of 17 built |
-| 26 | 26 | Agents anywhere: Hermes, Claude Code and Codex in a pod or on a server enrolled by `curl … | sudo bash`, Codex with full access, six live Engineer-led deliveries (owner, 2026-11-15) | XL | 25 | 0 of 23 built |
+| 26 | 26 | Agents anywhere: Hermes, Claude Code and Codex in a pod or on a server enrolled by `curl … | sudo bash`, Codex with full access, six live Engineer-led deliveries (owner, 2026-11-15) | XL | 25 | being built; 26 tasks |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -745,6 +745,9 @@ Owner request 2026-11-15: Codex runs in a pod with full permission (`codex --yol
 | P26-18 | Live proofs 3, 1, 2 (managed Hermes pod first, then the agent pods), §6 | Not built |
 | P26-19 | Live proofs 4 to 6 (enrolled devbox), §6; the hand-built root bridge stopped; the devbox's local ports listed | Not built |
 | P26-20 | The report to the owner: the six links, the six pull requests, nudges and approvals per thread, spend; then P25-17 (retire the CLI drivers) can start | Not built |
+| P26-21 | Shared runners in pods: one pod per (runner, team), all sharing the runner's sign-in volume, each with its own work volume, key, profiles, deploy login and policy (owner, 2026-11-15: many teams reuse one runner) | Not built |
+| P26-22 | Shared servers: one Unix user per team on an enrolled server (root helper with a narrow sudoers rule, group-shared sign-in folders), container test with two teams | Not built |
+| P26-23 | Runners page and docs for shared runners (any team list, the shared-subscription note), conventions.md, claude-pods.md, agent-bridge.md | Not built |
 
 ---
 
