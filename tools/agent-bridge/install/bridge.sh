@@ -15,7 +15,8 @@
 # A second service, `manythreads-publisher.service`, runs as its own user (`manythreads-publisher`) on a socket only the bridge's user can open. `mt-publish` talks to it, so a bot
 # that publishes never holds the push token: the publisher asks this site for it, per publish, with the run's own token. `git` and `jq` should be installed (the repository sync needs them).
 #
-#   --enrol CODE|-      the one-time code from the Runners page ("-" asks for it)
+#   --enrol CODE|-      the one-time code from the Runners page ("-" asks for it on the keyboard: a code on the command line is in `ps` for the length of the run)
+#   --code-file PATH    the one-time code is the first line of this file (delete it afterwards; it is single use and lasts 15 minutes)
 #   --update            install the bundle this site serves now, keep the key (no code needed)
 #   --uninstall         stop and remove the service and the program, and tell the site (--purge also removes the work folders and the user)
 #   --allow-full-access this machine's half of Codex "full access" (the other half is the switch on the Runners page)
@@ -38,10 +39,11 @@ main() {
   local UNIT_FILE=/etc/systemd/system/manythreads-bridge.service
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock
 
-  local mode='' code='' allow_full=0 want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
+  local mode='' code='' code_file='' allow_full=0 want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
+      --code-file) mode=enrol; shift; [ $# -gt 0 ] || die "--code-file needs a path"; code_file="$1" ;;
       --update) mode=update ;;
       --uninstall) mode=uninstall ;;
       --purge) purge=1 ;;
@@ -52,12 +54,14 @@ main() {
       --no-browser) want_browser=0 ;;
       --no-publisher) want_publisher=0 ;;
       --insecure-for-tests) insecure=1 ;;
-      -h|--help) sed -n '2,34p' "$0" 2>/dev/null || true; return 0 ;;
+      -h|--help) sed -n '2,36p' "$0" 2>/dev/null || true; return 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
     shift
   done
   [ -n "$mode" ] || die "say what to do: --enrol <code>, --update or --uninstall"
+  # the key and the code go to this address: plain http only for the tests (checked first, before anything else on the machine is looked at)
+  case "$SITE" in https://*) ;; http://*) [ "$insecure" -eq 1 ] || die "the site address is not https: $SITE (the key and the code would travel in the clear)" ;; *) die "this copy of the script has no site address; download it from the Runners page" ;; esac
 
   # ---- checks ----------------------------------------------------------------------------------------------------------------------------------------------
   [ "$(uname -s)" = Linux ] || die "this installer is for Linux"
@@ -68,7 +72,6 @@ main() {
   local c
   for c in curl tar sha256sum gzip; do command -v "$c" >/dev/null 2>&1 || die "$c is needed and was not found"; done
   for c in git jq; do command -v "$c" >/dev/null 2>&1 || warn "$c was not found: the team's repositories and publishing need it (on Debian or Ubuntu: apt-get install git jq)"; done
-  case "$SITE" in https://*) ;; http://*) [ "$insecure" -eq 1 ] || die "the site address is not https: $SITE" ;; *) die "this copy of the script has no site address; download it from the Runners page" ;; esac
 
   if [ "$mode" = uninstall ]; then uninstall_all "$purge"; return 0; fi
 
@@ -77,6 +80,13 @@ main() {
   check_disk /var 3000000
   curl -fsS --max-time 20 -o /dev/null "$SITE/install/bridge.sh.sha256" || die "cannot reach $SITE (this machine must reach it on port 443)"
 
+  if [ "$mode" = enrol ] && [ -n "$code_file" ]; then
+    [ -z "$code" ] || die "give the code once: --enrol or --code-file, not both"
+    [ -r "$code_file" ] || die "cannot read $code_file"
+    code="$(head -n 1 "$code_file" | tr -d '[:space:]')"
+  elif [ "$mode" = enrol ] && [ "$code" != - ]; then
+    warn "the code is on the command line, where other users of this machine can see it with ps until the script ends; next time use --enrol - or --code-file"
+  fi
   if [ "$mode" = enrol ] && [ "$code" = - ]; then
     [ -r /dev/tty ] || die "no keyboard to read the code from; pass it as --enrol <code> instead"
     printf 'One-time code from the Runners page: ' >/dev/tty
@@ -331,7 +341,7 @@ EOF
   say "waiting for the site to see this machine"
   local status
   for _ in $(seq 1 45); do
-    status="$(key_status "$ETC/key" "$SITE")"
+    status="$(key_status "$(live_key_file "$DATA" "$ETC")" "$SITE")"
     if [ "$status" = connected ]; then
       say "connected. Sign each agent in from the Runners page: $SITE/ (Settings, Runners)"
       return 0
@@ -404,6 +414,12 @@ install_hermes() {
   printf '%s' "$bin"
 }
 
+# The key the bridge connects with: the same order as the bridge's own list (`keyFiles`): the copy in its state folder (written by a key rotation) first, then the installer's.
+live_key_file() {
+  local data="$1" etc="$2"
+  if [ -s "$data/state/key" ]; then printf '%s' "$data/state/key"; else printf '%s' "$etc/key"; fi
+}
+
 # "connected" or something else; the key goes in a header read from a file, not from the command line
 key_status() {
   local keyfile="$1" site="$2" out
@@ -413,7 +429,8 @@ key_status() {
 
 uninstall_all() {
   local purge="$1" PREFIX=/opt/manythreads-bridge ETC=/etc/manythreads-bridge DATA=/var/lib/manythreads-bridge
-  local site='@@SITE@@' key_file=/etc/manythreads-bridge/key
+  local site='@@SITE@@' key_file
+  key_file="$(live_key_file "$DATA" "$ETC")"
   if [ -s "$key_file" ]; then
     say "telling the site this server is going away"
     printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' <"$key_file")" | curl -sS --max-time 20 --config - -X POST "$site/api/bridge/uninstall" >/dev/null 2>&1 \
@@ -423,6 +440,8 @@ uninstall_all() {
   rm -f /etc/systemd/system/manythreads-bridge.service /etc/systemd/system/manythreads-publisher.service
   systemctl daemon-reload || true
   rm -rf "$PREFIX" "$ETC"
+  # the key a rotation wrote is the live one: it goes with the program, also when the work folders stay
+  rm -f "$DATA/state/key"
   if [ "$purge" -eq 1 ]; then
     rm -rf "$DATA"
     userdel manythreads-bridge >/dev/null 2>&1 || true

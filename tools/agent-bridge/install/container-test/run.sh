@@ -52,7 +52,9 @@ check() {
 echo "--- install"
 curl -fsS "http://127.0.0.1:$port/install/bridge.sh" -o "$work/bridge.sh"
 docker cp "$work/bridge.sh" "$name:/tmp/bridge.sh"
-docker exec "$name" bash /tmp/bridge.sh --enrol "$code" --no-browser --no-hermes --insecure-for-tests 2>&1 | sed 's/^/  | /' || true
+# the code goes in through a file (--code-file), the way the Runners page advises: not through the command line
+docker exec "$name" bash -c 'umask 077; printf "%s\n" "$1" >/tmp/enrol-code' _ "$code"
+docker exec "$name" bash /tmp/bridge.sh --code-file /tmp/enrol-code --no-browser --no-hermes --insecure-for-tests 2>&1 | sed 's/^/  | /' || true
 
 check "node 22 or later is installed"            '/opt/manythreads-bridge/node/bin/node -v | grep -q "^v22"'
 check "the bundle is unpacked and complete"      'test -f /opt/manythreads-bridge/current/.complete && test -f /opt/manythreads-bridge/current/bridge.mjs'
@@ -90,9 +92,11 @@ echo "--- update (no code needed)"
 docker exec "$name" bash /tmp/bridge.sh --update --no-browser --no-hermes --insecure-for-tests 2>&1 | sed 's/^/  | /' || true
 check "the key survived the update"              'grep -q "^mtb_" /etc/manythreads-bridge/key'
 
-echo "--- uninstall --purge"
+echo "--- uninstall --purge (a key a rotation wrote under the state folder goes too)"
+docker exec "$name" bash -c 'printf "%s\n" "mtb_$(printf "%064d" 0)" >/var/lib/manythreads-bridge/state/key'
 docker exec "$name" bash /tmp/bridge.sh --uninstall --purge --insecure-for-tests 2>&1 | sed 's/^/  | /' || true
 check "program, config and units are gone"       '! test -e /opt/manythreads-bridge && ! test -e /etc/manythreads-bridge && ! test -e /etc/systemd/system/manythreads-bridge.service && ! test -e /etc/systemd/system/manythreads-publisher.service'
+check "no key is left behind"                    '! test -e /var/lib/manythreads-bridge/state/key'
 check "both users are gone"                      '! id manythreads-bridge && ! id manythreads-publisher'
 grep -q '^POST /api/bridge/uninstall' "$work/site.log" && echo "ok   the site was told" || echo "note the site was not told (the stub has no uninstall route)"
 
