@@ -746,7 +746,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     id: nextId('8'), workspaceId: WORKSPACE_ID, name: init.name, label: init.label, kind: init.kind, agent: init.kind === 'hermes_gateway' ? ((init.agent as string | undefined) ?? 'hermes') : 'hermes', enabled: true, isDefault: false, allTeams: init.allTeams ?? false,
     teamIds: init.teamIds ?? [], baseUrl: (init.baseUrl as string | undefined) ?? null, hasKey: init.kind === 'hermes_gateway', profileRule: (init.profileRule as string | undefined) ?? (init.kind === 'hermes_gateway' || init.kind === 'hermes_pod' ? '{bot}' : null),
     node: null, modelAlias: (init.modelAlias as string | undefined) ?? null, ownerActorId: null, ownerName: null, planLabel: null, credentialsExpiresAt: null, uploadedAt: null, termsAcceptedBy: null,
-    termsAcceptedAt: null, maxConcurrent: init.maxConcurrent ?? null, status: init.status ?? 'not_set_up', statusDetail: null, pausedUntil: null, lastCheckedAt: null, botCount: init.botCount ?? 0, createdAt: NOW, updatedAt: NOW,
+    termsAcceptedAt: null, maxConcurrent: init.maxConcurrent ?? null, fullAccess: false, status: init.status ?? 'not_set_up', statusDetail: null, pausedUntil: null, lastCheckedAt: null, botCount: init.botCount ?? 0, createdAt: NOW, updatedAt: NOW,
   });
   const teamIdsFrom = (body: Record<string, unknown>): { allTeams: boolean; teamIds: string[] } => {
     if (body['all'] === true) return { allTeams: true, teamIds: [] };

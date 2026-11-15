@@ -9,9 +9,10 @@ import { HermesConnectionAgent } from './hermes.ts';
 /**
  * What a runner is. `hermes_gateway`: a Hermes running on the devbox host or any machine, reached by address and key. `hermes_pod`: the team's own Hermes pod in
  * the cluster. `claude_cli` and `codex_cli`: the Claude Code or Codex command-line tool in a pod, signed in with a file the admin uploads (later tasks).
- * `llm_gateway`: a model alias called through the platform's own LLM gateway.
+ * `llm_gateway`: a model alias called through the platform's own LLM gateway. `server_agent`: one agent (Claude Code, Codex or Hermes) on an enrolled server, driven
+ * over the Agent Client Protocol (docs/plans/agents-anywhere.md §5); the kind exists in the database since bot-runners 0007, the server tasks fill it in.
  */
-export const BotRunnerKind = z.enum(['hermes_gateway', 'hermes_pod', 'claude_cli', 'codex_cli', 'llm_gateway']);
+export const BotRunnerKind = z.enum(['hermes_gateway', 'hermes_pod', 'claude_cli', 'codex_cli', 'llm_gateway', 'server_agent']);
 export type BotRunnerKind = z.infer<typeof BotRunnerKind>;
 
 /**
@@ -113,6 +114,8 @@ export const BotRunner = z.object({
   termsAcceptedBy: ActorId.nullable(),
   termsAcceptedAt: IsoDateTime.nullable(),
   maxConcurrent: z.number().int().min(1).max(4).nullable(),
+  /** Codex only: true lets Codex run commands without asking (the `codex --yolo` behaviour). False for every other runner. Set only by an admin, and only while the runner serves one team. */
+  fullAccess: z.boolean(),
   /** `off` when the runner is disabled, whatever was last found. */
   status: BotRunnerStatus,
   statusDetail: z.string().nullable(),

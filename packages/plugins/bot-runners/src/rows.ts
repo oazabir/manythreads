@@ -27,6 +27,7 @@ export interface RunnerRow extends Record<string, unknown> {
   terms_accepted_by: string | null;
   terms_accepted_at: Date | null;
   max_concurrent: number | null;
+  full_access: boolean;
   status: BotRunnerStatus;
   paused_until: Date | null;
   status_detail: string | null;
@@ -38,7 +39,7 @@ export interface RunnerRow extends Record<string, unknown> {
 /** The columns, with the owner's display name. Use as `SELECT ${RUNNER_SELECT} WHERE ...`. */
 export const RUNNER_SELECT = `r.id, r.workspace_id, r.name, r.label, r.kind, r.agent, r.enabled, r.is_default, r.all_teams, r.base_url, r.secret_id, r.profile_rule,
   r.node, r.model_alias, r.owner_actor_id, pe.display_name AS owner_name, r.plan_label, r.credentials_expires_at, r.uploaded_at, r.terms_accepted_by,
-  r.terms_accepted_at, r.max_concurrent, r.status, r.paused_until, r.status_detail, r.last_checked_at, r.created_at, r.updated_at
+  r.terms_accepted_at, r.max_concurrent, r.full_access, r.status, r.paused_until, r.status_detail, r.last_checked_at, r.created_at, r.updated_at
   FROM app.bot_runners r
   LEFT JOIN app.actors ac ON ac.id = r.owner_actor_id AND ac.kind = 'person'
   LEFT JOIN app.people pe ON pe.id = ac.ref_id`;
@@ -78,6 +79,7 @@ export function toBotRunner(r: RunnerRow, teams: readonly BotRunnerTeam[], botCo
     termsAcceptedBy: r.terms_accepted_by,
     termsAcceptedAt: iso(r.terms_accepted_at),
     maxConcurrent: r.max_concurrent,
+    fullAccess: r.full_access,
     status: effectiveStatus(r),
     statusDetail: r.status_detail,
     pausedUntil: iso(r.paused_until),

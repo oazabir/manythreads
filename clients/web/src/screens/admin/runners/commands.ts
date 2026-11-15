@@ -79,6 +79,7 @@ const KIND_WORDS: Record<BotRunnerKind, string> = {
   claude_cli: 'Claude Code',
   codex_cli: 'Codex',
   llm_gateway: 'LLM gateway',
+  server_agent: 'Agent on a server',
 };
 export const kindWords = (k: BotRunnerKind): string => KIND_WORDS[k];
 
