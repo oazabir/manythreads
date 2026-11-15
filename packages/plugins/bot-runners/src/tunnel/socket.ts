@@ -114,7 +114,7 @@ export function serveBridgeSocket(opts: BridgeSocketOptions, socket: PluginSocke
     serverRow = found.row;
     if (found.pending) {
       // the bridge wrote the new key and came back with it: it is the key now
-      await ctx.db.system((tx) => tx.query('UPDATE app.bot_servers SET key_hash = pending_key_hash, pending_key_hash = NULL, updated_at = now() WHERE id = $1::uuid AND pending_key_hash = $2', [found.row.id, hash]), {
+      await ctx.db.system((tx) => tx.query('UPDATE app.bot_servers SET key_hash = pending_key_hash, pending_key_hash = NULL, pending_key_at = NULL, updated_at = now() WHERE id = $1::uuid AND pending_key_hash = $2', [found.row.id, hash]), {
         workspaceId: found.row.workspace_id,
       });
     }
@@ -201,7 +201,7 @@ export function serveBridgeSocket(opts: BridgeSocketOptions, socket: PluginSocke
     if (conn === null || serverRow === null) return;
     const row = serverRow;
     const next = await ctx.db.system(
-      async (tx) => (await tx.query<{ key_hash: string }>('UPDATE app.bot_servers SET key_hash = pending_key_hash, pending_key_hash = NULL, updated_at = now() WHERE id = $1::uuid AND pending_key_hash IS NOT NULL RETURNING key_hash', [row.id])).rows[0],
+      async (tx) => (await tx.query<{ key_hash: string }>('UPDATE app.bot_servers SET key_hash = pending_key_hash, pending_key_hash = NULL, pending_key_at = NULL, updated_at = now() WHERE id = $1::uuid AND pending_key_hash IS NOT NULL RETURNING key_hash', [row.id])).rows[0],
       { workspaceId: row.workspace_id },
     );
     if (next) activeHash = next.key_hash;

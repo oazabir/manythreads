@@ -21,6 +21,7 @@ import {
   abuseLimit,
   isRepoOriginAllowed,
   parseRepoOriginAllow,
+  TUNNEL_MAX_FRAME_BYTES,
   bridgeConnectRoute,
   bridgeReposRoute,
   bridgeStatusRoute,
@@ -206,7 +207,13 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
       const conn = registry.get(row.id);
       if (row.key_hash === null || conn === undefined) throw conflict('The server must be connected to change its key. Connect it first, or make a new code and run the command again.');
       const key = newBridgeKey();
-      await tx.query('UPDATE app.bot_servers SET pending_key_hash = $2, updated_at = now() WHERE id = $1::uuid', [row.id, hashSecret(key)]);
+      // A rotation that is still waiting for the bridge's answer is never replaced (the bridge may already have stored its key: a second one would lock it out); one older than 15 minutes is taken as lost.
+      const started = await tx.query(
+        `UPDATE app.bot_servers SET pending_key_hash = $2, pending_key_at = now(), updated_at = now()
+          WHERE id = $1::uuid AND (pending_key_hash IS NULL OR pending_key_at IS NULL OR pending_key_at < now() - interval '15 minutes') RETURNING id`,
+        [row.id, hashSecret(key)],
+      );
+      if (started.rows.length === 0) throw conflict('A key change is already waiting for the server to confirm it. Wait a moment, or try again in 15 minutes.');
       try {
         // the new key goes to the bridge over its own open connection and nowhere else; it answers `rotated` once the key is on its disk
         conn.send({ type: 'rotate', key });
@@ -265,13 +272,14 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
             await tx.query<ServerRow>(`SELECT ${SERVER_SELECT} WHERE s.enrol_code_hash = $1 AND s.enrol_code_expires_at > now() FOR UPDATE OF s`, [hashSecret(body.code)])
           ).rows[0];
           if (!row) throw notFound('That code is not valid. It may have been used or may have expired: make a new one on the Runners page.');
-          await tx.query(
+          const redeemed = await tx.query(
             `UPDATE app.bot_servers
-                SET key_hash = $2, pending_key_hash = NULL, enrol_code_hash = NULL, enrol_code_expires_at = NULL, status = 'offline',
+                SET key_hash = $2, pending_key_hash = NULL, pending_key_at = NULL, enrol_code_hash = NULL, enrol_code_expires_at = NULL, status = 'offline',
                     host_name = $3, host_system = $4, host_arch = $5, bridge_version = $6, agents = $7::jsonb, allow_full_access = $8, last_seen_at = now(), updated_at = now()
-              WHERE id = $1::uuid`,
-            [row.id, hashSecret(key), body.host.hostname, body.host.system, body.host.arch, body.bridgeVersion, JSON.stringify(body.agents), body.allowFullAccess],
+              WHERE id = $1::uuid AND enrol_code_hash = $9 AND enrol_code_expires_at > now() RETURNING id`,
+            [row.id, hashSecret(key), body.host.hostname, body.host.system, body.host.arch, body.bridgeVersion, JSON.stringify(body.agents), body.allowFullAccess, hashSecret(body.code)],
           );
+          if (redeemed.rows.length !== 1) throw notFound('That code is not valid. It may have been used or may have expired: make a new one on the Runners page.');
           await syncServerRunners(tx, row, body.agents, false);
           await ctx.audit.emit(tx, { type: 'bot_server.server.changed', workspaceId: row.workspace_id, serverId: row.id, name: row.name, change: 'enrolled', actorId: null, at: now().toISOString() });
           return { row, key };
@@ -369,6 +377,8 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
     public: true,
     rateLimit: abuseLimit(bridgeConnectRoute.method, bridgeConnectRoute.path),
     rateLimitBy: 'address',
+    // the bridge's data frames are a 64 KiB chunk in base64: the site-wide 64 KiB socket limit would close the tunnel at the first big answer
+    wsMaxPayload: TUNNEL_MAX_FRAME_BYTES,
     ws: (socket, request) => serveBridgeSocket({ ...deps.socket, ctx, registry, lock: keyLock }, socket, request),
   });
 

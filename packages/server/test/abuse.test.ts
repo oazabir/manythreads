@@ -161,7 +161,8 @@ describe('every credential route carries its listed limit and answers 429 with r
     });
 
   // the public machine routes (/hooks, /api/slack) carry their own tests in the plugin that owns them: a burst of empty calls there is a locked address, not a plain limit
-  const bursts = ABUSE_ROUTES.filter((r) => r.key !== 'failures' && !r.path.startsWith('/hooks/') && !r.path.startsWith('/api/slack/'));
+  // /api/bridge/repos answers 401 to a call with no key, and the tenth such call from an address is a lock (429) long before its limit of 120: its lock is tested in bot-runners (bot-servers-api.test.ts)
+  const bursts = ABUSE_ROUTES.filter((r) => r.key !== 'failures' && !r.path.startsWith('/hooks/') && !r.path.startsWith('/api/slack/') && r.path !== '/api/bridge/repos');
   it.each(bursts.map((r) => [`${r.method} ${r.path}`, r] as const))('%s: the limit passes, the next call is 429 with retry-after, the window frees it', async (_name, r) => {
     const address = freshAddress();
     const statuses: number[] = [];

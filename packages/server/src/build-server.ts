@@ -424,6 +424,13 @@ async function mountPluginRoutes(
     ...(def.public ? { public: true } : {}),
     ...(def.csrfExempt ? { csrfExempt: true } : {}),
   });
+  /** Sets the largest message one socket accepts (the server-wide 64 KiB is the default). Answers false when the library gives no way to do it. */
+  const raiseSocketLimit = (socket: unknown, bytes: number): boolean => {
+    const receiver = (socket as { _receiver?: { _maxPayload?: unknown } })._receiver;
+    if (!receiver || typeof receiver._maxPayload !== 'number') return false;
+    receiver._maxPayload = bytes;
+    return true;
+  };
   /** The slice of a `ws` socket the bridge below uses (the package's own types are not a server dependency). */
   interface RawSocket {
     send(data: string | Uint8Array, options: { binary: boolean }): void;
@@ -454,6 +461,12 @@ async function mountPluginRoutes(
         },
         handler: (raw: RawSocket, req: FastifyRequest) => {
           const socket = raw;
+          if (def.wsMaxPayload !== undefined && !raiseSocketLimit(raw, def.wsMaxPayload)) {
+            // `ws` does not expose a per-socket limit: if its internals change, refuse the socket rather than serve it with the wrong limit
+            req.log.error({ plugin, path: def.fullPath }, 'the websocket library has no per-socket payload limit');
+            raw.close(1011, 'server error');
+            return;
+          }
           const request = requestOf(req, def);
           const sessionEnded: Listener[] = [];
           const deliver = (event: 'message' | 'close' | 'error' | 'sessionEnded', listener: Listener): void => {

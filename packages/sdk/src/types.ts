@@ -269,6 +269,11 @@ export interface HttpRouteDefinition {
    */
   ws?: PluginSocketHandler;
   /**
+   * `ws` routes only: the largest message this socket accepts, in bytes. The server's own limit for every socket is 64 KiB (frames are small envelopes); a plugin whose protocol carries
+   * bigger frames names its own number here, and only its route gets it. Above the limit the socket is closed with 1009.
+   */
+  wsMaxPayload?: number;
+  /**
    * Runs in a transaction as the caller BEFORE the route is answered, and before a socket is upgraded: throw `HttpError` (for instance `forbidden()`) to refuse with that status. On a
    * `ws` route this is what makes a refusal a real HTTP 403 on the upgrade request instead of a socket that opens and closes. The caller is never null on a private route.
    */

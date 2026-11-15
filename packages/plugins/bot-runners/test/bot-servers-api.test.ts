@@ -146,6 +146,76 @@ describe('enrolment', () => {
   });
 });
 
+describe('enrolment under pressure', () => {
+  it('five bridges redeeming one code at once (the lockout allows ten wrong codes per address, so no more): exactly one gets a key, the rest are told the code is not valid, and one key opens the server', async () => {
+    const made = await create('enrol-race');
+    const results = await Promise.all(Array.from({ length: 5 }, () => enrol(made.body.code)));
+    const won = results.filter((r) => r.status === 200);
+    expect(won).toHaveLength(1);
+    expect(results.filter((r) => r.status === 404)).toHaveLength(4);
+    for (const lost of results.filter((r) => r.status !== 200)) expect(JSON.stringify(lost.body)).not.toMatch(/mtb_/);
+    const rows = await w.system((tx) => tx.query<{ n: string }>("SELECT count(*) AS n FROM app.bot_runners WHERE name LIKE 'enrol-race-%'"));
+    expect(Number(rows.rows[0]!.n)).toBe(2);
+    const b = await bridge(won[0]!.body.key);
+    b.ws.send(JSON.stringify(HELLO));
+    await until(() => b.frames.some((f) => f.type === 'welcome'));
+    b.ws.close();
+  });
+});
+
+describe('two workspaces with a server of the same name', () => {
+  it('each socket is its own server: the site asks only the one the runner belongs to, and one workspace\'s key opens nothing of the other', async () => {
+    const made = await create('twin');
+    const mine = await enrol(made.body.code);
+    const otherWs = await w.system(async (tx) => (await tx.query<{ id: string }>("INSERT INTO app.workspaces (slug, name) VALUES ('twin-ws', 'Twin') RETURNING id")).rows[0]!.id);
+    const theirKey = `mtb_${'7'.repeat(64)}`;
+    const theirId = await w.system(async (tx) =>
+      (await tx.query<{ id: string }>("INSERT INTO app.bot_servers (workspace_id, name, label, key_hash, status) VALUES ($1::uuid, 'twin', 'Twin', $2, 'offline') RETURNING id", [otherWs, createHash('sha256').update(theirKey).digest('hex')])).rows[0]!.id);
+    const a = await bridge(mine.body.key);
+    const b = await bridge(theirKey);
+    a.ws.send(JSON.stringify(HELLO));
+    b.ws.send(JSON.stringify({ ...HELLO, agents: [{ agent: 'claude-code', version: '9.9.9' }] }));
+    await until(() => a.frames.some((f) => f.type === 'welcome') && b.frames.some((f) => f.type === 'welcome'));
+    const welcomeA = a.frames.find((f) => f.type === 'welcome');
+    const welcomeB = b.frames.find((f) => f.type === 'welcome');
+    expect(welcomeA.name).toBe('twin');
+    expect(welcomeB.name).toBe('twin');
+    expect(welcomeA.serverId).toBe(made.body.server.id);
+    expect(welcomeB.serverId).toBe(theirId);
+    expect(welcomeA.serverId).not.toBe(welcomeB.serverId);
+    // both are connected at once: neither replaced the other
+    expect(a.ws.readyState).toBe(WebSocket.OPEN);
+    expect(b.ws.readyState).toBe(WebSocket.OPEN);
+    // each bridge answers a request by saying whose it is
+    const answer = (who: string) => (ws: WebSocket) => {
+      let seen = 0;
+      ws.on('message', (m) => {
+        const f = JSON.parse(m.toString());
+        if (f.type !== 'request') return;
+        seen += 1;
+        const body = JSON.stringify({ auth: { agent: 'claude-code', profile: who, home: 'dedicated', state: 'signed_in', kind: 'account', canLogout: true, methods: [], attempt: null, note: null } });
+        ws.send(JSON.stringify({ type: 'head', id: f.id, status: 200, headers: { 'content-type': 'application/json' } }));
+        ws.send(JSON.stringify({ type: 'data', id: f.id, data: Buffer.from(body).toString('base64') }));
+        ws.send(JSON.stringify({ type: 'end', id: f.id }));
+      });
+      return () => seen;
+    };
+    const seenA = answer('server-a')(a.ws);
+    const seenB = answer('server-b')(b.ws);
+    const runner = (await w.call<{ items: any[] }>(omar, 'GET', '/api/admin/bot-runners')).body.items.find((r) => r.name === 'twin-claude');
+    expect(runner).toMatchObject({ serverId: made.body.server.id });
+    const res = await w.call<any>(omar, 'GET', `/api/admin/bot-runners/${runner.id}/agent-auth`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.auth.profile).toBe('server-a');
+    expect(seenA()).toBeGreaterThanOrEqual(1);
+    expect(seenB()).toBe(0);
+    // the other workspace's key is not the first one's, and its server is not in this workspace's list
+    expect((await list()).filter((s) => s.name === 'twin')).toHaveLength(1);
+    a.ws.close();
+    b.ws.close();
+  });
+});
+
 describe('the tunnel socket', () => {
   let key: string;
   let serverId: string;
@@ -212,7 +282,8 @@ describe('the tunnel socket', () => {
     expect(next).toMatch(/^mtb_[0-9a-f]{64}$/);
     expect(next).not.toBe(key);
     b.ws.send(JSON.stringify({ type: 'rotated' }));
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // the old key stops opening it as soon as the site has taken the answer
+    await until(async () => (await w.system((tx) => tx.query("SELECT 1 FROM app.bot_servers WHERE id = $1::uuid AND pending_key_hash IS NULL AND pending_key_at IS NULL", [serverId]))).rows.length === 1);
     b.ws.close();
     expect((await (await bridge(key)).closed).code).toBe(1008);
     const c = await bridge(next);
@@ -239,6 +310,66 @@ describe('the tunnel socket', () => {
     await until(() => fresh.frames.some((f) => f.type === 'welcome'));
     key = next;
     fresh.ws.close();
+  });
+
+  it('a second rotation while the first waits for the bridge is refused with 409 and changes nothing; one older than 15 minutes is taken as lost', async () => {
+    const made = await create('tun-rot');
+    const done = await enrol(made.body.code);
+    const id = made.body.server.id as string;
+    const b = await bridge(done.body.key);
+    b.ws.send(JSON.stringify(HELLO));
+    await until(() => b.frames.some((f) => f.type === 'welcome'));
+    expect((await w.call<any>(omar, 'POST', `/api/admin/bot-servers/${id}/rotate-key`)).status).toBe(200);
+    await until(() => b.frames.some((f) => f.type === 'rotate'));
+    const first = b.frames.find((f) => f.type === 'rotate').key as string;
+    const pendingOf = async () => (await w.system((tx) => tx.query<{ h: string | null }>('SELECT pending_key_hash AS h FROM app.bot_servers WHERE id = $1::uuid', [id]))).rows[0]!.h;
+    const hashBefore = await pendingOf();
+    const again = await w.call<any>(omar, 'POST', `/api/admin/bot-servers/${id}/rotate-key`);
+    expect(again.status).toBe(409);
+    expect(JSON.stringify(again.body)).not.toMatch(/mtb_/);
+    expect(await pendingOf()).toBe(hashBefore);
+    expect(b.frames.filter((f) => f.type === 'rotate')).toHaveLength(1);
+    // the first rotation still completes: the key the bridge was sent is the one that opens it
+    b.ws.send(JSON.stringify({ type: 'rotated' }));
+    await until(async () => (await pendingOf()) === null);
+    // the answer arrived: a new rotation is fine again
+    expect((await w.call<any>(omar, 'POST', `/api/admin/bot-servers/${id}/rotate-key`)).status).toBe(200);
+    await until(() => b.frames.filter((f) => f.type === 'rotate').length === 2);
+    // that one is never answered: after 15 minutes the next one replaces it
+    expect((await w.call<any>(omar, 'POST', `/api/admin/bot-servers/${id}/rotate-key`)).status).toBe(409);
+    await w.system((tx) => tx.query("UPDATE app.bot_servers SET pending_key_at = now() - interval '16 minutes' WHERE id = $1::uuid", [id]));
+    expect((await w.call<any>(omar, 'POST', `/api/admin/bot-servers/${id}/rotate-key`)).status).toBe(200);
+    const keys = b.frames.filter((f) => f.type === 'rotate').map((f) => f.key as string);
+    expect(keys).toHaveLength(3);
+    expect(keys[0]).toBe(first);
+    expect(new Set(keys).size).toBe(3);
+    b.ws.close();
+  });
+
+  it('the old key keeps opening the server until the bridge confirms, and a replaced socket does not take the server offline', async () => {
+    const made = await create('tun-rep');
+    const done = await enrol(made.body.code);
+    const id = made.body.server.id as string;
+    const first = await bridge(done.body.key);
+    first.ws.send(JSON.stringify(HELLO));
+    await until(() => first.frames.some((f) => f.type === 'welcome'));
+    await w.call(omar, 'POST', `/api/admin/bot-servers/${id}/rotate-key`);
+    await until(() => first.frames.some((f) => f.type === 'rotate'));
+    // a runner that was ready stays ready when the socket is replaced (a reconnect is not a new sign-in), one that was not set up waits for its sign-in
+    await until(async () => (await runnersOf('tun-rep')).every((r) => r.status === 'waiting_for_sign_in'));
+    await w.system((tx) => tx.query("UPDATE app.bot_runners SET status = 'ready', status_detail = NULL WHERE name = 'tun-rep-claude'"));
+    // not confirmed yet: the old key still opens a socket, and the new socket replaces the first
+    const second = await bridge(done.body.key);
+    second.ws.send(JSON.stringify(HELLO));
+    await until(() => second.frames.some((f) => f.type === 'welcome'));
+    expect((await first.closed).code).toBe(1000);
+    expect(Object.fromEntries((await runnersOf('tun-rep')).map((r) => [r.name, r.status]))).toEqual({ 'tun-rep-claude': 'ready', 'tun-rep-codex': 'waiting_for_sign_in' });
+    // the replaced socket closing last must not mark the server offline while the new one is open
+    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    expect((await list()).find((x) => x.id === id)?.status).toBe('connected');
+    second.ws.send(JSON.stringify({ type: 'beat' }));
+    await until(() => second.frames.some((f) => f.type === 'beat_ack'));
+    second.ws.close();
   });
 
   it('removing the server closes its socket (1008), deletes the runners, and the key stops opening anything', async () => {
@@ -355,5 +486,21 @@ describe('the lockout', () => {
     for (let i = 0; i < 12; i++) last = (await enrol(`mte_${String(i).padStart(40, '1')}`)).status;
     expect(last).toBe(429);
     expect((await enrol(made.body.code)).status).toBe(429);
+  });
+
+  it('too many wrong bridge keys from one address lock it for the key routes too, even for a right key', async () => {
+    const made = await create('key-lock');
+    // the enrolment lock above holds this address, so the key is put in the database: a known key for this server
+    const key = `mtb_${'5'.repeat(64)}`;
+    await w.system((tx) => tx.query("UPDATE app.bot_servers SET key_hash = $2 WHERE id = $1::uuid", [made.body.server.id, createHash('sha256').update(key).digest('hex')]));
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++) statuses.push((await fetch(`${w.server.url}/api/bridge/repos`, { headers: { authorization: `Bearer mtb_${String(i).padStart(64, '2')}` } })).status);
+    // earlier tests in this file spent some of the ten: the first 429 comes at the tenth wrong key of all, never later, and nothing before it is anything but 401
+    const first = statuses.indexOf(429);
+    expect(first).toBeGreaterThan(-1);
+    expect(first).toBeLessThanOrEqual(10);
+    expect(statuses.slice(0, first).every((x) => x === 401)).toBe(true);
+    expect(statuses.slice(first).every((x) => x === 429)).toBe(true);
+    expect((await fetch(`${w.server.url}/api/bridge/repos`, { headers: { authorization: `Bearer ${key}` } })).status).toBe(429);
   });
 });

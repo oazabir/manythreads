@@ -95,9 +95,12 @@ export async function syncServerRunners(tx: PluginTx, server: Pick<ServerRow, 'i
          VALUES ($1::uuid, $2, $3, 'server_agent', $4, $5::uuid, true, $6, $7, $8, now())
          ON CONFLICT (workspace_id, name) DO UPDATE
             SET agent = EXCLUDED.agent, updated_at = now(),
-                -- a runner an admin switched to a state of its own (paused) keeps it; every other state follows the connection
-                status = CASE WHEN app.bot_runners.status IN ('ready', 'waiting_for_sign_in', 'not_set_up') OR NOT $9::boolean THEN EXCLUDED.status ELSE app.bot_runners.status END,
-                status_detail = CASE WHEN app.bot_runners.status IN ('ready', 'waiting_for_sign_in', 'not_set_up') OR NOT $9::boolean THEN EXCLUDED.status_detail ELSE app.bot_runners.status_detail END,
+                -- A connection that ends sets every runner back to "not set up". A connection that starts moves a runner out of "not set up" (to "waiting for a sign-in", or "ready" for
+                -- Hermes) and out of "waiting for a sign-in" the same way; a runner that is already "ready" stays ready: a reconnect in the middle of a run must not turn the runner away
+                -- for the seconds until the bridge says again whether the agent is signed in (the sign-in check after the connect sets the real state). A state an admin or a limit gave
+                -- (paused, needs a new sign-in) is kept.
+                status = CASE WHEN NOT $9::boolean OR app.bot_runners.status IN ('not_set_up', 'waiting_for_sign_in') THEN EXCLUDED.status ELSE app.bot_runners.status END,
+                status_detail = CASE WHEN NOT $9::boolean OR app.bot_runners.status IN ('not_set_up', 'waiting_for_sign_in') THEN EXCLUDED.status_detail ELSE app.bot_runners.status_detail END,
                 last_checked_at = now()
           WHERE app.bot_runners.server_id = EXCLUDED.server_id
           RETURNING id`,

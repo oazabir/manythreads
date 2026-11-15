@@ -27,6 +27,8 @@ export const TUNNEL_HEARTBEAT_SECONDS = 20;
 export const TUNNEL_MAX_REQUEST_BYTES = 1024 * 1024;
 /** An answer is sent in pieces of at most this many bytes. */
 export const TUNNEL_CHUNK_BYTES = 64 * 1024;
+/** The largest message the site accepts on the tunnel's socket (the rest of the site's sockets take 64 KiB). A data frame is the chunk in base64 inside a small JSON envelope: this leaves 40 KiB of room. */
+export const TUNNEL_MAX_FRAME_BYTES = 128 * 1024;
 /** Open requests at most this many per server. */
 export const TUNNEL_MAX_STREAMS = 64;
 /** A stream whose unread pieces on the site pass this many bytes is closed (a reader that stopped reading). */
