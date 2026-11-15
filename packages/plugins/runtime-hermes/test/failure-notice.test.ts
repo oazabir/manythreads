@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, FAILURE_NOTICE, personAddressed } from '../src/failure-notice.ts';
+import { classifyFailure, deniedNotice, FAILURE_NOTICE, personAddressed } from '../src/failure-notice.ts';
 import type { RunPayload } from '../src/run-job.ts';
 
 describe('classifyFailure', () => {
@@ -34,6 +34,19 @@ describe('classifyFailure', () => {
     expect(classifyFailure('the answer was cut off at the length limit', 'too_long')).toBe('too_long');
     expect(FAILURE_NOTICE.too_long).toMatch(/longer than I am allowed to write/);
     expect(FAILURE_NOTICE.too_long).not.toMatch(/https?:|key/i);
+  });
+  it('a run that ended after a refused question names who said No and to what, in the bot\'s words (P26-02)', () => {
+    expect(classifyFailure('The agent stopped after a request was refused.', 'denied')).toBe('denied');
+    expect(deniedNotice({ by: 'Omar', step: 'git push origin card-1a2b3c4d', bot: 'Committer' })).toBe(
+      'Omar said No to `git push origin card-1a2b3c4d`, so Committer stopped. Ask again with another way to do it.',
+    );
+    // nobody answered in time: no name is made up
+    expect(deniedNotice({ by: null, step: 'rm -rf build', bot: 'Coder' })).toBe('Nobody approved `rm -rf build`, so Coder stopped. Ask again with another way to do it.');
+    // only the first line of the command, no backtick to break the quoting, a long one cut
+    expect(deniedNotice({ by: 'Omar', step: 'echo `x`\nsecond line', bot: 'Coder' })).toContain('`echo x`');
+    expect(deniedNotice({ by: 'Omar', step: 'a'.repeat(300), bot: 'Coder' }).length).toBeLessThan(300);
+    expect(deniedNotice({ by: null, step: null, bot: '' })).toBe('Nobody approved a step, so I stopped. Ask again with another way to do it.');
+    expect(FAILURE_NOTICE.denied).not.toMatch(/something went wrong on our side/);
   });
   it('says plainly, in one sentence, that the bot is not set up to post', () => {
     expect(FAILURE_NOTICE.not_allowed).toMatch(/^I couldn't answer: [^.]*\. [^.]*\.$/);

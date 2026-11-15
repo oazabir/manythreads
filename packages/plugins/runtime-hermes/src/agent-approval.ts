@@ -48,6 +48,8 @@ export interface AgentApprovalInput {
   approvers: readonly string[];
   /** True once the person who asked pressed Stop: the wait ends and the command is refused. */
   stopped?: () => boolean;
+  /** Called when the question was refused: `by` is the person who said No (null when nobody answered in time) and `command` is what was asked, as the card showed it. */
+  refused?: (refusal: { by: string | null; command: string }) => void;
   /** For a test: how long to wait for a person, and how often to look. */
   waitMs?: number;
   pollMs?: number;
@@ -63,6 +65,8 @@ export type ApprovalOutcome = 'once' | 'session' | 'deny' | 'ended';
 export async function settleAgentApproval(input: AgentApprovalInput): Promise<ApprovalOutcome> {
   const { ctx, job, run, question } = input;
   const log = (line: string): void => job.log.info(`runtime-hermes: run ${run.runId}: ${line}`);
+  let shownCommand = question.command;
+  const refuse = (by: string | null): void => input.refused?.({ by, command: shownCommand });
   const answer = async (choice: 'once' | 'session' | 'deny', note: string): Promise<ApprovalOutcome> => {
     const delivered = await question.answer(choice, note).catch(() => false);
     if (!delivered) log(`the answer (${choice}) could not be delivered: the program no longer waits`);
@@ -80,6 +84,7 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<Ap
 
     // What an approver reads of the command goes through the same redaction as any text that leaves for a person (a key-like string is shown as [redacted:...]).
     const shown = await job.transaction((tx) => previewText(ctx, tx, run.workspaceId, question.command));
+    shownCommand = shown;
     let approvalId: string;
     try {
       const filed = await ctx.runs.asBot(run, (tx) =>
@@ -118,6 +123,7 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<Ap
       const expiredNote = question.expired?.() ?? null;
       if (expiredNote !== null) {
         log(`the program ended the question itself: ${expiredNote}`);
+        refuse(null);
         return 'deny';
       }
       const state = await job.transaction((tx) => approvals.answerOf(tx, approvalId, { botId: run.botId }));
@@ -127,10 +133,19 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<Ap
         await job.transaction((tx) => approvals.claim(tx, approvalId, { botId: run.botId, source: 'agent' })).catch(() => null);
         return told;
       }
-      if (state.status === 'denied') return await answer('deny', state.note);
-      if (state.status === 'expired') return await answer('deny', 'The approval expired without an answer, so the command was not run.');
+      if (state.status === 'denied') {
+        refuse(state.deciderName);
+        return await answer('deny', state.note);
+      }
+      if (state.status === 'expired') {
+        refuse(null);
+        return await answer('deny', 'The approval expired without an answer, so the command was not run.');
+      }
       if (input.stopped?.() === true) return await ended(approvals, approvalId);
-      if (Date.now() - startedAt >= waitMs) return await answer('deny', 'Nobody answered in time, so the command was not run.');
+      if (Date.now() - startedAt >= waitMs) {
+        refuse(null);
+        return await answer('deny', 'Nobody answered in time, so the command was not run.');
+      }
       await sleepUnless(pollMs, input.stopped);
     }
   } catch (err) {

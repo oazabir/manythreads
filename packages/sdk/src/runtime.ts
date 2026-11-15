@@ -103,8 +103,8 @@ export interface BotRuntimeScope {
   log(message: string): void;
 }
 
-/** Why a run failed, when the runtime knows it better than the error text says. `limit` is a budget, rate limit or safety rule; `gateway` a model gateway that did not answer; `steps` a loop that used up its steps; `too_long` an answer the model could not finish within its length limit. */
-export type BotRuntimeFailure = 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'runner_refused' | 'limit' | 'gateway' | 'steps' | 'too_long';
+/** Why a run failed, when the runtime knows it better than the error text says. `limit` is a budget, rate limit or safety rule; `gateway` a model gateway that did not answer; `steps` a loop that used up its steps; `too_long` an answer the model could not finish within its length limit; `denied` a run that ended because a person (or the clock) refused a question the agent asked. */
+export type BotRuntimeFailure = 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'runner_refused' | 'limit' | 'gateway' | 'steps' | 'too_long' | 'denied';
 
 /** A tool as a model is told about it. */
 export interface ModelToolSpec {

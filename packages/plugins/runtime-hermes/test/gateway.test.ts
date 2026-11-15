@@ -85,6 +85,13 @@ describe('a shared Claude Code runner (P19-07)', () => {
     expect(r.refusal).toMatchObject({ runner: 'shared-claude', reason: 'plan_limit' });
   });
 
+  it('a run the bridge marked denied (it ended after a refused question) is a `denied` failure, not an unknown one (P26-02)', async () => {
+    gw.setScript(() => [{ type: 'fail', error: 'The agent stopped after a request was refused.', extra: { reason: 'denied', step: 'Running git' } }]);
+    const r = await run();
+    expect(r).toMatchObject({ ok: false, failure: 'denied' });
+    expect(r.refusal).toBeUndefined();
+  });
+
   it('turns a refused sign-in into a line for the thread and no retry', async () => {
     gw.setScript(() => [{ type: 'fail', error: 'API Error: 401', extra: { reason: 'needs_sign_in' } }]);
     const r = await run();

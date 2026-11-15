@@ -7,7 +7,7 @@ import type { RunPayload } from './run-job.ts';
 // never the error text (it can carry a key's first characters, a hash, an address or a stack trace), never the model's half answer.
 
 /** The causes a notice can name. `limit` and `approval` are raised by the run job where it knows them; the rest are read off a failed run. */
-export type FailureCategory = 'gateway' | 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | 'limit' | 'steps' | 'too_long' | 'approval' | 'not_allowed' | 'other';
+export type FailureCategory = 'gateway' | 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | 'limit' | 'steps' | 'too_long' | 'approval' | 'denied' | 'not_allowed' | 'other';
 
 /** The whole text a person sees, per category. Fixed strings: nothing from the failure is ever put into them. */
 export const FAILURE_NOTICE: Record<FailureCategory, string> = {
@@ -21,9 +21,28 @@ export const FAILURE_NOTICE: Record<FailureCategory, string> = {
   steps: "I couldn't answer: I used up the steps I am allowed for one question before I finished. A narrower question may fit.",
   too_long: "I couldn't answer: my answer was longer than I am allowed to write in one go, so it would have been cut off. A narrower question may fit.",
   approval: "I couldn't answer: this was held for approval, and nobody here can approve it.",
+  // The run job posts the sentence with the person's name and the step (`deniedNotice`); this one is the fallback when it has neither.
+  denied: 'A request was refused, so I stopped. Ask again with another way to do it.',
   not_allowed: "I couldn't answer: this bot is not set up to post messages. Tell a lead of this team to check its definition.",
   other: "I couldn't answer: something went wrong on our side. Try again; if it keeps happening, tell a workspace admin.",
 };
+
+/** The step a refusal names: the first line of what was asked, in backticks, with nothing that could break the quoting or run long. */
+function stepWords(step: string | null): string {
+  const first = (step ?? '').split('\n').find((l) => l.trim() !== '') ?? '';
+  const clean = first.replace(/[`\s]+/g, ' ').trim();
+  return clean === '' ? 'a step' : `\`${clean.length > 80 ? `${clean.slice(0, 79)}…` : clean}\``;
+}
+
+/**
+ * The line for a run that ended because a question to a person was refused (P26-02): who said No and to what, said in the bot's own thread. `by` is the person's
+ * display name from the approval's decision, or null when nobody answered in time; `step` is what was asked (already redacted, as the card showed it).
+ */
+export function deniedNotice(input: { by: string | null; step: string | null; bot: string }): string {
+  const name = input.by !== null && input.by.trim() !== '' ? input.by.trim().slice(0, 60) : null;
+  const who = name !== null ? `${name} said No to ${stepWords(input.step)}` : `Nobody approved ${stepWords(input.step)}`;
+  return `${who}, so ${input.bot.trim().slice(0, 60) || 'I'} stopped. Ask again with another way to do it.`;
+}
 
 /**
  * Did a person address this run, so that someone is waiting for an answer in the thread? A conversation or a mention, and a card handed to the bot

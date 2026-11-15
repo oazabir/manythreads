@@ -636,12 +636,14 @@ export async function runOnGateway(
     }
     // The agent bridge's own plain sentences (our code, not a remote program) say why in a way the notice can use; its text is shown nowhere.
     const bridgeFailure = claudeRunner !== undefined && terminal.event === 'run.failed' ? bridgeFailureOf(typeof f['error'] === 'string' ? f['error'] : undefined) : null;
+    // The bridge marks a run that ended after a refused question `denied` (P26-02); the run job knows who said No and to what, and says it in the thread.
+    const denied = terminal.event === 'run.failed' && f['reason'] === 'denied';
     yield {
       type: 'result',
       text: streamed,
       ok: false,
       error,
-      ...(timedOut ? { failure: 'timeout' as const } : terminal.event === 'run.interrupted' ? { failure: 'hermes_unreachable' as const } : bridgeFailure !== null ? { failure: bridgeFailure } : {}),
+      ...(timedOut ? { failure: 'timeout' as const } : terminal.event === 'run.interrupted' ? { failure: 'hermes_unreachable' as const } : denied ? { failure: 'denied' as const } : bridgeFailure !== null ? { failure: bridgeFailure } : {}),
       tokens: tokensOf(f['usage']),
       ...claudeMark(f),
     };

@@ -89,3 +89,34 @@ describe('a wait that the Stop ends (M3)', () => {
     expect(s.warns.some((w) => w.includes('could not be withdrawn'))).toBe(true);
   });
 });
+
+describe('a question that was refused (P26-02)', () => {
+  const setup = (status: 'denied' | 'approved' | 'expired') => {
+    const approvals = {
+      request: async () => ({ approvalId: 'a1' }),
+      answerOf: async () => ({ status, note: '', deciderName: 'Omar' }),
+      claim: async () => null,
+    } as unknown as ApprovalProvider;
+    const ctx = { providers: { get: () => approvals }, runs: { asBot: async (_r: unknown, fn: (tx: unknown) => unknown) => fn({}), extend: async () => true } } as unknown as PluginContext;
+    const job = { log: { info: () => undefined, warn: () => undefined }, transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn({}) };
+    const answer = vi.fn(async () => true);
+    const question: Question = { type: 'approval', command: 'git push origin card-1', description: 'why', choices: ['once', 'deny'], answer };
+    const refused = vi.fn();
+    const run = { runId: 'r1', workspaceId: 'w1', botId: 'b1' } as unknown as BotRunHandle;
+    return { ctx, job, question, refused, run };
+  };
+
+  it('tells who said No and what was asked', async () => {
+    const t = setup('denied');
+    expect(await settleAgentApproval({ ctx: t.ctx, job: t.job as never, run: t.run, question: t.question, approvers: ['p1'], pollMs: 10, refused: t.refused })).toBe('deny');
+    expect(t.refused).toHaveBeenCalledWith({ by: 'Omar', command: 'git push origin card-1' });
+  });
+  it('tells that nobody answered when the approval lapsed, and says nothing for a Yes', async () => {
+    const lapsed = setup('expired');
+    await settleAgentApproval({ ctx: lapsed.ctx, job: lapsed.job as never, run: lapsed.run, question: lapsed.question, approvers: ['p1'], pollMs: 10, refused: lapsed.refused });
+    expect(lapsed.refused).toHaveBeenCalledWith({ by: null, command: 'git push origin card-1' });
+    const yes = setup('approved');
+    expect(await settleAgentApproval({ ctx: yes.ctx, job: yes.job as never, run: yes.run, question: yes.question, approvers: ['p1'], pollMs: 10, refused: yes.refused })).toBe('once');
+    expect(yes.refused).not.toHaveBeenCalled();
+  });
+});

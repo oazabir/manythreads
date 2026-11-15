@@ -350,6 +350,21 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
       expect(answered[0]).toEqual({ choice: 'deny', steered: ['The person declined that command and wrote: leave the build alone'] });
     });
 
+    it('a No that ends the run is said in the thread: who said it, to what, and what to do next (P26-02)', async () => {
+      gw.setScript(() => [
+        { type: 'tool', name: 'terminal' },
+        { type: 'approval', command: 'git push origin card-1', description: 'push the branch', onAnswer: () => undefined },
+        { type: 'fail', error: 'The agent stopped after a request was refused.', extra: { reason: 'denied', step: 'Running git' } },
+      ]);
+      const rootId = await post('@ext-bot push the branch');
+      const card = await pending(rootId);
+      expect((await w.call<any>(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/deny`, { note: '' })).status).toBe(200);
+      const botActor = await w.system(async (tx) => (await tx.query<{ actor_id: string }>(`SELECT a.id AS actor_id FROM app.actors a JOIN app.bots b ON b.id = a.ref_id WHERE b.slug = 'ext-bot'`)).rows[0]!.actor_id);
+      const notice = await until(async () => (await messagesBy(rootId, botActor))[0], 20_000, 'the notice');
+      expect(notice.body).toMatch(/^.+ said No to `git push origin card-1`, so .+ stopped\. Ask again with another way to do it\.$/);
+      expect(notice.body).not.toMatch(/something went wrong on our side/);
+    });
+
     it('the person the bot is working for can answer it: the one who started the thread is not locked out (migration 0006)', async () => {
       const answered: Array<{ choice: string; steered: string[] }> = [];
       gw.setScript(() => ask(answered));
@@ -416,10 +431,7 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
     await changeConnection('host', { baseUrl: deadUrl });
     try {
       const rootId = await post('@ext-bot are you there?');
-      const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 15_000, 'the failure notice').catch((e) => {
-        console.log('DEBUG', JSON.stringify(w.server.logs.filter((l) => /runtime-hermes/.test(l)).slice(-8)), JSON.stringify(gw.calls.slice(-3)));
-        throw e;
-      });
+      const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 15_000, 'the failure notice');
       expect(notice.body).toBe(FAILURE_NOTICE.hermes_unreachable);
       expect(notice.body).not.toContain(deadUrl);
       expect(await closedRun(bot.botId)).toMatchObject({ status: 'failed' });

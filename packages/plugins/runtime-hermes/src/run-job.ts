@@ -35,7 +35,7 @@ import { z } from 'zod';
 import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { settleAgentApproval } from './agent-approval.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
-import { classifyFailure, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
+import { classifyFailure, deniedNotice, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
 import { applyChatAlias, recordRunFacts, recordStopped, streamsLive } from './chat-run.ts';
 import { LiveFrames, stopTracked, trackRun, untrackRun, watchersOf } from './live.ts';
 import { RunRecorder } from './run-recorder.ts';
@@ -252,6 +252,8 @@ export async function reportFailure(input: {
   failure?: BotRuntimeFailure | undefined;
   /** With `failure: 'runner_refused'`: which runner turned the run away and why, and the one sentence to say it with. */
   refusal?: RunnerRefusal | undefined;
+  /** The platform's own sentence for this run when it has one (a refused question: who said No to what), in place of the category's fixed line. */
+  line?: string | undefined;
 }): Promise<void> {
   const { ctx, tx, log, run, payload, botId } = input;
   // A run the runner catalog turned away at the start (P19-03): the fact is written down whoever was waiting, and the thread hears one plain line.
@@ -275,7 +277,7 @@ export async function reportFailure(input: {
     log.info(`runtime-hermes: run ${run.runId}: no failure notice (the run already posted into its thread)`);
     return;
   }
-  await postFailureNotice(ctx, tx, run, payload, input.category ?? classifyFailure(input.error, input.failure), (line) => log.warn(line), input.refusal?.line);
+  await postFailureNotice(ctx, tx, run, payload, input.category ?? classifyFailure(input.error, input.failure), (line) => log.warn(line), input.refusal?.line ?? input.line);
 }
 
 /** What a runner said when it turned a run away: its name, a reason from the fixed list, and the plain sentence. */
@@ -680,7 +682,7 @@ export async function postReply(input: {
   reply: string;
   ok: boolean;
   /** Why a failed run failed; with `botId` and `log` it lets the asker be told (`reportFailure`). Without them a failed run closes silently. */
-  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: BotRuntimeFailure | undefined; refusal?: RunnerRefusal | undefined };
+  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: BotRuntimeFailure | undefined; refusal?: RunnerRefusal | undefined; line?: string | undefined };
 }): Promise<void> {
   const { ctx, tx, run, payload, scope, reply, ok, failed } = input;
   const answered = ok && (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId));
@@ -694,7 +696,7 @@ export async function postReply(input: {
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
   const waiting = approvals ? await approvals.pendingForRun(tx, run.runId) : 0;
   // A failed run says so once (never the half answer above); one that is waiting for a person has its card in the thread already.
-  if (!ok && waiting === 0 && failed) await reportFailure({ ctx, tx, log: failed.log, run, payload, botId: failed.botId, error: failed.error, failure: failed.failure, refusal: failed.refusal });
+  if (!ok && waiting === 0 && failed) await reportFailure({ ctx, tx, log: failed.log, run, payload, botId: failed.botId, error: failed.error, failure: failed.failure, refusal: failed.refusal, line: failed.line });
   await ctx.runs.close(run.runId, waiting > 0 ? 'stopped' : ok ? 'done' : 'failed');
 }
 
@@ -979,6 +981,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let error: string | undefined;
         let failure: BotRuntimeFailure | undefined;
         let refusal: RunnerRefusal | undefined;
+        let refused: { by: string | null; command: string } | null = null;
         let viaPod: { runner: string } | undefined;
         let viaClaude: Extract<BotRuntimeEvent, { type: 'result' }>['viaClaude'];
         let tokens: { input: number; output: number; total: number } | null | undefined;
@@ -994,7 +997,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           }
           // The bot's program stopped to ask a person (a command it wants to run): file it, wait for the decision, and tell the program (agent-approval.ts).
           if (event.type === 'approval') {
-            const told = await settleAgentApproval({ ctx, job, run, question: event, approvers, stopped: () => liveEntry.stopped });
+            const told = await settleAgentApproval({ ctx, job, run, question: event, approvers, stopped: () => liveEntry.stopped, refused: (r) => (refused = r) });
+            if (told === 'once' || told === 'session') refused = null;
             recorder.settle(told);
           }
           if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
@@ -1054,7 +1058,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         }
         // committed first: the reply is posted through the run's own door, and the conversations plugin reads this fact when that message's event arrives
         if (wasStopped && (conversation || by?.actorId === payload.askerActorId)) await job.transaction((tx) => recordStopped(tx, run.runId));
-        await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure, refusal } }));
+        await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure, refusal, ...(failure === 'denied' ? { line: deniedNotice({ by: refused?.by ?? null, step: refused?.command ?? null, bot: bot.name }) } : {}) } }));
         const status = wasStopped ? 'stopped' : ok ? 'done' : 'failed';
         await frames?.end(status);
         await recorder.end(status);
