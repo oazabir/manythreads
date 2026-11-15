@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^mte_[0-9a-f]{40}$"
+    },
+    "bridgeVersion": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "host": {
+      "type": "object",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "system": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "arch": {
+          "type": "string",
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "hostname",
+        "system",
+        "arch"
+      ]
+    },
+    "agents": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex",
+              "hermes-acp"
+            ]
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "version"
+        ]
+      }
+    },
+    "allowFullAccess": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code",
+    "bridgeVersion",
+    "host",
+    "agents"
+  ],
+  "additionalProperties": false
+}

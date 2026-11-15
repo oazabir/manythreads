@@ -65,6 +65,15 @@ const of = (kind: string, id: unknown, label?: string | null, named?: Target['na
 };
 const team = (v: unknown): string | null => uuid(v);
 
+const BOT_SERVER_CHANGES: Readonly<Record<string, string>> = {
+  code_minted: 'A one-time enrolment code was made',
+  enrolled: 'The installer enrolled the server',
+  connected: 'The server connected',
+  disconnected: 'The server disconnected',
+  key_rotated: 'A new key was made for the server',
+  removed: 'The server was removed',
+};
+
 const GUARDED_ROOTS = /^(TEAM\.md|(bots|skills|routines)(\/[A-Za-z0-9._-]{1,80}){0,4})$/;
 /**
  * The label of a repo path. A path can name something private (`memory/people/jane.md`, `channels/<id>/salary.pdf`), so only the guarded places a
@@ -521,6 +530,13 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
           ? 'A machine was chosen; the work volumes start empty there'
           : 'A machine was chosen'
         : 'The cluster chooses the machine again',
+  }),
+  // The server is named by its slug; the words say what kind of change it was, from a fixed list, and never a code, a key or anything about the machine.
+  'bot_server.server.changed': (e) => ({
+    action: 'bot_server.changed',
+    who: actor(e['actorId']),
+    target: of('bot_server', uuid(e['serverId']), code(e['name'])),
+    reason: BOT_SERVER_CHANGES[String(e['change'])] ?? null,
   }),
   'bot_runner.terms.accepted': (e) => ({ action: 'bot_runner.terms_accepted', who: actor(e['acceptedBy']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
   'claude_pod.credentials.uploaded': (e) => ({ action: 'claude_pod.credentials_uploaded', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),

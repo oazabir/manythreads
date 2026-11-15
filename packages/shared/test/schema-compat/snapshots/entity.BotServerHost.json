@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "hostname": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "system": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "arch": {
+      "type": "string",
+      "maxLength": 40
+    }
+  },
+  "required": [
+    "hostname",
+    "system",
+    "arch"
+  ],
+  "additionalProperties": false
+}

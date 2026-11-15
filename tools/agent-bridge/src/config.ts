@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 // The bridge's config file: which agent CLI serves which profile.
 //
@@ -73,8 +73,34 @@ export interface ProfileConfig {
   instructions?: string | undefined;
 }
 
+/**
+ * Server mode (an enrolled server, PLAN P26-15, docs/plans/agents-anywhere.md §5.4): the bridge answers ANY profile name of the form `<agent>--<team>--<bot>` from a template
+ * per agent, so adding a bot or a team needs nothing on the machine. `agent` is `claude`, `codex` or `hermes`; `team` and `bot` are slugs. A name of another form is a 404
+ * (there is no `default` to fall back to). The bot's folder is `<root>/work/<team>/<bot>`; the team's repository of record is `<root>/work/<team>/repos`.
+ */
+export interface ServerAgentTemplate {
+  acp?: AcpConfig | undefined;
+  model?: string | undefined;
+  /** The sign-in folder of this tool on this machine (the same one the plain sign-in profile of the tool uses). */
+  authHome?: string | undefined;
+  env?: Record<string, string> | undefined;
+  passEnv?: string[] | undefined;
+  /** Codex only. `"allowed"` when the installer was given `--allow-full-access`: the machine's half of the rule (the run's own switch is the site's half). */
+  fullAccess?: boolean | 'allowed' | undefined;
+  /** Hermes only: the folder that holds one Hermes home per bot (`<home>/<team>--<bot>`, made on first use). */
+  hermesHome?: string | undefined;
+}
+
+export interface ServerModeConfig {
+  root: string;
+  agents: Partial<Record<'claude' | 'codex' | 'hermes', ServerAgentTemplate>>;
+  /** Appended after the bot's BOT.md in every run (where it runs); `{team}`, `{bot}`, `{workdir}`, `{repos}` are filled in. */
+  instructions?: string | undefined;
+}
+
 export interface BridgeConfig {
   profiles: Record<string, ProfileConfig>;
+  server?: ServerModeConfig | undefined;
   /** Runs at once, over all profiles. A start beyond it is answered with 429. */
   maxConcurrentRuns: number;
   /** Seconds between asking a process group to stop (SIGTERM) and killing it (SIGKILL). */
@@ -105,6 +131,43 @@ const positive = (v: unknown, fallback: number, what: string): number => {
   if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new Error(`config: ${what} must be a positive number`);
   return v;
 };
+
+const SERVER_AGENT_KEYS = ['claude', 'codex', 'hermes'] as const;
+type ServerAgentKey = (typeof SERVER_AGENT_KEYS)[number];
+const AGENT_OF_KEY: Record<ServerAgentKey, AgentKind> = { claude: 'claude-code', codex: 'codex', hermes: 'hermes-acp' };
+/** A team or bot slug as it may become a folder name: no dot, no slash, no `--`. */
+const SLUG = /^[a-z0-9](?:[a-z0-9]|-(?!-)){0,62}$/;
+const SERVER_PROFILE = /^(claude|codex|hermes)--([^-]|-(?!-))+--([^-]|-(?!-))+$/;
+
+function parseServerMode(raw: unknown): ServerModeConfig | undefined {
+  if (raw === undefined) return undefined;
+  if (!isRecord(raw)) throw new Error('config: "server" must be an object');
+  const root = raw['root'];
+  if (typeof root !== 'string' || !isAbsolute(root)) throw new Error('config: server.root must be an absolute folder path');
+  const agentsRaw = raw['agents'];
+  if (!isRecord(agentsRaw)) throw new Error('config: server.agents must be an object');
+  const agents: ServerModeConfig['agents'] = {};
+  for (const [key, t] of Object.entries(agentsRaw)) {
+    if (!(SERVER_AGENT_KEYS as readonly string[]).includes(key)) throw new Error(`config: server.agents: "${key}" is not one of ${SERVER_AGENT_KEYS.join(', ')}`);
+    if (!isRecord(t)) throw new Error(`config: server.agents.${key} must be an object`);
+    // The template is checked as a profile of that agent (same rules for acp, env, passEnv, authHome, fullAccess), with a work folder that is made per bot.
+    const checked = parseConfig({ profiles: { t: { ...t, agent: AGENT_OF_KEY[key as ServerAgentKey], driver: 'acp', workdir: root } } }).profiles['t']!;
+    const hermesHome = t['hermesHome'];
+    if (hermesHome !== undefined && (key !== 'hermes' || typeof hermesHome !== 'string' || !isAbsolute(hermesHome))) throw new Error(`config: server.agents.${key}.hermesHome must be an absolute folder path (Hermes only)`);
+    agents[key as ServerAgentKey] = {
+      ...(checked.acp !== undefined ? { acp: checked.acp } : {}),
+      ...(checked.model !== undefined ? { model: checked.model } : {}),
+      ...(checked.authHome !== undefined ? { authHome: checked.authHome } : {}),
+      ...(checked.env !== undefined ? { env: checked.env } : {}),
+      ...(checked.passEnv !== undefined ? { passEnv: checked.passEnv } : {}),
+      ...(checked.fullAccess !== undefined ? { fullAccess: checked.fullAccess } : {}),
+      ...(typeof hermesHome === 'string' ? { hermesHome } : {}),
+    };
+  }
+  const notes = raw['instructions'];
+  if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error('config: server.instructions must be text of at most 20000 characters');
+  return { root, agents, ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}) };
+}
 
 export function parseConfig(raw: unknown): BridgeConfig {
   if (!isRecord(raw)) throw new Error('config: the file must hold a JSON object');
@@ -178,8 +241,10 @@ export function parseConfig(raw: unknown): BridgeConfig {
     };
   }
   const binRaw = isRecord(raw['bin']) ? raw['bin'] : {};
+  const server = parseServerMode(raw['server']);
   return {
     profiles,
+    ...(server !== undefined ? { server } : {}),
     maxConcurrentRuns: Math.floor(positive(raw['maxConcurrentRuns'], 4, 'maxConcurrentRuns')),
     killGraceSeconds: positive(raw['killGraceSeconds'], 5, 'killGraceSeconds'),
     budgetGraceSeconds: positive(raw['budgetGraceSeconds'], 10, 'budgetGraceSeconds'),
@@ -211,10 +276,49 @@ export function loadConfig(path: string): BridgeConfig {
   return parseConfig(json);
 }
 
-/** The profile a request uses: the one named, else `default`; null when neither exists. */
+const profilesMade = new WeakMap<BridgeConfig, Map<string, ProfileConfig>>();
+
+/** The profile of a server-mode name (`claude--team--bot`), made from the template and remembered; null when the name does not have the form or the agent has no template. */
+export function serverProfile(config: BridgeConfig, name: string): ProfileConfig | null {
+  const server = config.server;
+  if (server === undefined || !SERVER_PROFILE.test(name)) return null;
+  const [agentKey, team, bot, ...rest] = name.split('--') as [ServerAgentKey, string, string, ...string[]];
+  if (rest.length > 0 || !SLUG.test(team) || !SLUG.test(bot)) return null;
+  const tmpl = server.agents[agentKey];
+  if (tmpl === undefined) return null;
+  let cache = profilesMade.get(config);
+  if (!cache) profilesMade.set(config, (cache = new Map()));
+  const cached = cache.get(name);
+  if (cached) return cached;
+  const workdir = join(server.root, 'work', team, bot);
+  const repos = join(server.root, 'work', team, 'repos');
+  const env = { ...(tmpl.env ?? {}) };
+  if (agentKey === 'hermes' && tmpl.hermesHome !== undefined) env['HERMES_HOME'] = join(tmpl.hermesHome, `${team}--${bot}`);
+  const instructions = server.instructions?.replaceAll('{team}', team).replaceAll('{bot}', bot).replaceAll('{workdir}', workdir).replaceAll('{repos}', repos);
+  const profile: ProfileConfig = {
+    agent: AGENT_OF_KEY[agentKey],
+    driver: 'acp',
+    ...(tmpl.acp !== undefined ? { acp: tmpl.acp } : {}),
+    workdir,
+    ...(tmpl.model !== undefined ? { model: tmpl.model } : {}),
+    ...(Object.keys(env).length > 0 ? { env } : {}),
+    ...(tmpl.passEnv !== undefined ? { passEnv: tmpl.passEnv } : {}),
+    ...(tmpl.authHome !== undefined ? { authHome: tmpl.authHome } : {}),
+    ...(tmpl.fullAccess !== undefined ? { fullAccess: tmpl.fullAccess } : {}),
+    ...(instructions !== undefined ? { instructions } : {}),
+  };
+  cache.set(name, profile);
+  return profile;
+}
+
+/** The profile a request uses: the one named, else `default`; null when neither exists. In server mode a name of the form `<agent>--<team>--<bot>` is made from the template, and there is no `default`. */
 export function profileFor(config: BridgeConfig, name: string): { name: string; profile: ProfileConfig } | null {
   const own = Object.hasOwn(config.profiles, name) ? config.profiles[name] : undefined;
   if (own) return { name, profile: own };
+  if (config.server !== undefined) {
+    const fromTemplate = serverProfile(config, name);
+    return fromTemplate ? { name, profile: fromTemplate } : null;
+  }
   const fallback = config.profiles['default'];
   return fallback ? { name, profile: fallback } : null;
 }

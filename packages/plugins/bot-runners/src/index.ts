@@ -2,6 +2,9 @@ import { definePlugin } from '@manythreads/sdk';
 import { createModelRuntime } from './model-runtime.ts';
 import { createBotRunnersProvider } from './resolve.ts';
 import { registerRoutes } from './routes.ts';
+import { registerServerRoutes } from './server-routes.ts';
+import { refreshServerSignIns } from './server-signin.ts';
+import { TunnelRegistry } from './tunnel/registry.ts';
 
 export { DEFAULT_PROFILE_RULE, resolveRunner } from './resolve.ts';
 export { createModelRuntime, DEFAULT_STEP_LIMIT, MODEL_RUNTIME_ID } from './model-runtime.ts';
@@ -31,6 +34,7 @@ export default definePlugin({
         'bot_runner.default.changed',
         'bot_runner.node.changed',
         'bot_runner.terms.accepted',
+        'bot_server.server.changed',
         'claude_pod.credentials.uploaded',
         'claude_pod.credentials.replaced',
         'claude_pod.credentials.removed',
@@ -48,9 +52,12 @@ export default definePlugin({
     migrations: 'migrations',
   },
   register(ctx) {
-    ctx.providers.register('bot.runners', createBotRunnersProvider(ctx));
+    // The connections of the enrolled servers that are open on this process, and `fetch` through them (docs/plans/agents-anywhere.md §5.3). One replica: a server's socket and the runs that use it are in one process.
+    const tunnel = new TunnelRegistry();
+    ctx.providers.register('bot.runners', createBotRunnersProvider(ctx, tunnel));
     // The runtime that answers a bot placed on an LLM gateway runner (P19-10): a loop of model turns and tool calls, with no process. The run job picks it by the runner's kind.
     ctx.providers.register('bot_runtime', createModelRuntime(ctx));
-    registerRoutes(ctx);
+    registerRoutes(ctx, tunnel);
+    registerServerRoutes({ ctx, registry: tunnel, socket: { onConnected: (server) => void refreshServerSignIns(ctx, tunnel, server) } });
   },
 });

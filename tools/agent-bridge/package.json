@@ -8,15 +8,19 @@
   },
   "scripts": {
     "start": "tsx src/main.ts",
+    "build:install": "node install/build.mjs",
     "typecheck": "tsc --noEmit -p ."
   },
   "devDependencies": {
     "@manythreads/sdk": "workspace:*",
     "@manythreads/shared": "workspace:*",
     "@manythreads/tools-fake-acp-agent": "workspace:*",
+    "@types/ws": "^8.18.2",
+    "esbuild": "0.28.2",
     "tsx": "^4"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "2.7.0"
+    "@agentclientprotocol/sdk": "2.7.0",
+    "ws": "^8.22.0"
   }
 }

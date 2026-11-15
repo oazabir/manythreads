@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { chmodSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { BridgeConfig } from './config.ts';
 import { profileFor } from './config.ts';
@@ -34,6 +35,8 @@ export interface BridgeOptions {
   /** Default 127.0.0.1:8650; port 0 picks a free one. */
   host?: string;
   port?: number;
+  /** Listen on this Unix socket instead of a TCP port (an enrolled server: the tunnel hands the site's requests to it; the bridge opens no port). Mode 0600. */
+  socketPath?: string;
   log?: (line: string) => void;
   tmpRoot?: string;
   /** Seconds-level knobs, mostly for tests. Defaults: 10 s for the request headers, 30 s for a request body, 30 failed sign-ins a minute per address. */
@@ -397,8 +400,25 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
   server.headersTimeout = headersTimeoutMs;
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.port ?? 8650, options.host ?? '127.0.0.1', resolve);
+    if (options.socketPath !== undefined) {
+      rmSync(options.socketPath, { force: true }); // a socket file left by a bridge that was killed
+      server.listen(options.socketPath, resolve);
+    } else server.listen(options.port ?? 8650, options.host ?? '127.0.0.1', resolve);
   });
+  if (options.socketPath !== undefined) {
+    chmodSync(options.socketPath, 0o600);
+    return {
+      url: 'http://unix',
+      port: 0,
+      close: async () => {
+        clearInterval(sweepFailures);
+        authService.close();
+        manager.close();
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      },
+    };
+  }
   const addr = server.address();
   const port = typeof addr === 'object' && addr ? addr.port : (options.port ?? 0);
   const host = options.host ?? '127.0.0.1';

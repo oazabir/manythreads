@@ -107,6 +107,7 @@ import { BotRunnerAgentAuthChangedEvent } from './bot_runner.agent_auth.changed.
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
 import { BotRunnerNodeChangedEvent } from './bot_runner.node.changed.ts';
+import { BotServerChangedEvent } from './bot_server.server.changed.ts';
 import { BotRunnerTermsAcceptedEvent } from './bot_runner.terms.accepted.ts';
 import { ClaudePodCredentialsUploadedEvent } from './claude_pod.credentials.uploaded.ts';
 import { ClaudePodCredentialsReplacedEvent } from './claude_pod.credentials.replaced.ts';
@@ -385,6 +386,7 @@ export const eventRegistry = {
   'bot_runner.availability.changed': { 1: BotRunnerAvailabilityChangedEvent },
   'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },
   'bot_runner.node.changed': { 1: BotRunnerNodeChangedEvent },
+  'bot_server.server.changed': { 1: BotServerChangedEvent },
   'bot_runner.terms.accepted': { 1: BotRunnerTermsAcceptedEvent },
   'claude_pod.credentials.uploaded': { 1: ClaudePodCredentialsUploadedEvent },
   'claude_pod.credentials.replaced': { 1: ClaudePodCredentialsReplacedEvent },

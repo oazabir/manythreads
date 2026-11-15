@@ -6,6 +6,7 @@
     "hermes_pod",
     "claude_cli",
     "codex_cli",
-    "llm_gateway"
+    "llm_gateway",
+    "server_agent"
   ]
 }

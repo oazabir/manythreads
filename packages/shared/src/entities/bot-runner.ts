@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, BotRunnerId, TeamId, WorkspaceId } from '../ids.ts';
+import { ActorId, BotRunnerId, BotServerId, TeamId, WorkspaceId } from '../ids.ts';
 import { HermesConnectionAgent } from './hermes.ts';
 
 // Bot runners (PLAN Phase 19, P19-02): the places a bot can run, set up by a workspace admin. Every enum matches a CHECK of the bot-runners migration
@@ -116,6 +116,8 @@ export const BotRunner = z.object({
   maxConcurrent: z.number().int().min(1).max(4).nullable(),
   /** Codex only: true lets Codex run commands without asking (the `codex --yolo` behaviour). False for every other runner. Set only by an admin, and only while the runner serves one team. */
   fullAccess: z.boolean(),
+  /** `server_agent` only: the enrolled server this runner is one agent of (null for every other kind). */
+  serverId: BotServerId.nullable().default(null),
   /** `off` when the runner is disabled, whatever was last found. */
   status: BotRunnerStatus,
   statusDetail: z.string().nullable(),

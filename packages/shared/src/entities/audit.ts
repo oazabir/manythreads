@@ -120,6 +120,7 @@ export const AUDIT_ACTIONS = {
   'bot_runner.availability_changed': { category: 'settings', label: 'Changed which teams can use a bot runner' },
   'bot_runner.default_changed': { category: 'settings', label: 'Changed the default bot runner' },
   'bot_runner.node_changed': { category: 'settings', label: 'Changed the machine a bot runner uses' },
+  'bot_server.changed': { category: 'settings', label: 'Changed an enrolled server' },
   'bot_runner.terms_accepted': { category: 'settings', label: 'Accepted the terms for a bot runner' },
   'claude_pod.credentials_uploaded': { category: 'settings', label: "Uploaded a Claude Code runner's sign-in file" },
   'claude_pod.credentials_replaced': { category: 'settings', label: "Replaced a Claude Code runner's sign-in file" },

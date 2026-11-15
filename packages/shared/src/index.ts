@@ -4,6 +4,7 @@ export * from './common/index.ts';
 export * from './entities/index.ts';
 export * from './api/index.ts';
 export * from './runner/protocol.ts';
+export * from './runner/bridge-tunnel.ts';
 export * from './runners/where-you-run.ts';
 export * from './events/index.ts';
 export * from './bot-md/index.ts';

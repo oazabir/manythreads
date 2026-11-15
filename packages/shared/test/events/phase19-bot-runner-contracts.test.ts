@@ -17,6 +17,7 @@ const samples = {
   'bot_runner.availability.changed': { ...base, type: 'bot_runner.availability.changed', runnerId: uuid(2), name: 'host', enabled: true, allTeams: false, teamCount: 3, actorId: uuid(4) },
   'bot_runner.default.changed': { ...base, type: 'bot_runner.default.changed', runnerId: uuid(2), previousRunnerId: null, actorId: uuid(4) },
   'bot_runner.node.changed': { ...base, type: 'bot_runner.node.changed', runnerId: uuid(2), name: 'team-pod', wasPinned: false, isPinned: true, recreatesWorkVolume: true, actorId: uuid(4) },
+  'bot_server.server.changed': { ...base, type: 'bot_server.server.changed', serverId: uuid(8), name: 'devbox', change: 'enrolled', actorId: null },
   'bot_runner.terms.accepted': { ...base, type: 'bot_runner.terms.accepted', runnerId: uuid(2), name: 'claude-max', acceptedBy: uuid(4) },
   'bot_runner.run.refused': { ...base, type: 'bot_runner.run.refused', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'host', reason: 'disabled' },
   'claude_pod.credentials.uploaded': { ...base, type: 'claude_pod.credentials.uploaded', runnerId: uuid(2), name: 'claude-a', actorId: uuid(4) },

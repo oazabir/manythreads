@@ -37,7 +37,8 @@
           "agent",
           "node",
           "model_alias",
-          "enabled"
+          "enabled",
+          "full_access"
         ]
       }
     },

@@ -184,6 +184,10 @@ export type HermesConnectionId = z.infer<typeof HermesConnectionId>;
 export const BotRunnerId = z.uuid().brand<'BotRunnerId'>();
 export type BotRunnerId = z.infer<typeof BotRunnerId>;
 
+/** One enrolled server (`bot_servers`, PLAN P26-12): a machine outside the cluster that holds the agent bridge and keeps one connection open to the site. */
+export const BotServerId = z.uuid().brand<'BotServerId'>();
+export type BotServerId = z.infer<typeof BotServerId>;
+
 export const ScheduledJobId = z.uuid().brand<'ScheduledJobId'>();
 export type ScheduledJobId = z.infer<typeof ScheduledJobId>;
 

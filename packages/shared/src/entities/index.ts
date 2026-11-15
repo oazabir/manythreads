@@ -37,6 +37,7 @@ export * from './scheduled-job.ts';
 export * from './personal-routine-recipes.ts';
 export * from './hermes.ts';
 export * from './bot-runner.ts';
+export * from './bot-server.ts';
 export * from './project.ts';
 export * from './repo-origin.ts';
 export * from './proposal.ts';

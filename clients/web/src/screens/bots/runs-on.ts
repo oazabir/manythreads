@@ -17,6 +17,7 @@ export const KIND_ICON: Readonly<Record<Kind, string>> = {
   claude_cli: '✦',
   codex_cli: '❯',
   llm_gateway: '◎',
+  server_agent: '▣',
 };
 
 export const KIND_LABEL: Readonly<Record<Kind, string>> = {
@@ -25,6 +26,7 @@ export const KIND_LABEL: Readonly<Record<Kind, string>> = {
   claude_cli: 'Claude Code',
   codex_cli: 'Codex',
   llm_gateway: 'Model API',
+  server_agent: 'Agent on a server',
 };
 
 export const STATUS_LABEL: Readonly<Record<Status, string>> = {

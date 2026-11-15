@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "scriptSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "bridgeVersion": {
+      "type": "string",
+      "maxLength": 40
+    }
+  },
+  "required": [
+    "scriptSha256",
+    "bridgeVersion"
+  ]
+}

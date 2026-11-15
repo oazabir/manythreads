@@ -26,7 +26,8 @@
         "hermes_pod",
         "claude_cli",
         "codex_cli",
-        "llm_gateway"
+        "llm_gateway",
+        "server_agent"
       ]
     },
     "agent": {
@@ -184,6 +185,22 @@
         }
       ]
     },
+    "fullAccess": {
+      "type": "boolean"
+    },
+    "serverId": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "status": {
       "type": "string",
       "enum": [
@@ -268,6 +285,8 @@
     "termsAcceptedBy",
     "termsAcceptedAt",
     "maxConcurrent",
+    "fullAccess",
+    "serverId",
     "status",
     "statusDetail",
     "pausedUntil",

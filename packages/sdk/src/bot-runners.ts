@@ -17,7 +17,7 @@ export interface RunnerTarget {
   runner: string;
   /** The runner's label, for the one plain line a refused run shows. Only handed out for a runner the team may use. */
   label: string;
-  kind: 'hermes_gateway' | 'hermes_pod' | 'claude_cli' | 'codex_cli' | 'llm_gateway';
+  kind: 'hermes_gateway' | 'hermes_pod' | 'claude_cli' | 'codex_cli' | 'llm_gateway' | 'server_agent';
   /**
    * `hermes_gateway`: the address the admin typed. `hermes_pod`: where the team's own pod answers (its connection `managed`), or null before the pod is up.
    * Kinds that have no address of their own say null.
@@ -34,6 +34,11 @@ export interface RunnerTarget {
   status: string;
   /** `llm_gateway`: the model alias the runner answers with (`smart`, `fast`, ...). Null for every other kind. */
   modelAlias: string | null;
+  /**
+   * `server_agent`: a `fetch` that sends each request to the agent bridge on the enrolled server through the server's own open connection (the address above is a placeholder: only the
+   * path and query travel, and no authorization header does). Absent for every other kind, which are reached at their address. It lives in this process and never leaves it.
+   */
+  fetch?: typeof fetch;
 }
 
 /** Why a runner cannot be used for a run. `message` is one plain sentence, safe to post in a thread. */

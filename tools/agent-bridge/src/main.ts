@@ -1,11 +1,16 @@
-import { readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig } from './config.ts';
 import { startBridge } from './server.ts';
+import { helloFor, keyFiles, readServerKey, storeServerKey } from './server-mode.ts';
+import { newInternalKey, startTunnel } from './tunnel.ts';
 
 // tsx tools/agent-bridge/src/main.ts --config <file> [--listen 127.0.0.1:8650] [--state-dir ~/.manythreads-bridge] [--key-file <file>] [--repos-file <file>]
+//
+// Server mode (an enrolled server): the config has a "server" section. Then the bridge listens on a Unix socket, not a port, and dials the site (--site https://<site>)
+// with its bridge key (the file the bridge wrote after a rotation, else $CREDENTIALS_DIRECTORY/key); the site's requests come in over that socket.
 //
 // The API key comes from the environment (AGENT_BRIDGE_API_KEY) or from a file that only its owner can read (mode 0600);
 // the bridge does not start without one.
@@ -37,6 +42,9 @@ const { values } = parseArgs({
     'state-dir': { type: 'string' },
     'key-file': { type: 'string' },
     'repos-file': { type: 'string' },
+    site: { type: 'string' },
+    'print-hello': { type: 'boolean', default: false },
+    'insecure-for-tests': { type: 'boolean', default: false },
   },
 });
 if (!values.config) fatal('--config <file> is required');
@@ -50,6 +58,43 @@ try {
 } catch (err) {
   fatal(err instanceof Error ? err.message : String(err));
 }
+if (values['print-hello'] === true) {
+  // what the installer sends the site when it enrols: the machine, the bridge's version and the agents it found (no secret in it)
+  if (config.server === undefined) fatal('--print-hello is for a bridge with a "server" section');
+  process.stdout.write(`${JSON.stringify(await helloFor(config))}\n`);
+  process.exit(0);
+}
+if (config.server !== undefined) {
+  if (!values.site) fatal('server mode needs --site https://<site>');
+  const stateRoot = stateDir;
+  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  const files = keyFiles(stateRoot, process.env['CREDENTIALS_DIRECTORY'], values['key-file']);
+  try {
+    readServerKey(files); // fail at start, in plain words, when there is no key
+  } catch (err) {
+    fatal(err instanceof Error ? err.message : String(err));
+  }
+  const internalKey = newInternalKey();
+  const socketPath = join(stateRoot, 'bridge.sock');
+  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath });
+  const cfg = config;
+  const tunnel = startTunnel({
+    siteUrl: values.site,
+    key: () => readServerKey(files),
+    socketPath,
+    internalKey,
+    hello: () => helloFor(cfg),
+    storeKey: storeServerKey(stateRoot),
+    insecure: values['insecure-for-tests'] === true,
+    log: (line) => console.log(line),
+  });
+  console.log(`agent-bridge (server mode) dialing ${new URL(values.site).origin}; profiles are made from the "server" section`);
+  const stop = (): void => {
+    void tunnel.close().then(() => bridge.close()).then(() => process.exit(0));
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+} else {
 const apiKey = readKey(values['key-file'] ?? join(stateDir, 'api-key'));
 if (apiKey.length < 16) fatal('the API key must be at least 16 characters');
 // The key lives in this process only; children are started without it (see runs.ts), and it is dropped from the environment here too.
@@ -62,3 +107,4 @@ const shutdown = (): void => {
 };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+}

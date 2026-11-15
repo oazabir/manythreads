@@ -1,6 +1,8 @@
 import type { BotRunnersProvider, ClaudePodsProvider, PluginContext, PluginTx, PodRunnerInfo, PodRunnerState, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
 import { BotRunnerName, modelRunnerProblem } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
+import { serverProfileRule } from './servers.ts';
+import type { TunnelRegistry } from './tunnel/registry.ts';
 
 // `resolveRunner`: the one place that turns a runner's NAME into where a run goes (PLAN P19-02). A connection, a team pod and a runner all answer "where does
 // this bot's run go?"; runtime-hermes asks here for every runner and for every connection an admin has adopted, so two lookups cannot disagree.
@@ -18,7 +20,7 @@ const refuse = (reason: Extract<RunnerResolution, { ok: false }>['reason'], mess
 const shown = (name: string): string => (BotRunnerName.safeParse(name).success ? `"${name}"` : 'that name');
 
 /** The kinds that run a bot. A kind not on this list is listed to admins and teams but answers `not_runnable`. */
-const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod', 'llm_gateway', 'claude_cli', 'codex_cli']);
+const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod', 'llm_gateway', 'claude_cli', 'codex_cli', 'server_agent']);
 
 /**
  * The states in which a runner turns a run away, in the words a thread may carry. `ready` runs; so does `not_set_up` when the runner has an address and a key (an admin changed
@@ -39,7 +41,7 @@ async function openToTeam(tx: PluginTx, runner: { id: string; all_teams: boolean
   return (await tx.query('SELECT 1 FROM app.bot_runner_teams WHERE runner_id = $1::uuid AND team_id = $2::uuid', [runner.id, teamId])).rows.length > 0;
 }
 
-export async function resolveRunner(ctx: PluginContext, query: { teamId: string; runner: string }): Promise<RunnerResolution> {
+export async function resolveRunner(ctx: PluginContext, query: { teamId: string; runner: string }, tunnel?: TunnelRegistry): Promise<RunnerResolution> {
   return ctx.db.system(async (tx) => {
     const team = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
     if (!team) return refuse('unknown', `This bot's team could not be found, so its runner ${shown(query.runner)} cannot be used.`);
@@ -78,6 +80,26 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
       const bridge = await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.bridge({ runnerName: runner.name, agent: 'codex' }).catch(() => null);
       if (!bridge) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not running yet.`);
       const target: RunnerTarget = { ...base, kind: 'codex_cli', address: bridge.address, key: bridge.key, agent: 'codex', guard: false, profileRule: runner.profile_rule ?? CLAUDE_PROFILE_RULE };
+      return { ok: true, target };
+    }
+    // One agent on an enrolled server: the run goes through the server's open connection, so the target carries its own `fetch` (the address is a placeholder, and the key one the
+    // tunnel never sends: the bridge answers requests from its own connection with its own key). A server that is not connected, or dropped a while ago, cannot serve a run.
+    if (runner.kind === 'server_agent') {
+      const server = runner.server_id === null ? undefined : (await tx.query<{ name: string; key_hash: string | null }>('SELECT name, key_hash FROM app.bot_servers WHERE id = $1::uuid', [runner.server_id])).rows[0];
+      if (!server || runner.server_id === null || tunnel === undefined || server.key_hash === null) return refuse('not_set_up', `This bot runs on ${runner.label}, whose server is not set up yet.`);
+      if (!tunnel.reachable(runner.server_id)) return refuse('not_ready', `This bot runs on ${runner.label}, whose server is not connected. Check that the machine is on and the bridge is running.`);
+      const agent = runner.agent === 'claude-code' || runner.agent === 'codex' || runner.agent === 'hermes-acp' ? runner.agent : null;
+      if (agent === null) return refuse('not_set_up', `This bot runs on ${runner.label}, which has no agent set.`);
+      const target: RunnerTarget = {
+        ...base,
+        kind: 'server_agent',
+        address: 'http://server.invalid',
+        key: 'tunnel',
+        agent,
+        guard: false,
+        profileRule: runner.profile_rule ?? serverProfileRule(agent),
+        fetch: tunnel.fetchFor(runner.server_id, server.name),
+      };
       return { ok: true, target };
     }
     // An LLM gateway runner has no address or key of its own: the run is a loop of model calls made through the platform's gateway on the runner's alias (`model-runtime.ts`).
@@ -312,10 +334,10 @@ export async function pauseRunner(ctx: PluginContext, input: { runner: string; t
   });
 }
 
-export function createBotRunnersProvider(ctx: PluginContext): BotRunnersProvider {
+export function createBotRunnersProvider(ctx: PluginContext, tunnel?: TunnelRegistry): BotRunnersProvider {
   return {
     id: 'bot.runners',
-    resolveRunner: (query) => resolveRunner(ctx, query),
+    resolveRunner: (query) => resolveRunner(ctx, query, tunnel),
     checkPlacement: (tx, query) => checkPlacement(tx, query),
     kindOf: (tx, query) => kindOf(tx, query),
     teamRunners: (query) => teamRunners(ctx, query),

@@ -158,6 +158,7 @@ export * from './bot_runner.agent_auth.changed.ts';
 export * from './bot_runner.availability.changed.ts';
 export * from './bot_runner.default.changed.ts';
 export * from './bot_runner.node.changed.ts';
+export * from './bot_server.server.changed.ts';
 export * from './bot_runner.terms.accepted.ts';
 export * from './claude_pod.credentials.uploaded.ts';
 export * from './claude_pod.credentials.replaced.ts';

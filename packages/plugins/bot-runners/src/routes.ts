@@ -36,6 +36,7 @@ import { registerSigninRoutes } from './signin.ts';
 import { agentOfKind, isPodCli, loadRunner, presentOne, presentRunners, requireAllowedAddress, requireWorkspaceAdmin } from './common.ts';
 import { DEFAULT_PROFILE_RULE } from './resolve.ts';
 import { effectiveStatus, placementsOf, RUNNER_SELECT, type RunnerRow } from './rows.ts';
+import type { TunnelRegistry } from './tunnel/registry.ts';
 
 // The runner catalog's routes (PLAN P19-02, docs/plugins/bot-runners.md). A workspace admin makes, changes, tests, shares and removes runners; a team member
 // reads the short view of the runners available to their team. A key is accepted and never returned; neither an error nor a log line carries an address,
@@ -100,7 +101,7 @@ function requireAlias(alias: string | undefined): string {
   return alias;
 }
 
-export function registerRoutes(ctx: PluginContext): void {
+export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): void {
   ctx.http.route({
     method: listBotRunnersRoute.method,
     path: listBotRunnersRoute.path,
@@ -279,6 +280,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const { id } = BotRunnerPathParams.parse(req.params);
       await requireWorkspaceAdmin(tx);
       const current = await loadRunner(tx, id);
+      if (current.kind === 'server_agent') throw conflict('A server\'s runners go with the server. Remove the server to remove them.');
       const workspaceId = current.workspace_id;
       // Bots of every team are counted, so the count is read as the system; the answer names teams, never an address or a key.
       const placed = (await ctx.db.system((sys) => placementsOf(sys, workspaceId, [id]), { workspaceId })).get(id);
@@ -348,6 +350,26 @@ export function registerRoutes(ctx: PluginContext): void {
         status = ok ? 'ready' : 'not_set_up';
         await tx.query('UPDATE app.bot_runners SET status = $2, status_detail = $3, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid', [id, status, error]);
         status = effectiveStatus({ enabled: current.enabled, status });
+      } else if (current.kind === 'server_agent') {
+        // An agent on an enrolled server: the bridge is asked its health through the server's open connection (never an address), and the answer is the same three sentences.
+        const server = current.server_id === null || tunnel === undefined ? undefined : (await tx.query<{ name: string }>('SELECT name FROM app.bot_servers WHERE id = $1::uuid', [current.server_id])).rows[0];
+        if (!server || current.server_id === null || tunnel === undefined) {
+          ok = false;
+          error = 'This runner has no server.';
+        } else if (!tunnel.reachable(current.server_id)) {
+          ok = false;
+          error = 'The server is not connected. Check that the machine is on and the bridge is running.';
+        } else {
+          const outcome = await checkAgentBridge({ baseUrl: 'http://server.invalid', apiKey: 'tunnel', guarded: false }, { fetch: tunnel.fetchFor(current.server_id, server.name) });
+          ok = outcome.ok;
+          error = outcome.error;
+        }
+        // Reachable and healthy is not the same as ready: a sign-in the agent still waits for keeps the runner's own state.
+        status = effectiveStatus(current);
+        if (ok && status === 'not_set_up') {
+          status = current.agent === 'hermes-acp' ? 'ready' : 'waiting_for_sign_in';
+          await tx.query('UPDATE app.bot_runners SET status = $2, status_detail = NULL, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid', [id, status]);
+        }
       } else {
         // The other kinds are not asked over the network from here: they report the state they are in.
         status = effectiveStatus(current);
@@ -389,7 +411,7 @@ export function registerRoutes(ctx: PluginContext): void {
       if (body.runnerId !== null) {
         const target = await loadRunner(tx, body.runnerId);
         if (!target.enabled) throw conflict('A runner that is switched off cannot be the default.');
-        if (target.kind === 'claude_cli' || target.kind === 'codex_cli' || target.kind === 'llm_gateway') throw conflict('This kind of runner cannot be the default yet.');
+        if (target.kind === 'claude_cli' || target.kind === 'codex_cli' || target.kind === 'llm_gateway' || target.kind === 'server_agent') throw conflict('This kind of runner cannot be the default yet.');
       }
       if (previous !== body.runnerId) {
         // One statement clears the old default before the next sets the new one: the database allows one default per workspace.
@@ -424,5 +446,5 @@ export function registerRoutes(ctx: PluginContext): void {
   registerAdoptionRoutes(ctx);
   registerNodeRoutes(ctx);
   registerSigninRoutes(ctx);
-  registerAgentAuthRoutes(ctx);
+  registerAgentAuthRoutes(ctx, tunnel);
 }

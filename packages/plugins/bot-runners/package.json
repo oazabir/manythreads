@@ -21,6 +21,8 @@
     "@manythreads/kernel": "workspace:*",
     "@manythreads/test-utils": "workspace:*",
     "@types/pg": "^8",
-    "pg": "^8"
+    "@types/ws": "^8.18.2",
+    "pg": "^8",
+    "ws": "^8.22.0"
   }
 }

@@ -37,6 +37,9 @@
       "minLength": 1,
       "maxLength": 40
     },
+    "fullAccess": {
+      "type": "boolean"
+    },
     "enabled": {
       "type": "boolean"
     }
