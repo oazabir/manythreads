@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { PluginContext } from '@manythreads/sdk';
+import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { HttpError } from '@manythreads/sdk';
 import type { CredentialTeam, DeployKubeconfigProvider, ProjectCredentialsProvider } from '@manythreads/sdk';
 import { KubeconfigResponse, PushCredentialQuery, PushCredentialResponse, RunSelfResponse, addressKey, kubeconfigRoute, pushCredentialRoute, runSelfRoute } from '@manythreads/shared';
@@ -35,7 +35,7 @@ function windowed(limit: number): (key: string) => boolean {
  * Is the run's bot placed on a runner of an enrolled server (`kind = 'server_agent'`)? The two credential doors below exist for the publisher and the bridge of such a server, which
  * have no Kubernetes Secret to read; a run in an agent pod gets its login from the pod's own mounts and must not be able to fetch another variant (the host's) with its token.
  */
-async function placedOnServer(tx: { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }, botId: string): Promise<boolean> {
+async function placedOnServer(tx: PluginTx, botId: string): Promise<boolean> {
   const row = (
     await tx.query<{ kind: string }>(
       `SELECT r.kind FROM app.bots b JOIN app.bot_runners r ON r.workspace_id = b.workspace_id AND r.name = b.placement ->> 'runs_on' WHERE b.id = $1::uuid`,
