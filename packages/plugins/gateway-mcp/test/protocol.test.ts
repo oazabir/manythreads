@@ -307,6 +307,52 @@ describe('gateway-mcp protocol', () => {
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'withheld_by_guardrail' });
   });
 
+  describe('a private note is handed on whole (P26-03)', () => {
+    // A guard that turns anything shaped like `password: value` into a marker (what the data-loss plugin does) and refuses nothing else.
+    const redactingGuard = (input: { text: string; destination: string }) =>
+      /password\s*[:=]\s*\S{8,}/i.test(input.text)
+        ? { outcome: 'redact' as const, text: input.text.replace(/(password\s*[:=]\s*)\S{8,}/i, '$1[redacted:password]'), rules: ['password'], hooks: 1, ran: ['guardrails-dlp'] }
+        : { outcome: 'allow' as const, text: input.text, rules: [], hooks: 1, ran: ['guardrails-dlp'] };
+    const NOTE = 'admin omar@example.test password: Zk4-hunter2-9931-long';
+    const HANDOFF = { name: 'tasks.handoff', destructive: false };
+    const READ_NOTE = { name: 'tasks.private_note', destructive: false };
+
+    it('the privateNote of a hand-over is sealed as written, while the visible note still goes through the check', async () => {
+      const { ctx, invoked } = fakeContext({ tools: [HANDOFF], decisions: { 'tasks.handoff': ALLOWED }, guard: redactingGuard, answer: () => ({ ok: true }) });
+      await handleRpc(ctx, RUN, {
+        jsonrpc: '2.0', id: 40, method: 'tools/call',
+        params: { name: 'tasks.handoff', arguments: { taskId: UUIDS.run, toBotSlug: 'web-smoke-tester', note: 'deployed; password: visible-in-thread-1', privateNote: NOTE } },
+      });
+      expect(invoked).toHaveLength(1);
+      expect(invoked[0]!.input['privateNote']).toBe(NOTE);
+      expect(String(invoked[0]!.input['note'])).toContain('[redacted:password]');
+    });
+
+    it('the note a bot reads back is not held or redacted, while another read still is', async () => {
+      const { ctx } = fakeContext({
+        tools: [READ_NOTE, SEARCH_TOOL],
+        decisions: { 'tasks.private_note': ALLOWED, 'messages.search': ALLOWED },
+        guard: redactingGuard,
+        answer: (name) => (name === 'tasks.private_note' ? { ok: true, taskId: UUIDS.run, privateNote: NOTE } : { hits: [{ text: NOTE }] }),
+      });
+      const call = async (id: number, name: string, args: Record<string, unknown>) => {
+        const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+        return ((await body(res)) as { result: { content: Array<{ text: string }> } }).result.content[0]!.text;
+      };
+      expect(await call(41, 'tasks.private_note', { taskId: UUIDS.run })).toContain(NOTE);
+      expect(await call(42, 'messages.search', { query: 'x' })).toContain('[redacted:password]');
+    });
+
+    it('only the named field is exempt: a secret in any other field of the call is still checked', async () => {
+      const { ctx, invoked } = fakeContext({ tools: [HANDOFF], decisions: { 'tasks.handoff': ALLOWED }, guard: redactingGuard, answer: () => ({ ok: true }) });
+      await handleRpc(ctx, RUN, {
+        jsonrpc: '2.0', id: 43, method: 'tools/call',
+        params: { name: 'tasks.handoff', arguments: { taskId: UUIDS.run, toBotSlug: 'x', note: NOTE } },
+      });
+      expect(String(invoked[0]!.input['note'])).not.toContain('Zk4-hunter2');
+    });
+  });
+
   it('a grant that needs approval stops before the handler runs', async () => {
     const { ctx, invoked } = fakeContext({
       tools: [WRITE_TOOL],

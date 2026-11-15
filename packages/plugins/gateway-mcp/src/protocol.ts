@@ -144,6 +144,26 @@ async function guarded(ctx: PluginContext, run: BotRunHandle, value: unknown, wh
   }
 }
 
+/** The fields of a call that carry a secret to the next owner on purpose, by tool: `tasks.handoff`'s `privateNote`. */
+const SEALED_FIELDS: Readonly<Record<string, readonly string[]>> = { 'tasks.handoff': ['privateNote'] };
+/** The tools whose answer is a secret given to its reader on purpose: `tasks.private_note`. */
+const SEALED_ANSWERS: ReadonlySet<string> = new Set(['tasks.private_note']);
+
+/** The call's sealed fields set apart from the rest (the rest is what is checked, stored and shown). */
+export function sealedFieldsOf(tool: string, input: Record<string, unknown>): { rest: Record<string, unknown>; fields: Record<string, unknown> } {
+  const names = SEALED_FIELDS[tool];
+  if (names === undefined) return { rest: input, fields: {} };
+  const rest: Record<string, unknown> = { ...input };
+  const fields: Record<string, unknown> = {};
+  for (const name of names) {
+    if (name in rest) {
+      fields[name] = rest[name];
+      delete rest[name];
+    }
+  }
+  return { rest, fields };
+}
+
 /** The results `holdBack` made: the one sure sign that a call was held back (an answer's own text can say anything, this set cannot be written to from outside). */
 const heldResults = new WeakSet<McpToolResult>();
 export const wasHeld = (result: McpToolResult): boolean => heldResults.has(result);
@@ -165,7 +185,13 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   if (personalRoutineHidesTool(run, params.name)) return refusal(run, params.name, { ok: false, code: 'not_available', message: hiddenToolSentence(params.name) });
   // a personal routine has a budget of tool calls (personal-routine.ts)
   if (await toolBudgetUsed(ctx, run)) return refusal(run, params.name, { ok: false, code: 'forbidden', message: toolBudgetSentence() });
-  let input = fitted.input;
+  // The one place a secret is handed from one bot to the next on purpose (P26-03): the sealed field of a call is not read by the data-loss check on its way in, and the
+  // answer of its reading tool is not read on its way out. Both would otherwise turn a password into a redaction marker (or refuse the call), and the next bot would be
+  // given nothing it can use. The field is kept out of everything that is stored or shown on the way (the decision line, an approval card, a rehearsal) and put
+  // back only for the call itself.
+  const sealed = sealedFieldsOf(params.name, fitted.input);
+  let input = sealed.rest;
+  const withSealed = (given: Record<string, unknown>): Record<string, unknown> => ({ ...given, ...sealed.fields });
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
   const authContext = authorizeContext(input);
@@ -267,7 +293,7 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
     let answer: unknown;
     try {
       answer = await ctx.runs.asReader(run, async (tx) => {
-        const result = await ctx.runs.invoke(tx, params.name, input);
+        const result = await ctx.runs.invoke(tx, params.name, withSealed(input));
         // The source log is what "Sources reached" and the retention rule stand on: one line per hit the call answered with.
         for (const source of definition.sourcesFrom?.(result) ?? []) await ctx.runs.logSource(tx, source);
         // A read of a tool source always leaves a line, whatever `sourcesFrom` answered (a source may name no hit, or none at all): the retention rule ("a run keeps
@@ -282,6 +308,8 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
       return refusal(run, params.name, thrownAnswer(params.name, err));
     }
     // What a read answers with is checked before the bot sees it: a secret that sits in a page or a file stays out of the model's context.
+    // (the note of `tasks.private_note` is the exception: it is a secret given to this bot on purpose, see `SEALED_ANSWERS`)
+    if (SEALED_ANSWERS.has(params.name)) return toolResult(answer);
     const shown = await guarded(ctx, run, answer, 'mcp_result');
     if (shown.unchecked || shown.outcome === 'block' || shown.outcome === 'require_approval') {
       return refusal(run, params.name, { ok: false, code: 'withheld_by_guardrail', message: `The answer was held back: it carries ${describeFinding(shown.rules)}, which the data-loss policy does not let through.` });
@@ -289,7 +317,7 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
     return toolResult(shown.outcome === 'redact' ? shown.value : answer);
   }
   try {
-    const answer = await ctx.runs.asBot(run, (tx) => ctx.runs.invoke(tx, params.name, input));
+    const answer = await ctx.runs.asBot(run, (tx) => ctx.runs.invoke(tx, params.name, withSealed(input)));
     // A tool source's write can answer with outside text too (the output of a command run on a server): it is checked like a read's answer.
     if (ctx.toolSources.find(params.name) && !isRefusal(answer)) {
       const shown = await guarded(ctx, run, answer, 'mcp_result');
