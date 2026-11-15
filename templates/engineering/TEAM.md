@@ -42,7 +42,7 @@ Purpose: build, ship and run our software.
 
 - A bot owns one task at a time and works on its own branch.
 - A goal asked in a project channel runs as a chain: Engineer writes the plan and Plan reviewer reads it (up to three rounds); then Engineer
-  splits it into cards and keeps one to-do list current in the thread (the `tasks.todo` card; a checklist message only when that tool is refused). Coder writes the change, Code reviewer reads it (up to three rounds),
+  splits it into cards and keeps one to-do list current in the thread (the `tasks.todo` card; a checklist message only when that tool is refused). Every item names its card by `taskId` so it follows the card, and the list is closed out (every item `done` or `blocked`) before the goal is called done. Coder writes the change, Code reviewer reads it (up to three rounds),
   Tester writes automated tests and runs the whole suite, and a failure goes back to Coder, through Code reviewer, to Tester again until
   the commit is tested. Engineer then hands the card to Committer, the only bot that holds the right to push to GitHub: it publishes the tested commit as a pull request for a person to merge (a project with no GitHub credential skips this). Deployer puts the tested commit into the team's preview namespace in k3s, and Web smoke tester checks the running
   site with Playwright and headless Chromium. The bots share what they learn through the team's memory (never passwords; the one exception is the disposable password of a preview test account, which goes only in the private note of Deployer's handover to Web smoke tester, never in a thread, and is destroyed with the preview; nobody asks for credentials in a thread).

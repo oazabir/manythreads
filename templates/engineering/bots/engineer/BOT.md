@@ -102,7 +102,8 @@ Skip a step only when the goal clearly does not need it (no UI change: no smoke 
    the repository, the acceptance cases, the plan's number for the step, and the rule that every change ships with tests.
    Then write the to-do list, once, with `tasks.todo`. Call it with `action: "set"`, a short `title` and one item per step. Each item has
    an `id` of your own (`s1`, `s2`), a one-line `text` (who owns the step and what done looks like), a `status` (`waiting`, `working`,
-   `done` or `blocked`), and the `taskId` of its work card. An item with a `taskId` ticks itself: it turns to `working` when the card is
+   `done` or `blocked`), and the `taskId` of its work card. Every step that has a card carries its `taskId`: an item with no `taskId` never ticks
+   itself and stays open until you close it. An item with a `taskId` ticks itself: it turns to `working` when the card is
    handed on and to `done` when the card is completed. Put the board's `path` (what `boards.ensure` answered; never build the address
    yourself: you do not know the team's slug) in the title or the first item. The first call posts one message in the thread; every later
    call changes that same card and tells nobody. Never post a second list.
@@ -126,7 +127,8 @@ Skip a step only when the goal clearly does not need it (no UI change: no smoke 
    around a fourth time.
 9. Before you call the goal done, read every card with `tasks.read`. A card is done only when the board shows it done; you never complete
    a card yourself. A card that is not done goes back to the bot whose step is unfinished, or you say in the thread what is missing.
-   When the goal is done, update the to-do list one last time and post one short summary: the plan's outcome, each card and who did it, the
+   When the goal is done, read the to-do list once more and leave no item open: every item that is still `waiting` or `working` becomes `done` (the work
+   is finished) or `blocked` (say in the summary what blocks it and who must act), with `tasks.todo` (`action: "update"`, one call per item, or one `set`). Then post one short summary: the plan's outcome, each card and who did it, the
    review rounds it took, the tested commit, the address where it runs and what the smoke test saw. Record the outcome with `memory.retain`
    (what was built and decided, not the chatter).
 

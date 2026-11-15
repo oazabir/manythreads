@@ -686,6 +686,28 @@ describe('items that follow a card, again', () => {
     expect(list.items.map((i) => i.status)).toEqual(['done', 'done']);
   });
 
+  it('catches up when a run of the list\'s owner ends: a card that finished unseen ticks its item, and only the owner\'s lists are looked at (P26-04)', async () => {
+    const taskId = await card();
+    const mine = await thread(alpha);
+    const theirs = await thread(beta);
+    for (const t of [mine, theirs]) await todo(t.run, { action: 'set', items: [{ id: 'c', text: 'The card', status: 'working', taskId }, { id: 'p', text: 'Plain', status: 'waiting' }] });
+    // the card finished with no event delivered to the lists (a delivery that was missed)
+    await w.system((tx) => tx.query("UPDATE app.tasks SET state = 'done', completed_at = now(), tested_sha = 'abcdef1' WHERE id = $1", [taskId]));
+    expect((await read(nadia, mine.root))!.items[0]!.status).toBe('working');
+    const closed = (botId: string) => ({ type: 'bots.run.closed', schemaVersion: 1, workspaceId: nadia.workspaceId, teamId: TEAM_IDS.Engineering, botId, runId: randomUUID(), trigger: 'mention', status: 'done' });
+    // the plugin has more than one subscriber of this event (the card activity too): the event goes to all of them, as the outbox does
+    const deliverClosed = (botId: string) => w.system(async (tx) => { for (const e of w.server.host.registries.eventSubscriptions.list().filter((x) => x.plugin === 'tasks' && x.value.type === 'bots.run.closed')) await e.value.handler(closed(botId) as never, tx as never); });
+    await deliverClosed(alpha.botId);
+    const list = (await read(nadia, mine.root))!;
+    expect(list.items.map((i) => i.status)).toEqual(['done', 'waiting']);
+    // the other bot's list is not touched by this bot's run ending, and a second delivery changes nothing
+    expect((await read(nadia, theirs.root))!.items[0]!.status).toBe('working');
+    await deliverClosed(alpha.botId);
+    expect((await read(nadia, mine.root))!.version).toBe(list.version);
+    await deliverClosed(beta.botId);
+    expect((await read(nadia, theirs.root))!.items[0]!.status).toBe('done');
+  });
+
   it('leaves a list alone that a change would make too heavy, without failing the event', async () => {
     const taskId = await card();
     const { root, run } = await thread(alpha);

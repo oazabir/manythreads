@@ -1,5 +1,6 @@
 import { json, route, type MessageProvider, type PluginContext, type PluginEvent, type PluginTx } from '@manythreads/sdk';
 import {
+  BotsRunClosedEvent,
   GetThreadTodoResponse,
   TasksTaskCompletedEvent,
   TasksTaskHandedOffEvent,
@@ -351,6 +352,40 @@ async function follow(ctx: PluginContext, tx: PluginTx, workspaceId: string, tea
   }
 }
 
+/**
+ * The catch-up (P26-04): when a run of the bot that keeps a list ends, every item of its lists that names a card which is finished becomes done. The events above do this as
+ * the card finishes; this pass is for the delivery that was missed or came before the list named the card, so a thread's list does not stay open for a card that is over.
+ * Only the lists of this bot in this team are looked at, and only items that name a card; idempotent, like `follow`.
+ */
+async function catchUp(ctx: PluginContext, tx: PluginTx, event: BotsRunClosedEvent): Promise<void> {
+  const rows = (
+    await tx.query<TodoRow>(
+      `SELECT ${COLUMNS} FROM app.thread_todos t
+        WHERE t.workspace_id = $1::uuid AND t.team_id = $2::uuid
+          AND t.bot_actor_id = (SELECT a.id FROM app.actors a WHERE a.kind = 'bot' AND a.ref_id = $3::uuid AND a.workspace_id = $1::uuid)
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements(t.items) i WHERE i ? 'taskId' AND i->>'status' <> 'done')
+        ORDER BY t.thread_root_id FOR UPDATE`,
+      [event.workspaceId, event.teamId, event.botId],
+    )
+  ).rows;
+  for (const row of rows) {
+    const list = Array.isArray(row.items) ? (row.items as Array<Record<string, unknown>>) : [];
+    const open = [...new Set(list.flatMap((i) => (typeof i['taskId'] === 'string' && i['status'] !== 'done' && UUID.test(i['taskId']) ? [i['taskId']] : [])))];
+    if (open.length === 0) continue;
+    const finished = new Set(
+      (await tx.query<{ id: string }>("SELECT t.id FROM app.tasks t WHERE t.id = ANY ($1::uuid[]) AND t.team_id = $2::uuid AND t.state = 'done'", [open, event.teamId])).rows.map((r) => r.id),
+    );
+    if (finished.size === 0) continue;
+    const next = list.map((item) => (typeof item['taskId'] === 'string' && finished.has(item['taskId']) && item['status'] !== 'done' ? { ...item, status: 'done' } : item));
+    const text = JSON.stringify(next);
+    if (Buffer.byteLength(text, 'utf8') > FOLLOW_MAX_BYTES) continue;
+    const updated = (
+      await tx.query<{ version: number }>('UPDATE app.thread_todos SET items = $2::jsonb, version = version + 1, updated_at = now() WHERE thread_root_id = $1::uuid RETURNING version', [row.thread_root_id, text])
+    ).rows[0];
+    if (updated) await pushChanged(ctx, tx, event.workspaceId, row.channel_id, row.thread_root_id, updated.version);
+  }
+}
+
 export function registerTodo(ctx: PluginContext): void {
   ctx.capabilities.register(TODO_TOOL, async (raw, tx) => {
     const parsed = TodoToolInput.safeParse(raw);
@@ -379,5 +414,9 @@ export function registerTodo(ctx: PluginContext): void {
   ctx.events.subscribe('tasks.task.completed', async (raw: PluginEvent, tx: PluginTx) => {
     const event = TasksTaskCompletedEvent.parse(raw);
     await follow(ctx, tx, event.workspaceId, event.teamId, event.taskId, 'done', null);
+  });
+  // A run of the list's owner ended: a card that finished while the list did not know it ticks its item now (the catch-up).
+  ctx.events.subscribe('bots.run.closed', async (raw: PluginEvent, tx: PluginTx) => {
+    await catchUp(ctx, tx, BotsRunClosedEvent.parse(raw));
   });
 }
