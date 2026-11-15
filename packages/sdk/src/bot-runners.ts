@@ -39,6 +39,8 @@ export interface RunnerTarget {
    * path and query travel, and no authorization header does). Absent for every other kind, which are reached at their address. It lives in this process and never leaves it.
    */
   fetch?: typeof fetch;
+  /** `server_agent` with Codex: the admin's switch for full access on this runner (the site's half; the machine's own half is the installer flag). Absent for every other kind. */
+  fullAccess?: boolean;
 }
 
 /** Why a runner cannot be used for a run. `message` is one plain sentence, safe to post in a thread. */

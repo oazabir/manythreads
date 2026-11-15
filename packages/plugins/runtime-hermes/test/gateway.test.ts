@@ -156,6 +156,18 @@ describe('what a run carries to the gateway', () => {
     });
   });
 
+  it('sends the runner\'s full-access switch (the site\'s half) when the target has one, and nothing when it has none (P26-15)', async () => {
+    const withToken = input({ endpoint: { runId: RUN_ID, url: 'https://mt.example/mcp', token: 'run-token-abc' } });
+    for (const on of [true, false]) {
+      gw.calls.length = 0;
+      await collect((await runOnGateway(options({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent: 'codex' as const, fullAccess: on }) }), withToken, scope, { connection: 'host', profile: 'mt-coder' })).events);
+      expect(AgentBridgeRunExtension.parse(bodyOf()['manythreads']).fullAccess).toBe(on);
+    }
+    gw.calls.length = 0;
+    await collect((await runOnGateway(options(external('codex')), withToken, scope, { connection: 'host', profile: 'mt-coder' })).events);
+    expect(bodyOf()['manythreads']).not.toHaveProperty('fullAccess');
+  });
+
   it('treats the ACP words as bridge agents: Hermes over ACP is not a gateway and gets the run token like Claude Code does (P25-05)', async () => {
     for (const agent of ['hermes-acp', 'opencode'] as const) {
       gw.calls.length = 0;

@@ -133,6 +133,7 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
       profileRule: target.profileRule.split('{team}').join(slug),
       runner,
       fetch: target.fetch,
+      ...(target.fullAccess !== undefined ? { fullAccess: target.fullAccess } : {}),
       ...(target.agent === 'hermes-acp' ? {} : { claudeRunner: runner }),
     };
   }

@@ -99,6 +99,7 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
         guard: false,
         profileRule: runner.profile_rule ?? serverProfileRule(agent),
         fetch: tunnel.fetchFor(runner.server_id, server.name),
+        ...(agent === 'codex' ? { fullAccess: runner.full_access } : {}),
       };
       return { ok: true, target };
     }

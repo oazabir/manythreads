@@ -29,12 +29,12 @@ const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool
 let ctx: PluginContext;
 const KEY = 'resolver-key-0123456789abcdef';
 
-const insertRunner = (name: string, fields: { kind: string; agent?: string; enabled?: boolean; allTeams?: boolean; baseUrl?: string; secretId?: string | null; teams?: string[] }): Promise<string> =>
+const insertRunner = (name: string, fields: { kind: string; agent?: string; enabled?: boolean; allTeams?: boolean; baseUrl?: string; secretId?: string | null; teams?: string[]; serverId?: string }): Promise<string> =>
   sys(async (tx) => {
     const id = (
       await tx.query<{ id: string }>(
-        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, base_url, secret_id, status, agent) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ready', $9) RETURNING id`,
-        [omar.workspaceId, name, `Label of ${name}`, fields.kind, fields.enabled ?? true, fields.allTeams ?? false, fields.baseUrl ?? null, fields.secretId ?? null, fields.agent ?? 'hermes'],
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, base_url, secret_id, status, agent, server_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ready', $9, $10) RETURNING id`,
+        [omar.workspaceId, name, `Label of ${name}`, fields.kind, fields.enabled ?? true, fields.allTeams ?? false, fields.baseUrl ?? null, fields.secretId ?? null, fields.agent ?? 'hermes', fields.serverId ?? null],
       )
     ).rows[0]!.id;
     for (const team of fields.teams ?? []) await tx.query('INSERT INTO app.bot_runner_teams (runner_id, team_id) VALUES ($1, $2)', [id, team]);
@@ -224,5 +224,28 @@ describe('teamRunners', () => {
     await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = false WHERE name = 'gw'"));
     expect((await teamRunners(ctx, { teamId: TEAM_IDS.Engineering })).defaultRunner).toBeNull();
     await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = true, is_default = false WHERE name = 'gw'"));
+  });
+});
+
+describe('a runner of an enrolled server (P26-15)', () => {
+  const HASH = 'a'.repeat(64);
+  const tunnel = { reachable: () => true, fetchFor: () => fetch } as never;
+
+  it('carries the admin\'s full-access switch for a Codex agent and none for a Claude or Hermes agent', async () => {
+    const serverId = (
+      await sys((tx) => tx.query<{ id: string }>("INSERT INTO app.bot_servers (workspace_id, name, label, key_hash, status) VALUES ($1, 'fa-box', 'Box', $2, 'connected') RETURNING id", [omar.workspaceId, HASH]))
+    ).rows[0]!.id;
+    for (const [name, agent] of [['fa-box-codex', 'codex'], ['fa-box-claude', 'claude-code']] as const) {
+      await insertRunner(name, { kind: 'server_agent', agent, teams: [TEAM_IDS.Engineering], serverId });
+    }
+    const answer = async (name: string) => {
+      const r = await resolveRunner(ctx, { teamId: TEAM_IDS.Engineering, runner: name }, tunnel);
+      if (!r.ok) throw new Error(r.message);
+      return r.target;
+    };
+    expect((await answer('fa-box-codex')).fullAccess).toBe(false);
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET full_access = true WHERE name = 'fa-box-codex'"));
+    expect((await answer('fa-box-codex')).fullAccess).toBe(true);
+    expect(await answer('fa-box-claude')).not.toHaveProperty('fullAccess');
   });
 });
