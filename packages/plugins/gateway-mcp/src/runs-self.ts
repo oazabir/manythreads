@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext } from '@manythreads/sdk';
 import { HttpError } from '@manythreads/sdk';
-import { RunSelfResponse, addressKey, runSelfRoute } from '@manythreads/shared';
+import type { CredentialTeam, DeployKubeconfigProvider, ProjectCredentialsProvider } from '@manythreads/sdk';
+import { KubeconfigResponse, PushCredentialQuery, PushCredentialResponse, RunSelfResponse, addressKey, kubeconfigRoute, pushCredentialRoute, runSelfRoute } from '@manythreads/shared';
 import { json, route, unauthenticated } from './http.ts';
 
 // GET /api/runs/self (PLAN Bundle E, WP-R1, docs/plugins/claude-pods.md). The publisher container of a Claude or Codex pod presents the run's own token and
@@ -36,16 +37,22 @@ export function registerRunsSelfRoute(ctx: PluginContext): void {
   const rateLimited = (): Error => new HttpError(429, 'rate_limited', 'Too many requests; slow down', { 'retry-after': '30' });
   const refuse = (ip: string): Error => (tooManyFailures(addressKey(ip)) ? rateLimited() : unauthenticated(GONE));
 
+  /** The run behind the request's bearer token, or the refusal to throw. Every failure is the same 401 (counted per address); a run may ask 120 times a minute over all three routes. */
+  const runOf = async (req: { headers: Record<string, string | undefined>; ip: string }): Promise<NonNullable<Awaited<ReturnType<PluginContext['runs']['resolve']>>>> => {
+    const match = /^Bearer[ \t]+([A-Za-z0-9_-]{1,200})[ \t]*$/.exec(req.headers['authorization'] ?? '');
+    if (match === null) throw refuse(req.ip);
+    const run = await ctx.runs.resolve(sha256(match[1]!));
+    if (run === null) throw refuse(req.ip);
+    if (tooManyCalls(run.runId)) throw rateLimited();
+    return run;
+  };
+
   ctx.http.route({
     ...runSelfRoute,
     public: true,
     schema: { response: RunSelfResponse },
     handler: route(async (req) => {
-      const match = /^Bearer[ \t]+([A-Za-z0-9_-]{1,200})[ \t]*$/.exec(req.headers['authorization'] ?? '');
-      if (match === null) throw refuse(req.ip);
-      const run = await ctx.runs.resolve(sha256(match[1]!));
-      if (run === null) throw refuse(req.ip);
-      if (tooManyCalls(run.runId)) throw rateLimited();
+      const run = await runOf(req);
       // names, read from the database on every call: the run row says which bot and team, never the caller
       const found = await ctx.db.system(async (tx) => {
         const row = (
@@ -61,6 +68,81 @@ export function registerRunsSelfRoute(ctx: PluginContext): void {
       });
       if (found === null) throw refuse(req.ip);
       return json(RunSelfResponse.parse({ teamSlug: found.team_slug, botSlug: found.bot_slug, runId: run.runId, mayPublish: found.may_publish }));
+    }),
+  });
+
+  // The push credential of one project of the run's team, for the publisher of an enrolled server (it has no Kubernetes Secret to read, as a pod's publisher has). The same checks as the pod
+  // publisher's: the run is live, its bot is active and holds `tasks.pull_request`, and the project is one of the run's own team. The token comes from the `project.credentials` provider; it is
+  // never logged, and the answer is never cached.
+  ctx.http.route({
+    ...pushCredentialRoute,
+    public: true,
+    schema: { query: PushCredentialQuery, response: PushCredentialResponse },
+    handler: route(async (req) => {
+      const run = await runOf(req);
+      const { project } = PushCredentialQuery.parse(req.query);
+      const found = await ctx.db.system(async (tx) => {
+        const row = (
+          await tx.query<{ team_slug: string; may_publish: boolean; project: string | null }>(
+            `SELECT t.slug AS team_slug,
+                    EXISTS (SELECT 1 FROM app.capability_grants g WHERE g.actor_id = $3::uuid AND g.team_id = $1::uuid AND g.capability = $4) AS may_publish,
+                    (SELECT p.name FROM app.projects p WHERE p.team_id = $1::uuid AND p.name = $5) AS project
+               FROM app.teams t, app.bots b
+              WHERE t.id = $1::uuid AND b.id = $2::uuid AND b.status = 'active'`,
+            [run.teamId, run.botId, run.botActorId, MAY_PUBLISH, project],
+          )
+        ).rows[0];
+        return row ?? null;
+      });
+      if (found === null) throw refuse(req.ip);
+      if (!found.may_publish) throw new HttpError(403, 'forbidden', 'This bot may not publish: its definition does not grant tasks.pull_request');
+      if (found.project === null) throw new HttpError(404, 'not_found', 'This team has no such project');
+      const provider = ctx.providers.get<ProjectCredentialsProvider>('project.credentials');
+      if (!provider) throw new HttpError(404, 'not_found', 'No push credential is kept on this site');
+      const team: CredentialTeam = { id: run.teamId, slug: found.team_slug };
+      const credential = await provider.read(team, project).catch(() => null);
+      if (credential === null) throw new HttpError(404, 'not_found', 'This project has no push credential');
+      return {
+        status: 200,
+        headers: { 'cache-control': 'no-store' },
+        body: PushCredentialResponse.parse({
+          project,
+          origin: credential.origin,
+          branch: credential.branch,
+          token: credential.token,
+          ...(credential.identity ? { provider: credential.identity.provider, login: credential.identity.login, userId: credential.identity.userId, commitAs: credential.identity.commitAs } : {}),
+          ...(credential.refused === true ? { refused: true } : {}),
+        }),
+      };
+    }),
+  });
+
+  // The deployer's kubeconfig for a machine outside the cluster (the host variant: its API address is the host's), only for the team's deployer bot (the same slug rule as the pods).
+  // Any other bot, and a team with no deploy target, gets the same 404.
+  ctx.http.route({
+    ...kubeconfigRoute,
+    public: true,
+    schema: { response: KubeconfigResponse },
+    handler: route(async (req) => {
+      const run = await runOf(req);
+      const found = await ctx.db.system(async (tx) => {
+        const row = (
+          await tx.query<{ team_slug: string; bot_slug: string }>(
+            `SELECT t.slug AS team_slug, b.slug AS bot_slug FROM app.teams t, app.bots b WHERE t.id = $1::uuid AND b.id = $2::uuid AND b.status = 'active'`,
+            [run.teamId, run.botId],
+          )
+        ).rows[0];
+        return row ?? null;
+      });
+      if (found === null) throw refuse(req.ip);
+      const deployer = (process.env['MANYTHREADS_CLAUDE_PODS_DEPLOYER_BOT'] ?? process.env['MANYTHREADS_HERMES_PODS_DEPLOYER_BOT'] ?? 'deployer').trim();
+      const none = new HttpError(404, 'not_found', 'There is no deploy login for this bot');
+      if (deployer === '' || found.bot_slug !== deployer) throw none;
+      const provider = ctx.providers.get<DeployKubeconfigProvider>('deploy.kubeconfig');
+      if (!provider) throw none;
+      const texts = await provider.texts({ team: { id: run.teamId, slug: found.team_slug } }).catch(() => null);
+      if (texts === null || texts.host === null || texts.host === '') throw none;
+      return { status: 200, headers: { 'cache-control': 'no-store' }, body: KubeconfigResponse.parse({ kubeconfig: texts.host }) };
     }),
   });
 }

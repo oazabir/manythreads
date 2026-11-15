@@ -118,6 +118,8 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/mcp/bots/:botId` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot token in a minute and onward: `429` |
 | `POST /mcp` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot or run token in a minute and onward: `429` |
 | `GET /api/runs/self` | none | 60 per 60 s | 60 s | failures | 61st wrong or ended run token in a minute and onward: `429`; a run may also ask at most 120 times a minute (the publisher of a Claude or Codex pod asks here) |
+| `GET /api/runs/self/push-credential` | none | 60 per 60 s | 60 s | failures | 61st wrong or ended run token in a minute and onward: `429`; a run may also ask at most 120 times a minute (the publisher of an enrolled server asks here for the push credential of one project) |
+| `GET /api/runs/self/kubeconfig` | none | 60 per 60 s | 60 s | failures | 61st wrong or ended run token in a minute and onward: `429`; a run may also ask at most 120 times a minute (the bridge of an enrolled server asks here at the start of its deployer's run) |
 | `POST /api/llm/runs/:runId/v1/chat/completions` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong run token in a minute and onward: `429` |
 | `GET /api/runners/connect` | 60 per 60 s | 60 per 60 s | 60 s | address | none (the socket closes at once on a wrong runner token) |
 | `POST /hooks/:webhookId/:secret` | 600 per 60 s (actor, else address) | 600 per 60 s | 60 s | address | 30 calls that name no live webhook or carry a wrong secret in 5 min lock the address 5 min (then failing calls get `429`; a call with the right secret is never refused by the lock, because senders share addresses) |

@@ -148,7 +148,56 @@ describe('GET /api/runs/self', () => {
       await world.system((tx) => tx.query(`UPDATE app.bots SET status = 'active' WHERE id = $1`, [b.botId]));
     }
   });
+});
 
+// The two credential doors of an enrolled server (P26-15): the same token, the same checks, and no credential on a site that keeps none (a test server has no `project.credentials`
+// or `deploy.kubeconfig` provider, so every allowed ask ends at the provider's absence, which is a 404 and not an error).
+describe('GET /api/runs/self/push-credential and /kubeconfig', () => {
+  const get = async (path: string, bearer: string | null): Promise<{ status: number; text: string; cache: string | null }> => {
+    const res = await fetch(`${world.server.url}${path}`, { headers: bearer === null ? {} : { authorization: `Bearer ${bearer}` } });
+    return { status: res.status, text: await res.text(), cache: res.headers.get('cache-control') };
+  };
+
+  beforeAll(async () => {
+    const teamId = ids['engineering']!.teamId;
+    await world.system((tx) =>
+      tx.query(`INSERT INTO app.projects (workspace_id, team_id, name, repo_url, default_branch) VALUES ($1, $2, 'site', 'https://github.com/acme/site', 'main') ON CONFLICT DO NOTHING`, [omar.workspaceId, teamId]),
+    );
+  });
+
+  it('refuses a token that is not a live run, with the same 401 as /api/runs/self', async () => {
+    expect((await get('/api/runs/self/push-credential?project=site', 'made-up-run-token-0123456789')).status).toBe(401);
+    expect((await get('/api/runs/self/push-credential?project=site', null)).status).toBe(401);
+    expect((await get('/api/runs/self/kubeconfig', 'made-up-run-token-0123456789')).status).toBe(401);
+  });
+
+  it('refuses a bot without the pull request grant (403) and a project the run\'s team does not have (404)', async () => {
+    const noGrant = await openRun('marketing');
+    const refused = await get('/api/runs/self/push-credential?project=site', noGrant.token);
+    expect(refused.status, refused.text).toBe(403);
+    expect(refused.text).not.toContain(noGrant.token);
+    const publisher = await openRun('engineering');
+    expect((await get('/api/runs/self/push-credential?project=nothing', publisher.token)).status).toBe(404);
+    expect((await get('/api/runs/self/push-credential', publisher.token)).status).toBe(400);
+    expect((await get('/api/runs/self/push-credential?project=..%2Fsite', publisher.token)).status).toBe(400);
+  });
+
+  it('says there is no credential where the site keeps none, and never caches an answer', async () => {
+    const { token } = await openRun('engineering');
+    const res = await get('/api/runs/self/push-credential?project=site', token);
+    expect(res.status, res.text).toBe(404);
+    expect(res.text).not.toContain(token);
+  });
+
+  it('gives a kubeconfig to nobody here: a bot that is not the deployer and a site with no deploy login both get 404', async () => {
+    const { token } = await openRun('engineering');
+    const res = await get('/api/runs/self/kubeconfig', token);
+    expect(res.status, res.text).toBe(404);
+  });
+});
+
+// Last on purpose: it fills this address's failure bucket, and every refusal test above needs the 401 and not the 429.
+describe('the failure limit', () => {
   it('slows a client that keeps presenting wrong tokens: the 61st failure in a minute is 429, and a correct token is still answered', async () => {
     const { token } = await openRun('engineering');
     // this file's earlier refusals already count for the address; read the status until the limit is reached
