@@ -285,6 +285,46 @@ describe('the delete guard', () => {
   });
 });
 
+describe('the repository list of a server (P26-15)', () => {
+  const reposOf = (key: string | null) => fetch(`${w.server.url}/api/bridge/repos`, { headers: key === null ? {} : { authorization: `Bearer ${key}` } });
+
+  it('lists the projects of the teams on the server\'s runners for the bots placed on them, only plain allowed https addresses, and only with the key', async () => {
+    const savedAllow = process.env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW'];
+    process.env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW'] = 'https://github.com/acme';
+    try {
+      const made = await create('repos-1');
+      const done = await enrol(made.body.code);
+      const runner = (await w.call<{ items: any[] }>(omar, 'GET', '/api/admin/bot-runners')).body.items.find((r) => r.name === 'repos-1-claude');
+      expect(runner).toBeDefined();
+      expect(await (await reposOf(done.body.key)).json()).toEqual({ repos: [] });
+      await w.system(async (tx) => {
+        await tx.query("UPDATE app.bot_runners SET all_teams = false WHERE name = 'repos-1-claude'");
+        await tx.query("INSERT INTO app.bot_runner_teams (runner_id, team_id) SELECT $1::uuid, t.id FROM app.teams t WHERE t.slug = 'engineering'", [runner.id]);
+        await tx.query(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status, placement)
+           SELECT t.workspace_id, t.id, 'repo-bot', 'agent', 'hermes', 'team', repeat('a', 64), 'active', '{"runs_on":"repos-1-claude"}'::jsonb FROM app.teams t WHERE t.slug = 'engineering'`,
+        );
+        await tx.query(
+          `INSERT INTO app.projects (workspace_id, team_id, name, repo_url, default_branch)
+           SELECT t.workspace_id, t.id, p.name, p.url, 'main' FROM app.teams t, (VALUES ('site', 'https://github.com/acme/site'), ('elsewhere', 'https://example.org/x/y')) AS p (name, url) WHERE t.slug = 'engineering'`,
+        );
+      });
+      const body = await (await reposOf(done.body.key)).json();
+      expect(body).toEqual({ repos: [{ team: 'engineering', bot: 'repo-bot', project: 'site', branch: 'main', origin: 'https://github.com/acme/site' }] });
+      expect((await reposOf(done.body.key)).headers.get('cache-control')).toBe('no-store');
+      expect((await reposOf(null)).status).toBe(401);
+      expect((await reposOf('mtb_' + '0'.repeat(64))).status).toBe(401);
+    } finally {
+      await w.system(async (tx) => {
+        await tx.query("DELETE FROM app.bots WHERE slug = 'repo-bot'");
+        await tx.query("DELETE FROM app.projects WHERE name IN ('site', 'elsewhere')");
+      });
+      if (savedAllow === undefined) delete process.env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW'];
+      else process.env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW'] = savedAllow;
+    }
+  });
+});
+
 describe('the installer files', () => {
   it('the script carries this site\'s address and the bundle\'s hash; its own hash is the one the page shows', async () => {
     const res = await fetch(`${w.server.url}/install/bridge.sh`);

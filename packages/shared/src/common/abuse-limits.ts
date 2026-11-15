@@ -92,6 +92,7 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/admin/bot-servers/:id/rotate-key', 10, 'person'),
   r('DELETE', '/api/admin/bot-servers/:id', 20, 'person'),
   r('POST', '/api/bridge/enrol', 20, 'address', 'enrolment code: 160 random bits, single use, 15 minutes; 10 refused codes per address in 15 minutes lock the address for 15 minutes'),
+  r('GET', '/api/bridge/repos', 120, 'address', 'bridge key: 256 random bits; 10 refused keys per address in 15 minutes lock the address for 15 minutes; one poll every 30 seconds per server'),
   r('GET', '/api/bridge/connect', 60, 'address', 'bridge key: 256 random bits; 10 refused keys per address in 15 minutes lock the address for 15 minutes'),
   r('POST', '/api/admin/bot-runners/old-connections/:connectionId/adopt', 20, 'person'),
   // Connections (P8-06): a workspace admin adds a team's connection and puts its credential in; the value is sealed and never read back.

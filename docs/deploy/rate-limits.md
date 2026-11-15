@@ -96,6 +96,7 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/admin/bot-servers/:id/rotate-key` | 10 per 60 s | 10 per 60 s | 60 s | person | none |
 | `DELETE /api/admin/bot-servers/:id` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `POST /api/bridge/enrol` | 20 per 60 s | 20 per 60 s | 60 s | address | enrolment code: 160 random bits, single use, 15 minutes; 10 refused codes per address in 15 minutes lock the address for 15 minutes |
+| `GET /api/bridge/repos` | 120 per 60 s | 120 per 60 s | 60 s | address | bridge key: 256 random bits; 10 refused keys per address in 15 minutes lock the address for 15 minutes; one poll every 30 seconds per server |
 | `GET /api/bridge/connect` | 60 per 60 s | 60 per 60 s | 60 s | address | bridge key: 256 random bits; 10 refused keys per address in 15 minutes lock the address for 15 minutes |
 | `POST /api/admin/bot-runners/old-connections/:connectionId/adopt` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `POST /api/teams/:slug/connections` | 20 per 60 s | 20 per 60 s | 60 s | person | none |

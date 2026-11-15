@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { BotServer, BotServerAgent, BotServerHost, BotServerName } from '../../entities/bot-server.ts';
 import { BotServerId } from '../../ids.ts';
+import { ProjectName } from '../../entities/project.ts';
+import { BotSlug } from '../bots/pairing.ts';
+import { TeamSlug } from '../teams/common.ts';
 import { BotRunnerLabel } from '../../entities/bot-runner.ts';
 import { BRIDGE_KEY_PATTERN, ENROL_CODE_PATTERN } from '../../runner/bridge-tunnel.ts';
 
@@ -73,3 +76,15 @@ export const bridgeConnectRoute = { method: 'GET', path: '/api/bridge/connect' }
 export const BridgeUninstallResponse = z.object({ removed: z.boolean() });
 export type BridgeUninstallResponse = z.infer<typeof BridgeUninstallResponse>;
 export const bridgeUninstallRoute = { method: 'POST', path: '/api/bridge/uninstall' } as const;
+
+/**
+ * The repositories a server's repo-sync step clones (PLAN P26-15, docs/plans/agents-anywhere.md section 5.6): one line per project of each team on the server's runners, for each bot of the team
+ * placed on one of them. Asked with the bridge key. Only plain https addresses that start with an allowed prefix are listed (the same rule as for a pod), and no credential is in a line.
+ */
+export const BridgeReposResponse = z.object({
+  repos: z
+    .array(z.object({ team: TeamSlug, bot: BotSlug, project: ProjectName, branch: z.string().min(1).max(100).nullable(), origin: z.string().min(1).max(500) }))
+    .max(2000),
+});
+export type BridgeReposResponse = z.infer<typeof BridgeReposResponse>;
+export const bridgeReposRoute = { method: 'GET', path: '/api/bridge/repos' } as const;

@@ -7,6 +7,7 @@ import { conflict, createLockout, guardRedemption, HttpError, json, notFound, ro
 import {
   BotServerCode,
   BotServerPathParams,
+  BridgeReposResponse,
   BridgeStatusResponse,
   BridgeUninstallResponse,
   CreateBotServerRequest,
@@ -18,7 +19,10 @@ import {
   MintBotServerCodeResponse,
   RotateBotServerKeyResponse,
   abuseLimit,
+  isRepoOriginAllowed,
+  parseRepoOriginAllow,
   bridgeConnectRoute,
+  bridgeReposRoute,
   bridgeStatusRoute,
   bridgeUninstallRoute,
   createBotServerRoute,
@@ -289,6 +293,39 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
     handler: async (req) => {
       const row = await serverOfKey(ctx, keyLock, req);
       return json(BridgeStatusResponse.parse({ status: registry.get(row.id) ? 'connected' : 'offline', name: row.name }));
+    },
+  });
+
+  // The repository list of this server's repo-sync (P26-15): the projects of the teams on its runners, for the bots placed on them. The key is the credential, as for `status`.
+  ctx.http.route({
+    method: bridgeReposRoute.method,
+    path: bridgeReposRoute.path,
+    public: true,
+    rateLimit: abuseLimit(bridgeReposRoute.method, bridgeReposRoute.path),
+    rateLimitBy: 'address',
+    schema: { response: BridgeReposResponse },
+    handler: async (req) => {
+      const row = await serverOfKey(ctx, keyLock, req);
+      const allow = parseRepoOriginAllow(process.env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW'] ?? process.env['MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW']);
+      const rows = await ctx.db.system(
+        async (tx) =>
+          (
+            await tx.query<{ team: string; bot: string; project: string; branch: string | null; origin: string }>(
+              // the teams a runner serves (its list, or every team of the workspace when it is open to all) x the bots placed on it x the projects of the team
+              `SELECT DISTINCT t.slug AS team, b.slug AS bot, p.name AS project, p.default_branch AS branch, p.repo_url AS origin
+                 FROM app.bot_runners r
+                 JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.archived_at IS NULL
+                      AND (r.all_teams OR EXISTS (SELECT 1 FROM app.bot_runner_teams rt WHERE rt.runner_id = r.id AND rt.team_id = t.id))
+                 JOIN app.bots b ON b.team_id = t.id AND b.status = 'active' AND b.placement ->> 'runs_on' = r.name
+                 JOIN app.projects p ON p.team_id = t.id
+                WHERE r.server_id = $1::uuid AND r.enabled
+                ORDER BY t.slug, b.slug, p.name`,
+              [row.id],
+            )
+          ).rows,
+        { workspaceId: row.workspace_id },
+      );
+      return { status: 200, body: BridgeReposResponse.parse({ repos: rows.filter((r) => isRepoOriginAllowed(r.origin, allow)) }), headers: { 'cache-control': 'no-store' } };
     },
   });
 
