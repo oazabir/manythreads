@@ -72,7 +72,8 @@ function AgentPreview({ approval, terse = false }: { approval: Approval; terse?:
         <pre className="apr-command" data-testid="approval-command"><code>{command}</code></pre>
       ) : null}
       {why !== '' ? <p className="apr-why" data-testid="approval-why">{why}</p> : null}
-      {details !== '' ? <pre className="apr-details" data-testid="approval-details">{details}</pre> : null}
+      {/* the bot's details are its own sentences: read as text, not as code (a command has its own block above) */}
+      {details !== '' ? <p className="apr-details" data-testid="approval-details" dir="auto">{details}</p> : null}
     </div>
   );
 }
@@ -201,7 +202,8 @@ export function ApprovalCard({
         Asked by <b data-testid="approval-requester">{approval.requesterName}</b>
         {share ? ` · ${shareKind(approval.tool)}` : null}
       </p>
-      <p className="apr-raw" data-testid="approval-summary">{approval.summary}</p>
+      {/* a bot's own question is already the sentence above ("Engineer asks: <the question>"): the raw summary would say it a second time */}
+      {agent && approval.tool === ASK_TOOL ? null : <p className="apr-raw" data-testid="approval-summary">{approval.summary}</p>}
       {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
       {approval.argsTruncated ? (
         <div className="apr-truncated" data-testid="approval-truncated">

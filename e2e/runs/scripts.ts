@@ -87,6 +87,9 @@ export const EDGE: Action[] = [
   ...['Check the tests', 'Review the words', 'Look at dark mode', 'مراجعة الاتجاه من اليمين', 'Measure the phone layout'].map(
     (name, i): Action => ({ do: 'helper', name, steps: [{ title: `Read part${i}.ts`, kind: 'read', paths: [`clients/web/src/part${i}.ts`], ms: 100 }], report: 'Fine.' }),
   ),
+  // what Claude Code and Codex title a call to manythreads' own tools (seen in the P25-16 threads): the card says what it did, never the raw name
+  { do: 'step', title: 'mcp__manythreads__tasks_claim', kind: 'other' },
+  { do: 'step', title: 'mcp__manythreads__memory.recall', kind: 'execute' },
   { do: 'step', title: `Edit ${'RunCardWithAVeryLongFileNameThatGoesOnAndOn'.repeat(2)}.tsx`, kind: 'edit', paths: [`clients/web/src/${'RunCardWithAVeryLongFileNameThatGoesOnAndOn'.repeat(2)}.tsx`], diff: { path: THREAD, oldText: 'a', newText: 'a\nb\nc' } },
   { do: 'step', title: 'pnpm lint', kind: 'execute', toolName: 'Bash', fail: 'lint failed' },
   { do: 'step', title: 'pnpm test', kind: 'execute', toolName: 'Bash', ms: 600_000 },

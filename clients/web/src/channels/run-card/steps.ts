@@ -1,5 +1,5 @@
 import type { RunActivityItem, RunDiff, RunStepKind } from '@manythreads/shared';
-import { baseName, clip, commandOf, plural, STEP_VERB } from './words';
+import { BARE_TITLE, baseName, clip, commandOf, plural, STEP_VERB, toolPhrase } from './words';
 
 /*
  * The step list of a run (PLAN P25-11, docs/plans/acp.md section 5.2): the kept lines folded into what a person reads.
@@ -91,7 +91,7 @@ export function groupText(kind: RunStepKind, n: number): string {
 
 /** A step's sentence: its title when it has one, else the verb of its kind and its first file. */
 function sentence(kind: RunStepKind, title: string | undefined, paths: readonly string[]): string {
-  const t = title?.trim() ?? '';
+  const t = BARE_TITLE.test(title?.trim() ?? '') ? '' : (title?.trim() ?? '');
   if (t !== '') return clip(t, 120);
   const file = paths[0] !== undefined ? baseName(paths[0]) : '';
   const verb = STEP_VERB[kind] ?? 'Did a step';
@@ -118,6 +118,12 @@ interface Agent {
 }
 
 function toRow(d: Draft): StepRow {
+  // a call to a tool by its raw name ("mcp__manythreads__tasks_claim"; Codex marks it a command) says what it did, in plain words
+  const tool = toolPhrase(d.title, d.status === 'working' ? 'now' : 'past');
+  if (tool !== null) {
+    const kind: RunStepKind = d.kind === 'execute' ? 'other' : d.kind;
+    return { type: 'step', id: d.id, kind, text: tool, code: null, files: [], status: d.status, seconds: d.seconds, diff: d.diff, ...(d.answer !== undefined ? { answer: d.answer } : {}) };
+  }
   // a command reads "Ran pnpm" (or "Running pnpm" while it runs): the program in mono, said once
   const code = d.kind === 'execute' ? commandOf(d.title) : null;
   const text = d.kind === 'execute' ? (d.status === 'working' ? (code !== null ? 'Running' : 'Running a command') : code !== null ? 'Ran' : 'Ran a command') : sentence(d.kind, d.title, d.paths);

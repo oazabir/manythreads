@@ -89,6 +89,20 @@ function RunDetails({ head, plan, steps, trace }: { head: RunHead; plan: boolean
   );
 }
 
+/** Counts joined by " · ", each kept whole: a narrow panel wraps between "2 steps failed" and what is before it, never inside it. */
+function Parts({ parts }: { parts: readonly string[] }) {
+  return (
+    <>
+      {parts.map((p, i) => (
+        <span key={`${i}:${p}`}>
+          {i > 0 ? ' · ' : null}
+          <span className="rcPart">{p}</span>
+        </span>
+      ))}
+    </>
+  );
+}
+
 /** A fold button: a line of words and a caret, a real button that says whether it is open. Its name is its words. */
 function Fold({ open, onToggle, testId, children, wraps = false }: { open: boolean; onToggle: () => void; testId: string; children: ReactNode; wraps?: boolean }) {
   return (
@@ -226,7 +240,7 @@ export function RunCard({ head, rootId, slug, people, hidePlan = false, hideStop
       ) : null}
       {showWork && parts.length > 0 ? (
         <Fold open={stepsOpen} onToggle={() => setStepsOpen((o) => !o)} testId="run-work-fold" wraps>
-          <span data-testid="run-work">{parts.join(' · ')}</span>
+          <span data-testid="run-work"><Parts parts={parts} /></span>
         </Fold>
       ) : null}
       {(showPlan && planOpen) || (showWork && stepsOpen) ? <RunDetails head={head} plan={showPlan && planOpen} steps={showWork && stepsOpen} trace={view === 'trace'} /> : null}
@@ -270,7 +284,7 @@ export function RunEnd({ head, noticeShown = false }: { head: RunHead; noticeSho
   const line = endLine(head, Date.now());
   if (!showsEndLine(head)) return null;
   const openable = hasWork(head.counts);
-  const text = [line.lead, ...line.parts].join(' · ');
+  const text = <Parts parts={[line.lead, ...line.parts]} />;
   const isOpen = open && openable;
   return (
     <div className="rcEnd" data-testid="run-end" data-tone={line.tone} data-run-id={head.runId}>

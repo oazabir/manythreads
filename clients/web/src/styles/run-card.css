@@ -311,6 +311,11 @@
   white-space: normal;
 }
 
+/* one count ("2 steps failed") never breaks inside itself: the line wraps between counts */
+.rcPart {
+  white-space: nowrap;
+}
+
 .rcLead {
   font-weight: 600;
 }

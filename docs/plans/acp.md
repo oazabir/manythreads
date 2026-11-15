@@ -283,7 +283,8 @@ A run is one card at the bottom of the thread, in the place its answer will take
   can answer) or Waiting for Omar (someone else must), Stopping…, and then the card folds (§5.3). Stop is a small quiet button, shown only to those who may stop.
 - **Now line:** the current step in plain words from its kind and file: "Reading ThreadPanel.tsx", "Editing 2 files", "Running a command", "Searching the code",
   "Reading the web", "Asking Code reviewer" (an MCP call), "Thinking". A subagent's step reads "Helper: reading the tests". Never a raw tool name, JSON or an
-  absolute path. It changes at most once a second (a burst of reads reads "Reading 6 files").
+  absolute path. It changes at most once a second (a burst of reads reads "Reading 6 files"). Built (P25-11 visual check): Claude Code and Codex title a call to
+  manythreads' own tools with its raw name (`mcp__manythreads__tasks_claim`), so the web client says what it does ("Taking the card", "Recalled from memory").
 - **Plan line:** only when the agent has a plan: "Plan 3 of 5 · <the current item>". Opens the list in place.
 - **Work log line:** counts that a non-engineer can read: steps, files changed (with +/−), commands, helpers. Files read and searches are in the step count, not
   their own number (they say little to most people). Opens the step list.
@@ -322,7 +323,7 @@ when the agent can read a note. The thread's approvals strip (`ThreadApprovals`)
 
 - The to-do card is the request's list, drawn where its message was posted and **pinned as one line at the top of the thread panel while any item is open** (and only
   while the card's own head is scrolled out of sight, so the list is never on screen twice; a list of 9 or more folds its finished items into one "12 done" line):
-  "To do · 3 of 5 · Coder is working on Add the button ▸". Opened: the title, one row per item with a status icon, the owner's avatar (the bot holding the card),
+  "To do · 3 of 5 · Coder is working on Add the button ▸" (the list's title is only its tooltip: in a 360 px panel a title beside the item cut off the end of both). Opened: the title, one row per item with a status icon, the owner's avatar (the bot holding the card),
   and a link to the card's thread. When every item is done it says "All done" and unpins itself.
 - In an engineering chain, each card is worked on in **its own thread** (the handover announcement's thread, router-tasks). So the request thread shows the to-do
   card and the Engineer's short messages; the item of a card that is being worked on shows the live run's head on a second line ("Coder · working · plan 3 of 5")

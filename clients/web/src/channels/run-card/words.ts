@@ -98,6 +98,51 @@ export function commandOf(title: string | null | undefined): string | null {
   return clip(named ? named[1]! : t, 40);
 }
 
+/**
+ * manythreads' own tools, as an agent's program titles a call to them ("mcp__manythreads__tasks_claim", "mcp__manythreads__memory.recall"): what the step does, in plain
+ * words, while it runs and once it is done. Seen on the live site (P25-16): Claude Code and Codex title an MCP call with the tool's raw name.
+ */
+const OWN_TOOLS: Record<string, readonly [now: string, past: string]> = {
+  'tasks.claim': ['Taking the card', 'Took the card'],
+  'tasks.read': ['Reading a card', 'Read a card'],
+  'tasks.describe': ['Writing on the card', 'Wrote on the card'],
+  'tasks.update': ['Updating the card', 'Updated the card'],
+  'tasks.create': ['Making a card', 'Made a card'],
+  'tasks.handoff': ['Handing the card on', 'Handed the card on'],
+  'tasks.complete': ['Marking the card done', 'Marked the card done'],
+  'tasks.todo': ['Updating the to-do list', 'Updated the to-do list'],
+  'tasks.private_note': ["Reading the card's private note", "Read the card's private note"],
+  'tasks.commit_identity': ['Looking up who signs the commit', 'Looked up who signs the commit'],
+  'memory.recall': ['Recalling from memory', 'Recalled from memory'],
+  'memory.retain': ['Saving to memory', 'Saved to memory'],
+  'messages.post': ['Posting a message', 'Posted a message'],
+  'messages.search': ['Searching the messages', 'Searched the messages'],
+  'files.search': ['Searching the files', 'Searched the files'],
+  'approvals.ask': ['Asking a person', 'Asked a person'],
+};
+
+/**
+ * A step title that is a tool's raw name (`mcp__<server>__<tool>`), in plain words: one of manythreads' own tools by what it does, any other "Using <server>: <tool>". Null
+ * when the title is not a raw name (it is kept as it is). `tense` is "now" for the live line, "past" for the step list.
+ */
+export function toolPhrase(title: string | null | undefined, tense: 'now' | 'past'): string | null {
+  const m = /^mcp__([A-Za-z0-9-]+?)__([A-Za-z0-9_.-]+)$/.exec((title ?? '').trim());
+  if (m === null) return null;
+  const server = m[1]!.toLowerCase();
+  const tool = m[2]!;
+  if (server === 'manythreads') {
+    // the tool reaches the agent as `tasks_claim` (Claude Code) or `tasks.claim` (Codex): the area is the first word
+    const dot = tool.includes('.') ? tool : tool.replace('_', '.');
+    const own = OWN_TOOLS[dot.toLowerCase()];
+    if (own !== undefined) return tense === 'now' ? own[0] : own[1];
+    return `${tense === 'now' ? 'Using' : 'Used'} the workspace's ${dot.split('.')[0]!.replace(/_/g, ' ')} tool`;
+  }
+  return `${tense === 'now' ? 'Using' : 'Used'} ${server.replace(/[-_]/g, ' ')}: ${tool.replace(/[._]/g, ' ')}`;
+}
+
+/** A title an agent's program gives every step of a kind, which says less than the kind and its file ("Read File", "Edit", "Preparing file…"). */
+export const BARE_TITLE = /^(read|read file|edit|edit file|write|write file|preparing file…?|preparing file\.\.\.)$/i;
+
 /** What the run is doing, in one plain line. Never a raw tool name, never JSON, never a long path. */
 export function nowLine(now: RunNow | null, state: RunViewState): NowLine {
   if (now === null) {
@@ -108,6 +153,12 @@ export function nowLine(now: RunNow | null, state: RunViewState): NowLine {
   const many = now.count > 1;
   let text: string;
   let code: string | null = null;
+  // a call to a tool by its raw name (Codex marks an MCP call a command): what it does, never the name
+  const tool = toolPhrase(now.title, 'now');
+  if (tool !== null && !many) {
+    if (now.helper !== null) return { text: `Helper: ${lower(tool)}`, code: null, helper: now.helper };
+    return { text: tool, code: null, helper: null };
+  }
   switch (now.kind) {
     case 'thinking':
       text = 'Thinking';
@@ -161,7 +212,7 @@ export function planLine(plan: RunProgress['plan']): { done: number; total: numb
 }
 
 /**
- * "14 steps · 2 files changed (+48 −6) · 3 commands · 2 helpers · 1 failed": counts a person who does not read code can read. `compact` (the folded line under a finished
+ * "14 steps · 2 files changed (+48 −6) · 3 commands · 2 helpers · 1 step failed": counts a person who does not read code can read. `compact` (the folded line under a finished
  * run) keeps what matters after the fact: steps, files changed, helpers and failures; the commands are among the steps and the lines changed are in the step list.
  * `failed: false` leaves the failures out (a stopped run's last step fails because it was stopped, which is not a failure to report).
  */
@@ -175,7 +226,8 @@ export function workParts(counts: RunCounts, opts: { compact?: boolean; failed?:
   // commands are steps too: they are counted on their own only when they are all the run did besides reading (a run of commands reads "3 steps · 3 commands")
   if (!opts.compact && counts.commands > 0 && counts.filesChanged === 0 && counts.helpers === 0) parts.push(plural(counts.commands, 'command', 'commands'));
   if (counts.helpers > 0) parts.push(plural(counts.helpers, 'helper', 'helpers'));
-  if (opts.failed !== false && counts.failed > 0) parts.push(`${counts.failed} failed`);
+  // "2 steps failed", not "2 failed": after "5 files changed" a bare number reads as five files of which two failed
+  if (opts.failed !== false && counts.failed > 0) parts.push(`${plural(counts.failed, 'step', 'steps')} failed`);
   return parts;
 }
 

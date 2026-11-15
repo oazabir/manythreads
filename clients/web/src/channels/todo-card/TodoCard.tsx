@@ -136,7 +136,7 @@ export function TodoCard({ todo, slug, people, rootId }: { todo: ThreadTodo; slu
 }
 
 /**
- * One line at the top of the thread panel while the list has open items and its card is out of sight: the list's name, "3 of 5" and what is being worked on; a button that opens
+ * One line at the top of the thread panel while the list has open items and its card is out of sight: "To do", "3 of 5" and what is being worked on; a button that opens
  * the list (it scrolls in its own box, so a long list never covers the thread).
  */
 export function TodoPin({ todo, slug, people, rootId }: { todo: ThreadTodo; slug: string | null; people: People; rootId: string }) {
@@ -148,7 +148,8 @@ export function TodoPin({ todo, slug, people, rootId }: { todo: ThreadTodo; slug
     <div className="tdPin" data-testid="todo-pin" data-tone={line.tone}>
       <button type="button" className="tdPinBtn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {line.tone === 'working' ? <span className="tdPulse" aria-hidden="true" /> : <span className="tdMark" data-status={line.tone} aria-hidden="true">{line.tone === 'blocked' ? <ItemBlockedIcon size={14} /> : <ItemWaitingIcon size={14} />}</span>}
-        <span className="tdPinTitle" dir="auto">{todoTitle(todo)}</span>
+        {/* "To do", not the list's title: in a panel 360 px wide a title and the item both lost their ends ("Jump to latest in t… · Engineer is working …"); the title is the tooltip */}
+        <span className="tdPinTitle" title={todoTitle(todo)}>To do</span>
         <span className="tdCount">{line.progress}</span>
         <span className="tdPinNow" dir="auto">{line.text}</span>
         <span className="rcChev" aria-hidden="true"><CaretIcon open={open} /></span>

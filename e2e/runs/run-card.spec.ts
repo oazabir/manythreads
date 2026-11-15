@@ -330,7 +330,7 @@ test('edge cases: starting, Arabic and long words, five helpers, a failed step, 
 
     // the work goes on: five helpers, one step failed, the plan's current item is long, and the answer so far is partly Arabic
     await expect(card.getByTestId('run-work')).toContainText('5 helpers', { timeout: 60_000 });
-    await expect(card.getByTestId('run-work')).toContainText('1 failed');
+    await expect(card.getByTestId('run-work')).toContainText('1 step failed');
     await expect(card.getByTestId('run-now')).toHaveText(/^Running\s*pnpm$/, { timeout: 60_000 });
     await shoot(browser, playwright, page, nadia.rootId, 'busy');
 
@@ -339,6 +339,10 @@ test('edge cases: starting, Arabic and long words, five helpers, a failed step, 
     const steps = card.getByTestId('run-steps');
     await expect(steps).toContainText('+2 more helpers');
     await expect(steps).toContainText('Failed');
+    // a call to one of our own tools reads as what it did, also when the agent marks it a command
+    await expect(steps).toContainText('Took the card');
+    await expect(steps).toContainText('Recalled from memory');
+    await expect(steps).not.toContainText('mcp__');
     await card.getByTestId('run-plan-fold').click();
     await expect(card.getByTestId('run-plan')).toContainText('مراجعة النص العربي');
     await shoot(browser, playwright, page, nadia.rootId, 'busy-open', 'nadia', async (p) => {
@@ -408,7 +412,10 @@ test('a long to-do list: the finished items fold, and the line at the top stands
     const pin = nadia.page.getByTestId('todo-pin');
     await expect(pin).toBeVisible({ timeout: 10_000 });
     await expect(pin).toContainText('12 of 30');
+    // "To do", not the list's title: the item being worked on gets the room in a narrow panel
+    await expect(pin.locator('.tdPinTitle')).toHaveText('To do');
     await expect(pin).toContainText('Working on Step 13');
+    await nadia.page.screenshot({ path: join(SHOTS, 'todo-pin.light.png') });
     await pin.getByRole('button').first().click();
     await nadia.page.screenshot({ path: join(SHOTS, 'todo-pin-open.light.png') });
     await stopRun(nadia.page);

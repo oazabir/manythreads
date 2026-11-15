@@ -4,7 +4,7 @@
 //
 // Signs in with the person's entries of ~/manythreads.passwords.env (read here, never printed), opens `/t/<team>/c/<channel>?panel=thread:<rootId>`, and saves
 // `<out-prefix>-panel.png` (the thread panel) and `<out-prefix>-full.png` (the whole window). The panel is scrolled from the top in steps of one window and saved as
-// `<out-prefix>-panel-<n>.png` when it is taller than the window (`--steps 4`).
+// `<out-prefix>-panel-<n>.png` when it is taller than the window (`--steps 4`). `--width 390 --height 844` takes a phone view, `--dark` the dark theme.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
@@ -28,7 +28,10 @@ for (const l of readFileSync(`${homedir()}/manythreads.passwords.env`, 'utf8').s
 }
 const { chromium } = createRequire(new URL('../../e2e/package.json', import.meta.url))('@playwright/test');
 const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const context = await browser.newContext({
+  viewport: { width: Number(flag('width', '1440')), height: Number(flag('height', '1000')) },
+  colorScheme: process.argv.includes('--dark') ? 'dark' : 'light',
+});
 const page = await context.newPage();
 await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
 const res = await context.request.post(`${BASE}/api/auth/password/sign-in`, { data: { email: env[`${USER}_EMAIL`], password: env[`${USER}_PASSWORD`] } });
@@ -40,14 +43,21 @@ await page.goto(`${BASE}/t/${flag('team', 'engineering')}/c/${flag('channel', 'd
 await page.waitForTimeout(2500);
 mkdirSync(dirname(prefix), { recursive: true });
 await page.screenshot({ path: `${prefix}-full.png` });
-const panel = page.locator('[data-testid="thread-panel"], aside.panel, .thread-panel').first();
+const panel = page.locator('[data-testid="thread-view"]').first();
 if ((await panel.count()) > 0) await panel.screenshot({ path: `${prefix}-panel.png` });
-const scroller = page.locator('[data-testid="thread-replies"], .thread-panel .replies, .thread-panel [class*="scroll"]').first();
+const scroller = page.locator('[data-testid="thread-view"] .rpb').first();
 const steps = Number(flag('steps', '0'));
+// A long thread loads its replies a page at a time: load them all before stepping through it.
+for (let i = 0; steps > 0 && i < 20; i++) {
+  const earlier = page.locator('[data-testid="thread-view"] .load-earlier');
+  if ((await earlier.count()) === 0) break;
+  await earlier.first().click();
+  await page.waitForTimeout(1200);
+}
 for (let i = 0; i < steps && (await scroller.count()) > 0; i++) {
   await scroller.evaluate((el, n) => { el.scrollTop = n * el.clientHeight * 0.9; }, i);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: `${prefix}-panel-${i + 1}.png` });
+  await panel.screenshot({ path: `${prefix}-panel-${i + 1}.png` });
 }
 await browser.close();
 console.log(`saved ${prefix}-*.png`);

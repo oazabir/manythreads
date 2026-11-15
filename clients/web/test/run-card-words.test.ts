@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { placeRuns } from '../src/channels/run-card/place';
 import { buildRows, foldRows, helpersToHide, type Row, type StepRow } from '../src/channels/run-card/steps';
 import { forgetShownQuestions, leaveHandoff, setShownQuestions, shownNow, takeHandoff } from '../src/channels/run-card/shownQuestions';
-import { commandOf, elapsedText, endLine, nowLine, planLine, previewLines, runElapsedMs, showsEndLine, stateWord, workParts } from '../src/channels/run-card/words';
+import { commandOf, elapsedText, endLine, nowLine, planLine, previewLines, runElapsedMs, showsEndLine, stateWord, toolPhrase, workParts } from '../src/channels/run-card/words';
 import { barLine, currentItem, foldDone, isOpen, progressText, todoProgress } from '../src/channels/todo-card/words';
 
 // The words of the run card and the to-do card (P25-11): plain language, never a raw tool name, a long path or JSON; and where each run's line sits in a thread.
@@ -60,7 +60,7 @@ describe('words of the run card', () => {
 
   it('counts the work in words a person can read', () => {
     expect(workParts(counts())).toEqual([]);
-    expect(workParts(counts({ steps: 14, filesChanged: 2, added: 48, removed: 6, commands: 3, helpers: 2, failed: 1 }))).toEqual(['14 steps', '2 files changed (+48 −6)', '2 helpers', '1 failed']);
+    expect(workParts(counts({ steps: 14, filesChanged: 2, added: 48, removed: 6, commands: 3, helpers: 2, failed: 1 }))).toEqual(['14 steps', '2 files changed (+48 −6)', '2 helpers', '1 step failed']);
     expect(workParts(counts({ steps: 3, commands: 3 }))).toEqual(['3 steps', '3 commands']);
     expect(workParts(counts({ steps: 1, helpers: 1 }))).toEqual(['1 step', '1 helper']);
   });
@@ -250,7 +250,7 @@ describe('polish of the run card (P25-11 review)', () => {
 
   it('keeps the folded line short: no commands and no line counts; a stopped run lists no failure', () => {
     const c = counts({ steps: 8, filesChanged: 1, added: 1, commands: 1, helpers: 1, failed: 1 });
-    expect(endLine(head({ state: 'done', endedAt: '2026-11-14T10:00:10.000Z', counts: c }), 0).parts).toEqual(['8 steps', '1 file changed', '1 helper', '1 failed']);
+    expect(endLine(head({ state: 'done', endedAt: '2026-11-14T10:00:10.000Z', counts: c }), 0).parts).toEqual(['8 steps', '1 file changed', '1 helper', '1 step failed']);
     expect(endLine(head({ state: 'stopped', endedAt: '2026-11-14T10:00:10.000Z', counts: c }), 0).parts).toEqual(['8 steps', '1 file changed', '1 helper']);
   });
 
@@ -299,5 +299,34 @@ describe('the questions a run card draws', () => {
     leaveHandoff('r9', { focus: true, open: true });
     expect(takeHandoff('r9')).toEqual({ focus: true, open: true });
     expect(takeHandoff('r9')).toBeUndefined();
+  });
+});
+
+describe('what real runs titled their steps (P25-16 threads)', () => {
+  it('says a call to one of our own tools in plain words, never its raw name', () => {
+    expect(toolPhrase('mcp__manythreads__tasks_claim', 'now')).toBe('Taking the card');
+    expect(toolPhrase('mcp__manythreads__tasks_handoff', 'past')).toBe('Handed the card on');
+    expect(toolPhrase('mcp__manythreads__memory.recall', 'past')).toBe('Recalled from memory');
+    expect(toolPhrase('mcp__manythreads__tasks_private_note', 'past')).toBe("Read the card's private note");
+    expect(toolPhrase('mcp__manythreads__surface_render', 'now')).toBe("Using the workspace's surface tool");
+    expect(toolPhrase('mcp__github__create_issue', 'past')).toBe('Used github: create issue');
+    expect(toolPhrase('Running pnpm', 'now')).toBeNull();
+    expect(toolPhrase(null, 'now')).toBeNull();
+  });
+
+  it('the now line of a tool call, also when the agent marks it a command', () => {
+    expect(nowLine(now({ kind: 'other', title: 'mcp__manythreads__tasks_claim' }), 'working')).toMatchObject({ text: 'Taking the card', code: null });
+    expect(nowLine(now({ kind: 'execute', title: 'mcp__manythreads__messages.post' }), 'working')).toMatchObject({ text: 'Posting a message', code: null });
+    expect(nowLine(now({ kind: 'other', title: 'mcp__manythreads__memory_recall', helper: 'Reviewer' }), 'working').text).toBe('Helper: recalling from memory');
+  });
+
+  it('a step list row of a tool call says what it did; a bare "Read File" gives way to the file', () => {
+    const rows = buildRows([tool(0, 'a', 'execute', { title: 'mcp__manythreads__tasks.read' }), result(1, 'a'), tool(2, 'b', 'read', { title: 'Read File', paths: ['src/a/Card.tsx'] }), result(3, 'b')]);
+    expect(rows[0]).toMatchObject({ type: 'step', kind: 'other', text: 'Read a card', code: null });
+    expect(rows[1]).toMatchObject({ type: 'step', text: 'Read Card.tsx' });
+  });
+
+  it('a failed count names its steps', () => {
+    expect(workParts(counts({ steps: 39, filesChanged: 5, failed: 2 }), { compact: true })).toEqual(['39 steps', '5 files changed', '2 steps failed']);
   });
 });
