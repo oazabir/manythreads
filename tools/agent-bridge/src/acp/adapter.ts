@@ -35,14 +35,30 @@ export function adapterEnv(job: DriverJob, mode: string | null): NodeJS.ProcessE
   return env;
 }
 
-/** The mode each adapter must be put in, or null to leave it. Claude starts in `auto`, which decides permissions itself: it must be `default`. Codex follows the grants. */
+/** codex-acp's start mode with no sandbox and no command questions (the `codex --yolo` equivalent; the name is the adapter's and the version is pinned). */
+export const CODEX_FULL_ACCESS_MODE = 'agent-full-access';
+
+/**
+ * Whether this run's Codex runs with full access: the profile allows it (`fullAccess`) and the run does not take it back (P26-06). `true` follows the run unless it says no; `"allowed"`
+ * (an enrolled server) needs the run to say yes, so the machine's key and the site's key are both turned.
+ */
+export function fullAccessOn(job: Pick<DriverJob, 'profile' | 'request'>): boolean {
+  if (job.profile.agent !== 'codex') return false;
+  const asked = job.request.manythreads.fullAccess;
+  if (job.profile.fullAccess === true) return asked !== false;
+  if (job.profile.fullAccess === 'allowed') return asked === true;
+  return false;
+}
+
+/** The mode each adapter must be put in, or null to leave it. Claude starts in `auto`, which decides permissions itself: it must be `default`. Codex follows the grants; a bot with no file or shell grant stays read-only even on a full-access runner. */
 export function desiredMode(job: DriverJob): string | null {
   switch (flavorOf(job.profile.agent)) {
     case 'claude':
       return 'default';
     case 'codex': {
       const tools = job.request.manythreads.tools;
-      return tools.includes('files') || tools.includes('shell') ? 'workspace-write' : 'read-only';
+      if (!(tools.includes('files') || tools.includes('shell'))) return 'read-only';
+      return fullAccessOn(job) ? CODEX_FULL_ACCESS_MODE : 'workspace-write';
     }
     default:
       return null;

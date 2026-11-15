@@ -625,6 +625,15 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     const id = s.id ?? nextId();
     await startStep(env, s, id);
     const input = (s.input ?? {}) as { command?: string; description?: string };
+    // Codex in its full-access mode (no sandbox, no command questions): the command just runs. An MCP tool call is still asked about (the platform checks it).
+    if (flavor === 'codex' && !p.mcp && env.session.mode === 'agent-full-access') {
+      if (s.ms && !(await sleep(s.ms, env.signal))) {
+        await endStep(env, s, id, 'cancelled');
+        return 'cancelled';
+      }
+      await endStep(env, s, id, s.fail ? 'failed' : 'completed');
+      return 'ok';
+    }
     // Already cancelled: an adapter sends no new question after a cancel (unless it was already inside the call: `ignoreCancel`).
     if (env.signal.aborted && !p.ignoreCancel) {
       await endStep(env, s, id, 'cancelled');

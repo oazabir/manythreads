@@ -253,6 +253,23 @@ describe('the adapter module', () => {
     expect(desiredMode(jobOf('opencode'))).toBeNull();
   });
 
+  it('full access (Codex only) needs the profile\'s key; "allowed" also needs the run\'s; a bot with no file or shell grant stays read-only', () => {
+    const run = (fullAccess: boolean | null, tools = ['shell']) => ({ manythreads: { tools, fullAccess } });
+    expect(desiredMode(jobOf('codex', { fullAccess: true }, run(null)))).toBe('agent-full-access');
+    expect(desiredMode(jobOf('codex', { fullAccess: true }, run(false)))).toBe('workspace-write');
+    expect(desiredMode(jobOf('codex', { fullAccess: 'allowed' }, run(null)))).toBe('workspace-write');
+    expect(desiredMode(jobOf('codex', { fullAccess: 'allowed' }, run(true)))).toBe('agent-full-access');
+    expect(desiredMode(jobOf('codex', {}, run(true)))).toBe('workspace-write');
+    expect(desiredMode(jobOf('codex', { fullAccess: true }, run(null, ['web'])))).toBe('read-only');
+    expect(adapterEnv(jobOf('codex', { fullAccess: true }, run(null)), 'agent-full-access')['INITIAL_AGENT_MODE']).toBe('agent-full-access');
+  });
+
+  it('the config refuses full access for any agent but Codex and any word but true, false and "allowed"', () => {
+    expect(() => parseConfig({ profiles: { x: { agent: 'claude-code', workdir: '/w', fullAccess: true } } })).toThrow(/only for codex/);
+    expect(() => parseConfig({ profiles: { x: { agent: 'codex', workdir: '/w', fullAccess: 'yes' } } })).toThrow(/true, false or "allowed"/);
+    expect(parseConfig({ profiles: { x: { agent: 'codex', workdir: '/w', fullAccess: false } } }).profiles['x']!.fullAccess).toBeUndefined();
+  });
+
   it('points the adapter at the bridge\'s own claude and codex when `bin` is a path, and keeps the token out of its environment', () => {
     const env = adapterEnv(jobOf('claude-code', {}, {}, { PATH: '/bin' }), 'default');
     expect(env['CLAUDE_CODE_EXECUTABLE']).toBe('/opt/claude');

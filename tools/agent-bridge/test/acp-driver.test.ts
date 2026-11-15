@@ -97,6 +97,51 @@ describe('what a person sees of the work', () => {
   });
 });
 
+describe('codex full access (P26-06): the profile\'s key and the run\'s key', () => {
+  const ASKS = script('codex', {
+    work: [
+      { do: 'permission', step: { title: 'git commit -m x', kind: 'execute', input: { command: 'git commit -m x' } } },
+      { do: 'permission', mcp: true, step: { title: 'mcp.manythreads.mt_note', kind: 'execute', input: { server: 'manythreads', tool: 'mt_note', arguments: { text: 'hi' } } } },
+      { do: 'text', text: 'Done.' },
+    ],
+  });
+
+  const newest = (): Record<string, unknown> => [...h!.sessions()].sort((a, b) => String(a['updatedAt']).localeCompare(String(b['updatedAt']))).at(-1)!;
+
+  /** Runs once and answers the one command question with a No if it is asked; returns whether it was asked and the mode the adapter was put in. */
+  const runOnce = async (body: Record<string, unknown>): Promise<{ asked: boolean; mode: unknown }> => {
+    const id = await startRun(h!, { input: 'go', manythreads: { tools: ['shell'], mcp: MCP, ...body } });
+    const w = watch(h!, id);
+    let asked = false;
+    const first = await w.until((f) => f['event'] === 'approval.request' || f['event'] === 'run.completed' || f['event'] === 'run.failed');
+    if (first['event'] === 'approval.request') {
+      asked = JSON.stringify(first).includes('git commit');
+      await post(h!, id, 'approval', { choice: 'deny', request_id: first['request_id'] });
+    }
+    await w.done;
+    return { asked, mode: newest()['mode'] };
+  };
+
+  it('a full-access profile puts Codex in the full-access mode and no command is asked', async () => {
+    h = await acpHarness({ flavor: 'codex', script: ASKS, profile: { fullAccess: true } });
+    expect(await runOnce({})).toEqual({ asked: false, mode: 'agent-full-access' });
+  });
+
+  it('without the profile\'s key the run\'s key alone does nothing: the sandbox mode, and the command is asked', async () => {
+    h = await acpHarness({ flavor: 'codex', script: ASKS });
+    expect(await runOnce({ fullAccess: true })).toEqual({ asked: true, mode: 'workspace-write' });
+  });
+
+  it('"allowed" needs the run to say yes; true is taken back by a run that says no', async () => {
+    h = await acpHarness({ flavor: 'codex', script: ASKS, profile: { fullAccess: 'allowed' } });
+    expect(await runOnce({})).toEqual({ asked: true, mode: 'workspace-write' });
+    expect(await runOnce({ fullAccess: true })).toEqual({ asked: false, mode: 'agent-full-access' });
+    await h.close();
+    h = await acpHarness({ flavor: 'codex', script: ASKS, profile: { fullAccess: true } });
+    expect(await runOnce({ fullAccess: false })).toEqual({ asked: true, mode: 'workspace-write' });
+  });
+});
+
 describe('questions to a person (approval.request)', () => {
   it('claude: a permission request becomes a frame; a "once" answer lets the step run', async () => {
     h = await acpHarness({ flavor: 'claude' });

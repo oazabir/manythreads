@@ -12,6 +12,8 @@ export interface RunRequest {
     model: { alias: string | null; effort: string | null };
     budgetSeconds: number | null;
     maxTurns: number | null;
+    /** The site's half of Codex full access (the runner's switch): true, false, or null when the site did not say. Only the profile's own `fullAccess` can turn it on (config.ts). */
+    fullAccess: boolean | null;
   };
 }
 
@@ -42,6 +44,7 @@ export function parseRunRequest(body: unknown): { ok: true; value: RunRequest } 
   }
   const toolsRaw = mt['tools'] ?? [];
   if (!Array.isArray(toolsRaw) || toolsRaw.some((t) => typeof t !== 'string') || toolsRaw.length > 64) return { ok: false, error: '"manythreads.tools" must be a list of strings' };
+  if (mt['fullAccess'] !== undefined && mt['fullAccess'] !== null && typeof mt['fullAccess'] !== 'boolean') return { ok: false, error: '"manythreads.fullAccess" must be true or false' };
   const model = isRecord(mt['model']) ? mt['model'] : {};
   return {
     ok: true,
@@ -57,6 +60,7 @@ export function parseRunRequest(body: unknown): { ok: true; value: RunRequest } 
         model: { alias: optString(model['alias']), effort: optString(model['effort']) },
         budgetSeconds: optNumber(mt['budgetSeconds']),
         maxTurns: optNumber(mt['maxTurns']),
+        fullAccess: typeof mt['fullAccess'] === 'boolean' ? mt['fullAccess'] : null,
       },
     },
   };

@@ -55,6 +55,15 @@ export interface ProfileConfig {
    * nobody else on the machine. Without it (or the same variable in `env`) the profile uses the machine's shared sign-in: the one in the service user's home folder. An absolute path.
    */
   authHome?: string | undefined;
+  /**
+   * Codex only: may this profile's Codex run commands without asking (codex-acp's full-access mode, the `codex --yolo` behaviour)? Two keys, one on each side
+   * (docs/plans/agents-anywhere.md §4): this profile's, written by whoever installs the bridge (the pod's controller, the server's installer flag; the site cannot widen a
+   * machine's sandbox), and the run's own `manythreads.fullAccess`, the admin's switch on the site.
+   *   false / absent  never.
+   *   "allowed"       only when the run says `fullAccess: true` (an enrolled server: both keys needed).
+   *   true            on, unless the run says `fullAccess: false` (an agent pod: the controller already wrote the admin's switch here, and the run can only narrow it).
+   */
+  fullAccess?: boolean | 'allowed' | undefined;
   /** Names of the bridge's own environment variables handed on to the child (beyond the built-in allowlist). */
   passEnv?: string[] | undefined;
   /**
@@ -148,6 +157,9 @@ export function parseConfig(raw: unknown): BridgeConfig {
       throw new Error(`config: profile "${name}": authHome must be an absolute folder path`);
     }
     if (authHome !== undefined && agent !== 'claude-code' && agent !== 'codex') throw new Error(`config: profile "${name}": authHome is only for claude-code and codex profiles`);
+    const fullAccess = p['fullAccess'];
+    if (fullAccess !== undefined && fullAccess !== true && fullAccess !== false && fullAccess !== 'allowed') throw new Error(`config: profile "${name}": fullAccess must be true, false or "allowed"`);
+    if (fullAccess !== undefined && fullAccess !== false && agent !== 'codex') throw new Error(`config: profile "${name}": fullAccess is only for codex profiles`);
     const notes = p['instructions'];
     if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error(`config: profile "${name}": instructions must be text of at most 20000 characters`);
     profiles[name] = {
@@ -161,6 +173,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
       ...(envMap !== undefined ? { env: envMap as Record<string, string> } : {}),
       ...(pass !== undefined ? { passEnv: pass as string[] } : {}),
       ...(typeof authHome === 'string' ? { authHome } : {}),
+      ...(fullAccess === true || fullAccess === 'allowed' ? { fullAccess } : {}),
       ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}),
     };
   }
