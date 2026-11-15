@@ -79,8 +79,72 @@ clone_new() {
   if [ -d "$tmpd/.git" ] && mv -T -- "$tmpd" "$dir" 2>/dev/null; then :; else rm -rf "$tmpd"; fi
 }
 
+# The team's repository of record (P26-09): one bare repository per project at /work/<team>/repos/<project>.git, shared by every bot of the pod so that one bot's branch can reach another
+# (`mt-git record-push` and `mt-git record-fetch`; the bots' own clones stay as they are, with the public address as origin). It is made from the project's public address like a clone, with the
+# same fresh environment and empty templates, and its `update` hook (written here, never copied from anywhere) refuses a push to main, to the project's default branch, a delete and a forced push.
+# All bots of a pod run as one user, so the hook is a guard rail against mistakes and not a wall; a pod with full access serves one team for that reason. The default branch is refreshed from the
+# public address into the record's own branch the way a clone is fetched (a private git folder whose objects and refs are links to the record's, so nothing in the record's config or hooks runs here).
+RECORD_HOOK='#!/bin/sh
+# update hook of the repository of record (repo-sync.sh): refuses what would lose another bot'"'"'s work
+ref="$1"; old="$2"; new="$3"
+zero=0000000000000000000000000000000000000000
+head=$(git symbolic-ref HEAD 2>/dev/null)
+case "$ref" in refs/heads/*) ;; *) echo "the repository of record takes branches only" >&2; exit 1 ;; esac
+if [ "$ref" = "$head" ] || [ "$ref" = refs/heads/main ] || [ "$ref" = refs/heads/master ]; then echo "the main branch is not pushed to here: push a card branch" >&2; exit 1; fi
+if [ "$new" = "$zero" ]; then echo "a branch is not deleted here" >&2; exit 1; fi
+if [ "$old" != "$zero" ] && ! git merge-base --is-ancestor "$old" "$new" 2>/dev/null; then echo "a forced push is not accepted here" >&2; exit 1; fi
+exit 0
+'
+RECORDS_DONE=""
+
+# record_sync: makes or refreshes the repository of record of the current list entry (once per team and project in a round)
+record_sync() {
+  case " $RECORDS_DONE " in *" $team/$project "*) return 0 ;; esac
+  RECORDS_DONE="$RECORDS_DONE $team/$project"
+  mkdir -p "$WORK/$team/repos" 2>/dev/null
+  realdir "$WORK/$team" && realdir "$WORK/$team/repos" || { echo "repo-sync: no repository of record for $project: a folder on the way is a link"; return 0; }
+  rec="$WORK/$team/repos/$project.git"
+  if [ -e "$rec" ] || [ -L "$rec" ]; then
+    [ $((tick % FETCH_EVERY)) -eq 0 ] || return 0
+    for p in "$rec" "$rec/objects" "$rec/refs"; do
+      realdir "$p" || { echo "repo-sync: not fetching the record of $project: $p is not a plain folder"; return 0; }
+    done
+    [ ! -e "$rec/objects/info/alternates" ] || { echo "repo-sync: not fetching the record of $project: it borrows objects from another folder"; return 0; }
+    def=$(sed -n '1s#^ref: refs/heads/##p' "$rec/HEAD" 2>/dev/null)
+    case "$def" in ''|*[!A-Za-z0-9._/-]*) echo "repo-sync: not fetching the record of $project: odd default branch"; return 0 ;; esac
+    g="$SCRATCH/gitdir-record"
+    rm -rf "$g"
+    sg 10 git init --bare -q --template= -b mt-sync-unused "$g" </dev/null >/dev/null 2>&1 || { echo "repo-sync: cannot make a private git folder"; return 0; }
+    rm -rf "$g/objects" "$g/refs"
+    ln -s "$rec/objects" "$g/objects" && ln -s "$rec/refs" "$g/refs" && ln -s "$rec/packed-refs" "$g/packed-refs" || { rm -rf "$g"; return 0; }
+    sg 120 $HARD GIT_DIR="$g" git fetch --quiet --no-write-fetch-head --no-recurse-submodules -- "$origin" "+refs/heads/$def:refs/heads/$def" </dev/null 2>&1 | head -n 3
+    rm -rf "$g"
+    return 0
+  fi
+  mark="$STATE/failed-record.$team.$project"
+  now=$(date +%s)
+  last=$(cat "$mark" 2>/dev/null)
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  if [ -f "$mark" ] && [ $((now - last)) -lt "$RETRY_AFTER" ]; then return 0; fi
+  tmpr="$WORK/$team/repos/.record.$project"
+  rm -rf "$tmpr"
+  if [ "$branch" = "-" ]; then
+    sg 300 $HARD git clone --bare --quiet --template= -- "$origin" "$tmpr" </dev/null 2>&1 | head -n 3
+  else
+    sg 300 $HARD git clone --bare --quiet --template= --branch "$branch" -- "$origin" "$tmpr" </dev/null 2>&1 | head -n 3
+  fi
+  if [ -d "$tmpr/objects" ]; then
+    mkdir -p "$tmpr/hooks" && printf '%s' "$RECORD_HOOK" > "$tmpr/hooks/update" && chmod 0755 "$tmpr/hooks/update" \
+      && sg 10 git config --file "$tmpr/config" receive.denyDeletes true && sg 10 git config --file "$tmpr/config" receive.denyNonFastForwards true \
+      && mv -T -- "$tmpr" "$rec" 2>/dev/null && rm -f "$mark" && return 0
+  fi
+  rm -rf "$tmpr"
+  echo "$now" > "$mark"
+}
+
 tick=0
 while true; do
+  RECORDS_DONE=""
   src="$FALLBACK"
   [ -f "$LIST" ] && src="$LIST"
   if [ -f "$src" ]; then
@@ -99,6 +163,7 @@ while true; do
       # a public address has no user name, query or odd character in it (a token in an address would be written into the clone's config)
       case "$origin" in *[!A-Za-z0-9._~:/%+=,-]*) echo "repo-sync: skipping $project: the address has characters a public address does not need"; continue ;; esac
       dir="$WORK/$team/$bot/$project"
+      record_sync
       if [ -e "$dir" ] || [ -L "$dir" ]; then
         # an existing clone is fetched once in FETCH_EVERY rounds
         [ $((tick % FETCH_EVERY)) -eq 0 ] || continue

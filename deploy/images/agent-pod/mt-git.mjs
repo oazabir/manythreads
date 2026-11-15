@@ -12,7 +12,10 @@
 //      textconv, diff.external, fsmonitor, hooksPath, pager, editor, ssh/proxy command, include, credential or gpg line is ever honoured), and also overrides the
 //      dangerous ones on the command line, which wins over the file;
 //   5. runs git with a fresh environment (no global or system config, no external diff, no pager, no editor, no prompt) and never with `--ext-diff`/`--textconv`.
-// No push, fetch, pull, clone, reset, rebase, restore, clean, remote, config, stash, tag or branch deletion is on the list. Exit 2 means "mt-git refused"; any other
+// The one place a bot's work can leave its clone is the team's repository of record in the same pod (P26-09): `mt-git record-push <branch>` pushes one branch there and
+// `mt-git record-fetch` brings that repository's branches in as refs/record/<branch>. The folder is derived from the clone's own place (/work/<team>/<bot>/<project> ->
+// /work/<team>/repos/<project>.git), never from the clone's config, a variable or an argument; its `update` hook (written by repo-sync.sh) refuses main, deletes and forced pushes.
+// No push to anywhere else, fetch from anywhere else, pull, clone, reset, rebase, restore, clean, remote, config, stash, tag or branch deletion is on the list. Exit 2 means "mt-git refused"; any other
 // code is git's own.
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
@@ -293,16 +296,54 @@ const FIXED_CONFIG = [
   'color.ui=false',
 ];
 
+// ---- the repository of record ---------------------------------------------------------------------------------------------------------------------------------
+const RECORD_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+function recordOf(root) {
+  const rec = join(dirname(dirname(root)), 'repos', `${basename(root)}.git`);
+  let st = null;
+  try {
+    st = lstatSync(rec);
+  } catch {
+    st = null;
+  }
+  if (st === null) refuse('this project has no repository of record in the pod yet (it is made a few seconds after the project appears)');
+  if (st.isSymbolicLink() || !st.isDirectory()) refuse('the repository of record is not a plain folder; mt-git does not follow it');
+  for (const rel of ['config.worktree', 'commondir', join('objects', 'info', 'alternates'), join('objects', 'info', 'http-alternates')]) {
+    if (existsSync(join(rec, rel))) refuse(`the repository of record holds ${rel}, which mt-git does not allow`);
+  }
+  return rec;
+}
+
+function runRecord(root, cwd, args) {
+  const all = [];
+  for (const c of FIXED_CONFIG) all.push('-c', c);
+  // only this one transport, only for the folder named on the command line
+  all.push('-c', 'protocol.file.allow=always', ...args);
+  const r = spawnSync(GIT, all, { cwd, env: cleanEnv(root, cwd, true), stdio: 'inherit' });
+  if (r.error) refuse(`git could not run: ${r.error.code ?? 'error'}`);
+  process.exit(r.status ?? (r.signal ? 1 : 0));
+}
+
 function main() {
   const [sub, ...rest] = process.argv.slice(2);
-  if (sub === undefined) refuse('usage: mt-git status|diff|log|add|commit|switch|checkout -b|branch --show-current|show|rev-parse [options] [paths]');
+  if (sub === undefined) refuse('usage: mt-git status|diff|log|add|commit|switch|checkout -b|branch --show-current|show|rev-parse|record-push|record-fetch [options] [paths]');
 
   const cwd = realpathSync(process.cwd());
   let argv; // what goes after the subcommand name
   let write = false;
   const pathArgs = [];
 
-  if (sub === 'branch') {
+  if (sub === 'record-push' || sub === 'record-fetch') {
+    if (sub === 'record-fetch' && rest.length !== 0) refuse('record-fetch takes no argument');
+    if (sub === 'record-push' && (rest.length !== 1 || !RECORD_BRANCH.test(rest[0]) || rest[0] === 'main' || rest[0] === 'master' || rest[0].endsWith('.lock') || rest[0].includes('..'))) {
+      refuse('record-push: give one plain branch name (letters, digits, dot, dash, underscore; not main)');
+    }
+    const root = findRoot(cwd);
+    checkRepo(root);
+    const rec = recordOf(root);
+    if (sub === 'record-fetch') runRecord(root, cwd, ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', '--', rec, '+refs/heads/*:refs/record/*']);
+    runRecord(root, cwd, ['push', '--quiet', '--no-verify', '--no-recurse-submodules', '--', rec, `refs/heads/${rest[0]}:refs/heads/${rest[0]}`]);
+  } else if (sub === 'branch') {
     if (rest.length !== 1 || rest[0] !== '--show-current') refuse('branch: only "mt-git branch --show-current" is allowed');
     argv = ['--show-current'];
   } else if (sub === 'checkout') {
@@ -337,7 +378,7 @@ function main() {
     if (sub === 'diff' || sub === 'log' || sub === 'show') argv = ['--no-ext-diff', '--no-textconv', ...argv];
     if (sub === 'diff' || sub === 'status') argv = [`--ignore-submodules=all`, ...argv];
   } else {
-    refuse(`"${sub.slice(0, 40)}" is not a command mt-git runs (allowed: status, diff, log, add, commit, switch, checkout -b, branch --show-current, show, rev-parse)`);
+    refuse(`"${sub.slice(0, 40)}" is not a command mt-git runs (allowed: status, diff, log, add, commit, switch, checkout -b, branch --show-current, show, rev-parse, record-push, record-fetch)`);
   }
 
   const root = findRoot(cwd);

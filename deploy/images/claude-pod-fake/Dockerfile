@@ -6,6 +6,8 @@
 FROM node:22-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini procps jq curl && rm -rf /var/lib/apt/lists/*
 COPY bridge /opt/bridge
+# the bridge loads the ACP client library even when it drives the stand-in's CLI-style scripts (deploy.sh writes bridge/package.json)
+RUN cd /opt/bridge && npm install --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
 COPY repo-sync.sh /opt/claude-pod/repo-sync.sh
 COPY keeper.mjs /opt/claude-pod/keeper.mjs
 # The publisher container (decision E2, P19-09) is this same image started with `publisher.mjs serve`, as in claude-pod: the run container calls `mt-publish`, which only talks to it over a socket.

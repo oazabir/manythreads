@@ -199,11 +199,13 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
     exit 1
   fi
   CP_STAGE=$(mktemp -d)
-  cp -r deploy/images/claude-pod/. "$CP_STAGE/"
+  cp -r deploy/images/agent-pod/. "$CP_STAGE/"
   # the publisher container (P19-09) runs the workbench's push script, so it travels in the same image
   cp deploy/images/workbench/mt-publish.sh deploy/images/workbench/mt-askpass.sh "$CP_STAGE/"
   mkdir -p "$CP_STAGE/bridge"
   cp -r tools/agent-bridge/src "$CP_STAGE/bridge/src"
+  # the one thing the bridge imports from npm (its runtime dependencies, from the package's own file); the image installs it
+  node -e 'const p=require("./tools/agent-bridge/package.json");process.stdout.write(JSON.stringify({name:"agent-bridge",private:true,type:"module",dependencies:p.dependencies}))' > "$CP_STAGE/bridge/package.json"
   if [ "$(claude_pod_value useFake)" = "true" ]; then
     CP_NAME=claude-pod-fake
     cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs "$CP_STAGE/"

@@ -22,7 +22,7 @@ manythreads/web                     # built: deploy/docker/web.Dockerfile
 manythreads/hermes                  # built: deploy/docker/hermes.Dockerfile (Hermes Agent, the upstream installer)
 manythreads/hermes-pod              # built: deploy/images/hermes-pod, the Hermes container of a team's pod
 manythreads/workbench               # built: deploy/images/workbench, the bots' shell
-manythreads/claude-pod              # built: deploy/images/claude-pod, a Claude Code or Codex runner
+manythreads/claude-pod              # built: deploy/images/agent-pod, a Claude Code or Codex runner
 manythreads/claude-pod-fake         # built: deploy/images/claude-pod-fake, the test stand-in of the runner
 manythreads/asr                     # built: deploy/images/asr, speech to text (only with asr.enabled)
 manythreads/postgres                # built: deploy/postgres, the plain Postgres of the development compose file

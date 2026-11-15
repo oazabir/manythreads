@@ -68,10 +68,12 @@ cmd_image() {
   local stage
   stage=$(mktemp -d)
   # the same staged folder deploy.sh builds the fake pod image from (the bridge's source, the pod scripts, the stand-in claude and codex)
-  cp -r deploy/images/claude-pod/. "$stage/"
+  cp -r deploy/images/agent-pod/. "$stage/"
   cp deploy/images/workbench/mt-publish.sh deploy/images/workbench/mt-askpass.sh "$stage/"
   mkdir -p "$stage/bridge"
   cp -r tools/agent-bridge/src "$stage/bridge/src"
+  # the one thing the bridge imports from npm (its runtime dependencies, from the package's own file); the image installs it
+  node -e 'const p=require("./tools/agent-bridge/package.json");process.stdout.write(JSON.stringify({name:"agent-bridge",private:true,type:"module",dependencies:p.dependencies}))' > "$stage/bridge/package.json"
   cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs "$stage/"
   step "build manythreads/claude-pod-fake:$TAG"
   "$DOCKER" build -f "$stage/Dockerfile" -t "manythreads/claude-pod-fake:$TAG" "$stage"
