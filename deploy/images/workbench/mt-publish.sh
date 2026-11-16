@@ -147,7 +147,9 @@ if [ -n "$SOURCE" ]; then
   # it would not fit (a real project is larger than that) and could get the pod evicted. The fetch below then only sets the branch. Nothing is run from the clone.
   [ -d "$SOURCE/.git/objects" ] && [ ! -L "$SOURCE/.git/objects" ] || die 2 "no such project folder"
   printf '%s\n' "$SOURCE/.git/objects" > "$work/r.git/objects/info/alternates"
-  git -C "$work/r.git" -c safe.directory='*' fetch -q --no-tags --no-write-fetch-head -- "$SOURCE" "+refs/heads/$branch:refs/heads/$branch" >/dev/null 2>&1 || die 4 "the branch $branch is not in the project folder: commit your work on that branch first"
+  # The clone belongs to the bot's user and this script runs as the publisher's, so git refuses the clone as "dubious ownership" unless the process that READS it (upload-pack, a
+  # child of the fetch) is told to accept it: `-c safe.directory` on the fetch itself does not reach that child (found on a real Codex pod, 2026-11-16, P26-19 proof 2).
+  git -C "$work/r.git" -c safe.directory='*' fetch -q --no-tags --no-write-fetch-head --upload-pack="git -c safe.directory=* upload-pack" -- "$SOURCE" "+refs/heads/$branch:refs/heads/$branch" >/dev/null 2>&1 || die 4 "the branch $branch is not in the project folder: commit your work on that branch first"
   dir="$work/r.git"
 fi
 head="$(git -C "$dir" rev-parse --verify -q "refs/heads/$branch^{commit}" || true)"

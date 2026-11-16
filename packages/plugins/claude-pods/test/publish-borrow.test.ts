@@ -140,3 +140,12 @@ describe("mt-publish.sh with a working clone", () => {
     expect(alternates).toBe(join(clone, ".git/objects"));
   });
 });
+
+describe("the clone belongs to another user (a real pod)", () => {
+  it("the fetch tells the process that reads the clone to accept it, since -c on the fetch does not reach that child", () => {
+    const script = readFileSync(SCRIPT, "utf8");
+    expect(script).toMatch(
+      /fetch [^\n]*--upload-pack="git -c safe\.directory=\* upload-pack"[^\n]*-- "\$SOURCE"/,
+    );
+  });
+});
