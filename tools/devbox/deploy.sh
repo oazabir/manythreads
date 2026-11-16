@@ -221,7 +221,9 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   node -e 'const p=require("./tools/agent-bridge/package.json");process.stdout.write(JSON.stringify({name:"agent-bridge",private:true,type:"module",dependencies:p.dependencies}))' > "$CP_STAGE/bridge/package.json"
   if [ "$(claude_pod_value useFake)" = "true" ]; then
     CP_NAME=claude-pod-fake
-    cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs "$CP_STAGE/"
+    cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs deploy/images/claude-pod-fake/claude-agent-acp.sh deploy/images/claude-pod-fake/codex-acp.sh "$CP_STAGE/"
+    # the fake ACP agent, bundled to one file (P27-19): the adapter the bridge starts for a runner whose driver is acp
+    node tools/fake-acp-agent/bundle.mjs "$CP_STAGE/fake-acp-agent.mjs" || { echo "ERROR: the fake ACP agent did not bundle"; exit 1; }
   else
     CP_NAME=claude-pod
   fi

@@ -75,7 +75,8 @@ cmd_image() {
   node tools/agent-bridge/install/build.mjs --bridge-only "$stage/bridge/bridge.mjs" || die "the bridge bundle did not build"
   # the one thing the bridge imports from npm (its runtime dependencies, from the package's own file); the image installs it
   node -e 'const p=require("./tools/agent-bridge/package.json");process.stdout.write(JSON.stringify({name:"agent-bridge",private:true,type:"module",dependencies:p.dependencies}))' > "$stage/bridge/package.json"
-  cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs "$stage/"
+  cp deploy/images/claude-pod-fake/Dockerfile deploy/images/claude-pod-fake/fake-claude.mjs deploy/images/claude-pod-fake/fake-codex.mjs deploy/images/claude-pod-fake/claude-agent-acp.sh deploy/images/claude-pod-fake/codex-acp.sh "$stage/"
+  node tools/fake-acp-agent/bundle.mjs "$stage/fake-acp-agent.mjs" || die "the fake ACP agent did not bundle"
   step "build manythreads/claude-pod-fake:$TAG"
   "$DOCKER" build -f "$stage/Dockerfile" -t "manythreads/claude-pod-fake:$TAG" "$stage"
   rm -rf "$stage"
