@@ -126,8 +126,10 @@ export async function loadAuthenticated(
     workspace_id: string;
     workspace_name: string;
     role: AuthenticatedSession['role'];
+    must_change: boolean | null;
   }>(
-    `SELECT p.id, p.display_name, p.primary_email, p.avatar, p.theme, p.density, p.palette, w.id AS workspace_id, w.name AS workspace_name, wm.role
+    `SELECT p.id, p.display_name, p.primary_email, p.avatar, p.theme, p.density, p.palette, w.id AS workspace_id, w.name AS workspace_name, wm.role,
+            (SELECT c.must_change FROM app.password_credentials c WHERE c.person_id = p.id) AS must_change
      FROM app.people p
      JOIN app.workspaces w ON w.id = p.workspace_id
      JOIN app.workspace_members wm ON wm.person_id = p.id AND wm.workspace_id = p.workspace_id
@@ -153,6 +155,7 @@ export async function loadAuthenticated(
     teams: teams.rows,
     methods: await loadMethods(tx, row.workspace_id, { admin: row.role === 'owner' || row.role === 'admin' }),
     expiresAt,
+    mustChangePassword: row.must_change === true,
   };
 }
 

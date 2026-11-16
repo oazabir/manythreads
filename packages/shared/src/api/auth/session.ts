@@ -42,6 +42,8 @@ export const AuthenticatedSession = z.object({
   methods: z.array(SignInMethod),
   /** Absolute expiry of this session; idle expiry comes sooner when the browser is quiet. */
   expiresAt: IsoDateTime,
+  /** True while the password in use was made up for the person (the first one the installer printed, or one an operator generated): the app asks for a new one before anything else. Absent on an older server. */
+  mustChangePassword: z.boolean().optional(),
 });
 export type AuthenticatedSession = z.infer<typeof AuthenticatedSession>;
 

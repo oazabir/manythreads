@@ -6,6 +6,7 @@ import type { PersonId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import { databaseUrlsFromEnv } from '../db-env.ts';
 import { createSessionService, sessionConfigFromEnv } from '../session/index.ts';
+import { FIRST_ADMIN_USAGE, runFirstAdmin } from './first-admin.ts';
 import { INIT_USAGE, runInit } from './init.ts';
 
 /**
@@ -15,6 +16,9 @@ import { INIT_USAGE, runInit } from './init.ts';
  *   pnpm --filter @manythreads/server admin kms-rewrap                 queue the move of every secret to the current master key
  *   pnpm --filter @manythreads/server admin init --email <address>     first administrator, first team, the Hermes runner and the Brain's profile (Docker Compose installs)
  *   pnpm --filter @manythreads/server admin brain-profile --email <address>   only the Brain's profile and token again (docs/deploy/compose.md)
+ *   admin first-admin --email <address> [--workspace <name>]   the one-command install's first administrator: no team, no runner, a made-up password the person must change (first-admin.ts)
+ *   admin password-status <email>                               is the made-up password still the one in use (never printed)
+ *   admin reset-password <email> --generate                     a new made-up password, printed once, to be changed at the next sign-in
  *
  * `set-password` reads the new password from standard input (never from the command line, so it is not in `ps`, shell
  * history or logs), refuses one shorter than the policy minimum, stores its argon2id hash, signs the person out
@@ -47,7 +51,7 @@ export interface SetPasswordResult {
 export async function setPassword(
   pool: pg.Pool,
   input: { email: string; password: string },
-  options: { now?: () => Date; env?: NodeJS.ProcessEnv } = {},
+  options: { now?: () => Date; env?: NodeJS.ProcessEnv; mustChange?: boolean } = {},
 ): Promise<SetPasswordResult> {
   const email = input.email.trim().toLowerCase();
   if (!email.includes('@')) throw new AdminError(`"${input.email.trim()}" is not an email address.`, 2);
@@ -70,9 +74,9 @@ export async function setPassword(
       if (person.status !== 'active') throw new AdminError(`${email} is ${person.status}, not active.`);
 
       await tx.query(
-        `INSERT INTO app.password_credentials (person_id, hash, must_change, created_at, updated_at) VALUES ($1, $2, false, $3, $3)
-         ON CONFLICT (person_id) DO UPDATE SET hash = EXCLUDED.hash, must_change = false, updated_at = EXCLUDED.updated_at`,
-        [person.id, hash, now()],
+        `INSERT INTO app.password_credentials (person_id, hash, must_change, created_at, updated_at) VALUES ($1, $2, $4, $3, $3)
+         ON CONFLICT (person_id) DO UPDATE SET hash = EXCLUDED.hash, must_change = EXCLUDED.must_change, updated_at = EXCLUDED.updated_at`,
+        [person.id, hash, now(), options.mustChange ?? false],
       );
       // Every reset link of this person dies with the old password; so does every session.
       await tx.query(
@@ -114,6 +118,7 @@ const USAGE = [
   'usage: admin set-password <email>   (the new password is read from standard input)',
   '       admin kms-rewrap             (queue the move of every secret to the current master key)',
   INIT_USAGE,
+  FIRST_ADMIN_USAGE,
 ].join('\n');
 
 export interface KmsRewrapResult {
@@ -139,6 +144,9 @@ export async function runAdmin(argv: readonly string[], io: AdminIo): Promise<nu
   const [command, ...rest] = argv;
   if (command === 'init' || command === 'brain-profile') {
     return runInit(rest, io, command === 'brain-profile', () => (io.pool ?? (() => createSystemPool(databaseUrlsFromEnv(io.env).systemUrl, 2)))());
+  }
+  if (command === 'first-admin' || command === 'password-status' || command === 'reset-password') {
+    return runFirstAdmin(command, rest, io, () => (io.pool ?? (() => createSystemPool(databaseUrlsFromEnv(io.env).systemUrl, 2)))());
   }
   if (command === 'kms-rewrap') {
     if (rest.length > 0) {

@@ -113,7 +113,7 @@ export class InitError extends Error {
 }
 
 /** Wait until the server answers `/readyz` with 200. */
-async function waitReady(http: Http, say: (line: string) => void, seconds = 180): Promise<void> {
+export async function waitReady(http: Http, say: (line: string) => void, seconds = 180): Promise<void> {
   const until = Date.now() + seconds * 1000;
   let last = 'no answer';
   while (Date.now() < until) {

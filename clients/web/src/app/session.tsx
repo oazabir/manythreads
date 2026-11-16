@@ -10,6 +10,7 @@ import { dropPersonData } from './caches';
 import { setAwayOwner } from '../presence/manualAway';
 import { signInUrl } from './paths';
 import { applyAppearance } from '../shell/appearance';
+import { FirstPassword } from '../screens/FirstPassword';
 
 export type SessionState =
   | { status: 'loading' }
@@ -109,6 +110,8 @@ export function RequireSession() {
       </FullPageMessage>
     );
   }
+  // A password that was made up for the person (the installer's first one) must be replaced before anything else is shown.
+  if (state.session.mustChangePassword === true) return <FirstPassword email={state.session.person.email} />;
   // The quick switcher and its `?` sheet: keyboard shortcuts of the signed-in app (PLAN P14-10), above every screen.
   return (
     <>
