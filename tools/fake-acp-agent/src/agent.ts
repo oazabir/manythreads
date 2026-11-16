@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
@@ -15,7 +15,7 @@ import {
   type SessionUpdate,
   type StopReason,
 } from '@agentclientprotocol/sdk';
-import type { Action, AuthScript, FakeScript, Flavor, HelperAction, PermissionAction, PlanEntryInput, StepAction } from './script.ts';
+import type { Action, AuthScript, FakeScript, Flavor, HelperAction, McpAction, PermissionAction, PlanEntryInput, RunAction, StepAction } from './script.ts';
 import { writePid } from './login.ts';
 
 /*
@@ -352,6 +352,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     usageSent: boolean;
     /** Commands a step started (a `spawn` step), in the adapter's own process group. */
     children: ChildProcess[];
+    /** What `store` of an `mcp` or `run` action kept, for `{{var:name}}`. */
+    vars: Record<string, unknown>;
   }
 
   const emit = async (env: Env, update: Record<string, unknown>, replayable = true): Promise<void> => {
@@ -718,10 +720,83 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
   const fill = (env: Env, text: string): string =>
     withToken(env, text)
       .replaceAll('{{prompt}}', env.prompt)
+      .replaceAll('{{promptId}}', /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(env.prompt)?.[0] ?? '')
       .replaceAll('{{turn}}', String(env.session.turns))
       .replaceAll('{{sessionId}}', env.session.id)
       .replaceAll('{{cwd}}', env.session.cwd)
-      .replaceAll('{{steered}}', env.session.steered.join(' | '));
+      .replaceAll('{{steered}}', env.session.steered.join(' | '))
+      .replace(/\{\{var:([\w.-]+)\}\}/g, (_m, path: string) => {
+        const value = path.split('.').reduce<unknown>((v, k) => (v !== null && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined), env.vars);
+        return value === undefined ? '' : typeof value === 'string' ? value : JSON.stringify(value);
+      });
+
+  /** `fill` over every string of a value (the arguments of a tool call). */
+  const fillDeep = (env: Env, value: unknown): unknown =>
+    typeof value === 'string' ? fill(env, value) : Array.isArray(value) ? value.map((v) => fillDeep(env, v)) : value !== null && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fillDeep(env, v)])) : value;
+
+  /** The answer text of an MCP tool as a value: JSON when it parses, the text when it does not. */
+  const parseText = (text: string): unknown => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  };
+
+  /** One `tools/call` at the session's own MCP address. Returns the parsed answer and whether the platform called it an error. */
+  const callMcp = async (env: Env, a: McpAction): Promise<{ ok: boolean; value: unknown }> => {
+    const server = env.session.mcpServers.find((m) => (m as { type?: string }).type === 'http') as { url?: string; headers?: Array<{ name?: string; value?: string }> } | undefined;
+    if (!server?.url) return { ok: false, value: 'the client gave this session no MCP address' };
+    const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+    for (const h of server.headers ?? []) if (h.name && h.value) headers[h.name] = h.value;
+    try {
+      const res = await fetch(server.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: a.tool, arguments: fillDeep(env, a.args ?? {}) } }),
+        signal: AbortSignal.any([env.signal, AbortSignal.timeout(60_000)]),
+      });
+      const body = (await res.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean }; error?: { message?: string } };
+      if (body.error) return { ok: false, value: body.error.message ?? 'the call failed' };
+      const text = body.result?.content?.map((c) => c.text ?? '').join('') ?? '';
+      const value = parseText(text);
+      const answered = typeof value === 'object' && value !== null && (value as { ok?: unknown }).ok === false;
+      return { ok: res.ok && body.result?.isError !== true && !answered, value };
+    } catch (e) {
+      return { ok: false, value: e instanceof Error ? e.message : 'the call failed' };
+    }
+  };
+
+  const runMcp = async (env: Env, a: McpAction): Promise<'ok' | 'cancelled'> => {
+    const id = nextId();
+    const spec: StepSpec = { title: a.title ?? a.tool, kind: 'other', toolName: `mcp__manythreads__${a.tool.replaceAll('.', '_')}`, leak: false };
+    await startStep(env, spec, id);
+    const { ok, value } = await callMcp(env, a);
+    if (a.store) env.vars[a.store] = value;
+    if (env.signal.aborted) {
+      await endStep(env, spec, id, 'cancelled');
+      return 'cancelled';
+    }
+    await endStep(env, { ...spec, output: typeof value === 'string' ? value : JSON.stringify(value).slice(0, 2000), ...(ok ? {} : { fail: typeof value === 'string' ? value : 'The tool answered an error' }) }, id, ok ? 'completed' : 'failed');
+    return 'ok';
+  };
+
+  const runCommand = async (env: Env, a: RunAction): Promise<'ok' | 'cancelled'> => {
+    const id = nextId();
+    const command = fill(env, a.command);
+    const spec: StepSpec = { title: a.title ?? command, kind: 'execute', toolName: 'Bash', input: { command } };
+    await startStep(env, spec, id);
+    mkdirSync(env.session.cwd, { recursive: true });
+    const r = spawnSync('sh', ['-c', command], { cwd: env.session.cwd, encoding: 'utf8', timeout: a.timeoutMs ?? 120_000, env: process.env });
+    const out = `${r.stdout ?? ''}${r.stderr ?? ''}`.slice(-4000);
+    if (a.store) env.vars[a.store] = { code: r.status ?? -1, out };
+    if (env.signal.aborted) {
+      await endStep(env, spec, id, 'cancelled');
+      return 'cancelled';
+    }
+    await endStep(env, { ...spec, output: out, ...(r.status === 0 ? {} : { fail: out.trim() === '' ? 'The command failed' : out.trim().slice(-300) }) }, id, r.status === 0 ? 'completed' : 'failed');
+    return 'ok';
+  };
 
   const runActions = async (env: Env, actions: Action[]): Promise<'ok' | 'cancelled'> => {
     for (const a of actions) {
@@ -739,6 +814,12 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
           break;
         case 'helper':
           result = await runHelper(env, a);
+          break;
+        case 'mcp':
+          result = await runMcp(env, a);
+          break;
+        case 'run':
+          result = await runCommand(env, a);
           break;
         case 'plan':
           result = await runPlan(env, a.entries);
@@ -788,7 +869,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     session.updatedAt = new Date().toISOString();
     const prompt = promptText(blocks);
     session.history.push({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: prompt } } as SessionUpdate);
-    const env: Env = { client, session, signal: abort.signal, prompt, usageSent: false, children: [] };
+    const env: Env = { client, session, signal: abort.signal, prompt, usageSent: false, children: [], vars: {} };
     let stopReason: StopReason = 'end_turn';
     try {
       const outcome = await runActions(env, pickScenario(prompt));

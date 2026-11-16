@@ -241,6 +241,25 @@ and an LLM gateway runner in turn and read the stand-in's answer (screenshots in
 (`tools/devbox/stage-runners-probe.sh`, [runners-live](runbooks/runners-live.md)). Run one spec file at a time:
 `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test runners/<name>.spec.ts --project=desktop --workers=1 --retries=0`.
 
+## Stand-ins for the setup journey (P27-19)
+Four small fakes let a browser test run the whole onboarding journey and the engineering chain without an account, a model or a cluster. Each has its own tests and a header comment.
+- **Fake LLM, journey scenario and provider keys** (`tools/fake-llm`). `startFakeLlm({ scenario: 'journey', providerKeys: { good: ['sk-good'], noQuota: ['sk-empty'] } })`, or `--scenario=journey`
+  with `FAKE_LLM_GOOD_KEYS` / `FAKE_LLM_NO_QUOTA_KEYS`. The journey scenario answers Brain's turn with `messages_search`, then `answer_post` citing the first hit (`[1]`); a turn with no tool gets one sentence
+  with `journey-ok` (the wizard's test turn). With provider keys the stand-in checks the `api_key` the platform pushed with the alias: a good key answers, an unknown key is `401`, a key without quota `429`,
+  an alias that was never pushed `400`. A spec wires it as `e2e/runners/placement.spec.ts` does: `llm = await startFakeLlm({ masterKey: 'sk-fake', ... })` and the stack env `MANYTHREADS_LITELLM_URL=llm.url`, `MANYTHREADS_LITELLM_MASTER_KEY=sk-fake`.
+- **Fake ACP agent: tool calls and per-bot scripts** (`tools/fake-acp-agent`). Two actions: `{ do: 'mcp', tool, args, store? }` is a real `tools/call` at the session's own MCP address with the run's bearer
+  header (shown as a step; a refusal is a failed step and the script goes on), and `{ do: 'run', command, store? }` runs a command in the session folder (`mt-publish`, `git`). `{{var:name.path}}` reads what `store` kept,
+  `{{promptId}}` is the first id in the prompt (the card the bot was woken with). `chainScript(slug)` / `writeChainScripts(dir)` (`src/chain.ts`) hold one script per bot of the Engineering chain
+  (engineer: board, plan, two cards, to-do list, hand-off; the others claim, hand on; committer: `mt-publish`; the last completes the card), each ending with the text `<slug>: ... chain-ok`.
+  "The bot `engineer` answers with script X" is one bridge profile per bot (`engineering--engineer`) whose `acp.args` end with `--script=<dir>/engineer.json`; `e2e/runs/support.ts` shows the bridge and the claude-pods test seam.
+- **Fake git host** (`tools/fake-git-host`). `const host = await startFakeGitHost({ token, owner, repos })` → `{ apiUrl, gitUrl, remoteUrl(repo), calls, gitCalls, github, branchHead(repo, branch), stop }`. The REST side is the
+  GitHub double of `packages/test-utils` (`GET /user`, `GET /repos/<o>/<r>` with `permissions.push`, pull requests): point `MANYTHREADS_TEST_GITHUB_API` or a project's API base at `apiUrl`. The git side is real
+  (`git http-backend`): `git clone` and `git push` against `remoteUrl(repo)` with the token as the password; a wrong token is `401`, a read-only repository refuses the push. The test process is the host's process: run
+  `git` from a spec with an async spawn, never `spawnSync`, or the host cannot answer.
+- **Claude pod sign-in** (`deploy/images/claude-pod-fake`). The image carries the fake ACP agent as `claude-agent-acp` and `codex-acp` (`node tools/fake-acp-agent/bundle.mjs <staged folder>/fake-acp-agent.mjs` makes the one file the
+  image copies). The agent starts signed out; its terminal sign-in (the Runners page and the wizard run it through the bridge) accepts the one code in `FAKE_SIGNIN_CODE` (default `stand-in-code#stand-in`) and refuses any other
+  with the real program's words; after the code a prompt runs. `tools/fake-acp-agent/test/pod-signin.test.ts` runs the wrappers exactly as the pod does.
+
 ## The run card and the to-do card (P25-11, P25-12)
 `e2e/runs/run-card.spec.ts` runs on the `runs` stack (seed v25: seed v19 plus the Engineering bots `run-demo`, `run-lead` and `run-helper`, placed on the seeded Claude Code runner;
 `packages/test-utils/src/seed-runs.ts`). `e2e/runs/support.ts` starts a real agent bridge in the test process whose profiles (`engineering--<bot>`) start `tools/fake-acp-agent`, and points

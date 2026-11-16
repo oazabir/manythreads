@@ -65,6 +65,35 @@ export interface PermissionAction {
   ignoreCancel?: boolean;
 }
 
+/**
+ * A call of one of the platform's tools over the run's own MCP address (the `mcpServers` entry the client gave the session, with its bearer header): a real `tools/call`,
+ * as the chain's bots make them (`tasks.claim`, `messages.post`, `tasks.todo`, `tasks.handoff`, `answer.post` ...). Shown as a step; a refused or failed call is a failed step
+ * and the script goes on. `args` may hold `{{var:name}}` or `{{var:name.path.to.field}}` (a value an earlier `store` kept) and the usual `{{prompt}}`, `{{cwd}}` ...
+ */
+export interface McpAction {
+  do: 'mcp';
+  /** The tool's name as the catalogue spells it (`tasks.claim`). */
+  tool: string;
+  args?: Record<string, unknown>;
+  /** The step's title (default: the tool's name). */
+  title?: string;
+  /** Keep the answer (the tool's JSON text, parsed; else the text) under this name for `{{var:name}}` in the actions that follow. */
+  store?: string;
+}
+
+/**
+ * A command the agent runs in the session's folder through `sh -c` (a bot's `mt-publish`, `git`, `curl`), shown as an execute step. The exit status decides the step;
+ * its output is kept under `store` (`{ code, out }`). The environment is the fake agent's own (so `MT_*` set for the pod reach the command).
+ */
+export interface RunAction {
+  do: 'run';
+  command: string;
+  title?: string;
+  store?: string;
+  /** A command that runs longer is killed (default 120 000). A non-zero exit fails the step; the script goes on either way and can read `{ code, out }` from `store`. */
+  timeoutMs?: number;
+}
+
 export interface PlanEntryInput {
   content: string;
   status?: 'pending' | 'in_progress' | 'completed';
@@ -76,6 +105,8 @@ export type Action =
   | { do: 'thought'; text: string; chunks?: number }
   | StepAction
   | HelperAction
+  | McpAction
+  | RunAction
   /** Claude: a `plan` update with the whole list. Hermes: a `todo_list` step instead. Codex: nothing, as measured. */
   | { do: 'plan'; entries: PlanEntryInput[] }
   | PermissionAction
@@ -214,7 +245,10 @@ export const DEFAULT_SCRIPT: FakeScript = {
   default: 'work',
 };
 
-/** Loads a script from `--script=<file>`, `FAKE_ACP_SCRIPT` (a file) or `FAKE_ACP_SCRIPT_JSON` (the JSON itself); else the default. */
+/**
+ * Loads a script from `--script=<file>`, `FAKE_ACP_SCRIPT` (a file) or `FAKE_ACP_SCRIPT_JSON` (the JSON itself); else the default. `FAKE_ACP_FLAVOR`, `FAKE_ACP_STATE_DIR`,
+ * `FAKE_ACP_SIGNED_OUT=1` (start signed out, prompts refused until a sign-in) and `FAKE_ACP_SIGNIN_CODE` (the one code the terminal sign-in accepts) override the file.
+ */
 export function loadScript(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): FakeScript {
   const arg = argv.find((a) => a.startsWith('--script='))?.slice('--script='.length);
   const file = arg ?? env.FAKE_ACP_SCRIPT;
@@ -224,6 +258,9 @@ export function loadScript(argv: string[] = process.argv.slice(2), env: NodeJS.P
   else script = structuredClone(DEFAULT_SCRIPT);
   if (env.FAKE_ACP_FLAVOR) script.flavor = env.FAKE_ACP_FLAVOR as Flavor;
   if (env.FAKE_ACP_STATE_DIR) script.stateDir = env.FAKE_ACP_STATE_DIR;
+  // A pod's stand-in adapter (deploy/images/claude-pod-fake): starts signed out and takes one code, both set from the pod's environment.
+  if (env.FAKE_ACP_SIGNED_OUT === '1') script.auth = { ...script.auth, signedIn: false, requireSignIn: true };
+  if (env.FAKE_ACP_SIGNIN_CODE) script.auth = { ...script.auth, code: env.FAKE_ACP_SIGNIN_CODE };
   if (!script.scenarios || Object.keys(script.scenarios).length === 0) throw new Error('A fake ACP script needs at least one scenario');
   return script;
 }

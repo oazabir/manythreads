@@ -36,3 +36,10 @@ JSON, see `src/script.ts` for the types and `DEFAULT_SCRIPT` for one of each.
 
 Known gaps against the real adapters: no MCP client (the `mcpServers` a client sends are recorded, not called), no model, no
 `session/set_config_option` effect, `fork` and `title` are advertised but not implemented.
+
+## Tool calls, commands and the chain's scripts (P27-19)
+- `{ "do": "mcp", "tool": "tasks.claim", "args": { "taskId": "{{promptId}}" }, "store": "claim" }` makes a real MCP `tools/call` at the `http` server the client gave `session/new` (its bearer header included), shown as a step.
+  A refusal (`{ ok: false }`, `isError`, no server) fails the step; the script goes on. `store` keeps the parsed answer for `{{var:claim.task.id}}` in the actions after it.
+- `{ "do": "run", "command": "mt-publish check starter", "store": "r" }` runs the command with `sh -c` in the session folder; `{{var:r.code}}` and `{{var:r.out}}` hold its exit code and last output.
+- `src/chain.ts`: `chainScript(slug, options?)` and `writeChainScripts(dir, options?)` give one script per bot of the Engineering chain (`CHAIN` lists them in order).
+- `bundle.mjs <file>` bundles the agent into one file for `deploy/images/claude-pod-fake`; env `FAKE_ACP_SIGNED_OUT=1` starts it signed out and `FAKE_ACP_SIGNIN_CODE` sets the one code its terminal sign-in accepts.

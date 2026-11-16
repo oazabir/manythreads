@@ -18,7 +18,12 @@ COPY mt-git.mjs /opt/claude-pod/mt-git.mjs
 COPY mt-git.sh /usr/local/bin/mt-git
 COPY fake-claude.mjs /usr/local/bin/claude
 COPY fake-codex.mjs /usr/local/bin/codex
-RUN chmod 0755 /usr/local/bin/claude /usr/local/bin/codex /usr/local/bin/mt-publish /usr/local/bin/mt-git /opt/claude-pod/mt-publish.sh /opt/claude-pod/mt-askpass.sh \
+# The ACP side (P27-19): the fake ACP agent, bundled to one file by `node tools/fake-acp-agent/bundle.mjs <staged folder>/fake-acp-agent.mjs` (deploy.sh stages it with the other files),
+# is the adapter the bridge starts for a runner whose driver is `acp`, so the Runners page and the setup wizard can sign in with a code (see claude-agent-acp.sh) and run a turn.
+COPY fake-acp-agent.mjs /opt/fake-acp/agent.mjs
+COPY claude-agent-acp.sh /usr/local/bin/claude-agent-acp
+COPY codex-acp.sh /usr/local/bin/codex-acp
+RUN chmod 0755 /usr/local/bin/claude /usr/local/bin/codex /usr/local/bin/claude-agent-acp /usr/local/bin/codex-acp /usr/local/bin/mt-publish /usr/local/bin/mt-git /opt/claude-pod/mt-publish.sh /opt/claude-pod/mt-askpass.sh \
  && useradd --system --uid 1001 --no-create-home --shell /usr/sbin/nologin publisher
 USER 1000:1000
 ENV HOME=/state/home CLAUDE_CONFIG_DIR=/state/claude CODEX_HOME=/state/codex
