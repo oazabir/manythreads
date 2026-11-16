@@ -61,7 +61,17 @@ describe('EmptyState', () => {
 });
 
 describe('motion.css', () => {
-  const css = src('../src/styles/motion.css');
+  // the one rule that switches motion off (for the frame of a theme change) is checked on its own below
+  const full = src('../src/styles/motion.css');
+  const SWITCH = /\[data-look-switching\] \*,[^{]*\{[^}]*\}/;
+  const css = full.replace(SWITCH, '');
+
+  it('switches every transition and animation off for the frame of a theme change, and only then', () => {
+    const rule = SWITCH.exec(full)?.[0] ?? '';
+    expect(rule).toContain('transition: none !important');
+    expect(rule).toContain('animation-duration: 0s !important');
+    expect(rule.startsWith('[data-look-switching] *')).toBe(true);
+  });
 
   it('is loaded after states.css and every other style file', () => {
     const main = src('../src/main.tsx');
