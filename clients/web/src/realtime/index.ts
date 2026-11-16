@@ -8,6 +8,7 @@ import { notificationStore } from '../notifications/store';
 import { noteActivity, refreshDirectories } from '../shell/channelFeed';
 import { threadRunsStore } from '../runs/store';
 import { sidebarPrefsStore } from '../shell/sidebarPrefsStore';
+import { channelTasksStore } from '../taskview/store';
 import { threadTodoStore } from '../todo/store';
 import { RealtimeClient, browserDeps, type RealtimeStatus } from './socket';
 
@@ -31,6 +32,7 @@ export function useRealtime(): void {
     linkPreviewStore.attach(rt);
     threadRunsStore.attach(rt);
     threadTodoStore.attach(rt);
+    channelTasksStore.attach(rt);
     const rooms = liveRooms();
     rooms.attach(rt);
     const offHook = channelStore.onResync(() => {
