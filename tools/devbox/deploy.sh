@@ -183,11 +183,15 @@ if grep -q '^hermesPods:' deploy/helm/manythreads/values-live.yaml 2>/dev/null; 
   WB_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C deploy/images/workbench -cf - . | sha256sum | cut -c1-10)
   if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/hermes-pod:$HP_TAG\$"; then
     echo "--- build manythreads/hermes-pod:$HP_TAG"
-    if ! docker image inspect manythreads/hermes:stable >/dev/null 2>&1; then
-      docker build -f deploy/docker/hermes.Dockerfile -t manythreads/hermes:stable .
+    # The Hermes base comes from the upstream installer, checked against a pinned sha256. When upstream changes the script the build
+    # stops; that must not stop the rest of the deploy (server, web, agent pods): the Hermes pods then keep the image tag they have,
+    # and the deploy says loudly that the Hermes pod image is missing (2026-11-16: the kubelet's image GC removed an unused one).
+    if { docker image inspect manythreads/hermes:stable >/dev/null 2>&1 || docker build -f deploy/docker/hermes.Dockerfile -t manythreads/hermes:stable .; } \
+      && docker build -f deploy/images/hermes-pod/Dockerfile -t "manythreads/hermes-pod:$HP_TAG" deploy/images/hermes-pod; then
+      IMAGES+=("manythreads/hermes-pod:$HP_TAG")
+    else
+      echo "WARNING: the Hermes pod image manythreads/hermes-pod:$HP_TAG did not build (see above); the rest of the deploy goes on, and a Hermes pod cannot start until it is built"
     fi
-    docker build -f deploy/images/hermes-pod/Dockerfile -t "manythreads/hermes-pod:$HP_TAG" deploy/images/hermes-pod
-    IMAGES+=("manythreads/hermes-pod:$HP_TAG")
   fi
   if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/workbench:$WB_TAG\$"; then
     echo "--- build manythreads/workbench:$WB_TAG"
