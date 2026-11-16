@@ -33,7 +33,7 @@ Purpose: build, ship and run our software.
    (contents and pull requests). GitHub is asked about the token before it is kept, and it is kept in the team's pod where no bot can read it. Tick
    "Use for every project of this team that lives under" the owner to enter it once for all of them; this covers only the projects that exist when you
    save (a project added later needs the box ticked again), and a project that already has a token of its own is left as it is. Until this is done, Committer cannot send a tested
-   branch to GitHub; it says so in the thread and the work goes on to Deployer.
+   branch to GitHub; it says so in the thread and completes the card (the deploy and the browser check have already happened).
 3. **Watch the expiry.** The page shows when the token expires and warns two weeks before. If GitHub stops accepting it, the page reads "Token needs
    replacing" and the bots stop trying until a lead saves a new one.
 4. **Ask for a goal** in the project's channel and Engineer starts the chain below. Never paste a token in a thread: the guard blocks it.
@@ -44,7 +44,7 @@ Purpose: build, ship and run our software.
 - A goal asked in a project channel runs as a chain: Engineer writes the plan and Plan reviewer reads it (up to three rounds); then Engineer
   splits it into cards and keeps one to-do list current in the thread (the `tasks.todo` card; a checklist message only when that tool is refused). Every item names its card by `taskId` so it follows the card, and the list is closed out (every item `done` or `blocked`) before the goal is called done. Coder writes the change, Code reviewer reads it (up to three rounds),
   Tester writes automated tests and runs the whole suite, and a failure goes back to Coder, through Code reviewer, to Tester again until
-  the commit is tested. Engineer then hands the card to Committer, the only bot that holds the right to push to GitHub: it publishes the tested commit as a pull request for a person to merge (a project with no GitHub credential skips this). Deployer puts the tested commit into the team's preview namespace in k3s, and Web smoke tester checks the running
-  site with Playwright and headless Chromium. The bots share what they learn through the team's memory (never passwords; the one exception is the disposable password of a preview test account, which goes only in the private note of Deployer's handover to Web smoke tester, never in a thread, and is destroyed with the preview; nobody asks for credentials in a thread).
+  the commit is tested. Engineer then hands the card to Deployer, which puts the tested commit into the team's preview namespace in k3s (the test site), and Web smoke tester checks the running
+  site with Playwright and headless Chromium. Only then does the card go to Committer, the only bot that holds the right to push to GitHub: it publishes the tested commit as a pull request for a person to merge (a project with no GitHub credential skips this). The order is fixed (coder, code review, tester, deployer, web smoke tester, committer) because a published card is locked until a person merges it, so nothing can deploy or check it afterwards. The bots share what they learn through the team's memory (never passwords; the one exception is the disposable password of a preview test account, which goes only in the private note of Deployer's handover to Web smoke tester, never in a thread, and is destroyed with the preview; nobody asks for credentials in a thread).
 - Production deploys and gated topics wait for a person.
 - Incidents are coordinated in #incidents; alerts land in #alerts first.

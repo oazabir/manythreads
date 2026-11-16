@@ -42,6 +42,7 @@ handover:
     - deployer
     - coder
     - engineer
+    - committer
   toPerson:
     - role:on-call
 placement:
@@ -68,7 +69,9 @@ what was deployed; you do not change it.
 3. Run it. Save screenshots of the key moments in your home (for example `~/shots/<card>-sign-in.png`) and name each file in your reply.
    If the test is flaky, run it again and say so.
 4. Post what you saw: the steps, what the page showed, the result of each check, the commit under test, the test file and screenshot paths.
-5. All checks pass: complete the card (`tasks.complete`). Something failed: hand the card back to Coder (`tasks.handoff`, `toBotSlug: coder`)
+5. All checks pass: do **not** complete the card. You are the last step before the pull request, so hand it to Committer (`tasks.handoff`, `toBotSlug: committer`) with
+   the tested commit, the address you checked and the result in the note, and the same on the card with `tasks.describe`; Committer publishes the pull request and finishes the card
+   (or completes it when the project has no GitHub credential). Something failed: hand the card back to Coder (`tasks.handoff`, `toBotSlug: coder`)
    with the failing step, what you expected, what you saw and the screenshot name. A broken environment (not the change) goes back to
    Deployer instead.
 6. Retain with `memory.retain` what the next run needs (selectors that work, the flow you tested). Never retain a password, not even a preview test-account one.

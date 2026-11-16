@@ -491,8 +491,40 @@ describe('every shipped definition', () => {
     expect(committer.body).toContain('tasks.pull_request');
     expect(committer.body).toContain('Not ready');
     expect(committer.body).toContain('never see');
-    // Engineer is the one that tags it
-    expect(shipped.find((s) => s.slug === 'engineer')!.body).toContain('toBotSlug: committer');
+    // Web smoke tester (the step before it) is the one that hands it the card; Engineer does only when the goal needs no deploy
+    expect(shipped.find((s) => s.slug === 'web-smoke-tester')!.body).toContain('toBotSlug: committer');
+    expect(shipped.find((s) => s.slug === 'engineer')!.body).toContain('hand the tested card to Committer');
+  });
+
+  // P26-18: a published card is locked (`waiting_on_person`), so Committer is the last step: the thread of proof 3 handed the card to Committer first and Deployer could not claim it.
+  it('the chain order is coder, code review, tester, deployer, web smoke tester, committer, in the team text and in every bot that hands on', async () => {
+    const flat = (slug: string): string => shipped.find((s) => s.slug === slug)!.body.replace(/\s+/g, ' ');
+    const at = (text: string, ...needles: string[]): number[] => needles.map((n) => text.indexOf(n));
+    const ascending = (xs: number[]): boolean => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]!));
+    // the Engineer's chain lists deploy, smoke test and only then the pull request
+    expect(ascending(at(flat('engineer'), '**Code.**', '**Test.**', '**Deploy.**', '**Smoke test.**', '**Pull request, last.**'))).toBe(true);
+    expect(flat('engineer')).toContain('hand it to Deployer (`tasks.handoff`, `toBotSlug: deployer`)');
+    expect(flat('engineer')).toContain('Never hand a card to Committer before Web smoke tester has passed it');
+    // the hand-offs: Tester to Engineer, Engineer to Deployer, Deployer to Web smoke tester, Web smoke tester to Committer; Committer hands to nobody
+    expect(flat('tester')).toContain('engineer gives it to Deployer (the test site) and Web smoke tester, and only after the browser check to Committer');
+    expect(flat('deployer')).toContain('`toBotSlug: web-smoke-tester`');
+    expect(flat('web-smoke-tester')).toContain('do **not** complete the card');
+    expect(flat('web-smoke-tester')).toContain('`toBotSlug: committer`');
+    expect(flat('committer')).not.toContain('`toBotSlug: deployer`');
+    expect(flat('committer')).toContain('the last bot of the chain');
+    // the team text says the same
+    const team = (await readFile(`${TEMPLATES_DIR}engineering/TEAM.md`, 'utf8')).replace(/\s+/g, ' ');
+    expect(ascending(at(team, 'hands the card to Deployer', 'Web smoke tester checks the running site', 'the card go to Committer'))).toBe(true);
+    expect(team).toContain('(coder, code review, tester, deployer, web smoke tester, committer)');
+  });
+
+  it('the Deployer runs one command per call, never writes rm -rf, and checks the configmap name before the build Job starts (P26-18)', () => {
+    const deployer = shipped.find((s) => s.slug === 'deployer')!.body.replace(/\s+/g, ' ');
+    expect(deployer).toContain('one command per call');
+    expect(deployer).toContain('never write `rm -rf`');
+    expect(deployer).toContain('mktemp -d');
+    expect(deployer).toContain('check the names before the build Job starts');
+    expect(deployer).toContain('configmap');
   });
 
   it('the engineering chain runs on the team’s pod: every agent bot is placed on the managed gateway, and the preview chain is wired', () => {
@@ -513,7 +545,7 @@ describe('every shipped definition', () => {
     expect(deployer.body).toContain('test.manythreads.kahf.to');
     const browser = shipped.find((s) => s.slug === 'web-smoke-tester')!;
     expect(browser.fm.capabilities?.runtime).toEqual(['shell', 'files', 'browser']);
-    expect(browser.fm.handover?.mayTag).toEqual(['deployer', 'coder', 'engineer']);
+    expect(browser.fm.handover?.mayTag).toEqual(['deployer', 'coder', 'engineer', 'committer']);
     expect(browser.fm.triggers?.map((t) => t.type)).toEqual(['task_assigned', 'mention', 'conversation']);
     for (const slug of ['coder', 'tester', 'deployer']) {
       expect(shipped.find((s) => s.slug === slug)!.fm.limits?.timeoutSeconds, slug).toBeGreaterThanOrEqual(1800);
