@@ -77,17 +77,6 @@
   font-weight: 600;
 }
 
-.rail .ws-name {
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--font-display);
-  letter-spacing: var(--ls-title);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .team-wrap {
   position: relative;
 }
@@ -141,8 +130,10 @@ button.team {
 .rail .team b {
   display: block;
   overflow: hidden;
+  font-family: var(--font-display);
   font-size: var(--fs-body);
-  font-weight: 600;
+  font-weight: var(--fw-display);
+  letter-spacing: var(--ls-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

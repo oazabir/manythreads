@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import bundleUrl from 'mermaid/dist/mermaid.min.js?url';
 import type { ViewerProps } from '../kernel/viewers';
 import { ViewerBar } from './common';
-import { RENDER_TIMEOUT_MS, parseSandboxMessage, reduceMermaid, type MermaidState, MERMAID_CHANNEL, sandboxUrl } from './mermaid/sandbox';
+import { RENDER_TIMEOUT_MS, parseSandboxMessage, reduceMermaid, type MermaidState, MERMAID_CHANNEL, pageDiagramLook, sandboxUrl } from './mermaid/sandbox';
+import { THEME_EVENT } from '../shell/appearance';
 
 /**
  * Mermaid diagram in a sandboxed frame, with a Source toggle. A syntax error never throws: the message and the source are shown
@@ -28,7 +29,7 @@ export default function MermaidViewer({ path, text = '' }: ViewerProps) {
     timer.current = window.setTimeout(() => {
       if (request.current === id) setState({ status: 'error', message: 'The diagram took too long to draw.' });
     }, RENDER_TIMEOUT_MS);
-    win.postMessage({ channel: MERMAID_CHANNEL, type: 'render', id, source: text }, '*');
+    win.postMessage({ channel: MERMAID_CHANNEL, type: 'render', id, source: text, look: pageDiagramLook() }, '*');
   }, [text]);
 
   // replies: only from our own frame, only well-formed
@@ -55,6 +56,13 @@ export default function MermaidViewer({ path, text = '' }: ViewerProps) {
   // a new source after the frame is ready
   useEffect(() => {
     if (ready.current) render();
+  }, [render]);
+
+  // the theme or the mode changed: draw the diagram again in the new colours
+  useEffect(() => {
+    const again = () => render();
+    window.addEventListener(THEME_EVENT, again);
+    return () => window.removeEventListener(THEME_EVENT, again);
   }, [render]);
 
   const failed = state.status === 'error';

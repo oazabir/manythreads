@@ -254,3 +254,7 @@ scrolls away). Screenshots (light, dark, 390 px) go to `temp/screenshots/p25-12`
 `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test runs/run-card.spec.ts --project=desktop --workers=1 --retries=0` (the web client must be built: `pnpm --filter @manythreads/web build`).
 The spec starts its own stack, so the shared servers and sign-ins of the main config's global setup are not needed: a config of a few lines with `testMatch: 'runs/run-card.spec.ts'`,
 one `desktop` project and no `webServer` or `globalSetup` runs it in about half the time.
+
+`e2e/runs/themes.spec.ts` (P28-07) uses the same stack and the same kind of config: it opens the thread of a working run card and a to-do card as Nadia in each theme (Graphite, Linen, Harbor and Classic) and
+mode, set through `PUT /api/me/appearance`, and checks the loaded fonts, the face of the team name, the contrast of the words in both cards, and that nothing scrolls sideways at 390 px; then it opens
+Settings → Appearance in three looks. Pictures go to `temp/screenshots/themes` (git-ignored; `MANYTHREADS_THEME_SHOTS` moves them). `e2e/shell/theme.spec.ts` covers the picker, the saved choice, and a reload with no flash of another look.

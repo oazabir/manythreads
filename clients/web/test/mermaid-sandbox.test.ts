@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MERMAID_CHANNEL, SANDBOX_CSP, SANDBOX_PAGE, parseSandboxMessage, reduceMermaid, sandboxUrl, type MermaidState } from '../src/viewers/mermaid/sandbox';
+import { MERMAID_CHANNEL, diagramLook, SANDBOX_CSP, SANDBOX_PAGE, parseSandboxMessage, reduceMermaid, sandboxUrl, type MermaidState } from '../src/viewers/mermaid/sandbox';
 
 const msg = (m: Record<string, unknown>) => parseSandboxMessage({ channel: MERMAID_CHANNEL, ...m });
 
@@ -57,6 +57,34 @@ describe('mermaid error path (PLAN criterion 8)', () => {
     const m = msg({ type: 'ready' });
     if (!m) throw new Error('message rejected');
     expect(reduceMermaid(loading, m, 1)).toBe(loading);
+  });
+});
+
+describe('the diagram look (P28)', () => {
+  const tokens: Record<string, string> = { '--paper': 'rgb(27, 24, 21)', '--surface': 'rgb(36, 32, 28)', '--ink': 'rgb(240, 235, 228)', '--mute': 'color-mix(in srgb, red, blue)', '--sans': '"IBM Plex Sans", system-ui, sans-serif' };
+  const read = (n: string): string => tokens[n] ?? '';
+
+  it('carries the colours and the face of the page, and the mode', () => {
+    const look = diagramLook(read, true);
+    expect(look.dark).toBe(true);
+    expect(look.fontFamily).toBe('"IBM Plex Sans", system-ui, sans-serif');
+    expect(look.colours['paper']).toBe('rgb(27, 24, 21)');
+    expect(look.colours['ink']).toBe('rgb(240, 235, 228)');
+  });
+
+  it('leaves out a token that is not a plain colour, and a font list that is not plain', () => {
+    const look = diagramLook((n) => (n === '--sans' ? 'x; } body { background: url(//evil)' : read(n)), false);
+    expect(look.colours['mute']).toBeUndefined();
+    expect(look.colours['rule']).toBeUndefined();
+    expect(look.fontFamily).toBe('system-ui, sans-serif');
+  });
+
+  it('is applied by the frame from plain values only, with the base theme', () => {
+    const runtime = readFileSync(new URL('../public/mermaid-sandbox.js', import.meta.url), 'utf8');
+    expect(runtime).toContain("theme: 'base'");
+    expect(runtime).toContain('themeVariables');
+    expect(runtime).not.toContain("theme: 'neutral'");
+    expect(runtime).not.toMatch(/Inter/);
   });
 });
 

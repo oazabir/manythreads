@@ -57,7 +57,7 @@ The binding rules every change follows: how data, events, plugins and screens ar
   `req.routeOptions.url`, never the raw URL (percent-encoding bypass, see MISTAKES).
 - CSS: screen stylesheets prefix their classes (e.g. `f*` for Files); never redefine a shared class (`.linkish`, `.btn`) in a screen file.
 - Fonts are self-hosted (`clients/web/public/fonts`); never load Google Fonts at runtime (breaks visual baselines).
-- Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter (default for all UI text), JetBrains Mono (code only).
+- Design tokens only from `tokens.css` and the generated `styles/themes/*.css` (raw hex anywhere else fails lint). Fonts are the palette's faces, self-hosted: `--sans`, `--font-display` (titles only) and `--mono` (code only); a screen names a token, never a face. A theme (palette) is the `data-palette` attribute beside `data-theme` (light or dark); its values live in `tools/design/themes.mjs` and `node tools/design/build-themes.mjs` writes the stylesheets (a test fails when they differ). Text on a filled colour reads an `--on-*` token, a focus ring reads `--focus`, a field border reads `--control-border`.
 - Icons are ProIcons (`@proicons/react`, MIT), never hand-drawn SVG or a text glyph (×, ✓, ←, ★). Import the name from `clients/web/src/shell/icons.tsx` (or `meetings/icons.tsx` for the call bar); to add one, wrap it there with `proIcon()` (`components/proicon.tsx` sets colour, stroke and `aria-hidden`). Emoji people pick or type (statuses, reactions) stay emoji.
 - Screens carry `data-testid="app-frame"`; dynamic regions `data-vt-mask`; landmarks `data-landmark`.
 - Commit messages start with the task id, e.g. `P1-03: migration runner`.

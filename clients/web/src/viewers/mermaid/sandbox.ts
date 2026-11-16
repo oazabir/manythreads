@@ -52,3 +52,39 @@ export function sandboxUrl(bundlePath: string): string {
   if (!/^\/[A-Za-z0-9_.@/-]+\.js$/.test(bundlePath) || bundlePath.includes('//') || bundlePath.includes('..')) throw new Error('not a script of this site');
   return `${SANDBOX_PAGE}?bundle=${encodeURIComponent(bundlePath)}`;
 }
+
+/**
+ * How a diagram is drawn (P28): the colours and the face of the theme in use, read from the page's own tokens and sent with each render request, so a diagram in Linen
+ * dark is drawn in Linen dark and not in Mermaid's built-in grey. The frame cannot read the page's styles (its own opaque origin), so the page tells it. Only plain
+ * colours and a plain font list cross: the frame refuses anything else.
+ */
+export interface DiagramLook {
+  dark: boolean;
+  fontFamily: string;
+  /** token name (without the dashes) to a colour; a token that is not a plain colour is left out */
+  colours: Record<string, string>;
+}
+
+/** The tokens the diagram look reads. */
+export const DIAGRAM_TOKENS = ['paper', 'surface', 'shell', 'ink', 'txt', 'mute', 'rule', 'agent', 'agent-wash', 'human', 'ok', 'warn', 'alert'] as const;
+
+const PLAIN_COLOUR = /^(#[0-9a-fA-F]{3,8}|rgba?\([0-9 ,.%/]+\))$/;
+const PLAIN_FONTS = /^[A-Za-z0-9 ,'"_-]{1,200}$/;
+
+/** `read` answers the value of a custom property (`--paper`) of the page; `dark` is whether the page is drawn dark. */
+export function diagramLook(read: (name: string) => string, dark: boolean): DiagramLook {
+  const colours: Record<string, string> = {};
+  for (const t of DIAGRAM_TOKENS) {
+    const v = read(`--${t}`).trim();
+    if (PLAIN_COLOUR.test(v)) colours[t] = v;
+  }
+  const font = read('--sans').trim();
+  return { dark, fontFamily: PLAIN_FONTS.test(font) ? font : 'system-ui, sans-serif', colours };
+}
+
+/** The look of the page right now. */
+export function pageDiagramLook(): DiagramLook {
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  return diagramLook((n) => style.getPropertyValue(n), root.getAttribute('data-theme') === 'dark');
+}

@@ -18,15 +18,45 @@
   }
 
   var n = 0;
-  var start = function () {
+  // The page sends the colours and the face of its theme with each request (sandbox.ts, diagramLook). Only plain colours and a plain font list are used.
+  var PLAIN_COLOUR = /^(#[0-9a-fA-F]{3,8}|rgba?\([0-9 ,.%\/]+\))$/;
+  var PLAIN_FONTS = /^[A-Za-z0-9 ,'"_-]{1,200}$/;
+  var applied = '';
+  var applyLook = function (look) {
+    var c = {};
+    var dark = false;
+    var font = 'system-ui, sans-serif';
+    if (look && typeof look === 'object') {
+      dark = look.dark === true;
+      if (typeof look.fontFamily === 'string' && PLAIN_FONTS.test(look.fontFamily)) font = look.fontFamily;
+      var src = look.colours && typeof look.colours === 'object' ? look.colours : {};
+      Object.keys(src).forEach(function (k) { if (typeof src[k] === 'string' && PLAIN_COLOUR.test(src[k])) c[k] = src[k]; });
+    }
+    var key = JSON.stringify([dark, font, c]);
+    if (key === applied) return;
+    applied = key;
+    var v = { darkMode: dark, fontFamily: font };
+    var set = function (name, token) { if (c[token]) v[name] = c[token]; };
+    set('background', 'paper');
+    set('mainBkg', 'surface'); set('primaryColor', 'surface'); set('nodeBkg', 'surface');
+    set('primaryTextColor', 'ink'); set('textColor', 'txt'); set('nodeTextColor', 'ink'); set('titleColor', 'ink');
+    set('primaryBorderColor', 'mute'); set('nodeBorder', 'mute'); set('lineColor', 'mute'); set('arrowheadColor', 'mute');
+    set('secondaryColor', 'agent-wash'); set('secondaryTextColor', 'ink'); set('secondaryBorderColor', 'agent');
+    set('tertiaryColor', 'shell'); set('tertiaryTextColor', 'ink'); set('tertiaryBorderColor', 'rule');
+    set('clusterBkg', 'shell'); set('clusterBorder', 'rule'); set('edgeLabelBackground', 'paper');
+    set('noteBkgColor', 'shell'); set('noteTextColor', 'ink'); set('noteBorderColor', 'rule');
     try {
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral', suppressErrorRendering: true, fontFamily: 'Inter, system-ui, sans-serif' });
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', themeVariables: v, suppressErrorRendering: true, fontFamily: font });
     } catch (e) { /* reported on the first render */ }
+  };
+  var start = function () {
+    applyLook(null);
     window.addEventListener('message', function (ev) {
       if (ev.source !== host) return;
       var m = ev.data;
       if (!m || m.channel !== CH || m.type !== 'render' || typeof m.source !== 'string') return;
       var id = m.id;
+      applyLook(m.look);
       Promise.resolve()
         .then(function () { return mermaid.parse(m.source); })
         .then(function () { return mermaid.render('d' + (++n), m.source); })

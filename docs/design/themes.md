@@ -1,6 +1,6 @@
 # Themes for manythreads: Graphite, Linen, Harbor
 
-Status: design proposal (2026-11-15). Nothing in the app has changed. The preview is `temp/theme-preview/index.html` (one file, fonts inside it, no request
+Status: built (2026-11-16, Phase 28 in `PLAN.md`). The values moved to `tools/design/themes.mjs` (generator `tools/design/build-themes.mjs`, output `clients/web/src/styles/themes/`); the app also keeps the original look as a fourth palette, `classic`, which stays the default until the owner picks one (one line: `DEFAULT_PALETTE` in `packages/shared/src/entities/appearance.ts`, then regenerate the visual baselines). Original proposal text follows (2026-11-15; "nothing in the app has changed" was true then). The preview is `temp/theme-preview/index.html` (one file, fonts inside it, no request
 leaves the page); the six screenshots are in `temp/theme-preview/shots/`. The token values and the contrast numbers below are written by
 `temp/theme-preview/gen-doc.mjs` from `temp/theme-preview/themes.mjs`, the same data the preview draws, so the two cannot drift. That folder is git-ignored:
 whoever builds the theme system should move `themes.mjs` into `tools/` first.
