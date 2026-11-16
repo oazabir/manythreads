@@ -42,7 +42,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: {{ .Values.web.image }}:{{ .Values.imageTag }}
+          image: {{ include "manythreads.imageRef" (dict "image" .Values.web.image "tag" .Values.imageTag) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           env:
             - { name: MANYTHREADS_SERVER_HOST, value: manythreads-server }

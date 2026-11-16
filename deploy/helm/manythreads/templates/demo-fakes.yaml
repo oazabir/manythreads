@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: fake-llm
-          image: {{ .Values.demo.image }}:{{ .Values.imageTag }}
+          image: {{ include "manythreads.imageRef" (dict "image" .Values.demo.image "tag" .Values.imageTag) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: ["./node_modules/.bin/tsx", "tools/fake-llm/src/cli.ts"]
           ports:
@@ -74,7 +74,7 @@ spec:
     spec:
       containers:
         - name: fake-hindsight
-          image: {{ .Values.demo.image }}:{{ .Values.imageTag }}
+          image: {{ include "manythreads.imageRef" (dict "image" .Values.demo.image "tag" .Values.imageTag) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: ["./node_modules/.bin/tsx", "tools/fake-hindsight/src/cli.ts"]
           ports:

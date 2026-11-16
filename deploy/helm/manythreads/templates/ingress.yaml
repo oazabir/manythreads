@@ -19,9 +19,13 @@ spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
+  {{- $ipHost := regexMatch "^[0-9.]+$" .Values.domain }}
+  {{- $extra := .Values.extraDomains | default list }}
   {{- if $tlsSecret }}
   tls:
-    - hosts: [{{ .Values.domain }}]
+    - {{- if not $ipHost }}
+      hosts: [{{ include "manythreads.allDomains" . | splitList "," | join ", " }}]
+      {{- end }}
       secretName: {{ $tlsSecret }}
   {{- else if and (eq $tlsMode "none") .Values.ingress.tls.enabled }}
   tls:
@@ -31,11 +35,25 @@ spec:
       {{- end }}
   {{- end }}
   rules:
-    - host: {{ .Values.domain }}
+    {{- /* A bare address is not a name an Ingress may match on: the rule then has no host and answers whatever the visitor typed. */}}
+    - {{- if not $ipHost }}
+      host: {{ .Values.domain }}
+      {{- end }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service: { name: manythreads-web, port: { name: http } }
+    {{- range $extra }}
+    {{- if ne . $.Values.domain }}
+    - host: {{ . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: manythreads-web, port: { name: http } }
+    {{- end }}
+    {{- end }}
 {{- end }}

@@ -44,10 +44,59 @@ spec:
     name: manythreads-letsencrypt
     kind: Issuer
   dnsNames:
-    - {{ .Values.domain | quote }}
+    {{- range (include "manythreads.allDomains" . | splitList ",") }}
+    - {{ . | quote }}
+    {{- end }}
     {{- if include "manythreads.wildcard" . }}
     - {{ printf "*.%s" .Values.domain | quote }}
     {{- end }}
+{{- end }}
+{{- if eq $mode "selfsigned" }}
+{{- $ss := .Values.tls.selfSigned }}
+{{- $ips := list }}
+{{- range (concat (list .Values.domain) (.Values.extraDomains | default list) ($ss.ipAddresses | default list)) }}{{- if regexMatch "^[0-9.]+$" . }}{{- $ips = append $ips . }}{{- end }}{{- end }}
+{{- $names := list }}
+{{- range (include "manythreads.allDomains" . | splitList ",") }}{{- if not (regexMatch "^[0-9.]+$" .) }}{{- $names = append $names . }}{{- end }}{{- end }}
+# The fallback when no name can get a trusted certificate (no public address, or port 80 closed): cert-manager signs a certificate with its own key
+# (a self-signed one), for the names and addresses of this site, and renews it. Browsers warn once; the install prints the certificate's fingerprint so a person
+# (and `bridge.sh --ca-sha256`) can check they reached the right site.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: manythreads-selfsigned
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: manythreads-tls
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $secret }}
+  duration: {{ $ss.duration }}
+  renewBefore: {{ $ss.renewBefore | default "720h" }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: manythreads-selfsigned
+    kind: Issuer
+  {{- with $names }}
+  dnsNames:
+    {{- range . }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  {{- with $ips }}
+  ipAddresses:
+    {{- range . }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
 {{- end }}
 {{- if and $secret .Values.tls.defaultStore }}
 ---

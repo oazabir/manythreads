@@ -3,6 +3,8 @@ imageTag: dev
 imagePullPolicy: IfNotPresent
 
 domain: manythreads.kahf.to
+# More names that reach the same site and share its certificate (a custom name mapped later with `manythreads set-domain`, or the address name an install started with).
+extraDomains: []
 # Public base URL (links in mails, OIDC redirect URIs; Secure cookies follow it). Empty = https://<domain>.
 publicUrl: ""
 
@@ -11,13 +13,14 @@ publicUrl: ""
 #   cloudflare   Cloudflare's proxy terminates TLS for visitors. `cloudflare.origin: strict` (recommended, SSL/TLS mode "Full (strict)"): the cluster
 #                serves a Cloudflare Origin CA certificate from the kubernetes.io/tls Secret `certSecret` (made by tools/devbox/deploy.sh --origin-cert
 #                --origin-key). `flexible` (not recommended): Cloudflare talks plain HTTP to the cluster, so the router also answers on port 80.
+#   selfsigned   cert-manager makes a self-signed certificate (the one-command install's fallback; `tls.selfSigned`).
 #   letsencrypt  The cluster is reached directly; cert-manager (installed by deploy.sh in this mode) asks Let's Encrypt for a certificate.
 #                Without `wildcard` it proves ownership by answering a web request on port 80 (HTTP-01, through Traefik). With `wildcard` it must
 #                prove ownership with a DNS record (DNS-01): `dns01` names the DNS provider (only `cloudflare`) and a Secret holding its API token.
 # `wildcard` also covers *.<domain>, the hosts of the apps bots deploy (<app>--<team>.<domain>); only used with hermesPods.apps.routing=host. In either mode a Traefik TLSStore named `default`
 # then makes the wildcard certificate Traefik's default, so app Ingresses in other namespaces (which cannot read this Secret) get it too.
 tls:
-  mode: none            # none | cloudflare | letsencrypt
+  mode: none            # none | cloudflare | letsencrypt | selfsigned
   # Render the Traefik TLSStore named `default` (Traefik's default certificate, see the comment above). A second release in the same cluster
   # (a preview install in a deploy target) must set this false: two stores named `default` fight over the one default certificate.
   defaultStore: true
@@ -50,6 +53,12 @@ tls:
       - 2405:8100::/32
       - 2a06:98c0::/29
       - 2c0f:f248::/32
+  # `selfsigned`: the fallback of the one-command install when no name can get a trusted certificate. cert-manager makes and renews the certificate for `domain`
+  # (a name or a bare address) and `extraDomains`; `ipAddresses` adds more addresses.
+  selfSigned:
+    duration: 87600h      # ten years: the fingerprint the installer prints stays true
+    renewBefore: 720h
+    ipAddresses: []
   letsencrypt:
     email: ""           # required: Let's Encrypt writes here about expiring certificates
     server: production  # production | staging (staging certificates are not trusted by browsers; use it to test without hitting rate limits)

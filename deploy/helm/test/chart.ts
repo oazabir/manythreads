@@ -29,6 +29,7 @@ export const VALUE_SETS: Record<string, string[]> = {
   ci: ['values-ci.yaml'],
   stage: ['values-ci.yaml', 'values-demo.yaml', 'values-stage.yaml'],
   live: ['values-live.yaml'],
+  install: ['values-install.yaml'],
 };
 
 /** `helm template` with the named values files (relative to the chart) and `--set` pairs; the release is `manythreads` in `manythreads`, like the live one. */

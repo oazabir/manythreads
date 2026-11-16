@@ -48,7 +48,7 @@ spec:
       {{- end }}
       containers:
         - name: seed
-          image: {{ .Values.server.image }}:{{ .Values.imageTag }}
+          image: {{ include "manythreads.imageRef" (dict "image" .Values.server.image "tag" .Values.imageTag) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           {{- with .Values.seed.resources }}
           resources:

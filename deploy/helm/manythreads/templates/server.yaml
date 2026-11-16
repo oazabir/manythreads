@@ -35,7 +35,7 @@ spec:
       {{- end }}
       containers:
         - name: server
-          image: {{ .Values.server.image }}:{{ .Values.imageTag }}
+          image: {{ include "manythreads.imageRef" (dict "image" .Values.server.image "tag" .Values.imageTag) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           ports: [{ name: http, containerPort: {{ .Values.server.port }} }]
           env:

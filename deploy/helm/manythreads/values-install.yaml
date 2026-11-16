@@ -1,0 +1,80 @@
+# The profile of the one-command install (deploy/install/install.sh, docs/deploy/install.md, PLAN P27-02). The installer writes a small values file of its own
+# (/etc/manythreads/values.yaml: the address, the HTTPS choice, the image digests from release.json, the agent pod on or off by memory) and gives helm THIS
+# file first and that one second, so everything a customer's machine needs that differs from the base values is in this file and nowhere else:
+#   * no demo seed, no mail catcher, no in-cluster registry, no test stand-ins; the first admin is made by `admin first-admin` (the installer), never by a seed;
+#   * the LLM gateway (LiteLLM) and the memory engine (Hindsight) on, with the live site's limits; their providers are added in the first-run wizard;
+#   * the managed Hermes pods on, one per team, with the app namespaces of EVERY team template (so the Engineer's Deployer works for any team the wizard makes);
+#   * the agent pod (Claude Code and Codex) OFF here: the installer turns it on when the machine has 16 GB of memory or more (claudePod.enabled in its file);
+#   * nightly backups on, kept on the same disk (the printout says to copy them off the machine);
+#   * apps are reached by path (https://<address>/apps/<team>/<app>/), so no wildcard name and no wildcard certificate;
+#   * a repository may be copied from GitHub or GitLab (an admin's own GitLab is added with `manythreads upgrade --allow-git-host <url>`).
+# Images are NOT named here: the installer's file names every product image by digest (release.json), so a pinned image can never change under a customer.
+imagePullPolicy: IfNotPresent
+
+seed:
+  demo: false
+
+mailpit:
+  enabled: false
+registry:
+  enabled: false
+demo:
+  enabled: false
+asr:
+  enabled: false
+media:
+  enabled: false
+
+server:
+  # trustProxy stays at the base value (2): Traefik and the web pod's nginx each add one hop. The installer keeps visitors' addresses with externalTrafficPolicy Local.
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 2Gi }
+
+web:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+postgres:
+  mode: cnpg
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 2Gi }
+
+litellm:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1536Mi }
+hindsight:
+  enabled: true
+  # No model is behind the alias `fast` until the wizard's Models step; the start-up check would fail and the pod never become ready.
+  skipLlmVerification: "true"
+  resources:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits: { memory: 4Gi }
+
+hermesPods:
+  enabled: true
+  hermesResources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1536Mi }
+  # Every team template's slug (templates/*/template.yaml). The list is in the chart on purpose: creating namespaces and roles at run time would let the
+  # server grant itself anything. A team that is not made simply leaves its namespace empty.
+  appTeams: [engineering, marketing, customer-support, product-design, research]
+  apps:
+    routing: path
+  repoOriginAllow:
+    - https://github.com/
+    - https://gitlab.com/
+
+claudePod:
+  enabled: false
+
+backup:
+  enabled: true
+  databases: [manythreads, hindsight]
+  retention: 7
+  storage:
+    size: 10Gi

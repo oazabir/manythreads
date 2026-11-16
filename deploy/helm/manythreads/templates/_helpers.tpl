@@ -46,7 +46,8 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if not (regexMatch "^[0-9]+$" (toString .Values.server.trustProxy)) -}}{{ fail (printf "server.trustProxy must be a whole number (got %q)" (toString .Values.server.trustProxy)) }}{{- end -}}
 {{- $t := .Values.tls -}}
 {{- $wc := include "manythreads.wildcard" . -}}
-{{- if not (has $t.mode (list "none" "cloudflare" "letsencrypt")) -}}{{ fail (printf "tls.mode must be none, cloudflare or letsencrypt (got %q)" (toString $t.mode)) }}{{- end -}}
+{{- if not (has $t.mode (list "none" "cloudflare" "letsencrypt" "selfsigned")) -}}{{ fail (printf "tls.mode must be none, cloudflare, letsencrypt or selfsigned (got %q)" (toString $t.mode)) }}{{- end -}}
+{{- if and (eq $t.mode "selfsigned") (not (and $t.selfSigned (hasKey $t.selfSigned "duration"))) -}}{{ fail "tls.selfSigned.duration is required for tls.mode=selfsigned (for example 87600h)" }}{{- end -}}
 {{- if eq $t.mode "cloudflare" -}}
 {{- if not (has $t.cloudflare.origin (list "strict" "flexible")) -}}{{ fail (printf "tls.cloudflare.origin must be strict or flexible (got %q)" (toString $t.cloudflare.origin)) }}{{- end -}}
 {{- if and (eq $t.cloudflare.origin "strict") (not $t.cloudflare.certSecret) -}}{{ fail "tls.cloudflare.certSecret is required for tls.cloudflare.origin=strict (a kubernetes.io/tls Secret with the Cloudflare Origin CA certificate)" }}{{- end -}}
@@ -64,7 +65,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "manythreads.tlsSecret" -}}
 {{- $m := include "manythreads.tlsMode" . -}}
 {{- if and (eq $m "cloudflare") (eq .Values.tls.cloudflare.origin "strict") -}}{{ .Values.tls.cloudflare.certSecret }}
-{{- else if eq $m "letsencrypt" -}}manythreads-tls
+{{- else if or (eq $m "letsencrypt") (eq $m "selfsigned") -}}manythreads-tls
 {{- end -}}
 {{- end }}
 
@@ -113,4 +114,16 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- end -}}
 {{- $name -}}
+{{- end }}
+
+{{/* An image reference from a name and the release tag. A name that already carries a digest (`name@sha256:...`) is used as it is: a digest is the whole address. */}}
+{{- define "manythreads.imageRef" -}}
+{{- if contains "@" .image -}}{{ .image }}{{- else -}}{{ .image }}:{{ .tag }}{{- end -}}
+{{- end }}
+
+{{/* The names that reach this site: the main `domain` first, then `extraDomains` (a custom name mapped later, or the address name the install started with). */}}
+{{- define "manythreads.allDomains" -}}
+{{- $all := list .Values.domain -}}
+{{- range (.Values.extraDomains | default list) -}}{{- if not (has . $all) -}}{{- $all = append $all . -}}{{- end -}}{{- end -}}
+{{- join "," $all -}}
 {{- end }}
