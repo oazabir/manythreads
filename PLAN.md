@@ -160,7 +160,8 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 24 | 24 | A bot that needs a person asks through the platform (`approvals.ask`, stuck command prompts become cards) (owner, 2026-11-13) | M | 5, 19 | 5 of 5 built, live; the card's look and a real-pod command question not seen |
 | 25 | 25 | Agents driven through ACP (Hermes, Claude Code, Codex, OpenCode), their work shown live in the thread, a to-do card (owner, 2026-11-14) | XL | 19, 24 | 0 of 17 built |
 | 26 | 26 | Agents anywhere: Hermes, Claude Code and Codex in a pod or on a server enrolled by `curl … | sudo bash`, Codex with full access, six live Engineer-led deliveries (owner, 2026-11-15) | XL | 25 | being built; 26 tasks |
-| 28 | 28 | Themes: Graphite, Linen and Harbor, each light and dark, picked in Settings → Appearance and stored with the person (design: `docs/design/themes.md`) | L | 21 | being built; 10 tasks |
+| 27 | 28 | Themes: Graphite, Linen and Harbor, each light and dark, picked in Settings → Appearance and stored with the person (design: `docs/design/themes.md`) | L | 21 | being built; 10 tasks |
+| 28 | 27 | The onboarding journey: one `curl` installs manythreads on k3s from public GHCR images (sslip.io or Let's Encrypt, self-signed as a fallback), and a first-run wizard ends with at least one working runner and a first delivery (owner, 2026-11-15; answers 2026-11-16) | XL | 26, 28 | being built; 28 tasks |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -750,6 +751,41 @@ Owner request 2026-11-15: Codex runs in a pod with full permission (`codex --yol
 | P26-22 | Shared servers: one Unix user per team on an enrolled server (root helper with a narrow sudoers rule, group-shared sign-in folders), container test with two teams | Built (2026-11-16): `bridge.sh` adds the root helper `mt-team-helper`, its table and a `visudo`-checked sudo rule for two commands, the group `mt-agents`, a root-owned `work` folder; the bridge starts every team run, the repository sync and the kubeconfig clean-up through it as `mt-team-<slug>`; the container test with two teams passes (0 failed). Not shown: the relaxed unit under real systemd (P26-19). |
 | P26-23 | Runners page and docs for shared runners (any team list, the shared-subscription note), conventions.md, claude-pods.md, agent-bridge.md | Pods part built (2026-11-16): the note on the row and in the Teams dialog, full access no longer refused for many teams, e2e of a runner with two teams signed in once; claude-pods.md, bot-runners.md, conventions.md updated. Server part built with P26-22: agent-bridge.md, add-a-server.md, conventions.md and the plan page updated. |
 
+
+### Phase 27 · The onboarding journey: from an empty machine to a team that delivers (owner, 2026-11-15; answers 2026-11-16)
+
+One `curl` command on a Linux machine installs manythreads on k3s from public GHCR images and prints the admin's sign-in; the first-run wizard at `/onboarding` then takes the admin through the theme, the organization, HTTPS, the model keys, every predefined team (all shown and ticked), servers, runners (**at least one working runner is required: with none, the wizard deploys a Hermes pod on the site's LiteLLM proxy and proves it with a real turn**), the placement of bots, the code project, a Brain check and a first delivery. Plan page, with the owner's binding answers in section 10a: `docs/plans/onboarding-journey.md`. Starts after Phase 26 and Phase 28. Stop criteria: that page's header. Live run (P27-23, P27-24) waits for the owner's throwaway VM; the image push waits for the owner's GHCR token.
+
+| ID | Task | Status |
+|---|---|---|
+| P27-00 | Spike, measured on the devbox in containers: k3s installed by `get.k3s.io` inside a privileged systemd Ubuntu container (else the nested VM); the pull size and time of each image; memory and disk of the minimal and the full profile; Brain answering with memory through an `llm_gateway` runner; a sample app deployed by the Deployer to an apps namespace from a `deploy/preview/README.md` | Not built |
+| P27-01 | Release images: the devbox's release step pushes every product image to GHCR by digest, writes `release.json`, packages the chart as an OCI artifact; LiteLLM, Hindsight and every outside image pinned by digest, the CNPG chart by version; the images test of `air-gapped.md` checks the pins | Not built |
+| P27-02 | Chart profile `values-install.yaml`: no demo seed, no mailpit, no registry, images from `release.json`, LiteLLM and Hindsight on, pods on by memory, `appTeams` = every template slug, `repoOriginAllow` per q14, self-signed TLS mode in the `tls` block | Not built |
+| P27-03 | Admin CLI: `admin first-admin --email --workspace` (no team, no runner; made-up password; must-change; the Secret written by the script, not the server), `admin password-status <email>` (is the first password still in use: reads the hash, never prints it), `admin reset-password <email> --generate`; check the sign-in asks for a new password when `must_change` is set, and build it if not | Not built |
+| P27-04 | `install.sh`: §3.2 to §3.3 (checks, k3s, helm, add-ons, values, install, admin, printout, state file, re-run, `--upgrade`, `--uninstall`, `--print-plan`, the log), served at `/install.sh` by the server (like `/install/bridge.sh`) and attached to each release with its SHA-256 | Not built |
+| P27-05 | The host command `manythreads` (§3.4), installed by the script | Not built |
+| P27-06 | TLS for an installed site: the sslip.io name and Let's Encrypt (staging, then production), the self-signed mode in the chart, and `bridge.sh --ca-sha256` (the bridge and the script trust only that certificate); the Add a server command carries it when the site is self-signed | Not built |
+| P27-07 | Wizard shell: the stepper of §5.1, resume and step links, skip and come back, the sidebar card; migration `onboarding/0002` widening the step CHECK, shared types, `ENUM_COLUMNS` | Not built |
+| P27-08 | Organization step: name, slug, time zone; the address and certificate line | Not built |
+| P27-09 | Models step: provider presets with the recommended model per alias in one shared table (owner fills it, q5), paste a key, bind, Test, monthly cap; one line on why a Claude or ChatGPT subscription goes to step 6, not here | Not built |
+| P27-10 | Teams step: template cards, predefined ones pre-ticked (q4), make all ticked teams in one go, idempotent when the page is opened again | Not built |
+| P27-11 | Servers step: "Add this machine" inline, the command (with `--ca-sha256` when needed), Waiting, Connected, the agents found; the parts of `ServersSection` moved to a shared component, not copied | Not built |
+| P27-12 | Runners step: the cards of §5.3; `models` runner made and set default; pods per team; server agents; Sign-in inline; team lists; the memory note | Not built |
+| P27-13 | Place bots step: the recommended placement (q7), Apply as team defaults plus one proposal per team, the placement check re-read | Not built |
+| P27-14 | Code step: the starter template link, the P23 project form inline, the token check | Not built |
+| P27-15 | Verify Brain step (§5.5) with the run card and the causes in plain words; Brain on the `models` runner (or the fallback of decision 7) | Not built |
+| P27-16 | First delivery step (§5.5): the goal, the live cards, the approval buttons, time and spend, the stuck case | Not built |
+| P27-17 | Install-neutral chain texts: the Deployer and Web smoke tester read the target and address from the project's `deploy/preview/README.md` and "Where you run", never `test-manythreads` or the devbox's host; the live Engineering team's copies synced by repo commit (template fixes do not reach existing teams) | Not built |
+| P27-18 | The starter repository's content (§5.6) kept in this repository and published to the public template by the owner | Not built |
+| P27-19 | Stand-ins for the whole journey: per-bot scripts for the fake ACP agent that make the chain's real MCP calls (tasks, messages, to-do, `mt-publish` to a fake git host), the fake LLM script for Brain, the fake Claude pod's sign-in | Not built |
+| P27-20 | Playwright journey on the stack: every step, resume after reload, skip and come back, a member sees nothing, 1440 px and 390 px, light and dark screenshots; a "remote" mode that runs the same spec against an address | Not built |
+| P27-21 | The install journey test of §6.2 and its workflow | Not built |
+| P27-22 | Docs: `docs/deploy/install.md` (the one-command page; `self-host.md` and `k3s.md` point to it and keep the manual path), `docs/guide/first-day.md` (the wizard for a non-engineer), the failure table, `docs/plugins/onboarding.md` updated, `MISTAKES.md` | Not built |
+| P27-23 | The live run of §6.3 on the owner's machine | Not built |
+| P27-24 | The report to the owner: links, timings per step, spend, what failed and what was fixed; PLAN.md and STATUS.md updated | Not built |
+| P27-25 | The theme step (owner, 2026-11-16): the wizard embeds `ThemePicker` (Phase 28) as an early step so the admin tries the themes before anything else; done when a palette is saved with the person (a fact: `people.palette` is set), skippable | Not built |
+| P27-26 | A working runner is required to finish (owner, 2026-11-16): the Runners step cannot be passed with none working; with none configured it offers a managed Hermes pod on the site's LiteLLM proxy, the admin gives an LLM provider key or a coding plan (base URL + key) saved on LiteLLM as the pod's alias, the wizard deploys the pod, waits until ready, runs a real test turn with the run card visible, and moves on only when it answered; a failure says why in one sentence with a retry | Not built |
+| P27-27 | HTTPS step (owner, 2026-11-16): the wizard shows the address and certificate; offers the sslip.io name with Let's Encrypt, Let's Encrypt for the admin's own domain, and a custom domain mapped later without a reinstall (a route that reissues the certificate); self-signed only as the fallback | Not built |
 
 ### Phase 28 · Themes: Graphite, Linen and Harbor (owner, 2026-11-16)
 
