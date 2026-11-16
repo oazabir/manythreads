@@ -484,7 +484,9 @@ export class ChannelStore {
   async markRead(targetType: 'channel' | 'thread', targetId: string, upTo: string): Promise<void> {
     if (this.held.has(`${targetType}:${targetId}`)) return;
     const had = this.readStates.get(`${targetType}:${targetId}`);
-    if (had?.lastReadId && had.lastReadId >= upTo) return;
+    // An older position moves nothing, so it is not sent, unless the stored count is still above zero: the position can be a message that was
+    // deleted afterwards (newer than everything left) and the count taken before it, and only the server counting again can clear that.
+    if (had?.lastReadId && had.lastReadId >= upTo && had.unreadCount === 0) return;
     try {
       const entry = await markRead(targetType, targetId, upTo);
       this.readStates.set(`${targetType}:${targetId}`, entry);

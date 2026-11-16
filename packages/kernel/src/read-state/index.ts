@@ -104,8 +104,26 @@ export function createReadStateService(deps: { counters: UnreadCounters; plugin?
         )
       ).rows[0];
       if (!cur) throw new Error('read_state row vanished while locked');
-      // 3. Monotonic: a position older than the stored one changes nothing.
-      if (!cur.advance) return entryOf(cur);
+      // 3. Monotonic: a position older than the stored one never moves it back. The stored count is another matter: it is taken at post
+      //    time and a deletion does not touch it, so when the messages newer than the position were deleted since, it stays above what
+      //    there is to read and no later position could clear it (the position is the deleted one itself, newer than everything left).
+      //    Counting again from the stored position settles that; it changes nothing for a row that is already right.
+      if (!cur.advance) {
+        if (options.remaining !== undefined) return entryOf(cur);
+        const registered = deps.counters.get(target.targetType);
+        if (!registered) throw new UnreadCounterMissingError(target.targetType);
+        const left = await registered.counter(txIn, target, cur.last_read_id as string);
+        if (left === cur.unread_count) return entryOf(cur);
+        const settled = await tx.query<ChangedRow & { target_type: string; target_id: string }>(
+          `UPDATE app.read_state SET unread_count = $4, updated_at = now()
+           WHERE person_id = $1 AND target_type = $2 AND target_id = $3
+           RETURNING person_id, target_type, target_id, last_read_id, unread_count, followed`,
+          [person, target.targetType, target.targetId, left],
+        );
+        const fixed = settled.rows[0] as ChangedRow & { target_type: string; target_id: string };
+        await announce(tx, target, 'read', [fixed]);
+        return entryOf(fixed);
+      }
       // 4. Messages newer than `upTo`.
       let remaining = options.remaining;
       if (remaining === undefined) {
