@@ -41,8 +41,8 @@ describe.skipIf(!haveHelm)('the release policies (live values)', () => {
   });
 
   it('LiteLLM answers the server, Hindsight and the pods namespace, and nobody else', () => {
-    for (const who of [server, hindsight, hermesPod, claudePod]) expect(ok(who, litellm, 4000), JSON.stringify(who.labels)).toBe(true);
-    for (const who of [web, seed, backup, backupTool, mailpit, media, stranger, appPod, testPod, operator, traefik, dbPod(1)]) expect(ok(who, litellm, 4000), JSON.stringify(who.labels)).toBe(false);
+    for (const who of [server, hindsight, hermesPod]) expect(ok(who, litellm, 4000), JSON.stringify(who.labels)).toBe(true);
+    for (const who of [claudePod, web, seed, backup, backupTool, mailpit, media, stranger, appPod, testPod, operator, traefik, dbPod(1)]) expect(ok(who, litellm, 4000), JSON.stringify(who.labels)).toBe(false);
     expect(ok(server, litellm, 22)).toBe(false);
   });
 

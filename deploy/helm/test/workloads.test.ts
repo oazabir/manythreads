@@ -43,7 +43,7 @@ describe.skipIf(!haveHelm)('the workloads the chart renders', () => {
     }
   });
 
-  it('live values: nothing is removed; the new objects are the release policies, the hindsight Database and the split-off internet policy', () => {
+  it('live values: nothing is removed; the new objects are the release policies, the hindsight Database, the split-off internet policy and the Claude pod policies and controller role (the live values switch the Claude pods on)', () => {
     const now = render('live').map(idOf).sort();
     expect(before.live.filter((i) => !now.includes(i))).toEqual([]);
     expect(now.filter((i) => !before.live.includes(i))).toEqual([
@@ -51,7 +51,11 @@ describe.skipIf(!haveHelm)('the workloads the chart renders', () => {
       'NetworkPolicy/-/manythreads-hindsight',
       'NetworkPolicy/-/manythreads-litellm',
       'NetworkPolicy/-/manythreads-postgres',
+      'NetworkPolicy/manythreads-bots/manythreads-claude-pods',
+      'NetworkPolicy/manythreads-bots/manythreads-claude-pods-api',
       'NetworkPolicy/manythreads-bots/manythreads-hermes-pods-internet',
+      'Role/manythreads-bots/manythreads-claude-pods-controller',
+      'RoleBinding/manythreads-bots/manythreads-claude-pods-controller',
     ]);
   });
 

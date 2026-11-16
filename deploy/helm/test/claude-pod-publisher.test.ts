@@ -36,7 +36,7 @@ describe.skipIf(!haveHelm)('the publisher container: environment of the server',
   it('the controller gets the server address the publisher asks (MANYTHREADS_INCLUSTER_URL) and no line when the Claude pods are off', () => {
     const on = serverEnv(render('live', ON));
     expect(on['MANYTHREADS_INCLUSTER_URL']).toBe('http://manythreads-server.manythreads.svc.cluster.local:3000');
-    const off = serverEnv(render('live'));
+    const off = serverEnv(render('live', ['claudePod.enabled=false']));
     expect(off['MANYTHREADS_CLAUDE_PODS_PUBLISHER']).toBeUndefined();
     expect(off['MANYTHREADS_CLAUDE_PODS_PUBLISHER_RESOURCES']).toBeUndefined();
   });
@@ -44,6 +44,8 @@ describe.skipIf(!haveHelm)('the publisher container: environment of the server',
 
 describe.skipIf(!haveHelm)('the publisher container: what the pod policy lets it reach', () => {
   const claudePod: Pod = { ns: BOTS, labels: { 'app.kubernetes.io/name': 'manythreads', 'app.kubernetes.io/component': 'claude-pod', 'manythreads.io/team': 'engineering' } };
+  // a pod with a keeper (or a runner that asks the cluster) carries this label, and only that pod may reach the Kubernetes API address (claude-pods.yaml, P26-09)
+  const keeperPod: Pod = { ns: BOTS, labels: { ...claudePod.labels, 'manythreads.io/kube-api': 'true' } };
   const comp = (c: string): Pod => ({ ns: REL, labels: { 'app.kubernetes.io/name': 'manythreads', 'app.kubernetes.io/component': c } });
   const out = (ip: string): Peer => ({ ip });
   const can = (docs: K8sDoc[], to: Peer, port: number): boolean => allows(docs, REL, { pod: claudePod }, to, port);
@@ -69,9 +71,12 @@ describe.skipIf(!haveHelm)('the publisher container: what the pod policy lets it
 
   it('the keeper reaches the Kubernetes API at the node address (it patches the sign-in Secret), and only on the API port', () => {
     const docs = render('live', ON);
-    expect(can(docs, out('10.0.2.15'), 6443)).toBe(true);
-    expect(can(docs, out('10.0.2.15'), 10250)).toBe(false); // not the kubelet
-    expect(can(docs, out('10.0.2.16'), 6443)).toBe(false);
+    const keeper = (to: Peer, port: number): boolean => allows(docs, REL, { pod: keeperPod }, to, port);
+    expect(keeper(out('10.0.2.15'), 6443)).toBe(true);
+    expect(keeper(out('10.0.2.15'), 10250)).toBe(false); // not the kubelet
+    expect(keeper(out('10.0.2.16'), 6443)).toBe(false);
+    // a pod without the label cannot reach the API at all
+    expect(can(docs, out('10.0.2.15'), 6443)).toBe(false);
   });
 
   it('the pod is not given a second policy by the publisher setting: off or on, the same walls', () => {
