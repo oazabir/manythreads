@@ -37,8 +37,12 @@ const narrow = (): boolean => typeof window !== 'undefined' && typeof window.mat
  * with its Yes and No. Everything comes from the thread's own stores (the run lease, the to-do list, the approvals list): the dock asks the server for nothing of its own.
  * Folding hides the to-do and the run behind one line; it never hides a question.
  */
-export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reloadApprovals }: { rootId: string; slug: string | null; people: People; runs: readonly RunHead[]; todo: ThreadTodo | null; approvals: readonly Approval[]; reloadApprovals: () => void }) {
-  const [folded, setFolded] = useState<boolean>(() => readDockFolded(rootId) ?? narrow());
+export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reloadApprovals, railOpen = false }: { rootId: string;
+  /** The side rail is open and draws the to-do and the run: the dock keeps one line of them (never the question). */
+  railOpen?: boolean; slug: string | null; people: People; runs: readonly RunHead[]; todo: ThreadTodo | null; approvals: readonly Approval[]; reloadApprovals: () => void }) {
+  const [storedFolded, setFolded] = useState<boolean>(() => readDockFolded(rootId) ?? narrow());
+  // the rail, when open, draws the whole list and the run: the dock keeps one line (what the person chose for the dock is kept for when the rail closes)
+  const folded = storedFolded || railOpen;
   const toggle = useCallback(() => {
     setFolded((f) => {
       writeDockFolded(rootId, !f);
@@ -75,7 +79,12 @@ export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reload
   return (
     <div className="tvDock" data-testid="thread-dock" data-folded={cards && folded ? 'true' : 'false'}>
       {cards ? (
-        folded ? (
+        folded && railOpen ? (
+          <p className="tvDockLine tvDockLine-rail" data-testid="dock-line-rail">
+            {run !== null ? <span className="rcPulse" aria-hidden="true" /> : null}
+            <span className="tvDockText" dir="auto" data-testid="dock-line">{line}</span>
+          </p>
+        ) : folded ? (
           <button type="button" className="tvDockLine" aria-expanded={false} onClick={toggle} data-testid="dock-toggle" aria-label={`Show details: ${line}`}>
             {run !== null ? <span className="rcPulse" aria-hidden="true" /> : null}
             <span className="tvDockText" dir="auto" data-testid="dock-line">{line}</span>

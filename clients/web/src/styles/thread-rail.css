@@ -1,0 +1,475 @@
+/*
+ * The thread's side rail (P29-20, docs/plans/channel-task-view.md section 10e): "Progress" (the to-do list as a timeline) and "Outputs" (the files, the two newest pictures as
+ * previews). The thread's own width decides the place (a container query, not the window's): beside the messages from 900 px, over them as a sheet below that, and as a sheet
+ * from the bottom edge at phone width. Tokens only, logical properties only, 44 px targets at 390 px. Every class is prefixed `tr`.
+ */
+
+.thread-split {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  container: thsplit / inline-size;
+}
+
+.thread-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.trToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trRail {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  inline-size: min(320px, 92%);
+  border-inline-start: var(--border-w) solid var(--rule);
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.trHead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 6px 16px;
+}
+
+.trTop {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.trClose {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.trClose:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.trScroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  min-block-size: 0;
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}
+
+.trSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.trH {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trHCount {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--hover);
+  font-size: var(--fs-tiny);
+  letter-spacing: 0;
+}
+
+.trTitle {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.trEmpty {
+  margin: 0;
+  color: var(--mute);
+}
+
+.trStageLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trChip {
+  padding: 1px 8px;
+  border: var(--border-w) solid var(--todo-border);
+  border-radius: var(--radius-pill);
+  background: var(--todo-bg);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.trChip[data-stage="working"] {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.trChip[data-stage="blocked"] {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.trChip[data-stage="done"] {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.trCount {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the timeline: a vertical line joins the marks of the steps */
+.trSteps {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trSteps-in {
+  margin-block: 2px 0;
+}
+
+.trStep {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  min-inline-size: 0;
+  padding-block: 4px;
+}
+
+.trStep::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 8px;
+  inline-size: 1px;
+  background: var(--rule);
+}
+
+.trStep:first-child::before {
+  inset-block-start: 14px;
+}
+
+.trStep:last-child::before {
+  inset-block-end: calc(100% - 14px);
+}
+
+.trMark {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: 17px;
+  block-size: 17px;
+  margin-block-start: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--faint);
+}
+
+.trStep[data-status="done"] .trMark {
+  color: var(--ok);
+}
+
+.trStep[data-status="blocked"] .trMark {
+  color: var(--warn-ink);
+}
+
+.trStepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.trStepText {
+  overflow-wrap: anywhere;
+}
+
+.trStep[data-status="done"] .trStepText {
+  color: var(--mute);
+}
+
+.trStep[data-current="true"] {
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--human-wash);
+}
+
+.trStep[data-current="true"] .trStepText {
+  font-weight: 600;
+}
+
+.trStep[data-status="blocked"][data-current="true"] {
+  background: var(--warn-wash);
+}
+
+.trStage {
+  color: var(--human);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.trStep[data-status="blocked"] .trStage {
+  color: var(--warn-ink);
+}
+
+.trSub {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+.trLink,
+.trMore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.trLink {
+  padding: 0;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trMore {
+  align-self: flex-start;
+  color: var(--mute);
+}
+
+.trMore:hover {
+  color: var(--ink);
+}
+
+.trMore-block {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trEarlier {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Outputs */
+.trThumbs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.trThumbs[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trThumb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.trThumb img {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 4 / 3;
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--hairline);
+  object-fit: cover;
+}
+
+.trThumb:hover img {
+  border-color: var(--human-border);
+}
+
+.trThumbName {
+  overflow: hidden;
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trFiles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trFile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-block-size: 36px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.trFile:hover {
+  background: var(--hover);
+}
+
+.trFile .ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: var(--radius-xs);
+  background: var(--bot-grey);
+  color: var(--on-color);
+  font-family: var(--mono);
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+}
+
+.trFile .ic.img {
+  background: var(--ok);
+}
+
+.trFile .ic.pdf {
+  background: var(--alert);
+}
+
+.trFile .ic.md {
+  background: var(--human);
+}
+
+.trFile .ic.zip {
+  background: var(--zip);
+}
+
+.trFileText {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.trFileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trFileText small {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* the dock keeps one line of the to-do and the run while the rail draws them */
+.tvDockLine-rail {
+  margin: 0;
+  cursor: default;
+}
+
+/* beside the messages: the thread's own width is 900 px or more */
+@container thsplit (width >= 900px) {
+  .trRail {
+    position: static;
+    flex: none;
+    inline-size: 300px;
+    box-shadow: none;
+  }
+}
+
+/* over the messages as a sheet is the default above; from the bottom edge at phone width */
+@container thsplit (width <= 520px) {
+  .trRail {
+    inset-block: auto 0;
+    inset-inline: 0;
+    inline-size: auto;
+    max-block-size: 72%;
+    border-block-start: var(--border-w) solid var(--rule);
+    border-inline-start: 0;
+    border-start-start-radius: var(--radius-md);
+    border-start-end-radius: var(--radius-md);
+  }
+
+  .trClose {
+    inline-size: 44px;
+    block-size: 44px;
+  }
+
+  .trLink,
+  .trMore,
+  .trFile {
+    min-block-size: 44px;
+  }
+}

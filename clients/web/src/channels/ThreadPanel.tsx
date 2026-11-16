@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useMatch } from 'react-router';
 import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -9,12 +9,15 @@ import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
 import { ThreadApprovals, useThreadApprovals } from '../screens/approvals/ThreadApprovals';
 import { ThreadDock } from '../taskview/ThreadDock';
+import { ThreadRail } from '../taskview/ThreadRail';
+import { attachmentKey, readRailOpen, writeRailOpen } from '../taskview/railRules';
+import { runEnded } from './run-card/words';
 import { useThreadRunHeads } from '../runs/useThreadRuns';
 import { useThreadTodo } from '../todo/useThreadTodo';
 import { placeRuns } from './run-card/place';
 import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
-import { ArrowDownIcon, CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
+import { ArrowDownIcon, CheckIcon, FilesIcon, SidePanelIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -91,6 +94,13 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     setStuckState(next);
   }, []);
   const [busy, setBusy] = useState(false);
+  // the side rail (P29-20): the to-do timeline and the files, kept open or closed per person in this browser; the full page only
+  const railId = useId();
+  const [railOpen, setRailOpen] = useState<boolean>(() => readRailOpen() ?? false);
+  const setRail = useCallback((open: boolean) => {
+    writeRailOpen(open);
+    setRailOpen(open);
+  }, []);
 
   useEffect(() => {
     void channelStore.loadThread(rootId, hint);
@@ -109,6 +119,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   // the runs answering in this thread (their cards) and the bot's to-do list for it (P25-11)
   const runState = useThreadRunHeads(rootId);
   const todoState = useThreadTodo(rootId);
+  const liveRun = useMemo(() => runState.runs.filter((r) => !runEnded(r.state)).sort((x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt))[0] ?? null, [runState.runs]);
+  const fileKey = useMemo(() => attachmentKey([...(tl.root ? [tl.root] : []), ...tl.items]), [tl.root, tl.items]);
   const placed = useMemo(() => placeRuns(tl.items, runState.runs), [tl.items, runState.runs]);
   // A question is asked in one place: the strip leaves out the ones a run card draws (only those: one the card could not load stays here), and a bot's answered questions of a
   // run in this thread, which that run's step list keeps ("Asked to run pnpm · Allowed").
@@ -290,6 +302,53 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     el.focus({ preventScroll: true });
   };
 
+  const kind: 'panel' | 'main' = variant as 'panel' | 'main';
+  const column = (
+    <>
+    {kind === 'panel' ? (
+      <div className="rpb-wrap">
+        {list}
+        {!stuck ? (
+          <button type="button" className="jump thread-jump" data-testid="thread-jump-latest" aria-label={jumpAriaLabel(newCount)} onClick={jumpToLatest}>
+            <ArrowDownIcon />
+            <span>{jumpLabel(newCount)}</span>
+          </button>
+        ) : null}
+      </div>
+    ) : (
+      list
+    )}
+    {/* the to-do, the run and the question a bot waits on, always in sight above the composer (P29-12) */}
+    <ThreadDock rootId={rootId} railOpen={kind === 'main' && railOpen} slug={slug ?? null} people={people} runs={runState.runs} todo={todoState.todo} approvals={approvals.items} reloadApprovals={approvals.reload} />
+    {info.status === 'ok' && !canReply ?<p className="read-only">You can read this thread but not reply.</p> : null}
+    {canReply && replyBlocked !== null ? (
+      <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>
+    ) : canReply ? (
+      <div className="rpf">
+        {!answerTools ? <ScheduledStrip channelId={channelId} threadRootId={rootId} /> : null}
+        <Composer
+          draftKey={`thread:${rootId}`}
+          placeholder={kind === 'main' ? 'Reply in thread…' : 'Reply…'}
+          label="Reply in thread"
+          channelId={channelId}
+          threadRootId={rootId}
+          people={people}
+          channelNames={names}
+          onSend={send}
+          slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
+          autoFocus={kind === 'panel'}
+          compact={kind === 'panel'}
+          // a scheduled reply is posted in the thread only (there is no "Also send to channel" tick any more, P21-28)
+          sendLater={!answerTools}
+          onEditLast={() => {
+            const id = lastEditableOwn(tl.items, self);
+            if (id) window.dispatchEvent(new CustomEvent(EDIT_EVENT, { detail: id }));
+          }}
+        />
+      </div>
+    ) : null}
+    </>
+  );
   return (
     <div className={`thread ${variant}`} data-testid="thread-view" data-root-id={rootId}>
       {variant === 'main' ? (
@@ -303,51 +362,31 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
               </button>
             ) : null}
             {channelName && teamForLink ? <Link className="btn s" to={`${channelPath(teamForLink, channelName)}?message=${rootId}`}>Open channel</Link> : null}
+            <button type="button" className="btn s trToggle" aria-expanded={railOpen} aria-controls={railId} data-testid="rail-toggle" onClick={() => setRail(!railOpen)}>
+              <SidePanelIcon />
+              <span>{railOpen ? 'Hide overview' : 'Overview'}</span>
+            </button>
           </div>
         </div>
       ) : null}
-      {variant === 'panel' ? (
-        <div className="rpb-wrap">
-          {list}
-          {!stuck ? (
-            <button type="button" className="jump thread-jump" data-testid="thread-jump-latest" aria-label={jumpAriaLabel(newCount)} onClick={jumpToLatest}>
-              <ArrowDownIcon />
-              <span>{jumpLabel(newCount)}</span>
-            </button>
-          ) : null}
-        </div>
-      ) : (
-        list
-      )}
-      {/* the to-do, the run and the question a bot waits on, always in sight above the composer (P29-12) */}
-      <ThreadDock rootId={rootId} slug={slug ?? null} people={people} runs={runState.runs} todo={todoState.todo} approvals={approvals.items} reloadApprovals={approvals.reload} />
-      {info.status === 'ok' && !canReply ?<p className="read-only">You can read this thread but not reply.</p> : null}
-      {canReply && replyBlocked !== null ? (
-        <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>
-      ) : canReply ? (
-        <div className="rpf">
-          {!answerTools ? <ScheduledStrip channelId={channelId} threadRootId={rootId} /> : null}
-          <Composer
-            draftKey={`thread:${rootId}`}
-            placeholder={variant === 'main' ? 'Reply in thread…' : 'Reply…'}
-            label="Reply in thread"
-            channelId={channelId}
-            threadRootId={rootId}
-            people={people}
-            channelNames={names}
-            onSend={send}
-            slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
-            autoFocus={variant === 'panel'}
-            compact={variant === 'panel'}
-            // a scheduled reply is posted in the thread only (there is no "Also send to channel" tick any more, P21-28)
-            sendLater={!answerTools}
-            onEditLast={() => {
-              const id = lastEditableOwn(tl.items, self);
-              if (id) window.dispatchEvent(new CustomEvent(EDIT_EVENT, { detail: id }));
-            }}
+      {kind === 'main' ? (
+        <div className="thread-split" data-rail={railOpen ? 'open' : 'closed'}>
+          <div className="thread-col">{column}</div>
+          <ThreadRail
+            rootId={rootId}
+            id={railId}
+            open={railOpen}
+            onClose={() => setRail(false)}
+            todo={todoState.todo}
+            run={liveRun}
+            approvals={approvals.items}
+            fileKey={fileKey}
+            ownerName={(actorId) => people.botName?.(actorId) ?? people.byActor(actorId)?.name}
           />
         </div>
-      ) : null}
+      ) : (
+        column
+      )}
     </div>
   );
 }

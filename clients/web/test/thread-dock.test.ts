@@ -36,10 +36,10 @@ const people = { botAvatar: () => undefined, byActor: () => undefined, botName: 
 let host: HTMLDivElement;
 let root: Root;
 const reload = vi.fn();
-type P = { runs?: RunHead[]; todo?: ThreadTodo | null; approvals?: Approval[] };
+type P = { runs?: RunHead[]; todo?: ThreadTodo | null; approvals?: Approval[]; railOpen?: boolean };
 const draw = async (p: P): Promise<void> => {
   await act(async () => {
-    root.render(createElement(MemoryRouter, null, createElement(ThreadDock, { rootId: ROOT, slug: 'engineering', people, runs: p.runs ?? [], todo: p.todo ?? null, approvals: p.approvals ?? [], reloadApprovals: reload })));
+    root.render(createElement(MemoryRouter, null, createElement(ThreadDock, { rootId: ROOT, slug: 'engineering', people, runs: p.runs ?? [], todo: p.todo ?? null, approvals: p.approvals ?? [], railOpen: p.railOpen ?? false, reloadApprovals: reload })));
   });
 };
 const q = (sel: string) => host.querySelector(sel);
@@ -121,6 +121,18 @@ describe('what the dock holds', () => {
 });
 
 describe('folding', () => {
+  it('keeps one line of the to-do and the run while the side rail draws them, never the question, and gives the cards back when the rail closes (P29-20)', async () => {
+    await draw({ runs: [run()], todo: todo(), approvals: [ask('q1', '2026-11-16T10:00:00.000Z')], railOpen: true });
+    expect(q('[data-testid="tv-todo"]')).toBeNull();
+    expect(q('[data-testid="dock-line-rail"]')?.textContent).toBe('Engineer · Running pnpm lint · 1 of 4');
+    expect(q('[data-testid="dock-toggle"]')).toBeNull(); // nothing to press: the rail has the details
+    expect(q('[data-testid="tv-question"]')).not.toBeNull();
+    expect(localStorage.getItem(`mt.tv.dock.${ROOT}`)).toBeNull();
+    await draw({ runs: [run()], todo: todo(), approvals: [], railOpen: false });
+    expect(q('[data-testid="tv-todo"]')).not.toBeNull();
+  });
+
+
   it('folds the to-do and the run to one line, keeps the question, and remembers per thread', async () => {
     await draw({ runs: [run()], todo: todo(), approvals: [ask('q1', '2026-11-16T10:00:00.000Z')] });
     await act(async () => (q('[data-testid="dock-toggle"]') as HTMLButtonElement).click());

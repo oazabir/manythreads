@@ -15,6 +15,10 @@ import {
   getThreadRoute,
   listThreadsRoute,
   threadCountsRoute,
+  listThreadFilesRoute,
+  ListThreadFilesQuery,
+  ListThreadFilesResponse,
+  ThreadPathParams,
   unfollowThreadRoute,
   type FileSummary,
   type MessageAuthor,
@@ -243,6 +247,53 @@ export function registerThreadRoutes(ctx: PluginContext): void {
         )
       ).rows[0]?.n;
       return json(ThreadCountsResponse.parse({ mentions: n ?? 0 }));
+    }),
+  });
+  // The side rail's Outputs (P29-20): the files attached to the thread's messages, the root included, newest message first, in ONE read. Read as the caller, so the rows' own policies decide: a
+  // thread in a channel the caller cannot see, and a file they cannot read, are left out (an unreadable thread answers like one with no files).
+  ctx.http.route({
+    ...listThreadFilesRoute,
+    readOnly: true,
+    schema: { query: ListThreadFilesQuery, response: ListThreadFilesResponse },
+    handler: route(async (req, tx) => {
+      const { rootId } = ThreadPathParams.parse(req.params);
+      const { limit } = ListThreadFilesQuery.parse(req.query);
+      const rows = (
+        await tx.query<{ file_id: string; name: string; size: string; mime: string; message_id: string; at: Date; author_id: string; total: number }>(
+          `WITH hits AS (
+             SELECT f.id AS file_id, f.name, f.size, f.mime, m.id AS message_id, m.created_at AS at, m.author_id, x.ord
+               FROM app.messages m
+               CROSS JOIN LATERAL jsonb_array_elements_text(CASE WHEN jsonb_typeof(m.meta -> 'attachments') = 'array' THEN m.meta -> 'attachments' ELSE '[]'::jsonb END) WITH ORDINALITY AS x(file_id, ord)
+               JOIN app.files f ON f.id = x.file_id::uuid
+              WHERE (m.id = $1::uuid OR m.thread_root_id = $1::uuid) AND m.deleted_at IS NULL
+                AND ($3::text <> 'bot' OR f.mime NOT LIKE 'audio/%'))
+           SELECT h.*, count(*) OVER ()::int AS total FROM hits h ORDER BY h.message_id DESC, h.ord LIMIT $2`,
+          [rootId, limit, tx.actor.kind],
+        )
+      ).rows;
+      const names = new Map<string, { displayName: string; kind: 'person' | 'bot' | 'system' }>();
+      if (rows.length > 0) {
+        const a = await tx.query<{ message_id: string; display_name: string; kind: 'person' | 'bot' | 'system' }>(
+          `SELECT m.id AS message_id, a.display_name, a.kind
+             FROM app.messages m JOIN app.message_authors($1::uuid[]) a ON a.actor_id = m.author_id
+            WHERE m.id = ANY ($1::uuid[])`,
+          [[...new Set(rows.map((r) => r.message_id))]],
+        );
+        for (const r of a.rows) names.set(r.message_id, { displayName: r.display_name, kind: r.kind });
+      }
+      return json(
+        ListThreadFilesResponse.parse({
+          items: rows.map((r) => ({
+            file: { id: r.file_id, name: r.name, size: Number(r.size), mime: r.mime },
+            messageId: r.message_id,
+            at: r.at.toISOString(),
+            authorId: r.author_id,
+            authorName: names.get(r.message_id)?.displayName ?? 'Someone',
+            authorKind: names.get(r.message_id)?.kind ?? 'person',
+          })),
+          total: rows[0]?.total ?? 0,
+        }),
+      );
     }),
   });
 }

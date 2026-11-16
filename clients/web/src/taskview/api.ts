@@ -3,8 +3,10 @@ import {
   ChannelTodosResponse,
   ChannelUnwatchResponse,
   ChannelWatchResponse,
+  ListThreadFilesResponse,
   listChannelApprovalsRoute,
   listChannelTodosRoute,
+  listThreadFilesRoute,
   unwatchChannelRoute,
   watchChannelRoute,
 } from '@manythreads/shared';
@@ -19,3 +21,5 @@ export const fetchChannelApprovals = (channelId: string) => call(listChannelAppr
 /** "This page has this channel open": held 60 seconds, renewed every 20. The lease id is the tab's own. */
 export const watchChannel = (channelId: string, leaseId: string) => call(watchChannelRoute, { response: ChannelWatchResponse }, undefined, { channelId, leaseId });
 export const unwatchChannel = (channelId: string, leaseId: string) => call(unwatchChannelRoute, { response: ChannelUnwatchResponse }, undefined, { channelId, leaseId });
+/** The files attached to the thread's messages, the newest first (the side rail's Outputs); `total` counts all of them. */
+export const fetchThreadFiles = (rootId: string, limit: number) => call(listThreadFilesRoute, { response: ListThreadFilesResponse }, { limit }, { rootId });

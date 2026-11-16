@@ -11,7 +11,7 @@ import { CloseIcon } from '../shell/icons';
  * pictures stays affordable rather than free. Esc or a press on the scrim closes, and focus returns to the thumbnail that opened it.
  */
 
-function Lightbox({ file, onClose }: { file: FileSummary; onClose: () => void }) {
+export function Lightbox({ file, onClose }: { file: FileSummary; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const opener = useRef<HTMLElement | null>(null);
 

@@ -5,6 +5,7 @@ import { IsoDateTime } from '../../common/time.ts';
 import { ActorId, ChannelId, MessageId, TeamId } from '../../ids.ts';
 import { ActorKind } from '../../entities/kernel.ts';
 import { ChannelMessage, MessageAuthor } from '../channels/common.ts';
+import { FileSummary } from '../../entities/file.ts';
 import { TeamSlug } from '../teams/common.ts';
 
 // Threads: one thread per root message (SPEC 6.1, PLAN P3-06). A reply is posted with `postMessageRoute` (threadRootId set); these
@@ -177,3 +178,22 @@ export type ThreadBatchQuery = z.infer<typeof ThreadBatchQuery>;
 export const ThreadCountsResponse = z.object({ mentions: z.number().int().nonnegative() });
 export type ThreadCountsResponse = z.infer<typeof ThreadCountsResponse>;
 export const threadCountsRoute = { method: 'GET', path: '/api/teams/:slug/threads/counts' } as const;
+
+/** The most files the thread's side rail asks for at once ("Show all files" asks for more). */
+export const THREAD_FILES_MAX = 200;
+export const ListThreadFilesQuery = z.object({ limit: z.coerce.number().int().min(1).max(THREAD_FILES_MAX).default(20) });
+export type ListThreadFilesQuery = z.infer<typeof ListThreadFilesQuery>;
+/** One file attached to a message of the thread (the root included): the card, and the message and author it came with. */
+export const ThreadFileItem = z.object({
+  file: FileSummary,
+  messageId: MessageId,
+  at: IsoDateTime,
+  authorId: ActorId,
+  authorName: z.string(),
+  authorKind: ActorKind,
+});
+export type ThreadFileItem = z.infer<typeof ThreadFileItem>;
+/** The files of a thread, newest first, as the caller may read them (a file in a channel they cannot read is left out); `total` counts all of them. */
+export const ListThreadFilesResponse = z.object({ items: z.array(ThreadFileItem), total: z.number().int().nonnegative() });
+export type ListThreadFilesResponse = z.infer<typeof ListThreadFilesResponse>;
+export const listThreadFilesRoute = { method: 'GET', path: '/api/threads/:rootId/files' } as const;

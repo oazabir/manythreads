@@ -371,3 +371,60 @@ describe('the Threads view (P29): the filter, "waiting for you" and the sidebar 
     expect(before).toBe(await counts(nadia));
   });
 });
+
+describe('the thread files (P29-20): the side rail\'s Outputs', () => {
+  let root = '';
+  let channel = '';
+  const fileIn = (channelId: string, name: string, mime: string, by: Persona): Promise<string> =>
+    w.system(async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `INSERT INTO app.files (workspace_id, channel_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+         SELECT c.workspace_id, c.id, '/rail/', $2, 'k' || gen_random_uuid(), 2048, $3, repeat('b', 64), $4 FROM app.channels c WHERE c.id = $1 RETURNING id`,
+        [channelId, name, mime, by.actorId],
+      );
+      return r.rows[0]!.id;
+    });
+  const postWith = async (who: Persona, channelId: string, body: string, attachmentIds: string[], threadRootId: string | null = null): Promise<string> =>
+    ok<{ id: string }>(await w.call(who, 'POST', `/api/channels/${channelId}/messages`, { channelId, body, threadRootId, attachments: attachmentIds }), 201).id;
+  const files = async (who: Persona, rootId: string, query = ''): Promise<{ items: Array<{ file: { name: string; mime: string }; messageId: string; authorName: string; authorKind: string }>; total: number }> =>
+    ok(await w.call(who, 'GET', `/api/threads/${rootId}/files${query}`));
+  let first = '';
+  let second = '';
+  beforeAll(async () => {
+    channel = await w.channelId('engineering', 'standup');
+    const shot = await fileIn(channel, 'before.png', 'image/png', nadia);
+    root = await postWith(nadia, channel, 'Here is the screenshot', [shot]);
+    first = shot;
+    const report = await fileIn(channel, 'report.pdf', 'application/pdf', rafi);
+    const clip = await fileIn(channel, 'note.m4a', 'audio/mp4', rafi);
+    await post(rafi, channel, 'plain reply, no file', root);
+    second = await postWith(rafi, channel, 'And the report', [report, clip], root);
+  });
+
+  it('lists the files of the root and the replies, the newest message first, each with its author', async () => {
+    const r = await files(nadia, root);
+    expect(r.total).toBe(3);
+    expect(r.items.map((i) => i.file.name)).toEqual(['report.pdf', 'note.m4a', 'before.png']);
+    expect(r.items[0]).toMatchObject({ messageId: second, authorName: expect.stringContaining('Rafi') });
+    expect(r.items[2]?.file.mime).toBe('image/png');
+    expect(first).not.toBe('');
+  });
+
+  it('cuts the list at `limit` and still says how many there are', async () => {
+    const r = await files(nadia, root, '?limit=1');
+    expect(r.items).toHaveLength(1);
+    expect(r.total).toBe(3);
+  });
+
+  it('is empty for a thread with no files, and for one the caller cannot read', async () => {
+    const plain = await post(nadia, dev, 'No files here');
+    expect((await files(nadia, plain)).total).toBe(0);
+    const secret = await w.channelId('engineering', 'eng-leads').catch(() => '');
+    if (secret) {
+      const f = await fileIn(secret, 'private.png', 'image/png', omar);
+      const hidden = await postWith(omar, secret, 'Leads only', [f]);
+      expect((await files(omar, hidden)).total).toBe(1);
+      expect((await files(lena, hidden)).total).toBe(0);
+    }
+  });
+});

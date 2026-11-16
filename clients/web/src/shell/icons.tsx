@@ -12,7 +12,7 @@ import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon, OpenIcon, RecordStopIcon } from '@proicons/react';
 import { BarChartIcon, CodeSquareIcon, MoreHorizontalIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
-import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
+import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, PanelRightIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { AlertTriangleIcon, CircleIcon, CircleSmallIcon, DocumentIcon, FlagIcon, HandIcon, LightbulbIcon, TerminalIcon, GlobeIcon as ProGlobe } from '@proicons/react';
 import { BulletListIcon as ProBulletList, GridIcon as ProGrid } from '@proicons/react';
 import { proIcon } from '../components/proicon';
@@ -164,6 +164,8 @@ export const ShareChatIcon = proIcon(ShareIcon, 14);
 export const ThumbUpIcon = proIcon(ThumbsUpIcon, 14);
 export const ThumbDownIcon = proIcon(ThumbsDownIcon, 14);
 export const RailIcon = proIcon(PanelLeftIcon, 16);
+/** The thread's side rail (P29-20): a panel on the right. */
+export const SidePanelIcon = proIcon(PanelRightIcon, 16);
 export const SavePageIcon = proIcon(SaveIcon, 14);
 export const RegenerateIcon = proIcon(ArrowSyncIcon, 14);
 export const NextIcon = proIcon(ChevronRightIcon, 14);
