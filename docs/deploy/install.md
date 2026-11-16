@@ -37,7 +37,7 @@ local address. Let's Encrypt is tried on the staging server first, then producti
 SHA-256, `curl -fsSLk --pinnedpubkey 'sha256//…' <site>/install/bridge.sh | sudo bash -s -- --enrol <code> --ca-sha256 <hex>`. `bridge.sh` reads the certificate the address shows,
 refuses it unless the hash matches, keeps it as the only extra certificate the machine trusts for the site (`/etc/manythreads-bridge/site-ca.pem`, handed to the bridge as
 `NODE_EXTRA_CA_CERTS`), and installs nothing when it differs. The certificate is valid ten years; after a new one, run `bridge.sh --update --ca-sha256 <new hash>` on each server
-(the server prints the hash on the page, and `sudo manythreads url` / `sudo manythreads status` show the mode). The chart mounts the certificate into the server pod (`MANYTHREADS_SITE_CERT_FILE`) so the page can show the hashes.
+(the *Add a server* dialog always shows the command with the current hash). The chart mounts the certificate into the server pod (`MANYTHREADS_SITE_CERT_FILE`) so the page can show the hashes.
 
 ## The `manythreads` command
 
@@ -50,7 +50,7 @@ Installed at `/usr/local/bin/manythreads` (checked against `hostCommandSha256` o
 | `reset-admin-password [EMAIL]` | a new made-up password, printed once; the person chooses their own at the next sign-in |
 | `backup-key` | the key that encrypts stored secrets and backups (keep a copy away from this machine) |
 | `doctor` | checks the machine, the cluster and the site and says what is wrong |
-| `logs [server\|web\|db]`, `support-bundle` | logs; a bundle for a bug report (no secret in it) |
+| `logs [server\|web\|litellm\|hindsight\|db]`, `support-bundle` | logs; a bundle for a bug report (no secret in it) |
 | `set-domain NAME` | change the address: keeps the old one working, asks for a certificate for the new one |
 | `allow-git-host URL` | let team pods clone from one more git host |
 | `upgrade [--version X.Y.Z]` | a backup first, then the new release over the old one; a lower version is refused |

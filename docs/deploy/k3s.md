@@ -4,6 +4,8 @@ This page takes one empty Linux machine to a running manythreads with a first ad
 
 **Every command in the blocks marked `k3s-test` is run by a test, as written.** `tools/deploy-test/k3s-fresh.sh` starts a new k3s in a container on the project's build machine, takes these blocks out of this file (the fence says `sh k3s-test`) and runs them in order, then checks that `/readyz` answers 200 and that the first administrator can sign in. A command that stops working breaks the test, so this page cannot drift from what works. The k3s install in step 1 is the one thing the test replaces: it starts k3s in a container instead.
 
+> A machine you do not mind giving to manythreads can use the one-command installer instead: [install.md](install.md). This page is the command-by-command path that `tools/deploy-test/k3s-fresh.sh` tests.
+
 ## What you need
 
 - One x86-64 Linux machine with root access, [Docker](https://docs.docker.com/engine/install/), [Helm](https://helm.sh/docs/intro/install/) and `kubectl`, and a copy of this repository.

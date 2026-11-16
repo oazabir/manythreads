@@ -3,6 +3,8 @@
 This page is for a system administrator who has never seen this repository. It takes one Linux machine to a running
 manythreads with a first administrator who can sign in.
 
+> **Fastest path:** on a fresh Linux machine one command does everything below (k3s, helm, the database operator, HTTPS, the first administrator): see [install.md](install.md). The steps on this page are the manual way, for a cluster you already run or want to understand.
+
 ## What you get, and what is supported
 
 The **main supported install path** is the Helm chart in `deploy/helm/manythreads`, on a single-node
