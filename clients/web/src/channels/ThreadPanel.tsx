@@ -19,6 +19,7 @@ import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
 import { continuesRun } from './runs';
+import { setOpenThreadRoot } from '../taskview/openRoot';
 import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
 import { lastEditableOwn } from './messageActions';
 import { ScheduledStrip } from './ScheduledStrip';
@@ -117,6 +118,12 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     (a: { id: string; status: string; source: string; botId?: string | null }) => shownQuestions.has(a.id) || (a.source === 'agent' && a.status !== 'pending' && a.botId != null && runBots.has(a.botId)),
     [shownQuestions, runBots],
   );
+  // the channel folds this root's cards to a chip while it is open at the side (P29): the panel shows the same, once
+  useEffect(() => {
+    if (variant !== 'panel') return;
+    setOpenThreadRoot(rootId);
+    return () => setOpenThreadRoot(null);
+  }, [rootId, variant]);
   usePanelSub(variant === 'panel' && channelName ? `# ${channelName}` : null);
 
   // Mark the replies read while the thread is open and on screen.

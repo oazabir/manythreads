@@ -16,3 +16,9 @@ export function useTaskView(rootId: string): TaskViewState {
   const subscribe = useCallback((onChange: () => void) => channelTasksStore.subscribe(rootId, onChange), [rootId]);
   return useSyncExternalStore(subscribe, () => channelTasksStore.stateOf(rootId), () => EMPTY_TASK_VIEW);
 }
+
+/** The page's one live region: the line to speak when questions wait in this channel. */
+export function useTaskAnnouncement(channelId: string | null): string {
+  const subscribe = useCallback((onChange: () => void) => (channelId === null ? () => undefined : channelTasksStore.subscribeChannel(channelId, onChange)), [channelId]);
+  return useSyncExternalStore(subscribe, () => (channelId === null ? '' : channelTasksStore.announcementOf(channelId)), () => '');
+}

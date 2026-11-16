@@ -83,7 +83,7 @@ export function lastEditableOwn(
 export const NO_THREAD_CLICK = [
   'a,button,textarea,.acts,.dlg-scrim,.vpop,.pcard-avatar',
   'input,select,label,summary,details,img,video,audio,iframe,[role=button],[role=menu],[contenteditable]',
-  '.m,.chref,.show-more,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap',
+  '.m,.tv,.chref,.show-more,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap',
 ].join(',');
 
 /** A click on a message row opens its thread only for a plain single click on the row's own text, space and picture-free parts. */

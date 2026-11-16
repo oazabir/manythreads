@@ -6,7 +6,7 @@ import { Avatar } from '../components/ui';
 import { AuthorLine } from '../components/AuthorLine';
 import { MessageVia } from './MessageVia';
 import { RunOriginCard } from './RunOriginCard';
-import { RootChip } from './run-card/RootChip';
+import { TaskView } from '../taskview/TaskView';
 import { TodoMessage } from './todo-card/TodoMessage';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
@@ -470,7 +470,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             ) : null}
           </div>
         ) : null}
-        {!inThread && !deleted ? <RootChip rootId={m.id} /> : null}
+        {!inThread && !deleted && actions.openThread !== undefined ? <TaskView rootId={m.id} channelId={m.channelId} teamSlug={teamSlug} people={people} openThread={actions.openThread} /> : null}
         {!inThread && m.replyCount > 0 ? (
           <button type="button" className="replies" onClick={() => actions.openThread?.(m.id)}>
             {m.replyAuthors && m.replyAuthors.length > 0 ? <ReplyAvatars authors={m.replyAuthors} people={people} /> : null}

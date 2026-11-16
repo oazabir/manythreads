@@ -25,6 +25,7 @@ import './styles/savebar.css';
 import './styles/approvals.css';
 import './styles/run-card.css';
 import './styles/todo-card.css';
+import './styles/task-view.css';
 import './styles/conversations.css';
 import './styles/chat.css';
 import './styles/answer.css';

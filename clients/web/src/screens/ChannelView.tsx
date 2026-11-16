@@ -9,7 +9,7 @@ import { estimateItem, buildListItems, dayAt, messageKey, UNREAD_KEY, type ListI
 import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
 import { lastEditableOwn } from '../channels/messageActions';
 import { usePeople, useTimeline, useTyping } from '../channels/hooks';
-import { useChannelRuns } from '../runs/useThreadRuns';
+import { useTaskAnnouncement, useTrackChannelTasks } from '../taskview/useTaskView';
 import { channelKey, channelStore } from '../channels/store';
 import { firstUnreadIndex } from '../channels/timeline';
 import { isApiError } from '../api/client';
@@ -90,8 +90,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const botBoard = boards.status === 'ok' ? botBoardOf(boards.data.items) : undefined;
   const headerSlot = useHeaderActionsSlot();
   const tl = useTimeline(channelKey(channelId));
-  // the "Coder is working" chips under thread roots (P25-11): read once and kept live by the pushes
-  useChannelRuns(channelId);
+  // the to-do cards, the run cards and the questions under thread roots (P29): one lease and three reads for the whole channel, kept live by the pushes
+  useTrackChannelTasks(channelId);
+  const taskSaid = useTaskAnnouncement(channelId);
   // The orchestrator makes the board while the channel may already be open: until there is one, look again whenever the channel moves.
   const reloadBoards = boards.reload;
   const waitingForBoard = boards.status === 'ok' && botBoard === undefined && !dm;
@@ -323,6 +324,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             headerSlot,
           )
         : null}
+      {/* the channel's one live region for the cards under its roots: only "N questions are waiting", never the steps */}
+      <p className="sr-only" role="status" data-testid="task-view-said">{taskSaid}</p>
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}
       <BookmarksBar channelId={channelId} teamSlug={teamSlug} dm={dm !== undefined} canEdit={canPost} slot={headerSlot} />
       <div className="chview-list">

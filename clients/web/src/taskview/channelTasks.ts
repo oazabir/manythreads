@@ -132,6 +132,18 @@ export class ChannelTasksStore {
     return [...(this.entries.get(channelId)?.views.keys() ?? [])];
   }
 
+  /** A person answered a question here (or lost the race to answer it): read the channel's questions again now, not after the push. */
+  refreshQuestions(channelId: string): void {
+    this.later(channelId, 'questions');
+  }
+
+  private readonly said = new Map<string, string>();
+
+  /** The channel's one spoken line for a screen reader ("1 question is waiting for an answer"); empty when nothing waits. The cards themselves are not live regions. */
+  announcementOf = (channelId: string): string => this.said.get(channelId) ?? '';
+
+  subscribeChannel = (channelId: string, listener: () => void): (() => void) => this.subscribe(`channel:${channelId}`, listener);
+
   private emit(rootId: string): void {
     for (const l of [...(this.listeners.get(rootId) ?? [])]) l();
   }
@@ -365,6 +377,13 @@ export class ChannelTasksStore {
       this.emit(root);
     }
     e.views = next;
+    let waiting = 0;
+    for (const v of next.values()) waiting += v.questions.length;
+    const line = waiting === 0 ? '' : waiting === 1 ? '1 question is waiting for an answer' : `${waiting} questions are waiting for an answer`;
+    if ((this.said.get(channelId) ?? '') !== line) {
+      this.said.set(channelId, line);
+      this.emit(`channel:${channelId}`);
+    }
     for (const root of [...this.channelOf.keys()]) if (this.channelOf.get(root) === channelId && !next.has(root)) this.channelOf.delete(root);
   }
 

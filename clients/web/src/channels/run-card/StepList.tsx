@@ -123,7 +123,7 @@ function Question({ row }: { row: QuestionRow }) {
   );
 }
 
-function RowView({ row, defaultOpen }: { row: Row; defaultOpen: boolean }) {
+export function RowView({ row, defaultOpen }: { row: Row; defaultOpen: boolean }) {
   switch (row.type) {
     case 'step':
       return <Step row={row} />;

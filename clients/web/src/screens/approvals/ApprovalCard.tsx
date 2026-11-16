@@ -54,8 +54,14 @@ function Preview({ preview, testId = 'approval-preview' }: { preview: Approval['
   );
 }
 
+/** The words of the two buttons: a bot's own question is Yes or No, its command is Allow once or Deny, a platform approval is Approve or Deny. The one copy of them. */
+export function answerWords(approval: Pick<Approval, 'source' | 'tool'>): { yes: string; no: string } {
+  if (approval.source !== 'agent') return { yes: 'Approve', no: 'Deny' };
+  return approval.tool === ASK_TOOL ? { yes: 'Yes', no: 'No' } : { yes: 'Allow once', no: 'Deny' };
+}
+
 /** What a bot's own question or command shows: the command in a code block, the bot's reason and details as text. */
-function AgentPreview({ approval, terse = false }: { approval: Approval; terse?: boolean }) {
+export function AgentPreview({ approval, terse = false }: { approval: Approval; terse?: boolean }) {
   const p = approval.argsPreview as Record<string, unknown>;
   const text = (k: string): string => (typeof p[k] === 'string' ? (p[k] as string) : '');
   const command = text('command');
@@ -127,8 +133,7 @@ export function ApprovalCard({
   const risk = riskOf(approval);
   const agent = approval.source === 'agent';
   // a bot's question is answered yes or no; the bot's program that stopped at a command is told to run it once, or not
-  const yes = !agent ? 'Approve' : approval.tool === ASK_TOOL ? 'Yes' : 'Allow once';
-  const no = !agent ? 'Deny' : approval.tool === ASK_TOOL ? 'No' : 'Deny';
+  const { yes, no } = answerWords(approval);
   const buttons = answered ? null : (
     <>
       <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">

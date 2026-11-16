@@ -1,0 +1,288 @@
+/*
+ * The task view under a thread root in the channel (P29, docs/plans/channel-task-view.md): the to-do card, the live run card and the question strip, compact. Every class is
+ * prefixed `tv`; the cards reuse the run card's (`rc*`) and the to-do card's (`td*`) classes for their parts, so the four palettes already cover them. Tokens only, logical
+ * properties only. At 390 px the cards stack, every button is 44 px high and the Yes and No sit on one row as two equal buttons.
+ */
+
+.tv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-block: 6px 2px;
+  max-width: 640px;
+  min-width: 0;
+  position: relative;
+  container-type: inline-size;
+}
+
+.tvCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border: var(--border-w) solid var(--todo-border);
+  border-radius: var(--radius-md);
+  background: var(--todo-bg);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  min-width: 0;
+}
+
+.tv > .tvCard {
+  margin-block: 0;
+}
+
+.tvCard.rc {
+  border-color: var(--run-border);
+  background: var(--run-bg);
+}
+
+.tvHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tvTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.tvCount {
+  flex: none;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.tvItems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tvItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tvText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tvItem[data-status="done"] .tdMark {
+  color: var(--ok);
+}
+
+.tvItem[data-status="blocked"] .tdMark {
+  color: var(--alert);
+}
+
+.tvItem[data-status="working"] .tvText {
+  font-weight: 600;
+}
+
+.tvDone {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.tvMore,
+.tvLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tvMore {
+  align-self: flex-start;
+  color: var(--mute);
+  text-decoration: none;
+}
+
+.tvSteps {
+  margin: 0;
+}
+
+.tvFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.tvMoreRuns {
+  color: var(--agent-ink);
+}
+
+.tvStop {
+  min-height: 28px;
+}
+
+.tvEnded {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  min-width: 0;
+}
+
+.tvEnded[data-tone="failed"] {
+  color: var(--alert-ink);
+}
+
+.tvHide {
+  align-self: flex-end;
+  min-height: 24px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.tvHide:hover {
+  color: var(--ink);
+}
+
+.tvChip {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 1px 10px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--radius-pill);
+  background: var(--agent-wash);
+  color: var(--agent-ink);
+  font: inherit;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.tvChipStatic {
+  cursor: default;
+}
+
+.tvChipNote {
+  font-weight: 400;
+}
+
+/* the question strip: the one place a person answers from the channel */
+.tvStrips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tvStrip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border: var(--border-w) solid var(--warn-border);
+  border-radius: var(--radius-md);
+  background: var(--warn-wash);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  min-width: 0;
+}
+
+.tvStripMain {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.tvNeeds {
+  flex: none;
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.tvAsk {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.tvStripActs {
+  display: flex;
+  gap: 8px;
+}
+
+.tvStripActs .btn {
+  min-height: 32px;
+}
+
+@container (width <= 420px) {
+  .tvStripActs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tvStripActs .btn,
+  .tvStop,
+  .tvMore,
+  .tvLink,
+  .tvHide {
+    min-height: 44px;
+  }
+
+  .tvFoot {
+    justify-content: flex-start;
+  }
+}
+
+@media (width <= 480px) {
+  .tvStripActs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tvStripActs .btn,
+  .tvStop,
+  .tvMore,
+  .tvLink,
+  .tvHide,
+  .tvChip:not(.tvChipStatic) {
+    min-height: 44px;
+  }
+}
