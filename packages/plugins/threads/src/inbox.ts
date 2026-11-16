@@ -68,7 +68,7 @@ const TAB_PREDICATE: Record<ThreadsTab, string> = {
  */
 export async function listInbox(
   tx: PluginTx,
-  input: { personId: string; tab: ThreadsTab; teamId: string | null; limit: number; cursor?: string | undefined; q?: string | undefined; mentions?: readonly string[] | undefined },
+  input: { personId: string; tab: ThreadsTab; teamId: string | null; limit: number; cursor?: string | undefined; q?: string | undefined; mentions?: readonly (readonly string[])[] | undefined },
 ): Promise<ListThreadsResponse> {
   const filtered = input.q !== undefined || (input.mentions?.length ?? 0) > 0;
   const after = !filtered && input.cursor ? decodeCursor(input.cursor) : null;
@@ -82,10 +82,10 @@ export async function listInbox(
     patterns.push(at);
     where.push(`(coalesce(c.name, '') ILIKE ${at} OR EXISTS (SELECT 1 FROM app.messages fm WHERE (fm.thread_root_id = t.root_message_id OR fm.id = t.root_message_id) AND fm.deleted_at IS NULL AND fm.body_plain ILIKE ${at}))`);
   }
-  for (const actor of input.mentions ?? []) {
-    params.push(actor);
-    const at = `$${String(params.length)}::uuid`;
-    where.push(`EXISTS (SELECT 1 FROM app.messages xm JOIN app.message_mentions xmt ON xmt.message_id = xm.id AND xmt.mentioned_id = ${at} AND xmt.kind <> 'channel' WHERE (xm.thread_root_id = t.root_message_id OR xm.id = t.root_message_id) AND xm.deleted_at IS NULL)`);
+  for (const group of input.mentions ?? []) {
+    params.push(group);
+    const at = `$${String(params.length)}::uuid[]`;
+    where.push(`EXISTS (SELECT 1 FROM app.messages xm JOIN app.message_mentions xmt ON xmt.message_id = xm.id AND xmt.mentioned_id = ANY (${at}) AND xmt.kind <> 'channel' WHERE (xm.thread_root_id = t.root_message_id OR xm.id = t.root_message_id) AND xm.deleted_at IS NULL)`);
   }
   const limit = filtered ? THREAD_FILTER_RESULTS_MAX : input.limit;
   params[5] = limit + 1;

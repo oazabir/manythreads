@@ -349,6 +349,10 @@ describe('the Threads view (P29): the filter, "waiting for you" and the sidebar 
     expect(await q(priya, `mentions=${priya.actorId as string}`)).toEqual(expect.arrayContaining([rootA, rootB]));
     expect(await q(priya, `mentions=${priya.actorId as string}&q=zebrafish`)).toEqual([rootA]);
     expect(await q(nadia, `mentions=${priya.actorId as string}`)).not.toContain(rootC);
+    // one name that may mean two people: either of them
+    expect(await q(priya, `mentions=${lena.actorId as string}|${priya.actorId as string}&q=zebrafish`)).toEqual([rootA]);
+    expect(await q(priya, `mentions=${lena.actorId as string}|${priya.actorId as string},${priya.actorId as string}&q=zebrafish`)).toEqual([rootA]);
+    expect(await q(priya, `mentions=${lena.actorId as string}|${omar.actorId as string}&q=zebrafish`)).toEqual([]);
     // a wildcard typed by a person is text, not a pattern
     expect(await q(priya, 'q=%25')).toEqual([]);
     expect(await q(priya, 'q=_')).toEqual([]);

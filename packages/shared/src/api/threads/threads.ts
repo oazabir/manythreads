@@ -66,11 +66,17 @@ export type ThreadsTab = z.infer<typeof ThreadsTab>;
 
 /** Ids separated by commas (a query string carries a list this way; the handler splits it with `idList`). */
 const ID_LIST = /^[0-9a-f-]{36}(,[0-9a-f-]{36})*$/;
+/** The same with `|` inside a group: `a|b,c` is (a or b) and c. */
+const ID_GROUPS = /^[0-9a-f-]{36}([,|][0-9a-f-]{36})*$/;
 /** The ids of a comma separated query value, the first `max` of them. */
 export const idList = (value: string | undefined, max: number): string[] => (value ?? '').split(',').filter((x) => x.length > 0).slice(0, max);
 
-/** The most actors one filter names with `@name` (P29: the Threads view's filter box). */
+/** The most `@name` words one filter takes (P29: the Threads view's filter box), and the most actors one name may stand for (two people called Sam). */
 export const THREAD_FILTER_MENTIONS_MAX = 5;
+export const THREAD_FILTER_ACTORS_MAX = 20;
+/** The groups of a `mentions` value: `a|b,c` is [[a, b], [c]] (one name that may mean several actors, and another name). */
+export const idGroups = (value: string | undefined, max: number): string[][] =>
+  (value ?? '').split(',').filter((x) => x.length > 0).slice(0, max).map((g) => g.split('|').filter((x) => x.length > 0).slice(0, THREAD_FILTER_ACTORS_MAX));
 /** The longest text the filter box sends. */
 export const THREAD_FILTER_TEXT_MAX = 200;
 /** Threads one filtered answer holds (no paging: a filter narrows the list). */
@@ -85,11 +91,11 @@ export const ListThreadsQuery = z.object({
    * is the matching threads of the tab, channel-name matches first, at most `THREAD_FILTER_RESULTS_MAX`, and has no `nextCursor`.
    */
   q: z.string().trim().min(1).max(THREAD_FILTER_TEXT_MAX).optional(),
-  /** Actor ids (comma separated) that must be mentioned in some live message of the thread: the `@name` words of the filter. */
+  /** Who must be mentioned in some live message of the thread, one group per `@name` word of the filter: actor ids, `,` between names and `|` between the actors one name may mean (`idGroups`). */
   mentions: z
     .string()
-    .max(THREAD_FILTER_MENTIONS_MAX * 37)
-    .regex(ID_LIST, 'mentions: ids separated by commas')
+    .max(THREAD_FILTER_MENTIONS_MAX * THREAD_FILTER_ACTORS_MAX * 37)
+    .regex(ID_GROUPS, 'mentions: actor ids separated by commas and bars')
     .optional(),
 });
 export type ListThreadsQuery = z.infer<typeof ListThreadsQuery>;

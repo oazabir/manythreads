@@ -29,8 +29,8 @@
     },
     "mentions": {
       "type": "string",
-      "maxLength": 185,
-      "pattern": "^[0-9a-f-]{36}(,[0-9a-f-]{36})*$"
+      "maxLength": 3700,
+      "pattern": "^[0-9a-f-]{36}([,|][0-9a-f-]{36})*$"
     }
   }
 }
