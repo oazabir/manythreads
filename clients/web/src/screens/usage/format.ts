@@ -70,12 +70,14 @@ export function budgetView(b: UsageBudget): BudgetView {
   return { fill: Math.min(100, Math.round(share * 100)), tone, text };
 }
 
+const daysWords = (n: number): string => `${n} ${n === 1 ? 'day' : 'days'}`;
+
 /** A one-line text for a chart, for people who cannot see it. */
 export function chartSummary(days: readonly UsageDay[], pick: (d: UsageDay) => number, unit: string): string {
   const total = days.reduce((n, d) => n + pick(d), 0);
   const busiest = days.reduce<UsageDay | null>((best, d) => (best === null || pick(d) > pick(best) ? d : best), null);
   if (days.length === 0 || total === 0) return `No ${unit} in this range.`;
-  return `${count(Math.round(total))} ${unit} over ${days.length} days; the busiest day was ${dayLabel(busiest!.day)}.`;
+  return `${count(Math.round(total))} ${unit} over ${daysWords(days.length)}; the busiest day was ${dayLabel(busiest!.day)}.`;
 }
 
 /** "3 Nov" for a UTC day: the day first, as the chart's bar labels read it. */

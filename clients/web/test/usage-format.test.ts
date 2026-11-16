@@ -54,9 +54,22 @@ describe('usage formatting', () => {
     expect(budgetView(budget({ window: 'day' })).text).toContain('today');
   });
 
+  it('describes a one-day chart with singular day wording', () => {
+    expect(chartSummary([day('2026-11-01', 1234)], (d) => d.runs, 'bot runs')).toBe('1,234 bot runs over 1 day; the busiest day was Nov 1.');
+  });
+
+  it('describes a two-day chart with plural day wording', () => {
+    expect(chartSummary([day('2026-11-01', 2), day('2026-11-02', 5)], (d) => d.runs, 'bot runs')).toBe('7 bot runs over 2 days; the busiest day was Nov 2.');
+  });
+
   it('describes a chart for people who cannot see it', () => {
     expect(chartSummary([], (d) => d.runs, 'bot runs')).toBe('No bot runs in this range.');
     expect(chartSummary([day('2026-11-01', 0)], (d) => d.runs, 'bot runs')).toBe('No bot runs in this range.');
     expect(chartSummary([day('2026-11-01', 2), day('2026-11-02', 5)], (d) => d.runs, 'bot runs')).toBe('7 bot runs over 2 days; the busiest day was Nov 2.');
+  });
+
+  it.each([1, 3, 7, 30])('counts all %i calendar days, including days with no activity', (length) => {
+    const days = Array.from({ length }, (_, i) => day(`2026-11-${String(i + 1).padStart(2, '0')}`, i === 0 ? 1234.4 : 0));
+    expect(chartSummary(days, (d) => d.runs, 'tool calls')).toBe(`1,234 tool calls over ${length} ${length === 1 ? 'day' : 'days'}; the busiest day was Nov 1.`);
   });
 });
