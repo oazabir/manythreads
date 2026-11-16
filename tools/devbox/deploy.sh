@@ -127,7 +127,7 @@ if [ "$DEMO" = true ]; then
   if k3s ctr -n k8s.io images ls -q | grep -q "manythreads/hermes:stable"; then
     echo "manythreads/hermes:stable already imported; skipping (remove it from containerd to force a rebuild)"
   else
-    echo "--- build hermes agent image (one-time; the installer pulls upstream)"
+    echo "--- build hermes agent image (one-time; pulls the official image by digest)"
     docker build -f deploy/docker/hermes.Dockerfile -t manythreads/hermes:stable .
     echo "importing manythreads/hermes:stable"
     docker save manythreads/hermes:stable | k3s ctr -n k8s.io images import - | tail -n 2
@@ -176,7 +176,7 @@ fi
 
 # Managed Hermes pods (values-live.yaml hermesPods): the Hermes container and the workbench. Tagged by the content of their build
 # folders, so an unchanged folder is a no-op and a changed one rolls the pods. Built whether or not --no-build is given (the CI
-# pipeline builds only server+web); needs manythreads/hermes:stable (the official Hermes install, deploy/docker/hermes.Dockerfile).
+# pipeline builds only server+web); needs manythreads/hermes:stable (the official Hermes image by digest, deploy/docker/hermes.Dockerfile).
 PODS_ARGS=()
 if grep -q '^hermesPods:' deploy/helm/manythreads/values-live.yaml 2>/dev/null; then
   HP_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C deploy/images/hermes-pod -cf - . | sha256sum | cut -c1-10)

@@ -392,7 +392,7 @@ networkPolicies:
 hermesPods:
   enabled: true
   images:
-    hermes: manythreads/hermes-pod:1      # Hermes Agent (official installer) + the profile sync
+    hermes: manythreads/hermes-pod:1      # Hermes Agent (official image) + the profile sync
     workbench: manythreads/workbench:2    # the bots' shell: Playwright/Chromium, git, node, python, kubectl, helm, sshd
   workspaceSize: 10Gi        # /workspace of each team's workbench (repositories of record + every bot's clone)
   homeSize: 2Gi              # the Hermes container's profiles (state.db, sessions) and ssh keys

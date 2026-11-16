@@ -44,7 +44,7 @@ persistentvolumeclaims (get/list/create/patch/update, and since P19-08 delete, u
 ## The two containers
 
 **hermes** (image `manythreads/hermes-pod`, built from `deploy/images/hermes-pod` on top of `manythreads/hermes:stable`, which
-`deploy/docker/hermes.Dockerfile` makes with Hermes' official installer). It runs `hermes gateway run` with `gateway.multiplex_profiles: true`
+`deploy/docker/hermes.Dockerfile` makes from the official `nousresearch/hermes-agent` image, pinned by digest, see "The Hermes image" below). It runs `hermes gateway run` with `gateway.multiplex_profiles: true`
 (one gateway process serves every profile) and the `api_server` platform on port 8642. A request to `/p/<profile>/v1/…` is answered by that
 profile and needs *that profile's* `API_SERVER_KEY` as a bearer token; the gateway's own key does not open a profile. The *sync* (`sync.mjs`,
 every ten seconds) turns the Secret into `~/.hermes/profiles/<name>/` (`config.yaml`, `SOUL.md`, `.env` with the three secrets, mode 0600):
@@ -257,6 +257,21 @@ Chart values (`values.yaml`, `hermesPods`), passed to the server as `MANYTHREADS
 | `botRunners.allowedNodes` (outside `hermesPods`) | the machines an admin may choose for a pod runner, by name; empty means every machine. Passed to the server as `MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES` |
 
 `MANYTHREADS_HERMES_PODS_STATIC` = `{"<team slug>": [<profile specs>]}` stands in for the platform's profiles in tests; the server **refuses it when `NODE_ENV=production`**.
+
+## The Hermes image (P26-24)
+
+`manythreads/hermes:stable` is **not** built with Hermes' installer (`curl install.sh`, pinned by sha256: upstream changed the script and the pin broke the
+build, so no pod image could be made). It is made from the official Docker Hub image `nousresearch/hermes-agent:v0.22.6@sha256:d27689bc…` (the version the
+approval-answer body in `runtime-hermes/src/gateway.ts` is written against). Debian trixie (the same digest the official image uses), the official tree copied
+**at its own path** `/opt/hermes` (its venv's interpreter lives in `/opt/hermes/tools`, so the tree cannot move), without the Chromium (364 MB), the download
+cache and the desktop web app; no s6 (the pod entrypoint is the init). What the rest of the repo relies on is unchanged: user `node` (uid 1000), `HOME=/home/node`,
+state in `/home/node/.hermes` (no `HERMES_HOME`: the official image's `/opt/data` is not used), the binary at `/home/node/.local/bin/hermes` (a link to the venv's),
+`node` and `ffmpeg` on `PATH`. Hermes now needs `API_SERVER_KEY` of at least 16 characters to start its API server (the controller draws 48 hex characters).
+To update: new tag and digest from Docker Hub (never `-desktop`, never `latest`) in `HERMES_IMAGE` of `deploy/docker/hermes.Dockerfile`, rebuild, run the smoke test below.
+The image is built by `tools/devbox/deploy.sh` (once; `docker image inspect` decides) and imported into k3s with the pod image.
+
+Smoke test without a cluster (a throwaway key, no model keys): `docker run -d -e API_SERVER_KEY=$(openssl rand -hex 24) -v <dir>:/keys -v <dir with profiles.json>:/in:ro -p 18642:8642 manythreads/hermes-pod:<tag>`;
+`/health` answers 200, `/v1/models` 401 without and 200 with the key, a profile written to `profiles.json` is attached within ten seconds and answers on `/p/<profile>/v1/models` with its own key.
 
 ## Verifying a pod by hand
 
