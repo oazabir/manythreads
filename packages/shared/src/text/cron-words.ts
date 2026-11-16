@@ -194,7 +194,7 @@ export function wordsToSchedule(sentence: string, timeZone: string, at: Date = n
   const hours = /\bevery\s+(\d{1,2})\s*hours?\b/.exec(text);
   if (hours) {
     const n = Number(hours[1]);
-    if (n >= 1 && n <= 23) return { cron: `0 */${n} * * *`, words: `Every ${n} hours`, notes };
+    if (n >= 1 && n <= 23) return { cron: `0 */${n} * * *`, words: n === 1 ? 'Every hour' : `Every ${n} hours`, notes };
   }
   if (/\b(every|each)\s+hour\b|\bhourly\b/.test(text)) return { cron: '0 * * * *', words: 'Every hour', notes };
 
