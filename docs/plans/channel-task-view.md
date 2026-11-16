@@ -183,6 +183,45 @@ Open questions (each with the default this plan follows)
 4. **A switch in Settings?** Default: no global switch; each card can be hidden per thread. A "Show work in channels" switch under Settings → Appearance is a small addition if you want it.
 5. **Roots with a pending approval but no run or list** (a platform approval raised from a thread, for example `email.send`): default: they show the strip only. Approvals raised in a channel with no thread are not shown in the message list (the Approvals page has them).
 
+## 10a. The dock above the thread's composer (owner, 2026-11-16, added after the channel cards)
+
+The same compact cards also sit in the thread itself, directly above the message composer, always visible while the thread scrolls. Both `ThreadBody` variants (`panel` and `main`).
+
+What it holds, from top to bottom, and nothing else:
+1. The compact to-do card (`TodoCompact`).
+2. The compact run card (`RunCompact`, with its last steps).
+3. The pending approval strip (`QuestionStrip`), the lowest item, touching the composer.
+
+Rules (defaults, each can be changed by the owner):
+- **Replaces `TodoPin`** (the pinned to-do head at the top of the panel, `ThreadPanel.tsx:219`). Not a second copy. The full cards in the message stream stay where they are.
+- **Same data, no polling.** The dock reads the thread's own stores: `threadRunsStore` (the thread lease already pushes `run.activity` and the steps), `useThreadTodo` (`todo.changed`) and the thread's approvals (`approval.changed`, already filtered by thread root). Every bot update shows at once. The dock adds no request of its own beyond the reads the thread already makes. The compact cards are the same components as the channel's; only the data source (thread store instead of the channel store) differs, behind one `useTaskView(rootId)` shape.
+- **The approval strip is never hidden by collapsing.** Collapsing folds the to-do and run cards to one line ("Engineer · Running pnpm lint · 2 of 4"). The strip stays full. With several pending, the newest shows and a "1 more" button expands the rest. It shows whenever the thread has a pending approval, even with no run card or to-do list.
+- **One place to answer per screen.** The strip moves from where the thread draws its approvals now (`ThreadApprovals`) to the dock; it is not drawn twice. In-stream run cards and the thread's approvals list leave out any question the dock shows (the same "shown questions" bookkeeping the channel uses, keyed by approval id). The decide path is unchanged (`useDecision`, `canDecide`, 403/409, "View full call").
+- **Height.** The dock never takes more than 40% of the panel's height (it scrolls inside beyond that, the strip stays on screen). Collapsed state is remembered per thread in `localStorage`, inside try/catch. At 390 px it starts collapsed (the strip is still full).
+- **Goes away by the same rules as the channel**: a good run folds to its one line for 5 minutes (30 for a failed or stopped one), an all-done list shows "4 of 4 done" for 5 minutes, the strip stays until answered, expired or the run ends.
+- **The scroller and the composer keep working.** The dock sits in the layout above the composer (not over the message list), so the list's own height shrinks and its bottom padding is never covered. "Jump to latest" keeps its place above the dock. Focus, Tab order and the composer shortcuts are unchanged; the dock's controls come after the list and before the composer in Tab order.
+- **Live regions.** The thread already has one announcer for runs; the dock adds none of its own (no `role=status` in compact cards).
+
+Tests: a component test (the three parts, the collapse that keeps the strip, the 40% limit, the no-duplicate rule, `TodoPin` gone); an e2e case where a bot's to-do tick, a run step, and a question appear in the dock without a reload, answering it in the dock continues the run, and it goes away after the answer; at 390 px the strip is visible above the composer. Screenshots: dock open and collapsed, 1440 and 390.
+
+## 10b. Opening a bot from the sidebar opens the chat; the settings move under "Bot settings" (owner, 2026-11-16)
+
+Owner: "The default action for opening a bot from the sidebar would be the chat interface for that bot if the bot allows chatting. Otherwise it should show no chat is available to this bot and there should be a button to edit the bot settings if the current user has the permission to change bot settings. All the bot customization should be moved under the bot settings."
+
+What exists today (checked in the code):
+- The sidebar row (`shell/BotsSection.tsx`) links to `/t/:team/bots/:botSlug`, which is `BotPage`: the head and five tabs of customization (Basics, What it can do, Safety, Where it runs, History; `groups.ts`), with a "Talk" button to `/bots/:botSlug/chat` (`ConversationView`, the person's own conversation with the bot). Brain's chat lives in `/t/:team/chat?bot=brain`.
+- "The bot allows chatting" is already a field of `BotSummary`: `conversational` (the definition lists a `conversation` trigger; the API answers 409 `bot_has_no_conversation_trigger` otherwise), together with `status === 'active'` (turned off or invalid bots answer 409 as well). No new flag.
+- "May change the bot's settings" is the page's `canEdit` (`useBotPerms`: workspace owner or admin, or lead of the team); the repo writer and the deploy route enforce the same rule with 403.
+
+Design (defaults):
+- `/t/:team/bots/:botSlug` becomes `BotHome`. It reads the bot (`useBot`). Chat allowed (active and conversational): replace-redirect to `/bots/:botSlug/chat` (Brain: `/t/:team/chat?bot=brain`, as `BotChatRoute` does). Otherwise an empty state "No chat is available with <bot>." with one line of why (turned off; has no conversation trigger, so it works on mentions, schedules or events only; its file has a mistake), and a "Bot settings" button to `/bots/:botSlug/settings` only when `canEdit`. Without `canEdit` there is no button, and the line says who can change it (a team lead or workspace admin).
+- `/t/:team/bots/:botSlug/settings` is the existing `BotPage` (all customization: profile, instructions, model and placement, tools and connections, memory, knowledge, approvals, triggers, evals, audit, the usage link; chat on or off is the conversation trigger). Only its address changes, plus its crumb and a "Chat" button back (the existing "Talk"). A person who cannot change it still reads it, as today (read-only footer).
+- A settings button ("Bot settings", a gear) in the chat header, shown by the same rule (`canEdit`). The server rule is unchanged and still enforced on every settings route; the button only hides.
+- Old addresses keep working: `/bots/:botSlug?tab=<group or section>` redirects (replace) to `/bots/:botSlug/settings?tab=<same>`. The roster's name opens the chat or the empty state; its Configure icon goes to `/settings?tab=identity`; links elsewhere that meant settings (`Answer.tsx` audit link, the Agents screen) point at `/settings`. Usage stays at `/bots/:botSlug/usage`.
+- Sidebar: the row is active for chat, settings and usage (prefix match; the folded-section rule that keeps the open row follows).
+- Mobile 390 px: the empty state is one column with a 44 px button; the header gear is 44 px. Keyboard and themes: tokens only.
+- Tests: component tests for the three states of `BotHome` (chat allowed redirects; no chat with the settings button; no chat without it) and the `?tab=` redirect; e2e: click a chat bot in the sidebar and the chat opens; a non-chat bot as admin shows the empty state and the button leads to settings; as a member without rights there is no button; an old tab URL redirects; screenshots (empty state, 1440 and 390).
+
 ## 11. Tasks (go into PLAN.md as Phase 29, after Phase 28)
 
 | ID | Task | Status |
@@ -196,4 +235,6 @@ Open questions (each with the default this plan follows)
 | P29-06 | Components with their CSS, accessibility and component test each: `TodoCompact`, `RunCompact` (with the last 3 steps), `QuestionStrip`, then `TaskView` mounted under the root in `MessageRow` with the chip, Hide and the open-in-panel fold; `task-view.css` (desktop two columns, 390 px stacked, container query, 44 px targets, tokens only, four palettes light and dark); the channel's one live region | Not built |
 | P29-09 | e2e `channel-task-view.spec.ts` (eight cases above) and the `p29` screenshots (Graphite dark and light, one more palette, 1440 and 390); `docs/testing.md` section | Not built |
 | P29-10 | Docs: `docs/plugins/runtime-hermes.md` (channel lease, heads), `tasks.md`, `approvals.md`; STATUS.md; MISTAKES.md; PLAN.md rows | Not built |
+| P29-12 | The dock above the thread's composer (section 10a): `ThreadDock` with the compact to-do, run card and the pending question strip, replacing `TodoPin` and the thread's own approvals strip; collapse, 40% height, 390 px; component test, e2e case, screenshots | Not built |
+| P29-13 | Opening a bot opens its chat; no chat shows an empty state with a Bot settings button for people who may change it; the customization page moves to `/bots/:bot/settings` with redirects from the old tab addresses (section 10b); component tests, e2e, screenshots | Not built |
 | P29-11 | Deploy and live check with the Engineering bots (the coordinator deploys after the proofs) | Not built |
