@@ -1,9 +1,6 @@
-import { useState } from 'react';
 import type { Approval } from '@manythreads/shared';
-import { isApiError } from '../../api/client';
 import { ago } from '../../channels/format';
-import { decideApproval, fetchApprovalArgs } from './api';
-import { announceApprovalsChanged } from './live';
+import { useDecision } from './useDecision';
 import { AgePill } from './AgePill';
 import { AskerAvatar } from './Asker';
 import { riskClass, riskOf } from './risk';
@@ -88,6 +85,30 @@ export function runQuestion(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview'
   return `May it ${approvalAction(a)}?`;
 }
 
+/**
+ * "This preview is cut short": for the people who may decide, the button that opens the whole call (Yes stays disabled until it is open), and the call once open. Drawn by every
+ * variant, the run card's and the channel's question strip included.
+ */
+export function FullCall({ approval, full, opening, openFull }: { approval: Approval; full: Record<string, unknown> | null | undefined; opening: boolean; openFull: () => Promise<void> }) {
+  if (!approval.argsTruncated) return null;
+  return (
+    <div className="apr-truncated" data-testid="approval-truncated">
+      <p className="apr-blocked">This preview is cut short.{approval.canDecide && approval.status === 'pending' ? ' Open the full call before you decide.' : ''}</p>
+      {approval.canDecide && full === undefined ? (
+        <button type="button" className="btn s" disabled={opening} onClick={() => void openFull()} data-testid="approval-open-full">
+          {opening ? 'Opening…' : 'View full call'}
+        </button>
+      ) : null}
+      {full !== undefined && full !== null ? <Preview preview={full as Approval['argsPreview']} testId="approval-full" /> : null}
+    </div>
+  );
+}
+
+/** A second answer to a question somebody already answered (another person, another tab): said in a sentence, not as an error. */
+export function AnsweredLine() {
+  return <p className="apr-blocked" data-testid="approval-answered" role="status">Already answered. The card updates in a moment.</p>;
+}
+
 export function ApprovalCard({
   approval,
   slug,
@@ -99,50 +120,16 @@ export function ApprovalCard({
   onDecided?: (approval: Approval) => void;
   variant?: 'detail' | 'thread' | 'run';
 }) {
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [full, setFull] = useState<Record<string, unknown> | null | undefined>(undefined);
-  const [opening, setOpening] = useState(false);
-
-  // A clipped preview is not enough to approve on: the people who may decide open the whole call first (nothing is hidden from them but secrets).
-  const openFull = async (): Promise<void> => {
-    if (opening) return;
-    setOpening(true);
-    setError(null);
-    try {
-      setFull((await fetchApprovalArgs(slug, approval.id)).args);
-    } catch (e) {
-      setError(isApiError(e) ? e.message : 'Could not open the full call.');
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  const decide = async (decision: 'approve' | 'deny'): Promise<void> => {
-    if (busy) return;
-    setBusy(decision);
-    setError(null);
-    try {
-      const res = await decideApproval(slug, approval.id, decision, note);
-      announceApprovalsChanged();
-      onDecided?.(res.approval);
-    } catch (e) {
-      setError(isApiError(e) ? e.message : 'Could not record the decision.');
-    } finally {
-      setBusy(null);
-    }
-  };
+  const { note, setNote, busy, error, full, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, onDecided);
 
   const pending = approval.status === 'pending';
   const share = isShareApproval(approval);
   const risk = riskOf(approval);
-  const needsFull = approval.argsTruncated && full === undefined;
   const agent = approval.source === 'agent';
   // a bot's question is answered yes or no; the bot's program that stopped at a command is told to run it once, or not
   const yes = !agent ? 'Approve' : approval.tool === ASK_TOOL ? 'Yes' : 'Allow once';
   const no = !agent ? 'Deny' : approval.tool === ASK_TOOL ? 'No' : 'Deny';
-  const buttons = (
+  const buttons = answered ? null : (
     <>
       <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
         {busy === 'approve' ? 'Sending…' : yes}
@@ -160,12 +147,14 @@ export function ApprovalCard({
       <article className="apr-card apr-card-run" data-testid="approval-card" data-approval={approval.id} data-status={approval.status} aria-label={`Question: ${runQuestion(approval)}`}>
         <p className="apr-run-q" data-testid="approval-sentence" dir="auto">{runQuestion(approval)}</p>
         {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} terse /> : <Preview preview={approval.argsPreview} />}
-        {pending && approval.canDecide ? (
+        <FullCall approval={approval} full={full} opening={opening} openFull={openFull} />
+        {answered ? <AnsweredLine /> : null}
+        {pending && approval.canDecide && !answered ? (
           <div className="apr-actions">
             {agent ? <input className="apr-note" type="text" placeholder="Tell the bot more (optional)" aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" /> : null}
             {buttons}
           </div>
-        ) : pending ? (
+        ) : pending && !answered ? (
           <p className="apr-blocked" data-testid="approval-blocked" data-reason={approval.blockReason ?? ''}>
             {approval.blockReason === 'requester' ? 'You asked for this, so someone else has to decide it.' : `Waiting for ${approversLabel(approval.approvers)} to answer.`}
           </p>
@@ -205,19 +194,10 @@ export function ApprovalCard({
       {/* a bot's own question is already the sentence above ("Engineer asks: <the question>"): the raw summary would say it a second time */}
       {agent && approval.tool === ASK_TOOL ? null : <p className="apr-raw" data-testid="approval-summary">{approval.summary}</p>}
       {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
-      {approval.argsTruncated ? (
-        <div className="apr-truncated" data-testid="approval-truncated">
-          <p className="apr-blocked">This preview is cut short.{approval.canDecide ? ' Open the full call before you decide.' : ''}</p>
-          {approval.canDecide && full === undefined ? (
-            <button type="button" className="btn s" disabled={opening} onClick={() => void openFull()} data-testid="approval-open-full">
-              {opening ? 'Opening…' : 'View full call'}
-            </button>
-          ) : null}
-          {full !== undefined && full !== null ? <Preview preview={full as Approval['argsPreview']} testId="approval-full" /> : null}
-        </div>
-      ) : null}
+      <FullCall approval={approval} full={full} opening={opening} openFull={openFull} />
 
-      {pending ? (
+      {answered ? <AnsweredLine /> : null}
+      {pending && !answered ? (
         approval.canDecide ? (
           <div className="apr-actions">
             {variant === 'detail' ? (
