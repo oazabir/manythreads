@@ -16,6 +16,8 @@ export const LlmAliasTestCause = z.enum([
   'no_gateway',
   'unbound',
   'refused',
+  /** The provider's base URL points inside the network or at a metadata service: the guard stopped the call before it left. */
+  'address_blocked',
   'auth',
   'model_not_found',
   'rate_limited',

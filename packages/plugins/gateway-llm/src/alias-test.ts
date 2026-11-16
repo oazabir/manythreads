@@ -5,6 +5,7 @@ import {
   LlmAliasTest,
   type LlmAliasTestCause,
 } from '@manythreads/shared';
+import { providerBaseProblem } from './base-url.ts';
 import { gatewayFromEnv } from './gateway.ts';
 import { allowRate } from './eval-complete.ts';
 import { LiteLlmError, type LlmGateway } from './litellm.ts';
@@ -35,6 +36,8 @@ export function causeMessage(cause: LlmAliasTestCause | null, extra: { seconds?:
       return 'This server has no model proxy (the service that forwards calls to your provider) set up, so nothing can be tested yet. Ask whoever runs the server to set its address.';
     case 'unbound':
       return 'This alias is not connected to a working model yet. Choose a provider that is switched on and a model name, save, and test again.';
+    case 'address_blocked':
+      return 'The provider\'s address points inside this server\'s own network or at a cloud service that hands out credentials, so no call was made. Use the provider\'s public address, or switch on "runs inside this deployment" for a model you host yourself.';
     case 'refused':
       return 'A spending limit, a rate limit or a data-protection rule stopped the test before it left. Look at Limits and Data protection in Settings.';
     case 'auth':
@@ -79,6 +82,8 @@ interface AliasFacts {
   model: string;
   providerEnabled: boolean | null;
   providerId: string | null;
+  apiBase: string | null;
+  local: boolean;
 }
 
 export interface AliasTestOptions {
@@ -164,16 +169,24 @@ export async function runAliasTest(ctx: PluginContext, options: AliasTestOptions
     async (tx) => {
       startedAt = (await tx.query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0]?.now ?? null;
       const facts = (
-        await tx.query<{ model: string; provider_id: string | null; provider_enabled: boolean | null }>(
-          `SELECT a.model, a.provider_id, p.enabled AS provider_enabled
+        await tx.query<{ model: string; provider_id: string | null; provider_enabled: boolean | null; api_base: string | null; local: boolean | null }>(
+          `SELECT a.model, a.provider_id, p.enabled AS provider_enabled, p.api_base, p.local
              FROM app.llm_aliases a LEFT JOIN app.llm_providers p ON p.id = a.provider_id
             WHERE a.workspace_id = $1 AND a.alias = $2`,
           [workspaceId, alias],
         )
       ).rows[0];
       if (!facts) return { stop: 'unbound' as const };
-      const known: AliasFacts = { model: facts.model, providerId: facts.provider_id, providerEnabled: facts.provider_enabled };
+      const known: AliasFacts = {
+        model: facts.model,
+        providerId: facts.provider_id,
+        providerEnabled: facts.provider_enabled,
+        apiBase: facts.api_base,
+        local: facts.local === true,
+      };
       if (known.providerId !== null && known.providerEnabled === false) return { stop: 'unbound' as const };
+      // The proxy opens the connection, from inside the cluster: the address goes through the outbound guard first, as it did when it was saved (DNS answers change).
+      if (known.apiBase !== null && (await providerBaseProblem(known.apiBase, known.local)) !== null) return { stop: 'address_blocked' as const };
       const decision = await preflight(ctx, tx, allowRate, {
         workspaceId,
         botId: null,

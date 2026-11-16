@@ -19,6 +19,7 @@ import {
   setLlmAliasRoute,
   updateLlmProviderRoute,
 } from '@manythreads/shared';
+import { providerBaseProblem } from './base-url.ts';
 import { nextLocal } from './config.ts';
 import { APPLY_CONFIG_QUEUE } from './gateway.ts';
 import { invalid, json, notFound, requireWorkspaceAdmin, route } from './http.ts';
@@ -46,6 +47,13 @@ async function requireProvider(tx: PluginTx, providerId: string): Promise<Provid
 }
 
 /** Every provider or alias write ends here: the change is committed and the proxy is told about it (after that transaction). */
+/** The address an admin typed goes through the outbound guard before it is saved (docs/plugins/gateway-llm.md, "Where a base URL may point"). */
+async function requireAllowedBase(apiBase: string | null | undefined, local: boolean): Promise<void> {
+  if (apiBase === null || apiBase === undefined) return;
+  const problem = await providerBaseProblem(apiBase, local);
+  if (problem !== null) throw invalid(problem);
+}
+
 const pushConfig = (ctx: PluginContext, tx: PluginTx): Promise<string> =>
   ctx.jobs.enqueue(tx, APPLY_CONFIG_QUEUE, { workspaceId: tx.actor.workspaceId }, { dedupeKey: `config:${tx.actor.workspaceId}` });
 
@@ -71,6 +79,7 @@ export function registerLlmRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       await requireWorkspaceAdmin(tx);
       const body = CreateLlmProviderRequest.parse(req.body);
+      await requireAllowedBase(body.apiBase, body.local ?? false);
       const secretId = body.apiKey ? await ctx.secrets.put(tx, body.apiKey) : null;
       const created = await tx.query<ProviderRow>(
         `INSERT INTO app.llm_providers (workspace_id, name, kind, api_base, api_version, secret_id, enabled, local)
@@ -91,6 +100,10 @@ export function registerLlmRoutes(ctx: PluginContext): void {
       const { providerId } = LlmProviderPathParams.parse(req.params);
       const body = UpdateLlmProviderRequest.parse(req.body);
       const before = await requireProvider(tx, providerId);
+      // an address (or the word "local") that changes is checked again; an update of the name or the key leaves an older address alone
+      if (body.apiBase !== undefined || body.local !== undefined) {
+        await requireAllowedBase(body.apiBase === undefined ? before.api_base : body.apiBase, nextLocal(before, body));
+      }
 
       // An empty string clears the stored secret; a missing field leaves it alone.
       let secretId = before.secret_id;

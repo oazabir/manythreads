@@ -92,7 +92,7 @@ fallbacks switched off (so the result is about this alias, not about whichever o
 (`app.llm_alias_tests`, migration `0005`, one row per alias) with `outcome` (`ok` or `failed`), a `cause` when it failed, one plain sentence in
 `message`, the model, the time it took, and `current`.
 
-- Causes: `no_gateway` (no proxy address is set), `unbound` (no model, or its provider is switched off), `refused` (the guard preset), `auth` (the
+- Causes: `no_gateway` (no proxy address is set), `unbound` (no model, or its provider is switched off), `refused` (the guard preset), `address_blocked` (the provider's base URL points inside the network or at a metadata service, see below; no call was made), `auth` (the
   provider rejected the key), `model_not_found`, `rate_limited`, `provider_error`, `timeout`, `unreachable`, `empty_answer`, `other`. Each has its
   own sentence (`causeMessage` in `src/alias-test.ts`); the provider's own text is never repeated.
 - `current` is false once the alias or its provider changed after the test started, so an edit makes a green result stale instead of leaving it green.
@@ -240,3 +240,13 @@ The answer is either `{ ok: true, text, toolCalls, promptTokens, completionToken
 With `MANYTHREADS_LITELLM_URL` unset the gateway mints and stores keys and records the config, but pushes nothing (the
 apply-config job logs the omission). That keeps a dev box and the test suite working with no proxy; `pnpm llm:up` starts one
 (compose profile `llm`, `deploy/compose/litellm.yaml`, keys in the `litellm` database of the dev Postgres).
+
+## Where a base URL may point
+
+A base URL (`apiBase`) is typed by an admin and the proxy opens the connection from inside the cluster, so it is checked before it is saved and again before a test call (`src/base-url.ts`, using the platform's outbound guard of `@manythreads/sdk/hermes-outbound`). Only `http` and `https` are accepted, with no sign-in inside the address.
+
+- **Never**, for any provider: link-local (`169.254.0.0/16`, `fe80::/10`), the cloud metadata addresses and names, unspecified and multicast addresses, and the cluster's own API address.
+- **A provider that is not marked "runs inside this deployment"** may also not use loopback, the private ranges (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) or an in-cluster name (`*.svc`, `*.cluster.local`). A name is looked up and every address it answers is checked (a name that answers one private address is refused, so a rebinding name cannot slip through). A coding plan's address is public, so it is unaffected.
+- **A provider marked local** (the admin's own word, `local`) may use loopback and the private ranges, for a model the admin hosts. Changing the address clears the word unless the same request sets it again (`nextLocal`).
+
+The refusal is a `400 validation_failed` with a plain sentence; at test time the result is `address_blocked`. This list is not the Hermes operator allow list (`MANYTHREADS_HERMES_ALLOWED_HOSTS`), which is for the Hermes gateway and is not consulted here.

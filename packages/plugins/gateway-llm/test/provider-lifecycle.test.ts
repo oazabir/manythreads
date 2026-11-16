@@ -41,6 +41,45 @@ afterAll(async () => {
   }
 });
 
+describe('a base URL an admin types goes through the outbound guard (review M5)', () => {
+  const create = (body: Record<string, unknown>) => world.call<{ provider?: { id: string; apiBase: string | null }; error?: { code: string; message: string } }>(omar, 'POST', '/api/workspace/llm/providers', { kind: 'openai_compatible', ...body });
+
+  it('refuses the metadata address, loopback, private addresses and cluster names when the provider is not marked local, and saves nothing', async () => {
+    const before = ((await world.call<{ providers: unknown[] }>(omar, 'GET', '/api/workspace/llm/providers')).body.providers ?? []).length;
+    for (const apiBase of ['http://169.254.169.254/latest/meta-data', 'http://127.0.0.1:11434', 'http://10.0.4.7:11434', 'http://ollama.models.svc:11434', 'https://10.43.0.1/', 'file:///etc/passwd']) {
+      const res = await create({ name: `Bad ${apiBase}`.slice(0, 40), apiBase });
+      expect(res.status, apiBase).toBe(400);
+      expect(res.body.error?.code, apiBase).toBe('validation_failed');
+    }
+    // never, not even for a provider that says it runs here
+    expect((await create({ name: 'Metadata', apiBase: 'http://169.254.169.254/', local: true })).status).toBe(400);
+    expect(((await world.call<{ providers: unknown[] }>(omar, 'GET', '/api/workspace/llm/providers')).body.providers ?? []).length).toBe(before);
+  });
+
+  it('accepts a coding plan\'s public address, and a model the admin says runs inside the deployment', async () => {
+    const plan = await create({ name: 'GLM plan', apiBase: 'https://203.0.113.9/api/coding/paas/v4', apiKey: 'sk-plan-secret-0003' });
+    expect(plan.status, JSON.stringify(plan.body)).toBe(201);
+    const local = await create({ name: 'Own Ollama', kind: 'ollama', apiBase: 'http://10.0.4.7:11434', local: true });
+    expect(local.status, JSON.stringify(local.body)).toBe(201);
+  });
+
+  it('checks an address that changes on update, and the word local that goes away with the address', async () => {
+    const made = await create({ name: 'Plan two', apiBase: 'https://203.0.113.10/v1', apiKey: 'sk-plan-secret-0004' });
+    const id = made.body.provider!.id;
+    const patch = (body: Record<string, unknown>) => world.call(omar, 'PATCH', `/api/workspace/llm/providers/${id}`, body);
+    expect((await patch({ apiBase: 'http://169.254.169.254/' })).status).toBe(400);
+    expect((await patch({ apiBase: 'http://10.0.4.7:11434' })).status).toBe(400);
+    expect((await patch({ apiBase: 'http://10.0.4.7:11434', local: true })).status).toBe(200);
+    // the address changes and `local` is not repeated: the word no longer covers the new address
+    expect((await patch({ apiBase: 'http://192.168.0.9:11434' })).status).toBe(400);
+    // the provider is local, then the flag is taken away while the private address stays
+    expect((await patch({ local: false })).status).toBe(400);
+    expect((await patch({ apiBase: 'https://203.0.113.11/v1' })).status).toBe(200);
+    // a change of the name alone does not look at the address again
+    expect((await patch({ name: 'Plan two, renamed' })).status).toBe(200);
+  });
+});
+
 describe('providers and aliases, pushed to the proxy', () => {
   it('a provider with a key and an alias bound to it become one deployment; deleting the provider removes it', async () => {
     const created = await world.call<{ provider: { id: string } }>(omar, 'POST', '/api/workspace/llm/providers', { name: 'OpenAI', kind: 'openai', apiKey: 'sk-provider-secret-0001' });

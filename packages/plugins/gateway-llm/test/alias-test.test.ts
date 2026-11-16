@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createWorld, personas, type World } from '../../channels/test/world.ts';
+import { relaxedRateLimiter } from '@manythreads/test-utils';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import { causeMessage, classifyFailure } from '../src/alias-test.ts';
 import { LiteLlmError } from '../src/litellm.ts';
@@ -42,7 +43,7 @@ beforeAll(async () => {
   });
   process.env['MANYTHREADS_LITELLM_URL'] = fake.url;
   process.env['MANYTHREADS_LITELLM_MASTER_KEY'] = 'sk-fake';
-  world = await createWorld();
+  world = await createWorld({ limiter: relaxedRateLimiter() });
   const created = await world.call<{ provider: { id: string } }>(omar, 'POST', '/api/workspace/llm/providers', {
     name: 'OpenAI',
     kind: 'openai',
@@ -85,7 +86,7 @@ describe('causes in plain words', () => {
   });
 
   it('every cause has a sentence of its own that names no key and no vendor text', () => {
-    const causes = ['no_gateway', 'unbound', 'refused', 'auth', 'model_not_found', 'rate_limited', 'provider_error', 'timeout', 'unreachable', 'empty_answer', 'other'] as const;
+    const causes = ['no_gateway', 'unbound', 'refused', 'address_blocked', 'auth', 'model_not_found', 'rate_limited', 'provider_error', 'timeout', 'unreachable', 'empty_answer', 'other'] as const;
     const sentences = causes.map((c) => causeMessage(c));
     expect(new Set(sentences).size).toBe(causes.length);
     for (const s of sentences) expect(s).not.toMatch(/sk-|Bearer|api[_ ]key:/i);
@@ -193,6 +194,24 @@ describe('POST /api/workspace/llm/aliases/:alias/test', () => {
     expect((await world.call(omar, 'PUT', '/api/workspace/llm/settings', { preset: 'standard' })).status).toBe(200);
     expect(res.body.test).toMatchObject({ outcome: 'failed', cause: 'refused' });
     expect(chatCalls().length).toBe(before);
+  });
+
+  it('a provider whose address points inside the network or at the metadata service is stopped before the call: nothing reached the proxy', async () => {
+    answer = 'ready';
+    const before = chatCalls().length;
+    const point = (apiBase: string, local = false) => world.system((tx) => tx.query('UPDATE app.llm_providers SET api_base = $1, local = $2, updated_at = updated_at - interval \'1 minute\' WHERE id = $3', [apiBase, local, providerId]));
+    for (const [apiBase, local] of [['http://169.254.169.254/latest', false], ['http://169.254.169.254/latest', true], ['http://10.43.0.9:8080/v1', false], ['http://127.0.0.1:11434', false]] as const) {
+      await point(apiBase, local);
+      const res = await runTest('smart');
+      expect(res.body.test, `${apiBase} local=${local}`).toMatchObject({ outcome: 'failed', cause: 'address_blocked' });
+    }
+    expect(chatCalls().length).toBe(before);
+    // the same private address is fine for a provider the admin marked as running inside this deployment, and a public address is fine as it was
+    await point('http://10.43.0.9:8080/v1', true);
+    expect((await runTest('smart')).body.test.cause).not.toBe('address_blocked');
+    await point('https://api.openai.com/v1');
+    expect((await runTest('smart')).body.test).toMatchObject({ outcome: 'ok' });
+    await world.system((tx) => tx.query('UPDATE app.llm_providers SET api_base = NULL, local = false WHERE id = $1', [providerId]));
   });
 
   it('a proxy that cannot be reached is named as such', async () => {
