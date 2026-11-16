@@ -1,7 +1,7 @@
 // Builds what the site serves at /install/ (PLAN P26-14, docs/plans/agents-anywhere.md §5.2):
 //
 //   <out>/bridge.sh              the installer, still with @@SITE@@, @@BUNDLE_SHA256@@ and @@BRIDGE_VERSION@@ in it (the site fills them in when it serves it)
-//   <out>/bridge-<version>.tgz   bridge.mjs (the bridge as one bundled file), agents/package.json + package-lock.json (the pinned agent programs), tools/ (the pod's own
+//   <out>/bridge-<version>.tgz   bridge.mjs (the bridge as one bundled file), helper/team-helper.mjs (the root helper of the per-team users), agents/package.json + package-lock.json (the pinned agent programs), tools/ (the pod's own
 //                                mt-git.mjs, publisher.mjs, repo-sync.sh and the workbench's mt-publish.sh and mt-askpass.sh, unchanged), VERSION
 //   <out>/manifest.json          { bridgeVersion, bundle, bundleSha256 }
 //
@@ -59,6 +59,18 @@ try {
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
     logLevel: 'warning',
   });
+  // the root helper of the per-team users (P26-22): its own file, installed by bridge.sh into a folder only root can change; it shares no code with the bridge that it does not check itself
+  await build({
+    entryPoints: [join(bridge, 'src', 'team-helper-main.ts')],
+    outfile: join(stage, 'helper', 'team-helper.mjs'),
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'esm',
+    minify: false,
+    legalComments: 'none',
+    logLevel: 'warning',
+  });
   copyFileSync(join(bridge, 'install', 'agents', 'package.json'), join(stage, 'agents', 'package.json'));
   copyFileSync(join(bridge, 'install', 'agents', 'package-lock.json'), join(stage, 'agents', 'package-lock.json'));
   mkdirSync(join(stage, 'tools'), { recursive: true });
@@ -73,7 +85,7 @@ try {
   mkdirSync(out, { recursive: true });
   const name = `bridge-${version}.tgz`;
   const tar = join(stage, 'bundle.tar');
-  execFileSync('tar', ['--sort=name', '--owner=0', '--group=0', '--numeric-owner', '--mtime=2020-01-01 00:00:00Z', '-cf', tar, '-C', stage, 'bridge.mjs', 'agents', 'tools', 'VERSION']);
+  execFileSync('tar', ['--sort=name', '--owner=0', '--group=0', '--numeric-owner', '--mtime=2020-01-01 00:00:00Z', '-cf', tar, '-C', stage, 'bridge.mjs', 'helper', 'agents', 'tools', 'VERSION']);
   execFileSync('sh', ['-c', `gzip -9 -n -c "${tar}" > "${join(out, name)}"`]);
   const sha = createHash('sha256').update(readFileSync(join(out, name))).digest('hex');
   copyFileSync(join(here, 'bridge.sh'), join(out, 'bridge.sh'));

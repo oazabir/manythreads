@@ -14,11 +14,15 @@
 # folder of its own under /var/lib/manythreads-bridge/auth, and you sign in from the Runners page.
 # A second service, `manythreads-publisher.service`, runs as its own user (`manythreads-publisher`) on a socket only the bridge's user can open. `mt-publish` talks to it, so a bot
 # that publishes never holds the push token: the publisher asks this site for it, per publish, with the run's own token. `git` and `jq` should be installed (the repository sync needs them).
+# One Unix user per team (P26-22): every team's runs are started as `mt-team-<team>`, never as the bridge's user, so teams that share this machine (and one agent sign-in) cannot read each
+# other's folders, repositories, deploy logins or tokens. The installer adds, as root: a helper (`/opt/manythreads-bridge/helper/mt-team-helper`, root's, 0755) that makes those users and
+# starts the fixed programs as them, a sudoers rule (`/etc/sudoers.d/manythreads-bridge`, checked with `visudo -cf`) that lets the bridge's user run that helper with two commands and
+# nothing else, and the group `mt-agents` that shares the agents' sign-in folders. `sudo`, `setpriv` and `useradd` must be on the machine.
 #
 #   --enrol CODE|-      the one-time code from the Runners page ("-" asks for it on the keyboard: a code on the command line is in `ps` for the length of the run)
 #   --code-file PATH    the one-time code is the first line of this file (delete it afterwards; it is single use and lasts 15 minutes)
 #   --update            install the bundle this site serves now, keep the key (no code needed)
-#   --uninstall         stop and remove the service and the program, and tell the site (--purge also removes the work folders and the user)
+#   --uninstall         stop and remove the service, the program, the helper and the sudo rule, and tell the site (--purge also removes the work folders, the team users and the users of the bridge)
 #   --allow-full-access this machine's half of Codex "full access" (the other half is the switch on the Runners page)
 #   --no-hermes --no-claude --no-codex --no-browser --no-publisher   leave one out (without the publisher no bot on this machine can publish)
 #
@@ -37,6 +41,7 @@ main() {
 
   local PREFIX=/opt/manythreads-bridge ETC=/etc/manythreads-bridge DATA=/var/lib/manythreads-bridge SVC_USER=manythreads-bridge UNIT=manythreads-bridge.service
   local UNIT_FILE=/etc/systemd/system/manythreads-bridge.service
+  local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock
 
   local mode='' code='' code_file='' allow_full=0 want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
@@ -54,7 +59,7 @@ main() {
       --no-browser) want_browser=0 ;;
       --no-publisher) want_publisher=0 ;;
       --insecure-for-tests) insecure=1 ;;
-      -h|--help) sed -n '2,36p' "$0" 2>/dev/null || true; return 0 ;;
+      -h|--help) sed -n '2,42p' "$0" 2>/dev/null || true; return 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
     shift
@@ -71,6 +76,9 @@ main() {
   case "$(uname -m)" in x86_64|amd64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) die "this machine's processor ($(uname -m)) is not supported (x86_64 and arm64 are)" ;; esac
   local c
   for c in curl tar sha256sum gzip; do command -v "$c" >/dev/null 2>&1 || die "$c is needed and was not found"; done
+  # the per-team users (P26-22): sudo and its checker, setpriv (util-linux) and the account tools
+  if [ "$mode" != uninstall ]; then for c in sudo visudo setpriv useradd usermod groupadd getent env; do command -v "$c" >/dev/null 2>&1 || die "$c is needed for the per-team users and was not found (on Debian or Ubuntu: apt-get install sudo util-linux passwd)"; done; fi
+  if [ "$mode" != uninstall ] && ! grep -Eq '^[#@]includedir[[:space:]]+/etc/sudoers\.d' /etc/sudoers 2>/dev/null; then die "/etc/sudoers does not read /etc/sudoers.d, where the rule for the bridge goes; add the line '@includedir /etc/sudoers.d' with visudo and run this again"; fi
   for c in git jq; do command -v "$c" >/dev/null 2>&1 || warn "$c was not found: the team's repositories and publishing need it (on Debian or Ubuntu: apt-get install git jq)"; done
 
   if [ "$mode" = uninstall ]; then uninstall_all "$purge"; return 0; fi
@@ -104,25 +112,7 @@ main() {
     node="$(command -v node)"
     say "using Node $(node -v) at $node"
   else
-    local want_sha tarball
-    if [ "$arch" = x64 ]; then want_sha="$NODE_SHA256_X64"; else want_sha="$NODE_SHA256_ARM64"; fi
-    tarball="node-$NODE_VERSION-linux-$arch.tar.xz"
-    if [ ! -x "$PREFIX/node/bin/node" ]; then
-      command -v xz >/dev/null 2>&1 || die "xz is needed to unpack Node (install the xz-utils package)"
-      say "downloading Node $NODE_VERSION"
-      mkdir -p "$PREFIX"
-      local tmp
-      tmp="$(mktemp -d)"
-      curl -fsSL "https://nodejs.org/dist/$NODE_VERSION/$tarball" -o "$tmp/$tarball"
-      printf '%s  %s\n' "$want_sha" "$tmp/$tarball" | sha256sum -c - >/dev/null || die "the Node download does not match its pinned hash"
-      rm -rf "$PREFIX/node.new"
-      mkdir -p "$PREFIX/node.new"
-      tar -xJf "$tmp/$tarball" -C "$PREFIX/node.new" --strip-components=1
-      rm -rf "$PREFIX/node"
-      mv "$PREFIX/node.new" "$PREFIX/node"
-      rm -rf "$tmp"
-    fi
-    node="$PREFIX/node/bin/node"
+    node="$(pinned_node "$arch" "$PREFIX" "$NODE_VERSION" "$NODE_SHA256_X64" "$NODE_SHA256_ARM64")"
   fi
   local npm_dir
   npm_dir="$(dirname "$node")"
@@ -150,17 +140,39 @@ main() {
   ln -sfn "$release" "$PREFIX/current.new"
   mv -T "$PREFIX/current.new" "$PREFIX/current"
 
-  # ---- the user and the folders ----------------------------------------------------------------------------------------------------------------------------
+  # ---- the users, the group and the folders ------------------------------------------------------------------------------------------------------------------
   if ! id "$SVC_USER" >/dev/null 2>&1; then
     useradd --system --home-dir "$DATA/home" --no-create-home --shell /usr/sbin/nologin --user-group "$SVC_USER"
   fi
   if [ "$want_publisher" -eq 1 ] && ! id "$PUB_USER" >/dev/null 2>&1; then
     useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin --user-group "$PUB_USER"
   fi
-  mkdir -p "$ETC" "$DATA/state" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/hermes" "$DATA/work" "$DATA/home"
-  chown -R "$SVC_USER:$SVC_USER" "$DATA"
-  # what the publisher's user must not read: the sign-ins, the bridge's key and state, the Hermes homes and the deployer's login
-  chmod 0700 "$DATA/auth" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/state" "$DATA/hermes"
+  # the group that shares the agents' sign-in folders: the bridge's user and every team user are in it, and nobody else
+  getent group "$AGENTS_GROUP" >/dev/null 2>&1 || groupadd --system "$AGENTS_GROUP"
+  id -nG "$SVC_USER" | tr ' ' '\n' | grep -qx "$AGENTS_GROUP" || usermod -a -G "$AGENTS_GROUP" "$SVC_USER"
+  mkdir -p "$ETC" "$DATA/state" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/hermes" "$DATA/home" "$DATA/signin"
+  # Before the per-team users the bridge's own user owned `work`; a team's folders there are the team user's now, and the folder is root's so that no link in it can be planted by the
+  # bridge's user. What was there is kept beside it (its repositories are cloned again by the sync) and is the admin's to delete.
+  if [ -d "$DATA/work" ] && [ ! -L "$DATA/work" ] && [ "$(stat -c %u "$DATA/work")" != 0 ]; then
+    rm -rf "$DATA/work-before-teams"
+    mv "$DATA/work" "$DATA/work-before-teams"
+    say "the work folders of before the per-team users are kept in $DATA/work-before-teams (delete them when you do not need them)"
+  fi
+  mkdir -p "$DATA/work"
+  chown root:root "$DATA" "$DATA/work"
+  chmod 0755 "$DATA"
+  chmod 0711 "$DATA/work"
+  local d
+  for d in state hermes home signin hermes-install work-before-teams; do [ -d "$DATA/$d" ] && chown -hR "$SVC_USER:$SVC_USER" "$DATA/$d"; done
+  # what the publisher's user must not read: the bridge's key and state, the Hermes homes and the deployer's login (0700). The sign-in folders are the bridge's, group `mt-agents`: the
+  # group may enter `auth` (root's) and use the two agents' folders, which are setgid so a file made in them by any team's user belongs to the group; the CLIs renew tokens in place there.
+  chmod 0700 "$DATA/state" "$DATA/hermes" "$DATA/home"
+  chown "root:$AGENTS_GROUP" "$DATA/auth"
+  chmod 0750 "$DATA/auth"
+  chown -hR "$SVC_USER:$AGENTS_GROUP" "$DATA/auth/claude" "$DATA/auth/codex"
+  find "$DATA/auth/claude" "$DATA/auth/codex" -xdev -type f -links 1 -exec chmod g+rw {} +
+  find "$DATA/auth/claude" "$DATA/auth/codex" -xdev -type d -exec chmod 2770 {} +
+  # (the folder `auth` itself is root's, so the bridge's user cannot swap a sign-in folder for a link that the helper, as root, would follow)
   chmod 0755 "$ETC"
 
   # ---- what this machine has (reported; the bridge runs the pinned copies, never these) ---------------------------------------------------------------------
@@ -194,12 +206,58 @@ main() {
     [ -n "$hermes_bin" ] || warn "Hermes could not be installed here; it is left out (the rest goes on)"
   fi
 
+  # ---- the helper for the per-team users and the rule that lets the bridge's user run it -----------------------------------------------------------------------
+  # root's copy of the helper, from the bundle whose hash was checked above, in a folder only root can change; it is run by sudo as root, so the Node that runs it must be root's too
+  local helper_node="$node"
+  if ! root_safe_path "$helper_node"; then
+    say "the Node at $helper_node can be changed by someone other than root: the helper uses its own pinned copy"
+    helper_node="$(pinned_node "$arch" "$PREFIX" "$NODE_VERSION" "$NODE_SHA256_X64" "$NODE_SHA256_ARM64")"
+  fi
+  [ -f "$release/helper/team-helper.mjs" ] || die "the bundle has no helper"
+  install -d -m 0755 -o root -g root "$HELPER_DIR"
+  install -m 0644 -o root -g root "$release/helper/team-helper.mjs" "$HELPER_DIR/team-helper.mjs"
+  printf '#!/bin/sh\nexec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin %q %q "$@"\n' "$helper_node" "$HELPER_DIR/team-helper.mjs" >"$HELPER.new"
+  chown root:root "$HELPER.new"
+  chmod 0755 "$HELPER.new"
+  mv -f "$HELPER.new" "$HELPER"
+  # the table of programs the helper may start: it names a kind (claude, codex, hermes), never a program, so the table is the only place a path is
+  CFG_DATA="$DATA" CFG_CLAUDE_ACP="$([ "$want_claude" -eq 1 ] && printf %s "$claude_acp")" CFG_CODEX_ACP="$([ "$want_codex" -eq 1 ] && printf %s "$codex_acp")" CFG_HERMES_BIN="$hermes_bin" \
+    CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" \
+    "$node" -e '
+      const e = process.env;
+      const agents = {};
+      if (e.CFG_CLAUDE_ACP) agents.claude = { command: e.CFG_CLAUDE_ACP };
+      if (e.CFG_CODEX_ACP) agents.codex = { command: e.CFG_CODEX_ACP };
+      if (e.CFG_HERMES_BIN) agents.hermes = { command: e.CFG_HERMES_BIN, args: ["acp"] };
+      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER } : {}) };
+      process.stdout.write(JSON.stringify(table, null, 2) + "\n");
+    ' >"$TEAM_TABLE.new" || die "could not write the helper's table"
+  chown root:root "$TEAM_TABLE.new"
+  chmod 0644 "$TEAM_TABLE.new"
+  mv -f "$TEAM_TABLE.new" "$TEAM_TABLE"
+  # the sudo rule: the bridge's user may run the helper with two commands, as root, with no password; everything else about the words is checked by the helper itself. Written to a new
+  # file and checked with visudo before it is put in place: a broken sudoers file would lock everyone out of sudo.
+  cat >"$SUDOERS.new" <<EOF
+# manythreads agent bridge (written by bridge.sh at every install and update; do not edit).
+# The bridge's user may run the team helper, as root, with these two commands and nothing else. The helper checks the rest of the words itself.
+Defaults:$SVC_USER !requiretty, !use_pty, !lecture
+Cmnd_Alias MT_TEAM_HELPER = $HELPER ensure-user *, $HELPER run *
+$SVC_USER ALL=(root) NOPASSWD: MT_TEAM_HELPER
+EOF
+  chown root:root "$SUDOERS.new"
+  chmod 0440 "$SUDOERS.new"
+  if ! visudo -cf "$SUDOERS.new" >/dev/null 2>&1; then
+    rm -f "$SUDOERS.new"
+    die "the sudo rule for the bridge did not pass visudo, so it was not installed (nothing else was changed in sudo)"
+  fi
+  mv -f "$SUDOERS.new" "$SUDOERS"
+
   # ---- the config ------------------------------------------------------------------------------------------------------------------------------------------
   local playwright_env=''
   [ "$want_browser" -eq 1 ] && playwright_env="$browsers"
   local pub_socket=''
   [ "$want_publisher" -eq 1 ] && pub_socket="$PUB_SOCKET"
-  CFG_TOOLS="$PREFIX/current/tools" CFG_PUB_SOCKET="$pub_socket" CFG_DATA="$DATA" CFG_CLAUDE_ACP="$claude_acp" CFG_CODEX_ACP="$codex_acp" CFG_CLAUDE_BIN="$claude_bin" CFG_CODEX_BIN="$codex_bin" CFG_HERMES_BIN="$hermes_bin" \
+  CFG_HELPER="$HELPER" CFG_TOOLS="$PREFIX/current/tools" CFG_PUB_SOCKET="$pub_socket" CFG_DATA="$DATA" CFG_CLAUDE_ACP="$claude_acp" CFG_CODEX_ACP="$codex_acp" CFG_CLAUDE_BIN="$claude_bin" CFG_CODEX_BIN="$codex_bin" CFG_HERMES_BIN="$hermes_bin" \
     CFG_WANT_CLAUDE="$want_claude" CFG_WANT_CODEX="$want_codex" CFG_FULL="$allow_full" CFG_BROWSERS="$playwright_env" \
     "$node" -e '
       const e = process.env;
@@ -208,19 +266,19 @@ main() {
       const agents = {};
       const shared = e.CFG_BROWSERS ? { env: { PLAYWRIGHT_BROWSERS_PATH: e.CFG_BROWSERS } } : {};
       if (e.CFG_WANT_CLAUDE === "1") {
-        profiles["claude-signin"] = { agent: "claude-code", driver: "acp", workdir: root + "/work/.signin", authHome: root + "/auth/claude", acp: { command: e.CFG_CLAUDE_ACP } };
+        profiles["claude-signin"] = { agent: "claude-code", driver: "acp", workdir: root + "/signin", authHome: root + "/auth/claude", acp: { command: e.CFG_CLAUDE_ACP } };
         agents.claude = { authHome: root + "/auth/claude", acp: { command: e.CFG_CLAUDE_ACP }, ...shared };
       }
       if (e.CFG_WANT_CODEX === "1") {
-        profiles["codex-signin"] = { agent: "codex", driver: "acp", workdir: root + "/work/.signin", authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP } };
+        profiles["codex-signin"] = { agent: "codex", driver: "acp", workdir: root + "/signin", authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP } };
         agents.codex = { authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP }, ...(e.CFG_FULL === "1" ? { fullAccess: "allowed" } : {}), ...shared };
       }
       if (e.CFG_HERMES_BIN) {
         agents.hermes = { hermesHome: root + "/hermes", acp: { command: e.CFG_HERMES_BIN, args: ["acp"] }, ...shared };
       }
       if (Object.keys(profiles).length === 0 && !agents.hermes) { console.error("no agent is left to run"); process.exit(2); }
-      if (Object.keys(profiles).length === 0) profiles["hermes-placeholder"] = { agent: "hermes-acp", driver: "acp", workdir: root + "/work/.signin", acp: { command: e.CFG_HERMES_BIN, args: ["acp"] } };
-      const config = { profiles, bin: { claude: e.CFG_CLAUDE_BIN || "claude", codex: e.CFG_CODEX_BIN || "codex" }, maxConcurrentRuns: 4, mcpTokenInFile: true, server: { root, agents, toolsDir: e.CFG_TOOLS, ...(e.CFG_PUB_SOCKET ? { publisherSocket: e.CFG_PUB_SOCKET } : {}) } };
+      if (Object.keys(profiles).length === 0) profiles["hermes-placeholder"] = { agent: "hermes-acp", driver: "acp", workdir: root + "/signin", acp: { command: e.CFG_HERMES_BIN, args: ["acp"] } };
+      const config = { profiles, bin: { claude: e.CFG_CLAUDE_BIN || "claude", codex: e.CFG_CODEX_BIN || "codex" }, maxConcurrentRuns: 4, mcpTokenInFile: true, server: { root, agents, toolsDir: e.CFG_TOOLS, teamUsers: { helper: e.CFG_HELPER }, ...(e.CFG_PUB_SOCKET ? { publisherSocket: e.CFG_PUB_SOCKET } : {}) } };
       process.stdout.write(JSON.stringify(config, null, 2) + "\n");
     ' >"$ETC/config.json.new" || die "could not write the config"
   chmod 0644 "$ETC/config.json.new"
@@ -276,14 +334,15 @@ Environment=DISABLE_AUTOUPDATER=1
 ExecStart=$node $PREFIX/current/bridge.mjs --config $ETC/config.json --state-dir $DATA/state --site $SITE$insecure_flag
 Restart=always
 RestartSec=5
-NoNewPrivileges=true
+UMask=0007
+# No NoNewPrivileges and no RestrictSUIDSGID: the bridge starts each team's programs through sudo (the helper, below), and a sudo that cannot become root, or a helper that cannot make
+# a setgid home, would stop every run. The rule allows two commands of one root-owned file. The helper makes users, so /etc and /var/log must be writable for it.
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=$DATA
+ReadWritePaths=$DATA /etc /var/log -/var/mail -/var/spool/mail -/run/sudo -/var/lib/sudo
 ProtectKernelTunables=true
 ProtectControlGroups=true
-RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target
@@ -357,6 +416,43 @@ EOF
 say() { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# The pinned Node (checked against the hash this script carries), unpacked once under the program folder; prints its path. Used when the machine has no Node 22, and for the root
+# helper when the machine's own Node is in a place someone other than root can change.
+pinned_node() {
+  local arch="$1" prefix="$2" version="$3" sha_x64="$4" sha_arm64="$5" want_sha tarball tmp
+  if [ "$arch" = x64 ]; then want_sha="$sha_x64"; else want_sha="$sha_arm64"; fi
+  tarball="node-$version-linux-$arch.tar.xz"
+  if [ ! -x "$prefix/node/bin/node" ]; then
+    command -v xz >/dev/null 2>&1 || die "xz is needed to unpack Node (install the xz-utils package)"
+    say "downloading Node $version" >&2
+    mkdir -p "$prefix"
+    tmp="$(mktemp -d)"
+    curl -fsSL "https://nodejs.org/dist/$version/$tarball" -o "$tmp/$tarball"
+    printf '%s  %s\n' "$want_sha" "$tmp/$tarball" | sha256sum -c - >/dev/null || die "the Node download does not match its pinned hash"
+    rm -rf "$prefix/node.new"
+    mkdir -p "$prefix/node.new"
+    tar -xJf "$tmp/$tarball" -C "$prefix/node.new" --strip-components=1
+    rm -rf "$prefix/node"
+    mv "$prefix/node.new" "$prefix/node"
+    rm -rf "$tmp"
+  fi
+  printf '%s' "$prefix/node/bin/node"
+}
+
+# True when the file, what it links to and every folder above it belong to root and nobody but root can write them: a program that root runs must not be one the bridge's user or a team can swap.
+root_safe_path() {
+  local p dir
+  p="$(readlink -f "$1" 2>/dev/null)" || return 1
+  [ -n "$p" ] || return 1
+  dir="$p"
+  while [ -n "$dir" ] && [ "$dir" != / ]; do
+    [ "$(stat -c %u "$dir")" = 0 ] || return 1
+    case "$(stat -c %A "$dir")" in ?????w????|????????w?) return 1 ;; esac
+    dir="$(dirname "$dir")"
+  done
+  return 0
+}
 
 check_disk() {
   local dir="$1" need_kb="$2" probe="$1" avail
@@ -439,16 +535,25 @@ uninstall_all() {
   systemctl disable --now manythreads-bridge.service manythreads-publisher.service >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/manythreads-bridge.service /etc/systemd/system/manythreads-publisher.service
   systemctl daemon-reload || true
+  # the sudo rule and the helper go first and always: nothing may be able to start a program as a team's user once the bridge is gone
+  rm -f /etc/sudoers.d/manythreads-bridge /etc/sudoers.d/manythreads-bridge.new
   rm -rf "$PREFIX" "$ETC"
   # the key a rotation wrote is the live one: it goes with the program, also when the work folders stay
   rm -f "$DATA/state/key"
   if [ "$purge" -eq 1 ]; then
+    # the team users (their homes are under $DATA/work, which goes with the next line), then the group the sign-in folders shared
+    local u
+    for u in $(getent passwd | awk -F: -v root="$DATA/work/" 'index($1, "mt-team-") == 1 && index($6, root) == 1 { print $1 }'); do
+      pkill -KILL -u "$u" >/dev/null 2>&1 || true
+      userdel "$u" >/dev/null 2>&1 || true
+    done
     rm -rf "$DATA"
+    groupdel mt-agents >/dev/null 2>&1 || true
     userdel manythreads-bridge >/dev/null 2>&1 || true
     userdel manythreads-publisher >/dev/null 2>&1 || true
-    say "removed the bridge, its services, its users and its work folders"
+    say "removed the bridge, its services, its users (the bridge's, the publisher's and one per team) and its work folders"
   else
-    say "removed the bridge and its service; $DATA/work is kept (run with --uninstall --purge to remove it too)"
+    say "removed the bridge and its service; $DATA/work and the team users are kept (run with --uninstall --purge to remove them too)"
   fi
 }
 
