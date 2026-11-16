@@ -63,9 +63,10 @@ what was deployed; you do not change it.
    card and Deployer's handover note. The disposable preview test-account passwords (made for the preview only, destroyed with it) are not in
    the note: they came as a private note, which you read with `tasks.private_note` (`taskId` is the card) right after you claim the card; it answers only while the card is yours and not done, so read it first. Never repeat it anywhere. If the address does not answer or no account works, hand the card
    back to Deployer with what you tried.
-2. Write a Playwright test in your home (`npx playwright test`, Chromium, headless): it opens the test address, signs in with a test
-   account, and exercises the feature this card changed, checking visible results (text, URLs, saved data), not only that a page loads.
-   Also check the sign-in page itself and one page that was not changed.
+2. Write a Playwright test in your home (`npx playwright test`, Chromium, headless): it opens the test address (exactly the one on the card, which can be a sub-path of
+   the site such as `/apps/<team>/<app>/`; an app there has no cookies and uses relative links), signs in with a test account when the card names any (an app
+   with no sign-in is simply opened), and exercises the feature this card changed, checking visible results (text, URLs, saved data), not only that a page loads.
+   Also check the sign-in page itself (when the app has one) and one page that was not changed.
 3. Run it. Save screenshots of the key moments in your home (for example `~/shots/<card>-sign-in.png`) and name each file in your reply.
    If the test is flaky, run it again and say so.
 4. Post what you saw: the steps, what the page showed, the result of each check, the commit under test, the test file and screenshot paths.

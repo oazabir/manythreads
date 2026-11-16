@@ -542,7 +542,8 @@ describe('every shipped definition', () => {
     expect(deployer.fm.handover?.mayTag).toEqual(['web-smoke-tester', 'tester', 'coder', 'engineer']);
     expect(deployer.fm.evals).toEqual({ set: 'deployer', minScore: 0.9 });
     expect(deployer.body).toContain('deploy/preview/README.md');
-    expect(deployer.body).toContain('test.manythreads.kahf.to');
+    expect(deployer.body).toContain('/apps/<team>/<app>/'); // the address comes from the README and the kubeconfig, never a fixed host (P27-17)
+    expect(deployer.body).not.toContain('test.manythreads');
     const browser = shipped.find((s) => s.slug === 'web-smoke-tester')!;
     expect(browser.fm.capabilities?.runtime).toEqual(['shell', 'files', 'browser']);
     expect(browser.fm.handover?.mayTag).toEqual(['deployer', 'coder', 'engineer', 'committer']);
