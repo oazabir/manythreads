@@ -274,4 +274,17 @@ describe('channel store', () => {
     await store.markRead('channel', CH, msg(4).id);
     expect(seen).toHaveLength(1);
   });
+
+  it('a count left over from deleted messages is cleared by reading the newest message that is left, even though it sits before the stored position (P29-DM)', async () => {
+    // the stored position is a message that was deleted afterwards, and so is the one after it that the count still includes: nothing live is newer
+    const seen = serve(() => ({ status: 200, body: { targetType: 'channel', targetId: CH, lastReadId: msg(9).id, unreadCount: 0, followed: false } }));
+    store.handlePush({ type: 'reading.state.changed', id: 'x', payload: { targetType: 'channel', targetId: CH, lastReadId: msg(9).id, unreadCount: 1, followed: false, reason: 'posted' } });
+    expect(store.snapshot().unread[CH]).toBe(1);
+    await store.markRead('channel', CH, msg(5).id);
+    expect(seen).toHaveLength(1);
+    expect(store.snapshot().unread[CH]).toBe(0);
+    // settled: the same position again sends nothing
+    await store.markRead('channel', CH, msg(5).id);
+    expect(seen).toHaveLength(1);
+  });
 });

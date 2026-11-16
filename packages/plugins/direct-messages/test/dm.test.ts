@@ -157,3 +157,37 @@ describe('direct messages are private', () => {
     expect(DirectMessageSummary.safeParse((await list(nadia)).items[0]).success).toBe(true);
   });
 });
+
+describe('reading a conversation whose unread messages were deleted (P29-DM)', () => {
+  const mark = (who: Persona, channelId: string, upTo: string): Promise<ApiResult> =>
+    w.call(who, 'POST', '/api/read-state/mark', { targetType: 'channel', targetId: channelId, upTo });
+  const post = async (who: Persona, channelId: string, body: string): Promise<string> => ((await send(who, channelId, body)).body as { id: string }).id;
+  const unreadOf = async (who: Persona, channelId: string): Promise<number> => (await list(who)).items.find((i) => i.channel.id === channelId)!.unreadCount;
+
+  it('reading the newest message that is left clears the count, also when the stored position is a deleted message after it', async () => {
+    const c = (await opened(sameera, tariq)).dm.channel.id;
+    const first = await post(tariq, c, 'one');
+    const second = await post(tariq, c, 'two');
+    const third = await post(tariq, c, 'three');
+    // Sameera read up to "two" and "three" is unread; then both of the newer messages are deleted by their author
+    expect((await mark(sameera, c, second)).status).toBe(200);
+    expect(await unreadOf(sameera, c)).toBe(1);
+    expect((await w.call(tariq, 'DELETE', `/api/channels/${c}/messages/${third}`)).status).toBe(200);
+    expect((await w.call(tariq, 'DELETE', `/api/channels/${c}/messages/${second}`)).status).toBe(200);
+    // what she can read now ends at "one", which is before her stored position: the row must not stay at 1 for ever
+    const res = await mark(sameera, c, first);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ unreadCount: 0 });
+    expect(await unreadOf(sameera, c)).toBe(0);
+  });
+
+  it('an older position never moves the stored one back, and never invents unread', async () => {
+    const c = (await opened(sameera, priya)).dm.channel.id;
+    const first = await post(priya, c, 'one');
+    const second = await post(priya, c, 'two');
+    await post(priya, c, 'three');
+    expect((await mark(sameera, c, second)).status).toBe(200);
+    const res = await mark(sameera, c, first);
+    expect(res.body).toMatchObject({ lastReadId: second, unreadCount: 1 });
+  });
+});
