@@ -19,9 +19,12 @@
       "type": "string",
       "enum": [
         "signin",
+        "theme",
         "code",
         "infrastructure",
-        "servers"
+        "servers",
+        "runners",
+        "delivery"
       ]
     },
     "kind": {
@@ -30,7 +33,9 @@
           "type": "string",
           "enum": [
             "skipped",
-            "acknowledged"
+            "acknowledged",
+            "checked",
+            "started"
           ]
         },
         {

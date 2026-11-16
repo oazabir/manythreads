@@ -14,6 +14,17 @@
           "type": "string",
           "minLength": 1
         },
+        "slug": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeZone": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "selfSignup": {
           "type": "boolean"
         },
@@ -24,6 +35,7 @@
       "required": [
         "id",
         "name",
+        "slug",
         "selfSignup",
         "passwordForMembers"
       ]

@@ -26,6 +26,9 @@
         "name": {
           "type": "string"
         },
+        "timeZone": {
+          "type": "string"
+        },
         "selfSignup": {
           "type": "boolean"
         },

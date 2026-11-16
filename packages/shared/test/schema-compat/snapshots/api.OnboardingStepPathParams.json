@@ -6,9 +6,12 @@
       "type": "string",
       "enum": [
         "signin",
+        "theme",
         "code",
         "infrastructure",
-        "servers"
+        "servers",
+        "runners",
+        "delivery"
       ]
     }
   },

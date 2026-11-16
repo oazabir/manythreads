@@ -3,13 +3,17 @@
   "type": "string",
   "enum": [
     "bootstrap",
-    "signin",
-    "models",
-    "code",
+    "theme",
+    "organization",
     "infrastructure",
+    "models",
+    "signin",
     "teams",
-    "bots",
     "servers",
-    "launch"
+    "runners",
+    "bots",
+    "code",
+    "launch",
+    "delivery"
   ]
 }

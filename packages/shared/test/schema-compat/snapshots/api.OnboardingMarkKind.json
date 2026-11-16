@@ -3,6 +3,8 @@
   "type": "string",
   "enum": [
     "skipped",
-    "acknowledged"
+    "acknowledged",
+    "checked",
+    "started"
   ]
 }
