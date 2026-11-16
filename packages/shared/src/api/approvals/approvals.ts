@@ -70,6 +70,8 @@ export const CHANNEL_APPROVALS_MAX = 50;
 export const ChannelApprovalsResponse = z.object({ items: z.array(Approval).max(CHANNEL_APPROVALS_MAX) });
 export type ChannelApprovalsResponse = z.infer<typeof ChannelApprovalsResponse>;
 export const listChannelApprovalsRoute = { method: 'GET', path: '/api/channels/:channelId/approvals/pending' } as const;
+/** The same read for the threads the Threads view lists (P29), by root (`ThreadBatchQuery`). */
+export const listThreadBatchApprovalsRoute = { method: 'GET', path: '/api/thread-batch/approvals' } as const;
 
 /**
  * Live push to the people who may care: an approval was raised or settled in the team (a hint; the list is the truth). `channelId` and `threadRootId` say where it was asked

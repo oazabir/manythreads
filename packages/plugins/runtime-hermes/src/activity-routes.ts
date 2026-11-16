@@ -10,6 +10,7 @@ import {
   ChannelWatchPathParams,
   ChannelWatchResponse,
   ListThreadRunsResponse,
+  ListThreadsParams,
   RunActivityPathParams,
   RunActivityQuery,
   RunActivityItem,
@@ -22,6 +23,12 @@ import {
   ThreadWatchPathParams,
   ThreadWatchResponse,
   activeChannelRunsRoute,
+  activeThreadRunsRoute,
+  threadsRunningRoute,
+  ThreadsRunningResponse,
+  ThreadBatchQuery,
+  THREAD_BATCH_MAX,
+  idList,
   listThreadRunsRoute,
   runActivityRoute,
   unwatchChannelRoute,
@@ -190,6 +197,61 @@ export function registerActivityRoutes(ctx: PluginContext): void {
           recent: recent.map((r) => runHeadOf(r, false)),
         }),
       );
+    }),
+  });
+
+  // GET /api/thread-batch/runs?roots=a,b (P29): the runs going in the threads the Threads view lists, in one read for the page (the rows' own policy decides what the caller sees; a
+  // conversation with a bot is not a thread). The newest CHANNEL_RUN_HEADS_MAX carry their folded state.
+  ctx.http.route({
+    ...activeThreadRunsRoute,
+    readOnly: true,
+    schema: { query: ThreadBatchQuery, response: ActiveChannelRunsResponse },
+    handler: route(async (req, tx) => {
+      const roots = idList(ThreadBatchQuery.parse(req.query).roots, THREAD_BATCH_MAX);
+      const rows = (
+        await tx.query<ViewRow>(
+          `SELECT ${VIEW_COLUMNS} FROM app.run_view
+            WHERE thread_root_id = ANY ($1::uuid[]) AND ended_at IS NULL AND NOT conversation
+            ORDER BY started_at DESC, run_id DESC LIMIT 100`,
+          [roots],
+        )
+      ).rows;
+      const headed = rows.slice(0, CHANNEL_RUN_HEADS_MAX);
+      const can = await stoppable(tx, headed.map((r) => r.run_id));
+      const headIds = new Set(headed.map((r) => r.run_id));
+      return json(
+        ActiveChannelRunsResponse.parse({
+          runs: rows.map((r) => ({
+            runId: r.run_id,
+            channelId: r.channel_id,
+            threadRootId: r.thread_root_id,
+            botId: r.bot_id,
+            botActorId: r.bot_actor_id,
+            botName: r.bot_name,
+            startedAt: r.started_at.toISOString(),
+            ...(headIds.has(r.run_id) ? { head: runHeadOf(r, can.has(r.run_id)) } : {}),
+          })),
+        }),
+      );
+    }),
+  });
+
+  // GET /api/teams/:slug/threads/running (P29): in how many threads of the team a run is going, for the sidebar's "tasks in progress". The rows' policy limits it to channels the caller reads.
+  ctx.http.route({
+    ...threadsRunningRoute,
+    readOnly: true,
+    schema: { response: ThreadsRunningResponse },
+    handler: route(async (req, tx) => {
+      const { slug } = ListThreadsParams.parse(req.params);
+      const n = (
+        await tx.query<{ n: number }>(
+          `SELECT count(DISTINCT v.thread_root_id)::int AS n
+             FROM app.run_view v JOIN app.channels c ON c.id = v.channel_id JOIN app.teams t ON t.id = c.team_id
+            WHERE t.slug = $1 AND v.ended_at IS NULL AND v.thread_root_id IS NOT NULL AND NOT v.conversation`,
+          [slug],
+        )
+      ).rows[0]?.n;
+      return json(ThreadsRunningResponse.parse({ threads: n ?? 0 }));
     }),
   });
 

@@ -88,3 +88,5 @@ export type ChannelTodosPathParams = z.infer<typeof ChannelTodosPathParams>;
 export const ChannelTodosResponse = z.object({ todos: z.array(ThreadTodo).max(CHANNEL_TODOS_MAX) });
 export type ChannelTodosResponse = z.infer<typeof ChannelTodosResponse>;
 export const listChannelTodosRoute = { method: 'GET', path: '/api/channels/:channelId/todos' } as const satisfies ApiRoute;
+/** The same read for the threads the Threads view lists (P29), by root (`ThreadBatchQuery`). */
+export const listThreadBatchTodosRoute = { method: 'GET', path: '/api/thread-batch/todos' } as const satisfies ApiRoute;

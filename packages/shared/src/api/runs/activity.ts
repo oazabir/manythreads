@@ -220,6 +220,13 @@ export const ActiveChannelRunsResponse = z.object({
 });
 export type ActiveChannelRunsResponse = z.infer<typeof ActiveChannelRunsResponse>;
 export const activeChannelRunsRoute = { method: 'GET', path: '/api/channels/:channelId/active-runs' } as const satisfies ApiRoute;
+/** The same read for the threads the Threads view lists (P29), by root (`ThreadBatchQuery`); `recent` is left out there. */
+export const activeThreadRunsRoute = { method: 'GET', path: '/api/thread-batch/runs' } as const satisfies ApiRoute;
+
+/** The sidebar's Threads entry (P29): in how many threads of the team a run is going, in channels the caller can read. A person's own conversation with a bot is not counted. */
+export const ThreadsRunningResponse = z.object({ threads: z.number().int().nonnegative() });
+export type ThreadsRunningResponse = z.infer<typeof ThreadsRunningResponse>;
+export const threadsRunningRoute = { method: 'GET', path: '/api/teams/:slug/threads/running' } as const satisfies ApiRoute;
 
 // ---- watching a thread ------------------------------------------------------------------------------------------------------------
 

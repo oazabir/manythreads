@@ -821,11 +821,14 @@ Plan: `docs/plans/channel-task-view.md`. Under a thread's root message in the ch
 | P29-10 | Docs, STATUS, MISTAKES | Done |
 | P29-12 | The dock above the thread's composer (section 10a): `ThreadDock` with the compact to-do, run card and the pending question strip, replacing `TodoPin` and the thread's own approvals strip; collapse, 40% height, 390 px; component test, e2e case, screenshots | Done |
 | P29-13 | Opening a bot opens its chat; no chat shows an empty state with a Bot settings button for people who may change it; the customization page moves to `/bots/:bot/settings` with redirects from the old tab addresses (section 10b); component tests, e2e, screenshots | Done |
-| P29-14 | Threads view data (section 10c): the inbox rows carry the latest reply's replier and time and the caller's unanswered `mention`; `q` and `mentions` filter the inbox on the server; three `readOnly` batch reads by roots (runs, to-do lists, pending approvals) with shared zod shapes, RLS and tests | Not built |
+| P29-14 | Threads view data (section 10c): the inbox rows carry the latest reply's replier and time and the caller's unanswered `mention`; `q` and `mentions` filter the inbox on the server; three `readOnly` batch reads by roots (runs, to-do lists, pending approvals) with shared zod shapes, RLS and tests | Done |
 | P29-15 | Threads view rules and data hook: pure filter parse, `@name`, ordering and highlight, "Needs you" rule and group, `useInboxProgress` (three batched reads, push and slow poll), paging | Not built |
 | P29-16 | Threads view list: filter bar with `?q=`, compact progress line, "Needs you" chip and group, the mention block and the separate latest-reply block, component tests | Not built |
 | P29-17 | Threads view grid: the toggle, the card with progress, approval strip and both blocks, paging and `content-visibility`, tests | Not built |
 | P29-18 | Threads view e2e and screenshots (filter, mention, Needs you, grid at 1440 and 390 px, approve from a card), `docs/testing.md` and the plugin docs | Not built |
+| P29-19 | Sidebar Threads badges (section 10d): mentions, unread and tasks in progress with their glyphs, the accessible name, compact in the collapsed sidebar and the 390 px drawer; `threads/counts` and `threads/running`; unit, component and e2e tests, screenshots | Not built |
+| P29-20 | The thread's side rail (section 10e): `ThreadRail` in `ThreadBody` with the Progress timeline and the Outputs (two image previews, the file list), the toggle, the responsive overlay and sheet, the outputs read; component tests | Not built |
+| P29-21 | Side rail e2e (open and close, a tick updates it, an attached image appears), screenshots, `docs/testing.md` and the plugin docs | Not built |
 | P29-11 | Deploy and live check | Not built |
 
 ---

@@ -6,17 +6,21 @@ import {
   ListThreadsParams,
   ListThreadsQuery,
   ListThreadsResponse,
+  THREAD_FILTER_MENTIONS_MAX,
+  ThreadCountsResponse,
   ThreadPathParams,
   ThreadState,
   followThreadRoute,
+  idList,
   getThreadRoute,
   listThreadsRoute,
+  threadCountsRoute,
   unfollowThreadRoute,
   type FileSummary,
   type MessageAuthor,
   type ReactionSummary,
 } from '@manythreads/shared';
-import { listInbox } from './inbox.ts';
+import { listInbox, unanswered } from './inbox.ts';
 import { conflict, forbidden, json, notFound, route } from './http.ts';
 import { CHANNEL_REF_COLUMNS, MESSAGE_COLUMNS, toChannelMessage, toChannelRef, type ChannelRefRow, type MessageRow } from './rows.ts';
 
@@ -218,7 +222,27 @@ export function registerThreadRoutes(ctx: PluginContext): void {
         const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
         if (role !== 'guest') return json(ListThreadsResponse.parse({ items: [], nextCursor: null }));
       }
-      return json(await listInbox(tx, { personId: person, tab: q.tab, teamId, limit: q.limit, cursor: q.cursor }));
+      return json(await listInbox(tx, { personId: person, tab: q.tab, teamId, limit: q.limit, cursor: q.cursor, q: q.q, mentions: idList(q.mentions, THREAD_FILTER_MENTIONS_MAX) }));
+    }),
+  });
+
+  // The sidebar's mention count (P29): the threads of the team that wait on the caller, by the rule of the Needs-you rows.
+  ctx.http.route({
+    ...threadCountsRoute,
+    schema: { response: ThreadCountsResponse },
+    handler: route(async (req, tx) => {
+      const { slug } = ListThreadsParams.parse(req.params);
+      await callerPerson(tx);
+      const team = (await tx.query<{ id: string }>('SELECT id FROM app.teams WHERE slug = $1', [slug])).rows[0];
+      if (!team) return json(ThreadCountsResponse.parse({ mentions: 0 }));
+      const n = (
+        await tx.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM app.threads t JOIN app.channels c ON c.id = t.channel_id
+            WHERE c.team_id = $1::uuid AND t.reply_count > 0 AND ${unanswered('t.root_message_id')}`,
+          [team.id, tx.actor.id],
+        )
+      ).rows[0]?.n;
+      return json(ThreadCountsResponse.parse({ mentions: n ?? 0 }));
     }),
   });
 }

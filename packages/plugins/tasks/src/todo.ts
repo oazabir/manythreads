@@ -18,6 +18,10 @@ import {
   WS_TODO_CHANGED,
   getThreadTodoRoute,
   listChannelTodosRoute,
+  listThreadBatchTodosRoute,
+  ThreadBatchQuery,
+  THREAD_BATCH_MAX,
+  idList,
   type TodoStatus,
 } from '@manythreads/shared';
 
@@ -430,6 +434,29 @@ export function registerTodo(ctx: PluginContext): void {
             ORDER BY updated_at DESC, thread_root_id DESC
             LIMIT $4`,
           [channelId, CHANNEL_TODO_FRESH_HOURS, CHANNEL_TODO_DONE_MINUTES, CHANNEL_TODOS_MAX],
+        )
+      ).rows;
+      return json(ChannelTodosResponse.parse({ todos: rows.map(todoOf) }));
+    }),
+  });
+
+  // GET /api/thread-batch/todos?roots=a,b (P29): the lists of the threads the Threads view lists, in one read for the page, by the same freshness rule as the channel's read and the same
+  // table policy.
+  ctx.http.route({
+    ...listThreadBatchTodosRoute,
+    readOnly: true,
+    schema: { query: ThreadBatchQuery, response: ChannelTodosResponse },
+    handler: route(async (req, tx) => {
+      const roots = idList(ThreadBatchQuery.parse(req.query).roots, THREAD_BATCH_MAX);
+      const rows = (
+        await tx.query<TodoRow>(
+          `SELECT ${COLUMNS} FROM app.thread_todos
+            WHERE thread_root_id = ANY ($1::uuid[])
+              AND ((updated_at > now() - make_interval(hours => $2::int) AND EXISTS (SELECT 1 FROM jsonb_array_elements(items) e WHERE e ->> 'status' <> 'done'))
+                   OR updated_at > now() - make_interval(mins => $3::int))
+            ORDER BY updated_at DESC, thread_root_id DESC
+            LIMIT $4`,
+          [roots, CHANNEL_TODO_FRESH_HOURS, CHANNEL_TODO_DONE_MINUTES, CHANNEL_TODOS_MAX],
         )
       ).rows;
       return json(ChannelTodosResponse.parse({ todos: rows.map(todoOf) }));

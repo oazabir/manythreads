@@ -21,6 +21,16 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 512
+    },
+    "q": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "mentions": {
+      "type": "string",
+      "maxLength": 185,
+      "pattern": "^[0-9a-f-]{36}(,[0-9a-f-]{36})*$"
     }
   }
 }

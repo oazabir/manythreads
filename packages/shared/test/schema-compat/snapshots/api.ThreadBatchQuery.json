@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "roots": {
+      "type": "string",
+      "maxLength": 1850,
+      "pattern": "^[0-9a-f-]{36}(,[0-9a-f-]{36})*$"
+    }
+  },
+  "required": [
+    "roots"
+  ]
+}

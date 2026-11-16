@@ -82,7 +82,8 @@ describe('the Threads inbox: membership of each tab (criterion 4)', () => {
     expect(item).toMatchObject({ mine: true, followed: true, title: 'Deploy plan for Friday', replyCount: 2 });
     expect(item.channel).toMatchObject({ id: dev, name: 'dev', kind: 'channel' });
     // the row shows who spoke last and what they said (the newest live reply, named for what the caller may read)
-    expect(item.lastReply).toEqual({ authorName: rafi.name, preview: 'Second reply' });
+    expect(item.lastReply).toMatchObject({ authorName: rafi.name, preview: 'Second reply', authorId: rafi.actorId, kind: 'person' });
+    expect(item.lastReply?.at).toMatch(/^\d{4}-/);
     await post(nadia, dev, 'nobody answers me', null);
     expect(await roots(nadia, 'mine')).toEqual([root]);
   });
@@ -281,5 +282,88 @@ describe('GET /api/threads/:rootId', () => {
     expect(await roots(lena, 'followed', 'whatever')).toEqual([]);
     ok(await w.call(lena, 'POST', `/api/threads/${r}/follow`));
     expect(await roots(lena, 'followed', 'whatever')).toEqual([r]);
+  });
+});
+
+describe('the Threads view (P29): the filter, "waiting for you" and the sidebar count', () => {
+  const first = (p: Persona): string => p.name.split(' ')[0]!.toLowerCase();
+  let rootA = '';
+  let rootB = '';
+  let mentionId = '';
+  beforeAll(async () => {
+    rootA = await post(priya, releases, 'Zebrafish migration window');
+    mentionId = await post(rafi, releases, `@${first(priya)} please pick the window, the quokka dashboard is ready`, rootA);
+    rootB = await post(priya, dev, 'Plain thread about quokka caching');
+    await post(nadia, dev, 'no tags here', rootB);
+  });
+  const counts = async (who: Persona, slug = 'engineering'): Promise<number> => ok<{ mentions: number }>(await w.call(who, 'GET', `/api/teams/${slug}/threads/counts`)).mentions;
+
+  it('puts the newest unanswered mention on the row, and the thread in the default tab even when not followed', async () => {
+    await w.system((tx) => tx.query('DELETE FROM app.thread_follows WHERE person_id = $1 AND thread_root_id = $2', [priya.personId, rootA]));
+    const row = (await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === rootA)!;
+    expect(row.followed).toBe(false);
+    expect(row.mention).toMatchObject({ messageId: mentionId, authorId: rafi.actorId, authorName: rafi.name, kind: 'person' });
+    expect(row.mention?.preview).toContain('quokka dashboard');
+    expect((await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === rootB)?.mention ?? null).toBeNull();
+    expect(await counts(priya)).toBe(1);
+    expect(await counts(rafi)).toBe(0);
+  });
+
+  it('stops waiting once the person writes in the thread, and a new mention waits again', async () => {
+    await post(priya, releases, 'on it, window is Friday', rootA);
+    expect((await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === rootA)?.mention ?? null).toBeNull();
+    expect(await counts(priya)).toBe(0);
+    const again = await post(nadia, releases, `@${first(priya)} thanks, confirm in the morning`, rootA);
+    expect((await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === rootA)?.mention?.messageId).toBe(again);
+    expect(await counts(priya)).toBe(1);
+  });
+
+  it('does not count a #channel link, an old mention, a deleted message or a thread of another team', async () => {
+    const r = await post(nadia, dev, 'Channel-wide notice');
+    await post(rafi, dev, 'see #releases', r);
+    expect((await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === r)?.mention ?? null).toBeNull();
+    const old = await post(nadia, dev, `@${first(priya)} an old question`, rootB);
+    await w.system((tx) => tx.query("UPDATE app.messages SET created_at = now() - interval '9 days' WHERE id = $1", [old]));
+    expect((await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === rootB)?.mention ?? null).toBeNull();
+    const gone = await post(nadia, dev, `@${first(priya)} deleted soon`, rootB);
+    await w.system((tx) => tx.query('UPDATE app.messages SET deleted_at = now() WHERE id = $1', [gone]));
+    expect((await inbox(priya, 'followed')).items.find((i) => i.rootMessageId === rootB)?.mention ?? null).toBeNull();
+    expect(await counts(priya, 'marketing')).toBe(0);
+    expect(await counts(sameera)).toBe(0);
+    expect((await w.call(null, 'GET', '/api/teams/engineering/threads/counts')).status).toBe(401);
+  });
+
+  it('filters by words in the channel name or a message, channel-name matches first, and by @name', async () => {
+    const q = async (who: Persona, query: string): Promise<string[]> => (await inbox(who, 'followed', 'engineering', `&${query}`)).items.map((i) => i.rootMessageId);
+    // "releases" is a channel name (rootA) and also a word in a message of rootC
+    const rootC = await post(nadia, dev, 'Notes for the next releases');
+    await post(rafi, dev, 'ok', rootC);
+    await w.system((tx) => tx.query('UPDATE app.messages SET created_at = created_at WHERE id = $1', [rootC]));
+    expect(await q(priya, 'q=quokka')).toEqual(expect.arrayContaining([rootA, rootB]));
+    expect(await q(priya, 'q=zebrafish+quokka')).toEqual([rootA]);                 // every word must match
+    const named = await q(nadia, 'q=releases');
+    expect(named.indexOf(rootA)).toBeGreaterThanOrEqual(0);
+    expect(named.indexOf(rootA)).toBeLessThan(named.indexOf(rootC));               // the channel's name before a message
+    expect(await q(priya, 'q=no-such-word-anywhere')).toEqual([]);
+    // rootB holds an old mention of her too: the @name filter is any mention, "waiting" is a separate rule
+    expect(await q(priya, `mentions=${priya.actorId as string}`)).toEqual(expect.arrayContaining([rootA, rootB]));
+    expect(await q(priya, `mentions=${priya.actorId as string}&q=zebrafish`)).toEqual([rootA]);
+    expect(await q(nadia, `mentions=${priya.actorId as string}`)).not.toContain(rootC);
+    // a wildcard typed by a person is text, not a pattern
+    expect(await q(priya, 'q=%25')).toEqual([]);
+    expect(await q(priya, 'q=_')).toEqual([]);
+    // a filtered answer has no cursor
+    expect((await inbox(priya, 'followed', 'engineering', '&q=quokka&limit=1')).nextCursor).toBeNull();
+    expect((await w.call(priya, 'GET', '/api/teams/engineering/threads?mentions=nope')).status).toBe(400);
+  });
+
+  it('never leaks a private channel through the filter or the count', async () => {
+    const priv = ok<{ channel: { id: string } }>(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: 'filter-private', private: true }), 201).channel.id;
+    const secret = await post(omar, priv, `Zebrafish secret plan @${first(nadia)}`);
+    await post(omar, priv, `@${first(nadia)} quokka secret`, secret);
+    expect(await inbox(nadia, 'followed', 'engineering', '&q=secret')).toMatchObject({ items: [] });
+    expect(await inbox(nadia, 'followed', 'engineering', `&mentions=${nadia.actorId as string}`).then((r) => r.items.map((i) => i.rootMessageId))).not.toContain(secret);
+    const before = await counts(nadia);
+    expect(before).toBe(await counts(nadia));
   });
 });

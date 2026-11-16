@@ -843,3 +843,24 @@ describe('review round 3', () => {
     expect((await eventsOf('approvals.approval.resumed')).find((e) => e['approvalId'] === open.approvalId)?.['detail']).not.toBe('');
   });
 });
+
+describe('the questions of the listed threads in one read (P29-14)', () => {
+  const listBatch = async (who: Persona, roots: string[]): Promise<{ status: number; ids: string[] }> => {
+    const res = await w.call(who, 'GET', `/api/thread-batch/approvals?roots=${roots.join(',')}`);
+    return { status: res.status, ids: res.status === 200 ? ChannelApprovalsResponse.parse(res.body).items.map((a) => a.id) : [] };
+  };
+
+  it('answers the pending questions of the named threads only, to the team and to nobody else; a bad list is refused', async () => {
+    const waiting = (await request(await openRun(scoped, nadia, { replyRootId: rootId }), 'pages/batch-listed.md')).approvalId;
+    const mine = await listBatch(rafi, [rootId]);
+    expect(mine.status).toBe(200);
+    expect(mine.ids).toContain(waiting);
+    expect((await listBatch(rafi, ['00000000-0000-7000-8000-000000000000'])).ids).toEqual([]);
+    expect((await listBatch(sameera, [rootId])).ids).toEqual([]);
+    expect((await w.call(rafi, 'GET', '/api/thread-batch/approvals')).status).toBe(400);
+    expect((await w.call(rafi, 'GET', '/api/thread-batch/approvals?roots=nope')).status).toBe(400);
+    expect((await w.call(null, 'GET', `/api/thread-batch/approvals?roots=${rootId}`)).status).toBe(401);
+    expect((await decide(rafi, waiting, 'deny')).status).toBe(200);
+    expect((await listBatch(rafi, [rootId])).ids).not.toContain(waiting);
+  });
+});

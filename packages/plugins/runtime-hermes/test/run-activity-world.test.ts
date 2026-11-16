@@ -365,6 +365,37 @@ describe('the channel lease: one lease for the whole channel (P29-02)', () => {
   });
 });
 
+describe('the runs of the listed threads in one read, and the count for the sidebar (P29-14)', () => {
+  it('lists the going runs of the named threads with their head, counts the threads, and is empty for someone who cannot read them', async () => {
+    gw.setScript(() => work({ type: 'hang', ms: 60_000 }));
+    const rootId = await post(nadia, '@act-bot a run for the thread batch');
+    const open = await runOfThread(rootId);
+    await until(async () => (await viewOf(open.id))?.counts?.steps >= 1, 20_000, 'the first line');
+    const batch = await w.call<{ runs: Array<{ runId: string; threadRootId: string; head?: { state: string } }> }>(rafi, 'GET', `/api/thread-batch/runs?roots=${rootId}`);
+    expect(batch.status, JSON.stringify(batch.body)).toBe(200);
+    expect(batch.body.runs).toHaveLength(1);
+    expect(batch.body.runs[0]).toMatchObject({ runId: open.id, threadRootId: rootId, head: { state: 'working' } });
+    const other = await w.call<{ runs: unknown[] }>(rafi, 'GET', '/api/thread-batch/runs?roots=00000000-0000-7000-8000-000000000000');
+    expect(other.body.runs).toEqual([]);
+    const outsider = await w.call<{ runs: unknown[] }>(personas.lena, 'GET', `/api/thread-batch/runs?roots=${rootId}`);
+    expect(outsider.status === 200 ? outsider.body.runs : []).toEqual([]);
+    expect((await w.call(rafi, 'GET', '/api/thread-batch/runs')).status).toBe(400);
+
+    const running = await w.call<{ threads: number }>(rafi, 'GET', '/api/teams/engineering/threads/running');
+    expect(running.status, JSON.stringify(running.body)).toBe(200);
+    expect(running.body.threads).toBeGreaterThanOrEqual(1);
+    const none = await w.call<{ threads: number }>(personas.lena, 'GET', '/api/teams/engineering/threads/running');
+    expect(none.status === 200 ? none.body.threads : 0).toBe(0);
+    expect((await w.call(null, 'GET', '/api/teams/engineering/threads/running')).status).toBe(401);
+
+    await w.call(omar, 'POST', `/api/runs/${open.id}/stop`, {});
+    await closedRunOf(rootId);
+    const after = await w.call<{ runs: unknown[] }>(rafi, 'GET', `/api/thread-batch/runs?roots=${rootId}`);
+    expect(after.body.runs).toEqual([]);
+    expect((await w.call<{ threads: number }>(rafi, 'GET', '/api/teams/engineering/threads/running')).body.threads).toBe(running.body.threads - 1);
+  });
+});
+
 describe('Stop for a thread run (P25-08)', () => {
   it('a member who is neither the asker, the starter, a lead nor an admin is refused; the lead stops it and the reply says who', async () => {
     gw.setScript(() => work({ type: 'hang', ms: 60_000 }));

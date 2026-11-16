@@ -22,6 +22,10 @@ import {
   getApprovalsSummaryRoute,
   listApprovalsRoute,
   listChannelApprovalsRoute,
+  listThreadBatchApprovalsRoute,
+  ThreadBatchQuery,
+  THREAD_BATCH_MAX,
+  idList,
   listThreadApprovalsRoute,
 } from '@manythreads/shared';
 import { conflict, forbidden, json, notFound, requireTeam, route } from '@manythreads/sdk';
@@ -97,6 +101,20 @@ export function registerRoutes(ctx: PluginContext): void {
           `${APPROVAL_SELECT} WHERE a.channel_id = $1::uuid AND a.thread_root_id IS NOT NULL AND a.status = 'pending' ORDER BY a.id ASC LIMIT $2`,
           [channelId, CHANNEL_APPROVALS_MAX],
         )
+      ).rows;
+      return json(ChannelApprovalsResponse.parse({ items: await approvalsOf(tx, rows) }));
+    }),
+  });
+
+  // GET /api/thread-batch/approvals?roots=a,b (P29): the questions waiting in the threads the Threads view lists, in one read for the page; the table's policy decides what the caller sees.
+  ctx.http.route({
+    ...listThreadBatchApprovalsRoute,
+    readOnly: true,
+    schema: { query: ThreadBatchQuery, response: ChannelApprovalsResponse },
+    handler: route(async (req, tx) => {
+      const roots = idList(ThreadBatchQuery.parse(req.query).roots, THREAD_BATCH_MAX);
+      const rows = (
+        await tx.query<ApprovalRow>(`${APPROVAL_SELECT} WHERE a.thread_root_id = ANY ($1::uuid[]) AND a.status = 'pending' ORDER BY a.id ASC LIMIT $2`, [roots, CHANNEL_APPROVALS_MAX])
       ).rows;
       return json(ChannelApprovalsResponse.parse({ items: await approvalsOf(tx, rows) }));
     }),

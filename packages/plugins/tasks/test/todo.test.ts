@@ -379,6 +379,27 @@ describe('the channel\'s lists in one read (P29-03)', () => {
   });
 });
 
+describe('the lists of the listed threads in one read (P29-14)', () => {
+  const readBatch = async (who: typeof nadia, roots: string[]): Promise<string[]> => {
+    const res = await w.call<{ todos: ThreadTodo[] }>(who, 'GET', `/api/thread-batch/todos?roots=${roots.join(',')}`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return ChannelTodosResponse.parse(res.body).todos.map((t) => t.rootId);
+  };
+
+  it('answers the lists of the named threads (open ones and the ones just finished), and nothing for a thread the caller cannot read', async () => {
+    const a = await thread(alpha);
+    await todo(a.run, { action: 'set', items: ITEMS });
+    const b = await thread(alpha);
+    await todo(b.run, { action: 'set', items: ITEMS });
+    expect((await readBatch(nadia, [a.root, b.root])).sort()).toEqual([a.root, b.root].sort());
+    expect(await readBatch(nadia, [a.root])).toEqual([a.root]);
+    expect(await readBatch(sameera, [a.root, b.root])).toEqual([]);
+    expect(await readBatch(lena, [a.root])).toEqual([]);
+    expect((await w.call(nadia, 'GET', '/api/thread-batch/todos?roots=nope')).status).toBe(400);
+    expect((await w.call(null, 'GET', `/api/thread-batch/todos?roots=${a.root}`)).status).toBe(401);
+  });
+});
+
 describe('who can see it, and who is told', () => {
   it('in a person\'s own conversation only that person is told and reads it; a guest reads it only in a channel she was added to', async () => {
     const chat = await w.call<{ channelId: string }>(nadia, 'POST', '/api/teams/engineering/bots/todo-alpha/conversation');
