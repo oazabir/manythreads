@@ -35,3 +35,7 @@ Sign-in methods). Nothing else decides it; the `password` row of `auth_providers
 
 Tests: `packages/plugins/identity-password/test/identity.test.ts` (break-glass), `packages/plugins/teams/test/workspace-settings.test.ts`
 (the 409), `e2e/identity/break-glass.spec.ts` (the admin flips the switch in the real settings screen).
+
+## A made-up password must be changed first (server rule)
+
+The first administrator's password made by the installer (and one made by `reset-password --generate`) is marked *must change*. The session says so (`mustChangePassword`), and the **server** enforces it, not only the sign-in screen: while the mark is set, a signed-in session may read itself (`GET /api/session`), change the password (`POST /api/auth/password/change`) and sign out (`POST /api/auth/sign-out`, `.../sign-out-everywhere`); every other `/api/` route answers `403` with the code `password_change_required` and a plain sentence. Public routes (sign-in, reset) keep their own credentials and are not affected. The rule lives in `mustChangeRefusal` (`packages/server/src/session/authenticate.ts`), run in the server's request hook after the sign-in check; a development header actor has no session and is not affected. Test: `packages/server/test/first-admin.test.ts`.

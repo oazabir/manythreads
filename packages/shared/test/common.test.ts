@@ -55,6 +55,7 @@ describe('ErrorEnvelope', () => {
       'broadcast_needs_confirmation',
       'bot_cannot_ask_personal',
       'personal_memory_full',
+      'password_change_required',
     ]);
   });
 });

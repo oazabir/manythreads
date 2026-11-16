@@ -18,6 +18,8 @@ export interface ResolvedSession {
   /** The token that was presented (needed to verify the CSRF token bound to it). */
   token: string;
   expiresAt: Date;
+  /** The person's password was made up for them (the installer's first one) and is not yet replaced: the server then answers only the calls that replace it. */
+  mustChangePassword: boolean;
   /** Set when this lookup rotated the token: the response must carry these as the new cookies. */
   rotated: IssuedSession | null;
 }
@@ -61,10 +63,12 @@ interface LookupRow {
   actor_id: string | null;
   token_issued_at: Date;
   superseded_at: Date | null;
+  must_change: boolean | null;
 }
 
 const SELECT_COMMON = `s.id AS session_id, s.workspace_id, s.person_id, s.last_seen_at, s.expires_at, s.revoked_at,
-       p.status AS person_status, a.id AS actor_id`;
+       p.status AS person_status, a.id AS actor_id,
+       (SELECT pc.must_change FROM app.password_credentials pc WHERE pc.person_id = s.person_id) AS must_change`;
 const JOIN_COMMON = `JOIN app.sessions s ON s.id = X.session_id
   JOIN app.people p ON p.id = s.person_id AND p.workspace_id = s.workspace_id
   LEFT JOIN app.actors a ON a.kind = 'person' AND a.ref_id = s.person_id AND a.workspace_id = s.workspace_id`;
@@ -277,6 +281,7 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
             actor: { kind: 'person', id: actorId as ActorId, workspaceId: found.workspace_id as WorkspaceId },
             token,
             expiresAt: found.expires_at,
+            mustChangePassword: found.must_change === true,
             rotated,
           },
         };

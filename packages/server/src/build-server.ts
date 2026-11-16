@@ -48,6 +48,7 @@ import {
   authenticateCookie,
   clearSessionCookies,
   csrfAllows,
+  mustChangeRefusal,
   finishSessionCookies,
   mountTestAuth,
   setSessionCookies,
@@ -199,6 +200,9 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     const config = req.routeOptions.config;
     if (config.public !== true && !req.actor) {
       return reply.status(401).send(envelope('unauthenticated', 'Sign in required'));
+    }
+    if (mustChangeRefusal(req)) {
+      return reply.status(403).send(envelope('password_change_required', 'Change your password first. It was made up for you and has not been replaced yet.'));
     }
     const rule = config.rateLimit;
     if (rule) {

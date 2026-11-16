@@ -71,6 +71,28 @@ describe('the first administrator of an empty install', () => {
     expect(session.mustChangePassword).toBe(true);
   });
 
+  it('refuses everything but the session read, the password change and sign-out while the made-up password is still in use (a script gets nothing from the printed password)', async () => {
+    const c = createApiClient(s.url);
+    expect((await c.post('/api/auth/password/sign-in', { email, password: first })).status).toBe(200);
+    const probes: Array<[string, string]> = [
+      ['GET', '/api/workspace/onboarding'],
+      ['GET', '/api/admin/bot-runners'],
+      ['GET', '/api/auth/sessions'],
+      ['GET', '/api/teams'],
+    ];
+    for (const [method, path] of probes) {
+      const res = method === 'GET' ? await c.get(path) : await c.post(path, {});
+      const body = (await res.json()) as { error?: { code?: string } };
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(body.error?.code, `${method} ${path}`).toBe('password_change_required');
+    }
+    // a wrong current password is the route's own answer, so the change route is reached
+    expect((await c.post('/api/auth/password/change', { currentPassword: 'not-it-at-all-1234', newPassword: 'another-long-passphrase' })).status).not.toBe(403);
+    expect((await c.get('/api/session')).status).toBe(200);
+    expect((await c.post('/api/auth/sign-out', {})).status).toBeLessThan(300);
+    expect((await c.get('/api/session').then((r) => r.json()) as { authenticated: boolean }).authenticated).toBe(false);
+  });
+
   it('keeps the made-up password out of every event and audit line', async () => {
     const events = await sql<{ payload: unknown }>('SELECT payload FROM app.events');
     expect(JSON.stringify(events)).not.toContain(first);
@@ -101,6 +123,8 @@ describe('the first administrator of an empty install', () => {
     expect(changed.status).toBe(200);
     const session = (await (await c.get('/api/session')).json()) as { mustChangePassword?: boolean };
     expect(session.mustChangePassword).toBe(false);
+    // the same session now reaches the rest of the API
+    expect((await c.get('/api/workspace/onboarding')).status).toBe(200);
     expect((await run(['password-status', email])).out).toBe('FIRST_PASSWORD=changed');
     expect((await createApiClient(s.url).post('/api/auth/password/sign-in', { email, password: first })).status).toBe(401);
   });
@@ -115,6 +139,7 @@ describe('the first administrator of an empty install', () => {
     expect((await run(['password-status', email])).out).toBe('FIRST_PASSWORD=pending');
     const c = createApiClient(s.url);
     expect(((await (await c.post('/api/auth/password/sign-in', { email, password: fresh })).json()) as { mustChangePassword?: boolean }).mustChangePassword).toBe(true);
+    expect((await c.get('/api/workspace/onboarding')).status).toBe(403);
     const events = await sql<{ payload: unknown }>('SELECT payload FROM app.events');
     expect(JSON.stringify(events)).not.toContain(fresh);
   });

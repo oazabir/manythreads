@@ -24,6 +24,8 @@ export const ErrorCode = z.enum([
   'bot_cannot_ask_personal',
   /** 409: the person's Personal Memory already holds the most files it can (2,000). Unlike `conflict` (the file moved since it was opened), reloading does not help: delete a file first (memory plugin, P20-05). */
   'personal_memory_full',
+  /** 403: the signed-in person still has the password that was made up for them (the installer's first one); until it is replaced the server answers only the session read, the password change and sign-out. */
+  'password_change_required',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

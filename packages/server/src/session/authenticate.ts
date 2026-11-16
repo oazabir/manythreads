@@ -1,3 +1,4 @@
+import { changePasswordRoute, getSessionRoute, signOutEverywhereRoute, signOutRoute } from '@manythreads/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { CSRF_HEADER, cookieNames } from './config.ts';
 import { clearSessionCookies, setSessionCookies } from './cookies.ts';
@@ -12,6 +13,8 @@ export interface RequestSession {
   /** The presented token; only used to verify the CSRF token bound to it. Never log it. */
   token: string;
   expiresAt: Date;
+  /** The person still has the password that was made up for them: see `mustChangeRefusal`. */
+  mustChangePassword: boolean;
   /** Name of the readable CSRF cookie that belongs to the cookie this session was read from. */
   csrfCookie: string;
 }
@@ -35,8 +38,30 @@ export async function authenticateCookie(req: FastifyRequest, reply: FastifyRepl
   }
   const s = result.session;
   req.actor = s.actor;
-  req.authSession = { sessionId: s.sessionId, personId: s.personId, workspaceId: s.workspaceId, token: s.token, expiresAt: s.expiresAt, csrfCookie };
+  req.authSession = { sessionId: s.sessionId, personId: s.personId, workspaceId: s.workspaceId, token: s.token, expiresAt: s.expiresAt, mustChangePassword: s.mustChangePassword, csrfCookie };
   if (s.rotated) setSessionCookies(reply, s.rotated, sessions.config);
+}
+
+/** What a person who has not yet replaced the password made up for them may still call: read the session, change the password, sign out. */
+const MUST_CHANGE_ALLOWED: ReadonlySet<string> = new Set([
+  `${getSessionRoute.method} ${getSessionRoute.path}`,
+  `${changePasswordRoute.method} ${changePasswordRoute.path}`,
+  `${signOutRoute.method} ${signOutRoute.path}`,
+  `${signOutEverywhereRoute.method} ${signOutEverywhereRoute.path}`,
+]);
+
+/**
+ * The first-password rule, kept by the server and not only by the web page: while the signed-in person's password is the one made up for them, every `/api` call
+ * but the three above is refused with 403 `password_change_required`, so the password printed at install time gives no access until it has been changed.
+ * Answers true when the request must be refused. Only cookie sessions are subject to it (a dev header or an app token names no password).
+ */
+export function mustChangeRefusal(req: FastifyRequest): boolean {
+  if (!req.authSession?.mustChangePassword) return false;
+  // A public route is one that names its own credential (a token, a signature) or none at all; it does not act with the session.
+  if (req.routeOptions?.config?.public === true) return false;
+  const path = (req.routeOptions?.url ?? req.url).split('?')[0] ?? '';
+  if (!path.startsWith('/api/')) return false;
+  return !MUST_CHANGE_ALLOWED.has(`${req.method} ${path}`);
 }
 
 /** onSend: clear a dead session cookie unless the route already replaced it (sign-in sets a new one). */
