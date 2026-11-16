@@ -269,7 +269,7 @@ test('in the thread panel a long source chip wraps to two lines and nothing scro
 
 test('the bot page header at 390: the name, its description, then one row of actions; the roster count stacks under the title', async ({ browser, playwright, isMobile }) => {
   test.skip(!isMobile, 'the phone project');
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/release-manager', { viewport: PHONE, mobile: true });
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/release-manager/settings', { viewport: PHONE, mobile: true });
   try {
     const head = page.locator('[data-landmark="bot-head"]');
     await expect(head).toBeVisible();

@@ -179,7 +179,7 @@ test('an older placement shows read-only under "Old placement" and "Move to a ru
 test('at 390 px the tab does not scroll sideways and the select stays inside the screen', async ({ browser, playwright }) => {
   await stack.sql("UPDATE app.team_members SET role = 'lead' WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf('nadia')]);
   await placeCoder(playwright, null, NO_RUNS_ON);
-  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder?tab=placement');
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder/settings?tab=placement');
   try {
     await page.setViewportSize({ width: 390, height: 800 });
     const select = page.getByTestId('runs-on-select');

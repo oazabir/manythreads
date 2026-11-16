@@ -38,6 +38,7 @@ import { RunnersPage } from './screens/admin/runners/RunnersPage';
 import { BrainSettings } from './screens/admin/brain/BrainSettings';
 import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
+import { BotHome } from './screens/bots/BotHome';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
 import { AgentsScreen } from './screens/agents/AgentsScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
@@ -145,7 +146,8 @@ function AppRoutes() {
             <Route path="/t/:team/projects" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />
             <Route path="/t/:team/projects/:projectId" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />
             <Route path="/t/:team/bots/new" element={<RequireTeam><SetupScreen /></RequireTeam>} />
-            <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />
+            <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotHome /></RequireTeam>} />
+            <Route path="/t/:team/bots/:botSlug/settings" element={<RequireTeam><BotPage /></RequireTeam>} />
             <Route path="/t/:team/recipes" element={<RequireTeam><RecipesScreen /></RequireTeam>} />
             <Route path="/t/:team/proposals" element={<RequireTeam><ProposalsList /></RequireTeam>} />
             <Route path="/t/:team/proposals/:proposalId" element={<RequireTeam><ProposalPage /></RequireTeam>} />

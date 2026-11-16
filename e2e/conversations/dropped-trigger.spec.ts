@@ -92,7 +92,10 @@ test('a bot that dropped its conversation trigger keeps the lists; the message b
     // in its place a quiet label says why, in visible text and not only on hover
     await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-background')).toContainText('Runs in the background');
     await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-configure')).toBeVisible();
+    // opening it from the sidebar says there is no chat (P29-13); its settings page is the one that has the header
     await page.goto('/t/engineering/bots/drift');
+    await expect(page.getByTestId('bot-no-chat-title')).toContainText('No chat is available with');
+    await page.goto('/t/engineering/bots/drift/settings');
     await expect(page.getByTestId('bot-title')).toContainText('Drift');
     // (the bot page is up and its header has the "…" menu, so an absent Talk is not an unloaded page)
     await expect(page.getByTestId('bot-more')).toBeVisible();

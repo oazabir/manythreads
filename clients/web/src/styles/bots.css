@@ -1195,3 +1195,42 @@
     justify-content: center;
   }
 }
+
+/* a bot that has no chat (P29-13): what the sidebar's row says instead, with the way to its settings for the people who may use it */
+.bh-empty {
+  max-inline-size: 560px;
+  margin-inline: auto;
+  padding-block: 48px;
+  gap: 8px;
+}
+
+.bh-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-start: 8px;
+}
+
+.cv-settings {
+  flex: none;
+}
+
+@media (width <= 480px) {
+  .bh-empty {
+    padding: 32px 16px;
+  }
+
+  .bh-settings,
+  .cv-settings {
+    min-block-size: 44px;
+  }
+
+  .bh-settings {
+    justify-content: center;
+    inline-size: 100%;
+  }
+
+  .cv-settings {
+    min-inline-size: 44px;
+  }
+}

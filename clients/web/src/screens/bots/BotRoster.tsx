@@ -11,6 +11,7 @@ import { useQuery } from '../../app/useQuery';
 import { fetchProposals } from '../proposals/api';
 import { botAvailability, useAgentConnections } from './availability';
 import { useBots } from './store';
+import { botSettingsPath } from './botPaths';
 import { MoreMenu } from './MoreMenu';
 
 /*
@@ -73,7 +74,7 @@ function Row({ bot, slug, connections }: { bot: BotSummary; slug: string; connec
         ) : bot.status === 'active' ? (
           <span className="b-bg" title={NO_TALK} data-testid="bot-background">Runs in the background</span>
         ) : null}
-        <Link className="icon-btn" to={`/t/${slug}/bots/${bot.slug}?tab=identity`} aria-label={`Configure ${bot.name}`} title={`Configure ${bot.name}`} data-testid="bot-configure">
+        <Link className="icon-btn" to={botSettingsPath(slug, bot.slug, 'identity')} aria-label={`Configure ${bot.name}`} title={`Configure ${bot.name}`} data-testid="bot-configure">
           <GearIcon />
         </Link>
       </div>

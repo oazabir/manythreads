@@ -10,6 +10,7 @@ import { StatusStrip } from '../../components/StatusStrip';
 import { Alert } from '../../components/ui';
 import { fetchBots } from '../bots/api';
 import { useBotPerms } from '../bots/store';
+import { botSettingsPath } from '../bots/botPaths';
 import { fetchConnections, testConnection } from './api';
 import {
   AGENT_CHOICES,
@@ -118,7 +119,7 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
         <div className="ag-bots d" data-testid="agents-bots">
           {used.length === 0 ? 'No bot is placed on this connection yet.' : (
             <>Used by {used.map((b, i) => (
-              <span key={b.id}>{i > 0 ? ', ' : ''}<Link to={`/t/${slug}/bots/${b.slug}?tab=placement`}>{b.name}</Link></span>
+              <span key={b.id}>{i > 0 ? ', ' : ''}<Link to={botSettingsPath(slug, b.slug, 'placement')}>{b.name}</Link></span>
             ))}</>
           )}
         </div>

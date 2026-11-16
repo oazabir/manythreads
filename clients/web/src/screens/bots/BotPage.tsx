@@ -14,6 +14,7 @@ import { MoreMenu, type MoreItem } from './MoreMenu';
 import { GroupPanel } from './tabs';
 import { SaveBar, showSaveBar } from './SaveBar';
 import { LeaveGuard } from './LeaveGuard';
+import { botChatPath } from './botPaths';
 import { BOT_GROUPS, viewOf, type BotGroupId, type BotView } from './groups';
 import { BotTestPanel } from './test-panel';
 import { canOfferTest } from './test-run';
@@ -66,7 +67,7 @@ export function BotPage() {
   const { slug, canEdit, q } = useBot(botSlug);
   const [revision, setRevision] = useState(0);
   const [save, setSave] = useState<SaveState>(null);
-  useCrumbTail(q.status === 'ok' ? q.data.bot.name : null);
+  useCrumbTail(q.status === 'ok' ? `${q.data.bot.name} settings` : null);
 
   const goTab = (id: BotGroupId): void => {
     const next = new URLSearchParams(params);
@@ -231,7 +232,7 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
           <div className="b-head-main" data-testid="bot-head-actions">
             {/* no conversation trigger, no 1:1 chat: nothing is drawn (the API answers 409 as well) */}
             {bot.status === 'active' && bot.conversational ? (
-              <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} aria-label={`Talk to ${bot.name}`} data-testid="open-conversation">Talk</Link>
+              <Link className="btn s primary" to={botChatPath(slug, bot.slug)} aria-label={`Talk to ${bot.name}`} data-testid="open-conversation">Talk</Link>
             ) : null}
             {/* the Deploy action (P8-34): commits the definition, makes the knowledge ready, switches the connection on; the server checks every part and reports each */}
             {canEdit && draft.frontmatter ? (

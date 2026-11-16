@@ -17,23 +17,23 @@ export class BotsRosterPage extends PageObject {
   row(name: string | RegExp): Locator {
     return this.rows.filter({ hasText: name }).first();
   }
-  /** Opens one bot from the roster by clicking its row. */
+  /** Opens one bot's settings from the roster (its Configure button; the name opens its chat). */
   async openBot(name: string | RegExp): Promise<BotPage> {
-    await this.row(name).click();
+    await this.row(name).getByTestId(TID.botConfigure).click();
     const bot = new BotPage(this.page, this.team);
     await bot.expectLoaded();
     return bot;
   }
 }
 
-/** One bot's page (`/t/<team>/bots/<slug>`): its definition, runs, tests and audit. */
+/** One bot's settings page (`/t/<team>/bots/<slug>/settings`): its definition, runs, tests and audit. */
 export class BotPage extends PageObject {
   protected readonly landmark = TID.botPage;
   constructor(page: Page, readonly team: string) {
     super(page);
   }
   async open(slug: string): Promise<this> {
-    return this.goto(`/t/${this.team}/bots/${slug}`);
+    return this.goto(`/t/${this.team}/bots/${slug}/settings`);
   }
   /** "Talk to" the bot, when the page offers it. */
   get talk(): Locator {

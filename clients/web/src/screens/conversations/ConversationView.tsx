@@ -13,7 +13,9 @@ import { threadKey } from '../../channels/store';
 import { Alert, Avatar } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
 import { useShell } from '../../shell/context';
-import { BackIcon } from '../../shell/icons';
+import { BackIcon, GearIcon } from '../../shell/icons';
+import { botSettingsPath } from '../bots/botPaths';
+import { useBotPerms } from '../bots/store';
 import { OwnsPageTitle, useCrumbTail } from '../../shell/topic';
 import { useNarrow } from '../../shell/useNarrow';
 import { fetchBots } from '../bots/api';
@@ -66,6 +68,7 @@ const NO_OLDER: Older = { items: [], next: null, pages: 0, loading: false, faile
 
 export function ConversationView() {
   const { team = '', botSlug = '' } = useParams();
+  const { canEdit: canEditBot } = useBotPerms();
   const [params, setParams] = useSearchParams();
   const narrow = useNarrow();
   const people = usePeople();
@@ -234,6 +237,12 @@ export function ConversationView() {
               <Link to={{ pathname: path, search: scope === 'mine' ? '' : `?tab=${scope}` }} data-testid="conversation-home">{botName}</Link>
               <span className="cv-sub"> · conversations with you</span>
             </h1>
+            {/* every way to change the bot lives under its settings; the button is for the people who may (the server checks every settings route as well) */}
+            {canEditBot ? (
+              <Link className="icon-btn cv-settings" to={botSettingsPath(team, botSlug)} aria-label="Bot settings" title="Bot settings" data-testid="bot-settings-link">
+                <GearIcon />
+              </Link>
+            ) : null}
             <ViewTabs view="chat" onChange={changeView} />
             <div className="tabs2" role="tablist" aria-label={`${botName} conversations`}>
               {TABS.map((t) => (

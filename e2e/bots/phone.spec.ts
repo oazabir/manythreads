@@ -86,7 +86,7 @@ test('the roster keeps Add a bot in the header and puts Recipes, Proposals and A
 });
 
 test('the bot page header keeps Talk, Deploy and the "…" button in one row, and the menu answers the keys', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/coder', LAYOUT);
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/coder/settings', LAYOUT);
   try {
     await expect(page.getByTestId('bot-page')).toBeVisible();
     const row = [page.getByTestId('open-conversation'), page.getByTestId('deploy-bot'), page.getByTestId('bot-more')];
@@ -124,7 +124,7 @@ test('the bot page header keeps Talk, Deploy and the "…" button in one row, an
 });
 
 test('the save bar fits the screen, leaves the focus in the field and opens its menu upward inside the screen', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/coder', LAYOUT);
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/coder/settings', LAYOUT);
   try {
     const role = page.getByTestId('bot-role');
     await expect(role).toBeVisible();
@@ -160,7 +160,7 @@ test('the save bar fits the screen, leaves the focus in the field and opens its 
 });
 
 test('a link to a later group brings its tab into view; a link to a first section keeps the head and the tabs in sight', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/coder?tab=history', LAYOUT);
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/coder/settings?tab=history', LAYOUT);
   try {
     const tabs = page.locator('[data-landmark="bot-tabs"]');
     await expect(page.getByTestId('tab-history')).toHaveAttribute('aria-selected', 'true');
@@ -172,7 +172,7 @@ test('a link to a later group brings its tab into view; a link to a first sectio
     }).toBe(true);
     expect(await noSidewaysScroll(page)).toBe(true);
 
-    await page.goto('/t/engineering/bots/coder?tab=identity');
+    await page.goto('/t/engineering/bots/coder/settings?tab=identity');
     await expect(page.getByTestId('pane-identity')).toBeVisible();
     await expect(page.locator('[data-landmark="bot-head"]')).toBeInViewport();
     await expect(tabs).toBeInViewport();

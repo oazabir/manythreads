@@ -820,7 +820,7 @@ Plan: `docs/plans/channel-task-view.md`. Under a thread's root message in the ch
 | P29-09 | Playwright spec and screenshots (four palettes, light and dark, 1440 and 390) | Not built |
 | P29-10 | Docs, STATUS, MISTAKES | Not built |
 | P29-12 | The dock above the thread's composer (section 10a): `ThreadDock` with the compact to-do, run card and the pending question strip, replacing `TodoPin` and the thread's own approvals strip; collapse, 40% height, 390 px; component test, e2e case, screenshots | Done |
-| P29-13 | Opening a bot opens its chat; no chat shows an empty state with a Bot settings button for people who may change it; the customization page moves to `/bots/:bot/settings` with redirects from the old tab addresses (section 10b); component tests, e2e, screenshots | Not built |
+| P29-13 | Opening a bot opens its chat; no chat shows an empty state with a Bot settings button for people who may change it; the customization page moves to `/bots/:bot/settings` with redirects from the old tab addresses (section 10b); component tests, e2e, screenshots | Done |
 | P29-11 | Deploy and live check | Not built |
 
 ---

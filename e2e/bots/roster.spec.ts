@@ -91,7 +91,7 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     await expect(coder.getByTestId('bot-state')).toContainText('active');
     await expect(coder.getByTestId('bot-state')).not.toContainText(/idle|ready/);
     await expect(coder.getByTestId('bot-open')).toHaveAttribute('href', '/t/engineering/bots/coder');
-    await expect(coder.getByTestId('bot-configure')).toHaveAttribute('href', '/t/engineering/bots/coder?tab=identity');
+    await expect(coder.getByTestId('bot-configure')).toHaveAttribute('href', '/t/engineering/bots/coder/settings?tab=identity');
 
     // the other side of "only what differs": a fixed place and a bot shared with the workspace DO draw a chip (so the zero counts above can fail)
     const [before] = await stack.sql<{ placement: unknown; visibility: string }>("SELECT placement, visibility FROM app.bots WHERE slug = 'coder'");
@@ -111,7 +111,7 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
 });
 
 test('a member who does not lead the team reads every tab of one bot, with no Save and the file as the way to change it', async ({ browser, playwright }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder');
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder/settings');
   try {
     await expect(page.getByTestId('bot-page')).toBeVisible();
     await expect(page.getByTestId('bot-title')).toContainText('Coder');
@@ -152,7 +152,7 @@ test('a team lead who is not a workspace admin edits an existing bot, but cannot
   await stack.sql("UPDATE app.team_members SET role = 'lead' WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf('nadia')]);
   const api = await apiOn(playwright, stack, 'nadia');
   try {
-    const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder');
+    const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder/settings');
     try {
       await expect(page.getByTestId('bot-page')).toBeVisible();
       // a lead of the team has no read-only note, and Save appears with the first change (P21-17)
@@ -214,7 +214,7 @@ test('a definition that fails to load is the red banner on the page and the rost
   await commitDefinition(omar, fixed, 'Fix the Coder definition', (await definitionOf(omar)).blobSha);
   await omar.ctx.dispose();
 
-  const { page: fixedPage, context: fixedContext } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder');
+  const { page: fixedPage, context: fixedContext } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder/settings');
   try {
     await expect(fixedPage.getByTestId('bot-invalid-banner')).toHaveCount(0, { timeout: 15_000 });
     await expect(fixedPage.getByTestId('definition-unreadable')).toHaveCount(0);

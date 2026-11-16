@@ -35,7 +35,7 @@ export async function openBot(
   /** `{ viewport: PHONE, mobile: true }` on the mobile-web project: a context made with `browser.newContext` does not inherit the project's viewport. */
   layout: { viewport?: { width: number; height: number }; mobile?: boolean } = {},
 ): Promise<{ page: Page; close: () => Promise<void> }> {
-  const { page, context } = await openOn(browser, playwright, stack, who, `/t/engineering/bots/${slug}${query}`, layout);
+  const { page, context } = await openOn(browser, playwright, stack, who, `/t/engineering/bots/${slug}/settings${query}`, layout);
   await expect(page.getByTestId('bot-page')).toBeVisible();
   return { page, close: () => context.close() };
 }

@@ -226,7 +226,7 @@ describe('where a citation opens', () => {
     });
     expect(citationTarget(cite({ kind: 'file', n: 1, label: 'f', scope: 'channel', fileId: uuid(13) }), 'engineering', slugOf)).toEqual({ type: 'download', href: `/api/files/${uuid(13)}/content` });
     expect(citationTarget(cite({ kind: 'run', n: 1, label: 'r', scope: 'team', runId: uuid(14), botId: uuid(15), botSlug: 'brain' }), 'engineering', slugOf)).toMatchObject({
-      pathname: '/t/engineering/bots/brain',
+      pathname: '/t/engineering/bots/brain/settings',
       search: '?tab=audit',
     });
     expect(citationTarget(cite({ kind: 'run', n: 1, label: 'r', scope: 'team', runId: uuid(14), botId: uuid(15), botSlug: null }), 'engineering', slugOf)).toBeNull();

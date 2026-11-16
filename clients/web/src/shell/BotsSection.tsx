@@ -16,6 +16,9 @@ export const BOTS_FOLD_AT = 5;
  * row opens that bot's page (`/t/:team/bots/:botSlug`). The empty state is shown only while the team really has none; a server without the
  * bots plugin answers 404 and the section then says the same.
  */
+/** The page is one of the bot's own (its chat, its settings, its usage): its row stays in a folded list. */
+const isBotPath = (path: string, team: string, botSlug: string): boolean => path === `/t/${team}/bots/${botSlug}` || path.startsWith(`/t/${team}/bots/${botSlug}/`);
+
 export function BotsSection({ item, slug }: { item: NavContribution; slug: string }) {
   const session = useSession();
   const path = useLocation().pathname;
@@ -39,7 +42,7 @@ export function BotsSection({ item, slug }: { item: NavContribution; slug: strin
       </div>
       {bots.length > 0 ? (
         <div className="bot-list" data-slot="bots">
-          {bots.filter((b) => !folded || path.endsWith(`/bots/${b.slug}`)).map((b) => {
+          {bots.filter((b) => !folded || isBotPath(path, slug, b.slug)).map((b) => {
             const a = botAvailability(b, connections);
             return (
               <NavLink
