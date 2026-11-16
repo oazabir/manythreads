@@ -25,4 +25,4 @@ ENV HOME=/state/home CLAUDE_CONFIG_DIR=/state/claude CODEX_HOME=/state/codex
 WORKDIR /work
 EXPOSE 8650
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "--experimental-transform-types", "--disable-warning=ExperimentalWarning", "/opt/bridge/src/main.ts", "--config", "/etc/bridge/config.json", "--listen", "0.0.0.0:8650", "--state-dir", "/state/bridge"]
+CMD ["node", "/opt/bridge/bridge.mjs", "--config", "/etc/bridge/config.json", "--listen", "0.0.0.0:8650", "--state-dir", "/state/bridge"]

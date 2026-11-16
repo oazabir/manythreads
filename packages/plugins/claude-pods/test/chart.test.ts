@@ -15,10 +15,11 @@ const render = (extra: string[]): { code: number; out: string } => {
 const docsOf = (out: string, kind: string): string[] => out.split(/^---$/m).filter((d) => new RegExp(`^kind: ${kind}$`, 'm').test(d));
 
 describe.skipIf(!haveHelm)('the chart (P19-05)', () => {
-  it('is off in the live values: nothing about Claude pods is rendered', () => {
-    const r = render([]);
-    expect(r.code, r.out).toBe(0);
-    expect(r.out).not.toMatch(/CLAUDE_PODS|claude-pod/);
+  it('is on in the live values (the owner accepted the permission list, 2026-11-15); off renders nothing about Claude pods', () => {
+    expect(render([]).out).toContain('name: MANYTHREADS_CLAUDE_PODS, value: "1"');
+    const off = render(['--set', 'claudePod.enabled=false']);
+    expect(off.code, off.out).toBe(0);
+    expect(off.out).not.toMatch(/CLAUDE_PODS|claude-pod/);
   });
 
   it('on: one network policy for claude-pod only, ingress from the server on 8650, and 443 out only in public443 mode', () => {
@@ -56,7 +57,7 @@ describe.skipIf(!haveHelm)('the chart (P19-05)', () => {
   });
 
   it('adds one namespaced Role for the keeper identity, and nothing cluster-wide', () => {
-    const base = render([]);
+    const base = render(['--set', 'claudePod.enabled=false']);
     const on = render(['--set', 'claudePod.enabled=true']);
     for (const kind of ['ClusterRole', 'ClusterRoleBinding', 'ServiceAccount']) expect(docsOf(on.out, kind).length, kind).toBe(docsOf(base.out, kind).length);
     expect(docsOf(on.out, 'Role').length).toBe(docsOf(base.out, 'Role').length + 1);

@@ -215,6 +215,8 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   cp deploy/images/workbench/mt-publish.sh deploy/images/workbench/mt-askpass.sh "$CP_STAGE/"
   mkdir -p "$CP_STAGE/bridge"
   cp -r tools/agent-bridge/src "$CP_STAGE/bridge/src"
+  # the bridge as one file (it imports workspace packages, which the image does not hold); the pod runs /opt/bridge/bridge.mjs
+  node tools/agent-bridge/install/build.mjs --bridge-only "$CP_STAGE/bridge/bridge.mjs" || { echo "ERROR: the bridge bundle for the pod image did not build"; exit 1; }
   # the one thing the bridge imports from npm (its runtime dependencies, from the package's own file); the image installs it
   node -e 'const p=require("./tools/agent-bridge/package.json");process.stdout.write(JSON.stringify({name:"agent-bridge",private:true,type:"module",dependencies:p.dependencies}))' > "$CP_STAGE/bridge/package.json"
   if [ "$(claude_pod_value useFake)" = "true" ]; then

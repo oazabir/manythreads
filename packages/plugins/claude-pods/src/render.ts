@@ -436,7 +436,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
               name: 'bridge',
               image: cfg.image,
               imagePullPolicy: 'IfNotPresent',
-              command: ['/usr/bin/tini', '--', 'node', '--experimental-transform-types', '--disable-warning=ExperimentalWarning', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', bridgeStateDirFor(names.team), '--repos-file', REPOS_FILE],
+              command: ['/usr/bin/tini', '--', 'node', '/opt/bridge/bridge.mjs', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', bridgeStateDirFor(names.team), '--repos-file', REPOS_FILE],
               ports: [{ name: 'bridge', containerPort: BRIDGE_PORT }],
               env: [
                 { name: 'AGENT_BRIDGE_API_KEY', valueFrom: { secretKeyRef: { name: names.key, key: 'api-key' } } },

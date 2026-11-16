@@ -44,10 +44,14 @@ try {
     hash.update(readFileSync(f));
   }
   const version = hash.digest('hex').slice(0, 12);
+  // `--bridge-only <file>`: only the bridge as one file, for the agent pod image (deploy.sh). The pod used to run the bridge's TypeScript sources with only
+  // its npm dependencies beside them, which broke the day the bridge imported a workspace package (@manythreads/shared, 2026-11-16).
+  const only = process.argv.indexOf('--bridge-only');
+  const bridgeOut = only > 0 ? resolve(process.argv[only + 1]) : join(stage, 'bridge.mjs');
   mkdirSync(join(stage, 'agents'), { recursive: true });
   await build({
     entryPoints: [join(bridge, 'src', 'main.ts')],
-    outfile: join(stage, 'bridge.mjs'),
+    outfile: bridgeOut,
     bundle: true,
     platform: 'node',
     target: 'node22',
@@ -59,6 +63,11 @@ try {
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
     logLevel: 'warning',
   });
+  if (only > 0) {
+    console.log(`bridge ${version}: ${bridgeOut}`);
+    rmSync(stage, { recursive: true, force: true });
+    process.exit(0);
+  }
   // the root helper of the per-team users (P26-22): its own file, installed by bridge.sh into a folder only root can change; it shares no code with the bridge that it does not check itself
   await build({
     entryPoints: [join(bridge, 'src', 'team-helper-main.ts')],
