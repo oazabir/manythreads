@@ -27,6 +27,7 @@ import { PersonLink } from '../presence/ProfileCard';
 import { CloseIcon } from '../shell/icons';
 import { PageHeader } from '../components/PageHeader';
 import { SkeletonRows } from '../components/Skeleton';
+import { rosterCounts } from './rosterWords';
 
 /** /teams/:slug is the roster. */
 export function TeamRedirect() {
@@ -179,7 +180,7 @@ export function Roster() {
           <div className="roster" data-landmark="roster">
             <PageHeader title={<>{t.name}{t.archivedAt ? ' (archived)' : ''}</>} />
             <p className="lede" data-landmark="lede">
-              {members.length} {members.length === 1 ? 'person' : 'people'}{def ? `, ${def.bots.length} bots, ${def.channels.length} channels` : ''}. This team's memory is kept apart and is not readable from other teams.
+              {rosterCounts(members.length, def)}. This team's memory is kept apart and is not readable from other teams.
             </p>
             {error ? <Alert>{error}</Alert> : null}
 
