@@ -4,7 +4,7 @@ import type { K8s, K8sObject } from '@manythreads/sdk/pods';
 import { describe, expect, it } from 'vitest';
 import { configFrom, type ClaudePodConfig } from '../src/config.ts';
 import { Reconciler, type RunnerSource } from '../src/reconcile.ts';
-import { buildBridgeConfig, buildDeployment, kubeconfigPath, namesFor, publisherKey, type DeployPlan, type PodRunner } from '../src/render.ts';
+import { buildBridgeConfig, buildDeployment, kubeconfigPath, namesFor, publisherKey, runnerForTeam, type DeployPlan, type PodRunner } from '../src/render.ts';
 
 // P26-09: the agent pod. Both agents run over ACP; the pod starts with no sign-in (the Runners page signs the agent in inside the pod); Codex has full access only when the runner says so,
 // for one team; the team's deployer bot, and only it, gets the deploy login; nothing in the pod reaches the cluster API except a pod that needs it.
@@ -58,7 +58,7 @@ const runner = (name: string, agent: 'claude' | 'codex', over: Partial<PodRunner
 const profilesOf = (r: PodRunner, deploy?: DeployPlan, cfg: ClaudePodConfig = CFG): Record<string, any> => JSON.parse(buildBridgeConfig(cfg, r, new Set(), deploy)).profiles;
 const DEPLOY: DeployPlan = { bots: new Set([publisherKey('engineering', 'deployer')]), mounts: [{ teamSlug: 'engineering', secret: 'hermes-engineering-deployer', key: 'deployer.kubeconfig' }] };
 const deployment = (r: PodRunner, opts: Partial<Parameters<typeof buildDeployment>[3]> = {}): any =>
-  buildDeployment(CFG, r, namesFor(r.name, r.agent), { replicas: 1, node: null, moving: false, held: null, uploadId: null, pushSecrets: [], profilesSha: 'x', keeper: false, deployMounts: [], ...opts });
+  buildDeployment(CFG, r, namesFor(r.name, r.agent, 'engineering'), { replicas: 1, node: null, moving: false, held: null, uploadId: null, pushSecrets: [], profilesSha: 'x', keeper: false, deployMounts: [], ...opts });
 const bridgeOf = (d: any): any => d.spec.template.spec.containers.find((c: any) => c.name === 'bridge');
 
 describe('the bridge profiles of an agent pod', () => {
@@ -84,15 +84,19 @@ describe('the bridge profiles of an agent pod', () => {
     expect(p['default']).toMatchObject({ agent: 'claude-code', driver: 'acp', workdir: '/work' });
   });
 
-  it('give Codex full access only when the runner says so and the pod serves one team; Claude Code never gets the key', () => {
+  it('give Codex full access only when the runner says so, on every team pod; Claude Code never gets the key', () => {
     expect(profilesOf(runner('x', 'codex'))['engineering--engineer'].fullAccess).toBeUndefined();
     const on = profilesOf(runner('x', 'codex', { fullAccess: true }))['engineering--engineer'];
     expect(on.fullAccess).toBe(true);
     expect(on.instructions).toContain('without a question');
     expect(profilesOf(runner('c', 'claude', { fullAccess: true }))['engineering--engineer'].fullAccess).toBeUndefined();
-    // two teams on one pod: never, whatever the column says
-    const two = profilesOf(runner('x', 'codex', { fullAccess: true, allTeams: true, bots: [ENG, { teamId: 't-mkt', teamSlug: 'marketing', botSlug: 'writer' }] }));
-    for (const p of Object.values(two)) expect(p.fullAccess).toBeUndefined();
+    // two teams on one runner: each team has a pod of its own, and full access applies to each team pod (agents-anywhere §9b)
+    const wide = runner('x', 'codex', { fullAccess: true, allTeams: true, bots: [ENG, { teamId: 't-mkt', teamSlug: 'marketing', botSlug: 'writer' }] });
+    for (const team of [{ id: 't-eng', slug: 'engineering' }, { id: 't-mkt', slug: 'marketing' }]) {
+      const mine = profilesOf(runnerForTeam(wide, team));
+      expect(Object.keys(mine).every((k) => k.startsWith(`${team.slug}--`))).toBe(true);
+      for (const p of Object.values(mine)) expect(p.fullAccess).toBe(true);
+    }
     // the stand-in image has no ACP driver: the key is not written
     expect(profilesOf(runner('x', 'codex', { fullAccess: true }), undefined, { ...CFG, driver: 'cli' })['engineering--engineer'].fullAccess).toBeUndefined();
   });
@@ -164,7 +168,7 @@ describe('the Deployment of an agent pod', () => {
 
 describe('the controller for an agent pod', () => {
   const pod = (k8s: FakeK8s, name: string, agent: 'claude' | 'codex'): void => {
-    const base = namesFor(name, agent).base;
+    const base = namesFor(name, agent, 'engineering').base;
     k8s.store.set(`Pod/bots/${base}-1`, { apiVersion: 'v1', kind: 'Pod', metadata: { name: `${base}-1`, namespace: 'bots', labels: { 'manythreads.io/pod': base } }, status: { phase: 'Running' } });
   };
   const make = (runners: PodRunner[], doFetch: typeof fetch, extra: Partial<RunnerSource> = {}) => {
@@ -182,7 +186,7 @@ describe('the controller for an agent pod', () => {
     const res = await r.reconcileAll();
     expect(res[0]?.state).toBe('ready');
     expect(reports.at(-1)).toBe('ready');
-    expect(seen[0]?.url).toBe('http://codex-x.bots.svc:8650/v1/auth/status?agent=codex');
+    expect(seen[0]?.url).toBe('http://codex-x-engineering.bots.svc:8650/v1/auth/status?agent=codex');
     expect(seen[0]?.auth).toBe(`Bearer ${'k'.repeat(48)}`);
   });
 
@@ -226,17 +230,17 @@ describe('the controller for an agent pod', () => {
     expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('c').state}`)).toBe(true);
   });
 
-  it('mounts the deployer kubeconfig for a one-team pod with the deployer bot, and for no other pod', async () => {
+  it('mounts the deployer kubeconfig into the pod of the team that has the deployer bot, and into no other pod', async () => {
     const asked: string[] = [];
     const deployerKubeconfig = async (team: { id: string; slug: string }) => (asked.push(team.slug), { secret: `hermes-${team.slug}-deployer`, key: 'deployer.kubeconfig' });
     const offline = (async () => new Response('', { status: 503 })) as typeof fetch;
 
     const one = make([runner('c', 'claude', { bots: [ENG, DEP] })], offline, { deployerKubeconfig });
     await one.r.reconcileAll();
-    const d: any = one.k8s.store.get(`Deployment/bots/${namesFor('c').base}`);
+    const d: any = one.k8s.store.get(`Deployment/bots/${namesFor('c', 'claude', 'engineering').base}`);
     expect(JSON.stringify(d)).toContain('hermes-engineering-deployer');
     expect(d.spec.template.metadata.labels['manythreads.io/kube-api']).toBe('true');
-    const cfg = JSON.parse(((await one.k8s.get('ConfigMap', 'bots', namesFor('c').config))!.data as any)['config.json']);
+    const cfg = JSON.parse(((await one.k8s.get('ConfigMap', 'bots', namesFor('c', 'claude', 'engineering').config))!.data as any)['config.json']);
     expect(cfg.profiles['engineering--deployer'].env.KUBECONFIG).toBeTruthy();
     expect(cfg.profiles['engineering--engineer'].env.KUBECONFIG).toBeUndefined();
 
@@ -245,20 +249,24 @@ describe('the controller for an agent pod', () => {
     const none = make([runner('n', 'claude')], offline, { deployerKubeconfig });
     await none.r.reconcileAll();
     expect(asked).toEqual([]);
-    expect(JSON.stringify(none.k8s.store.get(`Deployment/bots/${namesFor('n').base}`))).not.toContain('deployer');
-    expect((none.k8s.store.get(`Deployment/bots/${namesFor('n').base}`) as any).spec.template.metadata.labels['manythreads.io/kube-api']).toBeUndefined();
+    expect(JSON.stringify(none.k8s.store.get(`Deployment/bots/${namesFor('n', 'claude', 'engineering').base}`))).not.toContain('deployer');
+    expect((none.k8s.store.get(`Deployment/bots/${namesFor('n', 'claude', 'engineering').base}`) as any).spec.template.metadata.labels['manythreads.io/kube-api']).toBeUndefined();
 
-    // two teams on one pod: every bot of the pod could read the file, so there is none, and the log says why
-    LOGS.length = 0;
+    // two teams on one runner: each team's pod gets its own team's login and no other (the second team's deployer has its own pod and its own Secret)
+    asked.length = 0;
     const two = make([runner('t', 'claude', { allTeams: true, bots: [ENG, DEP, MKT] })], offline, { deployerKubeconfig });
     await two.r.reconcileAll();
-    expect(asked).toEqual([]);
-    expect(JSON.stringify(two.k8s.store.get(`Deployment/bots/${namesFor('t').base}`))).not.toContain('hermes-engineering-deployer');
-    expect(LOGS.join('\n')).toMatch(/more than one team/);
+    expect(asked.sort()).toEqual(['engineering', 'marketing']);
+    const eng = JSON.stringify(two.k8s.store.get(`Deployment/bots/${namesFor('t', 'claude', 'engineering').base}`));
+    const mkt = JSON.stringify(two.k8s.store.get(`Deployment/bots/${namesFor('t', 'claude', 'marketing').base}`));
+    expect(eng).toContain('hermes-engineering-deployer');
+    expect(eng).not.toContain('hermes-marketing-deployer');
+    expect(mkt).toContain('hermes-marketing-deployer');
+    expect(mkt).not.toContain('hermes-engineering-deployer');
 
     // the platform has no kubeconfig for the team (provider off or the team has no deployer): the pod runs without
     const missing = make([runner('m', 'claude', { bots: [ENG, DEP] })], offline, { deployerKubeconfig: async () => null });
     await missing.r.reconcileAll();
-    expect(JSON.stringify(missing.k8s.store.get(`Deployment/bots/${namesFor('m').base}`))).not.toContain('/etc/deployer');
+    expect(JSON.stringify(missing.k8s.store.get(`Deployment/bots/${namesFor('m', 'claude', 'engineering').base}`))).not.toContain('/etc/deployer');
   });
 });

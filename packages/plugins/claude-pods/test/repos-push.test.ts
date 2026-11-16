@@ -87,14 +87,15 @@ async function bridgeStandIn(): Promise<{ url: string; puts: Put[]; status: { va
 
 function controller(bridgeUrl: string, projects: { current: ReturnType<typeof project>[] }) {
   const k8s = new FakeK8s();
-  const names = namesFor(runner.name);
+  const names = namesFor(runner.name, 'claude', 'engineering');
+  const shared = namesFor(runner.name);
   const source: RunnerSource = {
     runners: async () => [runner],
     reposForTeams: async () => projects.current,
     publishersForTeams: async () => [],
   };
   const r = new Reconciler(k8s, CFG, source, LOG, () => 'k'.repeat(48), Date.now, fetch, () => bridgeUrl);
-  const credentials = (): void => void k8s.store.set(`Secret/bots/${names.credentials}`, { apiVersion: 'v1', kind: 'Secret', metadata: { name: names.credentials, namespace: 'bots' }, data: {} });
+  const credentials = (): void => void k8s.store.set(`Secret/bots/${shared.credentials}`, { apiVersion: 'v1', kind: 'Secret', metadata: { name: shared.credentials, namespace: 'bots' }, data: {} });
   const podUp = (): void =>
     void k8s.store.set(`Pod/bots/${names.base}-abc`, { apiVersion: 'v1', kind: 'Pod', metadata: { name: `${names.base}-abc`, namespace: 'bots', labels: { 'manythreads.io/pod': names.base } }, status: { phase: 'Running' } });
   return { k8s, r, names, credentials, podUp };

@@ -6,7 +6,7 @@ import { namesFor } from '../src/render.ts';
 
 // P19-12: the test seam that lets a test server point the runners' bridges at one stand-in. It must do nothing in a real install: both variables are needed and NODE_ENV must be `test`.
 
-const keySecret = (name: string): K8sObject => ({ apiVersion: 'v1', kind: 'Secret', metadata: { name: namesFor(name, 'claude').key, namespace: 'bots' }, data: { 'api-key': Buffer.from('real-pod-key').toString('base64') } });
+const keySecret = (name: string): K8sObject => ({ apiVersion: 'v1', kind: 'Secret', metadata: { name: namesFor(name, 'claude', 'engineering').key, namespace: 'bots' }, data: { 'api-key': Buffer.from('real-pod-key').toString('base64') } });
 const k8s = (withKey: boolean): K8s => ({
   apply: async () => undefined,
   get: async (kind) => (kind === 'Secret' && withKey ? keySecret('shared') : null),
@@ -31,8 +31,8 @@ describe('the bridge address of a pod', () => {
   it('is the Service of the pod and the key of its Secret when no seam is set', async () => {
     delete process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL'];
     delete process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY'];
-    expect(await provider(true).bridge({ runnerName: 'shared', agent: 'claude' })).toEqual({ address: 'http://claude-shared.bots.svc:8650', key: 'real-pod-key' });
-    expect(await provider(false).bridge({ runnerName: 'shared', agent: 'claude' })).toBeNull();
+    expect(await provider(true).bridge({ runnerName: 'shared', agent: 'claude', teamSlug: 'engineering' })).toEqual({ address: 'http://claude-shared-engineering.bots.svc:8650', key: 'real-pod-key' });
+    expect(await provider(false).bridge({ runnerName: 'shared', agent: 'claude', teamSlug: 'engineering' })).toBeNull();
   });
 
   it('is the stand-in when a test server sets both variables', async () => {
@@ -46,9 +46,9 @@ describe('the bridge address of a pod', () => {
     process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL'] = 'http://127.0.0.1:9';
     process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY'] = 'stand-in-key';
     process.env['NODE_ENV'] = 'production';
-    expect(await provider(true).bridge({ runnerName: 'shared', agent: 'claude' })).toEqual({ address: 'http://claude-shared.bots.svc:8650', key: 'real-pod-key' });
+    expect(await provider(true).bridge({ runnerName: 'shared', agent: 'claude', teamSlug: 'engineering' })).toEqual({ address: 'http://claude-shared-engineering.bots.svc:8650', key: 'real-pod-key' });
     process.env['NODE_ENV'] = 'test';
     delete process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY'];
-    expect(await provider(true).bridge({ runnerName: 'shared', agent: 'claude' })).toEqual({ address: 'http://claude-shared.bots.svc:8650', key: 'real-pod-key' });
+    expect(await provider(true).bridge({ runnerName: 'shared', agent: 'claude', teamSlug: 'engineering' })).toEqual({ address: 'http://claude-shared-engineering.bots.svc:8650', key: 'real-pod-key' });
   });
 });

@@ -13,7 +13,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { client, handle, serve } from '../../../../deploy/images/agent-pod/publisher.mjs';
 import { startFakeGithub, type FakeGithub } from '../../../test-utils/src/fake-github.ts';
 import { configFrom, type ClaudePodConfig } from '../src/config.ts';
-import { buildBridgeConfig, buildDeployment, GIT_TOOLS, namesFor, PUBLISH_TOOL, publisherKey, pushSecretName, RECORD_TOOLS } from '../src/render.ts';
+import { buildBridgeConfig, buildDeployment, GIT_TOOLS, namesFor, PUBLISH_TOOL, publisherKey, pushSecretName, RECORD_TOOLS, runnerForTeam } from '../src/render.ts';
 
 // P19-09: publishing from a Claude pod. Two halves. The rendered objects: the run container has no push token, no push Secret and no way to reach one; only the publisher container mounts a team's
 // Secret. And the publisher itself, run for real (its server, its client, mt-publish.sh, git, a local double of GitHub and of the platform): a push to main is refused, a bot of team A cannot publish
@@ -50,30 +50,25 @@ describe('the rendered pod', () => {
     ],
     ...over,
   });
-  const names = namesFor('shared');
+  const names = namesFor('shared', 'claude', 'engineering');
+  // one pod per team (P26-21): the engineering team's pod of a runner that also serves marketing
   const pods = (cfg = CFG, over: Partial<PodRunnerInfo> = {}) => {
-    const r = runner(over);
-    return buildDeployment(cfg, r, names, {
-      replicas: 1,
-      pushSecrets: [
-        { teamSlug: 'marketing', secret: 'hermes-marketing-push' },
-        { teamSlug: 'engineering', secret: 'hermes-engineering-push' },
-      ],
-    }) as any;
+    const r = runnerForTeam(runner(over), { id: 't-eng', slug: 'engineering' });
+    return buildDeployment(cfg, r, names, { replicas: 1, pushSecrets: [{ teamSlug: 'engineering', secret: 'hermes-engineering-push' }] }) as any;
   };
   const containers = (d: any): Record<string, any> => Object.fromEntries(d.spec.template.spec.containers.map((c: any) => [c.name, c]));
   const volumes = (d: any): Record<string, any> => Object.fromEntries(d.spec.template.spec.volumes.map((v: any) => [v.name, v]));
 
-  it('mounts a push Secret in the publisher container alone, read-only, one folder per team', () => {
+  it('mounts the pod team\'s push Secret in the publisher container alone, read-only', () => {
     const d = pods();
     const cs = containers(d);
     const vols = volumes(d);
     expect(Object.keys(cs).sort()).toEqual(['bridge', 'keeper', 'publisher', 'repo-sync']);
     const pushMounts = cs.publisher.volumeMounts.filter((m: any) => m.mountPath.startsWith('/etc/publisher-push/'));
-    expect(pushMounts.map((m: any) => m.mountPath)).toEqual(['/etc/publisher-push/engineering', '/etc/publisher-push/marketing']);
+    expect(pushMounts.map((m: any) => m.mountPath)).toEqual(['/etc/publisher-push/engineering']);
     expect(pushMounts.every((m: any) => m.readOnly === true)).toBe(true);
     const secretNames = pushMounts.map((m: any) => vols[m.name].secret.secretName);
-    expect(secretNames).toEqual(['hermes-engineering-push', 'hermes-marketing-push']);
+    expect(secretNames).toEqual(['hermes-engineering-push']);
     // no other container, and no init container, mounts any of those volumes
     const pushVolumes = new Set(pushMounts.map((m: any) => m.name));
     for (const c of [...d.spec.template.spec.containers.filter((c: any) => c.name !== 'publisher'), ...d.spec.template.spec.initContainers]) {
@@ -94,7 +89,7 @@ describe('the rendered pod', () => {
     // the repo-sync container, which clones with no credential, mounts no publish folder and no Secret either
     expect(JSON.stringify(containers(d)['repo-sync'])).not.toMatch(/publish|push|secret/i);
     // the whole Deployment names a team's push Secret only in volumes, and only the publisher mounts them
-    expect(d.spec.template.spec.volumes.filter((v: any) => v.secret).map((v: any) => v.secret.secretName).sort()).toEqual(['claude-shared-credentials', 'hermes-engineering-push', 'hermes-marketing-push']);
+    expect(d.spec.template.spec.volumes.filter((v: any) => v.secret).map((v: any) => v.secret.secretName).sort()).toEqual(['claude-shared-credentials', 'hermes-engineering-push']);
   });
 
   it('runs the publisher as its own user with a read-only root, the work volume read-only, no Kubernetes token and no sign-in', () => {
@@ -131,20 +126,23 @@ describe('the rendered pod', () => {
 
   it('allows each bot the git commands, and the publish command only a bot whose definition grants tasks.pull_request', () => {
     const publishers = new Set([publisherKey('engineering', 'builder')]);
-    const profiles = JSON.parse(buildBridgeConfig(CFG, runner(), publishers)).profiles;
+    const eng = runnerForTeam(runner(), { id: 't-eng', slug: 'engineering' });
+    const profiles = JSON.parse(buildBridgeConfig(CFG, eng, publishers)).profiles;
     expect(profiles['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS, PUBLISH_TOOL]);
     expect(profiles['engineering--reviewer'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
-    expect(profiles['marketing--writer'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
+    // the marketing bot has a pod (and a profile) of its own: none of this pod's
+    expect(profiles['marketing--writer']).toBeUndefined();
+    expect(JSON.parse(buildBridgeConfig(CFG, runnerForTeam(runner(), { id: 't-mkt', slug: 'marketing' }), publishers)).profiles['marketing--writer'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
     // the older command-line driver has no repository of record: no record commands
-    const cli = JSON.parse(buildBridgeConfig({ ...CFG, driver: 'cli' }, runner(), publishers)).profiles;
+    const cli = JSON.parse(buildBridgeConfig({ ...CFG, driver: 'cli' }, eng, publishers)).profiles;
     expect(cli['engineering--reviewer'].extraAllowedTools).toEqual([...GIT_TOOLS]);
     // the same bot name in another team is not a publisher
-    const other = JSON.parse(buildBridgeConfig(CFG, runner(), new Set([publisherKey('marketing', 'builder')]))).profiles;
+    const other = JSON.parse(buildBridgeConfig(CFG, eng, new Set([publisherKey('marketing', 'builder')]))).profiles;
     expect(other['engineering--builder'].extraAllowedTools).not.toContain(PUBLISH_TOOL);
     expect(profiles['engineering--builder'].instructions).toContain('mt-publish');
     expect(profiles['engineering--reviewer'].instructions).not.toContain('mt-publish');
     // no publisher container: no publish command for anyone
-    const none = JSON.parse(buildBridgeConfig({ ...CFG, serverUrl: '' }, runner(), publishers)).profiles;
+    const none = JSON.parse(buildBridgeConfig({ ...CFG, serverUrl: '' }, eng, publishers)).profiles;
     expect(none['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
   });
 

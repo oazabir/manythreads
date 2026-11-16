@@ -73,27 +73,32 @@ const signIn = (k8s: FakeK8s, name: string, agent: 'claude' | 'codex'): void => 
     data: { [n.file]: Buffer.from('{"made":"up"}').toString('base64'), 'upload-id': Buffer.from('up-1').toString('base64') },
   });
 };
-const depOf = (k8s: FakeK8s, name: string, agent: 'claude' | 'codex'): any => k8s.store.get(`Deployment/bots/${namesFor(name, agent).base}`)!;
+const depOf = (k8s: FakeK8s, name: string, agent: 'claude' | 'codex'): any => k8s.store.get(`Deployment/bots/${namesFor(name, agent, 'engineering').base}`)!;
 
 describe('names of a Codex runner', () => {
   it('are codex-<runner>…, the sign-in Secret holds auth.json, and no name is shared with a Claude runner of the same name', () => {
-    const n = namesFor('team-codex', 'codex');
+    // the runner's shared objects (state, sign-in Secret, keeper) are `codex-<runner>-…`; a team's pod and the objects only it owns carry the team (P26-21)
+    const n = namesFor('team-codex', 'codex', 'engineering');
     expect(n).toEqual({
       agent: 'codex',
-      base: 'codex-team-codex',
+      runnerBase: 'codex-team-codex',
+      team: 'engineering',
+      base: 'codex-team-codex-engineering',
       state: 'codex-team-codex-state',
-      work: 'codex-team-codex-work',
-      key: 'codex-team-codex-key',
+      work: 'codex-team-codex-engineering-work',
+      key: 'codex-team-codex-engineering-key',
       credentials: 'codex-team-codex-credentials',
       file: 'auth.json',
-      config: 'codex-team-codex-config',
+      config: 'codex-team-codex-engineering-config',
       keeper: 'codex-team-codex-keeper',
     });
-    const c = namesFor('team-codex', 'claude');
+    const c = namesFor('team-codex', 'claude', 'engineering');
     expect(c.file).toBe('.credentials.json');
-    expect(namesFor('team-codex')).toEqual(c);
-    const mine = new Set(Object.entries(n).filter(([k]) => k !== 'agent' && k !== 'file').map(([, v]) => v));
-    for (const [k, v] of Object.entries(c)) if (k !== 'agent' && k !== 'file') expect(mine.has(v), `${k} ${v}`).toBe(false);
+    expect(namesFor('team-codex', 'claude', 'engineering')).toEqual(c);
+    const mine = new Set(Object.entries(n).filter(([k]) => k !== 'agent' && k !== 'file' && k !== 'team').map(([, v]) => v));
+    for (const [k, v] of Object.entries(c)) if (k !== 'agent' && k !== 'file' && k !== 'team') expect(mine.has(v), `${k} ${v}`).toBe(false);
+    // the old single pod's names (no team) are what the migration looks for
+    expect(namesFor('team-codex', 'codex')).toMatchObject({ base: 'codex-team-codex', work: 'codex-team-codex-work', key: 'codex-team-codex-key', config: 'codex-team-codex-config' });
   });
 });
 
@@ -142,7 +147,7 @@ describe('the objects of a Codex runner', () => {
     await r.reconcileAll();
     const d = depOf(k8s, 'team-codex', 'codex');
     const spec = d.spec.template.spec;
-    expect(d.metadata.name).toBe('codex-team-codex');
+    expect(d.metadata.name).toBe('codex-team-codex-engineering');
     expect(spec.serviceAccountName).toBe('codex-team-codex-keeper');
     expect(spec.containers.map((c: any) => c.name)).toEqual(['bridge', 'keeper', 'repo-sync', 'publisher']);
     const bridge = spec.containers.find((c: any) => c.name === 'bridge');
@@ -173,9 +178,9 @@ describe('the objects of a Codex runner', () => {
     expect(bridge.volumeMounts.some((m: any) => m.name.startsWith('push-'))).toBe(false);
     expect(d.spec.replicas).toBe(1);
 
-    const cm = JSON.parse(((await k8s.get('ConfigMap', 'bots', 'codex-team-codex-config'))!.data as any)['config.json']);
+    const cm = JSON.parse(((await k8s.get('ConfigMap', 'bots', 'codex-team-codex-engineering-config'))!.data as any)['config.json']);
     const p = cm.profiles['engineering--engineer'];
-    expect(p).toMatchObject({ agent: 'codex', workdir: '/work/engineering/engineer', env: { CODEX_HOME: '/state/codex', HOME: '/state/home' } });
+    expect(p).toMatchObject({ agent: 'codex', workdir: '/work/engineering/engineer', env: { CODEX_HOME: '/state/codex', HOME: '/state/home/engineering' } });
     expect(p.extraAllowedTools).toBeUndefined();
     expect(p.instructions).toContain('Codex runner');
     expect(p.instructions).toContain('mt-publish');
@@ -184,7 +189,7 @@ describe('the objects of a Codex runner', () => {
   it('a Codex runner without a sign-in file runs a pod with no keeper (it is signed in from the Runners page) and says it waits for a sign-in', async () => {
     const { k8s, r } = setup([runner('team-codex', 'codex')]);
     const res = await r.reconcileAll();
-    expect(res[0]).toMatchObject({ replicas: 1, state: 'waiting_for_sign_in', pod: 'codex-team-codex' });
+    expect(res[0]).toMatchObject({ replicas: 1, state: 'waiting_for_sign_in', pod: 'codex-team-codex-engineering' });
     expect(depOf(k8s, 'team-codex', 'codex').spec.template.spec.containers.map((c: any) => c.name)).toEqual(['bridge', 'repo-sync', 'publisher']);
   });
 
@@ -214,11 +219,11 @@ describe('a Claude and a Codex runner together', () => {
     expect(b.size).toBe(a.size);
     expect([...a].filter((k) => b.has(k))).toEqual([]);
     // the sign-in Secrets are made by the upload route, not the controller: they are disjoint too
-    expect(namesFor('alpha', 'claude').credentials).not.toBe(namesFor('beta', 'codex').credentials);
+    expect(namesFor('alpha', 'claude', 'engineering').credentials).not.toBe(namesFor('beta', 'codex').credentials);
 
     for (const [name, agent, other] of [['alpha', 'claude', 'beta'], ['beta', 'codex', 'alpha']] as const) {
-      const n = namesFor(name, agent);
-      const otherNames = namesFor(other, agent === 'claude' ? 'codex' : 'claude');
+      const n = namesFor(name, agent, 'engineering');
+      const otherNames = namesFor(other, agent === 'claude' ? 'codex' : 'claude', 'engineering');
       const role = k8s.store.get(`Role/bots/${n.keeper}`) as any;
       // every rule names exactly the one sign-in Secret and can only read and patch it: no list, no create, no rule without resourceNames
       expect(role.rules).toEqual([{ apiGroups: [''], resources: ['secrets'], resourceNames: [n.credentials], verbs: ['get', 'patch'] }]);
@@ -240,7 +245,7 @@ describe('a Claude and a Codex runner together', () => {
     await r.reconcileAll();
     expect(depOf(k8s, 'alpha', 'claude').spec.replicas).toBe(1);
     expect(depOf(k8s, 'beta', 'codex').spec.replicas).toBe(0);
-    expect(k8s.store.has('PersistentVolumeClaim/bots/codex-beta-work')).toBe(true);
+    expect(k8s.store.has('PersistentVolumeClaim/bots/codex-beta-engineering-work')).toBe(true);
   });
 });
 
@@ -264,10 +269,11 @@ describe('the provider for the Runners page', () => {
 
   it('finds a Codex pod\'s bridge by its own key Secret', async () => {
     const k8s = new FakeK8s();
-    k8s.store.set('Secret/bots/codex-beta-key', { apiVersion: 'v1', kind: 'Secret', metadata: { name: 'codex-beta-key', namespace: 'bots' }, data: { 'api-key': Buffer.from('the-key').toString('base64') } });
+    k8s.store.set('Secret/bots/codex-beta-engineering-key', { apiVersion: 'v1', kind: 'Secret', metadata: { name: 'codex-beta-engineering-key', namespace: 'bots' }, data: { 'api-key': Buffer.from('the-key').toString('base64') } });
     const p = holder(k8s);
-    expect(await p.bridge({ runnerName: 'beta', agent: 'codex' })).toEqual({ address: 'http://codex-beta.bots.svc:8650', key: 'the-key' });
-    expect(await p.bridge({ runnerName: 'beta' })).toBeNull();
+    expect(await p.bridge({ runnerName: 'beta', agent: 'codex', teamSlug: 'engineering' })).toEqual({ address: 'http://codex-beta-engineering.bots.svc:8650', key: 'the-key' });
+    expect(await p.bridge({ runnerName: 'beta', teamSlug: 'engineering' })).toBeNull();
+    expect(await p.bridge({ runnerName: 'beta', agent: 'codex', teamSlug: 'marketing' })).toBeNull();
   });
 });
 

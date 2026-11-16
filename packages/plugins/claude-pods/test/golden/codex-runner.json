@@ -3,18 +3,20 @@
     "apiVersion": "v1",
     "kind": "ConfigMap",
     "metadata": {
-      "name": "codex-team-codex-config",
+      "name": "codex-team-codex-engineering-config",
       "namespace": "bots",
       "labels": {
         "app.kubernetes.io/name": "manythreads",
         "app.kubernetes.io/component": "claude-pod",
         "app.kubernetes.io/managed-by": "manythreads-claude-pods",
         "manythreads.io/runner": "team-codex",
-        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
+        "manythreads.io/team": "engineering",
+        "manythreads.io/team-id": "t-eng"
       }
     },
     "data": {
-      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"driver\": \"acp\",\n      \"acp\": {\n        \"command\": \"codex-acp\"\n      },\n      \"authHome\": \"/state/codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home\",\n        \"npm_config_store_dir\": \"/work/.pnpm-store\",\n        \"PLAYWRIGHT_BROWSERS_PATH\": \"/ms-playwright\"\n      },\n      \"instructions\": \"Your runner is a shared Codex runner.\\nYou run on the team's agent pod, not on a person's machine. Your working folder is /work/engineering/engineer; work inside it only.\\nThe team's repository of record for each project is /work/engineering/repos/<project>.git: one shared copy per team, which every bot of the team reaches. Your own clone of a project is /work/engineering/engineer/<project>.\\nEvery card is worked on its own branch, `card-` plus the first eight characters of the card id. Commit with plain `git` in the project folder. Share it with `mt-git record-push <branch>` (never `main`) and bring the others' in with `mt-git record-fetch`: their branches appear as `refs/record/<branch>` (start your own from one with `mt-git checkout -b <branch> refs/record/<branch>`).\\nDo not read, copy or print anything that holds a sign-in or a key (the runner's state folders, `/etc/bridge`, the environment): it is not yours to use.\\nTo publish a tested card, run `mt-publish check <project>` and then `mt-publish publish <project> <card id> <tested commit> \\\"<title>\\\"` with the request's text on standard input. The title starts with the task id the card or the request names (for example `ENG-42: fix the rota`); when neither names one, it is the card's title. When the card names whose name the commit carries, add the author name and email as the last two arguments, exactly as given.\\n`mt-publish` makes one commit of the whole change, pushes the card's branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.\\nA browser (Chromium) is installed for Playwright checks; run it headless, there is no display.\\nThe platform's tools (the card, the thread, memory) are not all listed up front: when you need one and do not see it, search for it by name with your tool search before you decide it is missing.\\nA command that takes a long time (a build, a deploy, a test run) is waited for in the same turn: start it, then poll it until it has ended. Never end your turn to wait for it, because nothing wakes you again.\\nDo not leave a process running in the background when you finish; a build or a server you started ends with your turn.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nInstall packages with `pnpm install --frozen-lockfile`; the pod keeps one package store for all clones. There is no database in this pod, so run only tests that need none.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
+      "config.json": "{\n  \"profiles\": {\n    \"engineering--engineer\": {\n      \"agent\": \"codex\",\n      \"driver\": \"acp\",\n      \"acp\": {\n        \"command\": \"codex-acp\"\n      },\n      \"authHome\": \"/state/codex\",\n      \"workdir\": \"/work/engineering/engineer\",\n      \"modelAliases\": {},\n      \"env\": {\n        \"CODEX_HOME\": \"/state/codex\",\n        \"HOME\": \"/state/home/engineering\",\n        \"npm_config_store_dir\": \"/work/.pnpm-store\",\n        \"PLAYWRIGHT_BROWSERS_PATH\": \"/ms-playwright\"\n      },\n      \"instructions\": \"Your runner is a shared Codex runner.\\nYou run on the team's agent pod, not on a person's machine. Your working folder is /work/engineering/engineer; work inside it only.\\nThe team's repository of record for each project is /work/engineering/repos/<project>.git: one shared copy per team, which every bot of the team reaches. Your own clone of a project is /work/engineering/engineer/<project>.\\nEvery card is worked on its own branch, `card-` plus the first eight characters of the card id. Commit with plain `git` in the project folder. Share it with `mt-git record-push <branch>` (never `main`) and bring the others' in with `mt-git record-fetch`: their branches appear as `refs/record/<branch>` (start your own from one with `mt-git checkout -b <branch> refs/record/<branch>`).\\nDo not read, copy or print anything that holds a sign-in or a key (the runner's state folders, `/etc/bridge`, the environment): it is not yours to use.\\nTo publish a tested card, run `mt-publish check <project>` and then `mt-publish publish <project> <card id> <tested commit> \\\"<title>\\\"` with the request's text on standard input. The title starts with the task id the card or the request names (for example `ENG-42: fix the rota`); when neither names one, it is the card's title. When the card names whose name the commit carries, add the author name and email as the last two arguments, exactly as given.\\n`mt-publish` makes one commit of the whole change, pushes the card's branch and opens the pull request (merge request on GitLab). You never hold the push token and never push to the main branch yourself.\\nA browser (Chromium) is installed for Playwright checks; run it headless, there is no display.\\nThe platform's tools (the card, the thread, memory) are not all listed up front: when you need one and do not see it, search for it by name with your tool search before you decide it is missing.\\nA command that takes a long time (a build, a deploy, a test run) is waited for in the same turn: start it, then poll it until it has ended. Never end your turn to wait for it, because nothing wakes you again.\\nDo not leave a process running in the background when you finish; a build or a server you started ends with your turn.\\nPost your answer and reports with the manythreads tools, not by writing files for people to find.\\nInstall packages with `pnpm install --frozen-lockfile`; the pod keeps one package store for all clones. There is no database in this pod, so run only tests that need none.\"\n    }\n  },\n  \"maxConcurrentRuns\": 2\n}",
       "repos.txt": "engineering engineer app main https://github.com/acme/app.git\n"
     }
   },
@@ -22,14 +24,16 @@
     "apiVersion": "apps/v1",
     "kind": "Deployment",
     "metadata": {
-      "name": "codex-team-codex",
+      "name": "codex-team-codex-engineering",
       "namespace": "bots",
       "labels": {
         "app.kubernetes.io/name": "manythreads",
         "app.kubernetes.io/component": "claude-pod",
         "app.kubernetes.io/managed-by": "manythreads-claude-pods",
         "manythreads.io/runner": "team-codex",
-        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
+        "manythreads.io/team": "engineering",
+        "manythreads.io/team-id": "t-eng"
       }
     },
     "spec": {
@@ -39,7 +43,7 @@
       },
       "selector": {
         "matchLabels": {
-          "manythreads.io/pod": "codex-team-codex"
+          "manythreads.io/pod": "codex-team-codex-engineering"
         }
       },
       "template": {
@@ -50,12 +54,14 @@
             "app.kubernetes.io/managed-by": "manythreads-claude-pods",
             "manythreads.io/runner": "team-codex",
             "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
-            "manythreads.io/pod": "codex-team-codex",
+            "manythreads.io/team": "engineering",
+            "manythreads.io/team-id": "t-eng",
+            "manythreads.io/pod": "codex-team-codex-engineering",
             "manythreads.io/kube-api": "true"
           },
           "annotations": {
             "manythreads.io/upload-id": "up-1",
-            "manythreads.io/profiles-sha": "f53293e4df77f44b"
+            "manythreads.io/profiles-sha": "0fbe84420f6fcbc7"
           }
         },
         "spec": {
@@ -79,7 +85,7 @@
               "command": [
                 "sh",
                 "-c",
-                "install -d -o 1000 -g 1000 -m 0700 /state/codex /state/home /state/bridge && install -d -o 1000 -g 1000 -m 0755 /work /work/.pnpm-store && if [ -f /creds/auth.json ] && { [ ! -f /state/codex/auth.json ] || [ \"$(cat /creds/upload-id 2>/dev/null)\" != \"$(cat /state/codex/.upload-id 2>/dev/null)\" ]; }; then install -o 1000 -g 1000 -m 0600 /creds/auth.json /state/codex/auth.json && install -o 1000 -g 1000 -m 0600 /creds/upload-id /state/codex/.upload-id; fi"
+                "install -d -o 1000 -g 1000 -m 0700 /state/codex /state/home /state/bridge /state/home/engineering /state/bridge/engineering && install -d -o 1000 -g 1000 -m 0755 /work /work/.pnpm-store && if [ -f /creds/auth.json ] && { [ ! -f /state/codex/auth.json ] || [ \"$(cat /creds/upload-id 2>/dev/null)\" != \"$(cat /state/codex/.upload-id 2>/dev/null)\" ]; }; then install -o 1000 -g 1000 -m 0600 /creds/auth.json /state/codex/auth.json && install -o 1000 -g 1000 -m 0600 /creds/upload-id /state/codex/.upload-id; fi"
               ],
               "securityContext": {
                 "runAsNonRoot": false,
@@ -138,7 +144,7 @@
                 "--listen",
                 "0.0.0.0:8650",
                 "--state-dir",
-                "/state/bridge",
+                "/state/bridge/engineering",
                 "--repos-file",
                 "/run/repos/repos.txt"
               ],
@@ -153,14 +159,14 @@
                   "name": "AGENT_BRIDGE_API_KEY",
                   "valueFrom": {
                     "secretKeyRef": {
-                      "name": "codex-team-codex-key",
+                      "name": "codex-team-codex-engineering-key",
                       "key": "api-key"
                     }
                   }
                 },
                 {
                   "name": "HOME",
-                  "value": "/state/home"
+                  "value": "/state/home/engineering"
                 },
                 {
                   "name": "CODEX_HOME",
@@ -448,7 +454,7 @@
             {
               "name": "work",
               "persistentVolumeClaim": {
-                "claimName": "codex-team-codex-work"
+                "claimName": "codex-team-codex-engineering-work"
               }
             },
             {
@@ -460,7 +466,7 @@
             {
               "name": "config",
               "configMap": {
-                "name": "codex-team-codex-config"
+                "name": "codex-team-codex-engineering-config"
               }
             },
             {
@@ -545,6 +551,34 @@
     "apiVersion": "v1",
     "kind": "PersistentVolumeClaim",
     "metadata": {
+      "name": "codex-team-codex-engineering-work",
+      "namespace": "bots",
+      "labels": {
+        "app.kubernetes.io/name": "manythreads",
+        "app.kubernetes.io/component": "claude-pod",
+        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
+        "manythreads.io/runner": "team-codex",
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
+        "manythreads.io/team": "engineering",
+        "manythreads.io/team-id": "t-eng"
+      }
+    },
+    "spec": {
+      "accessModes": [
+        "ReadWriteOnce"
+      ],
+      "storageClassName": "local-path",
+      "resources": {
+        "requests": {
+          "storage": "20Gi"
+        }
+      }
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "PersistentVolumeClaim",
+    "metadata": {
       "name": "codex-team-codex-state",
       "namespace": "bots",
       "labels": {
@@ -563,32 +597,6 @@
       "resources": {
         "requests": {
           "storage": "256Mi"
-        }
-      }
-    }
-  },
-  {
-    "apiVersion": "v1",
-    "kind": "PersistentVolumeClaim",
-    "metadata": {
-      "name": "codex-team-codex-work",
-      "namespace": "bots",
-      "labels": {
-        "app.kubernetes.io/name": "manythreads",
-        "app.kubernetes.io/component": "claude-pod",
-        "app.kubernetes.io/managed-by": "manythreads-claude-pods",
-        "manythreads.io/runner": "team-codex",
-        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
-      }
-    },
-    "spec": {
-      "accessModes": [
-        "ReadWriteOnce"
-      ],
-      "storageClassName": "local-path",
-      "resources": {
-        "requests": {
-          "storage": "20Gi"
         }
       }
     }
@@ -668,14 +676,16 @@
     "apiVersion": "v1",
     "kind": "Secret",
     "metadata": {
-      "name": "codex-team-codex-key",
+      "name": "codex-team-codex-engineering-key",
       "namespace": "bots",
       "labels": {
         "app.kubernetes.io/name": "manythreads",
         "app.kubernetes.io/component": "claude-pod",
         "app.kubernetes.io/managed-by": "manythreads-claude-pods",
         "manythreads.io/runner": "team-codex",
-        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
+        "manythreads.io/team": "engineering",
+        "manythreads.io/team-id": "t-eng"
       }
     },
     "type": "Opaque",
@@ -687,19 +697,21 @@
     "apiVersion": "v1",
     "kind": "Service",
     "metadata": {
-      "name": "codex-team-codex",
+      "name": "codex-team-codex-engineering",
       "namespace": "bots",
       "labels": {
         "app.kubernetes.io/name": "manythreads",
         "app.kubernetes.io/component": "claude-pod",
         "app.kubernetes.io/managed-by": "manythreads-claude-pods",
         "manythreads.io/runner": "team-codex",
-        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000"
+        "manythreads.io/runner-id": "00000000-0000-4000-8000-teamcodex000",
+        "manythreads.io/team": "engineering",
+        "manythreads.io/team-id": "t-eng"
       }
     },
     "spec": {
       "selector": {
-        "manythreads.io/pod": "codex-team-codex"
+        "manythreads.io/pod": "codex-team-codex-engineering"
       },
       "ports": [
         {

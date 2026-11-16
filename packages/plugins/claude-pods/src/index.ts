@@ -1,12 +1,12 @@
-import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type DeployKubeconfigProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
-import { HttpK8s, confirmMark, type K8s, type ProjectRepo } from '@manythreads/sdk/pods';
+import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type DeployKubeconfigProvider, type PluginContext, type PluginLogger, type PodAgent } from '@manythreads/sdk';
+import { HttpK8s, confirmMark, type K8s, type K8sObject, type ProjectRepo } from '@manythreads/sdk/pods';
 import { configFrom, type ClaudePodConfig } from './config.ts';
 import { Reconciler, type RunnerSource } from './reconcile.ts';
-import { labelsFor, MANAGED_BY, namesFor, type PodRunner } from './render.ts';
+import { AGENTS, BRIDGE_PORT, COMPONENT, labelsFor, MANAGED_BY, namesFor, type PodRunner } from './render.ts';
 
 export { Reconciler, stateFor } from './reconcile.ts';
 export { configFrom } from './config.ts';
-export { buildBridgeConfig, buildDeployment, namesFor, slugForRunner, profileName } from './render.ts';
+export { buildBridgeConfig, buildDeployment, namesFor, podBaseFor, runnerForTeam, slugForRunner, profileName } from './render.ts';
 export type { PodRunner } from './render.ts';
 
 export const FIELD_MANAGER = MANAGED_BY;
@@ -34,8 +34,8 @@ export function createWake(run: () => void, delayMs: number = WAKE_DELAY_MS, tim
 }
 
 /**
- * claude-pods: the controller that gives every Claude Code runner and every Codex runner (a workspace admin made it on the Runners page) its own pod, `claude-<runner>` or
- * `codex-<runner>`, in the pods namespace.
+ * claude-pods: the controller that gives every team of every Claude Code runner and every Codex runner (a workspace admin made it on the Runners page) its own pod, `claude-<runner>-<team>` or
+ * `codex-<runner>-<team>`, in the pods namespace; the runner's sign-in (its state volume) is shared by its team pods.
  * It reads the runner list and the bots placed on each from the `bot.runners` provider, writes the bridge's configuration, and keeps the pod, its two volumes and its
  * Service in step. It stops the pod (replicas 0) while there is no sign-in file, the runner is off or no bot is placed on it, and never deletes a volume except in a move an admin
  * confirmed. Runs only where the chart turned it on (MANYTHREADS_CLAUDE_PODS=1). docs/plugins/claude-pods.md.
@@ -106,16 +106,38 @@ export function platformSource(ctx: PluginContext): RunnerSource {
 const CHECK_RESULTS = ['ok', 'rejected', 'expired', 'no_scope', 'limit'] as const;
 
 export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: ClaudePodConfig, now: () => number = Date.now, doFetch: typeof fetch = fetch): ClaudePodsProvider {
-  const bridge: ClaudePodsProvider['bridge'] = async ({ runnerName, agent }) => {
-    const names = namesFor(runnerName, agent);
-    const secret = await k8s().get('Secret', cfg.namespace, names.key);
-    const key = secret?.data ? Buffer.from(String((secret.data as Record<string, string>)['api-key'] ?? ''), 'base64').toString('utf8') : '';
+  const keyOf = async (secretName: string): Promise<string> => {
+    const secret = await k8s().get('Secret', cfg.namespace, secretName);
+    return secret?.data ? Buffer.from(String((secret.data as Record<string, string>)['api-key'] ?? ''), 'base64').toString('utf8') : '';
+  };
+  /** A runner's team pods, by name: its Deployments that carry a team (the old single pod, which carries none, is not one). */
+  const teamPods = async (runnerName: string, agent: PodAgent): Promise<K8sObject[]> => {
+    const prefix = `${AGENTS[agent].prefix}-`;
+    const deps = await k8s().list('Deployment', cfg.namespace, `app.kubernetes.io/component=${COMPONENT},app.kubernetes.io/managed-by=${MANAGED_BY},manythreads.io/runner=${runnerName}`);
+    return deps.filter((d) => d.metadata.name.startsWith(prefix) && d.metadata.labels?.['manythreads.io/team-id'] !== undefined).sort((a, b) => a.metadata.name.localeCompare(b.metadata.name));
+  };
+  const bridge: ClaudePodsProvider['bridge'] = async ({ runnerName, agent = 'claude', teamSlug }) => {
     // Test seam (P19-12): a test server (NODE_ENV=test) may point every bridge at one stand-in that speaks the bridge's protocol, since no pod and no cluster DNS exist in a stack.
     // Both variables must be set; in a real install neither is, and a NODE_ENV other than `test` ignores them.
     const standInUrl = process.env['NODE_ENV'] === 'test' ? (process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_URL'] ?? '') : '';
     const standInKey = process.env['MANYTHREADS_CLAUDE_PODS_TEST_BRIDGE_KEY'] ?? '';
     if (standInUrl !== '' && standInKey !== '') return { address: standInUrl, key: standInKey };
-    return key === '' ? null : { address: `http://${names.base}.${cfg.namespace}.svc:8650`, key };
+    const addressOf = (base: string): string => `http://${base}.${cfg.namespace}.svc:${BRIDGE_PORT}`;
+    if (teamSlug !== undefined) {
+      // a run goes to the pod of its own team
+      const names = namesFor(runnerName, agent, teamSlug);
+      const key = await keyOf(names.key);
+      return key === '' ? null : { address: addressOf(names.base), key };
+    }
+    // The runner's sign-in is shared by its pods: the first running pod by name answers, and it is the same one for every step of one sign-in while it runs.
+    const pods = await teamPods(runnerName, agent);
+    const running: K8sObject[] = [];
+    for (const d of pods) if ((await k8s().list('Pod', cfg.namespace, `manythreads.io/pod=${d.metadata.name}`)).some((p) => String((p.status as { phase?: string } | undefined)?.phase) === 'Running')) running.push(d);
+    for (const d of [...running, ...pods.filter((p) => !running.includes(p))]) {
+      const key = await keyOf(`${d.metadata.name}-key`);
+      if (key !== '') return { address: addressOf(d.metadata.name), key };
+    }
+    return null;
   };
   return {
     id: 'claude.pods',
@@ -142,6 +164,7 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
     bridge,
     async checkSignin({ runnerName, agent }) {
       try {
+        // the sign-in is the runner's: any running pod of it can say
         const target = await bridge({ runnerName, ...(agent !== undefined ? { agent } : {}) });
         if (!target) return 'unreachable';
         const res = await doFetch(`${target.address}/v1/signin/check`, { method: 'POST', headers: { authorization: `Bearer ${target.key}` }, signal: AbortSignal.timeout(60_000) });
@@ -153,6 +176,7 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
       }
     },
     async confirmMove({ runnerId, node }) {
+      // all of the runner's claims: the shared state volume and every team's work volume move together
       const claims = (await k8s().list('PersistentVolumeClaim', cfg.namespace, `app.kubernetes.io/managed-by=${MANAGED_BY},manythreads.io/runner-id=${runnerId}`)).filter((c) => /-(state|work)$/.test(c.metadata.name));
       for (const c of claims) await k8s().annotate?.('PersistentVolumeClaim', cfg.namespace, c.metadata.name, { 'manythreads.io/move-confirmed': node === null ? null : confirmMark(node, now()) });
       return claims.length;

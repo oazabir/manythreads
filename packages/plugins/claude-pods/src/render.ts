@@ -5,7 +5,8 @@ import { HOSTNAME_LABEL, isNodeLabelValue, MOVE_HELD_ANNOTATION, MOVING_ANNOTATI
 import type { ClaudePodConfig } from './config.ts';
 
 // Pure builders: the Kubernetes objects of one Claude Code runner, from plain values. No network, no clock, no randomness (the one generated secret, the bridge's key,
-// is drawn by the caller and passed in), so every object can be asserted in a test. One runner is one pod: a pod serves every team on the runner's list.
+// is drawn by the caller and passed in), so every object can be asserted in a test. One runner is one pod PER TEAM (P26-21, agents-anywhere §9b): the runner is the sign-in (one `state` volume, one
+// sign-in Secret, one keeper identity, shared by every team pod); everything else (Deployment, Service, bridge key, profiles, work volume, repository list, push and deploy mounts) belongs to one team.
 
 export const BRIDGE_PORT = 8650;
 /** The scratch folder of the repo-sync container: a memory volume that only that container mounts (deploy/images/agent-pod/repo-sync.sh). */
@@ -25,6 +26,10 @@ export const PNPM_STORE = '/work/.pnpm-store';
 export const KUBE_API_LABEL = 'manythreads.io/kube-api';
 export const COMPONENT = 'claude-pod';
 export const MANAGED_BY = 'manythreads-claude-pods';
+/** The home of the agent's processes: one folder per team inside the shared state volume (the sign-in is the one thing the teams share, not the shell's home). */
+export const homeDirFor = (team: string | null): string => (team === null ? '/state/home' : `/state/home/${team}`);
+/** The bridge's own state (its session list): one folder per team, so two bridges never write one file. */
+export const bridgeStateDirFor = (team: string | null): string => (team === null ? '/state/bridge' : `/state/bridge/${team}`);
 /** The folder a runner's `claude` keeps its sign-in file in (a folder of the state volume, so a refreshed file survives a restart). */
 export const CLAUDE_CONFIG_DIR = '/state/claude';
 /** The same for a Codex runner (`CODEX_HOME`): `/state/codex/auth.json` is its sign-in file. */
@@ -64,17 +69,25 @@ export const agentOf = (runner: { agent?: PodAgent | undefined }): PodAgent => r
 export interface Names {
   /** Which tool the pod runs; decides the prefix of every name below. */
   agent: PodAgent;
-  /** The Deployment and the Service: `claude-<runner>` (`codex-<runner>` for a Codex runner). */
+  /** The runner's own name: `claude-<runner>` (`codex-<runner>`). A runner's shared objects (the state claim, the sign-in Secret, the keeper) keep it; before P26-21 it was also the one pod's name. */
+  runnerBase: string;
+  /** The team this pod serves (its slug), or null for the runner's old single pod (`runnerBase`). */
+  team: string | null;
+  /** The Deployment and the Service: `claude-<runner>-<team>` (`codex-<runner>-<team>`); `claude-<runner>` for the old single pod. */
   base: string;
+  /** The runner's one state volume: the agent's home and sign-in, mounted by every team pod of the runner. */
   state: string;
+  /** This pod's own work volume: the team's clones and files. */
   work: string;
+  /** This pod's own bridge key. */
   key: string;
-  /** The sign-in Secret (written by the upload route, P19-06; the controller only reads whether it exists). */
+  /** The runner's sign-in Secret (written by the upload route, P19-06; the controller only reads whether it exists). Shared by the runner's pods. */
   credentials: string;
   /** The key of the sign-in file in that Secret: `.credentials.json` or `auth.json`. */
   file: string;
+  /** This pod's bridge config: only this team's bots. */
   config: string;
-  /** The keeper's ServiceAccount, Role and RoleBinding (P19-06). */
+  /** The keeper's ServiceAccount, Role and RoleBinding (P19-06), one set per runner. */
   keeper: string;
 }
 
@@ -89,14 +102,49 @@ export function slugForRunner(name: string): string {
   return `${clean === '' ? 'r' : clean}-${hash}`;
 }
 
+/** The longest name a team pod gets (its Deployment, Service and the `manythreads.io/pod` label, which is a label value: 63 characters at most; the claims and Secrets add a suffix to it). */
+const POD_NAME_MAX = 60;
+
+/**
+ * The name of one team's pod: `claude-<runner>-<team>`. A name that is too long for a Service and a label is cut and given six letters of the hash of the runner's and the team's names,
+ * so two pairs never share a name by being cut the same way. (Two different pairs may still spell the same plain name, for example runner `a` with team `b-c` and runner `a-b` with
+ * team `c`; the controller refuses to touch an object that carries another runner's id, see `foreign` in reconcile.ts.)
+ */
+export function podBaseFor(agent: PodAgent, runnerName: string, teamSlug: string): string {
+  const prefix = AGENTS[agent].prefix;
+  const plain = `${prefix}-${slugForRunner(runnerName)}-${teamSlug}`;
+  if (plain.length <= POD_NAME_MAX && /^[a-z0-9-]+$/.test(plain) && !plain.endsWith('-')) return plain;
+  const hash = createHash('sha256').update(`${runnerName}\u0000${teamSlug}`).digest('hex').slice(0, 6);
+  const runner = slugForRunner(runnerName).slice(0, 22).replace(/-+$/, '');
+  const team = teamSlug.toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 16).replace(/^-+|-+$/g, '') || 't';
+  return `${prefix}-${runner}-${team}-${hash}`;
+}
+
 /**
  * The names of a runner's objects. A Claude runner's are `claude-<runner>…`, a Codex runner's `codex-<runner>…`, so a Claude and a Codex runner never share an object
- * (the two prefixes differ, whatever the runner names are).
+ * (the two prefixes differ, whatever the runner names are). With a team, the pod's own objects carry the team (`claude-<runner>-<team>`, `-work`, `-key`, `-config`) and the runner's shared
+ * ones (`-state`, `-credentials`, `-keeper`) do not. Without a team: the names of the one pod a runner had before P26-21 (the migration looks for them).
  */
-export function namesFor(runnerName: string, agent: PodAgent = 'claude'): Names {
+export function namesFor(runnerName: string, agent: PodAgent = 'claude', teamSlug: string | null = null): Names {
   const spec = AGENTS[agent];
-  const base = `${spec.prefix}-${slugForRunner(runnerName)}`;
-  return { agent, base, state: `${base}-state`, work: `${base}-work`, key: `${base}-key`, credentials: `${base}-credentials`, file: spec.file, config: `${base}-config`, keeper: `${base}-keeper` };
+  const runnerBase = `${spec.prefix}-${slugForRunner(runnerName)}`;
+  const base = teamSlug === null ? runnerBase : podBaseFor(agent, runnerName, teamSlug);
+  return { agent, runnerBase, team: teamSlug, base, state: `${runnerBase}-state`, work: `${base}-work`, key: `${base}-key`, credentials: `${runnerBase}-credentials`, file: spec.file, config: `${base}-config`, keeper: `${runnerBase}-keeper` };
+}
+
+/** The labels of an object a team's pod owns, on top of the runner's. */
+export const teamLabels = (team: { id: string; slug: string }): Record<string, string> => ({ 'manythreads.io/team': team.slug, 'manythreads.io/team-id': team.id });
+
+/** The team a pod serves. The placeholder pod of a runner no team uses yet (an admin signs in first) has the id `none` and the slug `default`. */
+export interface PodTeam {
+  id: string;
+  slug: string;
+}
+export const PLACEHOLDER_TEAM: PodTeam = { id: 'none', slug: 'default' };
+
+/** The runner as one team's pod sees it: this team's bots and no other team's (the pod's profiles, repositories, push and deploy mounts are built from this and nothing else). */
+export function runnerForTeam(runner: PodRunner, team: PodTeam): PodRunner {
+  return { ...runner, teams: [team], bots: runner.bots.filter((b) => b.teamId === team.id) };
 }
 
 export function labelsFor(runner: Pick<PodRunnerInfo, 'id' | 'name'>, extra: Record<string, string> = {}): Record<string, string> {
@@ -108,6 +156,11 @@ export function labelsFor(runner: Pick<PodRunnerInfo, 'id' | 'name'>, extra: Rec
     'manythreads.io/runner-id': runner.id,
     ...extra,
   };
+}
+
+/** The labels of an object one team's pod owns: the runner's, and the team's (the team is the one on the sub-runner `runnerForTeam` made). */
+export function ownLabels(runner: PodRunner, names: Names, extra: Record<string, string> = {}): Record<string, string> {
+  return labelsFor(runner, { ...(names.team !== null ? teamLabels({ id: runner.teams[0]?.id ?? PLACEHOLDER_TEAM.id, slug: names.team }) : {}), ...extra });
 }
 
 /** The name of a bot's profile in the bridge: `<team>--<bot>`. The rule the bridge is asked by is the same, `{team}--{bot}`. */
@@ -171,14 +224,16 @@ const NO_DEPLOY: DeployPlan = { bots: new Set(), mounts: [] };
 /** Where a team's kubeconfig lies in the run container. */
 export const kubeconfigPath = (teamSlug: string, key: string): string => `${DEPLOY_ROOT}/${teamSlug}/${key}`;
 
-export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publishers: ReadonlySet<string> = new Set(), deploy: DeployPlan = NO_DEPLOY): string {
+export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publishers: ReadonlySet<string> = new Set(), deploy: DeployPlan = NO_DEPLOY, names: Pick<Names, 'team'> = { team: null }): string {
   const profiles: Record<string, unknown> = {};
   const publishing = publisherOn(cfg);
   const agent = agentOf(runner);
   const spec = AGENTS[agent];
   const acp = cfg.driver === 'acp';
-  // Full access is for a pod of one team (the route that sets it checks the same): a pod that serves two teams never runs without a question, whatever the column says.
-  const fullAccess = acp && agent === 'codex' && runner.fullAccess === true && new Set(runner.bots.map((b) => b.teamId)).size <= 1;
+  // A pod serves one team (P26-21): its profiles are that team's bots and no other team's. A runner that still names two teams is a bug in the caller, never a pod to build.
+  if (new Set(runner.bots.map((b) => b.teamId)).size > 1) throw new Error('a pod serves one team: build a pod per team (runnerForTeam)');
+  // Full access is per team pod (agents-anywhere §9b): the pod is the sandbox and holds nothing of another team. Never for Claude Code.
+  const fullAccess = acp && agent === 'codex' && runner.fullAccess === true;
   // A runner with no bot yet still needs one profile: the bridge's sign-in works on the profile of an agent, and an admin signs in before any bot is placed.
   const bots = runner.bots.length > 0 ? runner.bots : [{ teamId: '', teamSlug: 'default', botSlug: 'default' }];
   for (const b of bots) {
@@ -201,7 +256,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             // The runner's switch (admin, one team): the bridge also needs the run not to say no. The bridge's other key, "allowed", is for a server and is never written here.
             ...(fullAccess ? { fullAccess: true } : {}),
             // No `extraAllowedTools`: that list is Claude Code's. Codex runs with its own sandbox and approval policy, set by the bridge's driver.
-            env: { CODEX_HOME: CODEX_HOME_DIR, HOME: '/state/home', ...tools, ...kube },
+            env: { CODEX_HOME: CODEX_HOME_DIR, HOME: homeDirFor(names.team), ...tools, ...kube },
             instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'codex', { acp, kubeconfig, fullAccess }),
           }
         : {
@@ -210,7 +265,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             workdir: where,
             modelAliases: cfg.modelAliases,
             extraAllowedTools: [...GIT_TOOLS, ...(acp ? RECORD_TOOLS : []), ...(mayPublish ? [PUBLISH_TOOL] : [])],
-            env: { CLAUDE_CONFIG_DIR, HOME: '/state/home', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ...tools, ...kube },
+            env: { CLAUDE_CONFIG_DIR, HOME: homeDirFor(names.team), DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ...tools, ...kube },
             instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'claude', { acp, kubeconfig }),
           };
   }
@@ -226,9 +281,9 @@ export function buildConfigMap(cfg: ClaudePodConfig, runner: PodRunner, names: N
   return {
     apiVersion: 'v1',
     kind: 'ConfigMap',
-    metadata: { name: names.config, namespace: cfg.namespace, labels: labelsFor(runner) },
+    metadata: { name: names.config, namespace: cfg.namespace, labels: ownLabels(runner, names) },
     data: {
-      'config.json': buildBridgeConfig(cfg, runner, publishers, deploy),
+      'config.json': buildBridgeConfig(cfg, runner, publishers, deploy, names),
       // one line per clone for the sync step: <team> <bot> <project> <branch or -> <https address>
       'repos.txt': reposFor(runner, repos).map((r) => `${r.team} ${r.bot} ${r.project} ${r.branch ?? '-'} ${r.origin}`).join('\n') + '\n',
     },
@@ -236,23 +291,23 @@ export function buildConfigMap(cfg: ClaudePodConfig, runner: PodRunner, names: N
 }
 
 export function buildKeySecret(cfg: ClaudePodConfig, runner: PodRunner, names: Names, apiKey: string): K8sObject {
-  return { apiVersion: 'v1', kind: 'Secret', metadata: { name: names.key, namespace: cfg.namespace, labels: labelsFor(runner) }, type: 'Opaque', stringData: { 'api-key': apiKey } };
+  return { apiVersion: 'v1', kind: 'Secret', metadata: { name: names.key, namespace: cfg.namespace, labels: ownLabels(runner, names) }, type: 'Opaque', stringData: { 'api-key': apiKey } };
 }
 
-export function buildPvc(cfg: ClaudePodConfig, runner: PodRunnerInfo, name: string, size: string, node: string | null = null): K8sObject {
+export function buildPvc(cfg: ClaudePodConfig, runner: PodRunnerInfo, name: string, size: string, node: string | null = null, extraLabels: Record<string, string> = {}): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'PersistentVolumeClaim',
-    metadata: { name, namespace: cfg.namespace, labels: labelsFor(runner), ...(isNodeLabelValue(node) ? { annotations: { [NODE_ANNOTATION]: node } } : {}) },
+    metadata: { name, namespace: cfg.namespace, labels: labelsFor(runner, extraLabels), ...(isNodeLabelValue(node) ? { annotations: { [NODE_ANNOTATION]: node } } : {}) },
     spec: { accessModes: ['ReadWriteOnce'], storageClassName: cfg.storageClass, resources: { requests: { storage: size } } },
   };
 }
 
-export function buildService(cfg: ClaudePodConfig, runner: PodRunnerInfo, names: Names): K8sObject {
+export function buildService(cfg: ClaudePodConfig, runner: PodRunner, names: Names): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'Service',
-    metadata: { name: names.base, namespace: cfg.namespace, labels: labelsFor(runner) },
+    metadata: { name: names.base, namespace: cfg.namespace, labels: ownLabels(runner, names) },
     spec: { selector: { 'manythreads.io/pod': names.base }, ports: [{ name: 'bridge', port: BRIDGE_PORT, targetPort: BRIDGE_PORT }] },
   };
 }
@@ -290,6 +345,11 @@ export interface DeploymentOptions {
    * keeps its sign-in in the state volume and has no keeper. Absent: true (the old shape).
    */
   keeper?: boolean;
+  /**
+   * The pod mounts the uploaded sign-in Secret and its start-up step copies the file into the state volume. Absent: the same as `keeper`. A runner's pods all do it when the runner has an upload, but
+   * only one of them (`keeper`) runs the keeper container that writes a renewed file back.
+   */
+  signinFile?: boolean;
   /** The kubeconfig Secrets mounted in the run container (one team's deployer; see `deployPlanFor`). Empty or absent: none. */
   deployMounts?: readonly { teamSlug: string; secret: string; key: string }[];
   /** A hash of the bridge's profiles (config.json). The bridge reads them once at start, so a changed set rolls the pod; the repository list is not part of it. */
@@ -305,12 +365,14 @@ export function pushSecretName(team: { id: string; slug: string }, disambiguate 
 const NO_PRIVILEGE = { allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] }, seccompProfile: { type: 'RuntimeDefault' } } as const;
 
 export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: Names, opts: DeploymentOptions): K8sObject {
+  if (new Set(runner.bots.map((b) => b.teamId)).size > 1) throw new Error('a pod serves one team: build a pod per team (runnerForTeam)');
   const spec = AGENTS[names.agent];
   const codex = names.agent === 'codex';
   const keeper = opts.keeper !== false;
+  const signinFile = opts.signinFile ?? keeper;
   const deployMounts = [...(opts.deployMounts ?? [])].sort((a, b) => a.teamSlug.localeCompare(b.teamSlug));
   // The pod may reach the Kubernetes API (the chart's second policy): only the keeper's pod and the deployer's pod.
-  const podLabels = labelsFor(runner, { 'manythreads.io/pod': names.base, ...(keeper || deployMounts.length > 0 ? { [KUBE_API_LABEL]: 'true' } : {}) });
+  const podLabels = ownLabels(runner, names, { 'manythreads.io/pod': names.base, ...(keeper || deployMounts.length > 0 ? { [KUBE_API_LABEL]: 'true' } : {}) });
   const acp = cfg.driver === 'acp';
   const node = isNodeLabelValue(opts.node) ? opts.node : null;
   const publishing = publisherOn(cfg);
@@ -321,7 +383,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
   return {
     apiVersion: 'apps/v1',
     kind: 'Deployment',
-    metadata: { name: names.base, namespace: cfg.namespace, labels: labelsFor(runner), ...(Object.keys(annotations).length > 0 ? { annotations } : {}) },
+    metadata: { name: names.base, namespace: cfg.namespace, labels: ownLabels(runner, names), ...(Object.keys(annotations).length > 0 ? { annotations } : {}) },
     spec: {
       replicas: opts.replicas,
       // both volumes are ReadWriteOnce: the old pod lets go of them before the new one starts
@@ -353,8 +415,8 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
               command: [
                 'sh',
                 '-c',
-                `install -d -o 1000 -g 1000 -m 0700 ${spec.dir} /state/home /state/bridge && install -d -o 1000 -g 1000 -m 0755 /work${acp ? ` ${PNPM_STORE}` : ''}` +
-                  (keeper
+                `install -d -o 1000 -g 1000 -m 0700 ${spec.dir} /state/home /state/bridge ${homeDirFor(names.team)} ${bridgeStateDirFor(names.team)} && install -d -o 1000 -g 1000 -m 0755 /work${acp ? ` ${PNPM_STORE}` : ''}` +
+                  (signinFile
                     ? // the file is copied when the volume has none, or when the Secret holds a newer upload (its upload-id differs from the one the volume last took)
                       ` && if [ -f /creds/${spec.file} ] && { [ ! -f ${spec.dir}/${spec.file} ] || [ "$(cat /creds/upload-id 2>/dev/null)" != "$(cat ${spec.dir}/.upload-id 2>/dev/null)" ]; }; then` +
                       ` install -o 1000 -g 1000 -m 0600 /creds/${spec.file} ${spec.dir}/${spec.file} && install -o 1000 -g 1000 -m 0600 /creds/upload-id ${spec.dir}/.upload-id; fi`
@@ -365,7 +427,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
               volumeMounts: [
                 { name: 'state', mountPath: '/state' },
                 { name: 'work', mountPath: '/work' },
-                ...(keeper ? [{ name: 'creds', mountPath: '/creds', readOnly: true }] : []),
+                ...(signinFile ? [{ name: 'creds', mountPath: '/creds', readOnly: true }] : []),
               ],
             },
           ],
@@ -374,11 +436,11 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
               name: 'bridge',
               image: cfg.image,
               imagePullPolicy: 'IfNotPresent',
-              command: ['/usr/bin/tini', '--', 'node', '--experimental-transform-types', '--disable-warning=ExperimentalWarning', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', '/state/bridge', '--repos-file', REPOS_FILE],
+              command: ['/usr/bin/tini', '--', 'node', '--experimental-transform-types', '--disable-warning=ExperimentalWarning', '/opt/bridge/src/main.ts', '--config', '/etc/bridge/config.json', '--listen', `0.0.0.0:${BRIDGE_PORT}`, '--state-dir', bridgeStateDirFor(names.team), '--repos-file', REPOS_FILE],
               ports: [{ name: 'bridge', containerPort: BRIDGE_PORT }],
               env: [
                 { name: 'AGENT_BRIDGE_API_KEY', valueFrom: { secretKeyRef: { name: names.key, key: 'api-key' } } },
-                { name: 'HOME', value: '/state/home' },
+                { name: 'HOME', value: homeDirFor(names.team) },
                 { name: spec.homeVar, value: spec.dir },
                 // A Codex process in a pod loses OPENAI_API_KEY (an API key would go around the platform's model gateway): the bridge reads this switch.
                 ...(codex ? [{ name: 'MANYTHREADS_BRIDGE_IN_POD', value: '1' }] : []),
@@ -502,10 +564,10 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
                       ],
                     },
                   },
-                  // optional: the Secret exists only once an admin has uploaded a sign-in file
-                  { name: 'creds', secret: { secretName: names.credentials, defaultMode: 0o400, optional: true } },
                 ]
               : []),
+            // optional: the Secret exists only once an admin has uploaded a sign-in file
+            ...(signinFile ? [{ name: 'creds', secret: { secretName: names.credentials, defaultMode: 0o400, optional: true } }] : []),
           ],
         },
       },

@@ -4,7 +4,7 @@ import { confirmMark, type K8s, type K8sObject } from '@manythreads/sdk/pods';
 import { describe, expect, it } from 'vitest';
 import { configFrom, type ClaudePodConfig } from '../src/config.ts';
 import { Reconciler, stateFor, type RunnerSource } from '../src/reconcile.ts';
-import { buildBridgeConfig, namesFor, slugForRunner } from '../src/render.ts';
+import { buildBridgeConfig, namesFor, runnerForTeam, slugForRunner } from '../src/render.ts';
 
 // The controller against an in-memory Kubernetes API (same object in, same object out) and a stand-in for the runner list.
 
@@ -71,8 +71,8 @@ function setup(runners: PodRunnerInfo[], now = (): number => 1_000_000) {
 const signIn = (k8s: FakeK8s, name: string): void => {
   k8s.store.set(`Secret/bots/${namesFor(name).credentials}`, { apiVersion: 'v1', kind: 'Secret', metadata: { name: namesFor(name).credentials, namespace: 'bots' }, data: {} });
 };
-const dep = (k8s: FakeK8s, name: string): K8sObject => k8s.store.get(`Deployment/bots/${namesFor(name).base}`)!;
-const replicas = (k8s: FakeK8s, name: string): number => (dep(k8s, name).spec as { replicas: number }).replicas;
+const dep = (k8s: FakeK8s, name: string, team = 'engineering'): K8sObject => k8s.store.get(`Deployment/bots/${namesFor(name, 'claude', team).base}`)!;
+const replicas = (k8s: FakeK8s, name: string, team = 'engineering'): number => (dep(k8s, name, team).spec as { replicas: number }).replicas;
 
 describe('claude-pods objects', () => {
   it('writes a Deployment, Service, ConfigMap, key Secret and two claims per runner, and a second pass changes nothing', async () => {
@@ -85,13 +85,13 @@ describe('claude-pods objects', () => {
     await r.reconcileAll();
     expect(k8s.snapshot()).toBe(first);
     const d = dep(k8s, 'claude-test') as any;
-    expect(d.metadata.name).toBe('claude-claude-test');
+    expect(d.metadata.name).toBe('claude-claude-test-engineering');
     expect(d.spec.strategy).toEqual({ type: 'Recreate' });
     expect(d.spec.template.spec.automountServiceAccountToken).toBe(false);
     expect(d.spec.template.spec.containers.map((c: { name: string }) => c.name)).toEqual(['bridge', 'keeper', 'repo-sync']);
     for (const c of [...d.spec.template.spec.containers, ...d.spec.template.spec.initContainers]) expect(c.resources.limits.memory).toBeTruthy();
     const claims = [...k8s.store.values()].filter((o) => o.kind === 'PersistentVolumeClaim').map((o) => [o.metadata.name, (o.spec as any).resources.requests.storage]);
-    expect(claims.sort()).toEqual([['claude-claude-test-state', '256Mi'], ['claude-claude-test-work', '20Gi']]);
+    expect(claims.sort()).toEqual([['claude-claude-test-engineering-work', '20Gi'], ['claude-claude-test-state', '256Mi']]);
   });
 
   it('gives the keeper its own identity: a Role for its one Secret, and a token only the keeper container mounts', async () => {
@@ -128,7 +128,7 @@ describe('claude-pods objects', () => {
     const r = new Reconciler(k8s, CFG, { runners: async () => [runner('a')] }, LOG, () => `key-${++n}`);
     await r.reconcileAll();
     await r.reconcileAll();
-    const sec = await k8s.get('Secret', 'bots', namesFor('a').key);
+    const sec = await k8s.get('Secret', 'bots', namesFor('a', 'claude', 'engineering').key);
     expect(Buffer.from((sec!.data as Record<string, string>)['api-key']!, 'base64').toString()).toBe('key-1');
   });
 
@@ -188,7 +188,7 @@ describe('claude-pods objects', () => {
     live.length = 0;
     await r.reconcileAll();
     expect(replicas(k8s, 'gone')).toBe(0);
-    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('gone').work}`)).toBe(true);
+    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('gone', 'claude', 'engineering').work}`)).toBe(true);
   });
 
   it('names: a runner name with dots, underscores or length gets a valid, distinct Kubernetes name', () => {
@@ -202,9 +202,11 @@ describe('claude-pods objects', () => {
 });
 
 describe('bridge configuration', () => {
-  it('has one profile per placed bot named <team>--<bot>, with its folder, aliases and the where-you-run note', () => {
-    const cfg = JSON.parse(buildBridgeConfig(CFG, runner('x', { maxConcurrent: 3, bots: [{ teamId: 'a', teamSlug: 'marketing', botSlug: 'writer' }, { teamId: 'b', teamSlug: 'engineering', botSlug: 'engineer' }] })));
-    expect(Object.keys(cfg.profiles)).toEqual(['marketing--writer', 'engineering--engineer']);
+  it('has one profile per placed bot named <team>--<bot>, with its folder, aliases and the where-you-run note, and a pod never builds more than one team', () => {
+    const two = runner('x', { maxConcurrent: 3, bots: [{ teamId: 'a', teamSlug: 'marketing', botSlug: 'writer' }, { teamId: 'a', teamSlug: 'marketing', botSlug: 'editor' }, { teamId: 'b', teamSlug: 'engineering', botSlug: 'engineer' }] });
+    expect(() => buildBridgeConfig(CFG, two)).toThrow(/one team/);
+    const cfg = JSON.parse(buildBridgeConfig(CFG, runnerForTeam(two, { id: 'a', slug: 'marketing' })));
+    expect(Object.keys(cfg.profiles)).toEqual(['marketing--writer', 'marketing--editor']);
     expect(cfg.maxConcurrentRuns).toBe(3);
     const p = cfg.profiles['marketing--writer'];
     expect(p.agent).toBe('claude-code');
@@ -221,7 +223,7 @@ describe('bridge configuration', () => {
   it('clones only the repositories the origin rule allows, for teams that have a bot here', async () => {
     const { k8s, r } = setup([runner('x')]);
     await r.reconcileAll();
-    const cm = await k8s.get('ConfigMap', 'bots', namesFor('x').config);
+    const cm = await k8s.get('ConfigMap', 'bots', namesFor('x', 'claude', 'engineering').config);
     expect((cm!.data as Record<string, string>)['repos.txt']).toBe('engineering engineer app main https://github.com/acme/app.git\n');
   });
 });
@@ -233,7 +235,7 @@ describe('choosing the machine', () => {
     const { k8s, r } = setup([runner('n', { node: 'ubuntu-vm' })]);
     await r.reconcileAll();
     expect((dep(k8s, 'n').spec as any).template.spec.nodeSelector).toEqual({ 'kubernetes.io/hostname': 'ubuntu-vm' });
-    expect(k8s.store.get(`PersistentVolumeClaim/bots/${namesFor('n').work}`)!.metadata.annotations).toEqual({ 'manythreads.io/node': 'ubuntu-vm' });
+    expect(k8s.store.get(`PersistentVolumeClaim/bots/${namesFor('n', 'claude', 'engineering').work}`)!.metadata.annotations).toEqual({ 'manythreads.io/node': 'ubuntu-vm' });
   });
 
   it('ignores a node name that is not a label value', async () => {
@@ -252,22 +254,22 @@ describe('choosing the machine', () => {
     info.node = 'b';
     const held = await r.reconcileAll();
     expect(held[0]).toMatchObject({ held: 'b', moving: false, node: 'a' });
-    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('m').work}`)).toBe(true);
+    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('m', 'claude', 'engineering').work}`)).toBe(true);
     expect((dep(k8s, 'm').metadata.annotations as Record<string, string>)['manythreads.io/move-held']).toBe('b');
 
-    for (const c of [namesFor('m').state, namesFor('m').work]) {
+    for (const c of [namesFor('m').state, namesFor('m', 'claude', 'engineering').work]) {
       const claim = k8s.store.get(`PersistentVolumeClaim/bots/${c}`)!;
       claim.metadata.annotations = { ...claim.metadata.annotations, 'manythreads.io/move-confirmed': confirmMark('b', now) };
     }
     const moved = await r.reconcileAll();
     expect(moved[0]).toMatchObject({ moving: true, replicas: 0, state: 'moving' });
-    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('m').work}`)).toBe(false);
+    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('m', 'claude', 'engineering').work}`)).toBe(false);
     expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('m').state}`)).toBe(false);
-    expect(k8s.store.has(`Secret/bots/${namesFor('m').key}`)).toBe(true);
+    expect(k8s.store.has(`Secret/bots/${namesFor('m', 'claude', 'engineering').key}`)).toBe(true);
     expect(k8s.store.has(`Secret/bots/${namesFor('m').credentials}`)).toBe(true);
     const after = await r.reconcileAll();
     expect(after[0]).toMatchObject({ moving: false, node: 'b' });
-    expect(k8s.store.get(`PersistentVolumeClaim/bots/${namesFor('m').work}`)!.metadata.annotations).toEqual({ 'manythreads.io/node': 'b' });
+    expect(k8s.store.get(`PersistentVolumeClaim/bots/${namesFor('m', 'claude', 'engineering').work}`)!.metadata.annotations).toEqual({ 'manythreads.io/node': 'b' });
   });
 
   it('does not delete a volume when the confirmation is old or the target machine is not Ready', async () => {
@@ -277,16 +279,16 @@ describe('choosing the machine', () => {
     k8s.nodes = [NODE('a'), NODE('b', false)];
     await r.reconcileAll();
     info.node = 'b';
-    for (const c of [namesFor('o').state, namesFor('o').work]) {
+    for (const c of [namesFor('o').state, namesFor('o', 'claude', 'engineering').work]) {
       const claim = k8s.store.get(`PersistentVolumeClaim/bots/${c}`)!;
       claim.metadata.annotations = { ...claim.metadata.annotations, 'manythreads.io/move-confirmed': confirmMark('b', now) };
     }
     await r.reconcileAll();
-    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('o').work}`)).toBe(true);
+    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('o', 'claude', 'engineering').work}`)).toBe(true);
     k8s.nodes = [NODE('a'), NODE('b')];
     now += 16 * 60_000;
     await r.reconcileAll();
-    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('o').work}`)).toBe(true);
+    expect(k8s.store.has(`PersistentVolumeClaim/bots/${namesFor('o', 'claude', 'engineering').work}`)).toBe(true);
   });
 });
 
