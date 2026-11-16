@@ -19,6 +19,8 @@ import {
   describeTeams,
   FULL_ACCESS_WORDS,
   hasFullAccessChoice,
+  SHARED_SIGNIN_NOTE,
+  sharesSignin,
   hasNoTeams,
   hasNodeChoice,
   isChangingPlacement,
@@ -418,6 +420,7 @@ function RunnerRow({
           <span data-testid="runner-teams" className={hasNoTeams(r) ? 'rn-warn' : undefined}>{hasNoTeams(r) ? 'No team can use it yet' : `Teams: ${describeTeams(r)}`}</span>
           <span data-testid="runner-bots">{countBots(r.botCount)}</span>
         </div>
+        {sharesSignin(r) ? <div className="rn-detail faint" data-testid="runner-shared-signin-note">{SHARED_SIGNIN_NOTE}</div> : null}
         {gateway ? <div className="rn-detail mono">{gateway}</div> : null}
         {r.kind === 'llm_gateway' ? <div className="rn-detail">Model name: <span className="mono">{r.modelAlias ?? 'none chosen'}</span></div> : null}
         {where ? <div className={`rn-detail rn-place ${where.tone}`} data-testid="runner-place" data-state={placement?.state ?? 'unknown'}>{where.text}</div> : null}

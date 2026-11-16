@@ -43,7 +43,7 @@ async function openToTeam(tx: PluginTx, runner: { id: string; all_teams: boolean
 
 export async function resolveRunner(ctx: PluginContext, query: { teamId: string; runner: string }, tunnel?: TunnelRegistry): Promise<RunnerResolution> {
   return ctx.db.system(async (tx) => {
-    const team = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
+    const team = (await tx.query<{ workspace_id: string; slug: string }>('SELECT workspace_id, slug FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
     if (!team) return refuse('unknown', `This bot's team could not be found, so its runner ${shown(query.runner)} cannot be used.`);
     const runner = (
       await tx.query<RunnerRow>(`SELECT ${RUNNER_SELECT} WHERE r.workspace_id = $1::uuid AND r.name = $2`, [team.workspace_id, query.runner])
@@ -67,17 +67,18 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
       const target: RunnerTarget = { ...base, kind: 'hermes_gateway', address: runner.base_url, key, agent: runner.agent, guard: true };
       return { ok: true, target };
     }
-    // A Claude Code runner is one pod for every team on its list (shared mode, spec section 10.3): the address is its Service and the key its bridge key, which only this resolver reads. No outbound
-    // guard: nobody types this address. The team list was judged above, so a trigger of any kind (a person, a mention, a hand-off, a routine) is allowed for a team on it.
+    // A Claude Code runner has one pod for each team on its list, all on the runner's one sign-in (P26-21, agents-anywhere section 9b): the run goes to the pod of its own team. The address is
+    // that pod's Service and the key its bridge key, which only this resolver reads. No outbound guard: nobody types this address. The team list was judged above, so a trigger of any kind
+    // (a person, a mention, a hand-off, a routine) is allowed for a team on it.
     if (runner.kind === 'claude_cli') {
-      const bridge = await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.bridge({ runnerName: runner.name, agent: 'claude' }).catch(() => null);
+      const bridge = await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.bridge({ runnerName: runner.name, agent: 'claude', teamSlug: team.slug }).catch(() => null);
       if (!bridge) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not running yet.`);
       const target: RunnerTarget = { ...base, kind: 'claude_cli', address: bridge.address, key: bridge.key, agent: 'claude-code', guard: false, profileRule: runner.profile_rule ?? CLAUDE_PROFILE_RULE };
       return { ok: true, target };
     }
-    // A Codex runner is the same shape: one pod for every team on its list, answered by the same agent bridge with a `codex` profile.
+    // A Codex runner is the same shape: one pod for each team on its list, answered by the same agent bridge with a `codex` profile.
     if (runner.kind === 'codex_cli') {
-      const bridge = await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.bridge({ runnerName: runner.name, agent: 'codex' }).catch(() => null);
+      const bridge = await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.bridge({ runnerName: runner.name, agent: 'codex', teamSlug: team.slug }).catch(() => null);
       if (!bridge) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not running yet.`);
       const target: RunnerTarget = { ...base, kind: 'codex_cli', address: bridge.address, key: bridge.key, agent: 'codex', guard: false, profileRule: runner.profile_rule ?? CLAUDE_PROFILE_RULE };
       return { ok: true, target };

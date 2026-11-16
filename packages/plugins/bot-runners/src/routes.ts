@@ -78,11 +78,6 @@ async function writeTeams(tx: PluginTx, runnerId: string, teams: BotRunnerTeams)
 /** A Codex runner: a Codex pod runner, or one Codex agent on an enrolled server. Only these can have full access (the database says the same, bot-runners 0007). */
 export const isCodexRunner = (r: { kind: string; agent: string }): boolean => r.kind === 'codex_cli' || (r.kind === 'server_agent' && r.agent === 'codex');
 
-const FULL_ACCESS_ONE_TEAM = 'Full access lets Codex run any command without asking, so the runner may serve one team only. Choose that one team for this runner first.';
-const FULL_ACCESS_STAYS_ONE_TEAM = 'This runner has full access, so it serves one team only. Switch full access off first to open it to more teams.';
-
-/** The teams a runner serves are exactly one: a list of one team, never "every team". */
-export const isOneTeam = (teams: BotRunnerTeams): boolean => !('all' in teams) && new Set(teams.teams).size === 1;
 
 /** Which settings belong to which kind: a setting on the wrong kind is refused rather than stored and ignored. */
 function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown; profileRule?: unknown; agent?: unknown; modelAlias?: unknown; maxConcurrent?: unknown }): void {
@@ -126,9 +121,8 @@ export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): voi
       if (body.kind === 'server_agent') throw invalid('A server runner is made when a server is enrolled, not here.');
       checkSettingsFit(body.kind, body);
       if (body.fullAccess === true && body.kind !== 'codex_cli') throw invalid('Full access belongs to a Codex runner only.');
-      // A Codex pod runner starts with full access (the pod is the sandbox) unless the admin says otherwise or asked for more than one team in the same request.
-      const fullAccess = body.kind === 'codex_cli' && (body.fullAccess ?? (body.teams === undefined || isOneTeam(body.teams)));
-      if (fullAccess && body.teams !== undefined && !isOneTeam(body.teams)) throw conflict(FULL_ACCESS_ONE_TEAM);
+      // A Codex pod runner starts with full access (the pod is the sandbox) unless the admin says otherwise. Many teams may share it: each team has a pod of its own (P26-21).
+      const fullAccess = body.kind === 'codex_cli' && (body.fullAccess ?? true);
       const workspaceId = tx.actor.workspaceId;
       if ((await tx.query('SELECT 1 FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [workspaceId, body.name])).rows.length > 0) {
         throw conflict('A runner with that name already exists. Names are used in bot files, so pick a different one.');
@@ -241,8 +235,6 @@ export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): voi
       if (body.fullAccess !== undefined && body.fullAccess !== current.full_access) {
         if (body.fullAccess) {
           if (!isCodexRunner(current)) throw invalid('Full access belongs to a Codex runner only.');
-          const teamCount = current.all_teams ? -1 : (await tx.query('SELECT 1 FROM app.bot_runner_teams WHERE runner_id = $1::uuid', [id])).rows.length;
-          if (teamCount !== 1) throw conflict(FULL_ACCESS_ONE_TEAM);
         }
         set('full_access', body.fullAccess);
         changed.push('full_access');
@@ -391,7 +383,6 @@ export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): voi
       const body = SetBotRunnerTeamsRequest.parse(req.body);
       await requireWorkspaceAdmin(tx);
       const current = await loadRunner(tx, id);
-      if (current.full_access && ('all' in body || new Set(body.teams).size > 1)) throw conflict(FULL_ACCESS_STAYS_ONE_TEAM);
       const teamCount = await writeTeams(tx, id, body);
       await ctx.audit.emit(tx, { type: 'bot_runner.availability.changed', workspaceId: current.workspace_id, runnerId: id, name: current.name, enabled: current.enabled, allTeams: 'all' in body, teamCount, actorId: tx.actor.id, at: now(ctx) });
       return json(SetBotRunnerTeamsResponse.parse({ runner: await presentOne(ctx, tx, id) }));

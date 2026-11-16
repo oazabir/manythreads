@@ -3,7 +3,7 @@
 {{- if not (has .Values.claudePod.egress.mode (list "public443" "serverOnly")) }}{{ fail "claudePod.egress.mode must be public443 or serverOnly" }}{{ end }}
 {{- $bots := .Values.hermesPods.namespace }}
 {{- $rel := .Release.Namespace }}
-# Claude Code and Codex runner pods (docs/plugins/claude-pods.md). A Codex pod (P19-13) is the same pod with `codex-` names and `auth.json`; it carries the same `claude-pod` component label, so this one policy
+# Claude Code and Codex runner pods (docs/plugins/claude-pods.md). A runner has one pod per team (P26-21: a Deployment `<agent>-<runner>-<team>`, one sign-in on the runner's shared state volume, a work volume and a bridge key per team). A Codex pod (P19-13) is the same pod with `codex-` names and `auth.json`; it carries the same `claude-pod` component label, so this one policy
 # and this one Role cover both and nothing is added for Codex. The namespace and ServiceAccount are the Hermes pods' (templates/hermes-pods.yaml); that Role already covers deployments, services,
 # secrets, configmaps, volume claims and pods in the namespace. The one addition is the Role below, for the keeper's identity (owner decision O2). The policy selects only `claude-pod`, so a Hermes pod keeps its own.
 #   ingress  only the server pod, on the bridge port (8650)

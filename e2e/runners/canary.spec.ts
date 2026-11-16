@@ -145,7 +145,7 @@ test('Remove sign-in takes the Secret and the state volume away, and the runner 
   const made = world.k8s.calls.slice(before);
   expect(made.some((c) => /^DELETE .*\/persistentvolumeclaims\/claude-claude-canary-state$/.test(c)), made.join('\n')).toBe(true);
   expect(made.some((c) => /^DELETE .*\/secrets\/claude-claude-canary-credentials$/.test(c)), made.join('\n')).toBe(true);
-  expect(made.every((c) => !/\/persistentvolumeclaims\/claude-claude-canary-work/.test(c) || !c.startsWith('DELETE')), 'the work claim (public clones) is not touched').toBe(true);
+  expect(made.every((c) => !/\/persistentvolumeclaims\/claude-claude-canary-[a-z0-9-]*work/.test(c) || !c.startsWith('DELETE')), 'the work claim (public clones) is not touched').toBe(true);
   // the state claim goes before the Secret
   expect(made.findIndex((c) => c.includes('persistentvolumeclaims') && c.startsWith('DELETE'))).toBeLessThan(made.findIndex((c) => c.includes('/secrets/') && c.startsWith('DELETE')));
 });

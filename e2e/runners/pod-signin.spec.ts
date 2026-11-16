@@ -16,7 +16,7 @@ import { apiOn, noSidewaysScroll, openOn, PHONE } from '../support/stack-browser
  *
  * Shown: a new pod runner has a Sign-in button that opens the agent dialog (no upload form); a Codex runner signs in with a device code and a Claude Code runner with a pasted code, the runner
  * turns Ready, the code is on no page text afterwards, and Sign out puts it back to waiting; the older upload of a file is one button inside the dialog; Codex full access is turned on with
- * its words shown first and refused for a runner that serves two teams; a plain member cannot reach the routes; the dialog fits a phone.
+ * its words shown first and allowed for a runner that serves two teams (each team has a pod of its own); a plain member cannot reach the routes; the dialog fits a phone.
  */
 test.skip(({ isMobile }) => isMobile, 'desktop layout; the phone width is read by its own test with an explicit viewport');
 test.describe.configure({ mode: 'serial' });
@@ -159,7 +159,7 @@ test('the older way, a sign-in file, is one button inside the dialog', async ({ 
   }
 });
 
-test('Codex full access shows its words first, turns on for a one-team runner, and is refused for a runner that serves two teams', async ({ browser, playwright }) => {
+test('Codex full access shows its words first, turns on for a one-team runner and for a runner that serves two teams (each team has its own pod)', async ({ browser, playwright }) => {
   const api = await apiOn(playwright, stack, 'omar');
   try {
     await api.post('/api/admin/bot-runners', { name: 'codex-two', label: 'Codex two teams', kind: 'codex_cli', maxConcurrent: 1, teams: { teams: [teamId, otherTeamId] } });
@@ -191,14 +191,67 @@ test('Codex full access shows its words first, turns on for a one-team runner, a
     const audit = await stack.sql<Record<string, unknown>>('SELECT * FROM app.audit_events');
     expect(JSON.stringify(audit)).toMatch(/full access/i);
 
-    // two teams: the server says no, in words, and the dialog stays open
+    // two teams (P26-21): each team has a pod of its own, so full access is not refused; the page says what the teams share
     const two = page.locator('[data-testid="runner-row"][data-runner="codex-two"]');
+    await expect(two.getByTestId('runner-full-access-badge')).toBeVisible();
+    await expect(two.getByTestId('runner-shared-signin-note')).toHaveText("Teams on this runner share its sign-in and its plan's limits.");
+    await expect(row.getByTestId('runner-shared-signin-note')).toHaveCount(0);
     await two.getByTestId('runner-full-access-open').click();
-    const refused = page.getByRole('dialog', { name: 'Full access for Codex two teams' });
-    await refused.getByTestId('runner-full-access-confirm').click();
-    await expect(refused.getByTestId('runner-form-error')).toContainText(/one team/i);
-    await page.keyboard.press('Escape');
+    await page.getByRole('dialog', { name: 'Full access for Codex two teams' }).getByTestId('runner-full-access-confirm').click();
     await expect(two.getByTestId('runner-full-access-badge')).toHaveCount(0);
+    await two.getByTestId('runner-full-access-open').click();
+    const again = page.getByRole('dialog', { name: 'Full access for Codex two teams' });
+    await again.getByTestId('runner-full-access-confirm').click();
+    await expect(page.getByTestId('runner-status')).toContainText('Codex two teams now has full access.');
+    await expect(two.getByTestId('runner-full-access-badge')).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a runner shared by two teams lists both teams and both teams\' bots, says what the teams share, and is signed in once for all of them (P26-21)', async ({ browser, playwright }) => {
+  fake('codex', { signedIn: false, url: 'https://auth.example.test/device', deviceCode: DEVICE_CODE, pendingMs: 1500 });
+  const api = await apiOn(playwright, stack, 'omar');
+  try {
+    await api.post('/api/admin/bot-runners', { name: 'codex-duo', label: 'Codex duo', kind: 'codex_cli', maxConcurrent: 1, teams: { teams: [teamId, otherTeamId] } });
+  } finally {
+    await api.ctx.dispose();
+  }
+  // one bot of each team is placed on the runner (a team lead's BOT.md does this in life; the count is what the page reads)
+  const ws = (await stack.sql<{ id: string }>('SELECT id FROM app.workspaces LIMIT 1'))[0]!.id;
+  for (const [team, slug] of [[teamId, 'duo-one'], [otherTeamId, 'duo-two']] as const) {
+    await stack.sql(
+      `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, triggers, model_aliases, placement)
+       VALUES ($1, $2, $3, $3, '', 'agent', 'rules', 'team', repeat('a', 64), 'active', '[{"type":"mention"}]'::jsonb, ARRAY['smart'], '{"runs_on":"codex-duo"}'::jsonb)`,
+      [ws, team, slug],
+    );
+  }
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH);
+  try {
+    const row = page.locator('[data-testid="runner-row"][data-runner="codex-duo"]');
+    // both teams are on the list, both bots are counted, and the page says what the teams share
+    const names = await stack.sql<{ name: string }>('SELECT name FROM app.teams WHERE id = ANY($1::uuid[]) ORDER BY name', [[teamId, otherTeamId]]);
+    for (const n of names) await expect(row.getByTestId('runner-teams')).toContainText(n.name);
+    await expect(row.getByTestId('runner-bots')).toHaveText('2 bots');
+    await expect(row.getByTestId('runner-shared-signin-note')).toHaveText("Teams on this runner share its sign-in and its plan's limits.");
+    await expect(row.getByTestId('runner-state')).toHaveText(/Waiting for sign-in/);
+
+    // the same words in the Teams dialog, then one sign-in for the runner
+    await row.getByTestId('runner-teams-open').click();
+    await expect(page.getByRole('dialog').getByTestId('runner-shared-signin-note')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await row.getByTestId('runner-agent-signin-open').click();
+    const dialog = page.getByRole('dialog', { name: 'Sign-in for Codex duo' });
+    await dialog.locator('[data-method="chat-gpt-device-code"]').click();
+    await expect(dialog.getByTestId('agent-auth-code')).toHaveText(DEVICE_CODE);
+    await expect(dialog.getByTestId('agent-auth-status')).toContainText('Codex is signed in.', { timeout: 20_000 });
+    await expect(page.getByTestId('runner-status')).toContainText('Codex duo is signed in.');
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await expect(row.getByTestId('runner-state')).toHaveText(/Ready/, { timeout: 15_000 });
+    // one runner, one sign-in: there is no second runner or second sign-in for the second team
+    expect((await stack.sql<{ n: number }>("SELECT count(*)::int AS n FROM app.bot_runners WHERE name = 'codex-duo'"))[0]!.n).toBe(1);
+    const signins = await stack.sql<Record<string, unknown>>("SELECT payload FROM app.events WHERE type = 'bot_runner.agent_auth.changed' AND payload::text LIKE '%codex-duo%'");
+    expect(signins.length).toBeGreaterThan(0);
   } finally {
     await context.close();
   }

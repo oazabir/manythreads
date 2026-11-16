@@ -152,6 +152,12 @@ export function describeTeams(r: Pick<BotRunner, 'allTeams' | 'teams'>): string 
   return `${names[0]}, ${names[1]} and ${names.length - 2} more`;
 }
 
+/** What teams that share a runner share (agents-anywhere §9b): the one sign-in and the plan behind it. Said on the row and in the Teams dialog. */
+export const SHARED_SIGNIN_NOTE = "Teams on this runner share its sign-in and its plan's limits.";
+
+/** The note applies to a runner that has a sign-in of its own (an agent pod or a server's agent) and serves, or may serve, more than one team. */
+export const sharesSignin = (r: Pick<BotRunner, 'kind' | 'allTeams' | 'teams'>): boolean => (r.kind === 'claude_cli' || r.kind === 'codex_cli' || r.kind === 'server_agent') && (r.allTeams || r.teams.length > 1);
+
 /** True when nobody can use the runner yet, so the row says so instead of looking finished. */
 export const hasNoTeams = (r: Pick<BotRunner, 'allTeams' | 'teams'>): boolean => !r.allTeams && r.teams.length === 0;
 
@@ -623,7 +629,7 @@ export const hasFullAccessChoice = (r: Pick<BotRunner, 'kind'>): boolean => r.ki
 
 export const FULL_ACCESS_WORDS = {
   what: 'Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.',
-  who: 'Only a workspace admin can turn it on, only while the runner serves one team, and every change is in the audit log.',
+  who: 'Only a workspace admin can turn it on, and every change is in the audit log. Each team on the runner has its own pod, so full access stays inside that team’s pod and never reaches another team’s files, keys or deploy login.',
   off: 'Codex asks before it runs a command that is not on its approved list.',
   title: (label: string): string => `Full access for ${label}`,
   turnOn: 'Turn on full access',

@@ -3,7 +3,7 @@ import { startFakeK8s, TEAM_IDS, type FakeK8s } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createWorld, personas, type World } from './world.ts';
 
-// P26-06: Codex full access (docs/plans/agents-anywhere.md §4) over HTTP on a real server and database: the column, the admin-only switch, Codex only, one team only.
+// P26-06: Codex full access (docs/plans/agents-anywhere.md §4) over HTTP on a real server and database: the column, the admin-only switch, Codex only. Many teams may share a full-access runner (P26-21): full access applies per team pod.
 
 const { omar, rafi } = personas;
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
@@ -31,21 +31,22 @@ afterAll(async () => {
 });
 
 describe('a new runner', () => {
-  it('a Codex pod runner serving one team starts with full access on; with no team yet it is on as well', async () => {
+  it('a Codex pod runner starts with full access on, for one team, for several, for every team, or for none yet', async () => {
     const one = await make('fa-one', 'codex_cli', { teams: { teams: [TEAM_IDS.Engineering] } });
     expect(one.status, JSON.stringify(one.body)).toBe(201);
     expect(one.body.runner.fullAccess).toBe(true);
     const none = await make('fa-none', 'codex_cli');
     expect(none.body.runner.fullAccess).toBe(true);
     expect(await column(none.body.runner.id)).toBe(true);
+    expect((await make('fa-all', 'codex_cli', { teams: { all: true } })).body.runner.fullAccess).toBe(true);
+    expect((await make('fa-two', 'codex_cli', { teams: { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] } })).body.runner.fullAccess).toBe(true);
   });
 
-  it('is off when the request asks for every team or for two, unless it says so (then 409)', async () => {
-    expect((await make('fa-all', 'codex_cli', { teams: { all: true } })).body.runner.fullAccess).toBe(false);
-    expect((await make('fa-two', 'codex_cli', { teams: { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] } })).body.runner.fullAccess).toBe(false);
+  it('is off when the request says so, and on when it asks for it with several teams (no one-team rule: each team has its own pod)', async () => {
+    expect((await make('fa-off', 'codex_cli', { teams: { all: true }, fullAccess: false })).body.runner.fullAccess).toBe(false);
     const asked = await make('fa-asked', 'codex_cli', { teams: { all: true }, fullAccess: true });
-    expect(asked.status).toBe(409);
-    expect(asked.body.error.message).toContain('one team');
+    expect(asked.status, JSON.stringify(asked.body)).toBe(201);
+    expect(asked.body.runner.fullAccess).toBe(true);
   });
 
   it('a Claude Code runner never has full access: it is false and asking for it is refused', async () => {
@@ -60,12 +61,9 @@ describe('a new runner', () => {
 });
 
 describe('the switch', () => {
-  it('turns on only for exactly one team, off at any time, and says what changed', async () => {
-    const id = (await make('fa-sw', 'codex_cli', { teams: { all: true } })).body.runner.id as string;
-    const early = await patch(id, { fullAccess: true });
-    expect(early.status).toBe(409);
+  it('turns on for any number of teams, off at any time, and says what changed', async () => {
+    const id = (await make('fa-sw', 'codex_cli', { teams: { all: true }, fullAccess: false })).body.runner.id as string;
     expect(await column(id)).toBe(false);
-    expect((await teamsOf(id, { teams: [TEAM_IDS.Engineering] })).status).toBe(200);
     const on = await patch(id, { fullAccess: true });
     expect(on.status, JSON.stringify(on.body)).toBe(200);
     expect(on.body.runner.fullAccess).toBe(true);
@@ -76,14 +74,12 @@ describe('the switch', () => {
     expect(off.body.runner.fullAccess).toBe(false);
   });
 
-  it('keeps a full-access runner to one team: a second team or "every team" is refused until it is switched off', async () => {
+  it('keeps full access when the team list changes: a second team or "every team" is allowed', async () => {
     const id = (await make('fa-keep', 'codex_cli', { teams: { teams: [TEAM_IDS.Engineering] } })).body.runner.id as string;
-    expect((await teamsOf(id, { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] })).status).toBe(409);
-    expect((await teamsOf(id, { all: true })).status).toBe(409);
+    expect((await teamsOf(id, { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] })).status).toBe(200);
+    expect((await teamsOf(id, { all: true })).status).toBe(200);
     expect((await teamsOf(id, { teams: [TEAM_IDS.Marketing] })).status).toBe(200);
     expect(await column(id)).toBe(true);
-    await patch(id, { fullAccess: false });
-    expect((await teamsOf(id, { all: true })).status).toBe(200);
   });
 
   it('is refused for a Claude Code runner and for anyone who is not an admin', async () => {

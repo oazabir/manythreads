@@ -26,12 +26,12 @@ let db: TestDatabase;
 let sysPool: pg.Pool;
 let ctx: PluginContext;
 const emitted: Array<Record<string, unknown>> = [];
-const asked: Array<{ runnerName: string; agent?: string }> = [];
+const asked: Array<{ runnerName: string; agent?: string; teamSlug?: string }> = [];
 const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: omar.workspaceId });
 const pods: Pick<ClaudePodsProvider, 'bridge'> = {
   bridge: async (q) => {
     asked.push(q);
-    return { address: `http://${q.agent === 'codex' ? 'codex' : 'claude'}-${q.runnerName}.bots.svc:8650`, key: 'bridge-key-0123456789' };
+    return { address: `http://${q.agent === 'codex' ? 'codex' : 'claude'}-${q.runnerName}-${q.teamSlug}.bots.svc:8650`, key: `bridge-key-${q.teamSlug}` };
   },
 };
 
@@ -70,16 +70,16 @@ afterAll(async () => {
 
 describe('resolveRunner for a Codex runner', () => {
   it('answers a team on the list with the Codex pod address, agent codex, no guard and the team-and-bot profile rule; the pod is asked for Codex', async () => {
-    for (const team of [TEAM_IDS.Engineering, TEAM_IDS.Marketing]) {
+    for (const [team, slug] of [[TEAM_IDS.Engineering, 'engineering'], [TEAM_IDS.Marketing, 'marketing']] as const) {
       expect(await resolve('codex-shared', team)).toMatchObject({
         ok: true,
-        target: { runner: 'codex-shared', kind: 'codex_cli', address: 'http://codex-codex-shared.bots.svc:8650', key: 'bridge-key-0123456789', agent: 'codex', guard: false, profileRule: '{team}--{bot}', status: 'ready' },
+        target: { runner: 'codex-shared', kind: 'codex_cli', address: `http://codex-codex-shared-${slug}.bots.svc:8650`, key: `bridge-key-${slug}`, agent: 'codex', guard: false, profileRule: '{team}--{bot}', status: 'ready' },
       });
     }
-    expect(asked.at(-1)).toEqual({ runnerName: 'codex-shared', agent: 'codex' });
+    expect(asked.at(-1)).toEqual({ runnerName: 'codex-shared', agent: 'codex', teamSlug: 'marketing' });
     // and a Claude runner is still asked for Claude, so the pod picks the right Secret and address
     expect(await resolve('claude-one')).toMatchObject({ ok: true, target: { kind: 'claude_cli', agent: 'claude-code' } });
-    expect(asked.at(-1)).toEqual({ runnerName: 'claude-one', agent: 'claude' });
+    expect(asked.at(-1)).toEqual({ runnerName: 'claude-one', agent: 'claude', teamSlug: 'engineering' });
   });
 
   it('refuses a team that is not on the list in words that name nothing', async () => {

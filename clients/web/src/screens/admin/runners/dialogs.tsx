@@ -26,6 +26,7 @@ import {
   editChanged,
   emptyForm,
   FULL_ACCESS_WORDS,
+  SHARED_SIGNIN_NOTE,
   kindWords,
   nameProblem,
   suggestName,
@@ -330,6 +331,7 @@ export function TeamsDialog({ runner, teams, onClose, onDone }: { runner: BotRun
       }
     >
       <p className="dlg-text">A team that is not on the list cannot see this runner, and its bots cannot run here.</p>
+      {runner.kind === 'claude_cli' || runner.kind === 'codex_cli' || runner.kind === 'server_agent' ? <p className="fld-hint" data-testid="runner-shared-signin-note">{SHARED_SIGNIN_NOTE}</p> : null}
       <TeamsControl value={choice} onChange={setChoice} teams={teams} legend="Which teams may use it" />
       <FormError text={error} />
     </Dialog>
@@ -589,7 +591,7 @@ export function AdoptDialog({ connection, onClose, onDone }: { connection: OldCo
 
 // ---- full access (Codex pod runner) -----------------------------------------------------------------------------
 
-/** Turn Codex's full access on or off for one pod runner. Turning it on says what it means first; turning it off asks nothing more. The server refuses it for a runner that serves two teams. */
+/** Turn Codex's full access on or off for one pod runner. Turning it on says what it means first; turning it off asks nothing more. Teams that share the runner each have a pod of their own, so any number of teams may be on it. */
 export function FullAccessDialog({ runner, onClose, onDone }: { runner: BotRunner; onClose: () => void; onDone: (r: BotRunner, text: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

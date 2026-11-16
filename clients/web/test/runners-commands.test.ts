@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { OldConnection, TeamId } from '@manythreads/shared';
 import {
   AGENT_CHOICES,
+  SHARED_SIGNIN_NOTE,
+  sharesSignin,
   KIND_CARDS,
   agentHint,
   isBridge,
@@ -493,6 +495,20 @@ describe('what runs the bot on a gateway runner (P19-14)', () => {
   });
 });
 
+describe('teams that share a runner (P26-21 / P26-23)', () => {
+  const team = (n: string) => ({ teamId: n as TeamId, slug: n, name: n });
+  it('says in plain words what they share', () => {
+    expect(SHARED_SIGNIN_NOTE).toBe("Teams on this runner share its sign-in and its plan's limits.");
+  });
+  it('the note shows for an agent runner that serves, or may serve, several teams; not for one team or a Hermes runner', () => {
+    expect(sharesSignin({ kind: 'claude_cli', allTeams: false, teams: [team('a'), team('b')] })).toBe(true);
+    expect(sharesSignin({ kind: 'codex_cli', allTeams: true, teams: [] })).toBe(true);
+    expect(sharesSignin({ kind: 'server_agent', allTeams: false, teams: [team('a'), team('b')] })).toBe(true);
+    expect(sharesSignin({ kind: 'claude_cli', allTeams: false, teams: [team('a')] })).toBe(false);
+    expect(sharesSignin({ kind: 'hermes_gateway', allTeams: true, teams: [] })).toBe(false);
+  });
+});
+
 describe('Codex full access (P26-06)', () => {
   it('is offered for a Codex pod runner only', () => {
     expect(hasFullAccessChoice({ kind: 'codex_cli' })).toBe(true);
@@ -502,7 +518,8 @@ describe('Codex full access (P26-06)', () => {
   it('says in plain words what it is, where it is held and who may turn it on', () => {
     expect(FULL_ACCESS_WORDS.what).toBe('Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.');
     expect(FULL_ACCESS_WORDS.who).toContain('workspace admin');
-    expect(FULL_ACCESS_WORDS.who).toContain('one team');
+    expect(FULL_ACCESS_WORDS.who).not.toContain('only while the runner serves one team');
+    expect(FULL_ACCESS_WORDS.who).toContain('its own pod');
     expect(FULL_ACCESS_WORDS.doneOn('Codex pod')).toBe('Codex pod now has full access. Its pod restarts to take it.');
     expect(FULL_ACCESS_WORDS.doneOff('Codex pod')).toContain('no longer has full access');
   });

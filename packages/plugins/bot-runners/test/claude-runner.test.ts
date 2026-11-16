@@ -26,7 +26,8 @@ let sysPool: pg.Pool;
 let ctx: PluginContext;
 const emitted: Array<Record<string, unknown>> = [];
 const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: omar.workspaceId });
-const pods: Pick<ClaudePodsProvider, 'bridge'> = { bridge: async ({ runnerName }) => ({ address: `http://claude-${runnerName}.bots.svc:8650`, key: 'bridge-key-0123456789' }) };
+// the pod of a (runner, team): the address and the key are that pod's own (P26-21)
+const pods: Pick<ClaudePodsProvider, 'bridge'> = { bridge: async ({ runnerName, teamSlug }) => ({ address: `http://claude-${runnerName}-${teamSlug}.bots.svc:8650`, key: `bridge-key-${teamSlug}` }) };
 
 const make = (name: string, over: { enabled?: boolean; status?: string; teams?: string[]; allTeams?: boolean; pausedUntil?: string | null } = {}): Promise<string> =>
   sys(async (tx) => {
@@ -61,10 +62,11 @@ afterAll(async () => {
 
 describe('resolveRunner for a Claude Code runner', () => {
   it('answers a team on the list with the bridge address and key, no guard, and the team-and-bot profile rule', async () => {
-    for (const team of [TEAM_IDS.Engineering, TEAM_IDS.Marketing]) {
+    // each team's run goes to the pod of its own team on the shared runner (one pod per runner and team)
+    for (const [team, slug] of [[TEAM_IDS.Engineering, 'engineering'], [TEAM_IDS.Marketing, 'marketing']] as const) {
       expect(await resolve('claude-shared', team)).toMatchObject({
         ok: true,
-        target: { runner: 'claude-shared', kind: 'claude_cli', address: 'http://claude-claude-shared.bots.svc:8650', key: 'bridge-key-0123456789', agent: 'claude-code', guard: false, profileRule: '{team}--{bot}', status: 'ready' },
+        target: { runner: 'claude-shared', kind: 'claude_cli', address: `http://claude-claude-shared-${slug}.bots.svc:8650`, key: `bridge-key-${slug}`, agent: 'claude-code', guard: false, profileRule: '{team}--{bot}', status: 'ready' },
       });
     }
   });

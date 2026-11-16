@@ -288,7 +288,6 @@ export class Reconciler {
     const oldPodRuns = await this.retireOldPod(runner);
 
     const stampOf = (claim: string): string | null => (claim in plan.stamp ? (plan.stamp[claim] ?? null) : node);
-    const workOwner = new Map(pods.map((p) => [p.names.work, p.team]));
     const keeperPod = pods[0]?.names.base;
     const running: { pod: TeamPod; apiKey: string; repos: RepoToSync[] }[] = [];
     const pending: K8sObject[] = [];
