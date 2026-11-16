@@ -364,7 +364,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             {channelName && teamForLink ? <Link className="btn s" to={`${channelPath(teamForLink, channelName)}?message=${rootId}`}>Open channel</Link> : null}
             <button type="button" className="btn s trToggle" aria-expanded={railOpen} aria-controls={railId} data-testid="rail-toggle" onClick={() => setRail(!railOpen)}>
               <SidePanelIcon />
-              <span>{railOpen ? 'Hide overview' : 'Overview'}</span>
+              <span className="trToggleText">{railOpen ? 'Hide overview' : 'Overview'}</span>
             </button>
           </div>
         </div>

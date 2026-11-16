@@ -294,6 +294,14 @@ scrolling sideways. Pictures go to `temp/screenshots/p29` (git-ignored). The web
 no `webServer`): `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test -c <that config> --workers=1 --retries=0`. Unit and component tests: `clients/web/test/inbox-rules.test.ts`, `inbox-work.test.ts`, `threads-row.test.ts`.
 The same spec ends with the sidebar's Threads entry (P29-19): its badges in the order mentions (an @), unread, tasks in progress; its name and tooltip in words ("Threads, 2 mentions, 5 unread, 3 tasks in progress");
 a run starting adding one to the tasks and a message naming Nadia adding one to the mentions with no reload and no polling; the sidebar in four looks (Graphite, Linen, Harbor, Classic, light and dark) and the 390 px drawer, where one badge and a dot show.
+
+`e2e/runs/thread-rail.spec.ts` (P29-21) drives the thread's side rail (docs/plans/channel-task-view.md section 10e) on the same `runs` stack: the toggle (closed first, `aria-expanded` and `aria-controls`, the rail a
+named complementary landmark), the rail beside the messages and 300 px wide on a 1440 px screen, the bot's list as a timeline (the step in progress marked with its stage and the run's line, "2 earlier steps" folding after
+a tick that arrives with no reload, a blocked step turning the stage to "Waiting"), the dock keeping one line of the to-do while the rail is open, the choice remembered across a reload, the x and Escape closing it, then
+Outputs (a picture attached by another person appears with a lazy preview whose alt text is its file name, the two newest pictures as previews and the older picture and the PDF in the list, the count, a preview opening
+the viewer), and last the rail in Graphite dark and Linen light at 1440 px (beside), 1100 px (over the messages as a sheet: the thread's pane is about 430 px there) and 390 px (a bottom sheet with a 44 px close button),
+with nothing scrolling sideways. Build the web client first, run it with a config of a few lines as above (`testMatch: 'runs/thread-rail.spec.ts'`). Component tests: `clients/web/test/thread-rail.test.ts` (stage, timeline
+folding, the Outputs plan, what is remembered with a blocked storage, the rail drawn) and the rail case in `thread-dock.test.ts`; the route: `packages/plugins/threads/test/threads.test.ts`.
 Unit and component tests: `clients/web/test/threads-badges.test.ts`. The shell has no collapsed rail: the narrow layout is the drawer, so "compact" is the 390 px rule.
 
 `e2e/runs/themes.spec.ts` (P28-07) uses the same stack and the same kind of config: it opens the thread of a working run card and a to-do card as Nadia in each theme (Graphite, Linen, Harbor and Classic) and

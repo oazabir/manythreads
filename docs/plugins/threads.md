@@ -68,11 +68,20 @@ count; a `#channel` link does not. The page is 50 rows, by cursor ("Show more th
 at most 50 roots each (`THREAD_BATCH_MAX`); a thread the caller cannot read answers nothing, because the rows' own policies decide. All of them are `readOnly` routes. The client (`clients/web/src/inbox/`) keeps them live
 with the pushes `run.started`, `run.ended`, `todo.changed` and `approval.changed` and a 20 second poll while the tab is visible (a run's own steps reach a person only through a lease the list does not hold).
 
+### The thread's side rail: its files (P29-20)
+
+`GET /api/threads/:rootId/files?limit=` (`readOnly`, `limit` 1 to 200, default 20) answers `{ items, total }`: the files attached to the messages of the thread, the root included, in the order of
+their messages, the newest first (a message's own files keep their order). Each item is `{ file: { id, name, size, mime }, messageId, at, authorId, authorName, authorKind }`; `total` counts all of them, so
+the rail can say "Show all files (60)". One SQL read joins `app.messages` (the root and `thread_root_id = root`, not deleted; `meta.attachments` unrolled) to `app.files`, and names the authors through
+`app.message_authors`, so the rows' own policies decide: a thread of a channel the caller cannot read, and a file they cannot read, are left out, and an unreadable thread answers like one with no files.
+A bot caller does not see voice clips (`audio/*`). The client is `clients/web/src/taskview/ThreadRail.tsx`: it reads this once when the rail opens and again only when a message with a file appears or goes
+(the key is the ids of the messages that carry files), never per message.
+
 ## Manifest
 
 `threads` / `0.1.0` / `server`, `dependsOn: ['channels']`, no extension points, no events (the read-state events of follow changes are the kernel's `reading.state.changed`).
 
 ## Tests
 
-`test/threads.test.ts` (membership of each tab, ordering and cursor, follow semantics, the mirror, GET thread, guests, privacy), `e2e/api/threads/inbox.spec.ts`
-(`pnpm e2e --project=api`), `e2e/runs/threads-view.spec.ts` (the view in a browser, P29-18), `packages/plugins/channels/test/rls/channels-plugin.test.ts` (trigger and mirror).
+`test/threads.test.ts` (membership of each tab, ordering and cursor, follow semantics, the mirror, GET thread, guests, privacy, the thread's files), `e2e/api/threads/inbox.spec.ts`
+(`pnpm e2e --project=api`), `e2e/runs/threads-view.spec.ts` (the view in a browser, P29-18), `e2e/runs/thread-rail.spec.ts` (the side rail, P29-21), `packages/plugins/channels/test/rls/channels-plugin.test.ts` (trigger and mirror).

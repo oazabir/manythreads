@@ -18,7 +18,6 @@ import {
   listThreadFilesRoute,
   ListThreadFilesQuery,
   ListThreadFilesResponse,
-  ThreadPathParams,
   unfollowThreadRoute,
   type FileSummary,
   type MessageAuthor,

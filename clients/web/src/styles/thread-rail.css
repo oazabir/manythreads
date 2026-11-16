@@ -1,6 +1,6 @@
 /*
  * The thread's side rail (P29-20, docs/plans/channel-task-view.md section 10e): "Progress" (the to-do list as a timeline) and "Outputs" (the files, the two newest pictures as
- * previews). The thread's own width decides the place (a container query, not the window's): beside the messages from 900 px, over them as a sheet below that, and as a sheet
+ * previews). The thread's own width decides the place (a container query, not the window's): beside the messages from 720 px, over them as a sheet below that, and as a sheet
  * from the bottom edge at phone width. Tokens only, logical properties only, 44 px targets at 390 px. Every class is prefixed `tr`.
  */
 
@@ -20,10 +20,32 @@
   min-inline-size: 0;
 }
 
+.thread.main {
+  container: thread / inline-size;
+}
+
 .trToggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* a narrow thread keeps the button to its icon (the words stay for a screen reader) so the header's other buttons still fit */
+@container thread (width < 560px) {
+  .trToggle {
+    justify-content: center;
+    min-inline-size: 44px;
+  }
+
+  .trToggleText {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .trRail {
@@ -439,8 +461,8 @@
   cursor: default;
 }
 
-/* beside the messages: the thread's own width is 900 px or more */
-@container thsplit (width >= 900px) {
+/* beside the messages: the thread's own width is 720 px or more (the pane of the Threads view is about 780 px wide on a 1440 px screen, so 900 would never be reached there) */
+@container thsplit (width >= 720px) {
   .trRail {
     position: static;
     flex: none;
