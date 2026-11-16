@@ -1,13 +1,10 @@
-import { useState, useId } from 'react';
-import type { Appearance as AppearanceSetting, Density } from '@manythreads/shared';
-import { isApiError } from '../../api/client';
-import { useSession, useSessionState } from '../../app/session';
+import { useId } from 'react';
+import type { Density } from '@manythreads/shared';
 import { PageHeader } from '../../components/PageHeader';
 import { Alert } from '../../components/ui';
 import { ChoiceCards, ThemePicker } from '../../components/ThemePicker';
 import { sayToast } from '../../kernel/toast';
-import { applyAppearance } from '../../shell/appearance';
-import { saveMyAppearance } from './appearanceApi';
+import { useAppearanceChoice } from '../../shell/useAppearanceChoice';
 
 /**
  * Set to true while the page below is the real setting. The Account menu lists the page only when this is true (the route exists either way,
@@ -33,31 +30,8 @@ function DensityPreview({ value }: { value: Density }) {
 
 /** Account → Appearance: the theme (palette), light or dark, and the message density. A choice is saved the moment it is picked and drawn at once. */
 export function Appearance() {
-  const session = useSession();
-  const { setSession } = useSessionState();
   const uid = useId();
-  const current: AppearanceSetting = session.person.appearance;
-  const [error, setError] = useState<string | null>(null);
-
-  async function pick(change: Partial<AppearanceSetting>) {
-    const next: AppearanceSetting = { ...current, ...change };
-    setError(null);
-    // drawn first, so the page answers the click; the session carries it so a later page reads the new value, and a failed save puts the old one back
-    applyAppearance(next);
-    setSession({ ...session, person: { ...session.person, appearance: next } });
-    try {
-      const stored = await saveMyAppearance(change);
-      if (stored.theme !== next.theme || stored.density !== next.density || stored.palette !== next.palette) {
-        applyAppearance(stored);
-        setSession({ ...session, person: { ...session.person, appearance: stored } });
-      }
-      sayToast('Saved', { testId: 'appearance-saved' });
-    } catch (err) {
-      applyAppearance(current);
-      setSession({ ...session, person: { ...session.person, appearance: current } });
-      setError(isApiError(err) ? err.message : 'Could not save. Try again.');
-    }
-  }
+  const { current, error, pick } = useAppearanceChoice({ onSaved: () => sayToast('Saved', { testId: 'appearance-saved' }) });
 
   return (
     <>

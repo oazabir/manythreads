@@ -9,8 +9,11 @@ import { PauseDialog, StatusDialog } from '../presence/PresenceDialogs';
 import { MyAvatarPicker } from '../avatars/MyAvatarPicker';
 import { Avatar } from '../components/ui';
 import { useShell } from './context';
+import { AppearanceEntry } from './AppearanceMenu';
 import { GearIcon } from './icons';
+import { MENU_SCOPE, onMenuKeys } from './menuNav';
 import { useDismiss } from './useDismiss';
+import { useNarrow } from './useNarrow';
 
 type AccountDialog = 'status' | 'pause' | 'picture';
 
@@ -45,26 +48,40 @@ function AccountItems({ done, openDialog, leave }: { done: () => void; openDialo
   const session = useSession();
   const { guest } = useShell();
   const dnd = useMyDnd();
+  const narrow = useNarrow();
+  const [appearance, setAppearance] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  // on a phone the Appearance submenu takes the place of the rows (with a Back row); on a wide screen it is a flyout and the rows stay
+  const rows = !(narrow && appearance);
   return (
-    <>
-      <Link role="menuitem" className="menu-item" to="/account/profile" onClick={done}>Account</Link>
-      <button type="button" role="menuitem" className="menu-item" data-testid="menu-picture" onClick={() => { done(); openDialog('picture'); }}>Profile picture…</button>
-      {dnd.supported ? (
+    <div className="am-wrap" ref={wrap}>
+      {rows ? (
         <>
-          <button type="button" role="menuitem" className="menu-item" data-testid="menu-status" onClick={() => { done(); openDialog('status'); }}>Set status…</button>
-          <button type="button" role="menuitem" className="menu-item" data-testid="menu-pause" onClick={() => { done(); openDialog('pause'); }}>
-            {dnd.banner ? 'Notifications are paused…' : 'Pause notifications…'}
-          </button>
-          <Link role="menuitem" className="menu-item" to="/account/notifications#status-and-dnd" onClick={done}>Do not disturb settings</Link>
+          <Link role="menuitem" className="menu-item" to="/account/profile" onClick={done}>Account</Link>
+          <button type="button" role="menuitem" className="menu-item" data-testid="menu-picture" onClick={() => { done(); openDialog('picture'); }}>Profile picture…</button>
+          {dnd.supported ? (
+            <>
+              <button type="button" role="menuitem" className="menu-item" data-testid="menu-status" onClick={() => { done(); openDialog('status'); }}>Set status…</button>
+              <button type="button" role="menuitem" className="menu-item" data-testid="menu-pause" onClick={() => { done(); openDialog('pause'); }}>
+                {dnd.banner ? 'Notifications are paused…' : 'Pause notifications…'}
+              </button>
+              <Link role="menuitem" className="menu-item" to="/account/notifications#status-and-dnd" onClick={done}>Do not disturb settings</Link>
+            </>
+          ) : null}
+          {guest ? null : <Link role="menuitem" className="menu-item" to="/memory" data-testid="menu-my-memory" onClick={done}>Your memory</Link>}
+          {guest ? null : <Link role="menuitem" className="menu-item" to="/knowledge" data-testid="menu-my-knowledge" onClick={done}>Your knowledge</Link>}
+          {guest ? null : <Link role="menuitem" className="menu-item" to="/teams" onClick={done}>Teams</Link>}
+          {isAdmin(session) ? <Link role="menuitem" className="menu-item" to="/settings/workspace/general" onClick={done}>Settings</Link> : null}
         </>
       ) : null}
-      {guest ? null : <Link role="menuitem" className="menu-item" to="/memory" data-testid="menu-my-memory" onClick={done}>Your memory</Link>}
-      {guest ? null : <Link role="menuitem" className="menu-item" to="/knowledge" data-testid="menu-my-knowledge" onClick={done}>Your knowledge</Link>}
-      {guest ? null : <Link role="menuitem" className="menu-item" to="/teams" onClick={done}>Teams</Link>}
-      {isAdmin(session) ? <Link role="menuitem" className="menu-item" to="/settings/workspace/general" onClick={done}>Settings</Link> : null}
-      <div className="menu-sep" role="separator" />
-      <button type="button" role="menuitem" className="menu-item" onClick={leave}>Sign out</button>
-    </>
+      <AppearanceEntry open={appearance} setOpen={setAppearance} narrow={narrow} done={done} wrap={wrap} />
+      {rows ? (
+        <>
+          <div className="menu-sep" role="separator" />
+          <button type="button" role="menuitem" className="menu-item" onClick={leave}>Sign out</button>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -75,9 +92,18 @@ export function AccountMenu() {
   const [dialog, setDialog] = useState<AccountDialog | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const gear = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const dnd = useMyDnd();
   const signOutNow = useSignOut();
-  useDismiss(open, () => setOpen(false), box);
+  // closing from inside the menu puts focus back on the gear, so the keyboard carries on from where it was
+  const close = (): void => {
+    if (box.current?.contains(document.activeElement)) gear.current?.focus();
+    setOpen(false);
+  };
+  useDismiss(open, close, box);
+  useEffect(() => {
+    if (open) menu.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
+  }, [open]);
   const closeDialog = (): void => {
     setDialog(null);
     window.setTimeout(() => gear.current?.focus(), 0); // the menu item that opened it is gone: focus returns to the account button
@@ -104,6 +130,7 @@ export function AccountMenu() {
         type="button"
         className="icon-btn foot-settings"
         aria-label="Account menu"
+        data-testid="account-gear"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
@@ -111,8 +138,8 @@ export function AccountMenu() {
         <GearIcon />
       </button>
       {open ? (
-        <div className="menu menu-up" role="menu" aria-label="Account">
-          <AccountItems done={() => setOpen(false)} openDialog={setDialog} leave={leave} />
+        <div className="menu menu-up" role="menu" aria-label="Account" ref={menu} {...{ [MENU_SCOPE]: '' }} onKeyDown={(e) => onMenuKeys(e, close)}>
+          <AccountItems done={close} openDialog={setDialog} leave={leave} />
         </div>
       ) : null}
     </div>
@@ -132,7 +159,7 @@ export function AccountSheet({ open, onClose, onGone }: { open: boolean; onClose
   const signOutNow = useSignOut();
   useDismiss(open, onClose, sheet);
   useEffect(() => {
-    if (open) sheet.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    if (open) sheet.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [open]);
   const closeDialog = (): void => {
     setDialog(null);
@@ -148,7 +175,7 @@ export function AccountSheet({ open, onClose, onGone }: { open: boolean; onClose
               <Avatar name={session.person.name} avatar={session.person.avatar} personId={session.person.id} />
               <span className="bb-sheet-name">{session.person.name}</span>
             </div>
-            <div className="bb-sheet-items" role="menu" aria-label="Account">
+            <div className="bb-sheet-items" role="menu" aria-label="Account" {...{ [MENU_SCOPE]: '' }} onKeyDown={(e) => onMenuKeys(e, onClose)}>
               <AccountItems done={onClose} openDialog={setDialog} leave={() => { onClose(); void signOutNow(); }} />
             </div>
           </div>

@@ -117,3 +117,11 @@ export function applyAppearance(a: Appearance, env: AppearanceEnv = pageEnv()): 
   env.announce();
   env.later(() => env.root.removeAttribute('data-look-switching'));
 }
+
+/**
+ * Draws an appearance to look at, and keeps nothing: the same attributes as `applyAppearance`, but the first-paint copy in localStorage is left as it is, so a
+ * page that closes in the middle of a preview comes back as the saved look. Drawing the saved appearance again with this undoes a preview.
+ */
+export function previewAppearance(a: Appearance, env: AppearanceEnv = pageEnv()): void {
+  applyAppearance(a, { ...env, storage: null });
+}

@@ -65,6 +65,7 @@ import './styles/schedule.css';
 import './styles/recipes.css';
 import './styles/states.css';
 import './styles/theme-picker.css';
+import './styles/appearance-menu.css';
 import './styles/motion.css';
 import { configureApi } from './api/setup';
 import { App } from './App';

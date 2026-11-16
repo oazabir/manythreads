@@ -16,6 +16,12 @@ Current state (synced with the code on 2026-11-03; task by task in PLAN.md §8 B
 - **Nudges: 6** (Tester after the OOM; Engineer to shorten the card; Deployer for the context; Engineer to hand the card on; Engineer and Deployer for the browser gate). Screenshots (not committed) in `temp/screenshots/p26-proofs/codex-pod/`. Not checked: whether Codex's shell keeps a variable named `MANYTHREADS_RUN_TOKEN` (its default shell policy may drop names holding TOKEN); check with `mt-publish check` as the Codex Committer after the fix is deployed, and rename the variable for Codex only if it is dropped.
 - **State after:** disk 83% before `docker builder prune -af`; bots stay on `codex-shared` for the next placement.
 
+
+## P30 Appearance in the gear menu (2026-11-16)
+
+- **Built:** the account menu (the gear at the bottom left, and "You" on a phone) has an Appearance row with a submenu of Graphite, Linen, Harbor and Classic (each with a colour swatch) and System, Light, Dark, a check on the current ones, and "More appearance settings…". A click draws the look on the whole page and saves it through the same hook as Settings → Appearance (`shell/useAppearanceChoice.ts`); the menu stays open; a failed save puts the old look back with a small error line. Pointer or keyboard focus on a choice previews it and leaving restores the saved look. Wide screens get a flyout, 760 px and below an in-place drill-down with a Back row. Menu keys: arrows, Home, End, Right opens, Left and Esc close the submenu, focus returns to the Appearance row and then to the gear.
+- **Tests:** `clients/web/test/appearance-menu.test.ts` (12, jsdom) and `e2e/shell/appearance-menu.spec.ts` (5, on a stack of its own) pass; pictures in `temp/screenshots/p30/` (`graphite-dark-1440.png`, `linen-light-1440.png`, and `-390-drawer.png` and `-390-sheet.png` of each). Not deployed.
+
 ## P26-19 proof 1: the Engineering chain on a Claude Code pod (`claude-shared`), stopped at the pull request (2026-11-16)
 
 - **Setup:** the eight chain bots were placed on runner `claude-shared` (Engineering and Marketing are on its team list; one pod `claude-claude-shared-engineering`, 4 GiB). Before the run: 8 GB of memory available, disk 76%, workspace LLM spend 19.80 USD (limit 25; the pod uses the Claude subscription, outside that ledger, so it was 19.80 after).

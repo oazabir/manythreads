@@ -162,6 +162,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 26 | 26 | Agents anywhere: Hermes, Claude Code and Codex in a pod or on a server enrolled by `curl … | sudo bash`, Codex with full access, six live Engineer-led deliveries (owner, 2026-11-15) | XL | 25 | being built; 26 tasks |
 | 27 | 28 | Themes: Graphite, Linen and Harbor, each light and dark, picked in Settings → Appearance and stored with the person (design: `docs/design/themes.md`) | L | 21 | being built; 10 tasks |
 | 28 | 27 | The onboarding journey: one `curl` installs manythreads on k3s from public GHCR images (sslip.io or Let's Encrypt, self-signed as a fallback), and a first-run wizard ends with at least one working runner and a first delivery (owner, 2026-11-15; answers 2026-11-16) | XL | 26, 28 | being built; 28 tasks |
+| 29 | 30 | Appearance in the gear menu: the account menu at the bottom left offers Appearance, a submenu of the four palettes and System, Light, Dark that applies and saves on a click, so a person sees the look change instead of going to Settings → Appearance (owner, 2026-11-16) | S | 28 | built; 3 tasks |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -830,6 +831,16 @@ Plan: `docs/plans/channel-task-view.md`. Under a thread's root message in the ch
 | P29-20 | The thread's side rail (section 10e): `ThreadRail` in `ThreadBody` with the Progress timeline and the Outputs (two image previews, the file list), the toggle, the responsive overlay and sheet, the outputs read; component tests | Done |
 | P29-21 | Side rail e2e (open and close, a tick updates it, an attached image appears), screenshots, `docs/testing.md` and the plugin docs | Done |
 | P29-11 | Deploy and live check | Not built |
+
+### Phase 30 · Appearance in the gear menu (owner, 2026-11-16)
+
+The gear at the bottom left of the sidebar (and "You" in the phone's bottom bar) opens the account menu. It gets an **Appearance** row with a submenu: the four palettes (each with a small colour swatch and a check on the current one) and System, Light and Dark, then "More appearance settings…" (Settings → Appearance). A click draws the look on the whole page at once and saves it the way Settings → Appearance does (`useAppearanceChoice`, one hook for both screens: a draw, the session, the save, and a revert with a small error line when the save fails); the menu stays open so several can be tried. Looking at a choice (pointer over it, or keyboard focus on it) shows it on the page and leaving puts the saved look back (`previewAppearance`, which keeps no saved copy). A wide screen shows the submenu as a flyout beside the menu; 760 px and below shows it in place of the menu's rows under a Back row. Keys: Up, Down, Home, End inside a level; Right or Enter opens the submenu; Left or Esc closes it and puts focus on the Appearance row; the next Esc closes the menu and puts focus on the gear. No server change: the stored choice is the one of Phase 28.
+
+| ID | Task | Status |
+|---|---|---|
+| P30-01 | The Appearance row and submenu (`shell/AppearanceMenu.tsx`, `shell/menuNav.ts`, `styles/appearance-menu.css`), the shared `useAppearanceChoice` and `previewAppearance`, the account menu's arrow keys and focus return; a jsdom component test (`clients/web/test/appearance-menu.test.ts`: opens, a click sets `data-palette` and `data-theme` and calls the save, a failed save reverts, the preview, the keys, the phone drill-down) | Built |
+| P30-02 | Playwright `e2e/shell/appearance-menu.spec.ts`: switch palette and mode from the gear menu and a reload keeps them, hover preview, keys and focus, "More appearance settings…", the 390 px drill-down in the drawer and in the "You" sheet | Built |
+| P30-03 | Pictures of the open submenu in Graphite dark and Linen light, at 1440 px and at 390 px (drawer and sheet), taken by the spec into `temp/screenshots/p30` (git-ignored); this phase in PLAN, STATUS and `docs/testing.md` | Built |
 
 ---
 
