@@ -153,6 +153,23 @@ describe('a person who leaves the team of the bot', () => {
   });
 });
 
+describe('the organization time zone', () => {
+  it('is where a new routine starts when the person has set no zone of their own, and never replaces a zone they chose', async () => {
+    const zoneOf = async (who: Persona): Promise<unknown> => (ListPersonalRoutinesResponse.parse((await call(who, 'GET', '/api/me/scheduled-jobs')).body).settings.timeZone);
+    await sql(`UPDATE app.workspaces SET settings = jsonb_set(settings, '{timeZone}', '"Europe/Berlin"') WHERE id = $1`, [KAHF_WORKSPACE_ID]);
+    await sql('DELETE FROM app.routine_person_settings WHERE person_id = $1', [nadia.personId]);
+    expect(await zoneOf(nadia)).toBe('Europe/Berlin');
+    expect((await call(nadia, 'PUT', '/api/me/routine-settings', { timeZone: 'Asia/Dubai' })).status).toBe(200);
+    expect(await zoneOf(nadia)).toBe('Asia/Dubai');
+    // the organization's zone is a start, not a stored copy: it is not written to the person's settings by reading
+    await sql('DELETE FROM app.routine_person_settings WHERE person_id = $1', [nadia.personId]);
+    await zoneOf(nadia);
+    expect(await sql('SELECT 1 FROM app.routine_person_settings WHERE person_id = $1', [nadia.personId])).toHaveLength(0);
+    await sql(`UPDATE app.workspaces SET settings = settings - 'timeZone' WHERE id = $1`, [KAHF_WORKSPACE_ID]);
+    expect(await zoneOf(nadia)).toBeNull();
+  });
+});
+
 describe('the settings routes', () => {
   it('refuse an allowance outside 0 to 10000 and a time zone that does not exist', async () => {
     for (const bad of [-1, 10_001]) expect((await call(omar, 'PUT', '/api/workspace/routine-settings', { monthlyCapUsd: bad })).status, `a cap of ${String(bad)}`).toBe(400);

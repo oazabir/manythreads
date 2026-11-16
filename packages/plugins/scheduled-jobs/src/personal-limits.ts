@@ -30,7 +30,12 @@ export async function requireMemberOrNull(tx: PluginTx): Promise<Member | null> 
   return { personId: r.person_id, actorId: r.actor_id, workspaceId: r.workspace_id };
 }
 
-export async function getSettings(tx: PluginTx, personId: string): Promise<RoutineSettings> {
+/**
+ * The person's own routine settings. With `workspaceDefault`, a person who has set no time zone of their own is shown the one the admin chose in the setup wizard
+ * (Organization step), so a new routine starts in the organization's zone and not in UTC or the browser's. The scheduler does not use the fallback: a routine runs in
+ * the zone it was made with unless the person chose one of their own.
+ */
+export async function getSettings(tx: PluginTx, personId: string, options: { workspaceDefault?: boolean } = {}): Promise<RoutineSettings> {
   const row = (
     await tx.query<{ time_zone: string | null; quiet_from: string | null; quiet_to: string | null }>(
       'SELECT time_zone, quiet_from, quiet_to FROM app.routine_person_settings WHERE person_id = $1::uuid',
@@ -38,7 +43,12 @@ export async function getSettings(tx: PluginTx, personId: string): Promise<Routi
     )
   ).rows[0];
   const quietHours: RoutineQuietHours | null = row?.quiet_from && row.quiet_to ? { from: row.quiet_from, to: row.quiet_to } : null;
-  return { timeZone: row?.time_zone ?? null, quietHours };
+  let timeZone = row?.time_zone ?? null;
+  if (timeZone === null && options.workspaceDefault === true) {
+    const own = (await tx.query<{ tz: string | null }>(`SELECT settings ->> 'timeZone' AS tz FROM app.workspaces WHERE id = app.workspace_id()`)).rows[0]?.tz ?? null;
+    if (own !== null && own.trim() !== '') timeZone = own;
+  }
+  return { timeZone, quietHours };
 }
 
 /** The monthly allowance per person for the workspace: the admin's setting, else the default of 5 US dollars. */

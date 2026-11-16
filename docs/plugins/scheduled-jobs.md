@@ -107,7 +107,7 @@ Personal files.
 | POST | `/api/me/scheduled-jobs/:id/run` | run now (202) — rate limited 10/min |
 | GET | `/api/me/scheduled-jobs/:id/runs` | the last 50 firings |
 | POST | `/api/me/scheduled-jobs/draft` | a proposal from a sentence — rate limited 20/min |
-| PUT | `/api/me/routine-settings` | my time zone and quiet hours |
+| PUT | `/api/me/routine-settings` | my time zone and quiet hours. `GET /api/me/scheduled-jobs` shows the organization's time zone (the setup wizard's Organization step) as the starting zone for a person who set none; it is never stored for them and the scheduler only uses a zone the person chose or the routine was made with |
 | GET / PUT | `/api/workspace/routine-settings` | the monthly allowance per person (any member reads; owner or admin changes) |
 | GET / PATCH | `/api/me/action-items` | the action-items list |
 

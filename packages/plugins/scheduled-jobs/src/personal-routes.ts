@@ -162,7 +162,8 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
             spentUsd: await spentAsPerson(tx, member.personId, at),
             runToolCalls: PERSONAL_ROUTINE_LIMITS.runToolCalls,
           },
-          settings: await getSettings(tx, member.personId),
+          // a person with no zone of their own starts new routines in the organization's (set in the setup wizard)
+          settings: await getSettings(tx, member.personId, { workspaceDefault: true }),
         }),
       );
     }),
