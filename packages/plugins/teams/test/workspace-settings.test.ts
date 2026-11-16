@@ -108,6 +108,40 @@ describe('workspace General settings', () => {
   });
 });
 
+describe('the time zone (the setup wizard)', () => {
+  it('reads the short name (it never changes), and null for a time zone that was never set', async () => {
+    const { workspace } = GetWorkspaceResponse.parse(ok(await w.call(omar, 'GET', '/api/workspace')));
+    expect(workspace.slug).toMatch(/^[a-z0-9][a-z0-9-]*$/);
+    expect(workspace.timeZone).toBeNull();
+  });
+
+  it('changes it, and says so in the one event with the new value', async () => {
+    const before = (await events('workspace.settings.updated')).length;
+    const { workspace } = GetWorkspaceResponse.parse(ok(await w.call(omar, 'PATCH', '/api/workspace', { timeZone: 'Europe/Berlin' })));
+    expect(workspace).toMatchObject({ timeZone: 'Europe/Berlin' });
+    const all = await events('workspace.settings.updated');
+    expect(all).toHaveLength(before + 1);
+    expect((all[all.length - 1] as EventRow).payload).toMatchObject({ changes: { timeZone: 'Europe/Berlin' } });
+    // the other settings did not move, and a repeat writes nothing
+    expect(GetWorkspaceResponse.parse(ok(await w.call(omar, 'GET', '/api/workspace'))).workspace).toMatchObject({ passwordForMembers: true });
+    ok(await w.call(omar, 'PATCH', '/api/workspace', { timeZone: 'Europe/Berlin' }));
+    expect(await events('workspace.settings.updated')).toHaveLength(before + 1);
+  });
+
+  it('keeps the time zone when only the name changes', async () => {
+    const { workspace } = GetWorkspaceResponse.parse(ok(await w.call(omar, 'PATCH', '/api/workspace', { name: 'Kahf Group' })));
+    expect(workspace.timeZone).toBe('Europe/Berlin');
+  });
+
+  it('refuses a change of the short name, and a time zone nobody knows', async () => {
+    // the short name is read-only: it names things derived from it, so a request to change it is an unknown field
+    expect((await w.call(omar, 'PATCH', '/api/workspace', { slug: 'new-name' })).status).toBe(400);
+    const res = await w.call(omar, 'PATCH', '/api/workspace', { timeZone: 'Mars/Olympus' });
+    expect(res.status).toBe(400);
+    expect(errorOf(res).message).toContain('time zone');
+  });
+});
+
 describe('workspace roles and the last owner', () => {
   it('a member is 404 and a plain admin cannot grant or touch owner', async () => {
     expect((await w.call(nadia, 'PATCH', `/api/workspace/members/${priya.personId}`, { role: 'admin' })).status).toBe(404);

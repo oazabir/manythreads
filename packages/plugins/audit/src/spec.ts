@@ -307,7 +307,7 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
   }),
   'workspace.settings.updated': (e) => {
     const changes = e['changes'] && typeof e['changes'] === 'object' ? Object.keys(e['changes'] as object) : [];
-    const known = changes.filter((k) => ['name', 'selfSignup', 'passwordForMembers'].includes(k)).map((k) => (k === 'name' ? 'name' : k === 'selfSignup' ? 'self sign-up' : 'passwords for members'));
+    const known = changes.filter((k) => ['name', 'timeZone', 'selfSignup', 'passwordForMembers'].includes(k)).map((k) => (k === 'name' ? 'name' : k === 'timeZone' ? 'time zone' : k === 'selfSignup' ? 'self sign-up' : 'passwords for members'));
     return { action: 'workspace.settings_updated', who: person(e['personId']), target: of('workspace', null), reason: known.length > 0 ? `Changed: ${known.join(', ')}` : null };
   },
   'proposals.proposal.created': (e) => ({
@@ -710,7 +710,16 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     action: 'setup.step_marked',
     who: actor(e['markedBy']),
     target: of('setup_step', code(e['step'])),
-    reason: e['kind'] === 'acknowledged' ? 'Confirmed password-only sign-in' : e['kind'] === 'skipped' ? 'Set aside' : 'Taken back',
+    reason:
+      e['kind'] === 'acknowledged'
+        ? 'Confirmed'
+        : e['kind'] === 'skipped'
+          ? 'Set aside'
+          : e['kind'] === 'checked'
+            ? 'A runner answered a test'
+            : e['kind'] === 'started'
+              ? 'Started'
+              : 'Taken back',
   }),
   'onboarding.goal.launched': (e) => ({
     action: 'setup.goal_launched',

@@ -8,6 +8,10 @@ import type { ApiRoute } from '../client/route.ts';
 export const WorkspaceSettings = z.object({
   id: WorkspaceId,
   name: z.string().min(1),
+  /** The short name used in addresses (lowercase letters, digits and "-"). */
+  slug: z.string().min(1),
+  /** The workspace's time zone (an IANA name such as `Europe/Berlin`), or null when none was chosen; digests and schedules read it. */
+  timeZone: z.string().nullable().default(null),
   /** Anyone with an allowed email domain may create their own account. Off by default. */
   selfSignup: z.boolean(),
   /** Plain members may use the password form. Admins and owners always can, so a broken provider never locks everyone out. */
@@ -23,6 +27,8 @@ export const getWorkspaceRoute = { method: 'GET', path: '/api/workspace' } as co
 export const UpdateWorkspaceRequest = z
   .strictObject({
     name: z.string().trim().min(1, 'Enter a workspace name.').max(80, 'Workspace name must be at most 80 characters.').optional(),
+    /** An IANA time-zone name; checked by the server against the zones it knows. */
+    timeZone: z.string().trim().min(1).max(64).optional(),
     selfSignup: z.boolean().optional(),
     passwordForMembers: z.boolean().optional(),
   })

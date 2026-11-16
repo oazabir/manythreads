@@ -10,6 +10,7 @@ export const WorkspaceSettingsUpdatedEvent = z.object({
   personId: PersonId,
   changes: z.object({
     name: z.string().optional(),
+    timeZone: z.string().optional(),
     selfSignup: z.boolean().optional(),
     passwordForMembers: z.boolean().optional(),
   }),

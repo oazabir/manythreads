@@ -10,8 +10,8 @@ vi.setConfig({ testTimeout: 60_000 });
 
 interface StateBody {
   state: {
-    marks: Array<{ step: string; kind: string }>;
-    launch: { teamId: string; channelId: string; at: string } | null;
+    marks: Array<{ step: string; kind: string; refId: string | null }>;
+    launch: { teamId: string; channelId: string; at: string; messageId: string | null } | null;
     dismissedAt: string | null;
   };
 }
@@ -97,11 +97,44 @@ describe('marks', () => {
     expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/signin', { kind: 'skipped' })).status).toBe(409);
     expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/code', { kind: 'acknowledged' })).status).toBe(409);
     // models, teams and bots are facts: they cannot be marked, so they cannot be skipped around
-    for (const step of ['models', 'teams', 'bots', 'launch', 'bootstrap']) {
+    for (const step of ['models', 'teams', 'bots', 'launch', 'bootstrap', 'organization']) {
       expect((await world.call(omar, 'PUT', `/api/workspace/onboarding/marks/${step}`, { kind: 'skipped' })).status, step).toBe(400);
     }
     expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/code', { kind: 'skipped', extra: 1 })).status).toBe(400);
     expect((await get()).body.state.marks).toEqual([]);
+  });
+
+  it('keeps the look as a confirmation, and refuses a set-aside for it', async () => {
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/theme', { kind: 'skipped' })).status).toBe(409);
+    const kept = await world.call<StateBody>(omar, 'PUT', '/api/workspace/onboarding/marks/theme', { kind: 'acknowledged' });
+    expect(kept.body.state.marks).toMatchObject([{ step: 'theme', kind: 'acknowledged', refId: null }]);
+    expect((await events('onboarding.step.marked')).map((e) => [e['step'], e['kind']])).toEqual([['theme', 'acknowledged']]);
+  });
+
+  it('records a runner that answered a test with its id, and the latest one wins', async () => {
+    const one = '33333333-3333-4333-8333-333333333333';
+    const two = '44444444-4444-4444-8444-444444444444';
+    // a proof must say what was checked, and a decision must not
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked' })).status).toBe(409);
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'skipped' })).status).toBe(409);
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/code', { kind: 'skipped', refId: one })).status).toBe(409);
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: 'nope' })).status).toBe(400);
+    await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: one });
+    await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: one });
+    const second = await world.call<StateBody>(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: two });
+    expect(second.body.state.marks).toMatchObject([{ step: 'runners', kind: 'checked', refId: two }]);
+    // the same proof twice writes one event; a different runner writes another
+    expect((await events('onboarding.step.marked')).map((e) => [e['step'], e['kind']])).toEqual([['runners', 'checked'], ['runners', 'checked']]);
+    expect((await world.call<StateBody>(omar, 'DELETE', '/api/workspace/onboarding/marks/runners')).body.state.marks).toEqual([]);
+  });
+
+  it('starts the first delivery with the thread it watches, or sets it aside', async () => {
+    const root = '55555555-5555-4555-8555-555555555555';
+    const started = await world.call<StateBody>(omar, 'PUT', '/api/workspace/onboarding/marks/delivery', { kind: 'started', refId: root });
+    expect(started.body.state.marks).toMatchObject([{ step: 'delivery', kind: 'started', refId: root }]);
+    await world.call(omar, 'DELETE', '/api/workspace/onboarding/marks/delivery');
+    const aside = await world.call<StateBody>(omar, 'PUT', '/api/workspace/onboarding/marks/delivery', { kind: 'skipped' });
+    expect(aside.body.state.marks).toMatchObject([{ step: 'delivery', kind: 'skipped', refId: null }]);
   });
 
   it('is for admins only', async () => {
@@ -129,6 +162,16 @@ describe('launch and dismiss', () => {
     const keys = Object.keys(logged[0] ?? {});
     expect(keys).toEqual(expect.arrayContaining(['teamId', 'channelId']));
     for (const key of keys) expect(['at', 'channelId', 'launchedBy', 'schemaVersion', 'teamId', 'type', 'workspaceId']).toContain(key);
+  });
+
+  it('remembers the question the wizard watches, and moves it to a later question without a second launch', async () => {
+    const q1 = '66666666-6666-4666-8666-666666666666';
+    const q2 = '77777777-7777-4777-8777-777777777777';
+    const first = await world.call<StateBody>(omar, 'POST', '/api/workspace/onboarding/launch', { teamId, channelId, messageId: q1 });
+    expect(first.body.state.launch?.messageId).toBe(q1);
+    const later = await world.call<StateBody>(omar, 'POST', '/api/workspace/onboarding/launch', { teamId, channelId, messageId: q2 });
+    expect(later.body.state.launch).toMatchObject({ channelId, messageId: q2 });
+    expect(await events('onboarding.goal.launched')).toHaveLength(1);
   });
 
   it('puts the checklist away after the launch, once', async () => {

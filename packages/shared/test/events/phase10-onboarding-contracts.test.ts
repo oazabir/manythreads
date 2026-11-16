@@ -71,15 +71,21 @@ describe('llm.alias.tested', () => {
 
 describe('the setup and alias test shapes', () => {
   it('a state is marks, a launch (ids only) and the dismissal', () => {
-    const state = { marks: [{ step: 'servers', kind: 'skipped', markedAt: AT, markedBy: uuid(2) }], launch: { at: AT, by: uuid(2), teamId: uuid(3), channelId: uuid(4) }, dismissedAt: null, dismissedBy: null };
+    const state = { marks: [{ step: 'servers', kind: 'skipped', markedAt: AT, markedBy: uuid(2), refId: null }], launch: { at: AT, by: uuid(2), teamId: uuid(3), channelId: uuid(4), messageId: null }, dismissedAt: null, dismissedBy: null };
     expect(OnboardingState.parse(state)).toEqual(state);
     expect(() => OnboardingState.parse({ ...state, marks: [{ step: 'models', kind: 'skipped', markedAt: AT, markedBy: null }] })).toThrow();
+    // a proof carries the id of what answered, and a request names it as `refId` only
+    const proof = { step: 'runners', kind: 'checked', markedAt: AT, markedBy: uuid(2), refId: uuid(5) };
+    expect(OnboardingState.parse({ ...state, marks: [proof] }).marks[0]).toEqual(proof);
+    expect(SetOnboardingMarkRequest.parse({ kind: 'checked', refId: uuid(5) })).toEqual({ kind: 'checked', refId: uuid(5) });
+    expect(() => SetOnboardingMarkRequest.parse({ kind: 'checked', refId: 'nope' })).toThrow();
   });
 
   it('requests are strict: no extra field rides along, and a launch carries no text', () => {
     expect(() => SetOnboardingMarkRequest.parse({ kind: 'skipped', note: 'x' })).toThrow();
     expect(() => LaunchOnboardingRequest.parse({ teamId: uuid(1), channelId: uuid(2), goal: 'hello' })).toThrow();
     expect(LaunchOnboardingRequest.parse({ teamId: uuid(1), channelId: uuid(2) })).toEqual({ teamId: uuid(1), channelId: uuid(2) });
+    expect(LaunchOnboardingRequest.parse({ teamId: uuid(1), channelId: uuid(2), messageId: uuid(3) }).messageId).toBe(uuid(3));
   });
 
   it('an alias test result has a cause exactly when it failed to be ok in the stored sense, and the untestable list is the rest of the closed set', () => {
