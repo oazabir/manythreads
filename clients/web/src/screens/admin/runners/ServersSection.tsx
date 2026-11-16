@@ -321,6 +321,7 @@ function CommandDialog({ code, install, onClose }: { code: BotServerCode; instal
   const [copied, setCopied] = useState<string | null>(null);
   const origin = site();
   const hash = code.install?.scriptSha256 ?? install?.scriptSha256 ?? null;
+  const cert = code.install?.siteCert ?? install?.siteCert ?? null;
 
   const look = useCallback(async () => {
     try {
@@ -345,7 +346,7 @@ function CommandDialog({ code, install, onClose }: { code: BotServerCode; instal
       () => setCopied(null),
     );
   };
-  const careful = hash ? carefulSteps(origin, hash, code.code).join('\n') : null;
+  const careful = hash ? carefulSteps(origin, hash, code.code, cert).join('\n') : null;
   const connected = server.status === 'connected';
 
   return (
@@ -353,8 +354,8 @@ function CommandDialog({ code, install, onClose }: { code: BotServerCode; instal
       {install === null && code.install === null ? <Alert>This site has no installer built in. Ask whoever runs it to build one, then try again.</Alert> : null}
       <p>Run this on the machine, as a user who may use <span className="mono">sudo</span>:</p>
       <div className="sv-cmd">
-        <pre className="sv-pre mono" data-testid="server-command-text">{installCommand(origin, code.code)}</pre>
-        <button type="button" className="btn sm" onClick={() => copy('main', installCommand(origin, code.code))} data-testid="server-copy">{copied === 'main' ? 'Copied' : 'Copy'}</button>
+        <pre className="sv-pre mono" data-testid="server-command-text">{installCommand(origin, code.code, cert)}</pre>
+        <button type="button" className="btn sm" onClick={() => copy('main', installCommand(origin, code.code, cert))} data-testid="server-copy">{copied === 'main' ? 'Copied' : 'Copy'}</button>
       </div>
       <p className="faint">{codeWords(code.server)} It installs a program and a service, and creates a user called manythreads-bridge.</p>
 
@@ -374,8 +375,8 @@ function CommandDialog({ code, install, onClose }: { code: BotServerCode; instal
         <summary>Keep the code out of your shell history</summary>
         <p>This asks for the code on the keyboard, so it is in neither the history nor the process list. Type the code when it asks.</p>
         <div className="sv-cmd">
-          <pre className="sv-pre mono" data-testid="server-ask-text">{askCommand(origin)}</pre>
-          <button type="button" className="btn sm" onClick={() => copy('ask', askCommand(origin))}>{copied === 'ask' ? 'Copied' : 'Copy'}</button>
+          <pre className="sv-pre mono" data-testid="server-ask-text">{askCommand(origin, cert)}</pre>
+          <button type="button" className="btn sm" onClick={() => copy('ask', askCommand(origin, cert))}>{copied === 'ask' ? 'Copied' : 'Copy'}</button>
         </div>
         <div className="sv-cmd">
           <pre className="sv-pre mono" data-testid="server-code-text">{code.code}</pre>

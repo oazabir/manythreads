@@ -9,6 +9,23 @@
     "bridgeVersion": {
       "type": "string",
       "maxLength": 40
+    },
+    "siteCert": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "spkiSha256": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{43}=$"
+        }
+      },
+      "required": [
+        "sha256",
+        "spkiSha256"
+      ]
     }
   },
   "required": [

@@ -1,4 +1,7 @@
-import { spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createServer, type Server } from 'node:https';
+import type { AddressInfo } from 'node:net';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -76,5 +79,67 @@ describe('bridge.sh', () => {
   it('reads and removes the key where the bridge keeps it after a rotation, not only the installer\'s copy', () => {
     expect(script).toMatch(/live_key_file\(\)/);
     expect(script).toContain('rm -f "$DATA/state/key"');
+  });
+
+  it('--ca-sha256 is a documented option and its value is checked before the machine is looked at', () => {
+    expect(run('https://site.example', ['--help']).out).toContain('--ca-sha256');
+    const r = run('https://site.example', ['--update', '--ca-sha256']);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('--ca-sha256 needs');
+  });
+});
+
+// The pinning step, run on its own against a real self-signed site: right hash keeps the certificate, any other hash stops with nothing kept.
+describe('pin_site_certificate', () => {
+  let server: Server;
+  let port = 0;
+  let leafSha = '';
+  let certDir: string;
+  beforeAll(async () => {
+    certDir = mkdtempSync(join(tmpdir(), 'pin-'));
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(certDir, 'k.pem'), '-out', join(certDir, 'c.pem'), '-days', '2', '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1'], { stdio: 'ignore' });
+    const pem = readFileSync(join(certDir, 'c.pem'), 'utf8');
+    const der = Buffer.from(pem.replace(/-----[A-Z ]+-----|\s/g, ''), 'base64');
+    leafSha = createHash('sha256').update(der).digest('hex');
+    server = createServer({ key: readFileSync(join(certDir, 'k.pem')), cert: pem }, (_q, s) => s.end('ok'));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    port = (server.address() as AddressInfo).port;
+  });
+  afterAll(async () => {
+    await new Promise<void>((r) => server.close(() => r()));
+    rmSync(certDir, { recursive: true, force: true });
+  });
+
+  // asynchronous: the TLS site is in this very process, and a blocking call would stop it from answering
+  const pin = (hash: string, out: string): Promise<{ status: number | null; out: string }> => {
+    const fn = /^pin_site_certificate\(\) \{[\s\S]*?^\}$/m.exec(script)?.[0] ?? '';
+    const prelude = 'say() { printf "%s\\n" "$*"; }\ndie() { printf "error: %s\\n" "$*" >&2; exit 1; }\n';
+    return new Promise((resolve) => {
+      execFile('bash', ['-c', `${prelude}${fn}\npin_site_certificate "https://127.0.0.1:${port}" "$1" "$2"`, 'x', hash, out], { encoding: 'utf8', timeout: 20_000 }, (err, stdout, stderr) => {
+        resolve({ status: err === null ? 0 : typeof err.code === 'number' ? err.code : 1, out: `${stdout}${stderr}` });
+      });
+    });
+  };
+
+  it('keeps the certificate when the hash is the site\'s (colons and capitals are fine)', async () => {
+    const out = join(dir, 'pinned-ok.pem');
+    const r = await pin(leafSha.toUpperCase().replace(/(..)(?=.)/g, '$1:'), out);
+    expect(r.out).toContain('matches');
+    expect(r.status).toBe(0);
+    expect(readFileSync(out, 'utf8')).toBe(readFileSync(join(certDir, 'c.pem'), 'utf8'));
+  });
+
+  it('refuses another hash and writes nothing', async () => {
+    const out = join(dir, 'pinned-bad.pem');
+    const r = await pin('0'.repeat(64), out);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('not the one this command was made for');
+    expect(() => readFileSync(out)).toThrow();
+  });
+
+  it('refuses a value that is not 64 hex digits', async () => {
+    const r = await pin('abc', join(dir, 'pinned-x.pem'));
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('64 hex digits');
   });
 });

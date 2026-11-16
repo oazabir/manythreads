@@ -10,18 +10,31 @@ export const AGENT_TITLE: Readonly<Record<BotServerAgentName, string>> = { 'clau
 /** Which agents of a server have a sign-in of their own on this page. Hermes uses the workspace's model gateway and has none. */
 export const hasOwnSignin = (agent: BotServerAgentName): boolean => agent !== 'hermes-acp';
 
+/**
+ * What the commands need to know about a site that made its own certificate (tls.mode=selfsigned): `sha256` is the hash of the whole certificate (`--ca-sha256`, which the
+ * script and the bridge trust and nothing else); `spkiSha256` is the hash of its public key, which `curl --pinnedpubkey` checks for the download of the script itself
+ * (the machine has no way yet to trust the certificate: `-k` turns the usual check off and the pinned key takes its place). Null or absent for a site with a public certificate.
+ */
+export interface SiteCert {
+  sha256: string;
+  spkiSha256: string;
+}
+
+const curlFor = (cert: SiteCert | null | undefined): string => (cert ? `curl -fsSLk --pinnedpubkey 'sha256//${cert.spkiSha256}'` : 'curl -fsSL');
+const pinOf = (cert: SiteCert | null | undefined): string => (cert ? ` --ca-sha256 ${cert.sha256}` : '');
+
 /** The one line to paste. `code` is shown to the admin once; `-` makes the script ask for the code on the keyboard. */
-export const installCommand = (site: string, code: string): string => `curl -fsSL ${site}/install/bridge.sh | sudo bash -s -- --enrol ${code}`;
+export const installCommand = (site: string, code: string, cert?: SiteCert | null): string => `${curlFor(cert)} ${site}/install/bridge.sh | sudo bash -s -- --enrol ${code}${pinOf(cert)}`;
 
 /** The same, with the code kept out of the shell history and out of `ps`: the script reads it from the keyboard (`/dev/tty`). */
-export const askCommand = (site: string): string => installCommand(site, '-');
+export const askCommand = (site: string, cert?: SiteCert | null): string => installCommand(site, '-', cert);
 
 /** The careful way: download, look, check the hash this page shows, run. */
-export const carefulSteps = (site: string, scriptSha256: string, code: string): string[] => [
-  `curl -fsSL ${site}/install/bridge.sh -o bridge.sh`,
+export const carefulSteps = (site: string, scriptSha256: string, code: string, cert?: SiteCert | null): string[] => [
+  `${curlFor(cert)} ${site}/install/bridge.sh -o bridge.sh`,
   'less bridge.sh',
   `echo "${scriptSha256}  bridge.sh" | sha256sum -c -`,
-  `sudo bash bridge.sh --enrol ${code}`,
+  `sudo bash bridge.sh --enrol ${code}${pinOf(cert)}`,
 ];
 
 export const HASH_NOTE = 'The hash comes from this same site, so it guards against a broken download, not against a site that was taken over.';

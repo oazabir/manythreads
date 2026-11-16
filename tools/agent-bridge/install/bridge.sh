@@ -3,6 +3,8 @@
 #
 #   curl -fsSL @@SITE@@/install/bridge.sh | sudo bash -s -- --enrol <one-time code>
 #   curl -fsSL @@SITE@@/install/bridge.sh | sudo bash -s -- --enrol -        (asks for the code on the keyboard: it is never in shell history or in `ps`)
+#   ... --enrol - --ca-sha256 <64 hex digits>   for a site that made its own certificate (self-signed mode): the command on the Add-a-server page carries the hash; the
+#                                                script refuses any other certificate and the bridge then trusts that one certificate only
 #
 # The whole script is one function, `main`, called on the last line: a download that is cut short runs nothing.
 # Read it before you run it: it installs a program and a systemd service, and creates a user.
@@ -44,7 +46,7 @@ main() {
   local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock
 
-  local mode='' code='' code_file='' allow_full=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
+  local mode='' code='' code_file='' allow_full=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha=''
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
@@ -59,6 +61,7 @@ main() {
       --no-codex) want_codex=0 ;;
       --no-browser) want_browser=0 ;;
       --no-publisher) want_publisher=0 ;;
+      --ca-sha256) shift; [ $# -gt 0 ] || die "--ca-sha256 needs the 64 hex digits of the site's certificate"; ca_sha="$1" ;;
       --insecure-for-tests) insecure=1 ;;
       -h|--help) sed -n '2,/^$/p' "$0" 2>/dev/null || true; return 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
@@ -87,7 +90,8 @@ main() {
   say "manythreads bridge $BRIDGE_VERSION for $SITE"
   check_disk "$PREFIX" 3000000
   check_disk /var 3000000
-  curl -fsS --max-time 20 -o /dev/null "$SITE/install/bridge.sh.sha256" || die "cannot reach $SITE (this machine must reach it on port 443)"
+  if [ -n "$ca_sha" ]; then pin_site_certificate "$SITE" "$ca_sha" "$ETC/site-ca.pem"; fi
+  site_curl -fsS --max-time 20 -o /dev/null "$SITE/install/bridge.sh.sha256" || die "cannot reach $SITE (this machine must reach it on port 443)"
 
   if [ "$mode" = enrol ] && [ -n "$code_file" ]; then
     [ -z "$code" ] || die "give the code once: --enrol or --code-file, not both"
@@ -124,7 +128,7 @@ main() {
     say "downloading the bridge ($bundle)"
     local work
     work="$(mktemp -d)"
-    curl -fsSL "$SITE/install/$bundle" -o "$work/$bundle"
+    site_curl -fsSL "$SITE/install/$bundle" -o "$work/$bundle"
     printf '%s  %s\n' "$BUNDLE_SHA256" "$work/$bundle" | sha256sum -c - >/dev/null || die "the bridge download does not match the hash in this script; try again, and tell the person who runs the site if it keeps happening"
     rm -rf "$release"
     mkdir -p "$release"
@@ -298,7 +302,9 @@ EOF
   mv "$ETC/config.json.new" "$ETC/config.json"
 
   # ---- enrol -----------------------------------------------------------------------------------------------------------------------------------------------
-  local insecure_flag=''
+  local insecure_flag='' ca_env_line=''
+  # a site with its own certificate (the self-signed mode): the bridge trusts that one certificate, nothing wider
+  if [ -s "$ETC/site-ca.pem" ]; then ca_env_line="Environment=NODE_EXTRA_CA_CERTS=$ETC/site-ca.pem"; fi
   [ "$insecure" -eq 1 ] && insecure_flag=' --insecure-for-tests'
   if [ "$mode" = enrol ]; then
     say "enrolling this machine"
@@ -306,7 +312,7 @@ EOF
     hello="$(run_as "$SVC_USER" "$node" "$release/bridge.mjs" --config "$ETC/config.json" --state-dir "$DATA/state" --print-hello)" || die "the bridge could not describe this machine"
     # the code goes in the request body (from a variable, through a pipe), never in an argument of a program that stays running
     answer="$(CODE="$code" HELLO="$hello" "$node" -e 'const h = JSON.parse(process.env.HELLO); process.stdout.write(JSON.stringify({ code: process.env.CODE, host: h.host, agents: h.agents, bridgeVersion: h.bridgeVersion, allowFullAccess: h.allowFullAccess }));' \
-      | curl -sS --max-time 30 -X POST -H 'content-type: application/json' --data-binary @- -w '\n%{http_code}' "$SITE/api/bridge/enrol")" || die "could not reach the site to enrol"
+      | site_curl -sS --max-time 30 -X POST -H 'content-type: application/json' --data-binary @- -w '\n%{http_code}' "$SITE/api/bridge/enrol")" || die "could not reach the site to enrol"
     code=''
     local http body
     http="$(printf '%s' "$answer" | tail -n 1)"
@@ -344,6 +350,7 @@ Environment=HOME=$DATA/home
 Environment=PATH=$npm_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
 Environment=DISABLE_AUTOUPDATER=1
+$ca_env_line
 ExecStart=$node $PREFIX/current/bridge.mjs --config $ETC/config.json --state-dir $DATA/state --site $SITE$insecure_flag
 Restart=always
 RestartSec=5
@@ -589,6 +596,35 @@ find_hermes() {
   return 0
 }
 
+# curl to the site: with the pinned certificate when this machine was installed with --ca-sha256 (a site that made its own certificate)
+site_curl() {
+  if [ -s /etc/manythreads-bridge/site-ca.pem ]; then curl --cacert /etc/manythreads-bridge/site-ca.pem "$@"; else curl "$@"; fi
+}
+
+# --ca-sha256 HEX (SHA-256 of the site's certificate, as shown by the page that made this command): fetch the certificate the address shows now, refuse it unless its hash is
+# the given one, and keep it as the only extra certificate this machine trusts for the site (curl here, and the bridge through NODE_EXTRA_CA_CERTS).
+pin_site_certificate() {
+  local site="$1" want="$2" out="$3" hostport host port tmp got
+  want="$(printf '%s' "$want" | tr -d ': ' | tr 'A-F' 'a-f')"
+  printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "--ca-sha256 must be 64 hex digits (the SHA-256 of the site's certificate)"
+  command -v openssl >/dev/null 2>&1 || die "openssl is needed to check the site's certificate and was not found"
+  hostport="${site#https://}"; hostport="${hostport%%/*}"
+  host="${hostport%%:*}"; port=443
+  case "$hostport" in *:*) port="${hostport##*:}" ;; esac
+  tmp="$(mktemp)"
+  local sni=(); printf '%s' "$host" | grep -Eq '^[0-9.]+$' || sni=(-servername "$host")
+  openssl s_client -connect "$host:$port" "${sni[@]}" </dev/null 2>/dev/null | openssl x509 -outform PEM >"$tmp" 2>/dev/null || { rm -f "$tmp"; die "could not read the certificate of $site (this machine must reach it on port 443)"; }
+  got="$(openssl x509 -in "$tmp" -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
+  if [ "$got" != "$want" ]; then
+    rm -f "$tmp"
+    die "the certificate that $site shows is not the one this command was made for (it has the hash $got, the command says $want). Someone else may be answering at that address: nothing was installed."
+  fi
+  mkdir -p "$(dirname "$out")"
+  install -m 0644 "$tmp" "$out"
+  rm -f "$tmp"
+  say "the site's certificate matches the one in the command; this machine will trust that certificate for $host"
+}
+
 # The key the bridge connects with: the same order as the bridge's own list (`keyFiles`): the copy in its state folder (written by a key rotation) first, then the installer's.
 live_key_file() {
   local data="$1" etc="$2"
@@ -598,7 +634,7 @@ live_key_file() {
 # "connected" or something else; the key goes in a header read from a file, not from the command line
 key_status() {
   local keyfile="$1" site="$2" out
-  out="$(printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' <"$keyfile")" | curl -sS --max-time 15 --config - "$site/api/bridge/status" 2>/dev/null || true)"
+  out="$(printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' <"$keyfile")" | site_curl -sS --max-time 15 --config - "$site/api/bridge/status" 2>/dev/null || true)"
   case "$out" in *'"status":"connected"'*) printf connected ;; *) printf other ;; esac
 }
 
@@ -608,7 +644,7 @@ uninstall_all() {
   key_file="$(live_key_file "$DATA" "$ETC")"
   if [ -s "$key_file" ]; then
     say "telling the site this server is going away"
-    printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' <"$key_file")" | curl -sS --max-time 20 --config - -X POST "$site/api/bridge/uninstall" >/dev/null 2>&1 \
+    printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' <"$key_file")" | site_curl -sS --max-time 20 --config - -X POST "$site/api/bridge/uninstall" >/dev/null 2>&1 \
       || warn "the site could not be told; remove the server on the Runners page"
   fi
   systemctl disable --now manythreads-bridge.service manythreads-publisher.service >/dev/null 2>&1 || true

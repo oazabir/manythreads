@@ -40,6 +40,10 @@ spec:
           ports: [{ name: http, containerPort: {{ .Values.server.port }} }]
           env:
             - { name: PORT, value: {{ .Values.server.port | quote }} }
+            {{- if eq (include "manythreads.tlsMode" .) "selfsigned" }}
+            # the site's own certificate, so the Add-a-server command can pin it (P27-05); the Secret exists a moment after the install, hence optional
+            - { name: MANYTHREADS_SITE_CERT_FILE, value: /etc/manythreads/site-tls/tls.crt }
+            {{- end }}
             - name: OWNER_PW
               valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
             - name: MANYTHREADS_APP_PASSWORD
@@ -207,11 +211,18 @@ spec:
           volumeMounts:
             - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }} }
             - { name: repos, mountPath: {{ .Values.server.repos.persistence.mountPath | quote }} }
+            {{- if eq (include "manythreads.tlsMode" .) "selfsigned" }}
+            - { name: site-tls, mountPath: /etc/manythreads/site-tls, readOnly: true }
+            {{- end }}
           {{- with .Values.server.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
+        {{- if eq (include "manythreads.tlsMode" .) "selfsigned" }}
+        - name: site-tls
+          secret: { secretName: manythreads-tls, optional: true, items: [{ key: tls.crt, path: tls.crt }] }
+        {{- end }}
         - name: blobs
           {{- if .Values.server.blobs.persistence.enabled }}
           persistentVolumeClaim: { claimName: manythreads-blobs }

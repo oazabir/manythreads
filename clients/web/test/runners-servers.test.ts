@@ -21,6 +21,19 @@ describe('the install command', () => {
     expect(installCommand('https://site.example', 'mtc_abc')).toBe('curl -fsSL https://site.example/install/bridge.sh | sudo bash -s -- --enrol mtc_abc');
     expect(askCommand('https://site.example')).toMatch(/--enrol -$/);
   });
+
+  it('a site with its own certificate: the script download pins the key and the script is told the certificate hash (P27-05)', () => {
+    const cert = { sha256: 'a'.repeat(64), spkiSha256: `${'B'.repeat(43)}=` };
+    const main = installCommand('https://203.0.113.5', 'mtc_abc', cert);
+    expect(main).toBe(`curl -fsSLk --pinnedpubkey 'sha256//${cert.spkiSha256}' https://203.0.113.5/install/bridge.sh | sudo bash -s -- --enrol mtc_abc --ca-sha256 ${cert.sha256}`);
+    expect(askCommand('https://203.0.113.5', cert)).toMatch(/--enrol - --ca-sha256 a{64}$/);
+    const steps = carefulSteps('https://203.0.113.5', 'f'.repeat(64), 'mtc_abc', cert);
+    expect(steps[0]).toContain("--pinnedpubkey 'sha256//");
+    expect(steps[3]).toBe(`sudo bash bridge.sh --enrol mtc_abc --ca-sha256 ${cert.sha256}`);
+    // no certificate given or null: the plain commands, with no -k anywhere
+    expect(installCommand('https://site.example', 'mtc_abc', null)).not.toContain('-k');
+    expect(carefulSteps('https://site.example', 'f'.repeat(64), 'c', null).join('\n')).not.toContain('--ca-sha256');
+  });
   it('has a careful way that checks the hash before it runs anything', () => {
     const steps = carefulSteps('https://site.example', 'f'.repeat(64), 'mtc_abc');
     expect(steps).toHaveLength(4);

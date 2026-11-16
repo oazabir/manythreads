@@ -16,6 +16,8 @@ export const BotServerPathParams = z.object({ id: BotServerId });
 export const BotServerInstall = z.object({
   scriptSha256: z.string().regex(/^[0-9a-f]{64}$/),
   bridgeVersion: z.string().max(40),
+  /** Only a site with its own (self-signed) certificate: the hash the install command pins (`--ca-sha256`) and the key hash `curl --pinnedpubkey` takes. Absent for a site with a public certificate. */
+  siteCert: z.object({ sha256: z.string().regex(/^[0-9a-f]{64}$/), spkiSha256: z.string().regex(/^[A-Za-z0-9+/]{43}=$/) }).optional(),
 });
 export type BotServerInstall = z.infer<typeof BotServerInstall>;
 
