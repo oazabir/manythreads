@@ -29,22 +29,22 @@ manythreads/postgres                # built: deploy/postgres, the plain Postgres
 manythreads/server-demo             # built: the demo stand-ins on top of the server image (demo and test installs only)
 manythreads/demo-fakes              # built: the same, as a second image (demo and test installs only)
 platform/postgres-cnpg:19beta4-202609281634-u999@sha256:bbbca16250b87aec1e6fe9c078d0dc0f0b10d6bbe563d0bef92e909a55da77d4    # built: deploy/postgres/cnpg.Dockerfile, kept in the in-cluster registry
-node:22-slim                        # base of the server, web build, Hermes and Claude pod images
-nginx:alpine                        # base of the web image
+node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee                        # base of the server, web build, Hermes and Claude pod images
+nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72                        # base of the web image
 ghcr.io/speaches-ai/speaches:0.8.3-cpu@sha256:21e3df06d842fb7802ab470dd77c25f0e8c0d22950e8d8c6ae886e851af53ef8
 mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
 postgres:19beta4@sha256:946fd10fdac8a0e72ee1fd40c1ef074b5c8bcdddfb94bfd1597524c664243f64
 ghcr.io/cloudnative-pg/postgresql:19beta4-202609281634-standard-trixie@sha256:9ad505e94fa41c39b5d679987401ecf5b05dd15c8621068ce6101b4036acaca2
-axllent/mailpit:v1.31
-ghcr.io/berriai/litellm:main-stable
-ghcr.io/vectorize-io/hindsight:0.10.3
-livekit/livekit-server:v1.13.11
-registry:2.8.3
+axllent/mailpit:v1.31@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+ghcr.io/berriai/litellm:main-stable@sha256:c560d317136880ea92d62334d4367ab10955b1af189dd3ea24f6551290b1d6c1
+ghcr.io/vectorize-io/hindsight:0.10.3@sha256:b5da1a9aece1f53a15f12821fb1470f358ed6c74dfaa0c4b1a39c3f3ae93e002
+livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
 ```
 
 Not in the list because they belong to the cluster, not to this repository: the images of k3s itself (listed by `k3s ctr images ls` on a working node, or in the k3s release notes for the version you install), Traefik, the database operator (`helm template cnpg cnpg/cloudnative-pg | grep 'image:'`) and, for HTTPS by Let's Encrypt, cert-manager (which cannot get a certificate without internet anyway; use your own certificate, `tls.mode: cloudflare` shows the shape).
 
-`main-stable` is a moving tag: pull it once, then record its digest (`docker image inspect --format '{{index .RepoDigests 0}}'`) and use the digest from then on.
+`main-stable` is a moving tag, so the repository names it by digest (`name:tag@sha256:...`): the digest is what is pulled, the tag is only a label. Moving to a newer build is a change of that digest in `deploy/helm/manythreads/values.yaml`, checked by `tools/deploy-test/test/images.test.ts`. An image brought in by `docker save` must keep its digest (pull it by digest on the machine with internet).
 
 ## Bringing the images in
 

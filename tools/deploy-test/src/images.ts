@@ -89,7 +89,8 @@ export function installImages(): ImageRef[] {
   const out: ImageRef[] = [];
   for (const name of builtImages(deploy)) out.push({ ref: name, from: 'built', source: 'tools/devbox/deploy.sh' });
   const seen = new Set<string>();
-  for (const file of dockerfilesOf(deploy)) {
+  // A test stand-in (`*-fake`) is never published, so its base image is not part of what an install pulls.
+  for (const file of dockerfilesOf(deploy).filter((f) => !/-fake\//.test(f))) {
     for (const ref of baseImages(read(file))) {
       if (seen.has(ref)) continue;
       seen.add(ref);
@@ -111,4 +112,9 @@ export function listedImages(markdown: string): string[] {
     .split('\n')
     .map((l) => l.replace(/\s+#.*$/, '').trim())
     .filter((l) => l !== '');
+}
+
+/** The images an install pulls from others (a base of a published image, a chart image) that are not named by digest: a tag moves, a digest does not. */
+export function unpinnedImages(images: readonly ImageRef[]): ImageRef[] {
+  return images.filter((i) => i.from !== 'built' && !/@sha256:[0-9a-f]{64}$/.test(i.ref));
 }

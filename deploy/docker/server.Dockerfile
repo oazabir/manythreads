@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # manythreads server image. Build context = repo root:
 #   docker build -f deploy/docker/server.Dockerfile -t manythreads/server:dev .
-FROM node:22-slim
+FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
 ENV NODE_ENV=production CI=true COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 # `git` is the repo-git plugin's engine (team repositories, docs/plugins/repo-git.md); nothing else of git's ecosystem is needed.

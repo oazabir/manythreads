@@ -212,7 +212,7 @@ mail:
 # `mail.smtpUrl`); values-live.yaml turns it on, because the live site reads its mail there.
 mailpit:
   enabled: false
-  image: axllent/mailpit:v1.31
+  image: axllent/mailpit:v1.31@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
   resources: {}
 
 # Secrets generated once and kept across upgrades (lookup): manythreads-server-secrets holds the KMS master key
@@ -273,11 +273,11 @@ web:
 # Secret manythreads-llm-secrets (kept across upgrades). Providers are NOT configured here: use Workspace -> LLM API in the product.
 litellm:
   enabled: true
-  image: ghcr.io/berriai/litellm:main-stable
+  image: ghcr.io/berriai/litellm:main-stable@sha256:c560d317136880ea92d62334d4367ab10955b1af189dd3ea24f6551290b1d6c1
   resources: {}
 hindsight:
   enabled: true           # needs litellm.enabled
-  image: ghcr.io/vectorize-io/hindsight:0.10.3
+  image: ghcr.io/vectorize-io/hindsight:0.10.3@sha256:b5da1a9aece1f53a15f12821fb1470f358ed6c74dfaa0c4b1a39c3f3ae93e002
   # The database `hindsight` as a CloudNativePG Database object (templates/cnpg-database.yaml; postgres.mode=cnpg). The Hindsight pod's init container still makes the role
   # and the database when they are missing, so an install that has them is adopted. false = no such object.
   database:
@@ -295,7 +295,7 @@ hindsight:
 # NOT verified on a live cluster yet (P15-00): turn it on in values-live.yaml only after docs/spikes/voice.md "Deferred to the live site" is done.
 media:
   enabled: false
-  image: livekit/livekit-server:v1.13.11
+  image: livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
   publicUrl: ""            # wss://media.example.org : what browsers connect to (required when enabled)
   rtcPortStart: 50000
   rtcPortEnd: 50100        # 100 UDP ports are enough for a few dozen people; widen for more
@@ -497,7 +497,7 @@ hermesPods:
 registry:
   enabled: false
   namespace: manythreads-registry
-  image: registry:2.8.3
+  image: registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
   # Images are large (the server image is over 1 GB): the disk of this node is small, so watch this volume, and delete old tags.
   size: 10Gi
   storageClass: local-path

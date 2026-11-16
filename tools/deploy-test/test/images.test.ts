@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { baseImages, builtImages, chartImages, installImages, listedImages } from '../src/images.ts';
+import { baseImages, builtImages, chartImages, installImages, listedImages, unpinnedImages } from '../src/images.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const page = readFileSync(join(root, 'docs/deploy/air-gapped.md'), 'utf8');
@@ -26,8 +26,19 @@ describe('docs/deploy/air-gapped.md lists every image the install builds or pull
 
   it('finds the images it should (so an empty extraction cannot pass the test above)', () => {
     const refs = installImages().map((i) => i.ref);
-    expect(refs).toEqual(expect.arrayContaining(['manythreads/server', 'manythreads/web', 'manythreads/workbench', 'manythreads/claude-pod', 'node:22-slim', 'registry:2.8.3']));
+    expect(refs).toEqual(expect.arrayContaining(['manythreads/server', 'manythreads/web', 'manythreads/workbench', 'manythreads/claude-pod', expect.stringMatching(/^node:22-slim@sha256:/), expect.stringMatching(/^registry:2\.8\.3@sha256:/)]));
     expect(refs.length).toBeGreaterThan(15);
+  });
+});
+
+describe('every image of others is named by its digest (P27-01)', () => {
+  it('no base image of a published image and no chart image is a bare tag', () => {
+    expect(unpinnedImages(installImages()).map((i) => `${i.ref}  (from ${i.source})`)).toEqual([]);
+  });
+
+  it('knows an unpinned line when it sees one', () => {
+    const d = 'a'.repeat(64);
+    expect(unpinnedImages([{ ref: 'x:1', from: 'chart', source: 's' }, { ref: `x:1@sha256:${d}`, from: 'chart', source: 's' }, { ref: 'manythreads/server', from: 'built', source: 's' }]).map((i) => i.ref)).toEqual(['x:1']);
   });
 });
 

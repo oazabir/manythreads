@@ -5,7 +5,7 @@
 # (`/home/node/.hermes`, `/home/node/.local`). Never vendored into this repo;
 # docs https://github.com/nousresearch/hermes-agent.
 #   docker build -f deploy/docker/hermes.Dockerfile -t manythreads/hermes:stable .
-FROM node:22-slim
+FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
 # git/curl fetch the installer; the compilers build the pinned native
 # extensions `pm install` compiles (their own Dockerfile installs the same set).
 RUN apt-get update \
