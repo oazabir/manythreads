@@ -8,9 +8,9 @@ import { ApprovalChangedPush, approvalChangedPushType } from '@manythreads/share
  */
 export async function pushChanged(ctx: PluginContext, tx: PluginTx, approvalId: string): Promise<void> {
   // the audience is computed by a definer function: a bot filing a private-channel approval cannot read the row or the channel's members itself
-  const row = (await tx.query<{ o_team_id: string; o_people: string[] }>('SELECT o_team_id, o_people FROM app.approvals_audience($1::uuid)', [approvalId])).rows[0];
+  const row = (await tx.query<{ o_team_id: string; o_people: string[]; o_channel_id: string | null; o_thread_root_id: string | null }>('SELECT o_team_id, o_people, o_channel_id, o_thread_root_id FROM app.approvals_audience($1::uuid)', [approvalId])).rows[0];
   if (!row || row.o_people.length === 0) return;
-  await ctx.realtime.pushToPeople(tx, row.o_people, approvalChangedPushType, ApprovalChangedPush.parse({ teamId: row.o_team_id, approvalId }));
+  await ctx.realtime.pushToPeople(tx, row.o_people, approvalChangedPushType, ApprovalChangedPush.parse({ teamId: row.o_team_id, approvalId, channelId: row.o_channel_id, threadRootId: row.o_thread_root_id }));
 }
 
 /** The facts an event repeats about an approval; read through the app role's own column grants (never `resume`). */

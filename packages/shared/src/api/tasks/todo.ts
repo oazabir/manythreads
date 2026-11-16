@@ -78,3 +78,13 @@ export const getThreadTodoRoute = { method: 'GET', path: '/api/threads/:rootId/t
 export const WS_TODO_CHANGED = 'todo.changed';
 export const TodoChangedPush = z.object({ channelId: ChannelId, rootId: MessageId, version: z.number().int().min(1) });
 export type TodoChangedPush = z.infer<typeof TodoChangedPush>;
+
+/** The open lists of one channel, for the task view under its roots (P29): lists with an item not done that changed in the last `CHANNEL_TODO_FRESH_HOURS`, and lists finished in the last `CHANNEL_TODO_DONE_MINUTES`. */
+export const CHANNEL_TODO_FRESH_HOURS = 24;
+export const CHANNEL_TODO_DONE_MINUTES = 5;
+export const CHANNEL_TODOS_MAX = 50;
+export const ChannelTodosPathParams = z.object({ channelId: ChannelId });
+export type ChannelTodosPathParams = z.infer<typeof ChannelTodosPathParams>;
+export const ChannelTodosResponse = z.object({ todos: z.array(ThreadTodo).max(CHANNEL_TODOS_MAX) });
+export type ChannelTodosResponse = z.infer<typeof ChannelTodosResponse>;
+export const listChannelTodosRoute = { method: 'GET', path: '/api/channels/:channelId/todos' } as const satisfies ApiRoute;

@@ -205,9 +205,19 @@ export const ActiveChannelRun = z.object({
   botActorId: ActorId.nullable(),
   botName: z.string().max(200),
   startedAt: IsoDateTime,
+  /** The run's folded state (P29): present for the newest `CHANNEL_RUN_HEADS_MAX` runs, so the channel can draw the run card without a read per thread. */
+  head: RunHead.optional(),
 });
 export type ActiveChannelRun = z.infer<typeof ActiveChannelRun>;
-export const ActiveChannelRunsResponse = z.object({ runs: z.array(ActiveChannelRun).max(100) });
+/** How many runs of a channel carry their head, and how long a run that ended stays in `recent` (a reload shows its folded line). */
+export const CHANNEL_RUN_HEADS_MAX = 30;
+export const CHANNEL_RUN_RECENT_MINUTES = 30;
+export const ActiveChannelRunsResponse = z.object({
+  /** Only runs that are going: a client turns every row into a "working" chip. */
+  runs: z.array(ActiveChannelRun).max(100),
+  /** The heads of runs that ended in the last `CHANNEL_RUN_RECENT_MINUTES`, newest first. A separate list on purpose: an older client reads `runs` only. */
+  recent: z.array(RunHead).max(CHANNEL_RUN_HEADS_MAX).optional(),
+});
 export type ActiveChannelRunsResponse = z.infer<typeof ActiveChannelRunsResponse>;
 export const activeChannelRunsRoute = { method: 'GET', path: '/api/channels/:channelId/active-runs' } as const satisfies ApiRoute;
 
@@ -231,6 +241,23 @@ export const ThreadUnwatchResponse = z.object({ ok: z.literal(true) });
 export type ThreadUnwatchResponse = z.infer<typeof ThreadUnwatchResponse>;
 export const watchThreadRoute = { method: 'PUT', path: '/api/threads/:rootId/watch/:leaseId' } as const satisfies ApiRoute;
 export const unwatchThreadRoute = { method: 'DELETE', path: '/api/threads/:rootId/watch/:leaseId' } as const satisfies ApiRoute;
+
+// ---- the lease of an open channel (P29) --------------------------------------------------------------------------------------------
+
+/**
+ * A channel page that draws the task view under its roots holds one lease for the whole channel, not one per thread: a thread lease also asks for the words of the answer
+ * (`run.delta`, about 12 frames a second per run) and is capped at 50 per person, while the channel lease asks only for the folded state (`run.activity`).
+ * Held `THREAD_WATCH_TTL_SECONDS`, renewed every `THREAD_WATCH_RENEW_SECONDS`.
+ */
+export const CHANNEL_WATCH_MAX_PER_PERSON = 8;
+export const ChannelWatchPathParams = z.object({ channelId: ChannelId, leaseId: z.uuid() });
+export type ChannelWatchPathParams = z.infer<typeof ChannelWatchPathParams>;
+export const ChannelWatchResponse = z.object({ expiresAt: IsoDateTime });
+export type ChannelWatchResponse = z.infer<typeof ChannelWatchResponse>;
+export const ChannelUnwatchResponse = z.object({ ok: z.literal(true) });
+export type ChannelUnwatchResponse = z.infer<typeof ChannelUnwatchResponse>;
+export const watchChannelRoute = { method: 'PUT', path: '/api/channels/:channelId/watch/:leaseId' } as const satisfies ApiRoute;
+export const unwatchChannelRoute = { method: 'DELETE', path: '/api/channels/:channelId/watch/:leaseId' } as const satisfies ApiRoute;
 
 // ---- the live pushes of a run in a thread (WebSocket envelope `{ type, id, payload }`; ephemeral, never in the event log) ----------------
 

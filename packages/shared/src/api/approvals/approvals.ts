@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Approval } from '../../entities/approval.ts';
 import { JsonObject } from '../../entities/kernel.ts';
-import { ApprovalId, MessageId, TeamId } from '../../ids.ts';
+import { ApprovalId, ChannelId, MessageId, TeamId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
 // The Approvals inbox (SPEC §7.3, PLAN P5-20). One mechanism, many sources: everything a bot's call waits on is a row here. A person who
@@ -63,7 +63,18 @@ export const ListThreadApprovalsResponse = z.object({ items: z.array(Approval) }
 export type ListThreadApprovalsResponse = z.infer<typeof ListThreadApprovalsResponse>;
 export const listThreadApprovalsRoute = { method: 'GET', path: '/api/threads/:rootId/approvals' } as const;
 
-/** Live push to the people who may care: an approval was raised or settled in the team (a hint; the list is the truth). */
-export const ApprovalChangedPush = z.object({ teamId: TeamId, approvalId: ApprovalId });
+/** The questions waiting in the threads of one channel, for the task view under the roots (P29): the ones still pending, oldest first. */
+export const ChannelApprovalsPathParams = z.object({ channelId: ChannelId });
+export type ChannelApprovalsPathParams = z.infer<typeof ChannelApprovalsPathParams>;
+export const CHANNEL_APPROVALS_MAX = 50;
+export const ChannelApprovalsResponse = z.object({ items: z.array(Approval).max(CHANNEL_APPROVALS_MAX) });
+export type ChannelApprovalsResponse = z.infer<typeof ChannelApprovalsResponse>;
+export const listChannelApprovalsRoute = { method: 'GET', path: '/api/channels/:channelId/approvals/pending' } as const;
+
+/**
+ * Live push to the people who may care: an approval was raised or settled in the team (a hint; the list is the truth). `channelId` and `threadRootId` say where it was asked
+ * (absent: not in a thread), so a page that shows another channel does not read again for it.
+ */
+export const ApprovalChangedPush = z.object({ teamId: TeamId, approvalId: ApprovalId, channelId: ChannelId.nullable().optional(), threadRootId: MessageId.nullable().optional() });
 export type ApprovalChangedPush = z.infer<typeof ApprovalChangedPush>;
 export const approvalChangedPushType = 'approval.changed' as const;
