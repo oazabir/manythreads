@@ -98,6 +98,9 @@ try {
   execFileSync('sh', ['-c', `gzip -9 -n -c "${tar}" > "${join(out, name)}"`]);
   const sha = createHash('sha256').update(readFileSync(join(out, name))).digest('hex');
   copyFileSync(join(here, 'bridge.sh'), join(out, 'bridge.sh'));
+  // the one-command installer of a whole site and its host command (P27-04/05): the server answers them at /install.sh and /install/manythreads
+  copyFileSync(join(repo, 'deploy', 'install', 'install.sh'), join(out, 'install.sh'));
+  copyFileSync(join(repo, 'deploy', 'install', 'manythreads'), join(out, 'manythreads'));
   writeFileSync(join(out, 'manifest.json'), `${JSON.stringify({ bridgeVersion: version, bundle: name, bundleSha256: sha }, null, 2)}\n`);
   // older bundles stay for a site that a server updates from a moment later, but only the latest few
   const old = readdirSync(out).filter((f) => /^bridge-[0-9a-f]{12}\.tgz$/.test(f) && f !== name).sort((a, b) => statSync(join(out, b)).mtimeMs - statSync(join(out, a)).mtimeMs);

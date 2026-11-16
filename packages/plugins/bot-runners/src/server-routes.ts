@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -100,7 +100,64 @@ export async function loadInstall(publicUrl: string, dir: string = installDir())
   return value;
 }
 
-const installInfo = (f: InstallFiles | null): BotServerInstall | null => (f === null ? null : { scriptSha256: f.scriptSha256, bridgeVersion: f.bridgeVersion });
+export interface InstallScripts {
+  /** install.sh as this site serves it: the line `DEFAULT_RELEASE_URL=''` carries the address of release.json when the operator set `MANYTHREADS_RELEASE_URL`. */
+  script: string;
+  scriptSha256: string;
+  /** The `manythreads` command (the host command of an installed site), as built into the image. */
+  hostCommand: string;
+  hostCommandSha256: string;
+}
+
+let scriptsCache: { key: string; at: number; value: InstallScripts | null } | null = null;
+
+/** The one-command installer (deploy/install/install.sh) and the host command, from the same folder as the bridge installer. Null when the image has none (a dev server). */
+export async function loadInstallScripts(releaseUrl: string = process.env['MANYTHREADS_RELEASE_URL'] ?? '', dir: string = installDir()): Promise<InstallScripts | null> {
+  const key = `${dir}\n${releaseUrl}`;
+  if (scriptsCache && scriptsCache.key === key && Date.now() - scriptsCache.at < 5_000) return scriptsCache.value;
+  let value: InstallScripts | null = null;
+  try {
+    const template = await readFile(join(dir, 'install.sh'), 'utf8');
+    const hostCommand = await readFile(join(dir, 'manythreads'), 'utf8');
+    // only an https address (or none) goes into the script: it is read by `bash` on somebody's machine
+    const url = /^https:\/\/[A-Za-z0-9._~:/?#@!$&*+,;=%-]{1,500}$/.test(releaseUrl) && !releaseUrl.includes("'") ? releaseUrl : '';
+    const script = url === '' ? template : template.replace("DEFAULT_RELEASE_URL=''", `DEFAULT_RELEASE_URL='${url}'`);
+    value = {
+      script,
+      scriptSha256: createHash('sha256').update(script, 'utf8').digest('hex'),
+      hostCommand,
+      hostCommandSha256: createHash('sha256').update(hostCommand, 'utf8').digest('hex'),
+    };
+  } catch {
+    value = null;
+  }
+  scriptsCache = { key, at: Date.now(), value };
+  return value;
+}
+
+/**
+ * The certificate this site shows, when the chart mounts it (tls.mode=selfsigned: the Secret `manythreads-tls`, at MANYTHREADS_SITE_CERT_FILE). The hash of the whole
+ * certificate goes to `bridge.sh --ca-sha256`; the hash of its public key goes to `curl --pinnedpubkey` for the download of the script itself. Null for a site with a public
+ * certificate (the machine's own trust list already covers it) and while the certificate is not yet issued.
+ */
+export async function loadSiteCert(file: string | undefined = process.env['MANYTHREADS_SITE_CERT_FILE']): Promise<BotServerInstall['siteCert'] | null> {
+  if (file === undefined || file === '') return null;
+  try {
+    const cert = new X509Certificate(await readFile(file));
+    return {
+      sha256: createHash('sha256').update(cert.raw).digest('hex'),
+      spkiSha256: createHash('sha256').update(cert.publicKey.export({ type: 'spki', format: 'der' })).digest('base64'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+const installInfo = async (f: InstallFiles | null): Promise<BotServerInstall | null> => {
+  if (f === null) return null;
+  const siteCert = await loadSiteCert();
+  return { scriptSha256: f.scriptSha256, bridgeVersion: f.bridgeVersion, ...(siteCert ? { siteCert } : {}) };
+};
 
 // --- The server routes -------------------------------------------------------------------------------------------------------------------------------
 
@@ -147,7 +204,7 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
     handler: route(async (_req, tx) => {
       await requireWorkspaceAdmin(tx);
       const rows = await tx.query<ServerRow>(`SELECT ${SERVER_SELECT} WHERE s.workspace_id = $1::uuid ORDER BY s.name`, [tx.actor.workspaceId]);
-      return json(ListBotServersResponse.parse({ items: rows.rows.map(present), install: installInfo(await loadInstall(ctx.runtime.publicUrl)) }));
+      return json(ListBotServersResponse.parse({ items: rows.rows.map(present), install: await installInfo(await loadInstall(ctx.runtime.publicUrl)) }));
     }),
   });
 
@@ -158,7 +215,7 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
     await tx.query('UPDATE app.bot_servers SET enrol_code_hash = $2, enrol_code_expires_at = $3::timestamptz, updated_at = now() WHERE id = $1::uuid', [row.id, hashSecret(code), expires.toISOString()]);
     const fresh = await loadServer(tx, row.id);
     await ctx.audit.emit(tx, { type: 'bot_server.server.changed', workspaceId: row.workspace_id, serverId: row.id, name: row.name, change: 'code_minted', actorId, at: now().toISOString() });
-    return BotServerCode.parse({ server: present(fresh), code, expiresAt: expires.toISOString(), install: installInfo(await loadInstall(ctx.runtime.publicUrl)) });
+    return BotServerCode.parse({ server: present(fresh), code, expiresAt: expires.toISOString(), install: await installInfo(await loadInstall(ctx.runtime.publicUrl)) });
   }
 
   ctx.http.route({
@@ -402,8 +459,31 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
         const size = (await stat(found.bundlePath)).size;
         return { status: 200, body: createReadStream(found.bundlePath), headers: { 'content-type': 'application/gzip', 'content-length': String(size), 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' } };
       }
+      if (file === 'manythreads' || file === 'manythreads.sha256') {
+        const scripts = await loadInstallScripts();
+        if (scripts === null) throw notFound('This install has no installer.');
+        return file === 'manythreads'
+          ? { status: 200, body: scripts.hostCommand, headers: { ...text, 'content-type': 'text/x-shellscript; charset=utf-8' } }
+          : { status: 200, body: `${scripts.hostCommandSha256}  manythreads\n`, headers: text };
+      }
       throw notFound('No such file.');
     },
   });
 
+  // The one-command installer of a whole manythreads site (`curl -fsSL https://<site>/install.sh | sudo bash`, docs/deploy/install.md) and its hash.
+  for (const [path, sha] of [['/install.sh', false], ['/install.sh.sha256', true]] as const) {
+    ctx.http.route({
+      method: 'GET',
+      path,
+      public: true,
+      rateLimit: { limit: 60, windowMs: 60_000 },
+      rateLimitBy: 'address',
+      handler: async (): Promise<HttpResponse> => {
+        const scripts = await loadInstallScripts();
+        if (scripts === null) throw notFound('This install has no installer.');
+        const headers = { 'content-type': sha ? 'text/plain; charset=utf-8' : 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' };
+        return { status: 200, body: sha ? `${scripts.scriptSha256}  install.sh\n` : scripts.script, headers };
+      },
+    });
+  }
 }

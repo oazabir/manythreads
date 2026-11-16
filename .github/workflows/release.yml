@@ -49,3 +49,19 @@ jobs:
             if git rev-parse -q --verify "refs/tags/$t" >/dev/null; then echo "$t exists, keeping it"; continue; fi
             git tag -a "$t" -m "Phase $PHASE" && git push -q origin "refs/tags/$t"
           done
+      # The one-command installer (P27-04/05): its script, the host command and their hashes go on the GitHub release of the tag. This step carries code only: it never
+      # pushes an image (the images go to GHCR from the owner's machine with tools/devbox/release-images.sh, which also makes release.json).
+      - name: Attach the installer to the release
+        if: steps.phase.outputs.phase != ''
+        env:
+          PHASE: ${{ steps.phase.outputs.phase }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v0.$PHASE.0"
+          dir=$(mktemp -d)
+          cp deploy/install/install.sh deploy/install/manythreads "$dir/"
+          (cd "$dir" && sha256sum install.sh manythreads > SHA256SUMS)
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "manythreads $tag" --notes "Phase $PHASE. Install on a fresh Linux machine: download install.sh from this release (check it against SHA256SUMS) and run it with --release-url pointing at this release's release.json." --verify-tag
+          fi
+          gh release upload "$tag" "$dir/install.sh" "$dir/manythreads" "$dir/SHA256SUMS" --clobber

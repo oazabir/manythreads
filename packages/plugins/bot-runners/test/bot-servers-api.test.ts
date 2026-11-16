@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- these tests read JSON documents of many shapes */
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,8 @@ const saved = process.env['MANYTHREADS_BRIDGE_INSTALL_DIR'];
 const HELLO = { type: 'hello', protocol: 1, bridgeVersion: '1.2.3', host: { hostname: 'box-1', system: 'Ubuntu 24.04', arch: 'x64' }, agents: [{ agent: 'claude-code', version: '2.1.3' }, { agent: 'codex', version: '0.166.0' }], allowFullAccess: false };
 const SCRIPT = '#!/usr/bin/env bash\nmain() { echo "site=@@SITE@@ sha=@@BUNDLE_SHA256@@ v=@@BRIDGE_VERSION@@"; }\nmain "$@"\n';
 
+const INSTALL_SH = "#!/usr/bin/env bash\nDEFAULT_RELEASE_URL=''\nmain() { echo hi; }\nmain \"$@\"\n";
+const HOST_SH = '#!/usr/bin/env bash\necho host\n';
 const bundleBytes = Buffer.from('not really a tarball');
 const bundleSha = createHash('sha256').update(bundleBytes).digest('hex');
 
@@ -28,6 +31,8 @@ beforeAll(async () => {
   mkdirSync(installDir, { recursive: true });
   writeFileSync(join(installDir, 'bridge.sh'), SCRIPT);
   writeFileSync(join(installDir, 'bridge-1.2.3.tgz'), bundleBytes);
+  writeFileSync(join(installDir, 'install.sh'), INSTALL_SH);
+  writeFileSync(join(installDir, 'manythreads'), HOST_SH);
   writeFileSync(join(installDir, 'manifest.json'), JSON.stringify({ bridgeVersion: '1.2.3', bundle: 'bridge-1.2.3.tgz', bundleSha256: bundleSha }));
   process.env['MANYTHREADS_BRIDGE_INSTALL_DIR'] = installDir;
   w = await createWorld();
@@ -468,6 +473,42 @@ describe('the installer files', () => {
     expect(made.body.install.scriptSha256).toBe(createHash('sha256').update(text).digest('hex'));
     const sum = await (await fetch(`${w.server.url}/install/bridge.sh.sha256`)).text();
     expect(sum).toBe(`${made.body.install.scriptSha256}  bridge.sh\n`);
+  });
+
+  it('serves the one-command installer of a site at /install.sh, with its hash, and the host command beside the bridge files (P27-04)', async () => {
+    const res = await fetch(`${w.server.url}/install.sh`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/x-shellscript');
+    const text = await res.text();
+    expect(text).toBe(INSTALL_SH);
+    expect(await (await fetch(`${w.server.url}/install.sh.sha256`)).text()).toBe(`${createHash('sha256').update(INSTALL_SH).digest('hex')}  install.sh\n`);
+    expect(await (await fetch(`${w.server.url}/install/manythreads`)).text()).toBe(HOST_SH);
+    expect(await (await fetch(`${w.server.url}/install/manythreads.sha256`)).text()).toBe(`${createHash('sha256').update(HOST_SH).digest('hex')}  manythreads\n`);
+  });
+
+  it('shows the site\'s own certificate hashes in the install info only when the chart mounted a certificate (P27-05)', async () => {
+    const { loadSiteCert } = await import('../src/server-routes.ts');
+    expect(await loadSiteCert(undefined)).toBeNull();
+    expect(await loadSiteCert(join(installDir, 'nothing.crt'))).toBeNull();
+    writeFileSync(join(installDir, 'junk.crt'), 'not a certificate');
+    expect(await loadSiteCert(join(installDir, 'junk.crt'))).toBeNull();
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(installDir, 'k.pem'), '-out', join(installDir, 'c.pem'), '-days', '2', '-subj', '/CN=10.0.0.1'], { stdio: 'ignore' });
+    const got = await loadSiteCert(join(installDir, 'c.pem'));
+    const der = Buffer.from(readFileSync(join(installDir, 'c.pem'), 'utf8').replace(/-----[A-Z ]+-----|\s/g, ''), 'base64');
+    expect(got?.sha256).toBe(createHash('sha256').update(der).digest('hex'));
+    const spki = execFileSync('openssl', ['x509', '-in', join(installDir, 'c.pem'), '-pubkey', '-noout'], { encoding: 'utf8' });
+    const spkiDer = execFileSync('openssl', ['pkey', '-pubin', '-outform', 'DER'], { input: spki });
+    expect(got?.spkiSha256).toBe(createHash('sha256').update(spkiDer).digest('base64'));
+  });
+
+  it('puts the operator\'s release address into the served script only when it is an https address with no quote', async () => {
+    const { loadInstallScripts } = await import('../src/server-routes.ts');
+    const good = await loadInstallScripts('https://example.org/releases/release.json', installDir);
+    expect(good?.script).toContain("DEFAULT_RELEASE_URL='https://example.org/releases/release.json'");
+    expect(good?.scriptSha256).toBe(createHash('sha256').update(good?.script ?? '').digest('hex'));
+    for (const bad of ['http://example.org/release.json', "https://x.org/a'; rm -rf /; '", 'javascript:alert(1)', '']) {
+      expect((await loadInstallScripts(bad, installDir))?.script, bad).toBe(INSTALL_SH);
+    }
   });
 
   it('serves the bundle and its checksum, and nothing else', async () => {
