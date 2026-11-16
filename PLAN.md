@@ -803,6 +803,24 @@ Design: `docs/design/themes.md`. A theme is a palette (colours, type, corners, s
 | P28-07 | Tests: theme-boot resolution, appearance API, Playwright switch-reload-no-flash, six screenshots of a thread with a run card and a to-do card at 1440 and one at 390 | Built |
 | P28-08 | Later, not built: replace raw `600`/`500` weights with `--fw-*`; ten `--peer-n` caret tokens; an admin default theme for a team; metric-matched fallback faces (`size-adjust`) for each text face; the default theme is `classic` (the original look) so the visual baselines stay valid, and making Graphite the default is `DEFAULT_PALETTE` plus regenerating the baselines | Not built |
 
+
+### Phase 29 · The task view in the channel (owner, 2026-11-16)
+
+Plan: `docs/plans/channel-task-view.md`. Under a thread's root message in the channel view: the to-do card, the live run card (with its last steps) and the questions waiting for a person, with their buttons, so a task can be followed and answered without opening the thread. One lease and three batched reads per open channel, nothing per row.
+
+| ID | Task | Status |
+|---|---|---|
+| P29-00 | The plan, revised after review | Done |
+| P29-05 | First: `useDecision` hook shared by every approval card; "View full call" in the run-card variant; "Already answered" for a second decision | Not built |
+| P29-01 | Shared shapes: run heads and `recent` in the channel read, the channel lease, the channel's open to-do lists and pending approvals, the approval push's channel | Not built |
+| P29-02 | Runtime-hermes: migration 0009 `channel_watchers`, the lease routes, the push audience, heads and `recent` in `active-runs` | Not built |
+| P29-03 | Tasks and approvals: the channel's open lists, the channel's pending approvals, the push's channel | Not built |
+| P29-04 | Client store for the channel's task view (heads, steps, lists, approvals) and `useTaskView` | Not built |
+| P29-06 | Components with their CSS, accessibility and tests: compact to-do, compact run card, question strip, the view under the root, the channel's live region | Not built |
+| P29-09 | Playwright spec and screenshots (four palettes, light and dark, 1440 and 390) | Not built |
+| P29-10 | Docs, STATUS, MISTAKES | Not built |
+| P29-11 | Deploy and live check | Not built |
+
 ---
 
 # Phase 1 · Foundations
