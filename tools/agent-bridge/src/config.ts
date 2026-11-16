@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { SLUG as SLUG_PATTERN, teamHermesHome } from './team-user.ts';
 
 // The bridge's config file: which agent CLI serves which profile.
 //
@@ -91,8 +92,17 @@ export interface ServerAgentTemplate {
   hermesHome?: string | undefined;
 }
 
+/** Team users (P26-22): the bridge starts each team's programs as `mt-team-<team>` through the root helper and `sudo`. Absent: everything runs as the bridge's own user (a hand-run bridge, the tests). */
+export interface TeamUsersConfig {
+  /** The helper's path: the one file the sudoers rule names. */
+  helper: string;
+  /** `sudo`'s path (default `/usr/bin/sudo`). */
+  sudo: string;
+}
+
 export interface ServerModeConfig {
   root: string;
+  teamUsers?: TeamUsersConfig | undefined;
   agents: Partial<Record<'claude' | 'codex' | 'hermes', ServerAgentTemplate>>;
   /** Appended after the bot's BOT.md in every run (where it runs); `{team}`, `{bot}`, `{workdir}`, `{repos}` are filled in. */
   instructions?: string | undefined;
@@ -140,7 +150,7 @@ const SERVER_AGENT_KEYS = ['claude', 'codex', 'hermes'] as const;
 type ServerAgentKey = (typeof SERVER_AGENT_KEYS)[number];
 const AGENT_OF_KEY: Record<ServerAgentKey, AgentKind> = { claude: 'claude-code', codex: 'codex', hermes: 'hermes-acp' };
 /** A team or bot slug as it may become a folder name: no dot, no slash, no `--`. */
-const SLUG = /^[a-z0-9](?:[a-z0-9]|-(?!-)){0,62}$/;
+const SLUG = SLUG_PATTERN;
 const SERVER_PROFILE = /^(claude|codex|hermes)--([^-]|-(?!-))+--([^-]|-(?!-))+$/;
 
 function parseServerMode(raw: unknown): ServerModeConfig | undefined {
@@ -170,6 +180,14 @@ function parseServerMode(raw: unknown): ServerModeConfig | undefined {
   }
   const notes = raw['instructions'];
   if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error('config: server.instructions must be text of at most 20000 characters');
+  const teamRaw = raw['teamUsers'];
+  let teamUsers: TeamUsersConfig | undefined;
+  if (teamRaw !== undefined) {
+    const sudo = isRecord(teamRaw) ? (teamRaw['sudo'] ?? '/usr/bin/sudo') : null;
+    const ok = (v: unknown): v is string => typeof v === 'string' && isAbsolute(v) && [...v].every((c) => c.charCodeAt(0) >= 32);
+    if (!isRecord(teamRaw) || !ok(teamRaw['helper']) || !ok(sudo)) throw new Error('config: server.teamUsers must be { "helper": <absolute path>, "sudo": <absolute path, optional> }');
+    teamUsers = { helper: teamRaw['helper'], sudo };
+  }
   const toolsDir = raw['toolsDir'];
   const publisherSocket = raw['publisherSocket'];
   for (const [what, v] of [['toolsDir', toolsDir], ['publisherSocket', publisherSocket]] as const) {
@@ -178,6 +196,7 @@ function parseServerMode(raw: unknown): ServerModeConfig | undefined {
   return {
     root,
     agents,
+    ...(teamUsers !== undefined ? { teamUsers } : {}),
     ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}),
     ...(typeof toolsDir === 'string' ? { toolsDir } : {}),
     ...(typeof publisherSocket === 'string' ? { publisherSocket } : {}),
@@ -316,7 +335,9 @@ export function serverProfile(config: BridgeConfig, name: string): ProfileConfig
   const workdir = join(server.root, 'work', team, bot);
   const repos = join(server.root, 'work', team, 'repos');
   const env = { ...(tmpl.env ?? {}) };
-  if (agentKey === 'hermes' && tmpl.hermesHome !== undefined) env['HERMES_HOME'] = join(tmpl.hermesHome, `${team}--${bot}`);
+  // a team's Hermes home is inside its own home (a team user cannot reach another team's); without team users it is one folder per bot under the template's
+  if (agentKey === 'hermes' && server.teamUsers !== undefined) env['HERMES_HOME'] = teamHermesHome(server.root, team, bot);
+  else if (agentKey === 'hermes' && tmpl.hermesHome !== undefined) env['HERMES_HOME'] = join(tmpl.hermesHome, `${team}--${bot}`);
   const instructions = server.instructions?.replaceAll('{team}', team).replaceAll('{bot}', bot).replaceAll('{workdir}', workdir).replaceAll('{repos}', repos);
   const profile: ProfileConfig = {
     agent: AGENT_OF_KEY[agentKey],

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { GIT_TOOLS, PUBLISH_TOOL, RECORD_TOOLS, whereYouRun } from '@manythreads/shared';
 import { parseServerProfileName, type BridgeConfig, type ProfileConfig } from './config.ts';
 import type { RunRequest } from './request.ts';
+import { teamHermesHome, teamKubeconfigFile } from './team-user.ts';
 
 // What a bot's run needs on an enrolled server, made per run (PLAN P26-15, docs/plans/agents-anywhere.md section 5.6). A pod gets all of this from its controller; a server has no controller,
 // so the bridge asks the site, with the run's own token, the same three questions the pod's containers ask:
@@ -21,6 +22,11 @@ export interface ServerRunSupport {
   log: (line: string) => void;
   /** Registers something to do when the run is over, whatever way it ended (the run manager calls each in its `finally`): the run's kubeconfig is deleted this way. */
   onEnd?: (cleanup: () => void) => void;
+  /**
+   * Team users (P26-22): the bridge cannot write into a team's home, so a file the run needs (the kubeconfig, Hermes' config) is handed to the helper, which writes it as the team's user before
+   * the program starts and removes what `removeWhenDone` names when the program ends. Without it the bridge writes the files itself.
+   */
+  team?: { put(path: string, text: string, mode: string): void; removeWhenDone(path: string): void };
 }
 
 const TIMEOUT_MS = 15_000;
@@ -107,9 +113,11 @@ export async function prepareServerRun(config: BridgeConfig, name: string, profi
 
   let mayPublish = false;
   let kubeconfig: string | null = null;
-  const file = kubeconfigFile(server.root, who.team, who.bot, runFolder(request.manythreads.runId));
+  const run = runFolder(request.manythreads.runId);
+  const file = support.team !== undefined ? teamKubeconfigFile(server.root, who.team, who.bot, run) : kubeconfigFile(server.root, who.team, who.bot, run);
   // The deployer's login is the cluster's, not this run's: it never stays on the disk. The folder goes when the run ends, whatever way it ended.
-  support.onEnd?.(() => rmSync(dirname(file), { recursive: true, force: true }));
+  if (support.team !== undefined) support.team.removeWhenDone(dirname(file));
+  else support.onEnd?.(() => rmSync(dirname(file), { recursive: true, force: true }));
   if (token !== null) {
     try {
       const self = await ask(`${site}/api/runs/self`, token, doFetch);
@@ -120,7 +128,8 @@ export async function prepareServerRun(config: BridgeConfig, name: string, profi
     try {
       const kube = await ask(`${site}/api/runs/self/kubeconfig`, token, doFetch);
       if (kube.status === 200 && isRecord(kube.json) && typeof kube.json['kubeconfig'] === 'string' && kube.json['kubeconfig'] !== '') {
-        writePrivate(file, kube.json['kubeconfig'], 0o600);
+        if (support.team !== undefined) support.team.put(file, kube.json['kubeconfig'], '0600');
+        else writePrivate(file, kube.json['kubeconfig'], 0o600);
         kubeconfig = file;
       }
     } catch {
@@ -152,16 +161,19 @@ export async function prepareServerRun(config: BridgeConfig, name: string, profi
 
   if (who.agentKey === 'hermes') {
     // Hermes' own home, one per bot, under the bridge's data folder: never the bridge user's default and never anyone's login. Its config is written once; the run's values come through the environment.
-    const home = env['HERMES_HOME'] ?? join(server.root, 'hermes', `${who.team}--${who.bot}`);
+    const home = env['HERMES_HOME'] ?? (support.team !== undefined ? teamHermesHome(server.root, who.team, who.bot) : join(server.root, 'hermes', `${who.team}--${who.bot}`));
     env['HERMES_HOME'] = home;
     const configFile = join(home, 'config.yaml');
-    let have = '';
-    try {
-      have = readFileSync(configFile, 'utf8');
-    } catch {
-      // first run of this bot
+    if (support.team !== undefined) support.team.put(configFile, HERMES_SEED, '0600');
+    else {
+      let have = '';
+      try {
+        have = readFileSync(configFile, 'utf8');
+      } catch {
+        // first run of this bot
+      }
+      if (have !== HERMES_SEED) writePrivate(configFile, HERMES_SEED, 0o600);
     }
-    if (have !== HERMES_SEED) writePrivate(configFile, HERMES_SEED, 0o600);
     if (token !== null && request.manythreads.runId !== null) {
       env[TOKEN_VAR] = token;
       env[HERMES_URL_VAR] = `${site}/api/llm/runs/${encodeURIComponent(request.manythreads.runId)}/v1`;

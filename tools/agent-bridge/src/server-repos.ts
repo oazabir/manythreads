@@ -2,6 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseRepoList, toLines, writeRepoList } from './repos.ts';
+import type { ServerModeConfig } from './config.ts';
+import { hasTeamUsers } from './server-team.ts';
+import { startTeamSync } from './server-team-sync.ts';
 
 // The repository sync of an enrolled server (PLAN P26-15, docs/plans/agents-anywhere.md section 5.6). A pod's controller sends its list to `PUT /internal/repos`; a server has no controller,
 // so the bridge asks the site for it with its own key (`GET /api/bridge/repos`), writes the file the sync step reads, and keeps that step (the pod's own `repo-sync.sh`, from the bundle's
@@ -18,6 +21,8 @@ export interface ServerReposOptions {
   /** The bridge's state folder: the list and the sync step's scratch folder live in it. */
   stateDir: string;
   intervalMs?: number;
+  /** The server section of the config: with team users (P26-22) each team's sync step is started as that team's user (`server-team-sync.ts`) and there is no one shared step or list file. */
+  server?: ServerModeConfig | undefined;
   /** Seconds between the sync step's own passes (its default is 5); a server does not need that often. */
   syncSeconds?: number;
   /** Test hook: how long before an ended sync step is started again (default five seconds). */
@@ -69,6 +74,7 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
   let child: ChildProcess | undefined;
   let closed = false;
   let restart: NodeJS.Timeout | undefined;
+  const teamSync = hasTeamUsers(options.server) ? startTeamSync({ server: options.server, syncSeconds: options.syncSeconds, restartMs: options.restartMs, log: options.log }) : undefined;
   let complained = '';
   const complain = (what: string): void => {
     // one line per kind of trouble until it goes away: a site that is down for an hour must not fill the journal
@@ -109,7 +115,11 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
       return false;
     }
     const text = toLines(parsed.repos);
-    if (text !== last) {
+    if (text !== last && teamSync !== undefined) {
+      teamSync.update(parsed.repos);
+      last = text;
+      options.log(`repo sync: ${parsed.repos.length} repositor${parsed.repos.length === 1 ? 'y' : 'ies'} on the list`);
+    } else if (text !== last) {
       try {
         writeRepoList(listFile, parsed.repos);
       } catch {
@@ -126,7 +136,7 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
   };
 
   const startChild = (): void => {
-    if (closed) return;
+    if (closed || teamSync !== undefined) return;
     try {
       mkdirSync(scratch, { recursive: true });
     } catch {
@@ -187,6 +197,7 @@ export function startServerRepos(options: ServerReposOptions): ServerRepos {
       closed = true;
       clearInterval(timer);
       clearTimeout(restart);
+      await teamSync?.close();
       const c = child;
       if (c?.pid !== undefined) {
         const ended = new Promise<void>((r) => c.once('exit', () => r()));

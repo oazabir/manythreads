@@ -2,8 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { profileFor, type BridgeConfig } from './config.ts';
+import { parseServerProfileName, profileFor, type BridgeConfig } from './config.ts';
 import { prepareServerRun, type ServerRunSupport } from './server-run.ts';
+import { ensureTeamUser, hasTeamUsers, TeamRun } from './server-team.ts';
 import { acpDriver } from './drivers/acp.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
@@ -89,6 +90,9 @@ export interface RunManagerOptions {
   serverRun?: Omit<ServerRunSupport, 'log'>;
   log: (line: string) => void;
 }
+
+/** What the helper starts for a server-mode agent key. */
+const AGENT_KIND = { claude: 'claude', codex: 'codex', hermes: 'hermes' } as const;
 
 const drivers: Record<string, Driver> = { 'claude-code': claudeCodeDriver, codex: codexDriver, acp: acpDriver };
 
@@ -237,6 +241,8 @@ export class RunManager {
       budgetTimer.unref();
     };
     let runDir: string | null = null;
+    /** Set when this run is a team's on a server with team users: its programs are started through the helper. */
+    let team: TeamRun | null = null;
     /** What the run left on this machine that must go with it (the deployer's kubeconfig). */
     const cleanups: Array<() => void> = [];
     try {
@@ -245,15 +251,22 @@ export class RunManager {
         return;
       }
       if (this.opts.serverRun !== undefined) {
+        const who = hasTeamUsers(config.server) ? parseServerProfileName(profileName) : null;
+        if (who !== null && hasTeamUsers(config.server)) {
+          // P26-22: this team's runs are started as the team's own user, through the root helper; its user is made now (the first run of a team), so a refusal is the run's plain failure
+          await ensureTeamUser(config.server.teamUsers, who.team);
+          team = new TeamRun(config.server, who.team, AGENT_KIND[who.agentKey]);
+        }
         // an enrolled server: this run's copy of the profile (where-you-run text, tools, kubeconfig, Hermes home), made with the run's own token
-        profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`), onEnd: (fn) => cleanups.push(fn) });
+        profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`), onEnd: (fn) => cleanups.push(fn), ...(team !== null ? { team } : {}) });
         request = withProfileInstructions(given, profile.instructions);
       }
       if (run.stopRequested) {
         this.finish(run, 'cancelled', 'run.cancelled', {});
         return;
       }
-      mkdirSync(profile.workdir, { recursive: true });
+      // a team's folders belong to the team's user: the helper makes the working folder
+      if (team === null) mkdirSync(profile.workdir, { recursive: true });
       runDir = mkdtempSync(join(this.opts.tmpRoot ?? tmpdir(), 'agent-bridge-run-'));
       armBudget((budgetS + config.budgetGraceSeconds) * 1000);
 
@@ -270,7 +283,7 @@ export class RunManager {
         },
         log: (line) => this.opts.log(`run ${run.id} ${line}`),
         start: (bin, args, o) => {
-          const child = startChild(bin, args, o);
+          const child = team !== null ? team.start(o) : startChild(bin, args, o);
           run.children.add(child);
           // Whatever a tool left running in the run's process group (a background server, a watcher) ends with the run.
           void child.done.then(() => {

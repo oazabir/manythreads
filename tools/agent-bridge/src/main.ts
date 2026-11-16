@@ -6,6 +6,7 @@ import { loadConfig } from './config.ts';
 import { startBridge } from './server.ts';
 import { helloFor, keyFiles, readServerKey, storeServerKey } from './server-mode.ts';
 import { startServerRepos } from './server-repos.ts';
+import { cleanTeamKube, hasTeamUsers } from './server-team.ts';
 import { kubeFolder } from './server-run.ts';
 import { newInternalKey, startTunnel } from './tunnel.ts';
 
@@ -77,7 +78,8 @@ if (config.server !== undefined) {
     fatal(err instanceof Error ? err.message : String(err));
   }
   // A run that was cut short by a crash or a restart left its kubeconfig: no run survives a restart, so the folder is emptied.
-  rmSync(kubeFolder(config.server.root), { recursive: true, force: true });
+  if (hasTeamUsers(config.server)) await cleanTeamKube(config.server, (line) => console.log(line));
+  else rmSync(kubeFolder(config.server.root), { recursive: true, force: true });
   const internalKey = newInternalKey();
   const socketPath = join(stateRoot, 'bridge.sock');
   const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site });
@@ -94,7 +96,7 @@ if (config.server !== undefined) {
   });
   // the repositories of the teams on this server's runners: the list from the site, and the sync step that clones them (needs the bundle's tools folder)
   const repos = cfg.server?.toolsDir !== undefined
-    ? startServerRepos({ siteUrl: values.site, key: () => readServerKey(files), toolsDir: cfg.server.toolsDir, root: cfg.server.root, stateDir, syncSeconds: 10, log: (line) => console.log(line) })
+    ? startServerRepos({ siteUrl: values.site, key: () => readServerKey(files), toolsDir: cfg.server.toolsDir, root: cfg.server.root, stateDir, server: cfg.server, syncSeconds: 10, log: (line) => console.log(line) })
     : undefined;
   console.log(`agent-bridge (server mode) dialing ${new URL(values.site).origin}; profiles are made from the "server" section`);
   const stop = (): void => {
