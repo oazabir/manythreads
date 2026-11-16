@@ -12,13 +12,27 @@
   gap: 4px;
   margin: 8px 0;
   padding: 8px 10px 8px 12px;
-  border: 1px solid var(--agent-border);
+  border: var(--border-w) solid var(--run-border);
   border-radius: var(--radius-md);
-  background: var(--agent-wash);
+  background: var(--run-bg);
   color: var(--ink);
   font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
   min-width: 0;
+  position: relative;
+}
+
+/* a palette may mark the card with a rail on its leading edge (Harbor: 3 px); with --run-rail-w at 0 it is not there. Mirrored by the logical properties. */
+.rc::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--border-w) * -1);
+  width: var(--run-rail-w);
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+  background: var(--run-rail);
+  pointer-events: none;
 }
 
 /* the same bot's message is just above: the card continues it, under its text */
@@ -63,7 +77,7 @@
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--agent-ink);
+  color: var(--run-state-ink);
   font-size: var(--fs-caption);
   font-weight: 600;
   text-overflow: ellipsis;
@@ -100,7 +114,7 @@
   height: 8px;
   flex: none;
   border-radius: var(--radius-pill);
-  background: var(--agent);
+  background: var(--run-pulse);
 }
 
 .rcIconBtn,
@@ -336,7 +350,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 6px 0 2px;
-  border-top: 1px solid var(--agent-border);
+  border-top: 1px solid var(--run-border);
 }
 
 .rcList {
@@ -378,7 +392,7 @@
   margin-block: 2px;
   margin-inline-start: -16px;
   padding-inline-start: 14px;
-  border-inline-start: 2px solid var(--agent-border);
+  border-inline-start: 2px solid var(--run-border);
 }
 
 .rcIc {
@@ -497,7 +511,7 @@
 }
 
 .rcSteps:focus-visible {
-  outline: 2px solid var(--human-border);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

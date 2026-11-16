@@ -9,6 +9,11 @@
  * property that reads another one keeps the value it had where it was declared: a `.theme-dark-scope` box inside a light page has to
  * declare them again.
  *
+ * P28-01, palettes: this file holds the `classic` palette (the look the app always had; the default, and the fallback for a missing or unknown
+ * `data-palette`) and everything that is shared. Graphite, Linen and Harbor are generated from tools/design/themes.mjs into themes/<id>.css and
+ * loaded after this file. `data-theme` keeps meaning light or dark; `data-palette` is the second axis. A box that must show another palette next
+ * to the page's own carries both attributes (`<span data-palette="linen" data-theme="dark">`).
+ *
  * not yet tokens (prototype CSS values seen in section #app, kept out until a screen needs them):
  *   - #E3E7EB  selected sidebar item background (.it.on)
  *   - #EDEFF2  hairline between list rows (.trow, .frow, .brow)
@@ -23,7 +28,8 @@
  *   - radii 5/6/10/12 px, frame grid 248px | 1fr | 380px
  */
 :root,
-.theme-light-scope {
+.theme-light-scope,
+[data-palette="classic"][data-theme="light"] {
   color-scheme: light;
 
   --paper: #EDEEF0;
@@ -102,7 +108,8 @@
 }
 
 :root[data-theme="dark"],
-.theme-dark-scope {
+.theme-dark-scope,
+[data-palette="classic"][data-theme="dark"] {
   color-scheme: dark;
 
   /* graphite, not black (B4); the primary button stays "ink on paper", so it becomes a light button with dark text (B5) */
@@ -181,17 +188,14 @@
   --skeleton-hi: #2D3540;
 }
 
-/* a box that shows the other theme next to the page's own (Appearance previews, /dev/tokens) */
-.theme-dark-scope,
-.theme-light-scope {
-  background: var(--paper);
-  color: var(--ink);
-}
-
-/* built from the palette, so declared again for every scope (see the top of this file) */
+/*
+ * Built from the palette, so declared again for every scope (see the top of this file). It names no palette: a new palette adds a file, not a line here.
+ * The tokens of P28 that a palette sets itself (accent, controls, code, run card, to-do card, shadows) have their classic value here, as a reference to
+ * another token, and a palette file overrides them with a more specific rule.
+ */
 :root,
+[data-palette],
 .theme-light-scope,
-:root[data-theme="dark"],
 .theme-dark-scope {
   /* colour meanings: blue is you, purple is a bot, amber needs you, red is a danger or a mention */
   --you: var(--human);
@@ -202,13 +206,63 @@
   --attention-wash: var(--warn-wash);
   --danger: var(--alert);
   --mention: var(--alert);
-  --focus: var(--human);
-  --on-accent: var(--surface); /* text on a filled ink button (light text on dark ink, dark text on the light dark-theme button) */
-  --card-shadow: 0 1px 2px rgb(var(--shadow-color) / var(--card-alpha));
-  --menu-shadow: 0 6px 20px rgb(var(--shadow-color) / var(--menu-alpha));
-  --pop-shadow: 0 8px 24px rgb(0 0 0 / var(--menu-alpha));
-  --savebar-shadow: 0 -6px 14px -10px rgb(0 0 0 / var(--savebar-alpha));
+  --focus: var(--focus-ring);
   --scrim: rgb(var(--shadow-color) / var(--scrim-alpha));
+
+  /* the primary button and a ticked box or radio; Harbor's is blue, the others' is ink on paper */
+  --accent: var(--ink);
+  --accent-hover: var(--mute);
+  --on-accent: var(--surface);
+
+  /* text on a fill that is a meaning colour: every palette's fills are dark in light and light in dark, so the page colour reads on them (checked by tools/lint-contrast) */
+  --on-ink: var(--surface);
+  --on-you: var(--surface);
+  --on-bot: var(--surface);
+  --on-ok: var(--surface);
+  --on-alert: var(--surface);
+  --on-grey: var(--surface);
+
+  /* a field, a checkbox, a radio and an off switch need an edge of 3:1; classic keeps the divider colour it always had */
+  --control-border: var(--rule);
+  --control-bg: var(--surface);
+  --focus-ring: var(--human);
+  --code-bg: var(--shell);
+  --code-border: var(--hairline);
+  --code-ink: var(--txt);
+  --selection: var(--human-border);
+  --syn-keyword: var(--agent-ink);
+  --syn-string: var(--ok-ink);
+  --syn-number: var(--warn-ink);
+  --syn-title: var(--human);
+  --syn-comment: var(--mute);
+
+  /* the run card and the to-do card (run-card.css, todo-card.css) */
+  --run-bg: var(--agent-wash);
+  --run-border: var(--agent-border);
+  --run-rail: var(--agent);
+  --run-state-ink: var(--agent-ink);
+  --run-pulse: var(--agent);
+  --todo-bg: var(--surface);
+  --todo-border: var(--agent-border);
+  --todo-track: var(--hover);
+  --todo-fill: var(--ok);
+
+  /* whole shadows per palette; the three old names are aliases */
+  --elev-1: 0 1px 2px rgb(var(--shadow-color) / var(--card-alpha));
+  --elev-2: 0 6px 20px rgb(var(--shadow-color) / var(--menu-alpha));
+  --elev-3: 0 8px 24px rgb(var(--shadow-color) / var(--menu-alpha));
+  --card-shadow: var(--elev-1);
+  --menu-shadow: var(--elev-2);
+  --pop-shadow: var(--elev-3);
+  --savebar-shadow: 0 -6px 14px -10px rgb(var(--shadow-color) / var(--savebar-alpha));
+}
+
+/* a box that shows the other theme next to the page's own (Appearance previews, /dev/tokens) */
+.theme-dark-scope,
+.theme-light-scope,
+[data-palette]:not(:root) {
+  background: var(--paper);
+  color: var(--ink);
 }
 
 /* look tokens that do not change with the theme */
@@ -224,12 +278,34 @@
   --fs-tiny: 11px; /* count pills only */
   --fw-title: 600;
   --fw-caption: 500;
+  --radius-xs: 4px; /* inline code, a chip, a checkbox */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-pill: 999px;
   --sans: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", monospace;
+  --font-display: var(--sans); /* a screen title, the team name, a settings heading: never a control, a label or a message */
+  --font-features: normal;
+  --fw-display: 600;
+  --ls-title: 0;
+  --ls-body: 0;
+  --ls-caps: 0.04em;
+
+  /* P28: control and row sizes, a spacing scale, hover timing and the hairline width, one place each (a palette sets its own) */
+  --ctl-h: 30px;
+  --ctl-pad-x: 12px;
+  --row-h: 30px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --dur-fast: 100ms;
+  --dur-pulse: 1.4s;
+  --run-rail-w: 0px;
+  --border-w: 1px;
 
   /* motion (P21-22): menus and pop-overs fade and rise, a side panel slides; reduced motion switches them off in motion.css */
   --dur-menu: 120ms;
@@ -245,8 +321,9 @@
   --day-gap: 6px; /* above the day divider; it has two pixels more below */
 }
 
-/* Compact: channels, DMs and the thread panel only. Chat and the Threads inbox do not read these tokens (B8) */
-:root[data-density="compact"] {
+/* Compact: channels, DMs and the thread panel only. Chat and the Threads inbox do not read these tokens (B8). The second selector outranks a palette's own look block. */
+:root[data-density="compact"],
+:root[data-density="compact"][data-palette] {
   --msg-pad-y: 3px;
   --msg-gap: 2px;
   --run-gap: 0;

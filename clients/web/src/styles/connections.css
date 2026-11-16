@@ -141,9 +141,9 @@
 .cn-form select {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -332,7 +332,7 @@
 .cg-chip.on {
   border-color: var(--ink);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 .cg-count {

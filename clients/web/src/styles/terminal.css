@@ -20,7 +20,7 @@
 }
 
 .wt-h:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -63,12 +63,12 @@
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
   overflow: auto;
 }
 
 .wt-box:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -102,16 +102,16 @@
   min-width: 0;
   min-height: 44px;
   padding: 6px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font-family: var(--mono);
   font-size: var(--fs-h2);
 }
 
 .wt-input:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 

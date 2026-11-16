@@ -29,7 +29,7 @@
   border: 0;
   border-radius: var(--radius-pill);
   background: var(--human);
-  color: var(--surface);
+  color: var(--on-you);
   cursor: pointer;
 }
 

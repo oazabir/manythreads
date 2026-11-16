@@ -77,7 +77,7 @@
 }
 
 .poll-lab:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -100,7 +100,7 @@
   display: block;
   height: 100%;
   background: var(--human-wash);
-  transition: width 0.25s ease;
+  transition: width var(--dur-panel) ease;
 }
 
 .poll-opt.mine .poll-fill {

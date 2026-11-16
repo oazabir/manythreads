@@ -205,9 +205,9 @@
 .ob-goal textarea {
   min-width: 0;
   padding: 6px 8px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-small);

@@ -14,7 +14,7 @@
   height: 14px;
   border-radius: 50%;
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 .bell-moon svg {
@@ -163,16 +163,16 @@
 .pr-input {
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-small);
 }
 
 .pr-input:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -456,7 +456,7 @@
 }
 
 .pcard-open:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }

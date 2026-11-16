@@ -35,7 +35,7 @@
 }
 
 .pj-fold-h:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -155,9 +155,9 @@
   width: 100%;
   max-width: 360px;
   padding: 7px 9px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
 }

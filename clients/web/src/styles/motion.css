@@ -30,7 +30,7 @@
   /* the run card and the to-do card (P25-11): the dot of a step or an item that is being worked on breathes; nothing else moves */
   .rcPulse,
   .tdPulse {
-    animation: mt-pulse 1.4s ease-in-out infinite;
+    animation: mt-pulse var(--dur-pulse) ease-in-out infinite;
   }
 }
 
@@ -73,4 +73,12 @@
   from {
     background-color: var(--attention-wash);
   }
+}
+
+/* a switch of palette or mode is one change: for the frame that carries data-look-switching (appearance.ts) nothing fades from the old colour */
+[data-look-switching] *,
+[data-look-switching] *::before,
+[data-look-switching] *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
 }

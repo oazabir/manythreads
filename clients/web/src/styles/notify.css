@@ -139,9 +139,9 @@
 .nset-input {
   min-width: 0;
   padding: 5px 8px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-caption);

@@ -175,7 +175,7 @@
 .wh-danger {
   border-color: var(--alert);
   background: var(--alert);
-  color: var(--surface);
+  color: var(--on-alert);
 }
 
 .wh-danger-text {

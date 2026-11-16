@@ -50,14 +50,14 @@
 }
 
 .rg-chip:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .rg-chip.on {
   border-color: var(--ink);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 .rg-count {
@@ -107,7 +107,7 @@
 }
 
 .rg-card:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

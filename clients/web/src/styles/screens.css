@@ -11,11 +11,11 @@ a.btn {
 }
 
 a.btn.primary {
-  color: var(--surface);
+  color: var(--on-accent);
 }
 
 :focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -48,7 +48,7 @@ a.btn.primary {
   height: 28px;
   border-radius: var(--radius-sm);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
   font-size: var(--fs-small);
   font-weight: 600;
 }
@@ -134,7 +134,7 @@ a.btn.primary {
   padding: 0 4px;
   border-radius: var(--radius-sm);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
   font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
@@ -177,9 +177,9 @@ a.btn.primary {
 .fld input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -188,9 +188,9 @@ a.btn.primary {
 .fld textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -292,7 +292,7 @@ a.btn.primary {
   margin-top: 1px;
   border-radius: 50%;
   background: var(--alert);
-  color: var(--surface);
+  color: var(--on-alert);
   font-size: var(--fs-tiny);
   font-weight: 700;
 }
@@ -482,9 +482,9 @@ a.btn.primary {
 .settings-select select {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -684,7 +684,7 @@ a.btn.primary {
   height: 32px;
   border-radius: 50%;
   background: var(--human);
-  color: var(--surface);
+  color: var(--on-you);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
@@ -1006,9 +1006,9 @@ a.btn.primary {
   height: 18px;
   margin-top: 2px;
   padding: 0;
-  border: 1.5px solid var(--rule);
+  border: 1.5px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   cursor: pointer;
 }
 
@@ -1026,7 +1026,7 @@ a.btn.primary {
   position: absolute;
   top: -1px;
   left: 3px;
-  color: var(--surface);
+  color: var(--on-bot);
   font-size: var(--fs-caption);
 }
 
@@ -1316,7 +1316,7 @@ a.btn.primary {
   font: inherit;
   font-size: var(--fs-caption);
   padding: 3px 6px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
 }
 
@@ -1352,9 +1352,9 @@ a.btn.primary {
 .mem-input {
   width: 100%;
   padding: 8px 10px 8px 32px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -1416,7 +1416,7 @@ a.btn.primary {
   }
 }
 
-/* ---- Account → Appearance (P21-21): theme and density cards. Previews read tokens only; each theme sample sits in its own scope box ---- */
+/* ---- Account → Appearance (P21-21): the cards of the theme picker (theme-picker.css) and of the message spacing. Previews read tokens only ---- */
 .ap-group {
   min-width: 0;
   margin: 0;
@@ -1487,27 +1487,6 @@ a.btn.primary {
   border-radius: var(--radius-sm);
 }
 
-.ap-sample {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  padding: 8px;
-}
-
-.ap-split .ap-sample {
-  flex: 1 1 50%;
-}
-
-.ap-bar {
-  height: 6px;
-  width: 40%;
-  border-radius: var(--radius-pill);
-  background: var(--rule);
-}
-
-.ap-row,
 .ap-msg {
   display: flex;
   align-items: center;

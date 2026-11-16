@@ -70,7 +70,7 @@
 
 .ws-tab.on {
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 /* a tab the person may not use: still reachable and readable, and it says why (aria-describedby), but it chooses nothing */
@@ -84,7 +84,7 @@
 }
 
 .ws-tab:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -142,7 +142,7 @@
 }
 
 .ws-h:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -181,7 +181,7 @@
 }
 
 .ws-earlier-btn:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -357,9 +357,9 @@
   width: 100%;
   min-height: 72px;
   padding: 8px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -367,7 +367,7 @@
 }
 
 .ws-textarea:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -492,7 +492,7 @@
 
 .ws-h2:focus-visible,
 .ws-linkbtn:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -506,9 +506,9 @@
 .ws-days select {
   min-height: 32px;
   padding: 2px 8px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
 }

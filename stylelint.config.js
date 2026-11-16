@@ -10,17 +10,16 @@ export default {
     'custom-property-pattern': null,
     // P21-20: screens use the look tokens (radius, type size, colour meaning) and never remove the focus ring
     'declaration-property-value-allowed-list': {
-      'border-radius': [/^(0|50%|inherit|var\(--radius-(sm|md|lg|pill)\))( (0|50%|var\(--radius-(sm|md|lg|pill)\))){0,3}$/],
+      'border-radius': [/^(0|50%|inherit|var\(--radius-(xs|sm|md|lg|pill)\))( (0|50%|var\(--radius-(xs|sm|md|lg|pill)\))){0,3}$/],
       'font-size': [/^var\(--fs-[a-z0-9]+\)$/, 'inherit', /^[\d.]+(em|%)$/],
     },
     'declaration-property-value-disallowed-list': { outline: ['none', '0'] },
   },
   overrides: [
-    // channels.css is migrated by the message-view batch; exempt until then (see STATUS)
-    { files: ['clients/web/src/styles/channels.css'], rules: { 'declaration-property-value-allowed-list': null, 'declaration-property-value-disallowed-list': null } },
     // the desktop app's first-run server picker is a page of its own (system colours and sizes), it does not load the web tokens
     { files: ['clients/desktop/ui/picker.css'], rules: { 'declaration-property-value-allowed-list': null } },
     { files: ['clients/web/src/styles/tokens.css'], rules: { 'declaration-property-value-allowed-list': null } },
-    { files: ['clients/web/src/styles/tokens.css'], rules: { 'color-no-hex': null, 'function-disallowed-list': null, 'selector-disallowed-list': null } },
+    // P28-01: tokens.css and the generated palette files (themes/<id>.css) are the only places for raw colours and for a `data-theme` selector
+    { files: ['clients/web/src/styles/tokens.css', 'clients/web/src/styles/themes/*.css'], rules: { 'color-no-hex': null, 'function-disallowed-list': null, 'selector-disallowed-list': null, 'declaration-property-value-allowed-list': null } },
   ],
 };

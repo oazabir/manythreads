@@ -1,7 +1,11 @@
 import './zod-config';
 import { createRoot } from 'react-dom/client';
 import './styles/fonts.css';
+import './styles/fonts-palettes.css';
 import './styles/tokens.css';
+import './styles/themes/graphite.css';
+import './styles/themes/linen.css';
+import './styles/themes/harbor.css';
 import './styles/app.css';
 import './styles/screens.css';
 import './styles/signin.css';
@@ -58,11 +62,16 @@ import './styles/meetings-view.css';
 import './styles/schedule.css';
 import './styles/recipes.css';
 import './styles/states.css';
+import './styles/theme-picker.css';
 import './styles/motion.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
+import { THEME_EVENT, syncThemeColour } from './shell/appearance';
 
 configureApi();
+// the phone browser bar follows the sidebar colour: once the styles are in, and again when the device switches light and dark while the choice is System
+syncThemeColour();
+window.addEventListener(THEME_EVENT, () => syncThemeColour());
 
 const root = document.getElementById('root');
 if (root) createRoot(root).render(<App />);

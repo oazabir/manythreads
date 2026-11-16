@@ -72,7 +72,7 @@
   height: 26px;
   border-radius: var(--radius-sm);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
   font-size: var(--fs-caption);
   font-weight: 600;
 }
@@ -80,6 +80,8 @@
 .rail .ws-name {
   min-width: 0;
   overflow: hidden;
+  font-family: var(--font-display);
+  letter-spacing: var(--ls-title);
   font-size: var(--fs-body);
   font-weight: 600;
   text-overflow: ellipsis;
@@ -120,7 +122,7 @@ button.team {
   height: 24px;
   border-radius: var(--radius-sm);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
   font-size: var(--fs-caption);
   font-weight: 600;
 }
@@ -163,9 +165,9 @@ button.team {
   align-items: center;
   gap: 7px;
   padding: 5px 9px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--faint);
 }
 
@@ -262,7 +264,7 @@ a.it:hover {
   padding: 1px 6px;
   border-radius: var(--radius-md);
   background: var(--human);
-  color: var(--surface);
+  color: var(--on-you);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
@@ -589,7 +591,7 @@ a.sec:hover {
   position: absolute;
   inset: 0 3px;
   background: transparent;
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
 }
 
 .panel-resizer:hover::after,
@@ -717,7 +719,7 @@ a.sec:hover {
     z-index: 30;
     width: min(300px, 84vw);
     transform: translateX(-100%);
-    transition: transform 0.18s ease;
+    transition: transform var(--dur-panel) ease;
   }
 
   /* the shadow only while the drawer is out: closed, it would bleed into the screen from beyond the left edge */

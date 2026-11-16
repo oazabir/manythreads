@@ -9,9 +9,10 @@
   gap: 8px;
   max-width: 560px;
   padding: 10px 12px;
-  border: 1px solid var(--agent-border);
+  border: var(--border-w) solid var(--todo-border);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--todo-bg);
+  box-shadow: var(--elev-1);
   font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
 }
@@ -56,13 +57,13 @@
   height: 4px;
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: var(--hover);
+  background: var(--todo-track);
 }
 
 .tdBar > span {
   display: block;
   height: 100%;
-  background: var(--ok);
+  background: var(--todo-fill);
 }
 
 .tdList {
@@ -132,7 +133,7 @@
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);
-  background: var(--agent);
+  background: var(--run-pulse);
 }
 
 .tdText {
@@ -196,9 +197,9 @@
   z-index: 2;
   margin: 0 0 6px;
   box-shadow: var(--menu-shadow);
-  border: 1px solid var(--agent-border);
+  border: var(--border-w) solid var(--todo-border);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--todo-bg);
 }
 
 .tdPin[data-tone="blocked"] {

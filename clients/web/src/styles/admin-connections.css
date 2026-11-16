@@ -124,9 +124,9 @@
 .ac-input {
   width: 100%;
   padding: 8px 10px 8px 32px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);

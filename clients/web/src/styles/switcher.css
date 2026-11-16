@@ -178,7 +178,7 @@
   border: 0;
   border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--muted);
+  color: var(--mute);
   font: inherit;
   font-size: var(--fs-caption);
   cursor: pointer;

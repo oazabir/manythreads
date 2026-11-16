@@ -546,7 +546,7 @@
 }
 
 .csv-table td input:focus {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
   background: var(--surface);
 }
@@ -643,7 +643,7 @@
   height: 40px;
   border-radius: var(--radius-sm);
   background: var(--bot-grey);
-  color: var(--surface);
+  color: var(--on-grey);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
@@ -708,16 +708,16 @@
 .code-pre {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--code-border);
   border-radius: var(--radius-sm);
-  background: var(--shell);
+  background: var(--code-bg);
   overflow: auto;
   max-height: 520px;
 }
 
 .code-pre .hljs {
   background: transparent;
-  color: var(--txt);
+  color: var(--code-ink);
   font-family: var(--mono);
   font-size: var(--fs-caption);
   line-height: 1.6;
@@ -726,7 +726,7 @@
 
 .hljs-comment,
 .hljs-quote {
-  color: var(--faint);
+  color: var(--syn-comment);
   font-style: italic;
 }
 
@@ -734,13 +734,13 @@
 .hljs-selector-tag,
 .hljs-literal,
 .hljs-doctag {
-  color: var(--agent);
+  color: var(--syn-keyword);
 }
 
 .hljs-string,
 .hljs-regexp,
 .hljs-addition {
-  color: var(--ok-ink);
+  color: var(--syn-string);
 }
 
 .hljs-number,
@@ -748,7 +748,7 @@
 .hljs-bullet,
 .hljs-attr,
 .hljs-attribute {
-  color: var(--warn-ink);
+  color: var(--syn-number);
 }
 
 .hljs-title,
@@ -756,11 +756,11 @@
 .hljs-built_in,
 .hljs-type,
 .hljs-class .hljs-title {
-  color: var(--human);
+  color: var(--syn-title);
 }
 
 .hljs-deletion {
-  color: var(--alert);
+  color: var(--alert-ink);
 }
 
 .hljs-meta,

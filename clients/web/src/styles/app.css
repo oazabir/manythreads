@@ -11,7 +11,13 @@ body {
   font-family: var(--sans);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
+  letter-spacing: var(--ls-body);
+  font-feature-settings: var(--font-features);
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--selection);
 }
 
 /* Form controls ignore the page font unless told to follow it: Inter reaches buttons, fields and menus the same way it reaches text. */
@@ -101,8 +107,10 @@ textarea {
 .ph-title {
   margin: 0;
   color: var(--ink);
+  font-family: var(--font-display);
   font-size: var(--fs-h1);
-  font-weight: var(--fw-title);
+  font-weight: var(--fw-display);
+  letter-spacing: var(--ls-title);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -138,14 +146,14 @@ textarea {
 }
 
 .btn.primary {
-  background: var(--ink);
-  color: var(--surface);
-  border-color: var(--ink);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
 }
 
 .btn.human {
   background: var(--human);
-  color: var(--surface);
+  color: var(--on-you);
   border-color: var(--human);
 }
 
@@ -168,8 +176,8 @@ textarea {
 
 .btn.primary.hover,
 .btn.primary:hover:not(:disabled) {
-  background: var(--mute);
-  border-color: var(--mute);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .chip {
@@ -235,7 +243,7 @@ textarea {
   color: var(--mute);
 }
 
-/* the two palettes side by side; each box carries its own theme's tokens */
+/* light and dark of one palette side by side; each box carries its own tokens */
 .dev-cols {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
@@ -309,6 +317,13 @@ textarea {
 .sample.sans {
   font-family: var(--sans);
   font-size: var(--fs-h1);
+}
+
+.sample.display {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-display);
+  letter-spacing: var(--ls-title);
 }
 
 .sample.mono {

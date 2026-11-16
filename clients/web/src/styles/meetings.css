@@ -35,7 +35,7 @@
 .call-face .av {
   width: 26px;
   height: 26px;
-  transition: box-shadow 0.12s;
+  transition: box-shadow var(--dur-fast);
 }
 
 /* ---- sidebar badge ---- */
@@ -55,7 +55,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--ok);
-  animation: live-pulse 2s ease-in-out infinite;
+  animation: live-pulse var(--dur-pulse) ease-in-out infinite;
 }
 
 .live-faces {
@@ -259,7 +259,7 @@
 }
 
 .call-btn:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -318,7 +318,7 @@
   padding: 0 5px;
   border-radius: var(--radius-md);
   background: var(--human);
-  color: var(--surface);
+  color: var(--on-you);
   font-size: var(--fs-tiny);
   font-weight: 600;
   line-height: 16px;
@@ -406,7 +406,7 @@
 
 .cap-history-btn:focus-visible,
 .cap-edit-btn:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -543,9 +543,9 @@
 .call-field select {
   min-width: 0;
   padding: 5px 6px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
 }
@@ -686,7 +686,7 @@
 }
 
 .call-grab:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

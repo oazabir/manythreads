@@ -28,7 +28,7 @@ owner's own deployment.
 
 The number after the underscore is the icon's number on Flaticon (`https://www.flaticon.com/free-icon/<name>_<number>`).
 
-## Fonts (Inter, JetBrains Mono)
+## Fonts (Inter, JetBrains Mono, and the faces of the Linen and Harbor themes)
 
 Served from `clients/web/public/fonts` (declared in `clients/web/src/styles/fonts.css`); the app never loads a font from a CDN.
 
@@ -36,3 +36,8 @@ Served from `clients/web/public/fonts` (declared in `clients/web/src/styles/font
 |---|---|---|
 | **Inter** (the default font of every screen), variable weight 100-900, by Rasmus Andersson (https://fonts.google.com/specimen/Inter) | `inter-<script>.woff2` for latin, latin-ext, vietnamese, cyrillic, cyrillic-ext, greek, greek-ext, and `inter-latin-italic`, `inter-latin-ext-italic` | SIL Open Font License 1.1; the text is `clients/web/public/fonts/OFL-Inter.txt`. |
 | **JetBrains Mono** (code and terminals only), latin subset | `jetbrains-mono-latin.woff2` | SIL Open Font License 1.1. |
+| **IBM Plex Sans** (Linen's text), 400, 500, 600, and **IBM Plex Mono** 400 (Linen's code), IBM; npm `@fontsource/ibm-plex-sans`, `@fontsource/ibm-plex-mono` 5.3.0 | `ibm-plex-sans-<script>-<weight>-normal.woff2`, `ibm-plex-mono-<script>-400-normal.woff2` for latin, latin-ext, cyrillic | SIL Open Font License 1.1; `OFL-ibm-plex-sans.txt`, `OFL-ibm-plex-mono.txt`. |
+| **Source Serif 4** (Linen's page and panel titles only), variable weight, Adobe; npm `@fontsource-variable/source-serif-4` 5.3.1 | `source-serif-4-<script>-wght-normal.woff2` | SIL Open Font License 1.1; `OFL-source-serif-4.txt`. |
+| **Geist** (Harbor's text) and **Geist Mono** (Harbor's code), variable weight, Vercel; npm `@fontsource-variable/geist`, `@fontsource-variable/geist-mono` 5.3.0 | `geist-<script>-wght-normal.woff2`, `geist-mono-<script>-wght-normal.woff2` | SIL Open Font License 1.1; `OFL-geist.txt`, `OFL-geist-mono.txt`. |
+
+These are copied out of the npm packages by `clients/web/scripts/copy-fonts.mjs` (which writes `src/styles/fonts-palettes.css`); the files are committed, so a build needs no network. Only the chosen theme's text face is preloaded (`public/theme-boot.js`).

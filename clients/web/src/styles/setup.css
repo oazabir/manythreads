@@ -99,9 +99,9 @@
   width: 100%;
   min-height: 36px;
   padding: 8px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-body);
@@ -113,7 +113,7 @@
 
 .su-textarea:focus-visible,
 .su-input:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -347,7 +347,7 @@
 }
 
 .su-ex:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -426,7 +426,7 @@
 }
 
 .su-option:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 

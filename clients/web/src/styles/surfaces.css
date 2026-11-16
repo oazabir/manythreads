@@ -615,6 +615,6 @@ ol.sf-list {
 .sf-table-wrap:focus-visible,
 .sf-code:focus-visible,
 .sf-diff-body:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

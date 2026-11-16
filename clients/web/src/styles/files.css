@@ -39,9 +39,9 @@
 }
 
 .btn.s.p {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--surface);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .btn.s.p:disabled {
@@ -80,7 +80,7 @@
 }
 
 .tnode:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -271,7 +271,7 @@
 .filt .chip.on {
   border-color: var(--ink);
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 .filt-gap {
@@ -319,7 +319,7 @@
 
 .fview-toggle .icon-btn.on {
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 /* ---- the selection bar ---- */
@@ -368,7 +368,7 @@
 }
 
 .frow:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -422,7 +422,7 @@
 }
 
 .fsort:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -483,7 +483,7 @@
 }
 
 .fcheck:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -500,7 +500,7 @@
   height: 28px;
   border-radius: var(--radius-sm);
   background: var(--bot-grey);
-  color: var(--surface);
+  color: var(--on-grey);
   font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
@@ -721,7 +721,7 @@
 }
 
 .fcard:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -1219,7 +1219,7 @@
 
 .seg button.on {
   background: var(--ink);
-  color: var(--surface);
+  color: var(--on-ink);
 }
 
 .diff {
@@ -1362,16 +1362,16 @@
 
 .dlg-input {
   padding: 7px 10px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-small);
 }
 
 .dlg-input:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -1400,7 +1400,7 @@
 .btn.danger {
   border-color: var(--alert);
   background: var(--alert);
-  color: var(--surface);
+  color: var(--on-alert);
 }
 
 .btn.danger:hover:not(:disabled) {

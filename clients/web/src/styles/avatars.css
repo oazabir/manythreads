@@ -95,7 +95,7 @@
 }
 
 .avp-cell:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -209,5 +209,5 @@
 
 .av-badge.bot {
   background: var(--agent-ink);
-  color: var(--surface);
+  color: var(--on-bot);
 }

@@ -428,9 +428,9 @@
 .b-add-row select {
   width: 100%;
   padding: 5px 9px;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-small);
@@ -896,7 +896,7 @@
 }
 
 .b-test-q:focus-visible {
-  outline: 2px solid var(--human);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
@@ -1057,7 +1057,7 @@
 
 .b-fld select:focus-visible,
 .b-old-act .btn:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 

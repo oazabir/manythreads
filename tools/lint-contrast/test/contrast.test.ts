@@ -3,11 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { luminance, parseHex, ratio } from '../contrast.ts';
-import { failures, judge, resolveColour, tokensFor, type AllowEntry } from '../check.ts';
+import { allFailures, failures, judge, PALETTES, resolveColour, tokensFor, type AllowEntry } from '../check.ts';
 import { pairs } from '../pairs.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const real = readFileSync(join(here, '..', '..', '..', 'clients', 'web', 'src', 'styles', 'tokens.css'), 'utf8');
+const styles = join(here, '..', '..', '..', 'clients', 'web', 'src', 'styles');
+const tokensCss = readFileSync(join(styles, 'tokens.css'), 'utf8');
+/** What the app loads: tokens.css, then each palette's generated file. */
+const real = [tokensCss, ...PALETTES.filter((p) => p !== 'classic').map((p) => readFileSync(join(styles, 'themes', `${p}.css`), 'utf8'))].join('\n');
 
 const SMALL = `
 :root { --paper: #FFFFFF; --ink: #000000; --soft: var(--ink); --faint: #777777; --shadow: rgb(0 0 0 / 5%); }
@@ -66,21 +69,65 @@ describe('failures and judge', () => {
   });
 });
 
-describe('the real tokens.css', () => {
-  it('names every token the pairs use in both themes', () => {
-    for (const theme of ['light', 'dark'] as const) {
-      const t = tokensFor(real, theme);
-      for (const p of pairs()) {
-        expect(resolveColour(t, p.fg), `${theme} --${p.fg}`).not.toBeNull();
-        expect(resolveColour(t, p.bg), `${theme} --${p.bg}`).not.toBeNull();
+describe('palettes', () => {
+  const CSS = `
+:root { --paper: #FFFFFF; --ink: #000000; --accent: var(--ink); }
+:root[data-theme="dark"] { --paper: #000000; --ink: #FFFFFF; }
+:root[data-palette="warm"][data-theme="light"] { --paper: #F0E0D0; }
+:root[data-palette="warm"][data-theme="dark"] { --paper: #201008; --accent: #FFAA00; }
+[data-palette="warm"][data-theme="dark"]:not(:root) { --paper: #FF0000; }
+`;
+  it('takes the palette of the page and not a nested scope box, and lets the more specific rule win whatever the order', () => {
+    expect(resolveColour(tokensFor(CSS, 'light', 'warm'), 'paper')).toBe('#F0E0D0');
+    expect(resolveColour(tokensFor(CSS, 'dark', 'warm'), 'paper')).toBe('#201008');
+    expect(resolveColour(tokensFor(CSS, 'dark', 'warm'), 'accent')).toBe('#FFAA00');
+    expect(resolveColour(tokensFor(CSS, 'dark', 'warm'), 'ink')).toBe('#FFFFFF');
+    expect(resolveColour(tokensFor(CSS, 'light'), 'paper')).toBe('#FFFFFF');
+    expect(resolveColour(tokensFor(CSS, 'dark'), 'accent')).toBe('#FFFFFF');
+  });
+  it('skips a pair that names the palette in `except`', () => {
+    const list = [{ fg: 'ink', bg: 'paper', min: 21, kind: 'text' as const, except: ['warm'] }];
+    expect(failures(CSS, 'light', list, 'warm')).toEqual([]);
+    expect(failures(CSS, 'light', list, 'classic')).toEqual([]);
+    expect(failures(CSS, 'light', [{ ...list[0]!, min: 22, except: ['warm'] }], 'classic')).toHaveLength(1);
+  });
+});
+
+describe('the real stylesheets', () => {
+  it('name every token the pairs use, in both modes of all four palettes', () => {
+    for (const palette of PALETTES) {
+      for (const theme of ['light', 'dark'] as const) {
+        const t = tokensFor(real, theme, palette);
+        for (const p of pairs()) {
+          expect(resolveColour(t, p.fg), `${palette}/${theme} --${p.fg}`).not.toBeNull();
+          expect(resolveColour(t, p.bg), `${palette}/${theme} --${p.bg}`).not.toBeNull();
+        }
       }
     }
   });
-  it('has no failing pair in dark', () => {
-    expect(failures(real, 'dark')).toEqual([]);
+  it('give every palette a value for every colour token classic has, so none shows through from classic', () => {
+    const colourKeys = (css: string, theme: 'light' | 'dark'): string[] => [...tokensFor(css, theme, 'classic').keys()];
+    for (const palette of PALETTES.filter((p) => p !== 'classic')) {
+      for (const theme of ['light', 'dark'] as const) {
+        const own = tokensFor(real, theme, palette);
+        const fromClassic = tokensFor(tokensCss, theme, 'classic');
+        // the tokens a palette file declares itself: everything classic declares in its two colour blocks, except the ones built from other tokens in the shared block
+        const missing = colourKeys(tokensCss, theme).filter((k) => /^--(paper|surface|shell|ink|txt|mute|faint|rule|human|agent|ok|warn|alert|av-\d+-(bg|ink)|plate|hover|skeleton|toggle-off|dot-off|bot-grey|zip|presence-ring|msg-hover|nav-on|hairline|table-head|scrim-alpha|card-alpha|menu-alpha|savebar-alpha|shadow-color)/.test(k) && own.get(k) === fromClassic.get(k));
+        // a palette may repeat a classic value on purpose (white `plate`), so only the keys it never mentions are reported
+        const block = readFileSync(join(styles, 'themes', `${palette}.css`), 'utf8');
+        expect(missing.filter((k) => !block.includes(`${k}:`)), `${palette}/${theme}`).toEqual([]);
+      }
+    }
   });
-  it('has no failing pair in light except the ones listed in allow.json', () => {
+  it('has no failing pair in any palette in dark', () => {
+    expect(PALETTES.flatMap((p) => failures(real, 'dark', pairs(), p))).toEqual([]);
+  });
+  it('has no failing pair in any palette in light except the ones listed in allow.json', () => {
     const allow = JSON.parse(readFileSync(join(here, '..', 'allow.json'), 'utf8')) as AllowEntry[];
-    expect(judge(failures(real, 'light'), allow)).toEqual({ failing: [], unused: [] });
+    expect(judge(allFailures(real), allow)).toEqual({ failing: [], unused: [] });
+  });
+  it('checks the six palettes of the three themes with every pair of the design (138 or more each)', () => {
+    expect(pairs().length).toBeGreaterThanOrEqual(130);
+    expect(PALETTES.filter((p) => p !== 'classic')).toEqual(['graphite', 'linen', 'harbor']);
   });
 });
