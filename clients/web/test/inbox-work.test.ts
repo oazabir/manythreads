@@ -139,4 +139,16 @@ describe('what is going on in the listed threads', () => {
     await vi.advanceTimersByTimeAsync(WORK_DEBOUNCE_MS * 3);
     expect(deps.todos).toHaveBeenCalledTimes(1);
   });
+
+  it('knows which roots it lists (a push about another thread is not its business) and whether a run is going in one', async () => {
+    const { work } = make({ runs: [run(2)] });
+    work.setRoots([id(1), id(2)]);
+    await settle();
+    expect(work.has(id(1))).toBe(true);
+    expect(work.has(id(9))).toBe(false);
+    expect(work.has(null)).toBe(false);
+    expect(work.anyRunning()).toBe(true);
+    work.setRoots([id(1)]);
+    expect(work.anyRunning()).toBe(false);
+  });
 });

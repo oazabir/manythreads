@@ -16,6 +16,7 @@ vi.mock('../src/screens/approvals/api', () => ({
 }));
 const { ApprovalCard } = await import('../src/screens/approvals/ApprovalCard');
 const { useApprovalsChanged } = await import('../src/screens/approvals/live');
+const { channelTasksStore } = await import('../src/taskview/store');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -110,11 +111,19 @@ describe('a cut-short call', () => {
   });
 
   it('does not read anything for a person who cannot decide, and says the preview is cut short', async () => {
-    await show(approval({ argsTruncated: true, canDecide: false, blockReason: 'not_approver' }));
+    await show(approval({ source: 'grant', tool: 'pages.write', summary: 'pages.write · pages/a.md', argsPreview: { path: 'pages/a.md' }, argsTruncated: true, canDecide: false, blockReason: 'not_approver' }));
     expect(fetchApprovalArgs).not.toHaveBeenCalled();
     expect(byId('approval-open-full')).toBeNull();
     expect(byId('approval-approve')).toBeNull();
     expect(byId('approval-truncated')?.textContent).toContain('cut short');
+  });
+
+  it('gives anyone who reads a bot ask its whole text (the lists carry the first 300 characters of the details), the people who cannot decide included', async () => {
+    fetchApprovalArgs.mockResolvedValue({ args: { question: 'Deploy?', details: 'the whole details\nline two' } });
+    await show(approval({ argsPreview: { question: 'Deploy?', details: 'the whole…' }, argsTruncated: true, canDecide: false, blockReason: 'not_approver' }), 'detail');
+    expect(fetchApprovalArgs).toHaveBeenCalledTimes(1);
+    expect(byId('approval-details')?.textContent).toBe('the whole details\nline two');
+    expect(byId('approval-approve')).toBeNull();
   });
 
   it('draws a bot ask whole: the long question as the headline and the context kept line by line', async () => {
@@ -142,6 +151,7 @@ describe('answering', () => {
 
   it('says "Already answered" for a second answer (409), without an error, and tells every list to read again', async () => {
     const changed = vi.fn();
+    const refresh = vi.spyOn(channelTasksStore, 'refreshAllQuestions').mockImplementation(() => undefined);
     function Probe() {
       useApprovalsChanged(changed);
       return null;
@@ -153,6 +163,8 @@ describe('answering', () => {
     expect(byId('approval-error')).toBeNull();
     expect(byId('approval-approve')).toBeNull();
     expect(changed).toHaveBeenCalled();
+    // the channel's own list of questions reads again too
+    expect(refresh).toHaveBeenCalled();
   });
 
   it('shows a refusal (403) as an error and keeps the buttons', async () => {

@@ -18,7 +18,7 @@ export function useTaskView(rootId: string): TaskViewState {
 }
 
 /** The page's one live region: the line to speak when questions wait in this channel. */
-export function useTaskAnnouncement(channelId: string | null): string {
+export function useTaskAnnouncement(channelId: string | null, exceptRoot: string | null = null): string {
   const subscribe = useCallback((onChange: () => void) => (channelId === null ? () => undefined : channelTasksStore.subscribeChannel(channelId, onChange)), [channelId]);
-  return useSyncExternalStore(subscribe, () => (channelId === null ? '' : channelTasksStore.announcementOf(channelId)), () => '');
+  return useSyncExternalStore(subscribe, () => (channelId === null ? '' : channelTasksStore.announcementOf(channelId, exceptRoot)), () => '');
 }

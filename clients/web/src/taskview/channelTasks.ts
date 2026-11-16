@@ -20,6 +20,8 @@ import {
   type ThreadTodo,
 } from '@manythreads/shared';
 import type { Push, RealtimeClient } from '../realtime/socket';
+import { isApiError } from '../api/client';
+import { runEnded } from '../channels/run-card/words';
 
 /*
  * The task view of a channel (P29, docs/plans/channel-task-view.md): for each thread root of the page, its run head, the last steps of that run, its to-do list and the
@@ -66,6 +68,12 @@ export interface ChannelTasksDeps {
 export const READ_DEBOUNCE_MS = 300;
 /** The steps of one run are read at most this often. */
 export const STEPS_EVERY_MS = 3000;
+/** A lease call that has not answered by now is given up on, so the chain of lease calls never stalls. */
+export const LEASE_TIMEOUT_MS = 10_000;
+/** A channel that holds no lease (the server's limit of leases per person was reached) reads its heads this often instead of waiting for the pushes. */
+export const SLOW_POLL_MS = 30_000;
+/** A run that was asked about and is not among the channel's going runs is not asked about again for this long (a run beyond the head cap would read the channel on every push). */
+const IGNORE_UNKNOWN_MS = 60_000;
 /** Lines behind the newest one that are read for the last steps (enough for three or four rows). */
 const LINES_BEHIND = 40;
 
@@ -87,7 +95,15 @@ interface Entry {
   stepsSeq: Map<string, number>;
   stepsTimer: Map<string, ReturnType<typeof setTimeout>>;
   paused: boolean;
+  /** Runs a push named that the page did not know, waiting for the next read to say whether they are going. */
+  asked: Set<string>;
+  /** Runs the last read did not list among the going ones: their pushes are ignored for a while. */
+  ignored: Map<string, number>;
+  /** The slow poll of a channel without a lease. */
+  poll: ReturnType<typeof setInterval> | null;
 }
+
+let warnedNoLease = false;
 
 const sameQuestions = (a: readonly Approval[], b: readonly Approval[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -137,10 +153,22 @@ export class ChannelTasksStore {
     this.later(channelId, 'questions');
   }
 
+  /** A second answer lost the race (409): every open channel reads its questions again now. */
+  refreshAllQuestions(): void {
+    for (const channelId of this.entries.keys()) this.later(channelId, 'questions');
+  }
+
   private readonly said = new Map<string, string>();
 
-  /** The channel's one spoken line for a screen reader ("1 question is waiting for an answer"); empty when nothing waits. The cards themselves are not live regions. */
-  announcementOf = (channelId: string): string => this.said.get(channelId) ?? '';
+  /** The channel's one spoken line for a screen reader ("1 question is waiting for an answer"); empty when nothing waits. The cards themselves are not live regions. `said` holds who waits, to tell when it changes. */
+  announcementOf = (channelId: string, exceptRoot: string | null = null): string => {
+    const e = this.entries.get(channelId);
+    if (!e) return '';
+    let waiting = 0;
+    // a thread open in the side panel speaks for itself (its own strip and live region): it is not counted again here
+    for (const [root, v] of e.views) if (root !== exceptRoot) waiting += v.questions.length;
+    return waiting === 0 ? '' : waiting === 1 ? '1 question is waiting for an answer' : `${waiting} questions are waiting for an answer`;
+  };
 
   subscribeChannel = (channelId: string, listener: () => void): (() => void) => this.subscribe(`channel:${channelId}`, listener);
 
@@ -169,6 +197,9 @@ export class ChannelTasksStore {
         stepsSeq: new Map(),
         stepsTimer: new Map(),
         paused: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+        asked: new Set(),
+        ignored: new Map(),
+        poll: null,
       };
       this.entries.set(channelId, e);
       this.renew(channelId);
@@ -192,6 +223,7 @@ export class ChannelTasksStore {
 
   private close(channelId: string, e: Entry): void {
     if (e.timer) clearInterval(e.timer);
+    if (e.poll) clearInterval(e.poll);
     for (const t of Object.values(e.debounce)) if (t) clearTimeout(t);
     for (const t of e.stepsTimer.values()) clearTimeout(t);
     this.entries.delete(channelId);
@@ -206,12 +238,50 @@ export class ChannelTasksStore {
   private renew(channelId: string): void {
     const e = this.entries.get(channelId);
     if (!e || e.paused) return;
-    this.lease(() => (this.entries.has(channelId) ? this.deps.watch(channelId, this.leaseId) : Promise.resolve()));
+    this.lease(async () => {
+      if (this.entries.get(channelId) !== e) return;
+      try {
+        await this.deps.watch(channelId, this.leaseId);
+        if (e.poll) {
+          clearInterval(e.poll);
+          e.poll = null;
+        }
+      } catch (err) {
+        // the server holds a few leases per person (8): the ninth is refused. Without a lease there are no `run.activity` pushes, so the channel's heads are read on a slow clock instead
+        if (isApiError(err) && err.status === 429) this.slowPoll(channelId, e);
+      }
+    });
   }
 
-  /** One lease call after the other (a close never overtakes the open before it); a failure is the next renewal's to mend. */
+  private slowPoll(channelId: string, e: Entry): void {
+    if (e.poll) return;
+    if (!warnedNoLease) {
+      warnedNoLease = true;
+      console.warn('The channel task view has no live lease (too many channels watched); it reads every 30 seconds instead.');
+    }
+    e.poll = setInterval(() => {
+      if (e.paused || this.entries.get(channelId) !== e) return;
+      this.resyncChannel(channelId);
+    }, SLOW_POLL_MS);
+  }
+
+  /** One lease call after the other (a close never overtakes the open before it); each is given up on after LEASE_TIMEOUT_MS, a failure is the next renewal's to mend. */
   private lease(call: () => Promise<unknown>): void {
-    this.chain = this.chain.then(call).catch(() => undefined);
+    const timed = (): Promise<unknown> =>
+      new Promise((resolve) => {
+        const t = setTimeout(resolve, LEASE_TIMEOUT_MS);
+        call().then(
+          () => {
+            clearTimeout(t);
+            resolve(undefined);
+          },
+          () => {
+            clearTimeout(t);
+            resolve(undefined);
+          },
+        );
+      });
+    this.chain = this.chain.then(timed);
   }
 
   // ---- the batched reads -------------------------------------------------------------------------------------------------------
@@ -234,15 +304,30 @@ export class ChannelTasksStore {
       const recent = new Map<string, RunHead>();
       for (const r of res.runs) {
         const head = r.head ?? e.going.get(r.runId);
-        if (head) going.set(r.runId, head);
+        if (!head) continue;
+        // a read that was answered before a newer push is not allowed to take a run back: the higher `seq` wins
+        const held = e.going.get(r.runId);
+        going.set(r.runId, held !== undefined && held.seq > head.seq ? held : head);
       }
       for (const h of res.recent ?? []) recent.set(h.runId, h);
       e.going = going;
       e.recent = recent;
       e.loadedRuns = true;
+      // what a push named and this read did not list among the going runs is left alone for a while (a run beyond the cap would read the channel again on every push)
+      for (const id of e.asked) if (!going.has(id)) e.ignored.set(id, this.now());
+      e.asked.clear();
+      // nothing is kept for a run that is no longer shown
+      for (const id of [...e.lines.keys()]) if (!going.has(id) && !recent.has(id)) e.lines.delete(id);
+      for (const id of [...e.stepsAt.keys()]) if (!going.has(id) && !recent.has(id)) e.stepsAt.delete(id);
+      for (const id of [...e.stepsSeq.keys()]) if (!going.has(id) && !recent.has(id)) e.stepsSeq.delete(id);
+      for (const [id, t] of [...e.stepsTimer]) {
+        if (going.has(id) || recent.has(id)) continue;
+        clearTimeout(t);
+        e.stepsTimer.delete(id);
+      }
       this.rebuild(channelId, e);
+      // the last steps are read for the runs that are going, never for the ended ones (their lines are not drawn)
       for (const h of going.values()) this.wantSteps(channelId, e, h);
-      for (const h of recent.values()) if (!e.lines.has(h.runId)) this.wantSteps(channelId, e, h);
     } catch {
       // what is held stays; the next push or reconnect reads again
     } finally {
@@ -377,11 +462,10 @@ export class ChannelTasksStore {
       this.emit(root);
     }
     e.views = next;
-    let waiting = 0;
-    for (const v of next.values()) waiting += v.questions.length;
-    const line = waiting === 0 ? '' : waiting === 1 ? '1 question is waiting for an answer' : `${waiting} questions are waiting for an answer`;
-    if ((this.said.get(channelId) ?? '') !== line) {
-      this.said.set(channelId, line);
+    // the channel's live region listens to who waits (it leaves out the thread open in the side panel), so it is told whenever that changes
+    const key = [...next].filter(([, v]) => v.questions.length > 0).map(([r, v]) => `${r}:${v.questions.length}`).sort().join(',');
+    if ((this.said.get(channelId) ?? '') !== key) {
+      this.said.set(channelId, key);
       this.emit(`channel:${channelId}`);
     }
     for (const root of [...this.channelOf.keys()]) if (this.channelOf.get(root) === channelId && !next.has(root)) this.channelOf.delete(root);
@@ -462,14 +546,26 @@ export class ChannelTasksStore {
     if (!e) return;
     const head = e.going.get(p.runId);
     if (head === undefined) {
-      // a run this page does not know (it began before the page, or its start was missed): one debounced read of the channel's runs, never a read per thread
+      // a run this page does not know (it began before the page, or its start was missed): one debounced read of the channel's runs, never a read per thread; one the last read did
+      // not list (beyond the cap) is left alone for a while
+      const at = e.ignored.get(p.runId);
+      if (at !== undefined && this.now() - at < IGNORE_UNKNOWN_MS) return;
+      e.ignored.delete(p.runId);
+      e.asked.add(p.runId);
       this.later(p.channelId, 'runs');
       return;
     }
     if (head.seq === p.seq && head.state === p.state && head.now === p.now) return;
+    // a late line of an older read never takes the head back
+    if (p.seq < head.seq) return;
     const next: RunHead = { ...head, state: p.state, now: p.now, counts: p.counts, plan: p.plan, planVersion: p.planVersion, helpers: p.helpers, seq: p.seq, stoppedBy: p.stoppedBy };
     e.going.set(p.runId, next);
     this.rebuild(p.channelId, e);
+    // the run has ended (this push came after `run.ended`, or without it): the channel's runs are read again to move it from the going to the recent
+    if (runEnded(p.state)) {
+      this.later(p.channelId, 'runs');
+      return;
+    }
     this.wantSteps(p.channelId, e, next);
   }
 

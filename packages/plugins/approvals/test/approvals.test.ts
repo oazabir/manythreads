@@ -680,6 +680,41 @@ describe('a long call', () => {
   });
 });
 
+describe('a bot ask in the lists (review round)', () => {
+  it('carries the first 300 characters of its details in every list, and the whole text by the args route, for anyone who can read it', async () => {
+    const run = await openRun(scoped, nadia);
+    const details = `${'line of context for the person who decides\n'.repeat(40)}the very end`;
+    const filed = await runs.asBot(run, (tx) =>
+      provider.request(tx, {
+        runId: run.runId,
+        source: 'agent',
+        tool: 'approvals.ask',
+        summary: 'Is this fine?',
+        argsPreview: { question: 'Is this fine?', details },
+        resume: { kind: 'handoff', payload: { kind: 'ask', runId: run.runId } },
+      }),
+    );
+    const inList = (await list(rafi)).items.find((a) => a.id === filed.approvalId)!;
+    expect((inList.argsPreview['details'] as string).length).toBeLessThanOrEqual(300);
+    expect(inList.argsPreview['question']).toBe('Is this fine?');
+    expect(inList.argsTruncated).toBe(true);
+    // the whole text: by the args route, for a person who may decide and for one who may only read (the stored text of an ask is not a secret call)
+    for (const who of [rafi, priya, nadia]) {
+      const full = await w.call(who, 'GET', `/api/teams/engineering/approvals/${filed.approvalId}/args`);
+      expect(full.status, `${who.key}: ${JSON.stringify(full.body)}`).toBe(200);
+      expect(GetApprovalArgsResponse.parse(full.body).args?.['details']).toBe(details);
+    }
+    // someone off the team reads nothing
+    expect([403, 404]).toContain((await w.call(sameera, 'GET', `/api/teams/engineering/approvals/${filed.approvalId}/args`)).status);
+    // a short ask is not flagged
+    const run2 = await openRun(scoped, nadia);
+    const short = await runs.asBot(run2, (tx) =>
+      provider.request(tx, { runId: run2.runId, source: 'agent', tool: 'approvals.ask', summary: 'Short one?', argsPreview: { question: 'Short one?', details: 'one line' }, resume: { kind: 'handoff', payload: { kind: 'ask', runId: run2.runId } } }),
+    );
+    expect((await list(rafi)).items.find((a) => a.id === short.approvalId)?.argsTruncated).toBe(false);
+  });
+});
+
 describe('time', () => {
   const enqueue = (queue: string, payload: object, attempts = 0): Promise<string> =>
     w.system(async (tx) => {

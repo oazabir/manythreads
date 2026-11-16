@@ -25,7 +25,7 @@ export interface InboxWorkDeps {
 
 /** A burst of pushes makes one read, this long after the first. */
 export const WORK_DEBOUNCE_MS = 400;
-/** While the list is visible the three reads are repeated this often (the run's line moves without a push for the person). */
+/** While a run is going in a listed row and the list is visible, the three reads are repeated this often (the run's line moves without a push for the person). */
 export const SLOW_POLL_MS = 20_000;
 
 const chunks = <T>(list: readonly T[], size: number): T[][] => {
@@ -41,6 +41,7 @@ const sameRun = (a: ActiveChannelRun | null, b: ActiveChannelRun | null): boolea
 
 export class InboxWork {
   private roots: string[] = [];
+  private rootSet = new Set<string>();
   private work = new Map<string, RowWork>();
   private readonly listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -62,11 +63,21 @@ export class InboxWork {
   /** The work of one root; the same object until it changes, the shared `NO_WORK` when there is none. */
   of = (root: string): RowWork => this.work.get(root) ?? NO_WORK;
 
+  /** Is this root one the page lists (a push about another thread costs nothing)? */
+  has = (root: string | null | undefined): boolean => root !== null && root !== undefined && this.rootSet.has(root);
+
+  /** Is a run going in any listed row (only then does the page read on a clock: a run's line moves without a push for the person)? */
+  anyRunning(): boolean {
+    for (const w of this.work.values()) if (w.run !== null) return true;
+    return false;
+  }
+
   /** The roots the page lists now. A change reads at once (new rows must not wait for the next turn); no change reads nothing. */
   setRoots(next: readonly string[]): void {
     const same = next.length === this.roots.length && next.every((r, i) => r === this.roots[i]);
     if (same) return;
     this.roots = [...next];
+    this.rootSet = new Set(next);
     this.work = new Map([...this.work].filter(([r]) => this.roots.includes(r)));
     if (this.roots.length > 0) void this.read();
   }

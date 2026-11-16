@@ -4,7 +4,7 @@ import { useDecision } from './useDecision';
 import { AgePill } from './AgePill';
 import { AskerAvatar } from './Asker';
 import { riskClass, riskOf } from './risk';
-import { approvalAction, approvalSentence, askText, ASK_TOOL, COMMAND_TOOL } from './sentence';
+import { approvalAction, approvalSentence, askText, ASK_TOOL, COMMAND_TOOL, oneLine, ownsText } from './sentence';
 import { ShareApprovalPreview } from './ShareApprovalPreview';
 import { isShareApproval, shareKind, shareOutcomeLine } from './shareApproval';
 import { callOverdue } from './state';
@@ -91,6 +91,9 @@ export function runQuestion(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview'
   return `May it ${approvalAction(a)}?`;
 }
 
+/** The run card's question as one short line, for labels and live regions: a bot's own ask reads from its summary, not from the whole stored question. */
+export const runLine = (a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source'>): string => (a.tool === ASK_TOOL ? oneLine(a.summary) || runQuestion(a) : runQuestion(a));
+
 /**
  * What a cut-short call says about itself. The people who may decide get the whole call at once (`useDecision` opens it on its own; the card draws it in place of the preview),
  * so here is only the wait, a failure with Retry, or, when the server holds no more than the preview, one honest line. A person who may not decide cannot open it and is told
@@ -98,7 +101,7 @@ export function runQuestion(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview'
  */
 export function FullCall({ approval, full, opening, openFull, fullError }: { approval: Approval; full: Record<string, unknown> | null | undefined; opening: boolean; openFull: () => Promise<void>; fullError?: string | null }) {
   if (!approval.argsTruncated) return null;
-  const mayOpen = approval.canDecide && approval.status === 'pending';
+  const mayOpen = (approval.canDecide && approval.status === 'pending') || ownsText(approval);
   if (full !== undefined) {
     return full === null ? (
       <p className="apr-blocked" data-testid="approval-truncated">This call was longer than the platform keeps; the end of it is not stored.</p>
@@ -160,7 +163,7 @@ export function ApprovalCard({
   if (variant === 'run') {
     // inside a run card: the question, what it would do, and the answer; who and when are in the card's own header
     return (
-      <article className="apr-card apr-card-run" data-testid="approval-card" data-approval={approval.id} data-status={approval.status} aria-label={`Question: ${runQuestion(approval)}`}>
+      <article className="apr-card apr-card-run" data-testid="approval-card" data-approval={approval.id} data-status={approval.status} aria-label={`Question: ${runLine(approval)}`}>
         <p className="apr-run-q" data-testid="approval-sentence" dir="auto">{runQuestion(approval)}</p>
         {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} terse full={full} /> : <Preview preview={shown as Approval['argsPreview']} />}
         <FullCall approval={approval} full={full} opening={opening} openFull={openFull} fullError={fullError} />

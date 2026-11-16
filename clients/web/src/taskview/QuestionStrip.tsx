@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { Approval } from '@manythreads/shared';
-import { AgentPreview, AnsweredLine, FullCall, Preview, answerWords, approversLabel, runQuestion } from '../screens/approvals/ApprovalCard';
+import { AgentPreview, AnsweredLine, FullCall, Preview, answerWords, approversLabel, runLine, runQuestion } from '../screens/approvals/ApprovalCard';
 import { fetchThreadApprovals } from '../screens/approvals/api';
 import { useDecision } from '../screens/approvals/useDecision';
 import { ShareApprovalPreview } from '../screens/approvals/ShareApprovalPreview';
 import { isShareApproval } from '../screens/approvals/shareApproval';
-import { approvalSentence } from '../screens/approvals/sentence';
+import { approvalLine, approvalSentence } from '../screens/approvals/sentence';
 
 /** The sentence the strip asks: a bot's own question or command in the run-card words, a platform approval in the inbox's. */
 export const stripQuestion = (a: Approval): string => (a.source === 'agent' ? runQuestion(a) : approvalSentence(a));
+
+/** The same question as one short line, for an aria-label or a live region (never the whole 4,000-character ask). */
+export const stripLine = (a: Approval): string => (a.source === 'agent' ? runLine(a) : approvalLine(a));
 
 /** "Already answered by Nadia": one read of the thread's questions, only after a second answer lost the race. Falls back to the plain line. */
 function AnsweredBy({ rootId, approvalId }: { rootId: string; approvalId: string }) {
@@ -38,7 +41,7 @@ function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug
   const words = answerWords(approval);
   const agent = approval.source === 'agent';
   return (
-    <article className="tvStrip" data-testid="tv-question" data-approval={approval.id} aria-label={`Needs you: ${stripQuestion(approval)}`}>
+    <article className="tvStrip" data-testid="tv-question" data-approval={approval.id} aria-label={`Needs you: ${stripLine(approval)}`}>
       <div className="tvStripMain">
         <span className="tvNeeds">Needs you</span>
         <span className="tvAsk" dir="auto" data-testid="tv-question-text">{stripQuestion(approval)}</span>
@@ -69,7 +72,7 @@ function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug
 /** The questions waiting under one root: the oldest first, with "N more" for the rest (two or three at once is rare, and each is answered in place). */
 export function QuestionStrip({ questions, slug, rootId, onDecided, limit = 1 }: { questions: readonly Approval[]; slug: string; rootId: string; onDecided: () => void; limit?: number }) {
   const [all, setAll] = useState(false);
-  if (questions.length === 0) return null;
+  if (questions.length === 0 || slug === '') return null;
   const shown = all ? questions : questions.slice(0, limit);
   const rest = questions.length - shown.length;
   return (

@@ -36,10 +36,10 @@ const people = { botAvatar: () => undefined, byActor: () => undefined, botName: 
 let host: HTMLDivElement;
 let root: Root;
 const reload = vi.fn();
-type P = { runs?: RunHead[]; todo?: ThreadTodo | null; approvals?: Approval[]; railOpen?: boolean };
+type P = { runs?: RunHead[]; todo?: ThreadTodo | null; approvals?: Approval[]; railOpen?: boolean; slug?: string | null };
 const draw = async (p: P): Promise<void> => {
   await act(async () => {
-    root.render(createElement(MemoryRouter, null, createElement(ThreadDock, { rootId: ROOT, slug: 'engineering', people, runs: p.runs ?? [], todo: p.todo ?? null, approvals: p.approvals ?? [], railOpen: p.railOpen ?? false, reloadApprovals: reload })));
+    root.render(createElement(MemoryRouter, null, createElement(ThreadDock, { rootId: ROOT, slug: p.slug === undefined ? 'engineering' : p.slug, people, runs: p.runs ?? [], todo: p.todo ?? null, approvals: p.approvals ?? [], railOpen: p.railOpen ?? false, reloadApprovals: reload })));
   });
 };
 const q = (sel: string) => host.querySelector(sel);
@@ -156,5 +156,22 @@ describe('folding', () => {
 
   it('the folded line for a to-do alone', () => {
     expect(foldedLine(null, todo(2))).toBe('To do · 2 of 4');
+  });
+});
+
+describe('review round', () => {
+  it('draws no question while the team is not known (an empty slug), as the thread\'s cards did', async () => {
+    await draw({ approvals: [ask('q1', '2026-11-16T10:00:00.000Z')], slug: '' });
+    expect(q('[data-testid="thread-dock"]')).toBeNull();
+    expect(q('[data-testid="tv-question"]')).toBeNull();
+    expect(q('[data-testid="dock-said"]')).toBeNull();
+  });
+
+  it('speaks a long ask as its one short line, in the live region and in the label', async () => {
+    const long = `Can the owner resolve this? ${'It is needed for every release. '.repeat(100)}`;
+    const a = { ...ask('q1', '2026-11-16T10:00:00.000Z', `${long.slice(0, 299)}…`), argsPreview: { question: long } } as Approval;
+    await draw({ approvals: [a] });
+    expect((q('[data-testid="dock-said"]')?.textContent ?? '').length).toBeLessThan(340);
+    expect((q('[data-testid="tv-question"]')?.getAttribute('aria-label') ?? '').length).toBeLessThan(340);
   });
 });

@@ -3,6 +3,8 @@ import type { Approval } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { decideApproval, fetchApprovalArgs } from './api';
 import { announceApprovalsChanged } from './live';
+import { ownsText } from './sentence';
+import { channelTasksStore } from '../../taskview/store';
 
 /*
  * Answering one approval, wherever its card is drawn (the inbox, a thread, a run card, the question strip under a thread's root in the channel). One copy of the rules:
@@ -56,7 +58,8 @@ export function useDecision(approval: Approval, slug: string, onDecided?: (appro
 
   // the people who may decide get the whole call without asking: one read when the card appears (not a button)
   const asked = useRef<string | null>(null);
-  const wants = approval.argsTruncated && approval.canDecide && approval.status === 'pending';
+  // anyone who reads a bot's own ask gets its whole text (the lists carry the first 300 characters of its details); other calls are opened only by those who may decide them
+  const wants = approval.argsTruncated && ((approval.canDecide && approval.status === 'pending') || ownsText(approval));
   useEffect(() => {
     if (!wants || asked.current === approval.id) return;
     asked.current = approval.id;
@@ -77,6 +80,8 @@ export function useDecision(approval: Approval, slug: string, onDecided?: (appro
         // the first answer won: show the settled card (every open list reads again) instead of an error
         setAnswered(true);
         announceApprovalsChanged();
+        // the channel's own list of questions reads again too (it is its own store, kept by its pushes)
+        channelTasksStore.refreshAllQuestions();
       } else setError(isApiError(e) ? e.message : 'Could not record the decision.');
     } finally {
       setBusy(null);

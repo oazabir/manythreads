@@ -82,3 +82,36 @@ export function approvalSentence(a: Pick<Approval, 'tool' | 'summary' | 'argsPre
   if (asker === bot || asker.trim() === '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} wants to ${action}`;
   return `${asker} asked ${bot} to ${action}`;
 }
+
+const LINE_MAX = 300;
+export const oneLine = (text: string): string => {
+  const line = text.trim().replace(/\s+/g, ' ');
+  return line.length > LINE_MAX ? `${line.slice(0, LINE_MAX - 1)}…` : line;
+};
+
+/**
+ * The sentence for a list row, an aria-label or a live region: a bot's own question reads from its `summary` (one clipped line, at most 300), never from the whole stored question
+ * (up to 4,000 characters, line breaks and all). The cards draw the whole text in their bodies.
+ */
+export function approvalLine(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source' | 'botName' | 'requesterName'>): string {
+  if (a.tool === ASK_TOOL && !isShareApproval(a)) {
+    const bot = a.botName ?? 'a bot';
+    const q = oneLine(typeof a.summary === 'string' ? a.summary : '');
+    if (q !== '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} asks: ${q}`;
+  }
+  return oneLine(approvalSentence(a));
+}
+
+/**
+ * A bot's own ask or command that carries more than its one line (details, a command, or a cut-short preview) is read in the card before it is answered: the list shows Open, never a
+ * one-click Approve. The one rule for the inbox row and anything else that offers a quick answer from a list.
+ */
+export function needsOpen(a: Pick<Approval, 'source' | 'argsTruncated' | 'argsPreview'>): boolean {
+  if (a.argsTruncated) return true;
+  if (a.source !== 'agent') return false;
+  const p = a.argsPreview as Record<string, unknown>;
+  return ['details', 'command'].some((k) => typeof p[k] === 'string' && (p[k] as string).trim() !== '');
+}
+
+/** A bot's own ask or command keeps its whole text in the card; the list responses carry the first 300 characters of its details and say so (`argsTruncated`). Anyone who reads it may open the rest. */
+export const ownsText = (a: Pick<Approval, 'tool'>): boolean => a.tool === ASK_TOOL || a.tool === COMMAND_TOOL;

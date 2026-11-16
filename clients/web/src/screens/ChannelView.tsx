@@ -92,7 +92,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const tl = useTimeline(channelKey(channelId));
   // the to-do cards, the run cards and the questions under thread roots (P29): one lease and three reads for the whole channel, kept live by the pushes
   useTrackChannelTasks(channelId);
-  const taskSaid = useTaskAnnouncement(channelId);
+  const topEntry = panel.top();
+  const taskSaid = useTaskAnnouncement(channelId, topEntry?.type === 'thread' ? topEntry.id : null);
   // The orchestrator makes the board while the channel may already be open: until there is one, look again whenever the channel moves.
   const reloadBoards = boards.reload;
   const waitingForBoard = boards.status === 'ok' && botBoard === undefined && !dm;

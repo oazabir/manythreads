@@ -1,6 +1,7 @@
 import type { ActiveChannelRunsResponse, Approval, BotId, ChannelId, MessageId, RunActivityResponse, RunHead, RunId, ThreadTodo } from '@manythreads/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChannelTasksStore, EMPTY_TASK_VIEW, READ_DEBOUNCE_MS, STEPS_EVERY_MS, type ChannelTasksDeps } from '../src/taskview/channelTasks';
+import { ApiError } from '../src/api/client';
+import { ChannelTasksStore, EMPTY_TASK_VIEW, LEASE_TIMEOUT_MS, READ_DEBOUNCE_MS, SLOW_POLL_MS, STEPS_EVERY_MS, type ChannelTasksDeps } from '../src/taskview/channelTasks';
 
 // The data layer of the task view under a channel's roots (P29-04): one lease for the channel, three batched reads, pushes that move what is held, a debounced read for what is
 // unknown, the last steps read at most once per three seconds, and a shared empty state for a root with nothing.
@@ -224,5 +225,108 @@ describe('leaving', () => {
     off();
     expect(store.stateOf(ROOT)).toBe(EMPTY_TASK_VIEW);
     store.handlePush(activityPush() as never);
+  });
+});
+
+describe('the review round', () => {
+  const ended = (id: string, root: MessageId): RunHead => head({ runId: id as RunId, threadRootId: root, state: 'done', endedAt: '2026-11-16T10:05:00.000Z' });
+
+  it('opening a channel with ended runs reads no run activity for them (only a going run has its last steps read)', async () => {
+    const recent = Array.from({ length: 30 }, (_, i) => ended(`00000000-0000-7000-8000-0000000b${String(i).padStart(4, '0')}`, ROOT2));
+    const { store, deps } = setup({ runs: { runs: [], recent } as unknown as ActiveChannelRunsResponse });
+    store.track(CH);
+    await settle();
+    expect(deps.activity).not.toHaveBeenCalled();
+    expect(store.stateOf(ROOT2).ended).not.toBeNull();
+  });
+
+  it('a run beyond the head cap (listed neither as going nor recent) is asked about once, then left alone for a minute, however many pushes', async () => {
+    const { store, deps } = setup({ runs: { runs: [] } as ActiveChannelRunsResponse });
+    store.track(CH);
+    await settle();
+    store.handlePush(activityPush({ runId: RUN2, threadRootId: ROOT2, seq: 1 }) as never);
+    await vi.advanceTimersByTimeAsync(READ_DEBOUNCE_MS + 10);
+    expect(deps.activeRuns).toHaveBeenCalledTimes(2);
+    for (let i = 2; i < 12; i += 1) {
+      store.handlePush(activityPush({ runId: RUN2, threadRootId: ROOT2, seq: i }) as never);
+      await vi.advanceTimersByTimeAsync(READ_DEBOUNCE_MS + 10);
+    }
+    expect(deps.activeRuns).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(61_000);
+    store.handlePush(activityPush({ runId: RUN2, threadRootId: ROOT2, seq: 20 }) as never);
+    await vi.advanceTimersByTimeAsync(READ_DEBOUNCE_MS + 10);
+    expect(deps.activeRuns).toHaveBeenCalledTimes(3);
+  });
+
+  it('a late run.activity that says the run ended on a going head reads the channel\'s runs again', async () => {
+    const { store, deps } = setup();
+    store.track(CH);
+    await settle();
+    store.handlePush(activityPush({ state: 'done', seq: 9 }) as never);
+    await vi.advanceTimersByTimeAsync(READ_DEBOUNCE_MS + 10);
+    expect(deps.activeRuns).toHaveBeenCalledTimes(2);
+  });
+
+  it('a read answered after a newer push does not take the run back: the higher seq wins', async () => {
+    const { store, state } = setup();
+    store.track(CH);
+    await settle();
+    store.handlePush(activityPush({ seq: 8, now: { kind: 'execute', title: 'Newer step', paths: [], helper: null, count: 1 } }) as never);
+    expect(store.stateOf(ROOT).run?.seq).toBe(8);
+    state.runs = { runs: [{ runId: RUN, channelId: CH, threadRootId: ROOT, botId: BOT, botActorId: null, botName: 'Engineer', startedAt: head().startedAt, head: head({ seq: 4, now: { kind: 'execute', title: 'Older step', paths: [], helper: null, count: 1 } }) }] } as ActiveChannelRunsResponse;
+    store.resync();
+    await settle();
+    expect(store.stateOf(ROOT).run?.seq).toBe(8);
+    expect(store.stateOf(ROOT).run?.now).toMatchObject({ title: 'Newer step' });
+  });
+
+  it('forgets the lines of a run that is no longer shown', async () => {
+    const { store, deps, state } = setup();
+    store.track(CH);
+    await settle();
+    expect(deps.activity).toHaveBeenCalledTimes(1);
+    state.runs = { runs: [] } as ActiveChannelRunsResponse;
+    store.resync();
+    await settle();
+    expect(store.stateOf(ROOT).lines).toEqual([]);
+    // a run of the same id coming back is read again (nothing stale was kept)
+    state.runs = { runs: [{ runId: RUN, channelId: CH, threadRootId: ROOT, botId: BOT, botActorId: null, botName: 'Engineer', startedAt: head().startedAt, head: head() }] } as ActiveChannelRunsResponse;
+    store.resync();
+    await settle();
+    expect(deps.activity).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refused lease (too many channels watched) falls back to a slow read of the heads, and says so once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { store, deps } = setup();
+    deps.watch.mockRejectedValue(new ApiError({ code: 'rate_limited' as never, message: 'Too many channels', status: 429 }));
+    store.track(CH);
+    await settle();
+    expect(deps.activeRuns).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(SLOW_POLL_MS + 10);
+    expect(deps.activeRuns).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(SLOW_POLL_MS);
+    expect(deps.activeRuns).toHaveBeenCalledTimes(3);
+    expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+    warn.mockRestore();
+  });
+
+  it('a lease call that never answers does not stall the ones after it', async () => {
+    const { store, deps } = setup();
+    deps.watch.mockImplementationOnce(() => new Promise(() => undefined));
+    const off = store.track(CH);
+    await settle();
+    off();
+    await vi.advanceTimersByTimeAsync(LEASE_TIMEOUT_MS + 10);
+    expect(deps.unwatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('the live line leaves out the thread open in the side panel, which speaks for itself', async () => {
+    const { store } = setup({ questions: [question('q1', ROOT), question('q2', ROOT2)] });
+    store.track(CH);
+    await settle();
+    expect(store.announcementOf(CH)).toBe('2 questions are waiting for an answer');
+    expect(store.announcementOf(CH, ROOT)).toBe('1 question is waiting for an answer');
+    expect(store.announcementOf(CH, ROOT2)).toBe('1 question is waiting for an answer');
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MEMORY_DIGEST_SEND_TOOL } from '@manythreads/shared';
-import { approvalAction, approvalSentence } from '../src/screens/approvals/sentence';
+import { approvalAction, approvalLine, approvalSentence, needsOpen } from '../src/screens/approvals/sentence';
 
 const base = { source: 'grant' as const, botName: 'Support responder', requesterName: 'Nadia', summary: '', argsPreview: {} };
 
@@ -58,5 +58,25 @@ describe('a request as one sentence', () => {
     const odd = { ...base, tool: 'email.send', argsPreview: null as never, summary: undefined as never, requesterName: undefined as never };
     expect(approvalSentence(odd)).toBe('Support responder wants to send an email');
     expect(approvalAction({ ...odd, tool: 'crm.merge' })).toBe('use crm.merge');
+  });
+});
+
+describe('the list line and the Open rule (review round)', () => {
+  const ask = { ...base, source: 'agent' as const, tool: 'approvals.ask' };
+  it('a long ask reads from its one-line summary in a list, an aria-label or a live region, never from the whole question', () => {
+    const question = `Can the owner resolve this? ${'It is needed for every release. '.repeat(100)}`;
+    const line = approvalLine({ ...ask, summary: `${question.slice(0, 299)}…`, argsPreview: { question } });
+    expect(line.length).toBeLessThanOrEqual(330);
+    expect(line.startsWith('Support responder asks: Can the owner resolve this?')).toBe(true);
+    expect(approvalLine({ ...base, tool: 'email.send', summary: 'email.send', argsPreview: { to: 'm.okafor' } })).toBe('Nadia asked Support responder to send an email to m.okafor');
+  });
+  it('an ask with details or a command, or a cut-short preview, is read before it is answered: the list shows Open', () => {
+    expect(needsOpen({ ...ask, argsTruncated: false, argsPreview: { question: 'Deploy?' } })).toBe(false);
+    expect(needsOpen({ ...ask, argsTruncated: false, argsPreview: { question: 'Deploy?', details: 'one line of context' } })).toBe(true);
+    expect(needsOpen({ ...ask, argsTruncated: false, argsPreview: { command: 'rm -rf build' } })).toBe(true);
+    expect(needsOpen({ ...ask, argsTruncated: false, argsPreview: { question: 'Deploy?', details: '   ' } })).toBe(false);
+    expect(needsOpen({ ...base, argsTruncated: true, argsPreview: {} })).toBe(true);
+    // a platform approval with a field called details is not a bot's ask
+    expect(needsOpen({ ...base, argsTruncated: false, argsPreview: { details: 'x' } })).toBe(false);
   });
 });

@@ -16,15 +16,20 @@ const NONE: ThreadsBadge = { mentions: 0, running: 0 };
 /** A burst of reasons to read again makes one read, this long after the first. */
 const SETTLE_MS = 500;
 
+/** Is the person reading a thread (open in the side panel) or the Threads page? An answer they wrote there clears a mention, so leaving it is a reason to read again. */
+const reading = (pathname: string, search: string): boolean => pathname.endsWith('/threads') || (new URLSearchParams(search).get('panel') ?? '').startsWith('thread:');
+
 /**
  * The two extra counts of the Threads entry (P29-19). No new polling: they are read once, and again when something the page already hears says they may have changed: the unread summary moved (a message
- * arrived), a run began or ended, the socket came back, the person moved to another page (an answer they wrote clears a mention), or the tab became visible. A server without the plugin answers an error
+ * arrived), a run began or ended, the socket came back, the person left a thread or the Threads page (an answer they wrote clears a mention), or the tab became visible. Moving between other pages reads nothing. A server without the plugin answers an error
  * and that count simply stays at nothing. Approvals are not counted here: they have their own entry.
  */
 export function useThreadsBadge(slug: string | null): ThreadsBadge {
   const [state, setState] = useState<{ slug: string | null; badge: ThreadsBadge }>({ slug: null, badge: NONE });
   const { threadsUnread } = useUnread();
-  const path = useLocation().pathname;
+  const loc = useLocation();
+  const here = reading(loc.pathname, loc.search);
+  const wasHere = useRef(here);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const load = useRef<() => void>(() => undefined);
 
@@ -56,10 +61,15 @@ export function useThreadsBadge(slug: string | null): ThreadsBadge {
   useEffect(() => {
     load.current();
   }, [slug]);
-  // the unread summary moved, or the person went to another page
+  // the unread summary moved
   useEffect(() => {
     soon.current();
-  }, [threadsUnread, path]);
+  }, [threadsUnread]);
+  // the person left a thread or the Threads page
+  useEffect(() => {
+    if (wasHere.current && !here) soon.current();
+    wasHere.current = here;
+  }, [here]);
   useEffect(() => {
     if (!slug || isMockMode()) return;
     const rt = realtimeClient();

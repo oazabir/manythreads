@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import type { ThreadInboxItem } from '@manythreads/shared';
+import { THREAD_BATCH_MAX, type ThreadInboxItem } from '@manythreads/shared';
 import { LaterTab, type LaterView } from '../later/LaterPanes';
 import { useLater } from '../later/RemindMenu';
 import { laterStore } from '../later/store';
@@ -184,7 +184,9 @@ export function ThreadsInbox() {
   const searching = filtering && !unmatchedName && !serverError && serverRows === null && (parsed.names.length > 0 || parsed.words.length > 0);
 
   // ---- what goes on in the listed threads, and which rows need the person ----
-  const workOf = useInboxWork(useMemo(() => rowsBase.slice(0, 200).map((r) => r.rootMessageId), [rowsBase]));
+  // the first page's rows (50) are one batch of reads; more rows are read only once the person has paged
+  const paged = (extra?.items.length ?? 0) > 0;
+  const workOf = useInboxWork(useMemo(() => rowsBase.slice(0, paged ? 200 : THREAD_BATCH_MAX).map((r) => r.rootMessageId), [rowsBase, paged]));
   const needsFirst = params.get('order') !== 'time';
   const setNeedsFirst = useCallback(
     (on: boolean): void => {

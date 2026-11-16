@@ -30,7 +30,7 @@ import {
 } from '@manythreads/shared';
 import { conflict, forbidden, json, notFound, requireTeam, route } from '@manythreads/sdk';
 import { factsOf, pushChanged } from './notify.ts';
-import { APPROVAL_SELECT, blockReasonsOf, toApproval, type ApprovalRow } from './rows.ts';
+import { APPROVAL_SELECT, OWN_TEXT_TOOLS, blockReasonsOf, toApproval, type ApprovalRow } from './rows.ts';
 import { RESUME_QUEUE } from './resume.ts';
 
 /** The approval of this team, as the caller sees it; 404 for one of another team (or one they cannot see), so an id reveals nothing. */
@@ -138,7 +138,12 @@ export function registerRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { slug, approvalId } = DecideApprovalPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
-      await approvalOf(tx, team.id, approvalId); // 404 for one of another team or one the caller cannot see
+      const shown = await approvalOf(tx, team.id, approvalId); // 404 for one of another team or one the caller cannot see
+      // A bot's own ask or command stores no call: its whole text is the stored preview, which anyone who can read the approval may read (the lists carry only its first 300 characters).
+      if (OWN_TEXT_TOOLS.has(shown.tool)) {
+        const stored = (await tx.query<{ p: Record<string, unknown> }>('SELECT args_preview AS p FROM app.approvals WHERE id = $1::uuid', [approvalId])).rows[0]?.p ?? null;
+        return json({ args: stored === null ? null : fullArgs(stored) });
+      }
       // Only the people who may decide it (the database answers 42501 to everyone else, the requester included).
       const args = (await tx.query<{ args: Record<string, unknown> | null }>('SELECT app.approvals_full_args($1::uuid) AS args', [approvalId])).rows[0]?.args ?? null;
       return json({ args: args === null ? null : fullArgs(args) });

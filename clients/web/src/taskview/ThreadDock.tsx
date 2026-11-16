@@ -8,7 +8,7 @@ import { nowLine, runEnded } from '../channels/run-card/words';
 import { useRunLines } from '../runs/useThreadRuns';
 import { planTaskView } from './rules';
 import { EMPTY_TASK_VIEW } from './channelTasks';
-import { QuestionStrip, stripQuestion } from './QuestionStrip';
+import { QuestionStrip, stripLine } from './QuestionStrip';
 import { RunCompact } from './RunCompact';
 import { TodoCompact } from './TodoCompact';
 import { readDockFolded, writeDockFolded } from './storage';
@@ -66,7 +66,7 @@ export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reload
   // a question is asked in one place: the thread's strip and the run card leave out what the dock draws
   const ids = questions.map((q) => q.id).join(',');
   useEffect(() => {
-    if (slug === null) return;
+    if (slug === null || slug === '') return;
     setShownQuestions(rootId, 'dock', ids === '' ? [] : ids.split(','));
     return () => setShownQuestions(rootId, 'dock', []);
   }, [rootId, slug, ids]);
@@ -74,7 +74,9 @@ export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reload
   const lines = useRunLines(run !== null && !folded ? run.runId : null, run?.seq ?? 0);
 
   const cards = plan.todo || plan.run === 'live';
-  if (!cards && questions.length === 0) return null;
+  // no team yet (the slug is not known): nobody can answer, so no question is drawn (as the thread's cards did before)
+  const asked = slug === null || slug === '' ? [] : questions;
+  if (!cards && asked.length === 0) return null;
   const line = foldedLine(plan.run === 'live' ? run : null, plan.todo ? todo : null);
   return (
     <div className="tvDock" data-testid="thread-dock" data-folded={cards && folded ? 'true' : 'false'}>
@@ -101,11 +103,11 @@ export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reload
           </div>
         )
       ) : null}
-      {questions.length > 0 ? (
+      {asked.length > 0 ? (
         <>
           {/* one polite line when a question arrives: the card itself is not a live region */}
-          <p className="sr-only" role="status" data-testid="dock-said">{`Needs you: ${stripQuestion(questions[0]!)}`}</p>
-          <QuestionStrip questions={questions} slug={slug ?? ''} rootId={rootId} onDecided={reloadApprovals} />
+          <p className="sr-only" role="status" data-testid="dock-said">{`Needs you: ${stripLine(asked[0]!)}`}</p>
+          <QuestionStrip questions={asked} slug={slug ?? ''} rootId={rootId} onDecided={reloadApprovals} />
         </>
       ) : null}
     </div>

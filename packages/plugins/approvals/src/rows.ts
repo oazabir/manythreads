@@ -52,10 +52,32 @@ export async function blockReasonsOf(tx: PluginTx, ids: readonly string[]): Prom
   return new Map(res.rows.map((r) => [r.o_id, r.o_reason]));
 }
 
+/**
+ * A bot's own ask and command keep their whole text in the stored preview (P29-05). The lists (the inbox, a channel, the Threads view, a thread) must not carry up to 20,000 characters
+ * per question for every row, so they carry the first `LIST_TEXT_MAX` of `details` and `command` and say the rest was left out (`argsTruncated`); the card reads the whole text by one
+ * read of the args route (`GET .../approvals/:id/args`). The question itself (at most 4,000) stays: the card headline needs it.
+ */
+export const LIST_TEXT_MAX = 300;
+export const OWN_TEXT_TOOLS: ReadonlySet<string> = new Set(['approvals.ask', 'agent.command']);
+export function leanPreview(tool: string, preview: Record<string, unknown>, truncated: boolean): { preview: Record<string, unknown>; truncated: boolean } {
+  if (!OWN_TEXT_TOOLS.has(tool)) return { preview, truncated };
+  let cut = false;
+  const out: Record<string, unknown> = { ...preview };
+  for (const key of ['details', 'command']) {
+    const v = out[key];
+    if (typeof v === 'string' && v.length > LIST_TEXT_MAX) {
+      out[key] = `${v.slice(0, LIST_TEXT_MAX - 1)}…`;
+      cut = true;
+    }
+  }
+  return { preview: out, truncated: truncated || cut };
+}
+
 /** The one place an `approvals` row becomes the shared `Approval`; `blockReason` is what `blockReasonsOf` said for it (undefined: not visible). */
 export function toApproval(r: ApprovalRow, blockReason: string | null | undefined): Approval {
   const pending = r.status === 'pending';
   const block = blockReason === 'requester' || blockReason === 'not_approver' ? blockReason : null;
+  const lean = leanPreview(r.tool, r.args_preview, r.args_truncated);
   return Approval.parse({
     id: r.id,
     workspaceId: r.workspace_id,
@@ -66,8 +88,8 @@ export function toApproval(r: ApprovalRow, blockReason: string | null | undefine
     outcomeDetail: r.outcome_detail,
     tool: r.tool,
     summary: r.summary,
-    argsPreview: r.args_preview,
-    argsTruncated: r.args_truncated,
+    argsPreview: lean.preview,
+    argsTruncated: lean.truncated,
     expiresAt: r.expires_at.toISOString(),
     startedAt: r.started_at ? r.started_at.toISOString() : null,
     botId: r.bot_id,

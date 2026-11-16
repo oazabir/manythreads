@@ -361,6 +361,24 @@ describe('the Threads view (P29): the filter, "waiting for you" and the sidebar 
     expect((await w.call(priya, 'GET', '/api/teams/engineering/threads?mentions=nope')).status).toBe(400);
   });
 
+  it('matches without regard to accents and case, as the page does: "cafe" finds "Café", "CAFÉ" finds "cafe"', async () => {
+    const q = async (who: Persona, query: string): Promise<string[]> => (await inbox(who, 'followed', 'engineering', `&${query}`)).items.map((i) => i.rootMessageId);
+    const cafe = await post(priya, dev, 'Le Café Münchner plan for the offsite');
+    await post(rafi, dev, 'sounds good, Ñandú too', cafe);
+    expect(await q(priya, 'q=cafe')).toContain(cafe);
+    expect(await q(priya, `q=${encodeURIComponent('CAFÉ')}`)).toContain(cafe);
+    expect(await q(priya, 'q=munchner')).toContain(cafe);
+    expect(await q(priya, 'q=nandu')).toContain(cafe);
+    expect(await q(priya, 'q=cafes')).not.toContain(cafe);
+  });
+
+  it('the mention count is the same number the Needs-you rows show, for each person, however many threads the team has', async () => {
+    for (const who of [priya, rafi, nadia, omar]) {
+      const rows = (await inbox(who, 'followed', 'engineering', '&limit=100')).items.filter((i) => i.mention !== null).length;
+      expect(await counts(who), who.key).toBe(rows);
+    }
+  });
+
   it('never leaks a private channel through the filter or the count', async () => {
     const priv = ok<{ channel: { id: string } }>(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: 'filter-private', private: true }), 201).channel.id;
     const secret = await post(omar, priv, `Zebrafish secret plan @${first(nadia)}`);

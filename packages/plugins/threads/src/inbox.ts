@@ -21,6 +21,26 @@ type InboxRow = ChannelRefRow & {
   last_reply_at_ts: Date | null;
 };
 
+/**
+ * Accents and case do not matter in the filter, as on the page (`fold` in the web client: NFD, marks removed, lower case). The words are folded here, and the text of the database is folded in
+ * the query the same way by `translate` over the Latin letters that carry a mark (U+00C0..U+017F), so "cafe" finds "Café" and the client and the server agree.
+ */
+const foldWord = (text: string): string => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const [FOLD_FROM, FOLD_TO] = (() => {
+  let from = '';
+  let to = '';
+  for (let cp = 0xc0; cp <= 0x17f; cp++) {
+    const ch = String.fromCodePoint(cp).toLowerCase();
+    const base = foldWord(ch);
+    if (base !== ch && /^[a-z]$/.test(base) && !from.includes(ch)) {
+      from += ch;
+      to += base;
+    }
+  }
+  return [from, to];
+})();
+const folded = (expr: string): string => `translate(lower(${expr}), '${FOLD_FROM}', '${FOLD_TO}')`;
+
 const encodeCursor = (ts: string, id: string): string => Buffer.from(`${ts}|${id}`).toString('base64url');
 
 function decodeCursor(cursor: string): { ts: string; id: string } {
@@ -77,10 +97,10 @@ export async function listInbox(
   const where: string[] = [];
   const patterns: string[] = [];
   for (const word of (input.q ?? '').split(/\s+/).filter((w) => w !== '').slice(0, 6)) {
-    params.push(`%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    params.push(`%${foldWord(word).replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     const at = `$${String(params.length)}`;
     patterns.push(at);
-    where.push(`(coalesce(c.name, '') ILIKE ${at} OR EXISTS (SELECT 1 FROM app.messages fm WHERE (fm.thread_root_id = t.root_message_id OR fm.id = t.root_message_id) AND fm.deleted_at IS NULL AND fm.body_plain ILIKE ${at}))`);
+    where.push(`(${folded("coalesce(c.name, '')")} LIKE ${at} OR EXISTS (SELECT 1 FROM app.messages fm WHERE (fm.thread_root_id = t.root_message_id OR fm.id = t.root_message_id) AND fm.deleted_at IS NULL AND ${folded('fm.body_plain')} LIKE ${at}))`);
   }
   for (const group of input.mentions ?? []) {
     params.push(group);
@@ -90,7 +110,7 @@ export async function listInbox(
   const limit = filtered ? THREAD_FILTER_RESULTS_MAX : input.limit;
   params[5] = limit + 1;
   // channel-name matches first, then the threads whose messages match, each newest first
-  const nameFirst = patterns.length > 0 ? `(${patterns.map((p) => `coalesce(c.name, '') ILIKE ${p}`).join(' OR ')}) DESC, ` : '';
+  const nameFirst = patterns.length > 0 ? `(${patterns.map((p) => `${folded("coalesce(c.name, '')")} LIKE ${p}`).join(' OR ')}) DESC, ` : '';
   const res = await tx.query<InboxRow>(
     `SELECT t.root_message_id, t.title, t.reply_count, t.last_reply_at, t.last_reply_at::text AS cursor_ts, m.author_id,
             (f.person_id IS NOT NULL) AS followed, (m.author_id = $2::uuid) AS mine, rs.unread_count,
@@ -154,7 +174,8 @@ export async function listInbox(
       lastReply: r.last_reply_id && names.has(r.last_reply_id) ? lastReplyOf(r, names.get(r.last_reply_id)!, authorOf) : null,
       mention: mentionOf(waiting.get(r.root_message_id), authorOf),
     })),
-    nextCursor: more && last ? encodeCursor(last.cursor_ts, last.root_message_id) : null,
+    // a filtered answer is the best matches up to a cap, not a page: there is no next page to ask for
+    nextCursor: !filtered && more && last ? encodeCursor(last.cursor_ts, last.root_message_id) : null,
   });
 }
 

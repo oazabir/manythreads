@@ -70,9 +70,11 @@ function Progress({ todo, run, approvals, ownerName }: { todo: ThreadTodo | null
   const timeline = useMemo(() => timelineOf(items), [items]);
   const pending = approvals.some((a) => a.status === 'pending');
   const goToApproval = useCallback(() => {
-    const el = document.querySelector<HTMLElement>('[data-testid="question-strip"], [data-testid="thread-dock"]');
+    // the strip's Yes button (an answer is what the person came for), else the strip, else the dock
+    const yes = document.querySelector<HTMLElement>('[data-testid="tv-question-yes"]:not([disabled])');
+    const el = yes ?? document.querySelector<HTMLElement>('[data-testid="tv-questions"], [data-testid="thread-dock"]');
     el?.scrollIntoView?.({ block: 'center' });
-    el?.querySelector<HTMLElement>('button')?.focus?.();
+    (yes ?? el?.querySelector<HTMLElement>('button'))?.focus?.();
   }, []);
   if (todo === null || items.length === 0) {
     return (

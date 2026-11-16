@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { RunStartedPush } from '@manythreads/shared';
-import { threadRunsStore } from '../../runs/store';
+import { useEffect, useRef, useState } from 'react';
 
 /** The clock, once a second, while `active`. A card of an ended run does not tick. */
 export function useClock(active: boolean): number {
@@ -33,10 +31,4 @@ export function useSteady<T>(value: T, gap = 1000): T {
     return () => clearTimeout(t);
   }, [value, gap]);
   return shown;
-}
-
-/** The runs working on a thread root now, for its chip in the channel: known to every reader of the channel from the live pushes, open thread or not. */
-export function useWorkingOn(rootId: string): readonly RunStartedPush[] {
-  const subscribe = useCallback((onChange: () => void) => threadRunsStore.subscribe(rootId, onChange), [rootId]);
-  return useSyncExternalStore(subscribe, () => threadRunsStore.workingOn(rootId));
 }

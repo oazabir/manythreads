@@ -7,12 +7,12 @@ import { AskerAvatar } from './Asker';
 import { decideApproval } from './api';
 import { announceApprovalsChanged } from './live';
 import { riskClass, riskOf } from './risk';
-import { approvalSentence } from './sentence';
+import { approvalLine, needsOpen } from './sentence';
 
 /*
  * One line of the Approvals list: the asker's picture, the request as one sentence, why it waits (the coloured risk tag) and how long (the age
  * pill). For a person who may decide it, Approve and Deny sit on the row — on hover or keyboard focus on a mouse screen, always on touch — so a
- * clear-cut request needs no trip into the detail. A request whose preview was cut short offers Open instead: nobody approves what they have not read.
+ * clear-cut request needs no trip into the detail. A request with more to read (a cut-short preview, or a bot's details or command) offers Open instead: nobody approves what they have not read.
  */
 export function ApprovalRow({ approval: a, slug, selected, onOpen, onDecided }: { approval: Approval; slug: string; selected: boolean; onOpen: () => void; onDecided: () => void }) {
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
@@ -41,7 +41,7 @@ export function ApprovalRow({ approval: a, slug, selected, onOpen, onDecided }: 
       <button type="button" className={`trow apr-trow ${selected ? 'on' : ''}`} onClick={onOpen} aria-current={selected ? 'true' : undefined}>
         <AskerAvatar approval={a} />
         <span className="trow-main">
-          <span className="apr-sentence" data-testid="approval-row-sentence">{approvalSentence(a)}</span>
+          <span className="apr-sentence" data-testid="approval-row-sentence">{approvalLine(a)}</span>
           <span className="apr-tags">
             {pending ? (
               <>
@@ -62,16 +62,16 @@ export function ApprovalRow({ approval: a, slug, selected, onOpen, onDecided }: 
       </button>
       {pending && a.canDecide ? (
         <div className="apr-row-actions" role="group" aria-label="Decide">
-          {a.argsTruncated ? (
-            <button type="button" className="btn s" onClick={onOpen} data-testid="approval-row-open" title="The preview is cut short. Open it to read the whole call.">
+          {needsOpen(a) ? (
+            <button type="button" className="btn s" onClick={onOpen} data-testid="approval-row-open" title="Open it to read the whole of it first.">
               Open
             </button>
           ) : (
             <>
-              <button type="button" className="btn primary s" disabled={busy !== null} onClick={() => void decide('approve')} data-testid="approval-row-approve" aria-label={`Approve: ${approvalSentence(a)}`}>
+              <button type="button" className="btn primary s" disabled={busy !== null} onClick={() => void decide('approve')} data-testid="approval-row-approve" aria-label={`Approve: ${approvalLine(a)}`}>
                 {busy === 'approve' ? 'Approving…' : 'Approve'}
               </button>
-              <button type="button" className="btn s" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-row-deny" aria-label={`Deny: ${approvalSentence(a)}`}>
+              <button type="button" className="btn s" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-row-deny" aria-label={`Deny: ${approvalLine(a)}`}>
                 {busy === 'deny' ? 'Denying…' : 'Deny'}
               </button>
             </>
