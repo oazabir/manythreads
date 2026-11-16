@@ -18,11 +18,11 @@ Where code is built, tested and deployed, and the machine facts that break a pip
   kept on the devbox in `/root/ci-logs/<time>-<sha>.log` (last 20); the run status and step timings are public on the GitHub API.
 - **CI shares the devbox's dev Postgres (55432).** Run no vitest/playwright there while a pipeline runs:
   `pgrep -fx 'bash tools/devbox/ci.sh.*'` (a plain `pgrep -f tools/devbox/ci.sh` matches its own shell). Overlapping runs fail CI.
-- **Disk is the devbox's tightest resource (77 GB).** At ~90% the kubelet evicts the live database and the team pods and deletes
+- **Disk is the devbox's tightest resource (96 GB).** Without the kubelet settings in `/etc/rancher/k3s/config.yaml` (eviction at 95%), at ~90% the kubelet evicts the live database and the team pods and deletes
   images; deploys drop Docker's copies of images k3s holds. After a deploy check `kubectl get pods -n manythreads-bots`, not only `/readyz`.
-  `deploy.sh` runs `tools/devbox/disk-guard.sh` first: above 65% it prunes the Docker build cache, Docker images no container uses and
-  k3s images no pod uses (never volumes); above 70% after that it stops (free the disk to about 60%; `DEPLOY_ALLOW_HIGH_DISK=1`
-  overrides). Its image import is watched and aborts at 88%. On 2026-11-09 a deploy peaked at 90%, the node evicted Postgres, and the
+  `deploy.sh` runs `tools/devbox/disk-guard.sh` first: above 75% it prunes the Docker build cache, Docker images no container uses and
+  k3s images no pod uses (never volumes); above 80% after that it stops (free the disk to about 70%; `DEPLOY_ALLOW_HIGH_DISK=1`
+  overrides). Its image import is watched and aborts at 90% (owner, 2026-11-16: deploys may use the disk up to 90%; `/etc/rancher/k3s/config.yaml` moves the kubelet's eviction and image clean-up to 95%, so 90% no longer evicts Postgres). On 2026-11-09 a deploy peaked at 90%, the node evicted Postgres, and the
   new server (now waiting up to `MANYTHREADS_DB_CONNECT_TIMEOUT_SECONDS`=120 s for the database) crashed on its first connection.
   `docker builder prune -f` alone freed 0.25 GB of a 20 GB cache; `-af` freed 18 GB.
 - Team bot definitions (`bots/<slug>/BOT.md`) are copies made from `templates/` when a team is created: a template fix does not reach an

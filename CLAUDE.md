@@ -33,6 +33,6 @@ The devbox has 15 GB and 8 cores and also runs k3s, Postgres and the live site: 
   (`git ls-files -z '*.css'`, as `tools/lint-css/cli.mjs` does) or name the folder (`clients/web/src`). Built output (`dist`, `dist-canary`) is never linted or searched.
 - **One heavy job at a time.** Do not run lint, typecheck, vitest and a Docker build together, and do not start a second copy of a job that is still running. Run tests of the package
   you touched (`npx vitest run` inside it), not the whole repository, until the last gate. `pnpm typecheck` already limits itself to two at once; do not raise that.
-- **Look before you start and while it runs:** `free -h` (stop under about 2 GB available), `df -h /` (a deploy peaks near 88% disk: prune with `docker builder prune -af` before it, and watch it). Start long commands
+- **Look before you start and while it runs:** `free -h` (stop under about 2 GB available), `df -h /` (deploys may fill the disk to 90% since the kubelet evicts only at 95% (owner, 2026-11-16); prune with `docker builder prune -af` before it, and watch it). Start long commands
   in the background with a `timeout`, and kill one that runs more than ten minutes with a growing size. Kill by exact PID (`kill <pid>`); `pkill -f` and `pgrep -f` match your own shell (write `[s]tylelint`).
 - **A "heap out of memory" is a bug in the command, not a limit to raise.** Do not set a bigger `--max-old-space-size` to get past it; find what the tool is reading.

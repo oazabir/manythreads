@@ -2,24 +2,24 @@
 # disk-guard.sh — the disk checks of deploy.sh (P10-08). Runs ON the devbox.
 #
 #   disk-guard.sh check [--keep REF]... [--keep-docker REF]...
-#       Prints the disk use of /. Above DISK_PRUNE_ABOVE (65 %) it first prunes what is safe and can be made again:
+#       Prints the disk use of /. Above DISK_PRUNE_ABOVE (75 %) it first prunes what is safe and can be made again:
 #         docker builder prune -af           (the build cache; -a: without it only dangling cache goes, 0.25 of 20 GB on 2026-11-10)
 #         unused docker images               (never an image a container uses, running or stopped; never a --keep / --keep-docker one)
 #         k3s crictl rmi --prune             (images no container uses; skipped while a --keep image is already in k3s and not yet in use,
 #                                             because the prune would delete the very image this deploy is about to roll out)
 #       It never touches volumes, never `docker system prune`, never a running pod's image. Then it looks again: above
-#       DISK_STOP_ABOVE (70 %) it STOPS (exit 1) with the biggest items to clean, unless DEPLOY_ALLOW_HIGH_DISK=1 (a loud warning, then on).
+#       DISK_STOP_ABOVE (80 %) it STOPS (exit 1) with the biggest items to clean, unless DEPLOY_ALLOW_HIGH_DISK=1 (a loud warning, then on).
 #   disk-guard.sh import IMAGE
-#       `docker save IMAGE | k3s ctr images import -` with a watch: when the disk use of / reaches DISK_ABORT_IMPORT_AT (88 %) the import
+#       `docker save IMAGE | k3s ctr images import -` with a watch: when the disk use of / reaches DISK_ABORT_IMPORT_AT (90 %) the import
 #       is stopped, df is printed and the exit status is 3. (A deploy peaked at 90 % on 2026-11-09 and the kubelet evicted the database.)
 #
-# Knobs (environment): DISK_PRUNE_ABOVE=65 DISK_STOP_ABOVE=70 DISK_ABORT_IMPORT_AT=88 DISK_WATCH_SECONDS=2 DEPLOY_ALLOW_HIGH_DISK=0
+# Knobs (environment): DISK_PRUNE_ABOVE=75 DISK_STOP_ABOVE=80 DISK_ABORT_IMPORT_AT=90 DISK_WATCH_SECONDS=2 DEPLOY_ALLOW_HIGH_DISK=0
 #                      K3S_CONTAINERD_DIR=/var/lib/rancher/k3s/agent/containerd DOCKER_DIR=/var/lib/docker
 set -uo pipefail
 
-PRUNE_ABOVE=${DISK_PRUNE_ABOVE:-65}
-STOP_ABOVE=${DISK_STOP_ABOVE:-70}
-ABORT_AT=${DISK_ABORT_IMPORT_AT:-88}
+PRUNE_ABOVE=${DISK_PRUNE_ABOVE:-75}
+STOP_ABOVE=${DISK_STOP_ABOVE:-80}
+ABORT_AT=${DISK_ABORT_IMPORT_AT:-90}
 WATCH_SECONDS=${DISK_WATCH_SECONDS:-2}
 K3S_DIR=${K3S_CONTAINERD_DIR:-/var/lib/rancher/k3s/agent/containerd}
 DOCKER_DIR=${DOCKER_DIR:-/var/lib/docker}
