@@ -8,7 +8,7 @@ import { Alert } from '../../components/ui';
 import { useShell } from '../../shell/context';
 import { pollDelay, stopsPolling } from '../setup/model';
 import { endWorkshop, fetchWorkshop, listWorkshop, sayInWorkshop, startWorkshop } from './api';
-import { announcement, asRule, messagesLeft, modeInfo, modeOf, usageLine } from './model';
+import { announcement, asRule, messagesLeft, messagesLeftLine, modeInfo, modeOf, usageLine } from './model';
 import { Compose, EarlierList, ModeTabs, Transcript, ViewTabs, viewPanelProps } from './parts';
 import { ReassessmentNotices, ReplayPanel } from './Replay';
 import { TerminalView } from './terminal/TerminalView';
@@ -313,7 +313,7 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
                 {session && (session.status === 'ready' || working) ? (
                   <div className="ws-row">
                     <button type="button" className="btn s" disabled={busy} data-testid="ws-end" onClick={() => void end()}>End this conversation</button>
-                    <span className="ws-hint">{messagesLeft(session)} messages left in this conversation.</span>
+                    <span className="ws-hint">{messagesLeftLine(session)}</span>
                   </div>
                 ) : null}
               </>

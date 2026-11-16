@@ -6,7 +6,7 @@ import type { WorkshopEntry, WorkshopSession } from '@manythreads/shared';
 import { setTransport } from '../src/api/client';
 import { createMockTransport } from '../src/api/mock';
 import { endWorkshop, fetchWorkshop, listWorkshop, sayInWorkshop, startWorkshop } from '../src/screens/workshop/api';
-import { announcement, asRule, charsLeft, lastReplyId, messagesLeft, modeInfo, modeOf, nextTab, textReady, usageLine, viewOf } from '../src/screens/workshop/model';
+import { announcement, asRule, charsLeft, lastReplyId, messagesLeft, messagesLeftLine, modeInfo, modeOf, nextTab, textReady, usageLine, viewOf } from '../src/screens/workshop/model';
 import { Compose, EarlierList, EntryView, ModeTabs, ViewTabs, viewPanelProps } from '../src/screens/workshop/parts';
 
 // P7-05, P7-06: the Workshop tab against the mock transport (a scripted helper), the small rules of its model, and the markup of its parts.
@@ -144,6 +144,10 @@ describe('the rules of the model', () => {
   it('counts the messages left and finds the reply that can be corrected', () => {
     expect(messagesLeft({ messageCount: 28 })).toBe(2);
     expect(messagesLeft({ messageCount: 40 })).toBe(0);
+    expect(messagesLeftLine({ messageCount: 40 })).toBe('0 messages left in this conversation.');
+    expect(messagesLeftLine({ messageCount: 29 })).toBe('1 message left in this conversation.');
+    expect(messagesLeftLine({ messageCount: 28 })).toBe('2 messages left in this conversation.');
+    expect(messagesLeftLine({ messageCount: 2 })).toBe('28 messages left in this conversation.');
     const entries: WorkshopEntry[] = [
       { id: 'e1', at: '2026-10-01T14:02:00.000Z', kind: 'reply', text: 'a', rehearsal: true },
       { id: 'e2', at: '2026-10-01T14:02:00.000Z', kind: 'notice', text: 'n' },
