@@ -137,9 +137,11 @@ case "$COMMAND" in
     install="$ROOT/deploy/install/install.sh"
     [ -f "$install" ] || die "deploy/install/install.sh does not exist" 4
     sha=$(sha256sum "$install" | cut -d' ' -f1)
-    node "$ROOT/tools/devbox/release-manifest.mjs" build --version "$VERSION" --owner "$OWNER" --digests "$digests" --install-sha256 "$sha" \
+    [ -f "$ROOT/deploy/install/manythreads" ] || die "deploy/install/manythreads does not exist" 4
+    host_sha=$(sha256sum "$ROOT/deploy/install/manythreads" | cut -d' ' -f1)
+    node "$ROOT/tools/devbox/release-manifest.mjs" build --version "$VERSION" --owner "$OWNER" --digests "$digests" --install-sha256 "$sha" --host-command-sha256 "$host_sha" \
       --commit "$(git -C "$ROOT" rev-parse HEAD)" --out "$RELEASE_DIR/release.json"
     node "$ROOT/tools/devbox/release-manifest.mjs" check "$RELEASE_DIR/release.json"
-    echo "wrote $RELEASE_DIR/release.json (attach it and deploy/install/install.sh to the GitHub release)"
+    echo "wrote $RELEASE_DIR/release.json (attach it, deploy/install/install.sh and deploy/install/manythreads to the GitHub release)"
     ;;
 esac

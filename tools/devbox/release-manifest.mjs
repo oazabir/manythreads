@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// release.json (P27-01): what one release is, in a file small enough to read: the version, every product image by digest, the chart, the SHA-256 of install.sh.
+// release.json (P27-01): what one release is, in a file small enough to read: the version, every product image by digest, the chart, the SHA-256 of install.sh and of the `manythreads` command (both are release assets beside this file).
 // `install.sh` pulls only what this file names (docs/deploy/install.md). Made by tools/devbox/release-images.sh after the push; checked by `check` here and by
 // install.sh before it installs anything.
 //
-//   node tools/devbox/release-manifest.mjs build --version 0.27.0 --owner <owner> --digests <file.json> --install-sha256 <hex> [--commit <sha>] [--out release.json]
+//   node tools/devbox/release-manifest.mjs build --version 0.27.0 --owner <owner> --digests <file.json> --install-sha256 <hex> --host-command-sha256 <hex> [--commit <sha>] [--out release.json]
 //   node tools/devbox/release-manifest.mjs check release.json
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -27,10 +27,11 @@ const OWNER = /^[a-z0-9](?:[a-z0-9-]{0,38})$/;
 export const packageName = (owner, name) => `ghcr.io/${owner}/manythreads-${name}`;
 
 /** `ghcr.io/<owner>/manythreads-<name>@sha256:...` for every image of the digests file. Throws a sentence on anything missing or malformed. */
-export function buildRelease({ version, owner, digests, installSha256, commit = '', chartVersion = version, now = new Date() }) {
+export function buildRelease({ version, owner, digests, installSha256, hostCommandSha256, commit = '', chartVersion = version, now = new Date() }) {
   if (!SEMVER.test(version)) throw new Error(`the version "${version}" is not like 0.27.0`);
   if (!OWNER.test(owner)) throw new Error(`the owner "${owner}" is not a GHCR account name (lower case letters, digits, dashes)`);
   if (!/^[0-9a-f]{64}$/.test(installSha256 ?? '')) throw new Error('the SHA-256 of install.sh is not 64 hex digits');
+  if (!/^[0-9a-f]{64}$/.test(hostCommandSha256 ?? '')) throw new Error('the SHA-256 of the manythreads command is not 64 hex digits');
   const images = {};
   for (const [name, needed] of RELEASE_IMAGES) {
     const digest = digests[name];
@@ -52,6 +53,7 @@ export function buildRelease({ version, owner, digests, installSha256, commit = 
     images,
     chart: { ref: `oci://ghcr.io/${owner}/charts/manythreads`, version: chartVersion },
     installSha256,
+    hostCommandSha256,
   };
 }
 
@@ -62,6 +64,7 @@ export function checkRelease(release) {
   if (release.schema !== 1) problems.push('schema is not 1');
   if (!SEMVER.test(release.version ?? '')) problems.push('version is not like 0.27.0');
   if (!/^[0-9a-f]{64}$/.test(release.installSha256 ?? '')) problems.push('installSha256 is not 64 hex digits');
+  if (!/^[0-9a-f]{64}$/.test(release.hostCommandSha256 ?? '')) problems.push('hostCommandSha256 is not 64 hex digits');
   const images = release.images ?? {};
   for (const [name, needed] of RELEASE_IMAGES) {
     const ref = images[name];
@@ -91,6 +94,7 @@ export function main(argv, out = (l) => process.stdout.write(`${l}\n`), err = (l
         owner: arg(rest, 'owner') ?? '',
         digests: JSON.parse(readFileSync(arg(rest, 'digests') ?? '/dev/null', 'utf8')),
         installSha256: arg(rest, 'install-sha256') ?? '',
+        hostCommandSha256: arg(rest, 'host-command-sha256') ?? '',
         commit: arg(rest, 'commit') ?? '',
         chartVersion: arg(rest, 'chart-version') ?? arg(rest, 'version') ?? '',
       });
@@ -105,7 +109,7 @@ export function main(argv, out = (l) => process.stdout.write(`${l}\n`), err = (l
       for (const p of problems) err(p);
       return problems.length === 0 ? 0 : 1;
     }
-    err('usage: release-manifest.mjs build --version V --owner O --digests FILE --install-sha256 HEX [--commit SHA] [--chart-version V] [--out FILE] | check FILE');
+    err('usage: release-manifest.mjs build --version V --owner O --digests FILE --install-sha256 HEX --host-command-sha256 HEX [--commit SHA] [--chart-version V] [--out FILE] | check FILE');
     return 2;
   } catch (e) {
     err(e instanceof Error ? e.message : String(e));

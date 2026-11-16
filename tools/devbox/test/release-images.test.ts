@@ -113,6 +113,18 @@ describe('release-images.sh', () => {
     expect(r.calls + r.out + r.err).not.toContain(TOKEN.MANYTHREADS_GHCR_TOKEN);
   });
 
+  it('manifest writes release.json from the digests and the two scripts of the repository, and the file passes the check', () => {
+    mkdirSync(join(tmp, 'rel'));
+    const names = ['claude-pod', 'hermes-pod', 'postgres-cnpg', 'server', 'web', 'workbench'];
+    writeFileSync(join(tmp, 'rel/digests-0.27.0.json'), JSON.stringify(Object.fromEntries(names.map((n, i) => [n, d(String(i + 1))]))));
+    const r = run(['manifest', '--version', '0.27.0', '--owner', 'acme']);
+    expect(r.code, r.err).toBe(0);
+    const release = JSON.parse(readFileSync(join(tmp, 'rel/release.json'), 'utf8'));
+    expect(checkRelease(release)).toEqual([]);
+    expect(release.installSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(release.hostCommandSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it('manifest needs the digests first', () => {
     const r = run(['manifest', '--version', '0.27.0', '--owner', 'acme']);
     expect(r.code).toBe(4);
@@ -122,7 +134,7 @@ describe('release-images.sh', () => {
 
 describe('release.json', () => {
   const digests = Object.fromEntries(NAMES.filter((n) => n !== 'asr').map((n, i) => [n, d(String(i + 1))]));
-  const base = { version: '0.27.0', owner: 'acme', digests, installSha256: 'a'.repeat(64), commit: 'abc', now: new Date('2026-11-16T10:00:00Z') };
+  const base = { version: '0.27.0', owner: 'acme', digests, installSha256: 'a'.repeat(64), hostCommandSha256: 'c'.repeat(64), commit: 'abc', now: new Date('2026-11-16T10:00:00Z') };
 
   it('names every image by digest in the owner\'s packages', () => {
     const r = buildRelease(base);
@@ -138,6 +150,7 @@ describe('release.json', () => {
     expect(() => buildRelease({ ...base, digests: { ...digests, litellm: d('9') } })).toThrow(/not a release image: litellm/);
     expect(() => buildRelease({ ...base, installSha256: 'xyz' })).toThrow(/install\.sh/);
     expect(() => buildRelease({ ...base, version: 'next' })).toThrow(/version/);
+    expect(() => buildRelease({ ...base, hostCommandSha256: undefined })).toThrow(/manythreads command/);
   });
 
   it('check names what is wrong in a file somebody edited', () => {
@@ -153,7 +166,7 @@ describe('release.json', () => {
     writeFileSync(f, JSON.stringify(digests));
     const out = join(tmp, 'release.json');
     const lines: string[] = [];
-    expect(main(['build', '--version', '0.27.0', '--owner', 'acme', '--digests', f, '--install-sha256', 'b'.repeat(64), '--out', out], (l: string) => lines.push(l), (l: string) => lines.push(l))).toBe(0);
+    expect(main(['build', '--version', '0.27.0', '--owner', 'acme', '--digests', f, '--install-sha256', 'b'.repeat(64), '--host-command-sha256', 'c'.repeat(64), '--out', out], (l: string) => lines.push(l), (l: string) => lines.push(l))).toBe(0);
     expect(existsSync(out)).toBe(true);
     expect(main(['check', out], () => undefined, (l: string) => lines.push(l))).toBe(0);
     writeFileSync(out, '{"schema":2}');

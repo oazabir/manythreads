@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# manythreads: the command on the machine manythreads was installed on (PLAN P27-05, docs/deploy/install.md). Installed by install.sh as /usr/local/bin/manythreads.
+# A thin script over kubectl and helm with the root kubeconfig, so it works only as root.
+#
+#   manythreads status                       the pods, the address and the version
+#   manythreads url                          the address people open
+#   manythreads admin-password               the first administrator's password, while it is still the one in use
+#   manythreads reset-admin-password [EMAIL] a new made-up password for a person (default: the first administrator), printed once; they choose their own at the next sign-in
+#   manythreads backup-key                   the key that unlocks stored secrets (save it in a password manager; without it a restored backup cannot read them)
+#   manythreads doctor                       checks the machine, the pods, the certificate, the address and /readyz; says the first thing that is wrong
+#   manythreads logs [server|web|litellm|hindsight|db|...]   the last lines of a part (default: the server)
+#   manythreads set-domain NAME              serve the site at NAME too (a name whose DNS points here), with a Let's Encrypt certificate; the old address keeps working
+#   manythreads allow-git-host URL           let a team copy repositories from another git host (for example your own GitLab); https:// only
+#   manythreads upgrade [--version X.Y.Z]    install the newest release (or that one) over this one, after a backup
+#   manythreads uninstall [args]             remove manythreads (asks for the word delete; see install.sh --help for the arguments)
+#   manythreads support-bundle               a file of logs and pod states, with secrets removed, to send to whoever helps you
+#   manythreads version
+#
+# Files: /etc/manythreads/values.yaml (what install.sh chose), /etc/manythreads/install.env (the state), /etc/manythreads/domain.yaml (written by set-domain),
+# /var/lib/manythreads/chart (the chart of the installed release).
+
+set -euo pipefail
+
+ETC=${MANYTHREADS_ETC:-/etc/manythreads}
+VAR=${MANYTHREADS_VAR:-/var/lib/manythreads}
+NS=manythreads
+RELEASE=manythreads
+export KUBECONFIG=${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+say() { printf '%s\n' "$*"; }
+state() { [ -f "$ETC/install.env" ] && sed -n "s/^$1=//p" "$ETC/install.env" | tail -n1 || true; }
+need_root() { [ "$(id -u)" -eq 0 ] || die "run it as root: sudo manythreads $*"; }
+need_install() { [ -f "$ETC/install.env" ] || die "manythreads is not installed on this machine (no $ETC/install.env)"; }
+server_exec() { kubectl -n "$NS" exec -i deploy/manythreads-server -- "$@"; }
+admin_cli() { server_exec pnpm --filter @manythreads/server admin "$@"; }
+
+helm_apply() {
+  local files=(-f "$VAR/chart/values-install.yaml" -f "$ETC/values.yaml")
+  [ ! -f "$ETC/domain.yaml" ] || files+=(-f "$ETC/domain.yaml")
+  [ ! -f "$ETC/git-hosts.yaml" ] || files+=(-f "$ETC/git-hosts.yaml")
+  helm upgrade --install "$RELEASE" "$VAR/chart" -n "$NS" "${files[@]}" --timeout 15m
+}
+
+cmd_status() {
+  need_install
+  say "manythreads $(state VERSION) at $(state ADDRESS) (HTTPS: $(state TLS_MODE))"
+  kubectl -n "$NS" get pods -o wide 2>/dev/null || say "(the cluster did not answer)"
+}
+
+cmd_url() { need_install; state ADDRESS; }
+
+cmd_admin_password() {
+  need_install
+  local email pass status
+  email=$(kubectl -n "$NS" get secret manythreads-first-admin -o jsonpath='{.data.email}' 2>/dev/null | base64 -d) || email=''
+  [ -n "$email" ] || die "no first password is kept here (the administrator may have been made some other way); use: manythreads reset-admin-password"
+  status=$(admin_cli password-status "$email" | sed -n 's/^FIRST_PASSWORD=//p')
+  case "$status" in
+    pending)
+      pass=$(kubectl -n "$NS" get secret manythreads-first-admin -o jsonpath='{.data.password}' | base64 -d)
+      say "Sign in:  $email"
+      say "Password: $pass"
+      say "(it works until $email chooses a new one)" ;;
+    changed) say "$email chose their own password, so the first one no longer works. To make a new one: sudo manythreads reset-admin-password $email" ;;
+    *) die "could not tell whether $email still uses the first password ($status)" ;;
+  esac
+}
+
+cmd_reset_admin_password() {
+  need_install
+  local email="${1:-}" out pass
+  [ -n "$email" ] || email=$(state ADMIN_EMAIL)
+  [ -n "$email" ] || die "say whose password: manythreads reset-admin-password <email>"
+  out=$(admin_cli reset-password "$email" --generate) || die "no password was made"
+  pass=$(printf '%s\n' "$out" | sed -n 's/^NEW_PASSWORD=//p')
+  [ -n "$pass" ] || die "no password was made"
+  if [ "$email" = "$(state ADMIN_EMAIL)" ]; then
+    local f; f=$(mktemp); chmod 600 "$f"; printf '%s' "$pass" >"$f"
+    kubectl -n "$NS" create secret generic manythreads-first-admin --from-literal=email="$email" --from-file=password="$f" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    rm -f "$f"
+  fi
+  say "Sign in:  $email"
+  say "Password: $pass"
+  say "(shown once; $email chooses their own at the next sign-in, and every other session of theirs is signed out)"
+}
+
+cmd_backup_key() {
+  need_install
+  local key
+  key=$(kubectl -n "$NS" get secret manythreads-server-secrets -o jsonpath='{.data.kms-key}' | base64 -d) || die "the key was not found"
+  say "The key that unlocks stored secrets (connection and provider keys) in a backup:"
+  say "$key"
+  say "Keep it with your password manager. Anyone who has it and a backup can read those secrets; without it a restored backup cannot."
+}
+
+cmd_doctor() {
+  need_install
+  local problems=0 host mode addr
+  host=$(state HOST); mode=$(state TLS_MODE); addr=$(state ADDRESS)
+  bad() { printf '  PROBLEM: %s\n' "$*"; problems=$((problems + 1)); }
+  ok() { printf '  ok: %s\n' "$*"; }
+  say "manythreads $(state VERSION) at $addr"
+  if systemctl is-active --quiet k3s 2>/dev/null; then ok "k3s is running"; else bad "k3s is not running (systemctl status k3s; journalctl -u k3s)"; fi
+  if kubectl get nodes 2>/dev/null | grep -q ' Ready'; then ok "the node is Ready"; else bad "the node is not Ready (kubectl get nodes)"; fi
+  local used; used=$(df -P / | awk 'NR==2 {gsub("%","",$5); print $5}')
+  if [ "${used:-0}" -ge 90 ]; then bad "the disk is ${used}% full: free space (docker or crictl images, old backups) before something is evicted"; else ok "the disk is ${used}% full"; fi
+  local avail; avail=$(awk '/^MemAvailable:/ {printf "%d", $2/1024}' /proc/meminfo)
+  if [ "${avail:-0}" -lt 800 ]; then bad "only ${avail} MB of memory is free"; else ok "${avail} MB of memory is free"; fi
+  local notready
+  notready=$(kubectl -n "$NS" get pods --no-headers 2>/dev/null | awk '$3 != "Running" && $3 != "Completed" && $3 != "Succeeded" {print $1" ("$3")"}')
+  if [ -n "$notready" ]; then bad "these pods are not running: $(printf '%s' "$notready" | tr '\n' ' ') (manythreads logs <part>; kubectl -n $NS describe pod <name>)"; else ok "every pod is running"; fi
+  if kubectl -n "$NS" exec deploy/manythreads-server -- node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then ok "the server answers /readyz"; else bad "the server does not answer /readyz (manythreads logs server)"; fi
+  case "$mode" in
+    letsencrypt|selfsigned)
+      if [ "$(kubectl -n "$NS" get certificate manythreads-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]; then ok "the HTTPS certificate is ready"; else bad "the HTTPS certificate is not ready (kubectl -n $NS describe certificate manythreads-tls); for Let's Encrypt, port 80 must be reachable from the Internet and $host must point here"; fi ;;
+  esac
+  if [ "$mode" = letsencrypt ] && command -v getent >/dev/null; then
+    local resolved; resolved=$(getent hosts "$host" | awk '{print $1}' | head -n1)
+    [ -n "$resolved" ] && ok "$host resolves to $resolved" || bad "$host does not resolve (DNS)"
+  fi
+  if command -v curl >/dev/null && [ -n "$addr" ]; then
+    if curl -fsS -k --max-time 15 -o /dev/null "$addr/readyz" 2>/dev/null; then ok "$addr answers from this machine"; else bad "$addr does not answer from this machine (is port 443 open, and does the name point here?)"; fi
+  fi
+  if [ "$problems" -eq 0 ]; then say "Everything looks fine."; else say "$problems problem(s). Start with the first one."; return 1; fi
+}
+
+cmd_logs() {
+  need_install
+  local part="${1:-server}" target
+  case "$part" in
+    server|web|litellm|hindsight) target="deploy/manythreads-$part" ;;
+    db|database|postgres) target="pod/manythreads-pg-1" ;;
+    *) target="deploy/$part" ;;
+  esac
+  kubectl -n "$NS" logs "$target" --tail=200 --all-containers=true
+}
+
+# Waits for the certificate to be Ready.
+cert_ready() { # seconds
+  for _ in $(seq 1 $(( ${1:-180} / 5 ))); do
+    [ "$(kubectl -n "$NS" get certificate manythreads-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ] && return 0
+    sleep 5
+  done
+  return 1
+}
+
+cmd_set_domain() {
+  need_root set-domain; need_install
+  local name="${1:-}" old email
+  [[ "$name" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] || die "give a name like team.example.com (lower case; its DNS must already point at this machine)"
+  [ -f "$VAR/chart/values-install.yaml" ] || die "the chart of this release is not kept on this machine ($VAR/chart); run: manythreads upgrade"
+  old=$(state HOST); email=$(state ADMIN_EMAIL)
+  [ -n "$email" ] || email="admin@$name"
+  local extra=''
+  # the first name keeps working; a bare address cannot have a Let's Encrypt certificate, so it is dropped from the list
+  [[ "$old" =~ [a-z] ]] && extra="extraDomains: [$old]"
+  write_domain() { # server
+    {
+      echo "# written by: manythreads set-domain $name"
+      echo "domain: $name"
+      [ -z "$extra" ] || echo "$extra"
+      echo 'publicUrl: ""'
+      printf 'tls:\n  mode: letsencrypt\n  wildcard: false\n  letsencrypt:\n    email: %s\n    server: %s\n' "$email" "$1"
+    } >"$ETC/domain.yaml"
+  }
+  cp -f "$ETC/domain.yaml" "$ETC/domain.yaml.before" 2>/dev/null || true
+  say "Getting a trial certificate for $name first..."
+  write_domain staging; helm_apply >/dev/null
+  if ! cert_ready 240; then
+    if [ -f "$ETC/domain.yaml.before" ]; then mv "$ETC/domain.yaml.before" "$ETC/domain.yaml"; else rm -f "$ETC/domain.yaml"; fi
+    helm_apply >/dev/null || true
+    die "Let's Encrypt could not prove $name (does it point at this machine, and is port 80 open to the Internet?). Nothing was changed."
+  fi
+  rm -f "$ETC/domain.yaml.before"
+  write_domain production
+  kubectl -n "$NS" delete secret manythreads-tls --ignore-not-found >/dev/null
+  helm_apply >/dev/null
+  cert_ready 240 || say "The real certificate is not ready yet; it keeps trying in the background (manythreads doctor)."
+  sed -i '/^HOST=/d;/^ADDRESS=/d;/^TLS_MODE=/d' "$ETC/install.env"
+  { echo "HOST=$name"; echo "ADDRESS=https://$name"; echo "TLS_MODE=letsencrypt"; } >>"$ETC/install.env"
+  say "Done: https://$name${old:+ (and https://$old keeps working)}"
+}
+
+cmd_allow_git_host() {
+  need_root allow-git-host; need_install
+  local url="${1:-}"
+  [[ "$url" =~ ^https://[a-z0-9.-]+(:[0-9]+)?/$ ]] || die "give the address of the git host like https://gitlab.example.com/ (https only, with the closing slash)"
+  [ -f "$VAR/chart/values-install.yaml" ] || die "the chart of this release is not kept on this machine ($VAR/chart); run: manythreads upgrade"
+  local f="$ETC/git-hosts.yaml"
+  if [ -f "$f" ] && grep -qF -- "- $url" "$f"; then say "$url is allowed already."; return 0; fi
+  [ -f "$f" ] || printf 'hermesPods:\n  repoOriginAllow:\n    - https://github.com/\n    - https://gitlab.com/\n' >"$f"
+  printf '    - %s\n' "$url" >>"$f"
+  helm_apply >/dev/null
+  say "Teams can now copy repositories from $url"
+}
+
+cmd_upgrade() {
+  need_root upgrade; need_install
+  local version='' url tmp want
+  while [ $# -gt 0 ]; do case "$1" in --version) shift; version="${1#v}" ;; *) die "unknown option $1" ;; esac; shift; done
+  url=$(state RELEASE_URL); [ -n "$url" ] || die "this install does not remember where releases are published; run install.sh --upgrade --release-url <address>"
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  case "$url" in https://*|http://*) curl -fsSL -o "$tmp/release.json" "$url" ;; *) cp "$url" "$tmp/release.json" ;; esac
+  want=$(jq -r .installSha256 "$tmp/release.json")
+  case "$url" in https://*|http://*) curl -fsSL -o "$tmp/install.sh" "${url%/*}/install.sh" ;; *) cp "${url%/*}/install.sh" "$tmp/install.sh" ;; esac
+  [ "$(sha256sum "$tmp/install.sh" | cut -d' ' -f1)" = "$want" ] || die "install.sh does not match release.json; nothing was changed"
+  if kubectl -n "$NS" get cronjob manythreads-backup >/dev/null 2>&1; then
+    say "Taking a backup first..."
+    local job; job="manythreads-backup-before-upgrade-$(date +%s)"
+    kubectl -n "$NS" create job --from=cronjob/manythreads-backup "$job" >/dev/null
+    kubectl -n "$NS" wait --for=condition=complete "job/$job" --timeout=900s >/dev/null || die "the backup did not finish; nothing was changed"
+  fi
+  bash "$tmp/install.sh" --upgrade --release-url "$url" ${version:+--version "$version"} --yes
+}
+
+cmd_uninstall() {
+  need_root uninstall
+  local url tmp
+  url=$(state RELEASE_URL); tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  case "$url" in https://*|http://*) curl -fsSL -o "$tmp/install.sh" "${url%/*}/install.sh" ;; *) cp "${url%/*}/install.sh" "$tmp/install.sh" ;; esac
+  bash "$tmp/install.sh" --uninstall "$@"
+}
+
+cmd_support_bundle() {
+  need_root support-bundle; need_install
+  local dir out; dir=$(mktemp -d); out="/tmp/manythreads-support-$(date +%Y%m%d-%H%M%S).tgz"
+  {
+    echo "version: $(state VERSION)  address: $(state ADDRESS)  tls: $(state TLS_MODE)"
+    uname -a; free -m; df -h /; kubectl get nodes -o wide; kubectl get pods -A -o wide; helm list -A
+  } >"$dir/overview.txt" 2>&1 || true
+  kubectl get events -A --sort-by=.lastTimestamp >"$dir/events.txt" 2>&1 || true
+  kubectl -n "$NS" describe pods >"$dir/describe-pods.txt" 2>&1 || true
+  local d
+  for d in server web litellm hindsight; do kubectl -n "$NS" logs "deploy/manythreads-$d" --tail=500 --all-containers=true >"$dir/log-$d.txt" 2>&1 || true; done
+  cp -f "$ETC/values.yaml" "$dir/values.yaml" 2>/dev/null || true
+  cp -f /var/log/manythreads-install.log "$dir/install.log" 2>/dev/null || true
+  # whatever looks like a secret is removed: values after password, token, secret, key or authorization, and long base64-like strings
+  local f
+  for f in "$dir"/*; do
+    sed -E -i 's/((password|passwd|token|secret|api[-_]?key|key|authorization|bearer)[A-Za-z_-]*["'"'"']?[=: ]+["'"'"']?)[^ ,"'"'"']{6,}/\1<removed>/Ig; s/[A-Za-z0-9+\/_-]{40,}={0,2}/<removed>/g' "$f"
+  done
+  tar -czf "$out" -C "$dir" . && rm -rf "$dir"
+  say "Wrote $out (secrets removed; look through it before you send it)"
+}
+
+cmd_version() { say "manythreads $(state VERSION)"; }
+
+main() {
+  local c="${1:-}"; [ $# -eq 0 ] || shift
+  case "$c" in
+    status|url|admin-password|reset-admin-password|backup-key|doctor|logs|set-domain|allow-git-host|upgrade|uninstall|support-bundle|version)
+      case "$c" in version) ;; *) need_root "$c" ;; esac
+      "cmd_${c//-/_}" "$@" ;;
+    ''|-h|--help|help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) die "unknown command: $c (manythreads help)" ;;
+  esac
+}
+
+if [ -z "${MANYTHREADS_HOST_SOURCE_ONLY:-}" ]; then main "$@"; fi
