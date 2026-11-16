@@ -1,0 +1,90 @@
+/*
+ * The Appearance entry of the account menu (P30-01, shell/AppearanceMenu.tsx): a row, and its submenu of palettes and modes. A wide screen shows the submenu as a
+ * flyout beside the menu (fixed to the window, because the sidebar clips what leaves it; shell/AppearanceMenu.tsx sets its top and left); a phone shows it in place
+ * of the menu's rows under a Back row. Classes are prefixed `am-`; the rows are the menu's own `menu-item`.
+ */
+.am-wrap {
+  display: contents;
+}
+
+.am-row .am-value {
+  margin-left: auto;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.am-next {
+  display: inline-flex;
+  color: var(--faint);
+}
+
+.am-row[aria-expanded="true"] {
+  background: var(--nav-on);
+}
+
+/* the flyout: the menu's own surface, placed beside it */
+.menu.am-fly {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  left: 0;
+  z-index: 60;
+  width: 224px;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+}
+
+.am-head {
+  display: block;
+  padding-bottom: 2px;
+  font-weight: var(--fw-caption);
+}
+
+.am-opt {
+  position: relative;
+}
+
+.am-opt[aria-checked="true"] {
+  font-weight: 600;
+}
+
+.am-label {
+  min-width: 0;
+}
+
+.am-check {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--ink);
+}
+
+/* a round swatch of a palette: the page colour that palette's own rules give the box (data-palette, data-theme), with its accent as a dot */
+.am-sw {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+}
+
+.am-sw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.am-error {
+  color: var(--danger);
+}
+
+.am-back {
+  font-weight: 600;
+}
+
+.bb-sheet .am-opt,
+.bb-sheet .am-back {
+  min-height: 44px;
+}
