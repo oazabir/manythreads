@@ -12,7 +12,7 @@ afterAll(async () => {
 });
 
 const look = (id: string) =>
-  w.system(async (tx) => (await tx.query<{ theme: string; density: string }>('SELECT theme, density FROM people WHERE id = $1', [id])).rows[0]);
+  w.system(async (tx) => (await tx.query<{ theme: string; density: string; palette: string }>('SELECT theme, density, palette FROM people WHERE id = $1', [id])).rows[0]);
 const code = async (p: Promise<unknown>): Promise<string> => {
   try {
     await p;
@@ -22,28 +22,32 @@ const code = async (p: Promise<unknown>): Promise<string> => {
   }
 };
 
-describe('people.theme and people.density', () => {
+describe('people.theme, people.density and people.palette', () => {
   it('start as System and Comfortable for everybody', async () => {
-    for (const p of [OMAR, NADIA, LENA]) expect(await look(p.personId)).toEqual({ theme: 'system', density: 'comfortable' });
+    for (const p of [OMAR, NADIA, LENA]) expect(await look(p.personId)).toEqual({ theme: 'system', density: 'comfortable', palette: 'classic' });
   });
 
   it('a person sets their own, a guest too; the other rows do not move', async () => {
     await w.as(NADIA, (tx) => tx.query(`UPDATE people SET theme = 'dark', density = 'compact' WHERE id = app.person_id()`));
     await w.as(LENA, (tx) => tx.query(`UPDATE people SET theme = 'light' WHERE id = app.person_id()`));
-    expect(await look(NADIA.personId)).toEqual({ theme: 'dark', density: 'compact' });
-    expect(await look(LENA.personId)).toEqual({ theme: 'light', density: 'comfortable' });
-    expect(await look(OMAR.personId)).toEqual({ theme: 'system', density: 'comfortable' });
+    expect(await look(NADIA.personId)).toEqual({ theme: 'dark', density: 'compact', palette: 'classic' });
+    expect(await look(LENA.personId)).toEqual({ theme: 'light', density: 'comfortable', palette: 'classic' });
+    await w.as(LENA, (tx) => tx.query(`UPDATE people SET palette = 'harbor' WHERE id = app.person_id()`));
+    expect(await look(LENA.personId)).toEqual({ theme: 'light', density: 'comfortable', palette: 'harbor' });
+    expect(await look(OMAR.personId)).toEqual({ theme: 'system', density: 'comfortable', palette: 'classic' });
   });
 
   it('a member cannot write another person (the policy hides the row: no row changes)', async () => {
     const res = await w.as(NADIA, (tx) => tx.query(`UPDATE people SET theme = 'light' WHERE id = $1`, [OMAR.personId]));
     expect(res.rowCount).toBe(0);
-    expect(await look(OMAR.personId)).toEqual({ theme: 'system', density: 'comfortable' });
+    expect(await look(OMAR.personId)).toEqual({ theme: 'system', density: 'comfortable', palette: 'classic' });
   });
 
   it('refuses a value outside the lists (23514)', async () => {
     expect(await code(w.system((tx) => tx.query(`UPDATE people SET theme = 'neon' WHERE id = $1`, [OMAR.personId])))).toBe('23514');
     expect(await code(w.system((tx) => tx.query(`UPDATE people SET density = 'huge' WHERE id = $1`, [OMAR.personId])))).toBe('23514');
+    expect(await code(w.system((tx) => tx.query(`UPDATE people SET palette = 'neon' WHERE id = $1`, [OMAR.personId])))).toBe('23514');
+    expect(await code(w.system((tx) => tx.query(`UPDATE people SET palette = NULL WHERE id = $1`, [OMAR.personId])))).toBe('23502');
     expect(await code(w.system((tx) => tx.query(`UPDATE people SET theme = NULL WHERE id = $1`, [OMAR.personId])))).toBe('23502');
   });
 });

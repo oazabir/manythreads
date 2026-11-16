@@ -28,7 +28,8 @@
     "appearance": {
       "default": {
         "theme": "system",
-        "density": "comfortable"
+        "density": "comfortable",
+        "palette": "classic"
       },
       "type": "object",
       "properties": {
@@ -45,6 +46,16 @@
           "enum": [
             "comfortable",
             "compact"
+          ]
+        },
+        "palette": {
+          "default": "classic",
+          "type": "string",
+          "enum": [
+            "classic",
+            "graphite",
+            "linen",
+            "harbor"
           ]
         }
       },

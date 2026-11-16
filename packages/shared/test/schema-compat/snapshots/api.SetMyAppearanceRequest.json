@@ -16,6 +16,15 @@
         "comfortable",
         "compact"
       ]
+    },
+    "palette": {
+      "type": "string",
+      "enum": [
+        "classic",
+        "graphite",
+        "linen",
+        "harbor"
+      ]
     }
   },
   "additionalProperties": false

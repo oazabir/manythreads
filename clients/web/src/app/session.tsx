@@ -56,14 +56,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     who.current = id;
   }, [state]);
 
-  // The person's theme and density, from the server: it wins over this browser's cached copy (which only painted the first frame). Signing out keeps the
+  // The person's palette, mode and density, from the server: it wins over this browser's cached copy (which only painted the first frame). Signing out keeps the
   // cache, so the sign-in page still draws the last look (P21-21).
   const look = state.status === 'ready' ? state.session.person.appearance : null;
   const lookTheme = look?.theme;
   const lookDensity = look?.density;
+  const lookPalette = look?.palette;
   useEffect(() => {
-    if (lookTheme && lookDensity) applyAppearance({ theme: lookTheme, density: lookDensity });
-  }, [lookTheme, lookDensity]);
+    if (lookTheme && lookDensity && lookPalette) applyAppearance({ theme: lookTheme, density: lookDensity, palette: lookPalette });
+  }, [lookTheme, lookDensity, lookPalette]);
 
   // A 401 anywhere means the session expired: RequireSession then redirects to /sign-in?return=<path>.
   useEffect(() => onSessionExpired(() => setState({ status: 'anonymous' })), []);

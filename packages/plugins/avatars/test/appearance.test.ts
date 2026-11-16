@@ -26,29 +26,41 @@ const sessionOf = async (c: ReturnType<typeof createApiClient>) => {
   return me.person.appearance;
 };
 const stored = async (personId: string) =>
-  withSystem(async (tx) => (await tx.query<{ theme: string; density: string }>('SELECT theme, density FROM app.people WHERE id = $1', [personId])).rows[0], { pool: s.pools.system });
+  withSystem(async (tx) => (await tx.query<{ theme: string; density: string; palette: string }>('SELECT theme, density, palette FROM app.people WHERE id = $1', [personId])).rows[0], { pool: s.pools.system });
 
 describe('PUT /api/me/appearance', () => {
   it('starts as System and Comfortable, and the session says so', async () => {
     const c = await signedIn(OMAR.email);
-    expect(await sessionOf(c)).toEqual({ theme: 'system', density: 'comfortable' });
+    expect(await sessionOf(c)).toEqual({ theme: 'system', density: 'comfortable', palette: 'classic' });
   });
 
   it('saves a theme and a density, answers what is stored, and the session carries them', async () => {
     const c = await signedIn(NADIA.email);
     const res = await put(c, { theme: 'dark', density: 'compact' });
     expect(res.status).toBe(200);
-    expect(MyAppearanceResponse.parse(await res.json())).toEqual({ theme: 'dark', density: 'compact' });
-    expect(await sessionOf(c)).toEqual({ theme: 'dark', density: 'compact' });
-    expect(await stored(NADIA.personId)).toEqual({ theme: 'dark', density: 'compact' });
+    expect(MyAppearanceResponse.parse(await res.json())).toEqual({ theme: 'dark', density: 'compact', palette: 'classic' });
+    expect(await sessionOf(c)).toEqual({ theme: 'dark', density: 'compact', palette: 'classic' });
+    expect(await stored(NADIA.personId)).toEqual({ theme: 'dark', density: 'compact', palette: 'classic' });
     // a new sign-in on another device sees the same
-    expect(await sessionOf(await signedIn(NADIA.email))).toEqual({ theme: 'dark', density: 'compact' });
+    expect(await sessionOf(await signedIn(NADIA.email))).toEqual({ theme: 'dark', density: 'compact', palette: 'classic' });
   });
 
   it('keeps the field that is left out', async () => {
     const c = await signedIn(NADIA.email);
-    expect(MyAppearanceResponse.parse(await (await put(c, { theme: 'light' })).json())).toEqual({ theme: 'light', density: 'compact' });
-    expect(MyAppearanceResponse.parse(await (await put(c, { density: 'comfortable' })).json())).toEqual({ theme: 'light', density: 'comfortable' });
+    expect(MyAppearanceResponse.parse(await (await put(c, { theme: 'light' })).json())).toEqual({ theme: 'light', density: 'compact', palette: 'classic' });
+    expect(MyAppearanceResponse.parse(await (await put(c, { density: 'comfortable' })).json())).toEqual({ theme: 'light', density: 'comfortable', palette: 'classic' });
+  });
+
+  it('saves a palette (theme look) on its own, keeps the other fields, and the session carries it', async () => {
+    const c = await signedIn(OMAR.email);
+    const res = await put(c, { palette: 'linen' });
+    expect(res.status).toBe(200);
+    expect(MyAppearanceResponse.parse(await res.json())).toEqual({ theme: 'system', density: 'comfortable', palette: 'linen' });
+    expect(await sessionOf(c)).toEqual({ theme: 'system', density: 'comfortable', palette: 'linen' });
+    expect(await stored(OMAR.personId)).toEqual({ theme: 'system', density: 'comfortable', palette: 'linen' });
+    expect(MyAppearanceResponse.parse(await (await put(c, { theme: 'dark', palette: 'harbor' })).json())).toEqual({ theme: 'dark', density: 'comfortable', palette: 'harbor' });
+    expect(MyAppearanceResponse.parse(await (await put(c, { palette: 'graphite' })).json())).toEqual({ theme: 'dark', density: 'comfortable', palette: 'graphite' });
+    expect(MyAppearanceResponse.parse(await (await put(c, { palette: 'classic', theme: 'system' })).json())).toEqual({ theme: 'system', density: 'comfortable', palette: 'classic' });
   });
 
   it('changes only the caller: another person keeps their own', async () => {
@@ -60,7 +72,7 @@ describe('PUT /api/me/appearance', () => {
   it('refuses an unknown value, an unknown field and an empty body (400), and changes nothing', async () => {
     const c = await signedIn(NADIA.email);
     const before = await stored(NADIA.personId);
-    for (const body of [{ theme: 'neon' }, { density: 'huge' }, { theme: 'dark', colour: 'red' }, {}, { theme: null }]) {
+    for (const body of [{ theme: 'neon' }, { density: 'huge' }, { palette: 'neon' }, { palette: null }, { palette: '__proto__' }, { theme: 'dark', colour: 'red' }, {}, { theme: null }]) {
       expect((await put(c, body)).status, JSON.stringify(body)).toBe(400);
     }
     expect(await stored(NADIA.personId)).toEqual(before);
@@ -74,7 +86,7 @@ describe('PUT /api/me/appearance', () => {
     const c = await signedIn(LENA.email);
     const res = await put(c, { theme: 'dark' });
     expect(res.status).toBe(200);
-    expect(await sessionOf(c)).toEqual({ theme: 'dark', density: 'comfortable' });
+    expect(await sessionOf(c)).toEqual({ theme: 'dark', density: 'comfortable', palette: 'classic' });
   });
 
   it('a signed-out session still parses for a client that expects no appearance (older server answer)', () => {
@@ -87,6 +99,6 @@ describe('PUT /api/me/appearance', () => {
       methods: [],
       expiresAt: '2026-11-08T00:00:00.000Z',
     });
-    expect(parsed.authenticated && parsed.person.appearance).toEqual({ theme: 'system', density: 'comfortable' });
+    expect(parsed.authenticated && parsed.person.appearance).toEqual({ theme: 'system', density: 'comfortable', palette: 'classic' });
   });
 });

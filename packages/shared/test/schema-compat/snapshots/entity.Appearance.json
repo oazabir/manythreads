@@ -16,11 +16,22 @@
         "comfortable",
         "compact"
       ]
+    },
+    "palette": {
+      "default": "classic",
+      "type": "string",
+      "enum": [
+        "classic",
+        "graphite",
+        "linen",
+        "harbor"
+      ]
     }
   },
   "required": [
     "theme",
-    "density"
+    "density",
+    "palette"
   ],
   "additionalProperties": false
 }

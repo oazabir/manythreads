@@ -137,6 +137,7 @@ import {
   ScopedKvScopeType,
   TeamRole,
   ThemeChoice,
+  Palette,
   Density,
   WorkspaceRole,
 } from '@manythreads/shared';
@@ -191,6 +192,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'people.status': PersonStatus,
   'people.theme': ThemeChoice,
   'people.density': Density,
+  'people.palette': Palette,
   'person_photos.content_type': AvatarPhotoType,
   'auth_providers.kind': AuthProviderKind,
   'invitations.role': InvitationRole,
