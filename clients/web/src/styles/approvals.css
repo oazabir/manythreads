@@ -91,6 +91,8 @@
 }
 
 .apr-preview {
+  max-height: 50dvh;
+  overflow: auto;
   display: grid;
   gap: 4px;
   margin: 0;
@@ -127,6 +129,8 @@
 
 .apr-command,
 .apr-details {
+  max-height: 50dvh;
+  overflow: auto;
   margin: 0;
   padding: 8px 10px;
   border: 1px solid var(--hairline);
@@ -144,6 +148,8 @@
 
 .apr-why {
   margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   color: var(--faint);
   font-size: var(--fs-caption);
 }
@@ -358,6 +364,8 @@
 
 .apr-askline .apr-sentence {
   display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   margin: 0;
   font-size: var(--fs-body);
   font-weight: 600;

@@ -26,7 +26,7 @@ export interface ArrangedApproval {
  */
 export async function arrangeApprovals(
   stack: Stack,
-  entries: ReadonlyArray<{ path: string; requester: PersonaKey; approvers?: string[]; threadRootId?: string; channelId?: string; longContent?: boolean }>,
+  entries: ReadonlyArray<{ path: string; requester: PersonaKey; approvers?: string[]; threadRootId?: string; channelId?: string; longContent?: boolean; ask?: { question: string; details: string } }>,
 ): Promise<ArrangedApproval[]> {
   // the loader (an outbox consumer) makes the bot from the seed's own commit a moment after the stack is up
   let bot: { id: string; actor_id: string } | undefined;
@@ -49,7 +49,8 @@ export async function arrangeApprovals(
   for (const entry of entries) {
     const approvers = entry.approvers ?? ['role:on-call'];
     const scope = { roles: approvers, people: [], leads: approvers.length === 0 };
-    const resume = {
+    // a bot's own question (P29-05): the whole question and context are stored as written, and the call has nothing more to open
+    const resume = entry.ask ? { kind: 'handoff', payload: { kind: 'ask' } } : {
       kind: 'tool',
       capability: 'pages.write',
       args: { team: ENGINEERING, mode: 'create', path: entry.path, content: entry.longContent ? LONG : `Written after approval: ${entry.path}` },
@@ -58,12 +59,12 @@ export async function arrangeApprovals(
     const row = (
       await stack.sql<{ id: string }>(
         `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, channel_id, thread_root_id, args_truncated)
-         VALUES ($1, $2, 'grant', 'pages.write', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $11, $8, $9, $10, $12) RETURNING id`,
+         VALUES ($1, $2, $13, $14, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $11, $8, $9, $10, $12) RETURNING id`,
         [
           personas.omar.workspaceId,
           ENGINEERING,
-          `pages.write · ${entry.path}`,
-          JSON.stringify(entry.longContent ? { path: entry.path, mode: 'create', content: `${LONG.slice(0, 300)}…` } : { path: entry.path, mode: 'create' }),
+          entry.ask ? entry.ask.question.replace(/\s+/g, ' ').slice(0, 299) : `pages.write · ${entry.path}`,
+          JSON.stringify(entry.ask ? { question: entry.ask.question, details: entry.ask.details } : entry.longContent ? { path: entry.path, mode: 'create', content: `${LONG.slice(0, 300)}…` } : { path: entry.path, mode: 'create' }),
           JSON.stringify(resume),
           JSON.stringify(scope),
           personas[entry.requester].actorId,
@@ -72,6 +73,8 @@ export async function arrangeApprovals(
           entry.threadRootId ?? null,
           personas[entry.requester].name,
           entry.longContent === true,
+          entry.ask ? 'agent' : 'grant',
+          entry.ask ? 'approvals.ask' : 'pages.write',
         ],
       )
     )[0];

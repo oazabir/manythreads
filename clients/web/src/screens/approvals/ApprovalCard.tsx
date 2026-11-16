@@ -4,7 +4,7 @@ import { useDecision } from './useDecision';
 import { AgePill } from './AgePill';
 import { AskerAvatar } from './Asker';
 import { riskClass, riskOf } from './risk';
-import { approvalAction, approvalSentence, ASK_TOOL, COMMAND_TOOL } from './sentence';
+import { approvalAction, approvalSentence, askText, ASK_TOOL, COMMAND_TOOL } from './sentence';
 import { ShareApprovalPreview } from './ShareApprovalPreview';
 import { isShareApproval, shareKind, shareOutcomeLine } from './shareApproval';
 import { callOverdue } from './state';
@@ -61,14 +61,14 @@ export function answerWords(approval: Pick<Approval, 'source' | 'tool'>): { yes:
 }
 
 /** What a bot's own question or command shows: the command in a code block, the bot's reason and details as text. */
-export function AgentPreview({ approval, terse = false }: { approval: Approval; terse?: boolean }) {
-  const p = approval.argsPreview as Record<string, unknown>;
+export function AgentPreview({ approval, terse = false, full }: { approval: Approval; terse?: boolean; full?: Record<string, unknown> | null | undefined }) {
+  const p = (full ?? approval.argsPreview) as Record<string, unknown>;
   const text = (k: string): string => (typeof p[k] === 'string' ? (p[k] as string) : '');
   const command = text('command');
   // in a run card the question already says it is a command: a reason that only repeats that is left out
   const why = terse && /^(run|running) a command\.?$/i.test(text('why').trim()) ? '' : text('why');
   const details = text('details');
-  if (command === '' && why === '' && details === '') return <Preview preview={approval.argsPreview} />;
+  if (command === '' && why === '' && details === '') return approval.tool === ASK_TOOL ? null : <Preview preview={approval.argsPreview} />;
   return (
     <div className="apr-agent" data-testid="approval-agent">
       {command !== '' ? (
@@ -86,26 +86,35 @@ export function AgentPreview({ approval, terse = false }: { approval: Approval; 
  * command?" over the command itself; a bot's own question is the question; anything else "May it <action>?".
  */
 export function runQuestion(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source'>): string {
-  if (a.tool === ASK_TOOL && typeof a.summary === 'string' && a.summary.trim() !== '') return a.summary.trim();
+  if (a.tool === ASK_TOOL && askText(a) !== '') return askText(a);
   if (a.tool === COMMAND_TOOL) return 'May it run this command?';
   return `May it ${approvalAction(a)}?`;
 }
 
 /**
- * "This preview is cut short": for the people who may decide, the button that opens the whole call (Yes stays disabled until it is open), and the call once open. Drawn by every
- * variant, the run card's and the channel's question strip included.
+ * What a cut-short call says about itself. The people who may decide get the whole call at once (`useDecision` opens it on its own; the card draws it in place of the preview),
+ * so here is only the wait, a failure with Retry, or, when the server holds no more than the preview, one honest line. A person who may not decide cannot open it and is told
+ * the preview is cut short. Yes stays disabled until the call has come. Drawn by every variant, the run card's and the channel's question strip included.
  */
-export function FullCall({ approval, full, opening, openFull }: { approval: Approval; full: Record<string, unknown> | null | undefined; opening: boolean; openFull: () => Promise<void> }) {
+export function FullCall({ approval, full, opening, openFull, fullError }: { approval: Approval; full: Record<string, unknown> | null | undefined; opening: boolean; openFull: () => Promise<void>; fullError?: string | null }) {
   if (!approval.argsTruncated) return null;
+  const mayOpen = approval.canDecide && approval.status === 'pending';
+  if (full !== undefined) {
+    return full === null ? (
+      <p className="apr-blocked" data-testid="approval-truncated">This call was longer than the platform keeps; the end of it is not stored.</p>
+    ) : null;
+  }
+  if (!mayOpen) return <p className="apr-blocked" data-testid="approval-truncated">This preview is cut short.</p>;
   return (
     <div className="apr-truncated" data-testid="approval-truncated">
-      <p className="apr-blocked">This preview is cut short.{approval.canDecide && approval.status === 'pending' ? ' Open the full call before you decide.' : ''}</p>
-      {approval.canDecide && full === undefined ? (
-        <button type="button" className="btn s" disabled={opening} onClick={() => void openFull()} data-testid="approval-open-full">
-          {opening ? 'Opening…' : 'View full call'}
-        </button>
-      ) : null}
-      {full !== undefined && full !== null ? <Preview preview={full as Approval['argsPreview']} testId="approval-full" /> : null}
+      {fullError ? (
+        <>
+          <p className="apr-error" role="alert" data-testid="approval-full-error">{fullError}</p>
+          <button type="button" className="btn s" disabled={opening} onClick={() => void openFull()} data-testid="approval-open-full">{opening ? 'Opening…' : 'Retry'}</button>
+        </>
+      ) : (
+        <p className="apr-blocked" role="status" data-testid="approval-full-loading">Opening the full call…</p>
+      )}
     </div>
   );
 }
@@ -126,7 +135,9 @@ export function ApprovalCard({
   onDecided?: (approval: Approval) => void;
   variant?: 'detail' | 'thread' | 'run';
 }) {
-  const { note, setNote, busy, error, full, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, onDecided);
+  const { note, setNote, busy, error, full, fullError, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, onDecided);
+  // the whole call stands in for the preview as soon as it has come
+  const shown = full ?? approval.argsPreview;
 
   const pending = approval.status === 'pending';
   const share = isShareApproval(approval);
@@ -136,7 +147,7 @@ export function ApprovalCard({
   const { yes, no } = answerWords(approval);
   const buttons = answered ? null : (
     <>
-      <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
+      <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Waiting for the full call' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
         {busy === 'approve' ? 'Sending…' : yes}
       </button>
       <button type="button" className="btn" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-deny">
@@ -151,8 +162,8 @@ export function ApprovalCard({
     return (
       <article className="apr-card apr-card-run" data-testid="approval-card" data-approval={approval.id} data-status={approval.status} aria-label={`Question: ${runQuestion(approval)}`}>
         <p className="apr-run-q" data-testid="approval-sentence" dir="auto">{runQuestion(approval)}</p>
-        {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} terse /> : <Preview preview={approval.argsPreview} />}
-        <FullCall approval={approval} full={full} opening={opening} openFull={openFull} />
+        {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} terse full={full} /> : <Preview preview={shown as Approval['argsPreview']} />}
+        <FullCall approval={approval} full={full} opening={opening} openFull={openFull} fullError={fullError} />
         {answered ? <AnsweredLine /> : null}
         {pending && approval.canDecide && !answered ? (
           <div className="apr-actions">
@@ -198,8 +209,8 @@ export function ApprovalCard({
       </p>
       {/* a bot's own question is already the sentence above ("Engineer asks: <the question>"): the raw summary would say it a second time */}
       {agent && approval.tool === ASK_TOOL ? null : <p className="apr-raw" data-testid="approval-summary">{approval.summary}</p>}
-      {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
-      <FullCall approval={approval} full={full} opening={opening} openFull={openFull} />
+      {share ? <ShareApprovalPreview approval={approval} /> : agent ? <AgentPreview approval={approval} full={full} /> : <Preview preview={shown as Approval['argsPreview']} />}
+      <FullCall approval={approval} full={full} opening={opening} openFull={openFull} fullError={fullError} />
 
       {answered ? <AnsweredLine /> : null}
       {pending && !answered ? (

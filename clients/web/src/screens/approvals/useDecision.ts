@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Approval } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { decideApproval, fetchApprovalArgs } from './api';
@@ -6,7 +6,7 @@ import { announceApprovalsChanged } from './live';
 
 /*
  * Answering one approval, wherever its card is drawn (the inbox, a thread, a run card, the question strip under a thread's root in the channel). One copy of the rules:
- *  - the full call is opened before a cut-short preview is approved (Yes stays disabled until it is);
+ *  - a cut-short preview is never approved on: for the people who may decide, the whole call is loaded by itself when the card appears (one read), and Yes stays disabled until it has come;
  *  - one answer at a time (`busy`);
  *  - a second answer to the same question (another person, another tab) is a 409 from the server: it is "Already answered", not an error, and every list on the page reads again.
  */
@@ -18,6 +18,8 @@ export interface UseDecision {
   setNote: (note: string) => void;
   busy: Decision | null;
   error: string | null;
+  /** Why the whole call could not be loaded (Retry is `openFull`); null while it loads or once it has come. */
+  fullError: string | null;
   /** The full stored call once opened (null: the server had none to show), undefined until then. */
   full: Record<string, unknown> | null | undefined;
   opening: boolean;
@@ -35,21 +37,32 @@ export function useDecision(approval: Approval, slug: string, onDecided?: (appro
   const [error, setError] = useState<string | null>(null);
   const [full, setFull] = useState<Record<string, unknown> | null | undefined>(undefined);
   const [opening, setOpening] = useState(false);
+  const [fullError, setFullError] = useState<string | null>(null);
   const [answered, setAnswered] = useState(false);
 
   // A clipped preview is not enough to approve on: the people who may decide open the whole call first (nothing is hidden from them but secrets).
   const openFull = async (): Promise<void> => {
     if (opening) return;
     setOpening(true);
-    setError(null);
+    setFullError(null);
     try {
       setFull((await fetchApprovalArgs(slug, approval.id)).args);
     } catch (e) {
-      setError(isApiError(e) ? e.message : 'Could not open the full call.');
+      setFullError(isApiError(e) ? e.message : 'Could not load the full call.');
     } finally {
       setOpening(false);
     }
   };
+
+  // the people who may decide get the whole call without asking: one read when the card appears (not a button)
+  const asked = useRef<string | null>(null);
+  const wants = approval.argsTruncated && approval.canDecide && approval.status === 'pending';
+  useEffect(() => {
+    if (!wants || asked.current === approval.id) return;
+    asked.current = approval.id;
+    void openFull();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per approval
+  }, [wants, approval.id]);
 
   const decide = async (decision: Decision): Promise<void> => {
     if (busy) return;
@@ -70,5 +83,5 @@ export function useDecision(approval: Approval, slug: string, onDecided?: (appro
     }
   };
 
-  return { note, setNote, busy, error, full, opening, needsFull: approval.argsTruncated && full === undefined, answered, openFull, decide };
+  return { note, setNote, busy, error, fullError, full, opening, needsFull: approval.argsTruncated && full === undefined, answered, openFull, decide };
 }

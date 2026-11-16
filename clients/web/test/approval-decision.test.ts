@@ -5,8 +5,8 @@ import type { Approval } from '@manythreads/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client';
 
-// P29-05: answering an approval is one set of rules wherever the card is drawn. Yes waits for the full call when the preview is cut short (the run card's variant used to disable
-// Yes and never draw the button that opens the call), one answer at a time, and a second answer (409) is a sentence, not an error.
+// P29-05: answering an approval is one set of rules wherever the card is drawn. When the preview is cut short the people who may decide get the whole call by itself (one read, no
+// button) and Yes waits for it (the run card's variant used to disable Yes and never draw the button that opened the call), one answer at a time, and a second answer (409) is a sentence, not an error.
 
 const decideApproval = vi.fn();
 const fetchApprovalArgs = vi.fn();
@@ -74,22 +74,56 @@ const click = async (el: HTMLElement | null): Promise<void> => {
 
 describe('a cut-short call', () => {
   for (const variant of ['run', 'thread', 'detail'] as const) {
-    it(`keeps Yes disabled in the ${variant} card until the full call is opened, and offers the button to open it`, async () => {
+    it(`loads the whole call by itself in the ${variant} card (one read, no button), shows it in place of the preview, and enables Yes once it has come`, async () => {
+      let arrive: (v: unknown) => void = () => undefined;
+      fetchApprovalArgs.mockReturnValue(new Promise((r) => (arrive = r)));
       await show(approval({ argsTruncated: true }), variant);
+      // while it loads: a small waiting line, Yes disabled, no button to press
+      expect(byId('approval-full-loading')).not.toBeNull();
+      expect(byId('approval-open-full')).toBeNull();
       expect(byId('approval-approve')?.disabled).toBe(true);
-      expect(byId('approval-open-full')).not.toBeNull();
-      fetchApprovalArgs.mockResolvedValue({ args: { question: 'the whole of it' } });
-      await click(byId('approval-open-full'));
+      await act(async () => arrive({ args: { question: 'the whole of it', details: 'line one\nline two' } }));
       expect(fetchApprovalArgs).toHaveBeenCalledOnce();
       expect(byId('approval-approve')?.disabled).toBe(false);
-      expect(byId('approval-full')?.textContent).toContain('the whole of it');
+      expect(byId('approval-truncated')).toBeNull();
+      expect(host.textContent).toContain('line one');
+      expect(host.textContent).not.toContain('cut short');
     });
   }
 
-  it('does not offer the button to a person who cannot decide', async () => {
+  it('shows a failure with Retry, keeps Yes disabled, and loads on Retry', async () => {
+    fetchApprovalArgs.mockRejectedValueOnce(new ApiError({ code: 'internal', message: 'The server is busy', status: 500 }));
+    await show(approval({ argsTruncated: true }), 'detail');
+    expect(byId('approval-full-error')?.textContent).toContain('The server is busy');
+    expect(byId('approval-approve')?.disabled).toBe(true);
+    fetchApprovalArgs.mockResolvedValue({ args: { details: 'now it came' } });
+    await click(byId('approval-open-full'));
+    expect(byId('approval-approve')?.disabled).toBe(false);
+    expect(host.textContent).toContain('now it came');
+  });
+
+  it('enables Yes when the server holds no more than the preview, and says so', async () => {
+    fetchApprovalArgs.mockResolvedValue({ args: null });
+    await show(approval({ argsTruncated: true }), 'detail');
+    expect(byId('approval-approve')?.disabled).toBe(false);
+    expect(byId('approval-truncated')?.textContent).toContain('not stored');
+  });
+
+  it('does not read anything for a person who cannot decide, and says the preview is cut short', async () => {
     await show(approval({ argsTruncated: true, canDecide: false, blockReason: 'not_approver' }));
+    expect(fetchApprovalArgs).not.toHaveBeenCalled();
     expect(byId('approval-open-full')).toBeNull();
     expect(byId('approval-approve')).toBeNull();
+    expect(byId('approval-truncated')?.textContent).toContain('cut short');
+  });
+
+  it('draws a bot ask whole: the long question as the headline and the context kept line by line', async () => {
+    const question = `Can the platform owner resolve Deployer's preview secret-read permission? ${'It is needed for every release. '.repeat(15)}`;
+    await show(approval({ summary: `${question.slice(0, 299)}…`, argsPreview: { question, details: 'first line\nsecond line' } }), 'detail');
+    expect(byId('approval-sentence')?.textContent).toContain(question.trim());
+    expect(byId('approval-details')?.textContent).toBe('first line\nsecond line');
+    expect(fetchApprovalArgs).not.toHaveBeenCalled();
+    expect(byId('approval-approve')?.disabled).toBe(false);
   });
 });
 

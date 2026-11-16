@@ -239,6 +239,7 @@
 
 .tvAsk {
   min-width: 0;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-weight: 600;
 }
@@ -367,4 +368,11 @@
   .tvDockLine {
     min-block-size: 44px;
   }
+}
+
+/* the question's own words are shown whole; a long context scrolls inside the strip */
+.tvStrip .apr-details,
+.tvStrip .apr-command,
+.tvStrip .apr-preview {
+  max-height: 30dvh;
 }

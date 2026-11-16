@@ -5,7 +5,7 @@ import { fetchThreadApprovals } from '../screens/approvals/api';
 import { useDecision } from '../screens/approvals/useDecision';
 import { ShareApprovalPreview } from '../screens/approvals/ShareApprovalPreview';
 import { isShareApproval } from '../screens/approvals/shareApproval';
-import { approvalSentence, ASK_TOOL } from '../screens/approvals/sentence';
+import { approvalSentence } from '../screens/approvals/sentence';
 
 /** The sentence the strip asks: a bot's own question or command in the run-card words, a platform approval in the inbox's. */
 export const stripQuestion = (a: Approval): string => (a.source === 'agent' ? runQuestion(a) : approvalSentence(a));
@@ -34,7 +34,7 @@ function AnsweredBy({ rootId, approvalId }: { rootId: string; approvalId: string
  * (`useDecision`: 403, 409 "Already answered", the "View full call" rule); only the look is smaller. A person who may not decide it sees who can.
  */
 function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug: string; rootId: string; onDecided: () => void }) {
-  const { busy, error, full, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, () => onDecided());
+  const { busy, error, full, fullError, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, () => onDecided());
   const words = answerWords(approval);
   const agent = approval.source === 'agent';
   return (
@@ -43,12 +43,12 @@ function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug
         <span className="tvNeeds">Needs you</span>
         <span className="tvAsk" dir="auto" data-testid="tv-question-text">{stripQuestion(approval)}</span>
       </div>
-      {agent ? (approval.tool !== ASK_TOOL ? <AgentPreview approval={approval} terse /> : null) : isShareApproval(approval) ? <ShareApprovalPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
-      <FullCall approval={approval} full={full} opening={opening} openFull={openFull} />
+      {agent ? <AgentPreview approval={approval} terse full={full} /> : isShareApproval(approval) ? <ShareApprovalPreview approval={approval} /> : <Preview preview={(full ?? approval.argsPreview) as Approval['argsPreview']} />}
+      <FullCall approval={approval} full={full} opening={opening} openFull={openFull} fullError={fullError} />
       {answered ? <AnsweredBy rootId={rootId} approvalId={approval.id} /> : null}
       {!answered && approval.canDecide ? (
         <div className="tvStripActs">
-          <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="tv-question-yes">
+          <button type="button" className="btn primary" disabled={busy !== null || needsFull} title={needsFull ? 'Waiting for the full call' : undefined} onClick={() => void decide('approve')} data-testid="tv-question-yes">
             {busy === 'approve' ? 'Sending…' : words.yes}
           </button>
           <button type="button" className="btn" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="tv-question-no">

@@ -93,7 +93,7 @@ export async function settleAgentApproval(input: AgentApprovalInput): Promise<Ap
           source: 'agent',
           tool: 'agent.command',
           summary: commandSummary(shown, question.kind),
-          argsPreview: { command: clip(shown, COMMAND_PREVIEW_CHARS), why: clip(question.description, 300) },
+          argsPreview: { command: clip(shown, COMMAND_PREVIEW_CHARS), why: clip(question.description, 2_000) },
           argsTruncated: shown.length > COMMAND_PREVIEW_CHARS,
           resume: { kind: 'handoff', payload: { kind: 'command', runId: run.runId } },
           approvers: input.approvers,

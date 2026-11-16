@@ -64,12 +64,19 @@ export function approvalAction(a: Pick<Approval, 'tool' | 'summary' | 'argsPrevi
   return hint ? `use ${a.tool} (${hint})` : `use ${a.tool}`;
 }
 
+/** The question of a bot's own ask, whole: the stored preview holds all of it (the summary is the list's one clipped line). */
+export function askText(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview'>): string {
+  const q = (a.argsPreview as Record<string, unknown>)['question'];
+  if (typeof q === 'string' && q.trim() !== '') return q.trim();
+  return typeof a.summary === 'string' ? a.summary.trim() : '';
+}
+
 /** "Nadia asked Support responder to send an email to m.okafor"; a bot that asked for itself reads "Support responder wants to ...". */
 export function approvalSentence(a: Pick<Approval, 'tool' | 'summary' | 'argsPreview' | 'source' | 'botName' | 'requesterName'>): string {
   if (isShareApproval(a)) return `${a.requesterName} asked: ${a.summary}`;
   const bot = a.botName ?? 'a bot';
   // a bot's own question (`approvals.ask`) reads as the question; the bot's program stopping at a command reads as the bot wanting to run it
-  if (a.tool === ASK_TOOL && typeof a.summary === 'string' && a.summary.trim() !== '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} asks: ${a.summary.trim()}`;
+  if (a.tool === ASK_TOOL && askText(a) !== '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} asks: ${askText(a)}`;
   const action = approvalAction(a);
   const asker = typeof a.requesterName === 'string' ? a.requesterName : '';
   if (asker === bot || asker.trim() === '') return `${bot.charAt(0).toUpperCase()}${bot.slice(1)} wants to ${action}`;

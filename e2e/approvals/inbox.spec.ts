@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, postAs } from '../support/stack-browser.ts';
@@ -234,16 +236,15 @@ test('the card sits in the thread the run answered in: the asker reads the quest
   await outsider.ctx.dispose();
 });
 
-test('a call too long for its preview says so, and cannot be approved before the whole call has been opened', async ({ browser, playwright }) => {
+test('a call too long for its preview is opened by itself for the people who may decide; Yes waits for it', async ({ browser, playwright }) => {
   const [long] = await arrangeApprovals(stack, [{ path: 'pages/e2e-long.md', requester: 'nadia', longContent: true }]);
   const { page, context } = await openOn(browser, playwright, stack, 'rafi', `/t/engineering/approvals?approval=${long!.id}`);
   try {
     const c = card(page, long!.id);
-    await expect(c.getByTestId('approval-truncated')).toContainText('cut short');
-    await expect(c.getByTestId('approval-approve')).toBeDisabled();
-    await expect(c.getByTestId('approval-preview')).not.toContainText('END-OF-PAGE');
-    await c.getByTestId('approval-open-full').click();
-    await expect(c.getByTestId('approval-full')).toContainText('END-OF-PAGE');
+    // no button and no "cut short": the whole call comes by itself and stands in place of the preview
+    await expect(c.getByTestId('approval-preview')).toContainText('END-OF-PAGE', { timeout: 15_000 });
+    await expect(c.getByTestId('approval-open-full')).toHaveCount(0);
+    await expect(c.getByTestId('approval-truncated')).toHaveCount(0);
     await expect(c.getByTestId('approval-approve')).toBeEnabled();
     // the requester cannot open the full call
     const nadia = await apiOn(playwright, stack, 'nadia');
@@ -251,6 +252,31 @@ test('a call too long for its preview says so, and cannot be approved before the
     await nadia.ctx.dispose();
     await c.getByTestId('approval-deny').click();
     await expect(c.getByTestId('approval-state')).toContainText('Denied by Rafi');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a bot question with a long question and a long context is shown whole in the Approvals view, in place of any preview', async ({ browser, playwright }) => {
+  const question = `Can the platform owner resolve Deployer's preview secret-read permission so the next release can run? ${'The deployer reads the preview secret on every release. '.repeat(12)}END-OF-QUESTION`;
+  const details = `${Array.from({ length: 60 }, (_, i) => `Context line ${i + 1}: what was tried and what the platform said.`).join('\n')}\nEND-OF-CONTEXT`;
+  const [ask] = await arrangeApprovals(stack, [{ path: 'pages/e2e-ask.md', requester: 'nadia', ask: { question, details } }]);
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', `/t/engineering/approvals?approval=${ask!.id}`);
+  try {
+    const c = card(page, ask!.id);
+    await expect(c.getByTestId('approval-sentence')).toContainText('END-OF-QUESTION');
+    // the context is whole (a scroll box, not a clipped line) and there is no "cut short" line and no button to open anything
+    await expect(c.getByTestId('approval-details')).toContainText('Context line 1:');
+    await expect(c.getByTestId('approval-details')).toContainText('END-OF-CONTEXT');
+    await expect(c.getByTestId('approval-truncated')).toHaveCount(0);
+    await expect(c.getByTestId('approval-open-full')).toHaveCount(0);
+    const box = await c.getByTestId('approval-details').evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, max: getComputedStyle(el).maxHeight }));
+    expect(box.scroll).toBeGreaterThan(box.client);
+    expect(box.max).not.toBe('none');
+    await expect(c.getByTestId('approval-approve')).toBeEnabled();
+    await expect(c.getByTestId('approval-approve')).toHaveText('Yes');
+    mkdirSync(join(import.meta.dirname, '..', '..', 'temp', 'screenshots', 'p29'), { recursive: true });
+    await page.screenshot({ path: join(import.meta.dirname, '..', '..', 'temp', 'screenshots', 'p29', 'approval-long-ask.png') });
   } finally {
     await context.close();
   }
