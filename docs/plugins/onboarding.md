@@ -1,6 +1,6 @@
 # onboarding
 
-The first admin's setup checklist (PLAN P10-01, SPEC §16): nine steps from a fresh install to a first answer from Brain, shown as a card in the sidebar and as a wizard at `/onboarding` (Settings, Workspace, Setup). To use it you need to be a workspace owner or admin; nobody else sees the card, the page or the routes.
+The first admin's setup checklist (PLAN P10-01, SPEC §16): thirteen steps from a fresh install to a first delivery by bots (Phase 27, `docs/plans/onboarding-journey.md`), shown as a card in the sidebar and as a wizard at `/onboarding` (Settings, Workspace, Setup). To use it you need to be a workspace owner or admin; nobody else sees the card, the page or the routes.
 
 Package: `packages/plugins/onboarding`. Manifest: `extends: ['event.emit']`, emits `onboarding.step.marked`, `onboarding.goal.launched` and `onboarding.checklist.dismissed`. Schemas: `packages/shared/src/api/onboarding`, `packages/shared/src/events/onboarding.*.ts`.
 
@@ -10,17 +10,25 @@ The plugin keeps only what a person decided or did. Everything else on the check
 
 | Step | Done when | Where the fact lives |
 |---|---|---|
-| 0 Sign in as the workspace owner | always (you are signed in) | the session |
-| 1 Sign-in methods | a single sign-on method is switched on, or an admin confirmed "passwords only" (a decision, recorded here) | identity-oidc, this plugin's mark |
-| 2 Models | the `smart` or `fast` alias (the ones the shipped Brain asks for) answered a test call made after the alias and its provider were last saved | gateway-llm, `app.llm_alias_tests` |
-| 3 Code | the first team has a project | projects |
-| 4 Domain and HTTPS | the page is served over HTTPS | the browser's address |
-| 5 Teams | one team exists | teams |
-| 6 Bots | Brain is on the first team | bots |
-| 7 Servers | the first team has a runner (a program on your own server that runs bots' commands there) | runners |
-| 8 Your first goal | the first goal was sent to Brain | this plugin, `app.onboarding_state` |
+| 0 Your sign-in | always (you are signed in) | the session |
+| 1 Pick a look (optional) | the admin's own palette is not Classic, or they chose to keep Classic (a confirmation, recorded here) | the session's appearance, this plugin's mark |
+| 2 Your organization | the workspace name is no longer the install's default "My organization"; the step also sets the short name and the time zone | workspace settings |
+| 3 Address and HTTPS (optional) | the page is served over HTTPS; otherwise the step shows the address and `sudo manythreads set-domain <name>` | the browser's address |
+| 4 Models | the `smart` alias (the one the shipped Brain asks for) answered a test call made after the alias and its provider were last saved. The step binds `smart`, `fast` and `code` from a preset (`LLM_PRESETS` in `packages/shared/src/api/llm/presets.ts`): a provider key, a coding plan (address plus key) or a local model, with a monthly spending limit | gateway-llm, `app.llm_alias_tests` |
+| 5 Sign-in methods (optional) | a single sign-on method is switched on, or an admin confirmed "passwords only" | identity-oidc, this plugin's mark |
+| 6 Teams | one team exists. Every template is shown and ticked; the admin unticks what they do not want | teams |
+| 7 Servers (optional) | a server is connected, or a team runner exists. The step makes the one-line enrol command | bot-runners, runners |
+| 8 Runners | **a runner the wizard proved**: an enabled, ready runner that answered a real question asked through a bot. The wizard records that proof as a `checked` mark with the runner's id; the step is done only while that runner is still enabled and ready | this plugin's mark, bot-runners |
+| 9 Where bots run | Brain is on a team and a runner is the workspace default | bots, bot-runners |
+| 10 Code (optional) | the first team has a project | projects |
+| 11 Check that Brain answers | the question was sent and a run in its thread ended with an answer (the launch record carries the thread's message id) | this plugin, `app.onboarding_state`, runs |
+| 12 A first delivery (optional) | a task of a team has a pull request created after the `started` mark | tasks, this plugin's mark |
 
-Steps 3, 4 and 7 are optional: they never hold the checklist open, and an admin can set them aside with "We do not need this". A step whose fact is true cannot be set aside, and a fact always wins over a mark. The checklist is finished when every required step is done.
+**A working runner is required (owner decision 2026-11-16).** Without a runner no bot can run, so the wizard does not let the admin finish with none: step 8 is required, and a ready runner alone does not satisfy it, only one that answered a real question. When no runner exists, the step offers to deploy a Hermes pod (a small program in the site's own cluster that runs bots on the models of step 4). Its model credentials are the same preset form as step 4: an API key or a coding plan, saved on LiteLLM as the aliases the pod uses. The wizard creates the runner, makes it the default, asks Brain a test question, waits for the answer and only then records the proof. A failure is shown in one sentence with a retry. This replaces plan decision 7 (Brain on the `models` runner) for a fresh install.
+
+Steps 1, 3, 5, 7, 10 and 12 are optional: they never hold the checklist open, and an admin can set them aside ("We do not need this"). A step whose fact is true cannot be set aside, and a fact always wins over a mark. The checklist is finished when every required step (0, 2, 4, 6, 8, 9, 11) is done.
+
+The wizard opens one step at a time: the one named in `?step=<id>`, else the first required step still to do, so a person who comes back lands where they stopped. "Continue" opens the next step.
 
 A plugin may not read another plugin's tables, so the browser assembles the facts from each owner's own routes (`clients/web/src/screens/onboarding/steps.ts`, pure and unit-tested) and this plugin stores only the decisions.
 
@@ -28,10 +36,10 @@ A plugin may not read another plugin's tables, so the browser assembles the fact
 
 | table | what it is |
 |---|---|
-| `app.onboarding_state` | one row per workspace: when and by whom the first goal was sent (with the team and the conversation channel), and when and by whom the checklist was put away. A row that says it was put away must also say a goal was sent (a CHECK). |
-| `app.onboarding_marks` | one row per decision: `signin` is `acknowledged` (passwords only), `code`, `infrastructure` and `servers` are `skipped`. |
+| `app.onboarding_state` | one row per workspace: when and by whom the first goal was sent (with the team, the conversation channel and the message the wizard watches for the answer), and when and by whom the checklist was put away. A row that says it was put away must also say a goal was sent (a CHECK). |
+| `app.onboarding_marks` | one row per decision or proof. `signin` and `theme` are `acknowledged`; `code`, `infrastructure`, `servers` and `delivery` can be `skipped`; `runners` is `checked` with the id of the runner that answered; `delivery` can be `started` with the id of the message that started it. A decision keeps its first record; a proof or a start keeps the latest. A CHECK ties each step to the kinds it takes and to having (or not having) a `ref_id`. |
 
-Both are readable and writable by workspace owners and admins only (row-level security: the database itself refuses anyone else). Migration `0001_onboarding.sql`.
+Both are readable and writable by workspace owners and admins only (row-level security: the database itself refuses anyone else). Migrations `0001_onboarding.sql` and `0002_wizard_steps.sql` (the new steps and kinds, `ref_id`, `launch_message_id`).
 
 ## Routes
 
@@ -40,9 +48,9 @@ All under `/api/workspace/onboarding`, workspace owner or admin (`403` for a mem
 | method | path | what |
 |---|---|---|
 | GET | `/` | `{ state }`: marks, the launch, the dismissal |
-| PUT | `/marks/:step` | `{ kind }`: confirm password-only sign-in, or set an optional step aside. A repeat changes nothing |
+| PUT | `/marks/:step` | `{ kind, refId? }`: confirm (sign-in, theme), set an optional step aside, record a proof (`checked` plus the runner id) or a start (`started` plus the message id). A repeat of a decision changes nothing; a proof for a different runner replaces the first |
 | DELETE | `/marks/:step` | take the decision back |
-| POST | `/launch` | `{ teamId, channelId }`: records the first goal. The first one wins; a repeat changes nothing and writes no second event |
+| POST | `/launch` | `{ teamId, channelId, messageId? }`: records the first goal. The first one wins and writes the one event; a later call with a new `messageId` only moves the thread the wizard watches, until the checklist is put away |
 | POST | `/dismiss` | puts the checklist away. `409` until a first goal was launched |
 
 ## The first goal
@@ -60,11 +68,14 @@ Each change writes one event, only when something really changed: `onboarding.st
 ## Honest limits
 
 - The launch is reported by the browser (ids only). The server checks the caller is an admin and that a launch exists before it lets the checklist be put away, but it does not verify the message was posted, because the messages table belongs to another plugin.
-- The facts behind steps 1 and 3 to 7 are read by the browser, not recorded: a step can go from done back to not done (a deleted team, a removed Brain).
-- Step 3 has no GitHub App or GitLab sign-in flow, step 4 has no generated Kubernetes manifest or `sshd_config` line with token and SSH checks, and step 7 has no install one-liner with a waiting indicator. The server has no code for any of them, so those rows report what exists and link to the page that does the work.
+- The facts behind most steps are read by the browser, not recorded: a step can go from done back to not done (a deleted team, a removed Brain, a runner switched off after it answered).
+- The runner proof is a recorded fact the wizard made (a bot test answered through that runner); the server stores it but does not re-ask the runner.
+- The address and HTTPS step shows the address and the command to move to an own domain; it has no server route that changes the domain, because that is the host command's job (`manythreads set-domain`).
+- The Code step creates the project from an address, but the access token is entered on the Projects page.
+- The first delivery needs the Engineering team, a project with a token and the chain's bots on a working runner; it is optional for that reason.
 
 ## Rules to keep
 
 - A step turns done only from a fact. Never add a button that ticks a step.
 - A check button re-reads facts; if nothing changed, the step stays as it was.
-- A new decision the server should remember is a new `step` value: update the migration's CHECK, `OnboardingMarkStep` in `packages/shared` and `ENUM_COLUMNS` in `packages/kernel/test/schema-enums.test.ts` together.
+- A new decision or proof the server should remember is a new `step` value: update the migration's CHECK, `OnboardingMarkStep` in `packages/shared` and `ENUM_COLUMNS` in `packages/kernel/test/schema-enums.test.ts` together.

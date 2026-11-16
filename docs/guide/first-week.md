@@ -6,6 +6,8 @@ Plain words are used on purpose. A **bot** is a team member that is a program. *
 
 ## Day 1. Finish the setup
 
+The wizard has thirteen steps now; [Your first day](first-day.md) walks all of them. The short version of the older nine-step text follows.
+
 1. Sign in as the workspace owner. The left sidebar shows a card, "Finish setting up", with a count such as "3 of 9" and a line "Next: ...".
    Only workspace admins see it. Press the link after "Next:" to open the setup wizard.
 2. Work down the steps: sign-in methods (add Google or Microsoft sign-in, or confirm that passwords are what you want), models (your provider key

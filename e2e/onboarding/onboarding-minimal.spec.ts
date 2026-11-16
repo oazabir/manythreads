@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { authState } from '../support/env.ts';
 
 /*
- * PLAN P5-22 and P10-01 in the browser: the setup page (the nine steps of SPEC section 16) renders for an admin with a link per step, and nobody
+ * PLAN P5-22 and P10-01 in the browser: the setup page (the thirteen steps of Phase 27) renders for an admin with a link per step, and nobody
  * else can open it. Read-only: nothing here creates, invites or reconfigures, so it runs on the shared server. The page that changes things is
  * onboarding-wizard.spec.ts.
  */
@@ -14,14 +14,14 @@ test('Omar opens the setup checklist and every step links to the page that does 
   await expect(page.getByRole('heading', { name: 'Finish setting up' })).toBeVisible();
 
   const steps = page.locator('[data-landmark="steps"]');
-  await expect(steps.locator('[data-step]')).toHaveCount(9);
-  for (const id of ['bootstrap', 'signin', 'models', 'code', 'infrastructure', 'teams', 'bots', 'servers', 'launch']) {
+  await expect(steps.locator('[data-step]')).toHaveCount(13);
+  for (const id of ['bootstrap', 'theme', 'organization', 'infrastructure', 'models', 'signin', 'teams', 'servers', 'runners', 'bots', 'code', 'launch', 'delivery']) {
     await expect(steps.locator(`[data-step="${id}"]`)).toBeVisible();
   }
   await expect(steps.locator('[data-step="bootstrap"]')).toHaveAttribute('data-done', 'true');
 
   // finished steps are folded to one line; open each one so its link can be seen
-  for (const id of ['bootstrap', 'signin', 'models', 'code', 'infrastructure', 'teams', 'bots', 'servers', 'launch']) {
+  for (const id of ['bootstrap', 'theme', 'organization', 'infrastructure', 'models', 'signin', 'teams', 'servers', 'runners', 'bots', 'code', 'launch', 'delivery']) {
     const toggle = page.getByTestId(`ob-toggle-${id}`);
     if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
     await expect(steps.locator(`[data-step="${id}"]`)).toHaveAttribute('data-open', 'true');
@@ -32,7 +32,10 @@ test('Omar opens the setup checklist and every step links to the page that does 
   await expect(steps.locator('[data-step="teams"] a[href="/teams"]').first()).toBeVisible();
   await expect(steps.locator('[data-step="infrastructure"] a[href="/settings/workspace/https"]').first()).toBeVisible();
   await expect(steps.locator('[data-step="code"] a[href$="/projects"]').first()).toBeVisible();
-  // a step is "done" only for a fact; the seeded world has a team with Brain, and the first goal was sent when it was seeded
+  // a step is "done" only for a fact; the seeded world has a named organization, a team with Brain, and the first goal was sent when it was seeded. It has no runner that
+  // answered a real question, so the required runner step is still to do.
+  await expect(steps.locator('[data-step="organization"]')).toHaveAttribute('data-done', 'true');
+  await expect(steps.locator('[data-step="runners"]')).toHaveAttribute('data-done', 'false');
   await expect(steps.locator('[data-step="teams"]')).toHaveAttribute('data-done', 'true');
   await expect(steps.locator('[data-step="launch"]')).toHaveAttribute('data-done', 'true');
 
