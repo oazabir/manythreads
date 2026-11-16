@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { MessageAuthor, ThreadInboxItem } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { followThread, unfollowThread } from '../api/endpoints';
@@ -10,7 +10,10 @@ import { laterErrorText, useLater } from '../later/RemindMenu';
 import { laterStore } from '../later/store';
 import { useDismiss } from '../shell/useDismiss';
 import { BellIcon, BellOffIcon, CopyLinkIcon, HashIcon, MarkReadIcon, MoreIcon, NewWindowIcon, SaveForLaterIcon } from '../shell/icons';
-import { channelLabel, followEntry, markerLabel, repliesLine, replySnippet, withHandles } from './threadCard';
+import { channelLabel, followEntry, markerLabel, repliesLine, withHandles } from './threadCard';
+import { Hl, NeedsChip, ProgressLine, ReplyBlocks } from '../inbox/RowParts';
+import { NO_WORK, type RowWork } from '../inbox/work';
+import { NOT_NEEDED, progressOf, type NeedsYou } from '../inbox/rules';
 
 /*
  * One row of the Threads list: who started the thread, where it lives, when it last moved, the first message, who is in it and how many
@@ -25,14 +28,22 @@ type Props = {
   item: ThreadInboxItem;
   teamSlug: string;
   selected: boolean;
-  onOpen: () => void;
+  onOpen: (rootId: string) => void;
   /** Mark the whole thread read (the inbox knows how to find the newest reply). */
-  onMarkRead: () => Promise<void>;
+  onMarkRead: (rootId: string) => Promise<void>;
   /** The row's follow state changed: the list is fetched again. */
   onChanged: () => void;
   /** Open the thread's channel at the thread (a link, so the router decides how). */
   onOpenInChannel: (path: string) => void;
+  /** The words of the filter box, folded: marked where they match. */
+  words?: readonly string[];
+  /** What goes on in the thread (to-do list, run, questions): the row's one line of progress. */
+  work?: RowWork;
+  /** Whether the row waits on the person, and why. */
+  needs?: NeedsYou;
 };
+
+const NO_WORDS: readonly string[] = [];
 
 function Who({ author, size }: { author: Pick<MessageAuthor, 'actorId' | 'displayName' | 'kind'>; size?: 'stack' }) {
   const people = usePeople();
@@ -42,7 +53,7 @@ function Who({ author, size }: { author: Pick<MessageAuthor, 'actorId' | 'displa
   return size === 'stack' ? <span className="thc-face" title={name}>{avatar}</span> : <>{avatar}</>;
 }
 
-export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onChanged, onOpenInChannel }: Props) {
+export const ThreadCard = memo(function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onChanged, onOpenInChannel, words = NO_WORDS, work = NO_WORK, needs = NOT_NEEDED }: Props) {
   const people = usePeople();
   const later = useLater();
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null);
@@ -57,7 +68,7 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
   const rootName = (item.rootAuthor && people.byActor(item.rootAuthor.actorId)?.name) ?? item.rootAuthor?.displayName ?? 'Someone';
   const saved = laterStore.itemFor(item.rootMessageId);
   const follow = followEntry(item.followed);
-  const snippet = replySnippet(item);
+  const progress = progressOf(work.todo, work.run ? { botName: work.run.botName, head: work.run.head } : null);
   const extra = item.participantCount - item.participants.length;
 
   useEffect(() => {
@@ -120,7 +131,7 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
 
   return (
     <li role="option" aria-selected={selected} data-root-id={item.rootMessageId} data-testid="thread-row" className={`thc ${unread ? 'unread' : ''} ${selected ? 'on' : ''} ${menu ? 'menu-open' : ''}`}>
-      <button type="button" className="thc-open" onClick={onOpen}>
+      <button type="button" className="thc-open" onClick={() => onOpen(item.rootMessageId)}>
         <span className="thc-gutter">
           {item.mentionCount > 0 ? (
             <span className="thc-tag" data-testid="thread-tags" data-vt-mask>{item.mentionCount}</span>
@@ -132,11 +143,12 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
         <span className="thc-main">
           <span className="thc-head">
             <b className="thc-who" data-vt-mask>{rootName}</b>
-            <span className="thc-place" title={channelLabel(item.channel)}>{channelLabel(item.channel)}</span>
+            <span className="thc-place" title={channelLabel(item.channel)}><Hl text={channelLabel(item.channel)} words={words} /></span>
+            <NeedsChip needs={needs} />
             <time className="thc-time" dateTime={item.lastReplyAt} data-vt-mask>{ago(item.lastReplyAt)}</time>
           </span>
-          <span className="thc-text" data-vt-mask>{withHandles(item.title).map((p, i) => (p.handle ? <span key={i} className="thc-handle">{p.text}</span> : p.text))}</span>
-          {snippet ? <span className="thc-snippet" data-vt-mask>{snippet}</span> : null}
+          <span className="thc-text" data-vt-mask>{withHandles(item.title).map((p, i) => (p.handle ? <span key={i} className="thc-handle">{p.text}</span> : <Hl key={i} text={p.text} words={words} />))}</span>
+          {progress ? <ProgressLine progress={progress} /> : null}
           <span className="thc-foot">
             {item.participants.length > 0 ? (
               <span className="thc-faces">
@@ -147,6 +159,7 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
             <span className={`thc-replies ${unread ? 'new' : ''}`} data-testid="thread-replies" data-vt-mask>{repliesLine(item)}</span>
             {note ? <span className="thc-note" role="status">{note}</span> : null}
           </span>
+          <ReplyBlocks item={item} words={words} />
         </span>
       </button>
       <div className="thc-actions" ref={wrap}>
@@ -166,7 +179,7 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
               <HashIcon /><span>Open in channel</span>
             </button>
             {unread ? (
-              <button type="button" role="menuitem" className="thc-item" data-testid="thread-action-read" onClick={() => void run('Marked as read', onMarkRead)}>
+              <button type="button" role="menuitem" className="thc-item" data-testid="thread-action-read" onClick={() => void run('Marked as read', () => onMarkRead(item.rootMessageId))}>
                 <MarkReadIcon /><span>Mark as read</span>
               </button>
             ) : null}
@@ -183,4 +196,4 @@ export function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onCha
       </div>
     </li>
   );
-}
+});

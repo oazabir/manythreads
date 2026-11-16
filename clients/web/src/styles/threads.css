@@ -4,6 +4,10 @@
 .thc {
   position: relative;
   border-bottom: 1px solid var(--hairline);
+
+  /* a list of 200 threads paints only the rows on screen */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
 }
 
 .thc.on {
@@ -105,7 +109,7 @@
 .thc-text {
   display: -webkit-box;
   overflow: hidden;
-  color: var(--mute);
+  color: var(--ink);
   font-size: var(--fs-small);
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -115,16 +119,6 @@
 
 .thc.unread .thc-text {
   color: var(--ink);
-  font-weight: 600;
-}
-
-.thc-snippet {
-  display: block;
-  overflow: hidden;
-  color: var(--mute);
-  font-size: var(--fs-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .thc-day {
@@ -324,4 +318,316 @@
   place-items: center;
   margin-bottom: 8px;
   color: var(--faint);
+}
+
+/* ---- Threads as a bird's-eye view (P29): the filter's marks, "Needs you", one line of progress, and the blocks under the reply count ---- */
+
+.thc-hit {
+  padding: 0 1px;
+  border-radius: var(--radius-xs);
+  background: var(--attention-wash);
+  color: inherit;
+  box-shadow: 0 0 0 1px var(--warn-border);
+}
+
+.thc-needs {
+  flex: none;
+  padding: 1px 7px;
+  border: var(--border-w, 1px) solid var(--warn-border);
+  border-radius: var(--radius-pill);
+  background: var(--attention-wash);
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* the one line of progress: a mini bar and "2 of 4" with the item being worked on, or the bot and what it does now */
+.thc-prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.thc-bar {
+  flex: none;
+  width: 56px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--todo-track);
+}
+
+.thc-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--todo-fill);
+}
+
+.thc-prog[data-tone="blocked"] .thc-bar > span {
+  background: var(--warn);
+}
+
+.thc-prog-count {
+  flex: none;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.thc-prog-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thc-prog[data-tone="done"] .thc-prog-text {
+  color: var(--faint);
+}
+
+.thc-pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--run-pulse);
+}
+
+.thc-prog[data-tone="blocked"] .thc-pulse {
+  background: var(--warn);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .thc-prog[data-kind="run"] .thc-pulse {
+    animation: thc-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes thc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* The block under the reply count: indented behind a muted elbow, a small label, the replier's picture, name and time, smaller muted text on a faint surface of its own.
+   The mention takes the accent look. Never drawn like the head (the first message above it is plain text at full size). */
+.thc-blk {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-block-start: 6px;
+  margin-inline-start: 16px;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--shell);
+}
+
+.thc-blk::before {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-start: -13px;
+  width: 11px;
+  height: 22px;
+  border-inline-start: 2px solid var(--rule);
+  border-block-end: 2px solid var(--rule);
+  border-end-start-radius: 9px;
+  content: "";
+}
+
+.thc-blk-label {
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  letter-spacing: 0.02em;
+}
+
+.thc-blk-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.thc-blk-who b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mute);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thc-blk-who time {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--faint);
+}
+
+.thc-blk-face .av {
+  width: 18px;
+  height: 18px;
+  font-size: var(--fs-tiny);
+}
+
+.thc-blk-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.thc-blk[data-kind="mention"] {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+}
+
+.thc-blk[data-kind="mention"]::before {
+  border-color: var(--human-border);
+}
+
+.thc-blk[data-kind="mention"] .thc-blk-label {
+  color: var(--human);
+  font-weight: 600;
+}
+
+.thc-blk[data-kind="mention"] .thc-blk-text {
+  color: var(--ink);
+}
+
+/* the selected row is already washed blue: the blocks keep their own surface */
+.thc.on .thc-blk:not([data-kind="mention"]) {
+  background: var(--surface);
+}
+
+/* the "Needs you" group's heading */
+.thc-day.thc-needs-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+/* ---- the filter bar ---- */
+
+.inf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.inf-field {
+  position: relative;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.inf-field > svg {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 9px;
+  color: var(--faint);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.inf-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 32px 0 30px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg, var(--surface));
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.inf-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.inf-clear {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.inf-clear:hover {
+  background: var(--hover);
+}
+
+.inf-order {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inf-order[aria-pressed="true"] {
+  border-color: var(--warn-border);
+  background: var(--attention-wash);
+  color: var(--warn-ink);
+}
+
+.inf-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.inl-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px 16px;
+  list-style: none;
+}
+
+@media (width <= 480px) {
+  .inf-input,
+  .inf-order,
+  .inf-clear {
+    min-height: 44px;
+  }
+
+  .inf-clear {
+    width: 44px;
+    height: 44px;
+  }
 }

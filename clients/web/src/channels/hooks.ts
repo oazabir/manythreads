@@ -25,6 +25,8 @@ export type People = {
   list: Person[];
   /** The team's bots a person can @mention; empty until they load, and for a guest. */
   bots: readonly MentionableBot[];
+  /** The same bots with their actor ids (the Threads filter turns `@name` into the actors a message must mention). */
+  botActors?: ReadonlyArray<{ actorId: string; slug: string; name: string }>;
   byActor(actorId: string): Person | undefined;
   byPerson(personId: string): Person | undefined;
   /** The picture a bot of this team has (by its actor id, the author of its messages); undefined for an actor that is not a known bot. */
@@ -76,7 +78,7 @@ export function useLoadPeople(teamSlug: string | null): People {
     const byPerson = new Map(list.map((p) => [p.personId, p]));
     const me = byPerson.get(session.person.id);
     const admin = session.role === 'owner' || session.role === 'admin';
-    return { loaded: members !== undefined, settled, list, bots: (botList ?? []).filter((b) => b.mentionable).map((b) => ({ slug: b.slug, name: b.name, avatar: b.avatar })), byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), botAvatar: (id) => botByActor.get(id), botName: (id) => botNameByActor.get(id), botAvatarBySlug: (s) => botBySlug.get(s), isBotHandle: (h) => botBySlug.has(h.toLowerCase()), me, canModerate: admin || me?.role === 'lead' };
+    return { loaded: members !== undefined, settled, list, bots: (botList ?? []).filter((b) => b.mentionable).map((b) => ({ slug: b.slug, name: b.name, avatar: b.avatar })), botActors: (botList ?? []).flatMap((b) => (b.actorId !== null ? [{ actorId: b.actorId, slug: b.slug, name: b.name }] : [])), byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), botAvatar: (id) => botByActor.get(id), botName: (id) => botNameByActor.get(id), botAvatarBySlug: (s) => botBySlug.get(s), isBotHandle: (h) => botBySlug.has(h.toLowerCase()), me, canModerate: admin || me?.role === 'lead' };
   }, [members, botList, settled, session.person.id, session.person.avatar, session.role]);
   useEffect(() => {
     channelStore.setSelf(value.me?.actorId ?? null);

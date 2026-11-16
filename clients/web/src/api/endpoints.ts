@@ -807,7 +807,7 @@ export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'min
   call(
     listThreadsRoute,
     { request: ListThreadsQuery, response: ListThreadsResponse },
-    { tab, limit: 30, ...(cursor ? { cursor } : {}), ...(filter?.q ? { q: filter.q } : {}), ...(filter?.mentions ? { mentions: filter.mentions } : {}) } as ListThreadsQuery,
+    { tab, limit: 50, ...(cursor ? { cursor } : {}), ...(filter?.q ? { q: filter.q } : {}), ...(filter?.mentions ? { mentions: filter.mentions } : {}) } as ListThreadsQuery,
     { slug },
   );
 

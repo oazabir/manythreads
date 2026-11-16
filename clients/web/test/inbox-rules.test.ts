@@ -1,4 +1,4 @@
-import type { Approval, RunHead, ThreadInboxItem, ThreadTodo } from '@manythreads/shared';
+import type { Approval, RunHead, ThreadInboxItem, ThreadMention, ThreadTodo } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { filterThreads, fold, highlight, matchThread, mentionsParam, mergeFiltered, needsYou, orderThreads, parseFilter, progressOf, resolveNames, NOT_NEEDED } from '../src/inbox/rules';
 
@@ -71,7 +71,7 @@ describe('matching the loaded rows', () => {
   it('needs every word, anywhere in the row, and sees the latest reply and the mention', () => {
     expect(matchThread(dev, ['releases', 'fix'])).toBe('message');
     expect(matchThread(dev, ['releases', 'nope'])).toBeNull();
-    expect(matchThread(row(4, { mention: { messageId: id(99), authorId: id(5), authorName: 'Rafi', kind: 'person', at: '2026-11-16T10:00:00.000Z', preview: 'please check the quokka' } }), ['quokka'])).toBe('message');
+    expect(matchThread(row(4, { mention: mention('2026-11-16T10:00:00.000Z', { preview: 'please check the quokka' }) }), ['quokka'])).toBe('message');
   });
 
   it('lists channel-name matches first, then message matches, each in the order they came', () => {
@@ -109,7 +109,7 @@ describe('highlighting a match', () => {
 });
 
 const approval = (over: Partial<Approval> = {}): Approval => ({ id: id(700), status: 'pending', canDecide: true, createdAt: '2026-11-16T09:00:00.000Z', ...over }) as unknown as Approval;
-const mention = (at: string) => ({ messageId: id(800), authorId: id(5), authorName: 'Rafi', kind: 'person' as const, at, preview: 'can you decide?' });
+const mention = (at: string, over: Record<string, unknown> = {}): ThreadMention => ({ messageId: id(800), authorId: id(5), authorName: 'Rafi', kind: 'person', at, preview: 'can you decide?', ...over }) as unknown as ThreadMention;
 
 describe('who needs you', () => {
   it('is nobody when nothing waits', () => {
@@ -125,7 +125,7 @@ describe('who needs you', () => {
   it('needs the person for an unanswered mention, and takes the older of the two as the time it began to wait', () => {
     const m = needsYou(row(1, { mention: mention('2026-11-16T11:00:00.000Z') }), []);
     expect(m).toMatchObject({ needs: true, approval: null, since: '2026-11-16T11:00:00.000Z' });
-    const both = needsYou(row(1, { mention: mention('2026-11-16T11:00:00.000Z') }), [approval({ createdAt: '2026-11-16T10:00:00.000Z' }), approval({ id: id(701), createdAt: '2026-11-16T08:00:00.000Z' })]);
+    const both = needsYou(row(1, { mention: mention('2026-11-16T11:00:00.000Z') }), [approval({ createdAt: '2026-11-16T10:00:00.000Z' }), approval({ id: id(701) as unknown as Approval['id'], createdAt: '2026-11-16T08:00:00.000Z' })]);
     expect(both.since).toBe('2026-11-16T08:00:00.000Z');
     expect(both.approval?.id).toBe(id(701));
   });
@@ -161,7 +161,7 @@ describe('the one line of progress on a row', () => {
   });
 
   it('is the run when there is no list: bot and what it does now', () => {
-    expect(progressOf(null, { botName: 'Engineer', head: head({ kind: 'command', title: 'pnpm lint', paths: [], helper: null, count: 1 }) })?.text).toMatch(/^Engineer · /);
+    expect(progressOf(null, { botName: 'Engineer', head: head({ kind: 'execute', title: 'pnpm lint', paths: [], helper: null, count: 1 }) })?.text).toMatch(/^Engineer · /);
     expect(progressOf(null, { botName: 'Engineer' })).toMatchObject({ kind: 'run', text: 'Engineer · Working', count: null, pct: null });
   });
 
