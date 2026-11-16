@@ -1,8 +1,16 @@
-# tools/ excluded: workspace members not needed at runtime (and tools/bench was missing from the lockfile)
+# tools/ excluded: workspace members not needed at runtime (and tools/bench was missing from the lockfile).
+# Kept: what tools/agent-bridge/install/build.mjs needs to make the installer the site serves at /install/ (P26-14): the bridge
+# workspace member and the pod tools it bundles.
 **/node_modules
 **/dist
 .git
 e2e
 docs
 deploy
+!deploy/images/agent-pod
+!deploy/images/workbench
 tools
+!tools/agent-bridge
+!tools/fake-acp-agent
+tools/agent-bridge/spike
+tools/agent-bridge/test
