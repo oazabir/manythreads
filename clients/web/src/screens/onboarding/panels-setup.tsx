@@ -407,7 +407,7 @@ export function ServersStep({ step, setAside }: { step: OnboardingStep; setAside
             e.preventDefault();
             void act.run(async () => {
               const made = await createBotServer({ name: suggestServerName(label), label: label.trim() });
-              setCommand(installCommand(window.location.origin, made.code));
+              setCommand(installCommand(window.location.origin, made.code, made.install?.siteCert ?? null));
             });
           }}
         >
