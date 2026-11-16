@@ -32,6 +32,10 @@ export function adapterEnv(job: DriverJob, mode: string | null): NodeJS.ProcessE
     // The start mode is the grant (measured): the adapter's own start mode `agent` ("Auto review") adds a review step to every command.
     if (mode !== null) env['INITIAL_AGENT_MODE'] = mode;
   }
+  // `mt-publish` presents the run's own token to the publisher. The adapters otherwise start without it (the platform's tools get it in the session's MCP header), so only a bot whose profile
+  // says it may publish gets it here: the token opens this run only (P26-19: a Committer on an agent pod found "no run token").
+  const token = job.request.manythreads.mcp?.token ?? null;
+  if (job.profile.publish === true && token !== null) env['MANYTHREADS_RUN_TOKEN'] = token;
   return env;
 }
 

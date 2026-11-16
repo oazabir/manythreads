@@ -144,6 +144,12 @@ describe('the rendered pod', () => {
     // no publisher container: no publish command for anyone
     const none = JSON.parse(buildBridgeConfig({ ...CFG, serverUrl: '' }, eng, publishers)).profiles;
     expect(none['engineering--builder'].extraAllowedTools).toEqual([...GIT_TOOLS, ...RECORD_TOOLS]);
+    // only the publisher's profile says the adapter may hand its run's token to mt-publish (P26-19); the older command-line driver sets the token itself
+    expect(profiles['engineering--builder'].publish).toBe(true);
+    expect(profiles['engineering--reviewer'].publish).toBeUndefined();
+    expect(cli['engineering--builder']?.publish).toBeUndefined();
+    expect(other['engineering--builder'].publish).toBeUndefined();
+    expect(none['engineering--builder'].publish).toBeUndefined();
   });
 
   it('lists no git command that reaches the network or rewrites history', () => {

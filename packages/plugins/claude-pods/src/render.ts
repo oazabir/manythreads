@@ -255,6 +255,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             modelAliases: cfg.codexModelAliases,
             // The runner's switch (admin, one team): the bridge also needs the run not to say no. The bridge's other key, "allowed", is for a server and is never written here.
             ...(fullAccess ? { fullAccess: true } : {}),
+            ...(mayPublish && acp ? { publish: true } : {}),
             // No `extraAllowedTools`: that list is Claude Code's. Codex runs with its own sandbox and approval policy, set by the bridge's driver.
             env: { CODEX_HOME: CODEX_HOME_DIR, HOME: homeDirFor(names.team), ...tools, ...kube },
             instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'codex', { acp, kubeconfig, fullAccess }),
@@ -265,6 +266,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             workdir: where,
             modelAliases: cfg.modelAliases,
             extraAllowedTools: [...GIT_TOOLS, ...(acp ? RECORD_TOOLS : []), ...(mayPublish ? [PUBLISH_TOOL] : [])],
+            ...(mayPublish && acp ? { publish: true } : {}),
             env: { CLAUDE_CONFIG_DIR, HOME: homeDirFor(names.team), DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ...tools, ...kube },
             instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'claude', { acp, kubeconfig }),
           };

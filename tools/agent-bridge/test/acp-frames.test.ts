@@ -279,6 +279,14 @@ describe('the adapter module', () => {
     expect(adapterEnv(jobOf('hermes-acp'), null)['INITIAL_AGENT_MODE']).toBeUndefined();
   });
 
+  it('only a profile that may publish hands the run\'s token to the adapter (for mt-publish); the config takes it as a boolean', () => {
+    expect(adapterEnv(jobOf('claude-code', { publish: true }, {}, { PATH: '/bin' }), 'default')['MANYTHREADS_RUN_TOKEN']).toBe('tok-SECRET');
+    expect(adapterEnv(jobOf('codex', { publish: true }), 'workspace-write')['MANYTHREADS_RUN_TOKEN']).toBe('tok-SECRET');
+    expect(adapterEnv(jobOf('claude-code', { publish: false }), 'default')['MANYTHREADS_RUN_TOKEN']).toBeUndefined();
+    expect(adapterEnv(jobOf('claude-code', { publish: true }, { manythreads: { mcp: null } }), 'default')['MANYTHREADS_RUN_TOKEN']).toBeUndefined();
+    expect(() => parseConfig({ profiles: { x: { agent: 'claude-code', workdir: '/w', publish: 'yes' } } })).toThrow(/publish must be true or false/);
+  });
+
   it('claude: the CLI driver\'s grants as the adapter\'s options, with the helper and plan tools, and no settings, memory or connectors of the operator', () => {
     const meta = sessionMeta(jobOf('claude-code')) as { claudeCode: { options: Record<string, any> } }; // eslint-disable-line @typescript-eslint/no-explicit-any
     const o = meta.claudeCode.options;
