@@ -101,10 +101,21 @@ echo "deploying $(git rev-parse HEAD) as tag $TAG"
 # docker images, unused k3s images; never volumes, never an image a pod or container uses); above 70% it stops with what to clean, unless
 # DEPLOY_ALLOW_HIGH_DISK=1. A deploy peaked at 90% on 2026-11-09 and the kubelet evicted the database. The images of THIS deploy and the Hermes
 # base image (hours to rebuild) are never pruned.
-bash tools/devbox/disk-guard.sh check --keep "manythreads/server:$TAG" --keep "manythreads/web:$TAG" --keep-docker manythreads/hermes:stable || exit 1
+# Pod images Docker already holds (built by an earlier deploy that stopped before its import) are kept: building them again costs 10 minutes and the disk
+# peak of a second build cache (2026-11-16, P26-18).
+KEEP_BUILT=()
+while read -r ref; do [ -n "$ref" ] && KEEP_BUILT+=(--keep-docker "$ref"); done < <(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^manythreads/(claude-pod|claude-pod-fake|workbench|hermes-pod|asr):' || true)
+# ...and so are the pod images already imported into k3s for the tags this checkout builds (a --keep image not yet in use also stops the k3s prune from deleting it)
+for dir in agent-pod workbench hermes-pod; do
+  repo=$( [ "$dir" = agent-pod ] && echo claude-pod || echo "$dir")
+  while read -r ref; do [ -n "$ref" ] && KEEP_BUILT+=(--keep "${ref#docker.io/}"); done < <(k3s ctr -n k8s.io images ls -q 2>/dev/null | grep -E "^docker.io/manythreads/$repo:[0-9a-f]{10}\$" || true)
+done
+bash tools/devbox/disk-guard.sh check --keep "manythreads/server:$TAG" --keep "manythreads/web:$TAG" --keep-docker manythreads/hermes:stable "${KEEP_BUILT[@]}" || exit 1
 
 if [ "$BUILD" = "true" ]; then
   echo "--- build images"
+  # the installer bundle the site serves at /install/ (P26-14), built here so the server image does not carry the bridge's workspace
+  node tools/agent-bridge/install/build.mjs || { echo "ERROR: the installer bundle (tools/agent-bridge/install/build.mjs) did not build"; exit 1; }
   docker build -f deploy/docker/server.Dockerfile -t "manythreads/server:$TAG" .
   docker build -f deploy/docker/web.Dockerfile -t "manythreads/web:$TAG" .
 else
@@ -180,7 +191,7 @@ if grep -q '^hermesPods:' deploy/helm/manythreads/values-live.yaml 2>/dev/null; 
   fi
   if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/workbench:$WB_TAG\$"; then
     echo "--- build manythreads/workbench:$WB_TAG"
-    docker build -f deploy/images/workbench/Dockerfile -t "manythreads/workbench:$WB_TAG" deploy/images/workbench
+    docker image inspect "manythreads/workbench:$WB_TAG" >/dev/null 2>&1 || docker build -f deploy/images/workbench/Dockerfile -t "manythreads/workbench:$WB_TAG" deploy/images/workbench
     IMAGES+=("manythreads/workbench:$WB_TAG")
   fi
   PODS_ARGS=(--set "hermesPods.images.hermes=manythreads/hermes-pod:$HP_TAG" --set "hermesPods.images.workbench=manythreads/workbench:$WB_TAG")
@@ -215,7 +226,7 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   CP_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$CP_STAGE" -cf - . | sha256sum | cut -c1-10)
   if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/$CP_NAME:$CP_TAG\$"; then
     echo "--- build manythreads/$CP_NAME:$CP_TAG"
-    docker build -f "$CP_STAGE/Dockerfile" -t "manythreads/$CP_NAME:$CP_TAG" "$CP_STAGE"
+    docker image inspect "manythreads/$CP_NAME:$CP_TAG" >/dev/null 2>&1 || docker build -f "$CP_STAGE/Dockerfile" -t "manythreads/$CP_NAME:$CP_TAG" "$CP_STAGE"
     IMAGES+=("manythreads/$CP_NAME:$CP_TAG")
   fi
   rm -rf "$CP_STAGE"

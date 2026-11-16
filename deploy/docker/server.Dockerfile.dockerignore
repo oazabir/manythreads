@@ -1,17 +1,10 @@
 # tools/ excluded: workspace members not needed at runtime (and tools/bench was missing from the lockfile).
-# Kept: what tools/agent-bridge/install/build.mjs needs to make the installer the site serves at /install/ (P26-14): the bridge
-# workspace member, its fake agent and the pod tools it bundles. The node_modules and dist rules come LAST: a later `!` line would
-# otherwise bring a member's node_modules back into the context (a 4.5 GB image, 2026-11-16).
+# The installer bundle the site serves at /install/ is built on the host before the image (tools/devbox/deploy.sh runs
+# tools/agent-bridge/install/build.mjs into packages/plugins/bot-runners/install-dist), so it arrives with packages/.
+**/node_modules
+**/dist
 .git
 e2e
 docs
 deploy
-!deploy/images/agent-pod
-!deploy/images/workbench
 tools
-!tools/agent-bridge
-!tools/fake-acp-agent
-tools/agent-bridge/spike
-tools/agent-bridge/test
-**/node_modules
-**/dist
