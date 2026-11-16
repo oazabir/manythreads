@@ -84,3 +84,7 @@ media:
 # The speech-to-text server for devices too weak to transcribe by themselves (docs/deploy.md "Speech to text"); the image is built by tools/devbox/deploy.sh.
 asr:
   enabled: true
+# Agent pods for Claude Code and Codex runners over ACP (Phase 26; the owner accepted the permission list in docs/plugins/claude-pods.md on 2026-11-15).
+# One pod per runner and team, all of a runner's pods sharing its sign-in volume; the admin signs in from the Runners page.
+claudePod:
+  enabled: true
