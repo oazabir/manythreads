@@ -38,11 +38,13 @@ export interface TunnelOptions {
   /** Test only: allow `ws://` to a local site. */
   insecure?: boolean;
   log?: (line: string) => void;
-  /** Reconnect pauses in ms: the first, and the longest. Defaults 1000 and 30000. */
+  /** Reconnect pauses in ms: the first, and the longest (each pause gets up to a quarter of jitter, never above the longest). Defaults 1000 and 60000. */
   minBackoffMs?: number;
   maxBackoffMs?: number;
-  /** After the site refuses the key (close 1008): how long to wait before asking again with whatever key is stored. Default 5 minutes. */
+  /** After the site refuses the key (close 1008, or HTTP 401/403 to the upgrade): how long to wait before asking again with whatever key is stored. Default 10 minutes. */
   refusedWaitMs?: number;
+  /** How long a socket may stay open without the site's welcome before it is dropped and retried. Default 30 seconds. */
+  welcomeWaitMs?: number;
 }
 
 export interface TunnelClient {
@@ -88,7 +90,9 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
   const log = options.log ?? (() => undefined);
   const url = connectUrl(options.siteUrl, options.insecure === true);
   const minBackoff = options.minBackoffMs ?? 1000;
-  const maxBackoff = options.maxBackoffMs ?? 30_000;
+  const maxBackoff = options.maxBackoffMs ?? 60_000;
+  const refusedWait = options.refusedWaitMs ?? 10 * 60_000;
+  const welcomeWait = options.welcomeWaitMs ?? 30_000;
   let closed = false;
   let current: WebSocket | null = null;
   let welcomed = false;
@@ -106,10 +110,17 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
       key = options.key();
     } catch (err) {
       log(`tunnel: no key to connect with (${err instanceof Error ? err.message : 'error'})`);
-      schedule(options.refusedWaitMs ?? 5 * 60_000);
+      schedule(refusedWait, 'no key');
       return;
     }
-    const ws = new WebSocket(url, { headers: { authorization: `Bearer ${key}` }, maxPayload: 4 * 1024 * 1024, handshakeTimeout: 15_000 });
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url, { headers: { authorization: `Bearer ${key}` }, maxPayload: 4 * 1024 * 1024, handshakeTimeout: 15_000 });
+    } catch (err) {
+      log(`tunnel: could not start a connection (${err instanceof Error ? err.message.replace(/mtb_[0-9a-f]+/g, 'mtb_…').slice(0, 120) : 'error'})`);
+      schedule(nextBackoff(), 'start failed');
+      return;
+    }
     current = ws;
     const streams = new Map<string, Live>();
     let heartbeat: NodeJS.Timeout | null = null;
@@ -117,6 +128,8 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
     let beatMs = 20_000;
     let refused = false;
     let rotating = false;
+    let down = false;
+    let welcomeTimer: NodeJS.Timeout | null = null;
 
     const send = (frame: Record<string, unknown>): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));
@@ -232,6 +245,8 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
         case 'welcome': {
           welcomed = true;
           attempt = 0;
+          if (welcomeTimer) clearTimeout(welcomeTimer);
+          welcomeTimer = null;
           const s = Number(frame['heartbeatSeconds']);
           beatMs = Number.isFinite(s) && s >= 5 && s <= 60 ? s * 1000 : 20_000;
           if (heartbeat) clearInterval(heartbeat);
@@ -261,17 +276,14 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
           return;
       }
     });
-    ws.on('unexpected-response', (_req, res) => {
-      // the site said no before the upgrade (a proxy in front, a wrong path): nothing about the body is logged
-      log(`tunnel: the site answered ${res.statusCode ?? 0} to the connection`);
-      res.resume();
-    });
-    ws.on('error', (err) => {
-      log(`tunnel: ${err instanceof Error ? err.message.replace(/mtb_[0-9a-f]+/g, 'mtb_…').slice(0, 120) : 'connection error'}`);
-    });
-    ws.on('close', (code) => {
+    // This connection is over (closed, refused before the upgrade, or never got there): drop its streams and plan the next try. Runs once per connection.
+    const onDown = (why: string): void => {
+      if (down) return;
+      down = true;
       if (heartbeat) clearInterval(heartbeat);
       heartbeat = null;
+      if (welcomeTimer) clearTimeout(welcomeTimer);
+      welcomeTimer = null;
       for (const [id, live] of streams) {
         live.done = true;
         live.res?.destroy();
@@ -280,21 +292,66 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
       }
       if (current === ws) current = null;
       if (closed) return;
-      if (code === 1008) {
-        refused = true;
-        log('tunnel: the site does not accept this key; waiting before asking again');
-      }
       welcomed = false;
-      if (refused) schedule(options.refusedWaitMs ?? 5 * 60_000);
-      else schedule(Math.min(maxBackoff, minBackoff * 2 ** Math.min(attempt++, 10)));
+      if (refused) {
+        log('tunnel: the site does not accept this key; waiting before asking again');
+        schedule(refusedWait, why);
+      } else {
+        schedule(nextBackoff(), why);
+      }
+    };
+
+    ws.on('unexpected-response', (_req, res) => {
+      // The site said no before the upgrade (a deploy's 503 from the proxy, a wrong path, a refused key). ws does NOT end the socket when this event has a listener, so it is
+      // ended here: without it no 'close' ever came and the loop stopped for good (MISTAKES P26-12). Nothing about the body is logged.
+      const status = res.statusCode ?? 0;
+      log(`tunnel: the site answered ${status} to the connection`);
+      res.resume();
+      if (status === 401 || status === 403) refused = true;
+      try {
+        ws.terminate();
+      } catch {
+        // already gone
+      }
+      onDown(`HTTP ${status}`);
+    });
+    ws.on('error', (err) => {
+      log(`tunnel: ${err instanceof Error ? err.message.replace(/mtb_[0-9a-f]+/g, 'mtb_…').slice(0, 120) : 'connection error'}`);
+    });
+    ws.on('close', (code) => {
+      if (code === 1008) refused = true;
+      onDown(`closed ${code}`);
+    });
+    // a site that takes the upgrade and then never says welcome would hold the socket for ever
+    ws.on('open', () => {
+      welcomeTimer = setTimeout(() => {
+        log('tunnel: the site did not welcome the connection in time; reconnecting');
+        ws.terminate();
+      }, welcomeWait);
+      welcomeTimer.unref?.();
     });
   };
 
-  const schedule = (ms: number): void => {
+  /** 1 s, 2 s, 4 s ... up to the longest, with up to a quarter of jitter added (so many bridges do not return at the same second after a deploy). */
+  const nextBackoff = (): number => {
+    const base = Math.min(maxBackoff, minBackoff * 2 ** Math.min(attempt++, 16));
+    return Math.min(maxBackoff, Math.round(base * (1 + Math.random() * 0.25)));
+  };
+
+  const schedule = (ms: number, why: string): void => {
     if (closed) return;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connect, ms);
-    reconnectTimer.unref?.();
+    log(`tunnel: ${why}; trying again in ${ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.max(1, Math.round(ms / 1000))} s`}`);
+    // nothing thrown in here may end the loop: whatever happens, the next try is planned again
+    reconnectTimer = setTimeout(() => {
+      try {
+        connect();
+      } catch (err) {
+        log(`tunnel: a connection attempt failed (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`);
+        schedule(nextBackoff(), 'attempt failed');
+      }
+    }, ms);
+    // the timer is not unref'd: in server mode the loop is the process's job, and the bridge's own socket keeps it alive anyway; close() clears it
   };
 
   connect();
