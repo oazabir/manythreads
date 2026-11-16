@@ -81,6 +81,10 @@ export function usageLine(usage: WorkshopUsage): string {
 
 export const messagesLeft = (session: Pick<WorkshopSession, 'messageCount'>): number => Math.max(0, WORKSHOP_MAX_MESSAGES - session.messageCount);
 
+/** The sentence the ws-hint line says: "1 message left in this conversation." for exactly one, the count for the rest. */
+export const messagesLeftLine = (session: Pick<WorkshopSession, 'messageCount'>): string =>
+  `${String(messagesLeft(session))} ${messagesLeft(session) === 1 ? 'message left' : 'messages left'} in this conversation.`;
+
 /** The words a screen reader hears when the conversation changes under it. */
 export function announcement(prev: WorkshopSession | null, next: WorkshopSession | null): string {
   if (next === null) return '';
