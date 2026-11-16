@@ -1,19 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import type { OnboardingState } from '@manythreads/shared';
-import { onboardingSteps, type OnboardingInput } from '../src/screens/onboarding/steps';
+import { DEFAULT_WORKSPACE_NAME, isWorkingRunner, onboardingSteps, provenRunner, type OnboardingInput, type RunnerFact } from '../src/screens/onboarding/steps';
 
 /*
- * PLAN P10-01: the setup checklist. Every step's "done" is a fact (a model that answered a test after its last change, an enabled sign-in method, a team,
- * Brain on it, a project, a runner, HTTPS, the first goal sent); the only things a person records are decisions. The derivation is pure, so the gate pins
- * it here; the screens are proven in Playwright like every other screen.
+ * PLAN P10-01 and Phase 27: the setup wizard. Every step's "done" is a fact (a model that answered a test after its last change, an enabled sign-in method, a team,
+ * a runner that answered a real question, Brain on it, a project, HTTPS, the first goal answered); the only things a person records are decisions and two proofs
+ * the wizard made. The derivation is pure, so the gate pins it here; the screens are proven in Playwright like every other screen.
  */
 
 const empty: OnboardingState = { marks: [], launch: null, dismissedAt: null, dismissedBy: null };
-const mark = (step: 'signin' | 'code' | 'infrastructure' | 'servers', kind: 'skipped' | 'acknowledged') => ({ step, kind, markedAt: '2026-10-30T08:00:00.000Z', markedBy: null });
+const at = '2026-10-30T08:00:00.000Z';
+const RUNNER_ID = '22222222-2222-4222-8222-222222222222';
+const mark = (step: 'signin' | 'theme' | 'code' | 'infrastructure' | 'servers' | 'delivery', kind: 'skipped' | 'acknowledged' | 'started', refId: string | null = null) => ({
+  step,
+  kind,
+  markedAt: at,
+  markedBy: null,
+  refId,
+});
+const proof = { step: 'runners' as const, kind: 'checked' as const, markedAt: at, markedBy: null, refId: RUNNER_ID };
 const team = { id: '11111111-1111-4111-8111-111111111111', slug: 'engineering', name: 'Engineering' };
+const runner = (over: Partial<RunnerFact> = {}): RunnerFact => ({ id: RUNNER_ID, name: 'hermes', kind: 'hermes_pod', enabled: true, status: 'ready', isDefault: true, ...over });
 
 const base: OnboardingInput = {
-  workspaceName: 'Kahf Software',
+  workspaceName: DEFAULT_WORKSPACE_NAME,
   enabledSignInProviders: 0,
   llmProviders: 0,
   boundAliases: [],
@@ -24,33 +34,57 @@ const base: OnboardingInput = {
   runners: 0,
   secure: false,
   state: empty,
+  palette: 'classic',
+  adminRunners: [],
+  connectedServers: 0,
+  templates: 5,
+  madeTemplates: [],
 };
 
 const done = (input: OnboardingInput): string[] => onboardingSteps(input).steps.filter((s) => s.status === 'done').map((s) => s.id);
 const step = (input: OnboardingInput, id: string) => onboardingSteps(input).steps.find((s) => s.id === id)!;
 
-/** Everything required is true, and the first goal was sent. */
+/** Every required step is true: models answer, a team has Brain, a runner answered a real question, and the question to Brain was answered. */
 const ready: OnboardingInput = {
   ...base,
-  enabledSignInProviders: 1,
+  workspaceName: 'Kahf Software',
   llmProviders: 1,
   boundAliases: ['smart'],
   tests: [{ alias: 'smart', outcome: 'ok', current: true }],
   teams: [team],
   teamBots: { [team.slug]: [{ slug: 'brain' }] },
-  state: { ...empty, launch: { at: '2026-10-30T08:00:00.000Z', by: null, teamId: team.id as never, channelId: team.id as never } },
+  adminRunners: [runner()],
+  state: { ...empty, marks: [proof], launch: { at, by: null, teamId: team.id as never, channelId: team.id as never, messageId: null } },
 };
 
-describe('the setup checklist', () => {
-  it('has the nine steps of the spec in order, and on a new install only the sign-in as owner is done', () => {
+describe('the setup wizard', () => {
+  it('has the thirteen steps in order, and on a new install only the first sign-in is done', () => {
     const s = onboardingSteps(base);
-    expect(s.steps.map((x) => x.n)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(s.steps.map((x) => x.id)).toEqual(['bootstrap', 'signin', 'models', 'code', 'infrastructure', 'teams', 'bots', 'servers', 'launch']);
+    expect(s.steps.map((x) => x.n)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(s.steps.map((x) => x.id)).toEqual([
+      'bootstrap', 'theme', 'organization', 'infrastructure', 'models', 'signin', 'teams', 'servers', 'runners', 'bots', 'code', 'launch', 'delivery',
+    ]);
     expect(done(base)).toEqual(['bootstrap']);
     expect(s.finished).toBe(false);
-    expect(s.next?.id).toBe('signin');
-    expect(s.handled).toBe(1);
-    expect(s.total).toBe(9);
+    expect(s.next?.id).toBe('organization');
+    expect(s.total).toBe(13);
+  });
+
+  it('holds the checklist open for exactly the required steps', () => {
+    const required = onboardingSteps(base).steps.filter((s) => !s.optional).map((s) => s.id);
+    expect(required).toEqual(['bootstrap', 'organization', 'models', 'teams', 'runners', 'bots', 'launch']);
+  });
+
+  it('marks the look done by another palette or by keeping Classic, and never otherwise', () => {
+    expect(step(base, 'theme').done).toBe(false);
+    expect(step({ ...base, palette: 'harbor' }, 'theme').done).toBe(true);
+    expect(step({ ...base, state: { ...empty, marks: [mark('theme', 'acknowledged')] } }, 'theme').done).toBe(true);
+  });
+
+  it('marks the organization done once it has a name of its own', () => {
+    expect(step(base, 'organization').done).toBe(false);
+    expect(step({ ...base, workspaceName: 'Kahf Software' }, 'organization').done).toBe(true);
+    expect(step({ ...base, workspaceName: '  ' }, 'organization').done).toBe(false);
   });
 
   it('marks sign-in done with one enabled method, or with the password-only confirmation, and no other way', () => {
@@ -58,112 +92,121 @@ describe('the setup checklist', () => {
     const ack = { ...base, state: { ...empty, marks: [mark('signin', 'acknowledged')] } };
     expect(step(ack, 'signin').done).toBe(true);
     expect(step(ack, 'signin').hint).toContain('password');
-    expect(step({ ...base, llmProviders: 3 }, 'signin').done).toBe(false);
   });
 
-  it('is never green for a model that was only saved: a provider and an alias are not an answer', () => {
-    const saved = { ...base, llmProviders: 1, boundAliases: ['smart'] };
-    expect(step(saved, 'models').done).toBe(false);
-    expect(step(saved, 'models').hint).toContain('Test an alias');
-    expect(step({ ...base, llmProviders: 0 }, 'models').hint).toContain('Add a model provider');
-    expect(step({ ...base, llmProviders: 1 }, 'models').hint).toContain('Connect the smart alias');
+  it('needs the smart alias to have answered after its last change, because Brain runs on it', () => {
+    expect(step({ ...base, tests: [{ alias: 'fast', outcome: 'ok', current: true }] }, 'models').done).toBe(false);
+    expect(step({ ...base, tests: [{ alias: 'smart', outcome: 'ok', current: false }] }, 'models').done).toBe(false);
+    expect(step({ ...base, tests: [{ alias: 'smart', outcome: 'failed', current: true }] }, 'models').done).toBe(false);
+    expect(step({ ...base, tests: [{ alias: 'smart', outcome: 'ok', current: true }] }, 'models').done).toBe(true);
   });
 
-  it('marks models done only for a test that passed and still counts', () => {
-    const ok = { ...base, llmProviders: 1, boundAliases: ['smart'], tests: [{ alias: 'smart' as const, outcome: 'ok' as const, current: true }] };
-    expect(step(ok, 'models').done).toBe(true);
-    expect(step(ok, 'models').hint).toContain('smart answered');
-    const failed = { ...ok, tests: [{ alias: 'smart' as const, outcome: 'failed' as const, current: true }] };
-    expect(step(failed, 'models').done).toBe(false);
-    expect(step(failed, 'models').hint).toContain('failed');
-    const stale = { ...ok, tests: [{ alias: 'smart' as const, outcome: 'ok' as const, current: false }] };
-    expect(step(stale, 'models').done).toBe(false);
-    expect(step(stale, 'models').hint).toContain('changed since');
+  it('counts a team, and names the templates not made yet', () => {
+    expect(step(base, 'teams').done).toBe(false);
+    const one = { ...base, teams: [team], madeTemplates: ['engineering'] };
+    expect(step(one, 'teams').done).toBe(true);
+    expect(step(one, 'teams').hint).toContain('4 templates not made yet');
   });
 
-  it('does not count a model that answers on an alias Brain does not use', () => {
-    const codeOnly = { ...base, llmProviders: 1, boundAliases: ['code'], tests: [{ alias: 'code' as const, outcome: 'ok' as const, current: true }] };
-    expect(step(codeOnly, 'models').done).toBe(false);
-    expect(step(codeOnly, 'models').hint).toContain('Brain uses smart');
-    const smart = { ...codeOnly, boundAliases: ['smart'], tests: [{ alias: 'smart' as const, outcome: 'ok' as const, current: true }] };
-    expect(step(smart, 'models').done).toBe(true);
+  it('is done for the servers step only when a server is connected or a team runner exists, and the step is optional', () => {
+    expect(step(base, 'servers').optional).toBe(true);
+    expect(step({ ...base, connectedServers: 1 }, 'servers').done).toBe(true);
+    expect(step({ ...base, runners: 2 }, 'servers').done).toBe(true);
   });
 
-  it('marks teams done with one team, and sends the bots step to that team', () => {
-    const s = { ...base, teams: [team] };
-    expect(step(s, 'teams').done).toBe(true);
-    expect(step(s, 'teams').hint).toContain('Engineering');
-    expect(step(s, 'bots').to).toBe('/t/engineering/bots');
-    expect(step(s, 'bots').done).toBe(false);
+  describe('the runner is required', () => {
+    it('is not done by a ready runner alone: it has to have answered a real question', () => {
+      const noProof = { ...ready, state: { ...ready.state, marks: [] } };
+      expect(step(noProof, 'runners').done).toBe(false);
+      expect(step(noProof, 'runners').hint).toContain('real question');
+      expect(step(ready, 'runners').done).toBe(true);
+    });
+
+    it('is not done by a proof of a runner that was since switched off, removed or lost its sign-in', () => {
+      expect(step({ ...ready, adminRunners: [runner({ enabled: false })] }, 'runners').done).toBe(false);
+      expect(step({ ...ready, adminRunners: [runner({ status: 'needs_sign_in' })] }, 'runners').done).toBe(false);
+      expect(step({ ...ready, adminRunners: [] }, 'runners').done).toBe(false);
+      expect(step({ ...ready, adminRunners: [runner({ id: '33333333-3333-4333-8333-333333333333' })] }, 'runners').done).toBe(false);
+    });
+
+    it('says what to do when there is no runner at all', () => {
+      expect(step({ ...base, adminRunners: [] }, 'runners').hint).toContain('Hermes pod');
+      expect(step({ ...base, adminRunners: null }, 'runners').done).toBe(false);
+    });
+
+    it('keeps the checklist unfinished and names the runners step as next while none passed', () => {
+      const without = { ...ready, state: { ...ready.state, marks: [] } };
+      const s = onboardingSteps(without);
+      expect(s.finished).toBe(false);
+      expect(s.next?.id).toBe('runners');
+    });
+
+    it('knows a working runner and the one the wizard proved', () => {
+      expect(isWorkingRunner(runner())).toBe(true);
+      expect(isWorkingRunner(runner({ enabled: false }))).toBe(false);
+      expect(isWorkingRunner(runner({ status: 'starting' }))).toBe(false);
+      expect(provenRunner([runner()], ready.state)?.id).toBe(RUNNER_ID);
+      expect(provenRunner([runner()], empty)).toBeNull();
+    });
+  });
+
+  it('wants Brain on a team and a default runner before the bots step is done', () => {
+    expect(step({ ...ready, adminRunners: [runner({ isDefault: false })] }, 'bots').done).toBe(false);
+    expect(step(ready, 'bots').done).toBe(true);
+    expect(step({ ...ready, teamBots: { [team.slug]: [] } }, 'bots').done).toBe(false);
+  });
+
+  it('chooses the team that has Brain as the team the steps talk about', () => {
+    const support = { id: '44444444-4444-4444-8444-444444444444', slug: 'support', name: 'Support' };
+    const s = { ...ready, teams: [support, team], teamBots: { [support.slug]: [], [team.slug]: [{ slug: 'brain' }] } };
     expect(onboardingSteps(s).firstTeam).toEqual(team);
-  });
-
-  it('picks the team that has Brain, not the first by name, for the bots step and the first goal', () => {
-    const support = { id: '00000000-0000-7000-8000-0000000b0002', slug: 'customer-support', name: 'Customer support' };
-    const s = { ...base, teams: [support, team] };
-    expect(onboardingSteps({ ...s, teamBots: { [support.slug]: [], [team.slug]: [{ slug: 'brain' }] } }).firstTeam).toEqual(team);
-    expect(onboardingSteps({ ...s, teamBots: { [support.slug]: [], [team.slug]: [{ slug: 'brain' }] } }).brainChat).toBe('/t/engineering/bots/brain/chat');
-    // with no Brain anywhere the first team by name is the one to fix
+    expect(onboardingSteps(s).brainChat).toBe('/t/engineering/bots/brain/chat');
     expect(onboardingSteps({ ...s, teamBots: { [support.slug]: [], [team.slug]: [] } }).firstTeam).toEqual(support);
+    expect(onboardingSteps({ ...s, teamBots: { [support.slug]: [], [team.slug]: [] } }).brainChat).toBeNull();
   });
 
-  it('marks bots done only with Brain, and waits for the roster instead of guessing', () => {
-    const s = { ...base, teams: [team] };
-    expect(step({ ...s, teamBots: { [team.slug]: [{ slug: 'coder' }] } }, 'bots').done).toBe(false);
-    expect(step({ ...s, teamBots: { [team.slug]: [{ slug: 'brain' }, { slug: 'coder' }] } }, 'bots').done).toBe(true);
-    const waiting = step({ ...s, teamBots: null }, 'bots');
-    expect(waiting.done).toBe(false);
-    expect(waiting.hint).toContain('Reading');
-    expect(onboardingSteps({ ...s, teamBots: { [team.slug]: [{ slug: 'brain' }] } }).brainChat).toBe('/t/engineering/bots/brain/chat');
-    expect(onboardingSteps(s).brainChat).toBeNull();
+  describe('the Brain check', () => {
+    it('is done when the question was sent and its thread has an answer', () => {
+      const withRoot = { ...ready, state: { ...ready.state, launch: { ...ready.state.launch!, messageId: '55555555-5555-4555-8555-555555555555' as never } } };
+      expect(step({ ...withRoot, launchAnswered: true }, 'launch').done).toBe(true);
+      expect(step({ ...withRoot, launchAnswered: false }, 'launch').done).toBe(false);
+      expect(step({ ...withRoot, launchAnswered: null }, 'launch').done).toBe(true);
+      expect(step({ ...ready, state: { ...ready.state, launch: null } }, 'launch').done).toBe(false);
+    });
   });
 
-  it('marks the first goal done only when it was sent', () => {
-    expect(step({ ...ready, state: empty }, 'launch').done).toBe(false);
-    expect(step(ready, 'launch').done).toBe(true);
+  it('counts a set-aside optional step as handled but not as done, and never lets it finish the checklist', () => {
+    const aside = { ...base, state: { ...empty, marks: [mark('infrastructure', 'skipped'), mark('code', 'skipped')] } };
+    expect(step(aside, 'infrastructure').status).toBe('skipped');
+    expect(step(aside, 'infrastructure').done).toBe(false);
+    expect(onboardingSteps(aside).handled).toBe(onboardingSteps(base).handled + 2);
+    expect(onboardingSteps(aside).finished).toBe(false);
   });
 
-  it('the optional steps are facts when they can be and decisions when they cannot, and they never hold the checklist open', () => {
-    const t = { ...ready, teams: [team] };
-    expect(onboardingSteps(t).finished).toBe(true);
-    for (const id of ['code', 'infrastructure', 'servers']) {
-      expect(step(t, id)).toMatchObject({ optional: true, status: 'todo', done: false });
-    }
-    expect(step({ ...t, projects: 2 }, 'code').done).toBe(true);
-    expect(step({ ...t, runners: 1 }, 'servers').done).toBe(true);
-    expect(step({ ...t, secure: true }, 'infrastructure').done).toBe(true);
-    const aside = { ...t, state: { ...t.state, marks: [mark('code', 'skipped'), mark('servers', 'skipped')] } };
-    expect(step(aside, 'code').status).toBe('skipped');
-    expect(step(aside, 'servers').status).toBe('skipped');
-    expect(step(aside, 'infrastructure').status).toBe('todo');
-    expect(onboardingSteps(aside).handled).toBe(onboardingSteps(t).handled + 2);
+  it('finishes when every required step is done, and the optional ones stay to do', () => {
+    const s = onboardingSteps(ready);
+    expect(s.finished).toBe(true);
+    expect(s.next).toBeNull();
+    expect(step(ready, 'delivery').status).toBe('todo');
+    expect(onboardingSteps({ ...ready, enabledSignInProviders: 0 }).finished).toBe(true);
   });
 
-  it('a fact beats a mark: an optional step that became true reads as done, not set aside', () => {
-    const both = { ...ready, projects: 1, state: { ...ready.state, marks: [mark('code', 'skipped')] } };
-    expect(step(both, 'code').status).toBe('done');
+  it('marks the first delivery done only by a pull request after the start', () => {
+    const started = { ...ready, state: { ...ready.state, marks: [...ready.state.marks, mark('delivery', 'started', '66666666-6666-4666-8666-666666666666')] } };
+    expect(step(started, 'delivery').done).toBe(false);
+    expect(step(started, 'delivery').hint).toContain('working');
+    expect(step({ ...started, deliveryDone: true }, 'delivery').done).toBe(true);
   });
 
-  it('a step that is a fact cannot be set aside by a stray mark', () => {
-    const forged = { ...base, state: { ...empty, marks: [mark('code', 'skipped')] } };
-    // only the three optional steps and sign-in honour a mark; models, teams, bots and the launch have none
-    expect(step(forged, 'models').status).toBe('todo');
-    expect(step(forged, 'teams').status).toBe('todo');
-    expect(step(forged, 'launch').status).toBe('todo');
+  it('offers the step after one, required ones first', () => {
+    const s = onboardingSteps(base);
+    expect(s.after('bootstrap')?.id).toBe('organization');
+    expect(s.after('organization')?.id).toBe('models');
+    expect(s.after('delivery')).toBeNull();
   });
 
-  it('is finished only when every required step is done and the first goal was sent', () => {
-    expect(onboardingSteps(ready).finished).toBe(true);
-    expect(onboardingSteps(ready).next).toBeNull();
-    expect(onboardingSteps({ ...ready, state: empty }).finished).toBe(false);
-    expect(onboardingSteps({ ...ready, state: empty }).next?.id).toBe('launch');
-    expect(onboardingSteps({ ...ready, tests: [] }).finished).toBe(false);
-    expect(onboardingSteps({ ...ready, teamBots: { [team.slug]: [] } }).finished).toBe(false);
-    expect(onboardingSteps({ ...ready, enabledSignInProviders: 0 }).finished).toBe(false);
-  });
-
-  it('reports whether the checklist was put away', () => {
+  it('reports a checklist put away', () => {
     expect(onboardingSteps(ready).dismissed).toBe(false);
-    expect(onboardingSteps({ ...ready, state: { ...ready.state, dismissedAt: '2026-10-30T09:00:00.000Z' } }).dismissed).toBe(true);
+    expect(onboardingSteps({ ...ready, state: { ...ready.state, dismissedAt: at } }).dismissed).toBe(true);
   });
 });

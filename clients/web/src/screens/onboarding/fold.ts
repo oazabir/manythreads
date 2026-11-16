@@ -1,16 +1,18 @@
 import type { OnboardingStep } from './steps';
 
-// Which steps of the Setup page are folded to one line. No React here, so it is unit tested.
+// Which step of the Setup wizard is open. No React here, so it is unit tested.
+//
+// One step is open at a time when the page opens: the one the address names (`?step=theme`), else the first required step that is still to do (so a person who
+// comes back lands where they stopped), else the first optional one still to do, else none. The rest sit folded to one line. What a person opens or folds
+// afterwards (`chosen`) wins, and a step that turns done while it is open stays open so its result is not taken from under them.
 
-/** The steps that were already handled (done, or set aside) when the page opened. */
-export function collapsedAtStart(steps: readonly Pick<OnboardingStep, 'id' | 'status'>[]): ReadonlySet<string> {
-  return new Set(steps.filter((s) => s.status !== 'todo').map((s) => s.id));
+/** The id of the step to open when the page opens. */
+export function stepOpenAtStart(steps: readonly Pick<OnboardingStep, 'id' | 'status' | 'optional'>[], requested: string | null): string | null {
+  if (requested !== null && steps.some((s) => s.id === requested)) return requested;
+  const todo = steps.filter((s) => s.status === 'todo');
+  return (todo.find((s) => !s.optional) ?? todo[0])?.id ?? null;
 }
 
-/**
- * A step is open unless it was handled when the page opened; a person's own choice (`chosen`) wins either way. A step that was handled at the
- * start but is to do again now (`status`, when given) opens by itself: work that has come back must not stay hidden.
- */
-export function isStepOpen(id: string, foldedAtStart: ReadonlySet<string>, chosen: Readonly<Record<string, boolean>>, status?: OnboardingStep['status']): boolean {
-  return chosen[id] ?? (status === 'todo' || !foldedAtStart.has(id));
+export function isStepOpen(id: string, openAtStart: string | null, chosen: Readonly<Record<string, boolean>>): boolean {
+  return chosen[id] ?? id === openAtStart;
 }

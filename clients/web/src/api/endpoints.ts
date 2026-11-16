@@ -907,7 +907,7 @@ export const fetchDms = () => call(listDmsRoute, { request: ListDmsQuery, respon
 export const openDm = (personIds: readonly string[]) =>
   call(openDmRoute, { request: OpenDmRequest, response: OpenDmResponse }, { personIds } as OpenDmRequest);
 
-type SetOnboardingStep = 'signin' | 'code' | 'infrastructure' | 'servers';
+type SetOnboardingStep = import('@manythreads/shared').OnboardingMarkStep;
 
 // ---- Workspace → LLM (PLAN P5-06 and P5-07, SPEC §10.1) ---------------------------------------------------
 /*
@@ -938,8 +938,9 @@ export const testLlmAlias = (alias: string) => call(testLlmAliasRoute, { respons
 // ---- Workspace → Setup (PLAN P10-01) ---------------------------------------------------------------------
 /** The first admin's checklist state: what was set aside, whether the first goal was sent, whether it was put away. Admins only. */
 export const fetchOnboarding = () => call(getOnboardingRoute, { response: OnboardingStateResponse });
-export const setOnboardingMark = (step: SetOnboardingStep, kind: SetOnboardingMarkRequest['kind']) =>
-  call(setOnboardingMarkRoute, { request: SetOnboardingMarkRequest, response: OnboardingStateResponse }, { kind }, { step });
+/** Record a decision (`skipped`, `acknowledged`) or a proof the wizard made (`checked` and `started` carry the id of the runner or the thread they are about). */
+export const setOnboardingMark = (step: SetOnboardingStep, kind: SetOnboardingMarkRequest['kind'], refId?: string) =>
+  call(setOnboardingMarkRoute, { request: SetOnboardingMarkRequest, response: OnboardingStateResponse }, { kind, ...(refId ? { refId } : {}) }, { step });
 export const clearOnboardingMark = (step: SetOnboardingStep) => call(clearOnboardingMarkRoute, { response: OnboardingStateResponse }, undefined, { step });
 export const launchOnboarding = (body: LaunchOnboardingRequest) =>
   call(launchOnboardingRoute, { request: LaunchOnboardingRequest, response: OnboardingStateResponse }, body);

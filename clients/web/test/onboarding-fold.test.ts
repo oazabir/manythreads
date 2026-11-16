@@ -1,49 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { collapsedAtStart, isStepOpen } from '../src/screens/onboarding/fold';
+import { isStepOpen, stepOpenAtStart } from '../src/screens/onboarding/fold';
 
 const steps = [
-  { id: 'bootstrap', status: 'done' },
-  { id: 'signin', status: 'todo' },
-  { id: 'servers', status: 'skipped' },
-  { id: 'launch', status: 'todo' },
+  { id: 'bootstrap', status: 'done', optional: false },
+  { id: 'theme', status: 'todo', optional: true },
+  { id: 'models', status: 'todo', optional: false },
+  { id: 'servers', status: 'skipped', optional: true },
+  { id: 'launch', status: 'todo', optional: false },
 ] as const;
 
-describe('folding the finished steps of Setup', () => {
-  it('folds what was done or set aside when the page opened, and keeps the rest open', () => {
-    const folded = collapsedAtStart(steps);
-    expect([...folded].sort()).toEqual(['bootstrap', 'servers']);
-    expect(isStepOpen('bootstrap', folded, {})).toBe(false);
-    expect(isStepOpen('signin', folded, {})).toBe(true);
-    expect(isStepOpen('launch', folded, {})).toBe(true);
+describe('which step of the setup wizard is open', () => {
+  it('opens the first required step that is still to do, so a person lands where they stopped', () => {
+    expect(stepOpenAtStart(steps, null)).toBe('models');
   });
 
-  it('keeps a step open that turns done while the page is open, so its result stays on screen', () => {
-    const folded = collapsedAtStart(steps);
-    // the set is read once, when the page opens: a step that was to do then is not in it, whatever it becomes
-    expect(isStepOpen('signin', folded, {})).toBe(true);
+  it('opens the step the address names, even a done one', () => {
+    expect(stepOpenAtStart(steps, 'bootstrap')).toBe('bootstrap');
+    expect(stepOpenAtStart(steps, 'launch')).toBe('launch');
   });
 
-  it('opens a step that was folded at the start but is to do again, unless the person folded it', () => {
-    const folded = collapsedAtStart(steps);
-    expect(isStepOpen('bootstrap', folded, {}, 'todo')).toBe(true);
-    expect(isStepOpen('bootstrap', folded, {}, 'done')).toBe(false);
-    expect(isStepOpen('bootstrap', folded, { bootstrap: false }, 'todo')).toBe(false);
+  it('ignores a name that is no step, and falls back to an optional step when every required one is done', () => {
+    expect(stepOpenAtStart(steps, 'nonsense')).toBe('models');
+    const rest = steps.map((s) => (s.optional ? s : { ...s, status: 'done' as const }));
+    expect(stepOpenAtStart(rest, null)).toBe('theme');
+    expect(stepOpenAtStart(rest.map((s) => ({ ...s, status: 'done' as const })), null)).toBeNull();
   });
 
-  it("lets a person's own fold or unfold win over the start", () => {
-    const folded = collapsedAtStart(steps);
-    expect(isStepOpen('bootstrap', folded, { bootstrap: true })).toBe(true);
-    expect(isStepOpen('signin', folded, { signin: false })).toBe(false);
-  });
-
-  it('opens a folded step by itself when it is to do again', () => {
-    const folded = collapsedAtStart(steps);
-    expect(isStepOpen('bootstrap', folded, {}, 'todo')).toBe(true);
-    expect(isStepOpen('bootstrap', folded, {}, 'done')).toBe(false);
-    expect(isStepOpen('bootstrap', folded, { bootstrap: false }, 'todo')).toBe(false);
-  });
-
-  it('folds nothing on a fresh install where every step is still to do', () => {
-    expect(collapsedAtStart(steps.map((s) => ({ ...s, status: 'todo' as const }))).size).toBe(0);
+  it("keeps one step open at the start and lets a person's own fold or unfold win", () => {
+    expect(isStepOpen('models', 'models', {})).toBe(true);
+    expect(isStepOpen('theme', 'models', {})).toBe(false);
+    expect(isStepOpen('theme', 'models', { theme: true })).toBe(true);
+    expect(isStepOpen('models', 'models', { models: false })).toBe(false);
   });
 });
