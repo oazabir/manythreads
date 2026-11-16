@@ -398,6 +398,14 @@ one machine, arm64, an air-gapped run of the script (the `--build-from-source` p
 - Predefined teams (q4): **every template shown and ticked**; the admin unticks what they do not want.
 - Live run (q11): **the owner provides a throwaway VM** (Ubuntu, 16 GB, 8 vCPU, 100 GB, public address, SSH for the operator). The automated journey still runs in containers on the devbox.
 - The rest follow the recommendations; q13 (live-run sign-ins): the owner's own accounts, as in Phase 26.
+- **A working runner is required to finish onboarding (owner, 2026-11-16).** Without a server or a runner no bot can run, so the wizard never lets the admin
+  move past the runners step with none working. Either the admin sets up a runner (a server by the curl command, a Claude Code or Codex pod signed in, a
+  Hermes gateway) and the wizard proves it with a real test call, or, when the admin has configured none, the wizard **offers to deploy a Hermes pod** for the
+  team that uses the site's LiteLLM proxy. Right there the admin sets the model credentials for it: an LLM provider API key (Anthropic, OpenAI, Google,
+  OpenRouter, …) bound to the aliases, or a **coding plan** subscription that Hermes supports (for example a GLM, Kimi or MiniMax coding plan: base URL +
+  key), saved on LiteLLM as the alias the pod uses. The wizard then deploys the pod, waits until it is ready, runs a test turn through it (a real answer
+  from the model, the run card visible), and only then moves on. A failure says why in one sentence (bad key, no quota, pod not ready) with a retry; the
+  step stays open until one runner passes its test. The Brain check and the first delivery run on that runner when nothing else is set up.
 - Order: Phase 27 starts after Phase 26 and after the theme system (P28, below), so the wizard lets the admin try the themes.
 
 ## 10. Decisions for the owner
