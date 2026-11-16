@@ -204,6 +204,11 @@ test('the grid: remembered, a card carries the question and its buttons, and ope
 });
 
 test('read in every look, light and dark, at 1440 and 390 px', async ({ browser, playwright }) => {
+  // a few more threads of Nadia's own, so each group of the grid has cards to flow across the columns (her own replies: nothing new for the badge counts)
+  for (const text of ['Write up the canary checklist', 'Rota for the Friday pager', 'Rename the legacy-search flag', 'Collect the dashboard links']) {
+    const root = await postAs(nadia, dev, text);
+    await postAs(nadia, dev, 'Started on this, notes to follow.', root.id);
+  }
   for (const palette of ['graphite', 'linen', 'harbor']) {
     for (const theme of ['light', 'dark']) {
       await look(palette, theme);

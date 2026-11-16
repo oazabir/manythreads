@@ -45,6 +45,13 @@ export const TaskView = memo(function TaskView({ rootId, channelId, teamSlug, pe
   const todoProgressText = view.todo !== null && view.todo.items.length > 0 && !todoProgress(view.todo.items).allDone ? progressText(todoProgress(view.todo.items)) : null;
   const chipWho = view.run !== null ? `${view.run.botName} is working` : null;
 
+  // "Hide" is a small quiet button at the end of the row the person is reading: the ended-run line, the finished list's header, else under the cards
+  const canHide = plan.todo || plan.run !== null;
+  const hideButton = canHide ? <button type="button" className="tvHide" onClick={() => hide(true)} data-testid="tv-hide">Hide</button> : null;
+  const endedShown = plan.run === 'ended' && plan.ended !== null;
+  const hideInTodo = canHide && !endedShown && plan.run !== 'live' && view.todo !== null && view.todo.items.length > 0 && todoProgress(view.todo.items).allDone;
+  const hideAlone = canHide && !endedShown && !hideInTodo;
+
   return (
     <div className="tv" data-testid="task-view" data-root={rootId}>
       {plan.folded !== null ? (
@@ -63,12 +70,14 @@ export const TaskView = memo(function TaskView({ rootId, channelId, teamSlug, pe
           </p>
         )
       ) : null}
-      {plan.todo && view.todo !== null ? <TodoCompact todo={view.todo} /> : null}
-      {plan.run === 'live' && view.run !== null ? <RunCompact head={view.run} lines={view.lines} people={people} onOpen={open} more={plan.moreRuns} /> : null}
-      {plan.run === 'ended' && plan.ended !== null ? <RunEndedLine head={plan.ended} onOpen={open} /> : null}
-      {plan.todo || plan.run !== null ? (
-        <button type="button" className="tvHide" onClick={() => hide(true)} data-testid="tv-hide">Hide</button>
+      {plan.todo || plan.run === 'live' ? (
+        <div className="tvCards" data-testid="tv-cards">
+          {plan.todo && view.todo !== null ? <TodoCompact todo={view.todo} trailing={hideInTodo ? hideButton : null} /> : null}
+          {plan.run === 'live' && view.run !== null ? <RunCompact head={view.run} lines={view.lines} people={people} onOpen={open} more={plan.moreRuns} /> : null}
+        </div>
       ) : null}
+      {plan.run === 'ended' && plan.ended !== null ? <RunEndedLine head={plan.ended} onOpen={open} trailing={hideButton} /> : null}
+      {hideAlone ? hideButton : null}
       {plan.questions.length > 0 ? <QuestionStrip questions={plan.questions} slug={teamSlug ?? ''} rootId={rootId} onDecided={decided} /> : null}
     </div>
   );

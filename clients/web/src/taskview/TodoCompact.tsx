@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ThreadTodo, TodoItem } from '@manythreads/shared';
 import { CaretIcon, CheckIcon, ItemBlockedIcon, ItemWaitingIcon } from '../shell/icons';
 import { currentItem, progressText, STATUS_WORD, todoProgress, todoTitle } from '../channels/todo-card/words';
@@ -18,7 +18,7 @@ function Mark({ status }: { status: TodoItem['status'] }) {
  * The bot's list for the request, compact, under the root in the channel (P29): title and "2 of 4", the bar, and the open items (the one being worked on first). A finished list
  * says "4 of 4 done" on one line. The full list stays in the thread. No live region here: the channel has one.
  */
-export function TodoCompact({ todo }: { todo: ThreadTodo }) {
+export function TodoCompact({ todo, trailing = null }: { todo: ThreadTodo; /** A small button at the end of the header row of a finished list ("Hide"). */ trailing?: ReactNode }) {
   const p = todoProgress(todo.items);
   const [all, setAll] = useState(false);
   const open = todo.items.filter((i) => i.status !== 'done');
@@ -31,6 +31,7 @@ export function TodoCompact({ todo }: { todo: ThreadTodo }) {
       <header className="tvHead">
         <b className="tvTitle" dir="auto">{todoTitle(todo)}</b>
         <span className="tvCount" data-testid="tv-todo-count">{p.allDone ? `${p.done} of ${p.total} done` : progressText(p)}</span>
+        {p.allDone ? trailing : null}
       </header>
       <div className="tdBar" role="img" aria-label={`${p.done} of ${p.total} done`}>
         <span style={{ width: `${p.total === 0 ? 0 : Math.round((p.done / p.total) * 100)}%` }} />

@@ -131,6 +131,14 @@ test('the channel follows a run and answers its question without opening the thr
     await expect(tv.getByTestId('tv-run-ended')).toBeVisible({ timeout: 90_000 });
     await expect(tv.getByTestId('tv-run')).toHaveCount(0);
     await expect(nadia.page.getByTestId('task-view-said')).toHaveText('');
+    // one row, left-aligned: the icon, the words, "Open thread" and "Hide" side by side
+    const endedBox = await tv.getByTestId('tv-run-ended').boundingBox();
+    const hideBox = await tv.getByTestId('tv-hide').boundingBox();
+    const textBox = await tv.getByTestId('tv-run-ended').locator('.rcEndText').boundingBox();
+    expect(endedBox && hideBox && textBox, 'the ended row has its parts').toBeTruthy();
+    expect(hideBox!.y, 'Hide sits on the same row').toBeLessThan(endedBox!.y + endedBox!.height);
+    expect(Math.abs(textBox!.y - hideBox!.y), 'the words and Hide share a line').toBeLessThan(20);
+    expect(textBox!.x - endedBox!.x, 'the words start at the left edge').toBeLessThan(40);
     await shots(nadia.page, 'channel-run-ended');
   } finally {
     await nadia.close();
@@ -167,6 +175,11 @@ test('the to-do list and the run follow the bot in the channel; Stop works from 
     // the list appears under the root with no reload, the working item first
     await expect(tv.getByTestId('tv-todo-count')).toHaveText('1 of 4', { timeout: 30_000 });
     await expect(tv.getByTestId('tv-todo-items').locator('li').first()).toContainText('Build the run card');
+    // wide column: the to-do and the run sit side by side
+    const todoBox = await tv.getByTestId('tv-todo').boundingBox();
+    const runBox = await tv.getByTestId('tv-run').boundingBox();
+    expect(Math.abs(todoBox!.y - runBox!.y), 'the to-do and the run share a row').toBeLessThan(40);
+    expect(runBox!.x, 'the run is to the right of the to-do').toBeGreaterThan(todoBox!.x + todoBox!.width - 2);
     await shots(nadia.page, 'channel-todo-run');
     // an item ticks: the count follows
     await tool(2, { action: 'update', id: 'build', status: 'done' });

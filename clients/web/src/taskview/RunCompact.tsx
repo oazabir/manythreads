@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import type { RunActivityItem, RunHead } from '@manythreads/shared';
 import { Avatar } from '../components/ui';
 import { stopThreadRun } from '../runs/api';
@@ -90,7 +90,7 @@ export function RunCompact({ head, lines, people, onOpen, more = 0, hideOpen = f
 }
 
 /** What stays after the run: one quiet line ("Worked 4 min · 14 steps"), with the thread one press away. */
-export function RunEndedLine({ head, onOpen }: { head: RunHead; onOpen: () => void }) {
+export function RunEndedLine({ head, onOpen, trailing = null }: { head: RunHead; onOpen: () => void; /** A small button at the end of the row ("Hide"). */ trailing?: ReactNode }) {
   const line = endLine(head, Date.now());
   const Icon = line.tone === 'failed' ? StepFailedIcon : line.tone === 'stopped' ? StepStoppedIcon : StepDoneIcon;
   const text = [line.lead, ...line.parts];
@@ -99,6 +99,7 @@ export function RunEndedLine({ head, onOpen }: { head: RunHead; onOpen: () => vo
       <span className="rcEndIc" aria-hidden="true"><Icon /></span>
       <span className="rcEndText" dir="auto"><b>{head.botName}</b> · <Parts parts={text} /></span>
       {hasWork(head.counts) || line.tone !== 'done' ? <button type="button" className="tvLink" onClick={onOpen}>Open thread</button> : null}
+      {trailing}
     </p>
   );
 }

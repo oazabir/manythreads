@@ -9,10 +9,23 @@
   flex-direction: column;
   gap: 6px;
   margin-block: 6px 2px;
-  max-width: 640px;
   min-width: 0;
   position: relative;
   container-type: inline-size;
+}
+
+.tvCards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+/* the message column is wide: the to-do and the run sit side by side under the message (to-do a little wider); narrow, they stack */
+@container (width >= 720px) {
+  .tvCards:has(> .tvTodo + .tvRun) {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  }
 }
 
 .tvCard {
@@ -46,6 +59,7 @@
 }
 
 .tvTitle {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -158,6 +172,19 @@
   color: var(--alert-ink);
 }
 
+.tvEnded.rcEnd {
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-inline-start: 0;
+  margin-block: 0;
+  text-align: start;
+}
+
+.tvEnded .rcEndText {
+  flex: 0 1 auto;
+}
+
 .tvHide {
   align-self: flex-end;
   min-height: 24px;
@@ -172,6 +199,11 @@
 
 .tvHide:hover {
   color: var(--ink);
+}
+
+.tvEnded .tvHide,
+.tvHead .tvHide {
+  align-self: center;
 }
 
 .tvChip {
