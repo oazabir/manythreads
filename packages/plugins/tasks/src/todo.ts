@@ -1,6 +1,11 @@
 import { json, route, type MessageProvider, type PluginContext, type PluginEvent, type PluginTx } from '@manythreads/sdk';
 import {
   BotsRunClosedEvent,
+  CHANNEL_TODO_DONE_MINUTES,
+  CHANNEL_TODO_FRESH_HOURS,
+  CHANNEL_TODOS_MAX,
+  ChannelTodosPathParams,
+  ChannelTodosResponse,
   GetThreadTodoResponse,
   TasksTaskCompletedEvent,
   TasksTaskHandedOffEvent,
@@ -12,6 +17,7 @@ import {
   TodoToolInput,
   WS_TODO_CHANGED,
   getThreadTodoRoute,
+  listChannelTodosRoute,
   type TodoStatus,
 } from '@manythreads/shared';
 
@@ -403,6 +409,30 @@ export function registerTodo(ctx: PluginContext): void {
       const { rootId } = ThreadTodoPathParams.parse(req.params);
       const row = (await tx.query<TodoRow>(`SELECT ${COLUMNS} FROM app.thread_todos WHERE thread_root_id = $1::uuid`, [rootId])).rows[0];
       return json(GetThreadTodoResponse.parse({ todo: row ? todoOf(row) : null }));
+    }),
+  });
+
+  // GET /api/channels/:channelId/todos (P29): the lists the channel page draws under the roots of its threads, in one read. Read as the caller, so the rule is the table's (whoever can
+  // read the thread's channel: a conversation with a bot is its asker's alone, a guest reads what an ACL entry gives). A list is here while it has an item not done that changed in the
+  // last CHANNEL_TODO_FRESH_HOURS, and for CHANNEL_TODO_DONE_MINUTES after its last change when all of it is done (so "4 of 4 done" shows once). The newest first, at most 50.
+  ctx.http.route({
+    ...listChannelTodosRoute,
+    readOnly: true,
+    schema: { response: ChannelTodosResponse },
+    handler: route(async (req, tx) => {
+      const { channelId } = ChannelTodosPathParams.parse(req.params);
+      const rows = (
+        await tx.query<TodoRow>(
+          `SELECT ${COLUMNS} FROM app.thread_todos
+            WHERE channel_id = $1::uuid
+              AND ((updated_at > now() - make_interval(hours => $2::int) AND EXISTS (SELECT 1 FROM jsonb_array_elements(items) e WHERE e ->> 'status' <> 'done'))
+                   OR updated_at > now() - make_interval(mins => $3::int))
+            ORDER BY updated_at DESC, thread_root_id DESC
+            LIMIT $4`,
+          [channelId, CHANNEL_TODO_FRESH_HOURS, CHANNEL_TODO_DONE_MINUTES, CHANNEL_TODOS_MAX],
+        )
+      ).rows;
+      return json(ChannelTodosResponse.parse({ todos: rows.map(todoOf) }));
     }),
   });
 

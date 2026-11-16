@@ -1,6 +1,6 @@
 import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool, hashRunToken, withActor } from '@manythreads/kernel';
 import { NoEligibleApproverError, requestToolApproval, type ApprovalProvider, type BotRunHandle, type PluginRuns, type PluginTx } from '@manythreads/sdk';
-import { Approval, GetApprovalArgsResponse, ListApprovalsResponse, ListThreadApprovalsResponse, GetApprovalsSummaryResponse, previewArgsDetailed } from '@manythreads/shared';
+import { Approval, ChannelApprovalsResponse, GetApprovalArgsResponse, ListApprovalsResponse, ListThreadApprovalsResponse, GetApprovalsSummaryResponse, previewArgsDetailed } from '@manythreads/shared';
 import { personaActor, type Persona } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -331,6 +331,40 @@ describe('who may decide', () => {
     const theirs = await w.call(sameera, 'GET', `/api/threads/${rootId}/approvals`);
     expect(theirs.status).toBe(200);
     expect(ListThreadApprovalsResponse.parse(theirs.body).items).toEqual([]);
+  });
+});
+
+describe('the questions of a whole channel in one read (P29-03)', () => {
+  const listChannel = async (who: Persona, channel: string): Promise<{ status: number; ids: string[] }> => {
+    const res = await w.call(who, 'GET', `/api/channels/${channel}/approvals/pending`);
+    return { status: res.status, ids: res.status === 200 ? ChannelApprovalsResponse.parse(res.body).items.map((a) => a.id) : [] };
+  };
+
+  it('answers the pending questions that came from a thread of the channel, to the team and to nobody else', async () => {
+    const waiting = (await request(await openRun(scoped, nadia, { replyRootId: rootId }), 'pages/channel-listed.md')).approvalId;
+    const mine = await listChannel(rafi, channelId);
+    expect(mine.status).toBe(200);
+    expect(mine.ids).toContain(waiting);
+    expect((await listChannel(sameera, channelId)).ids).toEqual([]);
+    expect((await w.call(null, 'GET', `/api/channels/${channelId}/approvals/pending`)).status).toBe(401);
+  });
+
+  it('a guest with a read grant on the channel reads no question (the policy is the team\'s)', async () => {
+    await w.system((tx) => tx.query("INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission) VALUES ($1, 'channel', $2, 'person', $3, 'read') ON CONFLICT DO NOTHING", [omar.workspaceId, channelId, personas.lena.personId]));
+    try {
+      expect(await listChannel(personas.lena, channelId)).toEqual({ status: 200, ids: [] });
+    } finally {
+      await w.system((tx) => tx.query("DELETE FROM app.acl_entries WHERE resource_type = 'channel' AND resource_id = $1 AND subject_id = $2", [channelId, personas.lena.personId]));
+    }
+  });
+
+  it('a settled question is not listed, and the push audience names the channel and the thread root', async () => {
+    const id = (await request(await openRun(scoped, nadia, { replyRootId: rootId }), 'pages/channel-read.md')).approvalId;
+    expect((await listChannel(rafi, channelId)).ids).toContain(id);
+    const audience = await w.system(async (tx) => (await tx.query<{ o_channel_id: string | null; o_thread_root_id: string | null }>('SELECT o_channel_id, o_thread_root_id FROM app.approvals_audience($1)', [id])).rows[0]);
+    expect(audience).toEqual({ o_channel_id: channelId, o_thread_root_id: rootId });
+    expect((await decide(rafi, id, 'deny')).status).toBe(200);
+    expect((await listChannel(rafi, channelId)).ids).not.toContain(id);
   });
 });
 

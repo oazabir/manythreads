@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { CapabilityBroker, createAppPool, createDbGrantSource, createRunService, createSystemPool } from '@manythreads/kernel';
-import { GetThreadTodoResponse, type ThreadTodo } from '@manythreads/shared';
+import { ChannelTodosResponse, GetThreadTodoResponse, type ThreadTodo } from '@manythreads/shared';
 import type { BotRunHandle, PluginTx } from '@manythreads/sdk';
 import { TEAM_IDS } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -331,6 +331,53 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** A call of the door itself (the SQL function), as the bot of the run: for what the tool never sends. */
 const door = (run: BotRunHandle, sql: string, params: unknown[]) => runs.asBot(run, async (tx) => (await tx.query<Record<string, unknown>>(sql, params)).rows);
 const end = (run: BotRunHandle) => w.system((tx) => tx.query("UPDATE app.bot_runs SET status = 'done', ended_at = now() WHERE id = $1", [run.runId]));
+
+describe('the channel\'s lists in one read (P29-03)', () => {
+  const readChannel = async (who: typeof nadia, channelId: string): Promise<ThreadTodo[]> => {
+    const res = await w.call<{ todos: ThreadTodo[] }>(who, 'GET', `/api/channels/${channelId}/todos`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return ChannelTodosResponse.parse(res.body).todos;
+  };
+
+  it('answers the open lists of the channel and the lists finished a moment ago; not an old finished list, not an old stale one', async () => {
+    const open = await thread(alpha);
+    await todo(open.run, { action: 'set', items: ITEMS });
+    const justDone = await thread(alpha);
+    await todo(justDone.run, { action: 'set', items: ITEMS.map((i) => ({ ...i, status: 'done' })) });
+    const oldDone = await thread(alpha);
+    await todo(oldDone.run, { action: 'set', items: ITEMS.map((i) => ({ ...i, status: 'done' })) });
+    const oldOpen = await thread(alpha);
+    await todo(oldOpen.run, { action: 'set', items: ITEMS });
+    await w.system((tx) => tx.query("UPDATE app.thread_todos SET updated_at = now() - interval '10 minutes' WHERE thread_root_id = $1", [oldDone.root]));
+    await w.system((tx) => tx.query("UPDATE app.thread_todos SET updated_at = now() - interval '25 hours' WHERE thread_root_id = $1", [oldOpen.root]));
+    const roots = (await readChannel(nadia, dev)).map((t) => t.rootId);
+    expect(roots).toContain(open.root);
+    expect(roots).toContain(justDone.root);
+    expect(roots).not.toContain(oldDone.root);
+    expect(roots).not.toContain(oldOpen.root);
+    // an older list that still has work, changed 3 hours ago, stays
+    await w.system((tx) => tx.query("UPDATE app.thread_todos SET updated_at = now() - interval '3 hours' WHERE thread_root_id = $1", [open.root]));
+    expect((await readChannel(nadia, dev)).map((t) => t.rootId)).toContain(open.root);
+  });
+
+  it('is the table\'s rule: another team, a person\'s own conversation and a guest without a grant read nothing; a guest with a grant reads the lists of that channel', async () => {
+    const chat = await w.call<{ channelId: string }>(nadia, 'POST', '/api/teams/engineering/bots/todo-alpha/conversation');
+    const releases = await w.channelId('engineering', 'releases');
+    await w.system((tx) => tx.query("INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission) VALUES ($1, 'channel', $2, 'person', $3, 'read') ON CONFLICT DO NOTHING", [nadia.workspaceId, releases, lena.personId]));
+    const priv = await thread(alpha, chat.body.channelId);
+    await todo(priv.run, { action: 'set', items: ITEMS });
+    const shared = await thread(alpha, releases);
+    await todo(shared.run, { action: 'set', items: ITEMS });
+    const mine = (await readChannel(nadia, chat.body.channelId)).map((t) => t.rootId);
+    expect(mine).toContain(priv.root);
+    expect(mine).not.toContain(shared.root);
+    expect(await readChannel(omar, chat.body.channelId)).toEqual([]);
+    expect(await readChannel(sameera, dev)).toEqual([]);
+    expect(await readChannel(lena, dev)).toEqual([]);
+    expect((await readChannel(lena, releases)).map((t) => t.rootId)).toContain(shared.root);
+    expect((await w.call(null, 'GET', `/api/channels/${dev}/todos`)).status).toBe(401);
+  });
+});
 
 describe('who can see it, and who is told', () => {
   it('in a person\'s own conversation only that person is told and reads it; a guest reads it only in a channel she was added to', async () => {

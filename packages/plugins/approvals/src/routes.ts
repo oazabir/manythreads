@@ -1,6 +1,9 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   ApprovalsApprovalDecidedEvent,
+  CHANNEL_APPROVALS_MAX,
+  ChannelApprovalsPathParams,
+  ChannelApprovalsResponse,
   DecideApprovalPathParams,
   DecideApprovalRequest,
   DecideApprovalResponse,
@@ -18,6 +21,7 @@ import {
   getApprovalArgsRoute,
   getApprovalsSummaryRoute,
   listApprovalsRoute,
+  listChannelApprovalsRoute,
   listThreadApprovalsRoute,
 } from '@manythreads/shared';
 import { conflict, forbidden, json, notFound, requireTeam, route } from '@manythreads/sdk';
@@ -76,6 +80,25 @@ export function registerRoutes(ctx: PluginContext): void {
         )
       ).rows[0];
       return json({ waiting: row?.waiting ?? 0, mine: row?.mine ?? 0, overdue: row?.overdue ?? 0 });
+    }),
+  });
+
+  // GET /api/channels/:channelId/approvals/pending (P29): the questions waiting under the roots of a channel's threads, in one read. The table's policy decides what the caller sees
+  // (a guest with a channel grant but no team seat reads none; a private channel's question only its members). Only approvals that came from a thread (the page draws them under
+  // that root); the oldest first, at most CHANNEL_APPROVALS_MAX.
+  ctx.http.route({
+    ...listChannelApprovalsRoute,
+    readOnly: true,
+    schema: { response: ChannelApprovalsResponse },
+    handler: route(async (req, tx) => {
+      const { channelId } = ChannelApprovalsPathParams.parse(req.params);
+      const rows = (
+        await tx.query<ApprovalRow>(
+          `${APPROVAL_SELECT} WHERE a.channel_id = $1::uuid AND a.thread_root_id IS NOT NULL AND a.status = 'pending' ORDER BY a.id ASC LIMIT $2`,
+          [channelId, CHANNEL_APPROVALS_MAX],
+        )
+      ).rows;
+      return json(ChannelApprovalsResponse.parse({ items: await approvalsOf(tx, rows) }));
     }),
   });
 
