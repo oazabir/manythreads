@@ -1,0 +1,83 @@
+# The starter app as cluster objects, for the team's apps namespace (pod security "restricted": no root, no builder, no privilege).
+# The source is not built into an image: the stock Node image runs `server.mjs` from a ConfigMap, so a deploy takes seconds and needs no registry.
+# The deploy README fills the __PLACEHOLDERS__ with sed:
+#   __TAG__        the first 12 characters of the tested commit (names the ConfigMap, so a new commit means a new rollout)
+#   __TEAM__       the team's slug (the second part of the address)
+#   __HOST__       the site's host name, read from the kubeconfig's comment lines
+#   __NAMESPACE__  the apps namespace the kubeconfig's default context names (`apps-<team>`)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: starter
+  labels: { app: starter }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: starter }
+  template:
+    metadata:
+      labels: { app: starter }
+      annotations:
+        manythreads.io/commit: "__TAG__"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: docker.io/library/node:22-alpine
+          command: ["node", "/app/server.mjs"]
+          env:
+            - { name: PORT, value: "8080" }
+            - { name: TEAM_NAME, value: "__TEAM__" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 20m, memory: 48Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: src, mountPath: /app, readOnly: true }
+      volumes:
+        - name: src
+          configMap: { name: starter-src-__TAG__ }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: starter
+spec:
+  type: ClusterIP
+  selector: { app: starter }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+# The site only accepts this exact shape in an apps namespace: its own host, the path /apps/<team>/<app> with pathType Prefix, the one Traefik
+# annotation naming the namespace's protective chain, and no tls section.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: starter
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: __NAMESPACE__-apps-path@kubernetescrd
+spec:
+  rules:
+    - host: __HOST__
+      http:
+        paths:
+          - path: /apps/__TEAM__/starter
+            pathType: Prefix
+            backend:
+              service: { name: starter, port: { name: http } }

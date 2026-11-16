@@ -1,0 +1,12 @@
+{
+  "name": "starter-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The starter app of a manythreads team: one page, one test, no dependencies.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" }
+}
