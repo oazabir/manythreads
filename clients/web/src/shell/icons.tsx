@@ -108,6 +108,10 @@ export const ColumnGripIcon = proIcon(ArrowLeftRightIcon, 14);
 export const MicIcon = proIcon(MicrophoneIcon, 16);
 export const StopIcon = proIcon(SquareIcon, 14);
 export const PlayIcon = proIcon(PlayIcon_, 14);
+/** A small play triangle: a task in progress (the Threads entry's third badge). */
+export const RunningIcon = proIcon(PlayIcon_, 10);
+/** A small @: a thread that names the person (the Threads entry's first badge). */
+export const AtBadgeIcon = proIcon(ProMention, 10);
 export const PauseIcon = proIcon(PauseIcon_, 14);
 export const TrashIcon = proIcon(DeleteIcon, 15);
 

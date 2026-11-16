@@ -230,3 +230,70 @@ test('read in every look, light and dark, at 1440 and 390 px', async ({ browser,
 function rowOrCard(page: Page, mode: 'list' | 'grid', root: string) {
   return mode === 'grid' ? cardOf(page, root) : rowOf(page, root);
 }
+
+const threadsLink = (page: Page) => page.locator('[data-landmark="sidebar"] a.it', { hasText: 'Threads' });
+const num = async (page: Page, id: string): Promise<number> => {
+  const el = page.getByTestId(id);
+  return (await el.count()) === 0 ? 0 : Number(((await el.first().textContent()) ?? '0').replace(/\D/g, ''));
+};
+
+test('the sidebar Threads entry: mentions, unread and tasks in progress, in words and in four looks', async ({ browser, playwright }) => {
+  await look('graphite', 'light');
+  const opened = await openOn(browser, playwright, world.stack, 'nadia', '/t/engineering/threads');
+  const page = opened.page;
+  try {
+    const link = threadsLink(page);
+    // a mention (Omar named Nadia in thread A) and the run of the lead bot: the badges come in the order @, unread, run
+    await expect(page.getByTestId('threads-badge-mentions')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('threads-badge-running')).toBeVisible({ timeout: 60_000 });
+    const order = await page.locator('[data-testid="threads-badges"] .tb').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+    expect(order.indexOf('threads-badge-mentions')).toBeLessThan(order.indexOf('threads-badge-running'));
+    // its name says every count in words, and the tooltip is the same
+    const label = (await link.getAttribute('aria-label')) ?? '';
+    expect(label).toMatch(/^Threads, /);
+    expect(label).toMatch(/\d+ mentions?/);
+    expect(label).toMatch(/\d+ tasks? in progress/);
+    expect(await link.getAttribute('title')).toBe(label);
+    const mentions0 = await num(page, 'threads-badge-mentions');
+    const running0 = await num(page, 'threads-badge-running');
+
+    // a run starts: tasks in progress +1, with no reload and no polling of ours
+    await noOpenRun('run-demo');
+    world.script(JOURNEY);
+    const c = await postAs(nadia, dev, '@run-demo one more change to the panel');
+    await expect.poll(() => num(page, 'threads-badge-running'), { timeout: 60_000 }).toBe(running0 + 1);
+    // a message names Nadia in another thread: mentions +1
+    await postAs(omar, dev, '@nadia please look at this one too, it is about the panel', c.id);
+    await expect.poll(() => num(page, 'threads-badge-mentions'), { timeout: 60_000 }).toBe(mentions0 + 1);
+    expect((await link.getAttribute('aria-label')) ?? '').toContain(`${mentions0 + 1} mentions`);
+    const requests = await page.evaluate(() => performance.getEntriesByType('resource').filter((r) => r.name.includes('/threads/running')).length);
+    expect(requests, 'no polling: a few reads, not one every few seconds').toBeLessThan(12);
+
+    // four looks, light and dark: the sidebar with its badges
+    for (const palette of ['graphite', 'linen', 'harbor', 'classic']) {
+      for (const theme of ['light', 'dark']) {
+        await look(palette, theme);
+        await page.reload();
+        await expect(page.getByTestId('threads-badge-mentions')).toBeVisible({ timeout: 60_000 });
+        await page.locator('[data-landmark="sidebar"]').screenshot({ path: join(SHOTS, `sidebar-threads.${palette}.${theme}.png`) });
+      }
+    }
+    await look('graphite', 'light');
+  } finally {
+    await opened.context.close();
+  }
+  // the drawer at 390 px: the most urgent badge and a dot
+  const phone = await openOn(browser, playwright, world.stack, 'nadia', '/t/engineering/threads', { viewport: PHONE, mobile: true });
+  try {
+    await phone.page.getByRole('button', { name: 'Open menu' }).click();
+    await expect(phone.page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
+    const badges = phone.page.getByTestId('threads-badges');
+    await expect(badges).toBeVisible({ timeout: 60_000 });
+    expect(await phone.page.locator('[data-testid="threads-badges"] .tb:visible').count(), 'one badge shows on a phone').toBe(1);
+    await expect(phone.page.locator('[data-testid="threads-badges"] .tb-dot')).toBeVisible();
+    expect(await noSidewaysScroll(phone.page)).toBe(true);
+    await phone.page.screenshot({ path: join(SHOTS, 'sidebar-threads.drawer.390.png') });
+  } finally {
+    await phone.context.close();
+  }
+});

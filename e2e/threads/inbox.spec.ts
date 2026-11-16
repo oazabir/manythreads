@@ -46,7 +46,7 @@ test('three tabs list the right threads; opening one reads it; j, k and e move a
     await expect(rows.filter({ hasText: 'T2 Nadia proposes' })).toHaveCount(0);
     await expect(rows.filter({ hasText: 'T1 Priya asks' }).getByTestId('thread-replies')).toHaveText('1 new reply');
     await expect(rows.filter({ hasText: 'T1 Priya asks' }).getByTestId('thread-dot')).toBeVisible();
-    await expect(page.locator('[data-landmark="sidebar"] > a.it', { hasText: 'Threads' }).locator('.pill')).toHaveText(/^[1-9]/);
+    await expect(page.locator('[data-landmark="sidebar"] > a.it', { hasText: 'Threads' }).getByTestId('threads-badge-unread')).toHaveText(/^[1-9]/);
 
     // Mine: T1 only (she wrote the root)
     await tab('Mine').click();
@@ -64,7 +64,7 @@ test('three tabs list the right threads; opening one reads it; j, k and e move a
     await tab('Unread').click();
     await expect(rows.filter({ hasText: 'T1 Priya asks' })).toHaveCount(0, { timeout: 4_000 });
     await expect(page.getByTestId('threads-empty')).toContainText('You are all caught up');
-    await expect(page.locator('[data-landmark="sidebar"] > a.it', { hasText: 'Threads' }).locator('.pill')).toHaveCount(0);
+    await expect(page.locator('[data-landmark="sidebar"] > a.it', { hasText: 'Threads' }).getByTestId('threads-badge-unread')).toHaveCount(0);
 
     // a new reply lights the badge and the Unread tab live; j and k move; e marks the selected thread read
     await postMessage(nadiaApi, id, 'T2 another reply', t2.id);

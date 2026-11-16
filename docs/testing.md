@@ -292,6 +292,9 @@ holds found by the server, `@name`, an unknown name saying so, the address openi
 the question with its buttons on the card and Yes there taking it away, a card opening the thread with a way back), and last every look (Graphite, Linen, Harbor; light and dark; list and grid; 1440 and 390 px) with nothing
 scrolling sideways. Pictures go to `temp/screenshots/p29` (git-ignored). The web client must be built first (`pnpm --filter @manythreads/web build`); run it with a config of a few lines (one `desktop` project, `testMatch: 'runs/threads-view.spec.ts'`,
 no `webServer`): `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test -c <that config> --workers=1 --retries=0`. Unit and component tests: `clients/web/test/inbox-rules.test.ts`, `inbox-work.test.ts`, `threads-row.test.ts`.
+The same spec ends with the sidebar's Threads entry (P29-19): its badges in the order mentions (an @), unread, tasks in progress; its name and tooltip in words ("Threads, 2 mentions, 5 unread, 3 tasks in progress");
+a run starting adding one to the tasks and a message naming Nadia adding one to the mentions with no reload and no polling; the sidebar in four looks (Graphite, Linen, Harbor, Classic, light and dark) and the 390 px drawer, where one badge and a dot show.
+Unit and component tests: `clients/web/test/threads-badges.test.ts`. The shell has no collapsed rail: the narrow layout is the drawer, so "compact" is the 390 px rule.
 
 `e2e/runs/themes.spec.ts` (P28-07) uses the same stack and the same kind of config: it opens the thread of a working run card and a to-do card as Nadia in each theme (Graphite, Linen, Harbor and Classic) and
 mode, set through `PUT /api/me/appearance`, and checks the loaded fonts, the face of the team name, the contrast of the words in both cards, and that nothing scrolls sideways at 390 px; then it opens

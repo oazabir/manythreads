@@ -10,6 +10,7 @@ import { ProjectsSection } from './ProjectsSection';
 import { GUEST_SLUG } from './messageLink';
 import { CORE_NAV, navCount, navHref, navTone, visibleNav } from './nav';
 import { Pill } from './Pill';
+import { ThreadsBadges, threadsLabel } from './ThreadsBadges';
 
 /** A row of the contract: opens its page, shows its count, or its empty state while there is nothing to count. */
 function NavItem({ item, slug }: { item: NavContribution; slug: string }) {
@@ -19,15 +20,18 @@ function NavItem({ item, slug }: { item: NavContribution; slug: string }) {
   const count = navCount(item, counts);
   const tone = navTone(item, counts);
   const Icon = item.icon ? NAV_ICONS[item.icon] : null;
+  // the Threads entry has up to three badges: mentions, unread and tasks in progress (P29-19)
+  const threads = item.id === 'threads' ? { mentions: counts['threads.mentions'] ?? 0, unread: counts['threads.unread'] ?? 0, running: counts['threads.running'] ?? 0 } : null;
+  const label = threads ? threadsLabel(threads) : undefined;
   const body = (
     <>
       <span className="ic">{Icon ? <Icon /> : null}</span>
       <span className="it-label">{item.label}</span>
-      {count !== null ? <Pill n={count} tone={tone} {...(tone === 'attention' ? { note: 'some have waited over a day' } : {})} /> : item.emptyState ? <span className="hint">{item.emptyState}</span> : null}
+      {threads ? <ThreadsBadges {...threads} /> : count !== null ? <Pill n={count} tone={tone} {...(tone === 'attention' ? { note: 'some have waited over a day' } : {})} /> : item.emptyState ? <span className="hint">{item.emptyState}</span> : null}
     </>
   );
   return href ? (
-    <NavLink to={href} className={({ isActive }) => `it ${isActive || (atHome && item.id === 'threads') ? 'on' : ''} ${count !== null && tone !== 'quiet' && tone !== 'attention' ? 'unread' : ''}`}>
+    <NavLink to={href} aria-label={label} title={label} className={({ isActive }) => `it ${isActive || (atHome && item.id === 'threads') ? 'on' : ''} ${threads ? (threads.mentions > 0 || threads.unread > 0 ? 'unread' : '') : count !== null && tone !== 'quiet' && tone !== 'attention' ? 'unread' : ''}`}>
       {body}
     </NavLink>
   ) : (

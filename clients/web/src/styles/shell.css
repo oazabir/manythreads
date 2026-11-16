@@ -1183,3 +1183,40 @@ a.sec:hover {
     white-space: normal;
   }
 }
+
+/* ---- the Threads entry's badges (P29-19): mentions, unread, tasks in progress ---- */
+
+.tbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.tbs .tb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: 0;
+}
+
+.tb-dot {
+  display: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--human);
+}
+
+/* a tight row (a phone's drawer): the most urgent badge stays, and one dot says there is more */
+@media (width <= 480px) {
+  .tbs[data-count="2"] .tb ~ .tb,
+  .tbs[data-count="3"] .tb ~ .tb {
+    display: none;
+  }
+
+  .tbs[data-count="2"] .tb-dot,
+  .tbs[data-count="3"] .tb-dot {
+    display: inline-block;
+  }
+}
