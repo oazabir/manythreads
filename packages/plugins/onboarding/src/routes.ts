@@ -76,6 +76,60 @@ const wrongKind = (step: OnboardingMarkStep): string =>
           ? 'The first delivery can only be started or set aside.'
           : 'That step can only be set aside.';
 
+/** The kinds the wizard can try with a real question (the same list as the web client's): a runner of another kind is placed on bots one by one. */
+const PROVABLE_RUNNER_KINDS: readonly string[] = ['hermes_gateway', 'hermes_pod'];
+
+type RunnerRow = {
+  id: string;
+  kind: string;
+  enabled: boolean;
+  status: string;
+  is_default: boolean;
+  created_at: Date;
+};
+
+/** The runner of this workspace, or null when there is none with that id (an id of another workspace reads as none). */
+async function readRunner(tx: PluginTx, runnerId: string): Promise<RunnerRow | null> {
+  const present = (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.bot_runners') IS NOT NULL AS ok")).rows[0]?.ok === true;
+  if (!present) return null;
+  return (
+    (
+      await tx.query<RunnerRow>(
+        `SELECT id, kind, enabled, status, is_default, created_at FROM app.bot_runners WHERE id = $1::uuid AND workspace_id = $2::uuid`,
+        [runnerId, tx.actor.workspaceId],
+      )
+    ).rows[0] ?? null
+  );
+}
+
+/** A runner that can run a bot now: switched on and in the state `ready` (the web client's `isWorkingRunner`). */
+const isWorking = (r: RunnerRow): boolean => r.enabled && r.status === 'ready';
+
+/**
+ * The server's own check of "a working runner is required" (docs/plans/onboarding-journey.md section 10a), so a script cannot get past it with an invented id:
+ * the runner is one of this workspace, switched on, ready, the place bots run, and this admin's real question to a bot was answered since the runner exists
+ * (the wizard asks Brain through the Test action and waits for the reply; the question and its reply are rows the Test action keeps).
+ */
+async function requireProvenRunner(tx: PluginTx, runnerId: string): Promise<void> {
+  const runner = await readRunner(tx, runnerId);
+  if (!runner) throw conflict('That runner does not exist in this workspace.');
+  if (!PROVABLE_RUNNER_KINDS.includes(runner.kind)) throw conflict('A runner of that kind cannot be tried here; set up a Hermes gateway or a Hermes pod.');
+  if (!runner.enabled || runner.status !== 'ready') throw conflict('That runner is not switched on and ready yet.');
+  if (!runner.is_default) throw conflict('Make that runner the place bots run before asking it a question.');
+  const tables = (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.rehearsal_questions') IS NOT NULL AND to_regclass('app.bot_runs') IS NOT NULL AS ok")).rows[0]?.ok === true;
+  const answered = tables
+    ? await tx.query(
+        `SELECT 1 FROM app.rehearsal_questions q
+           JOIN app.bot_runs r ON r.reply_root_id = q.message_id AND r.rehearsal AND r.status = 'done' AND r.started_at >= $1::timestamptz
+          WHERE q.asked_by = app.actor() AND q.workspace_id = app.workspace_id()
+            AND EXISTS (SELECT 1 FROM app.messages m WHERE m.thread_root_id = q.message_id AND m.author_id <> app.actor() AND m.deleted_at IS NULL)
+          LIMIT 1`,
+        [runner.created_at],
+      )
+    : { rows: [] };
+  if (answered.rows.length === 0) throw conflict('No bot has answered a question yet. Ask a real question through that runner first.');
+}
+
 export function registerRoutes(ctx: PluginContext): void {
   ctx.http.route({
     method: getOnboardingRoute.method,
@@ -98,6 +152,8 @@ export function registerRoutes(ctx: PluginContext): void {
       const { kind, refId } = SetOnboardingMarkRequest.parse(req.body);
       if (!KINDS_OF[step].includes(kind)) throw conflict(wrongKind(step));
       if (needsRef(kind) !== (refId !== undefined)) throw conflict(needsRef(kind) ? 'Say what was checked or started.' : 'A decision points at nothing.');
+      // The required runner is a fact the server checks, not a claim of the client.
+      if (step === 'runners' && refId !== undefined) await requireProvenRunner(tx, refId);
       // A decision keeps its first record. A proof or a start is the latest one: a second delivery, or a second runner that answered, replaces the first.
       const written = await tx.query(
         `INSERT INTO app.onboarding_marks AS m (workspace_id, step, kind, marked_by, ref_id) VALUES ($1, $2, $3, $4, $5)
@@ -197,6 +253,12 @@ export function registerRoutes(ctx: PluginContext): void {
       const current = await readState(tx);
       if (current.launch === null) {
         throw conflict('Send your first goal to Brain before putting the checklist away.');
+      }
+      // A working runner is required too: the proof the wizard recorded must still point at a runner that is switched on and ready.
+      const proof = current.marks.find((m) => m.step === 'runners' && m.kind === 'checked');
+      const runner = proof?.refId ? await readRunner(tx, proof.refId) : null;
+      if (!runner || !isWorking(runner)) {
+        throw conflict('A working runner is required: set one up and ask it a real question before putting the checklist away.');
       }
       const dismissed = await tx.query(
         `UPDATE app.onboarding_state SET dismissed_at = now(), dismissed_by = $2, updated_at = now()

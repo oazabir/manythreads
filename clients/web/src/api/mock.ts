@@ -552,11 +552,13 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     };
   });
 
-  const workspaceBody = () => ({ workspace: { id: WORKSPACE_ID, name: workspaceName, selfSignup, passwordForMembers } });
+  let workspaceTimeZone: string | null = null;
+  const workspaceBody = () => ({ workspace: { id: WORKSPACE_ID, name: workspaceName, slug: 'kahf', timeZone: workspaceTimeZone, selfSignup, passwordForMembers } });
   on(getWorkspaceRoute, () => (requireAdmin(), workspaceBody()));
   on(updateWorkspaceRoute, ({ body }) => {
     requireAdmin();
     if (typeof body.name === 'string') workspaceName = body.name.trim();
+    if (typeof body.timeZone === 'string') workspaceTimeZone = body.timeZone.trim();
     if (typeof body.selfSignup === 'boolean') selfSignup = body.selfSignup;
     if (typeof body.passwordForMembers === 'boolean') passwordForMembers = body.passwordForMembers;
     return workspaceBody();

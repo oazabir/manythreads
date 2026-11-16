@@ -218,7 +218,7 @@ export function ModelSetup({ tests, aliases, hasProviders, compact = false }: { 
       // connecting the same vendor again (a new key after a failed test) changes its provider instead of making a second one
       const existing = (await fetchLlmProviders()).providers.find((p) => p.name === preset.label);
       const made = existing
-        ? (await updateLlmProvider(existing.id, { ...(key.trim() ? { apiKey: key.trim() } : {}), ...(apiBase ? { apiBase } : {}), enabled: true })).provider
+        ? (await updateLlmProvider(existing.id, { ...(key.trim() ? { apiKey: key.trim() } : {}), ...(apiBase ? { apiBase } : {}), ...(preset.type === 'local' ? { local: true } : {}), enabled: true })).provider
         : (
             await createLlmProvider({
               name: preset.label,
@@ -539,7 +539,7 @@ export function RunnersStep({
     void act.run(async () => {
       let runner: RunnerFact | undefined = facts.runners.find((r) => r.kind === 'hermes_pod');
       if (runner === undefined) {
-        const made = (await createBotRunner({ name: 'hermes', label: 'Hermes pod', kind: 'hermes_pod' })).runner;
+        const made = (await createBotRunner({ name: 'hermes', label: 'Hermes pod', kind: 'hermes_pod', teams: { all: true } })).runner;
         runner = { id: made.id as string, name: made.name, kind: made.kind, enabled: made.enabled, status: made.status, isDefault: made.isDefault };
       }
       if (!runner.enabled) await updateBotRunner(runner.id, { enabled: true });

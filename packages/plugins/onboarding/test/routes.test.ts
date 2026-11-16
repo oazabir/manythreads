@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWorld, personas, type World } from '../../channels/test/world.ts';
+import { createWorld, ensureChannels, personas, type World } from '../../channels/test/world.ts';
 
 // P10-01: the setup checklist's own state through the real server. What it proves: only admins read or change it, a mark takes only the kind its
 // step allows and can be taken back, the first goal is recorded once, the checklist cannot be put away before that goal, and each change writes
@@ -26,6 +26,58 @@ let since = new Date(0);
 const events = async (type: string): Promise<Array<Record<string, unknown>>> =>
   (await world.system((tx) => tx.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM app.events WHERE type = $1 AND occurred_at >= $2 ORDER BY id`, [type, since]))).rows.map((r) => r.payload);
 
+const SHA = 'a'.repeat(64);
+
+/** A runner row as the Runners page would leave it (ready, on, the place bots run), for the proof's checks. */
+async function makeRunner(over: Partial<{ name: string; kind: string; enabled: boolean; status: string; isDefault: boolean }> = {}): Promise<string> {
+  const v = { name: 'hermes', kind: 'hermes_pod', enabled: true, status: 'ready', isDefault: true, ...over };
+  return world.system(async (tx) =>
+    (
+      await tx.query<{ id: string }>(
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, is_default, status) VALUES ($1, $2, $2, $3, $4, $5, $6) RETURNING id`,
+        [omar.workspaceId, v.name, v.kind, v.enabled, v.isDefault, v.status],
+      )
+    ).rows[0]!.id,
+  );
+}
+
+/**
+ * What the Test action leaves when a bot answered the admin's real question: the question (his own message and a rehearsal row), the run that finished,
+ * and a reply in the thread from somebody else. `answered: false` leaves a question the run has not finished.
+ */
+async function leaveTestAnswer(opts: { answered?: boolean; reply?: boolean } = {}): Promise<void> {
+  const answered = opts.answered ?? true;
+  await ensureChannels(world);
+  const dev = await world.channelId('engineering', 'dev');
+  const q = await world.call<{ id: string }>(omar, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'Say hello', threadRootId: null });
+  expect(q.status, JSON.stringify(q.body)).toBe(201);
+  if (opts.reply ?? answered) {
+    const a = await world.call(nadia, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'Hello', threadRootId: q.body.id });
+    expect(a.status, JSON.stringify(a.body)).toBe(201);
+  }
+  await world.system(async (tx) => {
+    const bot = (
+      await tx.query<{ id: string }>(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status)
+         VALUES ($1, $2, 'brain-' || substr(md5(random()::text), 1, 6), 'agent', 'hermes', 'team', $3, 'active') RETURNING id`,
+        [omar.workspaceId, teamId, SHA],
+      )
+    ).rows[0]!.id;
+    await tx.query('INSERT INTO app.rehearsal_questions (message_id, workspace_id, team_id, bot_id, asked_by) VALUES ($1, $2, $3, $4, $5)', [
+      q.body.id,
+      omar.workspaceId,
+      teamId,
+      bot,
+      omar.actorId,
+    ]);
+    await tx.query(
+      `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, rehearsal, reply_root_id, ended_at)
+       VALUES ($1, $2, $3, 'conversation', $4, $5, true, $6, CASE WHEN $5 = 'done' THEN now() END)`,
+      [omar.workspaceId, bot, teamId, omar.actorId, answered ? 'done' : 'running', q.body.id],
+    );
+  });
+}
+
 beforeAll(async () => {
   world = await createWorld();
   teamId = await world.system(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.teams WHERE slug = 'engineering'`)).rows[0]!.id);
@@ -40,6 +92,9 @@ beforeEach(async () => {
   await world.system(async (tx) => {
     await tx.query('DELETE FROM app.onboarding_marks');
     await tx.query('DELETE FROM app.onboarding_state');
+    await tx.query('DELETE FROM app.rehearsal_questions');
+    await tx.query('DELETE FROM app.bot_runs');
+    await tx.query('DELETE FROM app.bot_runners');
   });
   since = (await world.system((tx) => tx.query<{ now: Date }>('SELECT clock_timestamp() AS now'))).rows[0]!.now;
 });
@@ -112,8 +167,9 @@ describe('marks', () => {
   });
 
   it('records a runner that answered a test with its id, and the latest one wins', async () => {
-    const one = '33333333-3333-4333-8333-333333333333';
-    const two = '44444444-4444-4444-8444-444444444444';
+    const one = await makeRunner({ name: 'one' });
+    const two = await makeRunner({ name: 'two', isDefault: false });
+    await leaveTestAnswer();
     // a proof must say what was checked, and a decision must not
     expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked' })).status).toBe(409);
     expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'skipped' })).status).toBe(409);
@@ -121,11 +177,63 @@ describe('marks', () => {
     expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: 'nope' })).status).toBe(400);
     await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: one });
     await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: one });
+    // the second becomes the place bots run, then it is accepted too
+    await world.system(async (tx) => {
+      await tx.query('UPDATE app.bot_runners SET is_default = false WHERE id = $1', [one]);
+      await tx.query('UPDATE app.bot_runners SET is_default = true WHERE id = $1', [two]);
+    });
     const second = await world.call<StateBody>(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: two });
     expect(second.body.state.marks).toMatchObject([{ step: 'runners', kind: 'checked', refId: two }]);
     // the same proof twice writes one event; a different runner writes another
     expect((await events('onboarding.step.marked')).map((e) => [e['step'], e['kind']])).toEqual([['runners', 'checked'], ['runners', 'checked']]);
     expect((await world.call<StateBody>(omar, 'DELETE', '/api/workspace/onboarding/marks/runners')).body.state.marks).toEqual([]);
+  });
+
+  it('refuses a runner proof the server cannot verify: an invented id, a runner that is off or not ready, one nobody asked, one without a real answer', async () => {
+    const mark = (refId: string) => world.call<{ error?: { message?: string }; message?: string }>(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId });
+    const refused = async (refId: string, why: RegExp): Promise<void> => {
+      const res = await mark(refId);
+      expect(res.status, JSON.stringify(res.body)).toBe(409);
+      expect(JSON.stringify(res.body)).toMatch(why);
+      expect((await get()).body.state.marks).toEqual([]);
+    };
+    await leaveTestAnswer();
+    const fresh = async (over: Parameters<typeof makeRunner>[0]): Promise<string> => {
+      await world.system((tx) => tx.query('DELETE FROM app.bot_runners WHERE workspace_id = $1', [omar.workspaceId]));
+      return makeRunner(over);
+    };
+    // a well-formed id that is no runner of this workspace
+    await refused('33333333-3333-4333-8333-333333333333', /does not exist/);
+    // a runner of another workspace reads as none
+    const otherWorkspace = await world.system(async (tx) => {
+      const ws = (await tx.query<{ id: string }>(`INSERT INTO app.workspaces (name, slug) VALUES ('Elsewhere', 'elsewhere') RETURNING id`)).rows[0]!.id;
+      return (
+        await tx.query<{ id: string }>(`INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, is_default, status) VALUES ($1, 'far', 'far', 'hermes_pod', true, true, 'ready') RETURNING id`, [ws])
+      ).rows[0]!.id;
+    });
+    await refused(otherWorkspace, /does not exist/);
+    await refused(await fresh({ name: 'off', enabled: false }), /not switched on and ready/);
+    await refused(await fresh({ name: 'starting', status: 'starting' }), /not switched on and ready/);
+    await refused(await fresh({ name: 'model', kind: 'llm_gateway' }), /cannot be tried here/);
+    await refused(await fresh({ name: 'spare', isDefault: false }), /place bots run/);
+  });
+
+  it('refuses a ready runner when no bot has answered a real question: none asked, one still running, one answered by nobody, or the answer is another admin\'s', async () => {
+    const mark = (refId: string) => world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId });
+    const runner = await makeRunner();
+    expect((await mark(runner)).status).toBe(409);
+    await leaveTestAnswer({ answered: false });
+    expect((await mark(runner)).status).toBe(409);
+    await world.system((tx) => tx.query('DELETE FROM app.rehearsal_questions'));
+    await leaveTestAnswer({ reply: false });
+    expect((await mark(runner)).status).toBe(409);
+    // a question another person asked does not count for this admin
+    await world.system((tx) => tx.query('DELETE FROM app.bot_runs'));
+    await world.system((tx) => tx.query('DELETE FROM app.rehearsal_questions'));
+    await leaveTestAnswer();
+    await world.system((tx) => tx.query('UPDATE app.rehearsal_questions SET asked_by = $1', [nadia.actorId]));
+    expect((await mark(runner)).status).toBe(409);
+    expect((await get()).body.state.marks).toEqual([]);
   });
 
   it('starts the first delivery with the thread it watches, or sets it aside', async () => {
@@ -174,7 +282,29 @@ describe('launch and dismiss', () => {
     expect(await events('onboarding.goal.launched')).toHaveLength(1);
   });
 
-  it('puts the checklist away after the launch, once', async () => {
+  it('refuses to put the checklist away without a working runner, even after the first goal', async () => {
+    await world.call(omar, 'POST', '/api/workspace/onboarding/launch', { teamId, channelId });
+    // no runner mark at all
+    expect((await world.call(omar, 'POST', '/api/workspace/onboarding/dismiss')).status).toBe(409);
+    // a proof, then the runner is switched off: the proof no longer counts
+    const runner = await makeRunner();
+    await leaveTestAnswer();
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: runner })).status).toBe(200);
+    await world.system((tx) => tx.query('UPDATE app.bot_runners SET enabled = false WHERE id = $1', [runner]));
+    expect((await world.call(omar, 'POST', '/api/workspace/onboarding/dismiss')).status).toBe(409);
+    await world.system((tx) => tx.query(`UPDATE app.bot_runners SET enabled = true, status = 'needs_sign_in' WHERE id = $1`, [runner]));
+    expect((await world.call(omar, 'POST', '/api/workspace/onboarding/dismiss')).status).toBe(409);
+    // a proof that points at a runner that was removed
+    await world.system((tx) => tx.query('DELETE FROM app.bot_runners WHERE id = $1', [runner]));
+    expect((await world.call(omar, 'POST', '/api/workspace/onboarding/dismiss')).status).toBe(409);
+    expect((await get()).body.state.dismissedAt).toBeNull();
+    expect(await events('onboarding.checklist.dismissed')).toEqual([]);
+  });
+
+  it('puts the checklist away after the launch and a proven runner, once', async () => {
+    const runner = await makeRunner();
+    await leaveTestAnswer();
+    expect((await world.call(omar, 'PUT', '/api/workspace/onboarding/marks/runners', { kind: 'checked', refId: runner })).status).toBe(200);
     await world.call(omar, 'POST', '/api/workspace/onboarding/launch', { teamId, channelId });
     const done = await world.call<StateBody>(omar, 'POST', '/api/workspace/onboarding/dismiss');
     expect(done.status, JSON.stringify(done.body)).toBe(200);
