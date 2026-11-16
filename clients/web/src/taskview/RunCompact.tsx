@@ -29,7 +29,7 @@ function Parts({ parts }: { parts: readonly string[] }) {
  * The run in the channel, compact (P29): who, the state, the time, Stop, what it is doing now, the counts, and the last three steps. It is not a live region (the channel has
  * one); the thread keeps the full card. `onOpen` opens the thread for everything else (the plan, every step, the answer so far).
  */
-export function RunCompact({ head, lines, people, onOpen, more = 0 }: { head: RunHead; lines: readonly RunActivityItem[]; people: People; onOpen: () => void; more?: number }) {
+export function RunCompact({ head, lines, people, onOpen, more = 0, hideOpen = false }: { head: RunHead; lines: readonly RunActivityItem[]; people: People; onOpen: () => void; more?: number; /** In the thread itself there is nothing more to open. */ hideOpen?: boolean }) {
   const live = !runEnded(head.state);
   const now = useClock(live);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +83,7 @@ export function RunCompact({ head, lines, people, onOpen, more = 0 }: { head: Ru
       <p className="tvFoot">
         {parts.length > 0 ? <span className="tvParts" data-testid="tv-run-work"><Parts parts={parts} /></span> : <span />}
         {more > 0 ? <span className="tvMoreRuns" data-testid="tv-run-more">and {more} more {more === 1 ? 'is' : 'are'} working</span> : null}
-        <button type="button" className="tvLink" onClick={onOpen} data-testid="tv-open-thread">Open thread</button>
+        {hideOpen ? null : <button type="button" className="tvLink" onClick={onOpen} data-testid="tv-open-thread">Open thread</button>}
       </p>
     </section>
   );

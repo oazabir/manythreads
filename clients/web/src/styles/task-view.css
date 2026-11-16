@@ -286,3 +286,85 @@
     min-height: 44px;
   }
 }
+
+/*
+ * The dock above a thread's composer (P29-12): the to-do and the run in the scrolling part, the question strip below them, always in sight. At most 40% of the screen's height; the
+ * cards scroll inside it and the question never does. Folded, the cards are one line.
+ */
+.tvDock {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  max-block-size: 40dvh;
+  padding: 6px 16px;
+  border-block-start: 1px solid var(--rule);
+  background: var(--surface);
+  min-inline-size: 0;
+}
+
+.tvDockBody {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tvDockBody > .tvCard {
+  margin-block: 0;
+}
+
+.tvDockFold,
+.tvDockLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 32px;
+  padding: 2px 8px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.tvDockFold {
+  align-self: flex-end;
+}
+
+.tvDockLine {
+  inline-size: 100%;
+  border: var(--border-w) solid var(--todo-border);
+  border-radius: var(--radius-md);
+  background: var(--todo-bg);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+
+.tvDockText {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tvDock .tvStrips {
+  flex: none;
+}
+
+@media (width <= 480px) {
+  .tvDock {
+    padding: 6px 12px;
+  }
+
+  .tvDockFold,
+  .tvDockLine {
+    min-block-size: 44px;
+  }
+}

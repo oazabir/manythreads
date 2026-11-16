@@ -204,18 +204,23 @@ test('denying settles it with a note and makes nothing', async ({ browser, playw
 test('the card sits in the thread the run answered in: the asker reads the question, an approver answers it there', async ({ browser, playwright }) => {
   const asker = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/threads?thread=${rootId}`);
   try {
-    const c = card(asker.page, inThread.id);
-    await expect(asker.page.getByTestId('thread-approvals')).toBeVisible();
-    await expect(c.getByTestId('approval-summary')).toHaveText('pages.write · pages/e2e-in-thread.md');
-    await expect(c.getByTestId('approval-blocked')).toContainText('You asked for this');
+    // a waiting approval is in the dock right above the composer (P29-12), once: not also in the strip under the replies
+    const q = asker.page.getByTestId('thread-dock').locator(`[data-testid="tv-question"][data-approval="${inThread.id}"]`);
+    await expect(q).toBeVisible();
+    await expect(q).toContainText('pages/e2e-in-thread.md');
+    await expect(q.getByTestId('tv-question-blocked')).toContainText('You asked for this');
+    await expect(asker.page.getByTestId('thread-approvals')).toHaveCount(0);
   } finally {
     await asker.context.close();
   }
   const approver = await openOn(browser, playwright, stack, 'rafi', `/t/engineering/threads?thread=${rootId}`);
   try {
+    const q = approver.page.getByTestId('thread-dock').locator(`[data-testid="tv-question"][data-approval="${inThread.id}"]`);
+    await expect(q.getByTestId('tv-question-yes')).toBeVisible();
+    await q.getByTestId('tv-question-yes').click();
+    // answered: it leaves the dock and stays under the replies as the settled card
     const c = card(approver.page, inThread.id);
-    await expect(c.getByTestId('approval-approve')).toBeVisible();
-    await c.getByTestId('approval-approve').click();
+    await expect(q).toHaveCount(0);
     await expect(c.getByTestId('approval-state')).toContainText('Approved by Rafi');
     await expect(c.getByTestId('approval-outcome')).toContainText('The call ran once, as the bot', { timeout: 30_000 });
   } finally {

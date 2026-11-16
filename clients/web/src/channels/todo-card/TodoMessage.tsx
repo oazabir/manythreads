@@ -20,5 +20,5 @@ export function TodoMessage({ rootId, messageId, body, teamSlug, people }: { roo
       </p>
     );
   }
-  return <TodoCard todo={todo} slug={teamSlug} people={people} rootId={rootId} />;
+  return <TodoCard todo={todo} slug={teamSlug} people={people} />;
 }

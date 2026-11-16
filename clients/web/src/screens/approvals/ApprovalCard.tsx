@@ -39,7 +39,7 @@ function outcomeLine(a: Approval): string {
   return '';
 }
 
-function Preview({ preview, testId = 'approval-preview' }: { preview: Approval['argsPreview']; testId?: string }) {
+export function Preview({ preview, testId = 'approval-preview' }: { preview: Approval['argsPreview']; testId?: string }) {
   const entries = Object.entries(preview);
   if (entries.length === 0) return null;
   return (

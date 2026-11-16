@@ -7,13 +7,13 @@ import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
-import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
+import { ThreadApprovals, useThreadApprovals } from '../screens/approvals/ThreadApprovals';
+import { ThreadDock } from '../taskview/ThreadDock';
 import { useThreadRunHeads } from '../runs/useThreadRuns';
 import { useThreadTodo } from '../todo/useThreadTodo';
 import { placeRuns } from './run-card/place';
 import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
-import { TodoPin } from './todo-card/TodoCard';
 import { ArrowDownIcon, CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
@@ -112,6 +112,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const placed = useMemo(() => placeRuns(tl.items, runState.runs), [tl.items, runState.runs]);
   // A question is asked in one place: the strip leaves out the ones a run card draws (only those: one the card could not load stays here), and a bot's answered questions of a
   // run in this thread, which that run's step list keeps ("Asked to run pnpm · Allowed").
+  const approvals = useThreadApprovals(rootId);
   const shownQuestions = useShownQuestions(rootId);
   const runBots = useMemo(() => new Set<string>(runState.runs.map((r) => r.botId)), [runState.runs]);
   const hideAsked = useCallback(
@@ -144,6 +145,19 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     const el = scroller.current;
     if (el && stuckRef.current) el.scrollTop = el.scrollHeight;
   });
+
+  // the dock above the composer appears and folds, which resizes the list: a reader at the newest reply stays there
+  const listDrawn = root !== null;
+  useEffect(() => {
+    if (!listDrawn) return;
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (stuckRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [listDrawn]);
 
   const rootActions = useMemo<RowActions | null>(
     () =>
@@ -223,7 +237,6 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         setStuck(atBottom(el.scrollHeight - el.scrollTop - el.clientHeight));
       }}
     >
-      {todoState.todo !== null ? <TodoPin todo={todoState.todo} slug={slug ?? null} people={people} rootId={rootId} /> : null}
       <div className="root">
         <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
         {variant === 'panel' ? followRow : null}
@@ -250,10 +263,11 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           slug={slug ?? null}
           people={people}
           hidePlan={todoState.todo !== null && r.botActorId === todoState.todo.botActorId}
+          questionsInDock={approvals.status === 'ok'}
           continued={i === 0 && tl.pending.length === 0 && r.botActorId !== null && tl.items.at(-1)?.authorId === r.botActorId}
         />
       ))}
-      <ThreadApprovals rootId={rootId} slug={slug ?? null} hide={hideAsked} />
+      <ThreadApprovals items={approvals.items} reload={approvals.reload} slug={slug ?? null} hide={hideAsked} />
       {waiting && placed.live.length === 0 ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
       {tl.pending.map((p) => (
         <PendingRow
@@ -305,6 +319,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       ) : (
         list
       )}
+      {/* the to-do, the run and the question a bot waits on, always in sight above the composer (P29-12) */}
+      <ThreadDock rootId={rootId} slug={slug ?? null} people={people} runs={runState.runs} todo={todoState.todo} approvals={approvals.items} reloadApprovals={approvals.reload} />
       {info.status === 'ok' && !canReply ?<p className="read-only">You can read this thread but not reply.</p> : null}
       {canReply && replyBlocked !== null ? (
         <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>

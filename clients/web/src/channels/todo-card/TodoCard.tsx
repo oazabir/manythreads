@@ -1,39 +1,15 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import type { ThreadTodo, TodoItem } from '@manythreads/shared';
 import { Avatar } from '../../components/ui';
 import { CaretIcon, CheckIcon, ItemBlockedIcon, ItemWaitingIcon, OpenCardIcon } from '../../shell/icons';
 import type { People } from '../hooks';
-import { barLine, foldDone, isOpen, progressText, STATUS_WORD, todoProgress, todoTitle } from './words';
+import { foldDone, progressText, STATUS_WORD, todoProgress, todoTitle } from './words';
 
 /*
  * The to-do card (PLAN P25-11, docs/plans/acp.md section 5.5): the bot's list for the request, in the thread. `TodoCard` is the whole list, in place of the message that carries
- * it (the message already has the bot's picture and name, so the card has neither); `TodoPin` is one quiet line at the top of the thread panel while anything is open and
- * the card itself is out of sight, which opens to the same list.
+ * it (the message already has the bot's picture and name, so the card has neither); the dock above the composer (taskview/ThreadDock) shows its compact form while anything is open.
  */
-
-// ---- is the card on screen? (the pin shows only when it is not) -----------------------------------------------------------------
-
-const inView = new Map<string, boolean>();
-const viewListeners = new Map<string, Set<() => void>>();
-function setInView(rootId: string, on: boolean): void {
-  if ((inView.get(rootId) ?? false) === on) return;
-  inView.set(rootId, on);
-  for (const l of [...(viewListeners.get(rootId) ?? [])]) l();
-}
-function useCardInView(rootId: string | undefined): boolean {
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      if (rootId === undefined) return () => undefined;
-      const set = viewListeners.get(rootId) ?? new Set();
-      set.add(onChange);
-      viewListeners.set(rootId, set);
-      return () => set.delete(onChange);
-    },
-    [rootId],
-  );
-  return useSyncExternalStore(subscribe, () => (rootId === undefined ? false : (inView.get(rootId) ?? false)), () => false);
-}
 
 // ---- an item ------------------------------------------------------------------------------------------------------------------------
 
@@ -107,23 +83,11 @@ export function TodoList({ todo, slug, people }: { todo: ThreadTodo; slug: strin
 }
 
 /** The card: title, "3 of 5", a bar and the items. Stands in the thread where the bot's list message was posted. */
-export function TodoCard({ todo, slug, people, rootId }: { todo: ThreadTodo; slug: string | null; people: People; rootId?: string }) {
+export function TodoCard({ todo, slug, people }: { todo: ThreadTodo; slug: string | null; people: People }) {
   const p = todoProgress(todo.items);
-  // the pin stands in for the card's head (its title and "3 of 5") while that is scrolled out of sight
-  const box = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const el = box.current;
-    if (rootId === undefined || el === null || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver((entries) => setInView(rootId, entries.some((e) => e.isIntersecting)), { threshold: [0, 1] });
-    io.observe(el);
-    return () => {
-      io.disconnect();
-      setInView(rootId, false);
-    };
-  }, [rootId]);
   return (
     <section className="td" data-testid="todo-card" data-all-done={p.allDone ? 'true' : 'false'} aria-label={todoTitle(todo)}>
-      <header className="tdHead" ref={box}>
+      <header className="tdHead">
         <b className="tdTitle" dir="auto">{todoTitle(todo)}</b>
         <span className="tdCount" data-testid="todo-progress" role="status">{progressText(p)}</span>
       </header>
@@ -132,33 +96,5 @@ export function TodoCard({ todo, slug, people, rootId }: { todo: ThreadTodo; slu
       </div>
       <TodoList todo={todo} slug={slug} people={people} />
     </section>
-  );
-}
-
-/**
- * One line at the top of the thread panel while the list has open items and its card is out of sight: "To do", "3 of 5" and what is being worked on; a button that opens
- * the list (it scrolls in its own box, so a long list never covers the thread).
- */
-export function TodoPin({ todo, slug, people, rootId }: { todo: ThreadTodo; slug: string | null; people: People; rootId: string }) {
-  const [open, setOpen] = useState(false);
-  const cardShown = useCardInView(rootId);
-  if (!isOpen(todo.items) || (cardShown && !open)) return null;
-  const line = barLine(todo, (id) => people.byActor(id)?.name ?? people.botName?.(id));
-  return (
-    <div className="tdPin" data-testid="todo-pin" data-tone={line.tone}>
-      <button type="button" className="tdPinBtn" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        {line.tone === 'working' ? <span className="tdPulse" aria-hidden="true" /> : <span className="tdMark" data-status={line.tone} aria-hidden="true">{line.tone === 'blocked' ? <ItemBlockedIcon size={14} /> : <ItemWaitingIcon size={14} />}</span>}
-        {/* "To do", not the list's title: in a panel 360 px wide a title and the item both lost their ends ("Jump to latest in t… · Engineer is working …"); the title is the tooltip */}
-        <span className="tdPinTitle" title={todoTitle(todo)}>To do</span>
-        <span className="tdCount">{line.progress}</span>
-        <span className="tdPinNow" dir="auto">{line.text}</span>
-        <span className="rcChev" aria-hidden="true"><CaretIcon open={open} /></span>
-      </button>
-      {open ? (
-        <div className="tdPinList">
-          <TodoList todo={todo} slug={slug} people={people} />
-        </div>
-      ) : null}
-    </div>
   );
 }

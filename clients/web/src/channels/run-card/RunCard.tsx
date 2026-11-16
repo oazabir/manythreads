@@ -130,9 +130,11 @@ export interface RunCardProps {
    * one message).
    */
   continued?: boolean;
+  /** The dock above the thread's composer asks this thread's questions: the card does not draw them a second time (it still says it waits). */
+  questionsInDock?: boolean;
 }
 
-export function RunCard({ head, rootId, slug, people, hidePlan = false, hideStop = false, hidePreview = false, continued = false }: RunCardProps) {
+export function RunCard({ head, rootId, slug, people, hidePlan = false, hideStop = false, hidePreview = false, continued = false, questionsInDock = false }: RunCardProps) {
   const view = useRunView();
   const live = !runEnded(head.state);
   const now = useClock(live);
@@ -143,7 +145,7 @@ export function RunCard({ head, rootId, slug, people, hidePlan = false, hideStop
   const waiting = head.state === 'waiting';
   const { pending, failed, reload } = useQuestions(rootId, waiting);
   const mine = useMemo(() => pending.filter((a) => asksOf(a, head)), [pending, head]);
-  const drawn = slug !== null ? mine : [];
+  const drawn = slug !== null && !questionsInDock ? mine : [];
   const ctx: WaitingContext = {
     viewerCanAnswer: mine.some((a) => a.canDecide),
     waitingFor: whoAnswers(mine[0], people),

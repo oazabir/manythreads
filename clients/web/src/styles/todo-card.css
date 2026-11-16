@@ -43,11 +43,6 @@
   white-space: nowrap;
 }
 
-.tdPinBtn .tdCount {
-  flex: none;
-  margin-inline-start: 0;
-}
-
 .td[data-all-done="true"] .tdCount {
   color: var(--ok-ink);
   font-weight: 600;
@@ -188,65 +183,6 @@
 
 .tdDoneFold .rcChev {
   margin-inline-start: 0;
-}
-
-/* the bar: one line at the top of the thread, kept while the list has open items; flush with the top of the panel, over its padding, so the thread never shows through above the line; it shows only once the card has scrolled away, so it floats */
-.tdPin {
-  position: sticky;
-  top: -14px;
-  z-index: 2;
-  margin: 0 0 6px;
-  box-shadow: var(--menu-shadow);
-  border: var(--border-w) solid var(--todo-border);
-  border-radius: var(--radius-md);
-  background: var(--todo-bg);
-}
-
-.tdPin[data-tone="blocked"] {
-  border-color: var(--alert-border);
-}
-
-.tdPinBtn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 4px 10px;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--fs-caption);
-  font-variant-numeric: tabular-nums;
-  text-align: start;
-  cursor: pointer;
-}
-
-.tdPinTitle {
-  flex: 0 1 auto;
-  max-width: 35%;
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tdPinNow {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: var(--mute);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* the opened list scrolls in its own box: a long list never covers the thread */
-.tdPinList {
-  max-height: min(50vh, 360px);
-  overflow: auto;
-  padding: 0 10px 8px;
-  border-top: 1px solid var(--rule);
 }
 
 /* an earlier list message, after the list passed to another bot: one quiet line */

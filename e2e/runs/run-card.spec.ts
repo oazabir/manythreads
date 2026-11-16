@@ -75,7 +75,7 @@ async function shoot(browser: Browser, playwright: PlaywrightWorkerArgs['playwri
   await page.emulateMedia({ colorScheme: 'light' });
   const phone = await openOn(browser, playwright, world.stack, who, threadPath(rootId), { viewport: PHONE, mobile: true });
   try {
-    await expect(phone.page.locator('[data-testid="run-card"], [data-testid="run-end"], [data-testid="todo-card"], [data-testid="todo-pin"]').first()).toBeVisible({ timeout: 20_000 });
+    await expect(phone.page.locator('[data-testid="run-card"], [data-testid="run-end"], [data-testid="todo-card"], [data-testid="thread-dock"]').first()).toBeVisible({ timeout: 20_000 });
     expect(await noSidewaysScroll(phone.page), `${name}: nothing scrolls sideways at 390 px`).toBe(true);
     if (phoneTo) await phoneTo(phone.page);
     // the team's bots (and their pictures) come with the page; wait for them rather than shoot the initials
@@ -112,8 +112,9 @@ test('working, a helper, a plan, a question, Yes, done and folded; the record is
 
     // it asks to run a command: the question is in the card itself, and the card says who is expected to answer
     await expect(card.getByTestId('run-state')).toContainText('Waiting for', { timeout: 60_000 });
-    await expect(card.getByTestId('run-questions')).toBeVisible();
-    // a question is asked in one place: the strip under the replies does not repeat it
+    // the question is in the dock right above the composer (P29-12), and only there: neither the run card nor the strip under the replies repeats it
+    await expect(nadia.page.getByTestId('thread-dock').getByTestId('tv-question')).toBeVisible();
+    await expect(card.getByTestId('run-questions')).toHaveCount(0);
     await expect(nadia.page.getByTestId('thread-approvals')).toHaveCount(0);
     // each person's card says "for you" only when the server says that person may answer (the same flag decides the buttons)
     const mayAnswer = async (page: Page, api: StackApi): Promise<boolean> => {
@@ -122,7 +123,7 @@ test('working, a helper, a plan, a question, Yes, done and folded; the record is
       const state = page.getByTestId('run-card').getByTestId('run-state');
       if (can) await expect(state).toContainText('Waiting for you', { timeout: 30_000 });
       else await expect(state).toContainText(/Waiting for (?!you)/, { timeout: 30_000 });
-      await expect(page.getByTestId('run-card').getByTestId('approval-approve')).toHaveCount(can ? 1 : 0);
+      await expect(page.getByTestId('thread-dock').getByTestId('tv-question-yes')).toHaveCount(can ? 1 : 0);
       return can;
     };
     const omarApi = await apiOn(playwright, world.stack, 'omar');
@@ -135,8 +136,8 @@ test('working, a helper, a plan, a question, Yes, done and folded; the record is
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'waiting');
     await omar.page.screenshot({ path: join(SHOTS, 'waiting-other-viewer.light.png') });
 
-    // she says Yes, in the card
-    await card.getByTestId('approval-approve').click();
+    // she says Yes, in the dock
+    await nadia.page.getByTestId('thread-dock').getByTestId('tv-question-yes').click();
 
     // it finishes: the card folds into one line under the answer
     const end = nadia.page.getByTestId('run-end');
@@ -255,8 +256,8 @@ test('the to-do card: kept by the orchestrator, an item follows its card, and it
     await expect(card).toBeVisible({ timeout: 30_000 });
     await expect(card.getByTestId('todo-progress')).toHaveText('1 of 4');
     await expect(card.getByTestId('todo-item')).toHaveCount(4);
-    // the line at the top of the panel stands in for the card only while the card's head is out of sight (the long list below shows it)
-    await expect(nadia.page.getByTestId('todo-pin')).toHaveCount(0);
+    // the dock above the composer holds the same list, compact, and follows it (P29-12)
+    await expect(nadia.page.getByTestId('thread-dock').getByTestId('tv-todo-count')).toHaveText('1 of 4');
     // the orchestrator made a plan of its own, but its card does not draw it: the to-do card is its plan
     await expect(nadia.page.getByTestId('run-card').getByTestId('run-work')).toBeVisible({ timeout: 30_000 });
     await expect(nadia.page.getByTestId('run-plan-fold')).toHaveCount(0);
@@ -288,7 +289,7 @@ test('the to-do card: kept by the orchestrator, an item follows its card, and it
       expect(JSON.stringify(await tick.json()), `ticking ${id}`).not.toContain('"isError":true');
     }
     await expect(card.getByTestId('todo-progress')).toHaveText('All done', { timeout: 30_000 });
-    await expect(nadia.page.getByTestId('todo-pin')).toHaveCount(0);
+    await expect(nadia.page.getByTestId('thread-dock').getByTestId('tv-todo-count')).toHaveText('4 of 4 done');
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'todo-done');
 
     // after a reload the list is the same
@@ -407,17 +408,16 @@ test('a long to-do list: the finished items fold, and the line at the top stands
     await shoot(browser, playwright, nadia.page, nadia.rootId, 'todo-long', 'nadia', async (p) => {
       await p.getByTestId('thread-view').locator('.rpb').evaluate((el) => { el.scrollTop = el.scrollHeight; });
     });
-    // scrolled to the newest: the card's head is out of sight, so the line at the top says where the list is
+    // scrolled to the newest, the dock above the composer still says where the list is, and folds to one line (P29-12)
     await nadia.page.getByTestId('thread-view').locator('.rpb').evaluate((el) => { el.scrollTop = el.scrollHeight; });
-    const pin = nadia.page.getByTestId('todo-pin');
-    await expect(pin).toBeVisible({ timeout: 10_000 });
-    await expect(pin).toContainText('12 of 30');
-    // "To do", not the list's title: the item being worked on gets the room in a narrow panel
-    await expect(pin.locator('.tdPinTitle')).toHaveText('To do');
-    await expect(pin).toContainText('Working on Step 13');
-    await nadia.page.screenshot({ path: join(SHOTS, 'todo-pin.light.png') });
-    await pin.getByRole('button').first().click();
-    await nadia.page.screenshot({ path: join(SHOTS, 'todo-pin-open.light.png') });
+    const dock = nadia.page.getByTestId('thread-dock');
+    await expect(dock).toBeVisible({ timeout: 10_000 });
+    await expect(dock.getByTestId('tv-todo-count')).toHaveText('12 of 30');
+    await expect(dock).toContainText('Step 13');
+    await nadia.page.screenshot({ path: join(SHOTS, 'todo-dock.light.png') });
+    await dock.getByTestId('dock-toggle').click();
+    await expect(dock.getByTestId('dock-line')).toContainText('12 of 30');
+    await nadia.page.screenshot({ path: join(SHOTS, 'todo-dock-folded.light.png') });
     await stopRun(nadia.page);
   } finally {
     await omar.ctx.dispose();

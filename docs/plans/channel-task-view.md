@@ -204,6 +204,8 @@ Rules (defaults, each can be changed by the owner):
 
 Tests: a component test (the three parts, the collapse that keeps the strip, the 40% limit, the no-duplicate rule, `TodoPin` gone); an e2e case where a bot's to-do tick, a run step, and a question appear in the dock without a reload, answering it in the dock continues the run, and it goes away after the answer; at 390 px the strip is visible above the composer. Screenshots: dock open and collapsed, 1440 and 390.
 
+As built (P29-12): the thread reads its approvals once (`useThreadApprovals`) and hands the list to both the dock and the strip under the replies; the dock claims every pending question through `setShownQuestions(rootId, 'dock', ids)` and the run card is told `questionsInDock` (it still says it waits). The dock shows no ended-run line (the stream keeps its own `RunEnd`). The dock has one polite line ("Needs you: ...") that speaks when a question arrives; the cards are not live regions. `TodoPin` and its CSS are removed. The dock's run steps are read only while the dock is open, and the dock's Stop uses the same stop route as the run card.
+
 ## 10b. Opening a bot from the sidebar opens the chat; the settings move under "Bot settings" (owner, 2026-11-16)
 
 Owner: "The default action for opening a bot from the sidebar would be the chat interface for that bot if the bot allows chatting. Otherwise it should show no chat is available to this bot and there should be a button to edit the bot settings if the current user has the permission to change bot settings. All the bot customization should be moved under the bot settings."

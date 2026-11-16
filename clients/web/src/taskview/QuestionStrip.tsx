@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Approval } from '@manythreads/shared';
-import { AgentPreview, AnsweredLine, FullCall, answerWords, approversLabel, runQuestion } from '../screens/approvals/ApprovalCard';
+import { AgentPreview, AnsweredLine, FullCall, Preview, answerWords, approversLabel, runQuestion } from '../screens/approvals/ApprovalCard';
 import { fetchThreadApprovals } from '../screens/approvals/api';
 import { useDecision } from '../screens/approvals/useDecision';
+import { ShareApprovalPreview } from '../screens/approvals/ShareApprovalPreview';
+import { isShareApproval } from '../screens/approvals/shareApproval';
 import { approvalSentence, ASK_TOOL } from '../screens/approvals/sentence';
 
 /** The sentence the strip asks: a bot's own question or command in the run-card words, a platform approval in the inbox's. */
@@ -41,7 +43,7 @@ function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug
         <span className="tvNeeds">Needs you</span>
         <span className="tvAsk" dir="auto" data-testid="tv-question-text">{stripQuestion(approval)}</span>
       </div>
-      {agent && approval.tool !== ASK_TOOL ? <AgentPreview approval={approval} terse /> : null}
+      {agent ? (approval.tool !== ASK_TOOL ? <AgentPreview approval={approval} terse /> : null) : isShareApproval(approval) ? <ShareApprovalPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
       <FullCall approval={approval} full={full} opening={opening} openFull={openFull} />
       {answered ? <AnsweredBy rootId={rootId} approvalId={approval.id} /> : null}
       {!answered && approval.canDecide ? (
