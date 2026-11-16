@@ -631,3 +631,123 @@
     height: 44px;
   }
 }
+
+/* ---- the layout toggle and the grid of cards (P29-17) ---- */
+
+.inf-layout {
+  display: inline-flex;
+  margin-inline-start: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.inf-lay {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 34px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.inf-lay + .inf-lay {
+  border-inline-start: 1px solid var(--rule);
+}
+
+.inf-lay[aria-pressed="true"] {
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+/* the grid takes the whole width; a thread opens on its own, with a way back */
+.inbox.grid {
+  display: block;
+}
+
+.inbox.grid .inl {
+  width: 100%;
+  max-width: none;
+}
+
+.thg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: 12px;
+  align-items: start;
+  padding: 12px 16px 24px;
+  margin: 0;
+  list-style: none;
+}
+
+.thg-grid > .thc-day,
+.thg-grid > .inl-more {
+  grid-column: 1 / -1;
+  padding-inline: 0;
+}
+
+.thg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 260px;
+}
+
+.thg.needs {
+  border-color: var(--warn-border);
+}
+
+.thg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-caption);
+}
+
+.thg-time {
+  margin-inline-start: auto;
+}
+
+.thg-open {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.thg-text {
+  -webkit-line-clamp: 3;
+}
+
+.thg-open:hover .thg-text {
+  text-decoration: underline;
+}
+
+@media (width <= 480px) {
+  .inf-lay {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .thg-grid {
+    grid-template-columns: 1fr;
+    padding-inline: 12px;
+  }
+}

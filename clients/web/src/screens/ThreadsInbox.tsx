@@ -23,6 +23,8 @@ import { FilterBar } from '../inbox/FilterBar';
 import { NOT_NEEDED, filterThreads, mentionsParam, mergeFiltered, needsYou, orderThreads, parseFilter, resolveNames, type NeedsYou } from '../inbox/rules';
 import { useInboxWork } from '../inbox/useInboxWork';
 import { usePeople } from '../channels/hooks';
+import { ThreadGridCard } from '../inbox/ThreadGridCard';
+import { readLayout, writeLayout, type ThreadsLayout } from '../inbox/viewMode';
 import { EmptyState, type EmptyStateAction } from '../components/EmptyState';
 import { SkeletonRows } from '../components/Skeleton';
 
@@ -72,6 +74,20 @@ export function ThreadsInbox() {
   const laterView: LaterView = params.get('view') === 'done' ? 'done' : 'open';
   const { threadsUnread } = useUnread();
   const people = usePeople();
+  const [layout, setLayoutState] = useState<ThreadsLayout>(() => readLayout(undefined));
+  const meId = people.me?.personId;
+  useEffect(() => {
+    if (meId) setLayoutState(readLayout(meId));
+  }, [meId]);
+  const setLayout = useCallback(
+    (l: ThreadsLayout): void => {
+      setLayoutState(l);
+      writeLayout(meId, l);
+    },
+    [meId],
+  );
+  const grid = layout === 'grid' && tab !== 'later';
+  const stacked = narrow || grid;
   const q = useQuery(`inbox:${slug}:${tab}:${threadsUnread}`, () => (tab === 'later' ? Promise.resolve(NO_THREADS) : fetchThreadInbox(slug, tab)));
   useEffect(() => {
     void laterStore.load(true);
@@ -208,14 +224,14 @@ export function ThreadsInbox() {
   // location this render saw (a late replace would otherwise pull them back to Threads, or drop the panel they just opened).
   const first = items[0]?.rootMessageId ?? null;
   useEffect(() => {
-    if (narrow || selected || tab === 'unread' || !first) return;
+    if (stacked || selected || tab === 'unread' || !first) return;
     if (window.location.pathname !== path) return;
     const live = new URLSearchParams(window.location.search);
     if (live.get('thread')) return;
     live.set('thread', first);
     const state = (window.history.state as { usr?: unknown } | null)?.usr ?? null;
     navigate({ pathname: path, search: `?${live.toString()}` }, { replace: true, state });
-  }, [narrow, selected, tab, first, path, navigate]);
+  }, [stacked, selected, tab, first, path, navigate]);
 
   const markDone = useCallback(
     (rootId: string): void => {
@@ -269,7 +285,9 @@ export function ThreadsInbox() {
   const onOpenInChannel = useCallback((to: string): void => {
     void navigate(to);
   }, [navigate]);
-  const card = (it: ThreadInboxItem): ReactNode => (
+  const card = (it: ThreadInboxItem): ReactNode => grid ? (
+    <ThreadGridCard key={it.rootMessageId} item={it} slug={slug} onOpen={onOpenRow} words={words} work={workOf(it.rootMessageId)} needs={needsOf(it.rootMessageId)} />
+  ) : (
     <ThreadCard
       key={it.rootMessageId}
       item={it}
@@ -294,14 +312,14 @@ export function ThreadsInbox() {
           ? 'Could not search every thread; showing the ones loaded'
           : `${items.length} ${items.length === 1 ? 'thread matches' : 'threads match'}`;
 
-  const showMain = !narrow || selected !== null;
+  const showMain = !stacked || selected !== null;
   // with no thread open the right band still carries the bell, which the shell's own band would have held
-  const emptyBand = !narrow && !selected ? <div className="chead thread-head" /> : null;
-  const showList = !narrow || selected === null;
+  const emptyBand = !stacked && !selected ? <div className="chead thread-head" /> : null;
+  const showList = !stacked || selected === null;
   // the tabs, shared by the thread tabs and Later; Later's badge counts the reminders that are due
   const header = (
     <header className="inh" data-landmark={narrow ? undefined : 'header'}>
-      {narrow ? null : <PageHeader compact title="Threads" />}
+      {narrow ? null : <PageHeader compact title="Threads" actions={grid && !selected ? <Bell /> : undefined} />}
       <div className="tabs2" role="tablist" aria-label="Threads">
         {TABS.filter((t) => t.id !== 'later' || later.supported).map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
@@ -338,7 +356,7 @@ export function ThreadsInbox() {
   }
   return (
     <div className="threads-home">
-    <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="threads-inbox">
+    <div className={`inbox ${stacked ? 'narrow' : ''} ${grid ? 'grid' : ''}`} data-testid="threads-inbox">
       {showList ? (
         <div className="inl" data-landmark="thread-list">
           {header}
@@ -349,6 +367,8 @@ export function ThreadsInbox() {
               needsFirst={needsFirst}
               onNeedsFirst={setNeedsFirst}
               status={filterStatus}
+              layout={layout}
+              onLayout={setLayout}
             />
           ) : null}
           {q.status === 'loading' ? (
@@ -375,7 +395,7 @@ export function ThreadsInbox() {
               <button type="button" className="btn s" onClick={() => changeFilter('')}>Clear the filter</button>
             </div>
           ) : (
-            <ul className="inlist" ref={listRef} role="listbox" aria-label={`${TABS.find((t) => t.id === tab)?.label ?? ''} threads`} aria-busy={searching}>
+            <ul className={grid ? 'inlist thg-grid' : 'inlist'} ref={listRef} role={grid ? undefined : 'listbox'} aria-label={`${TABS.find((t) => t.id === tab)?.label ?? ''} threads`} aria-busy={searching}>
               {ordered.needs.length > 0 ? (
                 <li role="presentation" className="thc-day thc-needs-h" data-testid="thread-needs-group">{`Needs you · ${ordered.needs.length}`}</li>
               ) : null}
@@ -400,7 +420,7 @@ export function ThreadsInbox() {
       ) : null}
       {showMain ? (
         <div className="inr" data-landmark="thread-view">
-          {narrow ? (
+          {stacked ? (
             <button type="button" className="btn s back-to-list" onClick={() => open(null)}>
               <BackIcon />
               <span>Threads</span>

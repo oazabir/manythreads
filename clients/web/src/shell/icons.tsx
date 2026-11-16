@@ -14,6 +14,7 @@ import { EyeIcon, EyeOffIcon, OpenIcon, RecordStopIcon } from '@proicons/react';
 import { BarChartIcon, CodeSquareIcon, MoreHorizontalIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
 import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { AlertTriangleIcon, CircleIcon, CircleSmallIcon, DocumentIcon, FlagIcon, HandIcon, LightbulbIcon, TerminalIcon, GlobeIcon as ProGlobe } from '@proicons/react';
+import { BulletListIcon as ProBulletList, GridIcon as ProGrid } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -35,6 +36,9 @@ export const CaretIcon = ({ open = false }: { open?: boolean }) => (
   </span>
 );
 export const SearchIcon = proIcon(ProSearch, 14);
+/** The Threads view's two layouts: a list, and a grid of cards. */
+export const ListIcon = proIcon(ProBulletList, 14);
+export const GridIcon = proIcon(ProGrid, 14);
 export const MenuIcon = proIcon(ProMenu, 18);
 export const CloseIcon = proIcon(CancelIcon, 14);
 export const ExpandIcon = proIcon(ArrowMaximizeIcon);

@@ -110,7 +110,7 @@ describe('the chip and the line of progress', () => {
 describe('the filter bar', () => {
   const draw2 = async (value: string, onChange: (t: string) => void): Promise<void> => {
     await act(async () => {
-      root.render(createElement(FilterBar, { value, onChange, needsFirst: true, onNeedsFirst: vi.fn(), status: null }));
+      root.render(createElement(FilterBar, { value, onChange, needsFirst: true, onNeedsFirst: vi.fn(), status: null, layout: 'list', onLayout: vi.fn() }));
     });
   };
 
@@ -126,5 +126,42 @@ describe('the filter bar', () => {
       q('[data-testid="threads-filter-input"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(onChange).toHaveBeenCalledWith('');
+  });
+});
+
+describe('the grid card and the layout memory', () => {
+  const approval = { id: 'a1', source: 'agent', status: 'pending', tool: 'approvals.ask', summary: 'Deploy to the test site?', argsPreview: {}, argsTruncated: false, botName: 'Engineer', requesterName: 'Engineer', createdAt: AT, channelId: ID(9), threadRootId: ID(1), approvers: { roles: [], people: [], leads: true }, canDecide: true, blockReason: null, decision: null };
+
+  it('draws the card with the question and its buttons, the blocks and an open action that opens the thread', async () => {
+    const { ThreadGridCard } = await import('../src/inbox/ThreadGridCard');
+    const onOpen = vi.fn();
+    const it = item({ mention: mention() });
+    await act(async () => {
+      root.render(createElement('ul', null, createElement(ThreadGridCard, { item: it, slug: 'engineering', onOpen, work: { todo: todo(), run: null, questions: [approval] as never }, needs: needsYou(it, [approval as never]) })));
+    });
+    expect(q('[data-testid="thread-card"]')).not.toBeNull();
+    expect(q('[data-testid="tv-question-yes"]')).not.toBeNull();
+    expect(q('[data-testid="thread-progress"]')?.textContent).toContain('1 of 4');
+    expect(qa('.thc-blk').map((b) => b.getAttribute('data-kind'))).toEqual(['mention', 'latest']);
+    await act(async () => (q('[data-testid="thread-card-open"]') as HTMLButtonElement).click());
+    expect(onOpen).toHaveBeenCalledWith(ID(1));
+  });
+
+  it('remembers the layout per person, and falls back to the list when storage is blocked', async () => {
+    const { readLayout, writeLayout, forgetLayout } = await import('../src/inbox/viewMode');
+    forgetLayout();
+    localStorage.clear();
+    expect(readLayout('p1')).toBe('list');
+    writeLayout('p1', 'grid');
+    expect(readLayout('p1')).toBe('grid');
+    expect(readLayout('p2')).toBe('list');
+    forgetLayout();
+    expect(readLayout('p1')).toBe('grid'); // from storage
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    forgetLayout();
+    expect(readLayout('p9')).toBe('list');
+    spy.mockRestore();
   });
 });

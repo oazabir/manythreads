@@ -1,5 +1,6 @@
-import { useId, type KeyboardEvent, type ReactNode } from 'react';
-import { CloseIcon, SearchIcon } from '../shell/icons';
+import { useId, type KeyboardEvent } from 'react';
+import { CloseIcon, GridIcon, ListIcon, SearchIcon } from '../shell/icons';
+import type { ThreadsLayout } from './viewMode';
 
 /**
  * The Threads view's filter (P29): one text box over the loaded threads and, for what is not loaded, the server. Words match the channel's name and the messages; `@name` keeps the
@@ -11,7 +12,8 @@ export function FilterBar({
   needsFirst,
   onNeedsFirst,
   status,
-  extra,
+  layout,
+  onLayout,
 }: {
   value: string;
   onChange: (text: string) => void;
@@ -19,8 +21,8 @@ export function FilterBar({
   onNeedsFirst: (on: boolean) => void;
   /** One line under the box: how many threads match, or that a name matches nobody. */
   status: string | null;
-  /** More controls on the right of the bar (the list and grid toggle). */
-  extra?: ReactNode;
+  layout: ThreadsLayout;
+  onLayout: (layout: ThreadsLayout) => void;
 }) {
   const id = useId();
   const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -57,7 +59,14 @@ export function FilterBar({
       <button type="button" className="inf-order" aria-pressed={needsFirst} data-testid="threads-order" title="Put the threads that wait on you first" onClick={() => onNeedsFirst(!needsFirst)}>
         Needs you first
       </button>
-      {extra}
+      <div className="inf-layout" role="group" aria-label="Layout">
+        <button type="button" className="inf-lay" aria-pressed={layout === 'list'} data-testid="threads-layout-list" title="List" aria-label="List" onClick={() => onLayout('list')}>
+          <ListIcon size={14} />
+        </button>
+        <button type="button" className="inf-lay" aria-pressed={layout === 'grid'} data-testid="threads-layout-grid" title="Grid" aria-label="Grid" onClick={() => onLayout('grid')}>
+          <GridIcon size={14} />
+        </button>
+      </div>
       {status !== null ? <p className="inf-status" role="status" data-testid="threads-filter-status">{status}</p> : null}
     </div>
   );
