@@ -31,6 +31,7 @@ export default tseslint.config(
       'clients/web/dist-*/**',
       '.claude/**',
       'data/**',
+      'temp/**',
       '**/node_modules/**',
       '**/coverage/**',
       'docs/spec/**',
