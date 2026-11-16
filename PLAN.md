@@ -817,10 +817,15 @@ Plan: `docs/plans/channel-task-view.md`. Under a thread's root message in the ch
 | P29-03 | Tasks and approvals: the channel's open lists, the channel's pending approvals, the push's channel | Done |
 | P29-04 | Client store for the channel's task view (heads, steps, lists, approvals) and `useTaskView` | Done |
 | P29-06 | Components with their CSS, accessibility and tests: compact to-do, compact run card, question strip, the view under the root, the channel's live region | Done |
-| P29-09 | Playwright spec and screenshots (four palettes, light and dark, 1440 and 390) | Not built |
-| P29-10 | Docs, STATUS, MISTAKES | Not built |
+| P29-09 | Playwright spec and screenshots (four palettes, light and dark, 1440 and 390) | Done |
+| P29-10 | Docs, STATUS, MISTAKES | Done |
 | P29-12 | The dock above the thread's composer (section 10a): `ThreadDock` with the compact to-do, run card and the pending question strip, replacing `TodoPin` and the thread's own approvals strip; collapse, 40% height, 390 px; component test, e2e case, screenshots | Done |
 | P29-13 | Opening a bot opens its chat; no chat shows an empty state with a Bot settings button for people who may change it; the customization page moves to `/bots/:bot/settings` with redirects from the old tab addresses (section 10b); component tests, e2e, screenshots | Done |
+| P29-14 | Threads view data (section 10c): the inbox rows carry the latest reply's replier and time and the caller's unanswered `mention`; `q` and `mentions` filter the inbox on the server; three `readOnly` batch reads by roots (runs, to-do lists, pending approvals) with shared zod shapes, RLS and tests | Not built |
+| P29-15 | Threads view rules and data hook: pure filter parse, `@name`, ordering and highlight, "Needs you" rule and group, `useInboxProgress` (three batched reads, push and slow poll), paging | Not built |
+| P29-16 | Threads view list: filter bar with `?q=`, compact progress line, "Needs you" chip and group, the mention block and the separate latest-reply block, component tests | Not built |
+| P29-17 | Threads view grid: the toggle, the card with progress, approval strip and both blocks, paging and `content-visibility`, tests | Not built |
+| P29-18 | Threads view e2e and screenshots (filter, mention, Needs you, grid at 1440 and 390 px, approve from a card), `docs/testing.md` and the plugin docs | Not built |
 | P29-11 | Deploy and live check | Not built |
 
 ---

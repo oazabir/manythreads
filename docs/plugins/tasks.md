@@ -160,6 +160,8 @@ Both answer `{ ok, version, counts, message }` or a plain refusal: `no_thread` (
 
 Tests: `test/todo.test.ts` (default offer, one message rewritten in place, invalid input, `no_item` and `no_list`, one batched redaction with the count, no data-loss plugin, round trip of Arabic, Chinese and emoji, four-byte texts at the limit, a text that grows when redacted, the byte limit, parallel sets, ownership and take-over, helpers ticking an item, a person forging `meta.todoRef`, an archived channel, a bot that can no longer post, the door's `bad_message` and shape checks, who is pushed (private conversation, guest) and no push on a refusal, the push rate, items following a handoff and a completion, several lists on one card, a late or doubled event, a reopened card, a card of another team).
 
+**The channel's to-do lists (P29).** `GET /api/channels/:channelId/todos` (read only) answers the open to-do list of each thread in the channel in one query (`{ todos: ThreadTodo[] }`, each with its `rootId`, bounded, for the people who can read the channel), so the channel view shows the lists under their roots without one read per thread. It is read again on each `todo.changed` push; the thread's own `GET /api/threads/:rootId/todo` stays for the thread view and the dock. See the section on the channel's task view in [runtime-hermes](./runtime-hermes.md).
+
 ## Channel boards and the Bot Board
 
 A board may belong to one channel (`boards.channel_id`). Such a board shows the cards filed on it (`tasks.board_id`) instead of a saved filter,

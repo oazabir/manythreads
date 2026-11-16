@@ -186,6 +186,8 @@ is amber "Sensitive data", a strict hand-off is grey, a flagged tool is amber "N
 and Deny on the row (on hover or keyboard focus; always on touch) and in the header of the detail; a request whose preview was cut short offers Open on the
 row instead, because nobody approves a call they have not read.
 
+**Answering in the channel and in the dock (P29).** A pending question of an agent run is also drawn as a strip under the thread root in the channel and above the composer of an open thread (`clients/web/src/taskview/QuestionStrip.tsx`): the same Yes and No, the same "view the full call before Yes when the preview is cut short" rule and the same decide route as the card (the strip and the card share `useDecision`). Two routes and one push feed it: `GET /api/channels/:channelId/approvals/pending` (up to 50, oldest first, for people who may decide; none for a guest), `GET /api/threads/:rootId/approvals` (one read gives the thread's list and, on a 409 from a decision, who already answered: "Already answered by Omar"), and `approval.changed`, which now carries `channelId` and `threadRootId` when the question was asked in a thread, so a page showing another channel does not read again. The list stays the truth; the push is a hint.
+
 ## Not here
 
 * The **gate** (P5-11) — a gate-list topic stops a run before any model call and creates a pending approval through this handler; not built.

@@ -274,6 +274,16 @@ scrolls away). Screenshots (light, dark, 390 px) go to `temp/screenshots/p25-12`
 The spec starts its own stack, so the shared servers and sign-ins of the main config's global setup are not needed: a config of a few lines with `testMatch: 'runs/run-card.spec.ts'`,
 one `desktop` project and no `webServer` or `globalSetup` runs it in about half the time.
 
+## The task view in the channel, the dock and opening a bot (P29-09, P29-12, P29-13)
+`e2e/runs/channel-task-view.spec.ts` uses the same `runs` stack and fake agent. It proves, in a real browser: the run card and the pending question under a thread root in the channel with no reload;
+Yes from the channel; no request of its own for the thread (`/api/threads/<root>/runs|watch|todo`) and at most two channel lease PUTs in the first seconds; Hide, the chip and its memory across a reload;
+Yes and No as two equal 44 px buttons on one row at 390 px with nothing scrolling sideways; the orchestrator's to-do list appearing, ticking and saying "4 of 4 done" under the root; Stop from the channel
+("Stopped by Nadia", again after a reload); the thread opened at the side (the channel keeps a chip, the dock above the composer holds the question and nothing repeats it in the replies or the run card; the strip is
+the lowest thing in the dock and folding the dock keeps it on screen; at 390 px the dock starts folded to one line). Pictures (light, dark, 390 px) go to `temp/screenshots/p29` (git-ignored).
+`e2e/bots/open-bot.spec.ts` covers the sidebar click (chat for a bot that allows chatting, "No chat is available with <bot>." for one that does not, the Bot settings button for an admin only, 44 px at 390 px, and the
+old `?tab=` address redirecting to `/settings`). Run both without the main config's global setup, with a config of a few lines (one `desktop` project, `testMatch` of those two files, no `webServer`):
+`flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test -c <that config> --project=desktop --workers=1 --retries=0` after `pnpm --filter @manythreads/web build`.
+
 `e2e/runs/themes.spec.ts` (P28-07) uses the same stack and the same kind of config: it opens the thread of a working run card and a to-do card as Nadia in each theme (Graphite, Linen, Harbor and Classic) and
 mode, set through `PUT /api/me/appearance`, and checks the loaded fonts, the face of the team name, the contrast of the words in both cards, and that nothing scrolls sideways at 390 px; then it opens
 Settings → Appearance in three looks. Pictures go to `temp/screenshots/themes` (git-ignored; `MANYTHREADS_THEME_SHOTS` moves them). `e2e/shell/theme.spec.ts` covers the picker, the saved choice, and a reload with no flash of another look.

@@ -296,10 +296,11 @@ test('the to-do card: kept by the orchestrator, an item follows its card, and it
     await nadia.page.reload();
     await expect(nadia.page.getByTestId('todo-card').getByTestId('todo-progress')).toHaveText('All done', { timeout: 30_000 });
 
-    // while the run is going, the channel shows who is on the thread
+    // while the run is going, the channel shows its card under the root: who is on it and that it is working (P29-06)
     const channel = await openOn(browser, playwright, world.stack, 'nadia', '/t/engineering/c/dev');
     try {
-      await expect(channel.page.getByTestId('run-chip').first()).toContainText('is working', { timeout: 30_000 });
+      await expect(channel.page.getByTestId('tv-run').first()).toContainText('run-lead', { timeout: 30_000 });
+      await expect(channel.page.getByTestId('tv-run-state').first()).toContainText(/Starting|Working/);
       await channel.page.screenshot({ path: join(SHOTS, 'channel-chip.light.png') });
     } finally {
       await channel.context.close();

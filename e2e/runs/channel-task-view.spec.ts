@@ -248,3 +248,35 @@ test('open at the side, the channel keeps a chip and the thread holds the questi
     await nadia.close();
   }
 });
+
+test('the cards read well in the four palettes, light and dark, at 1440 px and at 390 px', async ({ browser, playwright }) => {
+  world.script(JOURNEY);
+  const nadia = await ask(browser, playwright, 'run-demo', 'change the panel in every look');
+  try {
+    await expect(view(nadia.page, nadia.rootId).getByTestId('tv-question')).toBeVisible({ timeout: 90_000 });
+    for (const palette of ['graphite', 'linen', 'harbor', 'classic'] as const) {
+      for (const theme of ['light', 'dark'] as const) {
+        const res = await nadia.api.ctx.put('/api/me/appearance', { data: { palette, theme }, headers: await nadia.api.headers() });
+        expect(res.status(), await res.text()).toBe(200);
+        for (const phone of [false, true]) {
+          const opened = await openOn(browser, playwright, world.stack, 'nadia', phone ? `${channelPath}?panel=thread:${nadia.rootId}` : channelPath, phone ? { viewport: PHONE, mobile: true } : {});
+          try {
+            const scope = phone ? opened.page.getByTestId('thread-dock') : view(opened.page, nadia.rootId);
+            await expect(scope.getByTestId('tv-question')).toBeVisible({ timeout: 30_000 });
+            expect(await noSidewaysScroll(opened.page), `${palette} ${theme} ${phone ? '390' : '1440'}`).toBe(true);
+            await opened.page.screenshot({ path: join(SHOTS, `palette-${palette}.${theme}.${phone ? '390' : '1440'}.png`) });
+          } finally {
+            await opened.context.close();
+          }
+        }
+      }
+    }
+    await nadia.api.ctx.put('/api/me/appearance', { data: { palette: 'classic', theme: 'system' }, headers: await nadia.api.headers() });
+    // let the run finish before the stack is taken down
+    await nadia.page.reload();
+    await view(nadia.page, nadia.rootId).getByTestId('tv-question-yes').click();
+    await expect(view(nadia.page, nadia.rootId).getByTestId('tv-run-ended')).toBeVisible({ timeout: 90_000 });
+  } finally {
+    await nadia.close();
+  }
+});
