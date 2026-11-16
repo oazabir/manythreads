@@ -6,7 +6,12 @@ command on it. The machine connects **out** to manythreads, so you open no port 
 ## Before you start
 
 - A Linux machine with systemd (x64 or arm64) and a user who may use `sudo`. About 3 GB of free disk. The packages `sudo` and `util-linux` (on Debian and Ubuntu they are there by default; the installer stops and says so when one is missing), and `/etc/sudoers` must read `/etc/sudoers.d` (the default).
-- The agents you want. The installer adds Claude Code, Codex and a browser for checks. It installs Hermes only if the machine already has it.
+- The agents you want, each in its own way (the installer never installs Hermes: that is yours to do first):
+  - **Claude Code** and **Codex**: nothing to install. The installer brings its own pinned copies of both, and a browser for checks. You sign each one in later from this site.
+  - **Hermes**: install it **system-wide before you run the command**, for example under `/opt/hermes`, so that the program (for example `/usr/local/bin/hermes`, or `/opt/hermes/bin/hermes`) can be run by every user of the machine. `hermes --version` must work for a user such as `nobody`.
+    The installer looks for `hermes` on root's `PATH`, in `/usr/local/bin`, `/usr/bin` and `/opt/*/bin`. Put it somewhere else and add `--hermes-bin /path/to/hermes` to the command.
+    A Hermes inside someone's home folder (`/root/.local/bin`, `/home/<you>/.local/bin`) is found but **cannot be used**: the bridge's service and the team users cannot see a home folder. The installer says so in one sentence and sets the server up without Hermes. Hermes needs no sign-in and no model key: it uses this site's model gateway, and each team gets a Hermes home of its own inside its own folder, never your `~/.hermes`.
+  - Installed Hermes later? Run the same command again with `--update`: it looks again and adds the Hermes runner.
 - A login for each paid agent (see `runner-signin-files.md` for which login to use). You sign in from this site later, so nothing is typed on the machine.
 
 ## Steps
@@ -16,7 +21,7 @@ command on it. The machine connects **out** to manythreads, so you open no port 
 3. Copy the command and run it on the machine. The code in it works once and for 15 minutes.
    - To keep the code out of your shell history, use the second command in the dialog; the script asks for the code on the keyboard.
    - To read the script first, use "The careful way": download it, read it, check the hash, run it.
-4. The dialog says "Waiting for <name> to connect…" and then lists the machine and the agents it found.
+4. The dialog says "Waiting for <name> to connect…" and then lists the machine and the agents it found. The installer's own output ends with a line for each agent, and Hermes is either `found at <path>`, `not found` or `found but not usable`; this page shows a Hermes that is not usable as not found, so read the installer's sentence.
 5. Press **Sign-in** next to each agent and follow the steps. The agent signs in to a folder of its own on the server; your own account on that machine is not touched.
 6. The agents are now runners named `<name>-claude`, `<name>-codex` and `<name>-hermes` on the Runners page. Share them with teams and place bots on them like any runner.
 

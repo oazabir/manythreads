@@ -8,8 +8,8 @@
 # Read it before you run it: it installs a program and a systemd service, and creates a user.
 #
 # What it does: checks the machine; gets Node 22 (yours if it is 22 or later); downloads the bridge bundle from this site and checks its hash; installs the pinned agent
-# programs from a lock file (npm ci, no install scripts); makes the user `manythreads-bridge`; looks for Hermes, Claude Code and Codex on this machine and reports them;
-# installs Chromium for browser checks; writes the bridge's config; enrols (one call to this site, which answers a key kept in /etc/manythreads-bridge/key, mode 0600);
+# programs from a lock file (npm ci, no install scripts); makes the user `manythreads-bridge`; reports the Claude Code and Codex the machine already has (the pinned copies are
+# used); looks for Hermes and uses it only when the team users can run it (it never installs Hermes: owner decision 2026-11-16); installs Chromium for browser checks; writes the bridge's config; enrols (one call to this site, which answers a key kept in /etc/manythreads-bridge/key, mode 0600);
 # starts `manythreads-bridge.service` and waits until the site says it is connected. It does not use the sign-ins of anyone on this machine: each agent has a sign-in
 # folder of its own under /var/lib/manythreads-bridge/auth, and you sign in from the Runners page.
 # A second service, `manythreads-publisher.service`, runs as its own user (`manythreads-publisher`) on a socket only the bridge's user can open. `mt-publish` talks to it, so a bot
@@ -24,6 +24,8 @@
 #   --update            install the bundle this site serves now, keep the key (no code needed)
 #   --uninstall         stop and remove the service, the program, the helper and the sudo rule, and tell the site (--purge also removes the work folders, the team users and the users of the bridge)
 #   --allow-full-access this machine's half of Codex "full access" (the other half is the switch on the Runners page)
+#   --hermes-bin PATH   the Hermes program to use, when it is not on root's PATH or in /usr/local/bin, /usr/bin or /opt/*/bin. This script never installs Hermes: install it
+#                       system-wide first (for example under /opt/hermes). It is used only if the team users can run it (not under /root or /home, which the service cannot see)
 #   --no-hermes --no-claude --no-codex --no-browser --no-publisher   leave one out (without the publisher no bot on this machine can publish)
 #
 # The hash of this script is shown on the Runners page. It is checked against the same site, so it guards against a broken download, not against a site that was taken over.
@@ -35,8 +37,6 @@ main() {
   local SITE='@@SITE@@' BUNDLE_SHA256='@@BUNDLE_SHA256@@' BRIDGE_VERSION='@@BRIDGE_VERSION@@'
   # pinned: Node 22 for hosts that have none (hashes from https://nodejs.org/dist/v22.23.5/SHASUMS256.txt)
   local NODE_VERSION='v22.23.5' NODE_SHA256_X64='cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8' NODE_SHA256_ARM64='2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09'
-  # Hermes is installed by its official installer, pinned by checksum (the same one deploy/docker/hermes.Dockerfile pins); when upstream changes it the install stops
-  local HERMES_INSTALLER_SHA256='abf338605dae6dd28d101673ac6aed7995c955745db46d47676bc591a7957209'
   local PLAYWRIGHT_VERSION='1.56.1'
 
   local PREFIX=/opt/manythreads-bridge ETC=/etc/manythreads-bridge DATA=/var/lib/manythreads-bridge SVC_USER=manythreads-bridge UNIT=manythreads-bridge.service
@@ -44,7 +44,7 @@ main() {
   local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock
 
-  local mode='' code='' code_file='' allow_full=0 want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
+  local mode='' code='' code_file='' allow_full=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
@@ -53,13 +53,14 @@ main() {
       --uninstall) mode=uninstall ;;
       --purge) purge=1 ;;
       --allow-full-access) allow_full=1 ;;
+      --hermes-bin) shift; [ $# -gt 0 ] || die "--hermes-bin needs the path of the hermes program"; hermes_arg="$1" ;;
       --no-hermes) want_hermes=0 ;;
       --no-claude) want_claude=0 ;;
       --no-codex) want_codex=0 ;;
       --no-browser) want_browser=0 ;;
       --no-publisher) want_publisher=0 ;;
       --insecure-for-tests) insecure=1 ;;
-      -h|--help) sed -n '2,42p' "$0" 2>/dev/null || true; return 0 ;;
+      -h|--help) sed -n '2,/^$/p' "$0" 2>/dev/null || true; return 0 ;;
       *) die "unknown option: $1 (see --help)" ;;
     esac
     shift
@@ -163,7 +164,7 @@ main() {
   chmod 0755 "$DATA"
   chmod 0711 "$DATA/work"
   local d
-  for d in state hermes home signin hermes-install work-before-teams; do [ -d "$DATA/$d" ] && chown -hR "$SVC_USER:$SVC_USER" "$DATA/$d"; done
+  for d in state hermes home signin work-before-teams; do [ -d "$DATA/$d" ] && chown -hR "$SVC_USER:$SVC_USER" "$DATA/$d"; done
   # what the publisher's user must not read: the bridge's key and state, the Hermes homes and the deployer's login (0700). The sign-in folders are the bridge's, group `mt-agents`: the
   # group may enter `auth` (root's) and use the two agents' folders, which are setgid so a file made in them by any team's user belongs to the group; the CLIs renew tokens in place there.
   chmod 0700 "$DATA/state" "$DATA/hermes" "$DATA/home"
@@ -175,7 +176,7 @@ main() {
   # (the folder `auth` itself is root's, so the bridge's user cannot swap a sign-in folder for a link that the helper, as root, would follow)
   chmod 0755 "$ETC"
 
-  # ---- what this machine has (reported; the bridge runs the pinned copies, never these) ---------------------------------------------------------------------
+  # ---- what this machine has (reported; the bridge runs the pinned Claude Code and Codex, never these) -----------------------------------------------------------
   report_host_agents "${SUDO_USER:-}"
 
   # ---- the agents' programs --------------------------------------------------------------------------------------------------------------------------------
@@ -199,12 +200,24 @@ main() {
     fi
   fi
 
-  # ---- Hermes (only when this machine has it) --------------------------------------------------------------------------------------------------------------
-  local hermes_bin=''
-  if [ "$want_hermes" -eq 1 ] && host_has hermes "${SUDO_USER:-}"; then
-    hermes_bin="$(install_hermes "$DATA" "$SVC_USER" "$HERMES_INSTALLER_SHA256" || true)"
-    [ -n "$hermes_bin" ] || warn "Hermes could not be installed here; it is left out (the rest goes on)"
+  # ---- Hermes: found on this machine, never installed here -------------------------------------------------------------------------------------------------
+  # Hermes is the admin's to install (owner decision 2026-11-16). It is used only if the team users (group `mt-agents`) can run it; the table below records its path and the helper starts it
+  # per team with that team's own HERMES_HOME (under the team's home, never anyone's ~/.hermes).
+  local hermes_bin='' hermes_line='' hermes_warn=''
+  if [ "$want_hermes" -eq 1 ]; then
+    find_hermes "${SUDO_USER:-}" "$hermes_arg" "$TEAM_TABLE" "$AGENTS_GROUP" "$node"
+    hermes_bin="$HERMES_FOUND_BIN"
+    hermes_line="$HERMES_FOUND_LINE"
+    hermes_warn="$HERMES_FOUND_WARN"
+  else
+    hermes_line="Hermes: left out (--no-hermes)"
   fi
+  [ -z "$hermes_warn" ] || warn "$hermes_warn"
+  say "$hermes_line"
+  [ ! -d "$DATA/hermes-install" ] || say "note: $DATA/hermes-install is a Hermes an older version of this script installed; it is not used any more (delete it, and install Hermes system-wide)"
+
+  local agents_line
+  agents_line="Claude Code ($([ "$want_claude" -eq 1 ] && echo 'installed by this script' || echo 'left out')), Codex ($([ "$want_codex" -eq 1 ] && echo 'installed by this script' || echo 'left out')), $hermes_line"
 
   # ---- the helper for the per-team users and the rule that lets the bridge's user run it -----------------------------------------------------------------------
   # root's copy of the helper, from the bundle whose hash was checked above, in a folder only root can change; it is run by sudo as root, so the Node that runs it must be root's too
@@ -403,6 +416,8 @@ EOF
     status="$(key_status "$(live_key_file "$DATA" "$ETC")" "$SITE")"
     if [ "$status" = connected ]; then
       say "connected. Sign each agent in from the Runners page: $SITE/ (Settings, Runners)"
+      say "agents on this server: $agents_line"
+      [ -z "$hermes_warn" ] || warn "$hermes_warn"
       return 0
     fi
     sleep 2
@@ -485,29 +500,93 @@ host_has() {
   return 1
 }
 
+# The Claude Code and Codex that the machine has are only reported: the bridge runs its own pinned copies. (Hermes is reported by find_hermes.)
 report_host_agents() {
   local who="${1:-}" p found=''
-  for p in claude codex hermes; do
+  for p in claude codex; do
     if host_has "$p" "$who"; then found="$found $p"; fi
   done
-  if [ -n "$found" ]; then say "found on this machine:$found (the bridge runs its own pinned copies with sign-in folders of their own; your logins are not touched)"; else say "none of claude, codex or hermes is on this machine's PATH; the pinned copies are installed anyway"; fi
+  if [ -n "$found" ]; then say "found on this machine:$found (the bridge runs its own pinned copies with sign-in folders of their own; your logins are not touched)"; else say "neither claude nor codex is on this machine's PATH; the pinned copies are installed anyway"; fi
 }
 
-# Hermes by its official installer, as the bridge's user, in its own home. Prints the program's path, or nothing.
-install_hermes() {
-  local user="$2" sha="$3" home="$1/hermes-install" tmp
-  mkdir -p "$home"
-  chown "$user:$user" "$home"
-  tmp="$(mktemp)"
-  curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o "$tmp" || return 1
-  printf '%s  %s\n' "$sha" "$tmp" | sha256sum -c - >/dev/null || { warn "the Hermes installer is not the one this script was checked with"; rm -f "$tmp"; return 1; }
-  chmod 0644 "$tmp"
-  run_as "$user" env HOME="$home" HERMES_HOME="$home/.hermes" bash "$tmp" --skip-browser --skip-computer-use >/dev/null 2>&1 || { rm -f "$tmp"; return 1; }
-  rm -f "$tmp"
-  local bin
-  bin="$(find "$home" -maxdepth 4 -name hermes -type f -perm -u+x 2>/dev/null | head -1)"
-  [ -n "$bin" ] || bin="$(find "$home" -maxdepth 4 -name hermes -type l 2>/dev/null | head -1)"
-  printf '%s' "$bin"
+# Is this path somewhere the bridge's service cannot see (its unit has ProtectHome=true and a private /tmp), or where a login lives?
+hidden_from_service() {
+  case "$1" in /root|/root/*|/home|/home/*|/run/user|/run/user/*|/tmp|/tmp/*|/var/tmp|/var/tmp/*) return 0 ;; esac
+  return 1
+}
+
+# Can the team users run this program? Runs `<program> --version` as the user `nobody`, in the group the team users share, in a throwaway folder that is its HOME and HERMES_HOME:
+# no real home (root's, the admin's or a team's) is read or changed. Prints the version on success, or one short reason on failure.
+hermes_usable() {
+  local bin="$1" group="$2" real tmp uid gid gids out rc=0 line tmo=''
+  command -v timeout >/dev/null 2>&1 && tmo='timeout 60'
+  real="$(readlink -f "$bin" 2>/dev/null || true)"
+  [ -n "$real" ] || { printf 'the file is not there'; return 1; }
+  if hidden_from_service "$bin" || hidden_from_service "$real"; then printf 'it is in a home or temporary folder, which the bridge service cannot see'; return 1; fi
+  [ -f "$real" ] && [ -x "$bin" ] || { printf 'it is not an executable file'; return 1; }
+  uid="$(id -u nobody 2>/dev/null || echo 65534)"
+  gid="$(id -g nobody 2>/dev/null || echo 65534)"
+  gids="$(getent group "$group" | cut -d: -f3)"
+  tmp="$(mktemp -d)" || { printf 'no temporary folder to check it in'; return 1; }
+  chown "$uid:$gid" "$tmp"
+  chmod 0700 "$tmp"
+  # `--groups` also names mt-agents, so a program only that group may read counts as usable; the 60 seconds are for a first start
+  out="$(cd "$tmp" && $tmo setpriv --reuid "$uid" --regid "$gid" --groups "${gids:-$gid}" --no-new-privs -- env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$tmp" HERMES_HOME="$tmp/.hermes" LC_ALL=C "$bin" --version </dev/null 2>&1)" || rc=$?
+  rm -rf "$tmp"
+  line="$(printf '%s\n' "$out" | sed -n '/[^[:space:]]/{p;q}' | cut -c1-100)"
+  if [ "$rc" -ne 0 ]; then printf '%s' "${line:-it exited with status $rc}"; return 1; fi
+  printf '%s' "$(printf '%s' "$line" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+-]*' | head -1)"
+  return 0
+}
+
+# Looks for Hermes and sets HERMES_FOUND_BIN (the path to use, or empty), HERMES_FOUND_LINE (the report line) and HERMES_FOUND_WARN (one plain sentence when Hermes was
+# found but cannot be used). Looks only at the program, never at any Hermes home. Order: --hermes-bin; else root's PATH, /usr/local/bin, /usr/bin, /opt/*/bin; and the program an
+# earlier run recorded in the table. The programs in /root/.local/bin and in the sudo user's ~/.local/bin are looked for only to say they cannot be used (a test that the file exists).
+find_hermes() {
+  local who="$1" arg="$2" table="$3" group="$4" node="$5" cand c seen='' first_bad='' reason ver prev='' fix
+  HERMES_FOUND_BIN='' HERMES_FOUND_LINE='' HERMES_FOUND_WARN=''
+  fix="install Hermes system-wide, for example under /opt/hermes, or pass --hermes-bin <path>"
+  local -a cands=()
+  if [ -n "$arg" ]; then
+    case "$arg" in /*) ;; *) die "--hermes-bin needs an absolute path (starting with /)" ;; esac
+    cands=("$arg")
+  else
+    c="$(command -v hermes 2>/dev/null || true)"
+    [ -z "$c" ] || cands+=("$c")
+    cands+=(/usr/local/bin/hermes /usr/bin/hermes)
+    for c in /opt/*/bin/hermes; do cands+=("$c"); done
+    if [ -s "$table" ]; then
+      prev="$("$node" -e 'try { const a = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).agents || {}; if (a.hermes && typeof a.hermes.command === "string") process.stdout.write(a.hermes.command); } catch (e) {}' "$table" 2>/dev/null || true)"
+      [ -z "$prev" ] || cands+=("$prev")
+    fi
+    cands+=(/root/.local/bin/hermes)
+    if [ -n "$who" ] && [ "$who" != root ]; then
+      c="$(getent passwd "$who" | cut -d: -f6)"
+      [ -z "$c" ] || cands+=("$c/.local/bin/hermes")
+    fi
+  fi
+  for cand in "${cands[@]}"; do
+    case "$cand" in *[[:space:]]*|*..*) continue ;; esac
+    case " $seen " in *" $cand "*) continue ;; esac
+    seen="$seen $cand"
+    [ -e "$cand" ] || continue
+    if reason="$(hermes_usable "$cand" "$group")"; then
+      ver="$reason"
+      HERMES_FOUND_BIN="$cand"
+      HERMES_FOUND_LINE="Hermes: found at $cand${ver:+ ($ver)}; its runner appears on the Runners page"
+      return 0
+    fi
+    [ -n "$first_bad" ] || first_bad="$cand ($reason)"
+  done
+  if [ -n "$first_bad" ]; then
+    HERMES_FOUND_LINE="Hermes: found but not usable, so the server is set up without it"
+    HERMES_FOUND_WARN="Hermes was found at ${first_bad%% (*} but the team users cannot use it (${first_bad#* (}: $fix; the server is set up without Hermes and the rest goes on."
+  elif [ -n "$arg" ]; then
+    HERMES_FOUND_LINE="Hermes: not found at $arg, so the server is set up without it ($fix)"
+  else
+    HERMES_FOUND_LINE="Hermes: not found, so the server is set up without it (this script does not install Hermes; $fix, then run this command again with --update)"
+  fi
+  return 0
 }
 
 # The key the bridge connects with: the same order as the bridge's own list (`keyFiles`): the copy in its state folder (written by a key rotation) first, then the installer's.

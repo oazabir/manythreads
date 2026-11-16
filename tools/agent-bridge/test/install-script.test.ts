@@ -58,6 +58,21 @@ describe('bridge.sh', () => {
     expect(script).toContain('/dev/tty');
   });
 
+  it('never installs Hermes: it only finds it, and --hermes-bin names where it is (owner decision 2026-11-16)', () => {
+    expect(script).not.toMatch(/nousresearch|HERMES_INSTALLER_SHA256|install_hermes|hermes-agent\./);
+    expect(run('https://site.example', ['--help']).out).toContain('--hermes-bin');
+    // an option with no value is refused while the words are read, before anything on the machine is looked at
+    const r = run('https://site.example', ['--update', '--hermes-bin']);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('--hermes-bin needs the path');
+    expect(r.out).not.toMatch(/as root|systemd/);
+    // the three report lines and the one plain sentence with the fix
+    expect(script).toContain('Hermes: found at');
+    expect(script).toContain('Hermes: not found');
+    expect(script).toContain('Hermes: found but not usable');
+    expect(script).toContain('install Hermes system-wide, for example under /opt/hermes, or pass --hermes-bin <path>');
+  });
+
   it('reads and removes the key where the bridge keeps it after a rotation, not only the installer\'s copy', () => {
     expect(script).toMatch(/live_key_file\(\)/);
     expect(script).toContain('rm -f "$DATA/state/key"');

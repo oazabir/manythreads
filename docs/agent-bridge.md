@@ -369,14 +369,28 @@ against a broken download, not against a site that was taken over.
 host's Node 22 or later, otherwise a pinned Node with a pinned checksum under `/opt/manythreads-bridge/node`; downloads the bridge bundle `bridge-<version>.tgz` and
 checks it against the SHA-256 in the manifest; runs `npm ci --omit=dev --ignore-scripts` from a lock file for the pinned agent programs (claude-agent-acp, codex-acp,
 `codex`, Playwright; `claude` comes from the SDK's platform package); creates the user `manythreads-bridge` with its home under `/var/lib/manythreads-bridge`;
-installs Chromium with its libraries; installs Hermes with its pinned official installer only when the machine already has Hermes; writes the config, detects the
+installs Chromium with its libraries; looks for Hermes and uses it only when the team users can run it (it never installs Hermes; below); writes the config, detects the
 agents, calls `POST /api/bridge/enrol` once, keeps the answer's key in `/etc/manythreads-bridge/key` (mode 0600, passed to the service as a systemd credential),
 writes `manythreads-bridge.service` (hardened) and waits up to 90 seconds for the site to say it is connected. Also: `--update` (same command, new bundle),
-`--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`,
+`--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--hermes-bin <path>`, `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`,
 `--no-publisher`. It also installs the helper and the sudo rule of the per-team users (below). It also writes the two commands a bot runs, `mt-git` and `mt-publish` (small scripts that name this machine's Node, in `/opt/manythreads-bridge/current/tools`),
 and a second hardened service, `manythreads-publisher.service` (below). It warns when `git` or `jq` is missing: the repository sync needs both. The bridge's unit has a `PATH`
 that starts with the folder of the Node the installer chose, so a bot's shell finds `node` and `npm`. A container test runs the real script (Debian image, a stand-in site, `systemctl`
 replaced by a recorder): `bash tools/agent-bridge/install/container-test/run.sh` (about two minutes; needs docker and a network that reaches nodejs.org and the npm registry).
+
+**Hermes on a server is found, never installed (owner decision 2026-11-16: "Hermes installation should not be in the server install script").** The script has no Hermes download, no pinned
+Hermes installer checksum and no `hermes-install` folder; the admin installs Hermes system-wide first (for example under `/opt/hermes`; `docs/guide/add-a-server.md` says what each agent needs).
+The script looks, in this order, at `--hermes-bin <path>` (alone, when given), `hermes` on root's `PATH`, `/usr/local/bin`, `/usr/bin`, `/opt/*/bin`, the program an earlier run recorded in the
+table, and, only to name them as unusable, `/root/.local/bin/hermes` and the sudo user's `~/.local/bin/hermes` (a test that the file exists; no home is read or listed). A program counts as **usable**
+only when it is not under `/root`, `/home`, `/run/user` or `/tmp` (the bridge's unit has `ProtectHome=true` and a private `/tmp`, so the service and the helper it starts cannot see them) and when
+`<program> --version` succeeds as the user `nobody` with the group `mt-agents`, in a throwaway folder that is its `HOME` and `HERMES_HOME` (removed afterwards): nobody's real home, root's and a
+team's are never read or changed. The report line is `Hermes: found at <path> (<version>)`, `Hermes: not found ...` or `Hermes: found but not usable ...` plus, for the last, one warning sentence
+that gives the fix ("install Hermes system-wide, for example under /opt/hermes, or pass --hermes-bin <path>"); the script then goes on without Hermes. A usable path is written to the root-owned
+`team-agents.json` (`agents.hermes = {command, args: ["acp"]}`) and to the config, so the helper starts it per team with that team's own `HERMES_HOME` (`<root>/work/<team>/hermes/<bot>`, as below).
+The site knows only found or not found: a Hermes that is not usable is not reported, so the server card shows no Hermes and the sentence is in the installer's output. `--update` looks again, so a
+Hermes installed afterwards is added (its runner `<server>-hermes` appears when the bridge reconnects); an older install that had Hermes in `/var/lib/manythreads-bridge/hermes-install` keeps
+that folder (delete it, and install Hermes system-wide). The container test installs a stub `hermes`, shows it found in `/usr/local/bin` and `/opt/*/bin` and by `--hermes-bin`, started as a team user
+with that team's `HERMES_HOME`, a stub under `/root` or in a folder the team users cannot enter reported as not usable, and that no address of Hermes' download host is asked.
 
 **The publisher (P26-15).** A bot that may publish (its definition grants `tasks.pull_request`) runs `mt-publish check|publish <project> ...`, exactly as in a pod. On a server the command
 talks to `manythreads-publisher.service`, which runs as its own user `manythreads-publisher` on the Unix socket `/run/manythreads-publisher/publisher.sock` (folder 0750, socket 0660, group

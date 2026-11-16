@@ -4,7 +4,10 @@
 # exist with the right modes, the agents are detected, the config is written (with the tools folder and the publisher's socket), the enrolment call is made and its key is kept in 0600,
 # the two units are written, and --update and --uninstall --purge undo it all. P26-22: it also proves the per-team users with two teams: the helper and the sudo rule, each run as its own
 # user, one team unable to read another's folders, kubeconfig or token (files and /proc), both using the shared sign-in folder, the bridge's key and state out of their reach, and the sudo rule
-# allowing nothing else. The host is not touched: no installer runs on it.
+# allowing nothing else. Hermes (owner decision 2026-11-16: the script never installs it): the machine has none at the first install (reported as not found, no runner); a stub `hermes`
+# in /usr/local/bin is found by `--update` and started as a team user with that team's own HERMES_HOME; a stub under /root, or one the team users cannot enter, is reported as not usable
+# (one plain sentence with the fix) and left out; /opt/*/bin and `--hermes-bin` are found; and no program ever asks Hermes' download host (a recording `curl` and a dead address for it).
+# The host is not touched: no installer runs on it.
 #
 #   bash tools/agent-bridge/install/container-test/run.sh [--keep]
 #
@@ -42,6 +45,8 @@ docker run -d --name "$name" --network host "$image" sleep 3600 >/dev/null
 # the packages the installer expects on a server, and a systemctl that records its calls (the container runs no systemd)
 docker exec "$name" bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates xz-utils git jq util-linux procps sudo passwd >/dev/null'
 docker exec "$name" bash -c 'mkdir -p /run/systemd/system && printf "#!/bin/sh\necho \"systemctl \$*\" >> /var/log/systemctl.log\n" > /usr/local/bin/systemctl && chmod +x /usr/local/bin/systemctl'
+# a `curl` that records every address it is given (never a header or a body: the key goes in on standard input) and one that Hermes' download host could not answer; the installer must ask neither
+docker exec "$name" bash -c 'printf "#!/bin/sh\nfor a in \"\$@\"; do case \"\$a\" in http*) echo \"\$a\" >> /var/log/curl-urls.log ;; esac; done\nexec /usr/bin/curl \"\$@\"\n" > /usr/local/bin/curl && chmod +x /usr/local/bin/curl && echo "127.0.0.1 hermes-agent.nousresearch.com" >> /etc/hosts'
 docker cp "$work/dist/bridge.sh" "$name:/tmp/bridge.sh.template"
 docker cp "$here/as-team.sh" "$name:/usr/local/bin/as-team"
 docker cp "$here/probe.sh" "$name:/usr/local/bin/mt-probe"
@@ -54,12 +59,19 @@ check() {
   if out="$(docker exec "$name" bash -c "$*" 2>&1)"; then echo "ok   $what"; else echo "FAIL $what"; printf '%s\n' "$out" | tail -8 | sed 's/^/       /'; fail=$((fail + 1)); fi
 }
 
+# like `check`, but every line must succeed (a plain check judges by its last line only)
+checkx() {
+  local what="$1"; shift
+  check "$what" "$(printf '%s\n' "$*" | sed -e '/^[[:space:]]*$/!s/$/ || exit 1/')"
+}
+
 echo "--- install"
 curl -fsS "http://127.0.0.1:$port/install/bridge.sh" -o "$work/bridge.sh"
 docker cp "$work/bridge.sh" "$name:/tmp/bridge.sh"
 # the code goes in through a file (--code-file), the way the Runners page advises: not through the command line
 docker exec "$name" bash -c 'umask 077; printf "%s\n" "$1" >/tmp/enrol-code' _ "$code"
-docker exec "$name" bash /tmp/bridge.sh --code-file /tmp/enrol-code --no-browser --no-hermes --insecure-for-tests 2>&1 | sed 's/^/  | /' || true
+# no Hermes is on the machine at this first install (and no --no-hermes: it must look and say so)
+docker exec "$name" bash -c 'bash /tmp/bridge.sh --code-file /tmp/enrol-code --no-browser --insecure-for-tests 2>&1 | tee /tmp/install-1.log' | sed 's/^/  | /' || true
 
 check "node 22 or later is installed"            '/opt/manythreads-bridge/node/bin/node -v | grep -q "^v22"'
 check "the bundle is unpacked and complete"      'test -f /opt/manythreads-bridge/current/.complete && test -f /opt/manythreads-bridge/current/bridge.mjs'
@@ -76,6 +88,16 @@ check "the config names the tools and the socket" 'jq -e ".server.toolsDir == \"
 check "the bridge unit has a PATH with node"     'grep -q "^Environment=PATH=/opt/manythreads-bridge/node/bin:" /etc/systemd/system/manythreads-bridge.service'
 check "the publisher unit is written"            'grep -q "^User=manythreads-publisher" /etc/systemd/system/manythreads-publisher.service && grep -q "PUBLISHER_CREDENTIAL_FROM_SITE=1" /etc/systemd/system/manythreads-publisher.service && grep -q "^ExecStart=/opt/manythreads-bridge/node/bin/node /opt/manythreads-bridge/releases/.*/tools/publisher.mjs serve" /etc/systemd/system/manythreads-publisher.service'
 check "both services were started"               'grep -q "restart manythreads-bridge.service" /var/log/systemctl.log && grep -q "restart manythreads-publisher.service" /var/log/systemctl.log'
+echo "--- Hermes is found, never installed (owner decision 2026-11-16)"
+checkx "no Hermes on the machine: reported as not found, no table entry, no runner, nothing asked of Hermes' download host" '
+  grep -q "^Hermes: not found" /tmp/install-1.log
+  grep -q "^agents on this server: Claude Code (installed by this script), Codex (installed by this script), Hermes: not found" /tmp/install-1.log
+  jq -e ".agents | has(\"hermes\") | not" /etc/manythreads-bridge/team-agents.json
+  jq -e ".server.agents | has(\"hermes\") | not" /etc/manythreads-bridge/config.json
+  test -s /var/log/curl-urls.log
+  ! grep -qi "nousresearch\|hermes" /var/log/curl-urls.log
+  ! grep -qi "nousresearch\|HERMES_INSTALLER_SHA256" /tmp/bridge.sh
+  ! test -e /var/lib/manythreads-bridge/hermes-install'
 echo "--- per-team users (P26-22)"
 H=/opt/manythreads-bridge/helper/mt-team-helper
 B=/var/lib/manythreads-bridge
@@ -193,11 +215,84 @@ echo "--- the site saw"
 sed 's/^/  | /' "$work/site.log"
 grep -q '^POST /api/bridge/enrol 200' "$work/site.log" && echo "ok   the enrolment call was made and accepted" || { echo "FAIL the enrolment call"; fail=$((fail + 1)); }
 grep -q '^enrol agents=.*claude-code' "$work/site.log" && echo "ok   the machine reported its agents" || { echo "FAIL the agents report"; fail=$((fail + 1)); }
+grep -q '^enrol agents=.*hermes' "$work/site.log" && { echo "FAIL the machine reported Hermes, which it does not have"; fail=$((fail + 1)); } || echo "ok   the machine did not report a Hermes it does not have"
 
 echo "--- update (no code needed)"
-docker exec "$name" bash /tmp/bridge.sh --update --no-browser --no-hermes --insecure-for-tests 2>&1 | sed 's/^/  | /' || true
+docker exec "$name" bash -c 'bash /tmp/bridge.sh --update --no-browser --insecure-for-tests 2>&1 | tee /tmp/update-0.log' | sed 's/^/  | /' || true
 check "the key survived the update"              'grep -q "^mtb_" /etc/manythreads-bridge/key'
 check "the update kept the team users and rewrote the helper, table and sudo rule" 'id mt-team-acme && id mt-team-beta && test -x '"$H"' && jq -e ".agents.claude.command | test(\"claude-agent-acp\")" /etc/manythreads-bridge/team-agents.json && visudo -cf /etc/sudoers.d/manythreads-bridge && test "$(stat -c %U:%a '"$B"'/work)" = root:711'
+
+# A stand-in Hermes: `--version` answers, `acp` runs the lines it is given (so the check can look at the team user from the inside). The same file is copied to the places below.
+stub='#!/bin/sh\ncase "$1" in\n  --version) echo "hermes 0.99.0-stub"; exit 0 ;;\n  acp) while IFS= read -r l; do sh -c "$l"; done; exit 0 ;;\nesac\nexit 2\n'
+put_stub() { docker exec "$name" bash -c 'mkdir -p "$(dirname "$1")" && printf "$2" > "$1" && chmod 0755 "$1"' _ "$1" "$stub"; }
+update() { docker exec "$name" bash -c 'bash /tmp/bridge.sh --update --no-browser --insecure-for-tests "$@" 2>&1 | tee /tmp/update.log' _ "$@" | sed 's/^/  | /' || true; }
+TABLE=/etc/manythreads-bridge/team-agents.json
+CONFIG=/etc/manythreads-bridge/config.json
+HELLO='runuser -u manythreads-bridge -- /opt/manythreads-bridge/node/bin/node /opt/manythreads-bridge/current/bridge.mjs --config '"$CONFIG"' --state-dir '"$B"'/state --print-hello'
+
+echo "--- --update after Hermes was installed system-wide (/usr/local/bin)"
+put_stub /usr/local/bin/hermes
+update
+checkx "--update finds Hermes in /usr/local/bin, records it in the table, and the bridge reports it (its runner appears)" '
+  grep -q "^Hermes: found at /usr/local/bin/hermes (0.99.0-stub); its runner appears" /tmp/update.log
+  jq -e ".agents.hermes.command == \"/usr/local/bin/hermes\" and .agents.hermes.args == [\"acp\"]" '"$TABLE"'
+  jq -e ".server.agents | has(\"hermes\")" '"$CONFIG"'
+  '"$HELLO"' | jq -e "[.agents[] | select(.agent == \"hermes-acp\" and (.version | startswith(\"0.99.0\")))] | length == 1"
+  grep -q "^connected" /tmp/update.log'
+checkx "the helper starts Hermes as the team user, with that team's HERMES_HOME and never a ~/.hermes" '
+  out="$(echo "id -un; echo HH=\$HERMES_HOME; echo HOME=\$HOME" | MT_EXTRA_ENV="{\"HERMES_HOME\":\"'"$B"'/work/acme/hermes/dev\"}" as-team acme dev hermes 2>&1)"; echo "$out"
+  echo "$out" | grep -qx mt-team-acme
+  echo "$out" | grep -qx "HH='"$B"'/work/acme/hermes/dev"
+  ! echo "$out" | grep -q "\.hermes"'
+checkx "the check of the program left nothing behind and touched no home" '! ls -d /tmp/tmp.* 2>/dev/null | grep -q . ; ! test -e /root/.hermes && ! test -e '"$B"'/home/.hermes'
+
+echo "--- a Hermes under /root is found but not usable (named with --hermes-bin)"
+docker exec "$name" rm -f /usr/local/bin/hermes
+put_stub /root/stub/hermes
+update --hermes-bin /root/stub/hermes
+checkx "reported in one plain sentence with the fix, left out of the table, the rest goes on" '
+  grep -q "Hermes was found at /root/stub/hermes but the team users cannot use it" /tmp/update.log
+  grep -q "install Hermes system-wide, for example under /opt/hermes, or pass --hermes-bin <path>" /tmp/update.log
+  grep -q "^Hermes: found but not usable" /tmp/update.log
+  jq -e ".agents | has(\"hermes\") | not" '"$TABLE"'
+  jq -e "(.server.agents | has(\"hermes\") | not) and (.server.agents | has(\"claude\"))" '"$CONFIG"'
+  '"$HELLO"' | jq -e "[.agents[].agent] | index(\"hermes-acp\") == null"
+  grep -q "^connected" /tmp/update.log'
+
+echo "--- a Hermes the team users cannot enter is found but not usable (the check runs it as them)"
+put_stub /opt/private/hermes
+docker exec "$name" chmod 0700 /opt/private
+update --hermes-bin /opt/private/hermes
+checkx "the reason is what the system said, and nothing is installed or downloaded" '
+  grep -q "Hermes was found at /opt/private/hermes but the team users cannot use it (.*Permission denied" /tmp/update.log
+  jq -e ".agents | has(\"hermes\") | not" '"$TABLE"''
+
+echo "--- no option: a Hermes only under /root/.local/bin is named as not usable"
+put_stub /root/.local/bin/hermes
+docker exec "$name" bash -c 'rm -rf /opt/private /root/stub'
+update
+checkx "found where the person who runs this may have it, not usable, left out" '
+  grep -q "Hermes was found at /root/.local/bin/hermes but the team users cannot use it" /tmp/update.log
+  jq -e ".agents | has(\"hermes\") | not" '"$TABLE"''
+
+echo "--- no option: Hermes in /opt/<name>/bin is found (and wins over the one under /root)"
+put_stub /opt/hermes/bin/hermes
+update
+checkx "found in /opt/hermes/bin, recorded, no warning" '
+  grep -q "^Hermes: found at /opt/hermes/bin/hermes (0.99.0-stub)" /tmp/update.log
+  ! grep -q "^warning: Hermes" /tmp/update.log
+  jq -e ".agents.hermes.command == \"/opt/hermes/bin/hermes\"" '"$TABLE"''
+
+echo "--- --hermes-bin names it; a later --update with no option keeps what the table recorded"
+docker exec "$name" bash -c 'mkdir -p /srv/tools/bin && cp /opt/hermes/bin/hermes /srv/tools/bin/hermes && rm -rf /opt/hermes /root/.local/bin/hermes'
+update --hermes-bin /srv/tools/bin/hermes
+update
+checkx "the program outside the usual places is used through --hermes-bin, and still used by the next plain --update" '
+  grep -q "^Hermes: found at /srv/tools/bin/hermes (0.99.0-stub)" /tmp/update.log
+  jq -e ".agents.hermes.command == \"/srv/tools/bin/hermes\"" '"$TABLE"''
+checkx "through all of it no program was asked for Hermes' download host or for any Hermes installer" '
+  test -s /var/log/curl-urls.log
+  ! grep -qi "nousresearch\|hermes" /var/log/curl-urls.log'
 
 echo "--- uninstall --purge (a key a rotation wrote under the state folder goes too)"
 docker exec "$name" bash -c 'printf "%s\n" "mtb_$(printf "%064d" 0)" >/var/lib/manythreads-bridge/state/key'
