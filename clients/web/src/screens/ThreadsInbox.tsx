@@ -83,8 +83,16 @@ export function ThreadsInbox() {
     (l: ThreadsLayout): void => {
       setLayoutState(l);
       writeLayout(meId, l);
+      // the grid has no thread beside it: the thread the list had open gives way to the grid (a card opens it again)
+      if (l === 'grid') {
+        const sp = new URLSearchParams(window.location.search);
+        if (sp.has('thread')) {
+          sp.delete('thread');
+          setParams(sp, { replace: true });
+        }
+      }
     },
-    [meId],
+    [meId, setParams],
   );
   const grid = layout === 'grid' && tab !== 'later';
   const stacked = narrow || grid;

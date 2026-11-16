@@ -284,6 +284,15 @@ the lowest thing in the dock and folding the dock keeps it on screen; at 390 px 
 old `?tab=` address redirecting to `/settings`). Run both without the main config's global setup, with a config of a few lines (one `desktop` project, `testMatch` of those two files, no `webServer`):
 `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test -c <that config> --project=desktop --workers=1 --retries=0` after `pnpm --filter @manythreads/web build`.
 
+## The Threads view: list, filter, grid (P29-16, P29-17, P29-18)
+`e2e/runs/threads-view.spec.ts` uses the `runs` stack. Two real threads: one where the lead bot keeps a to-do list and a colleague names Nadia (a mention older than the latest reply), one where the demo bot asks to run a command.
+It proves: the row's one line of progress ("1 of 4" and the item being worked on, then "2 of 4" after a tick with no reload), the "Needs you" chip and group, the mention block first and the latest-reply block after it, the
+reply that is only a reply having no mention block, no request per row (only the three `/api/thread-batch/*` reads), the filter (words with the match marked, `?q=` in the address and Escape clearing it, a word only an older reply
+holds found by the server, `@name`, an unknown name saying so, the address opening with the filter filled, "Needs you first" off giving plain time order), then the grid (the toggle remembered across a reload, cards at least 300 px wide,
+the question with its buttons on the card and Yes there taking it away, a card opening the thread with a way back), and last every look (Graphite, Linen, Harbor; light and dark; list and grid; 1440 and 390 px) with nothing
+scrolling sideways. Pictures go to `temp/screenshots/p29` (git-ignored). The web client must be built first (`pnpm --filter @manythreads/web build`); run it with a config of a few lines (one `desktop` project, `testMatch: 'runs/threads-view.spec.ts'`,
+no `webServer`): `flock /tmp/manythreads-test.lock pnpm -C e2e exec playwright test -c <that config> --workers=1 --retries=0`. Unit and component tests: `clients/web/test/inbox-rules.test.ts`, `inbox-work.test.ts`, `threads-row.test.ts`.
+
 `e2e/runs/themes.spec.ts` (P28-07) uses the same stack and the same kind of config: it opens the thread of a working run card and a to-do card as Nadia in each theme (Graphite, Linen, Harbor and Classic) and
 mode, set through `PUT /api/me/appearance`, and checks the loaded fonts, the face of the team name, the contrast of the words in both cards, and that nothing scrolls sideways at 390 px; then it opens
 Settings → Appearance in three looks. Pictures go to `temp/screenshots/themes` (git-ignored; `MANYTHREADS_THEME_SHOTS` moves them). `e2e/shell/theme.spec.ts` covers the picker, the saved choice, and a reload with no flash of another look.

@@ -42,7 +42,7 @@ export function FilterBar({
           className="inf-input"
           type="search"
           value={value}
-          placeholder="Filter threads, @name for who is mentioned"
+          placeholder="Filter, or @name"
           autoComplete="off"
           spellCheck={false}
           enterKeyHint="search"

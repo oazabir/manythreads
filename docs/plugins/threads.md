@@ -55,6 +55,19 @@ they were granted whatever the slug.
 (`OR t.root_message_id IN (SELECT thread_root_id FROM app.tasks WHERE owner_id = <actor> AND state <> 'done')`); the tab, ordering, cursor and item shape do not change. Until then the tab holds
 threads the person started.
 
+### The Threads view as a bird's-eye view (P29-14 to P29-18)
+
+The inbox row is the starting message (the head), the reply count, then one block: the **latest reply**, or the **mention** that waits on the caller. `GET /api/teams/:slug/threads` therefore also takes
+`q` (words, each in the channel's name or any message of the thread, case and accent insensitive) and `mentions` (`a|b,c`: every comma part must name one of the listed actors, so `@name` filters by who is mentioned),
+and each item carries `lastReply` (`authorName`, `preview` up to 240 characters, `authorId`, `kind`, `at`, `messageId`) and `mention` (`messageId`, `authorId`, `authorName`, `kind`, `at`, `preview`): the newest message
+that names the caller, written by someone else, newer than the caller's own last message in the thread and at most `THREAD_MENTION_DAYS` old. A room word (`@channel`, `@here`) counts as a mention, as in the unread
+count; a `#channel` link does not. The page is 50 rows, by cursor ("Show more threads").
+
+`GET /api/teams/:slug/threads/counts` answers `{ mentions }`, the number of threads that wait on the caller by the same rule, for the sidebar. The rows' work is read in three batches for the whole page, never per row:
+`GET /api/thread-batch/runs?roots=a,b` (runtime-hermes: the runs going in those threads), `/api/thread-batch/todos` (tasks: the to-do lists) and `/api/thread-batch/approvals` (approvals: the pending questions),
+at most 50 roots each (`THREAD_BATCH_MAX`); a thread the caller cannot read answers nothing, because the rows' own policies decide. All of them are `readOnly` routes. The client (`clients/web/src/inbox/`) keeps them live
+with the pushes `run.started`, `run.ended`, `todo.changed` and `approval.changed` and a 20 second poll while the tab is visible (a run's own steps reach a person only through a lease the list does not hold).
+
 ## Manifest
 
 `threads` / `0.1.0` / `server`, `dependsOn: ['channels']`, no extension points, no events (the read-state events of follow changes are the kernel's `reading.state.changed`).
@@ -62,4 +75,4 @@ threads the person started.
 ## Tests
 
 `test/threads.test.ts` (membership of each tab, ordering and cursor, follow semantics, the mirror, GET thread, guests, privacy), `e2e/api/threads/inbox.spec.ts`
-(`pnpm e2e --project=api`), `packages/plugins/channels/test/rls/channels-plugin.test.ts` (trigger and mirror).
+(`pnpm e2e --project=api`), `e2e/runs/threads-view.spec.ts` (the view in a browser, P29-18), `packages/plugins/channels/test/rls/channels-plugin.test.ts` (trigger and mirror).
