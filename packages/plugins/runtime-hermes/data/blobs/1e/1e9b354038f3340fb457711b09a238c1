@@ -1,0 +1,10 @@
+# A routine of yours. The prompt below is what the bot is asked at each run; change it any time (every save keeps the earlier version).
+name: Keep items
+words: Keep items
+schedule: 0 5 * * 1-5
+timeZone: Asia/Dubai
+sources: []
+prompt: Rewrite the list. Keep it short.
+output:
+  path: Action items/action-items.md
+  mode: replace

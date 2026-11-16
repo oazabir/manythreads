@@ -325,12 +325,38 @@ export async function runOnGateway(
     return stopping;
   };
 
-  /** Answers the question the run asked (`POST /runs/<id>/approval`), then passes on what the person wrote so the model reads it (`/steer`, best effort). */
-  const answerRemote = async (choice: 'once' | 'session' | 'deny', requestId: string | null, note?: string, what = 'that command'): Promise<boolean> => {
+  /**
+   * Answers the question the run asked (`POST /runs/<id>/approval`), then passes on what the person wrote so the model reads it (`/steer`, best effort).
+   *
+   * Two shapes, told apart by the question's frame (measured on Hermes 0.22.6, P26-18; docs/plugins/runtime-hermes.md):
+   *  - Hermes' own gateway names the question `prompt_id` and the run's `execution_generation`, and its answer takes exactly `{request_id: <prompt_id>, execution_generation, choice}`;
+   *    any other body (the old `{choice}` alone) is `400 invalid_params`, a wrong generation `409 stale_generation`, an answered or unknown question `409 approval_not_pending`.
+   *  - The agent bridge (Claude Code, Codex, Hermes over ACP) names it `request_id`, and its answer is `{choice, request_id?}`.
+   */
+  const answerRemote = async (question: { promptId: string | null; requestId: string | null; generation: number | null }, choice: 'once' | 'session' | 'deny', note?: string, what = 'that command'): Promise<boolean> => {
     try {
-      const res = await call(`/runs/${encodeURIComponent(remoteId)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }), headers: { 'content-type': 'application/json' } }, 15_000);
+      let body: Record<string, unknown>;
+      if (question.promptId !== null) {
+        let generation = question.generation;
+        if (generation === null) {
+          // The question's frame did not carry the generation: the run's own status does (`execution_generation`).
+          const status = await call(`/runs/${encodeURIComponent(remoteId)}`, {}, 10_000);
+          const parsed = status.ok ? ((await readLimitedJson(status).catch(() => null)) as { execution_generation?: unknown } | null) : null;
+          if (!status.ok) void status.body?.cancel().catch(() => undefined);
+          if (typeof parsed?.execution_generation === 'number') generation = parsed.execution_generation;
+        }
+        body = { request_id: question.promptId, execution_generation: generation, choice };
+      } else {
+        body = { choice, ...(question.requestId ? { request_id: question.requestId } : {}) };
+      }
+      const res = await call(`/runs/${encodeURIComponent(remoteId)}/approval`, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }, 15_000);
+      if (!res.ok) {
+        // Say why in the log, so the next refusal is read, not guessed: Hermes' error body is `{error: {message, code}}` and holds nothing secret.
+        const refusal = (await readLimitedJson(res).catch(() => null)) as { error?: { code?: unknown; message?: unknown } } | null;
+        scope.log(`runtime-hermes: run ${runId}: the program refused the answer (${choice}): status ${res.status}, code ${String(refusal?.error?.code ?? '?').slice(0, 60)}, ${String(refusal?.error?.message ?? '').slice(0, 120)}`);
+        return false;
+      }
       void res.body?.cancel().catch(() => undefined);
-      if (!res.ok) return false;
     } catch {
       return false;
     }
@@ -562,6 +588,8 @@ export async function runOnGateway(
           const pausedAt = Date.now();
           clearTimeout(ceiling);
           const requestId = typeof event['request_id'] === 'string' ? event['request_id'] : null;
+          const promptId = typeof event['prompt_id'] === 'string' && event['prompt_id'] !== '' ? event['prompt_id'] : null;
+          const generation = typeof event['execution_generation'] === 'number' && Number.isInteger(event['execution_generation']) ? event['execution_generation'] : null;
           const choices = Array.isArray(event['choices']) ? event['choices'].filter((c): c is string => typeof c === 'string') : ['once', 'deny'];
           yield {
             type: 'approval',
@@ -572,7 +600,7 @@ export async function runOnGateway(
             // The program ended the question itself (the bridge cuts a wait at its limit and sends `approval.expired`): the run job stops waiting and refuses.
             expired: () => (requestId !== null ? (expiredQuestions.get(requestId) ?? null) : (expiredByNumber.get(numberOf.get(event) ?? -1) ?? null)),
             answer: async (choice, note) => {
-              const sent = await answerRemote(choice, requestId, note, event['kind'] === 'switch_mode' ? 'that plan' : 'that command');
+              const sent = await answerRemote({ promptId, requestId, generation }, choice, note, event['kind'] === 'switch_mode' ? 'that plan' : 'that command');
               // What was left of the budget when the run stopped to ask, and the grace again: the answer does not eat the time the work needs.
               const left = Math.max(60_000, budgetMs - (pausedAt - startedAt));
               if (!finished) armCeiling(left + options.killGraceSeconds * 1000);

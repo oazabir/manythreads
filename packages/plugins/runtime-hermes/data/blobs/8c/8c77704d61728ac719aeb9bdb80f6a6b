@@ -1,0 +1,10 @@
+# A routine of yours. The prompt below is what the bot is asked at each run; change it any time (every save keeps the earlier version).
+name: Brain note
+words: Brain note
+schedule: 0 5 * * 1-5
+timeZone: Asia/Dubai
+sources: []
+prompt: Write the Brain note now.
+output:
+  path: Routines/brain-note/output.md
+  mode: replace

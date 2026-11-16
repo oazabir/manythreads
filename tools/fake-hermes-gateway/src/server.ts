@@ -33,8 +33,11 @@ export type FakeRunStep =
   /**
    * Ask a person, as Hermes' shell does for a risky command: emit `approval.request` and wait until `POST /v1/runs/<id>/approval` answers it (or the run is stopped, or `ms` pass,
    * which is Hermes' own timeout: the answer is then `timeout`). `onAnswer` gets the choice and whatever `POST .../steer` sent after it.
+   * `shape`: `hermes` (the default) is Hermes 0.22.6 as measured in the managed pod (P26-18): the frame carries `kind: "approval"`, `prompt_id` and `execution_generation`, and the answer must be exactly
+   * `{request_id: <prompt_id>, execution_generation, choice}` (`400 invalid_params`, `409 stale_generation`, `409 approval_not_pending`, as Hermes says them); `bridge` is the agent bridge's frame
+   * (`request_id`) with its looser answer (`{choice, request_id?}`).
    */
-  | { type: 'approval'; command: string; description?: string; ms?: number; onAnswer?: (answer: { choice: string; steered: string[] }) => void }
+  | { type: 'approval'; shape?: 'hermes' | 'bridge'; /** `hermes` shape only: leave `execution_generation` out of the frame, so the run's status (`GET /runs/<id>`) is the only place it is read. */ omitGeneration?: boolean; command: string; description?: string; ms?: number; onAnswer?: (answer: { choice: string; steered: string[] }) => void }
   /** Wait until the run is stopped (or `ms` pass), then end cancelled. */
   | { type: 'hang'; ms?: number }
   /** Any one frame, as the agent bridge sends it (`step.update`, `agent.update`, `plan.update`, `thinking`, a `tool.started` with `step_id`, ...). */
@@ -96,7 +99,7 @@ export interface FakeHermesGateway {
 
 interface RunState {
   /** The question the run asks right now (an `approval` step): `answer` settles it. */
-  pending?: { requestId: string; answer: (choice: string) => void };
+  pending?: { requestId: string; shape: 'hermes' | 'bridge'; generation: number; answer: (choice: string) => void };
   steered?: string[];
   run: FakeHermesRun;
   events: Array<{ seq: number; data: Record<string, unknown> }>;
@@ -177,8 +180,11 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
           const choice = await new Promise<string>((resolve) => {
             const timer = setTimeout(() => resolve('timeout'), step.ms ?? 30_000);
             wakeHang = () => resolve('cancelled');
-            state.pending = { requestId, answer: (c) => { clearTimeout(timer); resolve(c); } };
-            emitEvent(state, 'approval.request', { request_id: requestId, command: step.command, description: step.description ?? 'a risky command', choices: ['once', 'session', 'deny'] });
+            const shape = step.shape ?? 'hermes';
+            state.pending = { requestId, shape, generation: 1, answer: (c) => { clearTimeout(timer); resolve(c); } };
+            const choices = ['once', 'deny', 'session', 'always'];
+            if (shape === 'hermes') emitEvent(state, 'approval.request', { kind: 'approval', prompt_id: requestId, ...(step.omitGeneration === true ? {} : { execution_generation: 1 }), command: step.command, description: step.description ?? 'a risky command', choices });
+            else emitEvent(state, 'approval.request', { request_id: requestId, command: step.command, description: step.description ?? 'a risky command', choices: ['once', 'session', 'deny'] });
           });
           state.pending = undefined;
           step.onAnswer?.({ choice, steered: state.steered });
@@ -305,17 +311,29 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
       if (req.method === 'POST' && (tail === '/approval' || tail === '/steer')) {
         const body = (json ?? {}) as Record<string, unknown>;
         if (tail === '/approval') {
-          if (!state.pending) return send(res, 409, errorBody(`Run has no pending approval: ${state.run.runId}`, 'approval_not_pending'));
+          const pending = state.pending;
+          if (!pending) return send(res, 409, errorBody('approval_not_pending', 'approval_not_pending'));
+          if (pending.shape === 'hermes') {
+            // Hermes 0.22.6 (session authority on): exactly these three fields, the current generation, the pending prompt, a choice of the frame's list.
+            const keys = Object.keys(body).sort().join(',');
+            if (keys !== 'choice,execution_generation,request_id') return send(res, 400, errorBody('invalid_params', 'invalid_params'));
+            if (body['execution_generation'] !== pending.generation) return send(res, 409, errorBody('stale_generation', 'stale_generation'));
+            if (body['request_id'] !== pending.requestId) return send(res, 409, errorBody('approval_not_pending', 'approval_not_pending'));
+            if (!['once', 'session', 'always', 'deny'].includes(String(body['choice']))) return send(res, 400, errorBody('invalid_params', 'invalid_params'));
+            const chosen = String(body['choice']);
+            pending.answer(chosen);
+            return send(res, 200, { run_id: state.run.runId, status: 'resolved', prompt_id: pending.requestId });
+          }
           const choice = String(body['choice'] ?? '');
           if (!['once', 'session', 'always', 'deny'].includes(choice)) return send(res, 400, errorBody('Invalid approval choice', 'invalid_approval_choice'));
-          state.pending.answer(choice);
+          pending.answer(choice);
           return send(res, 200, { object: 'hermes.run.approval_response', run_id: state.run.runId, choice, resolved: 1 });
         }
         state.steered?.push(String(body['input'] ?? ''));
         return send(res, 200, { object: 'hermes.run.steer', run_id: state.run.runId, status: 'accepted' });
       }
       if (req.method === 'GET' && tail === undefined) {
-        return send(res, 200, { run_id: state.run.runId, status: state.status, output: state.output, usage: state.usage, error: state.error });
+        return send(res, 200, { run_id: state.run.runId, status: state.status, execution_generation: 1, output: state.output, usage: state.usage, error: state.error });
       }
       if (req.method === 'GET' && tail === '/events') return stream(req, res, state, url);
     }

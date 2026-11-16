@@ -548,13 +548,49 @@ describe('a run that stops to ask a person (P24-02)', () => {
     for await (const event of handle.events) {
       seen.push(event);
       if (event.type === 'approval') {
-        expect(event).toMatchObject({ command: 'rm -rf build', description: 'delete files recursively', choices: ['once', 'session', 'deny'] });
+        expect(event).toMatchObject({ command: 'rm -rf build', description: 'delete files recursively', choices: ['once', 'deny', 'session', 'always'] });
         expect(answered).toHaveLength(0); // the program is still waiting
         expect(await event.answer('once', 'yes, in the build folder only')).toBe(true);
       }
     }
     expect(answered).toEqual([{ choice: 'once', steered: ['The person allowed that command and wrote: yes, in the build folder only'] }]);
     expect(resultOf(seen)).toMatchObject({ ok: true, text: 'done' });
+  });
+
+  // The real request and answer of Hermes 0.22.6, measured in the managed pod (P26-18): the frame names the question `prompt_id` and carries `execution_generation`;
+  // the answer is exactly `{request_id, execution_generation, choice}`, and the old `{choice}` was `400 invalid_params` (the fake gateway checks all of it, as Hermes does).
+  it('answers a Hermes 0.22.6 question with its prompt id and execution generation', async () => {
+    const answered: Array<{ choice: string; steered: string[] }> = [];
+    gw.setScript(askAndFinish(answered));
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    const seen: BotRuntimeEvent[] = [];
+    for await (const event of handle.events) {
+      seen.push(event);
+      if (event.type === 'approval') expect(await event.answer('once', 'go')).toBe(true);
+    }
+    expect(answered[0]?.choice).toBe('once');
+    const answers = gw.calls.filter((c) => c.path.endsWith('/approval'));
+    expect(answers).toHaveLength(1);
+    expect(answers[0]!.body).toEqual({ request_id: expect.stringMatching(/^req-/), execution_generation: 1, choice: 'once' });
+    expect(resultOf(seen)).toMatchObject({ ok: true, text: 'done' });
+  });
+
+  it('reads the execution generation from the run when the question did not carry it', async () => {
+    const answered: Array<{ choice: string; steered: string[] }> = [];
+    gw.setScript(() => [{ type: 'approval' as const, omitGeneration: true, command: 'rm -rf build', onAnswer: (a: { choice: string; steered: string[] }) => void answered.push(a) }, { type: 'finish' as const, output: 'done' }]);
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    for await (const event of handle.events) if (event.type === 'approval') expect(await event.answer('deny')).toBe(true);
+    expect(answered[0]?.choice).toBe('deny');
+  });
+
+  it('answers an agent bridge question with the request id it named, as the bridge reads it', async () => {
+    const answered: Array<{ choice: string; steered: string[] }> = [];
+    gw.setScript(() => [{ type: 'approval' as const, shape: 'bridge' as const, command: 'git push', onAnswer: (a: { choice: string; steered: string[] }) => void answered.push(a) }, { type: 'finish' as const, output: 'done' }]);
+    const handle = await runOnGateway(options(), input(), scope, { connection: 'managed' });
+    for await (const event of handle.events) if (event.type === 'approval') expect(await event.answer('once')).toBe(true);
+    expect(answered[0]?.choice).toBe('once');
+    const answers = gw.calls.filter((c) => c.path.endsWith('/approval'));
+    expect(answers[0]!.body).toEqual({ choice: 'once', request_id: expect.stringMatching(/^req-/) });
   });
 
   it('tells the program "deny" with what the person wrote', async () => {

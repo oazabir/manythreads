@@ -331,7 +331,7 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
 
       const decided = await w.call<any>(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, { note: 'only the build folder' });
       expect(decided.status, JSON.stringify(decided.body)).toBe(200);
-      await until(async () => answered.length === 1, 30_000, 'the answer to reach the program');
+      await until(async () => answered.length === 1 && answered[0]!.steered.length > 0, 30_000, 'the answer to reach the program');
       expect(answered[0]).toEqual({ choice: 'once', steered: ['The person allowed that command and wrote: only the build folder'] });
       const reply = await until(async () => (await messagesBy(rootId, (await w.system(async (tx) => (await tx.query<{ actor_id: string }>(`SELECT a.id AS actor_id FROM app.actors a JOIN app.bots b ON b.id = a.ref_id WHERE b.slug = 'ext-bot'`)).rows[0]!.actor_id))))[0], 30_000, 'the reply');
       expect(reply.body).toBe('Cleaned up.');
@@ -346,7 +346,7 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
       const card = await pending(rootId);
       const decided = await w.call<any>(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/deny`, { note: 'leave the build alone' });
       expect(decided.status).toBe(200);
-      await until(async () => answered.length === 1, 30_000, 'the answer to reach the program');
+      await until(async () => answered.length === 1 && answered[0]!.steered.length > 0, 30_000, 'the answer to reach the program');
       expect(answered[0]).toEqual({ choice: 'deny', steered: ['The person declined that command and wrote: leave the build alone'] });
     });
 
