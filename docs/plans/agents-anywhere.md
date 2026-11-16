@@ -491,6 +491,14 @@ any number of teams, with full access on or off. Teams are kept apart by the mac
   sign-in folders are group `mt-agents` (0770: the CLIs renew tokens in place), every team user is in that group; nothing else of the bridge (its key, its state,
   the publisher's socket folder) is readable by a team user. Full access on a server applies per team user: a team's Codex can read its own team's files and the shared
   sign-in, never another team's.
+- **As built for servers (P26-22, 2026-11-16).** `bridge.sh` installs `/opt/manythreads-bridge/helper/mt-team-helper` (root's), `/etc/manythreads-bridge/team-agents.json` (the programs a kind may start) and
+  `/etc/sudoers.d/manythreads-bridge` (two commands, `visudo -cf` before it is put in place), the group `mt-agents`, and a root-owned `<root>/work` (0711). The bridge calls
+  `sudo -n -- helper run <team> <kind>` with a JSON header on the first line of stdin (working folder, an environment allowlist, files such as the kubeconfig, folders to remove); the helper makes the user,
+  writes and removes as that user and starts the fixed adapter with `setpriv`. The repository sync runs per team as that user (kind `sync`). Details and limits: `docs/agent-bridge.md` "One Unix user per team".
+  Deviations from the text above, on purpose: a team home is **2750 with group `manythreads-publisher`**, not 0700, because the publisher is a separate user that reads a clone to push it; the sign-in folders are
+  setgid 2770 with the helper re-giving the group its bits to every file (a file a CLI makes 0600 is unreadable to the other teams for up to 15 seconds). Known and accepted: the shared sign-in folder also holds
+  every team's session transcripts, so teams that must not read each other's conversations need separate servers. Not shown yet: the bridge's relaxed systemd unit (no `NoNewPrivileges` or `RestrictSUIDSGID`,
+  `/etc` writable) cannot be tried in the container; P26-19 proves `sudo` and `useradd` under the real unit.
 - **The one rule left:** the deploy login and a full-access agent are per team (pod or user), never shared.
 
 Tasks: **P26-21** pods per (runner, team) sharing the sign-in volume (claude-pods reconcile/render, sign-in through any team pod, runner status from the shared

@@ -373,7 +373,7 @@ installs Chromium with its libraries; installs Hermes with its pinned official i
 agents, calls `POST /api/bridge/enrol` once, keeps the answer's key in `/etc/manythreads-bridge/key` (mode 0600, passed to the service as a systemd credential),
 writes `manythreads-bridge.service` (hardened) and waits up to 90 seconds for the site to say it is connected. Also: `--update` (same command, new bundle),
 `--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`,
-`--no-publisher`. It also writes the two commands a bot runs, `mt-git` and `mt-publish` (small scripts that name this machine's Node, in `/opt/manythreads-bridge/current/tools`),
+`--no-publisher`. It also installs the helper and the sudo rule of the per-team users (below). It also writes the two commands a bot runs, `mt-git` and `mt-publish` (small scripts that name this machine's Node, in `/opt/manythreads-bridge/current/tools`),
 and a second hardened service, `manythreads-publisher.service` (below). It warns when `git` or `jq` is missing: the repository sync needs both. The bridge's unit has a `PATH`
 that starts with the folder of the Node the installer chose, so a bot's shell finds `node` and `npm`. A container test runs the real script (Debian image, a stand-in site, `systemctl`
 replaced by a recorder): `bash tools/agent-bridge/install/container-test/run.sh` (about two minutes; needs docker and a network that reaches nodejs.org and the npm registry).
@@ -386,6 +386,37 @@ it may publish), finds the bot's clone at `<root>/work/<team>/<bot>/<project>`, 
 token from the answer. The push token is therefore never on the machine's disk and never in a bot's environment; the publisher's user cannot read the bridge's key, state, sign-ins or
 Hermes homes (those folders are 0700 for the bridge's user). Without `--no-publisher` it is always installed; with it, no bot on the machine is told it may publish.
 
+**One Unix user per team (P26-22).** Teams that share a server (and its one agent sign-in) must not read each other's repositories, deploy logins or tokens, so the bridge does not run a team's
+programs as its own user. Every run of team `<slug>` is started as the Unix user `mt-team-<slug>` (a slug longer than 24 characters is cut and given an 8-character hash, because a user name has 32 characters at most).
+How it works, in the order of what is trusted:
+- **The helper** (`/opt/manythreads-bridge/helper/mt-team-helper`, a small wrapper around `helper/team-helper.mjs`; root's, mode 0755, in a folder only root can change; built from `src/team-helper.ts`) is the only
+  thing that runs as root. It makes the user (`useradd --system --home-dir <root>/work/<team> --shell nologin`, member of the group `mt-agents`), and starts a fixed program as that user with `setpriv`.
+  Which program is decided by `/etc/manythreads-bridge/team-agents.json`, a table root wrote at install (adapter paths for `claude`, `codex`, `hermes`, the repository sync script): the bridge names a *kind*, never a program.
+- **The sudo rule** (`/etc/sudoers.d/manythreads-bridge`, written next to a new file and checked with `visudo -cf` before it is put in place; an installer that cannot make a valid rule stops and changes nothing in sudo)
+  lets the user `manythreads-bridge` run exactly `mt-team-helper ensure-user *` and `mt-team-helper run *`, as root, with no password. A sudoers wildcard cannot check words, so the helper does: `ensure-user <slug>` or `run <slug> <kind>`
+  (kind: `claude`, `codex`, `hermes`, `sync`, `clean-kube`) and nothing else; a slug is lower case, digits and single `-`; anything else is refused before a user is made.
+- **What the bridge sends.** `sudo -n -- <helper> run <team> <kind>`; the first line of its standard input is one JSON header with the working folder, the run's environment, the files the run needs (the deployer's kubeconfig,
+  Hermes' `config.yaml`) and the folders to remove when the run ends; the rest of standard input is the adapter's own protocol, so the ACP conversation is unchanged. Nothing secret is in an argument (`ps` shows none). The helper
+  takes only the environment names on an allowlist (`PATH`, `LANG`, `MANYTHREADS_*`, the sign-in folders, `KUBECONFIG`, `HERMES_HOME`, ...; the sync's own `REPO_SYNC_*` only for the sync), requires the working folder, the files, `KUBECONFIG` and `HERMES_HOME` to be inside the team's home
+  and the sign-in folders to be the machine's own, and sets `HOME`, `USER`, `LOGNAME`, `SHELL` and `TMPDIR` itself. The bridge's key and its own variables never go. A file is written, and a folder removed, **as the team user** by fixed `sh` snippets (the header's text is never program text), so root never follows a link that a team could plant.
+- **The team's home** `<root>/work/<team>` belongs to its user, mode 2750, group `manythreads-publisher` (so the publisher can read a clone to push it; no one else can enter). It holds the team's work folders, repositories of record, `kube/<bot>/<run>/config`
+  (0600, removed after the run) and `hermes/<bot>`. Everything the agents create has umask 0007 (the repository sync 0027). `<root>/work` itself is root's, mode 0711: the bridge's user cannot make or swap a team's folder (an older install's
+  `work` is moved to `work-before-teams` and is yours to delete; the sync clones again).
+- **The sign-in is shared.** One agent sign-in per server is the point (one subscription), so `<root>/auth/claude` and `auth/codex` belong to the bridge's user, group `mt-agents`, setgid, 2770 (files 0660), and every team user is in that group. The CLIs renew their tokens in place there. The helper
+  gives the group its bits back on every file below those folders (through open descriptors and `/proc/self/fd`, never through a path a team could redirect; not followed through links; files with several names are skipped) when a run starts, every 15 seconds, and when it ends, because a CLI that remakes a file with 0600 would
+  lock the other teams out. Two limits, said plainly: a file made 0600 stays unreadable to the other teams for up to 15 seconds, and **the sign-in folders also hold the CLIs' session transcripts, which every team on the server can read** (the same is true of a pod runner's one sign-in volume). Put teams that must not read each other's conversations on different servers.
+- **What a team user cannot reach:** the bridge's key (`/etc/manythreads-bridge/key`, 0600 root) and state (`<root>/state`, 0700), the Hermes template folder, the publisher's socket folder, the sudo rule (it has no sudo), and every other team's home (0750 and not in their group) and the `/proc` entries of their processes. The container test checks each of these from inside a running adapter.
+- **Lifetime.** `sudo` passes on `SIGTERM`, `SIGINT`, `SIGHUP` and `SIGQUIT`; if `sudo` is killed with `SIGKILL` the helper sees its parent change and ends the program's group; `setpriv --pdeathsig` is a second safeguard. At the end of a run the helper kills what is left in the group, fixes the sign-in files and removes the folders named in the header.
+  When the bridge starts it asks the helper (`clean-kube`) to empty each team's `kube` folder.
+- **The bridge's unit is looser for this.** `sudo` and `useradd` cannot work under `NoNewPrivileges` or `RestrictSUIDSGID`, so the unit of a server with team users drops those two, sets `UMask=0007` and lets the bridge write `/etc` and `/var/log` (for the account tools), keeping `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp` and the kernel protections. The only way up from the bridge's user is the two sudo commands above; that
+  the relaxed unit really lets `sudo` and `useradd` work under systemd is checked live (P26-19), not in the container (which has no systemd).
+- **Full access is per team user.** A Codex run with full access (no sandbox) is bounded by its Unix user, so it can read the sign-in folder and its own team's files and nothing of another team's. The two keys of "Full access for Codex" are unchanged.
+- The publisher keeps checking the run token (`/api/runs/self`), so a team user cannot publish another team's clone.
+Uninstall: `--uninstall` removes the helper, the table and the sudo rule at once (so nothing can start a program as a team user); `--uninstall --purge` also removes the `mt-team-*` users and the group `mt-agents`. `--update` writes the helper, table and rule again (the users stay).
+`sudo`, `visudo`, `setpriv` (util-linux), `useradd`, `usermod`, `groupadd` and `getent` must be on the machine, and `/etc/sudoers` must read `/etc/sudoers.d` (the installer says so and stops otherwise).
+The container test (`install/container-test/run.sh`, helpers `as-team.sh` and `probe.sh`) makes two teams and proves each run is its own user, one team cannot read another's home, kubeconfig, token or `/proc/<pid>/environ`, both use and renew the shared sign-in, the bridge's key and state are out of reach,
+`sudo -l` shows the two commands only and the helper refuses a bad slug, kind or extra word, the real Claude adapter answers `initialize` as a team user, and the uninstall removes the users, group, rule and helper.
+
 **What a run gets on a server (P26-15).** Before every run the bridge asks the site, with the run's own token, the same questions a pod's containers ask, and builds a copy of the bot's profile
 for that run (`tools/agent-bridge/src/server-run.ts`):
 - the "Where you run" text from the same function the pod renderer uses (`whereYouRun` in `@manythreads/shared`, place `server`): the working folder, the repository of record, `mt-git record-push`
@@ -395,13 +426,13 @@ for that run (`tools/agent-bridge/src/server-run.ts`):
 - `MT_PUBLISH_SOCKET` and `MANYTHREADS_RUN_TOKEN` in the run's environment for a bot that may publish and for Hermes only (the ACP adapters are started without the token; the platform's tools
   get it in the session's MCP header).
 - **The deployer's kubeconfig:** `GET /api/runs/self/kubeconfig` answers the team's deployer login only to the team's deployer bot (404 for any other bot). The bridge writes it to
-  `<root>/kube/<team>--<bot>/<runId>/config` (one folder per run, folder 0700, file 0600) and sets `KUBECONFIG` in that bot's run only. The folder is deleted when the run ends, whatever way it ends, and
-  the bridge empties the whole `kube` folder when it starts, so a login never outlives its run on the disk. The run token is never written to a file. The route answers only a run placed on a server runner (404 for a pod, a run with no runner or an unknown runner).
-- **Hermes:** its own home per bot, `<root>/hermes/<team>--<bot>` (never `~/.hermes`), with one static `config.yaml` written when it differs. The file names the model's address, key and name as
+  `<root>/work/<team>/kube/<bot>/<runId>/config` (one folder per run, file 0600, written and removed as the team's own user by the helper; the bridge's user cannot read it) and sets `KUBECONFIG` in that bot's run only. The folder is deleted when the run ends, whatever way it ends, and
+  the bridge has every team's `kube` folder emptied when it starts, so a login never outlives its run on the disk. The run token is never written to a file. The route answers only a run placed on a server runner (404 for a pod, a run with no runner or an unknown runner).
+- **Hermes:** its own home per bot, `<root>/work/<team>/hermes/<bot>` inside the team's home (`<root>/hermes/<team>--<bot>` on a server installed before the per-team users; never `~/.hermes`), with one static `config.yaml` written when it differs. The file names the model's address, key and name as
   `${MANYTHREADS_LLM_URL}`, `${MANYTHREADS_RUN_TOKEN}` and `${MANYTHREADS_LLM_MODEL}`; each run sets them to the site's run proxy (`/api/llm/runs/<runId>/v1`), the run's token and the model from
   `/v1/models` (the bot's alias when its key may call it, else the first listed). The spend is on the workspace ledger and the server holds no model key.
 - **The repository sync (P26-15):** `GET /api/bridge/repos` (bridge key) lists the projects of the teams placed on this server's runners, each with an https address. The bridge's
-  poller (`server-repos.ts`) writes them as list lines and keeps the pod's `repo-sync.sh` running as its child; it clones the repository of record to
+  poller (`server-repos.ts`) keeps the pod's `repo-sync.sh` running, one copy per team **as that team's user** through the helper (kind `sync`), each given only its own team's list lines; it clones the repository of record to
   `<root>/work/<team>/repos/<project>.git` and each bot's clone beside it, and `mt-git record-push` / `record-fetch` move work between a bot's clone and the record. Addresses other than https are refused.
 - **Full access:** the site sends `manythreads.fullAccess` for a Codex run on a server only when the runner's switch is on; the bridge applies it only when the installer was run with
   `--allow-full-access` (`conventions.md`, "Full access for Codex").
@@ -411,7 +442,7 @@ runner. Each agent with its own sign-in has a Sign-in button; the sign-in goes t
 person's own home. Rotate key sends a new key down the open connection (the old key keeps opening the server until the bridge answers `rotated` or connects with the new one; a second Rotate while the first waits is refused with 409, and a first one that was never answered is replaced after 15 minutes; the site keeps `pending_key_at` for that); Remove server closes the connection, refuses the key from then on and deletes the runners
 (refused while a bot is placed on one of them).
 
-**Server mode of the bridge.** The config has a `server` section (`root`, a template per agent, `toolsDir`, `publisherSocket`) and the bridge answers a profile name of the form
+**Server mode of the bridge.** The config has a `server` section (`root`, a template per agent, `toolsDir`, `publisherSocket`, `teamUsers.helper`) and the bridge answers a profile name of the form
 `<agent>--<team>--<bot>` by making the profile from the template: workdir `<root>/work/<team>/<bot>`, the team's repositories in `<root>/work/<team>/repos`, a
 Hermes home per bot. Each part of the name is a slug (lower case, digits, single `-`; no `..`, `/` or `--`; at most 63 characters); anything else is 404. There is
 no `default` profile in server mode. The bridge listens on a Unix socket (`<state>/bridge.sock`, mode 0600) with a random in-process key, not on a port.
@@ -424,8 +455,7 @@ exponential back-off. Limits: 64 open streams, 1 MiB request body, 8 MiB unread 
 closes with code 1008 and the bridge then waits five minutes before trying again. The key is read from `<state>/key` first (a rotation writes it there), then the installer's `/etc/manythreads-bridge/key`; the installer's status check and `--uninstall` use the same order, and `--uninstall` removes `<state>/key` even without `--purge`. The enrolment and key lockouts (10 wrong in 15 minutes per address) are kept in memory in one site process: with more than one site replica the allowance multiplies by the number of replicas. Bodies, keys and codes are never logged; the audit has `bot_server.changed` events
 (code_minted, enrolled, connected, disconnected, key_rotated, removed).
 
-**What a bot on the server can reach.** Everything the user `manythreads-bridge` can reach on that machine: its folders, its network, the key it uses to talk to
-the site. The Runners page says so. Put only teams you trust together on one server.
+**What a bot on the server can reach.** The bot runs as its team's Unix user (P26-22): its own team's folders and the shared agent sign-in (with the session transcripts of every team in it), the machine's network, and what the machine's other users let everyone read (`/etc`, `/usr`, world-readable files). It cannot read the bridge's key, other teams' folders or tokens. Anything on the machine that is world-readable is reachable, so do not put a server on a network or beside data the bots must not see. A server whose bridge was installed before the per-team users still runs every bot as `manythreads-bridge`: run the installer with `--update` to switch.
 
 ## The protocol
 
