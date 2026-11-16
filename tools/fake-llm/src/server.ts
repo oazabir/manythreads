@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { journeyAnswer, type WireMessage, type WireTool } from './journey.ts';
 import { demoScenarioCompletion } from './scenario.ts';
 
 /*
@@ -78,7 +79,13 @@ export interface FakeLlmOptions {
    * canned sentence — unless `completion` is also set, which wins. The CLI sets
    * this with `--scenario demo` / `FAKE_LLM_SCENARIO=demo`.
    */
-  scenario?: 'demo';
+  scenario?: 'demo' | 'journey';
+  /**
+   * Act as a model provider that checks the key the platform sent for the alias (the `api_key` of the deployment the alias was pushed with): a chat completion for an alias whose
+   * key is not in `good` answers 401 (as LiteLLM relays a provider's refusal), one whose key is in `noQuota` answers 429 "exceeded your current quota". Unset: every key works. The wizard's
+   * Models step is tested with a good key, a bad key and a key without quota against this.
+   */
+  providerKeys?: { good: string[]; noQuota?: string[] };
   /**
    * What a chat completion answers (default: a canned sentence). A string is the assistant's text; `{ status, body }` is a raw answer
    * (a 500 to prove a caller's error path). A test makes the classifier of the gate (PLAN P5-11) say yes or no with this, and reads what it
@@ -102,6 +109,22 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
 };
 
 /** The proxy's error shape: a message under `error`, which is what the client's duplicate detection reads. */
+/** A journey answer as a chat completion, plain or as server-sent events. */
+function journeyResponse(res: ServerResponse, model: string, answer: ReturnType<typeof journeyAnswer>, stream: boolean): void {
+  const calls = 'toolCalls' in answer ? answer.toolCalls : [];
+  const message = 'text' in answer ? { role: 'assistant', content: answer.text } : { role: 'assistant', content: null, tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) };
+  const finish = calls.length > 0 ? 'tool_calls' : 'stop';
+  if (!stream) {
+    return json(res, 200, { id: 'chatcmpl-fake', model, choices: [{ index: 0, message, finish_reason: finish }], usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19 } });
+  }
+  const created = Math.floor(Date.now() / 1000);
+  const chunk = (delta: unknown, reason: string | null): string => `data: ${JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion.chunk', created, model, choices: [{ index: 0, delta, finish_reason: reason }] })}\n\n`;
+  const delta = 'text' in answer ? { role: 'assistant', content: answer.text } : { role: 'assistant', tool_calls: calls.map((c, index) => ({ index, id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) };
+  const text = `${chunk(delta, null)}${chunk({}, finish)}data: [DONE]\n\n`;
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'content-length': Buffer.byteLength(text) });
+  res.end(text);
+}
+
 const hasKey = (value: unknown, name: string): boolean =>
   Array.isArray(value)
     ? value.some((v) => hasKey(v, name))
@@ -319,6 +342,22 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
       if (path === '/chat/completions' || path === '/v1/chat/completions') {
         if (options.upstream) return forwardCompletion(options.upstream, req, res, body);
         const model = str(asObject(body)['model']) || 'unknown';
+        if (options.providerKeys) {
+          const deployment = [...state.models.values()].find((m) => m.model_name === model);
+          const key = str(deployment?.litellm_params['api_key']);
+          if (deployment === undefined) return error(res, 400, `Invalid model name passed in model=${model}`);
+          if (options.providerKeys.noQuota?.includes(key)) {
+            return json(res, 429, { error: { message: 'litellm.RateLimitError: You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota', code: '429' } });
+          }
+          if (!options.providerKeys.good.includes(key)) {
+            return json(res, 401, { error: { message: 'litellm.AuthenticationError: Incorrect API key provided.', type: 'auth_error', code: '401' } });
+          }
+        }
+        if (options.scenario === 'journey' && !options.completion) {
+          const raw = asObject(body);
+          const answer = journeyAnswer((Array.isArray(raw['messages']) ? raw['messages'] : []) as WireMessage[], Array.isArray(raw['tools']) ? (raw['tools'] as WireTool[]) : undefined);
+          return journeyResponse(res, model, answer, raw['stream'] === true);
+        }
         let content = 'This is the fake proxy.';
         if (options.scenario === 'demo' && !options.completion) {
           const rawMessages = asObject(body)['messages'];

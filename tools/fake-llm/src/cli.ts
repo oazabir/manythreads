@@ -24,10 +24,15 @@ const masterKey = (process.env['FAKE_LLM_MASTER_KEY'] ?? '').trim() || undefined
 const scenarioFlag = process.argv.find((arg) => arg.startsWith('--scenario='))?.slice('--scenario='.length);
 const scenarioEnv = (process.env['FAKE_LLM_SCENARIO'] ?? '').trim() || undefined;
 const scenario = scenarioFlag ?? scenarioEnv;
-if (scenario !== undefined && scenario !== 'demo') {
-  console.error(`unknown scenario "${scenario}": only "demo" is supported`);
+if (scenario !== undefined && scenario !== 'demo' && scenario !== 'journey') {
+  console.error(`unknown scenario "${scenario}": "demo" and "journey" are supported`);
   process.exit(1);
 }
+
+// FAKE_LLM_GOOD_KEYS (comma separated) makes the stand-in a provider that refuses every other key with a 401; FAKE_LLM_NO_QUOTA_KEYS lists keys that get a 429.
+const list = (name: string): string[] => (process.env[name] ?? '').split(',').map((k) => k.trim()).filter((k) => k !== '');
+const goodKeys = list('FAKE_LLM_GOOD_KEYS');
+const noQuotaKeys = list('FAKE_LLM_NO_QUOTA_KEYS');
 
 const upstreamUrl = (process.env['FAKE_LLM_UPSTREAM'] ?? '').trim().replace(/\/+$/, '');
 const upstreamKeyEnv = (process.env['FAKE_LLM_UPSTREAM_KEY_ENV'] ?? '').trim();
@@ -46,12 +51,13 @@ const fake = await startFakeLlm({
   port,
   host,
   ...(masterKey ? { masterKey } : {}),
-  ...(scenario === 'demo' ? { scenario: 'demo' as const } : {}),
+  ...(scenario === 'demo' || scenario === 'journey' ? { scenario } : {}),
+  ...(goodKeys.length > 0 ? { providerKeys: { good: goodKeys, noQuota: noQuotaKeys } } : {}),
   ...(upstream ? { upstream } : {}),
 });
 
 // The line a probe waits for; the URL is the value MANYTHREADS_LITELLM_URL takes.
-console.log(`fake-llm ready: ${fake.url} (master key ${masterKey ? 'required' : 'not required'}${scenario === 'demo' ? ', scenario demo' : ''})`);
+console.log(`fake-llm ready: ${fake.url} (master key ${masterKey ? 'required' : 'not required'}${scenario !== undefined ? `, scenario ${scenario}` : ''})`);
 console.log(`  management: /model/new /model/update /model/delete /config/update /key/generate /key/delete`);
 console.log(
   `  also:       /chat/completions (${

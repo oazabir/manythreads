@@ -70,6 +70,16 @@ the next step. Ask the brain bot about the deploy command, on-call, or proxy
 keys to see the memory-grounded answers. An explicit `completion` option still
 wins over the scenario, so gate/classifier tests are unaffected.
 
+## Journey scenario and provider keys (P27-19, the setup wizard's tests)
+
+`--scenario=journey` (or `FAKE_LLM_SCENARIO=journey`) answers like a model that follows Brain's rules: with `messages_search` and `answer_post` offered it first
+searches, then posts one answer that cites the first hit by its message id (`[1]`), then ends; with no tool offered it answers one sentence containing `journey-ok`
+(the wizard's plain test turn). Plain and streamed (`src/journey.ts`, pure).
+
+`FAKE_LLM_GOOD_KEYS=sk-a,sk-b` (library: `providerKeys: { good, noQuota }`) makes the stand-in act as a provider behind LiteLLM: a chat completion for an alias reads the
+`api_key` the platform pushed with that alias's deployment; a key not in the list answers `401` (`Incorrect API key provided`), a key in `FAKE_LLM_NO_QUOTA_KEYS` answers `429`
+(`exceeded your current quota`), an alias with no deployment `400`. The key is never echoed. The wizard's Models step is tested with a good key, a bad key and a key with no quota.
+
 This is not a replacement for [the real thing](https://docs.litellm.ai/docs/proxy/model_management): the repo's compose
 profile runs actual LiteLLM (`pnpm llm:up`). fake-llm is for when that container cannot be pulled, when a call path
 needs to be proven with no provider behind it, and for the test suite.
