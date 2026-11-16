@@ -2,7 +2,13 @@ import { HttpError, forbidden, json, notFound, route } from '@manythreads/sdk';
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   ActiveChannelRunsResponse,
+  CHANNEL_RUN_HEADS_MAX,
+  CHANNEL_RUN_RECENT_MINUTES,
+  CHANNEL_WATCH_MAX_PER_PERSON,
   ChannelRunsPathParams,
+  ChannelUnwatchResponse,
+  ChannelWatchPathParams,
+  ChannelWatchResponse,
   ListThreadRunsResponse,
   RunActivityPathParams,
   RunActivityQuery,
@@ -18,7 +24,9 @@ import {
   activeChannelRunsRoute,
   listThreadRunsRoute,
   runActivityRoute,
+  unwatchChannelRoute,
   unwatchThreadRoute,
+  watchChannelRoute,
   watchThreadRoute,
   type RunCounts,
   type RunHelper,
@@ -139,9 +147,12 @@ export function registerActivityRoutes(ctx: PluginContext): void {
   });
 
   // GET /api/channels/:channelId/active-runs: the runs going in the threads of a channel (a page that was just opened missed their `run.started`). The table's policy decides
-  // what the caller sees (a conversation run is its asker's alone), and a run that ended is not listed; one that was lost (no end, no sign of life) is closed by the sweep.
+  // what the caller sees (a conversation run is its asker's alone). `runs` holds only runs that are going (a client turns every row into a "working" chip), the newest
+  // CHANNEL_RUN_HEADS_MAX of them with their folded state; `recent` holds the heads of runs that ended lately, so a reload still shows the line they leave. A run that was lost
+  // (no end, no sign of life) is closed by the sweep.
   ctx.http.route({
     ...activeChannelRunsRoute,
+    readOnly: true,
     schema: { response: ActiveChannelRunsResponse },
     handler: route(async (req, tx) => {
       const { channelId } = ChannelRunsPathParams.parse(req.params);
@@ -153,6 +164,17 @@ export function registerActivityRoutes(ctx: PluginContext): void {
           [channelId],
         )
       ).rows;
+      const recent = (
+        await tx.query<ViewRow>(
+          `SELECT ${VIEW_COLUMNS} FROM app.run_view
+            WHERE channel_id = $1::uuid AND ended_at IS NOT NULL AND ended_at > now() - make_interval(mins => $2::int) AND thread_root_id IS NOT NULL AND NOT conversation
+            ORDER BY ended_at DESC, run_id DESC LIMIT $3`,
+          [channelId, CHANNEL_RUN_RECENT_MINUTES, CHANNEL_RUN_HEADS_MAX],
+        )
+      ).rows;
+      const headed = rows.slice(0, CHANNEL_RUN_HEADS_MAX);
+      const can = await stoppable(tx, headed.map((r) => r.run_id));
+      const headIds = new Set(headed.map((r) => r.run_id));
       return json(
         ActiveChannelRunsResponse.parse({
           runs: rows.map((r) => ({
@@ -163,9 +185,58 @@ export function registerActivityRoutes(ctx: PluginContext): void {
             botActorId: r.bot_actor_id,
             botName: r.bot_name,
             startedAt: r.started_at.toISOString(),
+            ...(headIds.has(r.run_id) ? { head: runHeadOf(r, can.has(r.run_id)) } : {}),
           })),
+          recent: recent.map((r) => runHeadOf(r, false)),
         }),
       );
+    }),
+  });
+
+  // PUT /api/channels/:channelId/watch/:leaseId: "this page has this channel open" (P29: one lease for the whole channel, so the folded state of its runs reaches the page without a
+  // lease per thread). Renewed every 20 s, held 60 s; a person only, in a channel they can read; not a conversation with a bot.
+  ctx.http.route({
+    ...watchChannelRoute,
+    rateLimit: { limit: 240, windowMs: 60_000 },
+    schema: { response: ChannelWatchResponse },
+    handler: route(async (req, tx) => {
+      const { channelId, leaseId } = ChannelWatchPathParams.parse(req.params);
+      // a channel the caller cannot read is a 404, as everywhere (read through the channels policy)
+      const channel = (await tx.query<{ kind: string }>('SELECT kind FROM app.channels WHERE id = $1::uuid', [channelId])).rows[0];
+      if (channel === undefined) throw notFound('No such channel');
+      if (channel.kind === 'bot_conversation') throw notFound('No such channel');
+      const person = (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0]?.id ?? null;
+      if (person === null) throw forbidden('Only a person can watch a channel');
+      // lapsed leases go first, so they never count against the cap; a new lease (not a renewal) above the cap is refused before the table's own trigger would
+      await tx.query('DELETE FROM app.channel_watchers WHERE person_id = $1::uuid AND expires_at < now()', [person]);
+      const mine = (
+        await tx.query<{ held: boolean | null; n: string }>(
+          'SELECT bool_or(channel_id = $1::uuid AND lease_id = $2::uuid) AS held, count(*)::text AS n FROM app.channel_watchers WHERE person_id = $3::uuid AND expires_at > now()',
+          [channelId, leaseId, person],
+        )
+      ).rows[0];
+      if (mine?.held !== true && Number(mine?.n ?? 0) >= CHANNEL_WATCH_MAX_PER_PERSON) {
+        throw new HttpError(429, 'rate_limited', 'Too many channels are open at once. Close one and try again.', { 'retry-after': '20' });
+      }
+      const lease = await tx.query<{ expires_at: Date }>(
+        `INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1::uuid, $2::uuid, $3::uuid, now() + make_interval(secs => $4))
+         ON CONFLICT (channel_id, person_id, lease_id) DO UPDATE SET expires_at = EXCLUDED.expires_at
+         RETURNING expires_at`,
+        [channelId, person, leaseId, THREAD_WATCH_TTL_SECONDS],
+      );
+      return json(ChannelWatchResponse.parse({ expiresAt: lease.rows[0]!.expires_at.toISOString() }));
+    }),
+  });
+
+  // DELETE /api/channels/:channelId/watch/:leaseId: the page left the channel (only its own lease ends)
+  ctx.http.route({
+    ...unwatchChannelRoute,
+    rateLimit: { limit: 240, windowMs: 60_000 },
+    schema: { response: ChannelUnwatchResponse },
+    handler: route(async (req, tx) => {
+      const { channelId, leaseId } = ChannelWatchPathParams.parse(req.params);
+      await tx.query('DELETE FROM app.channel_watchers WHERE channel_id = $1::uuid AND lease_id = $2::uuid AND person_id = app.person_id()', [channelId, leaseId]);
+      return json(ChannelUnwatchResponse.parse({ ok: true }));
     }),
   });
 

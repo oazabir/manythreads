@@ -88,6 +88,7 @@ export function registerRunViewSweep(ctx: PluginContext): void {
       if (n > 0) job.log.info(`runtime-hermes: ${n} run record(s) closed for runs that were over`);
       // leases nobody renewed (a closed laptop) are not kept
       await tx.query("DELETE FROM app.thread_watchers WHERE expires_at < now() - interval '5 minutes'");
+      await tx.query("DELETE FROM app.channel_watchers WHERE expires_at < now() - interval '5 minutes'");
     },
     { cron: '*/2 * * * *', maxAttempts: 1, concurrency: 1 },
   );

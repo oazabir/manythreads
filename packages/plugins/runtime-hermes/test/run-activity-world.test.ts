@@ -297,6 +297,74 @@ describe('the channel\'s active runs and who is pushed to (reviews H1, M1)', () 
   });
 });
 
+describe('the channel lease: one lease for the whole channel (P29-02)', () => {
+  const CH_LEASE = '00000000-0000-4000-8000-0000000c0a01';
+  let listener: pg.Client;
+  const seen: Array<{ personId: string; type: string; payload: Record<string, any> }> = [];
+  beforeAll(async () => {
+    listener = new pg.Client({ connectionString: w.server.db.systemUrl });
+    await listener.connect();
+    listener.on('notification', (m) => {
+      if (m.payload) seen.push(JSON.parse(m.payload));
+    });
+    await listener.query('LISTEN manythreads_realtime');
+  });
+  afterAll(async () => {
+    await listener?.end();
+  });
+
+  it('a lease renews and ends; a channel nobody can read is a 404; a bot is refused; a guest with no grant is a 404', async () => {
+    const put = await w.call<{ expiresAt: string }>(rafi, 'PUT', `/api/channels/${channelId}/watch/${CH_LEASE}`, {});
+    expect(put.status, JSON.stringify(put.body)).toBe(200);
+    expect(Date.parse(put.body.expiresAt)).toBeGreaterThan(Date.now() + 30_000);
+    expect((await w.call(rafi, 'PUT', `/api/channels/${channelId}/watch/${CH_LEASE}`, {})).status).toBe(200);
+    expect(await w.system(async (tx) => (await tx.query(`SELECT 1 FROM app.channel_watchers WHERE channel_id = $1`, [channelId])).rows.length)).toBe(1);
+    expect((await w.call(rafi, 'PUT', `/api/channels/00000000-0000-4000-8000-000000000000/watch/${CH_LEASE}`, {})).status).toBe(404);
+    expect((await w.call(rafi, 'PUT', `/api/channels/${channelId}/watch/not-a-uuid`, {})).status).toBe(400);
+    expect((await w.call(personas.lena, 'PUT', `/api/channels/${channelId}/watch/${CH_LEASE}`, {})).status).toBe(404);
+    expect((await w.call(rafi, 'DELETE', `/api/channels/${channelId}/watch/${CH_LEASE}`)).status).toBe(200);
+    expect(await w.system(async (tx) => (await tx.query(`SELECT 1 FROM app.channel_watchers WHERE channel_id = $1`, [channelId])).rows.length)).toBe(0);
+  });
+
+  it('the ninth open channel of one person is a 429; a renewal is not', async () => {
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at)
+         SELECT $1, $2, ('00000000-0000-4000-8000-0000000c1' || lpad(g::text, 3, '0'))::uuid, now() + interval '1 minute' FROM generate_series(1, 8) g`,
+        [channelId, personas.omar.personId],
+      ),
+    );
+    const refused = await w.call(omar, 'PUT', `/api/channels/${channelId}/watch/${CH_LEASE}`, {});
+    expect(refused.status).toBe(429);
+    expect((await w.call(omar, 'PUT', `/api/channels/${channelId}/watch/00000000-0000-4000-8000-0000000c1001`, {})).status).toBe(200);
+    await w.system((tx) => tx.query(`DELETE FROM app.channel_watchers WHERE person_id = $1`, [personas.omar.personId]));
+  });
+
+  it('a person with the channel open is sent the folded state of its runs; the channel read carries the head of a going run and, after it ends, the head in `recent`', async () => {
+    gw.setScript(() => work({ type: 'hang', ms: 60_000 }));
+    expect((await w.call(nadia, 'PUT', `/api/channels/${channelId}/watch/${CH_LEASE}`, {})).status).toBe(200);
+    const rootId = await post(nadia, '@act-bot a run for the channel lease');
+    const open = await runOfThread(rootId);
+    await until(async () => (await viewOf(open.id))?.counts?.steps >= 1, 20_000, 'the first line');
+    await until(async () => (seen.some((m) => m.type === 'run.activity' && m.payload['runId'] === open.id) ? true : null), 10_000, 'a run.activity push');
+    // only the person who holds the channel lease was sent it (no thread lease exists)
+    expect(new Set(seen.filter((m) => m.type === 'run.activity' && m.payload['runId'] === open.id).map((m) => m.personId))).toEqual(new Set([nadia.personId]));
+
+    const active = await w.call<{ runs: Array<{ runId: string; head?: { state: string; canStop?: boolean } }>; recent?: Array<{ runId: string }> }>(rafi, 'GET', `/api/channels/${channelId}/active-runs`);
+    expect(active.status, JSON.stringify(active.body)).toBe(200);
+    const going = active.body.runs.find((r) => r.runId === open.id);
+    expect(going?.head).toMatchObject({ state: 'working' });
+    expect(active.body.recent ?? []).not.toContainEqual(expect.objectContaining({ runId: open.id }));
+
+    await w.call(omar, 'POST', `/api/runs/${open.id}/stop`, {});
+    await closedRunOf(rootId);
+    const done = await w.call<{ runs: Array<{ runId: string }>; recent?: Array<{ runId: string; state: string }> }>(rafi, 'GET', `/api/channels/${channelId}/active-runs`);
+    expect(done.body.runs.map((r) => r.runId)).not.toContain(open.id);
+    expect(done.body.recent?.find((r) => r.runId === open.id)).toMatchObject({ state: 'stopped' });
+    await w.call(nadia, 'DELETE', `/api/channels/${channelId}/watch/${CH_LEASE}`);
+  });
+});
+
 describe('Stop for a thread run (P25-08)', () => {
   it('a member who is neither the asker, the starter, a lead nor an admin is refused; the lead stops it and the reply says who', async () => {
     gw.setScript(() => work({ type: 'hang', ms: 60_000 }));

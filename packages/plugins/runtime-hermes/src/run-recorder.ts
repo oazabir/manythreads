@@ -1,7 +1,7 @@
 import type { BotRuntimeEvent, JobInfo, PluginContext, PluginLogger, PluginTx } from '@manythreads/sdk';
 import { RunActivityPush, RunEndedPush, RunStartedPush, WS_RUN_ACTIVITY, WS_RUN_ENDED, WS_RUN_STARTED, type RunCost } from '@manythreads/shared';
 import { previewText } from './holds.ts';
-import { watchersOf } from './live.ts';
+import { activityWatchersOf } from './live.ts';
 import { ActivityFold, clip, fitPush, mapWords, MAX_ROWS, slimOf, type FoldRow, type SlimEvent } from './run-activity.ts';
 
 // Keeps what a run did, and tells the people who are looking (P25-06, P25-07; docs/plans/acp.md §3.4).
@@ -530,8 +530,9 @@ export class RunRecorder {
       const asker = await this.resolveAsker(tx);
       return asker === null ? [] : [asker];
     }
-    // the people who hold a lease on the thread AND can still read its channel right now (a member removed since still holds a lease for up to a minute)
-    return watchersOf(t.threadRootId!, t.channelId)(tx);
+    // the people who hold a lease on the thread, or on its whole channel (P29: the channel page's task view), AND can still read its channel right now (a member removed since
+    // still holds a lease for up to a minute)
+    return activityWatchersOf(t.threadRootId!, t.channelId)(tx);
   }
 
   private async channelReaders(tx: PluginTx): Promise<string[]> {

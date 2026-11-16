@@ -116,6 +116,25 @@ export const watchersOf =
       )
     ).rows.map((r) => r.person_id);
 
+/**
+ * Who gets the folded state of a run (`run.activity`, never the words of its answer): the people who have the thread open (`watchersOf`) and, since P29, the people who have the
+ * whole channel open (`app.channel_watchers`: the channel page's task view), each AND able to read the channel right now.
+ */
+export const activityWatchersOf =
+  (rootId: string, channelId: string) =>
+  async (tx: PluginTx): Promise<string[]> =>
+    (
+      await tx.query<{ person_id: string }>(
+        `SELECT person_id FROM (
+            SELECT w.person_id FROM app.thread_watchers w WHERE w.root_id = $1::uuid AND w.channel_id = $2::uuid AND w.expires_at > now()
+            UNION
+            SELECT c.person_id FROM app.channel_watchers c WHERE c.channel_id = $2::uuid AND c.expires_at > now()
+          ) held
+          WHERE person_id IN (SELECT a.person_id FROM app.channel_audience($2::uuid) a)`,
+        [rootId, channelId],
+      )
+    ).rows.map((r) => r.person_id);
+
 /** How long an empty audience is trusted: a thread nobody has open does not cost a transaction per frame. */
 const EMPTY_AUDIENCE_MS = 1500;
 /** How long an audience that was found is reused: a person who left the thread or the channel stops receiving within this, and the lookups do not come with every frame. */

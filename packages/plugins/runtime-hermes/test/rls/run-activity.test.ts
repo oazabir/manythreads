@@ -18,7 +18,7 @@ import {
   type TestDatabase,
 } from '@manythreads/test-utils';
 import type pg from 'pg';
-import { watchersOf } from '../../src/live.ts';
+import { activityWatchersOf, watchersOf } from '../../src/live.ts';
 import { closeOverRuns } from '../../src/run-sweep.ts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -72,8 +72,8 @@ async function makeRun(key: string, o: { team: string; channel: string; root: st
   await sys(async (tx) => {
     const r = await tx.query<{ id: string }>(
       `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, ended_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [omar.workspaceId, botOf[o.team]!.id, o.team, conversation ? 'conversation' : 'mention', o.asker.actorId, ended ? 'done' : 'running', ended ? new Date() : null],
+       VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7::boolean THEN now() END) RETURNING id`,
+      [omar.workspaceId, botOf[o.team]!.id, o.team, conversation ? 'conversation' : 'mention', o.asker.actorId, ended ? 'done' : 'running', ended],
     );
     const id = r.rows[0]!.id;
     run[key] = id;
@@ -150,7 +150,7 @@ describe('the run tables pass the RLS harness', () => {
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);
-      for (const table of ['run_view', 'run_activity', 'thread_watchers']) {
+      for (const table of ['run_view', 'run_activity', 'thread_watchers', 'channel_watchers']) {
         expect(await findPerRowPolicyCalls(admin, table), table).toEqual([]);
         const r = await admin.query('SELECT relrowsecurity AS on, relforcerowsecurity AS forced FROM pg_class WHERE oid = $1::regclass', [`app.${table}`]);
         expect(r.rows[0], table).toEqual({ on: true, forced: true });
@@ -239,7 +239,7 @@ describe('who reads what a run did (by the run channel, not the team)', () => {
     try {
       const r = await admin.query<{ rel: string; target: string; del: string }>(
         `SELECT conrelid::regclass::text AS rel, confrelid::regclass::text AS target, confdeltype AS del
-           FROM pg_constraint WHERE contype = 'f' AND conrelid IN ('app.run_view'::regclass, 'app.run_activity'::regclass, 'app.thread_watchers'::regclass)`,
+           FROM pg_constraint WHERE contype = 'f' AND conrelid IN ('app.run_view'::regclass, 'app.run_activity'::regclass, 'app.thread_watchers'::regclass, 'app.channel_watchers'::regclass)`,
       );
       const found = r.rows.map((x) => `${x.rel}>${x.target}:${x.del}`).sort();
       expect(found).toEqual(
@@ -249,6 +249,8 @@ describe('who reads what a run did (by the run channel, not the team)', () => {
           'app.run_view>app.bot_runs:c',
           'app.run_view>app.channels:c',
           'app.run_view>app.messages:c',
+          'app.channel_watchers>app.channels:c',
+          'app.channel_watchers>app.people:c',
           'app.thread_watchers>app.channels:c',
           'app.thread_watchers>app.messages:c',
           'app.thread_watchers>app.people:c',
@@ -570,5 +572,134 @@ describe('the sweep that closes a card whose run is over (review H1)', () => {
     await sys((tx) => tx.query("UPDATE app.run_view SET state = 'failed', ended_at = now() WHERE run_id = $1", [run['sweep-live']]));
     expect(await sys((tx) => closeOverRuns(ctx, tx as never, { runId: run['sweep-live'], workspaceId: omar.workspaceId }))).toBe(0);
     expect(await view('sweep-live')).toMatchObject({ state: 'failed' });
+  });
+});
+
+describe('who has a whole channel open (channel_watchers, P29)', () => {
+  const LEASE = '00000000-0000-4000-8000-0000000d0aa1';
+  const LEASE_B = '00000000-0000-4000-8000-0000000d0bb2';
+  const watch = (p: Persona, channelKey: string, seconds = 60, lease = LEASE): Promise<unknown> =>
+    as(p, (tx) =>
+      tx.query(
+        `INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1, $2, $3, now() + make_interval(secs => $4))
+         ON CONFLICT (channel_id, person_id, lease_id) DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+        [ch[channelKey], p.personId, lease, seconds],
+      ),
+    );
+  const rowsOf = (p: Persona): Promise<string[]> => as(p, async (tx) => (await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_watchers')).rows.map((r) => r.person_id));
+  const clear = (): Promise<unknown> => sys((tx) => tx.query('DELETE FROM app.channel_watchers'));
+
+  it('a person writes and renews their own lease in a channel they can read, and sees only their own rows', async () => {
+    await clear();
+    await watch(nadia, 'eng-general');
+    await watch(nadia, 'eng-general', 90);
+    await watch(rafi, 'eng-general');
+    expect(await rowsOf(nadia)).toEqual([nadia.personId]);
+    expect(await rowsOf(rafi)).toEqual([rafi.personId]);
+    expect(await rowsOf(sameera)).toEqual([]);
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.channel_watchers')).rows.length)).toBe(2);
+  });
+
+  it('a second tab holds a lease of its own, and closing one leaves the other', async () => {
+    await clear();
+    await watch(nadia, 'eng-general', 60, LEASE);
+    await watch(nadia, 'eng-general', 60, LEASE_B);
+    expect(await rowsOf(nadia)).toHaveLength(2);
+    const closed = await as(nadia, async (tx) => (await tx.query('DELETE FROM app.channel_watchers WHERE channel_id = $1 AND lease_id = $2 AND person_id = app.person_id()', [ch['eng-general'], LEASE_B])).rowCount ?? 0);
+    expect(closed).toBe(1);
+    expect(await rowsOf(nadia)).toHaveLength(1);
+  });
+
+  it('not for somebody else, and not in a channel the person cannot read', async () => {
+    expect(await code(as(nadia, (tx) => tx.query("INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1, $2, $3, now() + interval '1 minute')", [ch['eng-general'], priya.personId, LEASE])))).toBe('42501');
+    expect(await code(watch(nadia, 'eng-leads'))).toBe('42501');
+    expect(await code(watch(sameera, 'eng-general'))).toBe('42501');
+    expect(await code(watch(lena, 'eng-general'))).toBe('42501');
+  });
+
+  it('a conversation with a bot has no channel lease, whoever writes it', async () => {
+    const convo = await sys(async (tx) =>
+      (await tx.query<{ id: string }>("INSERT INTO app.channels (workspace_id, name, kind, private, bot_id) VALUES ($1, '', 'bot_conversation', true, $2) RETURNING id", [omar.workspaceId, botOf[ENG]!.id])).rows[0]!.id,
+    );
+    expect(await code(sys((tx) => tx.query("INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1, $2, $3, now() + interval '1 minute')", [convo, nadia.personId, LEASE])))).toBe('23514');
+  });
+
+  it('a person holds at most 8 live leases; a renewal is never refused for it, and lapsed leases do not count', async () => {
+    await clear();
+    await sys((tx) =>
+      tx.query("INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) SELECT $1, $2, gen_random_uuid(), now() + interval '1 minute' FROM generate_series(1, 8)", [ch['eng-general'], nadia.personId]),
+    );
+    const error = await watch(nadia, 'eng-general', 60, LEASE_B).then(() => null, (e: { code?: string; constraint?: string }) => e);
+    expect(error).toMatchObject({ code: '23514', constraint: 'channel_watchers_person_cap' });
+    const held = await sys(async (tx) => (await tx.query<{ lease_id: string }>('SELECT lease_id FROM app.channel_watchers WHERE person_id = $1 LIMIT 1', [nadia.personId])).rows[0]!.lease_id);
+    await watch(nadia, 'eng-general', 60, held);
+    await sys((tx) => tx.query("UPDATE app.channel_watchers SET expires_at = now() - interval '1 minute' WHERE person_id = $1", [nadia.personId]));
+    await watch(nadia, 'eng-general', 60, LEASE_B);
+    await clear();
+  });
+
+  it('a person cannot delete or renew another person\'s lease', async () => {
+    await clear();
+    await watch(rafi, 'eng-general');
+    expect(await as(nadia, async (tx) => (await tx.query('DELETE FROM app.channel_watchers WHERE person_id = $1', [rafi.personId])).rowCount ?? 0)).toBe(0);
+    expect(await as(nadia, async (tx) => (await tx.query("UPDATE app.channel_watchers SET expires_at = now() + interval '1 hour' WHERE person_id = $1", [rafi.personId])).rowCount ?? 0)).toBe(0);
+    await clear();
+  });
+
+  it('the check is a security definer owned by the system role, with a pinned search_path, and not callable by the public', async () => {
+    const r = await sys(async (tx) =>
+      (await tx.query<{ definer: boolean; owner: string; config: string[] | null; public_exec: boolean }>(
+        `SELECT p.prosecdef AS definer, pg_get_userbyid(p.proowner) AS owner, p.proconfig AS config, has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'app' AND p.proname = 'channel_watchers_check'`,
+      )).rows[0],
+    );
+    expect(r).toMatchObject({ definer: true, owner: 'manythreads_system', public_exec: false });
+    expect((r!.config ?? []).join(' ')).toContain('search_path=pg_catalog, app, pg_temp');
+  });
+
+  describe('who is sent the folded state of a run: thread leases and channel leases, joined with the channel audience', () => {
+    const audience = (rootKey: string, channelKey: string): Promise<string[]> => sys(async (tx) => (await activityWatchersOf(msg[rootKey]!, ch[channelKey]!)(tx as never)).sort());
+    const threadLease = (p: Persona, rootKey: string, channelKey: string): Promise<unknown> =>
+      sys((tx) => tx.query("INSERT INTO app.thread_watchers (root_id, person_id, lease_id, channel_id, expires_at) VALUES ($1, $2, gen_random_uuid(), $3, now() + interval '1 minute')", [msg[rootKey], p.personId, ch[channelKey]]));
+    const channelLease = (p: Persona, channelKey: string): Promise<unknown> =>
+      sys((tx) => tx.query("INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1, $2, gen_random_uuid(), now() + interval '1 minute')", [ch[channelKey], p.personId]));
+    const reset = (): Promise<unknown> => sys((tx) => tx.query('DELETE FROM app.thread_watchers; DELETE FROM app.channel_watchers'));
+
+    it('a channel lease is an audience for every thread of the channel; a thread lease is one for its thread; a person who holds both is sent it once', async () => {
+      await reset();
+      await channelLease(nadia, 'eng-general');
+      await threadLease(rafi, 'general', 'eng-general');
+      await channelLease(rafi, 'eng-general');
+      expect(await audience('general', 'eng-general')).toEqual([nadia.personId, rafi.personId].sort());
+    });
+
+    it('the words of the answer still go to thread leases only (watchersOf)', async () => {
+      await reset();
+      await channelLease(nadia, 'eng-general');
+      await threadLease(rafi, 'general', 'eng-general');
+      expect(await sys(async (tx) => (await watchersOf(msg['general']!, ch['eng-general']!)(tx as never)).sort())).toEqual([rafi.personId]);
+    });
+
+    it('a person who lost the channel, a lapsed lease, and a lease of another channel are not an audience', async () => {
+      await reset();
+      await channelLease(nadia, 'eng-leads'); // not a member of the private channel: a stale row only
+      await sys((tx) => tx.query("INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1, $2, gen_random_uuid(), now() - interval '1 second')", [ch['eng-general'], rafi.personId]));
+      await channelLease(priya, 'mkt-general');
+      expect(await audience('leads', 'eng-leads')).toEqual([]);
+      expect(await audience('general', 'eng-general')).toEqual([]);
+    });
+
+    it('a guest is sent it only while an ACL entry gives them the channel', async () => {
+      await reset();
+      await channelLease(lena, 'eng-leads');
+      expect(await audience('leads', 'eng-leads')).toEqual([]);
+    });
+  });
+
+  it('the run sweep deletes channel leases that lapsed more than five minutes ago', async () => {
+    await clear();
+    await sys((tx) => tx.query("INSERT INTO app.channel_watchers (channel_id, person_id, lease_id, expires_at) VALUES ($1, $2, gen_random_uuid(), now() - interval '10 minutes'), ($1, $3, gen_random_uuid(), now() + interval '1 minute')", [ch['eng-general'], nadia.personId, rafi.personId]));
+    await sys((tx) => tx.query("DELETE FROM app.channel_watchers WHERE expires_at < now() - interval '5 minutes'"));
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.channel_watchers')).rows.length)).toBe(1);
   });
 });
