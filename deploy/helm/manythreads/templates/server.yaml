@@ -198,6 +198,7 @@ spec:
           readinessProbe:
             httpGet: { path: /readyz, port: http }
             periodSeconds: 5
+            timeoutSeconds: 3
           # The start waits up to MANYTHREADS_DB_CONNECT_TIMEOUT_SECONDS (120) for a database that is down or starting, and the port is not open
           # while it waits; the startup probe gives it 5 x 48 = 240 s before the liveness probe (which would kill the pod) takes over.
           startupProbe:
@@ -205,9 +206,13 @@ spec:
             periodSeconds: 5
             failureThreshold: 48
           livenessProbe:
+            # A liveness kill is a restart of the whole site: the 1 s default timed out while a build on the same node took the CPU
+            # (2026-11-16, a 40 s 502), so the probe allows a slow answer and a minute of misses before it restarts the server.
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
             - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }} }
             - { name: repos, mountPath: {{ .Values.server.repos.persistence.mountPath | quote }} }
