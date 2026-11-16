@@ -24,6 +24,7 @@ step and choice without root and without changing anything.
 | `--tls MODE` | `auto` (default), `letsencrypt`, `selfsigned`, `cloudflare`, `none` |
 | `--origin-cert FILE --origin-key FILE` | with `--tls cloudflare` |
 | `--release-url URL`, `--version X.Y.Z`, `--chart REF` | which release, which chart |
+| `--insecure-release-url` | allow a release URL that starts with `http://` (a test network only; `https://` and a local file are the only forms accepted otherwise; also `manythreads upgrade` and `uninstall`) |
 | `--public-ip ADDR` | when the lookup of the public address is not possible |
 | `--kubeconfig FILE` | use an existing cluster; k3s is not installed |
 | `--upgrade`, `--uninstall`, `--yes`, `--print-plan` | see `--help` |
@@ -37,7 +38,12 @@ local address. Let's Encrypt is tried on the staging server first, then producti
 SHA-256, `curl -fsSLk --pinnedpubkey 'sha256//…' <site>/install/bridge.sh | sudo bash -s -- --enrol <code> --ca-sha256 <hex>`. `bridge.sh` reads the certificate the address shows,
 refuses it unless the hash matches, keeps it as the only extra certificate the machine trusts for the site (`/etc/manythreads-bridge/site-ca.pem`, handed to the bridge as
 `NODE_EXTRA_CA_CERTS`), and installs nothing when it differs. The certificate is valid ten years; after a new one, run `bridge.sh --update --ca-sha256 <new hash>` on each server
-(the *Add a server* dialog always shows the command with the current hash). The chart mounts the certificate into the server pod (`MANYTHREADS_SITE_CERT_FILE`) so the page can show the hashes.
+(the *Add a server* dialog always shows the command with the current hash).
+
+**Do not rotate the certificate on its own.** The pin is the certificate's own key (the leaf), so every server enrolled with the old hash stops trusting the site the moment the certificate
+changes, and `manythreads set-domain` or a re-install that makes a new self-signed certificate does that too. Before replacing it, list the enrolled servers (*Add a server*), make the new
+certificate, then run `bridge.sh --update --ca-sha256 <new hash>` on each of them (the command the dialog shows has the new hash) before the old certificate is removed. A site with a
+Let's Encrypt or Cloudflare certificate has no pin and nothing to re-enrol. The chart mounts the certificate into the server pod (`MANYTHREADS_SITE_CERT_FILE`) so the page can show the hashes.
 
 ## The `manythreads` command
 
@@ -51,10 +57,10 @@ Installed at `/usr/local/bin/manythreads` (checked against `hostCommandSha256` o
 | `backup-key` | the key that encrypts stored secrets and backups (keep a copy away from this machine) |
 | `doctor` | checks the machine, the cluster and the site and says what is wrong |
 | `logs [server\|web\|litellm\|hindsight\|db]`, `support-bundle` | logs; a bundle for a bug report (no secret in it) |
-| `set-domain NAME` | change the address: keeps the old one working, asks for a certificate for the new one |
+| `set-domain NAME` | change the address: asks for a certificate for the new one; the old name keeps working only when it is a name (a bare address has no certificate of its own and warns in the browser) |
 | `allow-git-host URL` | let team pods clone from one more git host |
-| `upgrade [--version X.Y.Z]` | a backup first, then the new release over the old one; a lower version is refused |
-| `uninstall` | removes manythreads (asks for the word `delete`) |
+| `upgrade [--version X.Y.Z]` | a backup first, then the new release over the old one; a lower version is refused; the installer it downloads is checked against `installSha256` of the release |
+| `uninstall` | removes manythreads (asks for the word `delete`); downloads the installer of the release it was installed from and checks it the same way; removes only the namespaces the installer labelled as its own (`app.kubernetes.io/part-of=manythreads`), never by name |
 
 State: `/etc/manythreads/install.env` (what was chosen), `values.yaml` (read on every upgrade), `domain.yaml`, `git-hosts.yaml`; the chart used is kept in `/var/lib/manythreads/chart`.
 The log is `/var/log/manythreads-install.log`; no password is ever written there.

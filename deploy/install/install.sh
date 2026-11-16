@@ -19,6 +19,7 @@
 #   --origin-cert FILE --origin-key FILE    with --tls cloudflare: the Cloudflare origin certificate
 #   --version X.Y.Z       the release to install (default: the one --release-url names)
 #   --release-url URL     where release.json is (an https address or a file path); remembered in /etc/manythreads/install.env
+#   --insecure-release-url  allow a plain http:// release address (a trial on a private network only: nothing then proves the files are the project's)
 #   --chart REF           install this chart (an oci:// address, a directory or a .tgz) instead of the release's
 #   --public-ip ADDR      use this as the machine's public address (otherwise it is looked up)
 #   --kubeconfig FILE     use an existing cluster (k3s is not installed; cluster-wide pieces are added after one question)
@@ -201,9 +202,12 @@ check_clock() {
 }
 
 # ---- release.json ---------------------------------------------------------------------------------------------------------------------------------------------
+INSECURE_RELEASE_URL=${MANYTHREADS_INSECURE_RELEASE_URL:-0}
 fetch() { # url|path dest
   case "$1" in
-    https://*|http://*) curl -fsSL --max-time 120 -o "$2" "$1" ;;
+    http://*) [ "$INSECURE_RELEASE_URL" = 1 ] || die "the release address $1 is plain http, so nothing would prove the files are the project's; use an https address (or --insecure-release-url on a private network)"
+              curl -fsSL --max-time 120 -o "$2" "$1" ;;
+    https://*) curl -fsSL --max-time 120 -o "$2" "$1" ;;
     file://*) cp "${1#file://}" "$2" ;;
     *) cp "$1" "$2" ;;
   esac
@@ -461,6 +465,7 @@ main() {
       --origin-key) shift; origin_key="${1:-}" ;;
       --version) shift; want_version="${1#v}" ;;
       --release-url) shift; [ $# -gt 0 ] || die "--release-url needs an address"; release_url="$1" ;;
+      --insecure-release-url) INSECURE_RELEASE_URL=1 ;;
       --chart) shift; chart_arg="${1:-}" ;;
       --public-ip) shift; public_ip="${1:-}" ;;
       --kubeconfig) shift; KUBECONFIG_ARG="${1:-}"; [ -r "$KUBECONFIG_ARG" ] || die "cannot read the kubeconfig $KUBECONFIG_ARG" ;;
@@ -638,7 +643,7 @@ refresh_images() { # values-file release.json: replaces the image lines the inst
 uninstall_all() { # remove_addons remove_k3s
   local addons="$1" k3s_too="$2" word=''
   setup_kube_env 2>/dev/null || true
-  say "This removes manythreads from this machine: the release, its database and every team's volumes and apps (the namespaces $NS, ${NS}-bots and apps-*)."
+  say "This removes manythreads from this machine: the release, its database and every team's volumes and apps (the namespaces $NS, ${NS}-bots and the team app namespaces this install made, found by their label)."
   if [ "${YES:-0}" -eq 1 ]; then word=delete
   elif [ -r /dev/tty ]; then printf 'Type the word delete to go on: ' >/dev/tty; IFS= read -r word </dev/tty || word=''; fi
   [ "$word" = delete ] || die "not removed (the word delete was not typed)"
@@ -647,7 +652,12 @@ uninstall_all() { # remove_addons remove_k3s
   fi
   helm uninstall "$RELEASE" -n "$NS" >>"$LOG" 2>&1 || true
   local ns
-  for ns in "$NS" "${NS}-bots" $(kubectl get ns -o name 2>/dev/null | sed -n 's#^namespace/\(apps-.*\)#\1#p'); do kubectl delete ns "$ns" --ignore-not-found --wait=false >>"$LOG" 2>&1 || true; done
+  # Only what this install labelled as its own (the chart puts manythreads.io/apps=true on a team's app namespace): a namespace of somebody else that happens to be called
+  # apps-something on a cluster that was there before is never touched, whatever its name.
+  for ns in "$NS" "${NS}-bots" $(kubectl get ns -l 'app.kubernetes.io/part-of=manythreads,manythreads.io/apps=true' -o name 2>/dev/null | sed -n 's#^namespace/\(.*\)#\1#p'); do
+    case "$ns" in default|kube-*|"") continue ;; esac
+    kubectl delete ns "$ns" --ignore-not-found --wait=false >>"$LOG" 2>&1 || true
+  done
   if [ "$addons" -eq 1 ]; then helm uninstall cert-manager -n cert-manager >>"$LOG" 2>&1 || true; helm uninstall cnpg -n cnpg-system >>"$LOG" 2>&1 || true; fi
   if [ "$k3s_too" -eq 1 ]; then
     if [ "$(state_get K3S_INSTALLED_BY_US)" = 1 ] && [ -x /usr/local/bin/k3s-uninstall.sh ]; then /usr/local/bin/k3s-uninstall.sh >>"$LOG" 2>&1 || true

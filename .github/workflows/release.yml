@@ -64,4 +64,5 @@ jobs:
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "manythreads $tag" --notes "Phase $PHASE. Install on a fresh Linux machine: download install.sh from this release (check it against SHA256SUMS) and run it with --release-url pointing at this release's release.json." --verify-tag
           fi
-          gh release upload "$tag" "$dir/install.sh" "$dir/manythreads" "$dir/SHA256SUMS" --clobber
+          # no --clobber: a published asset is never overwritten (a digest a person already checked must keep matching); a changed file needs a new tag
+          gh release upload "$tag" "$dir/install.sh" "$dir/manythreads" "$dir/SHA256SUMS"

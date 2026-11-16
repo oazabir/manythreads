@@ -154,7 +154,7 @@ cmd_set_domain() {
   [ -n "$email" ] || email="admin@$name"
   local extra=''
   # the first name keeps working; a bare address cannot have a Let's Encrypt certificate, so it is dropped from the list
-  [[ "$old" =~ [a-z] ]] && extra="extraDomains: [$old]"
+  [[ "$old" =~ ^[a-z0-9.-]+$ && "$old" =~ [a-z] ]] && extra="extraDomains: [$old]"
   write_domain() { # server
     {
       echo "# written by: manythreads set-domain $name"
@@ -179,7 +179,9 @@ cmd_set_domain() {
   cert_ready 240 || say "The real certificate is not ready yet; it keeps trying in the background (manythreads doctor)."
   sed -i '/^HOST=/d;/^ADDRESS=/d;/^TLS_MODE=/d' "$ETC/install.env"
   { echo "HOST=$name"; echo "ADDRESS=https://$name"; echo "TLS_MODE=letsencrypt"; } >>"$ETC/install.env"
-  say "Done: https://$name${old:+ (and https://$old keeps working)}"
+  if [ -n "$extra" ]; then say "Done: https://$name (and https://$old keeps working)"
+  elif [ -n "$old" ]; then say "Done: https://$name (the old address $old has no certificate of its own, so it no longer opens without a browser warning)"
+  else say "Done: https://$name"; fi
 }
 
 cmd_allow_git_host() {
@@ -195,31 +197,47 @@ cmd_allow_git_host() {
   say "Teams can now copy repositories from $url"
 }
 
+# Downloads release.json and the installer of the release this machine was installed from, and checks the installer against the SHA-256 in release.json.
+# Upgrade and uninstall both run the file as root, so both go through here; it dies, changing nothing, when the file is not the one the release names.
+fetch_checked_installer() { # url dir insecure(0|1) -> $dir/install.sh
+  local url="$1" dir="$2" insecure="$3" want
+  [ -n "$url" ] || die "this install does not remember where releases are published; run install.sh --upgrade --release-url <address> (or --uninstall with it)"
+  case "$url" in
+    https://*) curl -fsSL --max-time 120 -o "$dir/release.json" "$url" ;;
+    http://*)
+      [ "$insecure" = 1 ] || die "the release address $url is plain http, so nothing would prove the installer is the project's; nothing was changed (--insecure-release-url allows it on a private network)"
+      curl -fsSL --max-time 120 -o "$dir/release.json" "$url" ;;
+    *) cp "$url" "$dir/release.json" ;;
+  esac
+  want=$(jq -r '.installSha256 // ""' "$dir/release.json")
+  [[ "$want" =~ ^[0-9a-f]{64}$ ]] || die "release.json has no SHA-256 of install.sh; nothing was changed"
+  case "$url" in https://*|http://*) curl -fsSL --max-time 120 -o "$dir/install.sh" "${url%/*}/install.sh" ;; *) cp "${url%/*}/install.sh" "$dir/install.sh" ;; esac
+  [ "$(sha256sum "$dir/install.sh" | cut -d' ' -f1)" = "$want" ] || die "install.sh does not match release.json; nothing was changed"
+}
+
 cmd_upgrade() {
   need_root upgrade; need_install
-  local version='' url tmp want
-  while [ $# -gt 0 ]; do case "$1" in --version) shift; version="${1#v}" ;; *) die "unknown option $1" ;; esac; shift; done
+  local version='' url tmp insecure="${MANYTHREADS_INSECURE_RELEASE_URL:-0}"
+  while [ $# -gt 0 ]; do case "$1" in --version) shift; version="${1#v}" ;; --insecure-release-url) insecure=1 ;; *) die "unknown option $1" ;; esac; shift; done
   url=$(state RELEASE_URL); [ -n "$url" ] || die "this install does not remember where releases are published; run install.sh --upgrade --release-url <address>"
-  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-  case "$url" in https://*|http://*) curl -fsSL -o "$tmp/release.json" "$url" ;; *) cp "$url" "$tmp/release.json" ;; esac
-  want=$(jq -r .installSha256 "$tmp/release.json")
-  case "$url" in https://*|http://*) curl -fsSL -o "$tmp/install.sh" "${url%/*}/install.sh" ;; *) cp "${url%/*}/install.sh" "$tmp/install.sh" ;; esac
-  [ "$(sha256sum "$tmp/install.sh" | cut -d' ' -f1)" = "$want" ] || die "install.sh does not match release.json; nothing was changed"
+  tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+  fetch_checked_installer "$url" "$tmp" "$insecure"
   if kubectl -n "$NS" get cronjob manythreads-backup >/dev/null 2>&1; then
     say "Taking a backup first..."
     local job; job="manythreads-backup-before-upgrade-$(date +%s)"
     kubectl -n "$NS" create job --from=cronjob/manythreads-backup "$job" >/dev/null
     kubectl -n "$NS" wait --for=condition=complete "job/$job" --timeout=900s >/dev/null || die "the backup did not finish; nothing was changed"
   fi
-  bash "$tmp/install.sh" --upgrade --release-url "$url" ${version:+--version "$version"} --yes
+  MANYTHREADS_INSECURE_RELEASE_URL="$insecure" bash "$tmp/install.sh" --upgrade --release-url "$url" ${version:+--version "$version"} --yes
 }
 
 cmd_uninstall() {
   need_root uninstall
-  local url tmp
-  url=$(state RELEASE_URL); tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-  case "$url" in https://*|http://*) curl -fsSL -o "$tmp/install.sh" "${url%/*}/install.sh" ;; *) cp "${url%/*}/install.sh" "$tmp/install.sh" ;; esac
-  bash "$tmp/install.sh" --uninstall "$@"
+  local url tmp insecure="${MANYTHREADS_INSECURE_RELEASE_URL:-0}" a rest=()
+  for a in "$@"; do if [ "$a" = --insecure-release-url ]; then insecure=1; else rest+=("$a"); fi; done
+  url=$(state RELEASE_URL); tmp=$(mktemp -d); trap "rm -rf '$tmp'" EXIT
+  fetch_checked_installer "$url" "$tmp" "$insecure"
+  bash "$tmp/install.sh" --uninstall ${rest[@]+"${rest[@]}"}
 }
 
 cmd_support_bundle() {

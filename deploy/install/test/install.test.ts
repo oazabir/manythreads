@@ -234,6 +234,42 @@ describe('running it', () => {
   });
 });
 
+describe('fetch', () => {
+  const stubCurl = (): void => stub('curl', `echo "curl $*" >>"${tmp}/curl.log"; for last; do :; done; echo '{}' >"$3"`);
+  it('refuses a plain http address by default, takes https, and takes http only when the operator asked for it', () => {
+    stubCurl();
+    const refused = bash(`fetch http://releases.example.com/release.json "${tmp}/o.json"`);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain('plain http');
+    expect(existsSync(join(tmp, 'curl.log'))).toBe(false);
+    expect(bash(`fetch https://releases.example.com/release.json "${tmp}/o.json"`).code).toBe(0);
+    expect(bash(`fetch http://releases.example.com/release.json "${tmp}/o.json"`, { MANYTHREADS_INSECURE_RELEASE_URL: '1' }).code).toBe(0);
+    expect(runInstall(['--insecure-release-url', '--print-plan', '--release-url', 'x']).code).toBe(0);
+  });
+});
+
+describe('uninstall', () => {
+  it('deletes only the namespaces this install labelled as its own, never an apps-* name of somebody else', () => {
+    mkdirSync(join(tmp, 'etc'));
+    // a cluster that has a foreign apps-billing; `get ns` with the label selector answers only the platform's own team namespace
+    stub('kubectl', `echo "kubectl $*" >>"${tmp}/calls.log"
+case "$*" in
+  *"get secret"*) exit 1 ;;
+  *"get ns"*"-l"*"manythreads.io/apps=true"*) echo namespace/apps-engineering ;;
+  *"get ns"*) printf 'namespace/apps-engineering\nnamespace/apps-billing\nnamespace/kube-system\nnamespace/default\n' ;;
+esac
+exit 0`);
+    stub('helm', `echo "helm $*" >>"${tmp}/calls.log"; exit 0`);
+    const r = runInstall(['--uninstall', '--yes'], { MANYTHREADS_INSTALL_FOR_TESTS: '1', MANYTHREADS_HOST_COMMAND: join(tmp, 'none') });
+    expect(r.code, r.err).toBe(0);
+    const log = readFileSync(join(tmp, 'calls.log'), 'utf8');
+    for (const ns of ['manythreads', 'manythreads-bots', 'apps-engineering']) expect(log).toContain(`kubectl delete ns ${ns} `);
+    expect(log).not.toContain('apps-billing');
+    expect(log).not.toContain('delete ns kube-system');
+    expect(log).not.toContain('delete ns default');
+  });
+});
+
 describe('the state file', () => {
   it('keeps one line per key, mode 0600, and reads it back', () => {
     const r = bash('state_put VERSION 0.27.0; state_put HOST a.example.com; state_put VERSION 0.28.0; state_get VERSION; state_get HOST; stat -c %a "$ETC/install.env"');
@@ -324,6 +360,21 @@ exit 0`,
     expect(readFileSync(join(tmp, 'etc/install.env'), 'utf8')).toContain('HOST=team.example.com');
     expect(r.out).toContain('https://203-0-113-10.sslip.io keeps working');
   });
+  it('set-domain on a bare-address install does not claim the old address keeps working', () => {
+    writeFileSync(join(tmp, 'etc/install.env'), 'VERSION=0.27.0\nHOST=203.0.113.10\nADDRESS=https://203.0.113.10\nTLS_MODE=selfsigned\nADMIN_EMAIL=me@example.com\n');
+    mkdirSync(join(tmp, 'var/chart'), { recursive: true });
+    writeFileSync(join(tmp, 'var/chart/values-install.yaml'), '');
+    writeFileSync(join(tmp, 'etc/values.yaml'), '');
+    stub('helm', 'exit 0');
+    stub('kubectl', `case "$*" in *certificate*) printf True ;; esac; exit 0`);
+    stub('sleep', 'exit 0');
+    const r = runHost(['set-domain', 'team.example.com']);
+    expect(r.code, r.err).toBe(0);
+    expect(r.out).not.toContain('keeps working');
+    expect(r.out).toContain('Done: https://team.example.com');
+    expect(r.out).toContain('203.0.113.10 has no certificate of its own');
+    expect(readFileSync(join(tmp, 'etc/domain.yaml'), 'utf8')).not.toContain('extraDomains');
+  });
   it('allow-git-host takes an https address only and adds it once', () => {
     expect(runHost(['allow-git-host', 'http://git.example.com/']).err).toContain('https only');
     mkdirSync(join(tmp, 'var/chart'), { recursive: true });
@@ -335,6 +386,67 @@ exit 0`,
     const f = readFileSync(join(tmp, 'etc/git-hosts.yaml'), 'utf8');
     expect(f.match(/git\.example\.com/g)).toHaveLength(1);
     expect(f).toContain('https://github.com/');
+  });
+  describe.skipIf(!haveJq)('uninstall runs the installer only after the release names it', () => {
+    const served = (): string => join(tmp, 'served');
+    const sha = (f: string): string => spawnSync('sha256sum', [f], { encoding: 'utf8' }).stdout.split(' ')[0] ?? '';
+    /** A release folder with a stand-in install.sh that leaves a marker; `tamper` writes another file than the one release.json names. */
+    function serve(tamper = false): string {
+      mkdirSync(served(), { recursive: true });
+      writeFileSync(join(served(), 'install.sh'), `#!/usr/bin/env bash\necho "ran with: $*" >"${tmp}/ran.txt"\n`);
+      writeFileSync(join(served(), 'release.json'), JSON.stringify(release({ installSha256: sha(join(served(), 'install.sh')) })));
+      if (tamper) writeFileSync(join(served(), 'install.sh'), `#!/usr/bin/env bash\necho "ran with: $*" >"${tmp}/ran.txt"\n# changed\n`);
+      return join(served(), 'release.json');
+    }
+    const remember = (url: string): void => writeFileSync(join(tmp, 'etc/install.env'), `VERSION=0.27.0\nHOST=a.example.com\nADDRESS=https://a.example.com\nRELEASE_URL=${url}\n`);
+    const ran = (): boolean => existsSync(join(tmp, 'ran.txt'));
+    it('runs the installer whose SHA-256 release.json names, and passes the arguments on', () => {
+      remember(serve());
+      const r = runHost(['uninstall', '--yes']);
+      expect(r.code, r.err).toBe(0);
+      expect(readFileSync(join(tmp, 'ran.txt'), 'utf8')).toContain('ran with: --uninstall --yes');
+    });
+    it('refuses a substituted installer and runs nothing', () => {
+      remember(serve(true));
+      const r = runHost(['uninstall', '--yes']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('install.sh does not match release.json');
+      expect(ran()).toBe(false);
+    });
+    it('refuses a release.json without a SHA-256, and an install that does not know its release address', () => {
+      const url = serve();
+      writeFileSync(url, JSON.stringify(release({ installSha256: '' })));
+      remember(url);
+      expect(runHost(['uninstall', '--yes']).err).toContain('no SHA-256');
+      remember('');
+      expect(runHost(['uninstall', '--yes']).err).toContain('does not remember where releases are published');
+      expect(ran()).toBe(false);
+    });
+    it('refuses a plain http release address unless the operator says so; https needs no flag', () => {
+      serve();
+      // a stand-in curl that serves the folder (the address only has to look like http or https)
+      stub('curl', `out=''; while [ $# -gt 0 ]; do case "$1" in -o) shift; out="$1" ;; --max-time) shift ;; -*) ;; *) url="$1" ;; esac; shift; done; echo "curl $url" >>"${tmp}/curl.log"; cp "${served()}/$(basename "$url")" "$out"`);
+      remember('http://releases.example.com/release.json');
+      const refused = runHost(['uninstall', '--yes']);
+      expect(refused.code).toBe(1);
+      expect(refused.err).toContain('plain http');
+      expect(existsSync(join(tmp, 'curl.log'))).toBe(false);
+      expect(ran()).toBe(false);
+      const allowed = runHost(['uninstall', '--yes', '--insecure-release-url']);
+      expect(allowed.code, allowed.err).toBe(0);
+      expect(readFileSync(join(tmp, 'ran.txt'), 'utf8')).not.toContain('insecure');
+      rmSync(join(tmp, 'ran.txt'));
+      remember('https://releases.example.com/release.json');
+      expect(runHost(['uninstall', '--yes']).code).toBe(0);
+      expect(ran()).toBe(true);
+    });
+    it('upgrade keeps the same checks (and refuses http too)', () => {
+      remember('http://releases.example.com/release.json');
+      stub('curl', 'exit 0');
+      const r = runHost(['upgrade']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('plain http');
+    });
   });
   it('support-bundle removes what looks like a secret', () => {
     stub('kubectl', `echo "token: abcdefghijklmnop1234 and password=hunter2hunter2 and ${'A'.repeat(50)}"; exit 0`);
