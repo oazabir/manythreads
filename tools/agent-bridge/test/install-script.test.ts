@@ -36,6 +36,16 @@ describe('bridge.sh', () => {
     expect(spawnSync('bash', ['-n', join(dir, 'bridge.sh')], { encoding: 'utf8' }).status).toBe(0);
   });
 
+  it('opens the publisher\'s socket to the team users (P26-19 proof 4): their group is the unit\'s group, the publisher keeps its own group for the team homes, and the table names it', () => {
+    expect(script).toMatch(/PUBLISH_GROUP=mt-publish/);
+    expect(script).toMatch(/\nGroup=\$PUBLISH_GROUP\nSupplementaryGroups=\$PUB_USER\n/);
+    expect(script).toMatch(/publishClientsGroup: e\.CFG_PUBLISH_GROUP/);
+    expect(script).toMatch(/usermod -a -G "\$PUBLISH_GROUP" "\$tu"/);
+    // the uninstall takes the group and any drop-in away with the rest
+    expect(script).toMatch(/groupdel mt-publish/);
+    expect(script).toMatch(/rm -rf \/etc\/systemd\/system\/manythreads-publisher\.service\.d/);
+  });
+
   it('refuses a site address that is not https, for every way in, before it looks at the machine', () => {
     for (const args of [['--enrol', CODE], ['--update'], ['--uninstall'], ['--code-file', join(dir, 'nothing')]]) {
       const r = run('http://site.example', args);

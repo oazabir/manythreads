@@ -37,6 +37,8 @@ export interface HelperConfig {
   syncScript?: string | undefined;
   /** The group of the publisher service; the team home belongs to it (mode 2750) so the publisher can read a bot's clone. Absent: the home is 0700. */
   publisherGroup?: string | undefined;
+  /** The group that may open the publisher's socket (the publisher runs with it as its group): every team user joins it, nobody else is in it (P26-19). Absent: no one is added. */
+  publishClientsGroup?: string | undefined;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -63,7 +65,9 @@ export function parseHelperConfig(text: string): HelperConfig {
   if (sync !== undefined && !absolute(sync)) throw new Error('syncScript must be an absolute path');
   const pub = raw['publisherGroup'];
   if (pub !== undefined && (typeof pub !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(pub))) throw new Error('publisherGroup must be a group name');
-  return { dataRoot: raw['dataRoot'], agents, ...(typeof sync === 'string' ? { syncScript: sync } : {}), ...(typeof pub === 'string' ? { publisherGroup: pub } : {}) };
+  const clients = raw['publishClientsGroup'];
+  if (clients !== undefined && (typeof clients !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(clients))) throw new Error('publishClientsGroup must be a group name');
+  return { dataRoot: raw['dataRoot'], agents, ...(typeof sync === 'string' ? { syncScript: sync } : {}), ...(typeof pub === 'string' ? { publisherGroup: pub } : {}), ...(typeof clients === 'string' ? { publishClientsGroup: clients } : {}) };
 }
 
 export type Parsed = { ok: true; command: 'ensure-user'; team: string } | { ok: true; command: 'run'; team: string; kind: Kind } | { ok: false; error: string };
@@ -165,6 +169,8 @@ export function ensureUser(cfg: HelperConfig, team: string): Account {
   if (!NOLOGIN_SHELLS.includes(acct.shell) && acct.shell !== '/bin/false') throw new Error(`${name} has a login shell; it is not touched`);
   const groups = run('id', ['-nG', name]);
   if (!groups.stdout.split(/\s+/).includes(AGENTS_GROUP)) run('usermod', ['-a', '-G', AGENTS_GROUP, name]);
+  // the publisher's socket is open to this group only: a team user outside it cannot even reach the folder, so no bot of the team could publish (P26-19 proof 4)
+  if (cfg.publishClientsGroup !== undefined && groupId(cfg.publishClientsGroup) !== null && !groups.stdout.split(/\s+/).includes(cfg.publishClientsGroup)) run('usermod', ['-a', '-G', cfg.publishClientsGroup, name]);
 
   const pubGid = cfg.publisherGroup === undefined ? null : groupId(cfg.publisherGroup);
   const gid = pubGid ?? acct.gid;

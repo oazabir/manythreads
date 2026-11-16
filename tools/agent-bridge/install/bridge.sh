@@ -44,7 +44,7 @@ main() {
   local PREFIX=/opt/manythreads-bridge ETC=/etc/manythreads-bridge DATA=/var/lib/manythreads-bridge SVC_USER=manythreads-bridge UNIT=manythreads-bridge.service
   local UNIT_FILE=/etc/systemd/system/manythreads-bridge.service
   local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
-  local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock
+  local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock PUBLISH_GROUP=mt-publish
 
   local mode='' code='' code_file='' allow_full=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha=''
   while [ $# -gt 0 ]; do
@@ -154,6 +154,15 @@ main() {
   fi
   # the group that shares the agents' sign-in folders: the bridge's user and every team user are in it, and nobody else
   getent group "$AGENTS_GROUP" >/dev/null 2>&1 || groupadd --system "$AGENTS_GROUP"
+  # the group that may open the publisher's socket: the publisher runs with it as its group and every team user is in it (the helper adds a new team's user), nobody else.
+  # Without it a team user cannot reach the socket and no bot of an enrolled server can publish (P26-19 proof 4). The users that exist already are added here.
+  if [ "$want_publisher" -eq 1 ]; then
+    getent group "$PUBLISH_GROUP" >/dev/null 2>&1 || groupadd --system "$PUBLISH_GROUP"
+    local tu
+    for tu in $(getent passwd | awk -F: -v root="$DATA/work/" 'index($1, "mt-team-") == 1 && index($6, root) == 1 { print $1 }'); do
+      id -nG "$tu" | tr ' ' '\n' | grep -qx "$PUBLISH_GROUP" || usermod -a -G "$PUBLISH_GROUP" "$tu"
+    done
+  fi
   id -nG "$SVC_USER" | tr ' ' '\n' | grep -qx "$AGENTS_GROUP" || usermod -a -G "$AGENTS_GROUP" "$SVC_USER"
   mkdir -p "$ETC" "$DATA/state" "$DATA/auth/claude" "$DATA/auth/codex" "$DATA/hermes" "$DATA/home" "$DATA/signin"
   # Before the per-team users the bridge's own user owned `work`; a team's folders there are the team user's now, and the folder is root's so that no link in it can be planted by the
@@ -239,14 +248,14 @@ main() {
   mv -f "$HELPER.new" "$HELPER"
   # the table of programs the helper may start: it names a kind (claude, codex, hermes), never a program, so the table is the only place a path is
   CFG_DATA="$DATA" CFG_CLAUDE_ACP="$([ "$want_claude" -eq 1 ] && printf %s "$claude_acp")" CFG_CODEX_ACP="$([ "$want_codex" -eq 1 ] && printf %s "$codex_acp")" CFG_HERMES_BIN="$hermes_bin" \
-    CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" \
+    CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" CFG_PUBLISH_GROUP="$PUBLISH_GROUP" \
     "$node" -e '
       const e = process.env;
       const agents = {};
       if (e.CFG_CLAUDE_ACP) agents.claude = { command: e.CFG_CLAUDE_ACP };
       if (e.CFG_CODEX_ACP) agents.codex = { command: e.CFG_CODEX_ACP };
       if (e.CFG_HERMES_BIN) agents.hermes = { command: e.CFG_HERMES_BIN, args: ["acp"] };
-      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER } : {}) };
+      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER, publishClientsGroup: e.CFG_PUBLISH_GROUP } : {}) };
       process.stdout.write(JSON.stringify(table, null, 2) + "\n");
     ' >"$TEAM_TABLE.new" || die "could not write the helper's table"
   chown root:root "$TEAM_TABLE.new"
@@ -379,7 +388,9 @@ Wants=network-online.target
 
 [Service]
 User=$PUB_USER
-Group=$SVC_USER
+# the group of the socket and its folder: the team users are in it (they open the socket); the publisher's own group is added so it can read the team homes (group $PUB_USER, mode 2750)
+Group=$PUBLISH_GROUP
+SupplementaryGroups=$PUB_USER
 RuntimeDirectory=manythreads-publisher
 RuntimeDirectoryMode=0750
 UMask=0007
@@ -649,6 +660,7 @@ uninstall_all() {
   fi
   systemctl disable --now manythreads-bridge.service manythreads-publisher.service >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/manythreads-bridge.service /etc/systemd/system/manythreads-publisher.service
+  rm -rf /etc/systemd/system/manythreads-publisher.service.d
   systemctl daemon-reload || true
   # the sudo rule and the helper go first and always: nothing may be able to start a program as a team's user once the bridge is gone
   rm -f /etc/sudoers.d/manythreads-bridge /etc/sudoers.d/manythreads-bridge.new
@@ -663,6 +675,7 @@ uninstall_all() {
       userdel "$u" >/dev/null 2>&1 || true
     done
     rm -rf "$DATA"
+    groupdel mt-publish >/dev/null 2>&1 || true
     groupdel mt-agents >/dev/null 2>&1 || true
     userdel manythreads-bridge >/dev/null 2>&1 || true
     userdel manythreads-publisher >/dev/null 2>&1 || true

@@ -44,6 +44,11 @@ describe('the table the installer writes', () => {
     expect(cfg.agents.hermes).toEqual({ command: '/opt/h/hermes', args: ['acp'] });
     expect(cfg.publisherGroup).toBe('manythreads-publisher');
   });
+  it('names the group that may open the publisher\'s socket, and refuses a name that is not a group name', () => {
+    expect(parseHelperConfig(JSON.stringify({ ...good, publishClientsGroup: 'mt-publish' })).publishClientsGroup).toBe('mt-publish');
+    expect(parseHelperConfig(JSON.stringify(good)).publishClientsGroup).toBeUndefined();
+    expect(() => parseHelperConfig(JSON.stringify({ ...good, publishClientsGroup: 'a b' }))).toThrow();
+  });
   it.each([
     ['text that is not JSON', 'nope'],
     ['no data root', JSON.stringify({ ...good, dataRoot: undefined })],
