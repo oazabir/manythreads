@@ -28,8 +28,9 @@ The build fetches `$BASE` from GitHub, so `$BASE` must already be pushed there (
 ## 1. Make the patch series and put it in a ConfigMap
 
 ```sh
-rm -rf /tmp/preview-patches && git format-patch -o /tmp/preview-patches "$BASE..$SHA"
-$K create configmap "patches-$TAG" --from-file=/tmp/preview-patches
+P=$(mktemp -d)   # a fresh folder; never rm -rf: a Hermes pod holds that command for an approval that cannot reach it (P26-18)
+git format-patch -o "$P" "$BASE..$SHA"
+$K create configmap "patches-$TAG" --from-file="$P"      # the name must be exactly patches-<the 12-character TAG> the build Job reads
 ```
 
 A ConfigMap holds at most 1 MiB. If the patches are bigger, the change is too big for this path: split it, or push a branch and ask a person.
