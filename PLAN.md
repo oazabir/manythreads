@@ -760,11 +760,11 @@ Design: `docs/design/themes.md`. A theme is a palette (colours, type, corners, s
 | P28-01 | Tokens: the three palettes in light and dark as generated stylesheets, the new tokens (`--accent`, `--on-accent`, `--control-border`, `--focus-ring`, `--elev-1..3`, `--code-*`, `--selection`, `--run-*`, `--todo-*`, type, spacing and motion), the derived block with no palette in it, scopes for previews; blockers 5 and 6 of the design | Built |
 | P28-02 | Text on a filled colour reads `--on-accent` / `--on-color` instead of `--surface`; the primary button reads `--accent`; `channels.css` font sizes and radii onto tokens and its lint exemption removed; outlines read `--focus`; raw durations read `--dur-*`; run and to-do cards read their tokens | Built |
 | P28-03 | Fonts: Plex Sans and Mono, Source Serif 4, Geist and Geist Mono from `@fontsource` packages copied to `public/fonts` by a script; only the chosen palette's text face is preloaded, by `theme-boot.js`; Inter stays for Graphite and Classic | Built |
-| P28-04 | Stored choice: `palette` on the person (kernel migration `0018`, shared schema, route, session), `data-palette` set before the first paint from a local copy, `<meta name="theme-color">` follows the shell colour, the diagram sandbox follows the palette | Built |
+| P28-04 | Stored choice (the sandbox change is in P28-05): `palette` on the person (kernel migration `0018`, shared schema, route, session), `data-palette` set before the first paint from a local copy, `<meta name="theme-color">` follows the shell colour, the diagram sandbox follows the palette | Built |
 | P28-05 | Settings → Appearance: a theme picker with live swatches and a mode picker; the reusable `ThemePicker` for the onboarding wizard | Built |
 | P28-06 | Tooling: the contrast lint reads every palette and checks the pairs of the new tokens; `/dev/tokens` shows the palettes | Built |
 | P28-07 | Tests: theme-boot resolution, appearance API, Playwright switch-reload-no-flash, six screenshots of a thread with a run card and a to-do card at 1440 and one at 390 | Built |
-| P28-08 | Later, not built: replace raw `600`/`500` weights with `--fw-*`; ten `--peer-n` caret tokens; an admin default theme for a team | Not built |
+| P28-08 | Later, not built: replace raw `600`/`500` weights with `--fw-*`; ten `--peer-n` caret tokens; an admin default theme for a team; metric-matched fallback faces (`size-adjust`) for each text face; the default theme is `classic` (the original look) so the visual baselines stay valid, and making Graphite the default is `DEFAULT_PALETTE` plus regenerating the baselines | Not built |
 
 ---
 
