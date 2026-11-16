@@ -5,7 +5,7 @@ import { cancelImport, deleteImport, dryRunImport, fetchImports, fetchTeams, sta
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Alert, Notice } from '../../components/ui';
-import { SOURCE_ACCEPT, SOURCE_HELP, SOURCE_NAMES, STATUS_WORDS, actionsFor, channelOutcomeWords, formatSize, isActive, progressFraction, progressWords, skippedLine, tooBigWarning } from './format';
+import { SOURCE_ACCEPT, SOURCE_HELP, SOURCE_NAMES, STATUS_WORDS, actionsFor, channelOutcomeWords, formatSize, isActive, messageCountWords, progressFraction, progressWords, skippedLine, tooBigWarning } from './format';
 import { PageHeader } from '../../components/PageHeader';
 
 const failure = (e: unknown): string => (isApiError(e) ? e.message : 'Something went wrong. Try again.');
@@ -214,7 +214,7 @@ function Report({ report, heading }: { report: ImportReport; heading: string }) 
               <div className="imp-row" role="row" key={i}>
                 <span role="cell" className="imp-name">{c.kind === 'direct' ? 'Direct conversation' : `#${c.name}`}</span>
                 <span role="cell" className="imp-kind">{c.kind}</span>
-                <span role="cell" className="imp-count">{c.messages.toLocaleString('en-US')} messages</span>
+                <span role="cell" className="imp-count">{messageCountWords(c.messages)}</span>
                 <span role="cell" className="imp-out">
                   {channelOutcomeWords(c)}
                 </span>
