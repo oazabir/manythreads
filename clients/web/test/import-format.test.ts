@@ -1,6 +1,6 @@
 import { IMPORT_SKIP_REASONS, IMPORT_STATUSES, type ImportRun } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { STATUS_WORDS, actionsFor, channelOutcomeWords, formatSize, isActive, progressFraction, progressWords, skippedLine, tooBigWarning } from '../src/screens/import/format';
+import { STATUS_WORDS, actionsFor, channelOutcomeWords, formatSize, isActive, messageCountWords, progressFraction, progressWords, skippedLine, tooBigWarning } from '../src/screens/import/format';
 
 type P = Pick<ImportRun, 'status' | 'progress'>;
 const progress = (done: number, total: number, phase: 'people' | 'channels' | 'messages' | 'finishing' = 'messages'): ImportRun['progress'] => ({
@@ -27,6 +27,15 @@ describe('import screen words', () => {
   it('warns about a file over the default limit, and only then', () => {
     expect(tooBigWarning(1024 ** 3)).toBeNull();
     expect(tooBigWarning(2 * 1024 ** 3)).toMatch(/2\.0 GB/);
+  });
+});
+
+describe('message count', () => {
+  it('says "1 message" for exactly one and keeps the thousands separator', () => {
+    expect(messageCountWords(0)).toBe('0 messages');
+    expect(messageCountWords(1)).toBe('1 message');
+    expect(messageCountWords(2)).toBe('2 messages');
+    expect(messageCountWords(1234)).toBe('1,234 messages');
   });
 });
 

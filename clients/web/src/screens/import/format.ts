@@ -58,6 +58,11 @@ export function skippedLine(reason: keyof typeof IMPORT_SKIP_WORDS, count: numbe
   return importSkipPhrase(reason, count);
 }
 
+/** How many messages a channel holds: "1 message" for exactly one, otherwise "N messages" with the thousands separator. */
+export function messageCountWords(n: number): string {
+  return n === 1 ? '1 message' : `${n.toLocaleString('en-US')} messages`;
+}
+
 /** What happened to a channel of the archive, in words ("left out (direct conversation where someone has no account here)", never a code). */
 export function channelOutcomeWords(c: Pick<ImportChannelLine, 'outcome' | 'reason' | 'becomes'>): string {
   if (c.outcome === 'skip') return c.reason ? `left out (${IMPORT_SKIP_WORDS_ONE[c.reason]})` : 'left out';
