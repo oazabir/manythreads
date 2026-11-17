@@ -88,6 +88,15 @@ describe('a sentence to a schedule', () => {
     expect(wordsToSchedule('every morning', 'UTC')?.cron).toBe('0 8 * * *');
   });
 
+  it('says "Every hour" for every 1 hours and keeps "Every N hours" otherwise', () => {
+    const one = wordsToSchedule('every 1 hours', 'UTC');
+    expect(one?.words).toBe('Every hour');
+    expect(one?.cron).toBe('0 */1 * * *');
+    const two = wordsToSchedule('every 2 hours', 'UTC');
+    expect(two?.words).toBe('Every 2 hours');
+    expect(two?.cron).toBe('0 */2 * * *');
+  });
+
   it('returns nothing for a sentence with no schedule', () => {
     expect(wordsToSchedule('summarise my mail', 'UTC')).toBeNull();
   });
