@@ -1194,3 +1194,84 @@ a.sec:hover {
   }
 }
 
+/* ---- the Members panel (P33-02): a filter box and two lists, the people in the channel and the team's people who are not ---- */
+.mpn {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.mpn-filter {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.mpn-head {
+  margin: 0 0 6px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.mpn-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mpn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+}
+
+.mpn-row:hover {
+  background: var(--nav-on);
+}
+
+.mpn-who {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mpn-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mpn-you {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.mpn-add {
+  flex: none;
+  min-width: 64px;
+  min-height: 44px;
+  margin-right: 4px;
+  font-size: var(--fs-small);
+}

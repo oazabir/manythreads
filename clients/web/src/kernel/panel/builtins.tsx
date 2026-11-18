@@ -7,6 +7,7 @@ import { useShell } from '../../shell/context';
 import { PresenceDot } from '../../presence/PresenceDot';
 import { ThreadPanel } from '../../channels/ThreadPanel';
 import { SearchPanel } from '../../search/SearchPanel';
+import { MembersPanel } from '../../shell/MembersPanel';
 import { registerPanelType } from './registry';
 import type { PanelEntry } from './stack';
 
@@ -61,3 +62,4 @@ const Loading = <div className="vw-loading" role="status" aria-busy="true">Loadi
 registerPanelType({ type: 'file', label: 'File', Component: ({ entry }) => <Suspense fallback={Loading}><FilePreview entry={entry} /></Suspense> });
 registerPanelType({ type: 'history', label: 'History', Component: ({ entry }) => <Suspense fallback={Loading}><HistoryPanel entry={entry} /></Suspense> });
 registerPanelType({ type: 'member', label: 'Member', Component: MemberPanel });
+registerPanelType({ type: 'members', label: 'Members', Component: MembersPanel });
