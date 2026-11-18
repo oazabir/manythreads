@@ -20,12 +20,13 @@ import { useShell } from '../shell/context';
 import { DmLead, DmTrail } from '../dms/DmHeadTitle';
 import { ChannelSearch } from '../search/ChannelSearch';
 import { ChannelDetails } from '../shell/ChannelDetails';
-import { MembersStack } from '../shell/MembersStack';
+import { MembersButton } from '../shell/MembersButton';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
-import { ArrowDownIcon, ArrowUpIcon } from '../shell/icons';
+import { ArrowDownIcon, ArrowUpIcon, BoardsIcon } from '../shell/icons';
 import { useHeaderActionsSlot, useHeaderTitle, useHeaderTopic } from '../shell/topic';
-import { StartButton } from '../meetings/StartButton';
+import { VoiceButton } from '../meetings/VoiceButton';
 import { ScheduledChip } from '../meetings/schedule/ScheduledChip';
+import { ScheduleButton } from '../meetings/schedule/ScheduleButton';
 import { fetchChannelBoards } from './boards/api';
 import { boardPath, botBoardOf } from './boards/board';
 import { fetchProjects } from './projects/api';
@@ -76,18 +77,21 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   // A channel tied to a project says so beside its title. A person who cannot read the team's projects (a guest) simply sees no chip.
   const projects = useQuery(`projects:${teamSlug}`, () => fetchProjects(teamSlug));
   const project = !dm && projects.status === 'ok' ? projectOfChannel(projects.data.items, channelId) : undefined;
-  const detailsManage = info.status === 'ok' && info.data.canManage;
-  const detailsLabel = dm ? dm.label : `#${name}`;
-  const detailsNode = useMemo(
-    () => <ChannelDetails key={channelId} channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} />,
-    [channelId, name, teamSlug, dm, detailsManage, detailsLabel],
-  );
-  useHeaderTitle(detailsNode);
-  useHeaderTopic(!dm && info.status === 'ok' ? headerTopic(project, info.data.channel.purpose) : null);
-  // The channel's Bot Board (the board its bots keep their cards on), when it has one: a link beside the title. A person without access to
+  // The channel's Bot Board (the board its bots keep their cards on), when it has one: a link in the header's icon row (and in the details menu on a phone). A person without access to
   // the channel's boards, or a conversation that is not a channel, simply gets none.
   const boards = useQuery(`channel-boards:${channelId}`, () => (dm ? Promise.resolve({ items: [] }) : fetchChannelBoards(channelId)));
   const botBoard = boards.status === 'ok' ? botBoardOf(boards.data.items) : undefined;
+  const botBoardTo = botBoard ? boardPath(teamSlug, botBoard.id) : null;
+  const botBoardName = botBoard?.name ?? '';
+  const botBoardLink = useMemo(() => (botBoardTo ? { to: botBoardTo, name: botBoardName } : undefined), [botBoardTo, botBoardName]);
+  const detailsManage = info.status === 'ok' && info.data.canManage;
+  const detailsLabel = dm ? dm.label : `#${name}`;
+  const detailsNode = useMemo(
+    () => <ChannelDetails key={channelId} channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} botBoard={botBoardLink} />,
+    [channelId, name, teamSlug, dm, detailsManage, detailsLabel, botBoardLink],
+  );
+  useHeaderTitle(detailsNode);
+  useHeaderTopic(!dm && info.status === 'ok' ? headerTopic(project, info.data.channel.purpose) : null);
   const headerSlot = useHeaderActionsSlot();
   const tl = useTimeline(channelKey(channelId));
   // the to-do cards, the run cards and the questions under thread roots (P29): one lease and three reads for the whole channel, kept live by the pushes
@@ -291,6 +295,17 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     [channelId],
   );
 
+  // the voice icon takes the reader to the message that started the room (its card has Join): into view, and marked for a moment
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (flashTimer.current && clearTimeout(flashTimer.current)), []);
+  const messageLoaded = useCallback((id: string) => items.some((i) => i.key === messageKey(id)), [items]);
+  const showMessage = useCallback((id: string) => {
+    api.current?.scrollToKey(messageKey(id));
+    setHighlight(id);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setHighlight(null), 2_500);
+  }, []);
+
   if (info.status === 'error' && isApiError(info.error) && (info.error.status === 403 || info.error.status === 404)) return <NoChannelAccess />;
   if (tl.status === 'error' && tl.error && (tl.error.status === 403 || tl.error.status === 404)) return <NoChannelAccess />;
 
@@ -312,19 +327,20 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
 
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
-      {headerSlot && !dm && !guest ? createPortal(<MembersStack key={channelId} channelId={channelId} />, headerSlot) : null}
-      {headerSlot ? createPortal(<ChannelSearch channelId={channelId} />, headerSlot) : null}
-      {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
-      {/* Bundle D slot: the next planned room's chip (work package C); it draws nothing until then */}
+      {/* the header's tools, in the order the stylesheet gives them: search, planned-room chip, Bot Board, Schedule a room, voice, members, bookmark (P33-01) */}
+      {headerSlot ? createPortal(<ChannelSearch channelId={channelId} placeholder={dm ? 'Search this conversation' : `Search #${name}`} />, headerSlot) : null}
       {headerSlot && !dm ? createPortal(<ScheduledChip channelId={channelId} />, headerSlot) : null}
       {botBoard && headerSlot
         ? createPortal(
-            <Link className="chv-botboard" to={boardPath(teamSlug, botBoard.id)} data-testid="bot-board-link">
-              {botBoard.name}
+            <Link className="icon-btn chv-tool chv-botboard" to={boardPath(teamSlug, botBoard.id)} aria-label={botBoard.name} title={botBoard.name} data-testid="bot-board-link">
+              <BoardsIcon />
             </Link>,
             headerSlot,
           )
         : null}
+      {headerSlot && !dm ? createPortal(<ScheduleButton channelId={channelId} channelLabel={`#${name}`} />, headerSlot) : null}
+      {headerSlot ? createPortal(<VoiceButton channelId={channelId} dm={dm !== undefined} messageLoaded={messageLoaded} showMessage={showMessage} />, headerSlot) : null}
+      {headerSlot && !dm && !guest ? createPortal(<MembersButton key={channelId} channelId={channelId} />, headerSlot) : null}
       {/* the channel's one live region for the cards under its roots: only "N questions are waiting", never the steps */}
       <p className="sr-only" role="status" data-testid="task-view-said">{taskSaid}</p>
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}

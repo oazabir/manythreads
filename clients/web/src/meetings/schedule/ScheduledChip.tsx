@@ -8,19 +8,19 @@ import { useDismiss } from '../../shell/useDismiss';
 import { actionFailure } from '../../screens/meetings/words';
 import { cancelScheduledMeeting, fetchScheduledMeetings } from '../api';
 import { liveRooms } from '../store';
-import { ScheduleRoomDialog } from './ScheduleRoomDialog';
+import { onScheduledChangedHere } from './changed';
 import { chipText, invitedWords, whenWords } from './model';
 
 /**
- * The channel header's planned-room tools (PLAN Bundle D, P16-05, decision D10): the "Schedule a room" button, and, when a room is live or due within 12 hours, a chip with
+ * The channel header's planned-room chip (PLAN Bundle D, P16-05, decision D10): when a room is due within 12 hours, a chip with
  * its title and time ("Design review, today 15:00"). The chip opens a small card: when, who organizes, how many are invited, Join, and for the organizer Cancel (which also
  * cancels the event at their calendar). The chip asks the server again when a `scheduled_meeting.changed` push names this channel, so a plan made by someone else shows up at once.
+ * Once the room has started the chip goes: the card under the room's start message has Join (P33-03). The Schedule a room button is `ScheduleButton`.
  */
-export function ScheduledChip({ channelId, channelLabel }: { channelId: string; channelLabel?: string }) {
+export function ScheduledChip({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const upcoming = useQuery(`scheduled-upcoming:${channelId}`, () => fetchScheduledMeetings(channelId, { upcoming: '1', limit: 1 }));
   const [open, setOpen] = useState(false);
-  const [dialog, setDialog] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,14 +38,19 @@ export function ScheduledChip({ channelId, channelLabel }: { channelId: string; 
       if (p.channelId === channelId) reloadRef.current();
     });
     const tick = setInterval(() => setNow(new Date()), 60_000);
+    // a room planned in this tab (the Schedule a room button) shows at once
+    const here = onScheduledChangedHere(channelId, () => reloadRef.current());
     return () => {
       off();
+      here();
       clearInterval(tick);
     };
   }, [channelId]);
 
   if (isMockMode()) return null;
-  const plan = upcoming.status === 'ok' ? (upcoming.data.scheduledMeetings[0] ?? null) : null;
+  // a room that has started is the card's business (Join under its start message), not the chip's
+  const first = upcoming.status === 'ok' ? (upcoming.data.scheduledMeetings[0] ?? null) : null;
+  const plan = first !== null && first.status !== 'started' ? first : null;
   const mine = plan !== null && plan.organizerId === channelStore.selfActor;
 
   const cancel = async (): Promise<void> => {
@@ -66,7 +71,7 @@ export function ScheduledChip({ channelId, channelLabel }: { channelId: string; 
   return (
     <>
       {plan ? (
-        <div className="sch-chip-wrap" ref={box}>
+        <div className="sch-chip-wrap chv-tool chv-chip" ref={box}>
           <button type="button" className={`sch-chip${plan.status === 'started' ? ' live' : ''}`} aria-haspopup="dialog" aria-expanded={open} data-testid="scheduled-chip" onClick={() => setOpen((o) => !o)}>
             <ScheduleCalendarIcon />
             <span className="sch-chip-text">{chipText(plan, now)}</span>
@@ -85,21 +90,6 @@ export function ScheduledChip({ channelId, channelLabel }: { channelId: string; 
             </div>
           ) : null}
         </div>
-      ) : null}
-      <button type="button" className="btn sch-add" data-testid="schedule-open" title="Plan a voice room for later" aria-label="Schedule a room" onClick={() => setDialog(true)}>
-        <ScheduleCalendarIcon />
-        <span className="sch-add-label">Schedule a room</span>
-      </button>
-      {dialog ? (
-        <ScheduleRoomDialog
-          channelId={channelId}
-          {...(channelLabel ? { channelLabel } : {})}
-          onClose={() => setDialog(false)}
-          onCreated={() => {
-            setDialog(false);
-            upcoming.reload();
-          }}
-        />
       ) : null}
     </>
   );

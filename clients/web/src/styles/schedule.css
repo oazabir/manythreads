@@ -1,5 +1,5 @@
 /*
- * Rooms planned ahead (PLAN Bundle D, P16-05): the "Schedule a room" button and the planned-room chip in a channel's header (`sch-chip`, `sch-pop`, `sch-add`), the dialog
+ * Rooms planned ahead (PLAN Bundle D, P16-05): the planned-room chip in a channel's header (`sch-chip`, `sch-pop`; the Schedule a room button is an icon button, `chv-schedule`), the dialog
  * (`sch-form`, `sch-people`) and the join page (`sch-join`). Tokens only; shared classes (.btn, .dlg-*) are used, never redefined. A state change never moves a neighbour:
  * the chip has a fixed maximum width and cuts its text with an ellipsis.
  */
@@ -44,15 +44,7 @@
   text-overflow: ellipsis;
 }
 
-.sch-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.sch-chip:focus-visible,
-.sch-add:focus-visible {
+.sch-chip:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
@@ -201,10 +193,6 @@
 
 /* ---- a phone: the button keeps only its icon, the date and time sit one under the other ---- */
 @media (width <= 760px) {
-  .sch-add-label {
-    display: none;
-  }
-
   .sch-chip {
     max-width: 150px;
   }
@@ -213,8 +201,7 @@
     grid-template-columns: 1fr;
   }
 
-  /* a thumb needs 44 px: the header button and chip, the card's buttons, a person's row, the dialog's fields and the join button */
-  .sch-add,
+  /* a thumb needs 44 px: the header chip, the card's buttons, a person's row, the dialog's fields and the join button */
   .sch-chip,
   .sch-pop .btn,
   .sch-connect .btn,

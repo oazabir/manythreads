@@ -191,6 +191,8 @@ export const ToolMoreIcon = proIcon(MoreHorizontalIcon, 16);
 
 /* Bundle D (connectors): the icons of the planned-room, connected-apps and chat-apps pages. ProIcons 4.13.7 has no person-with-a-minus icon, so "Remove a leaving person" borrows PersonIcon. */
 export const ScheduleCalendarIcon = proIcon(CalendarIcon, 16);
+/* P33: the channel header's icons: the people of the channel (the Members button) */
+export const MembersIcon = proIcon(PersonMultipleIcon, 16);
 export const ScheduleClockIcon = proIcon(ProClock, 16);
 export const ConnectedAppsIcon = proIcon(LinkIcon, 16);
 export const ChatAppsIcon = proIcon(ChatIcon, 16);

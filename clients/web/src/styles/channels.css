@@ -2178,25 +2178,6 @@
   }
 }
 
-/* the Bot Board link the channel puts in the header's action slot, beside the project topic */
-.chv-botboard {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  margin-right: 8px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-lg);
-  color: var(--ink);
-  font-size: var(--fs-caption);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.chv-botboard:hover {
-  background: var(--msg-hover);
-}
-
 /* "(edited)" opens the earlier versions (PLAN P14-12) */
 .edited-wrap {
   position: relative;
@@ -2469,15 +2450,6 @@
   margin-right: 4px;
 }
 
-/* the header tools keep one order whichever of them is drawn first (the members arrive after the rest): search, voice room, members, bookmark (P21-RUN) */
-.chead-actions > .chd {
-  order: 2;
-}
-
-.chead-actions > .bm-open {
-  order: 3;
-}
-
 .bm-x {
   padding: 2px 8px 2px 0;
   border: 0;
@@ -2514,4 +2486,165 @@
 .bm-kind.on {
   border-color: var(--human-border);
   background: var(--human-wash);
+}
+
+/*
+ * A calmer channel header (P33-01): one row of square icon buttons of one size, the search as a bar that takes the free space. Everything the channel screen puts in the
+ * header's slot wears `chv-tool` (Files uses the same slot and keeps its own look), so `:has(.chv-tool)` is the channel's header and nothing else. The order, left to right:
+ * search, planned-room chip, Bot Board, Schedule a room, voice room, members, bookmark; the bell follows the slot.
+ */
+.chead-tools:has(.chv-tool) {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 0;
+}
+
+.chead-tools:has(.chv-tool) .chead-actions {
+  flex: 1 1 auto;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.chead-tools:has(.chv-tool) .icon-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.chead-tools:has(.chv-tool) .icon-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.chv-search {
+  order: 1;
+}
+
+.chv-chip {
+  order: 2;
+}
+
+.chv-botboard {
+  order: 3;
+}
+
+.chv-schedule {
+  order: 4;
+}
+
+.chv-voice {
+  order: 5;
+}
+
+.chv-members {
+  order: 6;
+}
+
+.chead-actions > .bm-open {
+  order: 7;
+  margin-right: 0;
+}
+
+/* the search bar takes what the title, the topic and the icons leave, between 96 and 560 px */
+.search-box.chv-search {
+  flex: 1 1 200px;
+  width: auto;
+  min-width: 96px;
+  max-width: 560px;
+  height: 32px;
+  padding: 0 10px;
+}
+
+/* the people icon carries the head count beside it, so it is as tall as the others and as wide as its number needs */
+.chead-tools .icon-btn.chv-members {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+}
+
+.chv-count {
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.chv-members[aria-pressed="true"] {
+  background: var(--nav-on);
+  color: var(--ink);
+}
+
+/* a small green dot on the voice icon: a room is live in this channel */
+.chv-live-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--paper);
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.chv-voice.chv-live {
+  color: var(--ok-ink);
+}
+
+/* in the room: the icon is a state, not a button */
+.chead-actions .call-here.chv-tool {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* the topic keeps a readable width on a wide screen (it was cut to one letter); with the right panel open it is left out */
+@media (width > 1100px) {
+  .chead > .topic {
+    min-width: 160px;
+  }
+}
+
+.frame:has(.right-panel:not([hidden])) .chead > .topic {
+  display: none;
+}
+
+@media (pointer: coarse) and (width > 760px) {
+  .chead-tools:has(.chv-tool) .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .chead-tools .icon-btn.chv-members {
+    width: auto;
+    min-width: 44px;
+  }
+
+  .chead-actions .call-here.chv-tool {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* a phone: Bot Board and Schedule a room move into the channel details menu (the name button); the search is the magnifier */
+.chd-phone-only {
+  display: none;
+}
+
+@media (width <= 760px) {
+  .chv-botboard,
+  .chv-schedule {
+    display: none;
+  }
+
+  .chd-menu .chd-phone-only {
+    display: flex;
+  }
+
+  .search-box.chv-search {
+    display: none;
+  }
 }

@@ -5,19 +5,6 @@
  */
 
 /* ---- header ---- */
-.call-start {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.call-start.live {
-  border-color: var(--ok-border);
-  background: var(--ok-wash);
-  color: var(--ok-ink);
-}
-
 .call-here {
   display: inline-flex;
   align-items: center;
@@ -29,6 +16,21 @@
   color: var(--ok-ink);
   font-size: var(--fs-caption);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+/* in a channel's header the pill of the room the person is in is a green square with its wave; its words stay for a screen reader (P33-01) */
+.chead-actions .call-here {
+  position: relative;
+  padding: 6px;
+}
+
+.chead-actions .call-here > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -768,25 +770,6 @@
   .call-dock.sheet .call-more {
     position: static;
   }
-
-  .call-start-label {
-    display: none;
-  }
-
-  /* the header also holds the Schedule button (44 px) now: the pill of the room the person is in keeps only its wave, its words stay for a screen reader, so the bell stays on the screen (P16-IT) */
-  .chead-actions .call-here {
-    position: relative;
-    padding: 6px;
-  }
-
-  .chead-actions .call-here > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
 }
 
 /* ---- an incoming call ---- */
@@ -833,3 +816,4 @@
   display: flex;
   gap: 8px;
 }
+

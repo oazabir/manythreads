@@ -3,18 +3,23 @@ import { Link, useNavigate } from 'react-router';
 import { leaveChannel } from '../api/endpoints';
 import { ChannelLevelOptions } from '../notifications/ChannelBell';
 import { WebhooksDialog } from '../webhooks/WebhooksDialog';
-import { MembersList } from './MembersStack';
+import { isMockMode } from '../api/setup';
+import { usePanel } from '../kernel/panel';
+import { notifyScheduledChanged } from '../meetings/schedule/changed';
+import { ScheduleRoomDialog } from '../meetings/schedule/ScheduleRoomDialog';
+import { MembersList } from './MembersButton';
+import { MEMBERS_PANEL } from './membersModel';
 import { useShell } from './context';
 import { FULL_STARS_TEXT, isStarred, starPatch } from './sidebarLayout';
 import { sidebarPrefsStore, useSidebarPrefs } from './sidebarPrefsStore';
-import { CaretIcon, StarIcon } from './icons';
+import { BoardsIcon, CaretIcon, MembersIcon, ScheduleCalendarIcon, StarIcon } from './icons';
 import { useDismiss } from './useDismiss';
 
 /**
  * The channel's name in the header, as a button that opens the channel's details (P21-06): notifications, star, members, integrations, files and
  * Leave. It replaces the separate star, bell and Integrations buttons the header used to carry. A direct message has the notifications choice only.
  */
-export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail }: {
+export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail, botBoard }: {
   channelId: string;
   name: string;
   teamSlug: string;
@@ -26,12 +31,16 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   lead?: ReactNode;
   /** Drawn after the button, outside it (a direct message: status and local time). */
   trail?: ReactNode;
+  /** The channel's Bot Board, when it has one: a phone has no room for its icon in the header, so the menu carries it (P33-01). */
+  botBoard?: { to: string; name: string } | undefined;
 }) {
   const { guest } = useShell();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'menu' | 'notify' | 'members'>('menu');
   const [hooks, setHooks] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const panel = usePanel();
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -91,6 +100,12 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
                 </button>
               ) : null}
               {!dm ? <button type="button" role="menuitem" className="menu-item" data-testid="details-members" onClick={() => setView('members')}>Members</button> : null}
+              {!dm && botBoard ? (
+                <Link role="menuitem" className="menu-item chd-phone-only" data-testid="details-bot-board" to={botBoard.to} onClick={close}><BoardsIcon /> {botBoard.name}</Link>
+              ) : null}
+              {!dm && !isMockMode() ? (
+                <button type="button" role="menuitem" className="menu-item chd-phone-only" data-testid="details-schedule" aria-haspopup="dialog" onClick={() => { close(); setScheduling(true); }}><ScheduleCalendarIcon /> Schedule a room</button>
+              ) : null}
               {!dm && canManage ? (
                 <button type="button" role="menuitem" className="menu-item" data-testid="webhooks-open" aria-haspopup="dialog" onClick={() => { close(); setHooks(true); }}>Integrations</button>
               ) : null}
@@ -113,12 +128,14 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
           ) : (
             <>
               <button type="button" className="menu-item" onClick={() => setView('menu')}>Back</button>
+              {!guest ? <button type="button" role="menuitem" className="menu-item" data-testid="details-members-panel" onClick={() => { close(); panel.push({ type: MEMBERS_PANEL, id: channelId }); }}><MembersIcon /> Open the member list</button> : null}
               <MembersList channelId={channelId} />
             </>
           )}
           {problem ? <p className="chn-error" role="alert">{problem}</p> : null}
         </div>
       ) : null}
+      {scheduling ? <ScheduleRoomDialog channelId={channelId} channelLabel={`#${name}`} onClose={() => setScheduling(false)} onCreated={() => { setScheduling(false); notifyScheduledChanged(channelId); }} /> : null}
       {hooks ? <WebhooksDialog channelId={channelId} channelName={name} onClose={() => setHooks(false)} /> : null}
     </div>
   );
