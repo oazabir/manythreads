@@ -111,11 +111,14 @@ export function allowanceSentence(l: Pick<RoutineLimits, 'spentUsd' | 'monthlyCa
 export const allowancePercent = (l: Pick<RoutineLimits, 'spentUsd' | 'monthlyCapUsd'>): number =>
   l.monthlyCapUsd <= 0 ? 100 : Math.min(100, Math.round((l.spentUsd / l.monthlyCapUsd) * 100));
 
-export const countSentence = (l: Pick<RoutineLimits, 'used' | 'maxRoutines'>): string => `${l.used} of ${l.maxRoutines} routines.`;
+export const countSentence = (l: Pick<RoutineLimits, 'used' | 'maxRoutines'>): string =>
+  `${l.used} of ${l.maxRoutines} ${l.maxRoutines === 1 ? 'routine' : 'routines'}.`;
 
 /** The line under the limits: what a single routine is held to. */
-export const limitsSentence = (l: Pick<RoutineLimits, 'minIntervalMinutes' | 'runToolCalls'>): string =>
-  `A routine runs at most once every ${l.minIntervalMinutes} minutes and makes at most ${l.runToolCalls} tool calls in one run.`;
+export const limitsSentence = (l: Pick<RoutineLimits, 'minIntervalMinutes' | 'runToolCalls'>): string => {
+  const interval = l.minIntervalMinutes === 1 ? 'minute' : `${l.minIntervalMinutes} minutes`;
+  return `A routine runs at most once every ${interval} and makes at most ${l.runToolCalls} tool calls in one run.`;
+};
 
 export function quietHoursProblem(from: string, to: string): string | null {
   const time = /^([01]\d|2[0-3]):[0-5]\d$/;
