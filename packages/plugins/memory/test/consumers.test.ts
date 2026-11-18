@@ -94,4 +94,24 @@ describe('messages', () => {
     await h.handlers.get('channel.message.posted')!({ type: 'channel.message.posted', ...base, teamId: null }, txPublic);
     expect(h.queries.length).toBe(before);
   });
+
+  it('a voice message whose transcript was written marks its thread (and the message) as changed, like an edit; a DM marks nothing', async () => {
+    const h = harness();
+    const base = { schemaVersion: 1, workspaceId: WS, channelId: '00000000-0000-7000-8000-0000000e0001', teamId: TEAM, authorId: '00000000-0000-7000-8000-0000000d0002', threadRootId: null, messageId: '00000000-0000-7000-8000-0000000f0002', state: 'server', transcriptEndMs: 20_000 };
+    const txPublic = {
+      ...h.tx,
+      query: (text: string, values: readonly unknown[] = []) => {
+        h.queries.push({ text, values });
+        return Promise.resolve({ rows: /FROM app\.channels/.test(text) ? [{ ok: true }] : [] });
+      },
+    } as unknown as PluginTx;
+    expect(h.handlers.has('channel.message.transcribed')).toBe(true);
+    await h.handlers.get('channel.message.transcribed')!({ type: 'channel.message.transcribed', ...base }, txPublic);
+    const marks = h.queries.filter((q) => /INSERT INTO app\.memory_feed_pending/.test(q.text));
+    expect(marks).toHaveLength(1);
+    expect(marks[0]!.values[1]).toContain(base.messageId);
+    const before = h.queries.length;
+    await h.handlers.get('channel.message.transcribed')!({ type: 'channel.message.transcribed', ...base, teamId: null }, txPublic);
+    expect(h.queries.length).toBe(before);
+  });
 });

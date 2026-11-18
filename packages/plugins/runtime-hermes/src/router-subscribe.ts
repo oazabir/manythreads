@@ -9,6 +9,7 @@ import {
 import {
   ApprovalsApprovalDecidedEvent,
   ChannelMessagePostedEvent,
+  ChannelMessageTranscribedEvent,
   isRepoOriginAllowed,
   parseRepoOriginAllow,
   type BotTrigger,
@@ -64,6 +65,8 @@ export interface MessageRow {
   is_channel_copy: boolean;
   /** The message is a poll or the result of one (`meta.poll`, `meta.pollResult`, set by the channels plugin only). */
   is_poll: boolean;
+  /** `meta.voice.transcript` of a voice message (`pending`, `server`, `failed`, `none`, ...); null for any other message. */
+  voice_state: string | null;
   [key: string]: unknown;
 }
 
@@ -104,7 +107,7 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
                 c.archived_at AS channel_archived, c.bot_id AS channel_bot_id, c.kind AS channel_kind,
                 a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name,
                 (m.meta ? 'answer') AS carries_answer, (m.meta ? 'handoff') AS is_handoff_card, (m.meta ? 'alsoSentFrom') AS is_channel_copy,
-                (m.meta ? 'poll' OR m.meta ? 'pollResult') AS is_poll
+                (m.meta ? 'poll' OR m.meta ? 'pollResult') AS is_poll, m.meta -> 'voice' ->> 'transcript' AS voice_state
            FROM app.messages m
            JOIN app.channels c ON c.id = m.channel_id
            JOIN app.actors a ON a.id = m.author_id
@@ -129,78 +132,108 @@ export function registerRouter(ctx: PluginContext): void {
   registerPersonalRoutineRouter(ctx);
   registerInboxRouter(ctx);
   registerWebhookRouter(ctx);
+  // A voice message is answered once, on the words (P32-04, decision D13): `channel.message.posted` leaves one that the server is still transcribing (or has
+  // transcribed already, or failed to) alone, and `channel.message.transcribed` routes it with the transcript as its text (or, when the server could not write
+  // one, with the stand-in line, as a message that never had a transcript). A voice message that never went to the server (the switch was off, an old
+  // client sent its own words) has no such event and is routed here as any message is.
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
-    const event = ChannelMessagePostedEvent.parse(raw);
-    const message = await loadMessage(tx, event.messageId);
-    if (!message) return;
-    // The announcement a handover posts ("Orchestrator → @coder: ...") carries `meta.handoff`, set only by the tasks plugin through the message
-    // door. It is not a request of its own: the assignment's event (router-tasks.ts) wakes the new owner, so this message starts nothing,
-    // whoever wrote it.
-    if (message.is_handoff_card) return;
-    // "Also send to channel" posts the reply a second time as a message of the channel (`meta.alsoSentFrom`, set by the channels plugin only).
-    // The reply in the thread already woke whoever it names; the copy is the same words, so it wakes nobody a second time.
-    if (message.is_channel_copy) return;
-    // A poll and its result carry words anybody typed (a question, an option): an `@bot` in one is text on a card, not a request, so nothing here wakes a bot.
-    if (message.is_poll) return;
-    // A bot answering a bot is a delegation (below): an explicit @mention in a public team channel, mayTag-gated and
-    // depth-capped. Anything else that is not a person — a gone author included — starts nothing.
-    if (message.author_kind === 'bot') {
-      await routeDelegation(ctx, tx, event.workspaceId, message);
-      return;
-    }
-    if (message.author_kind !== 'person') return;
-    // A person's message that carries an Answer is a shared copy, made by the platform from a bot's text: whatever it names (an `@bot` a
-    // prompt-injected source planted in the answer) is not the sharer asking for anything, so no trigger fires for it.
-    if (message.carries_answer) return;
-    // A bot conversation is the one private channel a bot runs from, and then only its own bot (a DM, a private team channel and every
-    // other bot's conversation stay out): the channel says who it is with, the bot's team is the channel's team.
-    const conversation = message.channel_kind === 'bot_conversation';
-    if (message.channel_team === null || message.channel_archived !== null) return;
-    if (message.channel_private && !conversation) return;
-    if (conversation && message.channel_bot_id === null) return;
-
-    const view: MessageView = {
-      channelName: message.channel_name,
-      isBotChannel: false,
-      mentions: conversation ? new Set() : mentionedHandles(message.body),
-    };
-    const bots = (
-      await tx.query<BotRow>(
-        `SELECT id, slug, runtime, triggers FROM app.bots
-          WHERE (team_id = $1 OR scope = 'workspace') AND status = 'active' AND ($2::uuid IS NULL OR id = $2::uuid) ORDER BY slug`,
-        [message.channel_team, conversation ? message.channel_bot_id : null],
-      )
-    ).rows;
-    const project = await projectOfChannel(tx, message.channel_id);
-    // A question the bot page's Test action filed is a rehearsal (the row is written by the Test route in the transaction that posted the message,
-    // so it is there before this event is delivered). Only a bot conversation has one.
-    const rehearsal = conversation && (await isRehearsalQuestion(tx, message.id));
-    // The model the person picked for this message in Chat (filed by the conversations send route in the transaction that posted it).
-    const modelAlias = conversation ? await pickedModel(tx, message.id) : null;
-    for (const bot of bots) {
-      const trigger = matchTrigger(bot.triggers ?? [], bot.slug, {
-        ...view,
-        isBotChannel: message.channel_bot_id === bot.id,
-      });
-      if (trigger === null) continue;
-      const payload: RunPayload = {
-        workspaceId: event.workspaceId,
-        botId: bot.id,
-        teamId: message.channel_team,
-        channelId: message.channel_id,
-        trigger,
-        askerActorId: message.author_id,
-        replyRootId: message.thread_root_id ?? message.id,
-        runThreadId: message.thread_root_id,
-        prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
-        text: message.body.slice(0, 40_000),
-        messageId: message.id,
-        ...(rehearsal && trigger === 'conversation' ? { rehearsal: true as const } : {}),
-        ...(modelAlias !== null && trigger === 'conversation' ? { modelAlias } : {}),
-      };
-      await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
-    }
+    await routeMessage(ctx, tx, ChannelMessagePostedEvent.parse(raw), 'posted');
   });
+  ctx.events.subscribe('channel.message.transcribed', async (raw: PluginEvent, tx: PluginTx) => {
+    await routeMessage(ctx, tx, ChannelMessageTranscribedEvent.parse(raw), 'transcribed');
+  });
+}
+
+/** Did the server already announce the end of this voice message's transcript? (The event is written after the message, so its id sorts after the message's.) */
+async function transcriptAnnounced(tx: PluginTx, workspaceId: string, messageId: string): Promise<boolean> {
+  const res = await tx.query(
+    `SELECT 1 FROM app.events WHERE workspace_id = $1::uuid AND type = 'channel.message.transcribed' AND id > $2::uuid AND payload ->> 'messageId' = $3::text LIMIT 1`,
+    [workspaceId, messageId, messageId],
+  );
+  return res.rows.length > 0;
+}
+
+/** Decide, then enqueue one run per bot that the message fires, for a message that was just posted or whose transcript just ended. */
+async function routeMessage(
+  ctx: PluginContext,
+  tx: PluginTx,
+  event: { workspaceId: string; messageId: string },
+  via: 'posted' | 'transcribed',
+): Promise<void> {
+  const message = await loadMessage(tx, event.messageId);
+  if (!message) return;
+  if (via === 'posted' && message.voice_state !== null) {
+    if (message.voice_state === 'pending') return; // the words are on their way: the transcribed event routes it
+    if (message.voice_state !== 'device' && message.voice_state !== 'edited' && (await transcriptAnnounced(tx, event.workspaceId, message.id))) return;
+  }
+  if (via === 'transcribed' && message.voice_state === null) return;
+  // The announcement a handover posts ("Orchestrator → @coder: ...") carries `meta.handoff`, set only by the tasks plugin through the message
+  // door. It is not a request of its own: the assignment's event (router-tasks.ts) wakes the new owner, so this message starts nothing,
+  // whoever wrote it.
+  if (message.is_handoff_card) return;
+  // "Also send to channel" posts the reply a second time as a message of the channel (`meta.alsoSentFrom`, set by the channels plugin only).
+  // The reply in the thread already woke whoever it names; the copy is the same words, so it wakes nobody a second time.
+  if (message.is_channel_copy) return;
+  // A poll and its result carry words anybody typed (a question, an option): an `@bot` in one is text on a card, not a request, so nothing here wakes a bot.
+  if (message.is_poll) return;
+  // A bot answering a bot is a delegation (below): an explicit @mention in a public team channel, mayTag-gated and
+  // depth-capped. Anything else that is not a person — a gone author included — starts nothing.
+  if (message.author_kind === 'bot') {
+    await routeDelegation(ctx, tx, event.workspaceId, message);
+    return;
+  }
+  if (message.author_kind !== 'person') return;
+  // A person's message that carries an Answer is a shared copy, made by the platform from a bot's text: whatever it names (an `@bot` a
+  // prompt-injected source planted in the answer) is not the sharer asking for anything, so no trigger fires for it.
+  if (message.carries_answer) return;
+  // A bot conversation is the one private channel a bot runs from, and then only its own bot (a DM, a private team channel and every
+  // other bot's conversation stay out): the channel says who it is with, the bot's team is the channel's team.
+  const conversation = message.channel_kind === 'bot_conversation';
+  if (message.channel_team === null || message.channel_archived !== null) return;
+  if (message.channel_private && !conversation) return;
+  if (conversation && message.channel_bot_id === null) return;
+
+  const view: MessageView = {
+    channelName: message.channel_name,
+    isBotChannel: false,
+    mentions: conversation ? new Set() : mentionedHandles(message.body),
+  };
+  const bots = (
+    await tx.query<BotRow>(
+      `SELECT id, slug, runtime, triggers FROM app.bots
+        WHERE (team_id = $1 OR scope = 'workspace') AND status = 'active' AND ($2::uuid IS NULL OR id = $2::uuid) ORDER BY slug`,
+      [message.channel_team, conversation ? message.channel_bot_id : null],
+    )
+  ).rows;
+  const project = await projectOfChannel(tx, message.channel_id);
+  // A question the bot page's Test action filed is a rehearsal (the row is written by the Test route in the transaction that posted the message,
+  // so it is there before this event is delivered). Only a bot conversation has one.
+  const rehearsal = conversation && (await isRehearsalQuestion(tx, message.id));
+  // The model the person picked for this message in Chat (filed by the conversations send route in the transaction that posted it).
+  const modelAlias = conversation ? await pickedModel(tx, message.id) : null;
+  for (const bot of bots) {
+    const trigger = matchTrigger(bot.triggers ?? [], bot.slug, {
+      ...view,
+      isBotChannel: message.channel_bot_id === bot.id,
+    });
+    if (trigger === null) continue;
+    const payload: RunPayload = {
+      workspaceId: event.workspaceId,
+      botId: bot.id,
+      teamId: message.channel_team,
+      channelId: message.channel_id,
+      trigger,
+      askerActorId: message.author_id,
+      replyRootId: message.thread_root_id ?? message.id,
+      runThreadId: message.thread_root_id,
+      prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
+      text: message.body.slice(0, 40_000),
+      messageId: message.id,
+      ...(rehearsal && trigger === 'conversation' ? { rehearsal: true as const } : {}),
+      ...(modelAlias !== null && trigger === 'conversation' ? { modelAlias } : {}),
+    };
+    await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
+  }
 }
 
 /**

@@ -10,6 +10,8 @@ import { registerEphemeralRoutes } from './routes-ephemeral.ts';
 import { registerMentionRoutes } from './routes-mentions.ts';
 import { registerMessageRoutes } from './routes-messages.ts';
 import { registerScheduledRoutes } from './routes-scheduled.ts';
+import { registerVoiceRoutes } from './routes-voice.ts';
+import { registerVoiceJob } from './voice.ts';
 import { registerPollRoutes } from './routes-polls.ts';
 import { CLOSE_CRON, CLOSE_QUEUE, closeDue } from './polls.ts';
 import { registerSidebarRoutes } from './routes-sidebar.ts';
@@ -38,6 +40,7 @@ export default definePlugin({
       emits: [
         'channel.message.posted',
         'channel.message.edited',
+        'channel.message.transcribed',
         'channel.markdown.repaired',
         'channel.message.deleted',
         'channel.reaction.changed',
@@ -70,6 +73,8 @@ export default definePlugin({
     registerPollRoutes(deps);
     registerSidebarRoutes(deps);
     registerEphemeralRoutes(deps);
+    registerVoiceRoutes(deps);
+    registerVoiceJob(deps);
     registerTemplateConsumer(ctx);
     registerCohesion(ctx);
     registerMessageCapabilities(deps);

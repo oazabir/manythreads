@@ -7,6 +7,7 @@ import {
   ChannelMessageDeletedEvent,
   ChannelMessageEditedEvent,
   ChannelMessagePostedEvent,
+  ChannelMessageTranscribedEvent,
   RepoRepoCommittedEvent,
 } from '@manythreads/shared';
 import { feedTuning } from './config.ts';
@@ -28,6 +29,7 @@ type Source = readonly [SourceKind, string];
 export const CONSUMED_EVENTS = [
   'channel.message.posted',
   'channel.message.edited',
+  'channel.message.transcribed',
   'channel.message.deleted',
   'channel.channel.updated',
   'approvals.approval.decided',
@@ -87,7 +89,7 @@ export function registerConsumers(ctx: PluginContext): void {
       )
     ).rows[0]?.ok === true;
 
-  const messageEvent = (schema: typeof ChannelMessagePostedEvent | typeof ChannelMessageEditedEvent | typeof ChannelMessageDeletedEvent, root: 'posted' | 'changed') =>
+  const messageEvent = (schema: typeof ChannelMessagePostedEvent | typeof ChannelMessageEditedEvent | typeof ChannelMessageTranscribedEvent | typeof ChannelMessageDeletedEvent, root: 'posted' | 'changed') =>
     async (raw: PluginEvent, tx: PluginTx): Promise<void> => {
       const parsed = schema.safeParse(raw);
       if (!parsed.success) return;
@@ -106,6 +108,8 @@ export function registerConsumers(ctx: PluginContext): void {
 
   ctx.events.subscribe('channel.message.posted', messageEvent(ChannelMessagePostedEvent, 'posted'));
   ctx.events.subscribe('channel.message.edited', messageEvent(ChannelMessageEditedEvent, 'changed'));
+  // a voice message's transcript arrives after the message was posted: the server's write of the words is a change of the message's text, like an edit (P32-04)
+  ctx.events.subscribe('channel.message.transcribed', messageEvent(ChannelMessageTranscribedEvent, 'changed'));
   ctx.events.subscribe('channel.message.deleted', messageEvent(ChannelMessageDeletedEvent, 'changed'));
 
   // A channel that stopped being team-visible takes its documents out of the bank. Privacy never changes through the API today; this is for the

@@ -41,6 +41,18 @@ export const EditMessageResponse = ChannelMessage;
 export type EditMessageResponse = z.infer<typeof EditMessageResponse>;
 export const editMessageRoute = { method: 'PATCH', path: '/api/channels/:channelId/messages/:messageId' } as const;
 
+/**
+ * Ask the server to write the transcript of your own voice message again (P32-04, decision D13). Only the author, only when the message's
+ * `meta.voice.transcript` is `failed` with `transcriptRetry` true, only while the workspace's transcript switch is on and the speech model is set up
+ * (409 otherwise, with the reason; 429 after 3 asks for one message in an hour). No body. The answer is the message as it now stands (`pending`); the
+ * result arrives as a `message.edited` push like the first one.
+ */
+export const VoiceTranscribePathParams = z.object({ messageId: MessageId });
+export type VoiceTranscribePathParams = z.infer<typeof VoiceTranscribePathParams>;
+export const RetryVoiceTranscriptResponse = ChannelMessage;
+export type RetryVoiceTranscriptResponse = z.infer<typeof RetryVoiceTranscriptResponse>;
+export const retryVoiceTranscriptRoute = { method: 'POST', path: '/api/messages/:messageId/voice/transcribe' } as const;
+
 /** Delete a message (its author, or a lead of the channel's team). Deleting twice is fine: `deleted` is false the second time. */
 export const DeleteMessageResponse = z.object({ deleted: z.boolean() });
 export type DeleteMessageResponse = z.infer<typeof DeleteMessageResponse>;
