@@ -250,3 +250,14 @@ A base URL (`apiBase`) is typed by an admin and the proxy opens the connection f
 - **A provider marked local** (the admin's own word, `local`) may use loopback and the private ranges, for a model the admin hosts. Changing the address clears the word unless the same request sets it again (`nextLocal`).
 
 The refusal is a `400 validation_failed` with a plain sentence; at test time the result is `address_blocked`. This list is not the Hermes operator allow list (`MANYTHREADS_HERMES_ALLOWED_HOSTS`), which is for the Hermes gateway and is not consulted here.
+
+## The clip door for voice messages (P32-03, decision D13)
+
+`ctx.providers.get<LlmProviderServices>('llm').transcribeClip(request, inTx)` turns one voice clip, as the browser recorded it (WebM, Ogg or MP4, 8 MB at most), into words. It sits beside the WAV door that meetings use (`transcribe`) and shares the `transcribe` alias, but it has its own file (`src/transcribe-clip.ts`) and its own rules:
+
+- **Only a model inside this deployment.** The `transcribe` alias, and every alias on its fallback chain, must be bound to a provider that the admin marked as running here (`local`). Anything else is refused before a byte leaves (`reason`: "Voice messages are transcribed only by a model inside this deployment..."), whatever the guardrail preset. `clipStatus(tx, workspaceId)` answers the same question without sending anything (`{ ready: true }` or `{ ready: false, reason }`); the channels plugin uses it to decide whether to offer "Try again".
+- **No transaction is held while the model works.** The door takes `inTx`, a function that opens a short system transaction for the workspace. It opens one for the check (the alias and the pre-call check of budgets and guardrails, which sees an empty text since audio carries none), none during the call to the proxy, and one more for the spend line (purpose `transcribe`, session `voice:<messageId>`, cost 0).
+- **It never throws.** `{ outcome: 'text', text, lang }`; `{ outcome: 'unavailable', reason }` for a busy model (429), a server error or a timeout, which may pass; `{ outcome: 'refused', reason }` for what waiting will not change (a clip the model will not read, a missing gateway, an empty or too large clip, a budget or guardrail refusal). The audio is never stored.
+- **Test stand-in.** With `MANYTHREADS_FAKE_ASR=1` (refused at start when `NODE_ENV=production`) the door answers `This is a test voice message.` after a short delay, with no proxy and no bound model; the check and the spend line still happen.
+
+Tests: `test/transcribe-clip.test.ts`.

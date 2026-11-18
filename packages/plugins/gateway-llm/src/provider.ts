@@ -1,9 +1,10 @@
-import type { LlmTranscribeRequest, LlmTranscribeResult, PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
+import type { ClipInTx, LlmClipRequest, LlmClipResult, LlmTranscribeRequest, LlmTranscribeResult, PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
 import { requestKeyCheck } from './keys.ts';
 import { classify, type LlmClassifyRequest, type LlmClassifyResult } from './complete.ts';
 import { chat, type ChatTx, type LlmChatRequest, type LlmChatResult } from './chat.ts';
 import { evalComplete, type LlmEvalRequest, type LlmEvalResult } from './eval-complete.ts';
 import { assertFakeAsrAllowed, transcribe } from './transcribe.ts';
+import { clipStatus, transcribeClip } from './transcribe-clip.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
 // The `provider.llm` contract (SPEC §10.2, PLAN P5-06 and P5-07). A bot's runtime does not reach LiteLLM itself; it is
@@ -47,6 +48,14 @@ export interface LlmProviderServices extends ProviderImpl {
    * The audio is never stored. Never throws for an unavailable model; the answer says why. Same shape as `LlmTranscriber` in the SDK, which the meetings plugin types it by.
    */
   transcribe(tx: PluginTx, request: LlmTranscribeRequest): Promise<LlmTranscribeResult>;
+  /**
+   * Speech to text for a voice message (P32-03, decision D13): one clip as the browser recorded it, through the pre-call check, the master key and a spend line.
+   * The `transcribe` model (and its fallbacks) must be inside this deployment, else the answer is `refused` and nothing is sent. No transaction is held while the
+   * model works: the door opens two short ones through `inTx`. Never throws. Same shape as `LlmClipTranscriber` in the SDK, which the channels plugin types it by.
+   */
+  transcribeClip(request: LlmClipRequest, inTx: ClipInTx): Promise<LlmClipResult>;
+  /** Whether a clip would be sent now (the model is set up and local, or the test stand-in is on). Reads only. */
+  clipStatus(tx: PluginTx, workspaceId: string): Promise<{ ready: true } | { ready: false; reason: string }>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
@@ -72,6 +81,8 @@ export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
     evalComplete: (tx, request) => evalComplete(ctx, tx, request),
     chat: (run, request) => chat(ctx, run, window.hit, request),
     transcribe: (tx, request) => transcribe(ctx, tx, request),
+    transcribeClip: (request, inTx) => transcribeClip(ctx, request, inTx),
+    clipStatus: (tx, workspaceId) => clipStatus(tx, workspaceId),
   };
   ctx.providers.register('llm', impl);
   return impl;
