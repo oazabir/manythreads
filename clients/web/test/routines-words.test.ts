@@ -4,7 +4,9 @@ import {
   allowancePercent,
   allowanceSentence,
   canRunNow,
+  countSentence,
   lastRunSentence,
+  limitsSentence,
   outputPlaceWords,
   quietHoursProblem,
   quietHoursSentence,
@@ -59,6 +61,21 @@ describe('routine words', () => {
     expect(allowancePercent({ spentUsd: 9, monthlyCapUsd: 5 })).toBe(100);
     expect(allowancePercent({ spentUsd: 0, monthlyCapUsd: 0 })).toBe(100);
     expect(allowanceSentence({ spentUsd: 0, monthlyCapUsd: 0 })).toContain('no spending allowance');
+  });
+  it.each([
+    { used: 0, maxRoutines: 1, expected: '0 of 1 routine.' },
+    { used: 1, maxRoutines: 1, expected: '1 of 1 routine.' },
+    { used: 1, maxRoutines: 2, expected: '1 of 2 routines.' },
+  ])('formats the routine count as "$expected"', ({ used, maxRoutines, expected }) => {
+    expect(countSentence({ used, maxRoutines })).toBe(expected);
+  });
+  it.each([
+    { minIntervalMinutes: 1, interval: 'minute' },
+    { minIntervalMinutes: 2, interval: '2 minutes' },
+  ])('describes a $minIntervalMinutes-minute gap', ({ minIntervalMinutes, interval }) => {
+    expect(limitsSentence({ minIntervalMinutes, runToolCalls: 5 })).toBe(
+      `A routine runs at most once every ${interval} and makes at most 5 tool calls in one run.`,
+    );
   });
   it('checks quiet hours and a time zone', () => {
     expect(quietHoursProblem('22:00', '07:00')).toBeNull();
