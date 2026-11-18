@@ -30,6 +30,9 @@
         },
         "passwordForMembers": {
           "type": "boolean"
+        },
+        "voiceTranscripts": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -37,7 +40,8 @@
         "name",
         "slug",
         "selfSignup",
-        "passwordForMembers"
+        "passwordForMembers",
+        "voiceTranscripts"
       ]
     }
   },

@@ -108,6 +108,38 @@ describe('workspace General settings', () => {
   });
 });
 
+describe('the voice message transcripts switch (P32-02)', () => {
+  it('is on by default, can be turned off and on by an owner, is audited with its new value, and a repeat writes nothing', async () => {
+    expect(GetWorkspaceResponse.parse(ok(await w.call(omar, 'GET', '/api/workspace'))).workspace.voiceTranscripts).toBe(true);
+    const before = (await events('workspace.settings.updated')).length;
+    const off = GetWorkspaceResponse.parse(ok(await w.call(omar, 'PATCH', '/api/workspace', { voiceTranscripts: false })));
+    expect(off.workspace).toMatchObject({ voiceTranscripts: false });
+    // the other settings did not move
+    expect(off.workspace).toMatchObject({ passwordForMembers: true });
+    await w.system(async (tx) => {
+      const row = (await tx.query<{ settings: Record<string, unknown> }>('SELECT settings FROM app.workspaces')).rows[0];
+      expect(row!.settings).toMatchObject({ voiceTranscripts: false });
+    });
+    const all = await events('workspace.settings.updated');
+    expect(all).toHaveLength(before + 1);
+    const last = all[all.length - 1] as EventRow;
+    expect(() => parseEvent(eventToRaw(last))).not.toThrow();
+    expect(Object.keys((last.payload as { changes: object }).changes)).toEqual(['voiceTranscripts']);
+    expect(last.payload).toMatchObject({ changes: { voiceTranscripts: false } });
+    ok(await w.call(omar, 'PATCH', '/api/workspace', { voiceTranscripts: false }));
+    expect(await events('workspace.settings.updated')).toHaveLength(before + 1);
+    expect(GetWorkspaceResponse.parse(ok(await w.call(omar, 'PATCH', '/api/workspace', { voiceTranscripts: true }))).workspace.voiceTranscripts).toBe(true);
+  });
+
+  it('is refused for a member (404) and for a wrong type (400), and a name change leaves it alone', async () => {
+    expect((await w.call(nadia, 'PATCH', '/api/workspace', { voiceTranscripts: false })).status).toBe(404);
+    expect((await w.call(omar, 'PATCH', '/api/workspace', { voiceTranscripts: 'no' })).status).toBe(400);
+    ok(await w.call(omar, 'PATCH', '/api/workspace', { voiceTranscripts: false }));
+    expect(GetWorkspaceResponse.parse(ok(await w.call(omar, 'PATCH', '/api/workspace', { name: 'Kahf Group' }))).workspace.voiceTranscripts).toBe(false);
+    ok(await w.call(omar, 'PATCH', '/api/workspace', { voiceTranscripts: true }));
+  });
+});
+
 describe('the time zone (the setup wizard)', () => {
   it('reads the short name (it never changes), and null for a time zone that was never set', async () => {
     const { workspace } = GetWorkspaceResponse.parse(ok(await w.call(omar, 'GET', '/api/workspace')));

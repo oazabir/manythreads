@@ -13,6 +13,7 @@ export const WorkspaceSettingsUpdatedEvent = z.object({
     timeZone: z.string().optional(),
     selfSignup: z.boolean().optional(),
     passwordForMembers: z.boolean().optional(),
+    voiceTranscripts: z.boolean().optional(),
   }),
 });
 export type WorkspaceSettingsUpdatedEvent = z.infer<typeof WorkspaceSettingsUpdatedEvent>;

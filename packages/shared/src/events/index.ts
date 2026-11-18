@@ -38,6 +38,7 @@ export * from './workspace.member.status_changed.ts';
 export * from './reading.state.changed.ts';
 export * from './channel.markdown.repaired.ts';
 export * from './channel.message.edited.ts';
+export * from './channel.message.transcribed.ts';
 export * from './channel.message.deleted.ts';
 export * from './channel.reaction.changed.ts';
 export * from './channel.channel.created.ts';

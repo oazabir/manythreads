@@ -48,7 +48,13 @@ describe('voice messages (P14-17)', () => {
     expect(VoiceMeta.parse({ ...voice, language: null }).language).toBeNull();
     expect(VoiceMeta.safeParse({ ...voice, extra: 1 }).success).toBe(false);
     expect(VoiceMeta.safeParse({ ...voice, language: 'English' }).success).toBe(false);
-    expect(VoiceMeta.safeParse({ ...voice, transcript: 'server' }).success).toBe(false);
+    expect(VoiceMeta.safeParse({ ...voice, transcript: 'unknown' }).success).toBe(false);
+    // P32-02: the server's states and fields
+    for (const transcript of ['pending', 'server', 'failed']) expect(VoiceMeta.safeParse({ ...voice, transcript }).success, transcript).toBe(true);
+    expect(VoiceMeta.safeParse({ ...voice, transcript: 'server', transcriptEndMs: 20_000 }).success).toBe(true);
+    expect(VoiceMeta.safeParse({ ...voice, transcript: 'failed', transcriptNote: 'x'.repeat(200), transcriptRetry: true }).success).toBe(true);
+    expect(VoiceMeta.safeParse({ ...voice, transcriptEndMs: 20_001 }).success).toBe(false);
+    expect(VoiceMeta.safeParse({ ...voice, transcriptNote: 'x'.repeat(201) }).success).toBe(false);
     expect(VoiceMeta.safeParse({ ...voice, peaks: [256] }).success).toBe(false);
     expect(VoiceMeta.safeParse({ ...voice, peaks: Array.from({ length: 65 }, () => 0) }).success).toBe(false);
     expect(VoiceMeta.safeParse({ ...voice, fileId: 'nope' }).success).toBe(false);

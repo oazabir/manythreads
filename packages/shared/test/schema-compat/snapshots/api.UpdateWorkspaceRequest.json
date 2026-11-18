@@ -17,6 +17,9 @@
     },
     "passwordForMembers": {
       "type": "boolean"
+    },
+    "voiceTranscripts": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false

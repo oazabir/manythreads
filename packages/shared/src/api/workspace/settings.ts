@@ -16,6 +16,11 @@ export const WorkspaceSettings = z.object({
   selfSignup: z.boolean(),
   /** Plain members may use the password form. Admins and owners always can, so a broken provider never locks everyone out. */
   passwordForMembers: z.boolean(),
+  /**
+   * The server writes the words of voice messages (the first 20 seconds, with the speech model inside this deployment; P32, decision D13). On by default; an admin
+   * switches it off in Settings, Workspace. Off: a new voice message has no transcript (`meta.voice.transcript` is `none`). Messages already sent are not changed.
+   */
+  voiceTranscripts: z.boolean(),
 });
 export type WorkspaceSettings = z.infer<typeof WorkspaceSettings>;
 
@@ -31,6 +36,7 @@ export const UpdateWorkspaceRequest = z
     timeZone: z.string().trim().min(1).max(64).optional(),
     selfSignup: z.boolean().optional(),
     passwordForMembers: z.boolean().optional(),
+    voiceTranscripts: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Change at least one setting.' });
 export type UpdateWorkspaceRequest = z.infer<typeof UpdateWorkspaceRequest>;

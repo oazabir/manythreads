@@ -307,7 +307,7 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
   }),
   'workspace.settings.updated': (e) => {
     const changes = e['changes'] && typeof e['changes'] === 'object' ? Object.keys(e['changes'] as object) : [];
-    const known = changes.filter((k) => ['name', 'timeZone', 'selfSignup', 'passwordForMembers'].includes(k)).map((k) => (k === 'name' ? 'name' : k === 'timeZone' ? 'time zone' : k === 'selfSignup' ? 'self sign-up' : 'passwords for members'));
+    const known = changes.filter((k) => ['name', 'timeZone', 'selfSignup', 'passwordForMembers', 'voiceTranscripts'].includes(k)).map((k) => (k === 'name' ? 'name' : k === 'timeZone' ? 'time zone' : k === 'selfSignup' ? 'self sign-up' : k === 'voiceTranscripts' ? 'voice message transcripts' : 'passwords for members'));
     return { action: 'workspace.settings_updated', who: person(e['personId']), target: of('workspace', null), reason: known.length > 0 ? `Changed: ${known.join(', ')}` : null };
   },
   'proposals.proposal.created': (e) => ({

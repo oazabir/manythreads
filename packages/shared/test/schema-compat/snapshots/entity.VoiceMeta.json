@@ -26,6 +26,9 @@
     "transcript": {
       "type": "string",
       "enum": [
+        "pending",
+        "server",
+        "failed",
         "device",
         "edited",
         "none"
@@ -39,6 +42,18 @@
         "minimum": 0,
         "maximum": 255
       }
+    },
+    "transcriptEndMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20000
+    },
+    "transcriptNote": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "transcriptRetry": {
+      "type": "boolean"
     }
   },
   "required": [

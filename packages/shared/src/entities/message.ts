@@ -18,13 +18,19 @@ export const MessageBody = z
 
 /** The longest voice message: five minutes. */
 export const VOICE_MAX_MS = 300_000;
+/** How much of a voice message the server transcribes: the first 20 seconds (decision D13). A preview, not a record. */
+export const VOICE_TRANSCRIPT_MAX_MS = 20_000;
 
 /**
  * What a voice message keeps beside its text (P14-17). The message's body is the transcript (so search, notifications and bots read it
  * with no extra code); the clip itself is a file attached to the message, and `fileId` names it again here so a reader knows which
- * attachment to draw as a player. `transcript` says where the body came from: `device` (the sender's own device wrote it), `edited`
- * (a person changed it afterwards) or `none` (no transcript: the body is only a stand-in line, see `voiceFallbackBody`).
- * `peaks` are up to 64 loudness values (0 to 255) for the waveform.
+ * attachment to draw as a player. `transcript` says where the body came from: `pending` (the server is writing it: the body is the stand-in line
+ * until it arrives), `server` (the server wrote it, P32-04, decision D13), `failed` (the server could not; `transcriptNote` says why), `device` (the sender's
+ * own device wrote it; old messages and old clients), `edited` (a person changed it afterwards) or `none` (no transcript: the body is only a stand-in line,
+ * see `voiceFallbackBody`). `peaks` are up to 64 loudness values (0 to 255) for the waveform.
+ *
+ * The server alone decides `transcript`, `transcriptEndMs`, `transcriptNote` and `transcriptRetry`; a post that carries them is read and the values are dropped
+ * (only an old client's `device` with words is kept). There is no transcript text in the meta: the message body is the transcript.
  */
 export const VoiceMeta = z.strictObject({
   fileId: FileId,
@@ -33,8 +39,14 @@ export const VoiceMeta = z.strictObject({
     .string()
     .regex(/^[a-z]{2,3}(-[A-Z]{2})?$/)
     .nullable(),
-  transcript: z.enum(['device', 'edited', 'none']),
+  transcript: z.enum(['pending', 'server', 'failed', 'device', 'edited', 'none']),
   peaks: z.array(z.number().int().min(0).max(255)).max(64),
+  /** `server` only: where the transcribed range ends, in milliseconds (at most `VOICE_TRANSCRIPT_MAX_MS`, never more than the clip). The range starts at 0. */
+  transcriptEndMs: z.number().int().min(0).max(VOICE_TRANSCRIPT_MAX_MS).optional(),
+  /** `failed` (or a model that is not set up): a plain reason, at most 200 characters. */
+  transcriptNote: z.string().max(200).optional(),
+  /** `failed` only: true when "Try again" can help (the model was busy or did not answer); absent when it cannot (the model is not set up, not local, or refused the clip). */
+  transcriptRetry: z.boolean().optional(),
 });
 export type VoiceMeta = z.infer<typeof VoiceMeta>;
 

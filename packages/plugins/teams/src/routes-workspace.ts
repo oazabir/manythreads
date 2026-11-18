@@ -25,12 +25,14 @@ interface WorkspaceRow extends Record<string, unknown> {
   self_signup: boolean;
   /** `settings.passwordForMembers` as text: only the literal `false` turns the password form off for members. */
   pfm: string | null;
+  /** `settings.voiceTranscripts` as text: only the literal `false` turns the server's voice-message transcripts off. */
+  vt: string | null;
 }
 
-const WORKSPACE_SQL = `SELECT w.id, w.name, w.slug, w.settings ->> 'timeZone' AS tz, w.self_signup, w.settings ->> 'passwordForMembers' AS pfm FROM app.workspaces w WHERE w.id = app.workspace_id()`;
+const WORKSPACE_SQL = `SELECT w.id, w.name, w.slug, w.settings ->> 'timeZone' AS tz, w.self_signup, w.settings ->> 'passwordForMembers' AS pfm, w.settings ->> 'voiceTranscripts' AS vt FROM app.workspaces w WHERE w.id = app.workspace_id()`;
 
 const toSettings = (r: WorkspaceRow): WorkspaceSettings =>
-  ({ id: r.id, name: r.name, slug: r.slug, timeZone: r.tz, selfSignup: r.self_signup, passwordForMembers: r.pfm !== 'false' }) as WorkspaceSettings;
+  ({ id: r.id, name: r.name, slug: r.slug, timeZone: r.tz, selfSignup: r.self_signup, passwordForMembers: r.pfm !== 'false', voiceTranscripts: r.vt !== 'false' }) as WorkspaceSettings;
 
 async function currentPersonId(tx: PluginTx): Promise<string> {
   const res = await tx.query<{ id: string | null }>('SELECT app.person_id() AS id');
@@ -131,7 +133,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
       const before = (await tx.query<WorkspaceRow>(`${WORKSPACE_SQL} FOR UPDATE OF w`)).rows[0];
       if (!before) throw notFound('Not found');
       const was = toSettings(before);
-      const changes: { name?: string; timeZone?: string; selfSignup?: boolean; passwordForMembers?: boolean } = {};
+      const changes: { name?: string; timeZone?: string; selfSignup?: boolean; passwordForMembers?: boolean; voiceTranscripts?: boolean } = {};
       if (body.name !== undefined && body.name !== was.name) changes.name = body.name;
       if (body.timeZone !== undefined && body.timeZone !== was.timeZone) {
         if (!isTimeZone(body.timeZone)) throw new HttpError(400, 'That is not a time zone this server knows. Use a name such as Europe/Berlin.');
@@ -141,6 +143,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
       if (body.passwordForMembers !== undefined && body.passwordForMembers !== was.passwordForMembers) {
         changes.passwordForMembers = body.passwordForMembers;
       }
+      if (body.voiceTranscripts !== undefined && body.voiceTranscripts !== was.voiceTranscripts) changes.voiceTranscripts = body.voiceTranscripts;
       if (changes.passwordForMembers === false) {
         // Break-glass: members can only be sent to single sign-on when there is one that works (identity-password enforces the same rule).
         const sso = await tx.query(
@@ -156,12 +159,13 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
          SET name = coalesce($1::text, w.name),
              self_signup = coalesce($2::boolean, w.self_signup),
              settings = jsonb_set(
-               CASE WHEN $3::boolean IS NULL THEN w.settings ELSE jsonb_set(w.settings, '{passwordForMembers}', to_jsonb($3::boolean)) END,
+               CASE WHEN $5::boolean IS NULL THEN w.settings ELSE jsonb_set(w.settings, '{voiceTranscripts}', to_jsonb($5::boolean)) END
+               || CASE WHEN $3::boolean IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('passwordForMembers', $3::boolean) END,
                '{timeZone}', coalesce(to_jsonb($4::text), w.settings -> 'timeZone', 'null'::jsonb)),
              updated_at = now()
          WHERE w.id = app.workspace_id()
-         RETURNING w.id, w.name, w.slug, w.settings ->> 'timeZone' AS tz, w.self_signup, w.settings ->> 'passwordForMembers' AS pfm`,
-        [changes.name ?? null, changes.selfSignup ?? null, changes.passwordForMembers ?? null, changes.timeZone ?? null],
+         RETURNING w.id, w.name, w.slug, w.settings ->> 'timeZone' AS tz, w.self_signup, w.settings ->> 'passwordForMembers' AS pfm, w.settings ->> 'voiceTranscripts' AS vt`,
+        [changes.name ?? null, changes.selfSignup ?? null, changes.passwordForMembers ?? null, changes.timeZone ?? null, changes.voiceTranscripts ?? null],
       );
       const after = res.rows[0];
       if (!after) throw forbidden();

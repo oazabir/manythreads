@@ -15,6 +15,7 @@ import {
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, notFound } from './http.ts';
 import { syncMessageRefs, type GroupNotice } from './mentions.ts';
+import { VOICE_QUEUE, decideVoice, voiceTranscriptsOn } from './voice-rules.ts';
 import { pollIdOf, pollsFor } from './poll-views.ts';
 import {
   CHANNEL_COLUMNS,
@@ -370,13 +371,18 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
     cards = attachmentIds.map((id) => byId.get(id)!);
   }
   if (input.voice) checkVoiceFile(input.voice, attachmentIds, cards);
-  const meta = { ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}), ...(input.voice ? { voice: input.voice } : {}), ...(input.meta ?? {}) };
+  // A voice message's transcript state and body are the server's to decide (P32-02, decision D13): the client's claims are dropped, and when the workspace
+  // switch is on the message is stored `pending` and a job writes the words (below, in this transaction).
+  const voice = input.voice ? decideVoice(input.voice, input.body, await voiceTranscriptsOn(tx)) : undefined;
+  const body = voice ? voice.body : input.body;
+  const meta = { ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}), ...(voice ? { voice: voice.voice } : {}), ...(input.meta ?? {}) };
   const res = await tx.query<MessageRow>(
     `INSERT INTO app.messages AS m (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
      VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::jsonb) RETURNING ${MESSAGE_COLUMNS}`,
-    [input.channelId, input.body, toPlainText(input.body), input.threadRootId ?? null, JSON.stringify(meta)],
+    [input.channelId, body, toPlainText(body), input.threadRootId ?? null, JSON.stringify(meta)],
   );
   const row = res.rows[0]!;
+  if (voice?.queue) await ctx.jobs.enqueue(tx, VOICE_QUEUE, { workspaceId: tx.actor.workspaceId, messageId: row.id }, { dedupeKey: `voice:${row.id}` });
   await ctx.audit.emit(tx, {
     type: 'channel.message.posted',
     channelId: input.channelId,

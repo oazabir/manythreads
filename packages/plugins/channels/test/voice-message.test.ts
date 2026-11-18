@@ -51,7 +51,7 @@ describe('posting a voice message', () => {
     expect(got.attachments?.[0]).toMatchObject({ id: f.id, mime: 'audio/webm' });
   });
 
-  it('works in a thread reply, and a clip with no transcript keeps the stand-in body', async () => {
+  it('works in a thread reply; the server decides the state, so a "none" from the client becomes pending and the body stays the stand-in', async () => {
     const root = ok<{ id: string }>(await send(nadia, dev, { body: 'voice thread root' }), 201);
     const f = await clip(nadia, dev, 'reply.webm');
     const body = voiceFallbackBody(42_000);
@@ -61,7 +61,7 @@ describe('posting a voice message', () => {
       201,
     );
     expect(reply).toMatchObject({ body, threadRootId: root.id });
-    expect(reply.meta.voice).toMatchObject({ transcript: 'none', language: null });
+    expect(reply.meta.voice).toMatchObject({ transcript: 'pending', language: null });
   });
 
   it('refuses a guest, even one who may post in the channel (403), and records nothing', async () => {
@@ -112,9 +112,9 @@ describe('posting a voice message', () => {
 
 describe('editing a voice message', () => {
   it('flips the transcript to "edited" and leaves the rest of meta.voice alone; a plain message gains no voice', async () => {
+    // an old client's own words (transcript "device") are kept, and the first edit marks them "edited"
     const f = await clip(nadia, dev, 'edit.webm');
-    const body = voiceFallbackBody(42_000);
-    const posted = ok<{ id: string }>(await send(nadia, dev, { body, attachments: [f.id], voice: voiceFor(f.id, { transcript: 'none' }) }), 201);
+    const posted = ok<{ id: string }>(await send(nadia, dev, { attachments: [f.id], voice: voiceFor(f.id) }), 201);
     const msg = ok<ChannelMessage>(await w.call(nadia, 'PATCH', `/api/channels/${dev}/messages/${posted.id}`, { body: 'Hello, here is what I said.' }));
     expect(msg.body).toBe('Hello, here is what I said.');
     expect(msg.meta.voice).toEqual({ ...voiceFor(f.id), transcript: 'edited' });
