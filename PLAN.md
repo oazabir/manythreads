@@ -167,7 +167,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 29 | 29 | The task view in the channel: the to-do card, the live run card and the questions waiting for a person under a thread's root message, a dock above the thread composer, a Threads view with progress, sidebar badges and a side rail (owner, 2026-11-16) | L | 25, 28 | 23 of 23 built, live |
 | 30 | 30 | Appearance in the gear menu: the account menu at the bottom left offers Appearance, a submenu of the four palettes and System, Light, Dark that applies and saves on a click, so a person sees the look change instead of going to Settings → Appearance (owner, 2026-11-16) | S | 28 | 3 of 3 built |
 | 31 | 31 | Deliveries that need no operator: Codex for several teams on one server, fewer approval cards without widening what the site controls, a chain that needs no nudges, a run that survives running out of memory, deploys and test-site builds that fit the disk, a Tester on a server that runs the full checks (2026-11-18, from the P26 proofs) | L | 26 | 0 of 7 built |
-| 32 | 32 | Voice messages like a phone app: a recording bar with delete, time, live waveform, pause and send; sent at once; the first 20 seconds transcribed on the server by Parakeet v3 and shown under the player (owner, 2026-11-18, D13) | M | 15, 28 | 0 of 10 built |
+| 32 | 32 | Voice messages like a phone app: a recording bar with delete, time, live waveform, pause and send; sent at once; the first 20 seconds transcribed on the server by Parakeet v3 and shown under the player (owner, 2026-11-18, D13) | M | 15, 28 | 10 of 10 built, live |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -206,7 +206,7 @@ Next after the ten: real email in and out (P8-09, P8-19; IMAP/SMTP first, then G
 
 ## 8. Build ledger (synced with the code, 2026-11-18)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **342 of 486 tasks (the 485 rows of this plan plus the follow-up P14-01b) are built, 68 are partly built, 70 are not built and 6 were dropped, superseded or built as something else.** On 2026-11-18 every phase was checked again against the code at commit 2bd6bf03 (three read-only audits); Phases 22 to 30 are in the table below from that date, and Phase 31 (7 rows, none built) was added the same day from the P26 proofs. (P6-13, P6-14, P20-16 and P21-26 to P21-28 were added on 2026-11-05 at the owner's request, and P6-09 was dropped the same day; Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **352 of 486 tasks (the 485 rows of this plan plus the follow-up P14-01b) are built, 68 are partly built, 60 are not built and 6 were dropped, superseded or built as something else.** On 2026-11-18 every phase was checked again against the code at commit 2bd6bf03 (three read-only audits); Phases 22 to 30 are in the table below from that date, and Phase 31 (7 rows, none built) was added the same day from the P26 proofs. (P6-13, P6-14, P20-16 and P21-26 to P21-28 were added on 2026-11-05 at the owner's request, and P6-09 was dropped the same day; Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -243,7 +243,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 29 · The task view in the channel | 23 | 0 | 0 | 0 |
 | 30 · Appearance in the gear menu | 3 | 0 | 0 | 0 |
 | 31 · Deliveries that need no operator | 0 | 0 | 7 | 0 |
-| 32 · Voice messages transcribed on the server | 0 | 0 | 10 | 0 |
+| 32 · Voice messages transcribed on the server | 10 | 0 | 0 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -900,22 +900,22 @@ The six P26 proofs (PRs #12 to #17) delivered on every agent and placement, but 
 | P31-07 | Message pins: pin and unpin a message, the channel's pinned list, `has:pin` in search (P14-11); separate from P9-09 (export a surface to pages) | Not built |
 
 
-### Phase 32 · Voice messages transcribed on the server (owner, 2026-11-18) — 0 built, 0 partly, 10 not built
+### Phase 32 · Voice messages transcribed on the server (owner, 2026-11-18) — 10 built, live
 
 A voice message is recorded in a bar like a phone messaging app and sent at once; the server transcribes the first 20 seconds with Parakeet v3 and the message shows "Transcript · 0:00–0:20" under its player (D13). The design and the independent review's changes are in `docs/plans/voice-messages-server.md`.
 
 | ID | Task | Status |
 |---|---|---|
-| P32-00 | Spike: the Parakeet image on the devbox, time and memory for 20 s clips, silence and two at once (`docs/spikes/parakeet-measured.md`) | Not built |
-| P32-01 | The `asr` image: Parakeet v3 int8 through onnx-asr, ffmpeg, an OpenAI-compatible server, non-WAV cut at 20 s and WAV at 30 s, a container test on the devbox; chart env and limits | Not built |
-| P32-02 | Schema and routes: `VoiceMeta.transcript` gains pending, server, failed, plus `transcriptEndMs` and `transcriptNote`; the server sets them; the workspace switch; the versions trigger skips transcript writes | Not built |
-| P32-03 | The gateway door `transcribeClip`: local targets only, no transaction across the fetch, 8 MiB cap, spend line, fake ASR | Not built |
-| P32-04 | The `voice-transcribe` job and worker (compare-and-set), the `channel.message.transcribed` event, the bot router and memory on that event, the retry route | Not built |
-| P32-05 | The recording bar (delete, red dot and time, live waveform, pause and resume, send), pause in `capture.ts`, the uploading pending row; the device transcription path removed | Not built |
-| P32-06 | The voice message view: player with a dot, length and time, avatar with a microphone badge, and the transcript block for each state, updated live | Not built |
-| P32-07 | Playwright on Chromium's fake microphone with fake ASR; the three voice specs rewritten, composer baselines refreshed | Not built |
-| P32-08 | Pictures in Graphite dark and Linen light at 1440 and 390 px of the bar and the message states | Not built |
-| P32-09 | Deploy and a live check with the real Parakeet (a real clip, a clip over 20 s, a voice DM to a bot); docs and notices | Not built |
+| P32-00 | Spike: the Parakeet image on the devbox, time and memory for 20 s clips, silence and two at once (`docs/spikes/parakeet-measured.md`) | Built (docs/spikes/parakeet-measured.md, 3acc2bab) |
+| P32-01 | The `asr` image: Parakeet v3 int8 through onnx-asr, ffmpeg, an OpenAI-compatible server, non-WAV cut at 20 s and WAV at 30 s, a container test on the devbox; chart env and limits | Built, live (asr image with Silero VAD before Parakeet, 3f6dead3; test.sh all cases) |
+| P32-02 | Schema and routes: `VoiceMeta.transcript` gains pending, server, failed, plus `transcriptEndMs` and `transcriptNote`; the server sets them; the workspace switch; the versions trigger skips transcript writes | Built, live (b0e7bd8c) |
+| P32-03 | The gateway door `transcribeClip`: local targets only, no transaction across the fetch, 8 MiB cap, spend line, fake ASR | Built, live (270aded4) |
+| P32-04 | The `voice-transcribe` job and worker (compare-and-set), the `channel.message.transcribed` event, the bot router and memory on that event, the retry route | Built, live (3a932990, 855a2cb5, 5152bd13) |
+| P32-05 | The recording bar (delete, red dot and time, live waveform, pause and resume, send), pause in `capture.ts`, the uploading pending row; the device transcription path removed | Built, live (779f0604, fcf26137) |
+| P32-06 | The voice message view: player with a dot, length and time, avatar with a microphone badge, and the transcript block for each state, updated live | Built, live (95ee4d9d, 99caf548) |
+| P32-07 | Playwright on Chromium's fake microphone with fake ASR; the three voice specs rewritten, composer baselines refreshed | Built (b32f31b4; voice specs pass on the fake microphone) |
+| P32-08 | Pictures in Graphite dark and Linen light at 1440 and 390 px of the bar and the message states | Built (1adf5039; 24 pictures in temp/screenshots/p32) |
+| P32-09 | Deploy and a live check with the real Parakeet (a real clip, a clip over 20 s, a voice DM to a bot); docs and notices | Built, checked live 2026-11-18 (a 9 s and a 27 s clip transcribed in 2.4 s and 4.0 s; a voice message to a bot covered by router tests only) |
 
 ---
 
