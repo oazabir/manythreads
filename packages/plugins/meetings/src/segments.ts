@@ -1,5 +1,5 @@
 import { invalid, type PluginContext, type PluginEvent, type PluginTx } from '@manythreads/sdk';
-import { ChannelMessagePostedEvent, MEETING_LATE_LINE_SECONDS, MEETING_SEGMENT_TEXT_MAX, VoiceMeta, type MeetingConsent, type MeetingSegmentInput } from '@manythreads/shared';
+import { ChannelMessagePostedEvent, ChannelMessageTranscribedEvent, MEETING_LATE_LINE_SECONDS, MEETING_SEGMENT_TEXT_MAX, VoiceMeta, type MeetingConsent, type MeetingSegmentInput } from '@manythreads/shared';
 import { pushCaption } from './captions.ts';
 import { comparableText, stripHostileText } from './limits.ts';
 import { noteQuestions } from './questions.ts';
@@ -153,12 +153,19 @@ interface VoiceRoomRow extends Record<string, unknown> {
   started_at: Date;
 }
 
+/** What both events name: the message and where it is. */
+export type VoiceMessageRef = Pick<ChannelMessagePostedEvent, 'channelId' | 'messageId' | 'authorId' | 'threadRootId'>;
+
 /**
- * A voice message posted in the thread of a call, while the call runs or in the two minutes after it, is the words its author said into their phone: it becomes a line of the
- * transcript, but only when the author said yes to "Transcribe my voice" in that call (the same rule as a line from a device) and only when the call is being transcribed. Safe
- * to run twice for one message (the line carries the message id as its `clientSegId`). Returns true when a line was stored.
+ * A voice message posted in the thread of a call, while the call runs or in the two minutes after it, is the words its author said: it becomes a line of the transcript, but only
+ * when the author said yes to "Transcribe my voice" in that call (the same rule as a line from a device) and only when the call is being transcribed. Safe to run twice for one
+ * message (the line carries the message id as its `clientSegId`, and the insert skips a repeat).
+ *
+ * A message of a client from before P32 carries the words its own device wrote (`device`) and is taken when it is posted. A message of the current client is posted `pending`
+ * with a stand-in line as its body ("Voice message (0:03)"): it is not taken then, but on `channel.message.transcribed`, when the body holds the server's words (`server`) or the
+ * author's own (`edited`). A transcript that `failed` or was switched off (`none`) leaves the stand-in line only, which is no line of the call. Returns true when a line was stored.
  */
-export async function takeVoiceMessage(ctx: PluginContext, tx: PluginTx, event: ChannelMessagePostedEvent): Promise<boolean> {
+export async function takeVoiceMessage(ctx: PluginContext, tx: PluginTx, event: VoiceMessageRef): Promise<boolean> {
   if (!event.threadRootId) return false;
   const room = (
     await tx.query<VoiceRoomRow>(
@@ -179,7 +186,8 @@ export async function takeVoiceMessage(ctx: PluginContext, tx: PluginTx, event: 
   ).rows[0];
   if (!message || message.author_id !== event.authorId) return false;
   const voice = VoiceMeta.safeParse((message.meta as { voice?: unknown } | null)?.voice);
-  if (!voice.success || voice.data.transcript === 'none') return false;
+  // `pending` waits for `channel.message.transcribed`; `failed` and `none` have only the stand-in line
+  if (!voice.success || !['device', 'server', 'edited'].includes(voice.data.transcript)) return false;
 
   const who = (
     await tx.query<{ display_name: string; consent_transcribe: MeetingConsent }>(
@@ -208,6 +216,12 @@ export function registerSegments(ctx: PluginContext): void {
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx) => {
     const event = ChannelMessagePostedEvent.safeParse(raw);
     if (!event.success) return;
+    await takeVoiceMessage(ctx, tx, event.data);
+  });
+  // a voice message of the current client: its words arrive after it was posted (P32-04)
+  ctx.events.subscribe('channel.message.transcribed', async (raw: PluginEvent, tx) => {
+    const event = ChannelMessageTranscribedEvent.safeParse(raw);
+    if (!event.success || (event.data.state !== 'server' && event.data.state !== 'edited')) return;
     await takeVoiceMessage(ctx, tx, event.data);
   });
 }

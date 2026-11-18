@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
 import { apiOn, channelsOf, postAs, type StackApi } from '../support/stack-browser.ts';
 import { closePerson, finishNotes, installBots, meetingsStack, openAs, repoText, type Person } from '../meetings/support.ts';
-import { uploadFile, voiceMeta } from './voice-support.ts';
+import { FAKE_TEXT, uploadFile, voiceMeta } from './voice-support.ts';
 
 /**
  * A voice message in a voice room's thread (PLAN P15-14, P15-17, spec row "voice message in the room's thread appears in the transcript at its time"). The words a client
@@ -101,17 +101,19 @@ test('a voice message of someone who said no, a plain text message, and a voice 
   expect(all).not.toContain('not in the room');
 });
 
-// P32-07 finding, not fixed here (meetings are outside P32-05 to P32-08): a message from the web client of P32 is stored as `pending` with the stand-in line as its body,
-// and `takeVoiceMessage` (packages/plugins/meetings/src/segments.ts) only skips `none`, so the room's transcript would get the line "Voice message (0:03)" at the time of
-// sending and never the server's words. The fix belongs to meetings: take the message on `channel.message.transcribed` (state `server` or `edited`) instead.
-test.fixme('a voice message from the P32 web client (pending, stand-in body) adds no stand-in line to the room', async () => {
+// A message from the web client of P32 is stored `pending` with the stand-in line as its body; the room takes it on `channel.message.transcribed` (state `server` or
+// `edited`), so its line holds the words the server wrote and the stand-in line "Voice message (0:03)" is never a line of the room.
+test('a voice message from the P32 web client (pending, stand-in body) is a line of the server\'s words, never the stand-in line', async () => {
   const up = await uploadFile(rafi, dev, CLIP, 'audio/wav', 'p32.wav');
   expect(up.status).toBe(201);
-  const before = (await stack.sql(`SELECT 1 FROM app.meeting_segments WHERE meeting_id = $1`, [meetingId])).length;
-  await rafi.post(`/api/channels/${dev}/messages`, { channelId: dev, body: 'Voice message (0:03)', threadRootId: root, attachments: [up.file!.id], voice: voiceMeta(up.file!.id, { durationMs: 3000, language: null, transcript: 'none' }) });
-  await sendVoice(priya, 'A later message that is not counted either.', 1000);
+  const sent = await rafi.post<{ id: string; body: string; meta: { voice: { transcript: string } } }>(`/api/channels/${dev}/messages`, { channelId: dev, body: 'Voice message (0:03)', threadRootId: root, attachments: [up.file!.id], voice: voiceMeta(up.file!.id, { durationMs: 3000, language: null, transcript: 'none' }) });
+  expect(sent.body).toBe('Voice message (0:03)');
+  expect(sent.meta.voice.transcript).toBe('pending');
+  // the stand-in speech model of the stack says FAKE_TEXT for every clip
+  await expect
+    .poll(async () => (await stack.sql<{ text: string }>('SELECT text FROM app.meeting_segments WHERE meeting_id = $1 AND client_seg_id = $2', [meetingId, `voice:${sent.id}`])).map((r) => r.text), { timeout: 20_000, message: 'the server\'s words as a line' })
+    .toEqual([FAKE_TEXT]);
   expect((await stack.sql<{ text: string }>('SELECT text FROM app.meeting_segments WHERE meeting_id = $1', [meetingId])).map((r) => r.text)).not.toContain('Voice message (0:03)');
-  expect((await stack.sql(`SELECT 1 FROM app.meeting_segments WHERE meeting_id = $1`, [meetingId])).length).toBe(before);
 });
 
 test('the page of the meeting shows the line at its time, and the files of the room hold it', async ({ browser, playwright }) => {

@@ -63,8 +63,8 @@ hears a person only while they are present with consent yes, so a removed person
 
 Emitted here: `meetings.meeting.started`, `meetings.meeting.ended`, `meetings.participant.joined`, `meetings.participant.left`, `meetings.consent.changed`, `meetings.transcript.written`, `meetings.notes.written` (with
 `actionOwnerIds`), `meetings.notes.shared`, `meetings.notes.saved`, `meetings.notetaker.added`, `meetings.notetaker.removed`, `meetings.recording.started`, `meetings.recording.stopped`; also `channel.channel.created`
-(the note-taker's first conversation with the organizer). Payloads hold ids and times, never a title or any text. Consumed: `channel.member.removed`, `team.member.removed`, `channel.message.posted` (a voice message in a
-call thread becomes a line; a mention of the note-taker in the thread is a question), `meetings.meeting.ended` (the transcript job) and `meetings.transcript.written` (the notes job). The audit plugin records
+(the note-taker's first conversation with the organizer). Payloads hold ids and times, never a title or any text. Consumed: `channel.member.removed`, `team.member.removed`, `channel.message.posted` (a voice message of a client from before P32, with its own words, in a
+call thread becomes a line; a mention of the note-taker in the thread is a question), `channel.message.transcribed` (a voice message of the current client becomes a line when the server's words, or the author's own, are in it: state `server` or `edited`; `failed` and `none` add no line), `meetings.meeting.ended` (the transcript job) and `meetings.transcript.written` (the notes job). The audit plugin records
 started, ended, consent changed, note-taker added and removed, recording started and stopped, notes shared and saved (ids only).
 
 ## Limits
@@ -137,7 +137,7 @@ Every line ends in one function, `takeSegments` (`segments.ts`), whatever its so
 - **From the server's speech-to-text** for a person who chose `server` and whose room and caps allow it (`POST /api/meetings/:meetingId/audio-chunks`, a 16 kHz mono WAV of at most 30 s and 2 MB; `routes-audio.ts`). The bytes
   go to the `transcribe` door of the LLM gateway ([asr.md](./asr.md)) and are dropped; nothing is written to disk or storage. Refused (403) unless the sender is present, said yes, and the room's mode is `server`.
 - **From the note-taker's listener** (see "The note-taker").
-- **From a voice message** posted in the call's thread while the room is live (or in the late window), with its transcript: a `device` line for its author, if they said yes.
+- **From a voice message** posted in the call's thread while the room is live (or in the late window), with its transcript: a `device` line for its author, if they said yes. A message of the current client is posted `pending` and is taken when `channel.message.transcribed` says `server` or `edited`, never as the stand-in line "Voice message (0:03)"; one line per message (`voice:<message id>`).
 
 The rules: control and bidirectional characters are stripped; a speaker who has not said yes leaves only the times of their speaking (the database trigger blanks the words); a final line that repeats what another device of the
 same speaker already sent (same words, the times overlapping by half or more of the shorter) is dropped; the same `clientSegId` twice is stored once; the speaker may correct their own line for 24 hours

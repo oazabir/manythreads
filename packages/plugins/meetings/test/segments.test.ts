@@ -1,7 +1,8 @@
 import { GetMeetingTranscriptResponse, PostMeetingSegmentsResponse, StartMeetingResponse, type MeetingTranscriptLine } from '@manythreads/shared';
 import { relaxedRateLimiter, testClient } from '@manythreads/test-utils';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eventually } from '../../channels/test/world.ts';
+import { heldDoor, installDoor, scriptedDoor } from '../../channels/test/voice-hook.ts';
 import { createWorld, ensureChannels, personas, type ApiResult, type FilesWorld } from '../../files/test/world.ts';
 import { SPEAKER_LINES_PER_MINUTE } from '../src/limits.ts';
 
@@ -318,5 +319,50 @@ describe('a voice message in the call thread', () => {
     await eventually(async () => ((await voiceLines(marker)).length > 0 ? true : undefined));
     expect(await voiceLines(off)).toEqual([]);
     expect(await voiceLines(old)).toEqual([]);
+  });
+
+  describe('of the current client (posted pending, the server writes the words)', () => {
+    afterEach(() => installDoor(undefined));
+    const standIn = (room: string) => w.system(async (tx) => (await tx.query<{ text: string }>("SELECT text FROM app.meeting_segments WHERE meeting_id = $1 AND text LIKE 'Voice message (%'", [room])).rows);
+    const eventsOf = (id: string) => w.system(async (tx) => (await tx.query<{ n: string }>("SELECT count(*) AS n FROM app.events WHERE type = 'channel.message.transcribed' AND payload ->> 'messageId' = $1", [id])).rows[0]!.n);
+
+    it('is no line while it is pending, and is the server\'s words as one line once they are written', async () => {
+      const held = heldDoor({ outcome: 'text', text: 'The words the model heard.', lang: 'en' });
+      installDoor(held.door);
+      const room = await openRoom(nadia, [], { nadia: 'yes' });
+      const id = await voice(nadia, room, 'Voice message (0:04)', 'none');
+      await eventually(async () => held.calls.length > 0 || undefined, 20_000, 'the job to reach the door');
+      expect(await voiceLines(room)).toEqual([]);
+      held.release();
+      const got = await eventually(async () => {
+        const l = await voiceLines(room);
+        return l.length > 0 ? l : undefined;
+      });
+      expect(got).toEqual([{ text: 'The words the model heard.', speaker_id: nadia.actorId, client_seg_id: `voice:${id}` }]);
+      expect(await standIn(room)).toEqual([]);
+      expect((await transcript(nadia, room)).map((l) => l.text)).toEqual(['The words the model heard.']);
+    });
+    it('is one line of the message (keyed by its id) for the one transcribed event', async () => {
+      installDoor(scriptedDoor({ outcome: 'text', text: 'Only once please.', lang: 'en' }).door);
+      const room = await openRoom(nadia, [], { nadia: 'yes' });
+      const id = await voice(nadia, room, 'Voice message (0:04)', 'none');
+      await eventually(async () => ((await voiceLines(room)).length > 0 ? true : undefined));
+      expect(Number(await eventsOf(id))).toBe(1);
+      expect((await voiceLines(room)).map((l) => l.text)).toEqual(['Only once please.']);
+    });
+    it('is no line when the words could not be written, and never the stand-in line', async () => {
+      installDoor(scriptedDoor({ outcome: 'refused', reason: 'The speech model must be inside this deployment.' }).door);
+      const room = await openRoom(nadia, [], { nadia: 'yes' });
+      const failedId = await voice(nadia, room, 'Voice message (0:04)', 'none');
+      await eventually(async () => ((await eventsOf(failedId)) === '1' ? true : undefined), 30_000, 'the failed transcript');
+      installDoor(scriptedDoor({ outcome: 'text', text: 'The marker line.', lang: 'en' }).door);
+      await voice(nadia, room, 'Voice message (0:04)', 'none');
+      const got = await eventually(async () => {
+        const l = await voiceLines(room);
+        return l.length > 0 ? l : undefined;
+      });
+      expect(got.map((l) => l.text)).toEqual(['The marker line.']);
+      expect(await standIn(room)).toEqual([]);
+    });
   });
 });
