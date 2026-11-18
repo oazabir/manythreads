@@ -817,3 +817,122 @@
   gap: 8px;
 }
 
+/* ---- the card under "Started a voice room" (P33-03): the room's title, who is in it, Join, and for the starter End room ---- */
+.room-card {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--radius-md);
+  background: var(--ok-wash);
+}
+
+.room-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.room-card-ico {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ok-ink);
+}
+
+.room-card-text {
+  min-width: 0;
+}
+
+.room-card-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-card-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--ok-ink);
+  font-size: var(--fs-caption);
+}
+
+.room-card-faces {
+  display: inline-flex;
+}
+
+.room-card .room-card-faces .av {
+  width: 20px;
+  height: 20px;
+  margin-left: -4px;
+  border: 1.5px solid var(--ok-wash);
+  font-size: var(--fs-tiny);
+}
+
+.room-card .room-card-faces .av:first-child {
+  margin-left: 0;
+}
+
+.room-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.room-card-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok-ink);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.room-card .btn.s {
+  min-height: 32px;
+  padding: 4px 14px;
+  font-size: var(--fs-small);
+}
+
+.room-end {
+  display: grid;
+  gap: 8px;
+}
+
+.room-end-q {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.room-end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-end-yes {
+  border-color: var(--alert-border);
+  color: var(--alert-ink);
+}
+
+@media (pointer: coarse) {
+  .room-card .btn.s,
+  .room-end .btn.s {
+    min-height: 44px;
+  }
+}

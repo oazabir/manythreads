@@ -17,6 +17,7 @@ import { CallController, type CallState, type RoomApi } from './controller';
 import { loadEngine } from './engine';
 import { loadAdapter } from './media';
 import { LIVE_POLL_MS, activeRings, liveByChannel, type Ring } from './model';
+import { roomOfMessage } from './roomCard';
 import { browserStorage, loadPrefs } from './prefs';
 import { browserAudioContext, createSounds, type Sounds } from './sounds';
 
@@ -298,4 +299,11 @@ export function useLive(): LiveSnapshot {
 /** The live room in this channel, if any. */
 export function useLiveRoom(channelId: string): MeetingSummary | undefined {
   return useLive().byChannel.get(channelId);
+}
+
+/** The live room that this message started (the card under "Started a voice room"); undefined for any other message and after the room ends. */
+export function useRoomOfMessage(messageId: string): MeetingSummary | undefined {
+  const l = liveRooms();
+  const read = (): MeetingSummary | undefined => roomOfMessage(l.snapshot().rooms, messageId);
+  return useSyncExternalStore(l.subscribe, read, read);
 }

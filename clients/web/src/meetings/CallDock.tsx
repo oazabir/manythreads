@@ -7,6 +7,7 @@ import type { CallState } from './controller';
 import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenOnServer } from './consent';
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
+import { EndRoomConfirm } from './EndRoomConfirm';
 import { CaptionsIcon, ChatIcon, HeadphonesIcon, LeaveIcon, MicIcon, SlidersIcon } from './icons';
 import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, notetakerBadge, rosterOf, visibleCaptions } from './model';
 import { NotetakerButton, NotetakerMenu } from './NotetakerPicker';
@@ -96,6 +97,8 @@ function ConsentPrompt({ call }: { call: CallState }) {
 function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
   const c = callController();
   const ids = { mic: useId(), spk: useId(), def: useId() };
+  // End for everyone asks once (P33-03): the button turns into the question
+  const [asking, setAsking] = useState(false);
   const d = call.devices;
   const tr = call.transcription;
   const offer = engineAvailable() && tr !== null;
@@ -144,7 +147,11 @@ function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
         </div>
       ) : null}
       {canEnd ? (
-        <button type="button" className="btn s call-end-all" onClick={() => void c.endForAll()} data-testid="call-end-all">End for everyone</button>
+        asking ? (
+          <EndRoomConfirm inRoom={call.present.filter((p) => p.leftAt === null).length} onEnd={() => { setAsking(false); void c.endForAll(); }} onCancel={() => setAsking(false)} testId="call-end-confirm" />
+        ) : (
+          <button type="button" className="btn s call-end-all" onClick={() => setAsking(true)} data-testid="call-end-all">End for everyone</button>
+        )
       ) : null}
     </div>
   );

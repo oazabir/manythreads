@@ -7,6 +7,7 @@ import { AuthorLine } from '../components/AuthorLine';
 import { MessageVia } from './MessageVia';
 import { RunOriginCard } from './RunOriginCard';
 import { TaskView } from '../taskview/TaskView';
+import { VoiceRoomCard } from '../meetings/VoiceRoomCard';
 import { TodoMessage } from './todo-card/TodoMessage';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
@@ -471,6 +472,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             Also sent from a thread · View thread
           </button>
         ) : null}
+        {/* the card of the voice room this message started, while that room is live (P33-03) */}
+        {!inThread && !deleted ? <VoiceRoomCard messageId={m.id} channelId={m.channelId} /> : null}
         {deleted ? null : <MessageImages files={attached.images} />}
         {!deleted && attached.files.length > 0 ? (
           <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
