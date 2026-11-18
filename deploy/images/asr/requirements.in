@@ -1,0 +1,5 @@
+onnx-asr[cpu,hub]
+fastapi
+uvicorn
+numpy
+python-multipart
