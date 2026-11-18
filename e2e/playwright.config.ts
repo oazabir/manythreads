@@ -21,13 +21,14 @@ const VOICE_MOBILE_SPEC = '**/voice-mobile.spec.ts';
 /** The persona journeys (P12-01): their own projects below; the plain `desktop` and `mobile-web` projects never run them. */
 const PERSONA_SPECS = '**/personas/**';
 /**
- * Chromium flags for the voice projects: a fake microphone that plays the fixture on a loop, no permission prompt. The web build for the e2e run has the
- * fake speech engine on (VITE_MANYTHREADS_FAKE_ASR=1, see webServer below), so every clip "says" the same known sentence.
+ * Chromium flags for the voice projects: a fake microphone that plays nadia.wav (real speech, 8.6 s) on a loop, no permission prompt. The words of a voice message
+ * are written by the server (P32): the voice specs start their stack with MANYTHREADS_FAKE_ASR=1 (channels/voice-support.ts VOICE_STACK_ENV), whose stand-in
+ * answers the same known sentence for every clip.
  */
 const FAKE_MIC = [
   '--use-fake-ui-for-media-stream',
   '--use-fake-device-for-media-stream',
-  `--use-file-for-fake-audio-capture=${fileURLToPath(new URL('./fixtures/speech/hello.wav', import.meta.url))}`,
+  `--use-file-for-fake-audio-capture=${fileURLToPath(new URL('./fixtures/speech/nadia.wav', import.meta.url))}`,
 ];
 
 const external = process.env.MANYTHREADS_URL;
@@ -134,7 +135,7 @@ export default defineConfig({
       testMatch: ['**/personas/completeness.spec.ts', '**/personas/journeys.meta.spec.ts'],
     },
     {
-      // Voice messages on the desktop layout and on a 390 px phone, with a fake microphone playing e2e/fixtures/speech/hello.wav.
+      // Voice messages on the desktop layout and on a 390 px phone, with a fake microphone playing e2e/fixtures/speech/nadia.wav.
       name: 'voice',
       testMatch: VOICE_SPECS,
       testIgnore: [VOICE_MOBILE_SPEC],

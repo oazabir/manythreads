@@ -210,7 +210,24 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   const nextId = useRef(1);
   const selection = useRef<[number, number] | null>(null);
   const draftFor = useRef(draftKey);
-  const focusBox = useCallback(() => void requestAnimationFrame(() => area.current?.focus()), []);
+  // The cursor goes back to the text box (after Send, Delete or Esc in the recording bar). A cancelled recording is still `recording` until the browser's recorder says it
+  // stopped, so the box can be hidden for a moment longer: the wish is kept and carried out as soon as the box is shown.
+  const wantFocus = useRef(false);
+  const focusBox = useCallback(() => {
+    wantFocus.current = true;
+    requestAnimationFrame(() => {
+      if (wantFocus.current && area.current && !area.current.hidden) {
+        wantFocus.current = false;
+        area.current.focus();
+      }
+    });
+  }, []);
+  useEffect(() => {
+    if (!voiceActive && wantFocus.current && area.current && !area.current.hidden) {
+      wantFocus.current = false;
+      area.current.focus();
+    }
+  }, [voiceActive]);
   const lastTyping = useRef(0);
   const typingOff = useRef(false);
 

@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { apiOn, channelsOf, messagesIn, noSidewaysScroll, type StackApi } from '../support/stack-browser.ts';
-import { FAKE_TEXT, liveTracks, mic, openVoice, preview, timerSeconds, transcriptBox } from './voice-support.ts';
+import { FAKE_TEXT, VOICE_STACK_ENV, bar, deleteButton, liveTracks, mic, openVoice, pauseButton, sendButton, startRecording, timerSeconds } from './voice-support.ts';
 
 /**
- * Voice messages on a 390 x 844 phone (PLAN P14-17 "Phone 390 px"), on a stack of its own: the mic is a 44 x 44 target, a long press records and
- * the release opens the preview, sliding left cancels, and the player is one row that fits the message with the words wrapping under it.
- * Run by the `voice-mobile` project (touch, 390 wide); the desktop project skips this file.
+ * Voice messages on a 390 x 844 phone (PLAN P14-17 "Phone 390 px", rewritten in P32-07), on a stack of its own with the server's stand-in speech model: the mic is a
+ * 44 x 44 target, a long press records and the release sends (no preview), sliding left cancels, the bar and its buttons fit the width and are finger-sized, and the
+ * message is a card that fits the row with the transcript under it. Run by the `voice-mobile` project (touch, 390 wide); the desktop project skips this file.
  */
 test.use({ actionTimeout: 10_000 });
 test.skip(({ isMobile }) => !isMobile, 'the phone layout');
@@ -17,7 +17,7 @@ let omar: StackApi;
 let dev = '';
 
 test.beforeAll(async ({ playwright }) => {
-  stack = await startStack({ MANYTHREADS_STACK_SEED: 'content' });
+  stack = await startStack({ ...VOICE_STACK_ENV });
   omar = await apiOn(playwright, stack, 'omar');
   dev = (await channelsOf(omar))['dev']!;
 });
@@ -26,7 +26,9 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-test('hold to record, release to preview, player fits the row', async ({ browser, playwright }) => {
+const voiceMessages = async (): Promise<Array<{ meta: { voice?: { transcript: string } } }>> => (await omar.get<{ items: Array<{ meta: { voice?: { transcript: string } } }> }>(`/api/channels/${dev}/messages`)).items.filter((m) => m.meta.voice);
+
+test('hold to record, release to send: no preview, the card fits the row with the transcript under it', async ({ browser, playwright }) => {
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev', { mobile: true });
   try {
     await expect(mic(page)).toBeVisible();
@@ -39,40 +41,66 @@ test('hold to record, release to preview, player fits the row', async ({ browser
     // a long press records for as long as the finger is down
     await page.mouse.move(x, y);
     await page.mouse.down();
-    await expect(page.getByTestId('voice-recording')).toContainText('Recording · slide left to cancel');
+    await expect(page.getByTestId('voice-hint')).toHaveText('Slide left to cancel');
     await expect.poll(() => timerSeconds(page)).toBeGreaterThanOrEqual(1);
     expect(await noSidewaysScroll(page)).toBe(true);
-    const bar = (await page.getByTestId('voice-recording').boundingBox())!;
-    expect(bar.x).toBeGreaterThanOrEqual(0);
-    expect(bar.x + bar.width).toBeLessThanOrEqual(390);
+    const held = (await bar(page).boundingBox())!;
+    expect(held.x).toBeGreaterThanOrEqual(0);
+    expect(held.x + held.width).toBeLessThanOrEqual(390);
     await page.mouse.up();
-    await expect(preview(page)).toBeVisible();
-    await expect(transcriptBox(page)).toHaveValue(FAKE_TEXT);
-    const pv = (await preview(page).boundingBox())!;
-    expect(pv.x + pv.width).toBeLessThanOrEqual(390);
-    expect(await noSidewaysScroll(page)).toBe(true);
-    // every control in the preview is a comfortable target
-    for (const id of ['voice-discard', 'voice-send']) {
-      const b = (await page.getByTestId(id).boundingBox())!;
-      expect(b.height, id).toBeGreaterThanOrEqual(32);
-    }
-    await page.getByTestId('voice-send').click();
-    await expect(preview(page)).toBeHidden();
-
-    // the player is one row inside the message, with the words wrapping under it
+    // released: sent at once, no preview
+    await expect(bar(page)).toBeHidden();
+    await expect(page.getByTestId('voice-preview')).toHaveCount(0);
     const row = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
     await expect(row).toBeVisible();
-    const player = (await row.getByTestId('voice-player').boundingBox())!;
+    await expect(row.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript · 0:00–0:0\d$/);
+
+    // the card is inside the row and the screen; the play button is finger-sized
+    const card = (await row.getByTestId('voice-message').boundingBox())!;
     const rowBox = (await row.boundingBox())!;
-    expect(player.x + player.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
-    expect(player.x + player.width).toBeLessThanOrEqual(390);
+    expect(card.x + card.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
+    expect(card.x + card.width).toBeLessThanOrEqual(390);
     const play = (await row.getByTestId('voice-play').boundingBox())!;
-    expect(play.width).toBeGreaterThanOrEqual(32);
-    const words = (await row.locator('.txt').boundingBox())!;
+    expect(play.width).toBeGreaterThanOrEqual(44);
+    // the transcript sits under the player
+    const words = (await row.getByTestId('voice-words').boundingBox())!;
+    const player = (await row.getByTestId('voice-player').boundingBox())!;
     expect(words.y).toBeGreaterThanOrEqual(player.y + player.height - 1);
+    // the length and the time sent are both there, and the picture with its badge
+    await expect(row.getByTestId('voice-time')).toBeVisible();
+    await expect(row.getByTestId('voice-sent')).toBeVisible();
+    await expect(row.getByTestId('voice-badge')).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
     await expect.poll(() => liveTracks(page)).toBe(0);
-    expect((await omar.get<{ items: Array<{ meta: { voice?: unknown } }> }>(`/api/channels/${dev}/messages`)).items.some((m) => m.meta.voice)).toBe(true);
+    expect((await voiceMessages()).length).toBe(1);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a tap opens the bar: delete, pause and send are finger-sized and fit; pause then Send sends', async ({ browser, playwright }) => {
+  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev', { mobile: true });
+  try {
+    await startRecording(page, 1);
+    const shape = (await bar(page).boundingBox())!;
+    expect(shape.x).toBeGreaterThanOrEqual(0);
+    expect(shape.x + shape.width).toBeLessThanOrEqual(390);
+    for (const [name, button] of [['delete', deleteButton(page)], ['pause', pauseButton(page)], ['send', sendButton(page)]] as const) {
+      const b = (await button.boundingBox())!;
+      expect(b.width, name).toBeGreaterThanOrEqual(40);
+      expect(b.height, name).toBeGreaterThanOrEqual(40);
+      expect(b.x + b.width, name).toBeLessThanOrEqual(390);
+    }
+    expect(await noSidewaysScroll(page)).toBe(true);
+    await pauseButton(page).tap();
+    await expect(bar(page)).toHaveAttribute('data-state', 'paused');
+    expect(await noSidewaysScroll(page)).toBe(true);
+    const before = (await voiceMessages()).length;
+    await sendButton(page).tap();
+    await expect(bar(page)).toBeHidden();
+    await expect.poll(async () => (await voiceMessages()).length).toBe(before + 1);
+    await expect.poll(() => liveTracks(page)).toBe(0);
   } finally {
     await context.close();
   }
@@ -81,20 +109,19 @@ test('hold to record, release to preview, player fits the row', async ({ browser
 test('sliding left while holding cancels on the phone too, with nothing sent', async ({ browser, playwright }) => {
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev', { mobile: true });
   try {
-    const before = (await omar.get<{ items: unknown[] }>(`/api/channels/${dev}/messages`)).items.length;
+    const before = (await voiceMessages()).length;
     const at = (await mic(page).boundingBox())!;
     const x = at.x + at.width / 2;
     const y = at.y + at.height / 2;
     await page.mouse.move(x, y);
     await page.mouse.down();
-    await expect(page.getByTestId('voice-recording')).toBeVisible();
+    await expect(bar(page)).toBeVisible();
     await page.mouse.move(x - 150, y, { steps: 6 });
-    await expect(page.getByTestId('voice-recording')).toContainText('Release to cancel');
+    await expect(page.getByTestId('voice-hint')).toHaveText('Release to cancel');
     await page.mouse.up();
-    await expect(page.getByTestId('voice-recording')).toBeHidden();
-    await expect(preview(page)).toBeHidden();
+    await expect(bar(page)).toBeHidden();
     await expect.poll(() => liveTracks(page)).toBe(0);
-    expect((await omar.get<{ items: unknown[] }>(`/api/channels/${dev}/messages`)).items.length).toBe(before);
+    expect((await voiceMessages()).length).toBe(before);
   } finally {
     await context.close();
   }

@@ -6,8 +6,8 @@ import { closePerson, finishNotes, installBots, meetingsStack, openAs, repoText,
 import { uploadFile, voiceMeta } from './voice-support.ts';
 
 /**
- * A voice message in a voice room's thread (PLAN P15-14, P15-17, spec row "voice message in the room's thread appears in the transcript at its time"). The words the device
- * wrote for the message are a line of the room's transcript at the time the message was sent, under the same consent rule as speaking in the room: only the author who said
+ * A voice message in a voice room's thread (PLAN P15-14, P15-17, spec row "voice message in the room's thread appears in the transcript at its time"). The words a client
+ * from before P32 wrote on its own device (`transcript: 'device'`, which the server still keeps as sent, P32-02) are a line of the room's transcript at the time the message was sent, under the same consent rule as speaking in the room: only the author who said
  * yes to "Transcribe my voice" in that call has a line. This spec drives the API for the room (the message is sent as the web client sends one) and the browser for what a
  * person reads afterwards, so it needs no microphone and is not one of the `voice-*` specs that run with the fake microphone.
  */
@@ -99,6 +99,19 @@ test('a voice message of someone who said no, a plain text message, and a voice 
   expect(all).not.toContain('rather not');
   expect(all).not.toContain('plain message');
   expect(all).not.toContain('not in the room');
+});
+
+// P32-07 finding, not fixed here (meetings are outside P32-05 to P32-08): a message from the web client of P32 is stored as `pending` with the stand-in line as its body,
+// and `takeVoiceMessage` (packages/plugins/meetings/src/segments.ts) only skips `none`, so the room's transcript would get the line "Voice message (0:03)" at the time of
+// sending and never the server's words. The fix belongs to meetings: take the message on `channel.message.transcribed` (state `server` or `edited`) instead.
+test.fixme('a voice message from the P32 web client (pending, stand-in body) adds no stand-in line to the room', async () => {
+  const up = await uploadFile(rafi, dev, CLIP, 'audio/wav', 'p32.wav');
+  expect(up.status).toBe(201);
+  const before = (await stack.sql(`SELECT 1 FROM app.meeting_segments WHERE meeting_id = $1`, [meetingId])).length;
+  await rafi.post(`/api/channels/${dev}/messages`, { channelId: dev, body: 'Voice message (0:03)', threadRootId: root, attachments: [up.file!.id], voice: voiceMeta(up.file!.id, { durationMs: 3000, language: null, transcript: 'none' }) });
+  await sendVoice(priya, 'A later message that is not counted either.', 1000);
+  expect((await stack.sql<{ text: string }>('SELECT text FROM app.meeting_segments WHERE meeting_id = $1', [meetingId])).map((r) => r.text)).not.toContain('Voice message (0:03)');
+  expect((await stack.sql(`SELECT 1 FROM app.meeting_segments WHERE meeting_id = $1`, [meetingId])).length).toBe(before);
 });
 
 test('the page of the meeting shows the line at its time, and the files of the room hold it', async ({ browser, playwright }) => {

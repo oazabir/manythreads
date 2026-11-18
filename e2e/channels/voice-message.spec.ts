@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { apiOn, channelsOf, messagesIn, postAs, type StackApi } from '../support/stack-browser.ts';
-import { FAKE_TEXT, liveTracks, mic, openVoice, players, preview, recordClip, refuseMicrophone, seedVoice, timerSeconds, transcriptBox } from './voice-support.ts';
+import { FAKE_TEXT, VOICE_STACK_ENV, bar, deleteButton, holdTranscriptPushes, liveTracks, mic, openVoice, pauseButton, players, recordClip, refuseMicrophone, seedVoice, sendButton, startRecording, timerSeconds } from './voice-support.ts';
 
 /**
- * Voice messages (PLAN P14-17), desktop layout, on a stack of its own (the spec posts messages and uploads clips). Chromium's fake microphone plays
- * e2e/fixtures/speech/hello.wav; the fake speech engine (VITE_MANYTHREADS_FAKE_ASR=1 in the e2e web build) writes FAKE_TEXT for every clip. The
- * `voice` project of playwright.config.ts supplies the browser flags. Nothing here sleeps: each step waits for what the page shows.
+ * Voice messages (PLAN P14-17, rewritten in P32-07 for P32-05 and P32-06), desktop layout, on a stack of its own (the spec posts messages and uploads clips).
+ * Chromium's fake microphone plays e2e/fixtures/speech/nadia.wav; the server's stand-in speech model (MANYTHREADS_FAKE_ASR=1, VOICE_STACK_ENV) writes FAKE_TEXT as the
+ * transcript of every clip. There is no preview: Send puts a row in the list at once, uploads the clip and posts it, and the words arrive by a push a moment later.
+ * The `voice` project of playwright.config.ts supplies the browser flags. Nothing here sleeps except where a test waits for something NOT to change.
  */
 test.use({ actionTimeout: 10_000 });
 test.skip(({ isMobile }) => isMobile, 'the desktop layout; voice-mobile.spec.ts runs the phone');
@@ -19,7 +20,7 @@ let dev = '';
 let general = '';
 
 test.beforeAll(async ({ playwright }) => {
-  stack = await startStack({ MANYTHREADS_STACK_SEED: 'content' });
+  stack = await startStack({ ...VOICE_STACK_ENV });
   omar = await apiOn(playwright, stack, 'omar');
   nadia = await apiOn(playwright, stack, 'nadia');
   const ids = await channelsOf(omar);
@@ -31,9 +32,10 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-type Posted = { id: string; body: string; meta: { voice?: { transcript: string; language: string | null; durationMs: number; fileId: string }; attachments?: string[] }; attachments?: Array<{ id: string; mime: string }> };
+type Posted = { id: string; body: string; meta: { voice?: { transcript: string; language: string | null; durationMs: number; fileId: string; transcriptEndMs?: number }; attachments?: string[] }; attachments?: Array<{ id: string; mime: string }> };
 const listOf = async (api: StackApi, channel: string): Promise<Posted[]> => (await api.get<{ items: Posted[] }>(`/api/channels/${channel}/messages`)).items;
 const box = (page: Page, name = 'Message #dev') => page.getByRole('textbox', { name });
+const lastVoiceRow = (page: Page) => messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
 const uploads = (page: Page): string[] => {
   const seen: string[] = [];
   page.on('request', (r) => {
@@ -42,52 +44,90 @@ const uploads = (page: Page): string[] => {
   return seen;
 };
 
-test('records a voice message, shows the device transcript in the preview, and sends it', async ({ browser, playwright }) => {
+test('records, pauses, resumes and sends: a row at once, then "Writing the transcript…", then the words', async ({ browser, playwright }) => {
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
     await expect(box(page)).toBeVisible();
+    const pushes = await holdTranscriptPushes(page);
+    // hold the upload, so the row that shows while the clip goes up can be looked at
+    let openGate: () => void = () => undefined;
+    const gate = new Promise<void>((res) => (openGate = res));
+    await page.route(/\/api\/channels\/[^/]+\/files$/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await expect(box(page)).toBeVisible();
     await expect(mic(page)).toHaveAccessibleName('Record a voice message');
     await expect(mic(page)).toHaveAttribute('aria-pressed', 'false');
-    await mic(page).click();
-    await expect(page.getByTestId('voice-recording')).toBeVisible();
-    await expect(mic(page)).toHaveAttribute('aria-pressed', 'true');
+
+    // the bar replaces the composer: delete, time, waveform, pause, send
+    await startRecording(page, 2);
+    await expect(bar(page)).toHaveAttribute('data-state', 'recording');
     await expect(page.getByTestId('voice-live')).toHaveText('Recording');
-    await expect.poll(() => timerSeconds(page)).toBeGreaterThanOrEqual(2);
-    await mic(page).click();
+    await expect(box(page)).toBeHidden();
+    await expect(deleteButton(page)).toHaveAccessibleName('Delete recording');
+    await expect(page.getByTestId('voice-wave')).toBeVisible();
+    await expect(sendButton(page)).toHaveAccessibleName('Send voice message');
+    await expect(page.getByTestId('voice-recording')).toHaveAccessibleDescription(/transcript/i);
 
-    // the preview: the clip, its length, the words the device wrote, and the language it found
-    await expect(preview(page)).toBeVisible();
-    await expect(page.getByTestId('voice-length')).toHaveText(/^0:00 \/ 0:0[2-9]$/);
-    await expect(transcriptBox(page)).toHaveValue(FAKE_TEXT);
-    await expect(page.getByTestId('voice-transcript-language')).toHaveText('Language: English');
-    await expect(page.getByTestId('voice-transcript-live')).toHaveText('Transcript ready');
-    await expect(page.getByTestId('voice-send')).toBeEnabled();
-    // the recording stopped: the microphone is let go the moment the preview is open
+    // pause: the clock stands still, the button becomes Resume
+    await pauseButton(page).click();
+    await expect(bar(page)).toHaveAttribute('data-state', 'paused');
+    await expect(pauseButton(page)).toHaveAccessibleName('Resume recording');
+    await expect(page.getByTestId('voice-live')).toHaveText(/^Recording paused, 0:0\d$/);
+    const frozen = await timerSeconds(page);
+    await page.waitForTimeout(2_200); // a negative: the clock must not move while paused
+    expect(await timerSeconds(page)).toBe(frozen);
+    // resume: it counts again from where it stopped
+    await pauseButton(page).click();
+    await expect(bar(page)).toHaveAttribute('data-state', 'recording');
+    await expect.poll(() => timerSeconds(page)).toBeGreaterThan(frozen);
+
+    // Send: no preview; the row is in the list at once, "Sending…", with the length
+    await sendButton(page).click();
+    await expect(bar(page)).toBeHidden();
+    const sending = page.getByTestId('pending-message');
+    await expect(sending).toHaveAttribute('data-status', 'sending');
+    await expect(sending.getByTestId('voice-pending')).toBeVisible();
+    await expect(sending.getByTestId('voice-pending-length')).toHaveText(/^0:0[3-9]$/);
+    await expect(sending).toContainText('Sending…');
+    // the microphone is let go the moment Send is pressed
     await expect.poll(() => liveTracks(page)).toBe(0);
+    await expect(box(page)).toBeFocused();
+    openGate();
 
-    await page.getByTestId('voice-send').click();
-    await expect(preview(page)).toBeHidden();
-    const row = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
+    // posted: the player, and the transcript block says it is being written
+    const row = lastVoiceRow(page);
     await expect(row).toBeVisible();
-    await expect(row.getByTestId('voice-player')).toHaveAccessibleName(/^Voice message from Omar, 0:0[2-9]$/);
-    // the words are the message's text, with a quiet line that says where they came from
-    await expect(row.locator('.txt')).toContainText(FAKE_TEXT);
-    await expect(row.getByTestId('voice-note')).toHaveText("Transcript in English, written on the sender's device");
-    // the recording is shown as the player, not as a file card
-    await expect(row.locator('.atts')).toHaveCount(0);
-    await expect(messagesIn(page).filter({ hasText: 'Voice message (' })).toHaveCount(0);
+    await expect(sending).toHaveCount(0);
+    await expect(row.getByTestId('voice-player')).toHaveAccessibleName(/^Voice message from Omar, 0:0[3-9]$/);
+    await expect(row.getByTestId('voice-writing')).toHaveText('Writing the transcript…');
+    await expect(row.getByTestId('voice-writing')).toHaveAttribute('role', 'status');
+    await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('not played yet');
+    await expect(row.getByTestId('voice-sent')).toHaveText(/\d{1,2}:\d{2}/);
+    // the stand-in line is never drawn as the words
+    await expect(row).not.toContainText('Voice message (');
+    const asPosted = (await listOf(omar, dev)).find((m) => m.meta.voice);
+    expect(asPosted?.meta.attachments).toEqual([asPosted?.meta.voice?.fileId]);
 
-    // the server kept it as audio, with the transcript in the body and the clip as the single attachment
+    // the server writes the words; the push brings them
+    await expect.poll(async () => (await listOf(omar, dev)).find((m) => m.meta.voice)?.meta.voice?.transcript, { timeout: 20_000 }).toBe('server');
+    pushes.release();
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript · 0:00–0:0[3-9]$/);
+    await expect(row.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
+    await expect(row.getByTestId('voice-writing')).toHaveCount(0);
+    // the words are drawn once, inside the transcript block
+    await expect(row.getByTestId('voice-words')).toHaveCount(1);
+    await expect(row.getByTestId('voice-transcript').getByTestId('voice-words')).toHaveCount(1);
+    await expect(row.getByTestId('voice-first-seconds')).toHaveCount(0);
+
     const posted = (await listOf(omar, dev)).find((m) => m.meta.voice);
     expect(posted?.body).toBe(FAKE_TEXT);
-    expect(posted?.meta.voice).toMatchObject({ transcript: 'device', language: 'en' });
-    expect(posted?.meta.attachments).toEqual([posted?.meta.voice?.fileId]);
+    expect(posted?.meta.voice).toMatchObject({ transcript: 'server' });
     expect(posted?.attachments?.[0]?.mime).toBe('audio/webm');
-    // and gives the recording back to a person with its audio type
     const clip = await omar.ctx.get(`/api/files/${posted?.meta.voice?.fileId}/content`);
     expect(clip.status()).toBe(200);
     expect(clip.headers()['content-type']).toBe('audio/webm');
-    // the composer is back to normal and holds no draft
     await expect(box(page)).toHaveValue('');
     await expect(mic(page)).toBeVisible();
   } finally {
@@ -95,67 +135,143 @@ test('records a voice message, shows the device transcript in the preview, and s
   }
 });
 
-test('the sender corrects the transcript before sending', async ({ browser, playwright }) => {
+test('a clip that goes up badly stays on the page: Try again sends it, Delete asks first', async ({ browser, playwright }) => {
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
+    let failing = true;
+    await page.route(/\/api\/channels\/[^/]+\/files$/, (route) => (failing ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'internal', message: 'boom' } }) }) : route.continue()));
+    const before = (await listOf(omar, dev)).filter((m) => m.meta.voice).length;
     await recordClip(page);
-    await expect(transcriptBox(page)).toHaveValue(FAKE_TEXT);
-    await transcriptBox(page).fill('Corrected by hand: quokkaplan is ready.');
-    await page.getByTestId('voice-send').click();
-    const row = messagesIn(page).filter({ hasText: 'Corrected by hand: quokkaplan is ready.' });
-    await expect(row.getByTestId('voice-player')).toBeVisible();
-    await expect(row.getByTestId('voice-note')).toHaveText('Transcript in English, corrected by hand');
-    const posted = (await listOf(omar, dev)).find((m) => m.body.startsWith('Corrected by hand'));
-    expect(posted?.meta.voice?.transcript).toBe('edited');
+    const failed = page.getByTestId('pending-message');
+    await expect(failed).toHaveAttribute('data-status', 'failed');
+    await expect(failed.getByTestId('voice-pending')).toBeVisible();
+    await expect(failed.getByRole('button', { name: 'Try again' })).toBeVisible();
+    // Delete asks first, and "Keep it" changes nothing
+    await failed.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(failed).toContainText('Throw this voice message away? The recording is lost.');
+    await failed.getByRole('button', { name: 'Keep it' }).click();
+    await expect(failed.getByRole('button', { name: 'Try again' })).toBeVisible();
+    failing = false;
+    await failed.getByRole('button', { name: 'Try again' }).click();
+    await expect(failed).toHaveCount(0);
+    await expect(lastVoiceRow(page).getByTestId('voice-player')).toBeVisible();
+    await expect.poll(async () => (await listOf(omar, dev)).filter((m) => m.meta.voice).length).toBe(before + 1);
+
+    // a second failure thrown away: nothing is sent
+    failing = true;
+    await recordClip(page);
+    await expect(failed).toHaveAttribute('data-status', 'failed');
+    await failed.getByRole('button', { name: 'Delete', exact: true }).click();
+    await failed.getByRole('button', { name: 'Yes, delete' }).click();
+    await expect(failed).toHaveCount(0);
+    expect((await listOf(omar, dev)).filter((m) => m.meta.voice).length).toBe(before + 1);
   } finally {
     await context.close();
   }
 });
 
-test('a reader plays it, changes speed and resumes where they stopped', async ({ browser, playwright }) => {
+test('Delete and Esc throw a recording away and put the cursor back in the text box', async ({ browser, playwright }) => {
+  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
+  try {
+    const sent = uploads(page);
+    await startRecording(page, 1);
+    await deleteButton(page).click();
+    await expect(bar(page)).toBeHidden();
+    await expect(page.getByTestId('voice-live')).toHaveText('Recording deleted');
+    await expect(box(page)).toBeFocused();
+    await expect.poll(() => liveTracks(page)).toBe(0);
+
+    await startRecording(page, 1);
+    await page.keyboard.press('Escape');
+    await expect(bar(page)).toBeHidden();
+    await expect(box(page)).toBeFocused();
+    await expect.poll(() => liveTracks(page)).toBe(0);
+
+    // paused recordings are thrown away the same way
+    await startRecording(page, 1);
+    await pauseButton(page).click();
+    await page.keyboard.press('Escape');
+    await expect(bar(page)).toBeHidden();
+    expect(sent).toEqual([]);
+    await expect(messagesIn(page).filter({ has: page.getByTestId('voice-player') }).filter({ hasText: 'Voice message (' })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test('sliding away while holding cancels the recording and nothing is uploaded', async ({ browser, playwright }) => {
+  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
+  try {
+    const sent = uploads(page);
+    const before = (await listOf(omar, dev)).length;
+    await expect(mic(page)).toBeVisible();
+    const at = (await mic(page).boundingBox())!;
+    const x = at.x + at.width / 2;
+    const y = at.y + at.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await expect(bar(page)).toBeVisible();
+    await expect(page.getByTestId('voice-hint')).toHaveText('Slide left to cancel');
+    await page.mouse.move(x - 120, y, { steps: 6 });
+    await expect(page.getByTestId('voice-hint')).toHaveText('Release to cancel');
+    await page.mouse.up();
+    await expect(bar(page)).toBeHidden();
+    await expect.poll(() => liveTracks(page)).toBe(0);
+    await expect(mic(page)).toBeVisible();
+    expect(sent).toEqual([]);
+    expect((await listOf(omar, dev)).length).toBe(before);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a reader plays it: the badge turns grey, speed changes, the place is remembered', async ({ browser, playwright }) => {
   // a clip long enough that "where they stopped" is more than a second from both ends
   const author = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
     await recordClip(author.page, 5);
-    await transcriptBox(author.page).fill('Resume check clip.');
-    await author.page.getByTestId('voice-send').click();
-    await expect(messagesIn(author.page).filter({ hasText: 'Resume check clip.' }).getByTestId('voice-player')).toBeVisible();
+    await expect(lastVoiceRow(author.page).getByTestId('voice-words')).toHaveText(FAKE_TEXT);
   } finally {
     await author.context.close();
   }
+  const id = (await listOf(omar, dev)).filter((m) => m.meta.voice).at(0)!.id;
 
   const { page, context } = await openVoice(browser, playwright, stack, 'nadia', '/t/engineering/c/dev');
   try {
-    const row = messagesIn(page).filter({ hasText: 'Resume check clip.' });
+    const row = messagesIn(page).filter({ has: page.locator(`[data-testid="voice-player"]`) }).last();
     const player = row.getByTestId('voice-player');
     await expect(player).toBeVisible();
     await expect(player).toHaveAttribute('data-state', 'idle');
-    // a reader gets the same player; they have no microphone-only controls on someone else's message
-    await expect(row.getByTestId('add-transcript')).toHaveCount(0);
+    await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('not played yet');
+    await expect(row.getByTestId('voice-transcript-heading')).toBeVisible();
+    // a reader has no controls of the author's on this message
+    await expect(row.getByTestId('voice-try-again')).toHaveCount(0);
 
     await row.getByTestId('voice-play').click();
     await expect(player).toHaveAttribute('data-state', 'playing');
     await expect(row.getByRole('button', { name: 'Pause voice message' })).toBeVisible();
-    // the speed button cycles 1x, 1.5x, 2x and back
+    await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('played');
     await expect(row.getByTestId('voice-speed')).toHaveText('1×');
     await row.getByTestId('voice-speed').click();
     await expect(row.getByTestId('voice-speed')).toHaveAccessibleName('Playback speed 1.5 times');
     await row.getByTestId('voice-speed').click();
     await expect(row.getByTestId('voice-speed')).toHaveAccessibleName('Playback speed 2 times');
-    // it plays on: the position moves past the second mark
+    // the dot moves with the position, and the length under the waveform becomes the position
     const seek = row.getByTestId('voice-seek');
     await expect.poll(async () => Number(await seek.getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(2);
+    await expect(row.getByTestId('voice-dot')).toHaveAttribute('style', /left: (?!0\.00%)/);
     await row.getByTestId('voice-play').click();
     await expect(player).not.toHaveAttribute('data-state', 'playing');
     const stoppedAt = Number(await seek.getAttribute('aria-valuenow'));
     expect(stoppedAt).toBeGreaterThanOrEqual(2);
-    await expect(seek).toHaveAttribute('aria-valuetext', /^0:0[1-9] of 0:0[5-9]$/);
 
-    // a reload: the place is remembered (in this browser only) and so is the speed
+    // a reload: the place, the speed and the "played" mark are remembered (in this browser only)
     await page.reload();
-    const again = messagesIn(page).filter({ hasText: 'Resume check clip.' });
+    const again = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
     await expect(again.getByTestId('voice-seek')).toHaveAttribute('aria-valuenow', String(stoppedAt));
     await expect(again.getByTestId('voice-speed')).toHaveText('2×');
+    await expect(again.getByTestId('voice-badge')).toHaveAccessibleName('played');
+    expect(id).not.toBe('');
 
     // arrow keys move by five seconds inside the clip and never past its ends
     await again.getByTestId('voice-seek').focus();
@@ -167,71 +283,17 @@ test('a reader plays it, changes speed and resumes where they stopped', async ({
 });
 
 test('search finds a voice message by a word of its transcript', async ({ browser, playwright }) => {
-  await seedVoice(omar, dev, 'Please review the quokkasearch plan before Friday.');
-  const { page, context } = await openVoice(browser, playwright, stack, 'nadia', '/t/engineering/search?q=quokkasearch');
+  const { page: author, context: authorContext } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/general');
   try {
-    const hit = page.getByTestId('search-hit').filter({ hasText: 'quokkasearch' });
-    await expect(hit).toHaveCount(1);
-    await expect(hit).toContainText('Please review the');
+    await recordClip(author, 2);
+    await expect(lastVoiceRow(author).getByTestId('voice-words')).toHaveText(FAKE_TEXT);
   } finally {
-    await context.close();
+    await authorContext.close();
   }
-});
-
-test('sliding away cancels the recording and nothing is uploaded', async ({ browser, playwright }) => {
-  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
+  const { page, context } = await openVoice(browser, playwright, stack, 'nadia', '/t/engineering/search?q=%22test+voice+message%22');
   try {
-    const sent = uploads(page);
-    const before = (await listOf(omar, dev)).length;
-    await expect(mic(page)).toBeVisible();
-    const at = (await mic(page).boundingBox())!;
-    const x = at.x + at.width / 2;
-    const y = at.y + at.height / 2;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await expect(page.getByTestId('voice-recording')).toContainText('Recording · slide left to cancel');
-    await page.mouse.move(x - 120, y, { steps: 6 });
-    await expect(page.getByTestId('voice-recording')).toContainText('Release to cancel');
-    await page.mouse.up();
-    await expect(page.getByTestId('voice-recording')).toBeHidden();
-    await expect(preview(page)).toBeHidden();
-    await expect.poll(() => liveTracks(page)).toBe(0);
-    await expect(mic(page)).toBeVisible();
-    expect(sent).toEqual([]);
-    expect((await listOf(omar, dev)).length).toBe(before);
-  } finally {
-    await context.close();
-  }
-});
-
-test('Esc throws a recording away; in the preview Esc first leaves the words box, then discards the clip', async ({ browser, playwright }) => {
-  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
-  try {
-    const sent = uploads(page);
-    await mic(page).click();
-    await expect(page.getByTestId('voice-recording')).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('voice-recording')).toBeHidden();
-    await expect(preview(page)).toBeHidden();
-    await expect.poll(() => liveTracks(page)).toBe(0);
-
-    await recordClip(page);
-    await transcriptBox(page).focus();
-    await page.keyboard.press('Escape');
-    // the words box lets go of the focus; the clip is kept
-    await expect(preview(page)).toBeVisible();
-    await expect(preview(page).getByTestId('voice-play')).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(preview(page)).toBeHidden();
-    await expect(page.getByTestId('voice-live')).toHaveText('Voice message discarded');
-    await expect(box(page)).toBeFocused();
-    expect(sent).toEqual([]);
-
-    // the Discard button does the same
-    await recordClip(page);
-    await page.getByTestId('voice-discard').click();
-    await expect(preview(page)).toBeHidden();
-    expect(sent).toEqual([]);
+    const hit = page.getByTestId('search-hit').filter({ hasText: 'This is a test voice message' });
+    await expect(hit.first()).toBeVisible();
   } finally {
     await context.close();
   }
@@ -242,7 +304,7 @@ test('a refused microphone says how to allow it', async ({ browser, playwright }
   try {
     await mic(page).click();
     await expect(page.getByTestId('voice-error')).toHaveText("Your browser blocked the microphone. Allow it in the address bar's site settings, then try again.");
-    await expect(page.getByTestId('voice-recording')).toBeHidden();
+    await expect(bar(page)).toBeHidden();
     await page.getByTestId('voice-error').getByRole('button', { name: 'Dismiss' }).click();
     await expect(page.getByTestId('voice-error')).toBeHidden();
     await expect(mic(page)).toBeVisible();
@@ -255,82 +317,33 @@ test('switching to another channel while recording lets go of the microphone', a
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
     await mic(page).click();
-    await expect(page.getByTestId('voice-recording')).toBeVisible();
+    await expect(bar(page)).toBeVisible();
     await expect.poll(() => liveTracks(page)).toBeGreaterThan(0);
     await page.locator('[data-landmark="sidebar"] a[href$="/c/general"]').click();
     await expect(page).toHaveURL(/\/c\/general$/);
-    await expect(page.getByTestId('voice-recording')).toBeHidden();
+    await expect(bar(page)).toBeHidden();
     await expect.poll(() => liveTracks(page)).toBe(0);
     await expect(box(page, 'Message #general')).toBeVisible();
-    expect((await listOf(omar, general)).some((m) => m.meta.voice)).toBe(false);
+    const sent = (await listOf(omar, general)).filter((m) => m.meta.voice).length;
+    expect(sent).toBeLessThanOrEqual(1); // the search test above sent one to #general, this one none
   } finally {
     await context.close();
   }
 });
 
-test('send without waiting posts the clip and the transcript follows; "Add a transcript" fills a clip that has none', async ({ browser, playwright }) => {
-  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
-  try {
-    // hold the decoder, so the device is still "writing it out" when Send is pressed
-    await page.evaluate(() => {
-      window.__holdDecode = true;
-    });
-    await recordClip(page);
-    await expect(page.getByTestId('voice-transcript-working')).toBeVisible();
-    await expect(page.getByTestId('voice-send')).toBeDisabled();
-    await page.getByTestId('voice-send-now').click();
-    await expect(preview(page)).toBeHidden();
-    const lateRow = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
-    await expect(lateRow).toBeVisible();
-    // posted with no words: the stand-in line is not shown, "No transcript" is
-    await expect(lateRow.getByTestId('voice-no-transcript')).toHaveText('No transcript');
-    await expect.poll(async () => (await listOf(omar, dev)).filter((m) => m.meta.voice?.transcript === 'none').length).toBe(1);
-    // the device finishes: the words are saved as an edit of that message
-    await page.evaluate(() => window.__releaseDecode());
-    await expect(lateRow.locator('.txt')).toContainText(FAKE_TEXT);
-    await expect(lateRow.getByTestId('voice-no-transcript')).toHaveCount(0);
-    // the clip was sent before the language was known, so the note names no language
-    await expect(lateRow.getByTestId('voice-note')).toHaveText('Transcript, corrected by hand');
-
-    // a second clip goes out and stays without words (the decoder never finishes before the page closes it): the author adds them from the menu
-    await page.evaluate(() => {
-      window.__holdDecode = true;
-    });
-    await recordClip(page);
-    await page.getByTestId('voice-send-now').click();
-    await expect(preview(page)).toBeHidden();
-    const bare = messagesIn(page).filter({ has: page.getByTestId('voice-no-transcript') });
-    await expect(bare).toHaveCount(1);
-    await expect(bare.getByTestId('voice-player')).toBeVisible();
-    // the author's own menu offers it
-    await bare.hover();
-    await bare.getByRole('button', { name: 'More actions' }).click();
-    await expect(page.getByTestId('add-transcript')).toBeVisible();
-    // let the first run finish quietly so it does not fill this one: the menu path starts a new run on the saved clip
-    await page.evaluate(() => {
-      window.__holdDecode = false;
-    });
-    await page.getByTestId('add-transcript').click();
-    // (the "No transcript" line is gone once the edit box is open, so find the row by its player)
-    await expect(messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last().getByRole('textbox', { name: 'Edit message' })).toHaveValue(FAKE_TEXT);
-  } finally {
-    await context.close();
-  }
-});
-
-test('a voice message in a thread and in a DM', async ({ browser, playwright }) => {
+test('a voice message in a thread and in a DM, with the transcript in the thread view', async ({ browser, playwright }) => {
   const root = await postAs(nadia, dev, 'Thread root for a voice reply');
   await postAs(nadia, dev, 'First reply', root.id);
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
-    // thread: the reply box in the right panel has its own microphone
+    // thread: the reply box in the right panel has its own microphone and its own bar
     const panel = page.locator('[data-landmark="right-panel"]');
     await messagesIn(page).filter({ hasText: 'Thread root for a voice reply' }).getByRole('button', { name: '1 reply' }).click();
     await expect(panel.getByRole('textbox', { name: 'Reply in thread' })).toBeVisible();
     await recordClip(panel);
-    await panel.getByTestId('voice-send').click();
     await expect(panel.getByTestId('voice-player')).toHaveCount(1);
-    await expect(panel.getByTestId('thread-view')).toContainText(FAKE_TEXT);
+    await expect(panel.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
+    await expect(panel.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript · 0:00–0:0\d$/);
 
     // DM: Omar starts a conversation with Nadia and sends a clip
     await page.goto('/t/engineering/threads');
@@ -341,37 +354,42 @@ test('a voice message in a thread and in a DM', async ({ browser, playwright }) 
     await expect(page).toHaveURL(/\/t\/engineering\/dm\/[0-9a-f-]{36}$/);
     await expect(box(page, 'Message Nadia')).toBeVisible();
     await recordClip(page);
-    await page.getByTestId('voice-send').click();
     await expect(page.getByTestId('voice-player')).toHaveCount(1);
-    await expect(messagesIn(page).last()).toContainText(FAKE_TEXT);
+    await expect(messagesIn(page).last().getByTestId('voice-words')).toHaveText(FAKE_TEXT);
   } finally {
     await context.close();
   }
 });
 
-test('a failed post keeps the voice message: Retry sends the clip with its words', async ({ browser, playwright }) => {
+test('an admin can turn transcripts off: the next voice message says "No transcript"', async ({ browser, playwright }) => {
+  const patch = await omar.ctx.patch('/api/workspace', { data: { voiceTranscripts: false }, headers: await omar.headers() });
+  expect(patch.status(), await patch.text()).toBe(200);
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
-    let failing = true;
-    await page.route(/\/api\/channels\/[^/]+\/messages$/, (route) => {
-      if (route.request().method() === 'POST' && failing) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'internal', message: 'boom' } }) });
-      return route.continue();
-    });
     await recordClip(page);
-    await transcriptBox(page).fill('Retry keeps the voice, quokkaretry.');
-    await page.getByTestId('voice-send').click();
-    const pending = page.getByTestId('pending-message');
-    await expect(pending).toHaveAttribute('data-status', 'failed');
-    await expect(pending).toContainText('Retry keeps the voice, quokkaretry.');
-    expect((await listOf(omar, dev)).some((m) => m.body.includes('quokkaretry'))).toBe(false);
-    failing = false;
-    await pending.getByRole('button', { name: 'Retry' }).click();
-    await expect(pending).toHaveCount(0);
-    const row = messagesIn(page).filter({ hasText: 'quokkaretry' });
-    await expect(row.getByTestId('voice-player')).toBeVisible();
-    const posted = (await listOf(omar, dev)).find((m) => m.body.includes('quokkaretry'));
-    expect(posted?.meta.voice?.transcript).toBe('edited');
-    expect(posted?.meta.attachments).toEqual([posted?.meta.voice?.fileId]);
+    const row = lastVoiceRow(page);
+    await expect(row.getByTestId('voice-no-transcript')).toHaveText('No transcript');
+    await expect(row.getByTestId('voice-writing')).toHaveCount(0);
+    await expect(row).not.toContainText('Add a transcript');
+    expect((await listOf(omar, dev)).find((m) => m.id !== undefined && m.meta.voice?.transcript === 'none')).toBeTruthy();
+  } finally {
+    await context.close();
+    const back = await omar.ctx.patch('/api/workspace', { data: { voiceTranscripts: true }, headers: await omar.headers() });
+    expect(back.status()).toBe(200);
+  }
+});
+
+test('a message from before P32 keeps its own words and the note, and offers no "Add a transcript"', async ({ browser, playwright }) => {
+  await seedVoice(omar, dev, 'Please review the quokkasearch plan before Friday.');
+  const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
+  try {
+    const row = messagesIn(page).filter({ hasText: 'quokkasearch' });
+    await expect(row.getByTestId('voice-words')).toContainText('Please review the quokkasearch plan');
+    await expect(row.getByTestId('voice-note')).toHaveText("Transcript in English, written on the sender's device");
+    await row.hover();
+    await row.getByRole('button', { name: 'More actions' }).click();
+    await expect(page.getByTestId('add-transcript')).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: /^Edit/ })).toBeVisible();
   } finally {
     await context.close();
   }

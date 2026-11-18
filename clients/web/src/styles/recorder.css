@@ -189,7 +189,8 @@
 /* ---- phone ---- */
 @media (width <= 760px) {
   /* a finger-sized target */
-  .vr-mic {
+  .vr-mic,
+  .vr-trash {
     width: 44px;
     height: 44px;
   }
