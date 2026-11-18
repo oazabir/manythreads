@@ -19,22 +19,6 @@ export function formatClock(ms: number): string {
   return `${Math.floor(total / 60)}:${seconds < 10 ? '0' : ''}${seconds}`;
 }
 
-/** The recording timer: `0:12 / 5:00`. */
-export function clockOfMax(ms: number, max: number = VOICE_MAX_MS): string {
-  return `${formatClock(Math.min(ms, max))} / ${formatClock(max)}`;
-}
-
-const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`;
-
-/** A length in words, for a screen reader: `42 seconds`, `1 minute 5 seconds`, `5 minutes`. */
-export function spokenDuration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes === 0) return plural(seconds, 'second');
-  return seconds === 0 ? plural(minutes, 'minute') : `${plural(minutes, 'minute')} ${plural(seconds, 'second')}`;
-}
-
 /** True once the recording has used up the limit. */
 export const reachedLimit = (ms: number, max: number = VOICE_MAX_MS): boolean => ms >= max;
 

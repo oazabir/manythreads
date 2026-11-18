@@ -388,6 +388,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           people={people}
           channelNames={channelNames}
           onSend={send}
+          onVoiceSent={() => api.current?.scrollToBottom()}
           slash={{ teamSlug, origin: dm ? 'a direct message' : `#${name}` }}
           sendLater
           onEditLast={() => {

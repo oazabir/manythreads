@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
+import { VOICE_TRANSCRIPT_MAX_MS } from '@manythreads/shared';
 import { CloseIcon, MicIcon, PauseIcon, SendIcon, TrashIcon } from '../../shell/icons';
 import { TAIL_BARS, type RecordedClip } from './capture';
 import { LIMIT_NOTE, formatClock } from './clock';
@@ -42,6 +43,8 @@ export function Recorder({ rec, showMic, onSendClip, returnFocus }: RecorderProp
   const [willCancel, setWillCancel] = useState(false);
   const willCancelRef = useRef(false);
   const press = useRef<{ x: number; at: number } | null>(null);
+  /** Send was pressed and the clip is not handed over yet: a second press does nothing. */
+  const sending = useRef(false);
   const setCancelling = (v: boolean): void => {
     willCancelRef.current = v;
     setWillCancel(v);
@@ -57,6 +60,7 @@ export function Recorder({ rec, showMic, onSendClip, returnFocus }: RecorderProp
       if (e.target instanceof Element && e.target.closest('[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[role="combobox"]')) return;
       e.preventDefault();
       e.stopPropagation();
+      press.current = null; // a hold that is still down must not send when the finger or button comes up
       cancel();
       setHolding(false);
       setCancelling(false);
@@ -68,7 +72,10 @@ export function Recorder({ rec, showMic, onSendClip, returnFocus }: RecorderProp
 
   /** Ends the recording and sends it (Send, or the release of a hold). */
   const sendNow = (): void => {
+    if (sending.current) return;
+    sending.current = true;
     void rec.take().then((clip) => {
+      sending.current = false;
       if (clip) {
         onSendClip(clip);
         returnFocus();
@@ -131,7 +138,7 @@ export function Recorder({ rec, showMic, onSendClip, returnFocus }: RecorderProp
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="voice-live">
         {rec.announcement}
       </span>
-      {recording ? <RecordingBar rec={rec} holding={holding} willCancel={willCancel} onSend={sendNow} onDelete={() => { rec.cancel(); returnFocus(); }} /> : null}
+      {recording ? <RecordingBar rec={rec} ending={rec.ending} holding={holding} willCancel={willCancel} onSend={sendNow} onDelete={() => { rec.cancel(); returnFocus(); }} /> : null}
       {micShown ? (
         <button
           type="button"
@@ -180,13 +187,14 @@ export function LiveWave({ rec }: { rec: RecorderState }) {
   );
 }
 
-function RecordingBar({ rec, holding, willCancel, onSend, onDelete }: { rec: RecorderState; holding: boolean; willCancel: boolean; onSend: () => void; onDelete: () => void }) {
+function RecordingBar({ rec, ending, holding, willCancel, onSend, onDelete }: { rec: RecorderState; ending: boolean; holding: boolean; willCancel: boolean; onSend: () => void; onDelete: () => void }) {
   const { elapsedMs } = useMeter(rec.meter);
   const s = rec.state.phase === 'recording' ? rec.state : null;
   const paused = s?.paused ?? false;
   const limited = s?.limited ?? false;
   const lost = s?.lost ?? false;
   const pauseButton = useRef<HTMLButtonElement>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
   // when the bar's own controls appear (a tap, or the key that started it) the keyboard lands on Pause: harmless to press by mistake
   const fresh = useRef(true);
   useEffect(() => {
@@ -195,12 +203,16 @@ function RecordingBar({ rec, holding, willCancel, onSend, onDelete }: { rec: Rec
       pauseButton.current?.focus();
     }
   }, [holding]);
+  // at the limit Pause is disabled: a keyboard that was on it moves to Send (a disabled button drops the focus to the page)
+  useLayoutEffect(() => {
+    if (limited && pauseButton.current && document.activeElement === pauseButton.current) sendButton.current?.focus();
+  }, [limited]);
   const hint = willCancel ? 'Release to cancel' : 'Slide left to cancel';
   return (
     <div className={`vr-bar ${paused ? 'paused' : ''} ${willCancel ? 'cancelling' : ''} ${holding ? 'holding' : ''}`} role="group" aria-label="Recording a voice message" aria-describedby="vr-about" data-testid="voice-recording" data-state={paused ? 'paused' : 'recording'}>
-      <span id="vr-about" className="sr-only">Your voice message is sent as soon as you press Send. This server may write a transcript of its first 20 seconds.</span>
+      <span id="vr-about" className="sr-only">Your voice message is sent as soon as you press Send. The server may add a transcript of the first {VOICE_TRANSCRIPT_MAX_MS / 1000} seconds.</span>
       {holding ? null : (
-        <button type="button" className="icon-btn vr-trash" aria-label="Delete recording" title="Delete recording (Esc)" onClick={onDelete} data-testid="voice-delete">
+        <button type="button" className="icon-btn vr-trash" aria-label="Delete recording" title="Delete recording (Esc)" onClick={onDelete} disabled={ending} data-testid="voice-delete">
           <TrashIcon />
         </button>
       )}
@@ -211,21 +223,21 @@ function RecordingBar({ rec, holding, willCancel, onSend, onDelete }: { rec: Rec
         <span className="vr-hint" data-testid="voice-hint">{hint}</span>
       ) : (
         <>
-          {lost ? null : (
+          {lost || !rec.canPause ? null : (
             <button
               ref={pauseButton}
               type="button"
               className="vr-round vr-pause"
               aria-label={paused ? 'Resume recording' : 'Pause recording'}
               title={paused ? 'Resume recording' : 'Pause recording'}
-              disabled={limited}
+              disabled={limited || ending}
               onClick={() => (paused ? rec.resume() : rec.pause())}
               data-testid="voice-pause"
             >
               {paused ? <MicIcon /> : <PauseIcon />}
             </button>
           )}
-          <button type="button" className="vr-round vr-send" aria-label="Send voice message" title="Send voice message" onClick={onSend} data-testid="voice-send">
+          <button ref={sendButton} type="button" className="vr-round vr-send" aria-label="Send voice message" title="Send voice message" onClick={onSend} disabled={ending} data-testid="voice-send">
             <SendIcon />
           </button>
         </>

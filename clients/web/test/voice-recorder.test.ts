@@ -293,4 +293,70 @@ describe('hold to record', () => {
     expect(must('voice-send')).not.toBeNull();
     expect(sent).toEqual([]);
   });
+
+  it('Esc during a hold throws the recording away, and the release that follows sends nothing', async () => {
+    await mount();
+    await act(async () => {
+      press(must('voice-mic'), 'pointerdown');
+    });
+    await advance(1_500);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    await act(async () => {
+      press(must('voice-mic'), 'pointerup');
+    });
+    expect(sent).toEqual([]);
+    expect(q('voice-recording')).toBeNull();
+  });
+
+  it('Send pressed twice sends once, and Send and Delete are disabled while the recording closes', async () => {
+    await mount();
+    await tapStart();
+    await advance(1_500);
+    let finish: () => void = () => undefined;
+    recorder.stop = function stop() {
+      this.state = 'inactive';
+      finish = () => {
+        this.ondataavailable?.({ data: new Blob([new Uint8Array(40)]) });
+        this.onstop?.();
+      };
+    };
+    await act(async () => {
+      must('voice-send').click();
+    });
+    expect((must('voice-send') as HTMLButtonElement).disabled).toBe(true);
+    expect((must('voice-delete') as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      must('voice-send').click();
+      must('voice-delete').click();
+    });
+    await act(async () => {
+      finish();
+    });
+    expect(sent.map((c) => c.durationMs)).toEqual([1_500]);
+  });
+
+  it('a recorder that cannot pause has no Pause button', async () => {
+    await mount();
+    (recorder as unknown as { pause?: unknown }).pause = undefined;
+    await tapStart();
+    expect(q('voice-pause')).toBeNull();
+    expect(must('voice-send')).not.toBeNull();
+  });
+
+  it('at the five minute limit Pause is disabled and the keyboard moves to Send', async () => {
+    await mount();
+    await tapStart();
+    expect(document.activeElement).toBe(must('voice-pause'));
+    await advance(300_000);
+    expect((must('voice-pause') as HTMLButtonElement).disabled).toBe(true);
+    expect(document.activeElement).toBe(must('voice-send'));
+  });
+
+  it('the sentence under the bar uses the shared 20 second limit and promises nothing', async () => {
+    await mount();
+    await tapStart();
+    expect(host.querySelector('#vr-about')?.textContent).toBe('Your voice message is sent as soon as you press Send. The server may add a transcript of the first 20 seconds.');
+  });
 });

@@ -55,6 +55,10 @@ export type Recorder = {
   state: CaptureState;
   /** The polite live-region text: "Recording", "Recording paused, 0:07". */
   announcement: string;
+  /** Send or Delete was pressed and the recording is closing: both buttons are disabled. */
+  ending: boolean;
+  /** False when this browser's recorder cannot pause (no Pause button then). */
+  canPause: boolean;
   meter: Meter;
   start: () => void;
   pause: () => void;
@@ -76,6 +80,7 @@ export function useRecorder(deps: CaptureDeps = browserDeps): Recorder {
   // the capture is replaced, not mutated: the snapshot is the state object itself, which changes on every transition
   const state = useSyncExternalStore(cap.subscribe, () => cap.state);
   const announcement = useSyncExternalStore(cap.subscribe, () => cap.announcement);
+  const ending = useSyncExternalStore(cap.subscribe, () => cap.isEnding);
   useEffect(() => () => cap.dispose(), [cap]);
   const actions = useMemo(
     () => ({
@@ -91,7 +96,7 @@ export function useRecorder(deps: CaptureDeps = browserDeps): Recorder {
     }),
     [cap],
   );
-  return { state, announcement, ...actions };
+  return { state, announcement, ending, canPause: cap.canPause, ...actions };
 }
 
 /** The timer and waveform for the bar: re-reads about twelve times a second while recording. */

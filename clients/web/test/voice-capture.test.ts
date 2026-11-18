@@ -293,4 +293,98 @@ describe('voice capture', () => {
     expect(r.recorder.state).toBe('inactive');
     expect(r.cap.state.phase).toBe('idle');
   });
+
+  /** Makes the recorder stop the way a browser does: `stop` answers at once, the `stop` event comes later. */
+  function slowStop(r: Awaited<ReturnType<typeof recording>>): () => void {
+    let finish: () => void = () => undefined;
+    r.recorder.stop = function stop() {
+      r.recorder.state = 'inactive';
+      finish = () => {
+        r.recorder.ondataavailable?.({ data: new Blob([new Uint8Array(40)]) });
+        r.recorder.onstop?.();
+      };
+    };
+    return () => finish();
+  }
+
+  it('a second take() while the first is closing gives the same answer, and the clip is not cut short', async () => {
+    const r = await recording();
+    r.advance(2_000);
+    const stop = slowStop(r);
+    const first = r.cap.take();
+    expect(r.cap.isEnding).toBe(true);
+    r.advance(0);
+    const second = r.cap.take();
+    expect(second).toBe(first);
+    stop();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a).not.toBeNull();
+    expect(b).toBe(a);
+    expect(a?.durationMs).toBe(2_000);
+    expect(r.cap.isEnding).toBe(false);
+    expect(r.cap.state.phase).toBe('idle');
+  });
+
+  it('cancel() after take() changes nothing, and take() after cancel() does nothing', async () => {
+    const r = await recording();
+    r.advance(2_000);
+    let stop = slowStop(r);
+    const sent = r.cap.take();
+    r.cap.cancel();
+    stop();
+    expect((await sent)?.durationMs).toBe(2_000);
+
+    const again = await recording();
+    again.advance(2_000);
+    stop = slowStop(again);
+    again.cap.cancel();
+    expect(again.cap.isEnding).toBe(true);
+    const late = again.cap.take();
+    stop();
+    expect(await late).toBeNull();
+    expect(again.cap.state.phase).toBe('idle');
+    expect(again.cap.announcement).toBe('Recording deleted');
+  });
+
+  it('a recorder that cannot pause: canPause is false, and nothing changes when pause is asked', async () => {
+    const r = await recording();
+    expect(r.cap.canPause).toBe(true);
+    (r.recorder as unknown as { pause?: unknown }).pause = undefined;
+    expect(r.cap.canPause).toBe(false);
+    r.cap.pause();
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: false, limited: false, lost: false });
+    expect(r.running()).toBe(true);
+    expect(r.cap.announcement).toContain('Could not pause');
+  });
+
+  it('a pause that throws keeps the recording going and says so; a resume that throws keeps it paused and says so', async () => {
+    const r = await recording();
+    r.advance(1_000);
+    const pause = r.recorder.pause;
+    r.recorder.pause = () => {
+      throw new Error('InvalidStateError');
+    };
+    r.cap.pause();
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: false, limited: false, lost: false });
+    expect(r.running()).toBe(true);
+    expect(r.cap.announcement).toBe('Could not pause the recording. It is still recording.');
+    r.recorder.pause = pause;
+    r.cap.pause();
+    expect(r.cap.state).toMatchObject({ paused: true });
+    r.recorder.resume = () => {
+      throw new Error('InvalidStateError');
+    };
+    r.cap.resume();
+    expect(r.cap.state).toMatchObject({ paused: true });
+    expect(r.running()).toBe(false);
+    expect(r.cap.announcement).toBe('Could not resume the recording. It is still paused.');
+  });
+
+  it('dispose clears what was collected', async () => {
+    const r = await recording();
+    r.advance(2_000);
+    r.cap.dispose();
+    const held = r.cap as unknown as { chunks: unknown[]; readings: unknown[]; tail: unknown[] };
+    expect([held.chunks.length, held.readings.length, held.tail.length]).toEqual([0, 0, 0]);
+  });
 });

@@ -91,6 +91,8 @@ export type ComposerProps = {
    * writer agreed that `@channel` or `@here` goes to a big room.
    */
   onSend: (body: string, options: SendOptions) => void;
+  /** A voice message was sent from here (its row is in the list already): the caller scrolls to it, the way it does for a text send. */
+  onVoiceSent?: () => void;
   /** Offer the microphone button (a voice message). Off where a voice message makes no sense. It is also hidden for guests and where files or recording are not supported. */
   voice?: boolean;
   /** Focus the box when it appears (the thread panel). */
@@ -158,7 +160,7 @@ export function Composer(props: ComposerProps) {
   return <ComposerBody {...props} />;
 }
 
-function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, compact = false, commands }: ComposerProps) {
+function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, compact = false, commands }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const guest = useContext(ShellContext)?.guest ?? false;
   const rec = useRecorder();
@@ -979,7 +981,10 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
               <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" hidden={voiceActive} onClick={() => fileInput.current?.click()}><ClipIcon /></button>
             </>
           ) : null}
-          {voiceOn ? <Recorder rec={rec} showMic={text === '' && uploads.length === 0} onSendClip={(clip) => void channelStore.sendVoice(channelId, threadRootId ?? null, clip)} returnFocus={focusBox} /> : null}
+          {voiceOn ? <Recorder rec={rec} showMic={text === '' && uploads.length === 0} onSendClip={(clip) => {
+            void channelStore.sendVoice(channelId, threadRootId ?? null, clip);
+            onVoiceSent?.();
+          }} returnFocus={focusBox} /> : null}
           <span className="sch-split" hidden={voiceActive}>
             <button type="button" className={`btn send ${canSend ? 'primary ready' : ''}`} aria-label="Send" title="Send (Enter)" disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
             {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}

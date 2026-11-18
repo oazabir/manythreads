@@ -77,7 +77,7 @@ for (const look of LOOKS) {
           `SET ROLE manythreads_system;
            UPDATE app.messages SET body = 'Voice message (0:04)', body_plain = 'Voice message (0:04)',
                   meta = jsonb_set(meta, '{voice}', (meta->'voice') - 'transcriptEndMs' || '{"transcript":"failed","transcriptNote":"The speech model did not answer. You can ask again.","transcriptRetry":true}'::jsonb)
-            WHERE meta ? 'voice' AND id = (SELECT id FROM app.messages WHERE meta ? 'voice' ORDER BY id DESC LIMIT 1)`,
+            WHERE meta ? 'voice' AND id = (SELECT id FROM app.messages WHERE meta ? 'voice' ORDER BY created_at DESC, id DESC LIMIT 1)`,
         );
         await page.reload();
         const failed = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();

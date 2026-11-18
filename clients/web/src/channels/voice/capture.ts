@@ -119,6 +119,9 @@ export class Capture {
   private taker: ((clip: RecordedClip | null) => void) | null = null;
   /** A clip kept when the microphone was lost, for `take()` after the recorder is gone. */
   private lostClip: RecordedClip | null = null;
+  /** Send (or Delete) was pressed and the recorder is stopping: a second press does nothing, a second `take()` gets the same answer. */
+  private ending = false;
+  private takePromise: Promise<RecordedClip | null> | null = null;
 
   constructor(private readonly deps: CaptureDeps) {}
 
@@ -131,6 +134,15 @@ export class Capture {
     this.state = state;
     if (announcement !== undefined) this.announcement = announcement;
     this.listeners.forEach((f) => f());
+  }
+
+  /** False when this browser's recorder cannot pause: the bar then offers no Pause button. */
+  get canPause(): boolean {
+    return typeof this.recorder?.pause === 'function';
+  }
+  /** Send or Delete was pressed and the recording is closing: the bar disables both. */
+  get isEnding(): boolean {
+    return this.ending;
   }
 
   private running = (): boolean => this.state.phase === 'recording' && !this.state.paused;
@@ -180,6 +192,8 @@ export class Capture {
     this.warned = 0;
     this.outcome = 'keep';
     this.lostClip = null;
+    this.ending = false;
+    this.takePromise = null;
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) this.chunks.push(e.data);
     };
@@ -218,16 +232,27 @@ export class Capture {
   }
 
   private pauseNow(limited: boolean): void {
-    if (!this.running()) return;
+    if (!this.running() || this.ending) return;
     const at = this.elapsed();
+    try {
+      if (typeof this.recorder?.pause !== 'function') throw new Error('no pause');
+      this.recorder.pause();
+    } catch {
+      if (limited) {
+        // the limit is reached whether the recorder pauses or not: stop it for good so no more is recorded
+        this.accumulated = at;
+        this.stopTicks?.();
+        this.stopTicks = null;
+        this.set({ phase: 'recording', paused: true, limited: true, lost: false }, `Recording stopped at the limit, ${formatClock(at)}`);
+        return;
+      }
+      // the state stays as it was: still recording, and the person is told
+      this.set(this.state, 'Could not pause the recording. It is still recording.');
+      return;
+    }
     this.accumulated = at;
     this.stopTicks?.();
     this.stopTicks = null;
-    try {
-      this.recorder?.pause();
-    } catch {
-      /* a recorder that is already stopped has nothing to pause */
-    }
     this.meter.set({ elapsedMs: at, level: 0, tail: this.tail.slice(), total: this.readings.length });
     this.set({ phase: 'recording', paused: true, limited, lost: false }, limited ? `Recording stopped at the limit, ${formatClock(at)}` : `Recording paused, ${formatClock(at)}`);
   }
@@ -242,8 +267,10 @@ export class Capture {
     const s = this.state;
     if (s.phase !== 'recording' || !s.paused || s.limited || s.lost) return;
     try {
-      this.recorder?.resume();
+      if (typeof this.recorder?.resume !== 'function') throw new Error('no resume');
+      this.recorder.resume();
     } catch {
+      this.set(this.state, 'Could not resume the recording. It is still paused.');
       return;
     }
     this.segmentAt = this.deps.now();
@@ -253,6 +280,7 @@ export class Capture {
 
   /** Ends the recording and hands the clip over to be sent. Resolves to null when nothing is kept (too short, or no recording under way). */
   take(): Promise<RecordedClip | null> {
+    if (this.ending) return this.takePromise ?? Promise.resolve(null);
     const s = this.state;
     if (s.phase !== 'recording') return Promise.resolve(null);
     if (s.lost) {
@@ -262,14 +290,18 @@ export class Capture {
       return Promise.resolve(clip);
     }
     this.outcome = 'keep';
-    return new Promise((resolve) => {
+    this.ending = true;
+    this.listeners.forEach((f) => f());
+    this.takePromise = new Promise((resolve) => {
       this.taker = resolve;
       this.halt();
     });
+    return this.takePromise;
   }
 
   /** Throws the recording away (slide away, Esc, the trash button). Nothing is kept and nothing is uploaded. */
   cancel(): void {
+    if (this.ending) return;
     if (this.state.phase === 'asking') {
       this.session++; // the answer, when it comes, is ignored and the microphone released
       this.set({ phase: 'idle' }, '');
@@ -282,6 +314,8 @@ export class Capture {
       return;
     }
     this.outcome = 'cancel';
+    this.ending = true;
+    this.listeners.forEach((f) => f());
     this.halt();
   }
 
@@ -294,7 +328,7 @@ export class Capture {
 
   /** The microphone went away (the device was unplugged, the track ended): keep what was recorded so far, if it is enough. */
   private lose(): void {
-    if (this.state.phase !== 'recording' || this.state.lost) return;
+    if (this.state.phase !== 'recording' || this.state.lost || this.ending) return;
     this.outcome = 'lost';
     this.halt();
   }
@@ -329,6 +363,8 @@ export class Capture {
     const peaks = reducePeaks(this.readings);
     const taker = this.taker;
     this.taker = null;
+    this.ending = false;
+    this.takePromise = null;
     this.release();
     this.chunks = [];
     this.readings = [];
@@ -374,6 +410,7 @@ export class Capture {
         return;
       }
       this.outcome = 'cancel';
+      this.ending = true;
       this.halt();
       return;
     }
@@ -393,6 +430,11 @@ export class Capture {
     }
     this.release();
     this.lostClip = null;
+    this.chunks = [];
+    this.readings = [];
+    this.tail = [];
+    this.ending = false;
+    this.takePromise = null;
     this.taker?.(null);
     this.taker = null;
     this.state = { phase: 'idle' };

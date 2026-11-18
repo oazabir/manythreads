@@ -516,8 +516,9 @@ export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: Pen
       <div className="msg-main">
         <AuthorLine name={name} createdAt={pending.createdAt} />
         {pending.clip ? <PendingVoice durationMs={pending.clip.durationMs} peaks={pending.clip.peaks} /> : <div className="txt"><Markdown source={pending.body} /></div>}
-        <MessageImages files={attached.images} />
-        {attached.files.length > 0 ? <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}
+        {/* the clip's own file is in the attachments once uploaded: the voice row stands for it, no file card under it */}
+        {pending.clip ? null : <MessageImages files={attached.images} />}
+        {pending.clip || attached.files.length === 0 ? null : <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>}
         {failed ? (
           <div className="send-state" role="alert">
             {sure ? (
