@@ -58,7 +58,7 @@ Spec v1.4.1 §2 already states these; the guide's queue wording is superseded.
 | Area | Rule |
 |---|---|
 | Media | Calls go through LiveKit (Apache-2.0), a self-hosted SFU — a selective forwarding unit, the server that forwards each person's audio and video to the others without mixing it. It is an optional sixth workload (`media`), on by default from phase 15's exit, and works in an air-gapped install. manythreads mints short-lived room tokens; no third-party media service is ever used. No telephone dial-in, no webinars |
-| Transcription | **On-device first** for a room without a note-taker bot (see that row below for a room with one): each person's own device turns their own microphone into text (a Whisper-family speech model in a browser worker; whisper.cpp in the desktop and phone shells); only text leaves the device. The speaker of every line is whoever's device wrote it, so no speaker-separation model is needed. A server fallback (the `transcribe` alias pointed at a self-hosted Whisper server) is off by default, set per team, and needs the speaker's own consent. Model files are served by the manythreads server, never fetched from a CDN at run time |
+| Transcription | (Voice messages: see D13, server transcription by Parakeet since 2026-11-18.) **On-device first** for a room without a note-taker bot (see that row below for a room with one): each person's own device turns their own microphone into text (a Whisper-family speech model in a browser worker; whisper.cpp in the desktop and phone shells); only text leaves the device. The speaker of every line is whoever's device wrote it, so no speaker-separation model is needed. A server fallback (the `transcribe` alias pointed at a self-hosted Whisper server) is off by default, set per team, and needs the speaker's own consent. Model files are served by the manythreads server, never fetched from a CDN at run time |
 | Consent | Turning on transcription or recording is announced to everyone in the room; each person may decline; a declining speaker's audio is never transcribed or recorded and nothing is attributed to them. Audio recording is off by default and needs every participant's yes |
 | Storage | A meeting in a public channel or a team room keeps its transcript and notes as text in the team repo at `meetings/<yyyy>/<mm>/<dd>-<hhmm>-<slug>/` (a guarded path). A meeting in a private channel or a DM call goes to Files storage under that channel's access, never git, because the repo is readable by the whole team. Audio and video are never in git |
 | Memory | A meeting reaches memory only through the team inbox (D6): the platform drops transcript and notes as an item with origin `meeting` and the Archivist files it. A private meeting is never filed unless a participant sends it. A meeting with a note-taker bot is never filed automatically: only its organizer's "Save to team meeting notes" files it |
@@ -83,6 +83,8 @@ Spec v1.4.1 §2 already states these; the guide's queue wording is superseded.
 **D11 · Icons are ProIcons (owner decision 2026-11-04).** The web client draws every icon with ProIcons (`@proicons/react`, MIT, 24-grid line icons) through `clients/web/src/shell/icons.tsx` (the call bar: `meetings/icons.tsx`) and `components/proicon.tsx`, which sets colour, stroke and `aria-hidden` in one place. No hand-drawn SVG and no text glyph (×, ✓, ←, ★, ✎, +) as an icon; emoji that people pick or type (statuses, reactions) stay emoji. New icons are added in those files. Built as P21-25.
 
 **D12 · Rhythms is called Jobs (owner decision 2026-11-05).** The sidebar, page title, quick switcher, buttons, empty state, recipe hints and messages say "Jobs", and so does the web address (`/t/<team>/jobs`; the old `/rhythms` redirects). In code the thing is a `scheduled_job` (the kernel already owns `app.jobs`, the job queue, and `Job`/`JobId`/`JobState`, so a bare `job` would be ambiguous): the plugin and package are `scheduled-jobs`, tables `app.scheduled_jobs` / `app.scheduled_job_runs`, events `scheduled_jobs.scheduled_job.ran` and `runtime.scheduled_job.started|finished`, API paths `/api/teams/:slug/scheduled-jobs`. The rename of the stored data is migration `scheduled-jobs/0002` (the old `rhythms` migrations are kept as test fixtures and a test adopts an install built with them); old events stay in the log under their old type. The recipe category "Team rhythm" and the knowledge sources' re-read schedule keep the word, since there it is plain English. Built as part of P21-15.
+
+**D13 · Voice messages are transcribed on the server (owner decision 2026-11-18).** A voice message is sent at once with no transcription on the device; the server transcribes its first 20 seconds with NVIDIA Parakeet TDT 0.6B v3 in the in-cluster `asr` workload (the `transcribe` alias, refused when its target is not local) and the message updates in place. This replaces D7's on-device-first rule and its per-speaker consent **for voice messages only**: a workspace admin switch (on by default) turns it off, and the docs say voice messages are transcribed on this server. Parakeet v3 covers 25 European languages, not Arabic, Bangla, Hindi or East Asian languages. Meetings keep D7. Design: `docs/plans/voice-messages-server.md` (Phase 32).
 
 Everything else follows the spec: Hermes only, no bot modes, `BOT.md`, one LLM gateway, one MCP gateway, Hindsight bank per team chosen by the gateway with the OKF bundle as its editable mirror, two-stage gate, one `needsApproval`, first-party person connections.
 
@@ -165,6 +167,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 29 | 29 | The task view in the channel: the to-do card, the live run card and the questions waiting for a person under a thread's root message, a dock above the thread composer, a Threads view with progress, sidebar badges and a side rail (owner, 2026-11-16) | L | 25, 28 | 23 of 23 built, live |
 | 30 | 30 | Appearance in the gear menu: the account menu at the bottom left offers Appearance, a submenu of the four palettes and System, Light, Dark that applies and saves on a click, so a person sees the look change instead of going to Settings → Appearance (owner, 2026-11-16) | S | 28 | 3 of 3 built |
 | 31 | 31 | Deliveries that need no operator: Codex for several teams on one server, fewer approval cards without widening what the site controls, a chain that needs no nudges, a run that survives running out of memory, deploys and test-site builds that fit the disk, a Tester on a server that runs the full checks (2026-11-18, from the P26 proofs) | L | 26 | 0 of 7 built |
+| 32 | 32 | Voice messages like a phone app: a recording bar with delete, time, live waveform, pause and send; sent at once; the first 20 seconds transcribed on the server by Parakeet v3 and shown under the player (owner, 2026-11-18, D13) | M | 15, 28 | 0 of 10 built |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -203,7 +206,7 @@ Next after the ten: real email in and out (P8-09, P8-19; IMAP/SMTP first, then G
 
 ## 8. Build ledger (synced with the code, 2026-11-18)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **342 of 476 tasks (the 475 rows of this plan plus the follow-up P14-01b) are built, 68 are partly built, 60 are not built and 6 were dropped, superseded or built as something else.** On 2026-11-18 every phase was checked again against the code at commit 2bd6bf03 (three read-only audits); Phases 22 to 30 are in the table below from that date, and Phase 31 (7 rows, none built) was added the same day from the P26 proofs. (P6-13, P6-14, P20-16 and P21-26 to P21-28 were added on 2026-11-05 at the owner's request, and P6-09 was dropped the same day; Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **342 of 486 tasks (the 485 rows of this plan plus the follow-up P14-01b) are built, 68 are partly built, 70 are not built and 6 were dropped, superseded or built as something else.** On 2026-11-18 every phase was checked again against the code at commit 2bd6bf03 (three read-only audits); Phases 22 to 30 are in the table below from that date, and Phase 31 (7 rows, none built) was added the same day from the P26 proofs. (P6-13, P6-14, P20-16 and P21-26 to P21-28 were added on 2026-11-05 at the owner's request, and P6-09 was dropped the same day; Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -240,6 +243,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 29 · The task view in the channel | 23 | 0 | 0 | 0 |
 | 30 · Appearance in the gear menu | 3 | 0 | 0 | 0 |
 | 31 · Deliveries that need no operator | 0 | 0 | 7 | 0 |
+| 32 · Voice messages transcribed on the server | 0 | 0 | 10 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -894,6 +898,24 @@ The six P26 proofs (PRs #12 to #17) delivered on every agent and placement, but 
 | P31-05 | Deploys and test-site builds that fit the disk: thin server layer on a fixed full build when only sources changed (full build on a lockfile or Dockerfile change; release images never thin); deploy.sh comments match `disk-guard.sh`; finished build jobs removed after an hour; a registry CronJob keeps the last two test tags and garbage-collects read-only. Done: two deploys and two test-site builds under 85% with no hand step | Not built |
 | P31-06 | The Tester on an enrolled server runs the full checks: a test database and a browser without Docker for the team user, so the desktop Playwright spec runs instead of NOT RUN | Not built |
 | P31-07 | Message pins: pin and unpin a message, the channel's pinned list, `has:pin` in search (P14-11); separate from P9-09 (export a surface to pages) | Not built |
+
+
+### Phase 32 · Voice messages transcribed on the server (owner, 2026-11-18) — 0 built, 0 partly, 10 not built
+
+A voice message is recorded in a bar like a phone messaging app and sent at once; the server transcribes the first 20 seconds with Parakeet v3 and the message shows "Transcript · 0:00–0:20" under its player (D13). The design and the independent review's changes are in `docs/plans/voice-messages-server.md`.
+
+| ID | Task | Status |
+|---|---|---|
+| P32-00 | Spike: the Parakeet image on the devbox, time and memory for 20 s clips, silence and two at once (`docs/spikes/parakeet-measured.md`) | Not built |
+| P32-01 | The `asr` image: Parakeet v3 int8 through onnx-asr, ffmpeg, an OpenAI-compatible server, non-WAV cut at 20 s and WAV at 30 s, a container test on the devbox; chart env and limits | Not built |
+| P32-02 | Schema and routes: `VoiceMeta.transcript` gains pending, server, failed, plus `transcriptEndMs` and `transcriptNote`; the server sets them; the workspace switch; the versions trigger skips transcript writes | Not built |
+| P32-03 | The gateway door `transcribeClip`: local targets only, no transaction across the fetch, 8 MiB cap, spend line, fake ASR | Not built |
+| P32-04 | The `voice-transcribe` job and worker (compare-and-set), the `channel.message.transcribed` event, the bot router and memory on that event, the retry route | Not built |
+| P32-05 | The recording bar (delete, red dot and time, live waveform, pause and resume, send), pause in `capture.ts`, the uploading pending row; the device transcription path removed | Not built |
+| P32-06 | The voice message view: player with a dot, length and time, avatar with a microphone badge, and the transcript block for each state, updated live | Not built |
+| P32-07 | Playwright on Chromium's fake microphone with fake ASR; the three voice specs rewritten, composer baselines refreshed | Not built |
+| P32-08 | Pictures in Graphite dark and Linen light at 1440 and 390 px of the bar and the message states | Not built |
+| P32-09 | Deploy and a live check with the real Parakeet (a real clip, a clip over 20 s, a voice DM to a bot); docs and notices | Not built |
 
 ---
 
