@@ -89,6 +89,7 @@ describe('voice player format (P14-17)', () => {
   it('names the stretch the server transcribed, and whether the clip goes on after it', () => {
     expect(rangeLabel(voice({ durationMs: 10_400, transcriptEndMs: 10_400 }))).toBe('0:00\u20130:10');
     expect(transcriptShows(voice({ durationMs: 10_400, transcriptEndMs: 10_400 }))).toEqual({ endMs: 10_400, seconds: 10, longer: false });
+    expect(transcriptShows(voice({ durationMs: 10_900, transcriptEndMs: 10_900 })).seconds).toBe(10); // whole seconds, never rounded up, like the clock
     expect(rangeLabel(voice({ durationMs: 95_000, transcriptEndMs: 20_000 }))).toBe('0:00\u20130:20');
     expect(transcriptShows(voice({ durationMs: 95_000, transcriptEndMs: 20_000 }))).toEqual({ endMs: 20_000, seconds: 20, longer: true });
     // no range recorded: the range is the clip, cut at 20 seconds; and never past the clip

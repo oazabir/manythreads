@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_BAR, barOf, liveBars } from '../src/channels/voice/liveWave';
-import { KEEP_PLAYED, isPlayed, markPlayed, parsePlayed, resetPlayed, withPlayed } from '../src/channels/voice/played';
+import { KEEP_PLAYED, isPlayed, markPlayed, parsePlayed, playedKey, resetPlayed, withPlayed } from '../src/channels/voice/played';
 
 // P32-05 / P32-06: the live waveform's bars and the played-state list behind the microphone badge.
 
@@ -58,7 +58,7 @@ describe('the played list', () => {
     expect(isPlayed('x')).toBe(false);
     markPlayed('x', good);
     expect(isPlayed('x')).toBe(true);
-    expect(JSON.parse(kept.get('mt.voice.played') ?? '[]')).toEqual(['x']);
+    expect(JSON.parse(kept.get(playedKey(null)) ?? '[]')).toEqual(['x']);
     resetPlayed();
     const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('full'); } } as unknown as Storage;
     expect(() => markPlayed('y', broken)).not.toThrow();

@@ -42,6 +42,7 @@ import { withServerPoll, withTotals, withVote } from './polls';
 import { buildVoiceSend } from './voice/send';
 import { clipFileName } from './voice/support';
 import type { RecordedClip } from './voice/capture';
+import { setPlayedOwner } from './voice/played';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import {
   applyReaction,
@@ -125,12 +126,14 @@ export class ChannelStore {
     this.counted.clear();
     this.snap = { unread: {}, threadsUnread: 0 };
     this.self = null;
+    setPlayedOwner(null);
     this.emit();
   }
 
   /** The reader's actor id (from the roster): it decides whose reaction is "mine" and which messages are own. */
   setSelf(actorId: string | null): void {
     this.self = actorId;
+    setPlayedOwner(actorId);
   }
   get selfActor(): string | null {
     return this.self;
@@ -617,7 +620,10 @@ export class ChannelStore {
    * `pending` once more; the result arrives as a `message.edited` push like the first one.
    */
   async retryTranscript(channelId: string, rootId: string | null, id: string): Promise<void> {
+    // an older held copy (the failure) must not be put over what comes next; and a push that arrives while the request is out is newer than its answer
+    this.voiceEdits.delete(id);
     const m = await retryVoiceTranscript(id);
+    if (this.voiceEdits.has(id)) return;
     this.mapMessage(channelId, rootId, id, (x) => withEdit(x, m));
   }
 

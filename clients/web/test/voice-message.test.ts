@@ -166,6 +166,17 @@ describe('a voice message in a row', () => {
     expect(text('voice-retry-error')).toBe('Could not ask again. Try again in a moment.');
   });
 
+  it('after Try again the keyboard goes to the words that say the transcript is being written', async () => {
+    setTransport(async () => ({ status: 200, body: message(voice({ transcript: 'pending' })) }));
+    await draw(message(voice({ transcript: 'failed', transcriptRetry: true })), ME);
+    const button = q('voice-try-again') as HTMLElement;
+    button.focus();
+    await act(async () => button.click());
+    await draw(message(voice({ transcript: 'pending' })), ME);
+    expect(q('voice-writing')).not.toBeNull();
+    expect(document.activeElement).toBe(q('voice-writing'));
+  });
+
   it('none and device: as before, with no "Add a transcript" anywhere', async () => {
     await draw(message(voice({ transcript: 'none' })));
     expect(text('voice-no-transcript')).toBe('No transcript');
@@ -201,6 +212,14 @@ describe('a voice message still being sent', () => {
     expect(text('voice-pending-length')).toBe('0:07');
     expect(host.querySelector('.send-state')?.textContent).toBe('Sending…');
     expect(q('voice-writing')).toBeNull();
+  });
+
+  it('draws no picture or file card under the voice row, whatever is attached to it', async () => {
+    const withFile = { ...pending, attachments: [{ id: FILE, name: 'voice.webm', size: 40, mime: 'audio/webm' }, { id: uuid(501), name: 'shot.png', size: 9, mime: 'image/png' }] };
+    await drawPending(withFile as unknown as typeof pending);
+    expect(q('voice-pending')).not.toBeNull();
+    expect(host.querySelector('.atts')).toBeNull();
+    expect(host.querySelector('img')).toBeNull();
   });
 
   it('a failed one offers Try again and Delete; Delete asks first and throws the clip away', async () => {

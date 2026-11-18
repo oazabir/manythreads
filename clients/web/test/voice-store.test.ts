@@ -176,4 +176,24 @@ describe('the transcript arrives by push', () => {
     expect(seen[0]).toMatchObject({ method: 'POST', url: `/api/messages/${uuid(700)}/voice/transcribe` });
     expect(held()?.meta.voice?.transcript).toBe('pending');
   });
+
+  it('Try again: a transcript pushed while the request is out is not overwritten by the older pending answer', async () => {
+    edited(posted({}, voice({ transcript: 'failed', transcriptRetry: true })));
+    await tick();
+    let answer: (v: { status: number; body: unknown }) => void = () => undefined;
+    setTransport(
+      () =>
+        new Promise((res) => {
+          answer = res;
+        }),
+    );
+    const asking = store.retryTranscript(CH, null, uuid(700));
+    await tick();
+    edited(posted({ body: 'Hello there.', bodyPlain: 'Hello there.', editedAt: '2026-09-07T08:10:09.000Z' }, voice({ transcript: 'server', transcriptEndMs: 4_200 })));
+    await tick();
+    answer({ status: 200, body: posted() });
+    await asking;
+    expect(held()?.body).toBe('Hello there.');
+    expect(held()?.meta.voice?.transcript).toBe('server');
+  });
 });

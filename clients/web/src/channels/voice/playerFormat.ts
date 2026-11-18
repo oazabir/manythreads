@@ -127,7 +127,7 @@ export function transcriptNote(voice: VoiceMeta): string | null {
 /** Where the server's transcript ends and whether the clip goes on after it: the range is cut at 20 seconds (`transcriptEndMs`) and never past the clip. */
 export function transcriptShows(voice: VoiceMeta): { endMs: number; seconds: number; longer: boolean } {
   const endMs = Math.max(0, Math.min(voice.durationMs, voice.transcriptEndMs ?? VOICE_TRANSCRIPT_MAX_MS));
-  return { endMs, seconds: Math.round(endMs / 1000), longer: voice.durationMs > endMs };
+  return { endMs, seconds: Math.floor(endMs / 1000), longer: voice.durationMs > endMs };
 }
 
 /** `0:00–0:10`: the stretch of the clip the transcript covers. */

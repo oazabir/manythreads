@@ -147,13 +147,24 @@ export function VoiceTranscript({ voice, body, own, channelId, rootId, messageId
   useEffect(() => {
     if (voice.transcript !== 'failed') setError(null);
   }, [voice.transcript]);
+  // after "Try again" the button is gone; the keyboard goes to the words that say the transcript is being written
+  const waiting = useRef<HTMLParagraphElement>(null);
+  const wantFocus = useRef(false);
+  useEffect(() => {
+    if (voice.transcript === 'pending' && wantFocus.current) {
+      wantFocus.current = false;
+      waiting.current?.focus();
+    }
+  }, [voice.transcript]);
   const tryAgain = async (): Promise<void> => {
     if (asking) return;
     setAsking(true);
     setError(null);
+    wantFocus.current = true;
     try {
       await channelStore.retryTranscript(channelId, rootId, messageId);
     } catch (e) {
+      wantFocus.current = false;
       setError(isApiError(e) && e.message ? e.message : 'Could not ask again. Try again in a moment.');
     } finally {
       setAsking(false);
@@ -164,7 +175,7 @@ export function VoiceTranscript({ voice, body, own, channelId, rootId, messageId
     case 'pending':
       return (
         <div className="vt" data-testid="voice-transcript" data-state="pending">
-          <p className="vt-wait" {...(own ? { role: 'status', 'aria-live': 'polite' as const } : {})} data-testid="voice-writing">
+          <p ref={waiting} tabIndex={-1} className="vt-wait" {...(own ? { role: 'status', 'aria-live': 'polite' as const } : {})} data-testid="voice-writing">
             <span className="vt-spin" aria-hidden="true" />
             <span>Writing the transcript…</span>
           </p>
