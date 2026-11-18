@@ -28,7 +28,7 @@ test.afterAll(async () => {
 
 const voiceMessages = async (): Promise<Array<{ meta: { voice?: { transcript: string } } }>> => (await omar.get<{ items: Array<{ meta: { voice?: { transcript: string } } }> }>(`/api/channels/${dev}/messages`)).items.filter((m) => m.meta.voice);
 
-test('hold to record, release to send: no preview, the card fits the row with the transcript under it', async ({ browser, playwright }) => {
+test('hold to record, release to send: no preview, the flat voice message fits the row with the transcript under it', async ({ browser, playwright }) => {
   const { page, context } = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev', { mobile: true });
   try {
     await expect(mic(page)).toBeVisible();

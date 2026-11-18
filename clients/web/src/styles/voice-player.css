@@ -51,9 +51,10 @@
   flex: 1 1 120px;
   align-items: center;
   gap: 2px;
-  min-width: 96px;
+  min-width: 80px;
   max-width: 320px;
   height: 32px;
+  container: vpwave / inline-size;
   cursor: pointer;
   touch-action: pan-y; /* up or down scrolls the list, sideways seeks */
 }
@@ -223,8 +224,15 @@
   font-size: var(--fs-small);
 }
 
-@media (width <= 360px) {
+/* 64 bars with their gaps need about 190 px: a narrower waveform (a phone, the thread panel) draws every second bar, and a very narrow one every fourth */
+@container vpwave (width < 192px) {
   .vp-bar:nth-child(even) {
+    display: none;
+  }
+}
+
+@container vpwave (width < 96px) {
+  .vp-bar:nth-child(4n + 1) {
     display: none;
   }
 }
@@ -249,6 +257,12 @@
     justify-content: center;
     min-width: 44px;
     min-height: 44px;
+  }
+
+  /* the finger-sized button sits in a line of small text: its extra height overlaps the lines around it instead of opening a gap */
+  .vt-retry {
+    margin-block: -14px;
+    vertical-align: middle;
   }
 
   .vp-wave {

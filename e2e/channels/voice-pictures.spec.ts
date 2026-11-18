@@ -121,9 +121,13 @@ for (const look of LOOKS) {
         // a voice message between text messages
         await say(nadia, 'Thanks. Can you say what changed?');
         await say(omar, 'Sure, a short note.');
+        await say(omar, 'The flag is gone now.');
         await recordClip(page, 3);
         await expect(page.getByTestId('voice-words')).toHaveCount(4);
         await say(nadia, 'Got it, thank you.');
+        await expect(messagesIn(page).filter({ hasText: 'Got it, thank you.' })).toBeVisible();
+        // reload: the list as the server has it (a message pushed from another session and one this tab posted differ in a detail of the author until the next load)
+        await page.reload();
         await expect(messagesIn(page).filter({ hasText: 'Got it, thank you.' })).toBeVisible();
         await toBottom();
         await shot('between-text');
@@ -134,7 +138,7 @@ for (const look of LOOKS) {
         await expect(first.getByTestId('voice-player')).toHaveAttribute('data-state', 'playing');
         await first.getByTestId('voice-play').click();
         await expect(first.getByTestId('voice-badge')).toHaveAccessibleName('played');
-        await first.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+        await first.evaluate((el) => el.scrollIntoView({ block: 'center' }));
         await shot('played-and-not-played');
 
         // a failed transcript, as the server writes it when the model is busy three times
