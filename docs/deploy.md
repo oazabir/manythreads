@@ -301,13 +301,14 @@ the **voice messages** of channels (the first 20 seconds of each clip, decision 
 Voice messages are transcribed on this server: the workspace admin switch (Settings, Workspace) turns it off, and the docs and the recording bar say so.
 
 - **Image** (`deploy/images/asr`): `python:3.12-slim` pinned by digest, Debian's ffmpeg, the Python packages pinned with hashes (`requirements.txt`, made from `requirements.in`), and the int8 model files of
-  `istupakov/parakeet-tdt-0.6b-v3-onnx`, downloaded once while the image is built (needs the network for that one step; the pod never downloads anything, `HF_HUB_OFFLINE=1`). It runs as user 1000, not root.
+  `istupakov/parakeet-tdt-0.6b-v3-onnx` and the Silero VAD model `istupakov/silero-vad-onnx`, downloaded once while the image is built (needs the network for that one step; the pod never downloads anything, `HF_HUB_OFFLINE=1`). It runs as user 1000, not root.
   About 1.4 GB of files (`docs/spikes/parakeet-measured.md`). `tools/devbox/deploy.sh` builds it, tags it by the content of the folder and imports it into k3s when `asr.enabled` is true in `values-live.yaml`;
   it stops with a message when under 10 GB is free. Import one image at a time and remove the old one after the roll. Check a built image on the devbox (not in CI) with `bash deploy/images/asr/test.sh`.
 - **The server**: `GET /health` (answers at once, also while a clip is being worked on), `GET /v1/models`, `POST /v1/audio/transcriptions` with `file`. Any `model` value is accepted (the alias may still name an old Whisper id)
   and `language` is ignored; the answer is `{text, language: null, duration}`. LiteLLM drops form fields the pod does not know, so the cut depends on the input: **a clip that is not WAV (a voice message) is cut at 20 seconds,
   WAV (meeting pieces, at most 30 seconds) at 30 seconds**. The upload is limited to 8 MiB (413 above); only WAV, webm, ogg, mp4, flac, mp3 and aac are opened (400 otherwise). One clip is worked on at a time and one more may
-  wait; a third gets 429 and the caller tries again. About 2 seconds for a 20-second clip.
+  wait; a third gets 429 and the caller tries again. Every clip is cut into speech segments by **Silero VAD** (MIT, downloaded at build time beside the Parakeet files) before Parakeet reads it, and the segment texts are
+  joined: Parakeet alone returned an empty or cut text on whole 10 to 20 s inputs (`docs/spikes/parakeet-measured.md`). About 2.5 s for a 20-second clip on a quiet CPU, 5 to 7 s on the shared devbox CPU.
 - **Chart** (`templates/asr.yaml`): `asr.enabled` (off by default), `asr.image`, `asr.threads` (CPU threads per clip, default 4), `asr.resources` (1 CPU and 1792 MiB requested, 2560 MiB limit, from the measurement).
   Deployment `manythreads-asr` and Service `manythreads-asr:8000`, no outside address needed, no key (reachable inside the cluster only).
 - **Dev compose**: `docker compose -f deploy/compose/docker-compose.dev.yml --profile asr up -d --build asr` (port 8000 on loopback).
@@ -322,7 +323,7 @@ Voice messages are transcribed on this server: the workspace admin switch (Setti
 - **Check after deploy**: `kubectl rollout status deploy/manythreads-asr`, then send a voice message in a channel and read the transcript under it; Spend shows a `transcribe` line.
 - **Undo**: `asr.enabled: false` (the alias then answers "not set up"; nothing else changes).
 - **Credits**: the model is NVIDIA's Parakeet TDT 0.6B v3 (<https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3>), licensed **CC-BY-4.0**; the ONNX int8 files are istupakov's conversion
-  (<https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx>, same licence). Debian's ffmpeg in the image is a **GPL** build, run only as a separate program. The full list is `deploy/images/asr/NOTICE`, which is also
+  (<https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx>, same licence). The Silero VAD model (<https://github.com/snakers4/silero-vad>) is **MIT**. Debian's ffmpeg in the image is a **GPL** build, run only as a separate program. The full list is `deploy/images/asr/NOTICE`, which is also
   inside the image at `/app/NOTICE`.
 
 ## Temporary test triggers

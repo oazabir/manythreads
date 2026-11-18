@@ -12,6 +12,14 @@ The image contains an ONNX conversion of the model, int8 quantised, made by istu
   https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx  (same licence)
 Changes: converted to ONNX and quantised to int8; no retraining. Credit goes to NVIDIA for the model.
 
+Voice activity detection model
+------------------------------
+Silero VAD, a voice activity detector by the Silero team.
+  Source:   https://github.com/snakers4/silero-vad
+  Licence:  MIT, https://github.com/snakers4/silero-vad/blob/master/LICENSE
+The image contains an ONNX copy of the model, as published by istupakov for onnx-asr: https://huggingface.co/istupakov/silero-vad-onnx  (same licence)
+It cuts a clip into speech segments before the Parakeet model reads each one. No changes were made to the model.
+
 ffmpeg (GPL)
 ------------
 The image contains the ffmpeg program and its libraries as packaged by Debian (the `ffmpeg` package of the Debian release the python:3.12-slim base is built on).

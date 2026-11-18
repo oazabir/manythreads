@@ -49,5 +49,6 @@ The `asr` image (`deploy/images/asr`) holds third-party software; the full notic
 | What | Made by | Licence |
 |---|---|---|
 | **NVIDIA Parakeet TDT 0.6B v3** speech model (<https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3>), as the int8 ONNX conversion `istupakov/parakeet-tdt-0.6b-v3-onnx` | NVIDIA (model), istupakov (conversion) | **CC-BY-4.0**: credit NVIDIA wherever the model is described (`docs/deploy.md` "Speech to text"); changes: converted to ONNX and quantised to int8, no retraining. |
+| **Silero VAD** voice activity model (<https://github.com/snakers4/silero-vad>), as the ONNX copy `istupakov/silero-vad-onnx` that onnx-asr downloads | Silero team (model), istupakov (ONNX copy) | **MIT**: keep the copyright notice and licence text (`deploy/images/asr/NOTICE`, inside the image at `/app/NOTICE`); no changes. It cuts a clip into speech segments before Parakeet reads it. |
 | **ffmpeg** as packaged by Debian (turns an uploaded clip into samples; run only as a separate program) | The FFmpeg developers, Debian | **GPL** (v2 or later) for Debian's build; the licence texts are in the image under `/usr/share/doc/ffmpeg/` and `/usr/share/common-licenses/`. |
 | onnx-asr, onnxruntime, numpy, FastAPI, uvicorn and their dependencies | Their authors | MIT, BSD or Apache-2.0, pinned with hashes in `requirements.txt`. |

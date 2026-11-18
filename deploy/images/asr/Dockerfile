@@ -21,8 +21,9 @@ RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt && rm /
 RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin asr
 USER asr
 ENV HF_HOME=/home/asr/hf
-# The only network use of this image besides apt and pip: the int8 model files of istupakov/parakeet-tdt-0.6b-v3-onnx (CC-BY-4.0, NVIDIA's model) into HF_HOME.
-RUN python -c "import onnx_asr; onnx_asr.load_model('nemo-parakeet-tdt-0.6b-v3', quantization='int8')" \
+# The only network use of this image besides apt and pip: the int8 model files of istupakov/parakeet-tdt-0.6b-v3-onnx (CC-BY-4.0, NVIDIA's model) and the Silero VAD model of
+# istupakov/silero-vad-onnx (MIT) into HF_HOME. The VAD cuts every clip into speech segments before Parakeet reads it: Parakeet alone returns empty or cut text on whole 10-20 s inputs.
+RUN python -c "import onnx_asr; onnx_asr.load_model('nemo-parakeet-tdt-0.6b-v3', quantization='int8'); onnx_asr.load_vad('silero')" \
  && du -sh /home/asr/hf
 
 WORKDIR /app

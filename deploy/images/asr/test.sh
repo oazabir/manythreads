@@ -4,7 +4,7 @@
 #   bash deploy/images/asr/test.sh                      builds nothing: starts a container of $ASR_IMAGE, runs the cases, removes the container
 #   ASR_URL=http://127.0.0.1:8000 bash .../test.sh      runs against a container that already runs (it is left alone; the non-root check is skipped)
 #
-#   ASR_IMAGE  the image to test (default manythreads/asr:p32-dev); it is also the source of ffmpeg for making the test clips
+#   ASR_IMAGE  the image to test (default manythreads/asr:p32-dev; set it to the tag you built); it is also the source of ffmpeg for making the test clips
 #   ASR_THREADS  threads for the container this script starts (default 4)
 #
 # Needs: docker, curl, python3. Heavy: hold the devbox lock (flock) when other jobs may run. Prints one line per case and exits 1 if any failed.
@@ -52,6 +52,8 @@ ff -i /f/nadia.wav -i /f/rafi.wav -i /f/nadia.wav -filter_complex "concat=n=3:v=
 ff -i /f/nadia.wav -c:a libopus -b:a 24k /w/nadia.webm
 ff -i /f/nadia.wav -c:a aac -b:a 48k /w/nadia-moovend.mp4                      # the mp4 muxer writes the index (moov) last
 ff -i /f/nadia.wav -c:a aac -b:a 48k -movflags +faststart /w/nadia-faststart.mp4
+# 20 s of speech that does not loop: nadia, rafi, nadia, rafi, each followed by 0.5 s of silence, cut at 20 s (16 kHz mono PCM). Parakeet without the VAD returned an empty text for it.
+ff -i /f/nadia.wav -i /f/rafi.wav -i /f/nadia.wav -i /f/rafi.wav -filter_complex "[0:a]apad=pad_dur=0.5[a0];[1:a]apad=pad_dur=0.5[a1];[2:a]apad=pad_dur=0.5[a2];[3:a]apad=pad_dur=0.5[a3];[a0][a1][a2][a3]concat=n=4:v=0:a=1" -t 20 -ar 16000 -ac 1 -c:a pcm_s16le /w/speech20.wav || { echo "ffmpeg failed"; exit 1; }
 ff -t 25 -i /w/long.wav -c:a libopus -b:a 24k /w/long25.webm
 ff -t 25 -i /w/long.wav /w/long25.wav
 ff -i /w/long.wav -i /w/long.wav -filter_complex "concat=n=2:v=0:a=1" -t 40 /w/long40.wav
@@ -79,6 +81,7 @@ words_found() {
 }
 near() { python3 -I -c 'import sys; sys.exit(0 if abs(float(sys.argv[1])-float(sys.argv[2]))<=float(sys.argv[3]) else 1)' "$1" "$2" "$3"; }
 NADIA="contestants twenties undisturbed rest nights dormitories quiet death"
+RAFI="kaliko gong pounded ruggedo answered summons"
 
 # ---- 1. /health answers while a clip is being worked on ----
 ( curl -s -m 120 -o "$WORK/bg_body" -w '%{http_code}' -F "file=@$WORK/long40.wav" -F model=whisper-1 "$URL/v1/audio/transcriptions" > "$WORK/bg_code"; date +%s.%N > "$WORK/bg_done" ) &
@@ -106,6 +109,10 @@ post "$FIX/hello.wav"
 check "hello.wav (a synthetic buzz, not speech): 200 and duration 6, the words are not checked" "code=$CODE $(head -c 200 "$WORK/body")" test "$CODE" = 200 -a "$(near "$(jget duration)" 6 0.1 && echo y)" = y
 post "$WORK/nadia.webm"; ok=0; [ "$CODE" = 200 ] && words_found 6 $NADIA && ok=1
 check "webm/opus clip gives the expected words" "code=$CODE $(head -c 300 "$WORK/body")" test "$ok" = 1
+
+post "$WORK/speech20.wav"; ok=0; [ "$CODE" = 200 ] && words_found 3 $NADIA && words_found 3 $RAFI && ok=1
+check "20 s of speech (nadia, rafi, nadia, rafi with pauses): at least 3 words of nadia AND 3 of rafi (empty without the VAD), took ${TIME}s" "code=$CODE time=$TIME $(head -c 500 "$WORK/body")" test "$ok" = 1
+echo "      20 s speech clip: $TIME s, text: $(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("text","")[:400])' "$WORK/body")"
 
 # ---- 4. the answer's shape; model and language are ignored ----
 post "$WORK/nadia.webm" -F model=anything-at-all -F language=xx -F response_format=verbose_json -F temperature=0.2

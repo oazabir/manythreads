@@ -57,6 +57,16 @@ Smaller pod (2 CPUs, 2 threads, memory limit 2560 MiB, not once killed):
 - **Two clips at once take twice as long, one after the other** (the semaphore of one); the answer to the second is not slower than 2 times one clip. A third at once is refused at once with 429 and a `Retry-After` header.
 - **Two threads are nearly as fast as four** (2.2 s against 1.6 to 1.9 s for 20 s). The cluster node has no spare CPU to waste, so the chart's default may be lowered with `asr.threads: 2` if the pod competes with other work.
 
+## Finding 2026-11-18: always segment with VAD
+
+Parakeet through onnx-asr (0.12.0, int8; fp32 does the same) sometimes returns an **empty string or only the first sentence** on a whole 10 to 20 s input, although the audio is fine. A live 27 s voice message
+came back as "No words were heard in the first 20 seconds". A 20 s clip made of nadia, rafi, nadia, rafi (0.5 s of silence after each, cut at 20 s) returns `''` when recognised whole.
+Recognising through Silero VAD (`onnx_asr.load_vad("silero")`, `model.with_vad(vad).recognize(audio, sample_rate=16000)`, the segment `.text` joined with spaces) was reliable on every failing clip.
+`server.py` now always does this (the VAD uses the same `SessionOptions` and threads as the model; the cut rules, the semaphore and the 429 are unchanged). The VAD model (`istupakov/silero-vad-onnx`, MIT, a few MB)
+is downloaded into `HF_HOME` at build time beside Parakeet's files; the image is as large as before (root file system 1410 MB, `manythreads/asr:vad-dev`).
+Timing of the 20 s case: **2.5 s** through `test.sh` on a quiet devbox (4 threads, decode included); on the shared CPU of the live site the same input took **5 to 7 s with the VAD against about 3 s plain**, so
+expect up to about twice the recognition time of the numbers above. Silence still gives an empty text. `test.sh` has the case (at least 3 reference words of both nadia and rafi).
+
 ## What the words look like
 
 - English (the three sentences of the fixtures, read aloud): correct, with capitals and punctuation, except for rare names (`Kaliko` came out as "Galico" or "Calico", `Ruggedo` as "Brigado"). With the 20-second cut the text ends in the middle of a sentence ("... needed undisturbed rest"), as designed.

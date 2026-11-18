@@ -9,6 +9,7 @@ An OpenAI-compatible subset on top of NVIDIA Parakeet TDT 0.6B v3 (int8, CPU, th
 The LLM gateway runs with drop_params, so no extra form field reaches this pod; the cut is decided from the input type instead:
   - input that is not WAV (a voice clip from a browser) is cut at 20 seconds;
   - WAV input (meeting chunks, at most 30 seconds) is cut at 30 seconds.
+Every clip is cut into speech segments by Silero VAD before Parakeet reads it (Parakeet alone returns empty or cut text on whole 10-20 s inputs); the segment texts are joined with spaces.
 Only one clip is recognised at a time. One more may wait; a third gets 429 and the caller retries later.
 """
 
@@ -86,8 +87,10 @@ async def lifespan(_app: FastAPI):
     opts.intra_op_num_threads = threads()
     opts.inter_op_num_threads = 1
     started = time.monotonic()
-    state["model"] = onnx_asr.load_model(MODEL_NAME, quantization="int8", sess_options=opts)
-    log.info("model %s loaded in %.1fs, %d threads", MODEL_NAME, time.monotonic() - started, threads())
+    model = onnx_asr.load_model(MODEL_NAME, quantization="int8", sess_options=opts)
+    vad = onnx_asr.load_vad("silero", sess_options=opts)
+    state["model"] = model.with_vad(vad)
+    log.info("model %s and the silero VAD loaded in %.1fs, %d threads", MODEL_NAME, time.monotonic() - started, threads())
     yield
 
 
@@ -171,7 +174,8 @@ async def decode(path: str, demuxer: str, cut: float) -> np.ndarray:
 
 
 def recognize(audio: np.ndarray) -> str:
-    return str(state["model"].recognize(audio, sample_rate=SAMPLE_RATE)).strip()
+    # The segments come lazily: the join runs the recognition, so it must happen here, on the worker thread.
+    return " ".join(segment.text.strip() for segment in state["model"].recognize(audio, sample_rate=SAMPLE_RATE)).strip()
 
 
 @app.post("/v1/audio/transcriptions")
