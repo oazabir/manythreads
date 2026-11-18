@@ -59,7 +59,8 @@
       "enum": [
         "server",
         "failed",
-        "none"
+        "none",
+        "edited"
       ]
     },
     "transcriptEndMs": {

@@ -668,6 +668,8 @@ export interface JobOptions {
   serialKey?: string;
   /** Attempts before the job is dead-lettered (default 5). */
   maxAttempts?: number;
+  /** The wait in milliseconds after the first failed attempt; each later one doubles it, up to five minutes (default 1000). For work that a busy upstream answers with "later". */
+  backoffBaseMs?: number;
   /**
    * A 5-field cron expression in UTC (`17 3 * * *`): the server stores the schedule under the queue's name when it starts and enqueues the
    * latest due slot with an empty payload (missed slots coalesce into one run; several replicas enqueue once). Only for queues whose

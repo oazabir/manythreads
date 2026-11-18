@@ -393,6 +393,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
           pollMs,
           ...(value.options.concurrency !== undefined ? { concurrency: value.options.concurrency } : {}),
           ...(value.options.maxAttempts !== undefined ? { maxAttempts: value.options.maxAttempts } : {}),
+          ...(value.options.backoffBaseMs !== undefined ? { backoffBaseMs: value.options.backoffBaseMs } : {}),
           ...(value.options.serialKey !== undefined ? { serialKey: value.options.serialKey } : {}),
           handler: (payload, job) => {
             const workspaceId = typeof payload['workspaceId'] === 'string' ? (payload['workspaceId'] as WorkspaceId) : undefined;

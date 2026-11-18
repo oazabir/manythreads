@@ -22,6 +22,9 @@ interface World {
   body: string;
   voice: string | null;
   announced: boolean;
+  /** An earlier `channel.message.transcribed` event of the message said `failed`. */
+  failedBefore?: boolean;
+  triggers?: unknown[];
 }
 function rig(world: World) {
   const jobs: Array<{ queue: string; payload: Record<string, unknown>; opts: Record<string, unknown> }> = [];
@@ -47,8 +50,9 @@ function rig(world: World) {
           ],
         };
       }
+      if (sql.includes("type = 'channel.message.transcribed'") && sql.includes("'state' = 'failed'")) return { rows: world.failedBefore ? [{ '?column?': 1 }] : [] };
       if (sql.includes("type = 'channel.message.transcribed'")) return { rows: world.announced ? [{ '?column?': 1 }] : [] };
-      if (sql.includes('FROM app.bots')) return { rows: [{ id: BOT, slug: 'coder', runtime: 'hermes', triggers: [{ type: 'channel_message' }] }] };
+      if (sql.includes('FROM app.bots')) return { rows: [{ id: BOT, slug: 'coder', runtime: 'hermes', triggers: world.triggers ?? [{ type: 'channel_message' }] }] };
       if (sql.includes('FROM app.projects') || sql.includes('rehearsal_questions') || sql.includes('message_model_picks')) return { rows: [] };
       throw new Error(`unexpected query: ${sql.slice(0, 80)}`);
     },
@@ -58,7 +62,15 @@ function rig(world: World) {
   } catch {
     // the other routers in registerRouter need more of the context than this canned one has; only the message subscriptions matter here
   }
-  return { posted: handlers.get('channel.message.posted')!, transcribed: handlers.get('channel.message.transcribed')!, jobs, tx };
+  const transcribedHandler = handlers.get('channel.message.transcribed')!;
+  return {
+    posted: handlers.get('channel.message.posted')!,
+    // the outbox hands a subscriber the event row's id as a third argument
+    transcribed: (e: PluginEvent, t: PluginTx, eventId: string | undefined = '00000000-0000-7000-8000-0000000000ff'): Promise<void> =>
+      (transcribedHandler as unknown as (e: PluginEvent, t: PluginTx, m?: unknown) => Promise<void>)(e, t, eventId === undefined ? undefined : { eventId }),
+    jobs,
+    tx,
+  };
 }
 
 describe('the router and a voice message', () => {
@@ -125,5 +137,45 @@ describe('the router and a voice message', () => {
     const none = rig({ body: 'Voice message (0:42)', voice: 'none', announced: false });
     await none.posted(posted(), none.tx);
     expect(none.jobs).toHaveLength(1);
+  });
+
+  it('an author edit while pending: the `edited` event routes the typed words once, and the late posted delivery is skipped', async () => {
+    const r = rig({ body: 'I typed this myself.', voice: 'edited', announced: true });
+    await r.transcribed(transcribed('edited'), r.tx);
+    expect(r.jobs).toHaveLength(1);
+    expect(RunPayload.parse(r.jobs[0]!.payload).text).toBe('I typed this myself.');
+    await r.posted(posted(), r.tx);
+    expect(r.jobs).toHaveLength(1);
+  });
+
+  it('a "Try again" that works wakes nobody a second time: the failure already woke the bot on the stand-in line', async () => {
+    const r = rig({ body: 'The real words.', voice: 'server', announced: true, failedBefore: true });
+    await r.transcribed(transcribed('server'), r.tx);
+    expect(r.jobs).toEqual([]);
+    // the same event when no failure came before it routes as usual
+    const first = rig({ body: 'The real words.', voice: 'server', announced: true, failedBefore: false });
+    await first.transcribed(transcribed('server'), first.tx);
+    expect(first.jobs).toHaveLength(1);
+    // a second failure after the retry also wakes nobody again; the first failure (the event being routed is the only one) still does
+    const again = rig({ body: 'Voice message (0:42)', voice: 'failed', announced: true, failedBefore: true });
+    await again.transcribed(transcribed('failed'), again.tx);
+    expect(again.jobs).toEqual([]);
+    const only = rig({ body: 'Voice message (0:42)', voice: 'failed', announced: true, failedBefore: false });
+    await only.transcribed(transcribed('failed'), only.tx);
+    expect(only.jobs).toHaveLength(1);
+  });
+
+  it('a name the speech model heard ("at coder") wakes no bot by mention; the same words typed do', async () => {
+    const triggers = [{ type: 'mention' }];
+    const spoken = rig({ body: 'hey @coder look at the plan', voice: 'server', announced: true, triggers });
+    await spoken.transcribed(transcribed('server'), spoken.tx);
+    expect(spoken.jobs).toEqual([]);
+    const typed = rig({ body: 'hey @coder look at the plan', voice: 'edited', announced: true, triggers });
+    await typed.transcribed(transcribed('edited'), typed.tx);
+    expect(typed.jobs).toHaveLength(1);
+    expect(RunPayload.parse(typed.jobs[0]!.payload).trigger).toBe('mention');
+    const plain = rig({ body: 'hey @coder look at the plan', voice: null, announced: false, triggers });
+    await plain.posted(posted(), plain.tx);
+    expect(plain.jobs).toHaveLength(1);
   });
 });

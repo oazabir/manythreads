@@ -162,12 +162,30 @@ check "three requests at once: two are served, the third gets 429" "codes: $CODE
 check "the 429 body is an OpenAI-style error" "$(cat "$WORK"/c?.body | grep -a rate_limit | head -c 200)" grep -qa '"rate_limit_error"' "$WORK/c1.body" "$WORK/c2.body" "$WORK/c3.body"
 post "$WORK/nadia.webm"
 check "after the 429 the server serves again (nothing leaked)" "code=$CODE" test "$CODE" = 200
+# an upload that starts and then stalls holds a connection but no slot: two real clips are both served while it hangs
+python3 -I - "$URL" 25 <<'PY' &
+import socket, sys, time, urllib.parse
+u = urllib.parse.urlparse(sys.argv[1])
+s = socket.create_connection((u.hostname, u.port or 80))
+s.sendall(b"POST /v1/audio/transcriptions HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/form-data; boundary=b\r\nContent-Length: 1000000\r\n\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.wav\"\r\n\r\nRIFF")
+time.sleep(float(sys.argv[2]))
+PY
+STALL=$!
+sleep 1
+for i in 1 2; do
+  ( curl -s -m 120 -o "$WORK/s$i.body" -w '%{http_code}' -F "file=@$WORK/long40.wav" -F model=whisper-1 "$URL/v1/audio/transcriptions" > "$WORK/s$i.code" ) &
+done
+for j in $(jobs -p); do [ "$j" = "$STALL" ] || wait "$j"; done
+check "a stalled upload holds no slot: two clips at once are both served meanwhile" "codes: $(cat "$WORK/s1.code") $(cat "$WORK/s2.code")" test "$(cat "$WORK/s1.code")$(cat "$WORK/s2.code")" = 200200
+kill "$STALL" 2>/dev/null; wait "$STALL" 2>/dev/null
 
 # ---- 8. the container itself ----
 if [ "$STARTED" = 1 ]; then
   check "the server runs as a non-root user" "uid=$(docker exec "$NAME" id -u)" test "$(docker exec "$NAME" id -u)" != 0
   check "HF_HUB_OFFLINE=1 in the container" "" test "$(docker exec "$NAME" printenv HF_HUB_OFFLINE)" = 1
   check "the NOTICE file is in the image" "" docker exec "$NAME" test -s /app/NOTICE
+  LEFT="$(docker exec "$NAME" sh -c 'ls /dev/shm | grep -c "^asr-"' 2>/dev/null)"
+  check "no clip is left behind in /dev/shm after the cases" "left=$LEFT" test "${LEFT:-1}" = 0
 fi
 
 echo

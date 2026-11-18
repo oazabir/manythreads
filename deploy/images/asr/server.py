@@ -15,6 +15,7 @@ Only one clip is recognised at a time. One more may wait; a third gets 429 and t
 import asyncio
 import logging
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -38,6 +39,8 @@ CUT_SECONDS_WAV = 30.0
 # One clip runs and one may wait.
 MAX_IN_FLIGHT = 2
 DECODE_TIMEOUT_S = 30
+# The whole upload, from the first byte of the body to the last: a client that stalls holds a connection but no slot, and is let go after this.
+BODY_TIMEOUT_S = 60
 SHM = "/dev/shm"
 
 log = logging.getLogger("asr")
@@ -175,12 +178,20 @@ def recognize(audio: np.ndarray) -> str:
 async def transcriptions(request: Request):
     if state["model"] is None:
         return error(503, "The model is still loading.", "server_error")
+    busy = HTTPException(429, "The speech server is busy. Try again in a moment.", headers={"Retry-After": "5"})
     if state["in_flight"] >= MAX_IN_FLIGHT:
-        raise HTTPException(429, "The speech server is busy. Try again in a moment.", headers={"Retry-After": "5"})
-    state["in_flight"] += 1
-    path = None
+        raise busy  # answered before the body is read: a busy server does not take 8 MiB it will not use
     try:
-        form = await request.form()
+        form = await asyncio.wait_for(request.form(), BODY_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise HTTPException(408, "The upload took too long.")
+    # A slot is held only from here, once the whole upload is in: a stalled upload above holds none. No await between the check and the count.
+    if state["in_flight"] >= MAX_IN_FLIGHT:
+        await form.close()
+        raise busy
+    state["in_flight"] += 1
+    work = None
+    try:
         upload = form.get("file")
         if upload is None or not hasattr(upload, "read"):
             raise HTTPException(400, "A `file` field is required.")
@@ -196,8 +207,10 @@ async def transcriptions(request: Request):
             raise HTTPException(400, "The audio type is not supported.")
         demuxer, is_wav = kind
         cut = CUT_SECONDS_WAV if is_wav else CUT_SECONDS
-        # tmpfs, not a pipe: an mp4 written with its index at the end can only be read from a file.
-        path = os.path.join(SHM, f"asr-{uuid.uuid4().hex}")
+        # tmpfs, not a pipe: an mp4 written with its index at the end can only be read from a file. A private directory (mode 0700) per clip, removed at the end.
+        work = os.path.join(SHM, f"asr-{uuid.uuid4().hex}")
+        os.mkdir(work, 0o700)
+        path = os.path.join(work, "clip")
         with open(path, "wb") as f:
             f.write(data)
         del data
@@ -216,8 +229,5 @@ async def transcriptions(request: Request):
         return {"text": text, "language": None, "duration": seconds}
     finally:
         state["in_flight"] -= 1
-        if path:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+        if work:
+            shutil.rmtree(work, ignore_errors=True)

@@ -1,6 +1,7 @@
 import {
   authorizeContext,
   type ApprovalProvider,
+  type EventMeta,
   type MessageProvider,
   type PluginContext,
   type PluginEvent,
@@ -139,8 +140,8 @@ export function registerRouter(ctx: PluginContext): void {
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
     await routeMessage(ctx, tx, ChannelMessagePostedEvent.parse(raw), 'posted');
   });
-  ctx.events.subscribe('channel.message.transcribed', async (raw: PluginEvent, tx: PluginTx) => {
-    await routeMessage(ctx, tx, ChannelMessageTranscribedEvent.parse(raw), 'transcribed');
+  ctx.events.subscribe('channel.message.transcribed', async (raw: PluginEvent, tx: PluginTx, meta?: EventMeta) => {
+    await routeMessage(ctx, tx, ChannelMessageTranscribedEvent.parse(raw), 'transcribed', meta?.eventId);
   });
 }
 
@@ -153,20 +154,38 @@ async function transcriptAnnounced(tx: PluginTx, workspaceId: string, messageId:
   return res.rows.length > 0;
 }
 
+/**
+ * Did an earlier `channel.message.transcribed` event of this message say `failed`? Then the bot was woken on the stand-in line already, and the transcript
+ * that a "Try again" wrote later (or a second failure, or an edit) wakes nobody a second time. `eventId` is the event being routed: only an event written before it counts.
+ */
+async function failureAnnounced(tx: PluginTx, workspaceId: string, messageId: string, eventId: string | undefined): Promise<boolean> {
+  const res = await tx.query(
+    `SELECT 1 FROM app.events WHERE workspace_id = $1::uuid AND type = 'channel.message.transcribed' AND id > $2::uuid AND ($4::uuid IS NULL OR id < $4::uuid)
+        AND payload ->> 'messageId' = $3::text AND payload ->> 'state' = 'failed' LIMIT 1`,
+    [workspaceId, messageId, messageId, eventId ?? null],
+  );
+  return res.rows.length > 0;
+}
+
 /** Decide, then enqueue one run per bot that the message fires, for a message that was just posted or whose transcript just ended. */
 async function routeMessage(
   ctx: PluginContext,
   tx: PluginTx,
-  event: { workspaceId: string; messageId: string },
+  event: { workspaceId: string; messageId: string; state?: string },
   via: 'posted' | 'transcribed',
+  eventId?: string,
 ): Promise<void> {
   const message = await loadMessage(tx, event.messageId);
   if (!message) return;
   if (via === 'posted' && message.voice_state !== null) {
     if (message.voice_state === 'pending') return; // the words are on their way: the transcribed event routes it
-    if (message.voice_state !== 'device' && message.voice_state !== 'edited' && (await transcriptAnnounced(tx, event.workspaceId, message.id))) return;
+    if (message.voice_state !== 'device' && (await transcriptAnnounced(tx, event.workspaceId, message.id))) return;
   }
-  if (via === 'transcribed' && message.voice_state === null) return;
+  if (via === 'transcribed') {
+    if (message.voice_state === null) return;
+    // (without the event's own id a `failed` event cannot tell its predecessors from itself, so only the other states look)
+    if ((eventId !== undefined || event.state !== 'failed') && (await failureAnnounced(tx, event.workspaceId, message.id, eventId))) return;
+  }
   // The announcement a handover posts ("Orchestrator → @coder: ...") carries `meta.handoff`, set only by the tasks plugin through the message
   // door. It is not a request of its own: the assignment's event (router-tasks.ts) wakes the new owner, so this message starts nothing,
   // whoever wrote it.
@@ -196,7 +215,9 @@ async function routeMessage(
   const view: MessageView = {
     channelName: message.channel_name,
     isBotChannel: false,
-    mentions: conversation ? new Set() : mentionedHandles(message.body),
+    // A transcript is what a speech model heard, not what the author typed: a spoken "at bot" in it wakes nobody by mention (the channel and conversation
+    // rules still apply). The author's own words (`edited`) are typed, so they count as any message's do.
+    mentions: conversation || (via === 'transcribed' && event.state === 'server') ? new Set() : mentionedHandles(message.body),
   };
   const bots = (
     await tx.query<BotRow>(

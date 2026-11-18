@@ -3,7 +3,7 @@ import { eventRegistry, latestVersion, parseEvent } from '../../src/index.ts';
 import { uuid } from '../fixtures.ts';
 
 // Event contract of P32-04 (`pnpm test:events`): `channel.message.transcribed` is registered at version 1, says how a voice message's transcript ended
-// (`server`, `failed`, `none`) and carries ids only: never the words. The channels plugin's own test proves the real code path writes this shape once.
+// (`server`, `failed`, `none`, `edited`) and carries ids only: never the words. The channels plugin's own test proves the real code path writes this shape once.
 
 const sample = { type: 'channel.message.transcribed', schemaVersion: 1, workspaceId: uuid(1), channelId: uuid(2), teamId: uuid(3), messageId: uuid(4), authorId: uuid(5), threadRootId: null, state: 'server', transcriptEndMs: 20_000 } as const;
 
@@ -17,7 +17,7 @@ describe('channel.message.transcribed', () => {
   it('takes a DM (no team), a thread reply, and each way the transcript can end', () => {
     expect(parseEvent({ ...sample, teamId: null })).toMatchObject({ teamId: null });
     expect(parseEvent({ ...sample, threadRootId: uuid(6) })).toMatchObject({ threadRootId: uuid(6) });
-    for (const state of ['server', 'failed', 'none']) expect(parseEvent({ ...sample, state, transcriptEndMs: state === 'server' ? 5000 : null })).toMatchObject({ state });
+    for (const state of ['server', 'failed', 'none', 'edited']) expect(parseEvent({ ...sample, state, transcriptEndMs: state === 'server' ? 5000 : null })).toMatchObject({ state });
   });
 
   it('refuses a missing or malformed id, another state, a negative time and another schema version', () => {

@@ -18,8 +18,16 @@ import { VOICE_MAX_ATTEMPTS, VOICE_QUEUE, transcribedRangeMs, transcriptBody, vo
 
 export { VOICE_MAX_ATTEMPTS, VOICE_QUEUE } from './voice-rules.ts';
 const VOICE_CONCURRENCY = 2;
+/** The wait before the second attempt (then doubled): a busy speech pod (429) is given half a minute, then a minute, not a second and two. */
+const VOICE_BACKOFF_BASE_MS = 30_000;
+/** `MANYTHREADS_VOICE_BACKOFF_BASE_MS` shortens the wait for a test; unset (or not a positive whole number), it is half a minute. */
+const backoffBaseMs = (): number => {
+  const n = Number(process.env['MANYTHREADS_VOICE_BACKOFF_BASE_MS']);
+  return Number.isInteger(n) && n > 0 ? n : VOICE_BACKOFF_BASE_MS;
+};
 const MISSING_CLIP = 'The recording is no longer stored.';
 const NO_WORDS = 'No words were heard in the first 20 seconds.';
+const FAILED_NOTE = 'The transcript could not be written.';
 const NO_TRANSCRIBER = 'Speech to text is not set up on this server.';
 
 // Voice messages on the server (P32-02 to P32-04, decision D13). A voice message is posted at once with a stand-in line as its body and
@@ -195,29 +203,36 @@ export async function transcribeVoiceMessage(
   const transcriber = clipTranscriberOf(ctx);
   if (!transcriber) return failNow(NO_TRANSCRIBER, false);
 
-  // 2. the clip, with no transaction open
-  const storage = ctx.providers.get<BlobStorage>('storage');
-  if (!storage || !row.blob_key) return failNow(MISSING_CLIP, false);
-  const clip = await readClip(storage, row.blob_key);
-  if (clip === null) return failNow(MISSING_CLIP, false);
+  // Steps 2 and 3 can throw for reasons that are nobody's decision (storage, the database, the provider lookup): up to the last attempt the queue tries again,
+  // and on the last one the message says so, since a job that dies leaves a message `pending` for ever. `>=` because a reaper requeue can pass the count.
+  try {
+    // 2. the clip, with no transaction open
+    const storage = ctx.providers.get<BlobStorage>('storage');
+    if (!storage || !row.blob_key) return await failNow(MISSING_CLIP, false);
+    const clip = await readClip(storage, row.blob_key);
+    if (clip === null) return await failNow(MISSING_CLIP, false);
 
-  // 3. the model (the door opens its own short transactions and holds none across the call)
-  const answer: LlmClipResult = await transcriber.transcribeClip(
-    { workspaceId, teamId: row.team_id, messageId, actorId: row.author_id, clip, contentType: row.mime ?? 'application/octet-stream', durationMs: meta.durationMs },
-    inTx,
-  );
-  switch (answer.outcome) {
-    case 'text': {
-      if (answer.text.trim() === '') return failNow(NO_WORDS, false);
-      await inTx((tx) => writeServerText(deps, tx, workspaceId, w, answer.text));
-      return;
+    // 3. the model (the door opens its own short transactions and holds none across the call)
+    const answer: LlmClipResult = await transcriber.transcribeClip(
+      { workspaceId, teamId: row.team_id, messageId, actorId: row.author_id, clip, contentType: row.mime ?? 'application/octet-stream', durationMs: meta.durationMs },
+      inTx,
+    );
+    switch (answer.outcome) {
+      case 'text': {
+        if (answer.text.trim() === '') return await failNow(NO_WORDS, false);
+        await inTx((tx) => writeServerText(deps, tx, workspaceId, w, answer.text));
+        return;
+      }
+      case 'refused':
+        return await failNow(answer.reason, false);
+      case 'unavailable':
+        // may pass: the queue tries again; the last attempt says so on the message, with "Try again" offered
+        if (attempt < maxAttempts) throw new Error(`speech model unavailable: ${answer.reason}`);
+        return await failNow(answer.reason, true);
     }
-    case 'refused':
-      return failNow(answer.reason, false);
-    case 'unavailable':
-      // may pass: the queue tries again; the last attempt says so on the message, with "Try again" offered
-      if (attempt < maxAttempts) throw new Error(`speech model unavailable: ${answer.reason}`);
-      return failNow(answer.reason, true);
+  } catch (err) {
+    if (attempt < maxAttempts) throw err;
+    await failNow(FAILED_NOTE, true);
   }
 }
 
@@ -228,7 +243,7 @@ export function registerVoiceJob(deps: Deps): void {
       await transcribeVoiceMessage(deps, (fn) => job.transaction(fn), payload, job.attempt);
     },
     // detached: the speech model takes seconds and no transaction is held meanwhile; two at once (the speech pod takes one at a time and queues a few)
-    { detached: true, concurrency: VOICE_CONCURRENCY, maxAttempts: VOICE_MAX_ATTEMPTS },
+    { detached: true, concurrency: VOICE_CONCURRENCY, maxAttempts: VOICE_MAX_ATTEMPTS, backoffBaseMs: backoffBaseMs() },
   );
 }
 
@@ -285,9 +300,9 @@ export async function retryVoiceTranscript(deps: Deps, tx: PluginTx, messageId: 
   const transcriber = clipTranscriberOf(ctx);
   const status = transcriber ? await transcriber.clipStatus(tx, tx.actor.workspaceId) : ({ ready: false, reason: NO_TRANSCRIBER } as const);
   if (!status.ready) throw conflict(status.reason);
-  budget.take(messageId);
   const flipped = (await tx.query<{ ok: boolean }>('SELECT app.voice_transcript_retry($1::uuid) AS ok', [messageId])).rows[0]?.ok === true;
   if (!flipped) throw conflict('There is no transcript to try again for this message');
+  budget.take(messageId); // only a flip that took counts; the 429 below rolls the flip back with the transaction
   await ctx.jobs.enqueue(tx, VOICE_QUEUE, { workspaceId: tx.actor.workspaceId, messageId }, { dedupeKey: `voice:${messageId}:retry:${randomUUID()}` });
   const message = (await findChannelMessage(tx, row.channel_id, messageId))!;
   await pushMessage(deps, tx, await audience(tx, row.channel_id), 'message.edited', message);

@@ -484,7 +484,13 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
   if (current.body === body) return current;
   // An answer's text is the payload's `body` (the Answer is drawn from it, and a shared copy was checked against its original): editing the
   // message would make the two differ, so a message that carries an Answer is deleted and shared again, never edited.
-  const kind = (await tx.query<{ answer: boolean; poll: boolean }>("SELECT meta ? 'answer' AS answer, meta ? 'poll' AS poll FROM app.messages WHERE id = $1", [messageId])).rows[0];
+  // The row is locked from here to the end of the transaction: a voice message's transcript job writes into the same row, and which of the two came first decides what is announced below.
+  const kind = (
+    await tx.query<{ answer: boolean; poll: boolean; voice_state: string | null }>(
+      "SELECT meta ? 'answer' AS answer, meta ? 'poll' AS poll, meta -> 'voice' ->> 'transcript' AS voice_state FROM app.messages WHERE id = $1 FOR UPDATE",
+      [messageId],
+    )
+  ).rows[0];
   if (kind?.answer === true) throw conflict('An answer cannot be edited. Delete it and share the answer again.');
   // a poll's text is made from its question and options and the card is drawn from the poll: editing the message would make the two differ
   if (kind?.poll === true) throw conflict('A poll cannot be edited. Delete it and ask again.');
@@ -497,6 +503,22 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
     [messageId, channelId, body, toPlainText(body)],
   );
   if (res.rows.length === 0) throw forbidden('You cannot edit this message');
+  // The author's own words came while the server was still writing the transcript: the job will find the message no longer pending and drop its answer, so this
+  // is the end of the transcript. The bot router waits for `channel.message.transcribed` before it answers a pending voice message; without it nobody would be woken.
+  if (kind?.voice_state === 'pending') {
+    await deps.ctx.events.emit(tx, {
+      type: 'channel.message.transcribed',
+      schemaVersion: 1,
+      workspaceId: tx.actor.workspaceId,
+      channelId,
+      teamId: channel.team_id,
+      messageId,
+      authorId: current.authorId,
+      threadRootId: current.threadRootId,
+      state: 'edited',
+      transcriptEndMs: null,
+    });
+  }
   await deps.ctx.audit.emit(tx, {
     type: 'channel.message.edited',
     channelId,

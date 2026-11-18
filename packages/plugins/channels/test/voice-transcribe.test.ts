@@ -13,6 +13,8 @@ const { nadia, rafi } = personas;
 let w: FilesWorld;
 let dev = '';
 beforeAll(async () => {
+  // the job waits half a minute before its second attempt in real life (a busy speech pod needs the time); a test does not
+  process.env['MANYTHREADS_VOICE_BACKOFF_BASE_MS'] = '150';
   w = await createWorld();
   await ensureChannels(w);
   dev = await w.channelId('engineering', 'dev');
@@ -114,6 +116,22 @@ describe('a voice message the server transcribes', () => {
     expect(await transcribedEvents(posted.id)).toHaveLength(1);
   }, 60_000);
 
+  it('a throw that is nobody\'s decision (the door itself breaks) is tried three times; the last time the message says so and offers "Try again", it is never left pending', async () => {
+    let calls = 0;
+    installDoor({
+      transcribeClip: async () => {
+        calls += 1;
+        throw new Error('the provider lookup broke');
+      },
+      clipStatus: async () => ({ ready: true }),
+    });
+    const posted = await sendVoice();
+    const done = await settled(posted.id);
+    expect(calls).toBe(3);
+    expect(done.meta.voice).toMatchObject({ transcript: 'failed', transcriptRetry: true, transcriptNote: 'The transcript could not be written.' });
+    expect(await transcribedEvents(posted.id)).toEqual([expect.objectContaining({ state: 'failed' })]);
+  }, 60_000);
+
   it('hearing nothing is failed, and with no speech model at all the message says so', async () => {
     installDoor(scriptedDoor({ outcome: 'text', text: '   ', lang: null }).door);
     const silent = await settled((await sendVoice()).id);
@@ -136,7 +154,7 @@ describe('the late answer loses to what happened meanwhile', () => {
     expect(await transcribedEvents(posted.id)).toEqual([]);
   });
 
-  it('an edit by the author while the model works wins: their words stay, the state is edited, no event', async () => {
+  it('an edit by the author while the model works wins: their words stay, the state is edited, and one `edited` event ends the transcript (the bot router waits for it)', async () => {
     const held = heldDoor();
     installDoor(held.door);
     const posted = await sendVoice();
@@ -148,7 +166,7 @@ describe('the late answer loses to what happened meanwhile', () => {
     const after = await read(posted.id);
     expect(after.body).toBe('What I really said.');
     expect(after.meta.voice?.transcript).toBe('edited');
-    expect(await transcribedEvents(posted.id)).toEqual([]);
+    expect(await transcribedEvents(posted.id)).toEqual([expect.objectContaining({ state: 'edited', transcriptEndMs: null })]);
     expect(await versions(posted.id)).toBe(1); // a real edit keeps the old text
   });
 });
@@ -221,6 +239,27 @@ describe('asking for the transcript again', () => {
     expect(done.body).toBe('Second time lucky. …');
     expect(done.meta.voice?.transcript).toBe('server');
     expect((await transcribedEvents(failed.id)).map((e) => e.state)).toEqual(['failed', 'server']);
+  });
+
+  it('two asks at once: one flips the message, the other gets a 409; one job is queued and the loser spent none of the three asks', async () => {
+    const failed = await failedMessage(true);
+    const held = heldDoor();
+    installDoor(held.door);
+    const jobsOf = (): Promise<number> =>
+      w.system(async (tx) => Number((await tx.query<{ n: string }>("SELECT count(*) AS n FROM app.jobs WHERE queue = 'channels.voice-transcribe' AND payload ->> 'messageId' = $1", [failed.id])).rows[0]!.n));
+    const before = await jobsOf();
+    const answers = await Promise.all([ask(nadia, failed.id), ask(nadia, failed.id)]);
+    expect(answers.map((a) => a.status).sort()).toEqual([200, 409]);
+    expect(await jobsOf()).toBe(before + 1);
+    expect((await read(failed.id)).meta.voice?.transcript).toBe('pending');
+    // the winner used one of the three asks of the hour; the loser none: two more go through
+    for (let i = 0; i < 2; i++) {
+      await w.system(async (tx) => {
+        await tx.query("UPDATE app.messages SET meta = jsonb_set(meta, '{voice}', (meta -> 'voice') || '{\"transcript\":\"failed\",\"transcriptRetry\":true}'::jsonb) WHERE id = $1", [failed.id]);
+      });
+      expect((await ask(nadia, failed.id)).status).toBe(200);
+    }
+    held.release();
   });
 
   it('is for the author only (403), only from a failed message that may be retried (409), only while the switch is on and the model is set up (409)', async () => {
