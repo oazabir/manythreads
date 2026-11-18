@@ -221,6 +221,7 @@ import {
   ForwardMessageResponse,
   ListMessageVersionsResponse,
   EditMessageResponse,
+  RetryVoiceTranscriptResponse,
   GetChannelResponse,
   GetMessageResponse,
   GetReadStateRequest,
@@ -307,6 +308,7 @@ import {
   clearMessageVersionsRoute,
   deleteMessageRoute,
   editMessageRoute,
+  retryVoiceTranscriptRoute,
   forwardMessageRoute,
   listMessageVersionsRoute,
   getChannelRoute,
@@ -718,6 +720,8 @@ export const postMessage = (
   );
 export const editMessage = (channelId: string, messageId: string, body: string, confirmBroadcast = false) =>
   call(editMessageRoute, { request: EditMessageRequest, response: EditMessageResponse }, { body, ...(confirmBroadcast ? { confirmBroadcast: true } : {}) }, { channelId, messageId });
+/** "Try again" on a voice message whose transcript failed (P32-06): answers with the message, `pending` once more. */
+export const retryVoiceTranscript = (messageId: string) => call(retryVoiceTranscriptRoute, { response: RetryVoiceTranscriptResponse }, undefined, { messageId });
 /** How many people `@channel` and `@here` would notify in this channel for the caller, and the size above which the writer confirms (P14-02). */
 export const fetchBroadcastReach = (channelId: string) => call(broadcastReachRoute, { response: BroadcastReach }, undefined, { channelId });
 // ---- custom emoji (P14-02) -------------------------------------------------------------------------------------

@@ -29,15 +29,19 @@ import {
   fetchReadStates,
   fetchThread,
   fetchUnreadSummary,
+  retryVoiceTranscript,
   markMessageUnread,
   markRead,
   postMessage,
   removeReaction,
+  uploadChannelFile,
   votePoll,
   withdrawVote,
 } from '../api/endpoints';
 import { withServerPoll, withTotals, withVote } from './polls';
-import { lateTranscripts } from './voice/late';
+import { buildVoiceSend } from './voice/send';
+import { clipFileName } from './voice/support';
+import type { RecordedClip } from './voice/capture';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import {
   applyReaction,
@@ -216,7 +220,8 @@ export class ChannelStore {
   }
 
   /** A message arrived (push, or the answer to our own POST): into its timeline, counted once, pending copy dropped. */
-  applyPosted(message: ChannelMessage, localId?: string): void {
+  applyPosted(arrived: ChannelMessage, localId?: string): void {
+    const message = this.withNewerTranscript(arrived);
     for (const h of [...this.activityHooks]) h(message.channelId, message.createdAt);
     const root = message.threadRootId;
     const key = root ? threadKey(root) : channelKey(message.channelId);
@@ -227,9 +232,9 @@ export class ChannelStore {
         ...t,
         // already held (the push and the answer to our own POST both arrive): keep its reactions and counts, take the text
         items: t.items.some((m) => m.id === message.id)
-          ? patchMessage(t.items, message.id, (m) => ({ ...m, body: message.body, bodyPlain: message.bodyPlain, editedAt: message.editedAt }))
+          ? patchMessage(t.items, message.id, (m) => (m.meta.voice && message.meta.voice && isNewerVoice(m.meta.voice, message.meta.voice) ? m : { ...m, body: message.body, bodyPlain: message.bodyPlain, editedAt: message.editedAt }))
           : mergeItems(t.items, [message]),
-        pending: t.pending.filter((x) => x.localId !== localId && !(mine && x.status === 'sending' && x.body === message.body)),
+        pending: t.pending.filter((x) => x.localId !== localId && !(mine && x.status === 'sending' && (x.clip ? x.voice !== undefined && x.voice.fileId === message.meta.voice?.fileId : x.body === message.body))),
       }));
     }
     if (root && !this.counted.has(message.id)) {
@@ -242,6 +247,18 @@ export class ChannelStore {
     }
   }
 
+  /**
+   * The newest transcript of each voice message that an edit push carried (the last 100). The server may finish the words before the answer to our own
+   * POST comes back, and that answer still says `pending`: it must not put the stand-in line back over the words.
+   */
+  private readonly voiceEdits = new Map<string, ChannelMessage>();
+  private withNewerTranscript(m: ChannelMessage): ChannelMessage {
+    const voice = m.meta.voice;
+    const seen = this.voiceEdits.get(m.id);
+    if (!voice || !seen?.meta.voice || !isNewerVoice(seen.meta.voice, voice)) return m;
+    return { ...m, body: seen.body, bodyPlain: seen.bodyPlain, editedAt: seen.editedAt, meta: { ...m.meta, voice: seen.meta.voice } };
+  }
+
   private async onEdited(p: MessageEditedPush): Promise<void> {
     let message = p.message;
     if (!message) {
@@ -252,6 +269,11 @@ export class ChannelStore {
       }
     }
     const next = message;
+    if (next.meta.voice) {
+      this.voiceEdits.delete(next.id);
+      this.voiceEdits.set(next.id, next);
+      if (this.voiceEdits.size > 100) this.voiceEdits.delete(this.voiceEdits.keys().next().value as string);
+    }
     this.mapMessage(next.channelId, next.threadRootId, next.id, (m) => withEdit(m, next));
   }
 
@@ -502,7 +524,7 @@ export class ChannelStore {
 
   // ---- writes ------------------------------------------------------------------------------------------------
   /** Optimistic send: the message shows at once as "sending"; on failure it stays with "Not sent · Retry". */
-  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false, confirmBroadcast = false, voice?: VoiceMeta): Promise<void> {
+  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false, confirmBroadcast = false): Promise<void> {
     const key = rootId ? threadKey(rootId) : channelKey(channelId);
     const item: PendingSend = {
       localId: idOf(),
@@ -513,7 +535,25 @@ export class ChannelStore {
       ...(alsoToChannel && rootId ? { alsoToChannel: true } : {}),
       // the writer confirmed that @channel or @here goes to a big room; kept so a retry sends what was confirmed
       ...(confirmBroadcast ? { confirmBroadcast: true } : {}),
-      ...(voice ? { voice } : {}),
+    };
+    this.put(key, (t) => ({ ...t, pending: [...t.pending, item] }));
+    await this.deliver(key, channelId, rootId, item);
+  }
+
+  /**
+   * Sends a recorded voice message (P32-05): no preview, no waiting for words. The row shows at once as "Sending…" and holds the clip; the clip is
+   * uploaded, then the message is posted. The server writes the transcript afterwards and tells the page by a `message.edited` push. A failed upload
+   * or post leaves the row with Try again and Delete, and the clip is kept for the retry.
+   */
+  async sendVoice(channelId: string, rootId: string | null, clip: RecordedClip): Promise<void> {
+    const key = rootId ? threadKey(rootId) : channelKey(channelId);
+    const item: PendingSend = {
+      localId: idOf(),
+      body: '',
+      attachments: [],
+      status: 'sending',
+      createdAt: new Date().toISOString(),
+      clip: { blob: clip.blob, mime: clip.mime, durationMs: clip.durationMs, peaks: clip.peaks },
     };
     this.put(key, (t) => ({ ...t, pending: [...t.pending, item] }));
     await this.deliver(key, channelId, rootId, item);
@@ -535,11 +575,20 @@ export class ChannelStore {
     this.put(key, (t) => ({ ...t, pending: t.pending.filter((p) => p.localId !== localId) }));
   }
 
-  private async deliver(key: string, channelId: string, rootId: string | null, item: PendingSend): Promise<void> {
+  private async deliver(key: string, channelId: string, rootId: string | null, start: PendingSend): Promise<void> {
+    let item = start;
     try {
+      if (item.clip && item.attachments.length === 0) {
+        // the clip goes up first; once it is on the server a retry of a failed post does not upload it again
+        const file = new File([item.clip.blob], clipFileName(item.clip.mime), { type: item.clip.mime });
+        const up = await uploadChannelFile(channelId, file, () => undefined);
+        const built = buildVoiceSend({ fileId: up.id, durationMs: item.clip.durationMs, peaks: item.clip.peaks });
+        const uploaded: PendingSend = { ...item, body: built.body, voice: built.voice, attachments: [{ id: up.id, name: up.name, size: up.size, mime: up.mime }] };
+        item = uploaded;
+        this.put(key, (t) => ({ ...t, pending: t.pending.map((p) => (p.localId === uploaded.localId ? uploaded : p)) }));
+      }
       const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true, item.confirmBroadcast === true, item.voice);
       this.applyPosted(asChannelMessage(m, item.attachments), item.localId);
-      if (item.voice) lateTranscripts.posted(item.voice.fileId, { channelId, rootId, messageId: m.id });
       // the push may have come first and already removed the pending copy; either way it is gone now
       this.put(key, (t) => ({ ...t, pending: t.pending.filter((p) => p.localId !== item.localId) }));
     } catch (err) {
@@ -564,13 +613,12 @@ export class ChannelStore {
   }
 
   /**
-   * The words of a voice message written out after it was sent ("Send without waiting"): saved as an edit, but only while the message still has no
-   * transcript, so a correction the author made by hand in the meantime is never overwritten.
+   * "Try again" on a voice message whose transcript failed (the author only): the server queues the job again and answers with the message, which is
+   * `pending` once more; the result arrives as a `message.edited` push like the first one.
    */
-  async addLateTranscript(channelId: string, rootId: string | null, id: string, text: string): Promise<void> {
-    const have = this.findMessage(channelId, rootId, id);
-    if (have && have.meta.voice?.transcript !== 'none') return;
-    await this.edit(channelId, rootId, id, text);
+  async retryTranscript(channelId: string, rootId: string | null, id: string): Promise<void> {
+    const m = await retryVoiceTranscript(id);
+    this.mapMessage(channelId, rootId, id, (x) => withEdit(x, m));
   }
 
   async remove(channelId: string, rootId: string | null, id: string): Promise<void> {
@@ -653,11 +701,15 @@ function withEdit(m: ChannelMessage, next: ChannelMessage): ChannelMessage {
   return { ...m, body: next.body, bodyPlain: next.bodyPlain, editedAt: next.editedAt, ...(voice && m.meta.voice ? { meta: { ...m.meta, voice } } : {}) };
 }
 
+/** True when `held` is further along than `incoming`: the transcript was written (or failed, or was edited) and `incoming` still says `pending`. */
+function isNewerVoice(held: VoiceMeta, incoming: VoiceMeta): boolean {
+  return incoming.transcript === 'pending' && held.transcript !== 'pending';
+}
+
 function errorOf(e: unknown): { status: number; message: string } {
   return isApiError(e) ? { status: e.status, message: e.message } : { status: 0, message: e instanceof Error ? e.message : 'Something went wrong' };
 }
 
 /** The app's store. */
 export const channelStore = new ChannelStore();
-lateTranscripts.setApplier((t, text) => channelStore.addLateTranscript(t.channelId, t.rootId, t.messageId, text));
 onPersonChange(() => channelStore.reset());

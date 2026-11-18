@@ -284,8 +284,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   );
 
   const send = useCallback(
-    (body: string, { attachments, confirmBroadcast, voice }: SendOptions) => {
-      void channelStore.send(channelId, null, body, attachments, false, confirmBroadcast === true, voice);
+    (body: string, { attachments, confirmBroadcast }: SendOptions) => {
+      void channelStore.send(channelId, null, body, attachments, false, confirmBroadcast === true);
       api.current?.scrollToBottom();
     },
     [channelId],

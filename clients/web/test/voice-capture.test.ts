@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Capture, type CaptureDeps, type RecorderLike, type StreamLike, type TrackLike } from '../src/channels/voice/capture';
+import { Capture, TAIL_BARS, type CaptureDeps, type RecorderLike, type StreamLike, type TrackLike } from '../src/channels/voice/capture';
 import { ALLOWED_TEXT, BLOCKED_TEXT, LOST_TEXT, TOO_SHORT_TEXT } from '../src/channels/voice/support';
 
 /** A microphone, a recorder and a clock that the test drives by hand. */
@@ -8,19 +8,27 @@ function rig(opts: { deny?: boolean; level?: number } = {}) {
   let tick: (() => void) | null = null;
   const track: TrackLike & { stopped: boolean } = { stopped: false, onended: null, stop() { this.stopped = true; } };
   const stream: StreamLike = { getTracks: () => [track] };
-  const urls: string[] = [];
-  const revoked: string[] = [];
   let release: ((s: StreamLike) => void) | null = null;
-  const recorder: RecorderLike & { started: boolean } = {
+  const recorder: RecorderLike & { started: boolean; paused: number; resumed: number } = {
     started: false,
     state: 'inactive',
     mimeType: 'audio/webm;codecs=opus',
     ondataavailable: null,
     onstop: null,
     onerror: null,
+    paused: 0,
+    resumed: 0,
     start() {
       this.state = 'recording';
       this.started = true;
+    },
+    pause() {
+      this.state = 'paused';
+      this.paused += 1;
+    },
+    resume() {
+      this.state = 'recording';
+      this.resumed += 1;
     },
     stop() {
       this.state = 'inactive';
@@ -45,12 +53,6 @@ function rig(opts: { deny?: boolean; level?: number } = {}) {
         tick = null;
       };
     },
-    makeUrl: () => {
-      const u = `blob:clip-${urls.length}`;
-      urls.push(u);
-      return u;
-    },
-    revokeUrl: (u) => void revoked.push(u),
   };
   const cap = new Capture(deps);
   const answer = async (): Promise<void> => {
@@ -62,7 +64,16 @@ function rig(opts: { deny?: boolean; level?: number } = {}) {
     clock += ms;
     tick?.();
   };
-  return { cap, track, recorder, urls, revoked, answer, advance, running: () => tick !== null };
+  return { cap, track, recorder, answer, advance, running: () => tick !== null };
+}
+
+/** Starts a recording on the rig and waits for the recording state. */
+async function recording(opts: Parameters<typeof rig>[0] = {}) {
+  const r = rig(opts);
+  const started = r.cap.start();
+  await r.answer();
+  await started;
+  return r;
 }
 
 describe('voice capture', () => {
@@ -82,27 +93,83 @@ describe('voice capture', () => {
     expect(closed).toBe(1);
   });
 
-  it('asks for the microphone, records, and keeps a clip for the preview', async () => {
+  it('asks for the microphone, records, and hands the clip over with take()', async () => {
     const r = rig();
     const started = r.cap.start();
     expect(r.cap.state.phase).toBe('asking');
     await r.answer();
     await started;
-    expect(r.cap.state.phase).toBe('recording');
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: false, limited: false, lost: false });
     expect(r.cap.announcement).toBe('Recording');
     r.advance(1_000);
     r.advance(1_500);
-    expect(r.cap.meter.get()).toEqual({ elapsedMs: 2_500, level: 0.5 });
-    r.cap.stop();
-    expect(r.cap.state.phase).toBe('preview');
-    if (r.cap.state.phase !== 'preview') return;
-    expect(r.cap.state.clip.mime).toBe('audio/webm');
-    expect(r.cap.state.clip.durationMs).toBe(2_500);
-    expect(r.cap.state.clip.limited).toBe(false);
-    expect(r.cap.state.clip.peaks).toEqual([255, 255]);
-    expect(r.cap.announcement).toBe('Recording stopped, 0:02');
+    expect(r.cap.meter.get()).toMatchObject({ elapsedMs: 2_500, level: 0.5, total: 2, tail: [0.5, 0.5] });
+    const clip = await r.cap.take();
+    expect(clip).not.toBeNull();
+    expect(clip?.mime).toBe('audio/webm');
+    expect(clip?.durationMs).toBe(2_500);
+    expect(clip?.limited).toBe(false);
+    expect(clip?.peaks).toEqual([255, 255]);
+    // there is no preview: the recorder is idle again at once, the microphone is let go
+    expect(r.cap.state.phase).toBe('idle');
+    expect(r.cap.announcement).toBe('Sending the voice message');
     expect(r.track.stopped).toBe(true);
     expect(r.running()).toBe(false);
+  });
+
+  it('pauses and resumes: paused time is not counted and nothing is read while paused', async () => {
+    const r = await recording();
+    r.advance(2_000);
+    r.cap.pause();
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: true, limited: false, lost: false });
+    expect(r.recorder.paused).toBe(1);
+    expect(r.cap.announcement).toBe('Recording paused, 0:02');
+    expect(r.running()).toBe(false);
+    // time passes while paused: the clock stands still and the meter takes no reading
+    r.advance(30_000);
+    expect(r.cap.meter.get()).toMatchObject({ elapsedMs: 2_000, level: 0, total: 1 });
+    r.cap.resume();
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: false, limited: false, lost: false });
+    expect(r.recorder.resumed).toBe(1);
+    expect(r.cap.announcement).toBe('Recording resumed');
+    r.advance(1_000);
+    expect(r.cap.meter.get().elapsedMs).toBe(3_000);
+    const clip = await r.cap.take();
+    expect(clip?.durationMs).toBe(3_000);
+  });
+
+  it('keeps pause and resume to what makes sense', async () => {
+    const r = await recording();
+    r.cap.resume(); // not paused: nothing happens
+    expect(r.recorder.resumed).toBe(0);
+    r.advance(1_000);
+    r.cap.pause();
+    r.cap.pause(); // twice is once
+    expect(r.recorder.paused).toBe(1);
+    const idle = new Capture((r.cap as unknown as { deps: CaptureDeps }).deps);
+    idle.pause();
+    idle.resume();
+    expect(idle.state.phase).toBe('idle');
+  });
+
+  it('Send works while paused, and the paused stretch is not in the clip length', async () => {
+    const r = await recording();
+    r.advance(1_000);
+    r.advance(1_000);
+    r.cap.pause();
+    r.advance(60_000);
+    const clip = await r.cap.take();
+    expect(clip?.durationMs).toBe(2_000);
+    expect(r.recorder.state).toBe('inactive');
+    expect(r.track.stopped).toBe(true);
+  });
+
+  it('keeps the newest readings for the live waveform, at most TAIL_BARS', async () => {
+    const r = await recording();
+    for (let i = 0; i < TAIL_BARS + 10; i++) r.advance(80);
+    const m = r.cap.meter.get();
+    expect(m.tail).toHaveLength(TAIL_BARS);
+    expect(m.total).toBe(TAIL_BARS + 10);
   });
 
   it('says how to allow the microphone when the browser refuses', async () => {
@@ -113,44 +180,50 @@ describe('voice capture', () => {
     expect(r.cap.state.phase).toBe('idle');
   });
 
-  it('cancel keeps nothing and lets the microphone go', async () => {
-    const r = rig();
-    const started = r.cap.start();
-    await r.answer();
-    await started;
+  it('cancel (the trash button, Esc) keeps nothing, lets the microphone go and settles take() with null', async () => {
+    const r = await recording();
     r.advance(3_000);
     r.cap.cancel();
     expect(r.cap.state.phase).toBe('idle');
-    expect(r.cap.announcement).toBe('Recording cancelled');
+    expect(r.cap.announcement).toBe('Recording deleted');
     expect(r.track.stopped).toBe(true);
-    expect(r.urls).toEqual([]);
+    expect(await r.cap.take()).toBeNull();
   });
 
-  it('a recording under half a second is refused with a plain sentence', async () => {
-    const r = rig();
-    const started = r.cap.start();
-    await r.answer();
-    await started;
+  it('cancel works while paused too', async () => {
+    const r = await recording();
+    r.advance(3_000);
+    r.cap.pause();
+    r.cap.cancel();
+    expect(r.cap.state.phase).toBe('idle');
+    expect(r.track.stopped).toBe(true);
+  });
+
+  it('a recording under half a second is refused with a plain sentence, and take() gives null', async () => {
+    const r = await recording();
     r.advance(200);
-    r.cap.stop();
+    expect(await r.cap.take()).toBeNull();
     expect(r.cap.state).toEqual({ phase: 'error', message: TOO_SHORT_TEXT });
   });
 
-  it('stops by itself at five minutes and says so', async () => {
-    const r = rig();
-    const started = r.cap.start();
-    await r.answer();
-    await started;
+  it('at five minutes the recording pauses by itself and waits for Send or Delete', async () => {
+    const r = await recording();
     r.advance(240_000);
     expect(r.cap.announcement).toBe('One minute left');
     r.advance(40_000);
     expect(r.cap.announcement).toBe('30 seconds left');
     r.advance(60_000);
-    expect(r.cap.state.phase).toBe('preview');
-    if (r.cap.state.phase !== 'preview') return;
-    expect(r.cap.state.clip.durationMs).toBe(300_000);
-    expect(r.cap.state.clip.limited).toBe(true);
-    expect(r.cap.announcement).toContain('limit');
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: true, limited: true, lost: false });
+    expect(r.cap.announcement).toBe('Recording stopped at the limit, 5:00');
+    expect(r.recorder.paused).toBe(1);
+    expect(r.running()).toBe(false);
+    // it cannot be resumed past the limit
+    r.cap.resume();
+    expect(r.cap.state).toMatchObject({ paused: true, limited: true });
+    expect(r.recorder.resumed).toBe(0);
+    const clip = await r.cap.take();
+    expect(clip?.durationMs).toBe(300_000);
+    expect(clip?.limited).toBe(true);
   });
 
   it('a press released before the answer comes records nothing and frees the microphone', async () => {
@@ -175,41 +248,49 @@ describe('voice capture', () => {
     expect(r.recorder.started).toBe(false);
   });
 
-  it('discard frees the clip, and a second recording can start', async () => {
-    const r = rig();
-    let started = r.cap.start();
-    await r.answer();
-    await started;
+  it('a second recording can start after the first one was sent', async () => {
+    const r = await recording();
     r.advance(2_000);
-    r.cap.stop();
-    expect(r.urls).toHaveLength(1);
-    r.cap.discard('Voice message discarded');
-    expect(r.revoked).toEqual(['blob:clip-0']);
-    expect(r.cap.state.phase).toBe('idle');
-    started = r.cap.start();
+    await r.cap.take();
+    const started = r.cap.start();
     await r.answer();
     await started;
     expect(r.cap.state.phase).toBe('recording');
   });
 
-  it('a lost microphone keeps what was recorded, or says it was lost when nothing was', async () => {
-    const r = rig();
-    const started = r.cap.start();
-    await r.answer();
-    await started;
+  it('a lost microphone with too little recorded says so', async () => {
+    const r = await recording();
     r.track.onended?.();
     expect(r.cap.state).toEqual({ phase: 'error', message: LOST_TEXT });
   });
 
-  it('reset drops a recording and a waiting clip without a word', async () => {
-    const r = rig();
-    const started = r.cap.start();
-    await r.answer();
-    await started;
+  it('a lost microphone keeps what was recorded: it waits for Send or Delete and cannot be resumed', async () => {
+    const r = await recording();
+    r.advance(2_000);
+    r.track.onended?.();
+    expect(r.cap.state).toEqual({ phase: 'recording', paused: true, limited: false, lost: true });
+    expect(r.cap.announcement).toContain('can still be sent');
+    r.cap.resume();
+    expect(r.cap.state).toMatchObject({ lost: true, paused: true });
+    const clip = await r.cap.take();
+    expect(clip?.durationMs).toBe(2_000);
+    expect(r.cap.state.phase).toBe('idle');
+  });
+
+  it('reset drops a recording without a word', async () => {
+    const r = await recording();
     r.advance(2_000);
     r.cap.reset();
     expect(r.cap.state.phase).toBe('idle');
     expect(r.track.stopped).toBe(true);
-    expect(r.urls).toEqual([]);
+  });
+
+  it('dispose lets go of everything and settles a waiting take()', async () => {
+    const r = await recording();
+    r.advance(2_000);
+    r.cap.dispose();
+    expect(r.track.stopped).toBe(true);
+    expect(r.recorder.state).toBe('inactive');
+    expect(r.cap.state.phase).toBe('idle');
   });
 });

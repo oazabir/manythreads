@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type CustomEmoji, type FileSummary, type VoiceMeta } from '@manythreads/shared';
+import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type CustomEmoji, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchBroadcastReach, sendTyping, uploadChannelFile } from '../api/endpoints';
 import { createTask, fetchChannelBoards } from '../screens/boards/api';
@@ -69,12 +69,10 @@ type Upload = {
   abort?: AbortController;
 };
 
-/** What goes out with the text: the files already uploaded, the writer's "Send anyway" for `@channel` / `@here` in a big room, and the meta of a voice message. */
+/** What goes out with the text: the files already uploaded, and the writer's "Send anyway" for `@channel` / `@here` in a big room. (A voice message does not come through here: the composer hands the clip to the store.) */
 export type SendOptions = {
   attachments: FileSummary[];
   confirmBroadcast?: boolean;
-  /** A voice message (P14-17): the clip is the one entry of `attachments`; the text is the stand-in line or the transcript. */
-  voice?: VoiceMeta;
 };
 
 export type ComposerProps = {
@@ -167,7 +165,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   const resetRecorder = rec.reset;
   const [canRecord] = useState(() => recorderSupported());
   const voiceOn = voice && canRecord && filesOn && !guest;
-  const voiceActive = voiceOn && (rec.state.phase === 'recording' || rec.state.phase === 'preview');
+  const voiceActive = voiceOn && rec.state.phase === 'recording';
   const [text, setText] = useState(() => readDraft(draftKey));
   // true while a "Send later" request is out; the ref is what the handlers read, the state is what the buttons show
   const scheduling = useRef(false);
@@ -863,7 +861,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
       onDrop={onDrop}
     >
       <div className="cbox">
-        <ComposerToolbar layout={layout} tools={tools} mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />
+        {voiceActive ? null : <ComposerToolbar layout={layout} tools={tools} mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />}
         {emojiOpen ? (
           <div ref={emojiPop} className="emp-pop">
             <EmojiPicker onPick={putEmoji} onClose={() => { setEmojiOpen(false); area.current?.focus(); }} />
@@ -964,7 +962,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
               <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" hidden={voiceActive} onClick={() => fileInput.current?.click()}><ClipIcon /></button>
             </>
           ) : null}
-          {voiceOn ? <Recorder rec={rec} channelId={channelId} showMic={text === '' && uploads.length === 0} onSend={onSend} returnFocus={focusBox} /> : null}
+          {voiceOn ? <Recorder rec={rec} showMic={text === '' && uploads.length === 0} onSendClip={(clip) => void channelStore.sendVoice(channelId, threadRootId ?? null, clip)} returnFocus={focusBox} /> : null}
           <span className="sch-split" hidden={voiceActive}>
             <button type="button" className={`btn send ${canSend ? 'primary ready' : ''}`} aria-label="Send" title="Send (Enter)" disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
             {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}

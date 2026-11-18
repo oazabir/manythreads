@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import { Capture, type CaptureDeps, type CaptureState, type LevelReader, type Meter, type MeterSnapshot, type RecorderLike, type StreamLike } from './capture';
+import { Capture, type CaptureDeps, type CaptureState, type LevelReader, type Meter, type MeterSnapshot, type RecordedClip, type RecorderLike, type StreamLike } from './capture';
 import { levelOf } from './peaks';
 import { pickMimeType } from './support';
 
@@ -49,19 +49,22 @@ export const browserDeps: CaptureDeps = {
     const id = window.setInterval(fn, ms);
     return () => window.clearInterval(id);
   },
-  makeUrl: (blob) => URL.createObjectURL(blob),
-  revokeUrl: (url) => URL.revokeObjectURL(url),
 };
 
 export type Recorder = {
   state: CaptureState;
-  /** The polite live-region text: "Recording", "Recording stopped, 0:42. 42 seconds." */
+  /** The polite live-region text: "Recording", "Recording paused, 0:07". */
   announcement: string;
   meter: Meter;
   start: () => void;
-  stop: () => void;
+  pause: () => void;
+  resume: () => void;
+  /** Ends the recording and hands the clip over to be sent (null when it was too short or nothing was recording). */
+  take: () => Promise<RecordedClip | null>;
+  /** Throws the recording away. */
   cancel: () => void;
   releaseWhileAsking: () => void;
+  /** Closes a microphone message. */
   discard: (announce?: string) => void;
   reset: () => void;
 };
@@ -78,7 +81,9 @@ export function useRecorder(deps: CaptureDeps = browserDeps): Recorder {
     () => ({
       meter: cap.meter,
       start: () => void cap.start(),
-      stop: () => cap.stop(),
+      pause: () => cap.pause(),
+      resume: () => cap.resume(),
+      take: () => cap.take(),
       cancel: () => cap.cancel(),
       releaseWhileAsking: () => cap.releaseWhileAsking(),
       discard: (announce?: string) => cap.discard(announce),
@@ -89,7 +94,7 @@ export function useRecorder(deps: CaptureDeps = browserDeps): Recorder {
   return { state, announcement, ...actions };
 }
 
-/** The timer and level for the panel: re-reads about twelve times a second while recording. */
+/** The timer and waveform for the bar: re-reads about twelve times a second while recording. */
 export function useMeter(meter: Meter): MeterSnapshot {
   return useSyncExternalStore(meter.subscribe, meter.get);
 }

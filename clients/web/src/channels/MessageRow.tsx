@@ -24,12 +24,12 @@ import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
-import { NO_THREAD_CLICK, canAddTranscript, copyText, rowShortcut, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
+import { NO_THREAD_CLICK, copyText, rowShortcut, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
-import { VoiceNoTranscript, VoicePlayer, VoiceTranscriptNote } from './voice/VoicePlayer';
-import { WritingOut } from './voice/WritingOut';
+import { PendingVoice } from './voice/PendingVoice';
+import { VoicePlayer, VoiceTranscript, type VoiceFace } from './voice/VoicePlayer';
 import { voiceClip, withoutClip } from './voice/playerFormat';
 import { useRowGestures } from './gestures';
 import { Markdown } from './MessageMarkdown';
@@ -154,8 +154,6 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [forwarding, setForwarding] = useState(false);
   const [sendingToMemory, setSendingToMemory] = useState(false);
   const [reminding, setReminding] = useState(false);
-  // "Add a transcript": this device is writing a voice message of mine out
-  const [adding, setAdding] = useState(false);
   // a short line in the header of the row after an action that has no other sign ("Link copied")
   const [done, setDone] = useState<string | null>(null);
   useEffect(() => {
@@ -223,6 +221,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // a voice message draws its clip as a player (above its text), not as a file card
   const clip = deleted ? null : voiceClip(m.meta.voice, m.attachments);
   const attached = splitAttachments(withoutClip(m.attachments, clip));
+  // the sender's picture at the right of the voice player (with the microphone badge)
+  const voiceFace: VoiceFace = authorPerson
+    ? { name, avatar: authorPerson.avatar, personId: authorPerson.personId }
+    : { name, kind: m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person', avatar: m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null };
   const markUnread = async (): Promise<void> => {
     try {
       await actions.markUnread?.(m.id);
@@ -346,9 +348,6 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
               ) : null}
               <LaterMenuItems messageId={m.id} say={setDone} close={() => setMenu(null)} onRemind={() => setMenu('remind')} />
-              {canEdit && canAddTranscript({ own, deleted, voice: clip?.voice }) ? (
-                <button type="button" role="menuitem" className="menu-item" data-testid="add-transcript" onClick={() => { setMenu(null); setAdding(true); }}>Add a transcript</button>
-              ) : null}
               {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit<kbd>E</kbd></button> : null}
               {canDelete ? (
                 confirm ? (
@@ -375,8 +374,31 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           {done ? <span className="row-done" role="status">{done}</span> : null}
         </AuthorLine>
         {m.author?.kind === 'bot' && m.meta.runId && !deleted ? <RunOriginCard runId={m.meta.runId} /> : null}
-        {clip ? <VoicePlayer voice={clip.voice} who={name} /> : null}
-        {adding && clip ? <WritingOut fileId={clip.voice.fileId} onText={(t) => setEditing(t)} onClose={() => setAdding(false)} /> : null}
+        {clip ? (
+          // the player, a thin rule and the transcript the server writes; the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
+          <div className="vm" data-testid="voice-message">
+            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} sentAt={m.createdAt} sentLabel={clock(m.createdAt)} face={voiceFace} />
+            {editing === null && !deleted ? (
+              <VoiceTranscript
+                voice={clip.voice}
+                own={own}
+                channelId={m.channelId}
+                rootId={m.threadRootId}
+                messageId={m.id}
+                body={
+                  clip.voice.transcript === 'server' ? (
+                    <div className="txt vt-plain" data-testid="voice-words">{m.body}</div>
+                  ) : (
+                    <>
+                      <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`} data-testid="voice-words"><Markdown source={m.body} teamSlug={teamSlug} /></div>
+                      {clamped ? <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button> : null}
+                    </>
+                  )
+                }
+              />
+            ) : null}
+          </div>
+        ) : null}
         {deleted ? (
           <div className="txt tomb">This message was deleted.</div>
         ) : editing !== null ? (
@@ -435,19 +457,13 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : m.poll ? (
           // a poll: the card replaces the text (the text is still stored, for search and for bots)
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
-        ) : (
-          clip?.voice.transcript === 'none' ? (
-            // no transcript: the stored text is only a stand-in line ("Voice message (0:42)"), so it is not drawn
-            <VoiceNoTranscript />
-          ) : (
-            <>
-              <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={m.body} teamSlug={teamSlug} /></div>
-              {clamped ? (
-                <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
-              ) : null}
-              {clip ? <VoiceTranscriptNote voice={clip.voice} /> : null}
-            </>
-          )
+        ) : clip ? null : (
+          <>
+            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={m.body} teamSlug={teamSlug} /></div>
+            {clamped ? (
+              <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
+            ) : null}
+          </>
         )}
         {!deleted && m.forward ? <ForwardCard card={m.forward} /> : null}
         {!deleted && m.alsoSentFromThread ? (
@@ -499,15 +515,15 @@ export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: Pen
       <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />
       <div className="msg-main">
         <AuthorLine name={name} createdAt={pending.createdAt} />
-        <div className="txt"><Markdown source={pending.body} /></div>
+        {pending.clip ? <PendingVoice durationMs={pending.clip.durationMs} peaks={pending.clip.peaks} /> : <div className="txt"><Markdown source={pending.body} /></div>}
         <MessageImages files={attached.images} />
         {attached.files.length > 0 ? <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}
         {failed ? (
           <div className="send-state" role="alert">
             {sure ? (
               <>
-                <span>{'Throw this message away? Its text is lost. '}</span>
-                <button type="button" className="link-btn" onClick={onDiscard}>Yes, discard</button>
+                <span>{pending.clip ? 'Throw this voice message away? The recording is lost. ' : 'Throw this message away? Its text is lost. '}</span>
+                <button type="button" className="link-btn" onClick={onDiscard}>{pending.clip ? 'Yes, delete' : 'Yes, discard'}</button>
                 <button type="button" className="link-btn quiet" onClick={() => setSure(false)}>Keep it</button>
               </>
             ) : pending.askConfirm ? (
@@ -519,8 +535,8 @@ export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: Pen
             ) : (
               <>
                 <span>{'Not sent · '}</span>
-                <button type="button" className="link-btn" onClick={() => onRetry()}>Retry</button>
-                <button type="button" className="link-btn quiet" onClick={() => setSure(true)}>Discard</button>
+                <button type="button" className="link-btn" onClick={() => onRetry()}>{pending.clip ? 'Try again' : 'Retry'}</button>
+                <button type="button" className="link-btn quiet" onClick={() => setSure(true)}>{pending.clip ? 'Delete' : 'Discard'}</button>
               </>
             )}
           </div>

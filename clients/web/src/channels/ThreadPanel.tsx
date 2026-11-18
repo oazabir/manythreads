@@ -195,10 +195,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     [channelId, rootId],
   );
   const send = useCallback(
-    (body: string, { attachments, confirmBroadcast, voice }: SendOptions) => {
+    (body: string, { attachments, confirmBroadcast }: SendOptions) => {
       if (!channelId) return;
       setStuck(true);
-      void channelStore.send(channelId, rootId, body, attachments, false, confirmBroadcast === true, voice);
+      void channelStore.send(channelId, rootId, body, attachments, false, confirmBroadcast === true);
     },
     [channelId, rootId, setStuck],
   );

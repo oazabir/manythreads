@@ -14,8 +14,10 @@ export type PendingSend = {
   createdAt: string;
   alsoToChannel?: boolean;
   confirmBroadcast?: boolean;
-  /** A voice message (P14-17): the clip is `attachments[0]`; kept so a retry sends the same meta. */
+  /** A voice message (P14-17): the clip is `attachments[0]`; kept so a retry sends the same meta. Set once the clip is uploaded. */
   voice?: VoiceMeta;
+  /** A voice message that is still on this device (P32-05): the recording, uploaded when the row is delivered. `attachments` is empty until then. */
+  clip?: { blob: Blob; mime: string; durationMs: number; peaks: number[] };
   /** Set on a failed send that the server refused only because `@channel` / `@here` would notify a big room: its sentence ("@channel will notify 52 people."). "Send anyway" confirms it. */
   askConfirm?: string;
 };

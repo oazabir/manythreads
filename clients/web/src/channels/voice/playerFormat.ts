@@ -1,4 +1,4 @@
-import type { FileSummary, VoiceMeta } from '@manythreads/shared';
+import { VOICE_TRANSCRIPT_MAX_MS, type FileSummary, type VoiceMeta } from '@manythreads/shared';
 
 /*
  * The pure parts of the voice-message player (P14-17): how a time reads, how many bars the waveform draws and how tall, what the keys do,
@@ -117,12 +117,22 @@ export function languageName(code: string | null): string | null {
   }
 }
 
-/** The line under a voice message's player that says where its text came from, or null when there is no text to explain. */
+/** The line under an old voice message's text that says it was written on the sender's device; null for every other state (the heading says the rest). */
 export function transcriptNote(voice: VoiceMeta): string | null {
-  if (voice.transcript === 'none') return null;
+  if (voice.transcript !== 'device') return null;
   const language = languageName(voice.language);
-  const what = language ? `Transcript in ${language}` : 'Transcript';
-  return voice.transcript === 'device' ? `${what}, written on the sender's device` : `${what}, corrected by hand`;
+  return `${language ? `Transcript in ${language}` : 'Transcript'}, written on the sender's device`;
+}
+
+/** Where the server's transcript ends and whether the clip goes on after it: the range is cut at 20 seconds (`transcriptEndMs`) and never past the clip. */
+export function transcriptShows(voice: VoiceMeta): { endMs: number; seconds: number; longer: boolean } {
+  const endMs = Math.max(0, Math.min(voice.durationMs, voice.transcriptEndMs ?? VOICE_TRANSCRIPT_MAX_MS));
+  return { endMs, seconds: Math.round(endMs / 1000), longer: voice.durationMs > endMs };
+}
+
+/** `0:00–0:10`: the stretch of the clip the transcript covers. */
+export function rangeLabel(voice: VoiceMeta): string {
+  return `0:00\u2013${formatClock(transcriptShows(voice).endMs)}`;
 }
 
 /** The words of a search hit that is a voice message with no transcript (`Voice message (0:42)`), as its length (`0:42`); else null. */

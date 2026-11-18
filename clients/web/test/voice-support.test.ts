@@ -42,25 +42,17 @@ describe('voice recorder support', () => {
 
 describe('voice send', () => {
   const fileId = '0197b9a8-0000-7000-8000-000000000001' as never;
-  it('sends without a transcript: the stand-in line and transcript none', () => {
+  it('sends the stand-in line and a transcript the server replaces', () => {
     const { body, voice } = buildVoiceSend({ fileId, durationMs: 42_400, peaks: [0, 128, 255] });
     expect(body).toBe('Voice message (0:42)');
     expect(voice).toEqual({ fileId, durationMs: 42_400, language: null, transcript: 'none', peaks: [0, 128, 255] });
   });
 
-  it('uses a device transcript when one is given', () => {
-    const { body, voice } = buildVoiceSend({ fileId, durationMs: 5_000, peaks: [], transcript: { text: '  hello there ', language: 'en' } });
-    expect(body).toBe('hello there');
-    expect(voice.transcript).toBe('device');
-    expect(voice.language).toBe('en');
-  });
-
   it('keeps the meta inside what the server accepts', () => {
-    const { voice } = buildVoiceSend({ fileId, durationMs: 9_999_999, peaks: Array.from({ length: 80 }, () => 400), transcript: { text: 'x', language: 'English' } });
+    const { voice } = buildVoiceSend({ fileId, durationMs: 9_999_999, peaks: Array.from({ length: 80 }, () => 400) });
     expect(voice.durationMs).toBe(300_000);
     expect(voice.peaks).toHaveLength(64);
     expect(voice.peaks.every((p) => p === 255)).toBe(true);
-    expect(voice.language).toBeNull();
     expect(buildVoiceSend({ fileId, durationMs: 10, peaks: [] }).voice.durationMs).toBe(500);
   });
 });

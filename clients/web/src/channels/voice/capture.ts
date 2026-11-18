@@ -4,8 +4,11 @@ import { reducePeaks } from './peaks';
 import { ALLOWED_TEXT, LOST_TEXT, TOO_SHORT_TEXT, clipMime, micErrorText } from './support';
 
 /**
- * The recording itself (P14-17), with no React and with every browser object handed in, so the rules (permission, too short, the five minute
- * limit, cancel, a lost microphone) are tested with stand-ins. `useRecorder` is the thin hook around it.
+ * The recording itself (P14-17, reshaped in P32-05), with no React and with every browser object handed in, so the rules (permission, too short, pause and
+ * resume, the five minute limit, cancel, a lost microphone) are tested with stand-ins. `useRecorder` is the thin hook around it.
+ *
+ * A recording is one thing from the first press to Send: it can be paused and resumed (paused time is not counted), and `take()` ends it and hands the clip
+ * over to be sent; there is no preview step. At five minutes the recording pauses by itself and waits for Send or Delete.
  */
 
 export interface TrackLike {
@@ -23,6 +26,8 @@ export interface RecorderLike {
   onerror: (() => void) | null;
   start(timesliceMs?: number): void;
   stop(): void;
+  pause(): void;
+  resume(): void;
 }
 /** Reads the level of the microphone (0 to 1); `close` lets go of the audio graph. */
 export interface LevelReader {
@@ -38,25 +43,39 @@ export type CaptureDeps = {
   now(): number;
   /** Calls `fn` every `ms` until the returned function is called. */
   every(fn: () => void, ms: number): () => void;
-  makeUrl(blob: Blob): string;
-  revokeUrl(url: string): void;
 };
 
-export type RecordedClip = { blob: Blob; url: string; mime: string; durationMs: number; peaks: number[]; /** The recording ran into the five minute limit and stopped by itself. */ limited: boolean };
+export type RecordedClip = { blob: Blob; mime: string; durationMs: number; peaks: number[]; /** The recording ran into the five minute limit and stopped by itself. */ limited: boolean };
 
 export type CaptureState =
   | { phase: 'idle' }
   /** Waiting for the person to answer the browser's microphone question. */
   | { phase: 'asking' }
-  | { phase: 'recording' }
-  | { phase: 'preview'; clip: RecordedClip }
+  /**
+   * Recording, or waiting paused. `limited`: it paused by itself at five minutes. `lost`: the microphone went away; what was recorded can still be sent,
+   * nothing more can be added.
+   */
+  | { phase: 'recording'; paused: boolean; limited: boolean; lost: boolean }
   | { phase: 'error'; message: string };
 
-export type MeterSnapshot = { elapsedMs: number; level: number };
+/** How many of the newest level readings the live waveform keeps (the bar shows as many as fit). */
+export const TAIL_BARS = 160;
 
-/** A value that changes about twelve times a second while recording: only the timer and the level meter listen, not the composer. */
+export type MeterSnapshot = {
+  /** Recorded time, paused time left out. */
+  elapsedMs: number;
+  level: number;
+  /** The newest readings (0 to 1), oldest first, at most `TAIL_BARS`; the waveform draws these. */
+  tail: readonly number[];
+  /** How many readings were taken in all (so a waveform that does not scroll knows where the newest one goes). */
+  total: number;
+};
+
+const SILENT: MeterSnapshot = { elapsedMs: 0, level: 0, tail: [], total: 0 };
+
+/** A value that changes about twelve times a second while recording: only the timer and the waveform listen, not the composer. */
 export function createMeter() {
-  let snap: MeterSnapshot = { elapsedMs: 0, level: 0 };
+  let snap: MeterSnapshot = SILENT;
   const subs = new Set<() => void>();
   return {
     get: (): MeterSnapshot => snap,
@@ -77,7 +96,7 @@ const TIMESLICE_MS = 250;
 
 export class Capture {
   state: CaptureState = { phase: 'idle' };
-  /** What a screen reader hears (a polite live region): short sentences at the start, the stop and the limit, never every second. */
+  /** What a screen reader hears (a polite live region): short sentences at the start, pause, resume, the limit, never every second. */
   announcement = '';
   readonly meter: Meter = createMeter();
 
@@ -89,10 +108,17 @@ export class Capture {
   private stopTicks: (() => void) | null = null;
   private chunks: Blob[] = [];
   private readings: number[] = [];
-  private startedAt = 0;
-  private endedAt = 0;
-  private outcome: 'keep' | 'cancel' | 'limit' | 'lost' = 'keep';
+  private tail: number[] = [];
+  /** Recorded time of the stretches that are over (a pause or resume closes one). */
+  private accumulated = 0;
+  /** When the running stretch began; meaningless while paused. */
+  private segmentAt = 0;
+  private outcome: 'keep' | 'cancel' | 'lost' = 'keep';
   private warned = 0;
+  /** Waiting for the recorder to stop so `take()` can hand the clip over. */
+  private taker: ((clip: RecordedClip | null) => void) | null = null;
+  /** A clip kept when the microphone was lost, for `take()` after the recorder is gone. */
+  private lostClip: RecordedClip | null = null;
 
   constructor(private readonly deps: CaptureDeps) {}
 
@@ -107,7 +133,14 @@ export class Capture {
     this.listeners.forEach((f) => f());
   }
 
-  /** Asks for the microphone and starts. Does nothing while a recording is under way or a clip waits in the preview. */
+  private running = (): boolean => this.state.phase === 'recording' && !this.state.paused;
+  /** Recorded time so far: the closed stretches and the one that runs, never more than the limit. */
+  private elapsed(): number {
+    const live = this.state.phase === 'recording' && !this.state.paused ? this.deps.now() - this.segmentAt : 0;
+    return Math.min(VOICE_MAX_MS, Math.max(0, this.accumulated + live));
+  }
+
+  /** Asks for the microphone and starts. Does nothing while a recording is under way. */
   async start(): Promise<void> {
     if (this.state.phase !== 'idle' && this.state.phase !== 'error') return;
     const mine = ++this.session;
@@ -142,58 +175,100 @@ export class Capture {
     this.recorder = recorder;
     this.chunks = [];
     this.readings = [];
+    this.tail = [];
+    this.accumulated = 0;
     this.warned = 0;
     this.outcome = 'keep';
+    this.lostClip = null;
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) this.chunks.push(e.data);
     };
     recorder.onstop = () => this.finish();
-    recorder.onerror = () => {
-      this.outcome = 'lost';
-      this.halt();
-    };
+    recorder.onerror = () => this.lose();
     for (const t of stream.getTracks()) {
       t.onended = () => {
-        if (this.state.phase === 'recording') {
-          this.outcome = 'lost';
-          this.halt();
-        }
+        if (this.state.phase === 'recording' && !this.state.lost) this.lose();
       };
     }
     this.levels = this.deps.makeLevelReader(stream);
-    this.startedAt = this.deps.now();
-    this.meter.set({ elapsedMs: 0, level: 0 });
+    this.segmentAt = this.deps.now();
+    this.meter.set(SILENT);
     recorder.start(TIMESLICE_MS);
+    this.state = { phase: 'recording', paused: false, limited: false, lost: false };
     this.stopTicks = this.deps.every(() => this.tick(), TICK_MS);
-    this.set({ phase: 'recording' }, 'Recording');
+    this.set(this.state, 'Recording');
   }
 
   private tick(): void {
-    if (this.state.phase !== 'recording') return;
-    const elapsedMs = Math.min(VOICE_MAX_MS, this.deps.now() - this.startedAt);
+    if (!this.running()) return;
+    const elapsedMs = this.elapsed();
     const level = this.levels?.read() ?? 0;
     this.readings.push(level);
-    this.meter.set({ elapsedMs, level });
+    this.tail.push(level);
+    if (this.tail.length > TAIL_BARS) this.tail.shift();
+    this.meter.set({ elapsedMs, level, tail: this.tail.slice(), total: this.readings.length });
     const warn = warningAt(elapsedMs, this.warned);
     if (warn) {
       this.warned = warn.said;
       this.announcement = warn.text;
       this.listeners.forEach((f) => f());
     }
-    if (reachedLimit(elapsedMs)) {
-      this.outcome = 'limit';
-      this.halt();
+    // five minutes: the recording waits, paused, for Send or Delete
+    if (reachedLimit(elapsedMs)) this.pauseNow(true);
+  }
+
+  private pauseNow(limited: boolean): void {
+    if (!this.running()) return;
+    const at = this.elapsed();
+    this.accumulated = at;
+    this.stopTicks?.();
+    this.stopTicks = null;
+    try {
+      this.recorder?.pause();
+    } catch {
+      /* a recorder that is already stopped has nothing to pause */
     }
+    this.meter.set({ elapsedMs: at, level: 0, tail: this.tail.slice(), total: this.readings.length });
+    this.set({ phase: 'recording', paused: true, limited, lost: false }, limited ? `Recording stopped at the limit, ${formatClock(at)}` : `Recording paused, ${formatClock(at)}`);
   }
 
-  /** Ends the recording: keeps it for the preview. */
-  stop(): void {
-    if (this.state.phase !== 'recording') return;
+  /** Pauses the recording: paused time is not counted and nothing is heard until Resume. */
+  pause(): void {
+    this.pauseNow(false);
+  }
+
+  /** Goes on recording after a pause (not after the five minute limit or a lost microphone). */
+  resume(): void {
+    const s = this.state;
+    if (s.phase !== 'recording' || !s.paused || s.limited || s.lost) return;
+    try {
+      this.recorder?.resume();
+    } catch {
+      return;
+    }
+    this.segmentAt = this.deps.now();
+    this.stopTicks = this.deps.every(() => this.tick(), TICK_MS);
+    this.set({ phase: 'recording', paused: false, limited: false, lost: false }, 'Recording resumed');
+  }
+
+  /** Ends the recording and hands the clip over to be sent. Resolves to null when nothing is kept (too short, or no recording under way). */
+  take(): Promise<RecordedClip | null> {
+    const s = this.state;
+    if (s.phase !== 'recording') return Promise.resolve(null);
+    if (s.lost) {
+      const clip = this.lostClip;
+      this.lostClip = null;
+      this.set({ phase: 'idle' }, clip ? 'Sending the voice message' : '');
+      return Promise.resolve(clip);
+    }
     this.outcome = 'keep';
-    this.halt();
+    return new Promise((resolve) => {
+      this.taker = resolve;
+      this.halt();
+    });
   }
 
-  /** Throws the recording away (slide away, Esc, Cancel). Nothing is kept and nothing is uploaded. */
+  /** Throws the recording away (slide away, Esc, the trash button). Nothing is kept and nothing is uploaded. */
   cancel(): void {
     if (this.state.phase === 'asking') {
       this.session++; // the answer, when it comes, is ignored and the microphone released
@@ -201,6 +276,11 @@ export class Capture {
       return;
     }
     if (this.state.phase !== 'recording') return;
+    if (this.state.lost) {
+      this.lostClip = null;
+      this.set({ phase: 'idle' }, 'Recording deleted');
+      return;
+    }
     this.outcome = 'cancel';
     this.halt();
   }
@@ -212,8 +292,15 @@ export class Capture {
     this.set({ phase: 'error', message: ALLOWED_TEXT }, '');
   }
 
+  /** The microphone went away (the device was unplugged, the track ended): keep what was recorded so far, if it is enough. */
+  private lose(): void {
+    if (this.state.phase !== 'recording' || this.state.lost) return;
+    this.outcome = 'lost';
+    this.halt();
+  }
+
   private halt(): void {
-    this.endedAt = this.deps.now();
+    this.accumulated = this.elapsed();
     this.stopTicks?.();
     this.stopTicks = null;
     const r = this.recorder;
@@ -237,48 +324,60 @@ export class Capture {
     const mime = clipMime(this.recorder?.mimeType || this.deps.pickMime() || 'audio/webm');
     const chunks = this.chunks;
     const outcome = this.outcome;
-    const durationMs = Math.min(VOICE_MAX_MS, Math.max(0, this.endedAt - this.startedAt));
+    const limited = this.state.limited;
+    const durationMs = Math.min(VOICE_MAX_MS, this.accumulated);
     const peaks = reducePeaks(this.readings);
+    const taker = this.taker;
+    this.taker = null;
     this.release();
     this.chunks = [];
     this.readings = [];
-    this.meter.set({ elapsedMs: 0, level: 0 });
+    this.tail = [];
+    this.meter.set(SILENT);
+    const done = (state: CaptureState, said: string, clip: RecordedClip | null): void => {
+      this.set(state, said);
+      taker?.(clip);
+    };
     if (outcome === 'cancel') {
-      this.set({ phase: 'idle' }, 'Recording cancelled');
+      done({ phase: 'idle' }, 'Recording deleted', null);
       return;
     }
     const blob = new Blob(chunks, { type: mime });
-    if (outcome === 'lost' && (durationMs < VOICE_MIN_MS || blob.size === 0)) {
-      this.set({ phase: 'error', message: LOST_TEXT }, '');
+    const short = durationMs < VOICE_MIN_MS || blob.size === 0;
+    if (short) {
+      done({ phase: 'error', message: outcome === 'lost' ? LOST_TEXT : TOO_SHORT_TEXT }, '', null);
       return;
     }
-    if (durationMs < VOICE_MIN_MS || blob.size === 0) {
-      this.set({ phase: 'error', message: TOO_SHORT_TEXT }, '');
+    const clip: RecordedClip = { blob, mime, durationMs, peaks, limited };
+    if (outcome === 'lost') {
+      // what was recorded stays, waiting for Send or Delete
+      this.lostClip = clip;
+      this.meter.set({ elapsedMs: durationMs, level: 0, tail: [], total: 0 });
+      this.set({ phase: 'recording', paused: true, limited: false, lost: true }, `The microphone was lost. The recording so far, ${formatClock(durationMs)}, can still be sent.`);
       return;
     }
-    const clip: RecordedClip = { blob, url: this.deps.makeUrl(blob), mime, durationMs, peaks, limited: outcome === 'limit' };
-    const said = outcome === 'limit' ? `Recording stopped at the limit, ${formatClock(durationMs)}` : `Recording stopped, ${formatClock(durationMs)}`;
-    this.set({ phase: 'preview', clip }, said);
+    done({ phase: 'idle' }, 'Sending the voice message', clip);
   }
 
-  /** Drops the clip waiting in the preview (Discard, or after it was sent). */
+  /** Closes the "That was too short" or microphone message. */
   discard(announce = ''): void {
-    if (this.state.phase === 'preview') this.deps.revokeUrl(this.state.clip.url);
-    if (this.state.phase === 'preview' || this.state.phase === 'error') this.set({ phase: 'idle' }, announce);
+    if (this.state.phase === 'error') this.set({ phase: 'idle' }, announce);
   }
 
-  /** The conversation changed under the recorder (another channel opened): whatever is under way or waiting is dropped, silently. */
+  /** The conversation changed under the recorder (another channel opened): whatever is under way is dropped, silently. */
   reset(): void {
     if (this.state.phase === 'asking') this.session++;
     if (this.state.phase === 'recording') {
+      if (this.state.lost) {
+        this.lostClip = null;
+        this.set({ phase: 'idle' }, '');
+        return;
+      }
       this.outcome = 'cancel';
       this.halt();
       return;
     }
-    if (this.state.phase !== 'idle') {
-      if (this.state.phase === 'preview') this.deps.revokeUrl(this.state.clip.url);
-      this.set({ phase: 'idle' }, '');
-    }
+    if (this.state.phase !== 'idle') this.set({ phase: 'idle' }, '');
   }
 
   /** The composer went away: let go of everything, silently. */
@@ -293,7 +392,9 @@ export class Capture {
       if (this.recorder.state !== 'inactive') this.recorder.stop();
     }
     this.release();
-    if (this.state.phase === 'preview') this.deps.revokeUrl(this.state.clip.url);
+    this.lostClip = null;
+    this.taker?.(null);
+    this.taker = null;
     this.state = { phase: 'idle' };
   }
 }
