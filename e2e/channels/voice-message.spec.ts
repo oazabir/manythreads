@@ -104,7 +104,7 @@ test('records, pauses, resumes and sends: a row at once, then "Writing the trans
     await expect(row.getByTestId('voice-writing')).toHaveText('Writing the transcript…');
     await expect(row.getByTestId('voice-writing')).toHaveAttribute('role', 'status');
     await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('not played yet');
-    await expect(row.getByTestId('voice-sent')).toHaveText(/\d{1,2}:\d{2}/);
+    await expect(row.getByTestId('voice-sent')).toHaveCount(0); // the row's own time is the only one
     // the stand-in line is never drawn as the words
     await expect(row).not.toContainText('Voice message (');
     const asPosted = (await listOf(omar, dev)).find((m) => m.meta.voice);
@@ -113,7 +113,7 @@ test('records, pauses, resumes and sends: a row at once, then "Writing the trans
     // the server writes the words; the push brings them
     await expect.poll(async () => (await listOf(omar, dev)).find((m) => m.meta.voice)?.meta.voice?.transcript, { timeout: 20_000 }).toBe('server');
     pushes.release();
-    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript · 0:00–0:0[3-9]$/);
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript$/);
     await expect(row.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
     await expect(row.getByTestId('voice-writing')).toHaveCount(0);
     // the words are drawn once, inside the transcript block
@@ -343,7 +343,7 @@ test('a voice message in a thread and in a DM, with the transcript in the thread
     await recordClip(panel);
     await expect(panel.getByTestId('voice-player')).toHaveCount(1);
     await expect(panel.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
-    await expect(panel.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript · 0:00–0:0\d$/);
+    await expect(panel.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript$/);
 
     // DM: Omar starts a conversation with Nadia and sends a clip
     await page.goto('/t/engineering/threads');

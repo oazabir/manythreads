@@ -34,6 +34,15 @@ describe('continuesRun (P21-01)', () => {
     expect(continuesRun(msg(), msg({ createdAt: at(RUN_GAP_MS + 1_000) }))).toBe(false);
   });
 
+  it('a voice message groups like a text message, with text or with another voice message (P32-10)', () => {
+    const voice = (over: Partial<ChannelMessage> = {}): ChannelMessage => msg({ meta: { voice: { fileId: uuid(500), durationMs: 5_000, language: null, transcript: 'server', peaks: [] } } as unknown as ChannelMessage['meta'], ...over });
+    expect(continuesRun(msg(), voice({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(voice(), msg({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(voice(), voice({ createdAt: at(120_000) }))).toBe(true);
+    expect(continuesRun(voice(), voice({ createdAt: at(RUN_GAP_MS + 1_000) }))).toBe(false);
+    expect(continuesRun(voice(), voice({ createdAt: at(60_000), authorId: uuid(3) as ChannelMessage['authorId'] }))).toBe(false);
+  });
+
   it('never joins the first message or a message that is older than the previous one', () => {
     expect(continuesRun(undefined, msg())).toBe(false);
     expect(continuesRun(null, msg())).toBe(false);

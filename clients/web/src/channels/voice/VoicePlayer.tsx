@@ -1,8 +1,7 @@
 import { useMemo, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
-import { MicrophoneIcon, PauseIcon, PlayIcon, SoundwaveIcon } from '@proicons/react';
+import { PauseIcon, PlayIcon, SoundwaveIcon } from '@proicons/react';
 import type { VoiceMeta } from '@manythreads/shared';
 import { proIcon } from '../../components/proicon';
-import { Avatar } from '../../components/ui';
 import { isApiError } from '../../api/client';
 import { channelStore } from '../store';
 import { BAR_COUNT, barHeights, formatClock, playedBars, positionAt, rangeLabel, seekForKey, speedAria, speedLabel, transcriptNote, transcriptShows, valueText } from './playerFormat';
@@ -10,9 +9,9 @@ import { isPlayed, markPlayed, subscribePlayed } from './played';
 import { usePlayback } from './usePlayback';
 
 /*
- * The voice message a row draws (P14-17, reshaped in P32-06): the player (play and pause, a waveform with a dot at the play position that is also the seek
- * bar, the length under its left end, the time sent under its right end, a speed button, and the sender's picture with a microphone badge that is green
- * until this reader has played the message), and under it a thin rule and the transcript the server writes (decision D13).
+ * The voice message a row draws (P14-17, flattened in P32-10): no card. One compact row (play and pause, a waveform with a dot at the play position that
+ * is also the seek bar, the length, a small dot that is filled until this reader has played the message, and a speed button as plain text), and under it
+ * the transcript the server writes as the message's ordinary text with one small muted caption after it (decision D13).
  * Everything works from the keyboard (Space or Enter plays, the arrows move by five seconds, Home and End jump) and nothing needs a hover.
  * The clip is fetched on the first press, not when the row is drawn. See `usePlayback.ts` for how it plays.
  */
@@ -20,7 +19,6 @@ import { usePlayback } from './usePlayback';
 const Play = proIcon(PlayIcon, 18);
 const Pause = proIcon(PauseIcon, 18);
 const Wave = proIcon(SoundwaveIcon, 14);
-const Mic = proIcon(MicrophoneIcon, 11);
 
 /** In a search result: the words and length of a voice message that has no transcript. */
 export function VoiceHitLabel({ length }: { length: string }) {
@@ -32,10 +30,7 @@ export function VoiceHitLabel({ length }: { length: string }) {
   );
 }
 
-/** Who sent it, for the picture at the right of the player. */
-export type VoiceFace = { name: string; kind?: 'person' | 'agent' | 'automation'; avatar?: string | null | undefined; personId?: string | null | undefined };
-
-export function VoicePlayer({ voice, who, messageId, sentAt, sentLabel, face }: { voice: VoiceMeta; who?: string; messageId?: string; sentAt?: string; sentLabel?: string; face?: VoiceFace }) {
+export function VoicePlayer({ voice, who, messageId }: { voice: VoiceMeta; who?: string; messageId?: string }) {
   const p = usePlayback(voice.fileId, voice.durationMs);
   const heights = useMemo(() => barHeights(voice.peaks, BAR_COUNT), [voice.peaks]);
   const track = useRef<HTMLDivElement>(null);
@@ -43,7 +38,7 @@ export function VoicePlayer({ voice, who, messageId, sentAt, sentLabel, face }: 
   const played = playedBars(p.positionMs, voice.durationMs);
   const name = who ? `Voice message from ${who}` : 'Voice message';
   const fraction = voice.durationMs > 0 ? Math.min(1, Math.max(0, p.positionMs / voice.durationMs)) : 0;
-  // the badge is green until this reader plays the message
+  // the dot after the length is filled until this reader plays the message
   const heard = useSyncExternalStore(subscribePlayed, () => (messageId ? isPlayed(messageId) : false), () => false);
   useEffect(() => {
     if (p.playing && messageId) markPlayed(messageId);
@@ -81,55 +76,40 @@ export function VoicePlayer({ voice, who, messageId, sentAt, sentLabel, face }: 
       >
         {p.playing ? <Pause /> : <Play />}
       </button>
-      <div className="vp-mid">
-        <div
-          ref={track}
-          className="vp-wave"
-          role="slider"
-          tabIndex={0}
-          aria-label="Position in the voice message"
-          aria-valuemin={0}
-          aria-valuemax={Math.round(voice.durationMs / 1000)}
-          aria-valuenow={Math.round(p.positionMs / 1000)}
-          aria-valuetext={valueText(p.positionMs, voice.durationMs)}
-          onKeyDown={onKey}
-          onPointerDown={(e) => {
-            dragging.current = true;
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            seekFromPointer(e);
-          }}
-          onPointerMove={(e) => dragging.current && seekFromPointer(e)}
-          onPointerUp={() => void (dragging.current = false)}
-          onPointerCancel={() => void (dragging.current = false)}
-          data-testid="voice-seek"
-        >
-          {heights.map((h, i) => (
-            <span key={i} className={`vp-bar ${i < played ? 'on' : ''}`} style={{ height: `${Math.round(h * 100)}%` }} />
-          ))}
-          <span className="vp-dot" aria-hidden="true" style={{ left: `${(fraction * 100).toFixed(2)}%` }} data-testid="voice-dot" />
-        </div>
-        <div className="vp-under">
-          <span className="vp-time" aria-hidden="true" data-testid="voice-time">
-            {p.status === 'loading' ? 'Loading…' : formatClock(started ? p.positionMs : voice.durationMs)}
-          </span>
-          <button type="button" className="vp-speed" aria-label={speedAria(p.speed)} onClick={p.cycleSpeed} data-testid="voice-speed">
-            {speedLabel(p.speed)}
-          </button>
-          {sentAt ? (
-            <time className="vp-sent" dateTime={sentAt} data-vt-mask data-testid="voice-sent">
-              {sentLabel ?? sentAt}
-            </time>
-          ) : null}
-        </div>
+      <div
+        ref={track}
+        className="vp-wave"
+        role="slider"
+        tabIndex={0}
+        aria-label="Position in the voice message"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(voice.durationMs / 1000)}
+        aria-valuenow={Math.round(p.positionMs / 1000)}
+        aria-valuetext={valueText(p.positionMs, voice.durationMs)}
+        onKeyDown={onKey}
+        onPointerDown={(e) => {
+          dragging.current = true;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+          seekFromPointer(e);
+        }}
+        onPointerMove={(e) => dragging.current && seekFromPointer(e)}
+        onPointerUp={() => void (dragging.current = false)}
+        onPointerCancel={() => void (dragging.current = false)}
+        data-testid="voice-seek"
+      >
+        {heights.map((h, i) => (
+          <span key={i} className={`vp-bar ${i < played ? 'on' : ''}`} style={{ height: `${Math.round(h * 100)}%` }} />
+        ))}
+        <span className="vp-dot" aria-hidden="true" style={{ left: `${(fraction * 100).toFixed(2)}%` }} data-testid="voice-dot" />
       </div>
-      {face ? (
-        <span className="vp-who">
-          <Avatar name={face.name} {...(face.kind ? { kind: face.kind } : {})} avatar={face.avatar} personId={face.personId} />
-          <span className={`vp-mic ${heard ? 'heard' : ''}`} role="img" aria-label={heard ? 'played' : 'not played yet'} data-testid="voice-badge">
-            <Mic />
-          </span>
-        </span>
-      ) : null}
+      <span className="vp-time" aria-hidden="true" data-testid="voice-time">
+        {formatClock(started ? p.positionMs : voice.durationMs)}
+      </span>
+      {/* a small dot after the length: filled until this reader has played the message, an empty ring after */}
+      <span className={`vp-heard ${heard ? 'heard' : ''}`} role="img" aria-label={heard ? 'played' : 'not played yet'} data-testid="voice-badge" />
+      <button type="button" className="vp-speed" aria-label={speedAria(p.speed)} onClick={p.cycleSpeed} data-testid="voice-speed">
+        {speedLabel(p.speed)}
+      </button>
       {p.status === 'error' ? (
         <p className="vp-error" role="alert">
           This voice message could not be played. Press play to try again.
@@ -175,7 +155,7 @@ export function VoiceTranscript({ voice, body, own, channelId, rootId, messageId
     case 'pending':
       return (
         <div className="vt" data-testid="voice-transcript" data-state="pending">
-          <p ref={waiting} tabIndex={-1} className="vt-wait" {...(own ? { role: 'status', 'aria-live': 'polite' as const } : {})} data-testid="voice-writing">
+          <p ref={waiting} tabIndex={-1} className="vt-line vt-wait" {...(own ? { role: 'status', 'aria-live': 'polite' as const } : {})} data-testid="voice-writing">
             <span className="vt-spin" aria-hidden="true" />
             <span>Writing the transcript…</span>
           </p>
@@ -183,30 +163,39 @@ export function VoiceTranscript({ voice, body, own, channelId, rootId, messageId
       );
     case 'server':
     case 'edited': {
-      const heading = voice.transcript === 'edited' ? 'Transcript (edited)' : `Transcript · ${rangeLabel(voice)}`;
+      const shows = transcriptShows(voice);
+      const first = voice.transcript === 'server' && shows.longer;
       return (
         <div className="vt" data-testid="voice-transcript" data-state={voice.transcript}>
-          <p className="vt-head" data-testid="voice-transcript-heading">{heading}</p>
           <div className="vt-body">{body}</div>
-          {voice.transcript === 'server' && transcriptShows(voice).longer ? <p className="vt-note" data-testid="voice-first-seconds">{`First ${transcriptShows(voice).seconds} seconds`}</p> : null}
+          {/* the one small caption after the words: what they are, and (a long clip) how much of the clip they cover */}
+          <p className="vt-cap" data-testid="voice-transcript-heading" title={`Transcript · ${rangeLabel(voice)}`}>
+            {voice.transcript === 'edited' ? 'Transcript (edited)' : 'Transcript'}
+            {first ? <span data-testid="voice-first-seconds">{` of the first ${shows.seconds} seconds`}</span> : null}
+          </p>
         </div>
       );
     }
     case 'failed':
       return (
         <div className="vt" data-testid="voice-transcript" data-state="failed">
-          <p className="vt-head" data-testid="voice-no-transcript">No transcript</p>
-          {voice.transcriptNote ? <p className="vt-note" data-testid="voice-fail-note">{voice.transcriptNote}</p> : null}
-          {own && voice.transcriptRetry === true ? (
-            <button type="button" className="link-btn vt-retry" disabled={asking} onClick={() => void tryAgain()} data-testid="voice-try-again">Try again</button>
-          ) : null}
-          {error ? <p className="vt-note bad" role="alert" data-testid="voice-retry-error">{error}</p> : null}
+          <p className="vt-line">
+            <span data-testid="voice-no-transcript">No transcript.</span>
+            {voice.transcriptNote ? <>{' '}<span data-testid="voice-fail-note">{voice.transcriptNote}</span></> : null}
+            {own && voice.transcriptRetry === true ? (
+              <>
+                {' '}
+                <button type="button" className="link-btn vt-retry" disabled={asking} onClick={() => void tryAgain()} data-testid="voice-try-again">Try again</button>
+              </>
+            ) : null}
+          </p>
+          {error ? <p className="vt-line bad" role="alert" data-testid="voice-retry-error">{error}</p> : null}
         </div>
       );
     case 'none':
       return (
         <div className="vt" data-testid="voice-transcript" data-state="none">
-          <p className="vt-head" data-testid="voice-no-transcript">No transcript</p>
+          <p className="vt-line" data-testid="voice-no-transcript">No transcript</p>
         </div>
       );
     default:
@@ -224,7 +213,7 @@ export function VoiceTranscript({ voice, body, own, channelId, rootId, messageId
 export function VoiceTranscriptNote({ voice }: { voice: VoiceMeta }) {
   const note = transcriptNote(voice);
   return note ? (
-    <p className="vt-note" data-testid="voice-note">
+    <p className="vt-cap" data-testid="voice-note">
       {note}
     </p>
   ) : null;

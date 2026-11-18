@@ -6,7 +6,7 @@ import { FAKE_TEXT, VOICE_STACK_ENV, bar, deleteButton, liveTracks, mic, openVoi
 /**
  * Voice messages on a 390 x 844 phone (PLAN P14-17 "Phone 390 px", rewritten in P32-07), on a stack of its own with the server's stand-in speech model: the mic is a
  * 44 x 44 target, a long press records and the release sends (no preview), sliding left cancels, the bar and its buttons fit the width and are finger-sized, and the
- * message is a card that fits the row with the transcript under it. Run by the `voice-mobile` project (touch, 390 wide); the desktop project skips this file.
+ * message is flat (no card), fits the row and has the transcript under it. Run by the `voice-mobile` project (touch, 390 wide); the desktop project skips this file.
  */
 test.use({ actionTimeout: 10_000 });
 test.skip(({ isMobile }) => !isMobile, 'the phone layout');
@@ -54,23 +54,34 @@ test('hold to record, release to send: no preview, the card fits the row with th
     const row = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
     await expect(row).toBeVisible();
     await expect(row.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
-    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript · 0:00–0:0\d$/);
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript$/);
 
-    // the card is inside the row and the screen; the play button is finger-sized
+    // the voice message is flat (P32-10): no card, inside the row and the screen, its left edge at the message text's; the play button is finger-sized
     const card = (await row.getByTestId('voice-message').boundingBox())!;
     const rowBox = (await row.boundingBox())!;
     expect(card.x + card.width).toBeLessThanOrEqual(rowBox.x + rowBox.width + 1);
     expect(card.x + card.width).toBeLessThanOrEqual(390);
+    const flat = await row.getByTestId('voice-message').evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { border: s.borderTopWidth, radius: s.borderTopLeftRadius, pad: s.paddingLeft, bg: s.backgroundColor };
+    });
+    expect(flat).toEqual({ border: '0px', radius: '0px', pad: '0px', bg: 'rgba(0, 0, 0, 0)' });
     const play = (await row.getByTestId('voice-play').boundingBox())!;
     expect(play.width).toBeGreaterThanOrEqual(44);
-    // the transcript sits under the player
+    expect(Math.abs(play.x - card.x)).toBeLessThanOrEqual(1);
+    // the transcript sits under the player, at the same left edge
     const words = (await row.getByTestId('voice-words').boundingBox())!;
     const player = (await row.getByTestId('voice-player').boundingBox())!;
     expect(words.y).toBeGreaterThanOrEqual(player.y + player.height - 1);
-    // the length and the time sent are both there, and the picture with its badge
+    expect(Math.abs(words.x - player.x)).toBeLessThanOrEqual(1);
+    // the length and the played dot are there; the sent time and a second picture are not
     await expect(row.getByTestId('voice-time')).toBeVisible();
-    await expect(row.getByTestId('voice-sent')).toBeVisible();
+    await expect(row.getByTestId('voice-sent')).toHaveCount(0);
     await expect(row.getByTestId('voice-badge')).toBeVisible();
+    await expect(row.getByTestId('voice-player').locator('.av')).toHaveCount(0);
+    const speed = (await row.getByTestId('voice-speed').boundingBox())!;
+    expect(speed.width).toBeGreaterThanOrEqual(44);
+    expect(speed.height).toBeGreaterThanOrEqual(44);
     expect(await noSidewaysScroll(page)).toBe(true);
     await expect.poll(() => liveTracks(page)).toBe(0);
     expect((await voiceMessages()).length).toBe(1);

@@ -29,7 +29,7 @@ import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
 import { PendingVoice } from './voice/PendingVoice';
-import { VoicePlayer, VoiceTranscript, type VoiceFace } from './voice/VoicePlayer';
+import { VoicePlayer, VoiceTranscript } from './voice/VoicePlayer';
 import { voiceClip, withoutClip } from './voice/playerFormat';
 import { useRowGestures } from './gestures';
 import { Markdown } from './MessageMarkdown';
@@ -221,10 +221,6 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // a voice message draws its clip as a player (above its text), not as a file card
   const clip = deleted ? null : voiceClip(m.meta.voice, m.attachments);
   const attached = splitAttachments(withoutClip(m.attachments, clip));
-  // the sender's picture at the right of the voice player (with the microphone badge)
-  const voiceFace: VoiceFace = authorPerson
-    ? { name, avatar: authorPerson.avatar, personId: authorPerson.personId }
-    : { name, kind: m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person', avatar: m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null };
   const markUnread = async (): Promise<void> => {
     try {
       await actions.markUnread?.(m.id);
@@ -375,9 +371,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         </AuthorLine>
         {m.author?.kind === 'bot' && m.meta.runId && !deleted ? <RunOriginCard runId={m.meta.runId} /> : null}
         {clip ? (
-          // the player, a thin rule and the transcript the server writes; the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
+          // the player row and, under it, the transcript the server writes as the message's own text (no card, P32-10); the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
           <div className="vm" data-testid="voice-message">
-            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} sentAt={m.createdAt} sentLabel={clock(m.createdAt)} face={voiceFace} />
+            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} />
             {editing === null && !deleted ? (
               <VoiceTranscript
                 voice={clip.voice}
