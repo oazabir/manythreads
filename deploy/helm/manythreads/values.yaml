@@ -316,15 +316,18 @@ media:
     udpPort: 3478          # TURN over UDP, for networks that allow UDP but not the audio ports
   resources: {}
 
-# The speech-to-text server (PLAN P15-07, docs/deploy.md "Speech to text"): speaches, a Whisper server with the model inside the image (deploy/images/asr). It is the
-# fallback for a device too weak to transcribe by itself. OFF by default. After it runs, bind the alias `transcribe` in Models to a model with api_base
-# http://manythreads-asr:8000/v1 (provider marked "runs inside this deployment"). tools/devbox/deploy.sh builds the image when this is on in values-live.yaml.
+# The speech-to-text server (PLAN P15-07, D13, docs/deploy.md "Speech to text"): NVIDIA Parakeet TDT 0.6B v3 (int8, CPU) with the model inside the image
+# (deploy/images/asr). It writes out the first 20 seconds of voice messages (and the 30-second pieces of meeting audio). OFF by default. After it runs, bind the alias
+# `transcribe` in Models to a model with api_base http://manythreads-asr:8000/v1 (provider marked "runs inside this deployment"). tools/devbox/deploy.sh builds the image
+# when this is on in values-live.yaml. `threads` is the number of CPU threads one clip uses (the server works on one clip at a time, one more may wait).
+# Measured (docs/spikes/parakeet-measured.md): about 2 s for a 20-second clip on 2 to 4 threads; memory about 1.3 GiB at rest, 1.7 GiB at the most with two 30-second WAV clips in hand.
 asr:
   enabled: false
   image: manythreads/asr:1
+  threads: 4
   resources:
-    requests: { cpu: 500m, memory: 1Gi }
-    limits: { memory: 3Gi }
+    requests: { cpu: "1", memory: 1792Mi }
+    limits: { memory: 2560Mi }
 # Hermes runs on the host through a runner, never in the cluster: this switch only fails the render if turned on.
 hermes: { enabled: false }
 

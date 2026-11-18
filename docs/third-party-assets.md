@@ -41,3 +41,13 @@ Served from `clients/web/public/fonts` (declared in `clients/web/src/styles/font
 | **Geist** (Harbor's text) and **Geist Mono** (Harbor's code), variable weight, Vercel; npm `@fontsource-variable/geist`, `@fontsource-variable/geist-mono` 5.3.0 | `geist-<script>-wght-normal.woff2`, `geist-mono-<script>-wght-normal.woff2` | SIL Open Font License 1.1; `OFL-geist.txt`, `OFL-geist-mono.txt`. |
 
 These are copied out of the npm packages by `clients/web/scripts/copy-fonts.mjs` (which writes `src/styles/fonts-palettes.css`); the files are committed, so a build needs no network. Only the chosen theme's text face is preloaded (`public/theme-boot.js`).
+
+## Speech model and ffmpeg in the asr image (P32, decision D13)
+
+The `asr` image (`deploy/images/asr`) holds third-party software; the full notice is `deploy/images/asr/NOTICE`, also inside the image at `/app/NOTICE`.
+
+| What | Made by | Licence |
+|---|---|---|
+| **NVIDIA Parakeet TDT 0.6B v3** speech model (<https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3>), as the int8 ONNX conversion `istupakov/parakeet-tdt-0.6b-v3-onnx` | NVIDIA (model), istupakov (conversion) | **CC-BY-4.0**: credit NVIDIA wherever the model is described (`docs/deploy.md` "Speech to text"); changes: converted to ONNX and quantised to int8, no retraining. |
+| **ffmpeg** as packaged by Debian (turns an uploaded clip into samples; run only as a separate program) | The FFmpeg developers, Debian | **GPL** (v2 or later) for Debian's build; the licence texts are in the image under `/usr/share/doc/ffmpeg/` and `/usr/share/common-licenses/`. |
+| onnx-asr, onnxruntime, numpy, FastAPI, uvicorn and their dependencies | Their authors | MIT, BSD or Apache-2.0, pinned with hashes in `requirements.txt`. |

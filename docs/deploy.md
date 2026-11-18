@@ -293,27 +293,37 @@ speech-to-text server), `roomCap`, `notetakerAllowed` (default on) and `recordin
 **Bots in teams that already exist.** Template changes do not reach a team that was made before: the Scribe (`bots/scribe/BOT.md`) and the note-taker (`bots/note-taker/BOT.md`) must be committed into each existing team's
 repository (as an admin, through the repository commit route with `baseBlobSha`), and the workspace Brain gains `meetings.search` by itself: its stored `BOT.md` is moved to the shipped file at the next start when the stored text is an earlier shipped one that no admin edited (`SUPERSEDED_BRAIN_SHAS` in `packages/plugins/bots/src/workspace-brain.ts`; add the old file's sha there whenever the shipped Brain changes). New teams get both from their template.
 
-## Speech to text (the server fallback and the note-taker)
-The page for this part is `docs/plugins/asr.md`. A device too weak to transcribe by itself sends 30-second pieces of audio to `POST /api/meetings/:meetingId/audio-chunks`; the server turns each into text through the `transcribe` door
-of the LLM gateway (plugin `gateway-llm`, `src/transcribe.ts`) and stores a line; the note-taker's listener sends its chunks through the same door. Audio is never stored. The words come from a Whisper server inside the deployment: **speaches** (MIT),
-an OpenAI-compatible server, CPU build, model `Systran/faster-whisper-tiny` (set `ASR_MODEL` at build time for a bigger one, for example `Systran/faster-whisper-base`).
+## Speech to text (voice messages, the server fallback and the note-taker)
+The page for this part is `docs/plugins/asr.md`. The `asr` workload writes out speech for three users, all through the `transcribe` door of the LLM gateway (plugin `gateway-llm`, `src/transcribe.ts`):
+the **voice messages** of channels (the first 20 seconds of each clip, decision D13, plan `docs/plans/voice-messages-server.md`), a device too weak to transcribe by itself (30-second pieces sent to
+`POST /api/meetings/:meetingId/audio-chunks`), and the note-taker's listener. Meeting audio is never stored; a voice message's clip is the message's own attachment. The words come from **NVIDIA Parakeet TDT 0.6B v3**
+(25 European languages, English among them; **not** Arabic, Bangla, Hindi or East Asian languages), int8, on the CPU, through onnx-asr (MIT) behind a small OpenAI-compatible server (`deploy/images/asr/server.py`).
+Voice messages are transcribed on this server: the workspace admin switch (Settings, Workspace) turns it off, and the docs and the recording bar say so.
 
-- **Image** (`deploy/images/asr`): the pinned speaches image plus the model, downloaded once while the image is built (needs the network for that one step; the pod never downloads
-  anything). About 3.5 GB. `tools/devbox/deploy.sh` builds it, tags it by the content of the folder and imports it into k3s when `asr.enabled` is true in `values-live.yaml`; it stops with
-  a message when under 10 GB is free.
-- **Chart** (`templates/asr.yaml`): `asr.enabled` (off by default), `asr.image`, `asr.resources` (about 1 GB requested). Deployment `manythreads-asr` and Service `manythreads-asr:8000`,
-  no outside address needed, no key (reachable inside the cluster only).
+- **Image** (`deploy/images/asr`): `python:3.12-slim` pinned by digest, Debian's ffmpeg, the Python packages pinned with hashes (`requirements.txt`, made from `requirements.in`), and the int8 model files of
+  `istupakov/parakeet-tdt-0.6b-v3-onnx`, downloaded once while the image is built (needs the network for that one step; the pod never downloads anything, `HF_HUB_OFFLINE=1`). It runs as user 1000, not root.
+  About 1.4 GB of files (`docs/spikes/parakeet-measured.md`). `tools/devbox/deploy.sh` builds it, tags it by the content of the folder and imports it into k3s when `asr.enabled` is true in `values-live.yaml`;
+  it stops with a message when under 10 GB is free. Import one image at a time and remove the old one after the roll. Check a built image on the devbox (not in CI) with `bash deploy/images/asr/test.sh`.
+- **The server**: `GET /health` (answers at once, also while a clip is being worked on), `GET /v1/models`, `POST /v1/audio/transcriptions` with `file`. Any `model` value is accepted (the alias may still name an old Whisper id)
+  and `language` is ignored; the answer is `{text, language: null, duration}`. LiteLLM drops form fields the pod does not know, so the cut depends on the input: **a clip that is not WAV (a voice message) is cut at 20 seconds,
+  WAV (meeting pieces, at most 30 seconds) at 30 seconds**. The upload is limited to 8 MiB (413 above); only WAV, webm, ogg, mp4, flac, mp3 and aac are opened (400 otherwise). One clip is worked on at a time and one more may
+  wait; a third gets 429 and the caller tries again. About 2 seconds for a 20-second clip.
+- **Chart** (`templates/asr.yaml`): `asr.enabled` (off by default), `asr.image`, `asr.threads` (CPU threads per clip, default 4), `asr.resources` (1 CPU and 1792 MiB requested, 2560 MiB limit, from the measurement).
+  Deployment `manythreads-asr` and Service `manythreads-asr:8000`, no outside address needed, no key (reachable inside the cluster only).
 - **Dev compose**: `docker compose -f deploy/compose/docker-compose.dev.yml --profile asr up -d --build asr` (port 8000 on loopback).
-- **Admin step after the first deploy** (the app, not the chart): in the Models page bind the alias `transcribe` to a model with provider "openai-compatible", model `openai/Systran/faster-whisper-tiny` (the name the server lists at `/v1/models`; `openai/` makes the gateway speak the OpenAI protocol),
-  `api_base` `http://manythreads-asr:8000/v1`, and mark the provider as running inside this deployment (the same flag as a local model). Until it is bound the door answers "Speech to
-  text is not set up" and the app tells the person so. The alias shows in Spend as "Meeting transcription", costs nothing per call, and is under the workspace's budgets and guardrails
-  like any other.
+- **Admin step after the first deploy** (the app, not the chart): in the Models page bind the alias `transcribe` to a model with provider "openai-compatible", model `openai/nemo-parakeet-tdt-0.6b-v3` (the name the server lists at `/v1/models`;
+  `openai/` makes the gateway speak the OpenAI protocol), `api_base` `http://manythreads-asr:8000/v1`, and mark the provider as running inside this deployment (the same flag as a local model). A binding that still names the old
+  Whisper model works too (the server accepts any name), but rebind it so the Models page tells the truth. Until it is bound the door answers "Speech to text is not set up" and the app tells the person so. A voice message is
+  refused a `transcribe` target that is not marked local. The alias shows in Spend as "Meeting transcription", costs nothing per call, and is under the workspace's budgets and guardrails like any other.
 - **Air-gapped preset**: allowed, because the server is inside the deployment; a `transcribe` model outside it is refused like any other outside model.
-- **Who may use it**: a room whose transcription is `server`, and only while the workspace's and the team's caps both allow `server` (the lower wins); only the sender's own speech, and only
-  after they said yes. Tests and screenshots use the stand-in `MANYTHREADS_FAKE_ASR=1` (text read from the audio itself; the server refuses to start with it when `NODE_ENV=production`).
-- **Check after deploy**: `kubectl rollout status deploy/manythreads-asr`, then in a room with server transcription say a sentence and read the line in the transcript; Spend shows a
-  `transcribe` line.
+- **Who may use it**: voice messages (any sender, while the workspace switch is on); a room whose transcription is `server`, and only while the workspace's and the team's caps both allow `server` (the lower wins), only the
+  sender's own speech and only after they said yes (D7; meetings keep it). Tests and screenshots use the stand-in `MANYTHREADS_FAKE_ASR=1` (a scripted text for a voice message, text read from the audio itself for a meeting piece; the
+  server refuses to start with it when `NODE_ENV=production`).
+- **Check after deploy**: `kubectl rollout status deploy/manythreads-asr`, then send a voice message in a channel and read the transcript under it; Spend shows a `transcribe` line.
 - **Undo**: `asr.enabled: false` (the alias then answers "not set up"; nothing else changes).
+- **Credits**: the model is NVIDIA's Parakeet TDT 0.6B v3 (<https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3>), licensed **CC-BY-4.0**; the ONNX int8 files are istupakov's conversion
+  (<https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx>, same licence). Debian's ffmpeg in the image is a **GPL** build, run only as a separate program. The full list is `deploy/images/asr/NOTICE`, which is also
+  inside the image at `/app/NOTICE`.
 
 ## Temporary test triggers
 During development `ops-rollout`, `ops-status` and `ops-logs` had a temporary `push:` trigger on branch
