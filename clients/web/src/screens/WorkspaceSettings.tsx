@@ -94,6 +94,18 @@ export function WorkspaceGeneral() {
                   </li>
                 </ul>
               </section>
+              <section className="block" aria-labelledby="ws-voice">
+                <h2 className="bh" id="ws-voice">Voice messages</h2>
+                <ul className="rows">
+                  <li className="srow">
+                    <div>
+                      <div id="ws-voice-transcripts">Write transcripts of voice messages on this server</div>
+                      <div className="d">The first 20 seconds of each voice message are written out by a speech model that runs inside this deployment; the audio goes nowhere else. Messages already sent keep what they have.</div>
+                    </div>
+                    <Toggle label="Write transcripts of voice messages on this server" checked={ws.voiceTranscripts} disabled={busy} onChange={(v) => void save({ voiceTranscripts: v }, v ? 'New voice messages get a transcript.' : 'New voice messages are sent without a transcript.')} />
+                  </li>
+                </ul>
+              </section>
             </>
           );
         }}

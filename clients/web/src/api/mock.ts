@@ -257,6 +257,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   let workspaceName = 'Kahf Software';
   let selfSignup = false;
   let passwordForMembers = true;
+  let voiceTranscripts = true;
   /** Per-person passwords changed in this tab; everyone else still has MOCK_PASSWORD. */
   const passwords = new Map<string, string>();
   const passwordOf = (p: Person): string => passwords.get(p.id) ?? MOCK_PASSWORD;
@@ -553,7 +554,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   });
 
   let workspaceTimeZone: string | null = null;
-  const workspaceBody = () => ({ workspace: { id: WORKSPACE_ID, name: workspaceName, slug: 'kahf', timeZone: workspaceTimeZone, selfSignup, passwordForMembers } });
+  const workspaceBody = () => ({ workspace: { id: WORKSPACE_ID, name: workspaceName, slug: 'kahf', timeZone: workspaceTimeZone, selfSignup, passwordForMembers, voiceTranscripts } });
   on(getWorkspaceRoute, () => (requireAdmin(), workspaceBody()));
   on(updateWorkspaceRoute, ({ body }) => {
     requireAdmin();
@@ -561,6 +562,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     if (typeof body.timeZone === 'string') workspaceTimeZone = body.timeZone.trim();
     if (typeof body.selfSignup === 'boolean') selfSignup = body.selfSignup;
     if (typeof body.passwordForMembers === 'boolean') passwordForMembers = body.passwordForMembers;
+    if (typeof body.voiceTranscripts === 'boolean') voiceTranscripts = body.voiceTranscripts;
     return workspaceBody();
   });
   on(updateWorkspaceMemberRoute, ({ params, body }) => {

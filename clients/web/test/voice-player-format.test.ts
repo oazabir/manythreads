@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FileSummary, VoiceMeta } from '@manythreads/shared';
 import {
-  barHeights, clampPosition, formatClock, nextSpeed, playedBars, positionAt, seekBy, seekForKey, speedAria, speedLabel, transcriptNote, valueText,
+  barHeights, clampPosition, formatClock, nextSpeed, playedBars, positionAt, seekBy, seekForKey, speedAria, speedLabel, rangeLabel, transcriptNote, transcriptShows, valueText,
   voiceClip, voiceHitLength, withoutClip,
 } from '../src/channels/voice/playerFormat';
 
@@ -81,8 +81,20 @@ describe('voice player format (P14-17)', () => {
 
   it('says where a transcript came from, and nothing when there is none', () => {
     expect(transcriptNote(voice({ transcript: 'device', language: 'en' }))).toBe("Transcript in English, written on the sender's device");
-    expect(transcriptNote(voice({ transcript: 'edited', language: null }))).toBe('Transcript, corrected by hand');
+    expect(transcriptNote(voice({ transcript: 'edited', language: null }))).toBeNull();
+    expect(transcriptNote(voice({ transcript: 'server' }))).toBeNull();
     expect(transcriptNote(voice({ transcript: 'none' }))).toBeNull();
+  });
+
+  it('names the stretch the server transcribed, and whether the clip goes on after it', () => {
+    expect(rangeLabel(voice({ durationMs: 10_400, transcriptEndMs: 10_400 }))).toBe('0:00\u20130:10');
+    expect(transcriptShows(voice({ durationMs: 10_400, transcriptEndMs: 10_400 }))).toEqual({ endMs: 10_400, seconds: 10, longer: false });
+    expect(rangeLabel(voice({ durationMs: 95_000, transcriptEndMs: 20_000 }))).toBe('0:00\u20130:20');
+    expect(transcriptShows(voice({ durationMs: 95_000, transcriptEndMs: 20_000 }))).toEqual({ endMs: 20_000, seconds: 20, longer: true });
+    // no range recorded: the range is the clip, cut at 20 seconds; and never past the clip
+    expect(transcriptShows(voice({ durationMs: 9_000 }))).toMatchObject({ endMs: 9_000, longer: false });
+    expect(transcriptShows(voice({ durationMs: 40_000 }))).toMatchObject({ endMs: 20_000, longer: true });
+    expect(transcriptShows(voice({ durationMs: 5_000, transcriptEndMs: 20_000 }))).toMatchObject({ endMs: 5_000, longer: false });
   });
 
   it('recognises the stand-in line of a voice message with no transcript in a search hit', () => {

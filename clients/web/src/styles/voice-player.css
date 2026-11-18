@@ -2,20 +2,24 @@
  * The voice-message player in a message row (`vp-`) and its search-result label (PLAN P14-17). Tokens only. Shared classes are used, never
  * redefined. Layout rule: pressing play, the time running or the speed changing never moves anything: the time sits in a column of fixed
  * width with tabular digits, the waveform takes the rest of the row, and the bars are a fixed height box whose fill changes colour only.
- * The player has no animation (the bars change colour as the clip plays, nothing slides), so reduced motion needs no rule. Phone: one row (play, waveform, time, speed); under 360 px every second bar is hidden; every control is at least 44 px on a touch screen.
+ * The only animation is the transcript's spinner, which becomes a still dot under reduced motion. Phone: the picture drops under the waveform when the row is too narrow (the row wraps); under 360 px every second bar is hidden; every control is at least 44 px on a touch screen.
  */
+
+/* the card: the player, a thin rule and the transcript the server writes (P32-06) */
+.vm {
+  max-width: 460px;
+  margin-top: 2px;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
 
 .vp {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
-  max-width: 420px;
-  margin-top: 2px;
-  padding: 6px 10px 6px 6px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  gap: 10px;
 }
 
 .vp-play {
@@ -41,12 +45,21 @@
   opacity: 0.7;
 }
 
-.vp-wave {
+/* the middle: the waveform, and under it the length at its left end and the time sent at its right end */
+.vp-mid {
   display: flex;
-  flex: 1 1 96px;
+  flex: 1 1 120px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+
+.vp-wave {
+  position: relative;
+  display: flex;
   align-items: center;
   gap: 2px;
-  min-width: 96px;
+  min-width: 0;
   height: 32px;
   cursor: pointer;
   touch-action: pan-y; /* up or down scrolls the list, sideways seeks */
@@ -57,28 +70,53 @@
   min-width: 1px;
   max-width: 4px;
   border-radius: var(--radius-pill);
-  background: var(--rule);
+  background: var(--faint);
 }
 
 .vp-bar.on {
-  background: var(--human);
+  background: var(--ok);
+}
+
+/* the dot at the play position: it stays at the start until the clip plays, and it never changes the row's size */
+.vp-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: var(--radius-pill);
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+
+.vp-under {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
 }
 
 .vp-time {
   flex: none;
-  min-width: 78px;
-  color: var(--mute);
-  font-size: var(--fs-caption);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+  min-width: 3.2em;
+  white-space: nowrap;
+}
+
+.vp-sent {
+  flex: none;
+  margin-left: auto;
   white-space: nowrap;
 }
 
 .vp-speed {
   flex: none;
-  min-width: 40px;
-  height: 28px;
-  padding: 0 8px;
+  min-width: 38px;
+  height: 22px;
+  padding: 0 7px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-pill);
   background: var(--shell);
@@ -90,6 +128,39 @@
 
 .vp-speed:hover {
   background: var(--nav-on);
+}
+
+/* the sender's picture with the microphone badge at its lower left: green until this reader plays the message, grey after */
+.vp-who {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+.vp-who .av {
+  width: 40px;
+  height: 40px;
+  margin: 0;
+}
+
+.vp-mic {
+  position: absolute;
+  bottom: -3px;
+  left: -3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-pill);
+  background: var(--ok);
+  color: var(--on-ok);
+}
+
+.vp-mic.heard {
+  background: var(--faint);
+  color: var(--surface);
 }
 
 .vp-error {
@@ -106,20 +177,89 @@
   outline-offset: 2px;
 }
 
-/* the lines under the player */
-.vp-note,
-.vp-none {
+/* the transcript block (P32-06): a thin rule, then the heading and the words */
+.vt {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.vt-head {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-title);
+}
+
+.vt-body {
+  margin-top: 2px;
+}
+
+.vt-body .txt {
+  margin: 0;
+}
+
+.vt-plain {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vt-note {
   margin: 2px 0 0;
-  color: var(--faint);
+  color: var(--mute);
   font-size: var(--fs-caption);
 }
 
-.vp-none {
+.vt-note.bad {
+  color: var(--alert-ink);
+}
+
+.vt-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--mute);
   font-size: var(--fs-small);
 }
 
-.vp-note {
-  margin-top: 0;
+/* the small spinner; a still dot under reduced motion */
+.vt-spin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--mute);
+  border-radius: var(--radius-pill);
+  animation: vt-turn 0.9s linear infinite;
+}
+
+.vt-retry {
+  margin-top: 2px;
+}
+
+@keyframes vt-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vt-spin {
+    border: 0;
+    background: var(--mute);
+    animation: none;
+  }
+}
+
+/* a voice message still on this device: nothing plays yet */
+.vp-idle .vp-play {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.vp-idle .vp-wave {
+  cursor: default;
 }
 
 .vp-hit {
@@ -134,10 +274,6 @@
   .vp-bar:nth-child(even) {
     display: none;
   }
-
-  .vp-time {
-    min-width: 66px;
-  }
 }
 
 @media (pointer: coarse) {
@@ -148,7 +284,7 @@
 
   .vp-speed {
     min-width: 44px;
-    height: 44px;
+    height: 32px;
   }
 
   .vp-wave {
