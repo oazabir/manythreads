@@ -142,12 +142,14 @@ export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reload
   // the steps are read only while the run's card is open here (the thread's run card reads them as well, from the same store)
   const lines = useRunLines(run !== null && !folded ? run.runId : null, run?.seq ?? 0);
 
-  const cards = plan.todo || plan.run === 'live';
+  // the thread pane keeps a finished list as its one line ("5 of 5 tasks complete", owner 2026-11-19); only the channel's task view lets it go after a few minutes
+  const showTodo = hasList;
+  const cards = showTodo || plan.run === 'live';
   // no team yet (the slug is not known): nobody can answer, so no question is drawn (as the thread's cards did before)
   const asked = slug === null || slug === '' ? [] : questions;
   if (!cards && asked.length === 0) return null;
   const lineRun = plan.run === 'live' ? run : null;
-  const lineTodo = plan.todo ? todo : null;
+  const lineTodo = showTodo ? todo : null;
   const line = lineWords(lineRun, lineTodo);
   return (
     <div className="tvDock" data-testid="thread-dock" data-folded={cards && folded ? 'true' : 'false'}>
@@ -167,7 +169,7 @@ export function ThreadDock({ rootId, slug, people, runs, todo, approvals, reload
               <span>Fold</span>
               <span className="rcChev" aria-hidden="true"><CaretIcon open /></span>
             </button>
-            {plan.todo && todo !== null ? <TodoCompact todo={todo} /> : null}
+            {showTodo && todo !== null ? <TodoCompact todo={todo} /> : null}
             {plan.run === 'live' && run !== null ? <RunCompact head={run} lines={lines.items} people={people} onOpen={() => undefined} more={plan.moreRuns} hideOpen /> : null}
           </div>
         )

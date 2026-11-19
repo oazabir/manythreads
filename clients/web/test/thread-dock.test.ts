@@ -166,6 +166,11 @@ describe('folding', () => {
     expect(q('.tvSpin')).toBeNull();
   });
 
+  it('a list finished long ago still says "X of Y tasks complete" in the thread pane (the channel lets it go after a few minutes)', async () => {
+    await draw({ todo: { ...todo(), updatedAt: '2026-11-01T10:00:00.000Z', items: todo().items.map((i) => ({ ...i, status: 'done' })) } as never });
+    expect(q('[data-testid="dock-line"]')?.textContent).toBe('4 of 4 tasks complete');
+  });
+
   it('the line: the task being worked on, else a blocked one, else the next; the ring only while work goes on', () => {
     const items = (...st: string[]) => ({ ...todo(), items: st.map((status, k) => ({ id: String(k), text: `T${k}`, status })) }) as never;
     expect(todoLine(items('done', 'working', 'waiting'), null)).toEqual({ state: 'working', count: '1 of 3 tasks done', text: 'T1' });
