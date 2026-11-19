@@ -173,7 +173,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
-**Next ten** (2026-11-19, after an independent review; replaces the 2026-11-18 list, which was not yet approved)
+**Next ten** (2026-11-19, after an independent review; replaces the 2026-11-18 list, which was not yet approved; **approved by the owner on 2026-11-19**, built in this order)
 
 Phases 32 and 33 were owner requests about the everyday chat, and on 2026-11-19 the owner asked for a pass over the screens people use all day (channel, composer, message kinds, thread, Threads, DMs) on desktop and phone. That pass found 33 issues (`docs/plans/everyday-screens.md`, new **Phase 34**). A person judges the product by those screens every minute, so the ten now lead with them; the Phase 31 delivery work stays for the Engineering bots and the first customer installs. Disk-safe deploys come first because every P34 task ships live and the deploy guard refused at 81% on 2026-11-19.
 
