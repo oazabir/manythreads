@@ -84,19 +84,32 @@ const q = (id: string): HTMLElement | null => host.querySelector(`[data-testid="
 const text = (id: string): string => q(id)?.textContent ?? '';
 
 describe('a voice message in a row', () => {
-  it('draws the player: play, waveform with a dot, the length at the left end, the time sent at the right end, the picture with a badge', async () => {
+  it('draws one flat player row: play, waveform with a dot, the length, the played dot and the speed; no card, no second picture, no sent time', async () => {
     await draw(message(voice()));
     expect(q('voice-message')).not.toBeNull();
     expect(host.querySelector('.vp-play')).not.toBeNull();
     expect(q('voice-seek')?.getAttribute('role')).toBe('slider');
     expect(q('voice-dot')).not.toBeNull();
     expect(text('voice-time')).toBe('0:19');
-    expect(q('voice-sent')?.tagName).toBe('TIME');
-    expect(q('voice-sent')?.textContent).toMatch(/\d{1,2}:\d{2}/);
     expect(q('voice-badge')?.getAttribute('aria-label')).toBe('not played yet');
     expect(q('voice-speed')).not.toBeNull();
-    // a thin rule and the transcript block sit under the player in the same card
+    // the row's own avatar is the only picture; the sent time is the row's (the player does not repeat it)
+    expect(host.querySelector('.vp-who, .vp-mic, .vp-sent')).toBeNull();
+    expect(q('voice-sent')).toBeNull();
+    expect(q('voice-player')?.querySelector('.av')).toBeNull();
+    // the transcript block sits under the player, in the message's body column
     expect(q('voice-message')?.querySelector('.vt')).not.toBeNull();
+    expect(q('voice-message')?.parentElement?.classList.contains('msg-main')).toBe(true);
+  });
+
+  it('a voice message that continues a run has no name or picture of its own, like a text message', async () => {
+    await act(async () => {
+      root.render(createElement(MessageRow, { message: message(voice()), continued: true, teamSlug: null, people, selfActor: ME, canPost: true, actions }));
+    });
+    expect(host.querySelector('.msg')?.classList.contains('run')).toBe(true);
+    expect(host.querySelector('.msg > .av, .msg > .av-wrap')).toBeNull();
+    expect(host.querySelector('.who b:not(.sr-only)')).toBeNull();
+    expect(q('voice-player')).not.toBeNull();
   });
 
   it('pending: "Writing the transcript…" with a spinner, announced only on the sender\'s own message', async () => {
@@ -112,10 +125,15 @@ describe('a voice message in a row', () => {
     expect(q('voice-writing')?.getAttribute('aria-live')).toBeNull();
   });
 
-  it('server: the heading with the range, and the words drawn once, as plain text', async () => {
+  it('server: the words drawn once, as the message text, with the caption after them', async () => {
     const m = message(voice({ transcript: 'server', durationMs: 10_400, transcriptEndMs: 10_400 }), { body: 'Hello **there**\nsecond line', bodyPlain: 'Hello there second line' });
     await draw(m);
-    expect(text('voice-transcript-heading')).toBe('Transcript · 0:00–0:10');
+    expect(text('voice-transcript-heading')).toBe('Transcript');
+    expect(q('voice-transcript-heading')?.getAttribute('title')).toBe('Transcript · 0:00–0:10');
+    // the words come first and the caption after them; no bold heading or rule
+    expect(q('voice-words')?.classList.contains('txt')).toBe(true);
+    expect(q('voice-words')?.compareDocumentPosition(q('voice-transcript-heading') as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(host.querySelector('.vt-head')).toBeNull();
     expect(host.querySelectorAll('[data-testid="voice-words"]')).toHaveLength(1);
     expect(q('voice-words')?.textContent).toBe('Hello **there**\nsecond line');
     expect(q('voice-first-seconds')).toBeNull();
@@ -126,11 +144,11 @@ describe('a voice message in a row', () => {
 
   it('server, a clip longer than 20 seconds: says the transcript is of the first 20 seconds', async () => {
     await draw(message(voice({ transcript: 'server', durationMs: 95_000, transcriptEndMs: 20_000 }), { body: 'Words.' }));
-    expect(text('voice-transcript-heading')).toBe('Transcript · 0:00–0:20');
-    expect(text('voice-first-seconds')).toBe('First 20 seconds');
+    expect(text('voice-transcript-heading')).toBe('Transcript of the first 20 seconds');
+    expect(text('voice-first-seconds')).toBe(' of the first 20 seconds');
   });
 
-  it('edited: the heading says so and nothing about a range', async () => {
+  it('edited: the caption says so and nothing about a range', async () => {
     await draw(message(voice({ transcript: 'edited' }), { body: 'Corrected words.', editedAt: '2026-09-07T18:10:00.000Z' }));
     expect(text('voice-transcript-heading')).toBe('Transcript (edited)');
     expect(text('voice-words')).toContain('Corrected words.');
@@ -140,7 +158,7 @@ describe('a voice message in a row', () => {
   it('failed: "No transcript" with the note; Try again for the author only when the server says a retry can help', async () => {
     const failed = message(voice({ transcript: 'failed', transcriptNote: 'The speech model is not ready.', transcriptRetry: true }));
     await draw(failed);
-    expect(text('voice-no-transcript')).toBe('No transcript');
+    expect(text('voice-no-transcript')).toBe('No transcript.');
     expect(text('voice-fail-note')).toBe('The speech model is not ready.');
     expect(q('voice-try-again')).not.toBeNull();
     await draw(failed, THEM);
@@ -186,7 +204,7 @@ describe('a voice message in a row', () => {
     expect(host.textContent).not.toContain('Add a transcript');
   });
 
-  it('the badge is green until this reader plays the message, then it says played', async () => {
+  it('the dot is filled until this reader plays the message, then it is a ring and says played', async () => {
     const m = message(voice());
     await draw(m);
     expect(q('voice-badge')?.classList.contains('heard')).toBe(false);
@@ -212,6 +230,19 @@ describe('a voice message still being sent', () => {
     expect(text('voice-pending-length')).toBe('0:07');
     expect(host.querySelector('.send-state')?.textContent).toBe('Sending…');
     expect(q('voice-writing')).toBeNull();
+  });
+
+  it('a sending row that continues the run has no name or picture, as the delivered message will (P32-11)', async () => {
+    await act(async () => {
+      root.render(createElement(PendingRow, { pending, name: 'Nadia', continued: true, onRetry: vi.fn(), onDiscard: vi.fn() }));
+    });
+    expect(host.querySelector('.msg')?.classList.contains('run')).toBe(true);
+    expect(host.querySelector('.msg > .av, .msg > .av-wrap')).toBeNull();
+    expect(host.querySelector('.who b:not(.sr-only)')).toBeNull();
+    expect(q('voice-pending')).not.toBeNull();
+    await drawPending(pending);
+    expect(host.querySelector('.msg')?.classList.contains('run')).toBe(false);
+    expect(host.querySelector('.who b')).not.toBeNull();
   });
 
   it('draws no picture or file card under the voice row, whatever is attached to it', async () => {

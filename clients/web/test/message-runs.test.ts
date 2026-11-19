@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelMessage } from '@manythreads/shared';
-import { continuesRun, RUN_GAP_MS } from '../src/channels/runs';
+import { continuesRun, pendingContinues, RUN_GAP_MS } from '../src/channels/runs';
 
 const uuid = (n: number): string => `00000000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const AT = Date.parse('2026-09-07T10:00:00.000Z');
@@ -32,6 +32,38 @@ describe('continuesRun (P21-01)', () => {
     expect(continuesRun(msg(), msg({ createdAt: at(60_000) }))).toBe(true);
     expect(continuesRun(msg(), msg({ createdAt: at(RUN_GAP_MS) }))).toBe(true);
     expect(continuesRun(msg(), msg({ createdAt: at(RUN_GAP_MS + 1_000) }))).toBe(false);
+  });
+
+  it('a voice message groups like a text message, with text or with another voice message (P32-10)', () => {
+    const voice = (over: Partial<ChannelMessage> = {}): ChannelMessage => msg({ meta: { voice: { fileId: uuid(500), durationMs: 5_000, language: null, transcript: 'server', peaks: [] } } as unknown as ChannelMessage['meta'], ...over });
+    expect(continuesRun(msg(), voice({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(voice(), msg({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(voice(), voice({ createdAt: at(120_000) }))).toBe(true);
+    expect(continuesRun(voice(), voice({ createdAt: at(RUN_GAP_MS + 1_000) }))).toBe(false);
+    expect(continuesRun(voice(), voice({ createdAt: at(60_000), authorId: uuid(3) as ChannelMessage['authorId'] }))).toBe(false);
+  });
+
+  it('a message without `author` (the answer to our own POST) joins the run of the same author id, and a known different kind does not (P32-11)', () => {
+    const bare = (over: Partial<ChannelMessage> = {}): ChannelMessage => msg({ author: undefined, ...over });
+    expect(continuesRun(msg(), bare({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(bare(), msg({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(bare(), bare({ createdAt: at(60_000) }))).toBe(true);
+    expect(continuesRun(bare(), bare({ createdAt: at(60_000), authorId: uuid(3) as ChannelMessage['authorId'] }))).toBe(false);
+    expect(continuesRun(msg(), msg({ createdAt: at(60_000), author: { actorId: uuid(2), kind: 'bot', displayName: 'Bot' } as ChannelMessage['author'] }))).toBe(false);
+  });
+
+  it('a message still being sent continues the reader\'s own run above it, a sending row above it too (P32-11)', () => {
+    const me = uuid(2);
+    expect(pendingContinues(msg(), me, at(60_000))).toBe(true);
+    expect(pendingContinues({ createdAt: at(30_000) }, me, at(60_000))).toBe(true);
+    // the tab's clock a little behind the server's
+    expect(pendingContinues(msg({ createdAt: at(5_000) }), me, at(0))).toBe(true);
+    expect(pendingContinues(msg(), uuid(9), at(60_000))).toBe(false);
+    expect(pendingContinues(msg(), null, at(60_000))).toBe(false);
+    expect(pendingContinues(undefined, me, at(60_000))).toBe(false);
+    expect(pendingContinues(msg(), me, at(RUN_GAP_MS + 1_000))).toBe(false);
+    expect(pendingContinues(msg({ replyCount: 1 }), me, at(60_000))).toBe(false);
+    expect(pendingContinues(msg({ reactions: [{ emoji: '👍', count: 1, mine: false }] }), me, at(60_000))).toBe(false);
   });
 
   it('never joins the first message or a message that is older than the previous one', () => {

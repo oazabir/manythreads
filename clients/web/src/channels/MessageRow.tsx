@@ -30,7 +30,7 @@ import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
 import { PendingVoice } from './voice/PendingVoice';
-import { VoicePlayer, VoiceTranscript, type VoiceFace } from './voice/VoicePlayer';
+import { VoicePlayer, VoiceTranscript } from './voice/VoicePlayer';
 import { voiceClip, withoutClip } from './voice/playerFormat';
 import { useRowGestures } from './gestures';
 import { Markdown } from './MessageMarkdown';
@@ -222,10 +222,6 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // a voice message draws its clip as a player (above its text), not as a file card
   const clip = deleted ? null : voiceClip(m.meta.voice, m.attachments);
   const attached = splitAttachments(withoutClip(m.attachments, clip));
-  // the sender's picture at the right of the voice player (with the microphone badge)
-  const voiceFace: VoiceFace = authorPerson
-    ? { name, avatar: authorPerson.avatar, personId: authorPerson.personId }
-    : { name, kind: m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person', avatar: m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null };
   const markUnread = async (): Promise<void> => {
     try {
       await actions.markUnread?.(m.id);
@@ -376,9 +372,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         </AuthorLine>
         {m.author?.kind === 'bot' && m.meta.runId && !deleted ? <RunOriginCard runId={m.meta.runId} /> : null}
         {clip ? (
-          // the player, a thin rule and the transcript the server writes; the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
+          // the player row and, under it, the transcript the server writes as the message's own text (no card, P32-10); the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
           <div className="vm" data-testid="voice-message">
-            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} sentAt={m.createdAt} sentLabel={clock(m.createdAt)} face={voiceFace} />
+            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} />
             {editing === null && !deleted ? (
               <VoiceTranscript
                 voice={clip.voice}
@@ -507,17 +503,17 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
 });
 
 /** A message this tab is sending, or that failed: shown in its place with "Not sent · Retry". */
-export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: PendingSend; name: string; onRetry: (confirmBroadcast?: boolean) => void; onDiscard: () => void }) {
+export function PendingRow({ pending, name, continued = false, onRetry, onDiscard }: { pending: PendingSend; name: string; /** It continues the run above (same author, within the window): no name or picture, as the delivered message will draw it (P32-11). */ continued?: boolean; onRetry: (confirmBroadcast?: boolean) => void; onDiscard: () => void }) {
   const failed = pending.status === 'failed';
   const attached = splitAttachments(pending.attachments);
   // the text of an unsent message is lost with it: Discard asks first
   const [sure, setSure] = useState(false);
   const me = usePeople().me;
   return (
-    <div className={`msg pending ${failed ? 'failed' : ''}`} data-testid="pending-message" data-status={pending.status}>
-      <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />
+    <div className={`msg pending ${failed ? 'failed' : ''} ${continued ? 'run' : ''}`} data-testid="pending-message" data-status={pending.status}>
+      {continued ? <time className="run-time" dateTime={pending.createdAt} data-vt-mask>{clock(pending.createdAt)}</time> : <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />}
       <div className="msg-main">
-        <AuthorLine name={name} createdAt={pending.createdAt} />
+        <AuthorLine name={name} createdAt={pending.createdAt} continued={continued} />
         {pending.clip ? <PendingVoice durationMs={pending.clip.durationMs} peaks={pending.clip.peaks} /> : <div className="txt"><Markdown source={pending.body} /></div>}
         {/* the clip's own file is in the attachments once uploaded: the voice row stands for it, no file card under it */}
         {pending.clip ? null : <MessageImages files={attached.images} />}
