@@ -214,6 +214,10 @@ test('a lead adds a team member to the channel from the Members panel: the row m
     const who = (await add.getAttribute('aria-label'))!.replace(/^Add (.*) to #.*$/, '$1');
     await add.click();
     await expect(lead.page.getByTestId('members-said')).toHaveText(`Added ${who} to #${name}`, T);
+    // the row is gone: the keyboard is on the next Add button, or on the list's heading when there is none
+    const left = lead.page.getByTestId('members-out').getByTestId('member-add');
+    if ((await left.count()) > 0) await expect(left.first()).toBeFocused(T);
+    else await expect(lead.page.getByTestId('members-in-head')).toBeFocused(T);
     await expect(lead.page.getByTestId('members-in').getByTestId('member-row').filter({ hasText: who })).toHaveCount(1);
     await expect(lead.page.getByTestId('members-out').getByTestId('member-row').filter({ hasText: who })).toHaveCount(0);
     await expect(lead.page.getByTestId('members-open')).toHaveAttribute('data-count', String(before + 1), T);

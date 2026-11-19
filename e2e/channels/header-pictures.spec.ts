@@ -7,7 +7,7 @@ import { meetingsStack, type Who } from '../meetings/support.ts';
 
 /**
  * The pictures of P33-05: the channel header with and without a live voice room, the room card (live; as its starter; when the reader is in the room), the Members panel
- * as a lead and as a member, the End confirm, and a 44-character channel name, in Graphite dark and Linen light, at 1440 and 390 px. A tool, not a check: it is skipped
+ * as a lead and as a member, the End confirm, and a 44-character channel name, in Graphite dark and Linen light, at 1440 and 390 px, and the header alone at 800, 1000 and 1100 px with the Members panel closed and open. A tool, not a check: it is skipped
  * unless MANYTHREADS_HEADER_PICTURES=1, and it writes the PNGs to MANYTHREADS_HEADER_PICTURES_DIR (default temp/screenshots/p33 in the repository). Run it with
  * `MANYTHREADS_HEADER_PICTURES=1 pnpm e2e --project=desktop channels/header-pictures.spec.ts`. One browser takes both sizes, so the phone project is not needed.
  */
@@ -61,7 +61,7 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-async function openLooking(browser: Browser, playwright: PlaywrightWorkerArgs['playwright'], who: Who, path: string, look: (typeof LOOKS)[number], mobile: boolean): Promise<{ page: Page; context: BrowserContext }> {
+async function openLooking(browser: Browser, playwright: PlaywrightWorkerArgs['playwright'], who: Who, path: string, look: (typeof LOOKS)[number], mobile: boolean, width?: number): Promise<{ page: Page; context: BrowserContext }> {
   const api = await apiOn(playwright, stack, who);
   const saved = await api.ctx.put('/api/me/appearance', { data: { theme: look.theme, density: 'comfortable', palette: look.palette }, headers: await api.headers() });
   expect(saved.status(), 'saving the look').toBe(200);
@@ -71,7 +71,7 @@ async function openLooking(browser: Browser, playwright: PlaywrightWorkerArgs['p
   const storageState = { ...state, origins: [...state.origins.filter((o) => o.origin !== stack.origin), { origin: stack.origin, localStorage: [{ name: 'mt.appearance', value }] }] };
   const context = await browser.newContext({
     baseURL: stack.origin,
-    viewport: mobile ? PHONE : DESKTOP,
+    viewport: mobile ? PHONE : width ? { width, height: DESKTOP.height } : DESKTOP,
     storageState,
     colorScheme: look.theme,
     reducedMotion: 'reduce',
@@ -175,6 +175,40 @@ for (const look of LOOKS) {
         for (const c of contexts) await c.close().catch(() => undefined);
         await endLive(nadiaApi);
         await nadiaApi.ctx.dispose();
+      }
+    });
+  }
+}
+
+/** The in-between widths: the header with the Members panel closed and open, and no icon pushed out of the header or onto another. */
+for (const look of LOOKS) {
+  for (const width of [800, 1000, 1100]) {
+    test(`${look.name} header at ${width}`, async ({ browser, playwright }) => {
+      const base = `${OUT}${look.name}-${width}-`;
+      const o = await openLooking(browser, playwright, 'omar', `/t/engineering/c/${LONG}`, look, false, width);
+      try {
+        const members = o.page.getByTestId('members-open');
+        await expect(members).toBeVisible(T);
+        for (const state of ['closed', 'open'] as const) {
+          if (state === 'open') {
+            await members.click();
+            await expect(o.page.getByTestId('members-panel')).toBeVisible(T);
+          }
+          await o.page.waitForTimeout(400);
+          await o.page.screenshot({ path: `${base}header-long-name-${state}.png`, clip: { x: 0, y: 0, width, height: 120 } });
+          const fit = await o.page.evaluate(() => {
+            const head = document.querySelector('header.chead') as HTMLElement;
+            const right = head.getBoundingClientRect().right;
+            const tools = [...head.querySelectorAll<HTMLElement>('.chead-actions > *')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.getBoundingClientRect());
+            const overlaps = tools.some((a, i) => tools.slice(i + 1).some((b) => a.left < b.right - 0.5 && b.left < a.right - 0.5));
+            return { over: head.scrollWidth - head.clientWidth, sideways: head.scrollWidth > head.clientWidth, pastEdge: tools.some((r) => r.right > right + 0.5), overlaps, height: Math.round(head.getBoundingClientRect().height) };
+          });
+          expect(fit, `the header at ${width} with the panel ${state}: ${JSON.stringify(fit)}`).toMatchObject({ sideways: false, pastEdge: false, overlaps: false });
+          // one row: the 52 px of the design (53 with the border); a wrapped header would be taller
+          expect(fit.height, `the header's height at ${width} with the panel ${state}`).toBeLessThanOrEqual(53);
+        }
+      } finally {
+        await o.context.close();
       }
     });
   }

@@ -81,8 +81,13 @@ export async function enterRoom(p: Person): Promise<void> {
   // the icon changes from "start" to "show the message" when the page hears of a live room, so each try looks again at what it is before pressing
   await expect(async () => {
     if ((await dock(p).count()) === 0) {
-      if ((await icon.getAttribute('data-action')) === 'show-message') await p.page.getByTestId('room-card-join').last().click({ timeout: 2_000 });
-      else await icon.click({ timeout: 2_000 });
+      if ((await icon.getAttribute('data-action')) === 'show-message') {
+        // the icon takes the reader to the message that started the room; the card's Join is then on the page (and has the keyboard)
+        await icon.click({ timeout: 2_000 });
+        const join = p.page.getByTestId('room-card-join').last();
+        await join.scrollIntoViewIfNeeded({ timeout: 2_000 });
+        await join.click({ timeout: 2_000 });
+      } else await icon.click({ timeout: 2_000 });
     }
     await expect(dock(p)).toHaveAttribute('data-phase', 'connected', { timeout: 4_000 });
   }).toPass({ timeout: 30_000 });

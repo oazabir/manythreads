@@ -257,8 +257,17 @@ screens.push({
   who: 'NADIA',
   go: async (page) => {
     await page.goto('/t/engineering/c/dev');
-    if (!(await visible(page, 'schedule-open'))) return false;
-    await page.getByTestId('schedule-open').click();
+    if ((page.viewportSize()?.width ?? 1440) > 760) {
+      if (!(await visible(page, 'schedule-open'))) return false;
+      await page.getByTestId('schedule-open').click();
+    }
+    else {
+      // on a phone the Schedule icon is in the channel's details menu (the name button)
+      if (!(await visible(page, 'channel-details-button'))) return false;
+      await page.getByTestId('channel-details-button').click();
+      if (!(await visible(page, 'details-schedule'))) return false;
+      await page.getByTestId('details-schedule').click();
+    }
     return visible(page, 'schedule-dialog');
   },
 });
