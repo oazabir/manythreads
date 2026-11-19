@@ -9,13 +9,20 @@ COPY clients/web/models.lock.json clients/web/models.lock.json
 COPY clients/web/scripts/fetch-models.mjs clients/web/scripts/fetch-models.mjs
 RUN node clients/web/scripts/fetch-models.mjs --out /models
 
+# Only the package manifests (P31-05): the install below depends on them alone, so a source-only change reuses its layer and the build cache
+# does not grow by a whole install on every deploy.
+FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS manifests
+COPY . /src
+RUN find /src -type f ! -name package.json ! -name pnpm-lock.yaml ! -name pnpm-workspace.yaml -delete && find /src -type d -empty -delete
+
 FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS build
 ENV CI=true COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
+COPY --from=manifests /src/ ./
+RUN pnpm install --frozen-lockfile --filter @manythreads/web...
 COPY . .
-RUN pnpm install --frozen-lockfile --filter @manythreads/web... \
-    && pnpm --filter @manythreads/web build
+RUN pnpm --filter @manythreads/web build
 
 FROM nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
 COPY deploy/docker/nginx.conf /etc/nginx/templates/default.conf.template

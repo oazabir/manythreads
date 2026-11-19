@@ -45,6 +45,9 @@ exit 0`);
   stub('k3s', `
 echo "k3s $*" >>"$FAKE_LOG"
 case "$*" in
+  "crictl ps -a -o json") [ -z "\${FAKE_CRICTL_FAIL:-}" ] || exit 1; cat "\${FAKE_PS:-/dev/null}" 2>/dev/null || echo '{"containers":[]}' ;;
+  "crictl images -o json") cat "\${FAKE_K3S_JSON:-/dev/null}" 2>/dev/null || echo '{"images":[]}' ;;
+  "crictl info") echo '{"config":{"sandboxImage":"rancher/mirrored-pause:3.10.2"}}' ;;
   *"images ls -q"*) for i in \${FAKE_K3S_IMAGES:-}; do echo "$i"; done ;;
   *"images import -"*) cat >/dev/null; [ -z "\${FAKE_IMPORT_FAIL:-}" ] || exit 1; echo "unpacking done" ;;
 esac
@@ -81,10 +84,23 @@ function run(args: string[], env: Record<string, string> = {}): { code: number; 
       K3S_CONTAINERD_DIR: join(tmp, 'containerd'),
       DOCKER_DIR: join(tmp, 'dockerdir'),
       DISK_WATCH_SECONDS: '0.1',
+      // the behaviour is tested at fixed limits; the defaults have their own test below
+      DISK_PRUNE_ABOVE: '65',
+      DISK_STOP_ABOVE: '70',
+      DISK_ABORT_IMPORT_AT: '88',
       ...env,
     },
   });
   return { code: res.status ?? -1, out: `${res.stdout}${res.stderr}` };
+}
+
+/** The k3s side: the containers (with the image ids they run) and the images, as crictl prints them in JSON. */
+function k3s(containers: string[], imgs: Array<{ id: string; tags?: string[]; digests?: string[] }>): Record<string, string> {
+  const ps = join(tmp, 'ps.json');
+  const im = join(tmp, 'k3s-images.json');
+  writeFileSync(ps, JSON.stringify({ containers: containers.map((id) => ({ imageRef: id, image: { image: id } })) }));
+  writeFileSync(im, JSON.stringify({ images: imgs.map((i) => ({ id: i.id, repoTags: i.tags ?? [], repoDigests: i.digests ?? [] })) }));
+  return { FAKE_PS: ps, FAKE_K3S_JSON: im };
 }
 
 const SENTENCE = 'free the disk to about 60% before deploying; a deploy peaked at 90% on 2026-11-09 and the node evicted the database';
@@ -99,14 +115,16 @@ describe('disk-guard.sh check', () => {
 
   it('above 65% prunes the build cache, unused docker images and unused k3s images, re-checks, and goes on when it is down', () => {
     images(['manythreads/demo-fakes:old', 'aaa'], ['node:22-slim', 'bbb']);
-    const res = run(['check'], { FAKE_DF_SEQ: '77,58' });
+    const res = run(['check'], { FAKE_DF_SEQ: '77,58', ...k3s([], [{ id: 'sha256:old', tags: ['docker.io/manythreads/web:old'] }]) });
     expect(res.code).toBe(0);
     const c = calls();
-    expect(c).toContain('docker builder prune -af');
+    // the build cache keeps its most recent 5 GB: the dependency layers a source-only deploy reuses (P31-05)
+    expect(c).toContain('docker builder prune -af --keep-storage 5gb');
     expect(c).toContain('docker image prune -f');
     expect(c).toContain('docker rmi manythreads/demo-fakes:old');
     expect(c).toContain('docker rmi node:22-slim');
-    expect(c).toContain('k3s crictl rmi --prune');
+    expect(c).toContain('k3s crictl rmi sha256:old');
+    expect(c).not.toContain('k3s crictl rmi --prune');
     expect(res.out).toMatch(/pruning the build cache/);
     // never a volume, never the blanket prune, never a forced removal
     for (const line of c) {
@@ -125,12 +143,33 @@ describe('disk-guard.sh check', () => {
     expect(rmi).toEqual(['docker rmi old/thing:1']);
   });
 
-  it('skips the k3s prune while an image of this deploy is already in k3s (the prune would delete it)', () => {
+  it('removes k3s images one by one, never one a container runs (by id, also one run by digest only), this deploy\'s, the pause image, platform/* or hermes:stable', () => {
     images();
-    const res = run(['check', '--keep', 'manythreads/server:T1'], { FAKE_DF_SEQ: '77,58', FAKE_K3S_IMAGES: 'docker.io/manythreads/server:T1' });
+    const env = k3s(
+      ['sha256:srv', 'sha256:pg'],
+      [
+        { id: 'sha256:srv', tags: ['docker.io/manythreads/server:LIVE'] },
+        { id: 'sha256:pg', digests: ['registry.local:5000/platform/postgres-cnpg@sha256:bbbc'] },
+        { id: 'sha256:new', tags: ['docker.io/manythreads/server:T1'] },
+        { id: 'sha256:pause', tags: ['docker.io/rancher/mirrored-pause:3.10.2'] },
+        { id: 'sha256:plat', tags: ['registry.local:5000/platform/postgres-cnpg:old'] },
+        { id: 'sha256:herm', tags: ['docker.io/manythreads/hermes:stable'] },
+        { id: 'sha256:stale', tags: ['docker.io/manythreads/server:OLD'] },
+        { id: 'sha256:none' },
+      ],
+    );
+    const res = run(['check', '--keep', 'manythreads/server:T1'], { FAKE_DF_SEQ: '77,58', ...env });
     expect(res.code).toBe(0);
-    expect(calls()).not.toContain('k3s crictl rmi --prune');
-    expect(res.out).toMatch(/k3s image prune skipped: manythreads\/server:T1/);
+    expect(calls().filter((l) => l.startsWith('k3s crictl rmi'))).toEqual(['k3s crictl rmi sha256:stale', 'k3s crictl rmi sha256:none']);
+    expect(res.out).toMatch(/removing unused k3s image docker\.io\/manythreads\/server:OLD/);
+  });
+
+  it('skips the k3s prune when it cannot read what runs', () => {
+    images();
+    const res = run(['check'], { FAKE_DF_SEQ: '77,58', FAKE_CRICTL_FAIL: '1', ...k3s([], [{ id: 'sha256:x', tags: ['a:b'] }]) });
+    expect(res.code).toBe(0);
+    expect(calls().some((l) => l.startsWith('k3s crictl rmi'))).toBe(false);
+    expect(res.out).toMatch(/k3s image prune skipped/);
   });
 
   it('stops above 70% after the clean-up, with the biggest items and the sentence', () => {
@@ -149,9 +188,9 @@ describe('disk-guard.sh check', () => {
 
   it('stops without any cleaning being skipped: the clean-up runs before the stop', () => {
     images();
-    run(['check'], { FAKE_DF_SEQ: '90' });
-    expect(calls()).toContain('docker builder prune -af');
-    expect(calls()).toContain('k3s crictl rmi --prune');
+    run(['check'], { FAKE_DF_SEQ: '90', ...k3s([], [{ id: 'sha256:old', tags: ['x:1'] }]) });
+    expect(calls()).toContain('docker builder prune -af --keep-storage 5gb');
+    expect(calls()).toContain('k3s crictl rmi sha256:old');
   });
 
   it('exactly 70% after the clean-up still goes on (the stop is above 70%)', () => {
@@ -165,6 +204,17 @@ describe('disk-guard.sh check', () => {
     expect(res.code).toBe(0);
     expect(res.out).toMatch(/WARNING: the disk is 84% in use/);
     expect(res.out).toContain('2026-11-09');
+  });
+
+  it('the defaults (owner 2026-11-19): prune above 75%, stop above 90%; 90% still goes on', () => {
+    images();
+    const defaults = { DISK_PRUNE_ABOVE: '', DISK_STOP_ABOVE: '', DISK_ABORT_IMPORT_AT: '' };
+    // (each run its own df sequence: the stand-in keeps it in a state file)
+    const at = (pct: string) => run(['check'], { FAKE_DF_SEQ: pct, FAKE_DF_STATE: join(tmp, `df-${pct}.state`), ...defaults }).code;
+    expect(at('75')).toBe(0);
+    expect(calls()).toEqual([]);
+    expect(at('90')).toBe(0);
+    expect(at('91')).toBe(1);
   });
 
   it('an unknown argument is a usage error', () => {
@@ -212,6 +262,34 @@ describe('deploy.sh wiring', () => {
     expect(text).toMatch(/disk-guard\.sh import "\$img"/);
     expect(text).not.toMatch(/docker save "\$img" \| k3s/);
     expect(text).toMatch(/--keep-docker manythreads\/hermes:stable/);
+  });
+  it('the comments say the guard\'s limits (90% to start, 95% for an import)', () => {
+    const g = readFileSync(guard, 'utf8');
+    expect(g).toMatch(/STOP_ABOVE=\$\{DISK_STOP_ABOVE:-90\}/);
+    expect(g).toMatch(/ABORT_AT=\$\{DISK_ABORT_IMPORT_AT:-95\}/);
+    const devbox = readFileSync(join(root, 'docs/engineering/devbox.md'), 'utf8');
+    for (const doc of [text, devbox]) {
+      expect(doc).not.toMatch(/(stopped|aborts?) (when the disk reaches |at )(88|90)%/);
+    }
+  });
+  it('ci.sh imports through the guard\'s watch too (P31-05)', () => {
+    const ci = readFileSync(join(root, 'tools/devbox/ci.sh'), 'utf8');
+    expect(ci).toMatch(/disk-guard\.sh import "\$img"/);
+    expect(ci).not.toMatch(/docker save "\$img" \| k3s/);
+  });
+  it('the server and web images install from the manifests before the sources arrive, and their context is an allow-list (P31-05)', () => {
+    for (const name of ['server', 'web']) {
+      const df = readFileSync(join(root, `deploy/docker/${name}.Dockerfile`), 'utf8');
+      const install = df.indexOf('pnpm install');
+      expect(df.indexOf('--from=manifests')).toBeGreaterThan(0);
+      expect(df.indexOf('--from=manifests')).toBeLessThan(install);
+      // the whole tree is copied only after the install (the manifests stage copies it to /src, not into the image)
+      expect(df.slice(0, install)).not.toMatch(/COPY (--chown=\S+ )?\. \./);
+      expect(df.slice(install)).toMatch(/COPY (--chown=\S+ )?\. \./);
+      const ignore = readFileSync(join(root, `deploy/docker/${name}.Dockerfile.dockerignore`), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
+      expect(ignore[0]).toBe('*');
+      expect(ignore).not.toContain('!.claude');
+    }
   });
   it('keeps the 10 GB free rule of the big images', () => {
     expect(text.match(/-lt 10 \]/g)?.length).toBe(2);

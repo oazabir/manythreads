@@ -271,7 +271,7 @@ for img in "${IMAGES[@]}"; do
     echo "$img is already in k3s"
   else
     echo "importing $img"
-    # (watched: the import is stopped when the disk reaches 88%, see disk-guard.sh)
+    # (watched: the import is stopped when the disk reaches DISK_ABORT_IMPORT_AT, 95%, see disk-guard.sh)
     bash tools/devbox/disk-guard.sh import "$img" || { echo "ERROR: importing $img into k3s failed or was stopped (see above); nothing was rolled out"; exit 1; }
   fi
   docker rmi "$img" >/dev/null 2>&1 || true

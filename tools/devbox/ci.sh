@@ -89,7 +89,8 @@ docker build -f deploy/docker/web.Dockerfile -t "manythreads/web:$TAG" .
 stage "import the images into k3s"
 for img in "manythreads/server:$TAG" "manythreads/web:$TAG"; do
   echo "importing $img"
-  docker save "$img" | k3s ctr -n k8s.io images import - | tail -n 2
+  # through the disk guard's watch, as deploy.sh does: the import is stopped at DISK_ABORT_IMPORT_AT (95%) instead of filling the disk (P31-05)
+  bash tools/devbox/disk-guard.sh import "$img" || { echo "ERROR: importing $img into k3s failed or was stopped (see above)"; exit 1; }
   # k3s now holds its own copy; deploy.sh (--no-build) finds it there, so Docker's duplicate is dropped (see deploy.sh's import).
   docker rmi "$img" >/dev/null 2>&1 || true
 done

@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 # manythreads server image. Build context = repo root:
 #   docker build -f deploy/docker/server.Dockerfile -t manythreads/server:dev .
+# Only the package manifests: the install below depends on them alone, so its layer is reused until one of them changes.
+FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS manifests
+COPY . /src
+RUN find /src -type f ! -name package.json ! -name pnpm-lock.yaml ! -name pnpm-workspace.yaml -delete && find /src -type d -empty -delete
+
 FROM node:22-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
 ENV NODE_ENV=production CI=true COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
@@ -9,13 +14,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY . .
-# The installer the site serves at /install/ (docs/plans/agents-anywhere.md section 5.2) is built on the host before this image
-# (tools/agent-bridge/install/build.mjs -> packages/plugins/bot-runners/install-dist) and comes in with COPY: building it here pulled the
-# bridge's whole workspace into the image (4.5 GB instead of 1 GB, 2026-11-16). Without it the /install/ routes answer 404.
-RUN pnpm install --frozen-lockfile --prod=false \
-    && chown -R node:node /app
+RUN chown node:node /app
 USER node
+# Two layers (P31-05): the dependencies, installed from the package manifests alone, and then the sources. A source-only change reuses the
+# install layer (Docker and kaniko cache it, k3s already holds it), so a deploy adds megabytes, not the whole image. Installing as `node`
+# replaces the old `chown -R`, which copied the whole tree into a second layer.
+COPY --chown=node:node --from=manifests /src/ ./
+RUN pnpm install --frozen-lockfile --prod=false
+# The installer the site serves at /install/ (docs/plans/agents-anywhere.md section 5.2) is built on the host before this image
+# (tools/agent-bridge/install/build.mjs -> packages/plugins/bot-runners/install-dist) and comes in with this COPY: building it here pulled the
+# bridge's whole workspace into the image (4.5 GB instead of 1 GB, 2026-11-16). Without it the /install/ routes answer 404.
+COPY --chown=node:node . .
 ENV PORT=3000
 EXPOSE 3000
 CMD ["pnpm", "--filter", "@manythreads/server", "start"]

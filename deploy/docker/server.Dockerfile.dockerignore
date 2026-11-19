@@ -1,10 +1,16 @@
-# tools/ excluded: workspace members not needed at runtime (and tools/bench was missing from the lockfile).
+# An allow-list: only what the server runs from goes into the build. The deny-list before it let a developer's .claude, .codegraph, temp and
+# review folders (about 1 GB) into every server image (P31-05, 2026-11-19). tools/ stays out: workspace members not needed at runtime.
 # The installer bundle the site serves at /install/ is built on the host before the image (tools/devbox/deploy.sh runs
 # tools/agent-bridge/install/build.mjs into packages/plugins/bot-runners/install-dist), so it arrives with packages/.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!.nvmrc
+!packages
+!clients
+!avatars
+!templates
 **/node_modules
 **/dist
-.git
-e2e
-docs
-deploy
-tools
