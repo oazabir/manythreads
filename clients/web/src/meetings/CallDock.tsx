@@ -99,6 +99,15 @@ function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
   const ids = { mic: useId(), spk: useId(), def: useId() };
   // End for everyone asks once (P33-03): the button turns into the question
   const [asking, setAsking] = useState(false);
+  const endAll = useRef<HTMLButtonElement>(null);
+  const focusEnd = useRef(false);
+  // Cancel and Esc put the keyboard back on the End for everyone button that asked
+  useEffect(() => {
+    if (!asking && focusEnd.current) {
+      focusEnd.current = false;
+      endAll.current?.focus();
+    }
+  }, [asking]);
   const d = call.devices;
   const tr = call.transcription;
   const offer = engineAvailable() && tr !== null;
@@ -148,9 +157,9 @@ function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
       ) : null}
       {canEnd ? (
         asking ? (
-          <EndRoomConfirm inRoom={call.present.filter((p) => p.leftAt === null).length} onEnd={() => { setAsking(false); void c.endForAll(); }} onCancel={() => setAsking(false)} testId="call-end-confirm" />
+          <EndRoomConfirm inRoom={call.present.filter((p) => p.leftAt === null).length} onEnd={() => { setAsking(false); void c.endForAll(); }} onCancel={() => { focusEnd.current = true; setAsking(false); }} testId="call-end-confirm" />
         ) : (
-          <button type="button" className="btn s call-end-all" onClick={() => setAsking(true)} data-testid="call-end-all">End for everyone</button>
+          <button type="button" ref={endAll} className="btn s call-end-all" onClick={() => setAsking(true)} data-testid="call-end-all">End for everyone</button>
         )
       ) : null}
     </div>

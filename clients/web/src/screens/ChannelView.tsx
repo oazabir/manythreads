@@ -5,7 +5,7 @@ import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { BookmarksBar } from '../channels/BookmarksBar';
 import { Composer, type SendOptions } from '../channels/Composer';
-import { estimateItem, buildListItems, dayAt, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
+import { estimateItem, buildListItems, dayAt, messageKey, messageShown, UNREAD_KEY, type ListItem } from '../channels/listItems';
 import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
 import { lastEditableOwn } from '../channels/messageActions';
 import { usePeople, useTimeline, useTyping } from '../channels/hooks';
@@ -299,7 +299,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   // the voice icon takes the reader to the message that started the room (its card has Join): into view, and marked for a moment
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (flashTimer.current && clearTimeout(flashTimer.current)), []);
-  const messageLoaded = useCallback((id: string) => items.some((i) => i.key === messageKey(id)), [items]);
+  // a message that was deleted has no card to join from: the icon then joins the room itself
+  const messageLoaded = useCallback((id: string) => messageShown(items, id), [items]);
   const showMessage = useCallback((id: string) => {
     api.current?.scrollToKey(messageKey(id));
     setHighlight(id);

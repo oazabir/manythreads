@@ -13,6 +13,9 @@ export type ListItem =
 export const UNREAD_KEY = 'unread';
 export const messageKey = (id: string): string => `m:${id}`;
 
+/** Whether the message is in the list and can show what hangs under it (a card): a message that was deleted is drawn as "deleted" and shows nothing. */
+export const messageShown = (items: readonly ListItem[], id: string): boolean => items.some((i) => i.kind === 'message' && i.key === messageKey(id) && i.message.deletedAt === null);
+
 export function buildListItems(
   messages: readonly ChannelMessage[],
   pending: readonly PendingSend[],

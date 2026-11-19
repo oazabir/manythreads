@@ -37,6 +37,11 @@ export function localInstant(date: string, time: string): Date | null {
   return Number.isNaN(out.getTime()) ? null : out;
 }
 
+/** The plan the header chip shows: the first one that has not started (a plan that has started is the card's business, and must not hide the plans behind it). */
+export function chipPlan<T extends Pick<ScheduledMeeting, 'status'>>(plans: readonly T[]): T | null {
+  return plans.find((m) => m.status !== 'started') ?? null;
+}
+
 /** An ISO time with the zone's offset ("2026-11-09T15:00:00+03:00"), as the server's contract names it. */
 export function isoWithOffset(d: Date): string {
   const off = -d.getTimezoneOffset();

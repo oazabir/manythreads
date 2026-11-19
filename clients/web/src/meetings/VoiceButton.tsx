@@ -3,6 +3,17 @@ import { HeadphonesIcon, PhoneIcon, WaveIcon } from './icons';
 import { voiceIconAction } from './roomCard';
 import { callController, useCall, useLiveRoom } from './store';
 
+/** The card's Join button of this room takes the keyboard once the message has been scrolled into view (the list may draw it a moment later). */
+function focusRoomJoin(meetingId: string): void {
+  const until = Date.now() + 800;
+  const look = (): void => {
+    const btn = document.querySelector<HTMLButtonElement>(`[data-testid="room-card"][data-meeting-id="${CSS.escape(meetingId)}"] [data-testid="room-card-join"]`);
+    if (btn) btn.focus({ preventScroll: true });
+    else if (Date.now() < until) requestAnimationFrame(look);
+  };
+  requestAnimationFrame(look);
+}
+
 /**
  * The voice icon in a channel's header, "Call" in a direct message's (P33-01). One square icon button like its neighbours; the words are its name and tooltip.
  * With no room live it starts one. With a room live in a channel it scrolls to the message that started it, whose card has Join (`messageLoaded` answers whether
@@ -32,6 +43,7 @@ export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { cha
   const press = (): void => {
     if (action === 'show-message' && root !== null) {
       showMessage?.(root);
+      if (live) focusRoomJoin(live.meeting.id);
       return;
     }
     // a live room is joined, not started: a guest may join a room of a channel they are in but may not start one (the server refuses the start with 403)

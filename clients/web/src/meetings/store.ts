@@ -62,7 +62,7 @@ export class LiveRoomsStore {
   private detach: Array<() => void> = [];
   private poll: unknown = null;
   private expiry: unknown = null;
-  private inflight = false;
+  private running: Promise<void> | null = null;
   private again = false;
   private rings: Ring[] = [];
   private readonly addedAt = new Map<string, number>();
@@ -111,12 +111,28 @@ export class LiveRoomsStore {
     this.ringing = false;
   }
 
+  /** Asks the server for the live rooms. A call while one ask is out waits for one more ask that starts after it, so the answer is never older than the call (P33-03: End room waits for it). */
   async refresh(): Promise<void> {
-    if (this.inflight) {
+    if (this.running) {
       this.again = true;
-      return;
+      return this.running;
     }
-    this.inflight = true;
+    this.running = this.refreshLoop();
+    try {
+      await this.running;
+    } finally {
+      this.running = null;
+    }
+  }
+
+  private async refreshLoop(): Promise<void> {
+    do {
+      this.again = false;
+      await this.refreshOnce();
+    } while (this.again);
+  }
+
+  private async refreshOnce(): Promise<void> {
     const startedAt = this.deps.now();
     try {
       const res = await this.deps.fetchLive();
@@ -128,12 +144,6 @@ export class LiveRoomsStore {
     } catch {
       // no meetings plugin (404), a server without the route, or offline: no badges, never an error on screen
       this.publish({ status: this.snap.status === 'ok' ? 'ok' : 'absent' });
-    } finally {
-      this.inflight = false;
-      if (this.again) {
-        this.again = false;
-        void this.refresh();
-      }
     }
   }
 

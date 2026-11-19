@@ -9,7 +9,7 @@ import { actionFailure } from '../../screens/meetings/words';
 import { cancelScheduledMeeting, fetchScheduledMeetings } from '../api';
 import { liveRooms } from '../store';
 import { onScheduledChangedHere } from './changed';
-import { chipText, invitedWords, whenWords } from './model';
+import { chipPlan, chipText, invitedWords, whenWords } from './model';
 
 /**
  * The channel header's planned-room chip (PLAN Bundle D, P16-05, decision D10): when a room is due within 12 hours, a chip with
@@ -19,7 +19,7 @@ import { chipText, invitedWords, whenWords } from './model';
  */
 export function ScheduledChip({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
-  const upcoming = useQuery(`scheduled-upcoming:${channelId}`, () => fetchScheduledMeetings(channelId, { upcoming: '1', limit: 1 }));
+  const upcoming = useQuery(`scheduled-upcoming:${channelId}`, () => fetchScheduledMeetings(channelId, { upcoming: '1', limit: 10 }));
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [busy, setBusy] = useState(false);
@@ -49,8 +49,8 @@ export function ScheduledChip({ channelId }: { channelId: string }) {
 
   if (isMockMode()) return null;
   // a room that has started is the card's business (Join under its start message), not the chip's
-  const first = upcoming.status === 'ok' ? (upcoming.data.scheduledMeetings[0] ?? null) : null;
-  const plan = first !== null && first.status !== 'started' ? first : null;
+  // (the first plan may be one that has started: the chip shows the next one that has not)
+  const plan = upcoming.status === 'ok' ? chipPlan(upcoming.data.scheduledMeetings) : null;
   const mine = plan !== null && plan.organizerId === channelStore.selfActor;
 
   const cancel = async (): Promise<void> => {
