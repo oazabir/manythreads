@@ -21,7 +21,8 @@ export function MembersList({ channelId }: { channelId: string }) {
 
 /**
  * One people icon with the channel's head count in the channel header (P33-01). It opens the Members panel on the right (P33-02) and closes it again when
- * pressed a second time; the button names the count ("Members (6)").
+ * pressed a second time; the button names the count ("Members (6)"). While the count is loading the icon stands without it, and when the count could not be loaded
+ * the icon still opens the panel (which says what went wrong). With one person's page open from the panel, pressing it goes back to the list instead of stacking another.
  */
 export function MembersButton({ channelId }: { channelId: string }) {
   const q = useQuery(`channel-members:${channelId}`, () => fetchChannelMembers(channelId));
@@ -29,23 +30,30 @@ export function MembersButton({ channelId }: { channelId: string }) {
   const reload = q.reload;
   // someone was added in the panel: the count follows at once
   useEffect(() => onMembersChanged((id) => id === channelId && reload()), [channelId, reload]);
-  if (q.status !== 'ok') return null;
-  const count = q.data.members.length;
-  const top = panel.top();
+  const count = q.status === 'ok' ? q.data.members.length : null;
+  const entries = panel.entries;
+  const top = entries.at(-1);
   const open = top?.type === MEMBERS_PANEL && top.id === channelId;
+  const below = entries.at(-2);
+  const onPerson = top?.type === 'member' && below?.type === MEMBERS_PANEL && below.id === channelId;
+  const press = (): void => {
+    if (open) panel.close();
+    else if (onPerson) panel.back();
+    else panel.push({ type: MEMBERS_PANEL, id: channelId });
+  };
   return (
     <button
       type="button"
       className="icon-btn chv-tool chv-members"
-      aria-label={`Members (${count})`}
+      aria-label={count === null ? 'Members' : `Members (${count})`}
       title="Members"
       aria-pressed={open}
       data-testid="members-open"
-      data-count={count}
-      onClick={() => (open ? panel.close() : panel.push({ type: MEMBERS_PANEL, id: channelId }))}
+      {...(count !== null ? { 'data-count': count } : {})}
+      onClick={press}
     >
       <MembersIcon />
-      {count > 0 ? <span className="chv-count" aria-hidden="true">{count}</span> : null}
+      {count !== null && count > 0 ? <span className="chv-count" aria-hidden="true">{count}</span> : null}
     </button>
   );
 }

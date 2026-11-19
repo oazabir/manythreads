@@ -45,6 +45,18 @@ export function canAddMembers(o: { canManage: boolean; guest: boolean; archived:
 }
 
 export const NO_ADD_NOTE = 'A team lead can add people to this channel.';
+export const ARCHIVED_NOTE = 'This channel is archived; people cannot be added.';
+export const ROSTER_FAILED = "Could not load the team's people.";
+
+/** The line under "Not in this channel" when Add is not offered: an archived channel says so, whoever is reading; otherwise it names who may add. */
+export const noAddNote = (archived: boolean): string => (archived ? ARCHIVED_NOTE : NO_ADD_NOTE);
+
+/** Who gets the focus after one person was added: the next one down the list, else the one above; null when the list is now empty. */
+export function nextToFocus(ids: readonly string[], added: string): string | null {
+  const at = ids.indexOf(added);
+  if (at < 0) return null;
+  return ids[at + 1] ?? ids[at - 1] ?? null;
+}
 
 /** The line a screen reader hears after Add. */
 export const addedLine = (name: string, channelName: string): string => `Added ${name} to #${channelName.replace(/^#/, '')}`;

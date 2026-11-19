@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addChannelMember, fetchChannel, fetchChannelMembers, fetchRoster } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { usePeople } from '../channels/hooks';
@@ -6,7 +6,7 @@ import { Avatar } from '../components/ui';
 import { usePanel, type PanelEntry } from '../kernel/panel';
 import { usePanelTitle } from '../kernel/panel/sub';
 import { useShell } from './context';
-import { NO_ADD_NOTE, addedLine, canAddMembers, notifyMembersChanged, splitMembers, type PanelPerson } from './membersModel';
+import { ROSTER_FAILED, addedLine, canAddMembers, nextToFocus, noAddNote, notifyMembersChanged, splitMembers, type PanelPerson } from './membersModel';
 
 /** Why an Add failed, in the person's words. */
 const addFailure = (name: string): string => `Could not add ${name}. Try again.`;
@@ -40,8 +40,22 @@ export function MembersPanel({ entry }: { entry: PanelEntry }) {
   const { inChannel, others } = useMemo(() => splitMembers(memberList, rosterList, filter, self, added), [memberList, rosterList, filter, self, added]);
   const canAdd = info.status === 'ok' && canAddMembers({ canManage: info.data.canManage, guest, archived: info.data.channel.archivedAt !== null });
   const showOthers = !guest && roster.status === 'ok';
+  const rosterFailed = !guest && roster.status === 'error';
+  const archived = info.status === 'ok' && info.data.channel.archivedAt !== null;
+  const box = useRef<HTMLDivElement>(null);
+  // after an Add the row is gone: the keyboard lands on the next Add button, or on the list's heading when no one is left
+  const [focusAfter, setFocusAfter] = useState<{ next: string | null } | null>(null);
+  useEffect(() => {
+    if (!focusAfter) return;
+    const root = box.current;
+    const btn = focusAfter.next ? root?.querySelector<HTMLButtonElement>(`[data-person-id="${CSS.escape(focusAfter.next)}"] .mpn-add`) : null;
+    (btn ?? root?.querySelector<HTMLElement>('#mpn-in'))?.focus();
+    setFocusAfter(null);
+  }, [focusAfter]);
 
   const add = async (p: PanelPerson): Promise<void> => {
+    if (adding !== null) return;
+    const next = nextToFocus(others.map((o) => o.personId), p.personId);
     setAdding(p.personId);
     setProblem(null);
     try {
@@ -49,6 +63,7 @@ export function MembersPanel({ entry }: { entry: PanelEntry }) {
       setAdded((a) => [...a, p]);
       setSaid(addedLine(p.displayName, channelName));
       notifyMembersChanged(channelId);
+      setFocusAfter({ next });
     } catch {
       setProblem(addFailure(p.displayName));
     } finally {
@@ -74,7 +89,7 @@ export function MembersPanel({ entry }: { entry: PanelEntry }) {
         {p.personId === self ? <span className="mpn-you">(you)</span> : null}
       </button>
       {!inside && canAdd ? (
-        <button type="button" className="btn s mpn-add" data-testid="member-add" aria-label={`Add ${p.displayName} to #${channelName}`} disabled={adding !== null} onClick={() => void add(p)}>
+        <button type="button" className="btn s mpn-add" data-testid="member-add" aria-label={`Add ${p.displayName} to #${channelName}`} disabled={adding === p.personId} aria-disabled={adding !== null && adding !== p.personId ? true : undefined} onClick={() => void add(p)}>
           {adding === p.personId ? 'Adding…' : 'Add'}
         </button>
       ) : null}
@@ -82,7 +97,7 @@ export function MembersPanel({ entry }: { entry: PanelEntry }) {
   );
 
   return (
-    <div className="mpn" data-testid="members-panel">
+    <div className="mpn" data-testid="members-panel" ref={box}>
       <input
         type="search"
         className="mpn-filter"
@@ -96,14 +111,21 @@ export function MembersPanel({ entry }: { entry: PanelEntry }) {
       <p className="sr-only" role="status" data-testid="members-said">{said}</p>
       {problem ? <p className="chn-error" role="alert">{problem}</p> : null}
       <section aria-labelledby="mpn-in">
-        <h3 className="mpn-head" id="mpn-in" data-testid="members-in-head">{`In this channel (${inChannel.length})`}</h3>
+        <h3 className="mpn-head" id="mpn-in" tabIndex={-1} data-testid="members-in-head">{`In this channel (${inChannel.length})`}</h3>
         {inChannel.length > 0 ? <ul className="mpn-list" data-testid="members-in">{inChannel.map((p) => row(p, true))}</ul> : <p className="chd-note">{filter.trim() ? 'No one here matches.' : 'No one yet.'}</p>}
       </section>
       {showOthers ? (
         <section aria-labelledby="mpn-out">
           <h3 className="mpn-head" id="mpn-out" data-testid="members-out-head">{`Not in this channel (${others.length})`}</h3>
-          {!canAdd && others.length > 0 ? <p className="chd-note" data-testid="members-no-add">{NO_ADD_NOTE}</p> : null}
+          {!canAdd && others.length > 0 ? <p className="chd-note" data-testid="members-no-add">{noAddNote(archived)}</p> : null}
           {others.length > 0 ? <ul className="mpn-list" data-testid="members-out">{others.map((p) => row(p, false))}</ul> : <p className="chd-note">{filter.trim() ? 'No one here matches.' : 'Everyone on the team is in this channel.'}</p>}
+        </section>
+      ) : null}
+      {rosterFailed ? (
+        <section aria-labelledby="mpn-out">
+          <h3 className="mpn-head" id="mpn-out" data-testid="members-out-head">Not in this channel</h3>
+          <p className="chn-error" role="alert" data-testid="members-roster-failed">{ROSTER_FAILED}</p>
+          <button type="button" className="btn s" data-testid="members-roster-retry" onClick={() => roster.reload()}>Try again</button>
         </section>
       ) : null}
     </div>
