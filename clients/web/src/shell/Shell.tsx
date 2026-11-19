@@ -20,6 +20,7 @@ import { crumbsFor } from './breadcrumb';
 import { ShellContext, type ShellValue } from './context';
 import { useNavCounts } from './counts';
 import { MenuIcon } from './icons';
+import { headerRoom, useElementWidth } from './headerRoom';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { SetupCard } from './SetupCard';
@@ -50,6 +51,9 @@ export function Shell() {
   const [topic, setTopic] = useState<string | null>(null);
   const [titleNode, setTitleNode] = useState<ReactNode>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  // how much room the header has: with a right panel open on a small screen it is tight (styles/channels.css)
+  const [headerEl, setHeaderEl] = useState<HTMLElement | null>(null);
+  const room = headerRoom(useElementWidth(headerEl));
   const [crumbTail, setCrumbTail] = useState<string | null>(null);
   // how many PageHeaders are on screen: while one is, the band shows the trail and the page's own h1 is the title
   const [headers, setHeaders] = useState(0);
@@ -132,7 +136,7 @@ export function Shell() {
         <DndLive />
         <main className="center">
           {inboxOwnsHeader ? null : (
-          <header className="region header chead" data-landmark="header">
+          <header className="region header chead" data-landmark="header" data-room={room} ref={setHeaderEl}>
             <button type="button" className="icon-btn menu-btn" aria-label="Open menu" aria-controls="shell-rail" aria-expanded={drawerOpen} onClick={() => setOpenedAt(loc.pathname + loc.search)}>
               <MenuIcon />
             </button>

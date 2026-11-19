@@ -881,7 +881,7 @@ a.sec:hover {
 
 @media (width <= 760px) {
   .search-box.chs-box {
-    width: min(60vw, 220px);
+    width: min(46vw, 220px);
   }
 }
 
