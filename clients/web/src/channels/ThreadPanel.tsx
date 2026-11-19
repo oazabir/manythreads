@@ -17,7 +17,7 @@ import { useThreadTodo } from '../todo/useThreadTodo';
 import { placeRuns } from './run-card/place';
 import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
-import { ArrowDownIcon, CheckIcon, FilesIcon, SidePanelIcon, ThreadsIcon } from '../shell/icons';
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, FilesIcon, SidePanelIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -93,6 +93,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     if (!next) setSeenUpTo(newestRef.current);
     setStuckState(next);
   }, []);
+  // Scrolled away from the top: the "Jump to top" button shows (owner, 2026-11-19). Set only when it changes, as above.
+  const [awayFromTop, setAwayFromTop] = useState(false);
   const [busy, setBusy] = useState(false);
   // the side rail (P29-20): the to-do timeline and the files, kept open or closed per person in this browser; the full page only
   const railId = useId();
@@ -247,6 +249,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       onScroll={(e) => {
         const el = e.currentTarget;
         setStuck(atBottom(el.scrollHeight - el.scrollTop - el.clientHeight));
+        setAwayFromTop(el.scrollTop > Math.min(240, el.clientHeight / 2));
       }}
     >
       <div className="root">
@@ -303,22 +306,42 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     el.focus({ preventScroll: true });
   };
 
+  const jumpToTop = (): void => {
+    const el = scroller.current;
+    if (!el) return;
+    el.scrollTop = 0;
+    el.focus({ preventScroll: true });
+  };
+
   const kind: 'panel' | 'main' = variant as 'panel' | 'main';
+  // Jump to top and to bottom (owner, 2026-11-19): two small round buttons at the bottom corner, each shown only when it would move the view. The pill in the
+  // middle stays: it counts the new replies.
+  const ends = awayFromTop || !stuck ? (
+    <div className="thread-ends" role="group" aria-label="Move in the thread">
+      {awayFromTop ? (
+        <button type="button" className="thread-end" data-testid="thread-jump-top" aria-label="Jump to the top of the thread" title="Jump to the top" onClick={jumpToTop}>
+          <ArrowUpIcon />
+        </button>
+      ) : null}
+      {!stuck ? (
+        <button type="button" className="thread-end" data-testid="thread-jump-bottom" aria-label="Jump to the bottom of the thread" title="Jump to the bottom" onClick={jumpToLatest}>
+          <ArrowDownIcon />
+        </button>
+      ) : null}
+    </div>
+  ) : null;
   const column = (
     <>
-    {kind === 'panel' ? (
-      <div className="rpb-wrap">
-        {list}
-        {!stuck ? (
-          <button type="button" className="jump thread-jump" data-testid="thread-jump-latest" aria-label={jumpAriaLabel(newCount)} onClick={jumpToLatest}>
-            <ArrowDownIcon />
-            <span>{jumpLabel(newCount)}</span>
-          </button>
-        ) : null}
-      </div>
-    ) : (
-      list
-    )}
+    <div className="rpb-wrap">
+      {list}
+      {kind === 'panel' && !stuck ? (
+        <button type="button" className="jump thread-jump" data-testid="thread-jump-latest" aria-label={jumpAriaLabel(newCount)} onClick={jumpToLatest}>
+          <ArrowDownIcon />
+          <span>{jumpLabel(newCount)}</span>
+        </button>
+      ) : null}
+      {ends}
+    </div>
     {/* the to-do, the run and the question a bot waits on, always in sight above the composer (P29-12) */}
     <ThreadDock rootId={rootId} railOpen={kind === 'main' && railOpen} slug={slug ?? null} people={people} runs={runState.runs} todo={todoState.todo} approvals={approvals.items} reloadApprovals={approvals.reload} />
     {info.status === 'ok' && !canReply ?<p className="read-only">You can read this thread but not reply.</p> : null}
