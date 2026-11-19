@@ -243,7 +243,8 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 29 · The task view in the channel | 23 | 0 | 0 | 0 |
 | 30 · Appearance in the gear menu | 3 | 0 | 0 | 0 |
 | 31 · Deliveries that need no operator | 0 | 0 | 7 | 0 |
-| 32 · Voice messages transcribed on the server | 10 | 0 | 0 | 0 |
+| 32 · Voice messages transcribed on the server | 12 | 0 | 0 | 0 |
+| 33 · A calmer channel header | 10 | 0 | 0 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -900,7 +901,7 @@ The six P26 proofs (PRs #12 to #17) delivered on every agent and placement, but 
 | P31-07 | Message pins: pin and unpin a message, the channel's pinned list, `has:pin` in search (P14-11); separate from P9-09 (export a surface to pages) | Not built |
 
 
-### Phase 32 · Voice messages transcribed on the server (owner, 2026-11-18) — 10 built, live
+### Phase 32 · Voice messages transcribed on the server (owner, 2026-11-18) — 12 built, live
 
 A voice message is recorded in a bar like a phone messaging app and sent at once; the server transcribes the first 20 seconds with Parakeet v3 and the message shows "Transcript · 0:00–0:20" under its player (D13). The design and the independent review's changes are in `docs/plans/voice-messages-server.md`.
 
@@ -916,7 +917,26 @@ A voice message is recorded in a bar like a phone messaging app and sent at once
 | P32-07 | Playwright on Chromium's fake microphone with fake ASR; the three voice specs rewritten, composer baselines refreshed | Built (b32f31b4; voice specs pass on the fake microphone) |
 | P32-08 | Pictures in Graphite dark and Linen light at 1440 and 390 px of the bar and the message states | Built (1adf5039; 24 pictures in temp/screenshots/p32) |
 | P32-09 | Deploy and a live check with the real Parakeet (a real clip, a clip over 20 s, a voice DM to a bot); docs and notices | Built, checked live 2026-11-18 (a 9 s and a 27 s clip transcribed in 2.4 s and 4.0 s; a voice message to a bot covered by router tests only) |
+| P32-10 | Voice messages flat in the list (owner 2026-11-18): no card, one player row, the transcript as the message's own text with a small caption, played dot, grouped like text | Built, live (ef4c21e1, 0f4a5743, 78771cee; deployed eed83972) |
+| P32-11 | Grouping: a message's own POST answer has no `author`, so it did not group under a pushed one until a reload (text too); the pending row continues the run | Built, live (be929c11) |
 
+
+### Phase 33 · A calmer channel header (owner, 2026-11-18) — 10 built, live
+
+The channel header was too busy: one Members icon opens a right-panel list of the channel's members and the team's people who are not in it (Add for a lead or admin); Bot Board, Schedule a room and the voice room are one row of matching icons; the per-channel search is a bar that fills the free space (a magnifier when the header is narrow); the big Join button left the header and the "Started a voice room" message carries a card with Join and, for the starter, End room. No video icon: there are no video calls (Phase 17). Plan and review corrections: `docs/plans/channel-header.md`.
+
+| ID | Task | Status |
+|---|---|---|
+| P33-00 | Plan and independent review | Built (c4238094) |
+| P33-01 | Header layout and icons, search bar | Built, live (24189450) |
+| P33-02 | Members panel with Add | Built, live (8b5196a5) |
+| P33-03 | Voice room card (Join, End room for the starter), End asks once in the dock too | Built, live (8328e2e8) |
+| P33-04 | Search bar (folded into P33-01) | Built, live (24189450) |
+| P33-05 | Unit and e2e tests, baselines, picture tool | Built (53df4476) |
+| P33-06 | Review fixes: focus after Add, roster failure and archived notes, Members icon states | Built, live (c5da0fc8) |
+| P33-07 | Review fixes: End waits for the refresh, deleted start message joins directly, reactive starter check, the planned-room chip skips a started plan | Built, live (efce1923) |
+| P33-08 | Review fixes: the header measures its own width (bar, icons, tight) so it fits with a panel open | Built, live (2f4665df) |
+| P33-09 | Tests and pictures for the fixes; deploy dacd7eab and a live check as Omar (header, Members panel Add in a scratch channel, start, card, End, archive) | Built, checked live 2026-11-19 |
 ---
 
 # Phase 1 · Foundations
