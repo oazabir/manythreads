@@ -152,6 +152,22 @@ describe('channel store', () => {
     expect(store.get(channelKey(CH)).items.map((m) => m.id)).toEqual([msg(1).id, incoming.id]);
   });
 
+  it('the answer to our own POST (no author) and a push of the same message complete each other: the author is kept either way (P32-11)', async () => {
+    serve(() => ({ status: 200, body: { items: [], nextCursor: null } }));
+    await store.loadChannel(CH);
+    const author = { actorId: ME, kind: 'person', displayName: 'Me' } as NonNullable<ChannelMessage['author']>;
+    const bare = msg(2, { authorId: ME as ChannelMessage['authorId'] });
+    const full = { ...bare, author } as ChannelMessage;
+    // the answer first, then the push
+    store.applyPosted(bare);
+    store.applyPosted(full);
+    expect(store.get(channelKey(CH)).items[0]?.author).toEqual(author);
+    // the push first, then the answer: the author stays
+    store.applyPosted(msg(3, { authorId: ME as ChannelMessage['authorId'], author }));
+    store.applyPosted(msg(3, { authorId: ME as ChannelMessage['authorId'] }));
+    expect(store.get(channelKey(CH)).items[1]?.author).toEqual(author);
+  });
+
   it('optimistic send: shown at once, replaced by the real message; a failure stays as "failed" until retried', async () => {
     serve((req) => {
       if (req.method === 'GET') return { status: 200, body: { items: [], nextCursor: null } };

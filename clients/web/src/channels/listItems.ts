@@ -1,6 +1,6 @@
 import type { ChannelMessage } from '@manythreads/shared';
 import { dayKey, dayLabel, estimateMessageHeight } from './format';
-import { continuesRun } from './runs';
+import { continuesRun, pendingContinues } from './runs';
 import { firstUnreadIndex, type PendingSend } from './timeline';
 
 /** What the message list draws, top to bottom: day dividers, one unread divider, messages, then messages still being sent. */
@@ -8,7 +8,7 @@ export type ListItem =
   | { kind: 'day'; key: string; label: string }
   | { kind: 'unread'; key: 'unread' }
   | { kind: 'message'; key: string; message: ChannelMessage; /** Continues the run of the message above: no avatar, no name (P21-01). */ continued: boolean }
-  | { kind: 'pending'; key: string; pending: PendingSend };
+  | { kind: 'pending'; key: string; pending: PendingSend; /** Continues the run of the row above (P32-11). */ continued: boolean };
 
 export const UNREAD_KEY = 'unread';
 export const messageKey = (id: string): string => `m:${id}`;
@@ -36,7 +36,11 @@ export function buildListItems(
     }
     out.push({ kind: 'message', key: messageKey(m.id), message: m, continued: !broken && continuesRun(messages[i - 1], m) });
   });
-  for (const p of pending) out.push({ kind: 'pending', key: `p:${p.localId}`, pending: p });
+  let above: ChannelMessage | PendingSend | undefined = messages.at(-1);
+  for (const p of pending) {
+    out.push({ kind: 'pending', key: `p:${p.localId}`, pending: p, continued: pendingContinues(above, opts.selfActor, p.createdAt) });
+    above = p;
+  }
   return out;
 }
 

@@ -235,7 +235,7 @@ export class ChannelStore {
         ...t,
         // already held (the push and the answer to our own POST both arrive): keep its reactions and counts, take the text
         items: t.items.some((m) => m.id === message.id)
-          ? patchMessage(t.items, message.id, (m) => (m.meta.voice && message.meta.voice && isNewerVoice(m.meta.voice, message.meta.voice) ? m : { ...m, body: message.body, bodyPlain: message.bodyPlain, editedAt: message.editedAt }))
+          ? patchMessage(t.items, message.id, (m) => (m.meta.voice && message.meta.voice && isNewerVoice(m.meta.voice, message.meta.voice) ? { ...m, author: m.author ?? message.author } : { ...m, author: m.author ?? message.author, body: message.body, bodyPlain: message.bodyPlain, editedAt: message.editedAt }))
           : mergeItems(t.items, [message]),
         pending: t.pending.filter((x) => x.localId !== localId && !(mine && x.status === 'sending' && (x.clip ? x.voice !== undefined && x.voice.fileId === message.meta.voice?.fileId : x.body === message.body))),
       }));

@@ -274,6 +274,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             <PendingRow
               pending={item.pending}
               name={pendingName}
+              continued={item.continued}
               onRetry={(confirm) => void channelStore.retry(channelId, null, item.pending.localId, confirm === true)}
               onDiscard={() => channelStore.discard(channelId, null, item.pending.localId)}
             />

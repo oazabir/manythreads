@@ -500,17 +500,17 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
 });
 
 /** A message this tab is sending, or that failed: shown in its place with "Not sent · Retry". */
-export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: PendingSend; name: string; onRetry: (confirmBroadcast?: boolean) => void; onDiscard: () => void }) {
+export function PendingRow({ pending, name, continued = false, onRetry, onDiscard }: { pending: PendingSend; name: string; /** It continues the run above (same author, within the window): no name or picture, as the delivered message will draw it (P32-11). */ continued?: boolean; onRetry: (confirmBroadcast?: boolean) => void; onDiscard: () => void }) {
   const failed = pending.status === 'failed';
   const attached = splitAttachments(pending.attachments);
   // the text of an unsent message is lost with it: Discard asks first
   const [sure, setSure] = useState(false);
   const me = usePeople().me;
   return (
-    <div className={`msg pending ${failed ? 'failed' : ''}`} data-testid="pending-message" data-status={pending.status}>
-      <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />
+    <div className={`msg pending ${failed ? 'failed' : ''} ${continued ? 'run' : ''}`} data-testid="pending-message" data-status={pending.status}>
+      {continued ? <time className="run-time" dateTime={pending.createdAt} data-vt-mask>{clock(pending.createdAt)}</time> : <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />}
       <div className="msg-main">
-        <AuthorLine name={name} createdAt={pending.createdAt} />
+        <AuthorLine name={name} createdAt={pending.createdAt} continued={continued} />
         {pending.clip ? <PendingVoice durationMs={pending.clip.durationMs} peaks={pending.clip.peaks} /> : <div className="txt"><Markdown source={pending.body} /></div>}
         {/* the clip's own file is in the attachments once uploaded: the voice row stands for it, no file card under it */}
         {pending.clip ? null : <MessageImages files={attached.images} />}

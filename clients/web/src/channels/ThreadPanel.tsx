@@ -21,7 +21,7 @@ import { ArrowDownIcon, CheckIcon, FilesIcon, SidePanelIcon, ThreadsIcon } from 
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
-import { continuesRun } from './runs';
+import { continuesRun, pendingContinues } from './runs';
 import { setOpenThreadRoot } from '../taskview/openRoot';
 import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
 import { lastEditableOwn } from './messageActions';
@@ -281,11 +281,12 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       ))}
       <ThreadApprovals items={approvals.items} reload={approvals.reload} slug={slug ?? null} hide={hideAsked} />
       {waiting && placed.live.length === 0 ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
-      {tl.pending.map((p) => (
+      {tl.pending.map((p, i) => (
         <PendingRow
           key={p.localId}
           pending={p}
           name={people.me?.name ?? 'You'}
+          continued={pendingContinues(i === 0 ? tl.items.at(-1) : tl.pending[i - 1], self, p.createdAt)}
           onRetry={(confirm) => void channelStore.retry(channelId, rootId, p.localId, confirm === true)}
           onDiscard={() => channelStore.discard(channelId, rootId, p.localId)}
         />

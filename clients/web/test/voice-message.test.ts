@@ -232,6 +232,19 @@ describe('a voice message still being sent', () => {
     expect(q('voice-writing')).toBeNull();
   });
 
+  it('a sending row that continues the run has no name or picture, as the delivered message will (P32-11)', async () => {
+    await act(async () => {
+      root.render(createElement(PendingRow, { pending, name: 'Nadia', continued: true, onRetry: vi.fn(), onDiscard: vi.fn() }));
+    });
+    expect(host.querySelector('.msg')?.classList.contains('run')).toBe(true);
+    expect(host.querySelector('.msg > .av, .msg > .av-wrap')).toBeNull();
+    expect(host.querySelector('.who b:not(.sr-only)')).toBeNull();
+    expect(q('voice-pending')).not.toBeNull();
+    await drawPending(pending);
+    expect(host.querySelector('.msg')?.classList.contains('run')).toBe(false);
+    expect(host.querySelector('.who b')).not.toBeNull();
+  });
+
   it('draws no picture or file card under the voice row, whatever is attached to it', async () => {
     const withFile = { ...pending, attachments: [{ id: FILE, name: 'voice.webm', size: 40, mime: 'audio/webm' }, { id: uuid(501), name: 'shot.png', size: 9, mime: 'image/png' }] };
     await drawPending(withFile as unknown as typeof pending);
