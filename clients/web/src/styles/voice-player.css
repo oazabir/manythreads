@@ -22,6 +22,7 @@
 }
 
 .vp-play {
+  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -40,8 +41,20 @@
   opacity: 0.88;
 }
 
+/* the clip is being fetched on the first press: a dimmed button with a ring turning round it (a still ring under reduced motion) */
 .vp-play[aria-busy="true"] {
   opacity: 0.7;
+}
+
+.vp-play[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid transparent;
+  border-top-color: var(--human);
+  border-radius: var(--radius-pill);
+  animation: vt-turn 0.9s linear infinite;
+  pointer-events: none;
 }
 
 /* the waveform takes the rest of the row, up to a sensible width */
@@ -83,13 +96,20 @@
   pointer-events: none;
 }
 
-.vp-time {
+/* the length and the played dot stay together */
+.vp-clock {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.vp-time {
   min-width: 3.2em;
   color: var(--mute);
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* "played": a small dot after the length, filled until this reader plays the message, an empty ring after (the shape differs, not only the colour) */
@@ -97,7 +117,6 @@
   flex: none;
   width: 8px;
   height: 8px;
-  margin-left: -4px;
   border-radius: var(--radius-pill);
   background: var(--ok);
 }
@@ -204,6 +223,11 @@
     background: var(--mute);
     animation: none;
   }
+
+  .vp-play[aria-busy="true"]::after {
+    border-color: var(--human);
+    animation: none;
+  }
 }
 
 /* a voice message still on this device: nothing plays yet */
@@ -259,9 +283,8 @@
     min-height: 44px;
   }
 
-  /* the finger-sized button sits in a line of small text: its extra height overlaps the lines around it instead of opening a gap */
+  /* the finger-sized button sits in the line of small text: that line is as tall as the button, so nothing overlaps its neighbours (the error line under it keeps its own space) */
   .vt-retry {
-    margin-block: -14px;
     vertical-align: middle;
   }
 

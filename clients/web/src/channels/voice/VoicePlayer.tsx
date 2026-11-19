@@ -102,11 +102,13 @@ export function VoicePlayer({ voice, who, messageId }: { voice: VoiceMeta; who?:
         ))}
         <span className="vp-dot" aria-hidden="true" style={{ left: `${(fraction * 100).toFixed(2)}%` }} data-testid="voice-dot" />
       </div>
-      <span className="vp-time" aria-hidden="true" data-testid="voice-time">
-        {formatClock(started ? p.positionMs : voice.durationMs)}
+      {/* the length and, after it, a small dot that is filled until this reader has played the message and an empty ring after: one unit, so a wrap never splits them */}
+      <span className="vp-clock">
+        <span className="vp-time" aria-hidden="true" data-testid="voice-time">
+          {formatClock(started ? p.positionMs : voice.durationMs)}
+        </span>
+        <span className={`vp-heard ${heard ? 'heard' : ''}`} role="img" aria-label={heard ? 'played' : 'not played yet'} data-testid="voice-badge" />
       </span>
-      {/* a small dot after the length: filled until this reader has played the message, an empty ring after */}
-      <span className={`vp-heard ${heard ? 'heard' : ''}`} role="img" aria-label={heard ? 'played' : 'not played yet'} data-testid="voice-badge" />
       <button type="button" className="vp-speed" aria-label={speedAria(p.speed)} onClick={p.cycleSpeed} data-testid="voice-speed">
         {speedLabel(p.speed)}
       </button>
