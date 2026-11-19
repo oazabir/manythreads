@@ -118,8 +118,8 @@ describe('disk-guard.sh check', () => {
     const res = run(['check'], { FAKE_DF_SEQ: '77,58', ...k3s([], [{ id: 'sha256:old', tags: ['docker.io/manythreads/web:old'] }]) });
     expect(res.code).toBe(0);
     const c = calls();
-    // the build cache keeps its most recent 5 GB: the dependency layers a source-only deploy reuses (P31-05)
-    expect(c).toContain('docker builder prune -af --keep-storage 5gb');
+    // the build cache keeps its most recent 8 GB: the dependency layers a source-only deploy reuses (P31-05)
+    expect(c).toContain('docker builder prune -af --keep-storage 8gb');
     expect(c).toContain('docker image prune -f');
     expect(c).toContain('docker rmi manythreads/demo-fakes:old');
     expect(c).toContain('docker rmi node:22-slim');
@@ -189,7 +189,7 @@ describe('disk-guard.sh check', () => {
   it('stops without any cleaning being skipped: the clean-up runs before the stop', () => {
     images();
     run(['check'], { FAKE_DF_SEQ: '90', ...k3s([], [{ id: 'sha256:old', tags: ['x:1'] }]) });
-    expect(calls()).toContain('docker builder prune -af --keep-storage 5gb');
+    expect(calls()).toContain('docker builder prune -af --keep-storage 8gb');
     expect(calls()).toContain('k3s crictl rmi sha256:old');
   });
 
@@ -271,6 +271,10 @@ describe('deploy.sh wiring', () => {
     for (const doc of [text, devbox]) {
       expect(doc).not.toMatch(/(stopped|aborts?) (when the disk reaches |at )(88|90)%/);
     }
+  });
+  it('the build cache deploy.sh leaves behind is the one the guard keeps, so the next deploy reuses the install layers (P31-05)', () => {
+    expect(text).toMatch(/docker builder prune -af --keep-storage "\$\{DISK_KEEP_BUILD_CACHE:-8gb\}"/);
+    expect(text).not.toMatch(/--keep-storage 3gb/);
   });
   it('ci.sh imports through the guard\'s watch too (P31-05)', () => {
     const ci = readFileSync(join(root, 'tools/devbox/ci.sh'), 'utf8');

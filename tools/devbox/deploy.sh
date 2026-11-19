@@ -304,9 +304,10 @@ k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench|cl
   echo "$USED" | grep -qx "$short" && continue
   k3s ctr -n k8s.io images rm "$ref" || true
 done
-# 3 GB of build cache: at 8 GB the cache, the image copies and a bot's build in a team pod filled the disk again on 2026-10-25, and the
-# clean-up that followed deleted the database image (see the postgres note in values.yaml).
-docker builder prune -f --keep-storage 3gb >/dev/null 2>&1 || true
+# 8 GB of build cache (DISK_KEEP_BUILD_CACHE, as disk-guard.sh keeps): the dependency install layers of the server and web images live there, and the next
+# source-only deploy reuses them (P31-05; at 3 GB they were pruned here and every deploy installed again; about 3.8 GB of it are base layers Docker cannot reclaim, so 5 GB was not enough). At 8 GB the cache, the image copies and a
+# bot's build in a team pod filled the disk on 2026-10-25, and the clean-up that followed deleted the database image (see the postgres note in values.yaml).
+docker builder prune -af --keep-storage "${DISK_KEEP_BUILD_CACHE:-8gb}" >/dev/null 2>&1 || true
 
 # --- HTTPS: decide the effective tls settings (flags win; otherwise whatever the release has now, so a plain redeploy keeps the mode)
 # "No release yet" is a normal first install; a FAILED read of an existing release must stop the deploy, or a plain redeploy could flip the mode.

@@ -20,7 +20,7 @@ Where code is built, tested and deployed, and the machine facts that break a pip
   `pgrep -fx 'bash tools/devbox/ci.sh.*'` (a plain `pgrep -f tools/devbox/ci.sh` matches its own shell). Overlapping runs fail CI.
 - **Disk is the devbox's tightest resource (96 GB).** Without the kubelet settings in `/etc/rancher/k3s/config.yaml` (eviction at 95%), at ~90% the kubelet evicts the live database and the team pods and deletes
   images; deploys drop Docker's copies of images k3s holds. After a deploy check `kubectl get pods -n manythreads-bots`, not only `/readyz`.
-  `deploy.sh` runs `tools/devbox/disk-guard.sh` first: above 75% it prunes the Docker build cache down to its most recent 5 GB (`DISK_KEEP_BUILD_CACHE`: the dependency layers a source-only deploy reuses, P31-05), Docker images no container uses and
+  `deploy.sh` runs `tools/devbox/disk-guard.sh` first: above 75% it prunes the Docker build cache down to its most recent 8 GB (`DISK_KEEP_BUILD_CACHE`: the dependency layers a source-only deploy reuses, P31-05), Docker images no container uses and
   k3s images no pod uses (never volumes); above 90% after that it stops, and an image import is stopped at 95% (owner 2026-11-19) (free the disk to about 70%; `DEPLOY_ALLOW_HIGH_DISK=1`
   overrides). Its image import is watched and stops at 95% (`DISK_ABORT_IMPORT_AT`, owner 2026-11-19; on 2026-11-16 the owner said deploys may use the disk up to 90%; `/etc/rancher/k3s/config.yaml` moves the kubelet's eviction and image clean-up to 95%, so 90% no longer evicts Postgres). On 2026-11-09 a deploy peaked at 90%, the node evicted Postgres, and the
   new server (now waiting up to `MANYTHREADS_DB_CONNECT_TIMEOUT_SECONDS`=120 s for the database) crashed on its first connection.

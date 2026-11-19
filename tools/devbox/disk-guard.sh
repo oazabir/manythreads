@@ -3,8 +3,8 @@
 #
 #   disk-guard.sh check [--keep REF]... [--keep-docker REF]...
 #       Prints the disk use of /. Above DISK_PRUNE_ABOVE (75 %) it first prunes what is safe and can be made again:
-#         docker builder prune -af --keep-storage DISK_KEEP_BUILD_CACHE (5gb)
-#                                            (the build cache down to the most recently used 5 GB: the dependency install layers of the server and web
+#         docker builder prune -af --keep-storage DISK_KEEP_BUILD_CACHE (8gb)
+#                                            (the build cache down to the most recently used 8 GB (about 3.8 GB of it are base layers Docker cannot reclaim): the dependency install layers of the server and web
 #                                             images live there, and a source-only deploy reuses them (P31-05); a full wipe made every deploy a full build)
 #         unused docker images               (never an image a container uses, running or stopped; never a --keep / --keep-docker one)
 #         unused k3s images, one by one      (never an image a container uses, running or stopped (matched by image id, so an image run by digest
@@ -16,7 +16,7 @@
 #       `docker save IMAGE | k3s ctr images import -` with a watch: when the disk use of / reaches DISK_ABORT_IMPORT_AT (95 %, owner 2026-11-19; the kubelet evicts from 95 %) the import
 #       is stopped, df is printed and the exit status is 3. (A deploy peaked at 90 % on 2026-11-09 and the kubelet evicted the database.)
 #
-# Knobs (environment): DISK_PRUNE_ABOVE=75 DISK_STOP_ABOVE=90 DISK_ABORT_IMPORT_AT=95 DISK_KEEP_BUILD_CACHE=5gb DISK_WATCH_SECONDS=2 DEPLOY_ALLOW_HIGH_DISK=0
+# Knobs (environment): DISK_PRUNE_ABOVE=75 DISK_STOP_ABOVE=90 DISK_ABORT_IMPORT_AT=95 DISK_KEEP_BUILD_CACHE=8gb DISK_WATCH_SECONDS=2 DEPLOY_ALLOW_HIGH_DISK=0
 #                      K3S_CONTAINERD_DIR=/var/lib/rancher/k3s/agent/containerd DOCKER_DIR=/var/lib/docker
 set -uo pipefail
 
@@ -24,7 +24,7 @@ PRUNE_ABOVE=${DISK_PRUNE_ABOVE:-75}
 STOP_ABOVE=${DISK_STOP_ABOVE:-90}
 ABORT_AT=${DISK_ABORT_IMPORT_AT:-95}
 WATCH_SECONDS=${DISK_WATCH_SECONDS:-2}
-KEEP_BUILD_CACHE=${DISK_KEEP_BUILD_CACHE:-5gb}
+KEEP_BUILD_CACHE=${DISK_KEEP_BUILD_CACHE:-8gb}
 K3S_DIR=${K3S_CONTAINERD_DIR:-/var/lib/rancher/k3s/agent/containerd}
 DOCKER_DIR=${DOCKER_DIR:-/var/lib/docker}
 
