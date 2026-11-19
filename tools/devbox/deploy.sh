@@ -97,8 +97,8 @@ if [ -z "${TAG:-}" ]; then
 fi
 echo "deploying $(git rev-parse HEAD) as tag $TAG"
 
-# The disk guard (tools/devbox/disk-guard.sh): prints the disk use; above 65% it prunes what is safe and can be made again (build cache, unused
-# docker images, unused k3s images; never volumes, never an image a pod or container uses); above 70% it stops with what to clean, unless
+# The disk guard (tools/devbox/disk-guard.sh): prints the disk use; above 75% it prunes what is safe and can be made again (build cache, unused
+# docker images, unused k3s images; never volumes, never an image a pod or container uses); above 90% it stops with what to clean (an import is stopped at 95%; owner 2026-11-19), unless
 # DEPLOY_ALLOW_HIGH_DISK=1. A deploy peaked at 90% on 2026-11-09 and the kubelet evicted the database. The images of THIS deploy and the Hermes
 # base image (hours to rebuild) are never pruned.
 # Pod images Docker already holds (built by an earlier deploy that stopped before its import) are kept: building them again costs 10 minutes and the disk

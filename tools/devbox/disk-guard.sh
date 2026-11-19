@@ -8,18 +8,18 @@
 #         k3s crictl rmi --prune             (images no container uses; skipped while a --keep image is already in k3s and not yet in use,
 #                                             because the prune would delete the very image this deploy is about to roll out)
 #       It never touches volumes, never `docker system prune`, never a running pod's image. Then it looks again: above
-#       DISK_STOP_ABOVE (80 %) it STOPS (exit 1) with the biggest items to clean, unless DEPLOY_ALLOW_HIGH_DISK=1 (a loud warning, then on).
+#       DISK_STOP_ABOVE (90 %, owner 2026-11-19) it STOPS (exit 1) with the biggest items to clean, unless DEPLOY_ALLOW_HIGH_DISK=1 (a loud warning, then on).
 #   disk-guard.sh import IMAGE
-#       `docker save IMAGE | k3s ctr images import -` with a watch: when the disk use of / reaches DISK_ABORT_IMPORT_AT (90 %) the import
+#       `docker save IMAGE | k3s ctr images import -` with a watch: when the disk use of / reaches DISK_ABORT_IMPORT_AT (95 %, owner 2026-11-19; the kubelet evicts from 95 %) the import
 #       is stopped, df is printed and the exit status is 3. (A deploy peaked at 90 % on 2026-11-09 and the kubelet evicted the database.)
 #
-# Knobs (environment): DISK_PRUNE_ABOVE=75 DISK_STOP_ABOVE=80 DISK_ABORT_IMPORT_AT=90 DISK_WATCH_SECONDS=2 DEPLOY_ALLOW_HIGH_DISK=0
+# Knobs (environment): DISK_PRUNE_ABOVE=75 DISK_STOP_ABOVE=90 DISK_ABORT_IMPORT_AT=95 DISK_WATCH_SECONDS=2 DEPLOY_ALLOW_HIGH_DISK=0
 #                      K3S_CONTAINERD_DIR=/var/lib/rancher/k3s/agent/containerd DOCKER_DIR=/var/lib/docker
 set -uo pipefail
 
 PRUNE_ABOVE=${DISK_PRUNE_ABOVE:-75}
-STOP_ABOVE=${DISK_STOP_ABOVE:-80}
-ABORT_AT=${DISK_ABORT_IMPORT_AT:-90}
+STOP_ABOVE=${DISK_STOP_ABOVE:-90}
+ABORT_AT=${DISK_ABORT_IMPORT_AT:-95}
 WATCH_SECONDS=${DISK_WATCH_SECONDS:-2}
 K3S_DIR=${K3S_CONTAINERD_DIR:-/var/lib/rancher/k3s/agent/containerd}
 DOCKER_DIR=${DOCKER_DIR:-/var/lib/docker}
