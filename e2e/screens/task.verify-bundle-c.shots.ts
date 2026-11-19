@@ -209,9 +209,10 @@ async function startCall(p: Opened, channelName: string): Promise<string> {
 }
 async function joinCall(p: Opened, channelName: string): Promise<void> {
   await p.page.goto(`/t/engineering/c/${channelName}`);
-  const btn = p.page.getByTestId('call-start');
-  await expect(btn).toBeVisible(T);
-  await btn.click();
+  // a live room is joined from the card under its start message (the icon only scrolls to it)
+  const card = p.page.getByTestId('room-card-join').last();
+  await expect(card).toBeVisible(T);
+  await card.click();
 }
 /** Answers the consent question when it is shown. */
 async function answerConsent(page: Page, yes: boolean): Promise<boolean> {
@@ -408,8 +409,10 @@ test('03 end the call: transcript in the repository, the Scribe notes, memory, t
   try {
     // Nadia ends it for everyone from her own page
     const endBtn = nadia.page.getByTestId('call-end-all');
-    if (await endBtn.isVisible().catch(() => false)) await endBtn.click();
-    else await api(nadia.ctx, 'POST', `/api/meetings/${room.meetingId}/end`);
+    if (await endBtn.isVisible().catch(() => false)) {
+      await endBtn.click();
+      await nadia.page.getByTestId('call-end-confirm-yes').click();
+    } else await api(nadia.ctx, 'POST', `/api/meetings/${room.meetingId}/end`);
     const ended = await poll(async () => ((await overview(omar, room.meetingId))?.meeting?.state === 'ended' ? true : null), 40_000, 2000);
     if (!ended) await api(nadia.ctx, 'POST', `/api/meetings/${room.meetingId}/end`);
     // the transcript file, in the Engineering repository

@@ -1,0 +1,181 @@
+import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { expect, test, type Browser, type BrowserContext, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
+import type { Stack } from '../fixtures/stack.ts';
+import { apiOn, channelsOf, DESKTOP, PHONE, type StackApi } from '../support/stack-browser.ts';
+import { meetingsStack, type Who } from '../meetings/support.ts';
+
+/**
+ * The pictures of P33-05: the channel header with and without a live voice room, the room card (live; as its starter; when the reader is in the room), the Members panel
+ * as a lead and as a member, the End confirm, and a 44-character channel name, in Graphite dark and Linen light, at 1440 and 390 px. A tool, not a check: it is skipped
+ * unless MANYTHREADS_HEADER_PICTURES=1, and it writes the PNGs to MANYTHREADS_HEADER_PICTURES_DIR (default temp/screenshots/p33 in the repository). Run it with
+ * `MANYTHREADS_HEADER_PICTURES=1 pnpm e2e --project=desktop channels/header-pictures.spec.ts`. One browser takes both sizes, so the phone project is not needed.
+ */
+test.skip(!process.env['MANYTHREADS_HEADER_PICTURES'], 'a picture tool, run on purpose');
+test.skip(({ isMobile }) => isMobile, 'takes its own sizes');
+test.describe.configure({ mode: 'serial' });
+test.use({ actionTimeout: 10_000 });
+
+const OUT = process.env['MANYTHREADS_HEADER_PICTURES_DIR'] ?? fileURLToPath(new URL('../../temp/screenshots/p33/', import.meta.url));
+const LOOKS = [
+  { name: 'graphite-dark', theme: 'dark', palette: 'graphite' },
+  { name: 'linen-light', theme: 'light', palette: 'linen' },
+] as const;
+const SIZES = [
+  { name: '1440', mobile: false },
+  { name: '390', mobile: true },
+] as const;
+const LONG = 'hdr-' + 'x'.repeat(40);
+const T = { timeout: 15_000 };
+
+/** The header's strip at twice the size, so the icons can be judged (the page pictures are 1x). */
+async function strip(page: Page, path: string): Promise<void> {
+  const h = page.locator('[data-landmark="header"]');
+  const box = (await h.boundingBox())!;
+  const cdp = await page.context().newCDPSession(page);
+  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { x: Math.max(0, box.x + box.width - 460), y: box.y, width: Math.min(460, box.width), height: box.height, scale: 2 } });
+  await cdp.detach();
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(path, Buffer.from(data, 'base64'));
+}
+
+let stack: Stack;
+let dev = '';
+let longId = '';
+const SMALL = 'p33-small';
+test.beforeAll(async ({ playwright }) => {
+  mkdirSync(OUT, { recursive: true });
+  stack = await meetingsStack('content');
+  const omar = await apiOn(playwright, stack, 'omar');
+  dev = (await channelsOf(omar))['dev']!;
+  longId = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: LONG })).channel.id;
+  // a small channel, so the Members panel has team members outside it to show (everyone is in #dev)
+  const small = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: SMALL })).channel.id;
+  expect(await omar.post(`/api/channels/${small}/join`)).toEqual({ joined: true });
+  const rafiApi = await apiOn(playwright, stack, 'rafi');
+  expect(await rafiApi.post(`/api/channels/${small}/join`)).toEqual({ joined: true });
+  await rafiApi.ctx.dispose();
+  await omar.ctx.dispose();
+});
+test.afterAll(async () => {
+  await stack?.stop();
+});
+
+async function openLooking(browser: Browser, playwright: PlaywrightWorkerArgs['playwright'], who: Who, path: string, look: (typeof LOOKS)[number], mobile: boolean): Promise<{ page: Page; context: BrowserContext }> {
+  const api = await apiOn(playwright, stack, who);
+  const saved = await api.ctx.put('/api/me/appearance', { data: { theme: look.theme, density: 'comfortable', palette: look.palette }, headers: await api.headers() });
+  expect(saved.status(), 'saving the look').toBe(200);
+  const state = await api.ctx.storageState();
+  await api.ctx.dispose();
+  const value = JSON.stringify({ theme: look.theme, density: 'comfortable', palette: look.palette });
+  const storageState = { ...state, origins: [...state.origins.filter((o) => o.origin !== stack.origin), { origin: stack.origin, localStorage: [{ name: 'mt.appearance', value }] }] };
+  const context = await browser.newContext({
+    baseURL: stack.origin,
+    viewport: mobile ? PHONE : DESKTOP,
+    storageState,
+    colorScheme: look.theme,
+    reducedMotion: 'reduce',
+    permissions: ['microphone'],
+    ...(mobile ? { isMobile: true, hasTouch: true } : {}),
+  });
+  const page = await context.newPage();
+  await page.goto(path);
+  return { page, context };
+}
+
+async function endLive(api: StackApi): Promise<void> {
+  const rooms = await api.get<{ meetings: Array<{ meeting: { id: string; channelId: string } }> }>('/api/meetings/live').catch(() => ({ meetings: [] }));
+  for (const r of rooms.meetings) await api.post(`/api/meetings/${r.meeting.id}/end`).catch(() => undefined);
+}
+
+for (const look of LOOKS) {
+  for (const size of SIZES) {
+    test(`${look.name} at ${size.name}`, async ({ browser, playwright }) => {
+      const base = `${OUT}${look.name}-${size.name}-`;
+      const nadiaApi = await apiOn(playwright, stack, 'nadia');
+      await endLive(nadiaApi);
+      const contexts: BrowserContext[] = [];
+      try {
+        // 1. the header with no room
+        const omar = await openLooking(browser, playwright, 'omar', '/t/engineering/c/dev', look, size.mobile);
+        contexts.push(omar.context);
+        await expect(omar.page.getByTestId('members-open')).toBeVisible(T);
+        await expect(omar.page.getByTestId('call-start')).toBeVisible(T);
+        await omar.page.waitForTimeout(400);
+        await omar.page.screenshot({ path: `${base}header-no-room.png` });
+        await strip(omar.page, `${base}strip-no-room.png`);
+
+        // 2. the members panel as a lead, then as a member
+        const lead = await openLooking(browser, playwright, 'omar', `/t/engineering/c/${SMALL}`, look, size.mobile);
+        contexts.push(lead.context);
+        await lead.page.getByTestId('members-open').click();
+        await expect(lead.page.getByTestId('members-out').getByTestId('member-add').first()).toBeVisible(T);
+        await lead.page.waitForTimeout(300);
+        await lead.page.screenshot({ path: `${base}members-lead.png` });
+        await lead.context.close();
+        const rafi = await openLooking(browser, playwright, 'rafi', `/t/engineering/c/${SMALL}`, look, size.mobile);
+        contexts.push(rafi.context);
+        await rafi.page.getByTestId('members-open').click();
+        await expect(rafi.page.getByTestId('members-panel')).toBeVisible(T);
+        await expect(rafi.page.getByTestId('members-no-add')).toBeVisible(T);
+        await rafi.page.waitForTimeout(300);
+        await rafi.page.screenshot({ path: `${base}members-member.png` });
+        await rafi.context.close();
+
+        // 3. a room is live (Nadia starts it): the header, the card for a reader, the card for its starter, and the End confirm
+        const started = await nadiaApi.post<{ meeting: { id: string } }>(`/api/channels/${dev}/meetings`, {});
+        expect(started.meeting.id).toBeTruthy();
+        await omar.page.reload();
+        await expect(omar.page.getByTestId('room-card')).toBeVisible(T);
+        await omar.page.getByTestId('room-card').scrollIntoViewIfNeeded();
+        await omar.page.waitForTimeout(400);
+        await omar.page.screenshot({ path: `${base}header-live-room.png` });
+        await strip(omar.page, `${base}strip-live.png`);
+        await omar.page.getByTestId('room-card').screenshot({ path: `${base}room-card-live.png` });
+
+        const nadia = await openLooking(browser, playwright, 'nadia', '/t/engineering/c/dev', look, size.mobile);
+        contexts.push(nadia.context);
+        await expect(nadia.page.getByTestId('room-card-end')).toBeVisible(T);
+        await nadia.page.getByTestId('room-card').scrollIntoViewIfNeeded();
+        await nadia.page.waitForTimeout(300);
+        await nadia.page.screenshot({ path: `${base}header-live-starter.png` });
+        await nadia.page.getByTestId('room-card').screenshot({ path: `${base}room-card-starter.png` });
+        await nadia.page.getByTestId('room-card-end').click();
+        await expect(nadia.page.getByTestId('room-end-confirm')).toBeVisible(T);
+        // the confirm makes the card taller: the list goes back to the latest message so the buttons are not under the message box
+        const jump = nadia.page.getByRole('button', { name: /Jump to latest/ });
+        if (await jump.isVisible()) await jump.click();
+        await nadia.page.getByTestId('room-end-confirm').scrollIntoViewIfNeeded();
+        await nadia.page.waitForTimeout(300);
+        await nadia.page.screenshot({ path: `${base}end-confirm.png` });
+        await nadia.page.getByTestId('room-card').screenshot({ path: `${base}end-confirm-card.png` });
+        await nadia.page.getByTestId('room-end-confirm-no').click();
+
+        // 4. the starter in the room: the icon is a state, the card says so
+        await nadia.page.getByTestId('room-card-join').click();
+        await expect(nadia.page.getByTestId('call-dock')).toHaveAttribute('data-phase', 'connected', { timeout: 20_000 });
+        await expect(nadia.page.getByTestId('room-card-in')).toBeVisible(T);
+        await nadia.page.getByTestId('room-card').scrollIntoViewIfNeeded();
+        await nadia.page.waitForTimeout(400);
+        await nadia.page.screenshot({ path: `${base}header-in-room.png` });
+        await strip(nadia.page, `${base}strip-in-room.png`);
+        await nadia.page.getByTestId('room-card').screenshot({ path: `${base}room-card-in-room.png` });
+        await nadia.page.getByTestId('call-leave').click();
+        await expect(nadia.page.getByTestId('call-dock')).toBeHidden(T);
+        await endLive(nadiaApi);
+
+        // 5. a 44-character channel name
+        const long = await openLooking(browser, playwright, 'omar', `/t/engineering/c/${LONG}`, look, size.mobile);
+        contexts.push(long.context);
+        await expect(long.page.getByTestId('members-open')).toBeVisible(T);
+        await long.page.waitForTimeout(400);
+        await long.page.screenshot({ path: `${base}header-long-name.png` });
+        expect(longId).toBeTruthy();
+      } finally {
+        for (const c of contexts) await c.close().catch(() => undefined);
+        await endLive(nadiaApi);
+        await nadiaApi.ctx.dispose();
+      }
+    });
+  }
+}

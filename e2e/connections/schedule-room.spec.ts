@@ -209,7 +209,10 @@ test('a person who cannot read the channel finds no plan: not its title, not its
 test('the dialog and the header fit a phone', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', CHANNEL, { viewport: PHONE, mobile: true });
   try {
-    await page.getByTestId('schedule-open').click();
+    // on a phone the header has no Schedule icon: it is in the channel's details menu (the name button)
+    await expect(page.getByTestId('schedule-open')).toBeHidden();
+    await page.getByTestId('channel-details-button').click();
+    await page.getByTestId('details-schedule').click();
     await expect(page.getByTestId('schedule-dialog')).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
   } finally {

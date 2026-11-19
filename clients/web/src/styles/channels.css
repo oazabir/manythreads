@@ -2493,6 +2493,12 @@
  * header's slot wears `chv-tool` (Files uses the same slot and keeps its own look), so `:has(.chv-tool)` is the channel's header and nothing else. The order, left to right:
  * search, planned-room chip, Bot Board, Schedule a room, voice room, members, bookmark; the bell follows the slot.
  */
+
+/* the 32 px buttons would make the header 2 px taller than it was (52 px with the old text buttons); the padding gives it back, so nothing below the header moves */
+.chead:has(.chv-tool) {
+  padding-block: 10px;
+}
+
 .chead-tools:has(.chv-tool) {
   flex: 1 1 auto;
   min-width: 0;

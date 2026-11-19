@@ -85,13 +85,22 @@ async function atLatest(page: Page): Promise<void> {
   await expect(jump).toHaveCount(0);
 }
 
-/** Presses Start voice room / Join voice room on a channel page and waits until the call bar is connected. */
+/** Presses the voice icon, or Join on the room card when a room is live (the icon only scrolls to it), and waits until the call bar is connected. */
 async function intoRoom(page: Page, channel: string): Promise<void> {
   await page.goto(`/t/engineering/c/${channel}`);
   // the header's Schedule button arrives with the plan list, a moment after the rest of the header: the plate waits for it
-  await expect(page.getByTestId('schedule-open')).toBeVisible();
-  await page.getByTestId('call-start').click();
-  await expect(page.getByTestId('call-dock')).toHaveAttribute('data-phase', 'connected', { timeout: 20_000 });
+  // (on a phone the Schedule icon is in the details menu, so the voice icon is what is waited for there)
+  await expect(page.getByTestId(page.viewportSize()!.width > 760 ? 'schedule-open' : 'call-start')).toBeVisible();
+  const icon = page.getByTestId('call-start');
+  const dock = page.getByTestId('call-dock');
+  // the icon turns from "start" into "show the message" when the page hears of the live room: each try looks again before it presses
+  await expect(async () => {
+    if ((await dock.count()) === 0) {
+      if ((await icon.getAttribute('data-action')) === 'show-message') await page.getByTestId('room-card-join').last().click({ timeout: 2_000 });
+      else await icon.click({ timeout: 2_000 });
+    }
+    await expect(dock).toHaveAttribute('data-phase', 'connected', { timeout: 4_000 });
+  }).toPass({ timeout: 30_000 });
   await atLatest(page);
 }
 

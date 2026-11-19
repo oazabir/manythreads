@@ -86,7 +86,10 @@ test('the UI: pick a person, one conversation opens; picking again opens the sam
     expect(await dmRows()).toHaveLength(1);
 
     // a conversation of its own: the header search is limited to it
-    await rafiPage.page.getByRole('button', { name: 'Search this conversation' }).click();
+    // (a wide screen has the search bar open; a phone has the magnifier that opens it)
+    const magnifier = rafiPage.page.getByRole('button', { name: 'Search this conversation' });
+    await expect(magnifier.or(rafiPage.page.getByRole('searchbox', { name: 'Search this conversation' }))).toBeVisible();
+    if (await magnifier.isVisible()) await magnifier.click();
     await rafiPage.page.getByRole('searchbox', { name: 'Search this conversation' }).fill('rota');
     await rafiPage.page.getByRole('searchbox', { name: 'Search this conversation' }).press('Enter');
     await expect(rafiPage.page.getByTestId('search-results')).toContainText('in this conversation');

@@ -24,7 +24,7 @@ export default defineJourney({
     {
       id: 'channel-header',
       expect: TID.channelView,
-      next: { testid: 'call-start', label: 'Start voice room', unchecked: true },
+      next: { testid: 'call-start', label: 'Start a voice room', unchecked: true },
       run: async ({ pages, page, stack, api }) => {
         allowKnownNoise(page);
         await pages.channel.open('releases');

@@ -168,7 +168,12 @@ test('meetings/schedule-dialog', async ({ browser }) => {
     who: 'nadia',
     go: async (page) => {
       await page.goto('/t/engineering/c/design');
-      await page.getByTestId('schedule-open').click();
+      if (page.viewportSize()!.width > 760) await page.getByTestId('schedule-open').click();
+      else {
+        // on a phone the Schedule icon is in the channel's details menu
+        await page.getByTestId('channel-details-button').click();
+        await page.getByTestId('details-schedule').click();
+      }
       await expect(page.getByTestId('schedule-dialog')).toBeVisible();
       await page.getByTestId('schedule-title').fill('Icon review');
       await mask(page, `${VOLATILE}, [data-testid="schedule-date"], [data-testid="schedule-time"]`);

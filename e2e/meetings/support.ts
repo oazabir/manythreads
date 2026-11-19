@@ -72,10 +72,20 @@ export async function closePerson(p: Person | undefined): Promise<void> {
 
 export const dock = (p: Person) => p.page.getByTestId('call-dock');
 
-/** Presses Start voice room (or Join voice room when one is live) and waits until the call bar is connected. */
+/**
+ * Presses the voice icon (a new room) or, when a room is live in a channel, Join on its card under "Started a voice room" (the icon only scrolls there),
+ * and waits until the call bar is connected. (Starting while a room is live joins it, so a page that has not heard of the room yet still ends up in it.)
+ */
 export async function enterRoom(p: Person): Promise<void> {
-  await p.page.getByTestId('call-start').click();
-  await expect(dock(p)).toHaveAttribute('data-phase', 'connected', { timeout: 20_000 });
+  const icon = p.page.getByTestId('call-start');
+  // the icon changes from "start" to "show the message" when the page hears of a live room, so each try looks again at what it is before pressing
+  await expect(async () => {
+    if ((await dock(p).count()) === 0) {
+      if ((await icon.getAttribute('data-action')) === 'show-message') await p.page.getByTestId('room-card-join').last().click({ timeout: 2_000 });
+      else await icon.click({ timeout: 2_000 });
+    }
+    await expect(dock(p)).toHaveAttribute('data-phase', 'connected', { timeout: 4_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 /** Opens Call settings, runs `then`, and puts the menu away again. */
@@ -115,6 +125,8 @@ export async function showSpeaking(p: Person, actorIds: string[]): Promise<void>
 export async function endForEveryone(p: Person): Promise<void> {
   await p.page.getByTestId('call-settings-btn').click();
   await p.page.getByTestId('call-end-all').click();
+  // End asks once, in the menu
+  await p.page.getByTestId('call-end-confirm-yes').click();
   await expect(dock(p)).toBeHidden();
 }
 

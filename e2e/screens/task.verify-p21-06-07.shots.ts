@@ -118,17 +118,17 @@ test('channel header, details menu, members popover, search, intro card at 1440 
     await shoot(`02-details-menu-${w}`);
     await page.keyboard.press('Escape');
     // members popover
-    const stack = page.getByTestId('members-stack');
+    const stack = page.getByTestId('members-open');
     await expect(stack).toBeVisible(T);
-    log(`members stack ${w}: name="${await stack.getAttribute('aria-label')}" count=${await stack.getAttribute('data-count')}`);
+    log(`members button ${w}: name="${await stack.getAttribute('aria-label')}" count=${await stack.getAttribute('data-count')}`);
     await stack.click();
-    await expect(page.getByRole('menu', { name: 'Members' })).toBeVisible(T);
-    await shoot(`03-members-popover-${w}`);
+    await expect(page.getByTestId('members-panel')).toBeVisible(T);
+    await shoot(`03-members-panel-${w}`);
     await page.keyboard.press('Escape');
     // search
-    await page.getByRole('button', { name: 'Search this conversation' }).click();
+    const magnifier = page.getByRole('button', { name: 'Search this conversation' });
+    if (await magnifier.isVisible()) await magnifier.click();
     const box = page.getByRole('searchbox', { name: 'Search this conversation' });
-    await expect(box).toBeFocused();
     await shoot(`04-search-box-${w}`);
     await box.fill('needle');
     await box.press('Enter');
@@ -190,7 +190,8 @@ test('DM header with Nadia', async () => {
     log(`dm menu ${w}: ${JSON.stringify(await page.getByTestId('channel-details').getByRole('menuitem').allInnerTexts())}`);
     await shoot(`10-dm-details-${w}`);
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Search this conversation' }).click();
+    const magnifier = page.getByRole('button', { name: 'Search this conversation' });
+    if (await magnifier.isVisible()) await magnifier.click();
     const box = page.getByRole('searchbox', { name: 'Search this conversation' });
     await box.fill('hello');
     await box.press('Enter');

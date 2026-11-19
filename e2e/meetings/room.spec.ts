@@ -31,13 +31,15 @@ test.afterAll(async () => {
 
 test('Nadia starts a room, Rafi joins, both call bars show both people', async ({ browser, playwright }) => {
   nadia = await openAs(browser, playwright, stack, 'nadia');
-  await expect(nadia.page.getByTestId('call-start')).toContainText('Start voice room');
+  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
   await enterRoom(nadia);
   await expect(nadia.page.getByTestId('call-face')).toHaveCount(1);
 
   rafi = await openAs(browser, playwright, stack, 'rafi');
-  // the room is live for Rafi: the button says so, and the channel shows who is in it
-  await expect(rafi.page.getByTestId('call-start')).toContainText('Join voice room');
+  // the room is live for Rafi: the icon says so (with a green dot), and the card under "Started a voice room" has Join and shows who is in it
+  await expect(rafi.page.getByTestId('call-start')).toHaveAccessibleName('A voice room is live: join it from its message');
+  await expect(rafi.page.getByTestId('room-card')).toBeVisible();
+  await expect(rafi.page.getByTestId('room-card-end')).toHaveCount(0);
   await enterRoom(rafi);
 
   for (const p of [nadia, rafi]) {
@@ -94,8 +96,10 @@ test('Rafi leaves, then Nadia ends the room for everyone', async () => {
   await expect(a.page.getByTestId('call-start')).toHaveCount(0);
   await a.page.getByTestId('call-settings-btn').click();
   await a.page.getByTestId('call-end-all').click();
+  await a.page.getByTestId('call-end-confirm-yes').click();
   await expect(dock(a)).toBeHidden();
   await expect.poll(async () => (await stack.sql<{ state: string }>(`SELECT state FROM app.meetings ORDER BY started_at DESC LIMIT 1`))[0]?.state).toBe('ended');
   // nobody is in a live room any more: the channel offers a new one
-  await expect(a.page.getByTestId('call-start')).toContainText('Start voice room');
+  await expect(a.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
+  await expect(a.page.getByTestId('room-card')).toHaveCount(0);
 });

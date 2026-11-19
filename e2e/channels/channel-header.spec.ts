@@ -166,29 +166,70 @@ test('a guest has no Star, Files or Leave in the details menu', async ({ browser
   }
 });
 
-test('the members stack counts what the members route says, and its popover stays on the screen', async ({ browser, playwright, isMobile }) => {
+test('the Members button counts what the members route says and opens the panel: the channel on top, the team members who are not in it below with Add for a lead', async ({ browser, playwright, isMobile }) => {
   const api = await rafi.get<{ members: Array<{ personId: string; displayName: string }> }>(`/api/channels/${first.id}/members`);
   expect(api.members.map((m) => m.displayName), `members of ${first.name}`).toHaveLength(2);
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${first.name}`, isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
-    const stackBtn = page.getByTestId('members-stack');
-    await expect(stackBtn).toHaveAttribute('data-count', String(api.members.length), T);
-    await expect(stackBtn).toHaveAccessibleName(`Members (${api.members.length})`);
-    expect(await stackBtn.locator('.av').count()).toBeLessThanOrEqual(3);
-    await stackBtn.click();
-    const menu = page.getByRole('menu', { name: 'Members' });
-    await expect(menu).toBeVisible();
-    await expect(menu.getByTestId('details-member-list').locator('li')).toHaveCount(api.members.length);
-    const box = (await menu.boundingBox())!;
+    const open = page.getByTestId('members-open');
+    await expect(open).toHaveAttribute('data-count', String(api.members.length), T);
+    await expect(open).toHaveAccessibleName(`Members (${api.members.length})`);
+    // one icon, no avatars in the header any more
+    expect(await open.locator('.av').count()).toBe(0);
+    await open.click();
+    const panel = page.getByTestId('members-panel');
+    await expect(panel).toBeVisible(T);
+    await expect(page.getByTestId('panel-title')).toHaveText(`Members of #${first.name}`);
+    await expect(page.getByTestId('members-in').getByTestId('member-row')).toHaveCount(api.members.length);
+    // Omar leads the team: every person outside has an Add, and the heading counts them
+    const outside = page.getByTestId('members-out').getByTestId('member-row');
+    expect(await outside.count()).toBeGreaterThan(0);
+    await expect(page.getByTestId('members-out').getByTestId('member-add')).toHaveCount(await outside.count());
+    const box = (await panel.boundingBox())!;
     const vp = page.viewportSize()!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
-    expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
     expect(await noSidewaysScroll(page)).toBe(true);
+    // the filter narrows both lists
+    await page.getByTestId('members-filter').fill('zzzz-nobody');
+    await expect(page.getByTestId('member-row')).toHaveCount(0);
+    await page.getByTestId('members-filter').fill('');
     await page.keyboard.press('Escape');
-    await expect(menu).toHaveCount(0);
+    await expect(panel).toHaveCount(0);
   } finally {
     await context.close();
+  }
+});
+
+test('a lead adds a team member to the channel from the Members panel: the row moves up, the count follows, and a plain member sees no Add', async ({ browser, playwright, isMobile }) => {
+  const name = `hdr-add-${isMobile ? 'm' : 'd'}`;
+  const id = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name })).channel.id;
+  const before = (await omar.get<{ members: Array<{ personId: string }> }>(`/api/channels/${id}/members`)).members.length;
+  const lead = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${name}`, isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await expect(lead.page.getByTestId('members-open')).toHaveAttribute('data-count', String(before), T);
+    await lead.page.getByTestId('members-open').click();
+    const add = lead.page.getByTestId('members-out').getByTestId('member-add').first();
+    await expect(add).toBeVisible(T);
+    const who = (await add.getAttribute('aria-label'))!.replace(/^Add (.*) to #.*$/, '$1');
+    await add.click();
+    await expect(lead.page.getByTestId('members-said')).toHaveText(`Added ${who} to #${name}`, T);
+    await expect(lead.page.getByTestId('members-in').getByTestId('member-row').filter({ hasText: who })).toHaveCount(1);
+    await expect(lead.page.getByTestId('members-out').getByTestId('member-row').filter({ hasText: who })).toHaveCount(0);
+    await expect(lead.page.getByTestId('members-open')).toHaveAttribute('data-count', String(before + 1), T);
+    expect((await omar.get<{ members: Array<{ displayName: string }> }>(`/api/channels/${id}/members`)).members.map((m) => m.displayName)).toContain(who);
+  } finally {
+    await lead.context.close();
+  }
+  // Rafi is a plain member of the team: he reads the lists, but cannot add
+  expect(await rafi.post(`/api/channels/${id}/join`)).toEqual({ joined: true });
+  const member = await openOn(browser, playwright, stack, 'rafi', `/t/engineering/c/${name}`, isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await member.page.getByTestId('members-open').click();
+    await expect(member.page.getByTestId('members-panel')).toBeVisible(T);
+    await expect(member.page.getByTestId('member-add')).toHaveCount(0);
+  } finally {
+    await member.context.close();
   }
 });
 
@@ -202,9 +243,11 @@ test('the header search is limited to the conversation and stays on the screen a
       const r = (await b.boundingBox())!;
       expect(r.x + r.width, `${(await b.getAttribute('aria-label')) ?? (await b.textContent())} right edge`).toBeLessThanOrEqual(vpw);
     }
-    await page.getByRole('button', { name: 'Search this conversation' }).click();
+    // a wide screen has the search bar always open; a phone has the magnifier that opens it
+    if (isMobile) await page.getByRole('button', { name: 'Search this conversation' }).click();
     const box = page.getByRole('searchbox', { name: 'Search this conversation' });
-    await expect(box).toBeFocused();
+    if (isMobile) await expect(box).toBeFocused();
+    else await expect(box).toHaveAttribute('placeholder', `Search #${first.name}`);
     const rect = (await box.boundingBox())!;
     const vp = page.viewportSize()!;
     expect(rect.x).toBeGreaterThanOrEqual(0);
@@ -269,7 +312,7 @@ test('at 390 px the details menu shows every item fully, and a 44-character name
     expect(page.viewportSize()!.width).toBe(390);
     const vpw = 390;
     // wait for the late tools (members stack, bell) so none is missed by the count below
-    await expect(page.getByTestId('members-stack')).toBeVisible(T);
+    await expect(page.getByTestId('members-open')).toBeVisible(T);
     await expect(page.locator('[data-landmark="header"]').getByRole('button', { name: /^Notifications/ })).toBeVisible(T);
     const buttons = page.locator('[data-landmark="header"]').getByRole('button').filter({ visible: true });
     const labels: string[] = [];

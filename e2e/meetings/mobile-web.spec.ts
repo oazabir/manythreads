@@ -53,7 +53,7 @@ test('Nadia starts a room from her phone: the call bar is a sheet that fits, wit
   nadia = await openAs(browser, playwright, stack, 'nadia', '/t/engineering/c/dev', { mobile: true });
   // the button is an icon on a phone, still with its name for a screen reader
   await expect(nadia.page.getByTestId('call-start')).toBeVisible();
-  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Start voice room');
+  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
   await enterRoom(nadia);
   meetingId = (await lastMeeting(stack, 'dev')).id;
   await expect(dock(nadia)).toHaveClass(/sheet/);
