@@ -88,7 +88,7 @@ const TAB_PREDICATE: Record<ThreadsTab, string> = {
  */
 export async function listInbox(
   tx: PluginTx,
-  input: { personId: string; tab: ThreadsTab; teamId: string | null; limit: number; cursor?: string | undefined; q?: string | undefined; mentions?: readonly (readonly string[])[] | undefined },
+  input: { personId: string; tab: ThreadsTab; teamId: string | null; limit: number; cursor?: string | undefined; q?: string | undefined; mentions?: readonly (readonly string[])[] | undefined; who?: 'people' | undefined },
 ): Promise<ListThreadsResponse> {
   const filtered = input.q !== undefined || (input.mentions?.length ?? 0) > 0;
   const after = !filtered && input.cursor ? decodeCursor(input.cursor) : null;
@@ -106,6 +106,15 @@ export async function listInbox(
     params.push(group);
     const at = `$${String(params.length)}::uuid[]`;
     where.push(`EXISTS (SELECT 1 FROM app.messages xm JOIN app.message_mentions xmt ON xmt.message_id = xm.id AND xmt.mentioned_id = ANY (${at}) AND xmt.kind <> 'channel' WHERE (xm.thread_root_id = t.root_message_id OR xm.id = t.root_message_id) AND xm.deleted_at IS NULL)`);
+  }
+  // people only (owner, 2026-11-19): every author of a live message of the thread (the root included) is a person. `actors` shows a caller only their own row, so the
+  // people among the authors come from the visibility-checked author lookup, asked ONCE per request (not per thread): `personAuthors`. An author it does not name counts
+  // as not a person, so it fails closed. A plain predicate: the list keeps its pages.
+  if (input.who === 'people') {
+    params.push(await personAuthors(tx));
+    const at = `$${String(params.length)}::uuid[]`;
+    where.push(`(m.deleted_at IS NOT NULL OR m.author_id = ANY (${at}))`);
+    where.push(`NOT EXISTS (SELECT 1 FROM app.messages pm WHERE pm.thread_root_id = t.root_message_id AND pm.deleted_at IS NULL AND NOT (pm.author_id = ANY (${at})))`);
   }
   const limit = filtered ? THREAD_FILTER_RESULTS_MAX : input.limit;
   params[5] = limit + 1;
@@ -217,6 +226,27 @@ function mentionOf(w: WaitingMention | undefined, authorOf: Map<string, NamedAut
 
 /** An author as the lookup names them; the response schema brands the id and checks the kind. */
 type NamedAuthor = { actorId: string; displayName: string; kind: string };
+/** The most authors `personAuthors` asks about (the author lookup looks at 500 messages at most); a person past it is left out, and so are their threads (fails closed). */
+const PERSON_AUTHORS_MAX = 500;
+
+/**
+ * The authors of the messages the caller can read who are people: each distinct author found by a skip scan of the `messages_author` index (one step per author, not one
+ * per message), one readable message of each given to the visibility-checked author lookup, which says each one's kind. One query, whatever the number of threads.
+ */
+async function personAuthors(tx: PluginTx): Promise<string[]> {
+  const res = await tx.query<{ actor_id: string }>(
+    `WITH RECURSIVE a(id) AS (
+       (SELECT author_id FROM app.messages ORDER BY author_id LIMIT 1)
+       UNION ALL
+       SELECT (SELECT m.author_id FROM app.messages m WHERE m.author_id > a.id ORDER BY m.author_id LIMIT 1) FROM a WHERE a.id IS NOT NULL
+     )
+     SELECT ma.actor_id FROM app.message_authors(ARRAY(
+       SELECT (SELECT m.id FROM app.messages m WHERE m.author_id = a.id LIMIT 1) FROM a WHERE a.id IS NOT NULL LIMIT ${String(PERSON_AUTHORS_MAX)}
+     )) ma WHERE ma.kind = 'person'`,
+  );
+  return res.rows.map((r) => r.actor_id);
+}
+
 type Participants = { total: number; rows: { id: string; author_id: string }[] };
 
 /**

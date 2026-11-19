@@ -361,6 +361,39 @@ describe('the Threads view (P29): the filter, "waiting for you" and the sidebar 
     expect((await w.call(priya, 'GET', '/api/teams/engineering/threads?mentions=nope')).status).toBe(400);
   });
 
+  it('people only (owner 2026-11-19): keeps the threads every message of which is by a person, and pages as the plain list does', async () => {
+    const q = async (query: string): Promise<string[]> => (await inbox(nadia, 'followed', 'engineering', `&limit=100&${query}`)).items.map((i) => i.rootMessageId);
+    const talk = await post(nadia, dev, 'Lunch on Friday?');
+    await post(rafi, dev, 'yes', talk);
+    const withBot = await post(nadia, dev, 'Build the release notes');
+    const botReply = await post(rafi, dev, 'on it', withBot);
+    await post(nadia, dev, 'thanks', withBot);
+    const botRoot = await post(nadia, dev, 'A root a bot will be said to have written');
+    await post(rafi, dev, 'ok', botRoot);
+    // a bot (or the system) is the author of one reply and of one root
+    await w.system(async (tx) => {
+      const ws = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.messages WHERE id = $1', [withBot])).rows[0]!.workspace_id;
+      const other = (await tx.query<{ id: string }>("SELECT id FROM app.actors WHERE kind <> 'person' AND workspace_id = $1 LIMIT 1", [ws])).rows[0]?.id
+        ?? (await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('system', $1, $1) RETURNING id", [ws])).rows[0]!.id;
+      await tx.query('UPDATE app.messages SET author_id = $1 WHERE id = ANY ($2::uuid[])', [other, [botReply, botRoot]]);
+    });
+    const all = await q('');
+    expect(all).toEqual(expect.arrayContaining([talk, withBot, botRoot]));
+    const people = await q('who=people');
+    expect(people).toContain(talk);
+    expect(people).not.toContain(withBot);
+    expect(people).not.toContain(botRoot);
+    // a deleted bot message no longer counts
+    await w.system((tx) => tx.query('UPDATE app.messages SET deleted_at = now() WHERE id = $1', [botReply]));
+    expect(await q('who=people')).toContain(withBot);
+    // it goes with the words, and keeps the cursor (it is not a capped filter)
+    expect(await q('who=people&q=lunch')).toEqual([talk]);
+    const page = await inbox(nadia, 'followed', 'engineering', '&who=people&limit=1');
+    expect(page.items).toHaveLength(1);
+    expect(page.nextCursor).not.toBeNull();
+    expect((await w.call(nadia, 'GET', '/api/teams/engineering/threads?who=bots')).status).toBe(400);
+  });
+
   it('matches without regard to accents and case, as the page does: "cafe" finds "Café", "CAFÉ" finds "cafe"', async () => {
     const q = async (who: Persona, query: string): Promise<string[]> => (await inbox(who, 'followed', 'engineering', `&${query}`)).items.map((i) => i.rootMessageId);
     const cafe = await post(priya, dev, 'Le Café Münchner plan for the offsite');

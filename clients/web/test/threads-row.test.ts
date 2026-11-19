@@ -117,9 +117,9 @@ describe('the chip and the line of progress', () => {
 });
 
 describe('the filter bar', () => {
-  const draw2 = async (value: string, onChange: (t: string) => void): Promise<void> => {
+  const draw2 = async (value: string, onChange: (t: string) => void, peopleOnly = false, onPeopleOnly: (on: boolean) => void = vi.fn()): Promise<void> => {
     await act(async () => {
-      root.render(createElement(FilterBar, { value, onChange, needsFirst: true, onNeedsFirst: vi.fn(), status: null, layout: 'list', onLayout: vi.fn() }));
+      root.render(createElement(FilterBar, { value, onChange, needsFirst: true, onNeedsFirst: vi.fn(), peopleOnly, onPeopleOnly, status: null, layout: 'list', onLayout: vi.fn() }));
     });
   };
 
@@ -135,6 +135,20 @@ describe('the filter bar', () => {
       q('[data-testid="threads-filter-input"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('has a "People only" quick filter that says whether it is on and turns it on and off (owner 2026-11-19)', async () => {
+    const onPeople = vi.fn();
+    await draw2('', vi.fn(), false, onPeople);
+    const b = q('[data-testid="threads-people-only"]') as HTMLButtonElement;
+    expect(b.textContent).toBe('People only');
+    expect(b.getAttribute('aria-pressed')).toBe('false');
+    await act(async () => b.click());
+    expect(onPeople).toHaveBeenLastCalledWith(true);
+    await draw2('', vi.fn(), true, onPeople);
+    expect(q('[data-testid="threads-people-only"]')!.getAttribute('aria-pressed')).toBe('true');
+    await act(async () => (q('[data-testid="threads-people-only"]') as HTMLButtonElement).click());
+    expect(onPeople).toHaveBeenLastCalledWith(false);
   });
 });
 

@@ -605,6 +605,13 @@
   color: var(--warn-ink);
 }
 
+/* "People only" is a filter, not news: pressed, it takes the people colour, not the amber of "Needs you" */
+.inf-order[data-kind="people"][aria-pressed="true"] {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--ink);
+}
+
 .inf-status {
   flex-basis: 100%;
   margin: 0;

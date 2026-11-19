@@ -98,6 +98,11 @@ export const ListThreadsQuery = z.object({
     .max(THREAD_FILTER_MENTIONS_MAX * THREAD_FILTER_ACTORS_MAX * 37)
     .regex(ID_GROUPS, 'mentions: actor ids separated by commas and bars')
     .optional(),
+  /**
+   * `people`: only the threads where people talk among themselves, with no bot in them: every live message of the thread (the root included) was written by a person
+   * (owner, 2026-11-19). Unlike `q`, it narrows the list but keeps its pages and cursor.
+   */
+  who: z.enum(['people']).optional(),
 });
 export type ListThreadsQuery = z.infer<typeof ListThreadsQuery>;
 

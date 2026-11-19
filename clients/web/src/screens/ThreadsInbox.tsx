@@ -96,7 +96,21 @@ export function ThreadsInbox() {
   );
   const grid = layout === 'grid' && tab !== 'later';
   const stacked = narrow || grid;
-  const q = useQuery(`inbox:${slug}:${tab}:${threadsUnread}`, () => (tab === 'later' ? Promise.resolve(NO_THREADS) : fetchThreadInbox(slug, tab)));
+  // "People only" (owner, 2026-11-19): the threads with no bot in them, kept in `?who=people`; the server narrows every read of the list (pages and the filter's)
+  const peopleOnly = params.get('who') === 'people' && tab !== 'later';
+  const who = peopleOnly ? ({ who: 'people' } as const) : {};
+  const setPeopleOnly = useCallback(
+    (on: boolean): void => {
+      const sp = new URLSearchParams(window.location.search);
+      if (on) sp.set('who', 'people');
+      else sp.delete('who');
+      setParams(sp, { replace: true });
+    },
+    [setParams],
+  );
+  const q = useQuery(`inbox:${slug}:${tab}:${peopleOnly ? 'people' : 'all'}:${threadsUnread}`, () =>
+    tab === 'later' ? Promise.resolve(NO_THREADS) : fetchThreadInbox(slug, tab, undefined, peopleOnly ? { who: 'people' } : undefined),
+  );
   useEffect(() => {
     void laterStore.load(true);
   }, [tab]);
@@ -104,7 +118,7 @@ export function ThreadsInbox() {
   const listRef = useRef<HTMLUListElement>(null);
 
   // "Show more": the pages after the first, read by cursor and kept until the tab or the team changes
-  const pageKey = `${slug}:${tab}`;
+  const pageKey = `${slug}:${tab}:${peopleOnly ? 'people' : 'all'}`;
   const [more, setMore] = useState<{ key: string; items: ThreadInboxItem[]; cursor: string | null; busy: boolean; failed: boolean }>({ key: '', items: [], cursor: null, busy: false, failed: false });
   const extra = more.key === pageKey ? more : null;
   const firstPage = q.status === 'ok' ? q.data : null;
@@ -114,12 +128,12 @@ export function ThreadsInbox() {
     if (!cursor || tab === 'later') return;
     setMore((m) => ({ key: pageKey, items: m.key === pageKey ? m.items : [], cursor, busy: true, failed: false }));
     try {
-      const page = await fetchThreadInbox(slug, tab, cursor);
+      const page = await fetchThreadInbox(slug, tab, cursor, peopleOnly ? { who: 'people' } : undefined);
       setMore((m) => ({ key: pageKey, items: [...(m.key === pageKey ? m.items : []), ...page.items], cursor: page.nextCursor, busy: false, failed: false }));
     } catch {
       setMore((m) => ({ key: pageKey, items: m.key === pageKey ? m.items : [], cursor, busy: false, failed: true }));
     }
-  }, [extra, firstPage, tab, slug, pageKey]);
+  }, [extra, firstPage, tab, slug, pageKey, peopleOnly]);
 
   // The thread being read stays on the Unread list while it is open, even though reading it just emptied its count there.
   const shown = useRef<ThreadInboxItem[]>([]);
@@ -166,9 +180,9 @@ export function ThreadsInbox() {
   const named = useMemo(() => resolveNames(parsedTyped.names, roster), [parsedTyped.names, roster]);
   const rawWords = useMemo(() => typed.trim().split(/\s+/).filter((w) => w !== '' && !w.startsWith('@')).slice(0, 6).join(' '), [typed]);
   const askServer = filtering && !parsedTyped.empty && named.unmatched.length === 0 && people.settled;
-  const serverKey = askServer ? `${slug}:${tab}:${rawWords}:${mentionsParam(named.groups) ?? ''}` : null;
+  const serverKey = askServer ? `${slug}:${tab}:${rawWords}:${mentionsParam(named.groups) ?? ''}:${peopleOnly ? 'people' : 'all'}` : null;
   const sq = useQuery<{ key: string | null; items: ThreadInboxItem[] }>(`inbox-q:${serverKey ?? 'off'}:${threadsUnread}`, () =>
-    serverKey === null ? Promise.resolve({ key: null, items: [] }) : fetchThreadInbox(slug, tab as 'followed' | 'unread' | 'mine', undefined, { ...(rawWords ? { q: rawWords } : {}), ...(mentionsParam(named.groups) ? { mentions: mentionsParam(named.groups) } : {}) }).then((r) => ({ key: serverKey, items: r.items })),
+    serverKey === null ? Promise.resolve({ key: null, items: [] }) : fetchThreadInbox(slug, tab as 'followed' | 'unread' | 'mine', undefined, { ...(rawWords ? { q: rawWords } : {}), ...(mentionsParam(named.groups) ? { mentions: mentionsParam(named.groups) } : {}), ...who }).then((r) => ({ key: serverKey, items: r.items })),
   );
   const serverRows = serverKey !== null && sq.status === 'ok' && sq.data.key === serverKey ? sq.data.items : null;
   const serverError = serverKey !== null && sq.status === 'error';
@@ -370,12 +384,14 @@ export function ThreadsInbox() {
       {showList ? (
         <div className="inl" data-landmark="thread-list">
           {header}
-          {q.status === 'ok' && (loaded.length > 0 || filtering) ? (
+          {q.status === 'ok' && (loaded.length > 0 || filtering || peopleOnly) ? (
             <FilterBar
               value={text}
               onChange={changeFilter}
               needsFirst={needsFirst}
               onNeedsFirst={setNeedsFirst}
+              peopleOnly={peopleOnly}
+              onPeopleOnly={setPeopleOnly}
               status={filterStatus}
               layout={layout}
               onLayout={setLayout}
@@ -383,7 +399,7 @@ export function ThreadsInbox() {
           ) : null}
           {q.status === 'loading' ? (
             <SkeletonRows rows={5} avatar label="Loading threads" />
-          ) : absent || (q.status === 'ok' && loaded.length === 0 && !filtering) ? (
+          ) : absent || (q.status === 'ok' && loaded.length === 0 && !filtering && !peopleOnly) ? (
             <div className="inl-empty">
               <EmptyState icon={ReplyIcon} testId="threads-empty" title={EMPTY[tab].title} action={ACTION(slug)[tab]}>
                 <p>{EMPTY[tab].body}</p>
@@ -398,6 +414,12 @@ export function ThreadsInbox() {
             </div>
           ) : searching && items.length === 0 ? (
             <SkeletonRows rows={3} avatar label="Searching threads" />
+          ) : items.length === 0 && peopleOnly && !filtering ? (
+            <div className="inl-empty" data-testid="threads-people-empty">
+              <p className="view-empty-title">No threads between people only</p>
+              <p className="view-empty-body">Threads with a bot in them are hidden while this is on.</p>
+              <button type="button" className="btn s" onClick={() => setPeopleOnly(false)}>Show all threads</button>
+            </div>
           ) : items.length === 0 ? (
             <div className="inl-empty" data-testid="threads-filter-empty">
               <p className="view-empty-title">{unmatchedName ? 'Nobody has that name' : 'No threads match'}</p>

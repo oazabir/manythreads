@@ -4,13 +4,16 @@ import type { ThreadsLayout } from './viewMode';
 
 /**
  * The Threads view's filter (P29): one text box over the loaded threads and, for what is not loaded, the server. Words match the channel's name and the messages; `@name` keeps the
- * threads that mention that person or bot. The x and Escape clear it. `?q=` in the address holds it. The "Needs you first" button switches the grouping to plain time order.
+ * threads that mention that person or bot. The x and Escape clear it. `?q=` in the address holds it. The "Needs you first" button switches the grouping to plain time order; "People only" keeps
+ * the threads with no bot in them.
  */
 export function FilterBar({
   value,
   onChange,
   needsFirst,
   onNeedsFirst,
+  peopleOnly,
+  onPeopleOnly,
   status,
   layout,
   onLayout,
@@ -19,6 +22,9 @@ export function FilterBar({
   onChange: (text: string) => void;
   needsFirst: boolean;
   onNeedsFirst: (on: boolean) => void;
+  /** "People only": the threads with no bot in them (owner, 2026-11-19). */
+  peopleOnly: boolean;
+  onPeopleOnly: (on: boolean) => void;
   /** One line under the box: how many threads match, or that a name matches nobody. */
   status: string | null;
   layout: ThreadsLayout;
@@ -58,6 +64,9 @@ export function FilterBar({
       </div>
       <button type="button" className="inf-order" aria-pressed={needsFirst} data-testid="threads-order" title="Put the threads that wait on you first" onClick={() => onNeedsFirst(!needsFirst)}>
         Needs you first
+      </button>
+      <button type="button" className="inf-order" data-kind="people" aria-pressed={peopleOnly} data-testid="threads-people-only" title="Only the threads where people talk, with no bot in them" onClick={() => onPeopleOnly(!peopleOnly)}>
+        People only
       </button>
       <div className="inf-layout" role="group" aria-label="Layout">
         <button type="button" className="inf-lay" aria-pressed={layout === 'list'} data-testid="threads-layout-list" title="List" aria-label="List" onClick={() => onLayout('list')}>

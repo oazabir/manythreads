@@ -228,7 +228,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
         const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
         if (role !== 'guest') return json(ListThreadsResponse.parse({ items: [], nextCursor: null }));
       }
-      return json(await listInbox(tx, { personId: person, tab: q.tab, teamId, limit: q.limit, cursor: q.cursor, q: q.q, mentions: idGroups(q.mentions, THREAD_FILTER_MENTIONS_MAX) }));
+      return json(await listInbox(tx, { personId: person, tab: q.tab, teamId, limit: q.limit, cursor: q.cursor, q: q.q, mentions: idGroups(q.mentions, THREAD_FILTER_MENTIONS_MAX), who: q.who }));
     }),
   });
 

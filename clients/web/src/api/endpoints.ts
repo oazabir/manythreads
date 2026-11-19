@@ -807,11 +807,11 @@ export const fetchThread = (rootId: string, query: { before?: string; limit?: nu
 export const followThread = (rootId: string) => call(followThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
 export const unfollowThread = (rootId: string) => call(unfollowThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
 /** One page of the inbox; with `q` or `mentions` (the filter box) the matching threads of the tab, channel-name matches first, no paging. */
-export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'mine', cursor?: string, filter?: { q?: string; mentions?: string }) =>
+export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'mine', cursor?: string, filter?: { q?: string; mentions?: string; who?: 'people' }) =>
   call(
     listThreadsRoute,
     { request: ListThreadsQuery, response: ListThreadsResponse },
-    { tab, limit: 50, ...(cursor ? { cursor } : {}), ...(filter?.q ? { q: filter.q } : {}), ...(filter?.mentions ? { mentions: filter.mentions } : {}) } as ListThreadsQuery,
+    { tab, limit: 50, ...(cursor ? { cursor } : {}), ...(filter?.q ? { q: filter.q } : {}), ...(filter?.mentions ? { mentions: filter.mentions } : {}), ...(filter?.who ? { who: filter.who } : {}) } as ListThreadsQuery,
     { slug },
   );
 
