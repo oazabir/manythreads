@@ -108,7 +108,11 @@ See correction 9 (the DM list data exists) and correction 10 (event rows need a 
 
 ## Corrections after the independent review (binding; they override the text above where they differ)
 1. **P34-01 run spacing:** the gap is the previous row's bottom `--msg-pad-y` + `--run-gap` + the virtual row's `.vrow` `padding-bottom: var(--msg-gap)` (`channels.css:34-37`). Move the gap to the *top* of non-run rows so a run row has none above it; re-test the virtualizer's measuring. Palettes are generated: change `tools/design/themes.mjs` and run `build-themes.mjs`. Comfortable keeps 4–6 px between run lines, Compact 2 px.
-2. **Owner decisions this phase would reverse** (each waits for the owner's yes; until then the task builds the rest):
+2. **Owner decisions this phase would reverse** (each waits for the owner's yes; until then the task builds the rest). **Decided by the owner on 2026-11-19:**
+   a. no presence dot on message avatars — **yes**; b. the voice caption only when unusual, the played dot replaced — **yes**; c. format bar from Aa — **no, keep
+   the always-open bar on desktop** (P21-04 stands); d. no breadcrumb on top-level screens — **yes**; e. phone channel header — **every header icon except
+   the notification bell moves into the channel details menu** (the header is the title and the bell; the bell stays, so "one bell" is not taken up).
+   The list as it was proposed:
    - no presence dot on message avatars (reverses P21-01);
    - the voice caption only when the transcript is partial, missing or failed, and the played dot replaced (P32-10, owner 2026-11-18);
    - the format bar opened from Aa on desktop (reverses P21-04's always-reserved toolbar; when opened it must reserve or animate its height so the list never jumps);
