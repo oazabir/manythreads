@@ -273,12 +273,14 @@
   background: var(--nav-on);
 }
 
-/* no hover on a touch screen: the button is always there, at the foot of the card, and the time keeps its place */
+/* no hover on a touch screen: the button is always there, on the head line after the time (the time keeps its place), never over the reply box below */
 @media (hover: none) {
   .thc-actions {
-    top: auto;
     right: 8px;
-    bottom: 8px;
+  }
+
+  .thc .thc-head {
+    padding-right: 30px;
   }
 
   .thc-kebab {
@@ -291,9 +293,6 @@
     visibility: visible;
   }
 
-  .thc-note {
-    margin-right: 32px;
-  }
 }
 
 /* Soft pill tabs and the plain empty-state icon (P21-11). */
