@@ -7,7 +7,7 @@ import { highlight, type NeedsYou, type RowProgress } from './rules';
 /*
  * The parts of a Threads row that the list row and the grid card share (P29, docs/plans/channel-task-view.md section 10c): the highlighted text, the "Needs you" chip, the one line
  * of progress, and the blocks under the reply count. The starting message is the head of a row; the reply count is the divider; ONE block follows it, drawn very differently from the head:
- * indented behind a muted elbow, with a small label, the replier's picture, name and time, smaller muted text on its own faint surface. When the latest reply is the one that names
+ * indented behind a muted elbow, ONE line with the replier's picture, name and time (and "Mentions you" when it names the person), then up to four lines of the reply on its own faint surface. When the latest reply is the one that names
  * the person, that same block takes the "Mentions you" look (never two blocks for one message); when the mention is an older reply, it is shown first and the latest reply follows.
  */
 
@@ -76,8 +76,9 @@ function Block({ kind, label, who, at, text, words }: { kind: 'latest' | 'mentio
   const name = (who.actorId !== undefined && who.kind === 'person' ? people.byActor(who.actorId)?.name : undefined) ?? who.name;
   return (
     <span className="thc-blk" data-kind={kind} data-testid={kind === 'mention' ? 'thread-mention-block' : 'thread-latest-block'}>
-      <span className="thc-blk-label">{label}</span>
       <span className="thc-blk-who">
+        {/* "Latest reply" is what the elbow and the box already show, so it is said only to a screen reader; "Mentions you" is shown, it is news */}
+        <span className={kind === 'mention' ? 'thc-blk-label' : 'sr-only'}>{kind === 'mention' ? label : `${label}: `}</span>
         <span className="thc-blk-face">
           <SmallFace who={who} />
         </span>

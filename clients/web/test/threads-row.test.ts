@@ -63,6 +63,15 @@ describe('the blocks under the reply count', () => {
     expect(q('.thc-text')?.textContent).toBe('Cut over to the EU region'); // the head is the starting message
   });
 
+  it('gives the latest reply one line for who and when, and the rest to its text (owner 2026-11-19)', async () => {
+    await draw(item());
+    const block = q('.thc-blk');
+    // no visible label row: "Latest reply" is said to a screen reader inside the who line
+    expect(block?.querySelector('.thc-blk-label')).toBeNull();
+    expect(block?.querySelector('.thc-blk-who .sr-only')?.textContent).toContain('Latest reply');
+    expect([...(block?.children ?? [])].map((c) => c.className)).toEqual(['thc-blk-who', 'thc-blk-text']);
+  });
+
   it('takes the mention look, never two blocks, when the latest reply is the one that names the person', async () => {
     await draw(item({ mention: mention({ messageId: ID(20), authorName: 'Rafi', preview: 'will do it tonight' }) }));
     const blocks = qa('.thc-blk');

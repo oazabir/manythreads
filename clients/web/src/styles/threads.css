@@ -414,17 +414,17 @@
   }
 }
 
-/* The block under the reply count: indented behind a muted elbow, a small label, the replier's picture, name and time, smaller muted text on a faint surface of its own.
+/* The block under the reply count: indented behind a muted elbow, one line with the replier's picture, name and time, then the reply itself (up to four lines) on a faint surface of its own.
    The mention takes the accent look. Never drawn like the head (the first message above it is plain text at full size). */
 .thc-blk {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
   margin-block-start: 6px;
   margin-inline-start: 16px;
-  padding: 6px 10px 7px;
+  padding: 5px 10px 6px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-sm);
   background: var(--shell);
@@ -443,6 +443,7 @@
 }
 
 .thc-blk-label {
+  flex: none;
   color: var(--faint);
   font-size: var(--fs-caption);
   letter-spacing: 0.02em;
@@ -486,7 +487,7 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 4;
 }
 
 .thc-blk[data-kind="mention"] {
