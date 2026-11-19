@@ -387,6 +387,60 @@
   white-space: nowrap;
 }
 
+/* the to-do's one line (owner, 2026-11-19): its mark, the count that is never cut, then the task being worked on, cut with an ellipsis */
+.tvLineMark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 16px;
+  block-size: 16px;
+  color: var(--faint);
+}
+
+.tvLineMark[data-state="done"] {
+  color: var(--ok);
+}
+
+.tvLineMark[data-state="blocked"] {
+  color: var(--alert);
+}
+
+/* a task is being worked on: a ring that turns (still, with a solid arc, when motion is reduced) */
+.tvSpin {
+  display: inline-block;
+  inline-size: 12px;
+  block-size: 12px;
+  border: 2px solid var(--rule);
+  border-block-start-color: var(--run-pulse);
+  border-radius: 50%;
+  animation: tv-turn 0.9s linear infinite;
+}
+
+@keyframes tv-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tvSpin {
+    animation: none;
+  }
+}
+
+.tvLineCount {
+  font-weight: 600;
+}
+
+.tvLineNow {
+  color: var(--mute);
+}
+
+.tvDockLine:has(.tvLineMark[data-state="done"]) .tvLineCount {
+  color: var(--ok-ink);
+}
+
 .tvDock .tvStrips {
   flex: none;
 }

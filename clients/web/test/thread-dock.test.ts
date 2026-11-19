@@ -26,7 +26,7 @@ vi.mock('../src/runs/useThreadRuns', () => ({
   useRunLines: () => ({ items: [{ seq: 9, at: '2026-11-16T10:00:00.000Z', payload: { kind: 'tool', stepId: 's9', stepKind: 'execute', title: 'pnpm lint' } }], plan: [], loading: false }),
 }));
 vi.mock('../src/screens/approvals/api', async (importOriginal) => ({ ...(await importOriginal<object>()), decideApproval: (...a: unknown[]) => decideApproval(...a), fetchThreadApprovals: vi.fn() }));
-const { ThreadDock, foldedLine } = await import('../src/taskview/ThreadDock');
+const { ThreadDock, foldedLine, todoLine } = await import('../src/taskview/ThreadDock');
 const { forgetDockFolded } = await import('../src/taskview/storage');
 const { shownNow, forgetShownQuestions } = await import('../src/channels/run-card/shownQuestions');
 
@@ -43,6 +43,10 @@ const draw = async (p: P): Promise<void> => {
   });
 };
 const q = (sel: string) => host.querySelector(sel);
+/** A to-do list starts as one line (owner, 2026-11-19): press it to see the cards. */
+const openDock = async (): Promise<void> => {
+  await act(async () => (q('[data-testid="dock-toggle"]') as HTMLButtonElement).click());
+};
 const setNarrow = (on: boolean): void => {
   window.matchMedia = ((query: string) => ({ matches: on && query.includes('480'), media: query, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, onchange: null, dispatchEvent: () => false })) as never;
 };
@@ -66,6 +70,7 @@ afterEach(async () => {
 describe('what the dock holds', () => {
   it('shows the to-do, the run and the question in that order, the question lowest (next to the composer)', async () => {
     await draw({ runs: [run()], todo: todo(), approvals: [ask('q1', '2026-11-16T10:00:00.000Z')] });
+    await openDock();
     const dock = q('[data-testid="thread-dock"]')!;
     const order = [...dock.querySelectorAll('[data-testid="tv-todo"], [data-testid="tv-run"], [data-testid="tv-question"]')].map((e) => e.getAttribute('data-testid'));
     expect(order).toEqual(['tv-todo', 'tv-run', 'tv-question']);
@@ -75,6 +80,8 @@ describe('what the dock holds', () => {
 
   it('follows the bots: a to-do tick and a new step show on the next draw, no reload', async () => {
     await draw({ runs: [run()], todo: todo(1) });
+    expect(q('[data-testid="dock-line"]')?.textContent).toBe('1 of 4 tasks done · in progress: Lint');
+    await openDock();
     expect(q('[data-testid="tv-todo-count"]')?.textContent).toBe('1 of 4');
     await draw({ runs: [run({ now: { kind: 'read', title: 'package.json', paths: [], helper: null, count: 1 } as never })], todo: todo(2) });
     expect(q('[data-testid="tv-todo-count"]')?.textContent).toBe('2 of 4');
@@ -124,25 +131,50 @@ describe('folding', () => {
   it('keeps one line of the to-do and the run while the side rail draws them, never the question, and gives the cards back when the rail closes (P29-20)', async () => {
     await draw({ runs: [run()], todo: todo(), approvals: [ask('q1', '2026-11-16T10:00:00.000Z')], railOpen: true });
     expect(q('[data-testid="tv-todo"]')).toBeNull();
-    expect(q('[data-testid="dock-line-rail"]')?.textContent).toBe('Engineer · Running pnpm lint · 1 of 4');
+    expect(q('[data-testid="dock-line-rail"]')?.textContent).toBe('1 of 4 tasks done · in progress: Lint');
     expect(q('[data-testid="dock-toggle"]')).toBeNull(); // nothing to press: the rail has the details
     expect(q('[data-testid="tv-question"]')).not.toBeNull();
     expect(localStorage.getItem(`mt.tv.dock.${ROOT}`)).toBeNull();
     await draw({ runs: [run()], todo: todo(), approvals: [], railOpen: false });
+    expect(q('[data-testid="dock-line"]')).not.toBeNull();
+    await openDock();
     expect(q('[data-testid="tv-todo"]')).not.toBeNull();
   });
 
 
-  it('folds the to-do and the run to one line, keeps the question, and remembers per thread', async () => {
+  it('a to-do list is one line until opened, keeps the question, and remembers per thread (owner 2026-11-19)', async () => {
     await draw({ runs: [run()], todo: todo(), approvals: [ask('q1', '2026-11-16T10:00:00.000Z')] });
-    await act(async () => (q('[data-testid="dock-toggle"]') as HTMLButtonElement).click());
     expect(q('[data-testid="tv-todo"]')).toBeNull();
     expect(q('[data-testid="tv-run"]')).toBeNull();
-    expect(q('[data-testid="dock-line"]')?.textContent).toBe('Engineer · Running pnpm lint · 1 of 4');
+    expect(q('[data-testid="dock-line"]')?.textContent).toBe('1 of 4 tasks done · in progress: Lint');
+    expect(q('[data-testid="dock-line-mark"]')?.getAttribute('data-state')).toBe('working');
+    expect(q('.tvSpin')).not.toBeNull();
+    expect(q('[data-testid="dock-toggle"]')?.getAttribute('aria-label')).toBe('Show details: 1 of 4 tasks done · in progress: Lint');
     expect(q('[data-testid="tv-question"]')).not.toBeNull();
-    expect(localStorage.getItem(`mt.tv.dock.${ROOT}`)).toBe('1');
-    await act(async () => (q('[data-testid="dock-toggle"]') as HTMLButtonElement).click());
+    await openDock();
     expect(q('[data-testid="tv-run"]')).not.toBeNull();
+    expect(localStorage.getItem(`mt.tv.dock.${ROOT}`)).toBe('0');
+    await openDock();
+    expect(q('[data-testid="tv-todo"]')).toBeNull();
+    expect(localStorage.getItem(`mt.tv.dock.${ROOT}`)).toBe('1');
+  });
+
+  it('a finished list says "X of Y tasks complete" on one line, with a tick and no ring', async () => {
+    await draw({ todo: { ...todo(), items: todo().items.map((i) => ({ ...i, status: 'done' })) } as never });
+    expect(q('[data-testid="dock-line"]')?.textContent).toBe('4 of 4 tasks complete');
+    expect(q('[data-testid="dock-line-mark"]')?.getAttribute('data-state')).toBe('done');
+    expect(q('.tvSpin')).toBeNull();
+  });
+
+  it('the line: the task being worked on, else a blocked one, else the next; the ring only while work goes on', () => {
+    const items = (...st: string[]) => ({ ...todo(), items: st.map((status, k) => ({ id: String(k), text: `T${k}`, status })) }) as never;
+    expect(todoLine(items('done', 'working', 'waiting'), null)).toEqual({ state: 'working', count: '1 of 3 tasks done', text: 'T1' });
+    expect(todoLine(items('done', 'blocked', 'waiting'), null)).toEqual({ state: 'blocked', count: '1 of 3 tasks done', text: 'Blocked: T1' });
+    expect(todoLine(items('done', 'waiting'), null)).toEqual({ state: 'waiting', count: '1 of 2 tasks done', text: 'Next: T1' });
+    // nothing ticked as being worked on, but a bot of the thread is at work: say what it does, with the ring
+    expect(todoLine(items('done', 'waiting'), run())).toEqual({ state: 'working', count: '1 of 2 tasks done', text: 'Engineer · Running pnpm lint' });
+    expect(todoLine(items('done'), null)).toEqual({ state: 'done', count: '1 of 1 task complete', text: null });
+    expect(todoLine(items('done', 'done'), run())).toEqual({ state: 'done', count: '2 of 2 tasks complete', text: null });
   });
 
   it('starts folded on a phone, unless the person chose otherwise for this thread', async () => {
