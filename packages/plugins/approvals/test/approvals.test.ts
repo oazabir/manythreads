@@ -368,6 +368,42 @@ describe('the questions of a whole channel in one read (P29-03)', () => {
   });
 });
 
+describe('a bot question that names who decides (owner 2026-11-19)', () => {
+  const ask = (run: BotRunHandle, key: string, approvers?: string[]) =>
+    runs.asBot(run, (tx) =>
+      provider.request(tx, {
+        runId: run.runId,
+        source: 'agent',
+        tool: 'approvals.ask',
+        summary: 'May I change the billing table?',
+        argsPreview: { question: 'May I change the billing table?' },
+        resume: { kind: 'handoff', payload: { kind: 'ask', runId: run.runId } },
+        dedupeKey: key,
+        ...(approvers ? { approvers } : {}),
+      }),
+    );
+
+  it('only the named people decide: not the person the bot works for, not a lead; a question naming nobody is still theirs to answer', async () => {
+    const named = await ask(await openRun(scoped, nadia), 'named-1', [`person:${personas.rafi.personId}`]);
+    const asNadia = (await list(nadia)).items.find((a) => a.id === named.approvalId)!;
+    expect(asNadia).toMatchObject({ canDecide: false, blockReason: 'not_approver' });
+    expect(asNadia.approvers).toMatchObject({ people: [personas.rafi.personId], leads: false, named: true });
+    expect((await list(rafi)).items.find((a) => a.id === named.approvalId)).toMatchObject({ canDecide: true });
+    expect((await list(omar)).items.find((a) => a.id === named.approvalId)).toMatchObject({ canDecide: false, blockReason: 'not_approver' });
+    // the person the bot works for cannot answer it through the API either
+    expect((await decide(nadia, named.approvalId, 'approve')).status).toBe(403);
+
+    const plain = await ask(await openRun(scoped, nadia), 'plain-1');
+    expect((await list(nadia)).items.find((a) => a.id === plain.approvalId)).toMatchObject({ canDecide: true, blockReason: null });
+  });
+
+  it('naming the person the bot works for lets them decide', async () => {
+    const filed = await ask(await openRun(scoped, nadia), 'named-2', [`person:${personas.nadia.personId}`]);
+    expect((await list(nadia)).items.find((a) => a.id === filed.approvalId)).toMatchObject({ canDecide: true });
+    expect((await list(rafi)).items.find((a) => a.id === filed.approvalId)).toMatchObject({ canDecide: false, blockReason: 'not_approver' });
+  });
+});
+
 describe('deciding', () => {
   it('approving re-runs the stopped call once, as the bot, and records what became of it; a second decision is refused', async () => {
     const id = (await request(await openRun(scoped, nadia), 'pages/approved.md')).approvalId;

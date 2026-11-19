@@ -79,6 +79,14 @@ const APPROVALS_ASK_SCHEMA = {
   properties: {
     question: { type: 'string', minLength: 3, maxLength: 300, description: 'One sentence a person can answer with yes or no: what you want to do, or what you need decided.' },
     details: { type: 'string', maxLength: 3000, description: 'What the person needs to read to decide: the command, the file, the consequence, the alternative. Never a key or a password.' },
+    approvers: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: { type: 'string', maxLength: 80 },
+      description:
+        'Only when your instructions say who must decide this (say, "changes to billing need Nadia\'s permission"): who may answer, as @handle or role:<tag>. Then only they can answer, not the person you work for. Leave it out otherwise: the team\'s usual approvers decide.',
+    },
   },
   required: ['question'],
   additionalProperties: false,

@@ -76,6 +76,11 @@ export const ApprovalApprovers = z.strictObject({
   people: z.array(z.uuid()).max(20),
   /** True when no role or person is named: the team's leads (and workspace owners and admins) decide. */
   leads: z.boolean(),
+  /**
+   * A bot's question (`approvals.ask`) that named who decides (owner 2026-11-19): only those people decide, and the person the bot works for is not added
+   * beside them. Absent on every other approval.
+   */
+  named: z.boolean().optional(),
 });
 export type ApprovalApprovers = z.infer<typeof ApprovalApprovers>;
 

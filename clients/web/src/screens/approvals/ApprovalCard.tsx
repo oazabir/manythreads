@@ -1,5 +1,6 @@
 import type { Approval } from '@manythreads/shared';
 import { ago } from '../../channels/format';
+import { usePeople } from '../../channels/hooks';
 import { useDecision } from './useDecision';
 import { AgePill } from './AgePill';
 import { AskerAvatar } from './Asker';
@@ -15,9 +16,9 @@ import { callOverdue } from './state';
  * Approve and Deny. The person who asked sees a plain sentence instead of the buttons: they cannot decide their own request.
  */
 
-/** Who decides, in words: the named role tags and people, or the team's leads. */
-export function approversLabel(approvers: Approval['approvers']): string {
-  const parts = [...approvers.roles, ...approvers.people.map(() => 'a named person')];
+/** Who decides, in words: the named role tags and people (by name when `nameOf` knows them), or the team's leads. */
+export function approversLabel(approvers: Approval['approvers'], nameOf: (personId: string) => string | undefined = () => undefined): string {
+  const parts = [...approvers.roles, ...approvers.people.map((id) => nameOf(id) ?? 'a named person')];
   if (approvers.leads) parts.push('the team’s leads');
   return parts.join(', ');
 }
@@ -139,6 +140,7 @@ export function ApprovalCard({
   variant?: 'detail' | 'thread' | 'run';
 }) {
   const { note, setNote, busy, error, full, fullError, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, onDecided);
+  const people = usePeople();
   // the whole call stands in for the preview as soon as it has come
   const shown = full ?? approval.argsPreview;
 
@@ -175,7 +177,7 @@ export function ApprovalCard({
           </div>
         ) : pending && !answered ? (
           <p className="apr-blocked" data-testid="approval-blocked" data-reason={approval.blockReason ?? ''}>
-            {approval.blockReason === 'requester' ? 'You asked for this, so someone else has to decide it.' : `Waiting for ${approversLabel(approval.approvers)} to answer.`}
+            {approval.blockReason === 'requester' ? 'You asked for this, so someone else has to decide it.' : `Waiting for ${approversLabel(approval.approvers, (id) => people.byPerson(id)?.name)} to answer.`}
           </p>
         ) : null}
         {error ? <p className="apr-error" role="alert" data-testid="approval-error">{error}</p> : null}
@@ -233,7 +235,7 @@ export function ApprovalCard({
           <p className="apr-blocked" data-testid="approval-blocked" data-reason={approval.blockReason ?? ''}>
             {approval.blockReason === 'requester'
               ? 'You asked for this, so someone else has to decide it.'
-              : `Waiting for ${approversLabel(approval.approvers)}.`}
+              : `Waiting for ${approversLabel(approval.approvers, (id) => people.byPerson(id)?.name)}.`}
           </p>
         )
       ) : (

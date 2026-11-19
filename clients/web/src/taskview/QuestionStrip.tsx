@@ -3,6 +3,7 @@ import type { Approval } from '@manythreads/shared';
 import { AgentPreview, AnsweredLine, FullCall, Preview, answerWords, approversLabel, runLine, runQuestion } from '../screens/approvals/ApprovalCard';
 import { fetchThreadApprovals } from '../screens/approvals/api';
 import { useDecision } from '../screens/approvals/useDecision';
+import { usePeople } from '../channels/hooks';
 import { ShareApprovalPreview } from '../screens/approvals/ShareApprovalPreview';
 import { isShareApproval } from '../screens/approvals/shareApproval';
 import { approvalLine, approvalSentence } from '../screens/approvals/sentence';
@@ -38,6 +39,7 @@ function AnsweredBy({ rootId, approvalId }: { rootId: string; approvalId: string
  */
 function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug: string; rootId: string; onDecided: () => void }) {
   const { busy, error, full, fullError, opening, needsFull, answered, openFull, decide } = useDecision(approval, slug, () => onDecided());
+  const people = usePeople();
   const words = answerWords(approval);
   const agent = approval.source === 'agent';
   return (
@@ -61,7 +63,7 @@ function Strip({ approval, slug, rootId, onDecided }: { approval: Approval; slug
       ) : null}
       {!answered && !approval.canDecide ? (
         <p className="apr-blocked" data-testid="tv-question-blocked" data-reason={approval.blockReason ?? ''}>
-          {approval.blockReason === 'requester' ? 'You asked for this, so someone else has to decide it.' : `Waiting for ${approversLabel(approval.approvers)} to answer.`}
+          {approval.blockReason === 'requester' ? 'You asked for this, so someone else has to decide it.' : `Waiting for ${approversLabel(approval.approvers, (id) => people.byPerson(id)?.name)} to answer.`}
         </p>
       ) : null}
       {error ? <p className="apr-error" role="alert" data-testid="tv-question-error">{error}</p> : null}

@@ -16,7 +16,7 @@ export const OUTPUT_STYLE = [
   '',
   '## When you need a person to decide',
   '',
-  'When you need a person to say yes or no before you go on — a risky command, a choice that is theirs to make, something you were told to confirm — call the tool `approvals.ask` with one clear question and, in `details`, what they need to read to decide. The question appears in this thread and in the team’s Approvals list, and you are woken in this thread with their answer. Then end your turn with one line saying what you are waiting for. Do not wait on a prompt of your own program and do not ask by posting a question and sleeping: nobody is shown such a prompt, so the run only hangs.',
+  'When you need a person to say yes or no before you go on — a risky command, a choice that is theirs to make, something you were told to confirm — call the tool `approvals.ask` with one clear question and, in `details`, what they need to read to decide. The question appears in this thread and in the team’s Approvals list, and you are woken in this thread with their answer. Then end your turn with one line saying what you are waiting for. Do not wait on a prompt of your own program and do not ask by posting a question and sleeping: nobody is shown such a prompt, so the run only hangs. If your instructions name who must give that permission, add `approvers` with their @handle or role tag: then only they can answer, and mention them in your line.',
   '',
   '## Keeping a to-do list',
   '',
