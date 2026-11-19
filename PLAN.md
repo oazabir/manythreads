@@ -169,7 +169,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 31 | 31 | Deliveries that need no operator: Codex for several teams on one server, fewer approval cards without widening what the site controls, a chain that needs no nudges, a run that survives running out of memory, deploys and test-site builds that fit the disk, a Tester on a server that runs the full checks (2026-11-18, from the P26 proofs) | L | 26 | 0 of 7 built |
 | 32 | 32 | Voice messages like a phone app: a recording bar with delete, time, live waveform, pause and send; sent at once; the first 20 seconds transcribed on the server by Parakeet v3 and shown under the player (owner, 2026-11-18, D13) | M | 15, 28 | 12 of 12 built, live (P32-10/11: flat voice messages, owner 2026-11-18) |
 | 33 | 33 | A calmer channel header: one Members icon opening a right-panel list with Add for a lead, Bot Board, Schedule and the voice room as matching icons, the search as a bar, Join and End room on the voice room's start message (owner, 2026-11-18) | M | 15, 21 | 10 of 10 built, live |
-| 34 | 34 | The everyday screens: the message list's rhythm, one composer everywhere, link previews that show once, a phone frame that fits, one header pattern; the call card and event rows built with P15-26 (owner, 2026-11-19; `docs/plans/everyday-screens.md`) | L | 21, 32, 33 | 1 of 9 built (the plan) |
+| 34 | 34 | The everyday screens: the message list's rhythm, one composer everywhere, link previews that show once, a phone frame that fits, one header pattern; the call card and event rows built with P15-26 (owner, 2026-11-19; `docs/plans/everyday-screens.md`) | L | 21, 32, 33 | 2 of 10 built (the plan, the Threads view's reply box) |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -208,7 +208,7 @@ Next after the ten: P31-06 (a Tester on a server runs the full checks), P26-20 (
 
 ## 8. Build ledger (synced with the code, 2026-11-19)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **365 of 507 tasks (the 506 rows of this plan plus the follow-up P14-01b) are built, 68 are partly built, 68 are not built and 6 were dropped, superseded or built as something else.** On 2026-11-18 every phase was checked again against the code at commit 2bd6bf03 (three read-only audits); Phases 22 to 30 are in the table below from that date, and Phase 31 (7 rows, none built) was added the same day from the P26 proofs. On 2026-11-19 Phase 32's two follow-ups (P32-10, P32-11) and Phase 33 (10 rows) were added, all built and live at web `dacd7eab`; nothing else changed since `2bd6bf03`. Phase 34 (9 rows, the plan built) was added the same day from a UI pass on the live site. (P6-13, P6-14, P20-16 and P21-26 to P21-28 were added on 2026-11-05 at the owner's request, and P6-09 was dropped the same day; Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **366 of 508 tasks (the 507 rows of this plan plus the follow-up P14-01b) are built, 68 are partly built, 68 are not built and 6 were dropped, superseded or built as something else.** On 2026-11-18 every phase was checked again against the code at commit 2bd6bf03 (three read-only audits); Phases 22 to 30 are in the table below from that date, and Phase 31 (7 rows, none built) was added the same day from the P26 proofs. On 2026-11-19 Phase 32's two follow-ups (P32-10, P32-11) and Phase 33 (10 rows) were added, all built and live at web `dacd7eab`; nothing else changed since `2bd6bf03`. Phase 34 (10 rows; the plan and the Threads view's reply box built) was added the same day from a UI pass on the live site. (P6-13, P6-14, P20-16 and P21-26 to P21-28 were added on 2026-11-05 at the owner's request, and P6-09 was dropped the same day; Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -247,7 +247,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 31 · Deliveries that need no operator | 0 | 0 | 7 | 0 |
 | 32 · Voice messages transcribed on the server | 12 | 0 | 0 | 0 |
 | 33 · A calmer channel header | 10 | 0 | 0 | 0 |
-| 34 · The everyday screens | 1 | 0 | 8 | 0 |
+| 34 · The everyday screens | 2 | 0 | 8 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -941,7 +941,7 @@ The channel header was too busy: one Members icon opens a right-panel list of th
 | P33-08 | Review fixes: the header measures its own width (bar, icons, tight) so it fits with a panel open | Built, live (2f4665df) |
 | P33-09 | Tests and pictures for the fixes; deploy dacd7eab and a live check as Omar (header, Members panel Add in a scratch channel, start, card, End, archive) | Built, checked live 2026-11-19 |
 
-### Phase 34 · The everyday screens (owner, 2026-11-19) — 1 built (the plan), 0 partly, 8 not built
+### Phase 34 · The everyday screens (owner, 2026-11-19) — 2 built, 0 partly, 8 not built
 
 A pass over the screens people use all day (channel, composer, message kinds, thread, Threads, DMs) on the live site at 1440 and 390 px found 33 rendering and usability issues. The findings, the tasks and the independent review's binding corrections (which owner decisions each task would reverse, what needs a server change) are in `docs/plans/everyday-screens.md`; the before-pictures are in `temp/screenshots/p34-before/` (not committed).
 
@@ -956,6 +956,7 @@ A pass over the screens people use all day (channel, composer, message kinds, th
 | P34-06 | One header pattern for the main screens (breadcrumb removal with the owner's yes), thread pane controls, sidebar headings, no monospace outside code | Not built |
 | P34-07 | Tests, baselines and pictures after in all four palettes, light and dark | Not built |
 | P34-08 | Deploy and a live check against the before-pictures | Not built |
+| P34-09 | Threads view (owner 2026-11-19): the latest-reply box keeps one line for the replier's picture, name and time and gives the rest to up to four lines of the reply (the "Latest reply" label only for a screen reader; "Mentions you" stays visible); on a touch screen the row's … button sits on the head line, not on the box | Built, live (922c20fe, 82a4bd2f; checked at 1440 and 390) |
 
 ---
 
