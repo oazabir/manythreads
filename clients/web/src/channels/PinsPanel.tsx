@@ -41,7 +41,7 @@ export function PinsPanel({ entry }: { entry: PanelEntry }) {
     return (
       <div className="panel-empty" role="alert">
         <p className="panel-empty-title">Could not load the pinned messages.</p>
-        <p className="panel-empty-body">Close the panel and open it again to try once more.</p>
+        <button type="button" className="btn s" onClick={reload}>Try again</button>
       </div>
     );
   }
