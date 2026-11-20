@@ -123,6 +123,13 @@ describe('the meta a plugin may put on a message', () => {
     await expect(post(bot(brain, brainRun), { body: 'x', meta: { meetingNotes: { meetingId, extra: 1 } } as never })).rejects.toMatchObject({ status: 400 });
   });
 
+  it('refuses a meta.meeting (a call card) that is not exactly a meeting id, and one the database does not find to be this author’s own live call', async () => {
+    await expect(post(bot(brain, brainRun), { body: 'x', meta: { meeting: { meetingId: 'not-a-uuid' } } })).rejects.toMatchObject({ status: 400 });
+    await expect(post(bot(brain, brainRun), { body: 'x', meta: { meeting: { meetingId: randomUUID(), extra: 1 } } as never })).rejects.toMatchObject({ status: 400 });
+    // the shape is right but no call of this bot exists: the stamp trigger (meetings 0007) refuses it
+    await expect(post(bot(brain, brainRun), { body: 'x', meta: { meeting: { meetingId: randomUUID() } } })).rejects.toBeTruthy();
+  });
+
   it('is still the one write: a message with no meta is an ordinary message', async () => {
     const posted = await post(bot(brain, brainRun), { body: 'A plain reply' });
     expect(posted.channelId).toBe(dev);

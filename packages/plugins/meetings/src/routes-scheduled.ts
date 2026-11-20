@@ -109,8 +109,9 @@ export function registerScheduledRoutes(ctx: PluginContext): void {
         return json(JoinScheduledMeetingResponse.parse({ meeting: toMeeting(room), created: false, join }));
       }
       // Whoever may post in the channel may open the room; the database marks the plan started, and one live room per plan keeps two presses of Start in one room.
-      const { m, created, join } = await startRoom(ctx, tx, { channelId: plan.channel_id, title: plan.title, caller, scheduledMeetingId: plan.id });
-      if (created) await afterRoomOpened(ctx, tx, plan);
+      // The new room gets its stamped start message like any call, and a start whose card cannot be written fails here too. What the plan does once its room is open
+      // runs before the media room is asked for, so a refused start leaves none.
+      const { m, created, join } = await startRoom(ctx, tx, { channelId: plan.channel_id, title: plan.title, caller, scheduledMeetingId: plan.id, onCreated: () => afterRoomOpened(ctx, tx, plan) });
       return json(JoinScheduledMeetingResponse.parse({ meeting: toMeeting(m), created, join }));
     }),
   });

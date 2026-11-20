@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Meeting, MeetingJoin, MeetingState, MeetingSummary, MeetingTitle } from '../../entities/meeting.ts';
+import { CALL_CARDS_MAX, CallCard, Meeting, MeetingJoin, MeetingKind, MeetingState, MeetingSummary, MeetingTitle } from '../../entities/meeting.ts';
 import { Team } from '../../entities/team.ts';
 import { ChannelId, MeetingId } from '../../ids.ts';
 
@@ -26,8 +26,11 @@ export type MeetingPathParams = z.infer<typeof MeetingPathParams>;
 export const StartMeetingPathParams = z.object({ channelId: ChannelId });
 export type StartMeetingPathParams = z.infer<typeof StartMeetingPathParams>;
 
-/** Start a room in a channel. The title defaults to "Voice room · 14:02" (the time in UTC). Asking again while a room is live joins that one (`created: false`). */
-export const StartMeetingRequest = z.strictObject({ title: MeetingTitle.optional() });
+/**
+ * Start a room in a channel. The title defaults to "Voice room · 14:02" (the time in UTC). Asking again while a room is live joins that one (`created: false`). Every field is
+ * optional (an older page sends `{ title }` only). `kind` defaults to `audio`; `video` answers 409 "Video calls are not available yet" until P17-01.
+ */
+export const StartMeetingRequest = z.strictObject({ title: MeetingTitle.optional(), kind: MeetingKind.optional() });
 export type StartMeetingRequest = z.infer<typeof StartMeetingRequest>;
 export const StartMeetingResponse = z.object({
   meeting: Meeting,
@@ -82,6 +85,27 @@ export type ListMeetingsResponse = z.infer<typeof ListMeetingsResponse>;
 export const listTeamMeetingsRoute = { method: 'GET', path: '/api/teams/:slug/meetings' } as const satisfies ApiRoute;
 /** Every live room the caller can read, in any team and in their direct messages (the sidebar badge, an incoming DM call). */
 export const listMyLiveMeetingsRoute = { method: 'GET', path: '/api/meetings/live' } as const satisfies ApiRoute;
+
+/**
+ * The cards of some calls (P15-26): the web asks for the calls whose start messages are in view (`meta.meeting`), ids joined by commas, at most 50. A call the caller cannot
+ * read is left out of the answer, never an error. The comma list is turned into an array before the check, and an array passes unchanged.
+ */
+export const ListCallCardsQuery = z.object({
+  ids: z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.length <= CALL_CARDS_MAX * 37
+        ? value
+            .split(',')
+            .map((part) => part.trim())
+            .filter((part) => part !== '')
+        : value,
+    z.array(MeetingId).min(1).max(CALL_CARDS_MAX),
+  ),
+});
+export type ListCallCardsQuery = { ids: string };
+export const ListCallCardsResponse = z.object({ cards: z.array(CallCard) });
+export type ListCallCardsResponse = z.infer<typeof ListCallCardsResponse>;
+export const listCallCardsRoute = { method: 'GET', path: '/api/meetings/cards' } as const satisfies ApiRoute;
 
 /** Whether the server can make calls: false with a plain reason (and what to do) when no media server is set up. */
 export const MediaStatusResponse = z.object({

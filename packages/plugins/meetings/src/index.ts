@@ -22,6 +22,7 @@ import { registerConsentRoutes } from './routes-consent.ts';
 import { registerRingEndJob } from './live.ts';
 import { registerMeetingJobs } from './jobs.ts';
 import { registerMeetingRoutes } from './routes.ts';
+import { registerCallCardRoutes } from './routes-cards.ts';
 import { registerMediaWebhook } from './webhook.ts';
 
 /**
@@ -75,6 +76,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerMeetingRoutes(ctx);
+    registerCallCardRoutes(ctx);
     registerConsentRoutes(ctx);
     registerRingEndJob(ctx);
     registerMediaWebhook(ctx);

@@ -10,12 +10,15 @@ The web part is in `clients/web/src/meetings` (the call bar) and `clients/web/sr
 
 - **Start** in a channel (`POST /api/channels/:channelId/meetings`): whoever may post there. One live room per channel: starting while one is live returns that room (`created: false`) and joins the person to it.
   The title defaults to "Voice room · 14:02" (UTC). A **call thread** is created at the same time, a message in the channel the room points at (`threadRootId`); people in the call reply there with the
-  channel's own messages, files and @mentions. If the message cannot be written the room still opens. A call in a direct message is a room in the DM's channel (`teamId` is null; only that conversation sees it).
+  channel's own messages, files and @mentions. That message is the call's **start message** and carries the call card (see [The call card](#the-call-card-p15-26)); if it cannot be written the start fails
+  with a plain reason and nothing is left behind. `kind` is `audio` (the default); `video` answers 409 "Video calls are not available yet" until P17-01. A call in a direct message is a room in the DM's
+  channel (`teamId` is null; only that conversation sees it).
 - **Join** (`POST /api/meetings/:id/join`): a person who can read the channel. The answer holds the media address and a token that lives at most 10 minutes. A room takes 25 people unless an admin changes `room_cap` (2 to 100); the 26th person gets 409 "This voice room is full (25 people)".
 - **Renew the token** (`POST /api/meetings/:id/token`): only while the person is in the room and can still read its channel.
 - **Leave** (`POST /api/meetings/:id/leave`), **heartbeat** every 30 seconds while in the room (`POST /api/meetings/:id/heartbeat`, optionally `{ speaking }`).
 - **End** (`POST /api/meetings/:id/end`): the starter, a lead of the room's team, or a workspace admin. Everyone in the room is dropped. An admin who cannot read a private channel cannot end its room
   (the database function checks that the caller could read it); a call in a DM can be ended only by the person who started it (a DM has no team lead).
+- **Cards**: `GET /api/meetings/cards?ids=<id>,<id>` (at most 50, 120 a minute): what the call cards of these calls show (see [The call card](#the-call-card-p15-26)).
 - **Look**: `GET /api/meetings/:id`, `GET /api/teams/:slug/meetings?state=live|ended` (a team's live rooms), `GET /api/meetings/live` (the live rooms the caller can see), `GET /api/meetings/media-status`
   (`{ configured, provider, reason }`).
 - **Not set up**: with no media server configured, start, join and token answer **409** with "Voice rooms are not set up" and a plain reason, and write nothing. Everything that only reads still works.
@@ -35,6 +38,30 @@ All forced row-level security with a `rls:` comment; the system role has `FOR AL
   A trigger keeps `meetings.empty_since`: set when the last person leaves, cleared when anyone is in.
 - `meeting_segments`: transcript lines (meeting, speaker, `start_ms`, `end_ms`, text, `final`, `lang`, `source` `device`/`server`, `client_seg_id`, `edited_at`). A person inserts their own `device` lines while present; the server inserts `server` lines (the fallback upload, the note-taker, a voice message in the call thread) as the system. A line is accepted until two minutes after the room ended (`MEETING_LATE_LINE_SECONDS` 120). A line is changed only by its speaker through `app.meetings_correct_segment` (24 hours). One line per `(meeting, speaker, client_seg_id)`. Trigram index on the text, BRIN on `created_at`.
 - `meeting_presence` (**UNLOGGED**): the heartbeat, `seen_at` and `speaking`. A person writes and reads only their own row. It may be lost in a crash; the sweep then waits for the next heartbeat.
+
+## The call card (P15-26)
+
+The words used here: a **stamp** is a key in a message's `meta` that only the platform may set; the **start message** is the channel message a call posts when it opens.
+
+- **The stamp.** A new call's start message is `Started a call: <title>`, posted through the `messages` provider with `meta.meeting = { meetingId }` and `skipRefs` (the title links and notifies
+  nobody). It is written once and never rewritten: the card reads the title, state and people from the cards route, so the message never changes with the call. The web draws the card in place of
+  the text of any message with `meta.meeting`. A person's post takes no `meta`, no bot capability carries it, and a caller cannot change `meta` afterwards (channels 0017), so only the start route
+  sets it. The database checks it as well, whoever inserts (`app.messages_meeting_stamp`, migration `0007_call_card.sql`, a trigger that runs as the caller and only for a message whose `meta` has
+  the key): the meeting is live, in the message's channel, started by the message's author, has no start message yet, and the message is top-level; anything else is refused with 42501, a value
+  that is not exactly `{ "meetingId": "<uuid>" }` with 23514. A unique index (`messages_meeting_card`) keeps one card per call.
+- **The thread.** `meetings.thread_root_id` is set by the starter once, from nothing to the message stamped with that meeting (the `meetings_guard` trigger). It may still go back to nothing:
+  deleting the message sets it to null through the foreign key. A deleted start message leaves the call running without a card, and the "Missed call" job of a DM call then writes nothing.
+- **Order of a start.** Every database write comes first (the started event, the stamped message, the thread, the starter's place, a planned room's "started", the ring of a DM call), and the
+  media room is asked for last, just before the token: the media room lives outside the transaction, so a start the database refuses leaves no media room. The join route of a planned room
+  (`POST /api/scheduled-meetings/:id/join`) starts through the same code.
+- **Old start messages.** Migration 0007 stamped the "Started a voice room:" messages written before it, only where the message is the starter's own top-level message in the call's channel (the
+  old guard let a caller point the thread at any message); one message shared by two meetings is stamped for the earlier one. A `meta`-only update keeps no version and sends no event or push.
+- **`GET /api/meetings/cards?ids=`** reads the meetings and their people through the caller's own row policies, so a call in a channel the caller cannot read is left out of the answer (never an
+  error). Each `CallCard`: `meetingId`, `kind`, `title`, `state`, `startedBy`, `starterName`, `startedAt`, `endedAt`, `durationSeconds` (null while live), `present` (the first five in the call
+  now) and `presentCount`, `joinedCount` (everyone who was in it), `invited` (`{ count, names }`; empty until invitations, P15-27), `notetaker` (`{ name, listening }` or null), `you`
+  (`joined`: in the call now; `canEnd`: the starter, a lead or an admin, while live; `canInvite`: may post in the channel, while live) and `notesLink` (the meeting page, `/t/<team>/meetings/<id>`
+  or `/meetings/<id>`, only when `app.meetings_can_read_notes` says yes and the notes are written). The team's slug, the bot's name and whether the notes are written are read as the system,
+  for calls the caller has already read. `meetings.meeting.started` carries the call's `kind`.
 
 ## Jobs
 

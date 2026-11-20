@@ -138,6 +138,8 @@ const ProviderMeta = z.strictObject({
   todoRef: z.uuid().optional(),
   /** The card a note-taker's nudge draws (meetings plugin, P15-21): the meeting whose notes the message is about. The client reads the notes through the meeting's own routes, which decide who may. */
   meetingNotes: z.strictObject({ meetingId: z.uuid() }).optional(),
+  /** The call a start message opened (meetings plugin, P15-26): the client draws the call card in its place. The database accepts it only on that call's own top-level start message, by the person who started the call (`app.messages_meeting_stamp`). */
+  meeting: z.strictObject({ meetingId: z.uuid() }).optional(),
   /** The chat app a message came across from (bridges plugin, P16-09). Only a plugin posting through the `messages` provider can set it: no bot capability carries `meta`, so a bot cannot claim it. */
   via: z.strictObject({ provider: z.enum(['telegram', 'whatsapp', 'slack', 'teams']) }).optional(),
   /** The category of the short notice a failed run leaves in the thread (runtime-hermes): at most one per run, found again by this key. */

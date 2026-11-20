@@ -32,3 +32,6 @@ clients/web/dist-*/
 /review/
 self-build-out/
 .release/
+
+# test runs of plugins write blobs under their own data/ folder (meetings, runtime-hermes): never committed
+packages/plugins/*/data/

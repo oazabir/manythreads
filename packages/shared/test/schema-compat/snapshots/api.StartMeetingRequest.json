@@ -6,6 +6,13 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 200
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "audio",
+        "video"
+      ]
     }
   },
   "additionalProperties": false

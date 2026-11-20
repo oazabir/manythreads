@@ -4,7 +4,7 @@ import type { PluginTx } from '@manythreads/sdk';
 // Rows of `meetings` and `meeting_participants` as the routes return them. Always read through the caller's own transaction, so the row-level
 // security decides who sees what; nothing here widens that.
 
-export const MEETING_COLUMNS = `m.id, m.workspace_id, m.team_id, m.channel_id, m.title, m.state, m.started_by, m.organizer_id, m.notetaker_bot_id, m.started_at,
+export const MEETING_COLUMNS = `m.id, m.workspace_id, m.team_id, m.channel_id, m.title, m.state, m.kind, m.started_by, m.organizer_id, m.notetaker_bot_id, m.started_at,
   m.ended_at, m.end_reason, m.transcription, m.recording, m.transcript_path, m.transcript_file_id, m.thread_root_id`;
 
 export interface MeetingRow {
@@ -14,6 +14,7 @@ export interface MeetingRow {
   channel_id: string | null;
   title: string;
   state: 'live' | 'ended';
+  kind: 'audio' | 'video';
   started_by: string;
   organizer_id: string;
   notetaker_bot_id: string | null;
@@ -48,6 +49,7 @@ export function toMeeting(r: MeetingRow): Meeting {
     channelId: r.channel_id as Meeting['channelId'],
     title: r.title,
     state: r.state,
+    kind: r.kind,
     startedBy: r.started_by as Meeting['startedBy'],
     organizerId: r.organizer_id as Meeting['organizerId'],
     notetakerBotId: r.notetaker_bot_id as Meeting['notetakerBotId'],

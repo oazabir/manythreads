@@ -75,8 +75,17 @@ export function registerRingEndJob(ctx: PluginContext): void {
       const messages = ctx.providers.get<MessageProvider>('messages');
       if (!messages) return;
       const wrote = await ctx.db.as({ actorId: p.callerActorId, kind: 'person', workspaceId: p.workspaceId, personId: null, sessionId: null }, async (tx) => {
-        const room = (await tx.query<{ channel_id: string | null; thread_root_id: string | null }>('SELECT channel_id, thread_root_id FROM app.meetings WHERE id = $1::uuid', [p.meetingId])).rows[0];
+        const room = (
+          await tx.query<{ channel_id: string | null; thread_root_id: string | null; root_deleted: boolean | null }>(
+            `SELECT m.channel_id, m.thread_root_id, (SELECT x.deleted_at IS NOT NULL FROM app.messages x WHERE x.id = m.thread_root_id) AS root_deleted
+               FROM app.meetings m WHERE m.id = $1::uuid`,
+            [p.meetingId],
+          )
+        ).rows[0];
         if (!room?.channel_id) return false;
+        // the start message (the call card) was deleted by its author or a lead: there is no thread to answer in, and a reply to a deleted message is refused, so
+        // the job would only fail and retry (review correction 7)
+        if (room.thread_root_id !== null && room.root_deleted === true) return false;
         const answered = await tx.query('SELECT 1 FROM app.meeting_participants WHERE meeting_id = $1::uuid AND actor_id <> $2::uuid LIMIT 1', [p.meetingId, p.callerActorId]);
         if (answered.rows.length > 0) return false;
         await messages.post(tx, { channelId: room.channel_id, body: MISSED_CALL_TEXT, threadRootId: room.thread_root_id, skipRefs: true });

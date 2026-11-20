@@ -1,3 +1,5 @@
+import { lastFakeMedia } from '@manythreads/plugin-media-fake';
+import { testClient } from '@manythreads/test-utils';
 import { CreateScheduledMeetingResponse, GetScheduledMeetingResponse, JoinScheduledMeetingResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eventually } from '../../channels/test/world.ts';
@@ -83,6 +85,39 @@ describe('joining a plan', () => {
     const gate = GetScheduledMeetingResponse.parse((await s.w.call(omar, 'GET', `/api/scheduled-meetings/${p.id}`)).body);
     expect(gate.gate.status).toBe('cancelled');
     expect((await join(omar, '01a1bcc8-eb39-7785-8564-e6e48905cad7')).status).toBe(404);
+  });
+
+  it('opens the room with its call card like any start, and a card that cannot be written leaves the plan unstarted and no media room (review correction 6)', async () => {
+    const owner = async (sql: string): Promise<void> => {
+      const admin = testClient({ connectionString: s.w.server.db.ownerUrl });
+      await admin.connect();
+      try {
+        await admin.query(sql);
+      } finally {
+        await admin.end();
+      }
+    };
+    const refused = await plan('Refused card');
+    await owner(`CREATE FUNCTION app.test_refuse_plan_card() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused by the test'; END $$;
+                 CREATE TRIGGER test_refuse_plan_card BEFORE INSERT ON app.messages FOR EACH ROW WHEN (NEW.meta ? 'meeting') EXECUTE FUNCTION app.test_refuse_plan_card();`);
+    try {
+      const roomsBefore = lastFakeMedia().rooms.size;
+      const res = await join(omar, refused.id);
+      expect(res.status, JSON.stringify(res.body)).toBe(409);
+      expect(JSON.stringify(res.body)).toContain('The call could not start');
+      expect((await row(refused.id))['status']).toBe('scheduled');
+      expect(lastFakeMedia().rooms.size).toBe(roomsBefore);
+      const rooms = await s.w.system(async (tx) => (await tx.query('SELECT 1 FROM app.meetings WHERE scheduled_meeting_id = $1', [refused.id])).rows.length);
+      expect(rooms).toBe(0);
+    } finally {
+      await owner('DROP TRIGGER test_refuse_plan_card ON app.messages; DROP FUNCTION app.test_refuse_plan_card();');
+    }
+    const opened = JoinScheduledMeetingResponse.parse((await join(omar, refused.id)).body);
+    expect(opened.created).toBe(true);
+    const card = await s.w.system(async (tx) => (await tx.query<{ id: string; body: string; meta: unknown }>('SELECT id, body, meta FROM app.messages WHERE id = $1', [opened.meeting.threadRootId])).rows[0]);
+    expect(card).toMatchObject({ body: 'Started a call: Refused card', meta: { meeting: { meetingId: opened.meeting.id } } });
+    expect((await row(refused.id))['status']).toBe('started');
+    expect((await s.w.call(omar, 'POST', `/api/meetings/${opened.meeting.id}/end`)).status).toBe(200);
   });
 
   it('says a room that has ended has already happened', async () => {

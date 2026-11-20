@@ -10,6 +10,10 @@ import { Avatar } from './avatar.ts';
 export const MeetingState = z.enum(['live', 'ended']);
 export type MeetingState = z.infer<typeof MeetingState>;
 
+/** What a call carries: `audio` (every call today) or `video`, which the start route refuses until video calls exist (P17-01). */
+export const MeetingKind = z.enum(['audio', 'video']);
+export type MeetingKind = z.infer<typeof MeetingKind>;
+
 /** Who closed the room: a person (the starter, a lead of the team or a workspace admin) or the platform after the last person left. */
 export const MeetingEndReason = z.enum(['person', 'empty']);
 export type MeetingEndReason = z.infer<typeof MeetingEndReason>;
@@ -51,6 +55,8 @@ export const Meeting = z.object({
   channelId: ChannelId.nullable(),
   title: z.string().min(1).max(MEETING_TITLE_MAX),
   state: MeetingState,
+  /** Audio or video; fixed when the call starts. */
+  kind: MeetingKind,
   startedBy: ActorId,
   /** The starter, or the person who planned the meeting. Owns the notes and the transcript folder (later tasks). */
   organizerId: ActorId,
@@ -350,3 +356,50 @@ export const MeetingOverview = z.object({
   you: z.object({ isOrganizer: z.boolean(), canManage: z.boolean(), canReadNotes: z.boolean() }),
 });
 export type MeetingOverview = z.infer<typeof MeetingOverview>;
+
+/** At most this many faces (and invited names) a call card carries; the rest is a count. */
+export const CALL_CARD_FACES = 5;
+/** At most this many calls one `GET /api/meetings/cards` asks for. */
+export const CALL_CARDS_MAX = 50;
+
+/** One person on a call card: the actor id (the web draws the face from it) and the name they joined with. */
+export const CallCardPerson = z.object({ actorId: ActorId, displayName: z.string() });
+export type CallCardPerson = z.infer<typeof CallCardPerson>;
+
+/**
+ * What a call card shows (P15-26): the card is drawn in place of a start message whose `meta.meeting` names this call. Read through the caller's row policies, so a call
+ * the caller cannot read is not answered at all. `you` says which buttons the card may draw; `notesLink` is the meeting page, given only to a person who may read the call's
+ * notes and only once they are written.
+ */
+export const CallCard = z.object({
+  meetingId: MeetingId,
+  kind: MeetingKind,
+  title: z.string().min(1).max(MEETING_TITLE_MAX),
+  state: MeetingState,
+  startedBy: ActorId,
+  starterName: z.string(),
+  startedAt: IsoDateTime,
+  endedAt: IsoDateTime.nullable(),
+  /** Whole seconds from start to end; null while the call is live. */
+  durationSeconds: z.number().int().min(0).nullable(),
+  /** Who is in the call now, the first five by the time they came in; `presentCount` is all of them. */
+  present: z.array(CallCardPerson).max(CALL_CARD_FACES),
+  presentCount: z.number().int().min(0),
+  /** Everyone who was in the call at any time. */
+  joinedCount: z.number().int().min(0),
+  /** The people asked to the call (invitations come with P15-27; until then the count is 0). */
+  invited: z.object({ count: z.number().int().min(0), names: z.array(z.string()).max(CALL_CARD_FACES) }),
+  /** The note-taker bot of the call, and whether it is listening now. */
+  notetaker: z.object({ name: z.string(), listening: z.boolean() }).nullable(),
+  you: z.object({
+    /** In the call right now. */
+    joined: z.boolean(),
+    /** May end it (the starter, a lead of the team, a workspace admin) while it is live. */
+    canEnd: z.boolean(),
+    /** May ask more people while it is live (whoever may post in the channel). */
+    canInvite: z.boolean(),
+  }),
+  /** The meeting page (`/t/<team>/meetings/<id>` or `/meetings/<id>`); null unless the caller may read the notes and they are written. */
+  notesLink: z.string().nullable(),
+});
+export type CallCard = z.infer<typeof CallCard>;

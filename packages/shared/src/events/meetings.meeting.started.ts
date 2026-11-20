@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
+import { MeetingKind } from '../entities/meeting.ts';
 import { ActorId, ChannelId, MeetingId, TeamId, WorkspaceId } from '../ids.ts';
 
 /**
@@ -14,6 +15,8 @@ export const MeetingsMeetingStartedEvent = z.object({
   channelId: ChannelId.nullable(),
   meetingId: MeetingId,
   startedBy: ActorId,
+  /** Audio or video (P15-25); absent in events written before calls had a kind, which were all audio. */
+  kind: MeetingKind.optional(),
   at: IsoDateTime,
 });
 export type MeetingsMeetingStartedEvent = z.infer<typeof MeetingsMeetingStartedEvent>;

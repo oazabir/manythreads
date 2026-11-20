@@ -51,6 +51,13 @@
             "ended"
           ]
         },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "audio",
+            "video"
+          ]
+        },
         "startedBy": {
           "type": "string",
           "format": "uuid",
@@ -153,6 +160,7 @@
         "channelId",
         "title",
         "state",
+        "kind",
         "startedBy",
         "organizerId",
         "notetakerBotId",
