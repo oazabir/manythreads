@@ -1,17 +1,15 @@
-import { useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
-import { useMenuKeys } from '../shell/RowMenu';
+import { useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import {
   ToolBoldIcon, ToolBulletIcon, ToolChannelIcon, ToolCodeBlockIcon, ToolCodeIcon, ToolEmojiIcon, ToolFormatIcon, ToolItalicIcon, ToolLinkIcon, ToolMentionIcon,
-  ToolMoreIcon, ToolNumberIcon, ToolPollIcon, ToolQuoteIcon, ToolStrikeIcon,
+  ToolNumberIcon, ToolPollIcon, ToolQuoteIcon, ToolStrikeIcon,
 } from '../shell/icons';
-import { useDismiss } from '../shell/useDismiss';
 import { CODE_LANGUAGES } from './composerFormat';
-import { TOOL_CHORDS, barTools, chordText, moreTools, toolTitle, type ToolId, type ToolLayout } from './composerTools';
+import { barTools, toolTitle, type ToolId, type ToolLayout } from './composerTools';
 
 /*
  * The formatting bar above the message box (PLAN P21-04). It is always there, so the list above never moves when the box gets focus; the icons are 16 px and the
- * tooltips name the shortcut. In a narrow box (the thread panel) the rarer tools sit under "…"; on a phone one "Aa" button opens the row. The bar is one stop
- * of the Tab key and the arrows move along it.
+ * tooltips name the shortcut. Every composer (channel, thread panel, direct message, Brain chat) draws the same tools in the same order (P34-03); a box too
+ * narrow for one row wraps to a second, and on a phone one "Aa" button opens the row. The bar is one stop of the Tab key and the arrows move along it.
  */
 
 type Icon = ComponentType<{ size?: number }>;
@@ -31,11 +29,6 @@ const UI: Record<ToolId, { aria: string; title: string; Icon: Icon; mono?: boole
   poll: { aria: 'Ask a poll', title: 'Poll', Icon: ToolPollIcon },
 };
 
-const chordFor = (id: ToolId, mac: boolean): string | null => {
-  const chord = TOOL_CHORDS[id];
-  return chord ? chordText(chord, mac) : null;
-};
-
 export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiOpen, emojiRef }: {
   layout: ToolLayout;
   /** The tools this box offers, in order (no poll where polls make no sense). */
@@ -47,30 +40,15 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
   emojiRef: RefObject<HTMLButtonElement | null>;
 }) {
   const [formatOpen, setFormatOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [toolAt, setToolAt] = useState(0);
   const bar = useRef<HTMLDivElement>(null);
-  const moreButton = useRef<HTMLButtonElement>(null);
-  const morePanel = useRef<HTMLDivElement>(null);
   const shown = barTools(layout, tools, formatOpen);
-  const rest = moreTools(layout, tools);
-  const slots: string[] = [...(layout === 'aa' ? ['format'] : []), ...shown, ...(rest.length > 0 ? ['more'] : [])];
+  const slots: string[] = [...(layout === 'aa' ? ['format'] : []), ...shown];
   const at = Math.min(toolAt, Math.max(0, slots.length - 1));
   const tab = (key: string): { tabIndex: number; onFocus: () => void } => {
     const i = slots.indexOf(key);
     return { tabIndex: i === at ? 0 : -1, onFocus: () => setToolAt(i) };
   };
-
-  const moreInside = useMemo(
-    () => ({ get current() { return { contains: (n: Node | null) => (moreButton.current?.contains(n) ?? false) || (morePanel.current?.contains(n) ?? false) } as unknown as HTMLElement; } }),
-    [],
-  );
-  const closeMore = (): void => {
-    if (morePanel.current?.contains(document.activeElement)) moreButton.current?.focus();
-    setMoreOpen(false);
-  };
-  useDismiss(moreOpen, closeMore, moreInside);
-  const moreKeys = useMenuKeys(moreOpen, morePanel, closeMore);
 
   const controls = (): HTMLElement[] => [...(bar.current?.querySelectorAll<HTMLElement>('button.ctool, select.ctool') ?? [])];
   const onKey = (e: KeyboardEvent<HTMLDivElement>): void => {
@@ -128,66 +106,22 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
   };
 
   return (
-    <>
-      <div className={`ctools ${layout}`} role="toolbar" aria-label="Formatting" ref={bar} onKeyDown={onKey} data-testid="composer-tools" data-layout={layout}>
-        {layout === 'aa' ? (
-          <button
-            type="button"
-            className="ctool"
-            aria-label="Formatting options"
-            title="Formatting options"
-            aria-pressed={formatOpen}
-            data-testid="composer-format-toggle"
-            onClick={() => setFormatOpen((o) => !o)}
-            {...tab('format')}
-          >
-            <ToolFormatIcon />
-          </button>
-        ) : null}
-        {shown.map(button)}
-        {rest.length > 0 ? (
-          <button
-            ref={moreButton}
-            type="button"
-            className="ctool"
-            aria-label="More formatting"
-            title="More formatting"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            data-testid="composer-more"
-            onClick={() => setMoreOpen((o) => !o)}
-            {...tab('more')}
-          >
-            <ToolMoreIcon />
-          </button>
-        ) : null}
-      </div>
-      {moreOpen ? (
-        <div ref={morePanel} className="ctools-more" role="menu" aria-label="More formatting" onKeyDown={moreKeys} data-testid="composer-more-menu">
-          {rest.map((id) => {
-            const ui = UI[id];
-            const Glyph = ui.Icon;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="menuitem"
-                className="ctools-more-item"
-                data-testid={`composer-more-${id}`}
-                onClick={() => {
-                  setMoreOpen(false);
-                  if (id === 'codeblock') onCodeBlock('');
-                  else onRun(id);
-                }}
-              >
-                <Glyph />
-                <span>{id === 'codeblock' ? 'Code block' : ui.aria}</span>
-                {chordFor(id, mac) ? <kbd>{chordFor(id, mac)}</kbd> : null}
-              </button>
-            );
-          })}
-        </div>
+    <div className={`ctools ${layout}`} role="toolbar" aria-label="Formatting" ref={bar} onKeyDown={onKey} data-testid="composer-tools" data-layout={layout}>
+      {layout === 'aa' ? (
+        <button
+          type="button"
+          className="ctool"
+          aria-label="Formatting options"
+          title="Formatting options"
+          aria-pressed={formatOpen}
+          data-testid="composer-format-toggle"
+          onClick={() => setFormatOpen((o) => !o)}
+          {...tab('format')}
+        >
+          <ToolFormatIcon />
+        </button>
       ) : null}
-    </>
+      {shown.map(button)}
+    </div>
   );
 }

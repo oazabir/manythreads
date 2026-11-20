@@ -1,30 +1,36 @@
 /*
  * The composer's toolbar as plain data (PLAN P21-04): which tool is which, the shortcut each one names in its tooltip, which keys the box answers to, and
- * which tools a narrow box keeps in view. Nothing here touches the page, so tests need none of it.
+ * which tools a phone keeps in view. Nothing here touches the page, so tests need none of it.
  */
 
 export type ToolId = 'bold' | 'italic' | 'strike' | 'code' | 'codeblock' | 'quote' | 'bullet' | 'number' | 'link' | 'mention' | 'channel' | 'emoji' | 'poll';
 
-/** `full`: every tool in a row. `more`: the common ones, the rest under "…" (the thread panel). `aa`: one "Aa" button that opens the row (a phone). */
-export type ToolLayout = 'full' | 'more' | 'aa';
+/** `full`: every tool in a row, the same row in the channel, the thread panel, a direct message and Brain chat (P34-03; the bar wraps to a second
+ * row in a box too narrow for it). `aa`: one "Aa" button that opens the row (a phone). */
+export type ToolLayout = 'full' | 'aa';
 
-/** The tools a `more` layout keeps in the row; the others go under "…". Mention and emoji stay, because they open a list and are used most. */
-const COMMON: ReadonlySet<ToolId> = new Set<ToolId>(['bold', 'italic', 'code', 'link', 'mention', 'emoji']);
 /** The tools an `aa` layout keeps beside the "Aa" button. */
 const PHONE: ReadonlySet<ToolId> = new Set<ToolId>(['mention', 'emoji']);
 
 export const TOOL_ORDER: readonly ToolId[] = ['bold', 'italic', 'strike', 'code', 'codeblock', 'quote', 'bullet', 'number', 'link', 'mention', 'channel', 'emoji', 'poll'];
 
+/**
+ * The tools a box offers, always in TOOL_ORDER (P34-03: one order in every composer). The only one that comes and goes is the poll, which needs the
+ * slash commands' team (a channel, a thread, a direct message; not Brain chat).
+ */
+export function composerTools(a: { polls: boolean }): ToolId[] {
+  return TOOL_ORDER.filter((t) => t !== 'poll' || a.polls);
+}
+
+/** Send is one size with or without text (P34-03, finding 16): only its colour changes, through `ready`. */
+export function sendButtonClass(ready: boolean): string {
+  return ready ? 'btn send primary ready' : 'btn send';
+}
+
 /** Which tools sit in the bar for a layout, in order. */
 export function barTools(layout: ToolLayout, tools: readonly ToolId[], formatOpen: boolean): ToolId[] {
   if (layout === 'full') return [...tools];
-  if (layout === 'aa') return formatOpen ? [...tools] : tools.filter((t) => PHONE.has(t));
-  return tools.filter((t) => COMMON.has(t));
-}
-
-/** The tools a `more` layout puts under "…". */
-export function moreTools(layout: ToolLayout, tools: readonly ToolId[]): ToolId[] {
-  return layout === 'more' ? tools.filter((t) => !COMMON.has(t)) : [];
+  return formatOpen ? [...tools] : tools.filter((t) => PHONE.has(t));
 }
 
 export type Chord = { key: string; shift?: boolean };

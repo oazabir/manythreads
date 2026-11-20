@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection } from '../src/channels/composerFormat';
+import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, enterKey, insideCodeBlock, insertText, linkSelection, prefixLines, wrapSelection } from '../src/channels/composerFormat';
 import { lastEditableOwn } from '../src/channels/messageActions';
 import { parseMarkdown } from '../src/channels/markdown';
 
@@ -128,5 +128,75 @@ describe('edge cases of the toggles', () => {
 describe('the message box height (P21-28)', () => {
   it('grows to 376 px, the number channels.css gives .cinput textarea', () => {
     expect(COMPOSER_MAX_HEIGHT).toBe(376);
+  });
+});
+
+describe('Enter in the message box (P34-03)', () => {
+  const plain = { shift: false, ctrl: false, meta: false, alt: false };
+  /** Enter at the end of `text`; the answer drawn with the caret as `|`. */
+  const at = (text: string, caret = text.length, keys = plain): string => {
+    const r = enterKey(text, caret, caret, keys);
+    return r.do === 'edit' ? `${r.edit.text.slice(0, r.edit.from)}|${r.edit.text.slice(r.edit.to)}` : r.do;
+  };
+
+  it('sends outside a list or a code block', () => {
+    expect(at('hello')).toBe('send');
+    expect(at('')).toBe('send');
+    expect(at('a - b')).toBe('send');
+    expect(at('1.5 kg')).toBe('send');
+    expect(at('**bold**')).toBe('send');
+  });
+  it('leaves Shift+Enter and Alt+Enter to the browser, and sends on Ctrl or Cmd with Enter from anywhere', () => {
+    expect(at('hello', 5, { ...plain, shift: true })).toBe('default');
+    expect(at('hello', 5, { ...plain, alt: true })).toBe('default');
+    expect(at('- one', 5, { ...plain, ctrl: true })).toBe('send');
+    expect(at('```\nx', 5, { ...plain, meta: true })).toBe('send');
+    expect(at('- one', 5, { ...plain, shift: true })).toBe('default');
+  });
+  it('starts the next item of a list, at the same indent and with the same mark', () => {
+    expect(at('- one')).toBe('- one\n- |');
+    expect(at('* one')).toBe('* one\n* |');
+    expect(at('+ one')).toBe('+ one\n+ |');
+    expect(at('intro\n  - nested')).toBe('intro\n  - nested\n  - |');
+    expect(at('- [x] done')).toBe('- [x] done\n- [ ] |');
+  });
+  it('numbers the next item', () => {
+    expect(at('1. first')).toBe('1. first\n2. |');
+    expect(at('1. first\n2. second')).toBe('1. first\n2. second\n3. |');
+    expect(at('9) ninth')).toBe('9) ninth\n10) |');
+  });
+  it('splits an item where the caret is', () => {
+    expect(at('- one two', 5)).toBe('- one\n- | two');
+  });
+  it('ends the list on an empty item: the mark goes, nothing is sent', () => {
+    expect(at('- one\n- ')).toBe('- one\n|');
+    expect(at('1. a\n2. ')).toBe('1. a\n|');
+    expect(at('- one\n  - ')).toBe('- one\n|');
+  });
+  it('leaves a plain new line to the browser when the caret is before the mark (Ctrl+Z undoes it)', () => {
+    expect(at('- one', 0)).toBe('default');
+  });
+  it('writes a new line inside an open code block and sends after it is closed', () => {
+    // inside a block the browser writes the new line itself, so Ctrl+Z undoes it
+    expect(at('```')).toBe('default');
+    expect(at('```ts\nconst a = 1')).toBe('default');
+    expect(at('look:\n```\n- not a list')).toBe('default');
+    expect(at('```\ncode\n```')).toBe('send');
+    expect(insideCodeBlock('```\ncode\n```\nafter', 18)).toBe(false);
+    expect(insideCodeBlock('```\ncode', 6)).toBe(true);
+  });
+  it('a one-line fence opens nothing, and only the same fence closes a block (review)', () => {
+    expect(at('```npm i```')).toBe('send');
+    expect(at('```npm i```\nmore')).toBe('send');
+    expect(insideCodeBlock('~~~\n```\nstill code', 18)).toBe(true);
+    expect(insideCodeBlock('~~~\n```\n~~~\n', 13)).toBe(false);
+  });
+  it('a year at the start of a sentence is not a list item (review)', () => {
+    expect(at('2024. was good')).toBe('send');
+    expect(at('12. twelfth')).not.toBe('send');
+  });
+  it('replaces a selection with the new item', () => {
+    const r = enterKey('- one two', 5, 9, plain);
+    expect(r).toEqual({ do: 'edit', edit: { text: '- one\n- ', from: 8, to: 8 }, replace: { start: 5, end: 9, insert: '\n- ' } });
   });
 });

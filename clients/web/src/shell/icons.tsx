@@ -1,7 +1,7 @@
 import {
   ArrowDownIcon as ProArrowDown, ArrowMaximizeIcon, ArrowMinimizeIcon, ArrowReplyIcon, ArrowUpIcon as ProArrowUp, AttachIcon, BellIcon as ProBell,
   BellOffIcon as ProBellOff, BoardIcon, BookmarkIcon as ProBookmark, BuildingMultipleIcon, CancelIcon, CheckmarkCircleIcon, ChevronDownIcon,
-  ChevronLeftIcon, ChevronUpIcon as ProChevronUp, ClockIcon as ProClock, CommentIcon, CommentMultipleIcon, EmojiIcon, FileMultipleIcon, FolderIcon as ProFolder,
+  ChevronLeftIcon, ClockIcon as ProClock, CommentIcon, CommentMultipleIcon, EmojiIcon, FileMultipleIcon, FolderIcon as ProFolder,
   LinkIcon, LockIcon as ProLock, MenuIcon as ProMenu, MoonIcon as ProMoon, MoreIcon as ProMore, SearchIcon as ProSearch, SendIcon as ProSend, SettingsIcon,
   StarIcon as ProStar, ArrowSyncIcon, TuneIcon, CheckmarkIcon, AddIcon as ProAdd, SubtractIcon as ProSubtract, PencilIcon as ProPencil, MailIcon as ProMail, HashIcon as ProHash, MentionIcon as ProMention,
   WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon, SparkleIcon, AndroidIcon, ArrowLeftIcon, ArrowRightIcon, DeleteIcon, ArrowLeftRightIcon,
@@ -11,7 +11,7 @@ import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon, OpenIcon, RecordStopIcon } from '@proicons/react';
-import { BarChartIcon, CodeSquareIcon, MoreHorizontalIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
+import { BarChartIcon, CodeSquareIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
 import { ChatIcon, CopyIcon, PinIcon, PinOffIcon, ShareIcon, ThumbsDownIcon, ThumbsUpIcon, PanelLeftIcon, PanelRightIcon, SaveIcon, ChevronRightIcon } from '@proicons/react';
 import { AlertTriangleIcon, CircleIcon, CircleSmallIcon, DocumentIcon, FlagIcon, HandIcon, LightbulbIcon, TerminalIcon, GlobeIcon as ProGlobe } from '@proicons/react';
 import { BulletListIcon as ProBulletList, GridIcon as ProGrid } from '@proicons/react';
@@ -54,9 +54,7 @@ export const SmileIcon = proIcon(EmojiIcon, 14);
 export const MoreIcon = proIcon(ProMore, 14);
 export const ClipIcon = proIcon(AttachIcon, 15);
 export const SendIcon = proIcon(ProSend, 15);
-/** A small caret pointing up: the "more ways to send" button beside Send, whose menu opens upward. */
-export const ChevronUpIcon = proIcon(ProChevronUp, 14);
-/** A clock face: scheduled messages. */
+/** A clock face: scheduled messages, and the Send later button beside Send. */
 export const ClockIcon = proIcon(ProClock, 14);
 export const ArrowDownIcon = proIcon(ProArrowDown, 14);
 export const ArrowUpIcon = proIcon(ProArrowUp, 14);
@@ -187,7 +185,6 @@ export const ToolChannelIcon = proIcon(ProHash, 16);
 export const ToolEmojiIcon = proIcon(EmojiIcon, 16);
 export const ToolPollIcon = proIcon(BarChartIcon, 16);
 export const ToolFormatIcon = proIcon(TextFontIcon, 16);
-export const ToolMoreIcon = proIcon(MoreHorizontalIcon, 16);
 
 /* Bundle D (connectors): the icons of the planned-room, connected-apps and chat-apps pages. ProIcons 4.13.7 has no person-with-a-minus icon, so "Remove a leaving person" borrows PersonIcon. */
 export const ScheduleCalendarIcon = proIcon(CalendarIcon, 16);

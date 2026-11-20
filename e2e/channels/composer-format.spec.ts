@@ -51,9 +51,23 @@ test('the toolbar: strike, quote, numbered list, link and a code block with a la
     await bar.getByRole('combobox', { name: 'Insert a code block' }).selectOption({ label: 'TypeScript' });
     await expect(box).toHaveValue('```ts\nx = 1\n```');
 
+    // Enter in a list item starts the next item, Enter on the empty item ends the list (P34-03); Ctrl or Cmd with Enter sends from anywhere
+    await box.fill('- one');
+    await box.press('Enter');
+    await expect(box).toHaveValue('- one\n- ');
+    await box.press('Enter');
+    await expect(box).toHaveValue('- one\n');
+    await box.fill('```\nlet a = 1');
+    await box.press('Enter');
+    await expect(box).toHaveValue('```\nlet a = 1\n');
+    await expect(messages(page)).toHaveCount(0);
     // what the toolbar writes is what the list draws
     await box.fill('~~gone~~ and **kept**\n\n> quoted\n\n1. first\n2. second');
     await box.press('Enter');
+    await expect(box).toHaveValue('~~gone~~ and **kept**\n\n> quoted\n\n1. first\n2. second\n3. ');
+    await box.press('Enter');
+    await expect(box).toHaveValue('~~gone~~ and **kept**\n\n> quoted\n\n1. first\n2. second\n');
+    await box.press('ControlOrMeta+Enter');
     const row = messages(page).first();
     await expect(row.locator('del')).toHaveText('gone');
     await expect(row.locator('blockquote')).toContainText('quoted');

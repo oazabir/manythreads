@@ -365,7 +365,6 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           onVoiceSent={() => setStuck(true)}
           slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
           autoFocus={kind === 'panel'}
-          compact={kind === 'panel'}
           // a scheduled reply is posted in the thread only (there is no "Also send to channel" tick any more, P21-28)
           sendLater={!answerTools}
           onEditLast={() => {

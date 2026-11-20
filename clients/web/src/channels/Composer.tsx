@@ -22,9 +22,9 @@ import { availability, isActionPlan, planSlash, taskFailureText, type ActionPlan
 import { announceChannelChanged, slashDeps } from './slashDeps';
 import { runSlashAction } from './slashRun';
 import { useSlashEnv, useSlashWho } from './useSlash';
-import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
+import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, enterKey, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
 import { ComposerToolbar } from './ComposerToolbar';
-import { TOOL_ORDER, isMac, matchBroadcast, matchLocalCommands, parseLocalCommand, toolForKey, type LocalCommand, type ToolId, type ToolLayout } from './composerTools';
+import { composerTools, isMac, matchBroadcast, matchLocalCommands, parseLocalCommand, sendButtonClass, toolForKey, type LocalCommand, type ToolId, type ToolLayout } from './composerTools';
 import { CustomEmojiImg } from './EmojiGlyph';
 import { useCustomEmoji } from './customEmoji';
 import { detectEmojiTrigger, suggestEmoji } from './emojiSuggest';
@@ -41,8 +41,11 @@ import { broadcastAsk, broadcastAskFromRefusal, type BroadcastAsk } from './broa
 import { readDraft, useServerDraft, writeDraft } from './serverDraft';
 
 /*
- * The shared composer (channel, thread, later DMs): markdown toolbar, Enter to send and Shift+Enter for a new line, a draft kept per
- * conversation (also kept on the server, so another device shows it), @ and # pickers, and attachments (upload with progress, paste, drag and drop, remove) when the server stores files.
+ * The one composer of every conversation (channel, thread panel and full thread, direct message, Brain chat and a bot conversation; P34-03): the same
+ * markdown toolbar in the same order everywhere, then the box with attach, the microphone (where a voice message can be sent), Send and Send later in one
+ * row beside it. Enter sends and Shift+Enter is a new line; inside a list or a code block Enter continues it, and Ctrl or Cmd with Enter always sends
+ * (composerFormat.ts `enterKey`). A draft is kept per conversation (also on the server, so another device shows it), @ and # pickers, and attachments
+ * (upload with progress, paste, drag and drop, remove) when the server stores files.
  */
 
 type Trigger = { char: '@' | '#'; query: string; start: number };
@@ -93,7 +96,11 @@ export type ComposerProps = {
   onSend: (body: string, options: SendOptions) => void;
   /** A voice message was sent from here (its row is in the list already): the caller scrolls to it, the way it does for a text send. */
   onVoiceSent?: () => void;
-  /** Offer the microphone button (a voice message). Off where a voice message makes no sense. It is also hidden for guests and where files or recording are not supported. */
+  /**
+   * Offer the microphone button (a voice message). Off where a voice message cannot be sent the way the screen sends text: Brain chat and a bot
+   * conversation send through their own route (it starts the bot's turn, with the chosen model), which takes text and files but no voice message. It is
+   * also hidden for guests and where files or recording are not supported.
+   */
   voice?: boolean;
   /** Focus the box when it appears (the thread panel). */
   autoFocus?: boolean;
@@ -107,8 +114,6 @@ export type ComposerProps = {
   slash?: { teamSlug: string; origin: string };
   /** Offer "Send later" beside Send (P14-05): the text is scheduled for this channel (or thread) and posted by a job at the chosen time. Text only. */
   sendLater?: boolean;
-  /** A narrow box (the thread panel): the rarer formatting tools sit under "…". */
-  compact?: boolean;
   /** Commands the screen answers itself (the Chat screen's `/new`, `/model`): offered in a menu while the first word is typed, run instead of sent. Not with `slash`. */
   commands?: readonly LocalCommand[];
 };
@@ -128,6 +133,8 @@ type PickItem = {
   group?: true;
   /** A bot offered by the @ picker: drawn with a "Bot" badge. */
   bot?: true;
+  /** `@channel` or `@here`: the name is the handle and stays whole, the sentence after it gives way (P34-03, finding 17). */
+  everyone?: true;
   /** The heading this line sits under; a new heading is drawn when it changes from the line above. */
   section?: string;
   /** The picture drawn before the name (a person or a bot). */
@@ -160,7 +167,7 @@ export function Composer(props: ComposerProps) {
   return <ComposerBody {...props} />;
 }
 
-function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, compact = false, commands }: ComposerProps) {
+function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, commands }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const guest = useContext(ShellContext)?.guest ?? false;
   const rec = useRecorder();
@@ -194,9 +201,9 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   const asking = useRef(false);
   const makingCard = useRef(false);
   const listId = useId();
-  // the toolbar (ComposerToolbar.tsx) is always there; a phone shows one "Aa" button, the thread panel puts the rarer tools under "…"
+  // the toolbar (ComposerToolbar.tsx) is always there, the same in every composer; a phone shows one "Aa" button that opens it
   const phone = useSyncExternalStore(subscribePhone, phoneNow, () => false);
-  const layout: ToolLayout = phone ? 'aa' : compact ? 'more' : 'full';
+  const layout: ToolLayout = phone ? 'aa' : 'full';
   const mac = useMemo(() => isMac(), []);
   const customEmoji = useCustomEmoji();
   const emojiButton = useRef<HTMLButtonElement>(null);
@@ -355,7 +362,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
     if (trigger.char === '@') {
       // everyone, then people, bots and role groups, each under its own heading
       const everyone: PickItem[] = broadcastOk
-        ? matchBroadcast(q).map((o) => ({ key: `broadcast:${o.word}`, label: `@${o.word}`, hint: o.hint, insert: `@${o.word} `, from: trigger.start, to: caret, section: 'Everyone' }))
+        ? matchBroadcast(q).map((o) => ({ key: `broadcast:${o.word}`, label: `@${o.word}`, hint: o.hint, insert: `@${o.word} `, from: trigger.start, to: caret, everyone: true as const, section: 'Everyone' }))
         : [];
       const persons: PickItem[] = people.list
         .filter((p) => q === '' || p.name.toLowerCase().includes(q) || handleFor(p, people.list).startsWith(q))
@@ -459,7 +466,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
         setPollOpen(true);
     }
   };
-  const tools = useMemo<ToolId[]>(() => TOOL_ORDER.filter((t) => t !== 'poll' || slashOn), [slashOn]);
+  const tools = useMemo<ToolId[]>(() => composerTools({ polls: slashOn }), [slashOn]);
 
   // ---- attachments --------------------------------------------------------------------------------------------
   const addFiles = (files: File[]): void => {
@@ -783,7 +790,9 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.nativeEvent.isComposing) return;
-    if (open) {
+    // Ctrl or Cmd with Enter sends even while a list is open under the box
+    const sendKey = e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.altKey;
+    if (open && !sendKey) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         setPick((active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
@@ -812,9 +821,22 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
         return;
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      send();
+    if (e.key === 'Enter') {
+      const el = e.currentTarget;
+      const act = enterKey(el.value, el.selectionStart, el.selectionEnd, { shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey });
+      if (act.do === 'send') {
+        e.preventDefault();
+        send();
+      } else if (act.do === 'edit') {
+        // the next list item or the end of the list, made through the browser so Ctrl+Z undoes it; the state follows from the input event
+        e.preventDefault();
+        el.setSelectionRange(act.replace.start, act.replace.end);
+        const done = act.replace.insert === '' ? document.execCommand('delete') : document.execCommand('insertText', false, act.replace.insert);
+        if (!done) {
+          onChange(act.edit.text, act.edit.to);
+          edit(act.edit.text, act.edit.from, act.edit.to);
+        }
+      }
     } else if (toolForKey(e) !== null) {
       // Ctrl or Cmd with B, I or K, and Ctrl+Shift+X
       e.preventDefault();
@@ -941,7 +963,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
                     role="option"
                     aria-selected={i === active}
                     aria-disabled={it.disabled ? true : undefined}
-                    className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''} ${it.group ? 'pk-group' : ''}`}
+                    className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''} ${it.group ? 'pk-group' : ''} ${it.everyone ? 'pk-everyone' : ''}`}
                     data-group={it.group ? it.key.slice(6) : undefined}
                     data-command={slashContext?.stage === 'command' ? it.key : undefined}
                     data-emoji={it.emoji ? (it.emoji.custom ? `:${it.emoji.custom.name}:` : it.emoji.char) : undefined}
@@ -986,7 +1008,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
             onVoiceSent?.();
           }} returnFocus={focusBox} /> : null}
           <span className="sch-split" hidden={voiceActive}>
-            <button type="button" className={`btn send ${canSend ? 'primary ready' : ''}`} aria-label="Send" title="Send (Enter)" disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
+            <button type="button" className={sendButtonClass(canSend)} aria-label="Send" title={`Send (Enter, or ${mac ? '⌘Enter' : 'Ctrl+Enter'} in a list)`} disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
             {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}
           </span>
         </div>

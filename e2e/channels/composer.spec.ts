@@ -228,6 +228,14 @@ test('the message box rests two lines tall and stops growing at 376 px', async (
     await expect(reply).toBeVisible();
     expect(await heightOf(reply)).toBeGreaterThanOrEqual(44);
     expect(await heightOf(reply)).toBeLessThanOrEqual(60);
+    // one composer (P34-03): the thread panel draws the channel's tools, in the same order, and the same Send and Send later beside the box
+    const toolNames = (scope: Locator): Promise<string[]> =>
+      scope.getByRole('toolbar', { name: 'Formatting' }).locator('button.ctool, select.ctool').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? ''));
+    const channelBox = page.locator('[data-landmark="composer"]');
+    const threadBox = page.getByTestId('thread-view').getByTestId('composer');
+    expect(await toolNames(threadBox)).toEqual(await toolNames(channelBox));
+    await expect(threadBox.getByTestId('composer-more')).toHaveCount(0);
+    for (const name of ['Send', 'Send later']) await expect(threadBox.getByRole('button', { name, exact: true })).toBeVisible();
     // resting size does not change on focus
     const resting = await heightOf(box);
     await box.focus();

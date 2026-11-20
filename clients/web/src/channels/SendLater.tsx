@@ -3,12 +3,13 @@ import { checkSendAt } from '@manythreads/shared';
 import { Dialog } from '../components/Dialog';
 import { fromLocalInput, presetTime, REMIND_PRESETS, remindWhen, toLocalInput } from '../later/times';
 import { useDismiss } from '../shell/useDismiss';
-import { ChevronUpIcon } from '../shell/icons';
+import { ClockIcon } from '../shell/icons';
 
 /*
  * "Send later" on the composer's send button (PLAN P14-05): a small button beside Send opens a menu of times (20 minutes, 1 hour, tomorrow morning,
  * next week) and a way to pick a day and a clock time. The times are worked out here, in the person's own time zone, and sent as exact moments;
- * the presets are the same ones "Remind me" offers (later/times.ts). The same dialog edits a scheduled message (text and time).
+ * the presets are the same ones "Remind me" offers (later/times.ts). The same dialog edits a scheduled message (text and time). The button is a clock with
+ * the tooltip "Send later: pick a time" (P34-03): a bare chevron there read as "make the box bigger".
  */
 
 /** A sentence for what is wrong with a custom send time, or null when it can be used. */
@@ -62,7 +63,7 @@ export function SendLaterMenu({ disabled, onPick }: { disabled: boolean; onPick:
           onClick={() => setOpen((o) => !o)}
           data-testid="send-later"
         >
-          <ChevronUpIcon />
+          <ClockIcon />
         </button>
         {open ? (
           <div id={menuId} className="menu menu-up sch-menu" role="menu" aria-label="Send later" onKeyDown={onMenuKey} data-testid="send-later-menu">

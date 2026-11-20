@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { CustomEmoji } from '@manythreads/shared';
 import { ComposerToolbar } from '../src/channels/ComposerToolbar';
 import {
-  TOOL_ORDER, barTools, chordText, isMac, matchBroadcast, matchLocalCommands, moreTools, parseLocalCommand, toolForKey, toolTitle, type LocalCommand,
+  TOOL_ORDER, barTools, chordText, composerTools, isMac, matchBroadcast, matchLocalCommands, parseLocalCommand, sendButtonClass, toolForKey, toolTitle, type LocalCommand,
 } from '../src/channels/composerTools';
 import { emojiForShortcode } from '../src/channels/emoji';
 import { detectEmojiTrigger, suggestEmoji } from '../src/channels/emojiSuggest';
@@ -14,21 +14,32 @@ const key = (k: string, o: { ctrl?: boolean; meta?: boolean; shift?: boolean; al
 describe('toolbar layouts', () => {
   it('shows every tool in a full row', () => {
     expect(barTools('full', TOOL_ORDER, false)).toEqual([...TOOL_ORDER]);
-    expect(moreTools('full', TOOL_ORDER)).toEqual([]);
-  });
-  it('keeps the common tools in a narrow box and puts the rest under "..."', () => {
-    expect(barTools('more', TOOL_ORDER, false)).toEqual(['bold', 'italic', 'code', 'link', 'mention', 'emoji']);
-    expect(moreTools('more', TOOL_ORDER)).toEqual(['strike', 'codeblock', 'quote', 'bullet', 'number', 'channel', 'poll']);
-    // every tool is in exactly one place
-    expect([...barTools('more', TOOL_ORDER, false), ...moreTools('more', TOOL_ORDER)].sort()).toEqual([...TOOL_ORDER].sort());
-  });
-  it('keeps no poll where there is none', () => {
-    const noPoll = TOOL_ORDER.filter((t) => t !== 'poll');
-    expect(moreTools('more', noPoll)).not.toContain('poll');
   });
   it('is one Aa button on a phone until it is opened', () => {
     expect(barTools('aa', TOOL_ORDER, false)).toEqual(['mention', 'emoji']);
     expect(barTools('aa', TOOL_ORDER, true)).toEqual([...TOOL_ORDER]);
+  });
+});
+
+describe('one composer (P34-03)', () => {
+  it('offers the same tools in the same order in every box; only the poll needs the slash commands', () => {
+    expect(composerTools({ polls: true })).toEqual([...TOOL_ORDER]);
+    expect(composerTools({ polls: false })).toEqual(TOOL_ORDER.filter((t) => t !== 'poll'));
+    expect(TOOL_ORDER).toEqual(['bold', 'italic', 'strike', 'code', 'codeblock', 'quote', 'bullet', 'number', 'link', 'mention', 'channel', 'emoji', 'poll']);
+  });
+  it('keeps the order in either layout: the phone row opened is the desktop row', () => {
+    for (const polls of [true, false]) {
+      const tools = composerTools({ polls });
+      expect(barTools('aa', tools, true)).toEqual(barTools('full', tools, false));
+    }
+  });
+  it('draws Send one size with or without text: only the colour class changes', () => {
+    const empty = sendButtonClass(false).split(' ');
+    const ready = sendButtonClass(true).split(' ');
+    expect(empty).toEqual(['btn', 'send']);
+    expect(ready).toEqual(expect.arrayContaining(['btn', 'send', 'primary', 'ready']));
+    // nothing in either that sets a size
+    expect([...empty, ...ready].filter((c) => /^(s|m|l|xs|big|small|icon-btn)$/.test(c))).toEqual([]);
   });
 });
 
@@ -129,7 +140,7 @@ describe('the :emoji: list', () => {
 });
 
 describe('ComposerToolbar', () => {
-  const draw = (layout: 'full' | 'more' | 'aa', tools = TOOL_ORDER) =>
+  const draw = (layout: 'full' | 'aa', tools = TOOL_ORDER) =>
     renderToStaticMarkup(createElement(ComposerToolbar, { layout, tools, mac: false, onRun: () => undefined, onCodeBlock: () => undefined, emojiOpen: false, emojiRef: createRef<HTMLButtonElement>() }));
   it('draws a labelled toolbar with the shortcut in each tooltip, one tab stop, and the old accessible names', () => {
     const html = draw('full');
@@ -141,13 +152,8 @@ describe('ComposerToolbar', () => {
     expect(html).toContain('aria-label="Ask a poll"');
     expect(html.match(/tabindex="0"/g)).toHaveLength(1);
     expect(html).not.toContain('composer-more');
-  });
-  it('puts the rare tools under the "..." button in the thread panel', () => {
-    const html = draw('more');
-    expect(html).toContain('data-testid="composer-more"');
-    expect(html).toContain('aria-label="Bold"');
-    expect(html).not.toContain('aria-label="Quote"');
-    expect(html).not.toContain('aria-label="Ask a poll"');
+    // the thirteen tools, in the shared order
+    expect([...html.matchAll(/aria-label="([^"]+)"/g)].map((m) => m[1]).slice(1)).toEqual(['Bold', 'Italic', 'Strikethrough', 'Code', 'Insert a code block', 'Quote', 'Bulleted list', 'Numbered list', 'Link', 'Mention a person', 'Link a channel', 'Emoji', 'Ask a poll']);
   });
   it('draws the Aa button with Mention and Emoji on a phone', () => {
     const html = draw('aa');

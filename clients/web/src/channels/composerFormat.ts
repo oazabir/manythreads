@@ -122,5 +122,62 @@ export function insertText(text: string, a: number, b: number, piece: string): E
   return { text: text.slice(0, a) + piece + text.slice(b), from: at, to: at };
 }
 
+/** What Enter does in the message box: send, leave the key to the browser (a plain new line), or write `edit`. */
+/** `replace` says the same change as `edit` as one replacement of the text between `start` and `end`, so the box can make it through the browser (`insertText`) and Ctrl+Z undoes it. */
+export type EnterAction = { do: 'send' } | { do: 'default' } | { do: 'edit'; edit: Edit; replace: { start: number; end: number; insert: string } };
+
+export type EnterKeys = { shift: boolean; ctrl: boolean; meta: boolean; alt: boolean };
+
+/** A list line: its indent, its mark (`-`, `*`, `+`, `1.`, `1)`), an optional task box, and the words after them. */
+const LIST_LINE = /^([ \t]*)([-*+]|\d{1,3}[.)])( +)(\[[ xX]\] +)?(.*)$/; // up to three digits: "2024. was good" is a sentence, not item 2024
+/** A line that opens or closes a fenced code block. */
+const FENCE = /^[ \t]*(```|~~~)/;
+/** A line that opens and closes a fence on itself (```npm i```): no block stays open after it. */
+const ONE_LINE_FENCE = /^[ \t]*(```|~~~).*\1[ \t]*$/;
+
+/** Whether `caret` sits inside a fenced code block that is still open. A ``` block is closed only by ``` and a ~~~ block only by ~~~; a one-line fence opens nothing. */
+export function insideCodeBlock(text: string, caret: number): boolean {
+  let open: string | null = null;
+  for (const line of text.slice(0, caret).split('\n')) {
+    const m = FENCE.exec(line);
+    if (!m) continue;
+    const kind = m[1] ?? '```';
+    if (open === null) {
+      if (!(ONE_LINE_FENCE.test(line) && line.trim().length > kind.length * 2)) open = kind;
+    } else if (kind === open) open = null;
+  }
+  return open !== null;
+}
+
+/**
+ * Enter in the message box (P34-03, finding 18). Ctrl or Cmd with Enter always sends. Shift+Enter (and Alt+Enter) is the browser's own new line. A plain
+ * Enter continues what is being written instead of sending: inside a fenced code block it writes a new line, and in a list item it starts the next item
+ * (`- `, `* `, the next number, an empty task box) at the same indent; Enter on an item with nothing after its mark ends the list (the mark goes, the
+ * message stays). Anywhere else Enter sends, as it always did.
+ */
+export function enterKey(text: string, a: number, b: number, keys: EnterKeys): EnterAction {
+  if (keys.ctrl || keys.meta) return keys.alt ? { do: 'default' } : { do: 'send' };
+  if (keys.shift || keys.alt) return { do: 'default' };
+  if (insideCodeBlock(text, a)) return { do: 'default' }; // the browser's own new line: Ctrl+Z undoes it
+  const start = a === 0 ? 0 : text.lastIndexOf('\n', a - 1) + 1;
+  const endAt = text.indexOf('\n', a);
+  const end = endAt < 0 ? text.length : endAt;
+  const m = LIST_LINE.exec(text.slice(start, end));
+  if (!m) return { do: 'send' };
+  const [, indent = '', marker = '-', gap = ' ', box = '', words = ''] = m;
+  const markEnd = start + indent.length + marker.length + gap.length + box.length;
+  // the caret before the end of the mark (at the start of the line, say): a plain new line, the list is left as it is
+  if (a < markEnd) return { do: 'default' };
+  if (words.trim() === '' && b <= end) {
+    // an empty item ends the list: its mark goes and the caret stays on the now empty line
+    const out = text.slice(0, start) + text.slice(end);
+    return { do: 'edit', edit: { text: out, from: start, to: start }, replace: { start, end, insert: '' } };
+  }
+  const num = /^(\d+)([.)])$/.exec(marker);
+  const nextMark = num ? `${String(Number(num[1]) + 1)}${num[2] ?? '.'}` : marker;
+  const insert = `\n${indent}${nextMark}${gap}${box ? '[ ] ' : ''}`;
+  return { do: 'edit', edit: insertText(text, a, b, insert), replace: { start: a, end: b, insert } };
+}
+
 /** The tallest the message box grows before it scrolls, in px (a resting box is two lines, 46 px). Same number as `.cinput textarea` in channels.css. */
 export const COMPOSER_MAX_HEIGHT = 376;

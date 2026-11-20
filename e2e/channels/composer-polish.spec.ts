@@ -99,6 +99,13 @@ test('"@" lists people with a picture and a handle; a long bot name is cut on on
     const person = list.getByRole('option').filter({ hasText: 'Omar' }).first();
     await expect(person.locator('.av').first()).toBeVisible();
     await expect(person.locator('.pk-hint')).toHaveText(/^@\S+/);
+    // @channel and @here read as names, whole and in the same font as the sentence beside them, like the people rows (P34-03)
+    const everyone = list.getByRole('option').filter({ hasText: '@channel' });
+    const everyoneName = everyone.locator('.pk-name');
+    await expect(everyoneName).toHaveText('@channel');
+    expect(await everyoneName.evaluate((el) => el.scrollWidth <= el.clientWidth), '@channel is not cut').toBe(true);
+    const fonts = await everyone.evaluate((el) => [el.querySelector('.pk-name'), el.querySelector('.pk-hint')].map((n) => (n ? getComputedStyle(n).fontFamily : '')));
+    expect(fonts[0]).toBe(fonts[1]);
 
     // the long-named bot: one line, an ellipsis in the name, the handle whole, the row inside the list
     await box.fill('@rel');
@@ -123,16 +130,20 @@ test('"@" lists people with a picture and a handle; a long bot name is cut on on
   }
 });
 
-test('the Send control is an icon that sleeps until there is text, and "#" lists the channels', async ({ browser, playwright, isMobile }) => {
+test('the Send control is one square that is quiet until there is text, and "#" lists the channels', async ({ browser, playwright, isMobile }) => {
   const { page, context } = await open(browser, playwright, 'nadia', isMobile);
   try {
     const box = boxOf(page);
     const send = page.getByRole('button', { name: 'Send', exact: true });
     await expect(send).toBeDisabled();
     await expect(send).not.toHaveClass(/ready/);
+    const empty = (await send.boundingBox())!;
     await box.fill('hello');
     await expect(send).toBeEnabled();
     await expect(send).toHaveClass(/ready/);
+    // one size with or without text: only the colour changes (P34-03)
+    const ready = (await send.boundingBox())!;
+    expect([ready.width, ready.height]).toEqual([empty.width, empty.height]);
     await box.fill('   ');
     await expect(send).toBeDisabled();
     await box.fill('');
