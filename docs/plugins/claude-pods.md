@@ -141,7 +141,7 @@ read fails the whole pass fails, so a pass never takes one kind's pods for pods 
 | Objects | `claude-<runner>`, `-state`, `-work`, `-key`, `-credentials`, `-config`, `-keeper` | the same with `codex-` for `claude-`: no object name is shared with a Claude runner |
 | Sign-in Secret key | `.credentials.json` (+ `upload-id`) | `auth.json` (+ `upload-id`) |
 | Tool's home | `CLAUDE_CONFIG_DIR=/state/claude` | `CODEX_HOME=/state/codex`, so the file is `/state/codex/auth.json` |
-| Bridge profile | `agent: claude-code`, `extraAllowedTools` (git, `mt-publish`) | `agent: codex`, no `extraAllowedTools` (that list is Claude Code's), `modelAliases` from `MANYTHREADS_CLAUDE_PODS_CODEX_MODEL_ALIASES` (empty by default: Codex uses the model its plan gives) |
+| Bridge profile | `agent: claude-code`, `extraAllowedTools` (git, `mt-publish`) | `agent: codex`, no `extraAllowedTools` (that list is Claude Code's), `modelAliases` from `MANYTHREADS_CLAUDE_PODS_CODEX_MODEL_ALIASES` (empty by default), `model` from `MANYTHREADS_CLAUDE_PODS_CODEX_MODEL` (default `gpt-6.2-sol`; empty: the model its plan gives) and `effort` from `MANYTHREADS_CLAUDE_PODS_CODEX_EFFORT` (default `low`, winning over the bot's own; empty: the bot's) (P35-11) |
 | Bridge container env | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` and `MANYTHREADS_BRIDGE_IN_POD=1` |
 | Keeper | watches `.credentials.json`, accepts a file with `claudeAiOauth.refreshToken` | watches `auth.json` (`KEEPER_KIND=codex`), accepts only a file with `tokens.refresh_token` and no API key, and **waits while `auth.lock` is next to it** |
 | Publisher | shared: the same third container, the same push Secrets, the same socket | |

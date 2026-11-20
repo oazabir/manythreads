@@ -184,6 +184,15 @@ describe('the objects of a Codex runner', () => {
     expect(p.extraAllowedTools).toBeUndefined();
     expect(p.instructions).toContain('Codex runner');
     expect(p.instructions).toContain('mt-publish');
+    // the machine's model and effort (owner 2026-11-20, P35-11); a Claude profile gets neither
+    expect(p).toMatchObject({ model: 'gpt-6.2-sol', effort: 'low' });
+  });
+
+  it('takes the pods\' Codex model and effort from the environment: unset is gpt-6.2-sol at low, empty is none, a bad value is the default (P35-11)', () => {
+    expect(configFrom({})).toMatchObject({ codexModel: 'gpt-6.2-sol', codexEffort: 'low' });
+    expect(configFrom({ MANYTHREADS_CLAUDE_PODS_CODEX_MODEL: 'gpt-6.1-terra', MANYTHREADS_CLAUDE_PODS_CODEX_EFFORT: 'high' })).toMatchObject({ codexModel: 'gpt-6.1-terra', codexEffort: 'high' });
+    expect(configFrom({ MANYTHREADS_CLAUDE_PODS_CODEX_MODEL: '', MANYTHREADS_CLAUDE_PODS_CODEX_EFFORT: '' })).toMatchObject({ codexModel: '', codexEffort: '' });
+    expect(configFrom({ MANYTHREADS_CLAUDE_PODS_CODEX_MODEL: 'a b', MANYTHREADS_CLAUDE_PODS_CODEX_EFFORT: 'ultra' })).toMatchObject({ codexModel: 'gpt-6.2-sol', codexEffort: 'low' });
   });
 
   it('a Codex runner without a sign-in file runs a pod with no keeper (it is signed in from the Runners page) and says it waits for a sign-in', async () => {

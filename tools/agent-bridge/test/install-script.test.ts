@@ -128,6 +128,25 @@ describe('bridge.sh', () => {
     expect(run('https://site.example', ['--allow-full-access']).out).not.toContain('unknown option');
   });
 
+  it('pins Codex to gpt-6.2-sol at low effort by default (P35-11); --codex-model and --codex-effort change it, an empty value leaves it out, a bad value stops before the machine', () => {
+    const end = script.indexOf("' >\"$ETC/config.json.new\"");
+    const at = script.lastIndexOf('"$node" -e \'\n', end);
+    const body = script.slice(script.indexOf("'", at) + 1, end);
+    const write = (model: string, effort: string) => {
+      const env = { ...process.env, CFG_DATA: '/var/lib/x', CFG_WANT_CLAUDE: '1', CFG_WANT_CODEX: '1', CFG_FULL: '1', CFG_CLAUDE_ACP: '/a/claude-acp', CFG_CODEX_ACP: '/a/codex-acp', CFG_HELPER: '/h', CFG_CODEX_MODEL: model, CFG_CODEX_EFFORT: effort };
+      return (JSON.parse(execFileSync(process.execPath, ['-e', body], { env, encoding: 'utf8' })) as { server: { agents: Record<string, { model?: string; effort?: string }> } }).server.agents;
+    };
+    expect(write('gpt-6.2-sol', 'low')['codex']).toMatchObject({ model: 'gpt-6.2-sol', effort: 'low' });
+    expect(write('gpt-6.2-sol', 'low')['claude']).not.toHaveProperty('model');
+    expect(write('gpt-6.2-sol', 'low')['claude']).not.toHaveProperty('effort');
+    expect(write('', '')['codex']).not.toHaveProperty('model');
+    expect(write('', '')['codex']).not.toHaveProperty('effort');
+    expect(script).toMatch(/codex_model='gpt-6\.2-sol' codex_effort='low'/);
+    expect(run('https://site.example', ['--help']).out).toContain('--codex-effort');
+    expect(run('ftp://site.example', ['--update', '--codex-effort', 'ultra']).out).toContain('--codex-effort must be low, medium, high, xhigh or max');
+    expect(run('ftp://site.example', ['--update', '--codex-model', 'gpt;rm']).out).toContain('--codex-model: letters, digits');
+  });
+
   it('refuses a site address that is not https, for every way in, before it looks at the machine', () => {
     for (const args of [['--enrol', CODE], ['--update'], ['--uninstall'], ['--code-file', join(dir, 'nothing')]]) {
       const r = run('http://site.example', args);

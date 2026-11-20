@@ -254,6 +254,9 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             ...driven,
             workdir: where,
             modelAliases: cfg.codexModelAliases,
+            // the machine's model and effort (P35-11): the effort wins over the bot's own, an alias above still maps the bot's model
+            ...(cfg.codexModel !== '' ? { model: cfg.codexModel } : {}),
+            ...(cfg.codexEffort !== '' ? { effort: cfg.codexEffort } : {}),
             // The runner's switch (an admin's; on by default): the bridge also needs the run not to say no. The bridge's other key, "allowed", is for a server and is never written here.
             ...(fullAccess ? { fullAccess: true } : {}),
             ...(mayPublish && acp ? { publish: true } : {}),

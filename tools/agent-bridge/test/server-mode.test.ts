@@ -90,6 +90,15 @@ describe('profiles made from the template', () => {
     expect(profileFor(both, 'claude--a--x')!.profile.fullAccess).toBe('allowed');
   });
 
+  it('a template\'s model and effort reach every profile made from it, and an effort outside the shared levels is refused (P35-11)', () => {
+    const root = tmp();
+    const cfg = parseConfig({ profiles: { s: { agent: 'codex', workdir: join(root, 's') } }, server: { root, agents: { codex: { model: 'gpt-6.2-sol', effort: 'low' } } } });
+    expect(profileFor(cfg, 'codex--a--x')!.profile).toMatchObject({ model: 'gpt-6.2-sol', effort: 'low' });
+    expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: root, effort: 'ultra' } } })).toThrow(/effort must be one of low, medium, high, xhigh, max/);
+    expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: root } }, server: { root, agents: { codex: { effort: 7 } } } })).toThrow(/effort/);
+    expect(parseConfig({ profiles: { s: { agent: 'codex', workdir: root } } }).profiles['s']!.effort).toBeUndefined();
+  });
+
   it('the hello says full access is allowed only for a server with team users whose claude or codex template allows it (P35-01)', async () => {
     const root = tmp();
     const make = (agents: Record<string, unknown>, teamUsers: boolean) =>

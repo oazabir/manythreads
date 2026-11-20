@@ -49,7 +49,7 @@ key it does not start. Every request, including `GET /health`, must carry `Autho
 
 A **profile** is the name that appears in the bridge's URL (`/p/<profile>/v1`). A bot placed on a connection without a profile name, or with a name
 that is not listed, uses `default`. Per profile: `agent` (`claude-code`, `codex`, `hermes-acp` or `opencode`), `workdir` (created when missing; the tool runs there),
-`model` (passed to the tool), `modelAliases` (the alias a bot's definition names, mapped to the tool's own model name; aliases not listed are ignored),
+`model` (passed to the tool), `modelAliases` (the alias a bot's definition names, mapped to the tool's own model name; aliases not listed are ignored), `effort` (`low`, `medium`, `high`, `xhigh` or `max`: the reasoning effort of every run, winning over the bot's own `model.effort`; P35-11),
 `extraAllowedTools` (Claude Code only: extra tools pre-approved for every run of the profile). `instructions` (a note about this machine, appended after the bot's BOT.md under "Where you run" in every run: where the
 repositories are, what is installed, what the bot must leave alone — the bot's definition says who it is, this says where it runs).
 
@@ -201,6 +201,7 @@ claude --version; codex --version; hermes --version
   really offers, or give the bot those tools.
 - A new `HERMES_HOME` takes about a minute to start the first time (Hermes installs its Python parts, 1.6 GB), and a Hermes home cannot be copied to another path. Use the
   one the host's Hermes already works in, and make sure its model setting is the one you want (Hermes has no per-run model).
+- An enrolled server's Codex template is written with `"model": "gpt-6.2-sol", "effort": "low"` (owner 2026-11-20, P35-11); the installer's `--codex-model` and `--codex-effort` change it (an empty value leaves it out). The model is pinned: a sign-in whose plan does not list `gpt-6.2-sol` fails every Codex run at session start ("The agent did not take the model …"), so for such a sign-in run `--update --codex-model ''` (pods: `MANYTHREADS_CLAUDE_PODS_CODEX_MODEL=''`).
 - Leave out `model` and `modelAliases` to use each agent's own default, or set them (`"model": "sonnet"`; a model the adapter does not know fails the run with a plain sentence).
 
 **4. Make the key and the unit.** The key is at least 24 random bytes in hex, in a file only the service user can read (`chmod 600`), and the same key goes into the Runners form.

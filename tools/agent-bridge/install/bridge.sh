@@ -32,6 +32,9 @@
 #                       that file and run --update to allow it again; a plain --uninstall keeps it. (--allow-full-access, the old opt-in, is accepted and ignored.)
 #   --hermes-bin PATH   the Hermes program to use, when it is not on root's PATH or in /usr/local/bin, /usr/bin or /opt/*/bin. This script never installs Hermes: install it
 #                       system-wide first (for example under /opt/hermes). It is used only if the team users can run it (not under /root or /home, which the service cannot see)
+#   --codex-model NAME  the model every Codex run on this machine uses (default gpt-6.2-sol, owner 2026-11-20, P35-11); an empty NAME leaves it to Codex's own default
+#   --codex-effort LEVEL  the reasoning effort of every Codex run: low (the default, "light"), medium, high, xhigh or max; it wins over a bot's own effort; empty leaves it to the bot.
+#                       Like the other options, give them again on every --update (the config is written from this run's options)
 #   --no-hermes --no-claude --no-codex --no-browser --no-publisher   leave one out (without the publisher no bot on this machine can publish)
 #
 # The hash of this script is shown on the Runners page. It is checked against the same site, so it guards against a broken download, not against a site that was taken over.
@@ -50,7 +53,7 @@ main() {
   local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock PUBLISH_GROUP=mt-publish
 
-  local mode='' code='' code_file='' allow_full=1 no_full=0 old_full_flag=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha=''
+  local mode='' code='' code_file='' allow_full=1 no_full=0 old_full_flag=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha='' codex_model='gpt-6.2-sol' codex_effort='low'
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
@@ -61,6 +64,8 @@ main() {
       --no-full-access) no_full=1 ;;
       --allow-full-access) old_full_flag=1 ;;
       --hermes-bin) shift; [ $# -gt 0 ] || die "--hermes-bin needs the path of the hermes program"; hermes_arg="$1" ;;
+      --codex-model) shift; [ $# -gt 0 ] || die "--codex-model needs a model name (or '' for Codex's own default)"; codex_model="$1" ;;
+      --codex-effort) shift; [ $# -gt 0 ] || die "--codex-effort needs low, medium, high, xhigh or max (or '' to leave it to the bot)"; codex_effort="$1" ;;
       --no-hermes) want_hermes=0 ;;
       --no-claude) want_claude=0 ;;
       --no-codex) want_codex=0 ;;
@@ -74,6 +79,9 @@ main() {
     shift
   done
   [ -n "$mode" ] || die "say what to do: --enrol <code>, --update or --uninstall"
+  case "$codex_model" in '') ;; *[!A-Za-z0-9._:-]*) die "--codex-model: letters, digits and . _ : - only" ;; esac
+  [ "${#codex_model}" -le 64 ] || die "--codex-model: at most 64 characters"
+  case "$codex_effort" in ''|low|medium|high|xhigh|max) ;; *) die "--codex-effort must be low, medium, high, xhigh or max" ;; esac
   # the key and the code go to this address: plain http only for the tests (checked first, before anything else on the machine is looked at)
   case "$SITE" in https://*) ;; http://*) [ "$insecure" -eq 1 ] || die "the site address is not https: $SITE (the key and the code would travel in the clear)" ;; *) die "this copy of the script has no site address; download it from the Runners page" ;; esac
 
@@ -307,7 +315,7 @@ EOF
   local pub_socket=''
   [ "$want_publisher" -eq 1 ] && pub_socket="$PUB_SOCKET"
   CFG_HELPER="$HELPER" CFG_TOOLS="$PREFIX/current/tools" CFG_PUB_SOCKET="$pub_socket" CFG_DATA="$DATA" CFG_CLAUDE_ACP="$claude_acp" CFG_CODEX_ACP="$codex_acp" CFG_CLAUDE_BIN="$claude_bin" CFG_CODEX_BIN="$codex_bin" CFG_HERMES_BIN="$hermes_bin" \
-    CFG_WANT_CLAUDE="$want_claude" CFG_WANT_CODEX="$want_codex" CFG_FULL="$allow_full" CFG_BROWSERS="$playwright_env" \
+    CFG_WANT_CLAUDE="$want_claude" CFG_WANT_CODEX="$want_codex" CFG_FULL="$allow_full" CFG_BROWSERS="$playwright_env" CFG_CODEX_MODEL="$codex_model" CFG_CODEX_EFFORT="$codex_effort" \
     "$node" -e '
       const e = process.env;
       const root = e.CFG_DATA;
@@ -320,7 +328,7 @@ EOF
       }
       if (e.CFG_WANT_CODEX === "1") {
         profiles["codex-signin"] = { agent: "codex", driver: "acp", workdir: root + "/signin", authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP } };
-        agents.codex = { authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP }, ...(e.CFG_FULL === "1" ? { fullAccess: "allowed" } : {}), ...shared };
+        agents.codex = { authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP }, ...(e.CFG_FULL === "1" ? { fullAccess: "allowed" } : {}), ...(e.CFG_CODEX_MODEL ? { model: e.CFG_CODEX_MODEL } : {}), ...(e.CFG_CODEX_EFFORT ? { effort: e.CFG_CODEX_EFFORT } : {}), ...shared };
       }
       if (e.CFG_HERMES_BIN) {
         agents.hermes = { hermesHome: root + "/hermes", acp: { command: e.CFG_HERMES_BIN, args: ["acp"] }, ...shared };

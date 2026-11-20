@@ -36,6 +36,9 @@ export interface AcpConfig {
 
 export const HERMES_GROUPS = ['files', 'shell', 'web', 'browser', 'vision'] as const;
 
+/** The efforts a profile may pin: the levels Claude Code and Codex share (Codex's `ultra` also hands work to helpers, so a machine never pins it). */
+export const PROFILE_EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
 export interface ProfileConfig {
   agent: AgentKind;
   /** `cli` (default) starts the tool's own CLI; `acp` starts its ACP adapter. `hermes-acp` and `opencode` only exist as `acp`. */
@@ -47,6 +50,12 @@ export interface ProfileConfig {
   model?: string | undefined;
   /** Names a bot may ask for (`model.alias` in the run) mapped to the CLI's own model names. An alias that is not listed is ignored. */
   modelAliases?: Record<string, string> | undefined;
+  /**
+   * The reasoning effort of every run of this profile (`low`, `medium`, `high`, `xhigh`, `max`). It wins over the bot's own `model.effort`: the machine's operator picks it for the plan
+   * the machine runs on (owner 2026-11-20: Codex on `gpt-6.2-sol` at `low`, P35-11). Absent: the bot's effort, else the CLI's own default.
+   * Used by the ACP path (Claude and Codex) and the Codex CLI driver; the Claude CLI driver does not take an effort.
+   */
+  effort?: string | undefined;
   /** Claude Code only: more tools to pre-approve for every run of this profile, e.g. `Bash(git status)`. They are also made available. */
   extraAllowedTools?: string[] | undefined;
   /** Variables set in the child's environment for this profile, e.g. `{ "KUBECONFIG": "/home/bridge/.kube/deployer" }`. */
@@ -88,6 +97,8 @@ export interface ProfileConfig {
 export interface ServerAgentTemplate {
   acp?: AcpConfig | undefined;
   model?: string | undefined;
+  /** The reasoning effort of every run made from this template (as a profile's `effort`). */
+  effort?: string | undefined;
   /** The sign-in folder of this tool on this machine (the same one the plain sign-in profile of the tool uses). */
   authHome?: string | undefined;
   env?: Record<string, string> | undefined;
@@ -180,6 +191,7 @@ function parseServerMode(raw: unknown): ServerModeConfig | undefined {
     agents[key as ServerAgentKey] = {
       ...(checked.acp !== undefined ? { acp: checked.acp } : {}),
       ...(checked.model !== undefined ? { model: checked.model } : {}),
+      ...(checked.effort !== undefined ? { effort: checked.effort } : {}),
       ...(checked.authHome !== undefined ? { authHome: checked.authHome } : {}),
       ...(checked.env !== undefined ? { env: checked.env } : {}),
       ...(checked.passEnv !== undefined ? { passEnv: checked.passEnv } : {}),
@@ -246,6 +258,8 @@ export function parseConfig(raw: unknown): BridgeConfig {
     if (aliases !== undefined && (!isRecord(aliases) || Object.values(aliases).some((x) => typeof x !== 'string'))) {
       throw new Error(`config: profile "${name}": modelAliases must map names to strings`);
     }
+    const effort = p['effort'];
+    if (effort !== undefined && (typeof effort !== 'string' || !PROFILE_EFFORTS.includes(effort))) throw new Error(`config: profile "${name}": effort must be one of ${PROFILE_EFFORTS.join(', ')}`);
     const extra = p['extraAllowedTools'];
     if (extra !== undefined && (!Array.isArray(extra) || extra.some((x) => typeof x !== 'string' || x === ''))) {
       throw new Error(`config: profile "${name}": extraAllowedTools must be a list of strings`);
@@ -277,6 +291,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
       workdir: p['workdir'],
       ...(typeof p['model'] === 'string' && p['model'] !== '' ? { model: p['model'] } : {}),
       ...(aliases !== undefined ? { modelAliases: aliases as Record<string, string> } : {}),
+      ...(typeof effort === 'string' ? { effort } : {}),
       ...(extra !== undefined ? { extraAllowedTools: extra as string[] } : {}),
       ...(envMap !== undefined ? { env: envMap as Record<string, string> } : {}),
       ...(pass !== undefined ? { passEnv: pass as string[] } : {}),
@@ -360,6 +375,7 @@ export function serverProfile(config: BridgeConfig, name: string): ProfileConfig
     ...(tmpl.acp !== undefined ? { acp: tmpl.acp } : {}),
     workdir,
     ...(tmpl.model !== undefined ? { model: tmpl.model } : {}),
+    ...(tmpl.effort !== undefined ? { effort: tmpl.effort } : {}),
     ...(Object.keys(env).length > 0 ? { env } : {}),
     ...(tmpl.passEnv !== undefined ? { passEnv: tmpl.passEnv } : {}),
     ...(tmpl.authHome !== undefined ? { authHome: tmpl.authHome } : {}),

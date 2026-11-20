@@ -348,6 +348,14 @@ describe('the adapter module', () => {
     expect(wantedOptions(jobOf('hermes-acp', { model: 'x' }, { manythreads: { model: { alias: null, effort: 'high' } } }))).toEqual([{ configId: 'model', value: 'x', pinned: true }]);
     expect(wantedOptions(jobOf('codex', {}, { manythreads: { model: { alias: null, effort: 'enormous' } } }))).toEqual([]);
   });
+
+  it('the profile\'s effort wins over the bot\'s, and is asked for even when the bot names none (P35-11)', () => {
+    expect(wantedOptions(jobOf('codex', { model: 'gpt-6.2-sol', effort: 'low' }, { manythreads: { model: { alias: null, effort: 'high' } } }))).toEqual([
+      { configId: 'model', value: 'gpt-6.2-sol', pinned: true },
+      { configId: 'reasoning_effort', value: 'low', pinned: false },
+    ]);
+    expect(wantedOptions(jobOf('codex', { effort: 'low' }, { manythreads: { model: { alias: null, effort: null } } }))).toEqual([{ configId: 'reasoning_effort', value: 'low', pinned: false }]);
+  });
 });
 
 describe('the profile\'s driver', () => {

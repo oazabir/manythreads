@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { PROFILE_EFFORTS } from '../config.ts';
 import { fullAccessOn } from '../full-access.ts';
 import { lastLine, redact } from '../process.ts';
 import { classifyFailure } from '../signin.ts';
@@ -10,7 +11,7 @@ import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 //
 //   codex exec --json --skip-git-repo-check -C <workdir> -c sandbox_mode="…" -c approval_policy="never"
 //          [-c developer_instructions="…"] [-c mcp_servers.manythreads.url="…"]
-//          [-c mcp_servers.manythreads.bearer_token_env_var="MANYTHREADS_RUN_TOKEN"] [-m model] -
+//          [-c mcp_servers.manythreads.bearer_token_env_var="MANYTHREADS_RUN_TOKEN"] [-m model] [-c model_reasoning_effort="low"] -
 //   codex exec resume --json … <thread id> -
 //
 // The prompt goes to stdin (`-`). The token goes only in the child's environment. A run with a files or shell grant gets
@@ -63,6 +64,9 @@ export function codexArgs(job: DriverJob, resumeId: string | null, instructionsI
   const mapped = alias !== null && job.profile.modelAliases && Object.hasOwn(job.profile.modelAliases, alias) ? job.profile.modelAliases[alias] : undefined;
   const model = mapped ?? job.profile.model;
   if (model !== undefined) args.push('-m', model);
+  // the profile's effort wins over the bot's (P35-11); Codex's own config key
+  const effort = job.profile.effort ?? mt.model.effort;
+  if (effort !== null && (PROFILE_EFFORTS as readonly string[]).includes(effort)) args.push('-c', `model_reasoning_effort=${toml(effort)}`);
   if (resumeId !== null) args.push(resumeId);
   args.push('-');
   return args;

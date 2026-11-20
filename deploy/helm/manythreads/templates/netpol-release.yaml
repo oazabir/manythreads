@@ -86,7 +86,7 @@ spec:
         - { port: 4000, protocol: TCP }
     {{- if .Values.hermesPods.enabled }}
     # the whole pods namespace is let in here by namespace selector, but only the Hermes pods call the gateway for their model: the Claude and Codex pod's own policy
-    # (claude-pods.yaml) does not let port 4000 out, so the pod side shuts it off (netpol.test.ts holds both walls)
+    # (the agent pods' own policy file) does not let port 4000 out, so the pod side shuts it off (netpol.test.ts holds both walls)
     - from:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $bots }} } }
       ports:

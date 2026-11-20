@@ -169,6 +169,18 @@ describe('codexArgs against docs/spikes/codex-flags.md', () => {
     expect(mentioned(section('Help output: codex exec resume'), '--last')).toBe(true);
   });
 
+  it('sets the effort as Codex\'s own config key: the profile\'s over the bot\'s, none when neither names a known level (P35-11)', () => {
+    const job = (profileEffort: string | undefined, botEffort: string | null): DriverJob =>
+      ({ request: { instructions: null, input: 'go', sessionId: 's', manythreads: { tools: [], mcp: null, model: { alias: null, effort: botEffort } } }, profile: { agent: 'codex', workdir: '/w', model: 'gpt-6.2-sol', ...(profileEffort ? { effort: profileEffort } : {}) } }) as unknown as DriverJob;
+    const effortOf = (args: string[]): string | undefined => args.find((a) => a.startsWith('model_reasoning_effort='));
+    expect(effortOf(codexArgs(job('low', 'high'), null, true))).toBe('model_reasoning_effort="low"');
+    expect(effortOf(codexArgs(job(undefined, 'high'), 'thread-1', true))).toBe('model_reasoning_effort="high"');
+    expect(effortOf(codexArgs(job(undefined, 'enormous'), null, true))).toBeUndefined();
+    expect(effortOf(codexArgs(job(undefined, null), null, true))).toBeUndefined();
+    const args = codexArgs(job('low', null), null, true);
+    expect(args.slice(args.indexOf('-m'), args.indexOf('-m') + 2)).toEqual(['-m', 'gpt-6.2-sol']);
+  });
+
   it('never sets a flag the page says is not used on purpose', () => {
     const all = [...codexArgs(fullJob(), null, true), ...codexArgs(fullJob(), 'x', false)];
     for (const banned of ['-s', '--sandbox', '--dangerously-bypass-approvals-and-sandbox', '--ephemeral', '--oss', '--approve-for-me']) expect(all, banned).not.toContain(banned);

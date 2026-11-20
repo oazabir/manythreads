@@ -22,6 +22,10 @@ export interface ClaudePodConfig {
   modelAliases: Record<string, string>;
   /** The same for a Codex runner. Empty by default: a name that is not listed is ignored and Codex uses the model its sign-in plan gives it. */
   codexModelAliases: Record<string, string>;
+  /** The model every Codex run in a pod uses unless an alias above maps the bot's (owner 2026-11-20: `gpt-6.2-sol`, P35-11). Empty: the model Codex's sign-in plan gives it. */
+  codexModel: string;
+  /** The reasoning effort of every Codex run in a pod; it wins over the bot's own (`low`, the catalog's lighter reasoning, P35-11). Empty: the bot's. */
+  codexEffort: string;
   /** The platform's address inside the cluster: where the publisher container asks `GET /api/runs/self`. Empty: the pod gets no publisher. */
   serverUrl: string;
   /** The publisher: the third container, the only one that holds a team's push token (P19-09, docs/plugins/claude-pods.md). */
@@ -50,6 +54,20 @@ function parseJson<T>(raw: string | undefined, fallback: T): T {
   }
 }
 
+/** The pods' Codex model: unset is `gpt-6.2-sol` (P35-11), an explicit empty value is none, a value with other characters than a model name has is the default. */
+export function codexModelOf(raw: string | undefined): string {
+  if (raw === undefined) return 'gpt-6.2-sol';
+  const v = raw.trim();
+  return v === '' || /^[A-Za-z0-9._:-]{1,64}$/.test(v) ? v : 'gpt-6.2-sol';
+}
+
+/** The pods' Codex effort: unset is `low` (P35-11), an explicit empty value is none (the bot's), a level the bridge does not take is the default. */
+export function codexEffortOf(raw: string | undefined): string {
+  if (raw === undefined) return 'low';
+  const v = raw.trim();
+  return v === '' || ['low', 'medium', 'high', 'xhigh', 'max'].includes(v) ? v : 'low';
+}
+
 /** A RuntimeClass name as Kubernetes allows it (a DNS subdomain), or '' (the cluster's default runtime). */
 export function runtimeClassOf(raw: string): string {
   return /^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/.test(raw) && raw.length <= 253 ? raw : '';
@@ -70,6 +88,8 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
     repoOriginAllow: parseRepoOriginAllow(env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW']),
     modelAliases: parseJson(env['MANYTHREADS_CLAUDE_PODS_MODEL_ALIASES'], DEFAULT_ALIASES),
     codexModelAliases: parseJson(env['MANYTHREADS_CLAUDE_PODS_CODEX_MODEL_ALIASES'], {}),
+    codexModel: codexModelOf(env['MANYTHREADS_CLAUDE_PODS_CODEX_MODEL']),
+    codexEffort: codexEffortOf(env['MANYTHREADS_CLAUDE_PODS_CODEX_EFFORT']),
     // the server pod's address in the cluster; the chart sets MANYTHREADS_INCLUSTER_URL whenever the pods namespace is on
     serverUrl: (env['MANYTHREADS_CLAUDE_PODS_SERVER_URL'] ?? env['MANYTHREADS_INCLUSTER_URL'] ?? '').trim().replace(/\/+$/, ''),
     publisher: {

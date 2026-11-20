@@ -119,9 +119,11 @@ export function wantedOptions(job: DriverJob): WantedOption[] {
   const out: WantedOption[] = [];
   // Hermes has no model option (its model is the home's setting): a model the profile pins cannot be set, and the run says so.
   if (model !== undefined) out.push({ configId: 'model', value: model, pinned: true });
-  if (mt.model.effort !== null && EFFORTS.has(mt.model.effort)) {
-    if (flavor === 'codex') out.push({ configId: 'reasoning_effort', value: mt.model.effort, pinned: false });
-    else if (flavor === 'claude') out.push({ configId: 'effort', value: mt.model.effort, pinned: false });
+  // the profile's effort (the machine's choice, P35-11) wins over the bot's; asked for, never pinned: an adapter without the option still runs
+  const effort = job.profile.effort ?? mt.model.effort;
+  if (effort !== null && EFFORTS.has(effort)) {
+    if (flavor === 'codex') out.push({ configId: 'reasoning_effort', value: effort, pinned: false });
+    else if (flavor === 'claude') out.push({ configId: 'effort', value: effort, pinned: false });
   }
   return out;
 }
