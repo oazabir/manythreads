@@ -143,7 +143,9 @@ export interface BridgeConfig {
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const RESERVED_ENV = new Set(['AGENT_BRIDGE_API_KEY', 'MANYTHREADS_RUN_TOKEN']);
+// NODE_OPTIONS and NODE_PATH change how every Node program of a run starts (a bigger heap past the run's memory, a module loaded first); a profile or server template may not set or pass
+// them (P31-04). Neither is on the helper's allowlist (team-user.ts ENV_ALLOW) or the bridge's ENV_COMMON (runs.ts).
+const RESERVED_ENV = new Set(['AGENT_BRIDGE_API_KEY', 'MANYTHREADS_RUN_TOKEN', 'NODE_OPTIONS', 'NODE_PATH']);
 
 const positive = (v: unknown, fallback: number, what: string): number => {
   if (v === undefined) return fallback;

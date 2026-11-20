@@ -46,6 +46,13 @@ describe('bridge.sh', () => {
     expect(script).toMatch(/rm -rf \/etc\/systemd\/system\/manythreads-publisher\.service\.d/);
   });
 
+  it('keeps the bridge running when the kernel kills one bot command for memory (P31-04): OOMPolicy=continue in the bridge\'s unit, once', () => {
+    const unit = script.slice(script.indexOf('cat >"$UNIT_FILE" <<EOF'), script.indexOf('cat >"$PUB_UNIT_FILE" <<EOF'));
+    expect(unit).toMatch(/\nOOMPolicy=continue\n/);
+    expect(unit).toMatch(/\nRestart=always\n/);
+    expect(script.match(/^OOMPolicy=/gm)).toHaveLength(1);
+  });
+
   it('refuses a site address that is not https, for every way in, before it looks at the machine', () => {
     for (const args of [['--enrol', CODE], ['--update'], ['--uninstall'], ['--code-file', join(dir, 'nothing')]]) {
       const r = run('http://site.example', args);

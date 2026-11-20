@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.ts';
 import { claudeToolFlags } from '../src/drivers/claude-code.ts';
-import { RunManager } from '../src/runs.ts';
+import { childEnv, RunManager } from '../src/runs.ts';
 import { SessionStore, sessionUuid } from '../src/sessions.ts';
 import { alive, auth, events, getRun, harness, KEY, start, waitFor, type Harness } from './support.ts';
 
@@ -306,6 +306,28 @@ describe('child environment, output, leftovers and hostile input', () => {
     expect(() => parseConfig({ profiles: { a: { ...base, env: { MANYTHREADS_RUN_TOKEN: 'x' } } } })).toThrow(/env/);
     expect(() => parseConfig({ profiles: { a: { ...base, passEnv: ['AGENT_BRIDGE_API_KEY'] } } })).toThrow(/passEnv/);
     expect(() => parseConfig({ profiles: { a: { ...base, passEnv: ['bad name'] } } })).toThrow(/passEnv/);
+  });
+
+  it('refuses NODE_OPTIONS and NODE_PATH in env and passEnv, of a profile and of a server template (P31-04)', () => {
+    const base = { agent: 'codex', workdir: '/x' };
+    for (const name of ['NODE_OPTIONS', 'NODE_PATH']) {
+      expect(() => parseConfig({ profiles: { a: { ...base, env: { [name]: '--max-old-space-size=16384' } } } })).toThrow(/env/);
+      expect(() => parseConfig({ profiles: { a: { ...base, passEnv: [name] } } })).toThrow(/passEnv/);
+      for (const agent of ['claude', 'codex']) {
+        expect(() => parseConfig({ profiles: { a: base }, server: { root: '/r', agents: { [agent]: { env: { [name]: 'x' } } } } })).toThrow(/env/);
+        expect(() => parseConfig({ profiles: { a: base }, server: { root: '/r', agents: { [agent]: { passEnv: [name] } } } })).toThrow(/passEnv/);
+      }
+    }
+  });
+
+  it('a child never inherits NODE_OPTIONS or NODE_PATH from the bridge (ENV_COMMON)', () => {
+    const from = { PATH: '/bin', HOME: '/h', NODE_OPTIONS: '--max-old-space-size=16384', NODE_PATH: '/tmp/mods' };
+    for (const agent of ['claude-code', 'codex', 'hermes-acp'] as const) {
+      const env = childEnv({ agent, workdir: '/w' } as Parameters<typeof childEnv>[0], from);
+      expect(env['NODE_OPTIONS']).toBeUndefined();
+      expect(env['NODE_PATH']).toBeUndefined();
+      expect(env['PATH']).toBe('/bin');
+    }
   });
 
   it('redacts the run token from the final output', async () => {

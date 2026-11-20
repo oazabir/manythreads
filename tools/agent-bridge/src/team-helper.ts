@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
+import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeSync } from 'node:fs';
 import { posix } from 'node:path';
 import { AGENTS_GROUP, isKind, isSlug, launchEnv, MAX_HEADER_BYTES, parseHeader, teamHome, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
 
@@ -99,6 +99,71 @@ export const SH_MKDIR = 'umask "$1"; shift; mkdir -p -- "$@"';
 export const SH_PUT = 'umask 077; d=$(dirname -- "$1") && mkdir -p -- "$d" && cat > "$1.new" && chmod "$2" "$1.new" && mv -f -- "$1.new" "$1"';
 export const SH_RM = 'rm -rf -- "$@"';
 export const SH_EXEC = 'umask "$1"; shift; cd -- "$1" && shift && exec "$@"';
+
+/** The kernel's out-of-memory weight of this process: -1000 (never) to 1000 (first). */
+export const OOM_SCORE_FILE = '/proc/self/oom_score_adj';
+/** A run's programs are the first the kernel stops when the machine runs out of memory, before the live site's database or the bridge (P31-04). */
+export const RUN_OOM_SCORE = 1000;
+
+export interface OomScoreFile {
+  read(): string;
+  write(text: string): void;
+}
+
+const procOomScore: OomScoreFile = {
+  read: () => readFileSync(OOM_SCORE_FILE, 'utf8'),
+  write: (text) => {
+    const fd = openSync(OOM_SCORE_FILE, constants.O_WRONLY);
+    try {
+      writeSync(fd, text);
+    } finally {
+      closeSync(fd);
+    }
+  },
+};
+
+const oomValue = (text: string): number | null => {
+  const t = text.trim();
+  if (!/^-?\d{1,4}$/.test(t)) return null;
+  const n = Number(t);
+  return n >= -1000 && n <= 1000 ? n : null;
+};
+
+/**
+ * Called as root right before the program is spawned (P31-04, plan correction 6). Root writes 1000 on the helper itself: a write by a process that may raise and lower the value
+ * (CAP_SYS_RESOURCE) also sets the floor `oom_score_adj_min`, and the spawned program inherits both, so the team's program (no longer root after `setpriv`) cannot lower its own value,
+ * not even by one, and cannot make the database the victim instead. `restore` then puts the helper's own value back (root may lower it; measured on the devbox, 2026-11-20), so the
+ * helper, which ends the run's group and removes its folders, is not the first to go. Never throws: a machine that refuses the write runs the program as before.
+ */
+export function raiseForChild(file: OomScoreFile = procOomScore): { raised: boolean; restore: () => boolean } {
+  let before = 0;
+  try {
+    before = oomValue(file.read()) ?? 0;
+  } catch {
+    /* unreadable: put back 0, the value a process normally has */
+  }
+  let raised = false;
+  try {
+    file.write(String(RUN_OOM_SCORE));
+    raised = oomValue(file.read()) === RUN_OOM_SCORE;
+  } catch {
+    raised = false;
+  }
+  let restored = !raised;
+  return {
+    raised,
+    restore: () => {
+      if (restored) return true;
+      try {
+        file.write(String(before));
+        restored = oomValue(file.read()) === before;
+      } catch {
+        restored = false;
+      }
+      return restored;
+    },
+  };
+}
 
 /** The words that start `argv` as the user: numeric ids, the user's other groups, and the parent-death signal so the program dies when its launcher does. */
 export function setprivArgv(setpriv: string, uid: number, gid: number, argv: readonly string[]): string[] {
@@ -383,7 +448,15 @@ export async function main(argv: readonly string[]): Promise<number> {
   const shell = which(['/bin/bash', '/bin/sh']) ?? '/bin/sh';
   const env = launchEnv(header, acct.name, home, shell);
   const [launcher, ...launcherArgs] = setprivArgv(plan.setpriv, acct.uid, acct.gid, ['/bin/sh', '-c', SH_EXEC, 'sh', program.umask, header.cwd, ...program.argv]);
-  const child = spawn(launcher!, launcherArgs, { env, stdio: 'inherit', detached: true });
+  // the program and all it starts go first when the machine runs out of memory; the helper keeps its own value (raised just for the spawn, put back right after it)
+  const oom = raiseForChild();
+  if (!oom.raised) say('could not raise the run\'s out-of-memory score; it runs with the helper\'s');
+  let child;
+  try {
+    child = spawn(launcher!, launcherArgs, { env, stdio: 'inherit', detached: true });
+  } finally {
+    if (!oom.restore()) say('could not put the helper\'s own out-of-memory score back');
+  }
   const pid = child.pid;
   if (pid === undefined) {
     say('the program could not be started');

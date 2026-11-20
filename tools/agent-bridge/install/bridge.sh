@@ -363,6 +363,8 @@ $ca_env_line
 ExecStart=$node $PREFIX/current/bridge.mjs --config $ETC/config.json --state-dir $DATA/state --site $SITE$insecure_flag
 Restart=always
 RestartSec=5
+# One bot command killed for memory must not stop the bridge and every team's runs with it (systemd's default for a unit is stop); the run's programs carry oom_score_adj 1000 (P31-04).
+OOMPolicy=continue
 UMask=0007
 # No NoNewPrivileges and no RestrictSUIDSGID: the bridge starts each team's programs through sudo (the helper, below), and a sudo that cannot become root, or a helper that cannot make
 # a setgid home, would stop every run. The rule allows two commands of one root-owned file. The helper makes users, so /etc and /var/log must be writable for it.

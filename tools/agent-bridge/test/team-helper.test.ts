@@ -2,7 +2,7 @@ import { mkdtempSync, openSync, readSync, rmSync, writeFileSync, closeSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseArgv, parseHelperConfig, programFor, readFirstLine, setprivArgv, SH_EXEC, SH_MKDIR, SH_PUT, SH_RM } from '../src/team-helper.ts';
+import { type OomScoreFile, parseArgv, parseHelperConfig, programFor, raiseForChild, readFirstLine, RUN_OOM_SCORE, setprivArgv, SH_EXEC, SH_MKDIR, SH_PUT, SH_RM } from '../src/team-helper.ts';
 
 // The root helper's own checks (P26-22). What it does as root needs root and is run by the container test (install/container-test/run.sh); here are the parts that decide WHAT it will do.
 
@@ -90,6 +90,66 @@ describe('starting a program as the team user', () => {
     }
     expect(SH_PUT).toContain('mv -f -- "$1.new" "$1"');
     expect(SH_RM).toBe('rm -rf -- "$@"');
+  });
+});
+
+describe('the out-of-memory score of a run (P31-04: root raises it for the spawn, the helper keeps its own)', () => {
+  /** A stand-in for /proc/self/oom_score_adj: what was written, in order, and what a read answers. */
+  const fakeFile = (start: string, opts: { refuse?: (text: string) => boolean; ignore?: boolean } = {}) => {
+    const writes: string[] = [];
+    let value = start;
+    const file: OomScoreFile = {
+      read: () => `${value}\n`,
+      write: (text) => {
+        writes.push(text);
+        if (opts.refuse?.(text) === true) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+        if (opts.ignore !== true) value = text;
+      },
+    };
+    return { file, writes, now: () => value };
+  };
+
+  it('writes 1000 before the spawn and the old value after it', () => {
+    const f = fakeFile('0');
+    const oom = raiseForChild(f.file);
+    expect(RUN_OOM_SCORE).toBe(1000);
+    expect(oom.raised).toBe(true);
+    expect(f.now()).toBe('1000');
+    expect(oom.restore()).toBe(true);
+    expect(f.writes).toEqual(['1000', '0']);
+    expect(f.now()).toBe('0');
+  });
+  it('puts back whatever value the helper had, once', () => {
+    const f = fakeFile('-17');
+    const oom = raiseForChild(f.file);
+    expect(oom.restore()).toBe(true);
+    expect(oom.restore()).toBe(true);
+    expect(f.writes).toEqual(['1000', '-17']);
+  });
+  it('a refused write never throws, and nothing is put back that was not changed', () => {
+    const f = fakeFile('0', { refuse: () => true });
+    const oom = raiseForChild(f.file);
+    expect(oom.raised).toBe(false);
+    expect(oom.restore()).toBe(true);
+    expect(f.writes).toEqual(['1000']);
+  });
+  it('a write the kernel did not keep counts as not raised', () => {
+    const f = fakeFile('0', { ignore: true });
+    expect(raiseForChild(f.file).raised).toBe(false);
+  });
+  it('a refused put-back is reported, not thrown', () => {
+    const f = fakeFile('0', { refuse: (t) => t === '0' });
+    const oom = raiseForChild(f.file);
+    expect(oom.raised).toBe(true);
+    expect(oom.restore()).toBe(false);
+  });
+  it('an unreadable or odd old value is put back as 0', () => {
+    const f = fakeFile('garbage');
+    raiseForChild(f.file).restore();
+    expect(f.writes).toEqual(['1000', '0']);
+  });
+  it('is not done by the team user\'s shell (an unprivileged write would set no floor)', () => {
+    expect(SH_EXEC).not.toContain('oom_score_adj');
   });
 });
 

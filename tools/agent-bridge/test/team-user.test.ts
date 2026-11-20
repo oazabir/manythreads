@@ -160,6 +160,14 @@ describe('what the bridge sends', () => {
     const text = buildHeader({ cwd: `${ROOT}/work/eng/b`, env: { PATH: '/p', CLAUDE_CONFIG_DIR: `${ROOT}/auth/claude` }, files: [{ path: `${ROOT}/work/eng/hermes/b/config.yaml`, text: 'x', mode: '0600' }], removeAtEnd: [], kind: 'claude' });
     expect(parseHeader(text, ctx())).toMatchObject({ ok: true, dropped: [] });
   });
+  it('NODE_OPTIONS and NODE_PATH are not on the helper\'s allowlist (P31-04)', () => {
+    for (const k of ['NODE_OPTIONS', 'NODE_PATH']) {
+      expect(ENV_ALLOW.test(k)).toBe(false);
+      expect(SYNC_ENV.test(k)).toBe(false);
+    }
+    const header = JSON.parse(buildHeader({ cwd: `${ROOT}/work/eng/b`, env: { PATH: '/p', NODE_OPTIONS: '--max-old-space-size=16384', NODE_PATH: '/x' }, kind: 'codex' })) as { env: Record<string, string> };
+    expect(Object.keys(header.env)).toEqual(['PATH']);
+  });
   it('the sync allowlist has no token and no sign-in variable', () => {
     for (const k of ['MANYTHREADS_RUN_TOKEN', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'KUBECONFIG']) expect(SYNC_ENV.test(k)).toBe(false);
   });
