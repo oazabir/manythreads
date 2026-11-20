@@ -313,9 +313,9 @@
   --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
 
   /* message density (P21-21): the numbers of a message row. Comfortable is the pixels the app always had */
-  --msg-pad-y: 6px; /* above and below one message */
-  --msg-gap: 6px; /* between two messages */
-  --run-gap: 1px; /* above a message that continues the author's run */
+  --msg-pad-y: 6px; /* above a message that starts an author's group */
+  --msg-gap: 6px; /* added above a message that starts an author's group (P34-01: the gap sits on top, never under a row) */
+  --run-gap: 4px; /* between two lines of one author's run: half under each row, half above the next */
   --av-size: 32px; /* the avatar beside the first line of a message */
   --gutter-w: 34px; /* the avatar column */
   --day-gap: 6px; /* above the day divider; it has two pixels more below */
@@ -326,7 +326,7 @@
 :root[data-density="compact"][data-palette] {
   --msg-pad-y: 3px;
   --msg-gap: 2px;
-  --run-gap: 0;
+  --run-gap: 2px;
   --av-size: 28px;
   --gutter-w: 28px;
   --day-gap: 4px;

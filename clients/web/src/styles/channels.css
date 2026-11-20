@@ -22,7 +22,9 @@
 .vlist {
   flex: 1;
   min-height: 0;
-  padding: 16px 20px 8px;
+
+  /* the first row brings its group gap above it and the last has none under it (P34-01): the padding gives back the same space at both ends */
+  padding: calc(16px - var(--group-gap)) 20px calc(8px + var(--group-gap));
   overflow: hidden auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
@@ -30,10 +32,12 @@
   outline: none;
 }
 
-/* a row is its own formatting context, so the height the list measures includes the gap below it */
+/*
+ * A row is its own formatting context, so the height the list measures includes the margin of what it holds. The space between rows sits on top
+ * of a row that starts an author's group (or a divider), never under a row, so a row that continues the run above has almost none (P34-01).
+ */
 .vrow {
   display: flow-root;
-  padding-bottom: var(--msg-gap);
   contain: layout style;
 }
 
@@ -95,15 +99,20 @@
   font-weight: 600;
 }
 
-/* the pill of the day in view, laid over the top of the list while the real divider is out of sight */
+/*
+ * The pill of the day in view, laid over the top of the list while the real divider is out of sight. It sits on a solid band of the list's own
+ * background, so no text and no button of the row under it shows through (P34-01). It spans the list's whole width: with overlay scroll bars (macOS,
+ * phones) a strip left open would show the rows under it.
+ */
 .day-float {
   position: absolute;
-  top: 6px;
+  top: 0;
   left: 0;
   right: 0;
   z-index: 3;
   margin: 0;
-  padding: 0 20px;
+  padding: 6px 8px 6px 20px;
+  background: var(--surface);
   pointer-events: none;
 }
 
@@ -135,8 +144,25 @@
   grid-template-columns: var(--gutter-w) 1fr;
   gap: 11px;
   margin: 0 -8px;
-  padding: var(--msg-pad-y) 8px;
+  padding: var(--msg-pad-y) 8px var(--run-pad);
   border-radius: var(--radius-sm);
+}
+
+/* half of a run's gap under each row; what the list adds above a row that starts a group, so the space between two groups is what it always was */
+.vlist,
+.thread,
+.msg {
+  --run-pad: calc(var(--run-gap) / 2);
+  --group-gap: calc(var(--msg-pad-y) - var(--run-pad) + var(--msg-gap));
+}
+
+/* `:where` keeps this at the weight of `.msg`, which it follows: the rules for hover and focus below stay in their order */
+.vrow > :where(.msg:not(.run)) {
+  margin-top: var(--group-gap);
+}
+
+.vrow > .daysep {
+  margin-top: calc(var(--day-gap) + var(--group-gap));
 }
 
 .msg:hover,
@@ -195,9 +221,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* a message that continues the run above (P21-01): no avatar, no name; the time shows in the avatar column while the row is hovered, focused or tapped */
+/* a message that continues the run above (P21-01): no avatar, no name; the time shows in the avatar column while the row is hovered, focused or tapped.
+   With the half under the row above, two lines of a run are `--run-gap` apart (P34-01) */
 .msg.run {
-  padding-top: var(--run-gap);
+  padding-top: var(--run-pad);
 }
 
 .msg.run .run-who {
@@ -235,18 +262,23 @@
 
   color: var(--txt);
   font-size: var(--fs-body);
-  overflow-wrap: anywhere;
+
+  /* prose breaks a long word only when nothing else fits; code spans may break anywhere (P34-01) */
+  overflow-wrap: break-word;
 }
 
-/* a long text shows four lines, fading out, with "Show more" under it (P21-03) */
+/* a long text shows four lines with "Show more" under it (P21-03); only the last line fades, so three are whole (P34-01) */
 .txt.clamp {
   max-height: calc(4 * var(--lh));
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, black calc(100% - 1.6 * var(--lh)), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--lh)), transparent);
 }
 
-/* "Show more" under a cut message: small and quiet (owner, 2026-11-19), a muted word that underlines only under the pointer, not a bold link */
+/* "Show more" under a cut message: small and quiet (owner, 2026-11-19), a muted word that underlines only under the pointer, not a bold link.
+   It has a line of its own, so it never sits beside the reply count (P34-01) */
 .link-btn.show-more {
+  display: block;
+  width: fit-content;
   margin-top: 0;
   padding: 0;
   color: var(--mute);
@@ -282,7 +314,7 @@
 .md {
   min-width: 0;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .md-linkhost {
@@ -321,6 +353,18 @@
   background: var(--code-bg);
   font-family: var(--mono);
   font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+/* a commit hash shows its first eight characters and an ellipsis; the whole value is in the tooltip and in what is copied (P34-01) */
+.md code.md-hash {
+  display: inline-block;
+  box-sizing: content-box;
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .md pre.md-code {
@@ -919,20 +963,24 @@
   font-weight: 400;
 }
 
-/* the people who replied, newest first, overlapping a little (P21-03) */
+/* the people who replied, newest first (P21-03), side by side: a face is never covered by the next one (P34-01) */
 .rp-avs {
   display: inline-flex;
+  flex: none;
+  gap: 2px;
 }
 
+/* one look for every face (P34-01): the same size, a person round and a bot in a rounded square, and never squeezed by a narrow row */
 .replies .rp-avs .av {
+  flex: none;
   width: 18px;
   height: 18px;
-  box-shadow: 0 0 0 1.5px var(--surface);
   font-size: 0.6em;
 }
 
-.replies .rp-avs .av + .av {
-  margin-left: -5px;
+.replies .rp-avs .av.a,
+.replies .rp-avs .av.r {
+  border-radius: var(--radius-xs);
 }
 
 .rp-unread {
@@ -1774,7 +1822,14 @@
 }
 
 .thread .msg {
-  margin-bottom: 6px;
+  --thread-after: calc(6px + var(--msg-pad-y) - var(--run-pad));
+
+  margin-bottom: var(--thread-after);
+}
+
+/* a reply that continues the run right above it pulls up over the margin under that row: the two lines are `--run-gap` apart (P34-01) */
+.thread .msg + .msg.run {
+  margin-top: calc(0px - var(--thread-after));
 }
 
 .thread.main .rpb {
@@ -2116,22 +2171,19 @@
   white-space: nowrap;
 }
 
+:root[data-density="compact"] .vlist,
 :root[data-density="compact"] .msg {
-  padding-bottom: 2px;
+  --group-gap: 2px;
 }
 
 :root[data-density="compact"] .msg:not(.run) {
   padding-top: 2px;
 }
 
-:root[data-density="compact"] .vrow {
-  padding-bottom: 1px;
-}
-
 /* ---- phone ---- */
 @media (width <= 760px) {
   .vlist {
-    padding: 12px 14px 6px;
+    padding: calc(12px - var(--group-gap)) 14px calc(6px + var(--group-gap));
   }
 
   .composer {

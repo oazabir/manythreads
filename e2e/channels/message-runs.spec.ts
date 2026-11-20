@@ -43,6 +43,18 @@ test('three quick messages by one person are one run: one avatar, one visible na
     await expect(rowOf(page, d.id).locator('.av')).toHaveCount(1);
     await expect(content(page).locator('.msg .av')).toHaveCount(2);
 
+    // the lines of a run sit close (P34-01: 4 to 6 px between two text lines, by palette); another author's row starts well below
+    const textBox = async (m: { id: string }): Promise<{ top: number; bottom: number }> => {
+      const b = (await rowOf(page, m.id).locator('.txt').boundingBox())!;
+      return { top: b.y, bottom: b.y + b.height };
+    };
+    const [ta, tb, tc, td] = [await textBox(a), await textBox(b), await textBox(c), await textBox(d)];
+    for (const [above, below] of [[ta, tb], [tb, tc]] as const) {
+      expect(below.top - above.bottom, 'the space between two lines of one run').toBeGreaterThanOrEqual(2);
+      expect(below.top - above.bottom, 'the space between two lines of one run').toBeLessThanOrEqual(7);
+    }
+    expect(td.top - tc.bottom, 'a new author: the gap and the name line').toBeGreaterThan(20);
+
     // the header time of the first row has the full date as its tooltip
     await expect(rowOf(page, a.id).locator('.who time')).toHaveAttribute('title', FULL_STAMP);
 
@@ -117,6 +129,10 @@ test('a long text is cut with Show more; Show more opens the text, not the threa
     expect(clampedHeight).toBeLessThan(5 * 21 + 4);
     const showMore = row.getByRole('button', { name: 'Show more' });
     await expect(showMore).toBeVisible();
+    // Show more has a line of its own under the text, above the reply count, never beside it (P34-01)
+    const [tBox, mBox, rBox] = [await row.locator('.txt').boundingBox(), await showMore.boundingBox(), await row.locator('button.replies').boundingBox()];
+    expect(mBox!.y).toBeGreaterThanOrEqual(tBox!.y + tBox!.height - 1);
+    expect(rBox!.y).toBeGreaterThanOrEqual(mBox!.y + mBox!.height - 1);
 
     await showMore.click();
     await expect(row.locator('.txt')).not.toHaveClass(/\bclamp\b/);
@@ -166,6 +182,13 @@ test('the reply count shows who replied, when, and a dot until the thread is ope
     await postMessage(omar, id, `${tag} third reply`, root.id);
     await expect(replies).toContainText('3 replies', T);
     await expect(replies.locator('.rp-avs .av')).toHaveCount(3);
+    // one look: every face the same size, side by side, none covered by the next (P34-01)
+    const faces = await replies.locator('.rp-avs .av').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, w: r.width, h: r.height }; }));
+    for (const [i, f] of faces.entries()) {
+      expect(f.w).toBeCloseTo(18, 0);
+      expect(f.h).toBeCloseTo(18, 0);
+      if (i > 0) expect(f.left).toBeGreaterThanOrEqual(faces[i - 1]!.right - 0.5);
+    }
 
     // opening the thread reads it: the dot goes
     await replies.click();

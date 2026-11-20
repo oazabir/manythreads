@@ -5,6 +5,7 @@ import { splitCustomEmoji, useCustomEmoji } from './customEmoji';
 import { CustomEmojiImg } from './EmojiGlyph';
 import { usePeople } from './hooks';
 import { parseMarkdown, type Block, type Inline } from './markdown';
+import { isLongHash } from './displayText';
 
 /** Parsed messages by their text: scrolling back over a row does not parse it again. Bounded, oldest out first. */
 const parsed = new Map<string, Block[]>();
@@ -80,7 +81,8 @@ function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: Cit
       case 'br':
         return <br key={k} />;
       case 'code':
-        return <code key={k}>{n.v}</code>;
+        // a commit hash is drawn short ("8ac36456…") by CSS; the whole value stays in the text, so it is what a selection copies, and in the tooltip
+        return isLongHash(n.v) ? <code key={k} className="md-hash" title={n.v}>{n.v}</code> : <code key={k}>{n.v}</code>;
       case 'strong':
         return <strong key={k}>{inline(n.c, teamSlug, `${k}.`, marker, cited)}</strong>;
       case 'em':

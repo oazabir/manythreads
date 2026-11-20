@@ -100,11 +100,11 @@ describe('timeline helpers', () => {
     expect(pending.at(-1)?.kind).toBe('pending');
   });
 
-  it('estimate: a continued row is 22px shorter and the cache keeps both answers', () => {
+  it('estimate: a continued row is 30px shorter (no header line, no group gap above) and the cache keeps both answers', () => {
     const m = msg(1);
     const plain = estimateItem({ kind: 'message', key: 'a', message: m, continued: false });
     const cont = estimateItem({ kind: 'message', key: 'a', message: m, continued: true });
-    expect(plain - cont).toBe(22);
+    expect(plain - cont).toBe(30);
     expect(estimateItem({ kind: 'message', key: 'a', message: m, continued: false })).toBe(plain);
     expect(estimateItem({ kind: 'message', key: 'a', message: m, continued: true })).toBe(cont);
   });

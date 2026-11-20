@@ -49,15 +49,16 @@ export function buildListItems(
 
 /** Message guesses by message object (a message is replaced, never edited in place), so a list rebuild does not split every body again. */
 const guessed = new WeakMap<ChannelMessage, { plain: number; continued: number }>();
-/** The header line a continued row does not have. */
-const CONTINUED_LESS = 22;
+/** The header line a continued row does not have (22 px), and the space above a new group that a run row does not have either (P34-01). */
+const CONTINUED_LESS = 30;
 
 export function estimateItem(item: ListItem): number {
   switch (item.kind) {
+    // a divider carries the next group's gap above it too (P34-01, measured: 44 and 38 px)
     case 'day':
-      return 36;
+      return 44;
     case 'unread':
-      return 30;
+      return 38;
     case 'message': {
       let h = guessed.get(item.message);
       if (h === undefined) {

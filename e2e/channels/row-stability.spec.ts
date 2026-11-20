@@ -73,7 +73,8 @@ test('the presence cards arriving, and being read again, leave the same row and 
     await page.goto(`/t/engineering/c/${ch.name}`);
     const row = page.locator(`[data-message-id="${id}"]`).first();
     await expect(row).toBeVisible(T);
-    await expect(row.getByTestId('presence-dot')).toHaveCount(0);
+    // before the cards: the name is plain text (a profile button only once the cards say presence may be shown)
+    await expect(row.getByTestId('profile-open')).toHaveCount(0);
     await row.hover();
     const bar = row.getByRole('toolbar', { name: 'Message actions' });
     await expect(bar).toBeVisible(T);
@@ -81,9 +82,11 @@ test('the presence cards arriving, and being read again, leave the same row and 
     await row.evaluate((el, k) => { (el as unknown as Record<string, boolean>)[k] = true; el.querySelector('.acts')!.setAttribute(k, '1'); }, MARK);
     const same = (): Promise<boolean> => row.evaluate((el, k) => (el as unknown as Record<string, boolean>)[k] === true && el.querySelector('.acts')?.getAttribute(k) === '1', MARK);
 
-    // the cards arrive: the dot appears, the row is the same element, in the same place, with the same bar
+    // the cards arrive: the name becomes the profile button (the row draws no presence dot, P34-01), the row is the same element, in the same
+    // place, with the same bar
     release();
-    await expect(row.getByTestId('presence-dot')).toHaveCount(1, T);
+    await expect(row.getByTestId('profile-open').first()).toBeVisible(T);
+    await expect(row.getByTestId('presence-dot')).toHaveCount(0);
     expect(await same()).toBe(true);
     expect(await row.boundingBox()).toEqual(before);
 

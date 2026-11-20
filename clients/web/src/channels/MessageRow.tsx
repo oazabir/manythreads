@@ -39,6 +39,7 @@ import { MessageImages } from './MessageImages';
 import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import { usePeople, type People } from './hooks';
+import { withoutOwnName } from './displayText';
 import { PersonLink } from '../presence/ProfileCard';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -133,7 +134,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
   const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
-  // a person's name opens their profile card and carries their presence dot; a bot or a webhook has neither (the roster lists people only)
+  // a person's name and picture open their profile card; a bot or a webhook has none (the roster lists people only). The list draws no presence dot on a
+  // message's picture (owner, P34-01): the sidebar, the conversation header and the member list say who is here
   const authorPerson = m.author?.kind === 'bot' || m.author?.kind === 'system' ? undefined : people.byActor(m.authorId);
   const mark = authorMark(m.author);
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
@@ -168,7 +170,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     const el = txt.current;
     if (el && plainText) setTall(el.scrollHeight > CLAMP_LINES * LINE_PX + 2);
   }, [m.body, plainText]);
-  const clamped = plainText && tall && !opened && !highlight && !expand;
+  // the thread pane draws every message whole (P34-01): it is where a long message is read
+  const clamped = plainText && tall && !opened && !highlight && !expand && !inThread;
+  // the header already names the author: a handover's "Name → @bot:" is drawn "→ @bot:"
+  const shown = withoutOwnName(m.body, name);
   // a jump target or the first unread message was drawn whole: it stays whole when the highlight or the "New" line goes (no jump in the list)
   useEffect(() => {
     if (highlight || expand) {
@@ -360,7 +365,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       {continued ? (
         <time className="run-time" dateTime={m.createdAt} title={fullStamp(m.createdAt)} data-vt-mask>{clock(m.createdAt)}</time>
       ) : authorPerson ? (
-        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} presencePersonId={authorPerson.personId} /></PersonLink>
+        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} /></PersonLink>
       ) : (
         <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} avatar={m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null} {...(m.author?.kind === 'bot' ? { badge: 'bot' as const } : {})} />
       )}
@@ -384,10 +389,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 messageId={m.id}
                 body={
                   clip.voice.transcript === 'server' ? (
-                    <div className="txt vt-plain" data-testid="voice-words">{m.body}</div>
+                    <div className="txt vt-plain" data-testid="voice-words">{shown}</div>
                   ) : (
                     <>
-                      <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`} data-testid="voice-words"><Markdown source={m.body} teamSlug={teamSlug} /></div>
+                      <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`} data-testid="voice-words"><Markdown source={shown} teamSlug={teamSlug} /></div>
                       {clamped ? <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button> : null}
                     </>
                   )
@@ -456,7 +461,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
         ) : clip ? null : (
           <>
-            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={m.body} teamSlug={teamSlug} /></div>
+            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={shown} teamSlug={teamSlug} /></div>
             {clamped ? (
               <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
             ) : null}

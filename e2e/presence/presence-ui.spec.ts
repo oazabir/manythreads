@@ -96,45 +96,45 @@ test.afterAll(async () => {
 
 const row = (page: Page, text: string): Locator => page.locator('[data-testid="message"]').filter({ hasText: text });
 const dotOf = (scope: Locator | Page): Locator => scope.getByTestId('presence-dot');
+/** Nadia's one-to-one conversation with that person in the sidebar: where a dot says who is here (message rows draw none, P34-01). */
+const dmRow = (page: Page, name: string): Locator => page.locator('[data-slot="direct-messages"] a.it').filter({ has: page.locator('.it-label', { hasText: new RegExp(`^${name}$`) }) });
 const fill = (dot: Locator): Promise<string> => dot.locator('.pdot').evaluate((el) => getComputedStyle(el).backgroundColor);
 const TRANSPARENT = /^(rgba\(0, 0, 0, 0\)|transparent)$/;
 
 test.describe('desktop', () => {
   test.skip(({ isMobile }) => isMobile, 'the desktop layout; the phone has its own tests below');
 
-  test('a person with a heartbeat is Active on the corner of the avatar (P21-01), the status said in words and no longer drawn as an emoji; a person who never beat has the Offline ring; a bot has no dot', async ({ browser, playwright }) => {
+  test('a message row draws no presence dot (P34-01); a person with a heartbeat is Active in the sidebar, the status said in words; a person who never beat has the Offline ring; a bot has no dot', async ({ browser, playwright }) => {
     await beat(rafi);
     await beat(omar);
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
     try {
       for (const who of ['Rafi writes', 'Priya writes', 'Omar writes', 'Coder writes']) await expect(row(page, who)).toBeVisible(T);
 
-      // Rafi: Active (a filled dot), named in words, with his status in the words (the picture of the status is not drawn on a message row any more)
-      const rafiDot = dotOf(row(page, 'Rafi writes').locator('.av-wrap'));
+      // Rafi: Active (a filled dot) on his one-to-one row in the sidebar, named in words, with his status in the words
+      const rafiDot = dotOf(dmRow(page, 'Rafi'));
       await expect(rafiDot).toHaveCount(1, T);
       await expect(rafiDot).toHaveAttribute('data-presence', 'online');
       await expect(rafiDot).toHaveAccessibleName(/^Active, .*Lunch/);
       await expect(rafiDot).toHaveAttribute('title', /^Active, .*Lunch/);
-      await expect(rafiDot.locator('.pdot-emoji')).toHaveCount(0);
       expect(await fill(rafiDot)).not.toMatch(TRANSPARENT);
-      // it sits on the bottom-right corner of the avatar, and no longer beside the name
-      await expect(row(page, 'Rafi writes').locator('.who').getByTestId('presence-dot')).toHaveCount(0);
-      const [avBox, dotBox] = [await row(page, 'Rafi writes').locator('.av-wrap .av').boundingBox(), await rafiDot.boundingBox()];
-      expect(dotBox!.x + dotBox!.width / 2).toBeGreaterThan(avBox!.x + avBox!.width / 2);
-      expect(dotBox!.y + dotBox!.height / 2).toBeGreaterThan(avBox!.y + avBox!.height / 2);
-      expect(dotBox!.x).toBeLessThan(avBox!.x + avBox!.width + 6);
+      // the cards have arrived (the sidebar shows them), and no message row carries a dot: not on the picture, not beside the name (owner, P34-01)
+      await expect(dotOf(page.locator('[data-testid="message"]'))).toHaveCount(0);
+      await expect(row(page, 'Rafi writes').locator('.av-wrap')).toHaveCount(0);
+      await expect(row(page, 'Rafi writes').locator('.pcard-avatar .av')).toHaveCount(1);
 
-      // Omar: Active with words only, so no picture is drawn, and the words are in the name
-      const omarDot = dotOf(row(page, 'Omar writes').locator('.av-wrap'));
-      await expect(omarDot).toHaveAccessibleName('Active, Heads down');
-      await expect(omarDot.locator('.pdot-emoji')).toHaveCount(0);
+      // Omar: Active with words only, so no picture is drawn, and the words are in the name (his option in the @ picker)
+      await page.getByRole('textbox', { name: /Message/ }).click();
+      await page.keyboard.type('@');
+      const omarOption = page.getByRole('listbox').getByRole('option', { name: /Omar/ });
+      await expect(dotOf(omarOption)).toHaveAccessibleName('Active, Heads down', T);
+      await page.keyboard.press('Escape');
 
       // Priya never beat: an empty ring, Offline
-      const priyaDot = dotOf(row(page, 'Priya writes').locator('.av-wrap'));
+      const priyaDot = dotOf(dmRow(page, 'Priya'));
       await expect(priyaDot).toHaveAttribute('data-presence', 'offline');
       await expect(priyaDot).toHaveAccessibleName('Offline');
       expect(await fill(priyaDot)).toMatch(TRANSPARENT);
-      await expect(priyaDot.locator('.pdot-emoji')).toHaveCount(0);
 
       // the bot: no dot, no profile button, a plain name
       const bot = row(page, 'Coder writes');
@@ -151,7 +151,7 @@ test.describe('desktop', () => {
     await beat(rafi, 'away');
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
     try {
-      const dot = dotOf(row(page, 'Rafi writes').locator('.av-wrap'));
+      const dot = dotOf(dmRow(page, 'Rafi'));
       await expect(dot).toHaveAttribute('data-presence', 'away', T);
       await expect(dot).toHaveAccessibleName(/^Away, /);
       // half filled: a gradient, not a flat fill and not an empty ring
@@ -166,7 +166,7 @@ test.describe('desktop', () => {
     await beat(rafi);
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
     try {
-      await expect(dotOf(row(page, 'Rafi writes'))).toHaveCount(1, T);
+      await expect(dotOf(dmRow(page, 'Rafi'))).toHaveCount(1, T);
 
       // held: the answer is on its way, so the names are plain and no dot says Offline
       let release!: () => void;
@@ -181,7 +181,7 @@ test.describe('desktop', () => {
       await expect(dotOf(page)).toHaveCount(0);
       await expect(page.getByTestId('profile-open')).toHaveCount(0);
       release();
-      await expect(dotOf(row(page, 'Rafi writes'))).toHaveAttribute('data-presence', 'online', T);
+      await expect(dotOf(dmRow(page, 'Rafi'))).toHaveAttribute('data-presence', 'online', T);
       await expect(page.getByTestId('profile-open').first()).toBeVisible();
 
       // a server that answers 404 (no plugin): still nothing, and the name stays text
@@ -203,7 +203,7 @@ test.describe('desktop', () => {
     await beat(omar);
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
     try {
-      await expect(dotOf(row(page, 'Rafi writes'))).toHaveCount(1, T);
+      await expect(dotOf(dmRow(page, 'Rafi'))).toHaveCount(1, T);
 
       // the @ picker: a dot in each person's option, and in its accessible name
       await page.getByRole('textbox', { name: /Message/ }).click();
@@ -364,7 +364,7 @@ test.describe('desktop', () => {
       await beat(rafi);
       const nadiaPage = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
       try {
-        const dot = dotOf(row(nadiaPage.page, 'Rafi writes').locator('.av-wrap'));
+        const dot = dotOf(dmRow(nadiaPage.page, 'Rafi'));
         await expect(dot).toHaveAccessibleName(/^Active, .*Lunch, Out of office$/, T);
         await row(nadiaPage.page, 'Rafi writes').getByTestId('profile-open').click();
         const card = nadiaPage.page.getByTestId('profile-card');
@@ -384,7 +384,7 @@ test.describe('desktop', () => {
         expect((await meOf(rafi)).outOfOffice).toBeNull();
         await beat(rafi);
         await nadiaPage.page.reload();
-        await expect(dotOf(row(nadiaPage.page, 'Rafi writes').locator('.av-wrap'))).toHaveAccessibleName(/^Active, .*Lunch$/, T);
+        await expect(dotOf(dmRow(nadiaPage.page, 'Rafi'))).toHaveAccessibleName(/^Active, .*Lunch$/, T);
         await row(nadiaPage.page, 'Rafi writes').getByTestId('profile-open').click();
         await expect(nadiaPage.page.getByTestId('profile-card')).toBeVisible();
         await expect(nadiaPage.page.getByTestId('profile-ooo')).toHaveCount(0);
@@ -425,7 +425,7 @@ test.describe('desktop', () => {
 test.describe('phone', () => {
   test.skip(({ isMobile }) => !isMobile, 'a 390 px screen; the desktop layout has its own tests above');
 
-  test('a message row with a dot and a long status does not scroll sideways, and the card fits the screen', async ({ browser, playwright }) => {
+  test('a message row of a person with a long status has no dot and does not scroll sideways, and the card fits the screen', async ({ browser, playwright }) => {
     const long = `Out at lunch with the whole department ${'x'.repeat(58)}`.slice(0, 100);
     await patchMe(rafi, { status: { emoji: '🍽️', text: long, clearsAt: null } });
     await beat(rafi);
@@ -433,15 +433,13 @@ test.describe('phone', () => {
     try {
       const mine = row(page, 'Rafi writes');
       await expect(mine).toBeVisible(T);
-      const dot = dotOf(mine.locator('.av-wrap'));
-      await expect(dot).toHaveAttribute('data-presence', 'online', T);
-      await expect(dot).toHaveAccessibleName(/^Active, .*Out at lunch/);
+      // the cards have arrived (the name is a profile button only then), and the row draws no dot (P34-01)
+      await expect(mine.getByTestId('profile-open')).toBeVisible(T);
+      await expect(dotOf(mine)).toHaveCount(0);
       expect(await noSidewaysScroll(page)).toBe(true);
       const box = (await mine.boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width);
-      const dotBox = (await dot.boundingBox())!;
-      expect(dotBox.x + dotBox.width).toBeLessThanOrEqual(PHONE.width);
 
       // the name is a touch target; the card opens with the whole status, inside the screen, and Esc closes it
       const open = mine.getByTestId('profile-open');

@@ -144,28 +144,21 @@
 
 .thc-faces {
   display: inline-flex;
+  flex: none;
+  gap: 2px;
   align-items: center;
 }
 
+/* side by side, never overlapping: an overlap cut the first face's initials ("OM" read "OI", P34-01 finding 29), as in the reply stack */
 .thc-face {
   display: inline-flex;
-  margin-left: -5px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--surface);
-}
-
-.thc-face:first-child {
-  margin-left: 0;
+  flex: none;
 }
 
 .thc-face .av {
   width: 22px;
   height: 22px;
   font-size: var(--fs-tiny);
-}
-
-.thc.on .thc-face {
-  box-shadow: 0 0 0 2px var(--human-wash);
 }
 
 .thc-more {

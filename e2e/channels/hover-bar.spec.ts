@@ -208,6 +208,8 @@ test('Jump to latest counts the new messages that came while scrolled up; the da
       el.scrollTop = 800;
     });
     await expect(page.locator('.day-float')).toBeVisible();
+    // it sits on a solid band of the list's background, so the text of the row under it never shows through (P34-01)
+    expect(await page.locator('.day-float').evaluate((el) => getComputedStyle(el).backgroundColor)).not.toMatch(/^(rgba\(0, 0, 0, 0\)|transparent)$/);
 
     await jump.click();
     await expect(messages(page).last()).toContainText('second while away');
