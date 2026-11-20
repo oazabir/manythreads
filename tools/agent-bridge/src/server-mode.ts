@@ -84,3 +84,14 @@ export async function helloFor(config: BridgeConfig): Promise<TunnelHello> {
     allowFullAccess: config.server?.agents.codex?.fullAccess === 'allowed',
   };
 }
+
+/**
+ * The sign-in folders an enrolled server's gates read (P31-01, review correction 1): the machine's own Claude and Codex folders, as the server's templates name them. A gate lets one run
+ * renew a sign-in that is near its renewal while the others wait, and remembers an account failure; before this the server branch started the bridge with neither.
+ */
+export function serverSigninDirs(config: BridgeConfig): { claudeConfigDir?: string; codexHome?: string } {
+  const agents = config.server?.agents;
+  const claude = agents?.claude?.authHome;
+  const codex = agents?.codex?.authHome;
+  return { ...(claude !== undefined ? { claudeConfigDir: claude } : {}), ...(codex !== undefined ? { codexHome: codex } : {}) };
+}

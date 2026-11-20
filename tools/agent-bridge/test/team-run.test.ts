@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.ts';
 import { startBridge, type Bridge } from '../src/server.ts';
 import { startTeamSync } from '../src/server-team-sync.ts';
+import { cleanTeamCodex } from '../src/server-team.ts';
 import { parseHeader } from '../src/team-user.ts';
 import { auth, KEY } from './support.ts';
 
@@ -73,7 +74,7 @@ FAKE_ACP_FLAVOR=claude FAKE_ACP_STATE_DIR="${dir}/fake-state" exec "${process.ex
   chmodSync(sudo, 0o755);
   const config = parseConfig({
     profiles: { 'claude-signin': { agent: 'claude-code', driver: 'acp', workdir: join(root, 'signin') } },
-    server: { root, agents: { claude: { authHome: join(root, 'auth', 'claude'), acp: { command: '/not/used/claude-agent-acp' } } }, teamUsers: { helper: '/opt/manythreads-bridge/helper/mt-team-helper', sudo }, publisherSocket: '/run/p.sock' },
+    server: { root, agents: { claude: { authHome: join(root, 'auth', 'claude'), acp: { command: '/not/used/claude-agent-acp' } }, codex: { authHome: join(root, 'auth', 'codex'), acp: { command: '/not/used/codex-acp' } } }, teamUsers: { helper: '/opt/manythreads-bridge/helper/mt-team-helper', sudo }, publisherSocket: '/run/p.sock' },
     killGraceSeconds: 0.5,
     budgetGraceSeconds: 0.2,
     cancelGraceSeconds: 2,
@@ -149,6 +150,30 @@ describe('a team\'s run through the helper', () => {
     expect(parsed.header.env['KUBECONFIG']).toBe(file);
     expect(existsSync(join(t.root, 'work'))).toBe(false);
     expect(existsSync(join(t.root, 'kube'))).toBe(false);
+  });
+
+  it('a Codex run (P31-01) names the team\'s own Codex home, never the machine\'s main copy, and the helper takes that header', async () => {
+    const t = setup();
+    await runOnce(t, 'codex--eng--builder');
+    expect(read(join(t.capture, 'argv.1')).trim()).toBe('-n -- /opt/manythreads-bridge/helper/mt-team-helper run eng codex');
+    const text = read(join(t.capture, 'header.1'));
+    const parsed = parseHeader(text, { root: t.root, team: 'eng', kind: 'codex' });
+    expect(parsed).toMatchObject({ ok: true, dropped: [] });
+    if (!parsed.ok) return;
+    expect(parsed.header.env['CODEX_HOME']).toBe(join(t.root, 'work', 'eng', '.codex'));
+    expect(text).not.toContain(join(t.root, 'auth', 'codex'));
+  });
+
+  it('at start-up every team\'s copy of the Codex sign-in is removed: one `run <team> clean-codex` per team, never a word like "all"', async () => {
+    const t = setup();
+    const passwd = join(t.dir, 'passwd');
+    writeFileSync(passwd, [`mt-team-eng:x:990:990::${join(t.root, 'work', 'eng')}:/usr/sbin/nologin`, `mt-team-mkt:x:991:991::${join(t.root, 'work', 'mkt')}:/usr/sbin/nologin`, 'root:x:0:0::/root:/bin/bash', ''].join('\n'));
+    const logs: string[] = [];
+    await cleanTeamCodex(t.config.server as never, (l) => logs.push(l), passwd);
+    // the fake sudo numbers its files by how many are there already (an argv and a header per call)
+    const calls = readdirSync(t.capture).filter((f) => f.startsWith('argv.')).sort().map((f) => read(join(t.capture, f)).trim());
+    expect(calls).toEqual(['-n -- /opt/manythreads-bridge/helper/mt-team-helper run eng clean-codex', '-n -- /opt/manythreads-bridge/helper/mt-team-helper run mkt clean-codex']);
+    expect(parseHeader(read(join(t.capture, 'header.0')), { root: t.root, team: 'eng', kind: 'clean-codex' })).toMatchObject({ ok: true });
   });
 
   it('a profile that is not a server-mode name (the sign-in profile) does not go through the helper', async () => {

@@ -2,7 +2,7 @@ import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +51,47 @@ describe('bridge.sh', () => {
     expect(unit).toMatch(/\nOOMPolicy=continue\n/);
     expect(unit).toMatch(/\nRestart=always\n/);
     expect(script.match(/^OOMPolicy=/gm)).toHaveLength(1);
+  });
+
+  it('keeps Codex\'s sign-in folder the bridge user\'s alone (P31-01): no group, no setgid at any --update, and the helper\'s table names the bridge user', () => {
+    expect(script).not.toMatch(/chown -hR "\$SVC_USER:\$AGENTS_GROUP"[^\n]*auth\/codex/);
+    expect(script).not.toMatch(/find [^\n]*auth\/codex[^\n]*2770/);
+    expect(script).toMatch(/bridgeUser: e\.CFG_BRIDGE_USER/);
+    expect(script).toMatch(/CFG_BRIDGE_USER="\$SVC_USER"/);
+    expect(script).toMatch(/move_codex_main_copy "\$DATA" "\$SVC_USER" "\$UNIT"/);
+    expect(script).toMatch(/for c in sudo visudo setpriv flock timeout useradd/);
+  });
+
+  it('moves an old shared Codex folder once: only auth.json stays, 0700 and 0600, a link is not followed, and a second --update keeps what Codex wrote since', () => {
+    const fn = /\nmove_codex_main_copy\(\) \{\n[\s\S]*?\n\}\n/.exec(script)?.[0];
+    expect(fn).toBeDefined();
+    const data = mkdtempSync(join(tmpdir(), 'codex-move-'));
+    const main = join(data, 'auth', 'codex');
+    const sh = (body: string) =>
+      spawnSync('bash', ['-c', `set -euo pipefail\nsay() { printf '%s\\n' "$*"; }\nsystemctl() { echo "systemctl $*" >> "${data}/systemctl.log"; return 0; }\nchown() { :; }\n${fn}\n${body}`], { encoding: 'utf8' });
+    try {
+      execFileSync('bash', ['-c', `mkdir -p "${main}/sessions/2026" "${main}/tmp/arg0-linux" && echo sign-in > "${main}/auth.json" && echo t > "${main}/sessions/2026/r.jsonl" && echo s > "${main}/state_5.sqlite" && echo secret > "${data}/outside" && ln -s "${data}/outside" "${main}/linked" && chmod 2770 "${main}" && chmod 0660 "${main}/auth.json"`]);
+      const first = sh(`move_codex_main_copy "${data}" "$(id -un)" manythreads-bridge.service`);
+      expect(first.stderr).toBe('');
+      expect(first.status).toBe(0);
+      expect(first.stdout).toContain('the teams\' old Codex sessions there were removed');
+      expect(readFileSync(join(data, 'systemctl.log'), 'utf8')).toContain('systemctl stop manythreads-bridge.service');
+      expect(spawnSync('ls', ['-A', main], { encoding: 'utf8' }).stdout.trim()).toBe('auth.json');
+      expect(readFileSync(join(main, 'auth.json'), 'utf8')).toBe('sign-in\n');
+      expect(readFileSync(join(data, 'outside'), 'utf8')).toBe('secret\n');
+      const mode = (p: string): number => Number(execFileSync('stat', ['-c', '%a', p], { encoding: 'utf8' }).trim()) ;
+      expect(mode(main)).toBe(700);
+      expect(mode(join(main, 'auth.json'))).toBe(600);
+      expect(mode(join(data, 'auth', '.locks'))).toBe(700);
+      // what the sign-in's own Codex writes there later is not removed by the next --update
+      writeFileSync(join(main, 'installation_id'), 'x');
+      const second = sh(`move_codex_main_copy "${data}" "$(id -un)" manythreads-bridge.service`);
+      expect(second.status).toBe(0);
+      expect(second.stdout).not.toContain('removed');
+      expect(existsSync(join(main, 'installation_id'))).toBe(true);
+    } finally {
+      rmSync(data, { recursive: true, force: true });
+    }
   });
 
   it('refuses a site address that is not https, for every way in, before it looks at the machine', () => {

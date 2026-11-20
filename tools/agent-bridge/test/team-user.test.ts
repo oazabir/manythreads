@@ -11,6 +11,7 @@ import {
   parseHeader,
   plainPath,
   SYNC_ENV,
+  teamCodexHome,
   teamHermesHome,
   teamHome,
   teamKubeconfigFile,
@@ -142,6 +143,18 @@ describe('the header the helper takes', () => {
     expect(parseHeader(line({ env: { PATH: 'x'.repeat(3 * 1024 * 1024) } }), ctx())).toMatchObject({ ok: false });
   });
 
+  it('CODEX_HOME (P31-01): only for a Codex run, and only the team\'s own Codex home, never the machine\'s main copy or another team\'s', () => {
+    expect(teamCodexHome(ROOT, 'eng')).toBe(`${ROOT}/work/eng/.codex`);
+    expect(parseHeader(line({ env: { CODEX_HOME: `${ROOT}/work/eng/.codex` } }), ctx('codex'))).toMatchObject({ ok: true });
+    expect(parseHeader(line({ env: { PATH: '/usr/bin' } }), ctx('codex'))).toMatchObject({ ok: true });
+    for (const bad of [`${ROOT}/auth/codex`, `${ROOT}/work/other/.codex`, `${ROOT}/work/eng/.codex/x`, `${ROOT}/work/eng`, '/root/.codex', `${ROOT}/work/eng/../other/.codex`]) {
+      expect(parseHeader(line({ env: { CODEX_HOME: bad } }), ctx('codex'))).toEqual({ ok: false, error: `CODEX_HOME must be ${ROOT}/work/eng/.codex` });
+    }
+    for (const kind of ['claude', 'hermes', 'clean-codex', 'clean-kube'] as const) {
+      expect(parseHeader(line({ env: { CODEX_HOME: `${ROOT}/work/eng/.codex` } }), ctx(kind))).toEqual({ ok: false, error: 'CODEX_HOME is only for a Codex run' });
+    }
+  });
+
   it('the sync work folder must be the machine\'s, and the interval a number', () => {
     expect(parseHeader(line({ cwd: `${ROOT}/work/eng/.sync`, env: { REPO_SYNC_WORK: '/tmp' } }), ctx('sync'))).toMatchObject({ ok: false });
     expect(parseHeader(line({ cwd: `${ROOT}/work/eng/.sync`, env: { REPO_SYNC_INTERVAL: '1; rm -rf /' } }), ctx('sync'))).toMatchObject({ ok: false });
@@ -150,7 +163,7 @@ describe('the header the helper takes', () => {
 
 describe('what the bridge sends', () => {
   it('only the allowlist, whatever its own environment holds', () => {
-    const env = { PATH: '/p', HOME: '/home/bridge', AGENT_BRIDGE_API_KEY: 'k', GITHUB_TOKEN: 't', MANYTHREADS_RUN_TOKEN: 'run-token', CODEX_HOME: `${ROOT}/auth/codex`, LD_LIBRARY_PATH: '/x' };
+    const env = { PATH: '/p', HOME: '/home/bridge', AGENT_BRIDGE_API_KEY: 'k', GITHUB_TOKEN: 't', MANYTHREADS_RUN_TOKEN: 'run-token', CODEX_HOME: `${ROOT}/work/eng/.codex`, LD_LIBRARY_PATH: '/x' };
     const header = JSON.parse(buildHeader({ cwd: `${ROOT}/work/eng/b`, env, kind: 'codex' })) as { env: Record<string, string> };
     expect(Object.keys(header.env).sort()).toEqual(['CODEX_HOME', 'MANYTHREADS_RUN_TOKEN', 'PATH']);
     for (const k of Object.keys(header.env)) expect(ENV_ALLOW.test(k)).toBe(true);

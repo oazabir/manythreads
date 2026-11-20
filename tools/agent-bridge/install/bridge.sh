@@ -19,7 +19,8 @@
 # One Unix user per team (P26-22): every team's runs are started as `mt-team-<team>`, never as the bridge's user, so teams that share this machine (and one agent sign-in) cannot read each
 # other's folders, repositories, deploy logins or tokens. The installer adds, as root: a helper (`/opt/manythreads-bridge/helper/mt-team-helper`, root's, 0755) that makes those users and
 # starts the fixed programs as them, a sudoers rule (`/etc/sudoers.d/manythreads-bridge`, checked with `visudo -cf`) that lets the bridge's user run that helper with two commands and
-# nothing else, and the group `mt-agents` that shares the agents' sign-in folders. `sudo`, `setpriv` and `useradd` must be on the machine.
+# nothing else, and the group `mt-agents` that shares Claude's sign-in folder. Codex's sign-in folder is the bridge user's alone: the helper gives each team's Codex run a copy in the
+# team's own Codex home (P31-01). `sudo`, `setpriv`, `flock` and `useradd` must be on the machine.
 #
 #   --enrol CODE|-      the one-time code from the Runners page ("-" asks for it on the keyboard: a code on the command line is in `ps` for the length of the run)
 #   --code-file PATH    the one-time code is the first line of this file (delete it afterwards; it is single use and lasts 15 minutes)
@@ -81,7 +82,7 @@ main() {
   local c
   for c in curl tar sha256sum gzip; do command -v "$c" >/dev/null 2>&1 || die "$c is needed and was not found"; done
   # the per-team users (P26-22): sudo and its checker, setpriv (util-linux) and the account tools
-  if [ "$mode" != uninstall ]; then for c in sudo visudo setpriv useradd usermod groupadd getent env; do command -v "$c" >/dev/null 2>&1 || die "$c is needed for the per-team users and was not found (on Debian or Ubuntu: apt-get install sudo util-linux passwd)"; done; fi
+  if [ "$mode" != uninstall ]; then for c in sudo visudo setpriv flock timeout useradd usermod groupadd getent env; do command -v "$c" >/dev/null 2>&1 || die "$c is needed for the per-team users and was not found (on Debian or Ubuntu: apt-get install sudo util-linux passwd)"; done; fi
   if [ "$mode" != uninstall ] && ! grep -Eq '^[#@]includedir[[:space:]]+/etc/sudoers\.d' /etc/sudoers 2>/dev/null; then die "/etc/sudoers does not read /etc/sudoers.d, where the rule for the bridge goes; add the line '@includedir /etc/sudoers.d' with visudo and run this again"; fi
   for c in git jq; do command -v "$c" >/dev/null 2>&1 || warn "$c was not found: the team's repositories and publishing need it (on Debian or Ubuntu: apt-get install git jq)"; done
 
@@ -152,7 +153,7 @@ main() {
   if [ "$want_publisher" -eq 1 ] && ! id "$PUB_USER" >/dev/null 2>&1; then
     useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin --user-group "$PUB_USER"
   fi
-  # the group that shares the agents' sign-in folders: the bridge's user and every team user are in it, and nobody else
+  # the group that shares Claude's sign-in folder: the bridge's user and every team user are in it, and nobody else
   getent group "$AGENTS_GROUP" >/dev/null 2>&1 || groupadd --system "$AGENTS_GROUP"
   # the group that may open the publisher's socket: the publisher runs with it as its group and every team user is in it (the helper adds a new team's user), nobody else.
   # Without it a team user cannot reach the socket and no bot of an enrolled server can publish (P26-19 proof 4). The users that exist already are added here.
@@ -178,14 +179,18 @@ main() {
   chmod 0711 "$DATA/work"
   local d
   for d in state hermes home signin work-before-teams; do [ -d "$DATA/$d" ] && chown -hR "$SVC_USER:$SVC_USER" "$DATA/$d"; done
-  # what the publisher's user must not read: the bridge's key and state, the Hermes homes and the deployer's login (0700). The sign-in folders are the bridge's, group `mt-agents`: the
-  # group may enter `auth` (root's) and use the two agents' folders, which are setgid so a file made in them by any team's user belongs to the group; the CLIs renew tokens in place there.
+  # what the publisher's user must not read: the bridge's key and state, the Hermes homes and the deployer's login (0700). Claude's sign-in folder is the bridge's, group `mt-agents`:
+  # the group may enter `auth` (root's) and use it, setgid so a file made in it by any team's user belongs to the group; Claude renews its tokens in place there.
   chmod 0700 "$DATA/state" "$DATA/hermes" "$DATA/home"
   chown "root:$AGENTS_GROUP" "$DATA/auth"
   chmod 0750 "$DATA/auth"
-  chown -hR "$SVC_USER:$AGENTS_GROUP" "$DATA/auth/claude" "$DATA/auth/codex"
-  find "$DATA/auth/claude" "$DATA/auth/codex" -xdev -type f -links 1 -exec chmod g+rw {} +
-  find "$DATA/auth/claude" "$DATA/auth/codex" -xdev -type d -exec chmod 2770 {} +
+  chown -hR "$SVC_USER:$AGENTS_GROUP" "$DATA/auth/claude"
+  find "$DATA/auth/claude" -xdev -type f -links 1 -exec chmod g+rw {} +
+  find "$DATA/auth/claude" -xdev -type d -exec chmod 2770 {} +
+  # Codex's sign-in folder (the "main copy") is the bridge user's alone, 0700, no group (P31-01): each team's Codex runs with a Codex home of its own (<root>/work/<team>/.codex) and the
+  # helper copies the sign-in in for a run and a renewed one back. Codex chmods files it did not make, so a shared folder cannot work (MISTAKES P26-19 proof 5), and a shared one also
+  # showed every team every other team's Codex sessions.
+  move_codex_main_copy "$DATA" "$SVC_USER" "$UNIT"
   # (the folder `auth` itself is root's, so the bridge's user cannot swap a sign-in folder for a link that the helper, as root, would follow)
   chmod 0755 "$ETC"
 
@@ -248,14 +253,14 @@ main() {
   mv -f "$HELPER.new" "$HELPER"
   # the table of programs the helper may start: it names a kind (claude, codex, hermes), never a program, so the table is the only place a path is
   CFG_DATA="$DATA" CFG_CLAUDE_ACP="$([ "$want_claude" -eq 1 ] && printf %s "$claude_acp")" CFG_CODEX_ACP="$([ "$want_codex" -eq 1 ] && printf %s "$codex_acp")" CFG_HERMES_BIN="$hermes_bin" \
-    CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" CFG_PUBLISH_GROUP="$PUBLISH_GROUP" \
+    CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_BRIDGE_USER="$SVC_USER" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" CFG_PUBLISH_GROUP="$PUBLISH_GROUP" \
     "$node" -e '
       const e = process.env;
       const agents = {};
       if (e.CFG_CLAUDE_ACP) agents.claude = { command: e.CFG_CLAUDE_ACP };
       if (e.CFG_CODEX_ACP) agents.codex = { command: e.CFG_CODEX_ACP };
       if (e.CFG_HERMES_BIN) agents.hermes = { command: e.CFG_HERMES_BIN, args: ["acp"] };
-      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER, publishClientsGroup: e.CFG_PUBLISH_GROUP } : {}) };
+      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, bridgeUser: e.CFG_BRIDGE_USER, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER, publishClientsGroup: e.CFG_PUBLISH_GROUP } : {}) };
       process.stdout.write(JSON.stringify(table, null, 2) + "\n");
     ' >"$TEAM_TABLE.new" || die "could not write the helper's table"
   chown root:root "$TEAM_TABLE.new"
@@ -447,6 +452,49 @@ EOF
 }
 
 # ---- helpers -------------------------------------------------------------------------------------------------------------------------------------------------
+
+# P31-01: the machine's Codex sign-in folder becomes the bridge user's alone (0700, files 0600, no setgid, no group). Once (a marker in root's lock folder), everything in it but
+# `auth.json` is deleted: until now every team's Codex wrote its sessions, history and SQLite state there, readable by every other team (owner 2026-11-20: losing that thread context is
+# accepted; a thread with an old Codex session starts a new one). The bridge is stopped first so no run of the old helper writes there while it changes; the end of the script starts it.
+# A folder that is a link is replaced by a real one (root never follows a link the bridge user could plant).
+move_codex_main_copy() {
+  local data="$1" user="$2" unit="$3" main="$1/auth/codex" locks="$1/auth/.locks"
+  mkdir -p "$locks"
+  chown root:root "$locks"
+  chmod 0700 "$locks"
+  if [ -L "$main" ]; then rm -f "$main"; fi
+  mkdir -p "$main"
+  if [ ! -e "$locks/codex-main-private" ]; then
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      say "stopping the bridge while the Codex sign-in folder is made private"
+      systemctl stop "$unit" || true
+    fi
+    find "$main" -mindepth 1 -maxdepth 1 ! -name auth.json -exec rm -rf -- {} +
+    if [ -L "$main/auth.json" ] || { [ -e "$main/auth.json" ] && [ ! -f "$main/auth.json" ]; }; then rm -rf -- "$main/auth.json"; fi
+    : >"$locks/codex-main-private"
+    chmod 0600 "$locks/codex-main-private"
+    say "the Codex sign-in folder holds only the sign-in now; the teams' old Codex sessions there were removed (each team keeps its own from now on)"
+  fi
+  chown -h "$user:$(id -gn "$user")" "$main"
+  chmod 00700 "$main"
+  # The sign-in itself must be one name of one file of the bridge user's. One with a second name (a hard link) or another owner is never chowned or chmodded by root: its content is
+  # copied, AS the bridge user, into a new 0600 file that replaces the name (a file the bridge user cannot read, such as a link to /etc/shadow, is only unlinked: sign in again).
+  local f="$main/auth.json"
+  if [ -L "$f" ] || { [ -e "$f" ] && [ ! -f "$f" ]; }; then
+    rm -rf -- "$f"
+  elif [ -f "$f" ] && { [ "$(stat -c %h "$f")" != 1 ] || [ "$(stat -c %U "$f")" != "$user" ]; }; then
+    if ! setpriv --reuid "$user" --regid "$(id -g "$user")" --init-groups -- /bin/sh -c 'umask 077; rm -f -- "$1.fresh" && timeout 5 head -c 65536 -- "$1" > "$1.fresh" && test -s "$1.fresh" && mv -f -T -- "$1.fresh" "$1"' sh "$f"; then
+      rm -f -- "$f" "$f.fresh"
+      warn "the Codex sign-in file was not the bridge user's own and could not be read as that user; it was removed (sign Codex in again from the Runners page)"
+    else
+      say "the Codex sign-in file is a file of the bridge user's own again"
+    fi
+  fi
+  # nothing else in the folder with a second name is chowned or chmodded by root either: it could be another file of the machine
+  find "$main" -xdev \( -type d -o \( -type f -links 1 \) \) -exec chown -h "$user:$(id -gn "$user")" {} +
+  find "$main" -xdev -type d -exec chmod 00700 {} +
+  find "$main" -xdev -type f -links 1 -exec chmod 0600 {} +
+}
 
 say() { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }

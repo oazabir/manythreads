@@ -4,7 +4,9 @@
 # exist with the right modes, the agents are detected, the config is written (with the tools folder and the publisher's socket), the enrolment call is made and its key is kept in 0600,
 # the two units are written, and --update and --uninstall --purge undo it all. P26-22: it also proves the per-team users with two teams: the helper and the sudo rule, each run as its own
 # user, one team unable to read another's folders, kubeconfig or token (files and /proc), both using the shared sign-in folder, the bridge's key and state out of their reach, and the sudo rule
-# allowing nothing else. Hermes (owner decision 2026-11-16: the script never installs it): the machine has none at the first install (reported as not found, no runner); a stub `hermes`
+# allowing nothing else. P31-01: Codex for two teams on one server: the main copy of the Codex sign-in is the bridge user's alone and holds only the sign-in after --update moved an old
+# install, each team's Codex home is its own (0700), Codex may chmod its files there, a renewal reaches the main copy and a forged, foreign or linked one does not, two renewals at once
+# leave one, a running team is given a renewal made meanwhile, and clean-codex removes a copy. Hermes (owner decision 2026-11-16: the script never installs it): the machine has none at the first install (reported as not found, no runner); a stub `hermes`
 # in /usr/local/bin is found by `--update` and started as a team user with that team's own HERMES_HOME; a stub under /root, or one the team users cannot enter, is reported as not usable
 # (one plain sentence with the fix) and left out; /opt/*/bin and `--hermes-bin` are found; and no program ever asks Hermes' download host (a recording `curl` and a dead address for it).
 # The host is not touched: no installer runs on it.
@@ -50,7 +52,9 @@ docker exec "$name" bash -c 'printf "#!/bin/sh\nfor a in \"\$@\"; do case \"\$a\
 docker cp "$work/dist/bridge.sh" "$name:/tmp/bridge.sh.template"
 docker cp "$here/as-team.sh" "$name:/usr/local/bin/as-team"
 docker cp "$here/probe.sh" "$name:/usr/local/bin/mt-probe"
+docker cp "$here/fake-codex-auth.mjs" "$name:/usr/local/lib/fake-codex-auth.mjs"
 docker exec "$name" chmod 0755 /usr/local/bin/as-team /usr/local/bin/mt-probe
+docker exec "$name" chmod 0644 /usr/local/lib/fake-codex-auth.mjs
 
 fail=0
 check() {
@@ -82,7 +86,8 @@ check "mt-git runs"                              '/opt/manythreads-bridge/curren
 check "the bridge user exists"                   'id manythreads-bridge'
 check "the publisher user exists"                'id manythreads-publisher'
 check "the key is kept, mode 0600"               'test "$(stat -c %a /etc/manythreads-bridge/key)" = 600 && grep -q "^mtb_" /etc/manythreads-bridge/key'
-check "the state and Hermes folders are 0700, the sign-in folders the agents group's" 'test "$(stat -c %a /var/lib/manythreads-bridge/state)" = 700 && test "$(stat -c %a /var/lib/manythreads-bridge/hermes)" = 700 && test "$(stat -c %U:%a:%G /var/lib/manythreads-bridge/auth)" = root:750:mt-agents && test "$(stat -c %a:%G:%U /var/lib/manythreads-bridge/auth/claude)" = 2770:mt-agents:manythreads-bridge'
+check "the state and Hermes folders are 0700, Claude's sign-in folder the agents group's, Codex's the bridge user's alone" 'test "$(stat -c %a /var/lib/manythreads-bridge/state)" = 700 && test "$(stat -c %a /var/lib/manythreads-bridge/hermes)" = 700 && test "$(stat -c %U:%a:%G /var/lib/manythreads-bridge/auth)" = root:750:mt-agents && test "$(stat -c %a:%G:%U /var/lib/manythreads-bridge/auth/claude)" = 2770:mt-agents:manythreads-bridge && test "$(stat -c %a:%G:%U /var/lib/manythreads-bridge/auth/codex)" = 700:manythreads-bridge:manythreads-bridge && test "$(stat -c %U:%a /var/lib/manythreads-bridge/auth/.locks)" = root:700'
+docker exec "$name" cp /etc/sudoers.d/manythreads-bridge /root/sudoers-at-install
 check "the publisher user cannot read them"      'runuser -u manythreads-publisher -- sh -c "! ls /var/lib/manythreads-bridge/auth /var/lib/manythreads-bridge/state"'
 check "the config names the tools and the socket" 'jq -e ".server.toolsDir == \"/opt/manythreads-bridge/current/tools\" and .server.publisherSocket == \"/run/manythreads-publisher/publisher.sock\" and .server.teamUsers.helper == \"/opt/manythreads-bridge/helper/mt-team-helper\" and (.server.instructions == null) and (.server.agents | has(\"claude\"))" /etc/manythreads-bridge/config.json'
 check "the bridge unit has a PATH with node"     'grep -q "^Environment=PATH=/opt/manythreads-bridge/node/bin:" /etc/systemd/system/manythreads-bridge.service'
@@ -217,10 +222,124 @@ grep -q '^POST /api/bridge/enrol 200' "$work/site.log" && echo "ok   the enrolme
 grep -q '^enrol agents=.*claude-code' "$work/site.log" && echo "ok   the machine reported its agents" || { echo "FAIL the agents report"; fail=$((fail + 1)); }
 grep -q '^enrol agents=.*hermes' "$work/site.log" && { echo "FAIL the machine reported Hermes, which it does not have"; fail=$((fail + 1)); } || echo "ok   the machine did not report a Hermes it does not have"
 
+# An install from before P31-01: the Codex folder shared with the group (setgid 2770), every team's sessions and state in it, files Codex chmodded to a team user, and a Codex home that
+# a run without CODEX_HOME made in a team's home (2755, files 0644). The marker of the one-time move is not there yet.
+docker exec "$name" bash -c '
+  B=/var/lib/manythreads-bridge
+  rm -f $B/auth/.locks/codex-main-private
+  runuser -u manythreads-bridge -- sh -c "umask 077; /opt/manythreads-bridge/node/bin/node /usr/local/lib/fake-codex-auth.mjs acct-1 rt-A 2026-11-10T00:00:00Z > $B/auth/codex/auth.json"
+  mkdir -p $B/auth/codex/sessions/2026/11 $B/auth/codex/tmp/arg0-linux
+  echo "{\"cwd\":\"/var/lib/manythreads-bridge/work/beta/dev\"}" > $B/auth/codex/sessions/2026/11/rollout-beta.jsonl
+  echo sqlite > $B/auth/codex/state_5.sqlite; : > $B/auth/codex/auth.lock; echo id > $B/auth/codex/installation_id
+  chown -R manythreads-bridge:mt-agents $B/auth/codex; chown -R mt-team-acme $B/auth/codex/tmp $B/auth/codex/installation_id
+  find $B/auth/codex -type d -exec chmod 2770 {} +; find $B/auth/codex -type f -exec chmod 0660 {} +
+  runuser -u mt-team-acme -- sh -c "umask 022; mkdir -p $B/work/acme/.codex/sessions && echo old-acme-session > $B/work/acme/.codex/sessions/old.jsonl && chmod 2755 $B/work/acme/.codex"
+  sha256sum $B/auth/codex/auth.json | cut -d" " -f1 > /root/main-sha-before-update'
 echo "--- update (no code needed)"
 docker exec "$name" bash -c 'bash /tmp/bridge.sh --update --no-browser --insecure-for-tests 2>&1 | tee /tmp/update-0.log' | sed 's/^/  | /' || true
 check "the key survived the update"              'grep -q "^mtb_" /etc/manythreads-bridge/key'
 check "the update kept the team users and rewrote the helper, table and sudo rule" 'id mt-team-acme && id mt-team-beta && test -x '"$H"' && jq -e ".agents.claude.command | test(\"claude-agent-acp\")" /etc/manythreads-bridge/team-agents.json && visudo -cf /etc/sudoers.d/manythreads-bridge && test "$(stat -c %U:%a '"$B"'/work)" = root:711'
+
+echo "--- Codex for several teams on one server (P31-01)"
+FAKE='/opt/manythreads-bridge/node/bin/node /usr/local/lib/fake-codex-auth.mjs'
+MAIN="$B/auth/codex/auth.json"
+# the stand-in Codex adapter: the probe, which runs the lines it is given as the team user (the real codex-acp needs a real sign-in)
+docker exec "$name" bash -c 'jq ".agents.codex.command = \"/usr/local/bin/mt-probe\" | .agents.codex.args = []" /etc/manythreads-bridge/team-agents.json > /tmp/t.json && install -m 0644 -o root -g root /tmp/t.json /etc/manythreads-bridge/team-agents.json'
+checkx "--update made the Codex folder the bridge user's alone, holding only the sign-in (byte for byte), and wrote the bridge user into the helper's table" '
+  test "$(stat -c %U:%G:%a '"$B"'/auth/codex)" = manythreads-bridge:manythreads-bridge:700
+  test "$(ls -A '"$B"'/auth/codex)" = auth.json
+  test "$(stat -c %U:%G:%a '"$MAIN"')" = manythreads-bridge:manythreads-bridge:600
+  test "$(sha256sum '"$MAIN"' | cut -d" " -f1)" = "$(cat /root/main-sha-before-update)"
+  test -e '"$B"'/auth/.locks/codex-main-private
+  grep -q "the teams. old Codex sessions there were removed" /tmp/update-0.log
+  jq -e ".bridgeUser == \"manythreads-bridge\"" /etc/manythreads-bridge/team-agents.json
+  ! jq -e ".server.agents.codex.env.CODEX_HOME" /etc/manythreads-bridge/config.json'
+checkx "no team user and not the publisher can read the main copy or root's lock folder" '
+  for u in mt-team-acme mt-team-beta manythreads-publisher nobody; do ! runuser -u $u -- cat '"$MAIN"' 2>/dev/null && ! runuser -u $u -- ls '"$B"'/auth/codex 2>/dev/null && ! runuser -u $u -- ls '"$B"'/auth/.locks 2>/dev/null || exit 1; done'
+checkx "a Codex run has the team's own Codex home (0700, its user's), a copy of the sign-in in it, and the old 2755 home was removed once" '
+  out="$(echo "echo H=\$CODEX_HOME; stat -c %U:%a \$CODEX_HOME \$CODEX_HOME/auth.json; grep -c rt-A \$CODEX_HOME/auth.json; ls \$CODEX_HOME/sessions 2>&1" | as-team acme dev codex 2>&1)"; echo "$out"
+  echo "$out" | grep -qx "H='"$B"'/work/acme/.codex"
+  echo "$out" | grep -qx "mt-team-acme:700"
+  echo "$out" | grep -qx "mt-team-acme:600"
+  echo "$out" | grep -qx 1
+  ! echo "$out" | grep -q old.jsonl
+  test -e '"$B"'/auth/.locks/codex-moved/acme
+  ! test -e '"$B"'/work/acme/.codex/auth.json'
+checkx "Codex may chmod the files it made in its home (P26-19 proof 5 died here with EPERM), for both teams" '
+  for t in acme beta; do echo "mkdir -p \$CODEX_HOME/tmp/arg0-linux && chmod 0700 \$CODEX_HOME/tmp/arg0-linux && echo id > \$CODEX_HOME/installation_id && chmod 0644 \$CODEX_HOME/installation_id && echo chmod-ok" | as-team $t dev codex 2>&1 | grep -qx chmod-ok || exit 1; done
+  test "$(stat -c %U '"$B"'/work/beta/.codex/installation_id)" = mt-team-beta'
+docker exec -d "$name" bash -c 'echo "sleep 40" | MT_TOKEN=token-acme-codex as-team acme dev codex >/tmp/acme-codex-long.log 2>&1'
+sleep 3
+checkx "while acme's Codex runs, beta cannot read acme's Codex home, its copy, or the run's environment" '
+  pid="$(pgrep -u mt-team-acme -x sleep | head -1)"; test -n "$pid"
+  test "$(stat -c %U:%a '"$B"'/work/acme/.codex/auth.json)" = mt-team-acme:600
+  out="$(printf "%s\n" "ls '"$B"'/work/acme/.codex" "cat '"$B"'/work/acme/.codex/auth.json" "cat /proc/$pid/environ" "cat '"$MAIN"'" | as-team beta dev codex 2>&1)"; echo "$out"
+  test "$(echo "$out" | grep -c "Permission denied")" -ge 4
+  ! echo "$out" | grep -q "rt-A\|token-acme-codex"'
+checkx "clean-codex removes a team's copy (its sessions stay), only as run <team> clean-codex, never with more words" '
+  echo "mkdir -p \$CODEX_HOME/sessions && echo keep > \$CODEX_HOME/sessions/s1" | as-team acme dev codex >/dev/null 2>&1
+  test -e '"$B"'/work/acme/.codex/auth.json
+  as-team acme dev clean-codex </dev/null
+  ! test -e '"$B"'/work/acme/.codex/auth.json
+  grep -qx keep '"$B"'/work/acme/.codex/sessions/s1
+  ! runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme clean-codex --all </dev/null 2>/dev/null
+  ! runuser -u manythreads-bridge -- sudo -n -- '"$H"' run --all clean-codex </dev/null 2>/dev/null'
+docker exec "$name" bash -c 'pkill -u mt-team-acme -x sleep; sleep 2; true'
+checkx "a renewal made in a team's run reaches the main copy (as the bridge user's file), and the team's copy goes at the end" '
+  echo "'"$FAKE"' acct-1 rt-B 2026-11-20T01:00:00Z > \$CODEX_HOME/auth.json" | as-team acme dev codex
+  runuser -u manythreads-bridge -- grep -q "\"rt-B\"" '"$MAIN"'
+  test "$(stat -c %U:%G:%a '"$MAIN"')" = manythreads-bridge:manythreads-bridge:600
+  ! test -e '"$B"'/work/acme/.codex/auth.json'
+for bad in \
+  "$FAKE acct-OTHER rt-X 2026-11-20T02:00:00Z > \$CODEX_HOME/auth.json" \
+  "rm -f \$CODEX_HOME/auth.json; ln -s /etc/shadow \$CODEX_HOME/auth.json" \
+  "rm -f \$CODEX_HOME/auth.json; ln -s $MAIN \$CODEX_HOME/auth.json" \
+  "$FAKE acct-1 rt-B 2026-11-20T03:00:00Z > \$CODEX_HOME/auth.json" \
+  "$FAKE acct-1 rt-Y 2026-11-19T00:00:00Z > \$CODEX_HOME/auth.json" \
+  "$FAKE acct-1 rt-Z 9999-12-31T00:00:00Z > \$CODEX_HOME/auth.json" \
+  "rm -f \$CODEX_HOME/auth.json; mkfifo \$CODEX_HOME/auth.json"; do
+  checkx "a copy that is not a renewal of the same account leaves the main copy byte for byte: $(printf %s "$bad" | cut -c1-70)" '
+    before="$(sha256sum '"$MAIN"')"
+    start=$(date +%s)
+    echo '"$(printf %q "$bad")"' | as-team beta dev codex 2>&1 | tail -3
+    test "$(sha256sum '"$MAIN"')" = "$before"
+    test $(( $(date +%s) - start )) -lt 30
+    ! test -e '"$B"'/work/beta/.codex/auth.json
+    test "$(stat -c %U /etc/shadow)" = root'
+done
+# (a background job and its `wait` on one line: checkx adds "|| exit 1" to every line)
+checkx "two teams renewing at once leave one valid newest main copy (the one written first), and say so" '
+  echo "sleep 3; '"$FAKE"' acct-1 rt-C 2026-11-20T04:00:00Z > \$CODEX_HOME/auth.json" | as-team acme dev codex >/tmp/c-acme.log 2>&1 & echo "sleep 3; '"$FAKE"' acct-1 rt-D 2026-11-20T04:00:01Z > \$CODEX_HOME/auth.json" | as-team beta dev codex >/tmp/c-beta.log 2>&1 & wait
+  cat /tmp/c-acme.log /tmp/c-beta.log
+  runuser -u manythreads-bridge -- cat '"$MAIN"' | jq -e ".tokens.refresh_token == \"rt-C\" or .tokens.refresh_token == \"rt-D\""
+  cat /tmp/c-acme.log /tmp/c-beta.log | grep -q "two runs renewed the Codex sign-in at once"'
+checkx "a running team is given the main copy that another team renewed meanwhile (Codex reads it again before it renews)" '
+  printf "%s\n" "sleep 24" "grep -o \"rt-[A-Z]\" \$CODEX_HOME/auth.json | head -1" | as-team beta dev codex >/tmp/c-push.log 2>&1 & sleep 4; echo "'"$FAKE"' acct-1 rt-E 2026-11-20T05:00:00Z > \$CODEX_HOME/auth.json" | as-team acme dev codex; wait
+  runuser -u manythreads-bridge -- grep -q "\"rt-E\"" '"$MAIN"'
+  cat /tmp/c-push.log
+  grep -qx rt-E /tmp/c-push.log'
+checkx "a renewal dated 9999 did not spread: the main copy and a new run's copy carry a date of this year" '
+  runuser -u manythreads-bridge -- cat '"$MAIN"' | jq -e ".last_refresh | startswith(\"2026-\")"
+  echo "jq -r .last_refresh \$CODEX_HOME/auth.json" | as-team beta dev codex 2>/dev/null | grep -q "^2026-"'
+# A slow team folder holds only that team's own lock: a FIFO where the helper writes acme's copy, then (its one-time marker taken away) a big old Codex home to remove
+docker exec "$name" bash -c 'echo "mkfifo \$CODEX_HOME/auth.json.new" | as-team acme dev codex >/dev/null 2>&1'
+checkx "a FIFO at a team's auth.json.new does not hold its own copy-in, nor another team's start" '
+  t0=$(date +%s%N); echo "test -s \$CODEX_HOME/auth.json && echo acme-has-copy" | as-team acme dev codex >/tmp/fifo-acme.log 2>&1 & sleep 0.3; echo "echo beta-started" | as-team beta dev codex >/tmp/fifo-beta.log 2>&1; t1=$(date +%s%N); wait
+  cat /tmp/fifo-acme.log /tmp/fifo-beta.log
+  grep -qx beta-started /tmp/fifo-beta.log
+  grep -qx acme-has-copy /tmp/fifo-acme.log
+  test $(( (t1 - t0) / 1000000 )) -lt 8000'
+docker exec "$name" bash -c 'echo "mkdir -p \$CODEX_HOME/big && cd \$CODEX_HOME/big && seq 1 60000 | xargs touch" | as-team acme dev codex >/dev/null 2>&1; rm -f /var/lib/manythreads-bridge/auth/.locks/codex-moved/acme'
+checkx "a big old Codex home being removed under acme's own lock does not delay beta's start" '
+  echo "echo acme-started" | as-team acme dev codex >/tmp/big-acme.log 2>&1 & sleep 0.3; t0=$(date +%s%N); echo "echo beta-started" | as-team beta dev codex >/tmp/big-beta.log 2>&1; t1=$(date +%s%N); wait
+  grep -qx beta-started /tmp/big-beta.log
+  grep -qx acme-started /tmp/big-acme.log
+  ! test -e '"$B"'/work/acme/.codex/big
+  echo "beta: $(( (t1 - t0) / 1000000 )) ms"
+  test $(( (t1 - t0) / 1000000 )) -lt 6000'
+checkx "the sudo rule is the one of the first install, word for word, and passes visudo" '
+  diff /root/sudoers-at-install /etc/sudoers.d/manythreads-bridge
+  visudo -cf /etc/sudoers.d/manythreads-bridge'
 
 # A stand-in Hermes: `--version` answers, `acp` runs the lines it is given (so the check can look at the team user from the inside). The same file is copied to the places below.
 stub='#!/bin/sh\ncase "$1" in\n  --version) echo "hermes 0.99.0-stub"; exit 0 ;;\n  acp) while IFS= read -r l; do sh -c "$l"; done; exit 0 ;;\nesac\nexit 2\n'
@@ -232,7 +351,14 @@ HELLO='runuser -u manythreads-bridge -- /opt/manythreads-bridge/node/bin/node /o
 
 echo "--- --update after Hermes was installed system-wide (/usr/local/bin)"
 put_stub /usr/local/bin/hermes
+# the sign-in file is a second name of a file the bridge user cannot read (bridge.sh must not chown it, nor copy its content anywhere)
+docker exec "$name" bash -c 'B=/var/lib/manythreads-bridge; cp $B/auth/codex/auth.json /root/main-saved; echo secret-of-root > /root/secret; chmod 600 /root/secret; rm -f $B/auth/codex/auth.json; ln /root/secret $B/auth/codex/auth.json'
 update
+checkx "--update leaves a hard-linked sign-in file's other name alone, copies nothing of it, and drops the name" '
+  test "$(stat -c %U:%a:%h /root/secret)" = root:600:1
+  grep -qx secret-of-root /root/secret
+  ! test -e '"$MAIN"'
+  ! grep -rq secret-of-root '"$B"'/auth'
 checkx "--update finds Hermes in /usr/local/bin, records it in the table, and the bridge reports it (its runner appears)" '
   grep -q "^Hermes: found at /usr/local/bin/hermes (0.99.0-stub); its runner appears" /tmp/update.log
   jq -e ".agents.hermes.command == \"/usr/local/bin/hermes\" and .agents.hermes.args == [\"acp\"]" '"$TABLE"'
@@ -249,7 +375,13 @@ checkx "the check of the program left nothing behind and touched no home" '! ls 
 echo "--- a Hermes under /root is found but not usable (named with --hermes-bin)"
 docker exec "$name" rm -f /usr/local/bin/hermes
 put_stub /root/stub/hermes
+# the sign-in file is another user's, with a second name: its content is copied by the bridge user into a file of its own
+docker exec "$name" bash -c 'B=/var/lib/manythreads-bridge; cp /root/main-saved $B/auth/codex/auth.json; chown nobody:nogroup $B/auth/codex/auth.json; chmod 0644 $B/auth/codex/auth.json; mkdir -p /srv/other; ln $B/auth/codex/auth.json /srv/other/second-name'
 update --hermes-bin /root/stub/hermes
+checkx "--update turns another user's, hard-linked sign-in file into the bridge user's own 0600 file with the same content" '
+  test "$(stat -c %U:%G:%a:%h '"$MAIN"')" = manythreads-bridge:manythreads-bridge:600:1
+  cmp /root/main-saved '"$MAIN"'
+  test "$(stat -c %U:%a:%h /srv/other/second-name)" = nobody:644:1'
 checkx "reported in one plain sentence with the fix, left out of the table, the rest goes on" '
   grep -q "Hermes was found at /root/stub/hermes but the team users cannot use it" /tmp/update.log
   grep -q "install Hermes system-wide, for example under /opt/hermes, or pass --hermes-bin <path>" /tmp/update.log

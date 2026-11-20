@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig } from './config.ts';
 import { startBridge } from './server.ts';
-import { helloFor, keyFiles, readServerKey, storeServerKey } from './server-mode.ts';
+import { helloFor, keyFiles, readServerKey, serverSigninDirs, storeServerKey } from './server-mode.ts';
 import { startServerRepos } from './server-repos.ts';
-import { cleanTeamKube, hasTeamUsers } from './server-team.ts';
+import { cleanTeamCodex, cleanTeamKube, hasTeamUsers } from './server-team.ts';
 import { kubeFolder } from './server-run.ts';
 import { newInternalKey, startTunnel } from './tunnel.ts';
 
@@ -78,11 +78,16 @@ if (config.server !== undefined) {
     fatal(err instanceof Error ? err.message : String(err));
   }
   // A run that was cut short by a crash or a restart left its kubeconfig: no run survives a restart, so the folder is emptied.
-  if (hasTeamUsers(config.server)) await cleanTeamKube(config.server, (line) => console.log(line));
-  else rmSync(kubeFolder(config.server.root), { recursive: true, force: true });
+  // The same for each team's copy of the Codex sign-in (P31-01): a copy lives only as long as a run, and no run survived.
+  if (hasTeamUsers(config.server)) {
+    await cleanTeamKube(config.server, (line) => console.log(line));
+    if (config.server.agents.codex !== undefined) await cleanTeamCodex(config.server, (line) => console.log(line));
+  } else rmSync(kubeFolder(config.server.root), { recursive: true, force: true });
   const internalKey = newInternalKey();
   const socketPath = join(stateRoot, 'bridge.sock');
-  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site });
+  // The sign-in gates (one renewing run at a time near a renewal, and the memory of an account failure) read the machine's own sign-in folders: the server's templates name them
+  // (P31-01, review correction 1: an enrolled server had neither gate).
+  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site, ...serverSigninDirs(config) });
   const cfg = config;
   const tunnel = startTunnel({
     siteUrl: values.site,

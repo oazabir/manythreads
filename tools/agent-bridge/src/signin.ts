@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { codexTokenFacts } from './codex-token.ts';
 
 // The sign-in as the bridge sees it (PLAN P19-06 for Claude, P19-13 for Codex): what the sign-in file says about itself, the one gate that lets a single run renew it, and the
 // words that tell a refused sign-in or a plan limit from any other failure. Nothing here logs or returns a token; the file is read for its shape and its dates only.
@@ -87,44 +88,24 @@ export function readFileFacts(configDir: string): FileFacts {
   }
 }
 
-/** The `auth_mode` words that mean a ChatGPT login. Kept in step with CODEX_CHATGPT_AUTH_MODES in packages/shared (the bridge imports nothing from the workspace). */
-const CODEX_CHATGPT_MODES = ['chatgpt'];
-
-/** The `exp` claim of a JWT in ms, or null. The token is read here and not kept. */
-function jwtExpiry(token: string): number | null {
-  const part = token.split('.')[1];
-  if (part === undefined || part === '' || part.length > 16 * 1024) return null;
-  try {
-    const exp = (JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as { exp?: unknown }).exp;
-    return typeof exp === 'number' && Number.isFinite(exp) ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * What `<codexHome>/auth.json` says, without keeping or returning any token. The file is `valid` only when it is a ChatGPT login with no API key (an API key would go around the
- * workspace's model gateway), and the three tokens are there. The access token's expiry comes from its JWT `exp` when it is one.
+ * workspace's model gateway), and the three tokens are there. The access token's expiry comes from its JWT `exp` when it is one. The shape is judged by codex-token.ts, which the
+ * server's root helper uses for its copies too.
  */
 export function readCodexFileFacts(codexHome: string): FileFacts {
   const path = join(codexHome, 'auth.json');
   try {
     const mtimeMs = statSync(path).mtimeMs;
-    const doc = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown> | null;
-    if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return { ...NO_FILE, exists: true, mtimeMs };
-    const tokens = doc['tokens'];
-    const t = typeof tokens === 'object' && tokens !== null && !Array.isArray(tokens) ? (tokens as Record<string, unknown>) : {};
-    const text = (v: unknown): v is string => typeof v === 'string' && v !== '';
-    const mode = doc['auth_mode'];
-    const valid =
-      typeof mode === 'string' &&
-      CODEX_CHATGPT_MODES.includes(mode.toLowerCase()) &&
-      (doc['OPENAI_API_KEY'] === null || doc['OPENAI_API_KEY'] === undefined) &&
-      text(t['id_token']) &&
-      text(t['access_token']) &&
-      text(t['refresh_token']);
-    const refreshed = typeof doc['last_refresh'] === 'string' ? Date.parse(doc['last_refresh']) : Number.NaN;
-    return { exists: true, valid, scopeOk: valid, expiresAt: valid && text(t['access_token']) ? jwtExpiry(t['access_token']) : null, refreshedAt: Number.isFinite(refreshed) ? refreshed : null, mtimeMs };
+    const bytes = readFileSync(path);
+    const facts = codexTokenFacts(bytes);
+    if (facts === null) {
+      // not a JSON object (or a file far beyond any sign-in): there, but not a sign-in
+      JSON.parse(bytes.toString('utf8'));
+      return { ...NO_FILE, exists: true, mtimeMs };
+    }
+    const valid = facts.chatgpt;
+    return { exists: true, valid, scopeOk: valid, expiresAt: valid ? facts.accessExpiresAt : null, refreshedAt: facts.lastRefresh, mtimeMs };
   } catch {
     return NO_FILE;
   }

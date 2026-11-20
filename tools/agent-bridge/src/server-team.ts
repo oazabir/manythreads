@@ -86,8 +86,8 @@ export function teamsOnMachine(root: string, passwd: string): string[] {
   return out;
 }
 
-/** At start-up: no run survives a restart, so every team's kube folder is emptied (the helper does it as the team's user). One team that fails is logged and the rest go on. */
-export async function cleanTeamKube(server: ServerWithTeams, log: (line: string) => void, passwdFile = '/etc/passwd'): Promise<void> {
+/** Asks the helper for one start-nothing kind (`clean-kube`, `clean-codex`) for every team that has a user here, one after another. One team that fails is logged and the rest go on. */
+async function cleanEachTeam(server: ServerWithTeams, kind: 'clean-kube' | 'clean-codex', what: string, log: (line: string) => void, passwdFile: string): Promise<void> {
   let teams: string[] = [];
   try {
     teams = teamsOnMachine(server.root, readFileSync(passwdFile, 'utf8'));
@@ -96,16 +96,29 @@ export async function cleanTeamKube(server: ServerWithTeams, log: (line: string)
   }
   for (const team of teams) {
     await new Promise<void>((resolve) => {
-      const { command, args } = sudoArgv(server.teamUsers, team, 'clean-kube');
+      const { command, args } = sudoArgv(server.teamUsers, team, kind);
       const child = startChild(command, args, { cwd: '/', env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, stdin: null, onLine: () => undefined });
-      child.write(`${buildHeader({ cwd: teamHome(server.root, team), env: {}, kind: 'clean-kube' })}\n`);
+      child.write(`${buildHeader({ cwd: teamHome(server.root, team), env: {}, kind })}\n`);
       child.endInput();
       const timer = setTimeout(() => child.signal('SIGKILL'), 20_000);
       void child.done.then((end) => {
         clearTimeout(timer);
-        if (end.code !== 0) log(`team ${team}: the old kubeconfig folder could not be emptied${end.stderrTail ? ` (${end.stderrTail.trim().split('\n').pop()?.slice(0, 150)})` : ''}`);
+        if (end.code !== 0) log(`team ${team}: ${what}${end.stderrTail ? ` (${end.stderrTail.trim().split('\n').pop()?.slice(0, 150)})` : ''}`);
         resolve();
       });
     });
   }
+}
+
+/** At start-up: no run survives a restart, so every team's kube folder is emptied (the helper does it as the team's user). */
+export function cleanTeamKube(server: ServerWithTeams, log: (line: string) => void, passwdFile = '/etc/passwd'): Promise<void> {
+  return cleanEachTeam(server, 'clean-kube', 'the old kubeconfig folder could not be emptied', log, passwdFile);
+}
+
+/**
+ * Every team's copy of the Codex sign-in is removed (the helper does it as the team's user; the team's sessions and state stay): at start-up, because no run survived, and after a
+ * sign-out, so no copy outlives the main one (P31-01). One team per helper call, never a word like "all": the helper takes exactly `run <team> clean-codex`.
+ */
+export function cleanTeamCodex(server: ServerWithTeams, log: (line: string) => void, passwdFile = '/etc/passwd'): Promise<void> {
+  return cleanEachTeam(server, 'clean-codex', 'its copy of the Codex sign-in could not be removed', log, passwdFile);
 }

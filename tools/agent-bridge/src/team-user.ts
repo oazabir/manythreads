@@ -40,11 +40,19 @@ export const teamHome = (root: string, team: string): string => posix.join(root,
 
 /** The per-run kubeconfig of one bot, inside the team's home (deleted when the run ends). */
 export const teamKubeconfigFile = (root: string, team: string, bot: string, run: string): string => posix.join(teamHome(root, team), 'kube', bot, run, 'config');
+/**
+ * The team's Codex home (`CODEX_HOME`), inside the team's home and the team user's alone (0700): its `installation_id`, sessions, state and, while a Codex run lasts, its copy of the
+ * machine's sign-in (P31-01). Codex's own default would be the same folder (`$HOME/.codex`).
+ */
+export const teamCodexHome = (root: string, team: string): string => posix.join(teamHome(root, team), '.codex');
 /** Hermes' home of one bot, inside the team's home. */
 export const teamHermesHome = (root: string, team: string, bot: string): string => posix.join(teamHome(root, team), 'hermes', bot);
 
-/** What the helper starts as the team's user. `claude`, `codex` and `hermes` are the adapters (the helper's own table says which program); `sync` is the repository sync; `clean-kube` empties the team's kube folder. */
-export const KINDS = ['claude', 'codex', 'hermes', 'sync', 'clean-kube'] as const;
+/**
+ * What the helper starts as the team's user. `claude`, `codex` and `hermes` are the adapters (the helper's own table says which program); `sync` is the repository sync; `clean-kube`
+ * empties the team's kube folder; `clean-codex` removes the team's copy of the Codex sign-in (at bridge start and after a sign-out). The two `clean-*` kinds start no program.
+ */
+export const KINDS = ['claude', 'codex', 'hermes', 'sync', 'clean-kube', 'clean-codex'] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (v: unknown): v is Kind => typeof v === 'string' && (KINDS as readonly string[]).includes(v);
 
@@ -143,9 +151,15 @@ export function parseHeader(line: string, ctx: HeaderContext): HeaderResult {
     if (!allow.test(k) || (FORCED_ENV as readonly string[]).includes(k)) dropped.push(k);
     else env[k] = v;
   }
-  // where the variables that name a folder may point: the sign-in folders of this machine, and the team's own home
-  const sign = { CLAUDE_CONFIG_DIR: `${ctx.root}/auth/claude`, CODEX_HOME: `${ctx.root}/auth/codex` } as const;
-  for (const [k, want] of Object.entries(sign)) if (env[k] !== undefined && env[k] !== want) return { ok: false, error: `${k} must be ${want}` };
+  // where the variables that name a folder may point: Claude's shared sign-in folder of this machine; Codex's home only for a Codex run, and only the team's own (P31-01: the machine's
+  // Codex sign-in is the bridge user's and no team reads it; the helper copies it into the team's home for the run)
+  const claudeDir = `${ctx.root}/auth/claude`;
+  if (env['CLAUDE_CONFIG_DIR'] !== undefined && env['CLAUDE_CONFIG_DIR'] !== claudeDir) return { ok: false, error: `CLAUDE_CONFIG_DIR must be ${claudeDir}` };
+  if (env['CODEX_HOME'] !== undefined) {
+    const codexHome = teamCodexHome(ctx.root, ctx.team);
+    if (ctx.kind !== 'codex') return { ok: false, error: 'CODEX_HOME is only for a Codex run' };
+    if (env['CODEX_HOME'] !== codexHome) return { ok: false, error: `CODEX_HOME must be ${codexHome}` };
+  }
   for (const k of ['KUBECONFIG', 'HERMES_HOME', 'REPO_SYNC_LIST', 'REPO_SYNC_FALLBACK', 'REPO_SYNC_SCRATCH']) {
     const v = env[k];
     if (v !== undefined && !(plainPath(v) && isInside(home, v))) return { ok: false, error: `${k} must be inside the team's home` };

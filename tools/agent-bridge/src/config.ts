@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { SLUG as SLUG_PATTERN, teamHermesHome } from './team-user.ts';
+import { SLUG as SLUG_PATTERN, teamCodexHome, teamHermesHome } from './team-user.ts';
 
 // The bridge's config file: which agent CLI serves which profile.
 //
@@ -348,6 +348,9 @@ export function serverProfile(config: BridgeConfig, name: string): ProfileConfig
   // a team's Hermes home is inside its own home (a team user cannot reach another team's); without team users it is one folder per bot under the template's
   if (agentKey === 'hermes' && server.teamUsers !== undefined) env['HERMES_HOME'] = teamHermesHome(server.root, team, bot);
   else if (agentKey === 'hermes' && tmpl.hermesHome !== undefined) env['HERMES_HOME'] = join(tmpl.hermesHome, `${team}--${bot}`);
+  // P31-01: a team's Codex runs with a Codex home of the team's own (its sessions and state, and for the run a copy of the machine's sign-in made by the helper); `env` wins over
+  // `authHome`, which stays the machine's main copy (the sign-in profile's and the gate's)
+  if (agentKey === 'codex' && server.teamUsers !== undefined) env['CODEX_HOME'] = teamCodexHome(server.root, team);
   const instructions = server.instructions?.replaceAll('{team}', team).replaceAll('{bot}', bot).replaceAll('{workdir}', workdir).replaceAll('{repos}', repos);
   const profile: ProfileConfig = {
     agent: AGENT_OF_KEY[agentKey],

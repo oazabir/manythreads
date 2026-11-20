@@ -11,7 +11,10 @@ kind="${3:-claude}"
 root=/var/lib/manythreads-bridge
 extra="${MT_EXTRA_ENV:-}"
 [ -n "$extra" ] || extra='{}'
-header="$(jq -nc --arg cwd "$root/work/$team/$bot" --arg tok "${MT_TOKEN:-token-of-$team}" --arg claude "$root/auth/claude" --arg codex "$root/auth/codex" \
-  --argjson files "${MT_FILES:-[]}" --argjson remove "${MT_REMOVE:-[]}" --argjson extra "$extra" \
-  '{v:1, cwd:$cwd, env:({PATH:"/opt/manythreads-bridge/node/bin:/usr/local/bin:/usr/bin:/bin", CLAUDE_CONFIG_DIR:$claude, CODEX_HOME:$codex, MANYTHREADS_RUN_TOKEN:$tok} + $extra), files:$files, removeAtEnd:$remove}')"
+# a Codex run names the team's own Codex home (P31-01); every other kind names none
+codex='{}'
+[ "$kind" = codex ] && codex="$(jq -nc --arg h "$root/work/$team/.codex" '{CODEX_HOME:$h}')"
+header="$(jq -nc --arg cwd "$root/work/$team/$bot" --arg tok "${MT_TOKEN:-token-of-$team}" --arg claude "$root/auth/claude" \
+  --argjson files "${MT_FILES:-[]}" --argjson remove "${MT_REMOVE:-[]}" --argjson extra "$extra" --argjson codex "$codex" \
+  '{v:1, cwd:$cwd, env:({PATH:"/opt/manythreads-bridge/node/bin:/usr/local/bin:/usr/bin:/bin", CLAUDE_CONFIG_DIR:$claude, MANYTHREADS_RUN_TOKEN:$tok} + $codex + $extra), files:$files, removeAtEnd:$remove}')"
 { printf '%s\n' "$header"; cat; } | runuser -u manythreads-bridge -- sudo -n -- /opt/manythreads-bridge/helper/mt-team-helper run "$team" "$kind"

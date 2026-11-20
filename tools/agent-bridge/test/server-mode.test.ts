@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseConfig, profileFor } from '../src/config.ts';
 import { startBridge, type Bridge } from '../src/server.ts';
-import { keyFiles, readServerKey, storeServerKey } from '../src/server-mode.ts';
+import { keyFiles, readServerKey, serverSigninDirs, storeServerKey } from '../src/server-mode.ts';
+import { childEnv } from '../src/runs.ts';
 import { FAKE_CLAUDE, FAKE_CODEX } from './support.ts';
 
 // Server mode (P26-15): an enrolled server's bridge answers any `<agent>--<team>--<bot>` profile from a template, listens on a Unix socket, and reads its key from files.
@@ -47,6 +48,28 @@ describe('profiles made from the template', () => {
     const p = profileFor(cfg, 'claude--platform--coder')!.profile;
     expect(p).toMatchObject({ agent: 'claude-code', driver: 'acp', workdir: join(root, 'work', 'platform', 'coder'), authHome: join(root, 'auth', 'claude'), acp: { command: '/opt/acp/claude-agent-acp' } });
     expect(p.instructions).toBe(`You work in ${join(root, 'work', 'platform', 'coder')}. Team platform, bot coder. Repository: ${join(root, 'work', 'platform', 'repos')}.`);
+  });
+
+  it('codex with team users (P31-01): the run\'s CODEX_HOME is the team\'s own Codex home; the template\'s authHome stays the machine\'s main copy', () => {
+    const root = tmp();
+    const withUsers = serverConfig(root, {});
+    withUsers.server!.teamUsers = { helper: '/opt/h', sudo: '/usr/bin/sudo' };
+    const p = profileFor(withUsers, 'codex--eng--coder')!.profile;
+    expect(p.env?.['CODEX_HOME']).toBe(join(root, 'work', 'eng', '.codex'));
+    expect(p.authHome).toBe(join(root, 'auth', 'codex'));
+    expect(childEnv(p, { PATH: '/bin' })['CODEX_HOME']).toBe(join(root, 'work', 'eng', '.codex'));
+    expect(profileFor(withUsers, 'claude--eng--coder')!.profile.env?.['CODEX_HOME']).toBeUndefined();
+    // without team users everything runs as the bridge's user, with the machine's folder as before
+    const plain = profileFor(serverConfig(tmp()), 'codex--eng--coder')!.profile;
+    expect(plain.env?.['CODEX_HOME']).toBeUndefined();
+  });
+
+  it('the sign-in gates of a server read the machine\'s own Claude and Codex folders (review correction 1)', () => {
+    const root = tmp();
+    expect(serverSigninDirs(serverConfig(root))).toEqual({ claudeConfigDir: join(root, 'auth', 'claude'), codexHome: join(root, 'auth', 'codex') });
+    const onlyHermes = parseConfig({ profiles: { x: { agent: 'hermes-acp', workdir: root } }, server: { root, agents: { hermes: {} } } });
+    expect(serverSigninDirs(onlyHermes)).toEqual({});
+    expect(serverSigninDirs(parseConfig({ profiles: { x: { agent: 'codex', workdir: root } } }))).toEqual({});
   });
 
   it('the profile of one bot is not the profile of another, and the same name is the same object', () => {

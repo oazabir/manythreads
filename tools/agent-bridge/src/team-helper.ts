@@ -1,13 +1,14 @@
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, writeSync } from 'node:fs';
+import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { posix } from 'node:path';
-import { AGENTS_GROUP, isKind, isSlug, launchEnv, MAX_HEADER_BYTES, parseHeader, teamHome, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
+import { acceptRenewed, accountOf, CODEX_AUTH_MAX_BYTES, codexTokenFacts, mainIsNewer, rebuildRenewed, refusalLine, type CodexTokenFacts } from './codex-token.ts';
+import { AGENTS_GROUP, isKind, isSlug, KINDS, launchEnv, MAX_HEADER_BYTES, parseHeader, teamCodexHome, teamHome, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
 
 // The root helper of an enrolled server (PLAN P26-22, docs/plans/agents-anywhere.md section 9b). The installer puts a copy at /opt/manythreads-bridge/helper/ (root's, 0755) and a sudoers
 // rule that lets the bridge's user run exactly two commands of it:
 //
 //   mt-team-helper ensure-user <team>        make the team's user `mt-team-<team>` and its home (idempotent)
-//   mt-team-helper run <team> <kind>         start one fixed program as that user: <kind> is claude, codex, hermes (the adapters), sync (the repository sync) or clean-kube
+//   mt-team-helper run <team> <kind>         start one fixed program as that user: <kind> is claude, codex, hermes (the adapters), sync (the repository sync), clean-kube or clean-codex
 //
 // Everything the sudoers rule cannot say (it only matches words) is checked here: the slug, the kind, that there are no more arguments. The programs come from a table the installer
 // wrote as root (`/etc/manythreads-bridge/team-agents.json`): the bridge names a kind, never a program. The run's environment, the files it needs and the working folder come on the
@@ -17,8 +18,11 @@ import { AGENTS_GROUP, isKind, isSlug, launchEnv, MAX_HEADER_BYTES, parseHeader,
 // Rules this file keeps, because it runs as root over folders that a team user can write into:
 //   - what is made or changed as root lies in folders that no team user can write: `<root>/work` (root's, checked) and the new home right after it is made. Everything a team's own files
 //     need (its work folder, the kube folder, a file) is made by a program started AS that user (`setpriv`), so a link planted in a home cannot make root write somewhere else;
-//   - the sign-in folders are shared on purpose (group `mt-agents`); the only thing done there as root is fixing the group and the group bits of the files directly in them, on an open
-//     file descriptor that is not a link and has one name (`O_NOFOLLOW`, `nlink` 1), so a link or a hard link planted there is left alone.
+//   - Claude's sign-in folder is shared on purpose (group `mt-agents`); the only thing done there as root is fixing the group and the group bits of the files in it, on an open
+//     file descriptor that is not a link and has one name (`O_NOFOLLOW`, `nlink` 1), so a link or a hard link planted there is left alone;
+//   - Codex's sign-in (P31-01) is the bridge user's alone (`<root>/auth/codex`, 0700). For a Codex run it is copied into the team's own Codex home and a renewed copy is copied back:
+//     every read and write of the main copy runs AS the bridge user and every read and write of the team's copy AS the team user (`setpriv`), so root never opens a file a team or the
+//     bridge controls. What root itself makes lies in `<root>/auth/.locks` (root's, 0700): the lock (`flock`), the live markers, the one-time markers.
 
 export const CONFIG_FILE = '/etc/manythreads-bridge/team-agents.json';
 export const NOLOGIN_SHELLS = ['/usr/sbin/nologin', '/sbin/nologin', '/usr/bin/nologin', '/bin/false'];
@@ -39,6 +43,8 @@ export interface HelperConfig {
   publisherGroup?: string | undefined;
   /** The group that may open the publisher's socket (the publisher runs with it as its group): every team user joins it, nobody else is in it (P26-19). Absent: no one is added. */
   publishClientsGroup?: string | undefined;
+  /** The bridge's own user, who owns the machine's Codex sign-in (`<root>/auth/codex`): the helper reads and writes that copy as this user, never as root (P31-01). Absent: no Codex run starts. */
+  bridgeUser?: string | undefined;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -67,7 +73,16 @@ export function parseHelperConfig(text: string): HelperConfig {
   if (pub !== undefined && (typeof pub !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(pub))) throw new Error('publisherGroup must be a group name');
   const clients = raw['publishClientsGroup'];
   if (clients !== undefined && (typeof clients !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(clients))) throw new Error('publishClientsGroup must be a group name');
-  return { dataRoot: raw['dataRoot'], agents, ...(typeof sync === 'string' ? { syncScript: sync } : {}), ...(typeof pub === 'string' ? { publisherGroup: pub } : {}), ...(typeof clients === 'string' ? { publishClientsGroup: clients } : {}) };
+  const bridgeUser = raw['bridgeUser'];
+  if (bridgeUser !== undefined && (typeof bridgeUser !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(bridgeUser) || bridgeUser === 'root')) throw new Error('bridgeUser must be a user name other than root');
+  return {
+    dataRoot: raw['dataRoot'],
+    agents,
+    ...(typeof sync === 'string' ? { syncScript: sync } : {}),
+    ...(typeof pub === 'string' ? { publisherGroup: pub } : {}),
+    ...(typeof clients === 'string' ? { publishClientsGroup: clients } : {}),
+    ...(typeof bridgeUser === 'string' ? { bridgeUser } : {}),
+  };
 }
 
 export type Parsed = { ok: true; command: 'ensure-user'; team: string } | { ok: true; command: 'run'; team: string; kind: Kind } | { ok: false; error: string };
@@ -79,12 +94,12 @@ export function parseArgv(argv: readonly string[]): Parsed {
   if (command === 'run' && isSlug(team) && isKind(kind) && rest.length === 0) return { ok: true, command, team, kind };
   if (command !== 'ensure-user' && command !== 'run') return { ok: false, error: 'the commands are ensure-user <team> and run <team> <kind>' };
   if (!isSlug(team)) return { ok: false, error: 'that is not a team slug (lower case letters, digits and single dashes, at most 63 characters)' };
-  return { ok: false, error: command === 'run' ? 'the kinds are claude, codex, hermes, sync and clean-kube, and nothing follows them' : 'nothing follows the team in ensure-user' };
+  return { ok: false, error: command === 'run' ? `the kinds are ${KINDS.slice(0, -1).join(', ')} and ${KINDS[KINDS.length - 1]}, and nothing follows them` : 'nothing follows the team in ensure-user' };
 }
 
-/** The program a kind starts, from the table: the command and its arguments, and the umask it runs with. `null` for a kind that starts none (clean-kube). */
+/** The program a kind starts, from the table: the command and its arguments, and the umask it runs with. `null` for a kind that starts none (clean-kube, clean-codex). */
 export function programFor(cfg: HelperConfig, kind: Kind): { argv: string[]; umask: string } | null {
-  if (kind === 'clean-kube') return null;
+  if (kind === 'clean-kube' || kind === 'clean-codex') return null;
   if (kind === 'sync') {
     if (cfg.syncScript === undefined) throw new Error('this machine has no repository sync script');
     return { argv: ['/bin/sh', cfg.syncScript], umask: '0027' };
@@ -96,9 +111,20 @@ export function programFor(cfg: HelperConfig, kind: Kind): { argv: string[]; uma
 
 // The three small programs run AS the team user. They are constants: nothing from a header is ever part of a program text, only an argument of it.
 export const SH_MKDIR = 'umask "$1"; shift; mkdir -p -- "$@"';
-export const SH_PUT = 'umask 077; d=$(dirname -- "$1") && mkdir -p -- "$d" && cat > "$1.new" && chmod "$2" "$1.new" && mv -f -- "$1.new" "$1"';
+export const SH_PUT = 'umask 077; d=$(dirname -- "$1") && mkdir -p -- "$d" && rm -rf -- "$1.new" && cat > "$1.new" && chmod "$2" "$1.new" && mv -f -- "$1.new" "$1"';
 export const SH_RM = 'rm -rf -- "$@"';
 export const SH_EXEC = 'umask "$1"; shift; cd -- "$1" && shift && exec "$@"';
+/** A folder only its user may enter (the team's Codex home): made with umask 077 and set to 0700; the leading 00 also clears a setgid bit (GNU chmod keeps it on a folder for 0700). */
+export const SH_PRIVATE_DIR = 'umask 077; mkdir -p -- "$1" && chmod 00700 -- "$1"';
+/**
+ * Reads a sign-in file, bounded: one byte over the limit shows that it is too big, and `timeout 2` ends a read that blocks (a FIFO planted in place of the file), so the 15 second watch
+ * of a run is never frozen (review correction 5). Run as the file's owner (the team user for its copy, the bridge user for the main copy). A missing file (no name at all) exits 3.
+ */
+export const SH_READ = `[ -e "$1" ] || [ -L "$1" ] || exit 3; exec timeout 2 head -c ${CODEX_AUTH_MAX_BYTES + 1} -- "$1"`;
+/** The exit code of SH_READ for "there is no such file" (a sign-out), told apart from a read that failed or timed out. */
+export const SH_READ_MISSING = 3;
+/** Replaces a file in one step as its owner: a new file of 0600 written from standard input, flushed to disk, then renamed over the old one (the main Codex copy, as the bridge user). */
+export const SH_REPLACE = 'umask 077; cat > "$1.new" && chmod 0600 -- "$1.new" && { sync -- "$1.new" 2>/dev/null || true; } && mv -f -T -- "$1.new" "$1"';
 
 /** The kernel's out-of-memory weight of this process: -1000 (never) to 1000 (first). */
 export const OOM_SCORE_FILE = '/proc/self/oom_score_adj';
@@ -173,8 +199,8 @@ export function setprivArgv(setpriv: string, uid: number, gid: number, argv: rea
 const which = (candidates: readonly string[]): string | null => candidates.find((c) => existsSync(c)) ?? null;
 const sysEnv = (): NodeJS.ProcessEnv => ({ PATH: SYSTEM_PATH, LC_ALL: 'C' });
 
-function run(cmd: string, args: string[], input?: string): SpawnSyncReturns<string> {
-  return spawnSync(cmd, args, { encoding: 'utf8', env: sysEnv(), ...(input !== undefined ? { input } : {}), timeout: 60_000, maxBuffer: 1 << 20 });
+function run(cmd: string, args: string[], input?: string, timeoutMs = 60_000): SpawnSyncReturns<string> {
+  return spawnSync(cmd, args, { encoding: 'utf8', env: sysEnv(), ...(input !== undefined ? { input } : {}), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 1 << 20 });
 }
 
 export interface Account {
@@ -265,9 +291,12 @@ export function ensureUser(cfg: HelperConfig, team: string): Account {
 const AUTH_MAX_DEPTH = 8;
 const AUTH_MAX_ENTRIES = 50_000;
 
+/** The sign-in folders the helper keeps open to the group `mt-agents`: Claude's only. Codex's is the bridge user's alone since P31-01 (each team has a copy in its own Codex home). */
+export const SHARED_AUTH_FOLDERS: readonly string[] = ['claude'];
+
 /**
- * The sign-in folders are shared by the teams' users through the group `mt-agents`. A CLI that makes a file with mode 0600 (its own choice) would lock the other teams out of it, so every
- * file and folder below each agent's folder gets the group and the group's bits back (folders keep the setgid bit, so what they make there stays the group's). Run as root over folders that
+ * Claude's sign-in folder is shared by the teams' users through the group `mt-agents`. A CLI that makes a file with mode 0600 (its own choice) would lock the other teams out of it, so every
+ * file and folder below it gets the group and the group's bits back (folders keep the setgid bit, so what they make there stays the group's). Run as root over folders that
  * the teams' users can write, so no step follows a link: a folder is opened with O_NOFOLLOW and its children are reached through `/proc/self/fd/<that folder>/<name>` (never through a path
  * that a team user could swap for a link between two steps), a file is opened with O_NOFOLLOW and changed through its descriptor, and a file with more than one name is not touched.
  */
@@ -309,7 +338,7 @@ export function fixAuthFolders(root: string): number {
       }
     }
   };
-  for (const agent of ['claude', 'codex']) {
+  for (const agent of SHARED_AUTH_FOLDERS) {
     let fd: number | null = null;
     try {
       fd = openSync(posix.join(root, 'auth', agent), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY);
@@ -378,6 +407,289 @@ function remove(plan: Plan, paths: readonly string[]): void {
   asUser(plan, ['/bin/sh', '-c', SH_RM, 'sh', ...paths]);
 }
 
+// ---- the team's copy of the Codex sign-in (P31-01, docs/plans/codex-teams-and-oom.md section 2 and its corrections) ------------------------------------------------------------
+
+/** A read of the main copy: its text, `missing` (no file: a sign-out), or `failed` (it timed out, could not be started, or was not readable): then nothing is decided and the next look tries again. */
+export type MainRead = { kind: 'ok'; text: string } | { kind: 'missing' } | { kind: 'failed' };
+
+/** What the copy steps do to the two files, each as the file's owner. A team read answers the file's text, or null (missing, unreadable, too big, or the read timed out). */
+export interface CodexCopyIo {
+  readMain(): MainRead;
+  readTeam(): string | null;
+  writeMain(text: string): boolean;
+  writeTeam(text: string): boolean;
+  removeTeam(): void;
+  log(line: string): void;
+}
+
+/** The state of one run's copy: what the team's copy holds as far as the helper knows (null: nothing was copied in, or it was taken away), and the refusals already logged. */
+export interface CodexCopyState {
+  base: CodexTokenFacts | null;
+  refused: Set<string>;
+}
+
+/** What is to be done to the team's copy after the lock of the main copy is let go (review fix: nothing a team controls is touched while every team waits on that lock). */
+export type TeamAction = { kind: 'none' } | { kind: 'write'; text: string; base: CodexTokenFacts | null } | { kind: 'remove' };
+
+const factsOf = (text: string | null): CodexTokenFacts | null => (text === null ? null : codexTokenFacts(text));
+
+/** Under the main copy's lock, before the program starts: the machine's sign-in is to be copied in when it is a ChatGPT sign-in; otherwise none is, and Codex says it is not signed in. */
+export function codexCopyInLocked(state: CodexCopyState, io: CodexCopyIo): TeamAction {
+  const read = io.readMain();
+  const facts = read.kind === 'ok' ? factsOf(read.text) : null;
+  if (read.kind !== 'ok' || accountOf(facts) === null) {
+    io.log(read.kind === 'failed' ? 'the machine\'s Codex sign-in could not be read; the run starts without one' : 'this machine has no Codex sign-in to copy; the run starts without one');
+    state.base = null;
+    return { kind: 'remove' };
+  }
+  return { kind: 'write', text: read.text, base: facts };
+}
+
+/**
+ * Under the main copy's lock, every 15 seconds while the run lasts and once at its end, with the team's copy as it was read just before (outside the lock). Cases:
+ *   - the main copy is gone (a sign-out) or names another account (a new sign-in): the team's copy is to be removed and nothing is ever copied back. A main copy that could not be
+ *     read (a timeout, a failed start) or is not readable as a sign-in decides nothing: the next look tries again;
+ *   - the team's copy changed (its Codex renewed the tokens): when `acceptRenewed` says so, a file rebuilt from the known fields (`rebuildRenewed`) replaces the main copy and the team's
+ *     copy; else one log line, and the copy is left alone (a refused copy goes nowhere);
+ *   - the main copy was renewed by another team's run: it is to be copied into this team's copy, because Codex reads `auth.json` again before it renews (review correction 2, measured);
+ *   - nothing changed: nothing is done.
+ */
+export function codexSyncLocked(state: CodexCopyState, io: CodexCopyIo, teamText: string | null, now: number = Date.now()): TeamAction {
+  const base = state.base;
+  if (base === null) return { kind: 'none' };
+  const read = io.readMain();
+  if (read.kind === 'failed') return { kind: 'none' };
+  const main = read.kind === 'ok' ? factsOf(read.text) : null;
+  if (read.kind === 'ok' && main === null) return { kind: 'none' };
+  if (read.kind === 'missing' || accountOf(main) !== accountOf(base)) {
+    state.base = null;
+    io.log('the machine\'s Codex sign-in was removed or changed, so this run\'s copy was removed');
+    return { kind: 'remove' };
+  }
+  const mainText = read.text;
+  const team = factsOf(teamText);
+  // another run of the same team (they share the team's copy) already copied this one back
+  if (team !== null && main !== null && team.sha256 === main.sha256) {
+    state.base = team;
+    return { kind: 'none' };
+  }
+  if (team !== null && team.sha256 === base.sha256) return mainIsNewer(main, base, now) ? { kind: 'write', text: mainText, base: main } : { kind: 'none' };
+  const verdict = acceptRenewed(main, base, team, now);
+  if (verdict.ok && teamText !== null) {
+    const rebuilt = rebuildRenewed(teamText, mainText);
+    if (rebuilt !== null && io.writeMain(rebuilt)) {
+      state.base = factsOf(rebuilt);
+      return { kind: 'write', text: rebuilt, base: state.base };
+    }
+    io.log('a renewed Codex sign-in could not be copied back to the machine\'s main copy');
+    return { kind: 'none' };
+  }
+  const reason = verdict.ok ? 'not_a_login' : verdict.reason;
+  const key = `${reason}:${team?.sha256 ?? 'none'}`;
+  if (!state.refused.has(key)) {
+    state.refused.add(key);
+    io.log(refusalLine(reason));
+  }
+  // two runs renewed at once: the main copy (written first) wins, and this run is given it, so its next renewal starts from a token that is still good
+  if (reason === 'main_changed' && mainIsNewer(main, team ?? base, now)) return { kind: 'write', text: mainText, base: main };
+  return { kind: 'none' };
+}
+
+/** Outside the main copy's lock (under the team's own lock in the helper): what the locked step decided for the team's copy. */
+export function applyTeamAction(state: CodexCopyState, io: CodexCopyIo, action: TeamAction): void {
+  if (action.kind === 'remove') io.removeTeam();
+  else if (action.kind === 'write') {
+    if (io.writeTeam(action.text)) state.base = action.base;
+    else io.log('the Codex sign-in could not be copied into the team\'s Codex home');
+  }
+}
+
+/** The three steps of one look in one call (no lock): what the tests drive. */
+export function codexSync(state: CodexCopyState, io: CodexCopyIo, now: number = Date.now()): void {
+  const teamText = state.base === null ? null : io.readTeam();
+  applyTeamAction(state, io, codexSyncLocked(state, io, teamText, now));
+}
+
+/** The copy-in in one call (no lock): what the tests drive. */
+export function codexCopyIn(io: CodexCopyIo): CodexCopyState {
+  const state: CodexCopyState = { base: null, refused: new Set() };
+  applyTeamAction(state, io, codexCopyInLocked(state, io));
+  return state;
+}
+
+/** The folder of root's own files for the Codex copies: `<root>/auth/.locks`, made 0700 under `<root>/auth`, which must be root's and writable by nobody else. */
+export function codexLockFolder(root: string): string {
+  const auth = posix.join(root, 'auth');
+  const st = lstatSync(auth);
+  if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== 0 || (st.mode & 0o022) !== 0) throw new Error(`${auth} must be a folder of root that nobody else can write to`);
+  const locks = posix.join(auth, '.locks');
+  for (const dir of [locks, posix.join(locks, 'codex-live'), posix.join(locks, 'codex-moved')]) {
+    try {
+      mkdirSync(dir, { mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
+    const d = lstatSync(dir);
+    if (!d.isDirectory() || d.isSymbolicLink() || d.uid !== 0 || (d.mode & 0o077) !== 0) throw new Error(`${dir} must be a folder of root's alone`);
+  }
+  return locks;
+}
+
+/** The kernel's start time of a process (field 22 of /proc/<pid>/stat), so a marker is not taken for alive when its pid was given to another process. */
+export function procStartTime(pid: number, read: (path: string) => string = (p) => readFileSync(p, 'utf8')): string | null {
+  try {
+    const stat = read(`/proc/${pid}/stat`);
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    return fields[19] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The live markers of a team's Codex runs: `<locks>/codex-live/<team>/<pid>.<start time>`, made by root. */
+export class CodexMarkers {
+  readonly folder: string;
+  constructor(locks: string, team: string) {
+    this.folder = posix.join(locks, 'codex-live', team);
+  }
+
+  /** This helper's marker; returns its path. */
+  add(pid = process.pid): string {
+    try {
+      mkdirSync(this.folder, { mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
+    const path = posix.join(this.folder, `${pid}.${procStartTime(pid) ?? '0'}`);
+    writeFileSync(path, '', { mode: 0o600, flag: 'w' });
+    return path;
+  }
+
+  /** Removes the markers of helpers that are gone; answers how many are alive besides `own`. */
+  othersAlive(own: string | null): number {
+    let names: string[];
+    try {
+      names = readdirSync(this.folder);
+    } catch {
+      return 0;
+    }
+    let alive = 0;
+    for (const n of names) {
+      const path = posix.join(this.folder, n);
+      if (path === own) continue;
+      const m = /^(\d{1,10})\.(\d{1,20})$/.exec(n);
+      if (m !== null && procStartTime(Number(m[1])) === m[2]) alive += 1;
+      else rmSync(path, { force: true });
+    }
+    return alive;
+  }
+
+  remove(own: string): void {
+    rmSync(own, { force: true });
+  }
+}
+
+/**
+ * Holds `<locks>/<name>` with `flock(1)` for as long as `fn` runs (review correction 4: no pid file, so no pid reuse and no "stale after 10 seconds"). A holder process keeps the lock
+ * while its standard input is open, so the lock goes when the helper dies whatever way. Answers false when the lock was not had within `waitSeconds` (nothing was done then).
+ * Two locks: `codex-token.lock`, shared by every team, held only while the main copy is read, compared and written; and `codex-team-<team>.lock`, one team's, held while that team's
+ * own files (its copy, its markers, its old Codex home) are changed, so a slow or hostile team folder never makes another team wait.
+ */
+export async function withCodexLock(flock: string, locks: string, fn: () => void, waitSeconds = 20, name = 'codex-token.lock'): Promise<boolean> {
+  const holder = spawn(flock, ['-w', String(waitSeconds), posix.join(locks, name), '/bin/sh', '-c', 'echo locked; exec cat >/dev/null'], { stdio: ['pipe', 'pipe', 'ignore'], env: sysEnv() });
+  const ended = new Promise<void>((resolve) => {
+    holder.on('close', () => resolve());
+    holder.on('error', () => resolve());
+  });
+  const locked = await new Promise<boolean>((resolve) => {
+    let seen = '';
+    holder.stdout?.on('data', (b: Buffer) => {
+      seen += b.toString('utf8');
+      if (seen.includes('locked')) resolve(true);
+    });
+    void ended.then(() => resolve(false));
+  });
+  try {
+    if (locked) fn();
+  } finally {
+    holder.stdin?.end();
+    await ended;
+  }
+  return locked;
+}
+
+/** The name of one team's own lock in the lock folder. */
+export const teamLockName = (team: string): string => `codex-team-${team}.lock`;
+
+/** The copy steps as the two owners: the main copy as the bridge user, the team's copy as the team user, each through a constant `sh` snippet. */
+export function codexIo(setpriv: string, bridge: Account, team: Account, root: string, teamName: string, log: (line: string) => void): CodexCopyIo {
+  const as = (who: Account, argv: string[], input?: string, timeoutMs = 10_000): SpawnSyncReturns<string> => {
+    const [cmd, ...args] = setprivArgv(setpriv, who.uid, who.gid, argv);
+    return run(cmd!, args, input, timeoutMs);
+  };
+  const mainFile = posix.join(root, 'auth', 'codex', 'auth.json');
+  const teamFile = posix.join(teamCodexHome(root, teamName), 'auth.json');
+  const read = (who: Account, file: string): MainRead => {
+    const r = as(who, ['/bin/sh', '-c', SH_READ, 'sh', file], undefined, 5_000);
+    if (r.status === SH_READ_MISSING) return { kind: 'missing' };
+    if (r.status !== 0 || typeof r.stdout !== 'string' || r.stdout === '' || Buffer.byteLength(r.stdout) > CODEX_AUTH_MAX_BYTES) return { kind: 'failed' };
+    return { kind: 'ok', text: r.stdout };
+  };
+  return {
+    readMain: () => read(bridge, mainFile),
+    readTeam: () => {
+      const r = read(team, teamFile);
+      return r.kind === 'ok' ? r.text : null;
+    },
+    writeMain: (text) => as(bridge, ['/bin/sh', '-c', SH_REPLACE, 'sh', mainFile], text).status === 0,
+    writeTeam: (text) => as(team, ['/bin/sh', '-c', SH_PUT, 'sh', teamFile, '0600'], text).status === 0,
+    removeTeam: () => void as(team, ['/bin/sh', '-c', SH_RM, 'sh', teamFile]),
+    log,
+  };
+}
+
+/**
+ * The team's Codex home, made by the team user with mode 0700. Once per team (a marker in root's lock folder), a Codex home made before P31-01 is removed first: one was made by a run
+ * that had no CODEX_HOME (2026-11-17, mode 2755, files 0644, readable by the publisher's group). Only once, because from then on that folder is the team's real Codex home.
+ */
+export function prepareCodexHome(plan: Plan, locks: string, root: string, team: string): void {
+  removeOldCodexHomeOnce(plan, locks, root, team);
+  if (asUser(plan, ['/bin/sh', '-c', SH_PRIVATE_DIR, 'sh', teamCodexHome(root, team)]).status !== 0) throw new Error('could not make the team\'s Codex home');
+}
+
+/** The once-per-team removal of a Codex home made before P31-01 (see `prepareCodexHome`). */
+export function removeOldCodexHomeOnce(plan: Plan, locks: string, root: string, team: string): void {
+  const moved = posix.join(locks, 'codex-moved', team);
+  if (existsSync(moved)) return;
+  if (asUser(plan, ['/bin/sh', '-c', SH_RM, 'sh', teamCodexHome(root, team)]).status !== 0) throw new Error('could not remove the team\'s old Codex home');
+  writeFileSync(moved, '', { mode: 0o600 });
+}
+
+const FLOCK = ['/usr/bin/flock', '/bin/flock'];
+
+/** One Codex run's copy, as the helper's main function keeps it. */
+interface CodexRun {
+  io: CodexCopyIo;
+  state: CodexCopyState;
+  markers: CodexMarkers;
+  marker: string | null;
+  locks: string;
+  flock: string;
+  team: string;
+}
+
+const tokenLocked = (c: CodexRun, fn: () => void): Promise<boolean> => withCodexLock(c.flock, c.locks, fn);
+const teamLocked = (c: CodexRun, fn: () => void): Promise<boolean> => withCodexLock(c.flock, c.locks, fn, 20, teamLockName(c.team));
+
+/** One look while the run lasts: the team's copy is read with no lock, the main copy is compared and written under the shared lock, the team's copy is changed under the team's lock. */
+async function codexLook(c: CodexRun): Promise<void> {
+  if (c.state.base === null) return;
+  const teamText = c.io.readTeam();
+  const box: { action: TeamAction } = { action: { kind: 'none' } };
+  if (!(await tokenLocked(c, () => (box.action = codexSyncLocked(c.state, c.io, teamText))))) return;
+  if (box.action.kind !== 'none') await teamLocked(c, () => applyTeamAction(c.state, c.io, box.action));
+}
+
 const say = (line: string): void => void process.stderr.write(`mt-team-helper: ${line}\n`);
 
 /** The entry: returns the exit code. `argv` is what follows the program's own name. */
@@ -435,6 +747,23 @@ export async function main(argv: readonly string[]): Promise<number> {
     remove(plan, [posix.join(home, 'kube')]);
     return 0;
   }
+  const flock = which(FLOCK);
+  if (parsed.kind === 'clean-codex') {
+    // the team's copy of the Codex sign-in goes (its sessions and state stay); the markers of runs that are gone go with it. Only the team's own lock: nothing here is another team's.
+    try {
+      const locks = codexLockFolder(cfg.dataRoot);
+      const clean = (): void => {
+        removeOldCodexHomeOnce(plan, locks, cfg.dataRoot, parsed.team);
+        new CodexMarkers(locks, parsed.team).othersAlive(null);
+        remove(plan, [posix.join(teamCodexHome(cfg.dataRoot, parsed.team), 'auth.json')]);
+      };
+      if (flock === null || !(await withCodexLock(flock, locks, clean, 20, teamLockName(parsed.team)))) clean();
+    } catch (err) {
+      say(err instanceof Error ? err.message : 'could not remove the team\'s Codex sign-in');
+      return 73;
+    }
+    return 0;
+  }
   let program;
   try {
     program = programFor(cfg, parsed.kind);
@@ -444,6 +773,31 @@ export async function main(argv: readonly string[]): Promise<number> {
   } catch (err) {
     say(err instanceof Error ? err.message : 'could not prepare the run');
     return 73;
+  }
+  // A Codex run: its own Codex home, and in it a copy of the machine's sign-in for as long as the run lasts (P31-01). The shared lock (`codex-token.lock`) is held only around the
+  // main copy; everything in the team's own folder is done under the team's own lock, before or after it.
+  let codex: CodexRun | null = null;
+  if (parsed.kind === 'codex') {
+    try {
+      if (cfg.bridgeUser === undefined) throw new Error('the helper table names no bridgeUser (run the installer again with --update)');
+      if (flock === null) throw new Error('flock is needed (the util-linux package)');
+      const bridgeAcct = lookup(cfg.bridgeUser);
+      if (bridgeAcct === null || bridgeAcct.uid === 0) throw new Error(`the bridge user ${cfg.bridgeUser} does not exist`);
+      const locks = codexLockFolder(cfg.dataRoot);
+      const c: CodexRun = { io: codexIo(setpriv, bridgeAcct, acct, cfg.dataRoot, parsed.team, say), state: { base: null, refused: new Set() }, markers: new CodexMarkers(locks, parsed.team), marker: null, locks, flock, team: parsed.team };
+      if (!(await teamLocked(c, () => {
+        prepareCodexHome(plan, locks, cfg.dataRoot, parsed.team);
+        c.marker = c.markers.add();
+      }))) throw new Error('the team\'s Codex home stayed locked by another of its runs for 20 seconds');
+      const box: { action: TeamAction } = { action: { kind: 'none' } };
+      if (!(await tokenLocked(c, () => (box.action = codexCopyInLocked(c.state, c.io))))) throw new Error('the Codex sign-in stayed locked by another run for 20 seconds');
+      if (!(await teamLocked(c, () => applyTeamAction(c.state, c.io, box.action)))) say('the team\'s Codex home stayed locked; the run starts without a copy of the sign-in');
+      codex = c;
+    } catch (err) {
+      say(err instanceof Error ? err.message : 'could not prepare the Codex sign-in');
+      remove(plan, header.removeAtEnd);
+      return 73;
+    }
   }
   const shell = which(['/bin/bash', '/bin/sh']) ?? '/bin/sh';
   const env = launchEnv(header, acct.name, home, shell);
@@ -485,15 +839,46 @@ export async function main(argv: readonly string[]): Promise<number> {
   }, 1000);
   // a CLI may remake a sign-in file with mode 0600 while it renews a token: give the group its bits back
   const fixer = setInterval(() => fixAuthFolders(cfg.dataRoot), 15_000);
+  // Codex: a renewed copy goes back to the main copy, a main copy renewed by another run comes in, a removed main copy takes this one with it (every 15 seconds, one at a time)
+  let codexBusy: Promise<unknown> | null = null;
+  const codexWatch = codex === null ? null : setInterval(() => {
+    const c = codex;
+    if (c === null || codexBusy !== null) return;
+    codexBusy = codexLook(c).catch(() => false).finally(() => {
+      codexBusy = null;
+    });
+  }, 15_000);
   const code = await new Promise<number>((resolve) => {
     child.on('error', () => resolve(74));
     child.on('exit', (c, sig) => resolve(c ?? (sig === null ? 1 : 128 + (({ SIGTERM: 15, SIGKILL: 9, SIGINT: 2, SIGHUP: 1, SIGQUIT: 3 } as Record<string, number>)[sig] ?? 0))));
   });
   clearInterval(watch);
   clearInterval(fixer);
-  // whatever the program left running in its group goes with it
+  if (codexWatch !== null) clearInterval(codexWatch);
+  // whatever the program left running in its group goes with it (before the last look at the Codex copy: nothing of the run can write it after that)
   kill('SIGKILL');
   fixAuthFolders(cfg.dataRoot);
+  if (codex !== null) {
+    const c = codex;
+    await codexBusy;
+    try {
+      const teamText = c.state.base === null ? null : c.io.readTeam();
+      const box: { action: TeamAction } = { action: { kind: 'none' } };
+      if (!(await tokenLocked(c, () => (box.action = codexSyncLocked(c.state, c.io, teamText))))) say('the Codex sign-in stayed locked at the end of the run; a renewal of this run was not copied back');
+      const ended = await teamLocked(c, () => {
+        if (c.marker !== null) c.markers.remove(c.marker);
+        // the team's copy goes unless another Codex run of the same team still uses it
+        if (c.markers.othersAlive(c.marker) === 0) c.io.removeTeam();
+        else applyTeamAction(c.state, c.io, box.action);
+      });
+      if (!ended) {
+        if (c.marker !== null) c.markers.remove(c.marker);
+        say('the team\'s Codex home stayed locked at the end of the run; its copy is removed when the bridge starts again');
+      }
+    } catch {
+      say('could not finish with the team\'s Codex sign-in');
+    }
+  }
   remove(plan, header.removeAtEnd);
   return code;
 }
