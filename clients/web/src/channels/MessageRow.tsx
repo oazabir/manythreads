@@ -11,7 +11,7 @@ import { CallCardMessage, VoiceRoomCard } from '../meetings/VoiceRoomCard';
 import { callCards } from '../meetings/callCards';
 import { callCopyText } from '../meetings/roomCard';
 import { TodoMessage } from './todo-card/TodoMessage';
-import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
+import { MoreIcon, PinMarkIcon, PinMessageIcon, ReplyIcon, SmileIcon, UnpinMessageIcon } from '../shell/icons';
 import { useCoarsePointer } from '../shell/useCoarsePointer';
 import { rowBar } from './rowBar';
 import { EmojiPicker } from './EmojiPicker';
@@ -85,6 +85,16 @@ function ReplyAvatars({ authors, people }: { authors: readonly NonNullable<Chann
   );
 }
 
+/** "Pinned" beside the author's name on a pinned message (P31-07), with who pinned it in the tooltip when the roster knows them. */
+export function PinnedMark({ by, people }: { by: string | null; people: People }) {
+  const who = by ? (people.byActor(by)?.name ?? people.botName?.(by)) : undefined;
+  return (
+    <span className="msg-pinned" data-testid="pinned-mark" title={who ? `Pinned by ${who}` : 'Pinned to the channel'}>
+      <PinMarkIcon /> Pinned
+    </span>
+  );
+}
+
 /** A menu under the row's toolbar; it opens upward when it would not fit above the end of the list (the newest messages sit at the composer). */
 function RowMenu({ className, label, children }: { className: string; label: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -109,6 +119,8 @@ export type RowActions = {
   remove: (messageId: string) => Promise<void>;
   /** "Mark unread from here": the reader's position goes back to just before the message. Absent where the view has no read position of its own. */
   markUnread?: (messageId: string) => Promise<void>;
+  /** Pin (`on`) or unpin the message in its channel (P31-07). Absent where the view cannot pin (a preview). Offered to whoever can post. */
+  pin?: (messageId: string, on: boolean) => Promise<void>;
 };
 
 type Props = {
@@ -246,6 +258,15 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       setDone('Could not mark it unread');
     }
   };
+  const togglePin = async (): Promise<void> => {
+    const on = !m.pinned;
+    try {
+      await actions.pin?.(m.id, on);
+      setDone(on ? 'Pinned to the channel' : 'Unpinned');
+    } catch (e) {
+      setDone(e instanceof Error && e.message ? e.message : on ? 'Could not pin it' : 'Could not unpin it');
+    }
+  };
   const copyLink = async (): Promise<void> => {
     const ok = await copyText(messageLinkUrl(window.location.origin, { channelId: m.channelId, messageId: m.id, threadRootId: m.threadRootId }));
     setDone(ok ? 'Link copied' : 'Could not copy the link');
@@ -369,6 +390,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               {actions.markUnread ? (
                 <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
               ) : null}
+              {actions.pin && canPost && !deleted ? (
+                <button type="button" role="menuitem" className="menu-item" data-testid="message-pin" onClick={() => { setMenu(null); void togglePin(); }}>
+                  {m.pinned ? <><UnpinMessageIcon /> Unpin from channel</> : <><PinMessageIcon /> Pin to channel</>}
+                </button>
+              ) : null}
               <LaterMenuItems messageId={m.id} say={setDone} close={() => setMenu(null)} onRemind={() => setMenu('remind')} />
               {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit<kbd>E</kbd></button> : null}
               {canDelete ? (
@@ -399,6 +425,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           <AuthorLine name={name} person={authorPerson ? { personId: authorPerson.personId, email: authorPerson.email } : undefined} mark={mark} createdAt={m.createdAt} continued={continued}>
             {m.meta.via ? <MessageVia via={m.meta.via} /> : null}
             {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
+            {m.pinned && !deleted ? <PinnedMark by={m.pinned.by} people={people} /> : null}
             {done ? <span className="row-done" role="status">{done}</span> : null}
           </AuthorLine>
         )}

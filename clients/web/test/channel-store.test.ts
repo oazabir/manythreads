@@ -304,3 +304,72 @@ describe('channel store', () => {
     expect(seen).toHaveLength(1);
   });
 });
+
+describe('pinned messages in the store (P31-07)', () => {
+  let store: ChannelStore;
+  beforeEach(() => {
+    store = new ChannelStore();
+  });
+
+  it('a pin push marks the row and an unpin push clears it; the pin hook hears both', async () => {
+    const m = msg(1);
+    serve(() => ({ status: 200, body: { items: [m], nextCursor: null } }));
+    await store.loadChannel(CH);
+    const heard: string[] = [];
+    const off = store.onPinChange((id) => heard.push(id));
+    const at = '2026-11-20T10:00:00.000Z';
+    store.handlePush({ type: 'message.pin_changed', id: 'p1', payload: { channelId: CH, messageId: m.id, threadRootId: null, pinned: { by: THEM, at } } });
+    expect(store.get(channelKey(CH)).items[0]?.pinned).toEqual({ by: THEM, at });
+    // the same pin again keeps who pinned it first
+    store.handlePush({ type: 'message.pin_changed', id: 'p2', payload: { channelId: CH, messageId: m.id, threadRootId: null, pinned: { by: ME, at: '2026-11-20T11:00:00.000Z' } } });
+    expect(store.get(channelKey(CH)).items[0]?.pinned?.by).toBe(THEM);
+    store.handlePush({ type: 'message.pin_changed', id: 'p3', payload: { channelId: CH, messageId: m.id, threadRootId: null, pinned: null } });
+    expect(store.get(channelKey(CH)).items[0]).not.toHaveProperty('pinned');
+    expect(heard).toEqual([CH, CH, CH]);
+    off();
+    store.handlePush({ type: 'message.pin_changed', id: 'p4', payload: { channelId: CH, messageId: m.id, threadRootId: null, pinned: null } });
+    expect(heard).toHaveLength(3);
+  });
+
+  it('setPin calls the route and marks the row at once; a refusal leaves the row as it was', async () => {
+    const m = msg(1);
+    let refuse = false;
+    const seen = serve((req) => {
+      if (req.url.endsWith('/pin')) return refuse ? { status: 409, body: { error: { code: 'conflict', message: 'A channel keeps at most 100 pinned messages. Unpin one first.' } } } : { status: 200, body: { pinned: req.method === 'PUT', changed: true } };
+      return { status: 200, body: { items: [m], nextCursor: null } };
+    });
+    await store.loadChannel(CH);
+    await store.setPin(CH, m.id, true);
+    expect(seen.some((r) => r.method === 'PUT' && r.url === `/api/channels/${CH}/messages/${m.id}/pin`)).toBe(true);
+    expect(store.get(channelKey(CH)).items[0]?.pinned).toBeDefined();
+    await store.setPin(CH, m.id, false);
+    expect(seen.some((r) => r.method === 'DELETE' && r.url === `/api/channels/${CH}/messages/${m.id}/pin`)).toBe(true);
+    expect(store.get(channelKey(CH)).items[0]?.pinned).toBeUndefined();
+    refuse = true;
+    await expect(store.setPin(CH, m.id, true)).rejects.toThrow(/at most 100/);
+    expect(store.get(channelKey(CH)).items[0]?.pinned).toBeUndefined();
+  });
+
+  it('pinning what somebody else already pinned credits them, as the server says, not the reader', async () => {
+    const m = msg(1);
+    const theirs = { by: THEM, at: '2026-11-20T09:00:00.000Z' };
+    store.setSelf(ME);
+    serve((req) => {
+      if (req.url.endsWith('/pin')) return { status: 200, body: { pinned: true, changed: false } };
+      if (req.url === `/api/channels/${CH}/messages/${m.id}`) return { status: 200, body: { ...m, pinned: theirs } };
+      return { status: 200, body: { items: [m], nextCursor: null } };
+    });
+    await store.loadChannel(CH);
+    await store.setPin(CH, m.id, true);
+    expect(store.get(channelKey(CH)).items[0]?.pinned).toEqual(theirs);
+  });
+
+  it('an edit keeps the pin', async () => {
+    const m = msg(1, { pinned: { by: THEM, at: '2026-11-20T10:00:00.000Z' } as ChannelMessage['pinned'] });
+    serve(() => ({ status: 200, body: { items: [m], nextCursor: null } }));
+    await store.loadChannel(CH);
+    store.handlePush({ type: 'message.edited', id: 'e1', payload: { channelId: CH, messageId: m.id, threadRootId: null, message: { ...msg(1), body: 'edited' } } });
+    await tick();
+    expect(store.get(channelKey(CH)).items[0]).toMatchObject({ body: 'edited', pinned: { by: THEM } });
+  });
+});

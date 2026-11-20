@@ -62,6 +62,10 @@ export type ForwardedMessage = z.infer<typeof ForwardedMessage>;
  * A message as the channel view lists it: the stored message plus its reactions and, for a thread root, how many replies it has.
  * A deleted message keeps its row (so a thread keeps its place): `deletedAt` is set, `body` is a fixed tombstone and `bodyPlain` is empty.
  */
+/** A pin on a message (P31-07): `by` is the actor who pinned it (null once that actor is gone), `at` when. */
+export const MessagePin = z.object({ by: ActorId.nullable(), at: IsoDateTime });
+export type MessagePin = z.infer<typeof MessagePin>;
+
 export const ChannelMessage = Message.extend({
   reactions: z.array(ReactionSummary),
   replyCount: z.number().int().nonnegative(),
@@ -80,5 +84,7 @@ export const ChannelMessage = Message.extend({
   alsoSentFromThread: MessageId.optional(),
   /** Set on a poll message (P14-07): the poll as this reader sees it. The message text is the plain-text form of the poll, for search and bots. */
   poll: PollView.optional(),
+  /** Set while the message is pinned to its channel (P31-07): who pinned it and when. */
+  pinned: MessagePin.optional(),
 });
 export type ChannelMessage = z.infer<typeof ChannelMessage>;

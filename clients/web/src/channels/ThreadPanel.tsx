@@ -189,6 +189,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             react: (id, emoji) => void channelStore.toggleReaction(channelId, null, id, emoji),
             edit: (id, body, confirm) => channelStore.edit(channelId, null, id, body, confirm),
             remove: (id) => channelStore.remove(channelId, null, id),
+            pin: (id, on) => channelStore.setPin(channelId, id, on),
           }
         : null,
     [channelId],
@@ -200,6 +201,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             react: (id, emoji) => void channelStore.toggleReaction(channelId, rootId, id, emoji),
             edit: (id, body, confirm) => channelStore.edit(channelId, rootId, id, body, confirm),
             remove: (id) => channelStore.remove(channelId, rootId, id),
+            pin: (id, on) => channelStore.setPin(channelId, id, on),
             markUnread: async (id) => void (await channelStore.markUnread(channelId, id, rootId)),
           }
         : null,

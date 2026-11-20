@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { MessageDeletedPush, MessagePostedPush, ReactionChangedPush, ChannelCreatedPush, TypingStartedPush } from '@manythreads/shared';
+import { MessageDeletedPush, MessagePinChangedPush, MessagePostedPush, ReactionChangedPush, ChannelCreatedPush, TypingStartedPush } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, ensureChannels, personas, type Persona, type World } from './world.ts';
 
@@ -149,6 +149,13 @@ describe('live pushes reach exactly the people who can see the channel', () => {
     await w.call(rafi, 'POST', `/api/channels/${dev}/messages/${sent.body.id}/reactions`, { emoji: '👍' });
     const reaction = await rSock.waitFor((f) => f.type === 'reaction.changed');
     expect(ReactionChangedPush.parse(reaction?.payload)).toMatchObject({ messageId: sent.body.id, emoji: '👍', added: true, count: 1, actorId: rafi.actorId });
+    // a pin and an unpin (P31-07): the state now, to everyone who reads the channel
+    await w.call(rafi, 'PUT', `/api/channels/${dev}/messages/${sent.body.id}/pin`);
+    const pinned = await rSock.waitFor((f) => f.type === 'message.pin_changed');
+    expect(MessagePinChangedPush.parse(pinned?.payload)).toMatchObject({ channelId: dev, messageId: sent.body.id, threadRootId: null, pinned: { by: rafi.actorId } });
+    await w.call(rafi, 'DELETE', `/api/channels/${dev}/messages/${sent.body.id}/pin`);
+    const unpinned = await rSock.waitFor((f) => f.type === 'message.pin_changed' && f.payload['pinned'] === null);
+    expect(MessagePinChangedPush.parse(unpinned?.payload).pinned).toBeNull();
     await w.call(nadia, 'DELETE', `/api/channels/${dev}/messages/${sent.body.id}`);
     const deleted = await rSock.waitFor((f) => f.type === 'message.deleted');
     expect(MessageDeletedPush.parse(deleted?.payload).messageId).toBe(sent.body.id);

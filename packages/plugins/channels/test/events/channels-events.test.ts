@@ -76,7 +76,9 @@ describe('channel events', () => {
     for (const type of POLL_EVENTS) expect(Object.keys(eventRegistry[type as EventType])).toEqual(['1']);
     // the transcript event (P32-04) is written by the voice job and checked in test/voice-transcribe.test.ts and the shared contract test
     expect(Object.keys(eventRegistry['channel.message.transcribed'])).toEqual(['1']);
-    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed', 'channel.custom_emoji.changed', 'channel.markdown.repaired', 'channel.message.transcribed', ...POLL_EVENTS].sort());
+    // the pin event (P31-07) is checked in test/pins.test.ts and the shared contract test
+    expect(Object.keys(eventRegistry['channel.message.pin_changed'])).toEqual(['1']);
+    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed', 'channel.custom_emoji.changed', 'channel.markdown.repaired', 'channel.message.transcribed', 'channel.message.pin_changed', ...POLL_EVENTS].sort());
   });
 
   it('every stored event parses against its registered schema', async () => {

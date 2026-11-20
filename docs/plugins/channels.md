@@ -88,6 +88,7 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 | `POST .../messages/:messageId/unread` | "Mark unread from here": moves **your own** read position back to just before this message (the message before it in the same feed, or "nothing read" for the first), so it and everything after it count as unread again. For a reply the thread's position moves, otherwise the channel's. Answers the new read state (`ReadStateEntry`). 403 for a channel you cannot read, 404 missing message, 409 deleted message. Nothing is sent to anybody else. |
 | `POST /api/channels/:channelId/polls`, `GET/PUT/DELETE .../polls/:pollId/vote`, `POST .../polls/:pollId/close`, `GET .../polls/:pollId` | Polls, below. |
 | `GET/POST .../bookmarks`, `DELETE .../bookmarks/:bookmarkId` | The channel's bookmarks bar, below. |
+| `GET .../pins`, `PUT/DELETE .../messages/:messageId/pin` | The channel's pinned messages, below. |
 | `GET/PUT /api/teams/:slug/sidebar-prefs` | The caller's own sidebar view of a team: starred channels, sort, "hide idle channels", order of the groups. See [Your own sidebar](#your-own-sidebar-p14-15). |
 | `GET/POST /api/channels/:channelId/scheduled-messages`, `PATCH/DELETE .../scheduled-messages/:scheduledId`, `GET /api/scheduled-messages` | The caller's own scheduled messages: list in a channel, schedule (text only), edit text or time, cancel, and the list of every channel (the "Not sent" list). See [Scheduled send](#scheduled-send-p14-05). |
 | `GET/POST /api/custom-emoji`, `DELETE /api/custom-emoji/:emojiId`, `GET .../:emojiId/image` | Custom emoji, below. |
@@ -160,6 +161,17 @@ There is no preview and no wait for words on the sender's side.
 ## Bookmarks bar (P14-12)
 
 `app.channel_bookmarks` (migration `0010`) holds up to 20 entries per channel under the channel header: a `link` (an http or https address with no user name or password), a `file` (the id of a file uploaded to this channel) or a `page` (a Markdown path under `pages/`; team channels only, a direct message has no team). A bookmark stores a reference and a title (80 characters; left out, a link is named by its host, a file by its name, a page by its file name), never content: opening a file or a page is checked again when it is opened. Whoever can read the channel lists them (`GET`); whoever can post adds (`POST`, 201; 400 for an address or path that is not allowed, 409 for a duplicate, the 21st, or an archived channel) and removes (`DELETE`, answers `removed`). The table's policies say the same (read set for `SELECT`, post set for `INSERT` and `DELETE`). The bar draws links and files in a new tab and a page in the team's Files screen. It is read when the channel opens and after your own change; another person's change shows the next time the channel opens (nothing is pushed). The pinned items of a channel (P9-09) will sit beside it in the same row.
+
+## Pinned messages (P31-07, migration `0020_message_pins.sql`)
+
+A pin keeps a message in its channel's pinned list, the way a notice is pinned to a board. `app.message_pins` holds one row per pinned message: who pinned it (`pinned_by`) and when, never the text. **Whoever can read the channel sees its pins; whoever can post in it pins and unpins** (the same people who keep the bookmarks bar; a guest with a read grant reads them and cannot pin; a bot has no pin capability). The table's policies say the same: the read set for `SELECT`, the post set for `INSERT` and `DELETE`, and an insert must name the message's own channel.
+
+- `GET /api/channels/:channelId/pins`: the pinned messages, the newest pin first, each a whole `ChannelMessage` as the reader sees it. 403 for a channel you cannot read.
+- `PUT .../messages/:messageId/pin` and `DELETE .../messages/:messageId/pin`: answer `{ pinned, changed }` (`changed: false` when it already was so). 403 without the post right, 404 for a message that is not in this channel, 409 for a deleted message, an archived channel or the 101st pin of a channel (`MAX_CHANNEL_PINS`, counted after the insert under a per-channel transaction lock, `pg_advisory_xact_lock`, so two pins at once cannot both slip under it; the bookmarks bar takes the same lock for its 20).
+- Every message the API returns (feed, one message, a thread, the pinned list) carries `pinned: { by, at }` while it is pinned. Deleting a message takes its pin away.
+- Each real change is one `channel.message.pin_changed` event (ids and `pinned` only) and one `message.pin_changed` push to the channel's readers, so the row's mark and an open pinned list follow in every tab.
+- `has:pin` in search finds pinned messages ([search.md](./search.md)).
+- Web: "Pin to channel" and "Unpin from channel" in a message's More menu (for whoever can post), a "Pinned" mark beside the author's name, and the pinned list in the right panel (`pins:<channelId>`, `clients/web/src/channels/PinsPanel.tsx`), opened from the channel details menu ("Pinned messages"; on a phone this is the same menu that holds the header's tools). Each row opens the message in place (a reply opens its thread) and offers Unpin.
 
 ## Composer and keyboard (P14-02, P14-10; web client only)
 
@@ -403,6 +415,7 @@ Schema version 1, in `packages/shared/src/events`, written as the acting person 
 | `channel.markdown.repaired` | `messageId, botActorId, runId?, via` (`post` \| `update`), `paths`, `fences` (P14-19: counts only; written by `messages.post` / `messages.update` as the bot, in the message's transaction, only when the Markdown repair changed something) |
 | `channel.message.deleted` | `messageId, deletedBy, threadRootId` |
 | `channel.reaction.changed` | `messageId, actorId, emoji, added` (only a real change) |
+| `channel.message.pin_changed` | `messageId, threadRootId, actorId, pinned` (P31-07; only a real change) |
 | `channel.channel.created` | `name, kind, private` |
 | `channel.channel.updated` | `changes` (only the changed fields) |
 | `channel.channel.archived` | `archived` (true to archive, false to restore) |
@@ -435,6 +448,7 @@ Envelope `{ type, id, payload }`; schemas in `packages/shared/src/api/channels/r
 | `message.posted`, `message.edited` | `{ channelId, messageId, threadRootId, message? }`: the full `ChannelMessage` rides along when it fits in about 5.5 KB (a push may be at most 7 KB), otherwise fetch `messageId` |
 | `message.deleted` | `{ channelId, messageId, threadRootId }` |
 | `reaction.changed` | `{ channelId, messageId, actorId, emoji, added, count }` |
+| `message.pin_changed` | `{ channelId, messageId, threadRootId, pinned }`: the pin now (`{ by, at }`), or null once it was taken off (P31-07) |
 | `channel.created` | `{ channel }` (also sent by direct-messages when a DM is made) |
 | `typing.started` | `{ channelId, personId, threadRootId, expiresAt }`, to the audience except the typist |
 | `scheduled.changed` | `{ channelId, change }` (`change` as in the event above), to the author only: another tab, or the job that sent or refused the message, tells this one to read the list again |

@@ -246,14 +246,29 @@ const divider: SurfaceView = ({ props }) => {
 };
 
 function EntityCardView({ entityType, id, label, summary }: { entityType: string; id: string; label: string; summary?: string | undefined }): ReactNode {
-  const found = useSurfaceHost().entity?.(entityType, id) ?? null;
+  const host = useSurfaceHost();
+  const found = host.entity?.(entityType, id) ?? null;
   const shown = found?.label ?? label;
   const about = found ? found.summary : summary;
-  return (
-    <div className="sf-entity" data-entity-type={entityType} data-resolved={found ? 'true' : 'false'}>
+  const body = (
+    <>
       <span className="sf-entity-type">{entityType}</span>
       <span className="sf-entity-label">{shown}</span>
       {about ? <span className="sf-entity-summary">{about}</span> : null}
+    </>
+  );
+  // A button only for a thing the page found for this person and can open; the bot's label alone opens nothing.
+  const open = host.openEntity;
+  if (found && open) {
+    return (
+      <button type="button" className="sf-entity sf-entity-link" data-entity-type={entityType} data-resolved="true" onClick={() => open(entityType, id)}>
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="sf-entity" data-entity-type={entityType} data-resolved={found ? 'true' : 'false'}>
+      {body}
     </div>
   );
 }
@@ -264,7 +279,16 @@ const entityCard: SurfaceView = ({ props }) => {
 };
 
 function PersonChipView({ id, label }: { id: string; label: string }): ReactNode {
-  const name = useSurfaceHost().personName?.(id) ?? null;
+  const host = useSurfaceHost();
+  const name = host.personName?.(id) ?? null;
+  const open = host.openPerson;
+  if (name && open) {
+    return (
+      <button type="button" className="sf-chip sf-chip-person sf-chip-link" data-resolved="true" onClick={() => open(id)}>
+        {name}
+      </button>
+    );
+  }
   return (
     <span className="sf-chip sf-chip-person" data-resolved={name ? 'true' : 'false'}>
       {name ?? label}
@@ -310,8 +334,10 @@ const APPROVAL_STATUS: Record<'waiting' | 'approved' | 'declined' | 'expired', {
 };
 
 function ApprovalCardView({ id, title, summary }: { id: string; title: string; summary?: string | undefined }): ReactNode {
-  const status = useSurfaceHost().approvalStatus?.(id) ?? null;
+  const host = useSurfaceHost();
+  const status = host.approvalStatus?.(id) ?? null;
   const s = status ? APPROVAL_STATUS[status] : null;
+  const open = host.openApproval;
   return (
     <div className="sf-approval" data-status={status ?? 'unknown'}>
       <div className="sf-approval-head">
@@ -320,6 +346,12 @@ function ApprovalCardView({ id, title, summary }: { id: string; title: string; s
       </div>
       {summary ? <div className="sf-approval-summary">{summary}</div> : null}
       <div className="sf-approval-note">{status === 'waiting' || !status ? 'A person decides this in the approvals list.' : 'This was decided in the approvals list.'}</div>
+      {/* the way to the list, never a decision: only for an approval the page found for this person */}
+      {status && open ? (
+        <button type="button" className="sf-approval-open" onClick={() => open(id)}>
+          Open in Approvals
+        </button>
+      ) : null}
     </div>
   );
 }

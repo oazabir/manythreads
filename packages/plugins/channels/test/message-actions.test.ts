@@ -372,6 +372,34 @@ describe('the bookmarks bar', () => {
     expect(await items(omar, ch)).toHaveLength(20);
   });
 
+  it('two adds at once at 19 leave 20: the second one counts after the first (the channel lock)', async () => {
+    const ch = await privateChannel('bookmarks-race');
+    // filled directly: the add route allows 60 a minute and the file's other tests use most of them
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.channel_bookmarks (workspace_id, channel_id, kind, title, target, created_by)
+         SELECT $1, $2, 'link', 'r' || g, 'https://example.org/r' || g, $3 FROM generate_series(1, 19) g`,
+        [omar.workspaceId, ch, omar.actorId],
+      ),
+    );
+    const [a, b] = await Promise.all([add(omar, ch, { kind: 'link', target: 'https://example.org/ra' }), add(omar, ch, { kind: 'link', target: 'https://example.org/rb' })]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await items(omar, ch)).toHaveLength(20);
+  });
+
+  it('an add waits for the channel lock, so two adds never count side by side', async () => {
+    const ch = await privateChannel('bookmarks-lock');
+    let answered = false;
+    let request: Promise<ApiResult> | undefined;
+    await w.system(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`channels:bookmarks:${ch}`]);
+      request = add(omar, ch, { kind: 'link', target: 'https://example.org/lock' }).then((r) => ((answered = true), r));
+      await new Promise((r) => setTimeout(r, 600));
+      expect(answered, 'the add went through while another transaction held the channel lock').toBe(false);
+    });
+    expect((await request!).status).toBe(201);
+  });
+
   it('a file of the channel can be bookmarked, named by the file, and the file of another channel cannot', async () => {
     const ch = await privateChannel('bookmarks-file');
     const other = await privateChannel('bookmarks-file-other');

@@ -218,3 +218,8 @@ export const StepStoppedIcon = proIcon(RecordStopIcon, 14);
 export const OpenCardIcon = proIcon(OpenIcon, 12);
 export const ItemWaitingIcon = proIcon(CircleIcon, 16);
 export const ItemBlockedIcon = proIcon(FlagIcon, 16);
+
+/* Pinned messages (PLAN P31-07): the mark on a pinned row, the menu items and the channel's pinned list. */
+export const PinMessageIcon = proIcon(PinIcon, 14);
+export const UnpinMessageIcon = proIcon(PinOffIcon, 14);
+export const PinMarkIcon = proIcon(PinIcon, 12);

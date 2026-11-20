@@ -8,12 +8,15 @@ import { Surface } from './Surface';
 import { SurfaceDataContext, type SurfaceData } from './BoundPart';
 import { failureOf } from './bound';
 import { SurfaceActionsContext, type SurfaceActions } from './views';
+import { SurfaceHostContext } from './host';
+import { usePageSurfaceHost } from './pageHost';
 
 /*
  * A bot's screen inside the message that announces it (PLAN P9-04). The message carries only the surface's id (`meta.surfaceRef`); the screen itself is read
  * from the server as the person who reads the channel, and read again when the server says it changed (a new version, or an answer). A press goes back as
  * data about one part (`{ nodeId, name, payload }`) together with the version the person was looking at; the server decides whether it is allowed.
- * Without the right to post in the channel the screen is drawn but cannot be pressed.
+ * Without the right to post in the channel the screen is drawn but cannot be pressed. The person, channel, card and approval parts are looked up as the reader
+ * and open from here (`pageHost.tsx`, P9-05).
  */
 
 /** What the person is told when an answer was refused. */
@@ -41,6 +44,8 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
   // How many answers went through since the page opened: a bound part with `refreshOn: ["answered"]` reads again each time it goes up.
   const [answeredCount, setAnsweredCount] = useState(0);
   const alive = useRef(true);
+  // the person, channel, card and approval parts look their ids up as this person, and open them (P9-05)
+  const host = usePageSurfaceHost();
 
   const load = useCallback(async () => {
     // One more try for a busy or failing server; a refusal that is final (no right to read, no such screen) is not retried.
@@ -135,11 +140,13 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
   return (
     <div className="sf-message" data-testid="surface-message" data-version={surface.version}>
       <div className="sf-message-title">{surface.title}</div>
-      <SurfaceActionsContext.Provider value={actions}>
-        <SurfaceDataContext.Provider value={dataValue}>
-          <Surface source={surface.source} ended />
-        </SurfaceDataContext.Provider>
-      </SurfaceActionsContext.Provider>
+      <SurfaceHostContext.Provider value={host}>
+        <SurfaceActionsContext.Provider value={actions}>
+          <SurfaceDataContext.Provider value={dataValue}>
+            <Surface source={surface.source} ended />
+          </SurfaceDataContext.Provider>
+        </SurfaceActionsContext.Provider>
+      </SurfaceHostContext.Provider>
       {error ? (
         <div className="sf-message-error" role="alert">
           {error}

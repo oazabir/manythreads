@@ -137,6 +137,30 @@ describe('has:, is:, before:, after:', () => {
     expect(ids(await find(rafi, w1))).toContain(plain);
   });
 
+  it('has:pin (P31-07): only pinned messages the asker can read, with or without words; no files; an unpinned one drops out', async () => {
+    const w1 = word();
+    const plain = await post(nadia, dev, `${w1} not pinned`);
+    const pinned = await post(nadia, dev, `${w1} pinned in dev`);
+    ok(await w.call(rafi, 'PUT', `/api/channels/${dev}/messages/${pinned}/pin`));
+    const secretChannel = await privateChannel([nadia]);
+    const secret = await post(nadia, secretChannel, `${w1} pinned in secret`);
+    ok(await w.call(nadia, 'PUT', `/api/channels/${secretChannel}/messages/${secret}/pin`));
+    const up = ok<{ id: string }>(await w.upload(nadia, dev, 'hello', { name: `${w1}.txt`, type: 'text/plain' }), 201);
+    expect(ids(await find(rafi, w1))).toContain(plain);
+    const res = await find(rafi, `has:pin ${w1}`);
+    expect(res.filters.has).toEqual(['pin']);
+    expect(ids(res)).toEqual([pinned]);
+    expect(res.files.map((f) => f.id)).not.toContain(up.id);
+    expect(res.threads).toEqual([]);
+    expect(ids(await find(nadia, `has:pin ${w1}`)).sort()).toEqual([pinned, secret].sort());
+    // only filter words: newest first, still only what the asker reads
+    expect(ids(await find(rafi, `has:pin in:dev`))).toContain(pinned);
+    expect(ids(await find(rafi, `has:pin in:dev`))).not.toContain(secret);
+    expect(ids(await find(sameera, `has:pin ${w1}`))).toEqual([]);
+    ok(await w.call(rafi, 'DELETE', `/api/channels/${dev}/messages/${pinned}/pin`));
+    expect(ids(await find(rafi, `has:pin ${w1}`))).toEqual([]);
+  });
+
   it('is:thread: replies and roots with replies', async () => {
     const w1 = word();
     const root = await post(nadia, dev, `${w1} root`);
@@ -172,10 +196,11 @@ describe('has:, is:, before:, after:', () => {
     }
   });
 
-  it('has:pin stays plain text (pins do not exist yet)', async () => {
+  it('has:pin is a filter word now (P31-07), and a near miss stays plain text', async () => {
     const res = await find(rafi, 'has:pin release');
-    expect(res.filters.has).toEqual([]);
-    expect(res.query).toBe('has:pin release');
+    expect(res.filters.has).toEqual(['pin']);
+    expect(res.query).toBe('release');
+    expect((await find(rafi, 'has:pins release')).query).toBe('has:pins release');
   });
 });
 

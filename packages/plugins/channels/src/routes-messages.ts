@@ -53,7 +53,9 @@ import {
   can,
   findChannelMessage,
   pushMessageDeleted,
+  pinsFor,
   reactionsFor,
+  withPin,
   reactToMessage,
   editChannelMessage,
   postChannelMessage,
@@ -162,12 +164,13 @@ export function registerMessageRoutes(deps: Deps): void {
       const authors = await authorsFor(tx, page.map((r) => r.id));
       const forwards = await forwardsFor(tx, page);
       const polls = await pollsFor(tx, page);
+      const pins = await pinsFor(tx, page.map((r) => r.id));
       // the channel feed (not a thread) shows who replied and whether the reader has unread replies, for the roots that have replies (P21-03)
       const replies = q.threadRootId ? new Map<string, { replyAuthors: MessageAuthor[]; unreadReplies: boolean }>() : await replyPreviews(tx, page);
       const oldest = page[page.length - 1];
       return json(
         ListMessagesResponse.parse({
-          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id), forwards.get(r.id), polls.get(r.id), replies.get(r.id))),
+          items: page.map((r) => withPin(toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id), forwards.get(r.id), polls.get(r.id), replies.get(r.id)), pins.get(r.id))),
           nextCursor: more && oldest ? oldest.id : null,
         }),
       );
@@ -333,6 +336,8 @@ export function registerMessageRoutes(deps: Deps): void {
         [messageId, channelId],
       );
       if (res.rows.length === 0) throw forbidden('You cannot delete this message');
+      // a deleted message leaves the pinned list (P31-07); the list and search skip deleted messages anyway, this only tidies the row
+      await tx.query('DELETE FROM app.message_pins WHERE message_id = $1', [messageId]);
       await emit(tx, {
         type: 'channel.message.deleted',
         channelId,

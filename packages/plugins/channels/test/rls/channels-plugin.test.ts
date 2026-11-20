@@ -21,7 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ALL = [omar, nadia, rafi, sameera, tariq, priya, lena] as const;
-const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs', 'scheduled_messages', 'custom_emoji', 'message_drafts'];
+const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs', 'scheduled_messages', 'custom_emoji', 'message_drafts', 'message_pins'];
 
 let db: TestDatabase;
 let appPool: pg.Pool;
@@ -811,5 +811,36 @@ describe('message_versions: earlier texts of an edited message (migration 0009)'
     expect(await versionsOf(nadia, id)).toEqual(['two']);
     await as(nadia, (tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [id]));
     expect(await versionsOf(nadia, id)).toEqual([]);
+  });
+});
+
+describe('pinned messages (migration 0020)', () => {
+  const pinAs = (p: Persona, message: string, channelId: string, by: string = p.actorId): Promise<unknown> =>
+    as(p, (tx) => tx.query('INSERT INTO app.message_pins (message_id, workspace_id, channel_id, pinned_by) VALUES ($1, $2, $3, $4)', [message, omar.workspaceId, channelId, by]));
+
+  it('a person who may post pins a message of that channel, as themself only', async () => {
+    expect(await code(pinAs(priya, msg['general']!, ch['eng-general']!, rafi.actorId))).toBe('42501');
+    // a message they cannot read, claimed for a channel they can post in
+    expect(await code(pinAs(priya, msg['leads']!, ch['eng-general']!))).toBe('42501');
+    // a message of another channel they can read, claimed for this one
+    expect(await code(pinAs(priya, msg['releases']!, ch['eng-general']!))).toBe('42501');
+    expect(await code(pinAs(priya, msg['general']!, ch['eng-general']!))).toBeUndefined();
+  });
+
+  it('readers see the pins, others do not; a read grant gives no pin; only the post set unpins', async () => {
+    expect(await code(pinAs(nadia, msg['releases']!, ch['eng-releases']!))).toBeUndefined();
+    expect((await q(lena, 'SELECT message_id FROM app.message_pins')).map((r) => r['message_id'])).toEqual([msg['releases']]);
+    expect(await code(pinAs(lena, msg['releases']!, ch['eng-releases']!))).toBe('42501');
+    expect(await q(sameera, 'SELECT message_id FROM app.message_pins')).toEqual([]);
+    expect((await as(lena, (tx) => tx.query('DELETE FROM app.message_pins WHERE message_id = $1', [msg['releases']]))).rowCount).toBe(0);
+    expect((await as(sameera, (tx) => tx.query('DELETE FROM app.message_pins WHERE message_id = $1', [msg['releases']]))).rowCount).toBe(0);
+    expect((await as(rafi, (tx) => tx.query('DELETE FROM app.message_pins WHERE message_id = $1', [msg['releases']]))).rowCount).toBe(1);
+  });
+
+  it('a private channel and an archived one: a non-member cannot pin, nobody pins in the archive', async () => {
+    expect(await code(pinAs(nadia, msg['leads']!, ch['eng-leads']!))).toBe('42501');
+    expect(await code(pinAs(rafi, msg['leads']!, ch['eng-leads']!))).toBeUndefined();
+    expect(await q(nadia, 'SELECT message_id FROM app.message_pins WHERE channel_id = $1', [ch['eng-leads']])).toEqual([]);
+    expect(await code(pinAs(nadia, msg['old']!, ch['eng-old']!))).toBe('42501');
   });
 });

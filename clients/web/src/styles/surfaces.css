@@ -513,6 +513,36 @@ ol.sf-list {
   cursor: pointer;
 }
 
+.sf-chip-link:hover {
+  border-color: var(--ink);
+}
+
+/* a card the page found for the viewer and can open (P9-05): the same card, pressable */
+.sf-entity-link {
+  width: 100%;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.sf-entity-link:hover {
+  border-color: var(--ink);
+}
+
+/* the way to the approvals list, never a decision */
+.sf-approval-open {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .sf-approval {
   min-width: 0;
   padding: 8px 10px;
@@ -612,6 +642,8 @@ ol.sf-list {
 /* keyboard focus on everything that can be pressed or scrolled */
 .sf-button:focus-visible,
 .sf-chip-link:focus-visible,
+.sf-entity-link:focus-visible,
+.sf-approval-open:focus-visible,
 .sf-table-wrap:focus-visible,
 .sf-code:focus-visible,
 .sf-diff-body:focus-visible {

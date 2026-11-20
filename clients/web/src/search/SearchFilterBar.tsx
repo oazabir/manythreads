@@ -9,13 +9,16 @@ import { SkeletonRows } from '../components/Skeleton';
 import { searchEntry } from './searchEntry';
 import { BookmarkIcon, CloseIcon, OptionsIcon } from '../shell/icons';
 
+/** What each `has:` chip says. */
+const HAS_LABEL: Record<SearchFilters['has'][number], string> = { file: 'Has a file', link: 'Has a link', pin: 'Pinned' };
+
 /** The words of a filter, in plain language (the chip and the screen-reader label). */
 export function filterChips(f: SearchFilters): { key: string; label: string; remove: SearchFilters }[] {
   const without = (patch: Partial<SearchFilters>): SearchFilters => ({ ...f, ...patch });
   return [
     ...f.from.map((v) => ({ key: `from:${v}`, label: `From ${v}`, remove: without({ from: f.from.filter((x) => x !== v) }) })),
     ...f.in.map((v) => ({ key: `in:${v}`, label: `In #${v}`, remove: without({ in: f.in.filter((x) => x !== v) }) })),
-    ...f.has.map((v) => ({ key: `has:${v}`, label: v === 'file' ? 'Has a file' : 'Has a link', remove: without({ has: f.has.filter((x) => x !== v) }) })),
+    ...f.has.map((v) => ({ key: `has:${v}`, label: HAS_LABEL[v], remove: without({ has: f.has.filter((x) => x !== v) }) })),
     ...f.is.map((v) => ({ key: `is:${v}`, label: 'In a thread', remove: without({ is: f.is.filter((x) => x !== v) }) })),
     ...(f.after ? [{ key: 'after', label: `After ${f.after}`, remove: without({ after: null }) }] : []),
     ...(f.before ? [{ key: 'before', label: `Before ${f.before}`, remove: without({ before: null }) }] : []),
@@ -72,6 +75,7 @@ function FilterForm({ id, filters, names, onApply }: { id: string; filters: Sear
   const [inChannel, setInChannel] = useState(filters.in[0] ?? '');
   const [file, setFile] = useState(filters.has.includes('file'));
   const [link, setLink] = useState(filters.has.includes('link'));
+  const [pin, setPin] = useState(filters.has.includes('pin'));
   const [thread, setThread] = useState(filters.is.includes('thread'));
   const [after, setAfter] = useState(filters.after ?? '');
   const [before, setBefore] = useState(filters.before ?? '');
@@ -84,7 +88,7 @@ function FilterForm({ id, filters, names, onApply }: { id: string; filters: Sear
       ...filters,
       from: name ? [name, ...filters.from.slice(1)] : [],
       in: channel ? [channel, ...filters.in.slice(1)] : [],
-      has: [...(file ? (['file'] as const) : []), ...(link ? (['link'] as const) : [])],
+      has: [...(file ? (['file'] as const) : []), ...(link ? (['link'] as const) : []), ...(pin ? (['pin'] as const) : [])],
       is: thread ? ['thread'] : [],
       after: after || null,
       before: before || null,
@@ -117,6 +121,7 @@ function FilterForm({ id, filters, names, onApply }: { id: string; filters: Sear
         <legend>Only messages that</legend>
         <label><input type="checkbox" checked={file} onChange={(e) => setFile(e.target.checked)} /> have a file</label>
         <label><input type="checkbox" checked={link} onChange={(e) => setLink(e.target.checked)} /> have a link</label>
+        <label><input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} /> are pinned</label>
         <label><input type="checkbox" checked={thread} onChange={(e) => setThread(e.target.checked)} /> are in a thread</label>
       </fieldset>
       <div className="sf-submit">

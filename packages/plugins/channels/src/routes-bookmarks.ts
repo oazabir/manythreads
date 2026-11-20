@@ -12,7 +12,7 @@ import {
   removeBookmarkRoute,
 } from '@manythreads/shared';
 import { conflict, invalid, json, route } from './http.ts';
-import { requireChannel, requirePost, type Deps } from './service.ts';
+import { lockChannel, requireChannel, requirePost, type Deps } from './service.ts';
 
 type BookmarkRow = { id: string; channel_id: string; kind: string; title: string; target: string; created_at: Date };
 const toBookmark = (r: BookmarkRow): ChannelBookmark =>
@@ -87,12 +87,14 @@ export function registerBookmarkRoutes(deps: Deps): void {
         if (!PAGE_PATH.test(body.target) || body.target.length > 512) throw invalid('target: a page is a Markdown file under pages/');
         title ??= clip(body.target.slice(body.target.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/, ''));
       }
+      // one add per channel at a time, so the count below sees every other add (READ COMMITTED would let two at 19 both pass)
+      await lockChannel(tx, 'bookmarks', channelId);
       const res = await tx.query<BookmarkRow>(
         `INSERT INTO app.channel_bookmarks (workspace_id, channel_id, kind, title, target, created_by)
          VALUES (app.workspace_id(), $1, $2, $3, $4, app.actor()) RETURNING ${COLUMNS}`,
         [channelId, body.kind, title, target],
       );
-      // the cap is checked after the insert, so two people adding at once cannot both slip under it (a refusal rolls this insert back)
+      // counted under the channel's lock, after the insert (a refusal rolls this insert back)
       const n = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.channel_bookmarks WHERE channel_id = $1', [channelId])).rows[0]?.n ?? 0;
       if (n > MAX_CHANNEL_BOOKMARKS) throw conflict(`A channel keeps at most ${MAX_CHANNEL_BOOKMARKS} bookmarks. Remove one first.`);
       return json(AddBookmarkResponse.parse(toBookmark(res.rows[0]!)), 201);

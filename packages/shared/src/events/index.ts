@@ -41,6 +41,7 @@ export * from './channel.message.edited.ts';
 export * from './channel.message.transcribed.ts';
 export * from './channel.message.deleted.ts';
 export * from './channel.reaction.changed.ts';
+export * from './channel.message.pin_changed.ts';
 export * from './channel.channel.created.ts';
 export * from './channel.channel.updated.ts';
 export * from './channel.channel.archived.ts';

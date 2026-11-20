@@ -7,6 +7,8 @@ import {
   type ForwardedMessage,
   type MessageAuthor,
   type MessageDeletedPush,
+  type MessagePin,
+  type MessagePinChangedPush,
   type MessagePostedPush,
   type ReactionChangedPush,
   type ReactionSummary,
@@ -93,6 +95,30 @@ export async function reactionsFor(tx: PluginTx, messageIds: readonly string[]):
   }
   return out;
 }
+
+/**
+ * Serializes one kind of capped change in one channel until the transaction ends (`pg_advisory_xact_lock`, no table lock, no privilege needed). A cap
+ * checked by counting after the insert only holds when the counts cannot run side by side: under READ COMMITTED each transaction sees its own insert and
+ * not the other's. Used by the pins (100) and the bookmarks bar (20).
+ */
+export async function lockChannel(tx: PluginTx, what: 'pins' | 'bookmarks', channelId: string): Promise<void> {
+  await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`channels:${what}:${channelId}`]);
+}
+
+/** The pins of a set of messages the caller can read (P31-07), by message id; a message that is not pinned is not in the map. */
+export async function pinsFor(tx: PluginTx, messageIds: readonly string[]): Promise<Map<string, MessagePin>> {
+  const out = new Map<string, MessagePin>();
+  if (messageIds.length === 0) return out;
+  const res = await tx.query<{ message_id: string; pinned_by: string | null; pinned_at: Date }>(
+    'SELECT message_id, pinned_by, pinned_at FROM app.message_pins WHERE message_id = ANY ($1::uuid[])',
+    [messageIds],
+  );
+  for (const r of res.rows) out.set(r.message_id, { by: r.pinned_by, at: r.pinned_at.toISOString() } as MessagePin);
+  return out;
+}
+
+/** The message with its pin, when it has one (`pinned` is left out otherwise, as the schema allows). */
+export const withPin = (m: ChannelMessage, pin: MessagePin | undefined): ChannelMessage => (pin && m.deletedAt === null ? { ...m, pinned: pin } : m);
 
 /**
  * The names of the authors of these messages, by author actor id, for the messages the caller can read (`app.message_authors` joins the
@@ -227,7 +253,8 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   const authors = await authorsFor(tx, [row.id]);
   const forwards = await forwardsFor(tx, [row]);
   const polls = await pollsFor(tx, [row]);
-  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id), forwards.get(row.id), polls.get(row.id));
+  const pins = await pinsFor(tx, [row.id]);
+  return withPin(toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id), forwards.get(row.id), polls.get(row.id)), pins.get(row.id));
 }
 
 /** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. One statement for any audience size. */
@@ -259,6 +286,9 @@ export async function pushMessage(
 
 export const pushMessageDeleted = (deps: Deps, tx: PluginTx, people: readonly string[], payload: MessageDeletedPush): Promise<void> =>
   pushToPeople(deps, tx, people, 'message.deleted', payload);
+
+export const pushPinChanged = (deps: Deps, tx: PluginTx, people: readonly string[], payload: MessagePinChangedPush): Promise<void> =>
+  pushToPeople(deps, tx, people, 'message.pin_changed', payload);
 
 export const pushReaction = (deps: Deps, tx: PluginTx, people: readonly string[], payload: ReactionChangedPush): Promise<void> =>
   pushToPeople(deps, tx, people, 'reaction.changed', payload);

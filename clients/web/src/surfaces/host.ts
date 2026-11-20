@@ -9,14 +9,20 @@ import type { AnswerChip } from '@manythreads/shared';
 export interface SurfaceHost {
   /** The name of a person as the viewer may see it, or null when they may not (then the label is used). */
   personName?: (id: string) => string | null;
+  /** Open a person the viewer can see (their member card). Without it a person is a chip, not a button. */
+  openPerson?: (id: string) => void;
   /** The name of a channel as the viewer may see it, or null when they may not. */
   channelName?: (id: string) => string | null;
   /** Open a channel the viewer can see. Without it a channel is drawn as a chip, not a link. */
   openChannel?: (id: string) => void;
   /** What a thing is called and, if it has one, its one-line summary, as the viewer may see it; null when they may not. */
   entity?: (entityType: string, id: string) => { label: string; summary?: string } | null;
+  /** Open a thing the viewer can see (a card opens on its board). Only called for a thing `entity` found. */
+  openEntity?: (entityType: string, id: string) => void;
   /** Where an approval stands, as the viewer may see it. */
   approvalStatus?: (id: string) => 'waiting' | 'approved' | 'declined' | 'expired' | null;
+  /** Open the approval in the approvals list, where a person decides it. Only called for an approval `approvalStatus` found. Never decides. */
+  openApproval?: (id: string) => void;
   /** What an Answer part needs from the page (P9-07): where its relative links go, the slug of another team, and what choosing a chip does (without it chips are inert). */
   answer?: {
     teamSlug: string | null;

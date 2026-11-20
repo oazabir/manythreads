@@ -210,10 +210,15 @@ import {
   listScheduledRoute,
   scheduleMessageRoute,
   ListBookmarksResponse,
+  ListPinsResponse,
+  PinMessageResponse,
   MarkMessageUnreadResponse,
   RemoveBookmarkResponse,
   addBookmarkRoute,
   listBookmarksRoute,
+  listPinsRoute,
+  pinMessageRoute,
+  unpinMessageRoute,
   markMessageUnreadRoute,
   removeBookmarkRoute,
   EditMessageRequest,
@@ -770,6 +775,10 @@ export const addBookmark = (channelId: string, body: AddBookmarkRequest) =>
   call(addBookmarkRoute, { request: AddBookmarkRequest, response: AddBookmarkResponse }, body, { channelId });
 export const removeBookmark = (channelId: string, bookmarkId: string) =>
   call(removeBookmarkRoute, { response: RemoveBookmarkResponse }, undefined, { channelId, bookmarkId });
+/** Pinned messages of a channel (P31-07): the list, newest pin first, and pinning or unpinning one message. */
+export const fetchPins = (channelId: string) => call(listPinsRoute, { response: ListPinsResponse }, undefined, { channelId });
+export const pinMessage = (channelId: string, messageId: string) => call(pinMessageRoute, { response: PinMessageResponse }, undefined, { channelId, messageId });
+export const unpinMessage = (channelId: string, messageId: string) => call(unpinMessageRoute, { response: PinMessageResponse }, undefined, { channelId, messageId });
 /** Scheduled send (P14-05): the caller's own scheduled and refused messages in a channel, and the writes on them. */
 export const fetchScheduled = (channelId: string) => call(listScheduledRoute, { response: ListScheduledResponse }, undefined, { channelId });
 /** Every scheduled and refused message of the caller, in any channel: the "Not sent" list, which needs no open channel. */

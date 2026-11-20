@@ -46,6 +46,8 @@ export type SearchNarrow = {
   in?: string[] | null;
   hasFile?: boolean;
   hasLink?: boolean;
+  /** `has:pin` (P31-07): only messages pinned to their channel. */
+  hasPin?: boolean;
   inThread?: boolean;
   before?: string | null;
   after?: string | null;
@@ -53,7 +55,7 @@ export type SearchNarrow = {
 
 type MessageRow = { id: string; channel_id: string; author_id: string; thread_root_id: string | null; snippet: string; score: number; created_at: Date };
 export async function searchMessages(tx: PluginTx, q: string, teamId: string | null, limit: number, n: SearchNarrow = {}): Promise<SearchMessageHit[]> {
-  const res = await tx.query<MessageRow>('SELECT * FROM app.search_messages($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [
+  const res = await tx.query<MessageRow>('SELECT * FROM app.search_messages($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)', [
     q,
     teamId,
     limit,
@@ -64,6 +66,7 @@ export async function searchMessages(tx: PluginTx, q: string, teamId: string | n
     n.inThread ?? false,
     n.before ?? null,
     n.after ?? null,
+    n.hasPin ?? false,
   ]);
   const channels = await channelsOf(tx, res.rows.map((r) => r.channel_id));
   return res.rows.flatMap((r) => {
@@ -163,6 +166,7 @@ export async function resolveFilters(tx: PluginTx, f: SearchFilters): Promise<{ 
   const narrow: SearchNarrow = {
     hasFile: f.has.includes('file'),
     hasLink: f.has.includes('link'),
+    hasPin: f.has.includes('pin'),
     inThread: f.is.includes('thread'),
     before: f.before ? searchDayStart(f.before) : null,
     after: f.after ? searchDayEnd(f.after) : null,
@@ -189,7 +193,7 @@ const cut = <T>(rows: T[], limit: number): { rows: T[]; more: boolean } => ({ ro
 
 /**
  * The `GET /api/search` answer: each requested kind best first (word similarity, then newest; newest first when the box holds only
- * filter words), the others empty. A kind that a filter cannot apply to is left out: `has:link` and `is:thread` are about messages,
+ * filter words), the others empty. A kind that a filter cannot apply to is left out: `has:link`, `has:pin` and `is:thread` are about messages,
  * so files, pages and meetings are not listed (`is:thread` still lists threads); `has:file` is about messages and files; `in:` is about a
  * channel, which a page does not have. Meetings (what was said, and the notes) need words to look for. Every list is what the caller may read, and `more` only says that list went on past `limit`.
  */
@@ -202,7 +206,7 @@ export async function search(tx: PluginTx, query: SearchQuery): Promise<SearchRe
   const { narrow, unmatched } = await resolveFilters(tx, filters);
   const about = {
     threads: !filters.has.length,
-    files: !filters.has.includes('link') && !filters.is.length,
+    files: !filters.has.includes('link') && !filters.has.includes('pin') && !filters.is.length,
     pages: !filters.has.length && !filters.is.length && !filters.in.length,
     // what was said needs words to look for; `has:` and `is:` are about messages
     meetings: text !== '' && !filters.has.length && !filters.is.length,

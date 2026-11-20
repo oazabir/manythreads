@@ -23,7 +23,8 @@
         "type": "string",
         "enum": [
           "file",
-          "link"
+          "link",
+          "pin"
         ]
       }
     },

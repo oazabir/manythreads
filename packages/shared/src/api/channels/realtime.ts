@@ -3,7 +3,7 @@ import { IsoDateTime } from '../../common/time.ts';
 import { ActorId, ChannelId, MessageId, PollId } from '../../ids.ts';
 import { Channel } from '../../entities/channel.ts';
 import { Emoji } from '../../entities/message.ts';
-import { ChannelMessage } from './common.ts';
+import { ChannelMessage, MessagePin } from './common.ts';
 
 // WebSocket pushes of the channels plugin: `{ type, id, payload }` envelopes (transport/envelope.ts), sent only to people who can
 // see the channel. A push stays small: `message` rides along when it fits, otherwise the client fetches `messageId`.
@@ -42,6 +42,19 @@ export const ReactionChangedPush = z.object({
   count: z.number().int().nonnegative(),
 });
 export type ReactionChangedPush = z.infer<typeof ReactionChangedPush>;
+
+/**
+ * A message was pinned or unpinned (P31-07): the row's mark and the open pinned list change in every tab. `pinned` is the pin now, null when it was taken off.
+ * Sent to everyone who can read the channel.
+ */
+export const WS_MESSAGE_PIN_CHANGED = 'message.pin_changed';
+export const MessagePinChangedPush = z.object({
+  channelId: ChannelId,
+  messageId: MessageId,
+  threadRootId: MessageId.nullable(),
+  pinned: MessagePin.nullable(),
+});
+export type MessagePinChangedPush = z.infer<typeof MessagePinChangedPush>;
 
 export const ChannelCreatedPush = z.object({ channel: Channel });
 export type ChannelCreatedPush = z.infer<typeof ChannelCreatedPush>;

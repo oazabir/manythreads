@@ -5,16 +5,15 @@ import { z } from 'zod';
  *
  *   from:nadia   from:"Nadia Hamdan"   from:me      who wrote the message (or uploaded the file, or last saved the page)
  *   in:dev       in:#dev                            the channel it sits in
- *   has:file     has:link                           a message with an attachment, or with a web address
+ *   has:file     has:link     has:pin               a message with an attachment, with a web address, or pinned to its channel (P31-07)
  *   is:thread                                       a message that belongs to a thread
  *   before:2026-10-01   after:2026-10-01            a day, written year-month-day, read as UTC
  *
- * `has:pin` is not here: pins do not exist yet (PLAN P9-09), so the word stays plain text until they do.
  * The same function reads the text on the server (which decides what to search) and in the browser (which draws the chips), so
  * the two never disagree. It is linear: one pass over the characters, no backtracking pattern.
  */
 
-export const SEARCH_HAS = ['file', 'link'] as const;
+export const SEARCH_HAS = ['file', 'link', 'pin'] as const;
 export const SearchHas = z.enum(SEARCH_HAS);
 export type SearchHas = z.infer<typeof SearchHas>;
 
@@ -118,7 +117,7 @@ export function parseSearchText(raw: string): SearchFilters {
         }
         case 'has': {
           const w = v.toLowerCase();
-          if (w === 'file' || w === 'link') {
+          if (w === 'file' || w === 'link' || w === 'pin') {
             if (!out.has.includes(w)) out.has.push(w);
             taken = true;
           }

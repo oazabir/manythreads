@@ -30,11 +30,11 @@ the server (to search), so a typed word and a chip are the same thing. A filter 
 |---|---|
 | `from:nadia`, `from:"Nadia Hamdan"`, `from:me` | the person who wrote the message, uploaded the file, or last saved the page. A name matches the start of the display name or of any later word of it, case-insensitively. Bots have no display name in the database and are not found by name. |
 | `in:dev`, `in:#dev` | the channel (by name, among the channels the person can read). Files with no channel and pages are left out. |
-| `has:file`, `has:link` | a message with an attachment, or with a web address (`http://` or `https://`). Only messages (and, for `has:file`, files) are listed. |
+| `has:file`, `has:link`, `has:pin` | a message with an attachment, with a web address (`http://` or `https://`), or pinned to its channel (P31-07; see [channels.md](./channels.md#pinned-messages-p31-07-migration-0020_message_pinssql)). Only messages (and, for `has:file`, files) are listed. |
 | `is:thread` | a message that belongs to a thread (a reply, or a root with replies). Messages and threads are listed. |
 | `before:2026-10-01`, `after:2026-10-01` | a day, year-month-day, read as UTC, from 0001-01-01 to 9998-12-31 (the database has no year 0000; a day outside that range stays plain text). `before:` is up to the start of that day, `after:` is from the day after it. |
 
-At most five names after `from:` and five after `in:`. **`has:pin` is not supported**: pins do not exist yet (PLAN P9-09), so the word stays plain text until the pins table does.
+At most five names after `from:` and five after `in:`. `has:pin` (migration `0008_has_pin.sql`) adds an eleventh argument to `app.search_messages`; the pinned ids are read through the pins table's own read policy and only among the channels the reader already reads, so it only narrows. In the web client its chip says "Pinned" and the Filters form has "are pinned".
 A box holding only filter words is a search too (`from:nadia in:dev`): newest first, no ranking (score 0), by recency slices (one day, 16 days, all) like the text search.
 
 **Names are resolved as the reader.** `from:` goes through `app.search_resolve_people` (a definer function that checks the caller with `lookup_workspace_role`): an owner, admin or member resolves
@@ -120,7 +120,7 @@ a third) and Lena (guest, one channel), checking p95 under 300 ms per persona (e
 
 ## Not here
 
-Highlighting on the server (the snippet is the start of the text; the web client marks the words close to the query with the same trigram measure, `clients/web/src/search/highlight.ts`), pagination of results (a `limit` of 50 at most; `more` says a list went on), transcripts (phase 15 adds them to the same page), `has:pin` (no pins table yet), bots by name in `from:`, semantic search, a search for people and channels (the quick switcher), stemming and stop words (trigrams need neither).
+Highlighting on the server (the snippet is the start of the text; the web client marks the words close to the query with the same trigram measure, `clients/web/src/search/highlight.ts`), pagination of results (a `limit` of 50 at most; `more` says a list went on), transcripts (phase 15 adds them to the same page), bots by name in `from:`, semantic search, a search for people and channels (the quick switcher), stemming and stop words (trigrams need neither).
 
 ## Tests
 

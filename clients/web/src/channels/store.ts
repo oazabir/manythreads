@@ -1,6 +1,7 @@
 import {
   MessageDeletedPush,
   MessageEditedPush,
+  MessagePinChangedPush,
   MessagePostedPush,
   PollChangedPush,
   ReactionChangedPush,
@@ -9,6 +10,7 @@ import {
   type ChannelMessage,
   type CreatePollRequest,
   type FileSummary,
+  type MessagePin,
   type Message,
   type PollView,
   type ReactionSummary,
@@ -31,6 +33,8 @@ import {
   fetchUnreadSummary,
   retryVoiceTranscript,
   markMessageUnread,
+  pinMessage,
+  unpinMessage,
   markRead,
   postMessage,
   removeReaction,
@@ -106,6 +110,7 @@ export class ChannelStore {
   private resyncHooks = new Set<() => void>();
   private activityHooks = new Set<(channelId: string, at: string) => void>();
   private changeHooks = new Set<(c: MessageChange) => void>();
+  private pinHooks = new Set<(channelId: string) => void>();
   private detach: Array<() => void> = [];
 
   // ---- subscription -------------------------------------------------------------------------------------
@@ -173,6 +178,37 @@ export class ChannelStore {
     return () => this.changeHooks.delete(cb);
   }
 
+  /** A hook for the pinned list (P31-07): called with the channel's id whenever a message of it is pinned or unpinned, here or elsewhere. */
+  onPinChange(cb: (channelId: string) => void): () => void {
+    this.pinHooks.add(cb);
+    return () => this.pinHooks.delete(cb);
+  }
+
+  /** Pin (`on`) or unpin a message; the row changes at once and the pinned lists are told. Throws the server's refusal (no right to post, the cap). */
+  async setPin(channelId: string, messageId: string, on: boolean): Promise<void> {
+    const res = await (on ? pinMessage(channelId, messageId) : unpinMessage(channelId, messageId));
+    if (!on) return this.applyPin(channelId, messageId, null);
+    // credited to the reader only when this call pinned it; already pinned means somebody else did: the server says who
+    if (res.changed) return this.applyPin(channelId, messageId, { by: this.self, at: new Date().toISOString() } as MessagePin);
+    let pin: MessagePin | undefined;
+    try {
+      pin = (await fetchMessage(channelId, messageId)).pinned;
+    } catch {
+      pin = undefined;
+    }
+    this.mapMessageAnywhere(channelId, messageId, (m) => (pin ? { ...m, pinned: pin } : m));
+    for (const h of [...this.pinHooks]) h(channelId);
+  }
+
+  private applyPin(channelId: string, messageId: string, pinned: MessagePin | null): void {
+    this.mapMessageAnywhere(channelId, messageId, (m) => {
+      if (pinned === null) return m.pinned ? withoutPin(m) : m;
+      // a pin already held keeps who pinned it and when (the push and our own answer both arrive)
+      return m.pinned ? m : { ...m, pinned };
+    });
+    for (const h of [...this.pinHooks]) h(channelId);
+  }
+
   handlePush(push: Push): void {
     switch (push.type) {
       case 'message.posted': {
@@ -193,6 +229,11 @@ export class ChannelStore {
       case 'reaction.changed': {
         const p = ReactionChangedPush.safeParse(push.payload);
         if (p.success) this.onReaction(p.data);
+        return;
+      }
+      case 'message.pin_changed': {
+        const p = MessagePinChangedPush.safeParse(push.payload);
+        if (p.success) this.applyPin(p.data.channelId, p.data.messageId, p.data.pinned);
         return;
       }
       case 'poll.changed': {
@@ -720,6 +761,13 @@ export class ChannelStore {
 }
 
 /** A message after an edit: the new text and time, and the voice record (an edited voice message says its transcript is `edited`). */
+/** The message without its pin (P31-07). */
+function withoutPin(m: ChannelMessage): ChannelMessage {
+  const next = { ...m };
+  delete next.pinned;
+  return next;
+}
+
 function withEdit(m: ChannelMessage, next: ChannelMessage): ChannelMessage {
   const voice = next.meta.voice;
   return { ...m, body: next.body, bodyPlain: next.bodyPlain, editedAt: next.editedAt, ...(voice && m.meta.voice ? { meta: { ...m.meta, voice } } : {}) };

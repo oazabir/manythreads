@@ -24,7 +24,8 @@ test.beforeAll(async ({ playwright }) => {
   Object.assign(ids, await channelsOf(omar));
   const priv = await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'leads-only', private: true });
   ids['leads-only'] = priv.channel.id;
-  await postAs(nadia, ids['dev']!, 'Zebra deploy checklist from Nadia, see https://example.com/zebra');
+  const checklist = await postAs(nadia, ids['dev']!, 'Zebra deploy checklist from Nadia, see https://example.com/zebra');
+  ids['checklist'] = checklist.id;
   await postAs(rafi, ids['dev']!, 'Zebra deploy notes from Rafi');
   await postAs(nadia, ids['releases']!, 'Zebra release plan from Nadia');
   await postAs(omar, ids['leads-only']!, 'Zebra layoff budget is approved');
@@ -82,6 +83,23 @@ test('filter words become chips, narrow the results, and come off with one click
     await expect(page.getByTestId('search-empty')).toBeVisible();
   } finally {
     await context.close();
+  }
+});
+
+test('has:pin (P31-07): only the pinned message, shown as the chip "Pinned"', async ({ browser, playwright, isMobile }) => {
+  const pinned = await rafi.ctx.put(`/api/channels/${ids['dev']}/messages/${ids['checklist']}/pin`, { headers: await rafi.headers() });
+  expect(pinned.status()).toBe(200);
+  const { page, context } = await openOn(browser, playwright, stack, 'priya', '/t/engineering/threads', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await search(page, 'has:pin zebra', !!isMobile);
+    const hits = page.getByTestId('search-messages').getByTestId('search-hit');
+    await expect(hits).toHaveCount(1);
+    await expect(hits.first()).toContainText('checklist');
+    await expect(page.getByTestId('search-chip')).toHaveText(['Pinned']);
+    expect(await noSidewaysScroll(page)).toBe(true);
+  } finally {
+    await context.close();
+    await rafi.ctx.delete(`/api/channels/${ids['dev']}/messages/${ids['checklist']}/pin`, { headers: await rafi.headers() });
   }
 });
 

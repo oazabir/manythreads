@@ -231,6 +231,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
       react: (id, emoji) => void channelStore.toggleReaction(channelId, null, id, emoji),
       edit: (id, body, confirm) => channelStore.edit(channelId, null, id, body, confirm),
       remove: (id) => channelStore.remove(channelId, null, id),
+      pin: (id, on) => channelStore.setPin(channelId, id, on),
       markUnread: async (id) => {
         const entry = await channelStore.markUnread(channelId, id, null);
         // the "New" line moves to where the reader asked, and the view does not jump to it

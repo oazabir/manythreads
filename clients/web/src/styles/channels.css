@@ -2993,3 +2993,79 @@
   color: var(--ok-ink);
   font-size: var(--fs-tiny);
 }
+
+/* ---- pinned messages (P31-07): the mark beside the author's name, and the right panel's pinned list ---- */
+.who .msg-pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--warn-ink);
+  font-size: var(--fs-tiny);
+}
+
+.pnp {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.pnp-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pnp-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.pnp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pnp-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pnp-time,
+.pnp-reply {
+  color: var(--faint);
+  font-size: var(--fs-tiny);
+  white-space: nowrap;
+}
+
+.pnp-text {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.pnp-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pnp-acts .btn {
+  min-height: 36px;
+}

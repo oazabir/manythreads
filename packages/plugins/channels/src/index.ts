@@ -5,6 +5,7 @@ import { registerCohesion } from './cohesion.ts';
 import { registerDraftRoutes } from './routes-drafts.ts';
 import { registerEmojiRoutes } from './routes-emoji.ts';
 import { registerBookmarkRoutes } from './routes-bookmarks.ts';
+import { registerPinRoutes } from './routes-pins.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
 import { registerMentionRoutes } from './routes-mentions.ts';
@@ -44,6 +45,7 @@ export default definePlugin({
         'channel.markdown.repaired',
         'channel.message.deleted',
         'channel.reaction.changed',
+        'channel.message.pin_changed',
         'channel.channel.created',
         'channel.channel.updated',
         'channel.channel.archived',
@@ -66,6 +68,7 @@ export default definePlugin({
     registerMessageRoutes(deps);
     registerMentionRoutes(deps);
     registerBookmarkRoutes(deps);
+    registerPinRoutes(deps);
     registerScheduledRoutes(deps);
     registerEmojiRoutes(deps);
     registerDraftRoutes(deps);

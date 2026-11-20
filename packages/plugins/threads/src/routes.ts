@@ -21,7 +21,9 @@ import {
   ListThreadFilesResponse,
   unfollowThreadRoute,
   type FileSummary,
+  type ChannelMessage,
   type MessageAuthor,
+  type MessagePin,
   type ReactionSummary,
 } from '@manythreads/shared';
 import { listInbox } from './inbox.ts';
@@ -83,6 +85,16 @@ async function authorsFor(tx: PluginTx, messageIds: readonly string[]): Promise<
   return out;
 }
 
+/** The pins of these messages (P31-07, channels migration 0020), read under the pins table's own read policy. */
+async function pinsFor(tx: PluginTx, messageIds: readonly string[]): Promise<Map<string, MessagePin>> {
+  const res = await tx.query<{ message_id: string; pinned_by: string | null; pinned_at: Date }>(
+    'SELECT message_id, pinned_by, pinned_at FROM app.message_pins WHERE message_id = ANY ($1::uuid[])',
+    [messageIds],
+  );
+  return new Map(res.rows.map((r) => [r.message_id, { by: r.pinned_by, at: r.pinned_at.toISOString() } as MessagePin]));
+}
+const withPin = (m: ChannelMessage, pin: MessagePin | undefined): ChannelMessage => (pin && m.deletedAt === null ? { ...m, pinned: pin } : m);
+
 /**
  * The files attached to messages (`meta.attachments`) as cards, in the order the sender listed them, for what the caller may read (the
  * files table's own policy decides; a file the caller cannot see is left out). Touches `app.files` only when a message has attachments.
@@ -134,6 +146,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
       const reactions = await reactionsFor(tx, [rootId, ...page.map((r) => r.id)]);
       const attachments = await attachmentsFor(tx, [root, ...page]);
       const authors = await authorsFor(tx, [rootId, ...page.map((r) => r.id)]);
+      const pins = await pinsFor(tx, [rootId, ...page.map((r) => r.id)]);
       const oldest = page[page.length - 1];
 
       const person = (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0]?.id ?? null;
@@ -147,7 +160,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
       return json(
         GetThreadResponse.parse({
           channel: toChannelRef(root),
-          root: toChannelMessage(root, reactions.get(rootId) ?? [], attachments.get(rootId) ?? [], authors.get(root.author_id)),
+          root: withPin(toChannelMessage(root, reactions.get(rootId) ?? [], attachments.get(rootId) ?? [], authors.get(root.author_id)), pins.get(rootId)),
           thread: ThreadState.parse({
             rootMessageId: rootId,
             channelId: root.channel_id,
@@ -158,7 +171,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
             ...entry,
           }),
           replies: {
-            items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id))),
+            items: page.map((r) => withPin(toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id)), pins.get(r.id))),
             nextCursor: more && oldest ? oldest.id : null,
           },
         }),

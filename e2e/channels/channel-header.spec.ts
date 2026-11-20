@@ -140,13 +140,15 @@ test('switching channel closes the menu, and a half-done Leave does not carry to
   }
 });
 
-test('a direct message offers Notifications only, with the person’s face, status and local time', async ({ browser, playwright }) => {
+test('a direct message offers Notifications and its pinned messages only, with the person’s face, status and local time', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/dm/${dmId}`);
   try {
     await expect(button(page)).toContainText('Rafi', T);
     await button(page).click();
-    await expect(details(page).getByRole('menuitem')).toHaveCount(1);
+    // Notifications, and the pinned messages of the conversation (P31-07: a DM can pin too)
+    await expect(details(page).getByRole('menuitem')).toHaveCount(2);
     await expect(details(page).getByRole('menuitem', { name: 'Notifications' })).toBeVisible();
+    await expect(details(page).getByTestId('details-pins')).toBeVisible();
     for (const id of ['channel-star', 'details-members', 'webhooks-open', 'details-files', 'details-leave']) await expect(details(page).getByTestId(id)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(details(page)).toHaveCount(0);

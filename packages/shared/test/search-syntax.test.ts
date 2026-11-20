@@ -23,8 +23,15 @@ describe('parseSearchText', () => {
     expect(parseSearchText('x from:"Nadia Ham').from).toEqual(['Nadia Ham']);
   });
 
-  it('keeps what is not a valid filter as text: unknown words, empty values, bad dates, has:pin', () => {
-    for (const raw of ['foo:bar', 'from:', 'has:pin', 'has:video', 'is:open', 'before:yesterday', 'before:2026-02-30', 'after:2026-13-01', 'time 10:30', 'http://x.y/z']) {
+  it('reads has:pin (P31-07) and writes it back', () => {
+    const f = parseSearchText('release has:PIN has:pin');
+    expect(f.has).toEqual(['pin']);
+    expect(f.text).toBe('release');
+    expect(formatSearchText(f)).toBe('has:pin release');
+  });
+
+  it('keeps what is not a valid filter as text: unknown words, empty values, bad dates', () => {
+    for (const raw of ['foo:bar', 'from:', 'has:pins', 'has:video', 'is:open', 'before:yesterday', 'before:2026-02-30', 'after:2026-13-01', 'time 10:30', 'http://x.y/z']) {
       const f = parseSearchText(raw);
       expect(f.text, raw).toBe(raw);
       expect(hasSearchFilters(f), raw).toBe(false);

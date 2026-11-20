@@ -80,3 +80,25 @@ test('her API calls to other channels are refused, and what she may read is only
   const directory = await lena.get<{ groups: Array<{ channels: Array<{ name: string }> }> }>('/api/teams/engineering/channels');
   expect(directory.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, '')))).toEqual(['releases']);
 });
+
+test('Lena sees a pinned message as pinned and is offered no Pin (P31-07)', async ({ browser, playwright }) => {
+  const posted = await omar.post<{ id: string }>(`/api/channels/${releases}/messages`, { channelId: releases, body: 'Pinned for everyone who reads releases', threadRootId: null });
+  const pinned = await omar.ctx.put(`/api/channels/${releases}/messages/${posted.id}/pin`, { headers: await omar.headers() });
+  expect(pinned.status()).toBe(200);
+  const { page, context } = await openOn(browser, playwright, stack, 'lena', '/');
+  try {
+    const row = messagesIn(page).filter({ hasText: 'Pinned for everyone who reads releases' });
+    await expect(row.getByTestId('pinned-mark')).toBeVisible();
+    await row.hover();
+    await row.getByRole('button', { name: 'More actions' }).click();
+    await expect(page.getByTestId('message-pin')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    // the pinned list is hers to read, without Unpin
+    await page.getByTestId('channel-details-button').click();
+    await page.getByTestId('details-pins').click();
+    await expect(page.getByTestId('pins-panel').getByTestId('pin-row')).toContainText('Pinned for everyone');
+    await expect(page.getByTestId('pin-unpin')).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
