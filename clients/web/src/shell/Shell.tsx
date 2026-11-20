@@ -53,7 +53,7 @@ export function Shell() {
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   // how much room the header has: with a right panel open on a small screen it is tight (styles/channels.css)
   const [headerEl, setHeaderEl] = useState<HTMLElement | null>(null);
-  const room = headerRoom(useElementWidth(headerEl));
+  const room = headerRoom(useElementWidth(headerEl), narrow);
   const [crumbTail, setCrumbTail] = useState<string | null>(null);
   // how many PageHeaders are on screen: while one is, the band shows the trail and the page's own h1 is the title
   const [headers, setHeaders] = useState(0);

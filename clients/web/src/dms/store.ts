@@ -4,6 +4,7 @@ import { isApiError } from '../api/client';
 import { fetchDms, openDm } from '../api/endpoints';
 import { onPersonChange } from '../app/caches';
 import { channelStore } from '../channels/store';
+import { withMessageChange } from './listRow';
 
 /*
  * The person's direct messages for the sidebar and the DM screen (docs/plugins/direct-messages.md). One list for the page: the route
@@ -38,6 +39,19 @@ export async function refreshDms(): Promise<void> {
 export function refreshDmsIfUsed(): void {
   if (started) void refreshDms();
 }
+
+// a message that arrives in a conversation (pushed, or sent from this tab), is edited or is deleted changes its row's last line at once (P34-05)
+channelStore.onMessageChange((change) => {
+  if (feed.status !== 'ok') return;
+  const next = withMessageChange(feed.items, change);
+  if (next.refetch) {
+    void refreshDms();
+    return;
+  }
+  if (next.items === feed.items) return;
+  feed = { status: 'ok', items: next.items };
+  emit();
+});
 
 onPersonChange(() => {
   feed = LOADING;

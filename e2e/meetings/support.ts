@@ -74,20 +74,30 @@ export const dock = (p: Person) => p.page.getByTestId('call-dock');
 
 /**
  * Presses the voice icon (a new room) or, when a room is live in a channel, Join on its card under "Started a voice room" (the icon only scrolls there),
- * and waits until the call bar is connected. (Starting while a room is live joins it, so a page that has not heard of the room yet still ends up in it.)
+ * and waits until the call bar is connected. (Starting while a room is live joins it, so a page that has not heard of the room yet still ends up in it.) On a phone
+ * the icon's item in the channel details menu is pressed instead.
  */
 export async function enterRoom(p: Person): Promise<void> {
   const icon = p.page.getByTestId('call-start');
+  // on a phone the header is the channel's name and the bell (P34-05): the icon is hidden and the details menu's item of the same name does what it does
+  const press = async (): Promise<void> => {
+    if (await icon.isVisible()) {
+      await icon.click({ timeout: 2_000 });
+      return;
+    }
+    await p.page.getByTestId('channel-details-button').click({ timeout: 2_000 });
+    await p.page.getByTestId('details-voice').click({ timeout: 2_000 });
+  };
   // the icon changes from "start" to "show the message" when the page hears of a live room, so each try looks again at what it is before pressing
   await expect(async () => {
     if ((await dock(p).count()) === 0) {
       if ((await icon.getAttribute('data-action')) === 'show-message') {
         // the icon takes the reader to the message that started the room; the card's Join is then on the page (and has the keyboard)
-        await icon.click({ timeout: 2_000 });
+        await press();
         const join = p.page.getByTestId('room-card-join').last();
         await join.scrollIntoViewIfNeeded({ timeout: 2_000 });
         await join.click({ timeout: 2_000 });
-      } else await icon.click({ timeout: 2_000 });
+      } else await press();
     }
     await expect(dock(p)).toHaveAttribute('data-phase', 'connected', { timeout: 4_000 });
   }).toPass({ timeout: 30_000 });

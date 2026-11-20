@@ -75,5 +75,23 @@ export async function openAs(
   return { page, context };
 }
 
+/**
+ * Holds a finger on a message row for long enough to count as a hold (channels/gestures.ts: 500 ms), with real touch events (CDP). Under a finger there is no
+ * hover bar (P34-05): a hold opens the reactions, with Reply in thread and More actions under them (or the actions, for a reader who cannot react).
+ */
+export async function holdOn(page: Page, row: Locator): Promise<void> {
+  await row.scrollIntoViewIfNeeded();
+  const b = (await row.boundingBox())!;
+  const x = b.x + Math.min(120, b.width / 2);
+  const y = b.y + b.height / 2;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await page.waitForTimeout(700);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  // the browser's own press-and-release events right after a hold are ignored for a moment (gestures.ts AFTER_GESTURE_MS)
+  await page.waitForTimeout(400);
+  await cdp.detach();
+}
+
 /** The messages inside a page or a region of it. */
 export const messages = (scope: Page | Locator): Locator => scope.locator('[data-testid="message"]');

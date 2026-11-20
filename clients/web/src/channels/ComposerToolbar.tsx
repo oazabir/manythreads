@@ -1,10 +1,10 @@
-import { useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import {
   ToolBoldIcon, ToolBulletIcon, ToolChannelIcon, ToolCodeBlockIcon, ToolCodeIcon, ToolEmojiIcon, ToolFormatIcon, ToolItalicIcon, ToolLinkIcon, ToolMentionIcon,
   ToolNumberIcon, ToolPollIcon, ToolQuoteIcon, ToolStrikeIcon,
 } from '../shell/icons';
 import { CODE_LANGUAGES } from './composerFormat';
-import { barTools, toolTitle, type ToolId, type ToolLayout } from './composerTools';
+import { barTools, scrollEdges, toolTitle, type ToolId, type ToolLayout } from './composerTools';
 
 /*
  * The formatting bar above the message box (PLAN P21-04). It is always there, so the list above never moves when the box gets focus; the icons are 16 px and the
@@ -43,6 +43,20 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
   const [toolAt, setToolAt] = useState(0);
   const bar = useRef<HTMLDivElement>(null);
   const shown = barTools(layout, tools, formatOpen);
+  // on a phone the bar scrolls sideways: the end with more tools beyond it fades out (channels.css `.ctools[data-more]`)
+  const [more, setMore] = useState<ReturnType<typeof scrollEdges>>('none');
+  const measure = useCallback((): void => {
+    const el = bar.current;
+    if (el) setMore(scrollEdges(el.scrollLeft, el.clientWidth, el.scrollWidth));
+  }, []);
+  useLayoutEffect(() => {
+    measure();
+    const el = bar.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, shown.length]);
   const slots: string[] = [...(layout === 'aa' ? ['format'] : []), ...shown];
   const at = Math.min(toolAt, Math.max(0, slots.length - 1));
   const tab = (key: string): { tabIndex: number; onFocus: () => void } => {
@@ -106,7 +120,7 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
   };
 
   return (
-    <div className={`ctools ${layout}`} role="toolbar" aria-label="Formatting" ref={bar} onKeyDown={onKey} data-testid="composer-tools" data-layout={layout}>
+    <div className={`ctools ${layout}`} role="toolbar" aria-label="Formatting" ref={bar} onKeyDown={onKey} onScroll={measure} data-testid="composer-tools" data-layout={layout} data-more={more === 'none' ? undefined : more}>
       {layout === 'aa' ? (
         <button
           type="button"

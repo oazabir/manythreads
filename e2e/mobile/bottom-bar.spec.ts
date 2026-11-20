@@ -105,6 +105,14 @@ test.describe('phone', () => {
       await expect(bar.getByRole('link', { name: /Messages/ })).toHaveAttribute('aria-current', 'page');
       const row = page.getByTestId('messages-screen').getByRole('link', { name: /Nadia/ });
       await expect(row).toBeVisible();
+      // a chat app's row (P34-05): the face, the name, the time, the last line and the unread count
+      await expect(row.locator('.av')).toHaveCount(1);
+      await expect(row.getByTestId('dm-chat-line')).toHaveText(/^Are you (free for five minutes\?|there\? \(\d\))$/);
+      await expect(row.locator('time')).toHaveText(/^\d{2}:\d{2}$/);
+      await expect(row.locator('.pill')).toHaveText(/^[1-9]\d*$/);
+      // a message that arrives while the page is open becomes the row's last line
+      await postAs(nadia, dm.dm.channel.id, 'One more thing about the release.');
+      await expect(row.getByTestId('dm-chat-line')).toHaveText('One more thing about the release.', { timeout: 15_000 });
       expect(await noSidewaysScroll(page)).toBe(true);
       // the page offers a new message too
       await page.getByTestId('messages-screen').getByRole('button', { name: 'New message' }).click();
@@ -217,12 +225,17 @@ test.describe('phone', () => {
     }
   });
 
-  test('one search icon in the header: the conversation search on a channel, none on a page', async ({ browser, playwright }) => {
+  test('no search icon in the header: the conversation search is in the channel details menu on a channel, none on a page', async ({ browser, playwright }) => {
     const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/c/dev', { viewport: PHONE, mobile: true });
     try {
       const searchButtons = page.locator('.chead button[aria-label*="earch"], .chead button[aria-label="Find"]');
-      await expect(page.getByRole('button', { name: 'Search this conversation' })).toBeVisible();
-      await expect(searchButtons).toHaveCount(1);
+      // P34-05 (owner decision e, 2026-11-19): the phone's channel header is the name and the bell; the magnifier is drawn (hidden) and its item is in the menu
+      await expect(page.getByTestId('bell')).toBeVisible();
+      await expect(page.getByTestId('conversation-search-open')).toHaveCount(1);
+      await expect(searchButtons.filter({ visible: true })).toHaveCount(0);
+      await page.getByTestId('channel-details-button').click();
+      await expect(page.getByTestId('details-search')).toBeVisible();
+      await page.keyboard.press('Escape');
       await expect(page.getByRole('button', { name: 'Find', exact: true })).toHaveCount(0);
       await page.goto('/t/engineering/boards');
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -234,7 +247,7 @@ test.describe('phone', () => {
     }
   });
 
-  test('a 40-character channel name reads in full at 390, on at most two lines, with the tools still in view', async ({ browser, playwright }) => {
+  test('a 40-character channel name takes one line at 390 and ends in an ellipsis, with the bell in view (P34-05: the header is the name and the bell)', async ({ browser, playwright }) => {
     expect(LONG_NAME.length).toBeGreaterThanOrEqual(35);
     const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${LONG_NAME}`, { viewport: PHONE, mobile: true });
     try {
@@ -244,13 +257,12 @@ test.describe('phone', () => {
       const line = await name.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.3);
       expect(r.x).toBeGreaterThanOrEqual(0);
       expect(r.x + r.width).toBeLessThanOrEqual(PHONE.width);
-      expect(r.height).toBeLessThanOrEqual(line * 2 + 2);
-      expect(await name.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe('ellipsis');
-      // nothing is cut: the text fits the box it is drawn in
-      expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-      for (const tool of [page.getByTestId('bell'), page.getByRole('button', { name: 'Search this conversation' })]) {
-        await expect(tool).toBeInViewport({ ratio: 1 });
-      }
+      // one line (owner decision e reverses P21-23's "never truncates"): the end of the name gives way with an ellipsis, the whole name stays its text
+      expect(r.height).toBeLessThanOrEqual(line + 2);
+      expect(await name.evaluate((el) => getComputedStyle(el).textOverflow)).toBe('ellipsis');
+      expect(await name.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+      await expect(page.getByTestId('bell')).toBeInViewport({ ratio: 1 });
+      await expect(page.getByTestId('channel-details-button')).toBeInViewport({ ratio: 1 });
       expect(await noSidewaysScroll(page)).toBe(true);
     } finally {
       await context.close();

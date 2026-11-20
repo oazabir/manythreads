@@ -51,9 +51,12 @@ test.afterAll(async () => {
 
 test('Nadia starts a room from her phone: the call bar is a sheet that fits, with thumb-sized controls', async ({ browser, playwright }) => {
   nadia = await openAs(browser, playwright, stack, 'nadia', '/t/engineering/c/dev', { mobile: true });
-  // the button is an icon on a phone, still with its name for a screen reader
-  await expect(nadia.page.getByTestId('call-start')).toBeVisible();
+  // on a phone the header is the channel's name and the bell (P34-05): the voice room is an item of the channel details menu, under the icon's name
+  await expect(nadia.page.getByTestId('call-start')).toBeHidden();
   await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
+  await nadia.page.getByTestId('channel-details-button').click();
+  await expect(nadia.page.getByTestId('details-voice')).toHaveText(/Start a voice room/);
+  await nadia.page.keyboard.press('Escape');
   await enterRoom(nadia);
   meetingId = (await lastMeeting(stack, 'dev')).id;
   await expect(dock(nadia)).toHaveClass(/sheet/);

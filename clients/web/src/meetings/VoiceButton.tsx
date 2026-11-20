@@ -1,4 +1,5 @@
 import { isMockMode } from '../api/setup';
+import { useHeaderItem } from '../shell/headerMenu';
 import { HeadphonesIcon, PhoneIcon, WaveIcon } from './icons';
 import { voiceIconAction } from './roomCard';
 import { callController, useCall, useLiveRoom } from './store';
@@ -24,22 +25,15 @@ function focusRoomJoin(meetingId: string): void {
 export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { channelId: string; dm: boolean; messageLoaded?: (messageId: string) => boolean; showMessage?: (messageId: string) => void }) {
   const call = useCall();
   const live = useLiveRoom(channelId);
-  if (isMockMode()) return null;
+  const mock = isMockMode();
   const inHere = call.meeting?.channelId === channelId && (call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost');
   const busy = call.phase === 'starting' || call.phase === 'connecting';
-  if (inHere) {
-    return (
-      <span className="call-here chv-tool chv-voice" data-testid="call-in-here" role="status">
-        <WaveIcon />
-        <span>{dm ? 'In this call' : 'In the voice room'}</span>
-      </span>
-    );
-  }
   const root = live?.meeting.threadRootId ?? null;
   const action = voiceIconAction({ live: live !== undefined, dm, messageLoaded: root !== null && messageLoaded !== undefined && showMessage !== undefined && messageLoaded(root) });
   const found = action === 'show-message';
   const label = dm ? (live ? 'Join the call' : 'Call') : live ? (found ? 'A voice room is live: join it from its message' : 'Join the voice room') : 'Start a voice room';
   const title = live ? `${label} (${live.present.length} in it now)` : dm ? 'Call by voice' : label;
+  const here = dm ? 'In this call' : 'In the voice room';
   const press = (): void => {
     if (action === 'show-message' && root !== null) {
       showMessage?.(root);
@@ -49,6 +43,17 @@ export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { cha
     // a live room is joined, not started: a guest may join a room of a channel they are in but may not start one (the server refuses the start with 403)
     void (live ? callController().joinRoom(live.meeting.id, channelId) : callController().start(channelId));
   };
+  // on a phone the icon is not in the header: the details menu carries the same action under the same name (P34-05); while in the room it is a state there too
+  useHeaderItem(channelId, mock ? null : inHere ? { key: 'voice', label: here, testId: 'details-voice', disabled: true } : { key: 'voice', label, testId: 'details-voice', disabled: busy }, press);
+  if (mock) return null;
+  if (inHere) {
+    return (
+      <span className="call-here chv-tool chv-voice" data-testid="call-in-here" role="status">
+        <WaveIcon />
+        <span>{here}</span>
+      </span>
+    );
+  }
   return (
     <button type="button" className={`icon-btn chv-tool chv-voice call-start ${live ? 'chv-live' : ''}`} data-testid="call-start" data-action={action} disabled={busy} aria-label={label} title={title} onClick={press}>
       {dm ? <PhoneIcon /> : <HeadphonesIcon />}

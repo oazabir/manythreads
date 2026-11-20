@@ -7,17 +7,29 @@ import { isMockMode } from '../api/setup';
 import { usePanel } from '../kernel/panel';
 import { notifyScheduledChanged } from '../meetings/schedule/changed';
 import { ScheduleRoomDialog } from '../meetings/schedule/ScheduleRoomDialog';
+import { HeadphonesIcon, PhoneIcon } from '../meetings/icons';
+import { useHeaderItems, type HeaderMenuEntry, type HeaderToolKey } from './headerMenu';
 import { MembersList } from './MembersButton';
 import { MEMBERS_PANEL } from './membersModel';
 import { useShell } from './context';
 import { FULL_STARS_TEXT, isStarred, starPatch } from './sidebarLayout';
 import { sidebarPrefsStore, useSidebarPrefs } from './sidebarPrefsStore';
-import { BoardsIcon, CaretIcon, MembersIcon, ScheduleCalendarIcon, StarIcon } from './icons';
+import { BoardsIcon, BookmarkIcon, CaretIcon, MembersIcon, ScheduleCalendarIcon, SearchIcon, StarIcon } from './icons';
 import { useDismiss } from './useDismiss';
+
+const TOOL_ICON: Record<HeaderToolKey, (dm: boolean) => ReactNode> = {
+  search: () => <SearchIcon />,
+  planned: () => <ScheduleCalendarIcon />,
+  voice: (dm) => (dm ? <PhoneIcon /> : <HeadphonesIcon />),
+  members: () => <MembersIcon />,
+  bookmark: () => <BookmarkIcon />,
+};
 
 /**
  * The channel's name in the header, as a button that opens the channel's details (P21-06): notifications, star, members, integrations, files and
  * Leave. It replaces the separate star, bell and Integrations buttons the header used to carry. A direct message has the notifications choice only.
+ * On a phone the header is the name and the bell (owner, 2026-11-19, P34-05): the menu starts with the header's tools (search, the planned room, the voice room,
+ * Members, Add a bookmark), each doing what its hidden button does (`headerMenu.ts`); the CSS shows those items only when the header's `data-room` is `phone`.
  */
 export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail, botBoard }: {
   channelId: string;
@@ -56,7 +68,8 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   useEffect(() => {
     if (open) {
       wasOpen.current = true;
-      box.current?.querySelector<HTMLElement>('.chd-menu button, .chd-menu a')?.focus();
+      // the first item that is drawn: the header's tools are in the menu on a phone only, and a hidden button cannot take the focus
+      [...(box.current?.querySelectorAll<HTMLElement>('.chd-menu button, .chd-menu a') ?? [])].find((el) => getComputedStyle(el).display !== 'none' && !(el as HTMLButtonElement).disabled)?.focus();
     } else if (wasOpen.current) {
       wasOpen.current = false;
       if (box.current?.contains(document.activeElement) || document.activeElement === document.body) trigger.current?.focus();
@@ -80,6 +93,14 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
       void navigate(`/t/${encodeURIComponent(teamSlug)}`);
     }, (e: unknown) => setProblem(e instanceof Error ? e.message : 'Could not leave the channel. Try again.'));
   };
+  const tools = useHeaderItems(channelId);
+  const hasMembersTool = tools.some((t) => t.key === 'members');
+  // the keyboard goes to the name button first: a dialog the tool opens gives it back there, and a box that takes the focus (the search) takes it from there
+  const runTool = (t: HeaderMenuEntry): void => {
+    close();
+    trigger.current?.focus();
+    t.run();
+  };
   const target = useMemo(() => ({ channelId, channelName: dm ? null : name, channelKind: dm ? ('dm' as const) : ('channel' as const) }), [channelId, name, dm]);
   return (
     <div className="chd" ref={box}>
@@ -93,13 +114,29 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
         <div className="chd-menu" role="menu" aria-label="Channel details" data-testid="channel-details">
           {view === 'menu' ? (
             <>
+              {tools.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="menuitem"
+                  className="menu-item chd-head-tool"
+                  data-testid={t.testId}
+                  disabled={t.disabled}
+                  {...(t.popup ? { 'aria-haspopup': 'dialog' as const } : {})}
+                  {...(t.pressed !== undefined ? { 'aria-pressed': t.pressed } : {})}
+                  onClick={() => runTool(t)}
+                >
+                  {TOOL_ICON[t.key](dm)} {t.label}
+                </button>
+              ))}
               <button type="button" role="menuitem" className="menu-item" data-testid="details-notifications" onClick={() => setView('notify')}>Notifications</button>
               {!dm && !guest && prefs.status === 'ok' ? (
                 <button type="button" role="menuitem" className="menu-item" data-testid="channel-star" aria-pressed={starred} onClick={toggleStar}>
                   <StarIcon filled={starred} /> {starred ? 'Unstar' : 'Star'}
                 </button>
               ) : null}
-              {!dm ? <button type="button" role="menuitem" className="menu-item" data-testid="details-members" onClick={() => setView('members')}>Members</button> : null}
+              {/* on a phone the Members tool above opens the panel, so this list view (which links to the same panel) steps aside */}
+              {!dm ? <button type="button" role="menuitem" className={`menu-item${hasMembersTool ? ' chd-head-twin' : ''}`} data-testid="details-members" onClick={() => setView('members')}>Members</button> : null}
               {!dm && botBoard ? (
                 <Link role="menuitem" className="menu-item chd-phone-only" data-testid="details-bot-board" to={botBoard.to} onClick={close}><BoardsIcon /> {botBoard.name}</Link>
               ) : null}

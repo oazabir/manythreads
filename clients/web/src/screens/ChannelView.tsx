@@ -390,9 +390,11 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           </button>
         ) : null}
         {!atBottom && tl.status === 'ready' && tl.items.length > 0 ? (
-          <button type="button" className="jump" aria-label={newCount > 0 ? `Jump to latest, ${newCount} new ${newCount === 1 ? 'message' : 'messages'}` : 'Jump to latest'} onClick={() => api.current?.scrollToBottom()}>
+          // at the bottom right, off the middle where the day pills are (P34-05, finding 30); on a phone or in a tight column it is a round arrow with the count
+          <button type="button" className="jump jump-latest" aria-label={newCount > 0 ? `Jump to latest, ${newCount} new ${newCount === 1 ? 'message' : 'messages'}` : 'Jump to latest'} title="Jump to latest" onClick={() => api.current?.scrollToBottom()}>
             <ArrowDownIcon />
-            <span>{newCount > 0 ? `${newCount} new ${newCount === 1 ? 'message' : 'messages'}` : 'Jump to latest'}</span>
+            <span className="jump-words">{newCount > 0 ? `${newCount} new ${newCount === 1 ? 'message' : 'messages'}` : 'Jump to latest'}</span>
+            {newCount > 0 ? <span className="jump-count" aria-hidden="true">{newCount > 99 ? '99+' : newCount}</span> : null}
           </button>
         ) : null}
       </div>

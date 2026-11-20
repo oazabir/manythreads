@@ -157,7 +157,13 @@ test('meetings/scheduled-header', async ({ browser }) => {
     who: 'nadia',
     go: async (page) => {
       await page.goto('/t/engineering/c/design');
-      await expect(page.getByTestId('scheduled-chip')).toBeVisible();
+      if (page.viewportSize()!.width > 760) await expect(page.getByTestId('scheduled-chip')).toBeVisible();
+      else {
+        // on a phone the header is the name and the bell (P34-05): the plan is an item of the channel's details menu
+        await expect(page.getByTestId('scheduled-chip')).toHaveCount(1);
+        await page.getByTestId('channel-details-button').click();
+        await expect(page.getByTestId('details-planned')).toBeVisible();
+      }
       await mask(page, VOLATILE);
     },
   });

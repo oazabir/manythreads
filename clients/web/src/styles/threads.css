@@ -619,7 +619,16 @@
   list-style: none;
 }
 
+/* a phone (P34-05, finding 22): the box takes its own line, so its placeholder is whole, and the two filters and the layout switch share the next one */
 @media (width <= 480px) {
+  .inf {
+    padding-inline: 12px;
+  }
+
+  .inf-field {
+    flex-basis: 100%;
+  }
+
   .inf-input,
   .inf-order,
   .inf-clear {

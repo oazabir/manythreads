@@ -106,3 +106,14 @@ export function parseLocalCommand(commands: readonly LocalCommand[], text: strin
   const command = commands.find((c) => c.name === (m[1] ?? '').toLowerCase());
   return command ? { command, arg: (m[2] ?? '').trim() } : null;
 }
+
+/**
+ * Which ends of a row that scrolls sideways have more tools beyond them (P34-05, finding 30): the phone's format bar is wider than the screen, and a tool cut at
+ * the edge gave no sign that the row scrolls. `none` when it all fits.
+ */
+export function scrollEdges(scrollLeft: number, clientWidth: number, scrollWidth: number): 'none' | 'start' | 'end' | 'both' {
+  if (scrollWidth - clientWidth <= 1) return 'none';
+  const before = scrollLeft > 1;
+  const after = scrollLeft + clientWidth < scrollWidth - 1;
+  return before && after ? 'both' : before ? 'start' : after ? 'end' : 'none';
+}

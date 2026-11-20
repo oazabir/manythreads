@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { channelStore } from '../../channels/store';
 import { isMockMode } from '../../api/setup';
 import { useQuery } from '../../app/useQuery';
+import { useHeaderItem } from '../../shell/headerMenu';
 import { ScheduleCalendarIcon } from '../../shell/icons';
 import { useDismiss } from '../../shell/useDismiss';
 import { actionFailure } from '../../screens/meetings/words';
@@ -25,6 +26,7 @@ export function ScheduledChip({ channelId }: { channelId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const returnTo = useRef<HTMLElement | null>(null);
   useDismiss(open, () => setOpen(false), box);
 
   const reloadRef = useRef(upcoming.reload);
@@ -47,10 +49,26 @@ export function ScheduledChip({ channelId }: { channelId: string }) {
     };
   }, [channelId]);
 
-  if (isMockMode()) return null;
   // a room that has started is the card's business (Join under its start message), not the chip's
   // (the first plan may be one that has started: the chip shows the next one that has not)
-  const plan = upcoming.status === 'ok' ? chipPlan(upcoming.data.scheduledMeetings) : null;
+  const plan = !isMockMode() && upcoming.status === 'ok' ? chipPlan(upcoming.data.scheduledMeetings) : null;
+  // on a phone the chip is not in the header: the details menu names the plan, and its item opens the same card under the header (P34-05). The card takes the
+  // keyboard, and once it closes the keyboard goes back to where it was (the channel's name), since the chip itself is hidden again
+  useHeaderItem(channelId, plan ? { key: 'planned', label: `Planned: ${chipText(plan, now)}`, testId: 'details-planned', popup: true } : null, () => {
+    returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOpen(true);
+  });
+  useEffect(() => {
+    if (open) {
+      if (returnTo.current) box.current?.querySelector<HTMLElement>('.sch-pop button')?.focus();
+      return;
+    }
+    const back = returnTo.current;
+    returnTo.current = null;
+    if (back?.isConnected && (document.activeElement === document.body || document.activeElement === null)) back.focus();
+  }, [open]);
+
+  if (isMockMode()) return null;
   const mine = plan !== null && plan.organizerId === channelStore.selfActor;
 
   const cancel = async (): Promise<void> => {

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { channelsOf, noSidewaysScroll, postAs } from '../support/stack-browser.ts';
+import { holdOn } from '../channels/support.ts';
 import { addBot, answerStackEnv, answeringBrainMd, apiOn, openChat } from './support.ts';
 
 /*
@@ -94,8 +95,14 @@ test('share to a channel: the preview says which sources are kept and which are 
   try {
     const copy = own.page.getByTestId('message').filter({ has: own.page.getByTestId('answer') }).first();
     await expect(copy).toBeVisible({ timeout: 30_000 });
-    await copy.hover();
-    await copy.getByRole('button', { name: 'More actions' }).click();
+    if (isMobile) {
+      // a finger has no hover bar (P34-05): a hold opens the reactions, with More actions under them
+      await holdOn(own.page, copy);
+      await own.page.getByRole('menu', { name: 'Reactions' }).getByRole('menuitem', { name: 'More actions' }).click();
+    } else {
+      await copy.hover();
+      await copy.getByRole('button', { name: 'More actions' }).click();
+    }
     await expect(own.page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
     await expect(own.page.getByRole('menuitem', { name: 'Edit' })).toHaveCount(0);
   } finally {

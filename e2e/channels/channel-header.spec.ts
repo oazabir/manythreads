@@ -25,8 +25,23 @@ const T = { timeout: 15_000 };
 const details = (page: Page) => page.getByTestId('channel-details');
 const button = (page: Page) => page.getByTestId('channel-details-button');
 
+/*
+ * P34-05 (owner decision e, 2026-11-19): on a phone the header is the channel's name and the bell; search, the voice room, Members, Add a bookmark (and Bot
+ * Board, Schedule a room) are items of the details menu. The Members panel opens from the header icon on a wide screen and from "Members (n)" in the menu on a phone.
+ */
+async function openMembers(page: Page, isMobile: boolean): Promise<void> {
+  if (!isMobile) {
+    await page.getByTestId('members-open').click();
+    return;
+  }
+  await expect(page.getByTestId('members-open')).toBeHidden();
+  await button(page).click();
+  await details(page).getByTestId('details-members-open').click();
+  await expect(details(page)).toHaveCount(0);
+}
+
 /* every item is on the screen, inside the menu, and not covered or clipped by an ancestor (the element at its centre is the item itself) */
-async function expectItemsFullyShown(page: Page, names: string[]): Promise<void> {
+async function expectItemsFullyShown(page: Page, names: (string | RegExp)[]): Promise<void> {
   const vp = page.viewportSize()!;
   const menuBox = (await details(page).boundingBox())!;
   expect(menuBox.x).toBeGreaterThanOrEqual(0);
@@ -34,7 +49,7 @@ async function expectItemsFullyShown(page: Page, names: string[]): Promise<void>
   expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(vp.height + 1);
   for (const name of names) {
     const item = details(page).getByRole('menuitem', { name });
-    await expect(item, name).toBeVisible();
+    await expect(item, String(name)).toBeVisible();
     const r = (await item.boundingBox())!;
     expect(r.height, `${name} height`).toBeGreaterThan(8);
     expect(r.x, `${name} left`).toBeGreaterThanOrEqual(menuBox.x - 1);
@@ -176,7 +191,13 @@ test('the Members button counts what the members route says and opens the panel:
     await expect(open).toHaveAccessibleName(`Members (${api.members.length})`);
     // one icon, no avatars in the header any more
     expect(await open.locator('.av').count()).toBe(0);
-    await open.click();
+    if (isMobile) {
+      // the phone's menu item says the same count
+      await button(page).click();
+      await expect(details(page).getByTestId('details-members-open')).toHaveText(`Members (${api.members.length})`);
+      await button(page).click();
+    }
+    await openMembers(page, isMobile);
     const panel = page.getByTestId('members-panel');
     await expect(panel).toBeVisible(T);
     await expect(page.getByTestId('panel-title')).toHaveText(`Members of #${first.name}`);
@@ -208,7 +229,7 @@ test('a lead adds a team member to the channel from the Members panel: the row m
   const lead = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${name}`, isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     await expect(lead.page.getByTestId('members-open')).toHaveAttribute('data-count', String(before), T);
-    await lead.page.getByTestId('members-open').click();
+    await openMembers(lead.page, isMobile);
     const add = lead.page.getByTestId('members-out').getByTestId('member-add').first();
     await expect(add).toBeVisible(T);
     const who = (await add.getAttribute('aria-label'))!.replace(/^Add (.*) to #.*$/, '$1');
@@ -229,7 +250,7 @@ test('a lead adds a team member to the channel from the Members panel: the row m
   expect(await rafi.post(`/api/channels/${id}/join`)).toEqual({ joined: true });
   const member = await openOn(browser, playwright, stack, 'rafi', `/t/engineering/c/${name}`, isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
-    await member.page.getByTestId('members-open').click();
+    await openMembers(member.page, isMobile);
     await expect(member.page.getByTestId('members-panel')).toBeVisible(T);
     await expect(member.page.getByTestId('member-add')).toHaveCount(0);
   } finally {
@@ -247,11 +268,23 @@ test('the header search is limited to the conversation and stays on the screen a
       const r = (await b.boundingBox())!;
       expect(r.x + r.width, `${(await b.getAttribute('aria-label')) ?? (await b.textContent())} right edge`).toBeLessThanOrEqual(vpw);
     }
-    // a wide screen has the search bar always open; a phone has the magnifier that opens it
-    if (isMobile) await page.getByRole('button', { name: 'Search this conversation' }).click();
+    // a wide screen has the search bar always open; on a phone the details menu's "Search this conversation" opens the box in the header (P34-05)
+    if (isMobile) {
+      await expect(page.getByRole('button', { name: 'Search this conversation' })).toBeHidden();
+      await button(page).click();
+      await details(page).getByRole('menuitem', { name: 'Search this conversation' }).click();
+    }
     const box = page.getByRole('searchbox', { name: 'Search this conversation' });
-    if (isMobile) await expect(box).toBeFocused();
-    else await expect(box).toHaveAttribute('placeholder', `Search #${first.name}`);
+    if (isMobile) {
+      await expect(box).toBeFocused();
+      // Escape folds the box, and the keyboard goes back to the channel's name (the magnifier it came from is not on a phone's header)
+      await box.press('Escape');
+      await expect(box).toHaveCount(0);
+      await expect(button(page)).toBeFocused();
+      await button(page).click();
+      await details(page).getByRole('menuitem', { name: 'Search this conversation' }).click();
+      await expect(box).toBeFocused();
+    } else await expect(box).toHaveAttribute('placeholder', `Search #${first.name}`);
     const rect = (await box.boundingBox())!;
     const vp = page.viewportSize()!;
     expect(rect.x).toBeGreaterThanOrEqual(0);
@@ -292,8 +325,9 @@ test('the channel name keeps its whole width with the right panel open', async (
     await expect(page.locator('[data-panel-entry]')).toBeVisible(T);
     await expect(button(page)).toContainText(longName, T);
     const title = page.locator('[data-landmark="header"] .chead-title');
-    // nothing is clipped: the text is fully in the box, and the box is inside the screen
-    const fit = await button(page).evaluate((el) => ({ clipped: el.scrollWidth > el.clientWidth + 1, text: el.textContent ?? '' }));
+    // nothing is clipped: the text is fully in the box, and the box is inside the screen (on a phone the header is the name and the bell, P34-05, so a
+    // 21-character name has the row to itself)
+    const fit = await button(page).evaluate((el) => ({ clipped: el.scrollWidth > el.clientWidth + 1 || (el.querySelector('.chd-name')?.scrollWidth ?? 0) > (el.querySelector('.chd-name')?.clientWidth ?? 0) + 1, text: el.textContent ?? '' }));
     expect(fit.clipped).toBe(false);
     expect(fit.text).toContain(longName);
     const box = (await title.boundingBox())!;
@@ -304,7 +338,7 @@ test('the channel name keeps its whole width with the right panel open', async (
   }
 });
 
-test('at 390 px the details menu shows every item fully, and a 44-character name keeps every header button on the screen', async ({ browser, playwright }) => {
+test('at 390 px the header is one row, the name and the bell; a 44-character name ends in an ellipsis; the details menu has the header tools first and shows every item fully', async ({ browser, playwright }) => {
   const longName = 'hdr-' + 'x'.repeat(40);
   expect(longName).toHaveLength(44);
   const longId = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: longName })).channel.id;
@@ -315,33 +349,74 @@ test('at 390 px the details menu shows every item fully, and a 44-character name
     await expect(button(page)).toBeVisible(T);
     expect(page.viewportSize()!.width).toBe(390);
     const vpw = 390;
-    // wait for the late tools (members stack, bell) so none is missed by the count below
-    await expect(page.getByTestId('members-open')).toBeVisible(T);
-    await expect(page.locator('[data-landmark="header"]').getByRole('button', { name: /^Notifications/ })).toBeVisible(T);
-    const buttons = page.locator('[data-landmark="header"]').getByRole('button').filter({ visible: true });
+    const header = page.locator('[data-landmark="header"]');
+    await expect(header).toHaveAttribute('data-room', 'phone');
+    await expect(header.getByRole('button', { name: /^Notifications/ })).toBeVisible(T);
+    // the tools are drawn (hidden) once their data is in: wait for the Members count, so the menu below has it
+    await expect(page.getByTestId('members-open')).toHaveAttribute('data-count', /^\d+$/, T);
+    // P34-05 (owner decision e, 2026-11-19): the header is the menu button, the name and the bell; no other tool is drawn there
+    const buttons = header.getByRole('button').filter({ visible: true });
     const labels: string[] = [];
+    const centres: number[] = [];
     for (const b of await buttons.all()) {
       const r = (await b.boundingBox())!;
       const label = (await b.getAttribute('aria-label')) ?? (await b.textContent()) ?? '';
       labels.push(label);
+      centres.push(r.y + r.height / 2);
       expect(r.x, `${label} left`).toBeGreaterThanOrEqual(0);
       expect(r.x + r.width, `${label} right`).toBeLessThanOrEqual(vpw);
     }
-    expect(labels.join('|')).toMatch(/Search/i);
     expect(labels.join('|')).toMatch(/Notification/i);
-    expect(labels.join('|')).toMatch(/Members/i);
     expect(labels.join('|')).toMatch(/hdr-x/);
-    const name = page.locator('[data-landmark="header"] .chd-name');
-    // P21-23 (B13): on a phone the name wraps (at most two lines) and is never cut with an ellipsis
-    const shape = await name.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight) }));
-    expect(shape.scroll, 'the long name is not cut').toBeLessThanOrEqual(shape.client + 1);
-    // (a 44-character name with no space in it may take a third line: the bottom-bar spec holds the two-line rule for a 38-character name)
-    expect(shape.height, 'the long name takes three lines at the most').toBeLessThanOrEqual(shape.line * 3 + 2);
+    expect(labels.join('|')).not.toMatch(/Search|Members|voice room|bookmark|Schedule/i);
+    for (const tool of ['members-open', 'call-start', 'bookmark-add', 'conversation-search-open', 'schedule-open']) await expect(page.getByTestId(tool), tool).toBeHidden();
+    // one row: the buttons share a line and the header is as tall as one
+    expect(Math.max(...centres) - Math.min(...centres), 'the buttons are on one row').toBeLessThanOrEqual(4);
+    expect((await header.boundingBox())!.height).toBeLessThanOrEqual(60);
+    // the name gives way with an ellipsis (it was two or three lines tall before, P21-23 B13); the whole name is still the button's text
+    const name = header.locator('.chd-name');
+    const shape = await name.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, height: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight), overflow: getComputedStyle(el).textOverflow }));
+    expect(shape.overflow).toBe('ellipsis');
+    expect(shape.scroll, 'the long name is cut at the end').toBeGreaterThan(shape.client);
+    expect(shape.height, 'the name takes one line').toBeLessThanOrEqual(shape.line + 2);
     await expect(name).toHaveText(`#${longName}`);
     expect(await noSidewaysScroll(page)).toBe(true);
     await button(page).click();
     await expect(details(page)).toBeVisible();
-    await expectItemsFullyShown(page, ['Notifications', 'Star', 'Members', 'Integrations', 'Files', 'Leave channel']);
+    // the header's tools first, in the header's order, then the menu as it was (the list view of Members steps aside: its twin above opens the panel)
+    const items = await details(page).getByRole('menuitem').filter({ visible: true }).allTextContents();
+    expect(items.slice(0, 4).map((t) => t.trim())).toEqual(['Search this conversation', 'Start a voice room', expect.stringMatching(/^Members \(\d+\)$/), 'Add a bookmark']);
+    await expectItemsFullyShown(page, ['Search this conversation', 'Start a voice room', /^Members \(\d+\)$/, 'Add a bookmark', 'Notifications', /^Star$/, 'Schedule a room', 'Integrations', 'Files', 'Leave channel']);
+    // the keyboard starts on the first item
+    await expect(details(page).getByRole('menuitem', { name: 'Search this conversation' })).toBeFocused();
+  } finally {
+    await context.close();
+  }
+});
+
+test('at 390 px each tool moved into the details menu does what its header button does, and the keyboard comes back to the channel name', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${first.name}`, { viewport: PHONE, mobile: true });
+  try {
+    await expect(messagesIn(page).first()).toBeVisible(T);
+    await expect(page.getByTestId('members-open')).toHaveAttribute('data-count', /^\d+$/, T);
+    // Add a bookmark opens the bookmark dialog; closing it gives the keyboard back to the name
+    await button(page).click();
+    await details(page).getByTestId('details-bookmark-add').click();
+    await expect(details(page)).toHaveCount(0);
+    await expect(page.getByTestId('bookmark-dialog')).toBeVisible(T);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('bookmark-dialog')).toHaveCount(0);
+    await expect(button(page)).toBeFocused();
+    // Schedule a room opens its dialog (it was a menu item on a phone already, P33-08)
+    await button(page).click();
+    await expect(details(page).getByTestId('details-schedule')).toBeVisible();
+    await page.keyboard.press('Escape');
+    // Members opens the Members panel
+    await openMembers(page, true);
+    await expect(page.getByTestId('members-panel')).toBeVisible(T);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('members-panel')).toHaveCount(0);
+    expect(await noSidewaysScroll(page)).toBe(true);
   } finally {
     await context.close();
   }

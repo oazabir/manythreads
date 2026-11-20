@@ -202,6 +202,17 @@ test('Jump to latest counts the new messages that came while scrolled up; the da
     await postMessage(nadia, id, 'second while away');
     const jump = page.getByRole('button', { name: 'Jump to latest, 2 new messages' });
     await expect(jump).toContainText('2 new messages');
+    // P34-05 (finding 30): the button sits at the bottom right, off the middle where every day pill is drawn, so no pill lies under it
+    const place = await page.evaluate(() => {
+      const j = document.querySelector('.jump-latest')!.getBoundingClientRect();
+      const l = document.querySelector('.vlist')!.getBoundingClientRect();
+      const under = [...document.querySelectorAll('.vlist .daysep > span, .day-float > span')].some((d) => {
+        const r = d.getBoundingClientRect();
+        return !(r.right <= j.left || r.left >= j.right || r.bottom <= j.top || r.top >= j.bottom);
+      });
+      return { under, rightHalf: j.left > l.left + l.width / 2 };
+    });
+    expect(place).toEqual({ under: false, rightHalf: true });
 
     // scrolled a little: the day stays on top as a floating pill
     await list.evaluate((el) => {
@@ -214,6 +225,36 @@ test('Jump to latest counts the new messages that came while scrolled up; the da
     await jump.click();
     await expect(messages(page).last()).toContainText('second while away');
     await expect(page.getByRole('button', { name: /Jump to latest/ })).toBeHidden();
+  } finally {
+    await rafi.context.close();
+    await omar.ctx.dispose();
+    await nadia.ctx.dispose();
+  }
+});
+
+test('in the thread pane the hover bar never lies over the time of a message (P34-05, finding 8)', async ({ browser, isMobile }) => {
+  test.skip(isMobile, 'the hover bar is the desktop layout; a finger has none');
+  const omar = await apiAs('omar');
+  const nadia = await apiAs('nadia');
+  const { id, name } = await createChannel(omar, 'panebar');
+  const root = await postMessage(omar, id, 'a root message for the thread pane');
+  const reply = await postMessage(nadia, id, 'a reply whose time must stay readable while the bar is up', root.id);
+  const rafi = await openAs(browser, 'rafi', `/t/engineering/c/${name}?panel=thread:${root.id}`);
+  try {
+    const pane = rafi.page.locator('[data-landmark="right-panel"]');
+    for (const messageId of [root.id, reply.id]) {
+      const row = pane.locator(`[data-message-id="${messageId}"]`);
+      await expect(row).toBeVisible();
+      await row.hover();
+      const bar = row.getByRole('toolbar', { name: 'Message actions' });
+      await expect(bar).toBeVisible();
+      // the narrow column's bar is Reply, React and More: the quick reactions are in React
+      await expect(bar.getByRole('button', { name: /^React with/ })).toHaveCount(0);
+      const b = (await bar.boundingBox())!;
+      const t = (await row.locator('.who time').first().boundingBox())!;
+      const overlaps = !(b.x + b.width <= t.x || b.x >= t.x + t.width || b.y + b.height <= t.y || b.y >= t.y + t.height);
+      expect(overlaps, `the bar ${JSON.stringify(b)} over the time ${JSON.stringify(t)}`).toBe(false);
+    }
   } finally {
     await rafi.context.close();
     await omar.ctx.dispose();

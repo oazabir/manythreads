@@ -6,6 +6,7 @@ import { isApiError } from '../api/client';
 import { addBookmark, fetchBookmarks, fetchChannelFiles, fileContentUrl, removeBookmark } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { Dialog } from '../components/Dialog';
+import { useHeaderItem } from '../shell/headerMenu';
 import { BookmarkIcon } from '../shell/icons';
 import { CloseIcon } from '../shell/icons';
 
@@ -27,6 +28,8 @@ export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { chann
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const items = list.status === 'ok' ? list.data.items : [];
+  // on a phone the button is not in the header: the details menu carries "Add a bookmark" (P34-05)
+  useHeaderItem(channelId, canEdit && slot ? { key: 'bookmark', label: 'Add a bookmark', testId: 'details-bookmark-add', popup: true } : null, () => setAdding(true));
 
   const remove = async (b: ChannelBookmark): Promise<void> => {
     setError(null);

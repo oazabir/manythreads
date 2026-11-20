@@ -1275,3 +1275,109 @@ a.sec:hover {
   margin-right: 4px;
   font-size: var(--fs-small);
 }
+
+/* ---- the Messages page as a chat app's list (P34-05): face, name and time, then the last line and the unread count ---- */
+.dmc {
+  margin: 4px 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dmc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+
+  /* the row menu's button sits at the right end: the time keeps clear of it */
+  padding: 8px 44px 8px 10px;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.dmc-row:hover {
+  background: var(--hover);
+}
+
+.dmc-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.dmc-face {
+  display: inline-flex;
+  flex: none;
+}
+
+.dmc .dmc-row .dmc-face > .av {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  font-size: var(--fs-small);
+}
+
+.dmc-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dmc-top,
+.dmc-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dmc-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmc-row.unread .dmc-name {
+  font-weight: 700;
+}
+
+.dmc-time {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.dmc-row.unread .dmc-time {
+  color: var(--human);
+}
+
+.dmc-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmc-row.unread .dmc-line {
+  color: var(--ink);
+}
+
+.dmc-row.muted .dmc-name,
+.dmc-row.muted .dmc-line {
+  color: var(--faint);
+}
+
+.dmc-bottom > .pill {
+  flex: none;
+}

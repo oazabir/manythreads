@@ -1044,6 +1044,28 @@
   box-shadow: var(--card-shadow);
 }
 
+/* a finger has no bar (P34-05): only the menu a held finger opened, from the row's top right corner */
+.msg .acts.acts-touch {
+  top: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.acts .emoji-menu .touch-item {
+  flex-basis: 100%;
+  gap: 8px;
+}
+
+/*
+ * The thread pane is a narrow column (320 px and up): the bar there is Reply, React and More only (the quick reactions are in React), and the author line keeps
+ * the bar's width free at its end, so the time wraps under the name rather than slide under the bar (P34-05, finding 8)
+ */
+.right-panel .rpb .msg .acts .act-quick {
+  display: none;
+}
+
 .act {
   display: inline-grid;
   place-items: center;
@@ -1209,6 +1231,50 @@
   /* below the floating day pill (top 6px) and at the side, so it never covers the day divider, which sits in the middle (a short DM draws that divider at the same height) */
   inset: 40px 24px auto auto;
   transform: none;
+}
+
+/* "Jump to latest" sits at the bottom right corner, off the middle where every day pill is drawn, so a divider never passes under it (P34-05, finding 30) */
+.jump.jump-latest {
+  inset: auto 24px 12px auto;
+  transform: none;
+}
+
+.jump-count {
+  display: none;
+}
+
+/* a phone, or a column a right panel leaves tight (the header measures it: data-room): too narrow for the words beside a day pill, so the button is a round
+   arrow in the corner with the count on it; its name and tooltip keep the words */
+.frame:has(.chead[data-room="tight"]) .jump.jump-latest,
+.frame:has(.chead[data-room="phone"]) .jump.jump-latest {
+  position: absolute;
+  right: 12px;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.frame:has(.chead[data-room="tight"]) .jump.jump-latest .jump-words,
+.frame:has(.chead[data-room="phone"]) .jump.jump-latest .jump-words {
+  display: none;
+}
+
+.frame:has(.chead[data-room="tight"]) .jump.jump-latest .jump-count,
+.frame:has(.chead[data-room="phone"]) .jump.jump-latest .jump-count {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-lg);
+  background: var(--human);
+  color: var(--on-you);
+  font-size: var(--fs-tiny);
+  line-height: 18px;
+  text-align: center;
 }
 
 /* a conversation that does not scroll has its day divider just under the start line, wherever the pill would go at the top: the pill rests at the bottom corner, where nothing is drawn */
@@ -2210,6 +2276,19 @@
     scrollbar-width: none;
   }
 
+  /* the end with more tools beyond it fades out, so a tool cut at the edge says the row scrolls (P34-05, finding 30; ComposerToolbar sets data-more) */
+  .ctools[data-more="end"] {
+    mask-image: linear-gradient(to right, var(--ink) calc(100% - 32px), transparent);
+  }
+
+  .ctools[data-more="start"] {
+    mask-image: linear-gradient(to left, var(--ink) calc(100% - 32px), transparent);
+  }
+
+  .ctools[data-more="both"] {
+    mask-image: linear-gradient(to right, transparent, var(--ink) 32px, var(--ink) calc(100% - 32px), transparent);
+  }
+
   /* a thumb needs 44 px */
   .ctool,
   .ctool-sel,
@@ -2824,5 +2903,55 @@
   .chead-actions .call-here.chv-tool {
     width: 40px;
     height: 40px;
+  }
+}
+
+/*
+ * A phone (P34-05, owner 2026-11-19): the channel header is the name and the bell, on one row. Every other tool of the slot is hidden and is an item at the top of
+ * the details menu (shell/headerMenu.ts); a box such an item opens (the search, the planned room's card) shows in the header while it is open. The name takes the
+ * row and ends in an ellipsis (the menu and the tab title carry it whole). The Shell sets `data-room="phone"` at 760 px and less.
+ */
+.chd-head-tool {
+  display: none;
+}
+
+.chead[data-room="phone"] .chd-menu .chd-head-tool {
+  display: flex;
+}
+
+.chead[data-room="phone"] .chd-menu .chd-head-twin,
+.chead[data-room="phone"] .chead-actions > .chv-tool:not(.chv-chip),
+.chead[data-room="phone"] .chead-actions > .bm-open,
+.chead[data-room="phone"] .chead-actions > .chv-chip:not(:has(.sch-pop)) {
+  display: none;
+}
+
+.chead[data-room="phone"]:has(.chv-tool) {
+  flex-wrap: nowrap;
+}
+
+.chead[data-room="phone"]:has(.chv-tool) > .chead-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  white-space: nowrap;
+}
+
+.chead[data-room="phone"]:has(.chv-tool) .chd-name {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chead[data-room="phone"] .chead-tools:has(.chv-tool),
+.chead[data-room="phone"] .chead-tools:has(.chv-tool) .chead-actions {
+  flex: 0 0 auto;
+}
+
+/* the thread pane's author line keeps the hover bar's width free at its end (see `.right-panel .rpb .msg .acts .act-quick`): the time never lies under the bar */
+@media (any-hover: hover) {
+  .right-panel .rpb .msg .who:not(.run-who) {
+    padding-inline-end: 96px;
   }
 }

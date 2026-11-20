@@ -2,13 +2,14 @@ import { useParams } from 'react-router';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import { SkeletonRows } from '../../components/Skeleton';
+import { DmChatList } from '../../dms/DmChatList';
 import { useDms } from '../../dms/store';
-import { DmRows, NewMessageButton } from '../../shell/DirectMessages';
+import { NewMessageButton } from '../../shell/DirectMessages';
 import { DmIcon } from '../../shell/icons';
 
 /**
- * The phone's Messages page (P21-23): the person's direct messages as a full page behind the bottom bar, the same rows as the sidebar section
- * (unread count, presence dot, row menu), with "New message" first so its picker has the room below it.
+ * The Messages page (P21-23): the person's direct messages as a full page, behind the bottom bar on a phone and from the sidebar's "Direct messages" heading on
+ * a desktop, with "New message" first so its picker has the room below it. The rows are a chat app's list (P34-05): face, name, time, last line, unread count.
  */
 export function MessagesScreen() {
   const slug = useParams().team ?? '';
@@ -23,7 +24,7 @@ export function MessagesScreen() {
       ) : null}
       {feed.status === 'error' ? <p className="empty-body" role="alert">Could not load your messages. Try again in a moment.</p> : null}
       {feed.status === 'absent' ? <p className="empty-body">Direct messages are not turned on here.</p> : null}
-      <DmRows slug={slug} />
+      <DmChatList slug={slug} />
     </div>
   );
 }

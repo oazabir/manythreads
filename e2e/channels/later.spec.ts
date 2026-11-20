@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { apiAs, createChannel, openAs, postMessage, uniqueName, type Api } from './support.ts';
+import { apiAs, createChannel, holdOn, openAs, postMessage, uniqueName, type Api } from './support.ts';
 
 /**
  * Later and reminders (PLAN P14-04, docs/plugins/reminders.md). Rafi saves messages of a channel Nadia writes in: "Mark for later" from the More
@@ -179,8 +179,9 @@ test.describe('phone', () => {
     try {
       const r = row(page, 'phone');
       await expect(r).toBeVisible(T);
-      await r.hover();
-      await r.getByRole('button', { name: 'More actions' }).click();
+      // a finger has no hover bar (P34-05): a hold opens the reactions, and More actions under them opens the message's menu
+      await holdOn(page, r);
+      await page.getByRole('menu', { name: 'Reactions' }).getByRole('menuitem', { name: 'More actions' }).click();
       await page.getByRole('menuitem', { name: 'Remind me…' }).click();
       const choice = page.getByRole('menuitem', { name: 'In 20 minutes' });
       await expect(choice).toBeVisible(T);

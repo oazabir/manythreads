@@ -63,6 +63,9 @@ import {
  * component re-renders only when its own slice moved.
  */
 
+/** A message that arrived, changed or went, as the hooks of `onMessageChange` hear of it. */
+export type MessageChange = { type: 'posted' | 'edited'; message: ChannelMessage } | { type: 'deleted'; channelId: string; messageId: string; threadRootId: string | null };
+
 export const channelKey = (channelId: string): string => `c:${channelId}`;
 export const threadKey = (rootId: string): string => `t:${rootId}`;
 
@@ -102,6 +105,7 @@ export class ChannelStore {
   private summaryTimer: ReturnType<typeof setTimeout> | null = null;
   private resyncHooks = new Set<() => void>();
   private activityHooks = new Set<(channelId: string, at: string) => void>();
+  private changeHooks = new Set<(c: MessageChange) => void>();
   private detach: Array<() => void> = [];
 
   // ---- subscription -------------------------------------------------------------------------------------
@@ -161,6 +165,12 @@ export class ChannelStore {
   onActivity(cb: (channelId: string, at: string) => void): () => void {
     this.activityHooks.add(cb);
     return () => this.activityHooks.delete(cb);
+  }
+
+  /** A hook for the DM list (its last line, P34-05): every message that arrives (pushed, or sent from here), is edited or is deleted. */
+  onMessageChange(cb: (c: MessageChange) => void): () => void {
+    this.changeHooks.add(cb);
+    return () => this.changeHooks.delete(cb);
   }
 
   handlePush(push: Push): void {
@@ -226,6 +236,7 @@ export class ChannelStore {
   applyPosted(arrived: ChannelMessage, localId?: string): void {
     const message = this.withNewerTranscript(arrived);
     for (const h of [...this.activityHooks]) h(message.channelId, message.createdAt);
+    for (const h of [...this.changeHooks]) h({ type: 'posted', message });
     const root = message.threadRootId;
     const key = root ? threadKey(root) : channelKey(message.channelId);
     const mine = this.self !== null && message.authorId === this.self;
@@ -278,9 +289,11 @@ export class ChannelStore {
       if (this.voiceEdits.size > 100) this.voiceEdits.delete(this.voiceEdits.keys().next().value as string);
     }
     this.mapMessage(next.channelId, next.threadRootId, next.id, (m) => withEdit(m, next));
+    for (const h of [...this.changeHooks]) h({ type: 'edited', message: next });
   }
 
   private onDeleted(channelId: string, messageId: string, rootId: string | null): void {
+    for (const h of [...this.changeHooks]) h({ type: 'deleted', channelId, messageId, threadRootId: rootId });
     const at = new Date().toISOString();
     if (rootId === null) {
       if (this.timelines.has(channelKey(channelId))) this.put(channelKey(channelId), (t) => ({ ...t, items: removeMessage(t.items, messageId, at) }));

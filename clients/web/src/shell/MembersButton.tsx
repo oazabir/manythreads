@@ -3,6 +3,7 @@ import { fetchChannelMembers } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { Avatar } from '../components/ui';
 import { usePanel } from '../kernel/panel';
+import { useHeaderItem } from './headerMenu';
 import { MembersIcon } from './icons';
 import { MEMBERS_PANEL, onMembersChanged } from './membersModel';
 
@@ -41,6 +42,8 @@ export function MembersButton({ channelId }: { channelId: string }) {
     else if (onPerson) panel.back();
     else panel.push({ type: MEMBERS_PANEL, id: channelId });
   };
+  // on a phone the icon is not in the header: the details menu's "Members (6)" opens the same panel (P34-05)
+  useHeaderItem(channelId, { key: 'members', label: count === null ? 'Members' : `Members (${count})`, testId: 'details-members-open', pressed: open }, press);
   return (
     <button
       type="button"

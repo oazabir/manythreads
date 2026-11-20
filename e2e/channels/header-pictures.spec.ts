@@ -83,6 +83,26 @@ async function openLooking(browser: Browser, playwright: PlaywrightWorkerArgs['p
   return { page, context };
 }
 
+/* the Members panel: the header icon, or on a phone (P34-05: the header is the name and the bell) the details menu's "Members (n)" */
+async function openMembersPanel(page: Page, mobile: boolean): Promise<void> {
+  if (!mobile) {
+    await page.getByTestId('members-open').click();
+    return;
+  }
+  await page.getByTestId('channel-details-button').click();
+  await page.getByTestId('details-members-open').click();
+}
+
+/* the tools are drawn once their data is in: visible on a wide screen, hidden (their items are in the details menu) on a phone */
+async function expectTools(page: Page, mobile: boolean): Promise<void> {
+  for (const tool of ['members-open', 'call-start']) {
+    if (mobile) {
+      await expect(page.getByTestId(tool)).toHaveCount(1, T);
+      await expect(page.getByTestId(tool)).toBeHidden();
+    } else await expect(page.getByTestId(tool)).toBeVisible(T);
+  }
+}
+
 async function endLive(api: StackApi): Promise<void> {
   const rooms = await api.get<{ meetings: Array<{ meeting: { id: string; channelId: string } }> }>('/api/meetings/live').catch(() => ({ meetings: [] }));
   for (const r of rooms.meetings) await api.post(`/api/meetings/${r.meeting.id}/end`).catch(() => undefined);
@@ -99,23 +119,30 @@ for (const look of LOOKS) {
         // 1. the header with no room
         const omar = await openLooking(browser, playwright, 'omar', '/t/engineering/c/dev', look, size.mobile);
         contexts.push(omar.context);
-        await expect(omar.page.getByTestId('members-open')).toBeVisible(T);
-        await expect(omar.page.getByTestId('call-start')).toBeVisible(T);
+        await expectTools(omar.page, size.mobile);
         await omar.page.waitForTimeout(400);
         await omar.page.screenshot({ path: `${base}header-no-room.png` });
         await strip(omar.page, `${base}strip-no-room.png`);
+        if (size.mobile) {
+          // the details menu with the header's tools at its top
+          await omar.page.getByTestId('channel-details-button').click();
+          await expect(omar.page.getByTestId('details-members-open')).toBeVisible(T);
+          await omar.page.waitForTimeout(300);
+          await omar.page.screenshot({ path: `${base}details-menu.png` });
+          await omar.page.keyboard.press('Escape');
+        }
 
         // 2. the members panel as a lead, then as a member
         const lead = await openLooking(browser, playwright, 'omar', `/t/engineering/c/${SMALL}`, look, size.mobile);
         contexts.push(lead.context);
-        await lead.page.getByTestId('members-open').click();
+        await openMembersPanel(lead.page, size.mobile);
         await expect(lead.page.getByTestId('members-out').getByTestId('member-add').first()).toBeVisible(T);
         await lead.page.waitForTimeout(300);
         await lead.page.screenshot({ path: `${base}members-lead.png` });
         await lead.context.close();
         const rafi = await openLooking(browser, playwright, 'rafi', `/t/engineering/c/${SMALL}`, look, size.mobile);
         contexts.push(rafi.context);
-        await rafi.page.getByTestId('members-open').click();
+        await openMembersPanel(rafi.page, size.mobile);
         await expect(rafi.page.getByTestId('members-panel')).toBeVisible(T);
         await expect(rafi.page.getByTestId('members-no-add')).toBeVisible(T);
         await rafi.page.waitForTimeout(300);
@@ -167,7 +194,7 @@ for (const look of LOOKS) {
         // 5. a 44-character channel name
         const long = await openLooking(browser, playwright, 'omar', `/t/engineering/c/${LONG}`, look, size.mobile);
         contexts.push(long.context);
-        await expect(long.page.getByTestId('members-open')).toBeVisible(T);
+        await expectTools(long.page, size.mobile);
         await long.page.waitForTimeout(400);
         await long.page.screenshot({ path: `${base}header-long-name.png` });
         expect(longId).toBeTruthy();

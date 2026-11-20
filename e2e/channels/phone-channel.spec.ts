@@ -126,6 +126,25 @@ test('a finger held on a message opens the reaction picker and adds no reaction;
     await page.getByRole('textbox', { name: `Message #${channelName}` }).tap();
     await expect(page.getByRole('menu', { name: 'Reactions' })).toHaveCount(0);
 
+    // P34-05 (correction 4): a finger has no hover bar, so nothing stands over the row's time; the hold offers what the bar did under the reactions
+    await expect(page.getByRole('toolbar', { name: 'Message actions' })).toHaveCount(0);
+    const again = await center(row);
+    await touch.down(again.left + 120, again.y);
+    await page.waitForTimeout(700);
+    await touch.up();
+    await page.waitForTimeout(400);
+    const reactions = page.getByRole('menu', { name: 'Reactions' });
+    await expect(reactions).toBeVisible();
+    await expect(page.getByRole('toolbar', { name: 'Message actions' })).toHaveCount(0);
+    await expect(reactions.getByRole('menuitem', { name: 'Reply in thread' })).toBeVisible();
+    await reactions.getByRole('menuitem', { name: 'More actions' }).tap();
+    const actions = page.getByRole('menu', { name: 'Message' });
+    await expect(actions.getByRole('menuitem', { name: /Copy link/ })).toBeVisible();
+    await expect(actions).toBeInViewport({ ratio: 1 });
+    await page.waitForTimeout(500);
+    await page.getByRole('textbox', { name: `Message #${channelName}` }).tap();
+    await expect(actions).toHaveCount(0);
+
     // a tap on the text of a message that has replies opens its thread
     const answered = rowOf(page, replied);
     await expect(answered).toBeVisible();

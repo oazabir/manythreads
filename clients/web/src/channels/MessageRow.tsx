@@ -10,6 +10,8 @@ import { TaskView } from '../taskview/TaskView';
 import { VoiceRoomCard } from '../meetings/VoiceRoomCard';
 import { TodoMessage } from './todo-card/TodoMessage';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
+import { useCoarsePointer } from '../shell/useCoarsePointer';
+import { rowBar } from './rowBar';
 import { EmojiPicker } from './EmojiPicker';
 import { ReactionPill } from './ReactionPill';
 import { loadReactions, rememberReaction } from './recentReactions';
@@ -261,6 +263,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
 
   // a message with replies opens its thread when its body is clicked (P21-26); not inside the thread itself
   const hasThread = !inThread && m.replyCount > 0 && actions.openThread !== undefined;
+  // a finger has no hover: no bar over the row, only the menu a held finger opened (P34-05)
+  const coarse = useCoarsePointer();
+  const bar = rowBar({ coarse, hot, tapped, menuOpen: menu !== null, deleted });
   return (
     <div
       className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''} ${continued ? 'run' : ''}`}
@@ -307,20 +312,20 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         }
       }}
     >
-      {deleted || !(hot || tapped || menu !== null) ? null : (
-        <div className="acts" ref={box} role="toolbar" aria-label="Message actions">
-          {canPost
+      {bar === 'none' ? null : (
+        <div className={`acts${bar === 'menu' ? ' acts-touch' : ''}`} ref={box} role={bar === 'bar' ? 'toolbar' : undefined} aria-label={bar === 'bar' ? 'Message actions' : undefined}>
+          {canPost && bar === 'bar'
             ? quick.map((e) => (
                 <button key={e} type="button" className="act act-quick" aria-label={`React with ${e}`} title={`React with ${e}`} onClick={() => { setMenu(null); react(e); }}><EmojiGlyph value={e} /></button>
               ))
             : null}
-          {!inThread && canPost ? (
+          {bar === 'bar' && !inThread && canPost ? (
             <button type="button" className="act" aria-label="Reply in thread" title="Reply in thread" onClick={() => actions.openThread?.(m.id)}><ReplyIcon /></button>
           ) : null}
-          {canPost ? (
+          {bar === 'bar' && canPost ? (
             <button type="button" className="act" aria-label="Add reaction" aria-expanded={menu === 'react'} aria-haspopup="menu" title="Add reaction" onClick={() => setMenu((x) => (x === 'react' ? null : 'react'))}><SmileIcon /></button>
           ) : null}
-          {!deleted ? (
+          {bar === 'bar' ? (
             <button type="button" className="act" aria-label="More actions" aria-expanded={menu === 'more'} aria-haspopup="menu" title="More" onClick={() => setMenu((x) => (x === 'more' ? null : 'more'))}><MoreIcon /></button>
           ) : null}
           {menu === 'react' ? (
@@ -329,6 +334,13 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 <button key={e} type="button" role="menuitem" className="emoji" aria-label={`React with ${e}`} onClick={() => { setMenu(null); react(e); }}>{e}</button>
               ))}
               <button type="button" role="menuitem" className="emoji emoji-more" aria-label="More emoji" title="More emoji" onClick={() => setMenu('emoji')}>More…</button>
+              {/* a finger has no bar: what the bar offers besides reactions is here, under them */}
+              {bar === 'menu' && !inThread && canPost && actions.openThread ? (
+                <button type="button" role="menuitem" className="menu-item touch-item" data-testid="touch-reply" onClick={() => { setMenu(null); actions.openThread?.(m.id); }}><ReplyIcon /> Reply in thread</button>
+              ) : null}
+              {bar === 'menu' ? (
+                <button type="button" role="menuitem" className="menu-item touch-item" data-testid="touch-more" onClick={() => setMenu('more')}><MoreIcon /> More actions</button>
+              ) : null}
             </RowMenu>
           ) : null}
           {menu === 'emoji' ? (

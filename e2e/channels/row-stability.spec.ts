@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { WEB, authState } from '../support/env.ts';
-import { apiAs, createChannel, postMessage, uniqueName } from './support.ts';
+import { apiAs, createChannel, holdOn, postMessage, uniqueName } from './support.ts';
 
 /*
  * A message row is not replaced or moved while the page finishes loading (found when the phone Later test failed with "element was detached" after the
@@ -13,6 +13,16 @@ test.use({ actionTimeout: 10_000 });
 
 const T = { timeout: 15_000 };
 const MARK = '__rowStable';
+
+/* the row's actions: the hover bar with a mouse; a finger has no hover bar (P34-05), so a hold opens the reactions menu, drawn in the same `.acts` of the row */
+async function showActions(page: Page, row: Locator, isMobile: boolean): Promise<Locator> {
+  if (isMobile) {
+    await holdOn(page, row);
+    return row.getByRole('menu', { name: 'Reactions' });
+  }
+  await row.hover();
+  return row.getByRole('toolbar', { name: 'Message actions' });
+}
 
 test('a late roster does not move the rows: the New line is already there when they are first drawn, and the action bar stays', async ({ browser, isMobile }) => {
   const omar = await apiAs('omar');
@@ -40,8 +50,7 @@ test('a late roster does not move the rows: the New line is already there when t
     await expect(row).toBeVisible(T);
     await expect(page.getByTestId('unread-divider')).toHaveCount(1);
     const before = await row.boundingBox();
-    await row.hover();
-    const bar = row.getByRole('toolbar', { name: 'Message actions' });
+    const bar = await showActions(page, row, isMobile);
     await expect(bar).toBeVisible(T);
     await row.evaluate((el, k) => { (el as unknown as Record<string, boolean>)[k] = true; el.querySelector('.acts')!.setAttribute(k, '1'); }, MARK);
     await page.waitForTimeout(1_500);
@@ -75,8 +84,7 @@ test('the presence cards arriving, and being read again, leave the same row and 
     await expect(row).toBeVisible(T);
     // before the cards: the name is plain text (a profile button only once the cards say presence may be shown)
     await expect(row.getByTestId('profile-open')).toHaveCount(0);
-    await row.hover();
-    const bar = row.getByRole('toolbar', { name: 'Message actions' });
+    const bar = await showActions(page, row, isMobile);
     await expect(bar).toBeVisible(T);
     const before = await row.boundingBox();
     await row.evaluate((el, k) => { (el as unknown as Record<string, boolean>)[k] = true; el.querySelector('.acts')!.setAttribute(k, '1'); }, MARK);

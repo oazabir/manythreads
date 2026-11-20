@@ -88,10 +88,11 @@ test('tapping the body of a message with replies opens its thread as a full shee
     await expect(row).not.toHaveClass(/tapped/);
     await page.getByRole('button', { name: 'Close panel' }).click();
     await expect(sheet).toBeHidden();
-    // a message nobody answered still opens its bar on a tap, and opens no thread
+    // a message nobody answered is marked on a tap (its time shows in a run) and opens no thread; a finger gets no hover bar (P34-05: it stood over the time)
     const plain = messagesIn(page).filter({ hasText: 'ready when you are' }).first();
     await plain.locator('.txt').first().tap({ position: { x: 150, y: 14 } }); // past the @nadia chip, which has a click of its own
     await expect(plain).toHaveClass(/tapped/);
+    await expect(plain.getByRole('toolbar', { name: 'Message actions' })).toHaveCount(0);
     await expect(page.getByTestId('thread-view')).toHaveCount(0);
     expect(await noSidewaysScroll(page)).toBe(true);
     // the root message inside the sheet still opens its bar on a tap
