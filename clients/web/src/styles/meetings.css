@@ -942,6 +942,20 @@
   font-weight: 600;
 }
 
+.room-card-invited {
+  margin: 0;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the Invite more dialog is drawn on top of the page; its holder in the card has no box of its own */
+.room-card .room-card-portal {
+  display: contents;
+}
+
 .room-card .btn.s {
   min-height: 32px;
   padding: 4px 14px;
@@ -975,4 +989,42 @@
   .room-end .btn.s {
     min-height: 44px;
   }
+}
+
+/* ---- the start dialog (P15-25): title, people, guest link, note-taker ---- */
+.scd-form {
+  display: grid;
+  gap: 8px;
+}
+
+.scd-dm {
+  margin: 0;
+}
+
+.scd-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.scd-switch .tog {
+  flex: none;
+  margin-top: 2px;
+}
+
+.scd-switch-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scd-switch-name {
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.scd-bot {
+  max-width: 260px;
 }

@@ -46,3 +46,17 @@ export function mentionedChannelIds(rows: Iterable<UnreadRow>): string[] {
   for (const r of rows) if (r.kind === 'mention') out.add(r.channelId);
   return [...out];
 }
+
+/**
+ * The message an invitation to a call opens (`meeting_invite`, P15-27): its `refId` is the call, not a message, so it opens the call's start message
+ * (`threadRootId`), where the card is. Null for every other kind, and for an invitation that came without its start message.
+ */
+export function inviteTarget(n: Pick<InboxItem, 'kind' | 'refType' | 'threadRootId'>): string | null {
+  if (n.kind !== 'meeting_invite' && n.refType !== 'meeting_invite') return null;
+  return n.threadRootId;
+}
+
+/** The call is in the live list and still live (an invitation offers Join only then). */
+export function isLiveCall(rooms: ReadonlyArray<{ meeting: { id: string; state: string } }>, meetingId: string): boolean {
+  return rooms.some((r) => r.meeting.id === meetingId && r.meeting.state === 'live');
+}

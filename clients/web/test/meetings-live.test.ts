@@ -8,7 +8,7 @@ import { CHANNEL, FakeClock, ME, MEETING, NADIA, THREAD, id, person, settle, sum
 function build(rooms = [summary([person(ME, 'Omar')])]) {
   const clock = new FakeClock();
   const log = { ringing: false, started: 0, notices: [] as string[], changed: [] as string[], captions: [] as Array<[string, number]>, chat: 0, fetches: 0 };
-  const state = { rooms, fail: false, hidden: false, current: null as { meetingId: string; threadRootId: string | null } | null };
+  const state = { rooms, fail: false, hidden: false, quiet: false, current: null as { meetingId: string; threadRootId: string | null } | null };
   const deps: LiveDeps = {
     fetchLive: async () => {
       log.fetches += 1;
@@ -36,6 +36,7 @@ function build(rooms = [summary([person(ME, 'Omar')])]) {
     },
     notify: (title) => void log.notices.push(title),
     hidden: () => state.hidden,
+    quiet: () => state.quiet,
   };
   return { store: new LiveRoomsStore(deps), clock, log, state };
 }
@@ -112,6 +113,41 @@ describe('a call ringing', () => {
     t.store.addRing(ringing);
     expect(t.log.ringing).toBe(false);
     expect(t.log.started).toBe(1);
+  });
+  it('shows the ring but makes no sound and no system notice while the person\'s own Do not disturb is on (P15-27)', async () => {
+    const t = build();
+    t.state.quiet = true;
+    t.state.hidden = true;
+    t.store.addRing(ringing);
+    await settle();
+    expect(t.store.snapshot().rings).toHaveLength(1);
+    expect(t.log.started).toBe(0);
+    expect(t.log.notices).toEqual([]);
+    // Do not disturb ends while the call still rings: the next look at the rings (here the live list's check) lets the sound start
+    t.state.quiet = false;
+    await t.store.refresh();
+    expect(t.log.ringing).toBe(true);
+  });
+  it('silences a ring going now when Do not disturb is turned on, and sounds it again when turned off (the presence store\'s change)', async () => {
+    const t = build();
+    t.store.addRing(ringing);
+    await settle();
+    expect(t.log.ringing).toBe(true);
+    t.state.quiet = true;
+    t.store.quietChanged();
+    expect(t.log.ringing).toBe(false);
+    expect(t.store.snapshot().rings).toHaveLength(1);
+    t.state.quiet = false;
+    t.store.quietChanged();
+    expect(t.log.ringing).toBe(true);
+  });
+  it('rings with sound and a notice when Do not disturb is off', async () => {
+    const t = build();
+    t.state.hidden = true;
+    t.store.addRing(ringing);
+    await settle();
+    expect(t.log.started).toBe(1);
+    expect(t.log.notices).toEqual(['Nadia is calling you']);
   });
   it('keeps a ring that arrived while the live list was being fetched', async () => {
     const t = build([]);

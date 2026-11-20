@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CallController } from '../src/meetings/controller';
 import type { EngineContext, TranscribeEngine } from '../src/meetings/engine';
-import { BOT, CHANNEL, MEETING, ME, NADIA, THREAD, apiError, person, rig, settle, transcription } from './meetings-fixtures';
+import { BOT, CHANNEL, MEETING, ME, NADIA, THREAD, apiError, id, person, rig, settle, transcription } from './meetings-fixtures';
 
 // P15-04 / P15-05: the whole life of a call, against the stand-in server and the in-memory media layer.
 
@@ -41,6 +41,47 @@ describe('starting a voice room', () => {
     expect(c.getState().meeting).toBeNull();
     c.dismiss();
     expect(c.getState().phase).toBe('idle');
+  });
+  it('starts from the dialog with its body, and lets the call bar take over once the server has answered (P15-25)', async () => {
+    const r = rig();
+    const c = new CallController(r.deps);
+    c.setSelf(ME);
+    const res = await c.startFromDialog(CHANNEL, { title: 'Design review', inviteeIds: [NADIA as never] });
+    expect(res?.created).toBe(true);
+    expect(r.server.calls[0]).toBe(`start ${CHANNEL} {"title":"Design review","inviteeIds":["${NADIA}"]}`);
+    await settle();
+    expect(c.getState().phase).toBe('connected');
+  });
+  it('keeps the person in their current call when a start from the dialog is refused, and leaves it only after a start that worked', async () => {
+    const t = await connected();
+    t.server.failOnce('start', apiError(409, 'The note-taker is busy, try again in a minute.'));
+    await expect(t.c.startFromDialog(id(101), { notetakerBotId: BOT as never })).rejects.toThrow('The note-taker is busy');
+    expect(t.c.getState().phase).toBe('connected');
+    expect(t.server.calls.some((x) => x.startsWith('leave'))).toBe(false);
+    const res = await t.c.startFromDialog(id(101), {});
+    expect(res.created).toBe(true);
+    const leaveAt = t.server.calls.findIndex((x) => x.startsWith('leave'));
+    const startAt = t.server.calls.lastIndexOf(`start ${id(101)}`);
+    expect(leaveAt).toBeGreaterThan(startAt);
+  });
+  it('refuses a second start from the dialog while one is still connecting, and one into the call the person is already in', async () => {
+    const r = rig();
+    const c = new CallController(r.deps);
+    c.setSelf(ME);
+    const first = c.startFromDialog(CHANNEL, {});
+    await expect(c.startFromDialog(CHANNEL, {})).rejects.toThrow('A call is still connecting');
+    await first;
+    await settle();
+    await expect(c.startFromDialog(CHANNEL, {})).rejects.toThrow('You are already in the call here.');
+  });
+  it('throws a refused start from the dialog back to it, and leaves the call bar idle instead of failed', async () => {
+    const r = rig();
+    r.server.failOnce('start', apiError(409, 'The note-taker is busy, try again in a minute.'));
+    const c = new CallController(r.deps);
+    await expect(c.startFromDialog(CHANNEL, { notetakerBotId: BOT as never })).rejects.toThrow('The note-taker is busy');
+    expect(c.getState().phase).toBe('idle');
+    expect(c.getState().error).toBeNull();
+    expect(r.adapters).toHaveLength(0);
   });
   it('reports a failed connection in words and tells the server the person is not there', async () => {
     const r = rig();

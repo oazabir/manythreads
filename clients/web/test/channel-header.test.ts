@@ -43,7 +43,9 @@ const h = vi.hoisted(() => {
     close: vi.fn(),
     refresh: vi.fn(),
     start: vi.fn(),
+    startFromDialog: vi.fn(),
     joinRoom: vi.fn(),
+    fetchCallOptions: vi.fn(),
   };
 });
 
@@ -65,12 +67,16 @@ vi.mock('../src/kernel/panel/sub', () => ({ usePanelTitle: () => undefined }));
 vi.mock('../src/presence/PresenceDot', () => ({ PresenceDot: () => null }));
 vi.mock('../src/api/setup', () => ({ isMockMode: () => false }));
 vi.mock('../src/channels/store', () => ({ channelStore: { get selfActor() { return h.state.selfActor; } } }));
-vi.mock('../src/meetings/api', () => ({ endMeeting: (meetingId: string) => h.endMeeting(meetingId) }));
+vi.mock('../src/meetings/api', () => ({
+  endMeeting: (meetingId: string) => h.endMeeting(meetingId),
+  fetchCallOptions: (channelId: string, q?: string) => h.fetchCallOptions(channelId, q),
+  inviteToMeeting: () => Promise.resolve({ invited: [] }),
+}));
 vi.mock('../src/meetings/store', () => ({
   useRoomOfMessage: (messageId: string) => (h.state.live && (h.state.live as { meeting: { threadRootId: string | null } }).meeting.threadRootId === messageId ? h.state.live : undefined),
   useLiveRoom: () => h.state.live,
   useCall: () => h.state.call,
-  callController: () => ({ start: h.start, joinRoom: h.joinRoom, endForAll: h.endForAll }),
+  callController: () => ({ start: h.start, startFromDialog: h.startFromDialog, joinRoom: h.joinRoom, endForAll: h.endForAll }),
   liveRooms: () => ({ refresh: h.refresh, snapshot: () => ({ rooms: h.state.rooms }) }),
 }));
 
@@ -131,7 +137,19 @@ beforeEach(() => {
   h.endMeeting.mockReset().mockResolvedValue({ meeting: {} });
   h.refresh.mockReset().mockResolvedValue(undefined);
   h.start.mockReset().mockResolvedValue(undefined);
+  h.startFromDialog.mockReset().mockResolvedValue({ created: true });
   h.joinRoom.mockReset().mockResolvedValue(undefined);
+  h.fetchCallOptions.mockReset().mockResolvedValue({
+    canStart: true,
+    reason: null,
+    directMessage: false,
+    defaultTitle: 'Call · #dev · 10:00',
+    live: null,
+    people: [{ personId: OMAR, displayName: 'Omar', you: true }, { personId: NADIA, displayName: 'Nadia', you: false }],
+    peopleTotal: 2,
+    notetaker: { bots: [], defaultBotId: null, available: false, reason: 'Note-takers are switched off for this workspace. A workspace admin can allow them.' },
+    guestLinks: { available: false, reason: 'Guest links are not available yet' },
+  });
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -502,21 +520,54 @@ describe('the voice icon', () => {
     expect(voiceIconAction({ live: true, dm: true, messageLoaded: true })).toBe('join');
   });
 
-  it('starts a room when none is live, and has no live dot', () => {
+  it('opens the start dialog when no call is live, has no live dot, and starts the call from the dialog', async () => {
     const { shown } = mount({});
     const btn = must('call-start');
-    expect(btn.getAttribute('aria-label')).toBe('Start a voice room');
+    expect(btn.getAttribute('aria-label')).toBe('Audio call');
+    expect(btn.getAttribute('aria-haspopup')).toBe('dialog');
     expect(btn.querySelector('.chv-live-dot')).toBeNull();
     click(btn);
-    expect(h.start).toHaveBeenCalledWith(CHANNEL);
+    expect(h.start).not.toHaveBeenCalled();
+    expect(must('call-start-dialog')).toBeTruthy();
+    await settle();
+    expect((must('call-start-title') as HTMLInputElement).value).toBe('Call · #dev · 10:00');
+    click(must('call-start-submit'));
+    await settle();
+    expect(h.startFromDialog).toHaveBeenCalledWith(CHANNEL, { title: 'Call · #dev · 10:00' });
+    expect(q('call-start-dialog')).toBeNull();
     expect(shown).toEqual([]);
+  });
+
+  it('gives the keyboard back to the button when the dialog is cancelled', async () => {
+    mount({});
+    const btn = must('call-start');
+    act(() => btn.focus());
+    click(btn);
+    await settle();
+    expect(document.activeElement).toBe(must('call-start-title'));
+    click(must('call-start-cancel'));
+    expect(q('call-start-dialog')).toBeNull();
+    expect(document.activeElement).toBe(must('call-start'));
+  });
+
+  it('tells a guest why they cannot start a call, and opens nothing', () => {
+    h.state.guest = true;
+    mount({});
+    const btn = must('call-start');
+    expect(btn.getAttribute('aria-label')).toBe('Audio call');
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.getAttribute('title')).toBe('Guests cannot start a call here');
+    click(btn);
+    expect(q('call-start-dialog')).toBeNull();
+    expect(h.fetchCallOptions).not.toHaveBeenCalled();
   });
 
   it('scrolls to the start message when a room is live in a channel, and does not join', () => {
     h.state.live = room();
     const { shown } = mount({});
     const btn = must('call-start');
-    expect(btn.getAttribute('aria-label')).toBe('A voice room is live: join it from its message');
+    expect(btn.getAttribute('aria-label')).toBe('Join call');
+    expect(btn.getAttribute('title')).toBe('Join call (1 in it now)');
     expect(btn.querySelector('.chv-live-dot')).not.toBeNull();
     click(btn);
     expect(shown).toEqual([THREAD]);
@@ -544,7 +595,7 @@ describe('the voice icon', () => {
   it('joins directly when the start message is not in the list', () => {
     h.state.live = room();
     const { shown } = mount({ loaded: false });
-    expect(must('call-start').getAttribute('aria-label')).toBe('Join the voice room');
+    expect(must('call-start').getAttribute('aria-label')).toBe('Join call');
     click(must('call-start'));
     expect(h.joinRoom).toHaveBeenCalledWith(meeting().id, CHANNEL);
     expect(shown).toEqual([]);
@@ -553,7 +604,7 @@ describe('the voice icon', () => {
   it('joins directly in a direct message, with no message to hunt for', () => {
     h.state.live = room();
     const { shown } = mount({ dm: true });
-    expect(must('call-start').getAttribute('aria-label')).toBe('Join the call');
+    expect(must('call-start').getAttribute('aria-label')).toBe('Join call');
     click(must('call-start'));
     expect(h.joinRoom).toHaveBeenCalledWith(meeting().id, CHANNEL);
     expect(shown).toEqual([]);
@@ -564,7 +615,7 @@ describe('the voice icon', () => {
     h.state.call = { phase: 'connected', meeting: { id: meeting().id, channelId: CHANNEL, startedBy: 'a-omar' } };
     mount({});
     expect(q('call-start')).toBeNull();
-    expect(must('call-in-here').textContent).toContain('In the voice room');
+    expect(must('call-in-here').textContent).toContain('In this call');
   });
 });
 

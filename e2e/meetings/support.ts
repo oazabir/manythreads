@@ -73,11 +73,43 @@ export async function closePerson(p: Person | undefined): Promise<void> {
 export const dock = (p: Person) => p.page.getByTestId('call-dock');
 
 /**
- * Presses the voice icon (a new room) or, when a room is live in a channel, Join call on the call card of its start message (the icon only scrolls there),
- * and waits until the call bar is connected. (Starting while a room is live joins it, so a page that has not heard of the room yet still ends up in it.) On a phone
- * the icon's item in the channel details menu is pressed instead.
+ * Fills in the start dialog that "Audio call" opens (P15-25) and presses Start call. The note-taker switch, on by default when one may come, is turned off unless
+ * `notetaker` is asked for (the specs add it from the call bar when they want it); `invite` ticks those people by name. A dialog that found a call already going
+ * offers Join call instead; one that joined a call already going says so and is closed.
  */
-export async function enterRoom(p: Person): Promise<void> {
+async function startFromDialog(p: Person, opts: { notetaker?: boolean; invite?: readonly string[] }): Promise<void> {
+  const dialog = p.page.getByTestId('call-start-dialog');
+  await expect(dialog).toBeVisible({ timeout: 2_000 });
+  const join = dialog.getByTestId('call-start-join');
+  const submit = dialog.getByTestId('call-start-submit');
+  // the options answer fills in the title; until then Start call waits
+  await expect(submit.or(join)).toBeEnabled({ timeout: 4_000 });
+  if (await join.isVisible()) {
+    await join.click();
+    return;
+  }
+  await expect(dialog.getByTestId('call-start-title')).not.toHaveValue('', { timeout: 4_000 });
+  const note = dialog.getByTestId('call-start-notetaker');
+  if ((await note.count()) > 0) {
+    const on = (await note.getAttribute('aria-checked')) === 'true';
+    if (on !== (opts.notetaker === true) && (await note.getAttribute('aria-disabled')) !== 'true') await note.click();
+  }
+  for (const name of opts.invite ?? []) await dialog.getByTestId('call-start-people').getByLabel(name).check();
+  await submit.click();
+  const joined = dialog.getByTestId('call-start-joined');
+  // a start that found a call already going joined it and says so: Close puts the dialog away
+  await expect(async () => {
+    if (await joined.isVisible()) await dialog.getByTestId('call-start-close').click();
+    await expect(dialog).toBeHidden({ timeout: 500 });
+  }).toPass({ timeout: 6_000 });
+}
+
+/**
+ * Presses "Audio call" and starts a call from its dialog or, when a call is live in a channel, Join call on the call card of its start message (the icon only
+ * scrolls there), and waits until the call bar is connected. (Starting while a call is live joins it, so a page that has not heard of the call yet still ends up
+ * in it.) On a phone the icon's item in the channel details menu is pressed instead. The note-taker is left out unless `notetaker` is true.
+ */
+export async function enterRoom(p: Person, opts: { notetaker?: boolean; invite?: readonly string[] } = {}): Promise<void> {
   const icon = p.page.getByTestId('call-start');
   // on a phone the header is the channel's name and the bell (P34-05): the icon is hidden and the details menu's item of the same name does what it does
   const press = async (): Promise<void> => {
@@ -88,16 +120,23 @@ export async function enterRoom(p: Person): Promise<void> {
     await p.page.getByTestId('channel-details-button').click({ timeout: 2_000 });
     await p.page.getByTestId('details-voice').click({ timeout: 2_000 });
   };
-  // the icon changes from "start" to "show the message" when the page hears of a live room, so each try looks again at what it is before pressing
+  // the icon changes from "start" to "show the message" when the page hears of a live call, so each try looks again at what it is before pressing
   await expect(async () => {
     if ((await dock(p).count()) === 0) {
-      if ((await icon.getAttribute('data-action')) === 'show-message') {
-        // the icon takes the reader to the message that started the room; the card's Join is then on the page (and has the keyboard)
+      // a dialog left open by a try that timed out is cancelled first, so this try starts from the header again
+      if (await p.page.getByTestId('call-start-dialog').isVisible()) await p.page.keyboard.press('Escape');
+      const action = await icon.getAttribute('data-action');
+      if (action === 'show-message') {
+        // the icon takes the reader to the message that started the call; the card's Join is then on the page (and has the keyboard)
         await press();
         const join = p.page.getByTestId('room-card-join').last();
         await join.scrollIntoViewIfNeeded({ timeout: 2_000 });
         await join.click({ timeout: 2_000 });
-      } else await press();
+      } else if (action === 'join') await press();
+      else {
+        await press();
+        await startFromDialog(p, opts);
+      }
     }
     await expect(dock(p)).toHaveAttribute('data-phase', 'connected', { timeout: 4_000 });
   }).toPass({ timeout: 30_000 });

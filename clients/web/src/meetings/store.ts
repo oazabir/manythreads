@@ -8,9 +8,11 @@ import {
   MeetingRingingPush,
   SCHEDULED_MEETING_CHANGED_PUSH,
   ScheduledMeetingChangedPush,
+  dndState,
   type MeetingSummary,
 } from '@manythreads/shared';
 import { channelStore } from '../channels/store';
+import { presenceStore } from '../presence/store';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import { addNotetaker, answerRecordConsent, correctSegment, fetchLiveMeetings, fetchNotetakers, fetchRecording, fetchTranscript, realCallApi, removeNotetaker, setRecording } from './api';
 import { CallController, type CallState, type RoomApi } from './controller';
@@ -55,6 +57,12 @@ export type LiveDeps = {
   hidden: () => boolean;
   /** The socket came back after a gap: what else the page keeps about calls asks again (the call cards, P15-26). */
   onReconnected?: () => void;
+  /**
+   * The person's own Do not disturb is on (P15-27): a call still shows its ring card, but makes no sound and no system notice. Read when a ring comes in, when
+   * the person's presence changes (`quietChanged`: turning it on silences a ring, turning it off lets the sound start) and at each look at the rings (the live
+   * list's half-minute check, a ring's end). A quiet period that starts or ends by the clock alone is noticed at the next of those, within half a minute.
+   */
+  quiet?: () => boolean;
 };
 
 const EMPTY: LiveSnapshot = { status: 'loading', rooms: [], byChannel: new Map(), rings: [] };
@@ -201,7 +209,7 @@ export class LiveRoomsStore {
     const ring: Ring = { meetingId: p.meetingId, channelId: p.channelId, callerActorId: p.callerActorId, callerName: p.callerName, until: this.deps.now() + p.ringSeconds * 1000 };
     this.rings = [...this.rings, ring];
     this.addedAt.set(p.meetingId, this.deps.now());
-    if (this.deps.hidden()) this.deps.notify(`${p.callerName} is calling you`, p.meetingId);
+    if (this.deps.hidden() && !this.quiet()) this.deps.notify(`${p.callerName} is calling you`, p.meetingId);
     this.syncRings();
     void this.refresh();
   }
@@ -210,6 +218,19 @@ export class LiveRoomsStore {
   stopRinging(meetingId: string): void {
     this.skip.add(meetingId);
     this.syncRings();
+  }
+
+  private quiet(): boolean {
+    try {
+      return this.deps.quiet?.() ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The person's Do not disturb may have changed: a ring going now is silenced or sounded to match. */
+  quietChanged(): void {
+    if (this.activeRings().length > 0 || this.ringing) this.syncRings();
   }
 
   /** Rings still going at this moment. */
@@ -225,10 +246,11 @@ export class LiveRoomsStore {
     this.expiry = null;
     const next = active.reduce<number | null>((m, r) => (m === null || r.until < m ? r.until : m), null);
     if (next !== null) this.expiry = this.deps.setTimeout(() => this.syncRings(), Math.max(50, next - now));
-    if (active.length > 0 && !this.ringing) {
+    const quiet = active.length > 0 && this.quiet();
+    if (active.length > 0 && !quiet && !this.ringing) {
       this.ringing = true;
       this.deps.sounds.startRing();
-    } else if (active.length === 0 && this.ringing) {
+    } else if ((active.length === 0 || quiet) && this.ringing) {
       this.ringing = false;
       this.deps.sounds.stopRing();
     }
@@ -305,9 +327,15 @@ export function liveRooms(): LiveRoomsStore {
     },
     hidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
     onReconnected: () => callCards().refreshAll(),
+    quiet: () => {
+      const me = presenceStore.snapshot().me;
+      return me !== null && dndState(me.dnd, me.timeZone ?? null, new Date(), false).active;
+    },
   });
   // a card drawn as live whose call left the live list is asked again (a lost push heals with the list's half-minute check)
   const rooms = live;
+  // turning Do not disturb on or off while a call rings silences or sounds it at once
+  presenceStore.subscribe(() => rooms.quietChanged());
   let seen: LiveSnapshot['rooms'] | null = null;
   rooms.subscribe(() => {
     const snap = rooms.snapshot();

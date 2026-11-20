@@ -24,7 +24,7 @@ export default defineJourney({
     {
       id: 'channel-header',
       expect: TID.channelView,
-      next: { testid: 'call-start', label: 'Start a voice room', unchecked: true },
+      next: { testid: 'call-start', label: 'Audio call', unchecked: true },
       run: async ({ pages, page, stack, api }) => {
         allowKnownNoise(page);
         await pages.channel.open('releases');
@@ -39,13 +39,22 @@ export default defineJourney({
       expect: TID.channelView,
       expectDenied: 403,
       run: async ({ page }) => {
+        // "Audio call" tells a guest why not (P15-25): the button is marked unavailable with the reason and opens no dialog; on a phone its menu item is off
         const start = page.getByTestId('call-start');
-        if ((await start.count()) > 0) {
+        if (await start.isVisible()) {
+          await expect(start).toHaveAttribute('aria-disabled', 'true');
+          await expect(start).toHaveAttribute('title', 'Guests cannot start a call here');
           await start.click();
-          await expect(page.getByTestId('call-dock').or(page.getByTestId('call-failed')).or(page.getByTestId('call-notice')).first()).toBeHidden({ timeout: 2_000 }).catch(() => undefined);
-        } else {
-          expect(await askFromPage(page, 'POST', `/api/channels/${releasesId}/meetings`, {})).toBe(403);
+          await expect(page.getByTestId('call-start-dialog')).toHaveCount(0);
+        } else if ((await start.count()) > 0) {
+          await page.getByTestId('channel-details-button').click();
+          await expect(page.getByTestId('details-voice')).toBeDisabled();
+          await expect(page.getByTestId('details-voice')).toContainText('Guests cannot start a call here', { ignoreCase: true });
+          await page.keyboard.press('Escape');
         }
+        await expect(page.getByTestId('call-dock')).toHaveCount(0);
+        // and the server refuses the start itself
+        expect(await askFromPage(page, 'POST', `/api/channels/${releasesId}/meetings`, {})).toBe(403);
       },
     },
     {

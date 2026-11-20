@@ -368,7 +368,7 @@ test('at 390 px the header is one row, the name and the bell; a 44-character nam
     }
     expect(labels.join('|')).toMatch(/Notification/i);
     expect(labels.join('|')).toMatch(/hdr-x/);
-    expect(labels.join('|')).not.toMatch(/Search|Members|voice room|bookmark|Schedule/i);
+    expect(labels.join('|')).not.toMatch(/Search|Members|Audio call|bookmark|Schedule/i);
     for (const tool of ['members-open', 'call-start', 'bookmark-add', 'conversation-search-open', 'schedule-open']) await expect(page.getByTestId(tool), tool).toBeHidden();
     // one row: the buttons share a line and the header is as tall as one
     expect(Math.max(...centres) - Math.min(...centres), 'the buttons are on one row').toBeLessThanOrEqual(4);
@@ -385,8 +385,8 @@ test('at 390 px the header is one row, the name and the bell; a 44-character nam
     await expect(details(page)).toBeVisible();
     // the header's tools first, in the header's order, then the menu as it was (the list view of Members steps aside: its twin above opens the panel)
     const items = await details(page).getByRole('menuitem').filter({ visible: true }).allTextContents();
-    expect(items.slice(0, 4).map((t) => t.trim())).toEqual(['Search this conversation', 'Start a voice room', expect.stringMatching(/^Members \(\d+\)$/), 'Add a bookmark']);
-    await expectItemsFullyShown(page, ['Search this conversation', 'Start a voice room', /^Members \(\d+\)$/, 'Add a bookmark', 'Notifications', /^Star$/, 'Schedule a room', 'Integrations', 'Files', 'Leave channel']);
+    expect(items.slice(0, 4).map((t) => t.trim())).toEqual(['Search this conversation', 'Audio call', expect.stringMatching(/^Members \(\d+\)$/), 'Add a bookmark']);
+    await expectItemsFullyShown(page, ['Search this conversation', 'Audio call', /^Members \(\d+\)$/, 'Add a bookmark', 'Notifications', /^Star$/, 'Schedule a room', 'Integrations', 'Files', 'Leave channel']);
     // the keyboard starts on the first item
     await expect(details(page).getByRole('menuitem', { name: 'Search this conversation' })).toBeFocused();
   } finally {

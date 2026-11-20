@@ -10,12 +10,13 @@ import { useMyDnd } from '../presence/hooks';
 import { useOpenMessage } from '../shell/messageLink';
 import { BellIcon, MarkReadIcon } from '../shell/icons';
 import { AlertsRow } from './AlertsRow';
-import { forTab, groupByDay, type BellTab } from './model';
+import { forTab, groupByDay, inviteTarget, isLiveCall, type BellTab } from './model';
+import { callController, liveRooms, useLive } from '../meetings/store';
 import { notificationStore, notificationTitle } from './store';
 import { useNotifications } from './useNotifications';
 
 /** One notification: the sender's picture, what happened (bold while unread), the quoted line (up to three lines), when, and Mark read / Open on hover. */
-function Item({ n, onOpen, onRead }: { n: InboxItem; onOpen: (n: InboxItem) => void; onRead: (n: InboxItem) => void }) {
+function Item({ n, onOpen, onRead, joinable }: { n: InboxItem; onOpen: (n: InboxItem, o?: { join?: boolean }) => void; onRead: (n: InboxItem) => void; joinable: boolean }) {
   const unread = n.readAt === null;
   return (
     <li className="ntf-li">
@@ -34,7 +35,11 @@ function Item({ n, onOpen, onRead }: { n: InboxItem; onOpen: (n: InboxItem) => v
             <MarkReadIcon /> Mark read
           </button>
         ) : null}
-        <button type="button" className="ntf-act" data-testid="notification-open" onClick={() => onOpen(n)}>Open</button>
+        {joinable ? (
+          <button type="button" className="ntf-act" data-testid="notification-join" onClick={() => onOpen(n, { join: true })}>Join</button>
+        ) : (
+          <button type="button" className="ntf-act" data-testid="notification-open" onClick={() => onOpen(n)}>Open</button>
+        )}
       </span>
     </li>
   );
@@ -52,6 +57,8 @@ export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; o
   const dnd = useMyDnd();
   const resume = useSaver();
   const [tab, setTab] = useState<BellTab>('unread');
+  // an invitation offers Join only while its call is in the live list; an ended one offers Open
+  const live = useLive();
 
   useEffect(() => {
     void notificationStore.loadItems();
@@ -61,12 +68,27 @@ export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; o
 
   const shown = forTab(snap.items, tab);
   const prefsOn = snap.prefs !== null && (snap.prefs.mention.browser || snap.prefs.reply.browser || snap.prefs.dm.browser);
-  const open = (n: InboxItem): void => {
+  const open = (n: InboxItem, o: { join?: boolean } = {}): void => {
     onOpened?.();
     void notificationStore.markRead([n.id]);
     // Action items from a meeting point at the meeting, not at a message.
     if (n.refType === 'meeting') {
       void navigate(`/meetings/${n.refId}`);
+      return;
+    }
+    // an invitation to a call names the call (`refId`); it opens the call's start message (or, without one, the channel), whose card has Join. Join also
+    // joins the call, once a fresh live list says it is still going
+    if (n.kind === 'meeting_invite') {
+      const target = inviteTarget(n);
+      void openMessage({ channelId: n.channelId, channelKind: n.channelKind, channelName: n.channelName, messageId: target ?? '', threadRootId: null, ...(target ? {} : { channelOnly: true }) });
+      if (o.join) {
+        const meetingId = String(n.refId);
+        void liveRooms()
+          .refresh()
+          .then(() => {
+            if (isLiveCall(liveRooms().snapshot().rooms, meetingId)) void callController().joinRoom(meetingId, n.channelId);
+          });
+      }
       return;
     }
     void openMessage({ channelId: n.channelId, channelKind: n.channelKind, channelName: n.channelName, messageId: n.refId, threadRootId: n.threadRootId });
@@ -117,7 +139,7 @@ export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; o
           {groupByDay(shown, new Date()).map((g) => (
             <section key={g.day} aria-label={g.day}>
               <h3 className="ntf-day">{g.day}</h3>
-              <ul className="ntf-group">{g.items.map((n) => <Item key={n.id} n={n} onOpen={open} onRead={read} />)}</ul>
+              <ul className="ntf-group">{g.items.map((n) => <Item key={n.id} n={n} onOpen={open} onRead={read} joinable={n.kind === 'meeting_invite' && isLiveCall(live.rooms, String(n.refId))} />)}</ul>
             </section>
           ))}
         </div>

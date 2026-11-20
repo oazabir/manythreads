@@ -103,6 +103,27 @@
   min-width: 0;
 }
 
+.sch-people-box {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sch-people-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sch-people-find {
+  flex: 1;
+  min-width: 0;
+}
+
+.sch-people-box .sch-people-count {
+  margin: 0;
+}
+
 .sch-people {
   display: grid;
   gap: 2px;
@@ -128,6 +149,11 @@
 
 .sch-person:hover {
   background: var(--paper);
+}
+
+.sch-person.sch-person-locked {
+  color: var(--mute);
+  cursor: default;
 }
 
 .sch-outside,

@@ -8,6 +8,7 @@ import { useSession } from '../../app/session';
 import { Dialog } from '../../components/Dialog';
 import { fetchMyCalendars } from '../../screens/connections/api';
 import { actionFailure } from '../../screens/meetings/words';
+import { PeopleChecklist } from '../PeopleChecklist';
 import { createScheduledMeeting } from '../api';
 import { LENGTHS, buildCreateRequest, calendarConnectPath, dateInput, parseAddresses, proposedStart, timeInput } from './model';
 
@@ -38,11 +39,8 @@ export function ScheduleRoomDialog({ channelId, channelLabel, onClose, onCreated
   const choices = calendars.status === 'ok' ? calendars.data.calendars : [];
   const chosen = choices.find((c) => `${c.provider}|${c.calendarId}` === calendarKey) ?? choices.find((c) => c.primary) ?? choices[0] ?? null;
   const others = members.status === 'ok' ? members.data.members.filter((m) => m.personId !== session.person.id) : [];
-  const shown = others.filter((m) => m.displayName.toLowerCase().includes(find.trim().toLowerCase()));
   const outsideCount = parseAddresses(outside).valid.length;
   const invited = picked.length + outsideCount;
-
-  const toggle = (id: string): void => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   const save = async (): Promise<void> => {
     const built = buildCreateRequest({ title, date, time, lengthMinutes: length, attendeePersonIds: picked, outsideText: outside, agenda, calendar: chosen ? { provider: chosen.provider, calendarId: chosen.calendarId } : null }, new Date());
@@ -128,20 +126,18 @@ export function ScheduleRoomDialog({ channelId, channelLabel, onClose, onCreated
           <p className="dlg-hint" data-testid="schedule-calendar-one">Goes in your calendar: {chosen.name}.</p>
         ) : null}
 
-        <span className="dlg-label" id="sch-people-label">People in this channel</span>
-        {members.status === 'error' ? <p className="dlg-hint">The members could not be loaded.</p> : null}
-        {others.length > 6 ? <input className="dlg-input" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find a person" aria-label="Find a person" data-testid="schedule-find" /> : null}
-        <ul className="sch-people" aria-labelledby="sch-people-label" data-testid="schedule-people">
-          {shown.map((m) => (
-            <li key={m.personId}>
-              <label className="sch-person">
-                <input type="checkbox" checked={picked.includes(m.personId)} onChange={() => toggle(m.personId)} />
-                <span>{m.displayName}</span>
-              </label>
-            </li>
-          ))}
-          {members.status === 'ok' && shown.length === 0 ? <li className="dlg-hint">{others.length === 0 ? 'Nobody else is in this channel yet.' : 'Nobody matches.'}</li> : null}
-        </ul>
+        <PeopleChecklist
+          label="People in this channel"
+          people={others}
+          picked={picked}
+          onChange={setPicked}
+          find={find}
+          onFind={setFind}
+          emptyText={members.status === 'error' ? 'The members could not be loaded.' : 'Nobody else is in this channel yet.'}
+          loading={members.status === 'loading'}
+          testId="schedule-people"
+          findTestId="schedule-find"
+        />
 
         <label className="dlg-label" htmlFor="sch-outside">People outside the workspace (email addresses)</label>
         <textarea id="sch-outside" className="dlg-input sch-outside" rows={2} value={outside} onChange={(e) => setOutside(e.target.value)} placeholder="name@example.com, other@example.com" data-testid="schedule-outside" />

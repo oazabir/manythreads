@@ -1,5 +1,6 @@
 import { CALL_CARD_FACES, type CallCard, type CallCardPerson, type MeetingSummary } from '@manythreads/shared';
 import { clock } from '../channels/format';
+import { invitedLine } from './startCall';
 
 /*
  * The call card (P33-03, grown in P15-26): the card a call's start message draws in place of its text while the call is live, and the one muted event line it
@@ -34,6 +35,10 @@ export type CallCardFacts = {
   canEnd: boolean;
   /** The note-taker bot's name while it is listening; null when there is none or it is not listening. */
   notetaker: string | null;
+  /** "Invited: Nadia, Rafi +2" (P15-27); null when nobody was asked. */
+  invited: string | null;
+  /** The reader may ask more people (Invite more): whoever may post in the channel, while the call is live. */
+  canInvite: boolean;
 };
 
 export function callCardFacts(card: CallCard, o: { selfActor: string | null; joinedMeetingId: string | null }): CallCardFacts {
@@ -52,6 +57,8 @@ export function callCardFacts(card: CallCard, o: { selfActor: string | null; joi
     // the route's `canEnd` also covers a lead or an admin; the card offers End only to the starter, as before (P33-03)
     canEnd: card.state === 'live' && o.selfActor !== null && card.startedBy === o.selfActor && card.you.canEnd,
     notetaker: card.notetaker?.listening ? card.notetaker.name : null,
+    invited: invitedLine(card.invited),
+    canInvite: card.state === 'live' && card.you.canInvite,
   };
 }
 

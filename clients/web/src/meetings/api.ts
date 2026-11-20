@@ -76,6 +76,12 @@ import {
   SetMeetingTranscriptionRequest,
   StartMeetingRequest,
   StartMeetingResponse,
+  CallStartOptionsQuery,
+  CallStartOptionsResponse,
+  InviteToMeetingRequest,
+  InviteToMeetingResponse,
+  callStartOptionsRoute,
+  inviteToMeetingRoute,
   endMeetingRoute,
   getMeetingRoute,
   getMeetingTranscriptRoute,
@@ -98,6 +104,12 @@ import { call } from '../api/client';
 
 export const startMeeting = (channelId: string, body: StartMeetingRequest = {}) =>
   call(startMeetingRoute, { request: StartMeetingRequest, response: StartMeetingResponse }, body, { channelId });
+/** What the start dialog offers in a channel (P15-25): who can be asked, the note-taker, the default title; `q` narrows the people on the server. */
+export const fetchCallOptions = (channelId: string, q = '') =>
+  call(callStartOptionsRoute, { request: CallStartOptionsQuery, response: CallStartOptionsResponse }, q.trim() === '' ? {} : { q: q.trim() }, { channelId });
+/** "Invite more" on a live call's card (P15-27): the people newly asked. */
+export const inviteToMeeting = (meetingId: string, personIds: readonly string[]) =>
+  call(inviteToMeetingRoute, { request: InviteToMeetingRequest, response: InviteToMeetingResponse }, { personIds: [...personIds] } as InviteToMeetingRequest, { meetingId });
 export const joinMeeting = (meetingId: string) => call(joinMeetingRoute, { response: JoinMeetingResponse }, undefined, { meetingId });
 export const renewMeetingToken = (meetingId: string) => call(renewMeetingTokenRoute, { response: RenewMeetingTokenResponse }, undefined, { meetingId });
 export const leaveMeeting = (meetingId: string) => call(leaveMeetingRoute, { response: LeaveMeetingResponse }, undefined, { meetingId });

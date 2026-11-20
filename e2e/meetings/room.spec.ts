@@ -29,20 +29,23 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-test('Nadia starts a room, Rafi joins, both call bars show both people', async ({ browser, playwright }) => {
+test('Nadia starts a call from the dialog inviting Rafi, Rafi joins, both call bars show both people', async ({ browser, playwright }) => {
   nadia = await openAs(browser, playwright, stack, 'nadia');
-  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
-  await enterRoom(nadia);
+  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Audio call');
+  // "Audio call" opens the start dialog (P15-25): the title filled in, Nadia ticked and locked, Start call
+  await enterRoom(nadia, { invite: ['Rafi'] });
   await expect(nadia.page.getByTestId('call-face')).toHaveCount(1);
 
   rafi = await openAs(browser, playwright, stack, 'rafi');
   // the room is live for Rafi: the icon says so (with a green dot), and the call card drawn in place of its start message has Join call, Live and who started it
-  await expect(rafi.page.getByTestId('call-start')).toHaveAccessibleName('A voice room is live: join it from its message');
+  await expect(rafi.page.getByTestId('call-start')).toHaveAccessibleName('Join call');
   await expect(rafi.page.getByTestId('room-card')).toBeVisible();
   await expect(rafi.page.getByTestId('room-card-join')).toHaveText('Join call');
   await expect(rafi.page.getByTestId('room-card-live')).toHaveText(/^Live \d+:\d{2}/);
   await expect(rafi.page.getByTestId('room-card-by')).toContainText('Started by Nadia');
   await expect(rafi.page.getByTestId('room-card-end')).toHaveCount(0);
+  // the people asked as the call started are named on the card (P15-27)
+  await expect(rafi.page.getByTestId('room-card-invited')).toContainText('Rafi');
   await enterRoom(rafi);
 
   for (const p of [nadia, rafi]) {
@@ -103,7 +106,7 @@ test('Rafi leaves, then Nadia ends the room for everyone', async () => {
   await expect(dock(a)).toBeHidden();
   await expect.poll(async () => (await stack.sql<{ state: string }>(`SELECT state FROM app.meetings ORDER BY started_at DESC LIMIT 1`))[0]?.state).toBe('ended');
   // nobody is in a live room any more: the channel offers a new one
-  await expect(a.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
+  await expect(a.page.getByTestId('call-start')).toHaveAccessibleName('Audio call');
   await expect(a.page.getByTestId('room-card')).toHaveCount(0);
   // the start message is now one muted event line: who started it, how long, how many joined (P34-02)
   const line = a.page.locator('[data-testid="call-event"][data-state="ended"]').last();

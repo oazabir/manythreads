@@ -18,6 +18,8 @@ export type MessageTarget = {
   messageId: string;
   /** Set when the message is a reply: the thread opens in the right panel. */
   threadRootId: string | null;
+  /** Open the channel itself, at its latest messages (a notification that names no message, such as an invitation without its start message). */
+  channelOnly?: boolean;
 };
 
 export const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
@@ -28,6 +30,10 @@ export const dmPath = (slug: string, channelId: string): string => `/t/${slug}/d
  */
 export function messageLocation(slug: string, t: MessageTarget, under: readonly PanelEntry[] = []): { pathname: string; search: string; state: unknown } {
   const target = t.threadRootId ?? t.messageId;
+  if (t.channelOnly) {
+    if (t.channelKind === 'bot_conversation') return { pathname: `/t/${slug}/chat/${t.channelId}`, search: '', state: null };
+    return { pathname: t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName), search: '', state: null };
+  }
   // a conversation with a bot has no name to put in a URL: the conversation view finds the bot from the channel and opens the thread
   if (t.channelKind === 'bot_conversation') return { pathname: `/t/${slug}/chat/${t.channelId}`, search: `?thread=${target}`, state: null };
   const pathname = t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);

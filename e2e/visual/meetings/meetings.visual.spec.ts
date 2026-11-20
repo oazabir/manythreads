@@ -85,7 +85,7 @@ async function atLatest(page: Page): Promise<void> {
   await expect(jump).toHaveCount(0);
 }
 
-/** Presses the voice icon, or Join on the room card when a room is live (the icon only scrolls to it), and waits until the call bar is connected. */
+/** Presses "Audio call" and starts the call from its dialog, or Join on the call card when a call is live (the icon only scrolls to it), and waits until the call bar is connected. */
 async function intoRoom(page: Page, channel: string): Promise<void> {
   await page.goto(`/t/engineering/c/${channel}`);
   // the header's Schedule button arrives with the plan list, a moment after the rest of the header: the plate waits for it
@@ -103,11 +103,28 @@ async function intoRoom(page: Page, channel: string): Promise<void> {
     await page.getByTestId('details-voice').click({ timeout: 2_000 });
   };
   const dock = page.getByTestId('call-dock');
+  // "Audio call" opens the start dialog (P15-25): the plate's call has no note-taker, so its switch is turned off before Start call
+  const fromDialog = async (): Promise<void> => {
+    const dialog = page.getByTestId('call-start-dialog');
+    if (await dialog.getByTestId('call-start-join').isVisible()) {
+      await dialog.getByTestId('call-start-join').click();
+      return;
+    }
+    await expect(dialog.getByTestId('call-start-submit')).toBeEnabled({ timeout: 4_000 });
+    const note = dialog.getByTestId('call-start-notetaker');
+    if ((await note.getAttribute('aria-checked')) === 'true') await note.click();
+    await dialog.getByTestId('call-start-submit').click();
+  };
   // the icon turns from "start" into "show the message" when the page hears of the live room: each try looks again before it presses
   await expect(async () => {
     if ((await dock.count()) === 0) {
-      if ((await icon.getAttribute('data-action')) === 'show-message') await page.getByTestId('room-card-join').last().click({ timeout: 2_000 });
-      else await press();
+      if (await page.getByTestId('call-start-dialog').isVisible()) await page.keyboard.press('Escape');
+      const action = await icon.getAttribute('data-action');
+      if (action === 'show-message') await page.getByTestId('room-card-join').last().click({ timeout: 2_000 });
+      else {
+        await press();
+        if (action === 'start') await fromDialog();
+      }
     }
     await expect(dock).toHaveAttribute('data-phase', 'connected', { timeout: 4_000 });
   }).toPass({ timeout: 30_000 });

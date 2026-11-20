@@ -198,12 +198,20 @@ async function makeChannel(omar: Opened, name: string, isPrivate: boolean, membe
   return id;
 }
 
-/** Clicks Start call on a channel page and returns the meeting id from the answer. */
+/**
+ * Presses "Audio call" on a channel page, then Start call in its dialog (P15-25) with the note-taker switch off (the checks add the note-taker from the call bar),
+ * and returns the meeting id from the answer.
+ */
 async function startCall(p: Opened, channelName: string): Promise<string> {
   await p.page.goto(`/t/engineering/c/${channelName}`);
   const btn = p.page.getByTestId('call-start');
   await expect(btn).toBeVisible(T);
-  const [res] = await Promise.all([p.page.waitForResponse((r) => /\/api\/channels\/[^/]+\/meetings$/.test(r.url()) && r.request().method() === 'POST', { timeout: 30_000 }), btn.click()]);
+  await btn.click();
+  const dialog = p.page.getByTestId('call-start-dialog');
+  await expect(dialog.getByTestId('call-start-submit')).toBeEnabled(T);
+  const note = dialog.getByTestId('call-start-notetaker');
+  if ((await note.getAttribute('aria-checked')) === 'true') await note.click();
+  const [res] = await Promise.all([p.page.waitForResponse((r) => /\/api\/channels\/[^/]+\/meetings$/.test(r.url()) && r.request().method() === 'POST', { timeout: 30_000 }), dialog.getByTestId('call-start-submit').click()]);
   const json: any = await res.json().catch(() => ({}));
   return String(json?.meeting?.id ?? '');
 }

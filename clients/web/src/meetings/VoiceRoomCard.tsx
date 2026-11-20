@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useContext, useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from 'react';
 import { Link } from 'react-router';
 import type { CallCard } from '@manythreads/shared';
 import { isApiError } from '../api/client';
@@ -10,6 +10,7 @@ import { isMockMode } from '../api/setup';
 import { endMeeting } from './api';
 import { callCards, useCallCard } from './callCards';
 import { EndRoomConfirm } from './EndRoomConfirm';
+import { InviteMoreDialog } from './StartCallDialog';
 import { BotIcon, EventHeadphonesIcon, WaveIcon } from './icons';
 import { callCardFacts, cardFromSummary, eventLine, runningTime, startLine } from './roomCard';
 import { callController, liveRooms, useCall, useRoomOfMessage } from './store';
@@ -17,7 +18,8 @@ import { callController, liveRooms, useCall, useRoomOfMessage } from './store';
 /*
  * The call card (P33-03, grown in P15-26). A message stamped with `meta.meeting` draws, in place of its text:
  * - while the call is live, the card: title, Audio, Live with the running time, who started it and when, the faces of who is in it, the note-taker while it
- *   listens, Join (the whole card joins) or "You are in this call", and for the starter End call, which asks once;
+ *   listens, who was invited ("Invited: Nadia, Rafi +2"), Join (the whole card joins) or "You are in this call", Invite more for whoever may post in the
+ *   channel (P15-27), and for the starter End call, which asks once;
  * - once it is over, one muted event line: "Omar started a call · 22:14 · 14 min · 3 joined", with Notes for a reader who may read them;
  * - before the card has loaded (or for a call the reader may not read), the start of that line at the same height, so the row never jumps.
  * A start message written before the stamp (none should be left after migration 0007) keeps P33's card from the live list (`VoiceRoomCard`) until S7.
@@ -90,6 +92,8 @@ function useNow(): number {
 
 const PROBLEM = 'Could not end the call. Try again.';
 
+const stop = (e: SyntheticEvent): void => e.stopPropagation();
+
 /**
  * The live card. `freshen` asks again for what the card is drawn from (End call waits for it); `endedHere` turns the card into its ended state without the
  * server, once the end route has answered.
@@ -99,6 +103,7 @@ export function CallCardBody({ card, channelId, freshen, endedHere }: { card: Ca
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [inviting, setInviting] = useState(false);
   const inCall = call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost';
   // the reader's actor id: from the roster once it has answered (the card may be drawn before), else what the store already knows
   const people = usePeople();
@@ -151,7 +156,8 @@ export function CallCardBody({ card, channelId, freshen, endedHere }: { card: Ca
   // click that selected words of the card (a double click on the title)
   const justFired = useContext(RowGestureContext);
   const onCard = (e: MouseEvent<HTMLDivElement>): void => {
-    if (!joinable || justFired() || (e.target as HTMLElement).closest('button,a,[role=group]')) return;
+    // a click inside the Invite more dialog bubbles here through React's portal, though it is not on the card
+    if (!joinable || inviting || !e.currentTarget.contains(e.target as Node) || justFired() || (e.target as HTMLElement).closest('button,a,[role=group]')) return;
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     if (e.detail > 1 || (sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode) && sel.toString() !== '')) return;
     join();
@@ -189,7 +195,9 @@ export function CallCardBody({ card, channelId, freshen, endedHere }: { card: Ca
           </span>
         ) : null}
       </p>
-      {/* S6 (P15-27): the invited names and Invite more come here, under who is in the call */}
+      {facts.invited !== null ? (
+        <p className="room-card-invited" data-testid="room-card-invited" title={card.invited.names.join(', ')}>{facts.invited}</p>
+      ) : null}
       {asking ? (
         <EndRoomConfirm inRoom={facts.presentCount} busy={busy} onEnd={() => void end()} onCancel={cancel} />
       ) : (
@@ -199,10 +207,20 @@ export function CallCardBody({ card, channelId, freshen, endedHere }: { card: Ca
           ) : (
             <button type="button" className="btn primary s room-card-join" data-testid="room-card-join" disabled={joining} onClick={join}>Join call</button>
           )}
+          {facts.canInvite ? (
+            <button type="button" className="btn s room-card-invite" data-testid="room-card-invite" aria-haspopup="dialog" onClick={() => setInviting(true)}>Invite more</button>
+          ) : null}
           {facts.canEnd ? <button type="button" ref={endButton} className="btn s room-card-end" data-testid="room-card-end" onClick={() => setAsking(true)}>End call</button> : null}
         </div>
       )}
       {problem ? <p className="dlg-error" role="alert">{problem}</p> : null}
+      {inviting ? (
+        // the dialog is drawn on top of the page, but React passes its clicks and keys up through the card and the message row (which would join the call or
+        // open the thread): they stop here
+        <span className="room-card-portal" onClick={stop} onMouseDown={stop} onPointerDown={stop} onTouchStart={stop} onKeyDown={stop}>
+          <InviteMoreDialog meetingId={card.meetingId} channelId={channelId} onClose={() => setInviting(false)} />
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { ListMeetingNotetakersResponse, Meeting, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption } from '@manythreads/shared';
+import type { ListMeetingNotetakersResponse, Meeting, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption, StartMeetingRequest, StartMeetingResponse } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { canOfferServer, enginePlan, planConsent, micMayOpen, writtenOnServer, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
 import type { CallApi, addNotetaker, answerRecordConsent, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
@@ -143,6 +143,14 @@ const IDLE = (prefs: CallPrefs): CallState => ({
 
 const GONE_STATUSES = new Set([403, 404]);
 
+/** A start the dialog asked for that cannot begin now (another call is connecting, or the person is already in this one): its message is for the person. */
+export class CallBusyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CallBusyError';
+  }
+}
+
 export class CallController {
   private state: CallState;
   private readonly listeners = new Set<() => void>();
@@ -187,6 +195,9 @@ export class CallController {
     if (this.state.myActorId === actorId) return;
     this.set({ myActorId: actorId });
   }
+  /** The start dialog has asked the server and is waiting: no other start or join begins meanwhile. */
+  private dialogStarting = false;
+
   get active(): boolean {
     const p = this.state.phase;
     return p === 'connecting' || p === 'connected' || p === 'reconnecting' || p === 'lost' || p === 'starting';
@@ -204,7 +215,7 @@ export class CallController {
   // ---- starting and joining ---------------------------------------------------------------------------------------------------------------------
   /** "Start voice room" / "Call": opens the channel's room or joins the one that is live. */
   async start(channelId: string): Promise<void> {
-    if (this.state.phase === 'starting' || this.state.phase === 'connecting') return;
+    if (this.dialogStarting || this.state.phase === 'starting' || this.state.phase === 'connecting') return;
     if (this.state.meeting && this.state.meeting.channelId === channelId && this.active) return;
     await this.teardownForNewRoom();
     const gen = ++this.generation;
@@ -219,10 +230,34 @@ export class CallController {
     }
   }
 
+  /**
+   * The start dialog's Start call (P15-25): like `start`, with the dialog's body (title, invitees, note-taker). The call the person is in now is kept until the
+   * server has answered: a refused start leaves them where they were, and the refusal is thrown back to the dialog, which shows it and stays open. Only after a
+   * successful answer is the old call left and the new one entered (the call bar takes over while the media connects). While another start or join is under way,
+   * or when the person is already in this channel's call, it throws a `CallBusyError` with words the dialog shows.
+   */
+  async startFromDialog(channelId: string, body: StartMeetingRequest): Promise<StartMeetingResponse> {
+    if (this.dialogStarting || this.state.phase === 'starting' || this.state.phase === 'connecting') throw new CallBusyError('A call is still connecting. Wait for it, then try again.');
+    if (this.state.meeting && this.state.meeting.channelId === channelId && this.active) throw new CallBusyError('You are already in the call here.');
+    this.dialogStarting = true;
+    let res: StartMeetingResponse;
+    try {
+      res = await this.deps.api.start(channelId, body);
+    } finally {
+      this.dialogStarting = false;
+    }
+    // no other start or join could begin while the server was answering (`dialogStarting`): only now is the call the person was in left
+    await this.teardownForNewRoom();
+    const gen = ++this.generation;
+    this.set({ ...IDLE(this.state.prefs), myActorId: this.state.myActorId, phase: 'starting', channelId });
+    void this.enter(res.meeting, res.join, gen).catch(() => undefined);
+    return res;
+  }
+
   /** Joins a room that is already live (a badge in the sidebar, an incoming call). */
   async joinRoom(meetingId: string, channelId: string | null = null): Promise<void> {
     if (this.state.meeting?.id === meetingId && this.active) return;
-    if (this.state.phase === 'starting' || this.state.phase === 'connecting') return;
+    if (this.dialogStarting || this.state.phase === 'starting' || this.state.phase === 'connecting') return;
     await this.teardownForNewRoom();
     const gen = ++this.generation;
     this.set({ ...IDLE(this.state.prefs), myActorId: this.state.myActorId, phase: 'starting', channelId });

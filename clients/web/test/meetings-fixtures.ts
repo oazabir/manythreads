@@ -100,7 +100,7 @@ export function fakeServer(over: { people?: MeetingParticipant[]; room?: Partial
     if (always.has(name)) throw always.get(name);
     return produce();
   };
-  srv.start = (channelId) => run('start', `start ${channelId}`, () => ({ meeting: srv.room, created: true, join: join(over.joinOver), invited: 0 }));
+  srv.start = (channelId, body) => run('start', body && Object.keys(body).length > 0 ? `start ${channelId} ${JSON.stringify(body)}` : `start ${channelId}`, () => ({ meeting: srv.room, created: true, join: join(over.joinOver), invited: 0 }));
   srv.join = (meetingId) => run('join', `join ${meetingId}`, () => ({ meeting: srv.room, join: join(over.joinOver) }));
   srv.renew = (meetingId) => run('renew', `renew ${meetingId}`, () => ({ join: join({ token: `tok-${srv.calls.length}`, ...over.joinOver }) }));
   srv.leave = (meetingId) => run('leave', `leave ${meetingId}`, () => ({ meeting: srv.room }));

@@ -53,10 +53,20 @@ test('Nadia starts a room from her phone: the call bar is a sheet that fits, wit
   nadia = await openAs(browser, playwright, stack, 'nadia', '/t/engineering/c/dev', { mobile: true });
   // on a phone the header is the channel's name and the bell (P34-05): the voice room is an item of the channel details menu, under the icon's name
   await expect(nadia.page.getByTestId('call-start')).toBeHidden();
-  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
+  await expect(nadia.page.getByTestId('call-start')).toHaveAccessibleName('Audio call');
   await nadia.page.getByTestId('channel-details-button').click();
-  await expect(nadia.page.getByTestId('details-voice')).toHaveText(/Start a voice room/);
+  await expect(nadia.page.getByTestId('details-voice')).toHaveText(/Audio call/);
+  // the item opens the start dialog as a sheet that fits the phone (P15-25); Esc cancels it and gives the keyboard back to the channel name
+  await nadia.page.getByTestId('details-voice').click();
+  await expect(nadia.page.getByTestId('call-start-dialog')).toBeVisible();
+  await expect(nadia.page.getByTestId('call-start-dialog')).toHaveClass(/sheet/);
+  await expect(nadia.page.getByTestId('call-start-title')).toBeFocused();
+  await fitsTheScreen(nadia, 'call-start-dialog');
+  expect(await noSidewaysScroll(nadia.page)).toBe(true);
   await nadia.page.keyboard.press('Escape');
+  await expect(nadia.page.getByTestId('call-start-dialog')).toBeHidden();
+  await expect(nadia.page.getByTestId('channel-details-button')).toBeFocused();
+  await expect(dock(nadia)).toHaveCount(0);
   await enterRoom(nadia);
   meetingId = (await lastMeeting(stack, 'dev')).id;
   await expect(dock(nadia)).toHaveClass(/sheet/);

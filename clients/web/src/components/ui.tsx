@@ -118,7 +118,7 @@ export function PasswordField({ label = 'Password', value, onChange, autoComplet
 
 /** `busy` marks a switch whose change is being saved: it keeps keyboard focus (a disabled button loses it) and ignores clicks until the save ends. */
 /** `locked` is for a switch that cannot be changed right now but must stay in the Tab order so its reason (named by `describedBy`) can be heard: it is `aria-disabled` and ignores clicks. */
-export function Toggle({ checked, onChange, label, disabled, busy, locked, describedBy }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; busy?: boolean; locked?: boolean; describedBy?: string }) {
+export function Toggle({ checked, onChange, label, disabled, busy, locked, describedBy, testId }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; busy?: boolean; locked?: boolean; describedBy?: string; testId?: string }) {
   return (
     <button
       type="button"
@@ -129,6 +129,7 @@ export function Toggle({ checked, onChange, label, disabled, busy, locked, descr
       aria-disabled={locked || undefined}
       aria-describedby={describedBy}
       disabled={disabled}
+      data-testid={testId}
       className={`tog ${checked ? 'on' : ''}`}
       onClick={() => {
         if (!busy && !locked) onChange(!checked);

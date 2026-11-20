@@ -1,0 +1,2039 @@
+{
+  "sha": "af52b6a711905812302a83c899f3aec26aba96d8",
+  "date": "2026-11-09T16:28:05.759Z",
+  "node": "v22.23.3",
+  "playwright": "1.56.1",
+  "chromium": "141.0.7390.37",
+  "budgetMinutes": 25,
+  "journeys": [
+    {
+      "persona": "lena",
+      "journey": "L1",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 7567,
+      "steps": {
+        "invitation-link": "passed",
+        "invitation-accepted": "passed",
+        "lands-in-releases": "passed",
+        "only-releases": "passed",
+        "read-only": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L2",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 15716,
+      "steps": {
+        "releases-channel": "passed",
+        "coder-release-post": "passed",
+        "shared-answer": "passed",
+        "masked-source": "passed",
+        "search-releases-only": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L3",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 29139,
+      "steps": {
+        "releases-only": "passed",
+        "no-composer": "passed",
+        "dev-channel-refused": "passed",
+        "private-channel-refused": "passed",
+        "members-refused": "passed",
+        "files-refused": "passed",
+        "boards-refused": "passed",
+        "approvals-refused": "passed",
+        "direct-messages-refused": "passed",
+        "bots-refused": "passed",
+        "brain-refused": "passed",
+        "memory-refused": "passed",
+        "admin-refused": "passed",
+        "inbox-drop-refused": "passed",
+        "search-stays-inside": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L4",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 10725,
+      "steps": {
+        "channel-header": "passed",
+        "start-room-refused": "passed",
+        "mention-group-refused": "passed",
+        "meetings-folder-refused": "passed",
+        "finished-call-refused": "passed",
+        "transcript-refused": "passed",
+        "guest-link-call": "pending"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 9902,
+      "steps": {
+        "releases-error": "passed",
+        "releases-loading": "passed",
+        "releases-empty": "passed",
+        "search-empty": "passed",
+        "search-error": "passed",
+        "channel-denied": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 6606,
+      "steps": {
+        "releases": "passed",
+        "search": "passed",
+        "no-access": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L1",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 6849,
+      "steps": {
+        "invitation-link": "passed",
+        "invitation-accepted": "passed",
+        "lands-in-releases": "passed",
+        "only-releases": "passed",
+        "read-only": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L2",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11748,
+      "steps": {
+        "releases-channel": "passed",
+        "coder-release-post": "passed",
+        "shared-answer": "passed",
+        "masked-source": "passed",
+        "search-releases-only": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L3",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 21558,
+      "steps": {
+        "releases-only": "passed",
+        "no-composer": "passed",
+        "dev-channel-refused": "passed",
+        "private-channel-refused": "passed",
+        "members-refused": "passed",
+        "files-refused": "passed",
+        "boards-refused": "passed",
+        "approvals-refused": "passed",
+        "direct-messages-refused": "passed",
+        "bots-refused": "passed",
+        "brain-refused": "passed",
+        "memory-refused": "passed",
+        "admin-refused": "passed",
+        "inbox-drop-refused": "passed",
+        "search-stays-inside": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L4",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 8366,
+      "steps": {
+        "channel-header": "passed",
+        "start-room-refused": "passed",
+        "mention-group-refused": "passed",
+        "meetings-folder-refused": "passed",
+        "finished-call-refused": "passed",
+        "transcript-refused": "passed",
+        "guest-link-call": "pending"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 8447,
+      "steps": {
+        "releases-error": "passed",
+        "releases-loading": "passed",
+        "releases-empty": "passed",
+        "search-empty": "passed",
+        "search-error": "passed",
+        "channel-denied": "passed"
+      }
+    },
+    {
+      "persona": "lena",
+      "journey": "L21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 6201,
+      "steps": {
+        "releases": "passed",
+        "search": "passed",
+        "no-access": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N6",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "connect-drive": "pending",
+        "ask-brain": "pending",
+        "share-masked": "pending",
+        "releases-channel": "pending"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N7",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "drop-pdf": "pending",
+        "archivist-files": "pending",
+        "ask-brain": "pending",
+        "confirm-concept": "pending"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N8",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "schedule-room": "pending",
+        "calendar-event": "pending",
+        "room-card": "pending"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N1",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13579,
+      "steps": {
+        "threads-inbox": "passed",
+        "deploy-plan-thread": "passed",
+        "reply": "passed",
+        "open-dev": "passed",
+        "releases-channel": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N3",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 9899,
+      "steps": {
+        "open-boards": "passed",
+        "card-form": "passed",
+        "card-made": "passed",
+        "card-claimed": "passed",
+        "handed-to-coder": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N5",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 7379,
+      "steps": {
+        "inbox-opens": "passed",
+        "request-waits": "passed",
+        "rafi-decides": "passed",
+        "decided-tab": "passed",
+        "release-approved": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N9",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 17545,
+      "steps": {
+        "open-standup": "passed",
+        "status-set": "passed",
+        "dnd-on": "passed",
+        "reminder-set": "passed",
+        "thread-actions": "passed",
+        "saved-for-later": "passed",
+        "later-tab": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N11",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 15759,
+      "steps": {
+        "own-request-no-buttons": "passed",
+        "own-request-refused": "passed",
+        "terminal-denied": "passed",
+        "terminal-refused": "passed",
+        "support-channel-no-access": "passed",
+        "marketing-channel-no-access": "passed",
+        "other-teams-refused": "passed",
+        "sidebar-engineering-only": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13683,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "approvals-empty": "passed",
+        "approvals-error": "passed",
+        "boards-empty": "passed",
+        "channel-denied": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 12076,
+      "steps": {
+        "threads": "passed",
+        "channel": "passed",
+        "brain": "passed",
+        "boards": "passed",
+        "approvals": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N2",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 30626,
+      "steps": {
+        "open-brain": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources": "passed",
+        "hand-to-coder": "passed",
+        "coder-replies": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N4",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 32134,
+      "steps": {
+        "page-open": "passed",
+        "live-editing": "passed",
+        "brain-writes-section": "passed",
+        "saved-to-history": "passed",
+        "history": "passed",
+        "restore": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N10",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13781,
+      "steps": {
+        "open-dev": "passed",
+        "request-typed": "passed",
+        "board-link-appears": "passed",
+        "bot-board": "passed",
+        "card-opened": "passed",
+        "second-request": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N6",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "connect-drive": "pending",
+        "ask-brain": "pending",
+        "share-masked": "pending",
+        "releases-channel": "pending"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N7",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "drop-pdf": "pending",
+        "archivist-files": "pending",
+        "ask-brain": "pending",
+        "confirm-concept": "pending"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N8",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "schedule-room": "pending",
+        "calendar-event": "pending",
+        "room-card": "pending"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N1",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 9946,
+      "steps": {
+        "threads-inbox": "passed",
+        "deploy-plan-thread": "passed",
+        "reply": "passed",
+        "open-dev": "passed",
+        "releases-channel": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N3",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 7223,
+      "steps": {
+        "open-boards": "passed",
+        "card-form": "passed",
+        "card-made": "passed",
+        "card-claimed": "passed",
+        "handed-to-coder": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N5",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 7597,
+      "steps": {
+        "inbox-opens": "passed",
+        "request-waits": "passed",
+        "rafi-decides": "passed",
+        "decided-tab": "passed",
+        "release-approved": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N9",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10960,
+      "steps": {
+        "open-standup": "passed",
+        "status-set": "passed",
+        "dnd-on": "passed",
+        "reminder-set": "passed",
+        "thread-actions": "passed",
+        "saved-for-later": "passed",
+        "later-tab": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N11",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10764,
+      "steps": {
+        "own-request-no-buttons": "passed",
+        "own-request-refused": "passed",
+        "terminal-denied": "passed",
+        "terminal-refused": "passed",
+        "support-channel-no-access": "passed",
+        "marketing-channel-no-access": "passed",
+        "other-teams-refused": "passed",
+        "sidebar-engineering-only": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10310,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "approvals-empty": "passed",
+        "approvals-error": "passed",
+        "boards-empty": "passed",
+        "channel-denied": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10306,
+      "steps": {
+        "threads": "passed",
+        "channel": "passed",
+        "brain": "passed",
+        "boards": "passed",
+        "approvals": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N2",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 25450,
+      "steps": {
+        "open-brain": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources": "passed",
+        "hand-to-coder": "passed",
+        "coder-replies": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N4",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 17353,
+      "steps": {
+        "page-open": "passed",
+        "live-editing": "passed",
+        "brain-writes-section": "passed",
+        "saved-to-history": "passed",
+        "history": "passed",
+        "restore": "passed"
+      }
+    },
+    {
+      "persona": "nadia",
+      "journey": "N10",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11764,
+      "steps": {
+        "open-dev": "passed",
+        "request-typed": "passed",
+        "board-link-appears": "passed",
+        "bot-board": "passed",
+        "card-opened": "passed",
+        "second-request": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O1",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "wizard": "pending",
+        "provider": "pending",
+        "first-goal": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O10",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "gallery": "pending",
+        "proposals": "pending",
+        "approved": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O11",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "connect-google": "pending",
+        "offboard": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O2",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "new-team": "pending",
+        "invite": "pending",
+        "role-tag": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O4",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "brief": "pending",
+        "rehearse": "pending",
+        "approved": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O8",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "share-written": "pending",
+        "marketing-waiting": "pending",
+        "accepted": "pending",
+        "digest-approved": "pending",
+        "held-mail": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O9",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "dry-run": "pending",
+        "import": "pending",
+        "restarted": "pending",
+        "counts": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O3",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13522,
+      "steps": {
+        "llm-settings": "passed",
+        "provider-added": "passed",
+        "alias-bound": "passed",
+        "budget-set": "passed",
+        "spend-read": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O6",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 10049,
+      "steps": {
+        "proposal-waiting": "passed",
+        "lines-read": "passed",
+        "applied": "passed",
+        "bots-read-only": "passed",
+        "bot-page": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O7",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 10662,
+      "steps": {
+        "dm-waiting": "passed",
+        "only-mine-listed": "passed",
+        "my-dm-open": "passed",
+        "reply-sent": "passed",
+        "their-dm-refused": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 26502,
+      "steps": {
+        "audit-empty": "passed",
+        "audit-error": "passed",
+        "audit-loading": "passed",
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "approvals-empty": "passed",
+        "approvals-loading": "passed",
+        "bots-error": "passed",
+        "bots-loading": "passed",
+        "llm-error": "passed",
+        "dm-denied": "passed",
+        "bot-board-none": "passed",
+        "bot-board-columns": "passed",
+        "bot-board-handed-back": "passed",
+        "bot-board-idle": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 19242,
+      "steps": {
+        "threads": "passed",
+        "channel": "passed",
+        "approvals": "passed",
+        "bots": "passed",
+        "boards": "passed",
+        "audit": "passed",
+        "llm": "passed",
+        "members": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O5",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 17632,
+      "steps": {
+        "audit-opened": "passed",
+        "filtered-to-nadia": "passed",
+        "exported": "passed",
+        "key-never-shown": "passed",
+        "key-read-refused": "passed",
+        "conversation-refused": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O1",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "wizard": "pending",
+        "provider": "pending",
+        "first-goal": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O10",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "gallery": "pending",
+        "proposals": "pending",
+        "approved": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O11",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "connect-google": "pending",
+        "offboard": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O2",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "new-team": "pending",
+        "invite": "pending",
+        "role-tag": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O4",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "brief": "pending",
+        "rehearse": "pending",
+        "approved": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O8",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "share-written": "pending",
+        "marketing-waiting": "pending",
+        "accepted": "pending",
+        "digest-approved": "pending",
+        "held-mail": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O9",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "dry-run": "pending",
+        "import": "pending",
+        "restarted": "pending",
+        "counts": "pending"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O3",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 12065,
+      "steps": {
+        "llm-settings": "passed",
+        "provider-added": "passed",
+        "alias-bound": "passed",
+        "budget-set": "passed",
+        "spend-read": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O6",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 8201,
+      "steps": {
+        "proposal-waiting": "passed",
+        "lines-read": "passed",
+        "applied": "passed",
+        "bots-read-only": "passed",
+        "bot-page": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O7",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 8434,
+      "steps": {
+        "dm-waiting": "passed",
+        "only-mine-listed": "passed",
+        "my-dm-open": "passed",
+        "reply-sent": "passed",
+        "their-dm-refused": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 26580,
+      "steps": {
+        "audit-empty": "passed",
+        "audit-error": "passed",
+        "audit-loading": "passed",
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "approvals-empty": "passed",
+        "approvals-loading": "passed",
+        "bots-error": "passed",
+        "bots-loading": "passed",
+        "llm-error": "passed",
+        "dm-denied": "passed",
+        "bot-board-none": "passed",
+        "bot-board-columns": "passed",
+        "bot-board-handed-back": "passed",
+        "bot-board-idle": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 23197,
+      "steps": {
+        "threads": "passed",
+        "channel": "passed",
+        "approvals": "passed",
+        "bots": "passed",
+        "boards": "passed",
+        "audit": "passed",
+        "llm": "passed",
+        "members": "passed"
+      }
+    },
+    {
+      "persona": "omar",
+      "journey": "O5",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 18013,
+      "steps": {
+        "audit-opened": "passed",
+        "filtered-to-nadia": "passed",
+        "exported": "passed",
+        "key-never-shown": "passed",
+        "key-read-refused": "passed",
+        "conversation-refused": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P5",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "late-join": "pending",
+        "catch-me-up": "pending",
+        "morning-brief": "pending"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P6",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "transcript-refused": "pending",
+        "recipe-refused": "pending"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P1",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 14666,
+      "steps": {
+        "welcome-card": "passed",
+        "general-open": "passed",
+        "thread-open": "passed",
+        "thread-followed": "passed",
+        "checklist-done": "passed",
+        "teams-menu": "passed",
+        "marketing": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P3",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 12278,
+      "steps": {
+        "dev-channel": "passed",
+        "reply-sent": "passed",
+        "bot-read-only": "passed",
+        "approval-view-only": "passed",
+        "private-channel-refused": "passed",
+        "members-page-gone": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P4",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 10521,
+      "steps": {
+        "threads-inbox": "passed",
+        "thread-row-opened": "passed",
+        "mention-arrives": "passed",
+        "bell-open": "passed",
+        "mention-opened": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 15114,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "general-error": "passed",
+        "general-loading": "passed",
+        "general-empty": "passed",
+        "approvals-empty": "passed",
+        "private-channel-denied": "passed",
+        "support-denied": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 14099,
+      "steps": {
+        "threads": "passed",
+        "general": "passed",
+        "dev": "passed",
+        "bots": "passed",
+        "brain": "passed",
+        "approvals": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P2",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 16712,
+      "steps": {
+        "brain-empty": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "source-opened": "passed",
+        "coder-release-post": "passed",
+        "thread-followed": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P5",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "late-join": "pending",
+        "catch-me-up": "pending",
+        "morning-brief": "pending"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P6",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "transcript-refused": "pending",
+        "recipe-refused": "pending"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P1",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 14842,
+      "steps": {
+        "welcome-card": "passed",
+        "general-open": "passed",
+        "thread-open": "passed",
+        "thread-followed": "passed",
+        "checklist-done": "passed",
+        "teams-menu": "passed",
+        "marketing": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P3",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10989,
+      "steps": {
+        "dev-channel": "passed",
+        "reply-sent": "passed",
+        "bot-read-only": "passed",
+        "approval-view-only": "passed",
+        "private-channel-refused": "passed",
+        "members-page-gone": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P4",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 8998,
+      "steps": {
+        "threads-inbox": "passed",
+        "thread-row-opened": "passed",
+        "mention-arrives": "passed",
+        "bell-open": "passed",
+        "mention-opened": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 12395,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "general-error": "passed",
+        "general-loading": "passed",
+        "general-empty": "passed",
+        "approvals-empty": "passed",
+        "private-channel-denied": "passed",
+        "support-denied": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 13158,
+      "steps": {
+        "threads": "passed",
+        "general": "passed",
+        "dev": "passed",
+        "bots": "passed",
+        "brain": "passed",
+        "approvals": "passed"
+      }
+    },
+    {
+      "persona": "priya",
+      "journey": "P2",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 13393,
+      "steps": {
+        "brain-empty": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "source-opened": "passed",
+        "coder-release-post": "passed",
+        "thread-followed": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R5",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "incident-started": "pending",
+        "oncall-paged": "pending",
+        "postmortem": "pending"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R6",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "push": "pending",
+        "approved": "pending"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R7",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "in-call": "pending",
+        "removed": "pending",
+        "dropped": "pending"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R1",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 11362,
+      "steps": {
+        "waiting": "passed",
+        "request-open": "passed",
+        "approved": "passed",
+        "second-open": "passed",
+        "declined": "passed",
+        "decided-list": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R2",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13288,
+      "steps": {
+        "incidents": "passed",
+        "brain-open": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources-open": "passed",
+        "source-in-channel": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R4",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 8825,
+      "steps": {
+        "own-request-waits": "passed",
+        "own-request-blocked": "passed",
+        "support-approvals-refused": "passed",
+        "guard-read-only": "passed",
+        "what-it-can-do-read-only": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 14899,
+      "steps": {
+        "approvals-empty": "passed",
+        "approvals-error": "passed",
+        "approvals-loading": "passed",
+        "threads-empty": "passed",
+        "incidents-error": "passed",
+        "incidents-loading": "passed",
+        "incidents-empty": "passed",
+        "support-denied": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13538,
+      "steps": {
+        "approvals": "passed",
+        "threads": "passed",
+        "incidents": "passed",
+        "bots": "passed",
+        "brain": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R5",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "incident-started": "pending",
+        "oncall-paged": "pending",
+        "postmortem": "pending"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R6",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "push": "pending",
+        "approved": "pending"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R7",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "in-call": "pending",
+        "removed": "pending",
+        "dropped": "pending"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R1",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 9603,
+      "steps": {
+        "waiting": "passed",
+        "request-open": "passed",
+        "approved": "passed",
+        "second-open": "passed",
+        "declined": "passed",
+        "decided-list": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R2",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 14577,
+      "steps": {
+        "incidents": "passed",
+        "brain-open": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources-open": "passed",
+        "source-in-channel": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R3",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10382,
+      "steps": {
+        "phone-inbox": "passed",
+        "request-open": "passed",
+        "note-typed": "passed",
+        "approved": "passed",
+        "decided": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R4",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 9073,
+      "steps": {
+        "own-request-waits": "passed",
+        "own-request-blocked": "passed",
+        "support-approvals-refused": "passed",
+        "guard-read-only": "passed",
+        "what-it-can-do-read-only": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 15987,
+      "steps": {
+        "approvals-empty": "passed",
+        "approvals-error": "passed",
+        "approvals-loading": "passed",
+        "threads-empty": "passed",
+        "incidents-error": "passed",
+        "incidents-loading": "passed",
+        "incidents-empty": "passed",
+        "support-denied": "passed"
+      }
+    },
+    {
+      "persona": "rafi",
+      "journey": "R21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 10347,
+      "steps": {
+        "approvals": "passed",
+        "threads": "passed",
+        "incidents": "passed",
+        "bots": "passed",
+        "brain": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S1",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "email-arrives": "pending",
+        "draft-ready": "pending",
+        "approve-and-send": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S3",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "answer-from-manual": "pending",
+        "manual-changes": "pending",
+        "source-changed-since": "pending",
+        "gap-in-kb-updates": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S4",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "public-question": "pending",
+        "bot-answers": "pending",
+        "hard-one-to-me": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S6",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "forward-email": "pending",
+        "mail-filed": "pending",
+        "ask-what-shipped": "pending",
+        "cited-from-engineering": "pending",
+        "confirm-concept": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S7",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "record": "pending",
+        "preview": "pending",
+        "transcript": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S2",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 26677,
+      "steps": {
+        "open-brain": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources": "passed",
+        "open-source": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S5",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 25950,
+      "steps": {
+        "own-team-only": "passed",
+        "engineering-channel-refused": "passed",
+        "engineering-memory-refused": "passed",
+        "engineering-inbox-refused": "passed",
+        "coder-refused": "passed",
+        "engineering-api-refused": "passed",
+        "engineering-memory-api-refused": "passed",
+        "coder-api-refused": "passed",
+        "others-conversations-refused": "passed",
+        "back-to-support": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S8",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 14848,
+      "steps": {
+        "open-support": "passed",
+        "ask-typed": "passed",
+        "draft-waits": "passed",
+        "approvals-inbox": "passed",
+        "lead-approves": "passed",
+        "reply-posted": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 9719,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "approvals-empty": "passed",
+        "approvals-error": "passed",
+        "channel-denied": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 11676,
+      "steps": {
+        "threads": "passed",
+        "support-channel": "passed",
+        "brain": "passed",
+        "approvals": "passed",
+        "bots": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S1",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "email-arrives": "pending",
+        "draft-ready": "pending",
+        "approve-and-send": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S3",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "answer-from-manual": "pending",
+        "manual-changes": "pending",
+        "source-changed-since": "pending",
+        "gap-in-kb-updates": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S4",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "public-question": "pending",
+        "bot-answers": "pending",
+        "hard-one-to-me": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S6",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "forward-email": "pending",
+        "mail-filed": "pending",
+        "ask-what-shipped": "pending",
+        "cited-from-engineering": "pending",
+        "confirm-concept": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S7",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "record": "pending",
+        "preview": "pending",
+        "transcript": "pending"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S2",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 24002,
+      "steps": {
+        "open-brain": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources": "passed",
+        "open-source": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S5",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 27449,
+      "steps": {
+        "own-team-only": "passed",
+        "engineering-channel-refused": "passed",
+        "engineering-memory-refused": "passed",
+        "engineering-inbox-refused": "passed",
+        "coder-refused": "passed",
+        "engineering-api-refused": "passed",
+        "engineering-memory-api-refused": "passed",
+        "coder-api-refused": "passed",
+        "others-conversations-refused": "passed",
+        "back-to-support": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S8",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 16610,
+      "steps": {
+        "open-support": "passed",
+        "ask-typed": "passed",
+        "draft-waits": "passed",
+        "approvals-inbox": "passed",
+        "lead-approves": "passed",
+        "reply-posted": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 12033,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "approvals-empty": "passed",
+        "approvals-error": "passed",
+        "channel-denied": "passed"
+      }
+    },
+    {
+      "persona": "sameera",
+      "journey": "S21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11133,
+      "steps": {
+        "threads": "passed",
+        "support-channel": "passed",
+        "brain": "passed",
+        "approvals": "passed",
+        "bots": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T2",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "ask-report": "pending",
+        "report-built": "pending",
+        "pin-to-channel": "pending",
+        "export": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T5",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "ask-image": "pending",
+        "pick-image": "pending",
+        "saved-attachment": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T6",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "share-waiting": "pending",
+        "share-accepted": "pending",
+        "digest-read": "pending",
+        "ask-brain-about-it": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T7",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "start-review": "pending",
+        "guest-waiting": "pending",
+        "guest-admitted": "pending",
+        "follow-up-approved": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T8",
+      "kind": "desktop",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "bangla-message": "pending",
+        "translated": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T1",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 20701,
+      "steps": {
+        "content-channel": "passed",
+        "brief-typed": "passed",
+        "brief-sent": "passed",
+        "draft-reply": "passed",
+        "draft-page": "passed",
+        "live-editor": "passed",
+        "colleague-joins": "passed",
+        "saved-to-history": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T3",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 23009,
+      "steps": {
+        "brain-empty": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources": "passed",
+        "save-as-page": "passed",
+        "page-saved": "passed",
+        "page-opened": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T4",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 13077,
+      "steps": {
+        "jobs-empty": "passed",
+        "routine-form": "passed",
+        "routine-filled": "passed",
+        "job-saved": "passed",
+        "job-run": "passed",
+        "report-page": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T9",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 26003,
+      "steps": {
+        "support-channel-refused": "passed",
+        "support-mail-refused": "passed",
+        "sidebar-marketing-only": "passed",
+        "production-approval-refused": "passed",
+        "production-approve-refused": "passed",
+        "brain-closed-source-asked": "passed",
+        "brain-closed-source-outside-scope": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T20",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 16176,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "jobs-empty": "passed",
+        "jobs-error": "passed",
+        "files-error": "passed",
+        "brain-empty": "passed",
+        "support-denied": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T21",
+      "kind": "desktop",
+      "status": "passed",
+      "durationMs": 14246,
+      "steps": {
+        "threads": "passed",
+        "channel": "passed",
+        "brain": "passed",
+        "files": "passed",
+        "jobs": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T2",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "ask-report": "pending",
+        "report-built": "pending",
+        "pin-to-channel": "pending",
+        "export": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T5",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "ask-image": "pending",
+        "pick-image": "pending",
+        "saved-attachment": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T6",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "share-waiting": "pending",
+        "share-accepted": "pending",
+        "digest-read": "pending",
+        "ask-brain-about-it": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T7",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "start-review": "pending",
+        "guest-waiting": "pending",
+        "guest-admitted": "pending",
+        "follow-up-approved": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T8",
+      "kind": "mobile",
+      "status": "pending",
+      "durationMs": 0,
+      "steps": {
+        "bangla-message": "pending",
+        "translated": "pending"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T1",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 18554,
+      "steps": {
+        "content-channel": "passed",
+        "brief-typed": "passed",
+        "brief-sent": "passed",
+        "draft-reply": "passed",
+        "draft-page": "passed",
+        "live-editor": "passed",
+        "colleague-joins": "passed",
+        "saved-to-history": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T3",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 23054,
+      "steps": {
+        "brain-empty": "passed",
+        "question-typed": "passed",
+        "answer": "passed",
+        "sources": "passed",
+        "save-as-page": "passed",
+        "page-saved": "passed",
+        "page-opened": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T4",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11072,
+      "steps": {
+        "jobs-empty": "passed",
+        "routine-form": "passed",
+        "routine-filled": "passed",
+        "job-saved": "passed",
+        "job-run": "passed",
+        "report-page": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T9",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11830,
+      "steps": {
+        "support-channel-refused": "passed",
+        "support-mail-refused": "passed",
+        "sidebar-marketing-only": "passed",
+        "production-approval-refused": "passed",
+        "production-approve-refused": "passed",
+        "brain-closed-source-asked": "passed",
+        "brain-closed-source-outside-scope": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T20",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11630,
+      "steps": {
+        "threads-empty": "passed",
+        "threads-error": "passed",
+        "threads-loading": "passed",
+        "jobs-empty": "passed",
+        "jobs-error": "passed",
+        "files-error": "passed",
+        "brain-empty": "passed",
+        "support-denied": "passed"
+      }
+    },
+    {
+      "persona": "tariq",
+      "journey": "T21",
+      "kind": "mobile",
+      "status": "passed",
+      "durationMs": 11497,
+      "steps": {
+        "threads": "passed",
+        "channel": "passed",
+        "brain": "passed",
+        "files": "passed",
+        "jobs": "passed"
+      }
+    }
+  ],
+  "pending": [
+    "omar/O1 (P10-01)",
+    "omar/O10 (P18-01)",
+    "omar/O11 (P18-08)",
+    "omar/O2 (P8-10)",
+    "omar/O4 (P7-04)",
+    "omar/O8 (P8-26)",
+    "omar/O9 (P14-13)",
+    "nadia/N6 (P8-02)",
+    "nadia/N7 (P8-17)",
+    "nadia/N8 (P16-05)",
+    "rafi/R5 (P18-07)",
+    "rafi/R6 (P11-06)",
+    "rafi/R7 (P15-02)",
+    "sameera/S1 (P8-19)",
+    "sameera/S3 (P8-08)",
+    "sameera/S4 (P8-10)",
+    "sameera/S6 (P8-19)",
+    "sameera/S7 (P14-17)",
+    "tariq/T2 (P9-08)",
+    "tariq/T5 (P9-08)",
+    "tariq/T6 (P8-26)",
+    "tariq/T7 (P17-04)",
+    "tariq/T8 (P18-10)",
+    "priya/P5 (P18-05)",
+    "priya/P6 (P15-09)",
+    "lena/L4/guest-link-call (P17-04)"
+  ],
+  "totals": {
+    "journeys": 139,
+    "passed": 89,
+    "failed": 0,
+    "pending": 26,
+    "pictures": 577
+  }
+}

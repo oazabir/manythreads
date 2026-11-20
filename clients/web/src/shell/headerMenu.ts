@@ -17,7 +17,7 @@ export type HeaderMenuItem = {
   /** What the item says, which is what the button is called ("Search this conversation", "Members (6)"). */
   label: string;
   testId: string;
-  /** A state shown in the menu but not a thing to press ("In the voice room"). */
+  /** A state shown in the menu but not a thing to press ("In this call"). */
   disabled?: boolean;
   /** The item opens a dialog or a box (`aria-haspopup`). */
   popup?: boolean;

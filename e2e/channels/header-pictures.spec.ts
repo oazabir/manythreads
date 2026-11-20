@@ -7,7 +7,7 @@ import { meetingsStack, type Who } from '../meetings/support.ts';
 
 /**
  * The pictures of P33-05: the channel header with and without a live voice room, the room card (live; as its starter; when the reader is in the room), the Members panel
- * as a lead and as a member, the End confirm, and a 44-character channel name, in Graphite dark and Linen light, at 1440 and 390 px, and the header alone at 800, 1000 and 1100 px with the Members panel closed and open. A tool, not a check: it is skipped
+ * as a lead and as a member, the start dialog (P15-25), the End confirm, and a 44-character channel name, in Graphite dark and Linen light, at 1440 and 390 px, and the header alone at 800, 1000 and 1100 px with the Members panel closed and open. A tool, not a check: it is skipped
  * unless MANYTHREADS_HEADER_PICTURES=1, and it writes the PNGs to MANYTHREADS_HEADER_PICTURES_DIR (default temp/screenshots/p33 in the repository). Run it with
  * `MANYTHREADS_HEADER_PICTURES=1 pnpm e2e --project=desktop channels/header-pictures.spec.ts`. One browser takes both sizes, so the phone project is not needed.
  */
@@ -148,6 +148,17 @@ for (const look of LOOKS) {
         await rafi.page.waitForTimeout(300);
         await rafi.page.screenshot({ path: `${base}members-member.png` });
         await rafi.context.close();
+
+        // 2b. "Audio call" opens the start dialog (P15-25; a sheet on the phone), cancelled with Esc: no call is started
+        if (size.mobile) {
+          await omar.page.getByTestId('channel-details-button').click();
+          await omar.page.getByTestId('details-voice').click();
+        } else await omar.page.getByTestId('call-start').click();
+        await expect(omar.page.getByTestId('call-start-title')).not.toHaveValue('', T);
+        await omar.page.waitForTimeout(300);
+        await omar.page.screenshot({ path: `${base}start-dialog.png` });
+        await omar.page.keyboard.press('Escape');
+        await expect(omar.page.getByTestId('call-start-dialog')).toBeHidden(T);
 
         // 3. a room is live (Nadia starts it): the header, the card for a reader, the card for its starter, and the End confirm
         const started = await nadiaApi.post<{ meeting: { id: string } }>(`/api/channels/${dev}/meetings`, {});

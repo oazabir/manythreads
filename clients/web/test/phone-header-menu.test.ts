@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   start: vi.fn(),
   joinRoom: vi.fn(),
 }));
+vi.mock('../src/meetings/StartCallDialog', () => ({ StartCallDialog: () => createElement('div', { 'data-testid': 'call-start-dialog' }) }));
 
 vi.mock('../src/api/endpoints', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -102,7 +103,8 @@ describe('the channel details menu on a phone', () => {
     click(must('channel-details-button'));
     const items = [...must('channel-details').querySelectorAll<HTMLElement>('[role="menuitem"]')].map((el) => el.dataset.testid);
     expect(items.slice(0, 3)).toEqual(['details-voice', 'details-members-open', 'details-notifications']);
-    expect(must('details-voice').textContent).toContain('Start a voice room');
+    expect(must('details-voice').textContent).toContain('Audio call');
+    expect(must('details-voice').getAttribute('aria-haspopup')).toBe('dialog');
     expect(must('details-members-open').textContent).toContain('Members (2)');
     expect(must('details-members-open').classList.contains('chd-head-tool')).toBe(true);
     // the list view of Members steps aside on a phone (its twin above opens the panel), but stays for a desktop
@@ -119,27 +121,28 @@ describe('the channel details menu on a phone', () => {
     expect(document.activeElement).toBe(must('channel-details-button'));
   });
 
-  it('starts the voice room from its item, and joins a live room the same way the icon does', async () => {
+  it('opens the start dialog from its item, and joins a live call the same way the icon does', async () => {
     draw();
     await settle();
     click(must('channel-details-button'));
     click(must('details-voice'));
-    expect(h.start).toHaveBeenCalledWith(CHANNEL);
+    expect(must('call-start-dialog')).toBeTruthy();
+    expect(h.start).not.toHaveBeenCalled();
     h.state.live = { meeting: { id: 'm1', threadRootId: null }, present: [] };
     draw();
     click(must('channel-details-button'));
-    expect(must('details-voice').textContent).toContain('Join the voice room');
+    expect(must('details-voice').textContent).toContain('Join call');
     click(must('details-voice'));
     expect(h.joinRoom).toHaveBeenCalledWith('m1', CHANNEL);
   });
 
-  it('shows "In the voice room" as a state, not a thing to press, while the reader is in it', async () => {
+  it('shows "In this call" as a state, not a thing to press, while the reader is in it', async () => {
     h.state.call = { phase: 'connected', meeting: { id: 'm1', channelId: CHANNEL } };
     draw();
     await settle();
     click(must('channel-details-button'));
     const item = must('details-voice') as HTMLButtonElement;
-    expect(item.textContent).toContain('In the voice room');
+    expect(item.textContent).toContain('In this call');
     expect(item.disabled).toBe(true);
     // the keyboard starts on the first item that can be pressed
     expect(document.activeElement).toBe(must('details-members-open'));
