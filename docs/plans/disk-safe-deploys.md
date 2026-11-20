@@ -51,3 +51,9 @@ and that is stated, not hidden.
 - An image a pod needs being removed: both prunes read what pods use right before acting.
 - A push during the registry's clean-up fails: the CronJob skips while a build runs, and the deploy waits for a running clean-up.
 - Workspace `bin` links made before the sources arrive (`packages/runner`): checked in the spike.
+
+## Result (2026-11-20)
+- Deploys: full 84%; source-only with both installs reused 83% (143 s, was ~300 s). The second source-only deploy of the proof is the next task's.
+- Test-site builds: kaniko cache on; a finished Job goes after ten minutes (its kaniko containers keep ~3 GB until then, so the hour of the design stacked builds). Builds C and D in a row: both installs reused, peak 84% and 84%, no hand step. The review's doubt about kaniko's `COPY --from` key was half right: it misses only when the source stage itself came from the cache; the build writes the tree id to `.build-source` so the stage always runs.
+- Registry clean-up: run live by hand (delete, collect, restart in 22 s); the first nightly run is to be read on 2026-11-21.
+
