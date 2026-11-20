@@ -86,7 +86,7 @@ clean-up does it (P31-05; `registry.cleanup.*`, `templates/registry.yaml`, the s
 the newest `keepTags` (2) tags of every other repository by image time, any tag or digest a pod in a deploy target uses, and kaniko's cache entries
 (`<ns>/cache`) whose layers a kept image already holds or that are younger than `keepCacheDays` (14, kaniko's own cache ttl). When it deleted something it stops the registry,
 runs `registry garbage-collect` (never `--delete-untagged`), and starts it again (a minute or so). A night with a test-site build running is skipped;
-`tools/devbox/deploy.sh` waits for a clean-up that is running. A finished build Job deletes itself after an hour.
+`tools/devbox/deploy.sh` waits for a clean-up that is running. A finished build Job deletes itself ten minutes later (its kaniko containers hold about 3 GB until then).
 
 ## Host step (once, as root on the node)
 

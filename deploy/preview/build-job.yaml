@@ -34,7 +34,9 @@ metadata:
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 2400
-  ttlSecondsAfterFinished: 3600   # gone an hour after it finished, with its pods and their scratch space (P31-05)
+  # Gone ten minutes after it finished (P31-05): a finished kaniko container keeps ~1.5 GB in its own layer until the pod is deleted (measured
+  # 2026-11-20: 3 GB for the two, --cleanup or not), so a second build within the hour would stack on the first. Read the logs within ten minutes.
+  ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
