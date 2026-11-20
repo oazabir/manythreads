@@ -30,6 +30,11 @@ export type Timeline = {
   /** The `before` for the next older page; null when everything older is held. */
   cursor: string | null;
   loadingOlder: boolean;
+  /**
+   * The first message of each page of older messages loaded after the first one (oldest first): a link preview is not deduplicated across one, so loading
+   * older messages never hides a card a row already shows (P34-04). Absent means none.
+   */
+  pageStarts?: readonly string[];
   pending: PendingSend[];
   /** Threads only: the channel the thread lives in, its root message and what the caller knows about it. */
   channel: ThreadChannelRef | null;

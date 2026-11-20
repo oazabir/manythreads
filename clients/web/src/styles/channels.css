@@ -552,10 +552,16 @@
 
 /* ---- link previews under a message (P14-08) ---- */
 
-/* The card is 96px tall whatever it holds, and its picture slot is 88px square, so a late picture or a long description never moves a row. */
+/*
+ * The card is 96px tall whatever it holds, and its picture slot is 88px square, so a late picture or a long description never moves a row. The list
+ * keeps 96px of room (`.lp-slot`) before it knows what comes, so the cards are never less tall than that: a one-line card (a page with only a title,
+ * P34-04) sits centred in the room instead of giving it back.
+ */
 .lp-cards {
   display: grid;
+  align-content: center;
   gap: 6px;
+  min-height: 96px;
   margin-top: 8px;
   max-width: 520px;
   animation: lp-in var(--dur-menu) ease-out;
@@ -633,6 +639,39 @@
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* under a title of two lines one whole line of description fits; the box never cuts a line through the middle */
+.lp-desc.lp-desc-1 {
+  -webkit-line-clamp: 1;
+}
+
+/* a page with only a title: one line, the host then the title */
+.lp-line .lp-link {
+  align-items: center;
+  height: auto;
+  min-height: 34px;
+  padding: 3px 3px 3px 10px;
+}
+
+.lp-line .lp-text {
+  flex-direction: row;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 30px 4px 0;
+}
+
+.lp-line .lp-host {
+  flex: none;
+  max-width: 45%;
+}
+
+.lp-line .lp-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lp-img {

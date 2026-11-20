@@ -369,7 +369,7 @@ export class ChannelStore {
     const fresh = fromPage(page);
     const newestHeld = t.items.at(-1)?.id;
     const gap = newestHeld !== undefined && page.length >= limit && (fresh[0]?.id ?? '') > newestHeld;
-    if (t.items.length === 0 || gap) return { ...t, status: 'ready', error: null, items: fresh, cursor: nextCursor };
+    if (t.items.length === 0 || gap) return { ...t, status: 'ready', error: null, items: fresh, cursor: nextCursor, pageStarts: [] };
     return { ...t, status: 'ready', error: null, items: mergeItems(t.items, fresh) };
   }
 
@@ -379,7 +379,12 @@ export class ChannelStore {
     this.put(key, (x) => ({ ...x, loadingOlder: true }));
     try {
       const page = await fetchMessages(channelId, { before: t.cursor, limit: OLDER_PAGE, ...(rootId ? { threadRootId: rootId } : {}) });
-      this.put(key, (x) => ({ ...x, loadingOlder: false, items: mergeItems(x.items, fromPage(page.items)), cursor: page.nextCursor }));
+      // the message that was the oldest held starts its page: the older page above it is a different stretch for link-preview dedupe
+      this.put(key, (x) => {
+        const first = x.items[0]?.id;
+        const pageStarts = first === undefined ? (x.pageStarts ?? []) : [...(x.pageStarts ?? []), first];
+        return { ...x, loadingOlder: false, items: mergeItems(x.items, fromPage(page.items)), cursor: page.nextCursor, pageStarts };
+      });
     } catch {
       this.put(key, (x) => ({ ...x, loadingOlder: false }));
     }

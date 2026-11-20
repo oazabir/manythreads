@@ -22,6 +22,7 @@ import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
 import { continuesRun, pendingContinues } from './runs';
+import { threadLinksAbove } from '../linkpreview/dedupe';
 import { setOpenThreadRoot } from '../taskview/openRoot';
 import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
 import { lastEditableOwn } from './messageActions';
@@ -124,6 +125,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const liveRun = useMemo(() => runState.runs.filter((r) => !runEnded(r.state)).sort((x, y) => Date.parse(y.startedAt) - Date.parse(x.startedAt))[0] ?? null, [runState.runs]);
   const fileKey = useMemo(() => attachmentKey([...(tl.root ? [tl.root] : []), ...tl.items]), [tl.root, tl.items]);
   const placed = useMemo(() => placeRuns(tl.items, runState.runs), [tl.items, runState.runs]);
+  // a link the root or an earlier reply already previewed gets no second card (P34-04)
+  const linksAbove = useMemo(() => threadLinksAbove(tl.root, tl.items, tl.pageStarts ?? []), [tl.root, tl.items, tl.pageStarts]);
   // A question is asked in one place: the strip leaves out the ones a run card draws (only those: one the card could not load stays here), and a bot's answered questions of a
   // run in this thread, which that run's step list keeps ("Asked to run pnpm · Allowed").
   const approvals = useThreadApprovals(rootId);
@@ -266,7 +269,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       {tl.items.length === 0 && tl.pending.length === 0 && placed.live.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
       {tl.items.map((m, i) => (
         <Fragment key={m.id}>
-          <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+          <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} linksAbove={linksAbove[i] ?? ''} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
           {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
         </Fragment>
       ))}

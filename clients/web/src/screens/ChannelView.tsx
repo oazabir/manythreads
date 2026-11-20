@@ -148,8 +148,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const readyToDivide = readAtOpen.known && tl.status === 'ready' && hadUnread !== null;
   const lastRead = hadUnread ? readAtOpen.lastReadId : atBottom ? newest : seenUpTo;
   const items = useMemo(
-    () => buildListItems(tl.items, tl.pending, { lastReadId: lastRead, selfActor: self, allLoaded: tl.cursor === null, readKnown: readyToDivide }),
-    [tl.items, tl.pending, tl.cursor, lastRead, self, readyToDivide],
+    () => buildListItems(tl.items, tl.pending, { lastReadId: lastRead, selfActor: self, allLoaded: tl.cursor === null, readKnown: readyToDivide, pageStarts: tl.pageStarts ?? [] }),
+    [tl.items, tl.pending, tl.cursor, lastRead, self, readyToDivide, tl.pageStarts],
   );
   // what came in below the place the reader left the bottom at, not their own (P21-05)
   const newCount = useMemo(() => (seenUpTo === null ? 0 : tl.items.reduce((n, m) => (m.id > seenUpTo && m.deletedAt === null && m.authorId !== self ? n + 1 : n), 0)), [tl.items, seenUpTo, self]);
@@ -269,6 +269,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
               canManage={canManage}
               highlight={highlight === item.message.id}
               continued={item.continued}
+              linksAbove={item.linksAbove ?? ''}
               expand={item.key === afterUnreadKey}
               actions={actions}
             />

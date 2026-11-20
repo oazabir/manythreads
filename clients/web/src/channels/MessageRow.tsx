@@ -37,6 +37,7 @@ import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
 import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
+import type { LinksAbove } from '../linkpreview/dedupe';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import { usePeople, type People } from './hooks';
 import { withoutOwnName } from './displayText';
@@ -124,13 +125,15 @@ type Props = {
   continued?: boolean;
   /** Drawn whole, however long (the first unread message); the jump target (`highlight`) is whole too. */
   expand?: boolean;
+  /** The links earlier messages of this thread or this run already carry (space-separated): they get no second preview card here (P34-04). */
+  linksAbove?: LinksAbove;
   actions: RowActions;
   /** Set in the reader's own conversation with a bot: an Answer in it that was for them can be shared, saved as a page and handed on (P5-17). */
   answerTools?: AnswerTools;
 };
 
 /** One message: avatar, name, time, markdown, attachments, reactions, the reply count, and (on hover) the actions. */
-export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, canVote, canManage = false, inThread = false, highlight = false, continued = false, expand = false, actions, answerTools }: Props) {
+export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, canVote, canManage = false, inThread = false, highlight = false, continued = false, expand = false, linksAbove = '', actions, answerTools }: Props) {
   // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
   const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
@@ -479,7 +482,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         {!deleted && attached.files.length > 0 ? (
           <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
         ) : null}
-        <LinkPreviewCards channelId={m.channelId} messageId={m.id} body={m.body} enabled={!deleted} />
+        <LinkPreviewCards channelId={m.channelId} messageId={m.id} body={m.body} enabled={!deleted} linksAbove={linksAbove} />
         {!deleted && m.reactions.length > 0 ? (
           <div className="reactions">
             {m.reactions.map((r) => (

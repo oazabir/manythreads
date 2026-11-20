@@ -133,6 +133,12 @@ test.afterAll(async () => {
         log(`cleanup: delete message "${m.body.slice(0, 50)}" -> ${res.status()}`);
       }
     }
+    if (rafi && devId) {
+      // lp-07b posts one message as Rafi: he deletes his own
+      const list = await rafi.page.request.get(`/api/channels/${devId}/messages?limit=100`);
+      const items = ((await list.json()) as { items: Array<{ id: string; body: string }> }).items;
+      for (const m of items.filter((i) => i.body.includes(`${MARK} N `))) await rafi.page.request.delete(`/api/channels/${devId}/messages/${m.id}`, { headers: await csrf(rafi.context) });
+    }
   } catch (e) {
     log(`cleanup failed: ${String(e).slice(0, 200)}`);
   }
@@ -362,6 +368,33 @@ test('lp-07 phone 390x844: a card fits the screen, nothing scrolls sideways', as
   } finally {
     await phone.context.close();
   }
+});
+
+test('lp-07b one card per link in a run (P34-04): the same link again in the same author run gets no card and no room; another author gets one', async () => {
+  const { page } = nadia!;
+  const link = `https://example.com/?repeat=${RAND}`;
+  await post(page, `${MARK} L ${link}`);
+  await expect(cards(page, 'L')).toHaveCount(1, { timeout: 40_000 });
+  // a page with only a title (example.com has no description and no picture) draws one line, centred in the 96 px the list keeps
+  const first = cards(page, 'L').first();
+  const shape = await first.getAttribute('data-shape');
+  const box = (await first.boundingBox())!;
+  const room = (await row(page, 'L').getByTestId('link-previews').boundingBox())!;
+  log(`example.com card: shape=${shape} card h=${Math.round(box.height)} room h=${Math.round(room.height)}`);
+  expect(Math.round(room.height)).toBeGreaterThanOrEqual(96);
+  if (shape === 'line') expect(box.height).toBeLessThan(44);
+  const res = await page.request.post(`/api/channels/${devId}/messages`, { data: { channelId: devId, body: `${MARK} M the same link again ${link}`, threadRootId: null }, headers: await csrf(nadia!.context) });
+  expect(res.status()).toBeLessThan(300);
+  await expect(row(page, 'M')).toBeVisible(T);
+  await page.waitForTimeout(5_000);
+  expect(await cards(page, 'M').count(), 'a repeated link in the same run has no second card').toBe(0);
+  expect(await row(page, 'M').getByTestId('link-preview-slot').count(), 'and keeps no room for one').toBe(0);
+  await expect(row(page, 'M').locator(`a[href="${link}"]`), 'the later message keeps its plain link').toHaveCount(1);
+  const theirs = await rafi!.page.request.post(`/api/channels/${devId}/messages`, { data: { channelId: devId, body: `${MARK} N Rafi posts it too ${link}`, threadRootId: null }, headers: await csrf(rafi!.context) });
+  expect(theirs.status()).toBeLessThan(300);
+  await expect(cards(page, 'N'), 'another author starts a new run: the card shows again').toHaveCount(1, { timeout: 40_000 });
+  await row(page, 'N').scrollIntoViewIfNeeded();
+  await shoot(page, 'lp-10-repeated-link-one-card-per-run-desktop');
 });
 
 test('lp-08 no page error, no console error over the run', () => {
