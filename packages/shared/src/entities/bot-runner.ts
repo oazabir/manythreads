@@ -114,7 +114,7 @@ export const BotRunner = z.object({
   termsAcceptedBy: ActorId.nullable(),
   termsAcceptedAt: IsoDateTime.nullable(),
   maxConcurrent: z.number().int().min(1).max(4).nullable(),
-  /** Codex only: true lets Codex run commands without asking (the `codex --yolo` behaviour). False for every other runner. Set only by an admin, and only while the runner serves one team. */
+  /** Claude Code and Codex runners (pods, and server runners of those agents; P35-01): true lets the agent run commands without asking. On by default; an admin can switch it off. False for every other runner. */
   fullAccess: z.boolean(),
   /** `server_agent` only: the enrolled server this runner is one agent of (null for every other kind). */
   serverId: BotServerId.nullable().default(null),

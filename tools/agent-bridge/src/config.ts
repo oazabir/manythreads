@@ -57,7 +57,8 @@ export interface ProfileConfig {
    */
   authHome?: string | undefined;
   /**
-   * Codex only: may this profile's Codex run commands without asking (codex-acp's full-access mode, the `codex --yolo` behaviour)? Two keys, one on each side
+   * Claude Code and Codex: may this profile's agent run commands without asking (codex-acp's full-access mode, the `codex --dangerously-bypass-approvals-and-sandbox` behaviour; Claude Code's
+   * `bypassPermissions`, `--dangerously-skip-permissions` without `--restricted`, P35-01)? Two keys, one on each side
    * (docs/plans/agents-anywhere.md §4): this profile's, written by whoever installs the bridge (the pod's controller, the server's installer flag; the site cannot widen a
    * machine's sandbox), and the run's own `manythreads.fullAccess`, the admin's switch on the site.
    *   false / absent  never.
@@ -91,7 +92,7 @@ export interface ServerAgentTemplate {
   authHome?: string | undefined;
   env?: Record<string, string> | undefined;
   passEnv?: string[] | undefined;
-  /** Codex only. `"allowed"` when the installer was given `--allow-full-access`: the machine's half of the rule (the run's own switch is the site's half). */
+  /** Claude Code and Codex. `"allowed"` unless the installer was given `--no-full-access`: the machine's half of the rule (the run's own switch is the site's half). Ignored on a server without team users. */
   fullAccess?: boolean | 'allowed' | undefined;
   /** Hermes only: the folder that holds one Hermes home per bot (`<home>/<team>--<bot>`, made on first use). */
   hermesHome?: string | undefined;
@@ -145,7 +146,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // NODE_OPTIONS and NODE_PATH change how every Node program of a run starts (a bigger heap past the run's memory, a module loaded first); a profile or server template may not set or pass
 // them (P31-04). Neither is on the helper's allowlist (team-user.ts ENV_ALLOW) or the bridge's ENV_COMMON (runs.ts).
-const RESERVED_ENV = new Set(['AGENT_BRIDGE_API_KEY', 'MANYTHREADS_RUN_TOKEN', 'NODE_OPTIONS', 'NODE_PATH']);
+// IS_SANDBOX makes Claude Code offer `bypassPermissions` to a root process; full access never runs as root (P35-01), so no profile may set or pass it.
+const RESERVED_ENV = new Set(['AGENT_BRIDGE_API_KEY', 'IS_SANDBOX', 'MANYTHREADS_RUN_TOKEN', 'NODE_OPTIONS', 'NODE_PATH']);
 
 const positive = (v: unknown, fallback: number, what: string): number => {
   if (v === undefined) return fallback;
@@ -263,7 +265,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
     if (authHome !== undefined && agent !== 'claude-code' && agent !== 'codex') throw new Error(`config: profile "${name}": authHome is only for claude-code and codex profiles`);
     const fullAccess = p['fullAccess'];
     if (fullAccess !== undefined && fullAccess !== true && fullAccess !== false && fullAccess !== 'allowed') throw new Error(`config: profile "${name}": fullAccess must be true, false or "allowed"`);
-    if (fullAccess !== undefined && fullAccess !== false && agent !== 'codex') throw new Error(`config: profile "${name}": fullAccess is only for codex profiles`);
+    if (fullAccess !== undefined && fullAccess !== false && agent !== 'codex' && agent !== 'claude-code') throw new Error(`config: profile "${name}": fullAccess is only for claude-code and codex profiles`);
     const publish = p['publish'];
     if (publish !== undefined && typeof publish !== 'boolean') throw new Error(`config: profile "${name}": publish must be true or false`);
     const notes = p['instructions'];

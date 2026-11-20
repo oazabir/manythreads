@@ -25,8 +25,11 @@
 #   --enrol CODE|-      the one-time code from the Runners page ("-" asks for it on the keyboard: a code on the command line is in `ps` for the length of the run)
 #   --code-file PATH    the one-time code is the first line of this file (delete it afterwards; it is single use and lasts 15 minutes)
 #   --update            install the bundle this site serves now, keep the key (no code needed)
-#   --uninstall         stop and remove the service, the program, the helper and the sudo rule, and tell the site (--purge also removes the work folders, the team users and the users of the bridge)
-#   --allow-full-access this machine's half of Codex "full access" (the other half is the switch on the Runners page)
+#   --uninstall         stop and remove the service, the program, the helper and the sudo rule, and tell the site (--purge also removes the work folders, the team users, the users of the bridge
+#                       and a refusal of full access; without --purge /etc/manythreads-bridge/no-full-access is kept)
+#   --no-full-access    refuse "full access" on this machine (Claude Code and Codex run commands without asking; P35-01). Allowed by default: it is this machine's half, the
+#                       other half is the runner's switch on the Runners page. The refusal is remembered in /etc/manythreads-bridge/no-full-access, so an --update keeps it; delete
+#                       that file and run --update to allow it again; a plain --uninstall keeps it. (--allow-full-access, the old opt-in, is accepted and ignored.)
 #   --hermes-bin PATH   the Hermes program to use, when it is not on root's PATH or in /usr/local/bin, /usr/bin or /opt/*/bin. This script never installs Hermes: install it
 #                       system-wide first (for example under /opt/hermes). It is used only if the team users can run it (not under /root or /home, which the service cannot see)
 #   --no-hermes --no-claude --no-codex --no-browser --no-publisher   leave one out (without the publisher no bot on this machine can publish)
@@ -47,7 +50,7 @@ main() {
   local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock PUBLISH_GROUP=mt-publish
 
-  local mode='' code='' code_file='' allow_full=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha=''
+  local mode='' code='' code_file='' allow_full=1 no_full=0 old_full_flag=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha=''
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
@@ -55,7 +58,8 @@ main() {
       --update) mode=update ;;
       --uninstall) mode=uninstall ;;
       --purge) purge=1 ;;
-      --allow-full-access) allow_full=1 ;;
+      --no-full-access) no_full=1 ;;
+      --allow-full-access) old_full_flag=1 ;;
       --hermes-bin) shift; [ $# -gt 0 ] || die "--hermes-bin needs the path of the hermes program"; hermes_arg="$1" ;;
       --no-hermes) want_hermes=0 ;;
       --no-claude) want_claude=0 ;;
@@ -284,6 +288,20 @@ EOF
   mv -f "$SUDOERS.new" "$SUDOERS"
 
   # ---- the config ------------------------------------------------------------------------------------------------------------------------------------------
+  # Full access (P35-01): allowed unless refused, now or at an earlier install (the refusal is a file, so an --update never widens a machine that said no).
+  if [ "$old_full_flag" -eq 1 ]; then say "note: --allow-full-access is no longer needed: full access is allowed by default (refuse it with --no-full-access). The flag was ignored."; fi
+  if [ "$no_full" -eq 1 ]; then
+    printf 'full access refused by bridge.sh --no-full-access\n' >"$ETC/no-full-access"
+    chmod 0644 "$ETC/no-full-access"
+  fi
+  if [ -e "$ETC/no-full-access" ]; then
+    allow_full=0
+    say "note: full access is refused on this machine ($ETC/no-full-access; delete it and run --update to allow it)"
+  fi
+  # an update that widens the machine says so: a server installed before 2026-11-20 without the old opt-in was refused by the old default only
+  if [ "$mode" = update ] && [ "$allow_full" -eq 1 ] && [ -f "$ETC/config.json" ] && ! grep -q '"fullAccess": "allowed"' "$ETC/config.json"; then
+    say "Full access for Claude Code and Codex is now allowed on this machine (the default since 2026-11-20); rerun with --no-full-access to refuse it."
+  fi
   local playwright_env=''
   [ "$want_browser" -eq 1 ] && playwright_env="$browsers"
   local pub_socket=''
@@ -298,7 +316,7 @@ EOF
       const shared = e.CFG_BROWSERS ? { env: { PLAYWRIGHT_BROWSERS_PATH: e.CFG_BROWSERS } } : {};
       if (e.CFG_WANT_CLAUDE === "1") {
         profiles["claude-signin"] = { agent: "claude-code", driver: "acp", workdir: root + "/signin", authHome: root + "/auth/claude", acp: { command: e.CFG_CLAUDE_ACP } };
-        agents.claude = { authHome: root + "/auth/claude", acp: { command: e.CFG_CLAUDE_ACP }, ...shared };
+        agents.claude = { authHome: root + "/auth/claude", acp: { command: e.CFG_CLAUDE_ACP }, ...(e.CFG_FULL === "1" ? { fullAccess: "allowed" } : {}), ...shared };
       }
       if (e.CFG_WANT_CODEX === "1") {
         profiles["codex-signin"] = { agent: "codex", driver: "acp", workdir: root + "/signin", authHome: root + "/auth/codex", acp: { command: e.CFG_CODEX_ACP } };
@@ -714,7 +732,14 @@ uninstall_all() {
   systemctl daemon-reload || true
   # the sudo rule and the helper go first and always: nothing may be able to start a program as a team's user once the bridge is gone
   rm -f /etc/sudoers.d/manythreads-bridge /etc/sudoers.d/manythreads-bridge.new
-  rm -rf "$PREFIX" "$ETC"
+  rm -rf "$PREFIX"
+  # the config and the key go; a refusal of full access (`no-full-access`) stays unless --purge, so a later install of this machine keeps refusing (P35-01)
+  if [ "$purge" -eq 1 ]; then
+    rm -rf "$ETC"
+  elif [ -d "$ETC" ]; then
+    find "$ETC" -mindepth 1 -maxdepth 1 ! -name no-full-access -exec rm -rf {} +
+    if [ -e "$ETC/no-full-access" ]; then say "kept $ETC/no-full-access: a new install of this machine still refuses full access (--uninstall --purge removes it)"; else rmdir "$ETC" 2>/dev/null || true; fi
+  fi
   # the key a rotation wrote is the live one: it goes with the program, also when the work folders stay
   rm -f "$DATA/state/key"
   if [ "$purge" -eq 1 ]; then

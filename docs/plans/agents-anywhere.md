@@ -53,7 +53,7 @@ Words used on this page:
    a pod is the **managed Hermes pod** the team already has (recommended answer to §9 question 4: nothing to build, it already ran the chain). A `hermes_acp_pod`
    kind (Hermes over ACP in the agent pod) is built only if the owner asks for ACP in the pod too (optional row P26-09h). The CLI drivers stay only for
    old hand-made gateway runners until P25-17.
-3. **Full access for Codex:** on by default in an agent pod (the pod is the sandbox); off by default on an enrolled server and needs two keys there (the machine's
+3. **Full access for Codex** (superseded 2026-11-20 by P35-01, `docs/plans/full-access-default.md`: Claude Code and Codex, on by default on pods and enrolled servers with team users, an admin switches it off; the binding text is `conventions.md` "Full access for Claude Code and Codex"): on by default in an agent pod (the pod is the sandbox); off by default on an enrolled server and needs two keys there (the machine's
    installer flag and the admin's switch). On a server with full access on, the **whole server** (all its runners) serves one team, because every agent there runs as
    the one user `manythreads-bridge` and can read the bridge key, the other agents' sign-in folders and the deployer's kubeconfig (§5.5). Claude Code keeps its
    allow-list (no bypass mode); Hermes keeps its profile toolsets. Details in §4.
@@ -154,6 +154,8 @@ entry only with the optional kind. Migration `bot-runners/0007` widens the `kind
 ---
 
 ## 4. Full access (the `--yolo` behaviour)
+
+> Superseded in part by P35-01 (`docs/plans/full-access-default.md`, owner 2026-11-20): Claude Code gets full access too (`bypassPermissions` without `--restricted`), it is on by default on enrolled servers with team users (installer `--no-full-access` refuses), and the one-team rule is gone (one pod or Unix user per team). Read the conventions page for the rule in force.
 
 `codex --yolo` is `--dangerously-bypass-approvals-and-sandbox`. Under `codex-acp` the same is a start mode: the adapter's modes are `read-only`, `workspace-write`,
 `agent` ("Auto review") and `agent-full-access` (docs/spikes/acp-measured.md). P26-01 measures that `INITIAL_AGENT_MODE=agent-full-access` gives no sandbox and no

@@ -6,6 +6,7 @@ import { parseServerProfileName, profileFor, type BridgeConfig } from './config.
 import { prepareServerRun, type ServerRunSupport } from './server-run.ts';
 import { ensureTeamUser, hasTeamUsers, TeamRun } from './server-team.ts';
 import { acpDriver } from './drivers/acp.ts';
+import { NO_TEAM_USERS_FULL_ACCESS } from './full-access.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
 import type { Driver, DriverJob } from './drivers/types.ts';
@@ -260,6 +261,11 @@ export class RunManager {
         // an enrolled server: this run's copy of the profile (where-you-run text, tools, kubeconfig, Hermes home), made with the run's own token
         profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`), onEnd: (fn) => cleanups.push(fn), ...(team !== null ? { team } : {}) });
         request = withProfileInstructions(given, profile.instructions);
+        // A server without team users runs every team as the bridge's one user: it never gets full access (P35-01), and the thread says why commands still ask.
+        if (!hasTeamUsers(config.server) && profile.fullAccess !== undefined && profile.fullAccess !== false) {
+          profile = { ...profile, fullAccess: false };
+          if (given.manythreads.fullAccess === true && run.status === 'running') run.emit('message.delta', { delta: `${NO_TEAM_USERS_FULL_ACCESS}\n\n` });
+        }
       }
       if (run.stopRequested) {
         this.finish(run, 'cancelled', 'run.cancelled', {});

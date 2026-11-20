@@ -77,6 +77,8 @@ const MODES: Record<Flavor, { current: string; list: Array<[string, string]> }> 
       ['acceptEdits', 'Accept edits'],
       ['plan', 'Plan'],
       ['auto', 'Auto'],
+      // full access (P35-01): offered only when the adapter does not run as root (or runs with IS_SANDBOX); `faults.noBypass` takes it away
+      ['bypassPermissions', 'Bypass Permissions'],
     ],
   },
   codex: {
@@ -209,9 +211,11 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     return [...out.values()];
   };
 
+  /** The modes this adapter offers: the real Claude adapter leaves `bypassPermissions` out when it runs as root without IS_SANDBOX (`faults.noBypass`). */
+  const modeList = (): Array<[string, string]> => MODES[flavor].list.filter(([id]) => !(flavor === 'claude' && faults.noBypass === true && id === 'bypassPermissions'));
   const modeState = (current?: string) => ({
     currentModeId: current ?? MODES[flavor].current,
-    availableModes: MODES[flavor].list.map(([id, name]) => ({ id, name })),
+    availableModes: modeList().map(([id, name]) => ({ id, name })),
   });
 
   /** What `session/new`, `resume` and `load` return as `configOptions` (mode always; model and effort where the real adapter has them). */
@@ -224,7 +228,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
       currentValue: current,
       options: values.map(([value, label]) => ({ value, name: label })),
     });
-    const out: Meta[] = [select('mode', 'Mode', 'mode', s.mode, MODES[flavor].list)];
+    const out: Meta[] = [select('mode', 'Mode', 'mode', s.mode, modeList())];
     if (flavor === 'claude') {
       out.push(select('model', 'Model', 'model', s.options['model'] ?? 'sonnet', [['default', 'Default'], ['sonnet', 'Sonnet'], ['opus', 'Opus'], ['haiku', 'Haiku']]));
       out.push(select('effort', 'Effort', 'thought_level', s.options['effort'] ?? 'medium', EFFORT_VALUES));
@@ -628,7 +632,8 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     await startStep(env, s, id);
     const input = (s.input ?? {}) as { command?: string; description?: string };
     // Codex in its full-access mode (no sandbox, no command questions): the command just runs. An MCP tool call is still asked about (the platform checks it).
-    if (flavor === 'codex' && !p.mcp && env.session.mode === 'agent-full-access') {
+    // Claude in `bypassPermissions` asks about nothing, the platform's MCP tools included.
+    if ((flavor === 'codex' && !p.mcp && env.session.mode === 'agent-full-access') || (flavor === 'claude' && env.session.mode === 'bypassPermissions')) {
       if (s.ms && !(await sleep(s.ms, env.signal))) {
         await endStep(env, s, id, 'cancelled');
         return 'cancelled';
@@ -1090,7 +1095,7 @@ export function createFakeAcpAgent(script: FakeScript): FakeAcpAgent {
     const s = findSession(params.sessionId);
     if (!s) throw unknownSession(params.sessionId);
     if (faults.setMode) throw new RequestError(-32603, 'Internal error', { details: 'set_mode is not available' });
-    if (!MODES[flavor].list.some(([id]) => id === params.modeId)) throw RequestError.invalidParams({ modeId: params.modeId }, 'Unknown mode');
+    if (!modeList().some(([id]) => id === params.modeId)) throw RequestError.invalidParams({ modeId: params.modeId }, 'Unknown mode');
     s.mode = params.modeId;
     return {};
   });

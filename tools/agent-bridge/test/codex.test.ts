@@ -174,6 +174,24 @@ describe('codexArgs against docs/spikes/codex-flags.md', () => {
     for (const banned of ['-s', '--sandbox', '--dangerously-bypass-approvals-and-sandbox', '--ephemeral', '--oss', '--approve-for-me']) expect(all, banned).not.toContain(banned);
   });
 
+  it('full access (P35-01): --dangerously-bypass-approvals-and-sandbox instead of the sandbox and approval settings, on a new thread and a resumed one; the run can say no', () => {
+    const job = (profileFull: boolean | 'allowed', runFull: boolean | null, tools = ['files', 'shell']): DriverJob => {
+      const base = fullJob() as unknown as { request: { manythreads: Record<string, unknown> }; profile: Record<string, unknown> };
+      return { ...base, request: { ...base.request, manythreads: { ...base.request.manythreads, tools, fullAccess: runFull } }, profile: { ...base.profile, fullAccess: profileFull } } as unknown as DriverJob;
+    };
+    for (const resume of [null, 'thread-1']) {
+      const args = codexArgs(job(true, null), resume, true);
+      expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+      expect(args.join(' ')).not.toMatch(/sandbox_mode|approval_policy/);
+      expect(mentioned(section(resume === null ? 'Help output: codex exec' : 'Help output: codex exec resume'), '--dangerously-bypass-approvals-and-sandbox')).toBe(true);
+    }
+    expect(codexArgs(job(true, false), null, true)).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(codexArgs(job('allowed', null), null, true)).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(codexArgs(job('allowed', true), null, true)).toContain('--dangerously-bypass-approvals-and-sandbox');
+    // no file or shell grant: read-only, never the bypass
+    expect(codexArgs(job(true, true, ['web']), null, true).join(' ')).toContain('sandbox_mode="read-only"');
+  });
+
   it('the page names the CLI version it was captured from, and the check against a real install is still open', () => {
     expect(DOC).toMatch(/codex-cli \d+\.\d+\.\d+/);
     expect(DOC).toContain('[owner test]');

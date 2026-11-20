@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseConfig, profileFor } from '../src/config.ts';
 import { startBridge, type Bridge } from '../src/server.ts';
-import { keyFiles, readServerKey, serverSigninDirs, storeServerKey } from '../src/server-mode.ts';
+import { helloFor, keyFiles, readServerKey, serverSigninDirs, storeServerKey } from '../src/server-mode.ts';
 import { childEnv } from '../src/runs.ts';
 import { FAKE_CLAUDE, FAKE_CODEX } from './support.ts';
 
@@ -78,10 +78,27 @@ describe('profiles made from the template', () => {
     expect(profileFor(cfg, 'codex--a--x')!.profile).toBe(profileFor(cfg, 'codex--a--x')!.profile);
   });
 
-  it('codex carries the machine\'s half of full access; claude does not', () => {
+  it('each template carries the machine\'s half of full access as written (codex here; claude too when the installer wrote it, P35-01)', () => {
     const cfg = serverConfig(tmp());
     expect(profileFor(cfg, 'codex--a--x')!.profile.fullAccess).toBe('allowed');
     expect(profileFor(cfg, 'claude--a--x')!.profile.fullAccess).toBeUndefined();
+    const root = tmp();
+    const both = parseConfig({
+      profiles: { s: { agent: 'claude-code', workdir: join(root, 's') } },
+      server: { root, agents: { claude: { fullAccess: 'allowed' }, codex: { fullAccess: 'allowed' } } },
+    });
+    expect(profileFor(both, 'claude--a--x')!.profile.fullAccess).toBe('allowed');
+  });
+
+  it('the hello says full access is allowed only for a server with team users whose claude or codex template allows it (P35-01)', async () => {
+    const root = tmp();
+    const make = (agents: Record<string, unknown>, teamUsers: boolean) =>
+      parseConfig({ profiles: { s: { agent: 'claude-code', workdir: join(root, 's') } }, bin: { claude: FAKE_CLAUDE, codex: FAKE_CODEX }, server: { root, agents, ...(teamUsers ? { teamUsers: { helper: '/opt/helper' } } : {}) } });
+    expect((await helloFor(make({ claude: { fullAccess: 'allowed' } }, true))).allowFullAccess).toBe(true);
+    expect((await helloFor(make({ codex: { fullAccess: 'allowed' } }, true))).allowFullAccess).toBe(true);
+    expect((await helloFor(make({ claude: {}, codex: {} }, true))).allowFullAccess).toBe(false);
+    // no team users: every team runs as one user, so never
+    expect((await helloFor(make({ claude: { fullAccess: 'allowed' }, codex: { fullAccess: 'allowed' } }, false))).allowFullAccess).toBe(false);
   });
 
   it('hermes gets one Hermes home per bot', () => {
@@ -123,7 +140,7 @@ describe('profiles made from the template', () => {
   it('refuses a template with a relative root, an unknown agent or a bad rule', () => {
     expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: '/w' } }, server: { root: 'rel', agents: {} } })).toThrow(/absolute/);
     expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: '/w' } }, server: { root: '/r', agents: { gemini: {} } } })).toThrow(/gemini/);
-    expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: '/w' } }, server: { root: '/r', agents: { claude: { fullAccess: true } } } })).toThrow(/codex/);
+    expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: '/w' } }, server: { root: '/r', agents: { hermes: { fullAccess: true } } } })).toThrow(/only for claude-code and codex/);
     expect(() => parseConfig({ profiles: { s: { agent: 'codex', workdir: '/w' } }, server: { root: '/r', agents: { claude: { hermesHome: '/h' } } } })).toThrow(/Hermes only/);
   });
 });

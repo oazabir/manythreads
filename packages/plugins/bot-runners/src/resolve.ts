@@ -100,7 +100,8 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
         guard: false,
         profileRule: runner.profile_rule ?? serverProfileRule(agent),
         fetch: tunnel.fetchFor(runner.server_id, server.name),
-        ...(agent === 'codex' ? { fullAccess: runner.full_access } : {}),
+        // the site's half of full access, for the two agents that have it (P35-01); Hermes has no command questions of its own to bypass
+        ...(agent === 'codex' || agent === 'claude-code' ? { fullAccess: runner.full_access } : {}),
       };
       return { ok: true, target };
     }

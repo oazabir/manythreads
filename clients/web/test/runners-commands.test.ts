@@ -26,6 +26,9 @@ import {
   emptyForm,
   FULL_ACCESS_WORDS,
   hasFullAccessChoice,
+  NO_FULL_ACCESS_WORDS,
+  SERVER_SHARED_SIGNIN_WARNING,
+  warnsServerSignin,
   hasNoTeams,
   hasNodeChoice,
   moveWarning,
@@ -509,18 +512,46 @@ describe('teams that share a runner (P26-21 / P26-23)', () => {
   });
 });
 
-describe('Codex full access (P26-06)', () => {
-  it('is offered for a Codex pod runner only', () => {
-    expect(hasFullAccessChoice({ kind: 'codex_cli' })).toBe(true);
-    for (const kind of ['claude_cli', 'hermes_gateway', 'hermes_pod', 'llm_gateway'] as const) expect(hasFullAccessChoice({ kind }), kind).toBe(false);
+describe('full access for Claude Code and Codex (P26-06, P35-01)', () => {
+  it('is offered for a Claude Code or Codex runner (pod or server agent), never for Hermes or the LLM gateway', () => {
+    expect(hasFullAccessChoice({ kind: 'codex_cli', agent: 'hermes' })).toBe(true);
+    expect(hasFullAccessChoice({ kind: 'claude_cli', agent: 'hermes' })).toBe(true);
+    expect(hasFullAccessChoice({ kind: 'server_agent', agent: 'claude-code' })).toBe(true);
+    expect(hasFullAccessChoice({ kind: 'server_agent', agent: 'codex' })).toBe(true);
+    expect(hasFullAccessChoice({ kind: 'server_agent', agent: 'hermes-acp' })).toBe(false);
+    // the host bridge (a Hermes gateway whose bridge runs Claude Code or Codex) never gets it
+    expect(hasFullAccessChoice({ kind: 'hermes_gateway', agent: 'claude-code' })).toBe(false);
+    for (const kind of ['hermes_gateway', 'hermes_pod', 'llm_gateway'] as const) expect(hasFullAccessChoice({ kind, agent: 'hermes' }), kind).toBe(false);
   });
 
-  it('says in plain words what it is, where it is held and who may turn it on', () => {
-    expect(FULL_ACCESS_WORDS.what).toBe('Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.');
+  it('says in plain words what it is, that both agents have it, where it is held and who may turn it off', () => {
+    expect(FULL_ACCESS_WORDS.what).toBe('Full access: Claude Code and Codex run commands and change files without asking. The pod (or the team’s user on the server) is the boundary: what it can reach on the network, and the team’s files.');
     expect(FULL_ACCESS_WORDS.who).toContain('workspace admin');
+    expect(FULL_ACCESS_WORDS.who).toContain('on for a new runner');
     expect(FULL_ACCESS_WORDS.who).not.toContain('only while the runner serves one team');
     expect(FULL_ACCESS_WORDS.who).toContain('its own pod');
+    expect(FULL_ACCESS_WORDS.off).not.toContain('Codex');
+    expect(FULL_ACCESS_WORDS.server).toContain('--no-full-access');
+    expect(FULL_ACCESS_WORDS.newRunner).toContain('on for a new runner');
     expect(FULL_ACCESS_WORDS.doneOn('Codex pod')).toBe('Codex pod now has full access. Its pod restarts to take it.');
     expect(FULL_ACCESS_WORDS.doneOff('Codex pod')).toContain('no longer has full access');
+    expect(FULL_ACCESS_WORDS.doneOnServer('Devbox · Codex')).toBe('Devbox · Codex now has full access, from its next run.');
+    expect(NO_FULL_ACCESS_WORDS).toContain('--update, which allows it');
+    expect(NO_FULL_ACCESS_WORDS).toContain('/etc/manythreads-bridge/no-full-access');
+  });
+
+  it('warns on a Claude Code or Codex runner (server or pod) that several teams share: they share its sign-in (owner, 2026-11-20)', () => {
+    const team = (n: string) => ({ teamId: n as TeamId, slug: n, name: n });
+    expect(SERVER_SHARED_SIGNIN_WARNING).toContain('share its sign-in');
+    expect(warnsServerSignin({ kind: 'server_agent', agent: 'codex', allTeams: false, teams: [team('a'), team('b')] })).toBe(true);
+    expect(warnsServerSignin({ kind: 'server_agent', agent: 'claude-code', allTeams: true, teams: [] })).toBe(true);
+    expect(warnsServerSignin({ kind: 'server_agent', agent: 'codex', allTeams: false, teams: [team('a')] })).toBe(false);
+    expect(warnsServerSignin({ kind: 'server_agent', agent: 'hermes-acp', allTeams: true, teams: [] })).toBe(false);
+    // a pod runner shares its sign-in on the state volume every team pod mounts: the same warning
+    expect(warnsServerSignin({ kind: 'codex_cli', agent: 'hermes', allTeams: true, teams: [] })).toBe(true);
+    expect(warnsServerSignin({ kind: 'claude_cli', agent: 'hermes', allTeams: false, teams: [team('a'), team('b')] })).toBe(true);
+    expect(warnsServerSignin({ kind: 'claude_cli', agent: 'hermes', allTeams: false, teams: [team('a')] })).toBe(false);
+    expect(warnsServerSignin({ kind: 'hermes_pod', agent: 'hermes', allTeams: true, teams: [] })).toBe(false);
+    expect(warnsServerSignin({ kind: 'hermes_gateway', agent: 'codex', allTeams: true, teams: [] })).toBe(false);
   });
 });

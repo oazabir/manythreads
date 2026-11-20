@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { fullAccessOn } from '../full-access.ts';
 import { lastLine, redact } from '../process.ts';
 import { classifyFailure } from '../signin.ts';
 import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
@@ -13,7 +14,7 @@ import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 //   codex exec resume --json … <thread id> -
 //
 // The prompt goes to stdin (`-`). The token goes only in the child's environment. A run with a files or shell grant gets
-// `workspace-write`; any other run is `read-only`.
+// `workspace-write`; any other run is `read-only`. A full-access run (P35-01, `fullAccessOn`) gets `--dangerously-bypass-approvals-and-sandbox` instead of both settings.
 
 const MCP_NAME = 'manythreads';
 /** Longer instructions than this are put before the prompt instead of in an argument (the OS limits argument sizes). */
@@ -48,7 +49,9 @@ export function codexArgs(job: DriverJob, resumeId: string | null, instructionsI
   if (resumeId !== null) args.push('resume');
   args.push('--json', '--skip-git-repo-check');
   if (resumeId === null) args.push('-C', job.profile.workdir);
-  args.push('-c', `sandbox_mode=${toml(writable ? 'workspace-write' : 'read-only')}`, '-c', `approval_policy=${toml('never')}`);
+  // Full access (P35-01): no sandbox and no questions, the pod or the team's user is the boundary; it replaces the sandbox_mode and approval_policy settings
+  if (fullAccessOn(job)) args.push('--dangerously-bypass-approvals-and-sandbox');
+  else args.push('-c', `sandbox_mode=${toml(writable ? 'workspace-write' : 'read-only')}`, '-c', `approval_policy=${toml('never')}`);
   if (instructionsInArg && job.request.instructions !== null) args.push('-c', `developer_instructions=${toml(job.request.instructions)}`);
   if (mt.mcp !== null) {
     args.push('-c', `mcp_servers.${MCP_NAME}.url=${toml(mt.mcp.url)}`, '-c', `mcp_servers.${MCP_NAME}.bearer_token_env_var=${toml('MANYTHREADS_RUN_TOKEN')}`);

@@ -1,4 +1,5 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerDataSteps } from './data-steps.ts';
 import { createModelRuntime } from './model-runtime.ts';
 import { createBotRunnersProvider } from './resolve.ts';
 import { registerRoutes } from './routes.ts';
@@ -22,7 +23,7 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     // `secret.seal` encrypts a Hermes gateway's key; `provider.bot.runners` is the resolver runtime-hermes asks.
-    extends: ['event.emit', 'provider.bot.runners', 'provider.bot_runtime', 'secret.seal'],
+    extends: ['event.emit', 'job.register', 'provider.bot.runners', 'provider.bot_runtime', 'secret.seal'],
     events: {
       emits: [
         'bot_runner.runner.created',
@@ -58,6 +59,8 @@ export default definePlugin({
     // The runtime that answers a bot placed on an LLM gateway runner (P19-10): a loop of model turns and tool calls, with no process. The run job picks it by the runner's kind.
     ctx.providers.register('bot_runtime', createModelRuntime(ctx));
     registerRoutes(ctx, tunnel);
+    // One-off changes to existing rows, audited (P35-01: the runners that existed before full access became the default are switched on once).
+    registerDataSteps(ctx);
     registerServerRoutes({ ctx, registry: tunnel, socket: { onConnected: (server) => void refreshServerSignIns(ctx, tunnel, server) } });
   },
 });

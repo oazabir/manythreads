@@ -8,6 +8,7 @@ import { Alert, Field } from '../../../components/ui';
 import { AgentSignInDialog } from './AgentSignInDialog';
 import { fetchBotRunners } from './api';
 import { createBotServer, deleteBotServer, fetchBotServers, mintBotServerCode, rotateBotServerKey } from './servers-api';
+import { NO_FULL_ACCESS_WORDS } from './commands';
 import {
   AGENT_TITLE,
   HASH_NOTE,
@@ -183,6 +184,7 @@ export function ServersSection({ onRunnersChanged }: { onRunnersChanged?: () => 
   );
 }
 
+
 function ServerRow({ server: s, onCode, onRotate, onRemove, onSignin }: { server: BotServer; onCode: () => void; onRotate: () => void; onRemove: () => void; onSignin: (agent: BotServer['agents'][number]['agent']) => void }) {
   const state = statusWords(s);
   const host = hostLine(s);
@@ -195,7 +197,7 @@ function ServerRow({ server: s, onCode, onRotate, onRemove, onSignin }: { server
         </div>
         <div className="rn-meta">
           <span className={`rn-state ${state.tone}`} data-state={s.status} data-testid="server-state">{state.label}</span>
-          {s.allowFullAccess ? <span className="rn-warn">Codex full access is allowed on this machine</span> : null}
+          {s.allowFullAccess ? <span className="rn-warn" data-testid="server-full-access">Full access for Claude Code and Codex is allowed on this machine</span> : s.status === 'connected' ? <span className="faint" data-testid="server-full-access">{NO_FULL_ACCESS_WORDS}</span> : null}
         </div>
         {host ? <div className="rn-detail" data-testid="server-host">{host}</div> : null}
         {s.agents.length > 0 ? (

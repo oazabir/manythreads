@@ -276,4 +276,40 @@ describe('the run manager on a server', () => {
     expect(seen?.env['MANYTHREADS_RUN_TOKEN']).toBe(TOKEN);
     expect(seen?.tools).toContain(PUBLISH_TOOL);
   });
+
+  it('a server without team users never gets full access, whatever its template and the run say, and the thread says why (P35-01)', async () => {
+    const { RunManager } = await import('../src/runs.ts');
+    const { SessionStore } = await import('../src/sessions.ts');
+    const { desiredMode } = await import('../src/acp/adapter.ts');
+    const { NO_TEAM_USERS_FULL_ACCESS } = await import('../src/full-access.ts');
+    const { root, config } = setup();
+    expect(config.server?.teamUsers).toBeUndefined();
+    const modes: Array<string | null> = [];
+    const manager = new RunManager({
+      config,
+      sessions: new SessionStore(join(root, 'state')),
+      tmpRoot: root,
+      log: () => undefined,
+      serverRun: { siteUrl: base },
+      drivers: {
+        acp: {
+          run: async (job) => {
+            modes.push(desiredMode(job));
+            return { ok: true, output: 'done', usage: null };
+          },
+        },
+      },
+    });
+    const asked = requestWith(TOKEN, { tools: ['shell'], fullAccess: true });
+    const { run } = manager.create('codex--eng--coder', asked, JSON.stringify(asked), null);
+    await vi.waitFor(() => expect(run.status).not.toBe('running'), { timeout: 10_000, interval: 10 });
+    const quiet = requestWith(TOKEN, { tools: ['shell'], fullAccess: false, runId: 'run-2' });
+    const { run: second } = manager.create('codex--eng--coder', quiet, JSON.stringify(quiet), null);
+    await vi.waitFor(() => expect(second.status).not.toBe('running'), { timeout: 10_000, interval: 10 });
+    manager.close();
+    expect(modes).toEqual(['workspace-write', 'workspace-write']);
+    expect(run.frames.filter((f) => f.data['event'] === 'message.delta').map((f) => f.data['delta']).join('')).toContain(NO_TEAM_USERS_FULL_ACCESS);
+    // a run that did not ask for full access is not told about it
+    expect(JSON.stringify(second.frames)).not.toContain('Full access is off');
+  });
 });

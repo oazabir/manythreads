@@ -4,6 +4,7 @@ import { client as createClient, methods, RequestError } from '@agentclientproto
 import type { DriverJob, DriverResult, Usage } from '../drivers/types.ts';
 import { MCP_SERVER_NAME } from '../drivers/claude-code.ts';
 import { lastLine } from '../process.ts';
+import { CLAUDE_FULL_ACCESS_MODE, FULL_ACCESS_NOT_OFFERED } from '../full-access.ts';
 import { adapterCommand, adapterEnv, desiredMode, flavorOf, hermesGrantProblem, mcpServers, OPENCODE_REFUSAL, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from './adapter.ts';
 import { approvalOf, clipText, Frames, KIND_WORDS, mcpServerOf, viewOf } from './frames.ts';
 
@@ -364,7 +365,12 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
     const configOptions = Array.isArray(opened?.['configOptions']) ? (opened['configOptions'] as unknown[]) : null;
     if (mode !== null) {
       const available = modes !== null && Array.isArray(modes['availableModes']) ? (modes['availableModes'] as unknown[]).map((m) => (isRecord(m) ? m['id'] : null)) : null;
-      if (available !== null && !available.includes(mode)) return { ok: false, error: `This agent has no "${mode}" mode, so its tools cannot be limited to what the bot may do.` };
+      // The guard for full access too (P35-01): claude-agent-acp leaves `bypassPermissions` out when it runs as root without IS_SANDBOX, which the bridge never sets. The run fails with
+      // its reason rather than quietly asking about every command.
+      if (available !== null && !available.includes(mode)) {
+        if (mode === CLAUDE_FULL_ACCESS_MODE) return { ok: false, error: FULL_ACCESS_NOT_OFFERED };
+        return { ok: false, error: `This agent has no "${mode}" mode, so its tools cannot be limited to what the bot may do.` };
+      }
       if (modes === null || modes['currentModeId'] !== mode) {
         try {
           await race(agent.request('session/set_mode', { sessionId, modeId: mode }));

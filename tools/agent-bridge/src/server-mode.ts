@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import type { BridgeConfig } from './config.ts';
 import { BRIDGE_VERSION } from './version.ts';
 import type { TunnelHello } from './tunnel.ts';
+import { hasTeamUsers } from './server-team.ts';
 
 // What an enrolled server's bridge needs besides the run API (PLAN P26-15): where its key is, what it tells the site about the machine, and the agents it found.
 
@@ -81,7 +82,8 @@ export async function helloFor(config: BridgeConfig): Promise<TunnelHello> {
     bridgeVersion: BRIDGE_VERSION.slice(0, 40),
     host: { hostname: hostname().slice(0, 120), system: systemName(), arch: arch().slice(0, 40) },
     agents: await detectAgents(config),
-    allowFullAccess: config.server?.agents.codex?.fullAccess === 'allowed',
+    // the machine's key for either agent; a server without team users never gets full access (P35-01), so it says no whatever its templates say
+    allowFullAccess: hasTeamUsers(config.server) && (config.server.agents.codex?.fullAccess === 'allowed' || config.server.agents.claude?.fullAccess === 'allowed'),
   };
 }
 

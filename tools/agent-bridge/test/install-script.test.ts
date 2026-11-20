@@ -94,6 +94,40 @@ describe('bridge.sh', () => {
     }
   });
 
+  it('allows full access by default for Claude Code and Codex (P35-01); --no-full-access refuses it and is remembered; the old --allow-full-access is accepted and ignored', () => {
+    // the config writer, run on its own with the installer's variables
+    const end = script.indexOf("' >\"$ETC/config.json.new\"");
+    const at = script.lastIndexOf('"$node" -e \'\n', end);
+    expect(at).toBeGreaterThan(-1);
+    const body = script.slice(script.indexOf("'", at) + 1, end);
+    const write = (full: string) => {
+      const env = { ...process.env, CFG_DATA: '/var/lib/x', CFG_WANT_CLAUDE: '1', CFG_WANT_CODEX: '1', CFG_FULL: full, CFG_CLAUDE_ACP: '/a/claude-acp', CFG_CODEX_ACP: '/a/codex-acp', CFG_HELPER: '/h' };
+      return JSON.parse(execFileSync(process.execPath, ['-e', body], { env, encoding: 'utf8' })) as { server: { agents: Record<string, { fullAccess?: string }>; teamUsers: unknown } };
+    };
+    const on = write('1');
+    expect(on.server.agents['claude']?.fullAccess).toBe('allowed');
+    expect(on.server.agents['codex']?.fullAccess).toBe('allowed');
+    expect(on.server.teamUsers).toBeDefined();
+    const off = write('0');
+    expect(off.server.agents['claude']?.fullAccess).toBeUndefined();
+    expect(off.server.agents['codex']?.fullAccess).toBeUndefined();
+    // the flags: allowed unless refused, now or at an earlier install (a file, so an --update without the flag never widens a machine that said no)
+    expect(script).toMatch(/local mode='' code='' code_file='' allow_full=1 /);
+    expect(script).toMatch(/--no-full-access\) no_full=1 ;;/);
+    expect(script).toMatch(/--allow-full-access\) old_full_flag=1 ;;/);
+    expect(script).toMatch(/>"\$ETC\/no-full-access"/);
+    expect(script).toMatch(/if \[ -e "\$ETC\/no-full-access" \]; then\n\s+allow_full=0/);
+    expect(run('https://site.example', ['--help']).out).toContain('--no-full-access');
+    // an update that widens the machine says so in one line, and a plain uninstall keeps the refusal (only --purge removes it)
+    expect(script).toContain('Full access for Claude Code and Codex is now allowed on this machine (the default since 2026-11-20); rerun with --no-full-access to refuse it.');
+    expect(script).toMatch(/\[ "\$mode" = update \] && \[ "\$allow_full" -eq 1 \] && \[ -f "\$ETC\/config.json" \] && ! grep -q '"fullAccess": "allowed"'/);
+    const uninstall = script.slice(script.indexOf('uninstall_all() {'));
+    expect(uninstall).not.toMatch(/rm -rf "\$PREFIX" "\$ETC"/);
+    expect(uninstall).toMatch(/find "\$ETC" -mindepth 1 -maxdepth 1 ! -name no-full-access -exec rm -rf \{\} \+/);
+    expect(uninstall).toMatch(/if \[ "\$purge" -eq 1 \]; then\n\s+rm -rf "\$ETC"/);
+    expect(run('https://site.example', ['--allow-full-access']).out).not.toContain('unknown option');
+  });
+
   it('refuses a site address that is not https, for every way in, before it looks at the machine', () => {
     for (const args of [['--enrol', CODE], ['--update'], ['--uninstall'], ['--code-file', join(dir, 'nothing')]]) {
       const r = run('http://site.example', args);

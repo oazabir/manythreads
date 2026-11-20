@@ -622,19 +622,44 @@ export function usageLines(rows: ReadonlyArray<ClaudeRunnerUsageRow>, runnerId: 
     .map((e) => ({ team: e.team, runs: e.runs, minutes: Math.round(e.seconds / 60), cost: e.cost > 0 ? e.cost.toFixed(2) : null }));
 }
 
-// ---- Codex full access (P26-06) -------------------------------------------------------------------------------
+// ---- full access, Claude Code and Codex (P26-06, P35-01) ------------------------------------------------------
 
-/** Only a Codex pod runner has the switch: Claude Code has its own list of approved commands and no "run without asking" mode here. */
-export const hasFullAccessChoice = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'codex_cli';
+/**
+ * The runners with the switch: a Claude Code or Codex pod runner, and a server's Claude Code or Codex agent (the same rule as the server's, bot-runners 0010). Hermes and the
+ * LLM gateway have no command questions of their own to bypass; a Hermes gateway (the host bridge) never gets full access.
+ */
+export const hasFullAccessChoice = (r: Pick<BotRunner, 'kind' | 'agent'>): boolean =>
+  r.kind === 'claude_cli' || r.kind === 'codex_cli' || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'));
 
 export const FULL_ACCESS_WORDS = {
-  what: 'Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.',
-  who: 'Only a workspace admin can turn it on, and every change is in the audit log. Each team on the runner has its own pod, so full access stays inside that team’s pod and never reaches another team’s files, keys or deploy login.',
-  off: 'Codex asks before it runs a command that is not on its approved list.',
+  what: 'Full access: Claude Code and Codex run commands and change files without asking. The pod (or the team’s user on the server) is the boundary: what it can reach on the network, and the team’s files.',
+  who: 'It is on for a new runner; a workspace admin can turn it off or on again, and every change is in the audit log. Each team on the runner has its own pod (or, on a server, its own user), so full access never reaches another team’s files, keys or deploy login.',
+  off: 'The agent asks before it runs a command that is not on its approved list, and each question is an approval card for a person.',
+  server: 'On a server the machine must allow it too: its installer allows it unless it was run with --no-full-access.',
   title: (label: string): string => `Full access for ${label}`,
   turnOn: 'Turn on full access',
   turnOff: 'Turn off full access',
   doneOn: (label: string): string => `${label} now has full access. Its pod restarts to take it.`,
   doneOff: (label: string): string => `${label} no longer has full access. Its pod restarts to take it.`,
+  doneOnServer: (label: string): string => `${label} now has full access, from its next run.`,
+  doneOffServer: (label: string): string => `${label} no longer has full access, from its next run.`,
+  newRunner: 'Full access is on for a new runner: Claude Code and Codex run commands without asking, held by the pod. You can turn it off with Full access on the runner’s row.',
   badge: 'Full access',
 } as const;
+
+/**
+ * The owner's decision of 2026-11-20 (docs/plans/codex-teams-and-oom.md): teams that share a runner share its one Claude Code or Codex sign-in (a server's sign-in folder, or a pod
+ * runner's `state` volume that every team pod mounts), and with full access (and Claude Code without `restricted`) a bot of any of them can read it. Said on a server's or a pod's
+ * Claude Code or Codex runner that more than one team may use (docs/plugins/security.md).
+ */
+export const SERVER_SHARED_SIGNIN_WARNING =
+  'Teams on this runner share its sign-in. With full access a bot of any of these teams can use or copy that account. Put teams that must not share it on runners of their own.';
+
+/** The warning applies to a Claude Code or Codex runner (a pod runner, or a server's agent) that serves, or may serve, more than one team. */
+export const warnsServerSignin = (r: Pick<BotRunner, 'kind' | 'agent' | 'allTeams' | 'teams'>): boolean =>
+  (r.kind === 'claude_cli' || r.kind === 'codex_cli' || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'))) && (r.allTeams || r.teams.length > 1);
+
+
+/** A connected server whose bridge says no to full access: its installer was run with --no-full-access, it has no team users, or it was installed before full access became the default. */
+export const NO_FULL_ACCESS_WORDS =
+  'Full access is not allowed on this machine. Installed before 2026-11-20: run its install command again with --update, which allows it. Refused with --no-full-access: delete /etc/manythreads-bridge/no-full-access on it first. A server without team users never gets it.';

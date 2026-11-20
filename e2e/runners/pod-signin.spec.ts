@@ -169,7 +169,8 @@ test('Codex full access shows its words first, turns on for a one-team runner an
   const { page, context } = await openOn(browser, playwright, stack, 'omar', PATH);
   try {
     const row = page.locator('[data-testid="runner-row"][data-runner="codex-pod"]');
-    await expect(page.locator('[data-testid="runner-row"][data-runner="claude-pod"]').getByTestId('runner-full-access-open')).toHaveCount(0);
+    // P35-01: a Claude Code pod runner has the same switch
+    await expect(page.locator('[data-testid="runner-row"][data-runner="claude-pod"]').getByTestId('runner-full-access-open')).toHaveCount(1);
     // a Codex runner of one team starts with full access on (the owner's decision); turning it off asks nothing more
     await expect(row.getByTestId('runner-full-access-badge')).toBeVisible();
     await row.getByTestId('runner-full-access-open').click();
@@ -181,7 +182,7 @@ test('Codex full access shows its words first, turns on for a one-team runner an
     await row.getByTestId('runner-full-access-open').click();
     const dialog = page.getByRole('dialog', { name: 'Full access for Codex pod' });
     await expect(dialog.getByTestId('runner-full-access-words')).toHaveText(
-      'Full access: Codex runs commands without asking. It is held by its pod: the pod reaches the site and the internet on port 443, and no other address in the cluster.',
+      'Full access: Claude Code and Codex run commands and change files without asking. The pod (or the team’s user on the server) is the boundary: what it can reach on the network, and the team’s files.',
     );
     await dialog.getByTestId('runner-full-access-confirm').click();
     await expect(page.getByTestId('runner-status')).toContainText('Codex pod now has full access.');

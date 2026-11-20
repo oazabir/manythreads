@@ -180,7 +180,7 @@ export interface InstructionOptions {
   acp?: boolean;
   /** The path of this bot's kubeconfig (the deployer bot of a one-team pod). */
   kubeconfig?: string | null;
-  /** Codex runs commands without asking in this pod (the runner's full-access switch). */
+  /** The agent (Claude Code or Codex) runs commands without asking in this pod (the runner's full-access switch, P35-01). */
   fullAccess?: boolean;
 }
 
@@ -232,8 +232,9 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
   const acp = cfg.driver === 'acp';
   // A pod serves one team (P26-21): its profiles are that team's bots and no other team's. A runner that still names two teams is a bug in the caller, never a pod to build.
   if (new Set(runner.bots.map((b) => b.teamId)).size > 1) throw new Error('a pod serves one team: build a pod per team (runnerForTeam)');
-  // Full access is per team pod (agents-anywhere §9b): the pod is the sandbox and holds nothing of another team. Never for Claude Code.
-  const fullAccess = acp && agent === 'codex' && runner.fullAccess === true;
+  // Full access is per team pod (agents-anywhere §9b): the pod is the sandbox (non-root, its NetworkPolicy and egress proxy, no host mounts) and holds nothing of another team. Claude Code
+  // and Codex alike (P35-01); the stand-in image (not ACP) never gets it.
+  const fullAccess = acp && runner.fullAccess === true;
   // A runner with no bot yet still needs one profile: the bridge's sign-in works on the profile of an agent, and an admin signs in before any bot is placed.
   const bots = runner.bots.length > 0 ? runner.bots : [{ teamId: '', teamSlug: 'default', botSlug: 'default' }];
   for (const b of bots) {
@@ -253,7 +254,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             ...driven,
             workdir: where,
             modelAliases: cfg.codexModelAliases,
-            // The runner's switch (admin, one team): the bridge also needs the run not to say no. The bridge's other key, "allowed", is for a server and is never written here.
+            // The runner's switch (an admin's; on by default): the bridge also needs the run not to say no. The bridge's other key, "allowed", is for a server and is never written here.
             ...(fullAccess ? { fullAccess: true } : {}),
             ...(mayPublish && acp ? { publish: true } : {}),
             // No `extraAllowedTools`: that list is Claude Code's. Codex runs with its own sandbox and approval policy, set by the bridge's driver.
@@ -266,9 +267,11 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             workdir: where,
             modelAliases: cfg.modelAliases,
             extraAllowedTools: [...GIT_TOOLS, ...(acp ? RECORD_TOOLS : []), ...(mayPublish ? [PUBLISH_TOOL] : [])],
+            // the same switch as Codex's: `bypassPermissions` without `restricted` (the bridge's adapter), only when the run does not say no
+            ...(fullAccess ? { fullAccess: true } : {}),
             ...(mayPublish && acp ? { publish: true } : {}),
             env: { CLAUDE_CONFIG_DIR, HOME: homeDirFor(names.team), DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ...tools, ...kube },
-            instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'claude', { acp, kubeconfig }),
+            instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'claude', { acp, kubeconfig, fullAccess }),
           };
   }
   return JSON.stringify({ profiles, maxConcurrentRuns: runner.maxConcurrent ?? cfg.defaultConcurrency }, null, 2);

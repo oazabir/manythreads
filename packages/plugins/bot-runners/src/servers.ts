@@ -91,8 +91,8 @@ export async function syncServerRunners(tx: PluginTx, server: Pick<ServerRow, 'i
     const detail = !connected ? NOT_CONNECTED : status === 'waiting_for_sign_in' ? SIGN_IN_NEEDED : null;
     const row = (
       await tx.query<{ id: string }>(
-        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, agent, server_id, enabled, profile_rule, status, status_detail, last_checked_at)
-         VALUES ($1::uuid, $2, $3, 'server_agent', $4, $5::uuid, true, $6, $7, $8, now())
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, agent, server_id, enabled, profile_rule, status, status_detail, last_checked_at, full_access)
+         VALUES ($1::uuid, $2, $3, 'server_agent', $4, $5::uuid, true, $6, $7, $8, now(), $10)
          ON CONFLICT (workspace_id, name) DO UPDATE
             SET agent = EXCLUDED.agent, updated_at = now(),
                 -- A connection that ends sets every runner back to "not set up". A connection that starts moves a runner out of "not set up" (to "waiting for a sign-in", or "ready" for
@@ -104,7 +104,8 @@ export async function syncServerRunners(tx: PluginTx, server: Pick<ServerRow, 'i
                 last_checked_at = now()
           WHERE app.bot_runners.server_id = EXCLUDED.server_id
           RETURNING id`,
-        [server.workspace_id, runnerNameOf(server.name, found.agent), clip(`${server.label} · ${meta.title}`, 80), found.agent, server.id, serverProfileRule(found.agent), status, detail, connected],
+        // a new Claude Code or Codex runner starts with full access on (P35-01; the column's default stays false); a conflict keeps the admin's choice (the UPDATE leaves the column alone)
+        [server.workspace_id, runnerNameOf(server.name, found.agent), clip(`${server.label} · ${meta.title}`, 80), found.agent, server.id, serverProfileRule(found.agent), status, detail, connected, found.agent === 'claude-code' || found.agent === 'codex'],
       )
     ).rows[0];
     if (row) out.set(found.agent, row.id);

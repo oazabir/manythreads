@@ -84,12 +84,17 @@ describe('the bridge profiles of an agent pod', () => {
     expect(p['default']).toMatchObject({ agent: 'claude-code', driver: 'acp', workdir: '/work' });
   });
 
-  it('give Codex full access only when the runner says so, on every team pod; Claude Code never gets the key', () => {
+  it('give Codex and Claude Code full access only when the runner says so, on every team pod (P35-01)', () => {
     expect(profilesOf(runner('x', 'codex'))['engineering--engineer'].fullAccess).toBeUndefined();
     const on = profilesOf(runner('x', 'codex', { fullAccess: true }))['engineering--engineer'];
     expect(on.fullAccess).toBe(true);
     expect(on.instructions).toContain('without a question');
-    expect(profilesOf(runner('c', 'claude', { fullAccess: true }))['engineering--engineer'].fullAccess).toBeUndefined();
+    const claude = profilesOf(runner('c', 'claude', { fullAccess: true }))['engineering--engineer'];
+    expect(claude.fullAccess).toBe(true);
+    expect(claude.instructions).toContain('Your commands run without a question in this pod');
+    expect(profilesOf(runner('c', 'claude'))['engineering--engineer'].fullAccess).toBeUndefined();
+    expect(profilesOf(runner('c', 'claude'))['engineering--engineer'].instructions).not.toContain('without a question');
+    expect(profilesOf(runner('c', 'claude', { fullAccess: true }), undefined, { ...CFG, driver: 'cli' })['engineering--engineer'].fullAccess).toBeUndefined();
     // two teams on one runner: each team has a pod of its own, and full access applies to each team pod (agents-anywhere §9b)
     const wide = runner('x', 'codex', { fullAccess: true, allTeams: true, bots: [ENG, { teamId: 't-mkt', teamSlug: 'marketing', botSlug: 'writer' }] });
     for (const team of [{ id: 't-eng', slug: 'engineering' }, { id: 't-mkt', slug: 'marketing' }]) {

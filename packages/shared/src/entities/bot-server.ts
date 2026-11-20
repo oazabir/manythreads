@@ -38,7 +38,7 @@ export const BotServer = z.object({
   host: BotServerHost.nullable(),
   bridgeVersion: z.string().max(40).nullable(),
   agents: z.array(BotServerAgent),
-  /** The installer was given `--allow-full-access`: the machine's half of the Codex full-access rule (the site's half is the runner's switch). */
+  /** The machine allows full access for Claude Code or Codex (the installer's default from P35-01, unless `--no-full-access`; never on a server without team users): the machine's half of the rule (the site's half is the runner's switch). */
   allowFullAccess: z.boolean(),
   enrolled: z.boolean(),
   /** A one-time code is waiting to be used, until this time. Null: none. */

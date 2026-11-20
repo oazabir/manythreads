@@ -75,8 +75,14 @@ async function writeTeams(tx: PluginTx, runnerId: string, teams: BotRunnerTeams)
   return unique.length;
 }
 
-/** A Codex runner: a Codex pod runner, or one Codex agent on an enrolled server. Only these can have full access (the database says the same, bot-runners 0007). */
-export const isCodexRunner = (r: { kind: string; agent: string }): boolean => r.kind === 'codex_cli' || (r.kind === 'server_agent' && r.agent === 'codex');
+const FULL_ACCESS_KINDS = 'Full access belongs to a Claude Code or Codex runner only.';
+
+/**
+ * A runner that can have full access (P35-01): a Claude Code or Codex pod runner, or one Claude Code or Codex agent on an enrolled server. The database says the same
+ * (bot-runners 0010). Hermes and the LLM gateway have no command questions of their own to bypass; a Hermes gateway (the host bridge) never gets it (conventions.md).
+ */
+export const hasFullAccessChoice = (r: { kind: string; agent: string }): boolean =>
+  r.kind === 'claude_cli' || r.kind === 'codex_cli' || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'));
 
 
 /** Which settings belong to which kind: a setting on the wrong kind is refused rather than stored and ignored. */
@@ -120,9 +126,10 @@ export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): voi
       if (isPodCli(body.kind) && !ctx.providers.get('claude.pods')) throw conflict(body.kind === 'codex_cli' ? NO_CODEX_PODS : NO_CLAUDE_PODS);
       if (body.kind === 'server_agent') throw invalid('A server runner is made when a server is enrolled, not here.');
       checkSettingsFit(body.kind, body);
-      if (body.fullAccess === true && body.kind !== 'codex_cli') throw invalid('Full access belongs to a Codex runner only.');
-      // A Codex pod runner starts with full access (the pod is the sandbox) unless the admin says otherwise. Many teams may share it: each team has a pod of its own (P26-21).
-      const fullAccess = body.kind === 'codex_cli' && (body.fullAccess ?? true);
+      if (body.fullAccess === true && !isPodCli(body.kind)) throw invalid(FULL_ACCESS_KINDS);
+      // A Claude Code or Codex pod runner starts with full access (the pod is the sandbox; owner, 2026-11-20) unless the admin says otherwise. The column's default stays false, so it is
+      // written here. Many teams may share it: each team has a pod of its own (P26-21).
+      const fullAccess = isPodCli(body.kind) && (body.fullAccess ?? true);
       const workspaceId = tx.actor.workspaceId;
       if ((await tx.query('SELECT 1 FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [workspaceId, body.name])).rows.length > 0) {
         throw conflict('A runner with that name already exists. Names are used in bot files, so pick a different one.');
@@ -234,7 +241,7 @@ export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): voi
       }
       if (body.fullAccess !== undefined && body.fullAccess !== current.full_access) {
         if (body.fullAccess) {
-          if (!isCodexRunner(current)) throw invalid('Full access belongs to a Codex runner only.');
+          if (!hasFullAccessChoice(current)) throw invalid(FULL_ACCESS_KINDS);
         }
         set('full_access', body.fullAccess);
         changed.push('full_access');

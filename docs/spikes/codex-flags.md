@@ -24,7 +24,7 @@ flags-resume: --json --skip-git-repo-check -c -m
 ## Flags the driver does not use, on purpose
 
 - `-s, --sandbox` exists on `exec` only. The driver sets the sandbox with `-c sandbox_mode=...` so a new thread and a resumed one are set the same way. [help]
-- `--dangerously-bypass-approvals-and-sandbox`: never. The pod is the sandbox; the run still gets a read-only or workspace-write policy. [help]
+- `--dangerously-bypass-approvals-and-sandbox`: only for a full-access run (P35-01, `fullAccessOn` in `tools/agent-bridge/src/full-access.ts`: the profile allows it and the run does not say no, and the bot has a files or shell grant). It then replaces the `sandbox_mode` and `approval_policy` settings; the pod or the team's Unix user is the boundary. Every other run gets a read-only or workspace-write policy and never this flag. It is on both `exec` and `exec resume`. [help]
 - `--approve-for-me`, `--oss`, `--local-provider`, `--worktree`, `--add-dir`: not used. [help]
 - `--ephemeral` would stop Codex saving the thread, which would break resume. Not used. [help]
 - `--ignore-user-config` ("auth still uses `CODEX_HOME`") would be a way to keep a stray `config.toml` out of a pod; not used yet, because the pod writes no `config.toml` at all. [help]

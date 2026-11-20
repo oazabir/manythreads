@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RequestError } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
-import { adapterCommand, adapterEnv, desiredMode, flavorOf, mcpServers, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from '../src/acp/adapter.ts';
+import { adapterCommand, adapterEnv, desiredMode, flavorOf, fullAccessOn, mcpServers, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from '../src/acp/adapter.ts';
 import { clipText, diffCounts, Frames, isHiddenStep, relativePath, viewOf } from '../src/acp/frames.ts';
 import { isFound, isMissingSession } from '../src/acp/session.ts';
 import { parseConfig } from '../src/config.ts';
@@ -253,7 +253,7 @@ describe('the adapter module', () => {
     expect(desiredMode(jobOf('opencode'))).toBeNull();
   });
 
-  it('full access (Codex only) needs the profile\'s key; "allowed" also needs the run\'s; a bot with no file or shell grant stays read-only', () => {
+  it('full access (Codex) needs the profile\'s key; "allowed" also needs the run\'s; a bot with no file or shell grant stays read-only', () => {
     const run = (fullAccess: boolean | null, tools = ['shell']) => ({ manythreads: { tools, fullAccess } });
     expect(desiredMode(jobOf('codex', { fullAccess: true }, run(null)))).toBe('agent-full-access');
     expect(desiredMode(jobOf('codex', { fullAccess: true }, run(false)))).toBe('workspace-write');
@@ -264,8 +264,25 @@ describe('the adapter module', () => {
     expect(adapterEnv(jobOf('codex', { fullAccess: true }, run(null)), 'agent-full-access')['INITIAL_AGENT_MODE']).toBe('agent-full-access');
   });
 
-  it('the config refuses full access for any agent but Codex and any word but true, false and "allowed"', () => {
-    expect(() => parseConfig({ profiles: { x: { agent: 'claude-code', workdir: '/w', fullAccess: true } } })).toThrow(/only for codex/);
+  it('full access (Claude Code, P35-01): bypassPermissions with the same two keys; a bot with no file or shell grant stays in default', () => {
+    const run = (fullAccess: boolean | null, tools = ['shell']) => ({ manythreads: { tools, fullAccess } });
+    expect(desiredMode(jobOf('claude-code', { fullAccess: true }, run(null)))).toBe('bypassPermissions');
+    expect(desiredMode(jobOf('claude-code', { fullAccess: true }, run(false)))).toBe('default');
+    expect(desiredMode(jobOf('claude-code', { fullAccess: 'allowed' }, run(null)))).toBe('default');
+    expect(desiredMode(jobOf('claude-code', { fullAccess: 'allowed' }, run(true)))).toBe('bypassPermissions');
+    expect(desiredMode(jobOf('claude-code', {}, run(true)))).toBe('default');
+    expect(desiredMode(jobOf('claude-code', { fullAccess: true }, run(null, ['web'])))).toBe('default');
+    expect(fullAccessOn(jobOf('claude-code', { fullAccess: true }, run(null, ['files'])))).toBe(true);
+    // Hermes and OpenCode never: they have no profile key for it
+    const hermes = jobOf('hermes-acp', {}, run(true));
+    expect(fullAccessOn({ ...hermes, profile: { ...hermes.profile, fullAccess: true } })).toBe(false);
+  });
+
+  it('the config refuses full access for any agent but Claude Code and Codex and any word but true, false and "allowed"; IS_SANDBOX is never set by a profile', () => {
+    expect(() => parseConfig({ profiles: { x: { agent: 'hermes-acp', workdir: '/w', fullAccess: true } } })).toThrow(/only for claude-code and codex/);
+    expect(parseConfig({ profiles: { x: { agent: 'claude-code', workdir: '/w', fullAccess: 'allowed' } } }).profiles['x']!.fullAccess).toBe('allowed');
+    expect(() => parseConfig({ profiles: { x: { agent: 'claude-code', workdir: '/w', env: { IS_SANDBOX: '1' } } } })).toThrow(/IS_SANDBOX/);
+    expect(() => parseConfig({ profiles: { x: { agent: 'claude-code', workdir: '/w', passEnv: ['IS_SANDBOX'] } } })).toThrow(/IS_SANDBOX/);
     expect(() => parseConfig({ profiles: { x: { agent: 'codex', workdir: '/w', fullAccess: 'yes' } } })).toThrow(/true, false or "allowed"/);
     expect(parseConfig({ profiles: { x: { agent: 'codex', workdir: '/w', fullAccess: false } } }).profiles['x']!.fullAccess).toBeUndefined();
   });
@@ -298,6 +315,17 @@ describe('the adapter module', () => {
       expect(o['allowedTools']).toContain(t);
     }
     expect(sessionMeta(jobOf('codex'))).toBeUndefined();
+    // P35-01: a full-access run drops `restricted` (the CLI refuses the bypass with it) and allows the bypass; the tools, settings and connectors stay as they are
+    const full = (sessionMeta(jobOf('claude-code', { fullAccess: true }, { manythreads: { tools: ['files', 'shell'], fullAccess: true } })) as { claudeCode: { options: Record<string, any> } }).claudeCode.options; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(full['extraArgs']).toEqual({ 'strict-mcp-config': null });
+    expect(full['allowDangerouslySkipPermissions']).toBe(true);
+    expect(full['settingSources']).toEqual([]);
+    expect(full['tools']).toEqual(expect.arrayContaining(['Read', 'Edit', 'Bash']));
+    expect(full['tools']).not.toContain('WebFetch');
+    // the run says no: back to restricted
+    const off = (sessionMeta(jobOf('claude-code', { fullAccess: true }, { manythreads: { tools: ['shell'], fullAccess: false } })) as { claudeCode: { options: Record<string, any> } }).claudeCode.options; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(off['extraArgs']).toEqual({ restricted: null, 'strict-mcp-config': null });
+    expect(off['allowDangerouslySkipPermissions']).toBe(false);
     expect(sessionMeta(jobOf('hermes-acp'))).toBeUndefined();
   });
 

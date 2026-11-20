@@ -160,6 +160,8 @@ export interface FaultScript {
   noLogout?: boolean;
   /** `mcpCapabilities.http` is false (Claude and Codex flavors; Hermes advertises none). */
   noHttp?: boolean;
+  /** Claude flavor: the adapter leaves `bypassPermissions` out of its modes, as the real one does when it runs as root without `IS_SANDBOX` (claude-agent-acp `permissions/modes.js`). */
+  noBypass?: boolean;
 }
 
 export interface FakeScript {

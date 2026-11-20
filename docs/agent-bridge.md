@@ -295,8 +295,15 @@ same session wait for each other. The record is `sessions.json` in the state dir
 
 ## Security notes
 
-- **No permission bypass.** The bridge never passes `--dangerously-skip-permissions` or a bypass permission mode. A tool that is not pre-approved is
-  refused, because nobody is there to answer a question. The tool's own settings files in the working folder still apply.
+- **No permission bypass, unless the run has full access.** Without full access the bridge never passes `--dangerously-skip-permissions` or a bypass permission mode; a tool
+  that is not pre-approved is refused (stream-json) or asked about (ACP: an approval card), because nobody else is there to answer. **Full access (P35-01, on by default; an admin
+  switches it off per runner)** needs both keys: the profile's `fullAccess` (`true` in a pod, written by the controller; `"allowed"` on an enrolled server, written by the installer
+  unless `--no-full-access`) and a run that does not say `manythreads.fullAccess: false` (`"allowed"` needs it to say `true`), and the bot must have a files or shell grant. Then
+  Claude Code runs in `bypassPermissions` with `allowDangerouslySkipPermissions: true` and **without `--restricted`** (the CLI refuses a bypass with it; file tools may then leave
+  the work folder and the agent may write its own settings and git config), and Codex in `agent-full-access` (stream-json: `--dangerously-bypass-approvals-and-sandbox`).
+  `settingSources: []`, `--strict-mcp-config` and the `--tools` list stay. The boundary is the pod or the team's Unix user. Claude Code refuses a bypass as root unless
+  `IS_SANDBOX` is set; the bridge never sets it (a profile may not set or pass it either), so a root adapter that leaves the mode out fails the run with a plain sentence. A server
+  without team users never gets full access: the run goes on without it and the thread says why.
 - **Run tokens stay out of argv and logs.** The prompt goes to the tool's standard input. The run token is given only in the tool's environment
   (`MANYTHREADS_RUN_TOKEN`). Claude Code's MCP file (mode 0600, in a private per-run folder deleted afterwards) holds `Bearer ${MANYTHREADS_RUN_TOKEN}`
   and Claude Code fills it in from the environment. If your Claude Code version does not expand that, set `"mcpTokenInFile": true`: the token is then
@@ -372,7 +379,8 @@ checks it against the SHA-256 in the manifest; runs `npm ci --omit=dev --ignore-
 installs Chromium with its libraries; looks for Hermes and uses it only when the team users can run it (it never installs Hermes; below); writes the config, detects the
 agents, calls `POST /api/bridge/enrol` once, keeps the answer's key in `/etc/manythreads-bridge/key` (mode 0600, passed to the service as a systemd credential),
 writes `manythreads-bridge.service` (hardened) and waits up to 90 seconds for the site to say it is connected. Also: `--update` (same command, new bundle),
-`--uninstall [--purge]`, `--allow-full-access` (the machine's half of the Codex full-access rule), `--hermes-bin <path>`, `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`,
+`--uninstall [--purge]`, `--no-full-access` (refuses the machine's half of the full-access rule for Claude Code and Codex, which is allowed by default from P35-01; remembered in
+`/etc/manythreads-bridge/no-full-access` so a later `--update` keeps refusing, and a plain `--uninstall` keeps that file (only `--purge` removes it); an `--update` that turns a machine from not allowed to allowed prints one line saying so; the old `--allow-full-access` is accepted and ignored), `--hermes-bin <path>`, `--no-hermes`, `--no-claude`, `--no-codex`, `--no-browser`,
 `--no-publisher`. It also installs the helper and the sudo rule of the per-team users (below). It also writes the two commands a bot runs, `mt-git` and `mt-publish` (small scripts that name this machine's Node, in `/opt/manythreads-bridge/current/tools`),
 and a second hardened service, `manythreads-publisher.service` (below). It warns when `git` or `jq` is missing: the repository sync needs both. The bridge's unit has a `PATH`
 that starts with the folder of the Node the installer chose, so a bot's shell finds `node` and `npm`. A container test runs the real script (Debian image, a stand-in site, `systemctl`
@@ -436,7 +444,7 @@ How it works, in the order of what is trusted:
 - **Out of memory (P31-04).** When the machine runs short of memory, the kernel's out-of-memory killer stops one process, chosen by its score, `oom_score_adj` (-1000 never, 1000 first). Right before it starts the program, the helper (as root) sets its own score to 1000. Because root makes that write, it also fixes the program's lowest allowed score at 1000. The program inherits both, so a team's program, even one with full access, cannot lower its score and push the kernel towards the site's database (984) or the bridge (0). The helper then puts its own score back. All of this was measured on the devbox on 2026-11-20 under the unit's hardening. The bridge's unit has `OOMPolicy=continue`: systemd's default, `stop`, stopped the whole bridge, and every team's runs, when the kernel killed one bot command inside it. Now the command fails, and the run goes on. There is no memory limit per run yet (P31-04b).
 - **The bridge's unit is looser for this.** `sudo` and `useradd` cannot work under `NoNewPrivileges` or `RestrictSUIDSGID`, so the unit of a server with team users drops those two, sets `UMask=0007` and lets the bridge write `/etc` and `/var/log` (for the account tools), keeping `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp` and the kernel protections. The only way up from the bridge's user is the two sudo commands above; that
   the relaxed unit really lets `sudo` and `useradd` work under systemd is checked live (P26-19), not in the container (which has no systemd).
-- **Full access is per team user.** A Codex run with full access (no sandbox) is bounded by its Unix user, so it can read its own team's files, its Codex home (with the run's copy of the sign-in) and Claude's shared sign-in folder, and nothing of another team's: not another team's home or Codex home, not the main Codex copy, not root's lock folder. The two keys of "Full access for Codex" are unchanged.
+- **Full access is per team user.** A Claude Code or Codex run with full access (no sandbox, no questions) is bounded by its Unix user, so it can read its own team's files, its Codex home (with the run's copy of the sign-in) and Claude's shared sign-in folder, and nothing of another team's: not another team's home or Codex home, not the main Codex copy, not root's lock folder. The two keys of "Full access for Claude Code and Codex" are unchanged.
 - The publisher keeps checking the run token (`/api/runs/self`), so a team user cannot publish another team's clone.
 Uninstall: `--uninstall` removes the helper, the table and the sudo rule at once (so nothing can start a program as a team user); `--uninstall --purge` also removes the `mt-team-*` users and the group `mt-agents`. `--update` writes the helper, table and rule again (the users stay). The first `--update` after P31-01 stops the bridge, deletes everything in `<root>/auth/codex` but `auth.json` (the teams' old shared Codex sessions and state; a thread with an old Codex session starts a new one), makes the folder the bridge user's 0700 and writes `bridgeUser` into the helper's table; a marker in `<root>/auth/.locks` keeps a later `--update` from deleting again.
 `sudo`, `visudo`, `setpriv` and `flock` (util-linux), `timeout` (coreutils), `useradd`, `usermod`, `groupadd` and `getent` must be on the machine, and `/etc/sudoers` must read `/etc/sudoers.d` (the installer says so and stops otherwise).
@@ -461,8 +469,10 @@ for that run (`tools/agent-bridge/src/server-run.ts`):
 - **The repository sync (P26-15):** `GET /api/bridge/repos` (bridge key) lists the projects of the teams placed on this server's runners, each with an https address. The bridge's
   poller (`server-repos.ts`) keeps the pod's `repo-sync.sh` running, one copy per team **as that team's user** through the helper (kind `sync`), each given only its own team's list lines; it clones the repository of record to
   `<root>/work/<team>/repos/<project>.git` and each bot's clone beside it, and `mt-git record-push` / `record-fetch` move work between a bot's clone and the record. Addresses other than https are refused.
-- **Full access:** the site sends `manythreads.fullAccess` for a Codex run on a server only when the runner's switch is on; the bridge applies it only when the installer was run with
-  `--allow-full-access` (`conventions.md`, "Full access for Codex").
+- **Full access:** the site sends `manythreads.fullAccess` for a Claude Code or Codex run on a server (the runner's switch, on by default); the bridge applies it only when its config
+  allows it (the installer's default, unless `--no-full-access`) and the server has team users (`conventions.md`, "Full access for Claude Code and Codex"). The hello's
+  `allowFullAccess` is true only then. Note: `--update` rewrites the config from the flags it is given, which is why a server installed with the old opt-in `--allow-full-access`
+  lost it at its next `--update` without the flag (seen on the devbox, 2026-11-20); the refusal is now a file, so it survives an update.
 
 **What the site then shows.** One runner per agent found, named `<server>-claude`, `<server>-codex`, `<server>-hermes`, kind `server_agent`, shared with teams like any
 runner. Each agent with its own sign-in has a Sign-in button; the sign-in goes through the tunnel and lands in `/var/lib/manythreads-bridge/auth/<agent>`, never in a

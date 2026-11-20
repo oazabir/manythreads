@@ -20,7 +20,9 @@ import {
   FULL_ACCESS_WORDS,
   hasFullAccessChoice,
   SHARED_SIGNIN_NOTE,
+  SERVER_SHARED_SIGNIN_WARNING,
   sharesSignin,
+  warnsServerSignin,
   hasNoTeams,
   hasNodeChoice,
   isChangingPlacement,
@@ -421,6 +423,7 @@ function RunnerRow({
           <span data-testid="runner-bots">{countBots(r.botCount)}</span>
         </div>
         {sharesSignin(r) ? <div className="rn-detail faint" data-testid="runner-shared-signin-note">{SHARED_SIGNIN_NOTE}</div> : null}
+        {warnsServerSignin(r) ? <div className="rn-detail rn-warn" data-testid="runner-server-signin-warning">{SERVER_SHARED_SIGNIN_WARNING}</div> : null}
         {gateway ? <div className="rn-detail mono">{gateway}</div> : null}
         {r.kind === 'llm_gateway' ? <div className="rn-detail">Model name: <span className="mono">{r.modelAlias ?? 'none chosen'}</span></div> : null}
         {where ? <div className={`rn-detail rn-place ${where.tone}`} data-testid="runner-place" data-state={placement?.state ?? 'unknown'}>{where.text}</div> : null}

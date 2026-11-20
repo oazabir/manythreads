@@ -67,7 +67,7 @@ export const CreateBotRunnerRequest = z.strictObject({
   modelAlias: z.string().min(1).max(40).optional(),
   /** Claude Code: runs at once on this runner (1 to 4); left out means the install's default. */
   maxConcurrent: z.number().int().min(1).max(4).optional(),
-  /** Codex only (P26-06): full access, the `codex --yolo` behaviour. Left out: on for a Codex pod runner (the pod is the sandbox), off for the rest. Any number of teams may share the runner: each team has a pod of its own (P26-21). */
+  /** Claude Code and Codex pod runners (P26-06, P35-01): full access, commands run without asking. Left out: on (the pod is the sandbox); refused for every other kind. Any number of teams may share the runner: each team has a pod of its own (P26-21). */
   fullAccess: z.boolean().optional(),
   enabled: z.boolean().optional(),
   teams: BotRunnerTeams.optional(),
@@ -86,7 +86,7 @@ export const UpdateBotRunnerRequest = z.strictObject({
   /** Hermes gateway only (P19-14): what answers at the address. A change needs a new Test. */
   agent: BotRunnerAgent.optional(),
   modelAlias: z.string().min(1).max(40).optional(),
-  /** Codex only (P26-06): turn full access on or off. Any number of teams may share the runner (P26-21: full access applies per team pod). */
+  /** Claude Code and Codex runners, pods and server runners (P26-06, P35-01): turn full access on or off. Any number of teams may share the runner (P26-21: full access applies per team pod or team user). */
   fullAccess: z.boolean().optional(),
   enabled: z.boolean().optional(),
 });

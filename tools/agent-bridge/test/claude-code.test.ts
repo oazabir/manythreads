@@ -3,7 +3,7 @@ import net from 'node:net';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.ts';
-import { claudeToolFlags } from '../src/drivers/claude-code.ts';
+import { claudeArgs, claudeToolFlags } from '../src/drivers/claude-code.ts';
 import { childEnv, RunManager } from '../src/runs.ts';
 import { SessionStore, sessionUuid } from '../src/sessions.ts';
 import { alive, auth, events, getRun, harness, KEY, start, waitFor, type Harness } from './support.ts';
@@ -146,6 +146,26 @@ describe('what the CLI is given', () => {
       for (const bad of ['--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--permission-mode', 'bypassPermissions']) expect(argv).not.toContain(bad);
       expect(argv).toEqual(expect.arrayContaining(['-p', '--output-format', 'stream-json', '--verbose', '--restricted', '--strict-mcp-config', '--model', 'sonnet']));
     }
+  });
+
+  it('full access (P35-01): --dangerously-skip-permissions and no --restricted, only with the profile\'s key and a run that does not say no', () => {
+    const job = (profileFull: boolean | 'allowed' | undefined, runFull: boolean | null, tools = ['shell']) =>
+      ({
+        profile: { agent: 'claude-code', workdir: '/w', ...(profileFull !== undefined ? { fullAccess: profileFull } : {}) },
+        request: { manythreads: { tools, fullAccess: runFull, model: { alias: null, effort: null } } },
+      }) as never;
+    const files = { mcp: null, instructions: null };
+    const on = claudeArgs(job(true, null), 'new', 'u', files);
+    expect(on).toContain('--dangerously-skip-permissions');
+    expect(on).not.toContain('--restricted');
+    expect(on).toEqual(expect.arrayContaining(['--strict-mcp-config', '--tools', 'Bash']));
+    for (const [p, r] of [[true, false], ['allowed', null], [undefined, true]] as const) {
+      const off = claudeArgs(job(p, r), 'new', 'u', files);
+      expect(off, `${String(p)} ${String(r)}`).toContain('--restricted');
+      expect(off).not.toContain('--dangerously-skip-permissions');
+    }
+    expect(claudeArgs(job('allowed', true), 'resume', 'u', files)).toContain('--dangerously-skip-permissions');
+    expect(claudeArgs(job(true, true, ['web']), 'new', 'u', files)).toContain('--restricted');
   });
 
   it("appends the profile's note about this machine after BOT.md", async () => {

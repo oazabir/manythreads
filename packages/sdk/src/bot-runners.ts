@@ -39,7 +39,7 @@ export interface RunnerTarget {
    * path and query travel, and no authorization header does). Absent for every other kind, which are reached at their address. It lives in this process and never leaves it.
    */
   fetch?: typeof fetch;
-  /** `server_agent` with Codex: the admin's switch for full access on this runner (the site's half; the machine's own half is the installer flag). Absent for every other kind. */
+  /** `server_agent` with Claude Code or Codex: the admin's switch for full access on this runner (the site's half; the machine's own half is the installer's, allowed unless `--no-full-access`). Absent for every other kind. */
   fullAccess?: boolean;
 }
 
@@ -84,7 +84,7 @@ export interface PodRunnerInfo {
   node: string | null;
   /** Runs at once; null = the controller's default. */
   maxConcurrent: number | null;
-  /** Codex only: full access is on (bot-runners 0007). The controller writes it into the bridge's profiles; always false for a Claude Code runner. */
+  /** Full access is on (bot-runners 0007, 0010; Claude Code and Codex alike since P35-01). The controller writes it into the bridge's profiles. */
   fullAccess?: boolean;
   /** The teams on the runner's list (the list is the permission); empty with `allTeams` true means every team. */
   teams: { id: string; slug: string }[];

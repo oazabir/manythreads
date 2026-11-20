@@ -40,7 +40,7 @@ export interface GatewayTarget {
    * travel). Used when the caller gave none. Never a reason to skip the checks on what comes back: the bridge is trusted no further than any other gateway.
    */
   fetch?: typeof fetch;
-  /** An agent on an enrolled server: the admin's switch for Codex full access on that runner, sent in the run as `manythreads.fullAccess`. The bridge honours it only when its own config allows it. */
+  /** An agent on an enrolled server: the admin's switch for Claude Code or Codex full access on that runner, sent in the run as `manythreads.fullAccess`. The bridge honours it only when its own config allows it. */
   fullAccess?: boolean;
 }
 

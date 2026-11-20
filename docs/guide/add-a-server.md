@@ -43,7 +43,7 @@ uses the site's model gateway, so the server needs no model key.
 
 A server and its runners can be shared with any number of teams, and the agents on it use **one** sign-in (one subscription for all of them): that is why you sign in once, here, and not per team.
 What is separate per team: a **Unix user** `mt-team-<team>` runs that team's bots, with a home of its own (`/var/lib/manythreads-bridge/work/<team>`) that holds its work folders, its repositories, its deploy login while a run lasts and its Hermes homes.
-One team's bots cannot read another team's files, repositories, deploy login or tokens, and cannot read the bridge's key or state. Codex "full access" applies to that team's user only.
+One team's bots cannot read another team's files, repositories, deploy login or tokens, and cannot read the bridge's key or state. Claude Code and Codex "full access" applies to that team's user only.
 What is shared, and said on the Runners page: the **sign-in itself**, kept in one folder every team user can use so the agents can renew their tokens. That folder also holds the agents' own session notes, so a team can read what another team's bots said to the agent (not the files they worked on).
 If teams must not see each other's conversations, give each its own server. Every team on the machine also shares its CPU, memory, disk and network: a Unix user is a wall for files, not a limit on how much of the machine a team can use.
 
@@ -51,7 +51,16 @@ If teams must not see each other's conversations, give each its own server. Ever
 
 - A bot on a server runs as its team's Unix user. It can reach its own team's folders, the shared agent sign-in, the machine's network and what the machine lets every user read; it cannot reach the key the server uses to talk to this site or another team's folders.
   Do not put a server on a network, or beside data, that the bots must not see.
-- Codex can be given full access (no sandbox) only when you start the installer with `--allow-full-access` **and** switch it on for one team on the Runners page.
+- **Full access is on by default** for Claude Code and Codex (owner decision 2026-11-20): their commands run without asking, so a delivery needs no command approval cards. Two keys
+  must both be on: the machine allows it (the installer does unless you start it with `--no-full-access`; the refusal is remembered, delete `/etc/manythreads-bridge/no-full-access`
+  and run `--update` to allow it again; a plain `--uninstall` keeps that file, `--uninstall --purge` removes it) **and** the runner's **Full access** switch on the Runners page is on (an admin can turn it off per runner; every change is audited). A
+  server without team users never gets full access. With full access the team's Unix user is the only boundary for what a bot's commands do: its own team's files, the shared
+  sign-in and the machine's network.
+- **Release note (P35-01, 2026-11-20):** a server installed before full access became the default, without the old `--allow-full-access`, becomes allowed at its next `--update`. The
+  installer says so in one line: "Full access for Claude Code and Codex is now allowed on this machine (the default since 2026-11-20); rerun with --no-full-access to refuse it."
+  Run `--update --no-full-access` instead if the machine must keep asking.
+- With full access, every team on a server holds a working copy of the server's one Claude Code or Codex sign-in, so a bot of any team could use or copy that account (accepted
+  for now, the Runners page warns; one sign-in per team is planned). Put teams that must not share it on servers of their own.
 - Several teams may share one server and its runners. Each has its own Unix user (above), so a team cannot read another's files or tokens; they do share the sign-in and the machine's resources.
 - **Rotate key** gives the server a new key over its open connection (one at a time: wait until the server has taken the key, or 15 minutes). **Remove server** ends the connection, refuses the key and deletes its runners; move bots off
   them first.

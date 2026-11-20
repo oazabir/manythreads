@@ -231,7 +231,7 @@ describe('a runner of an enrolled server (P26-15)', () => {
   const HASH = 'a'.repeat(64);
   const tunnel = { reachable: () => true, fetchFor: () => fetch } as never;
 
-  it('carries the admin\'s full-access switch for a Codex agent and none for a Claude or Hermes agent', async () => {
+  it('carries the admin\'s full-access switch for a Codex or Claude Code agent (P35-01)', async () => {
     const serverId = (
       await sys((tx) => tx.query<{ id: string }>("INSERT INTO app.bot_servers (workspace_id, name, label, key_hash, status) VALUES ($1, 'fa-box', 'Box', $2, 'connected') RETURNING id", [omar.workspaceId, HASH]))
     ).rows[0]!.id;
@@ -246,6 +246,9 @@ describe('a runner of an enrolled server (P26-15)', () => {
     expect((await answer('fa-box-codex')).fullAccess).toBe(false);
     await sys((tx) => tx.query("UPDATE app.bot_runners SET full_access = true WHERE name = 'fa-box-codex'"));
     expect((await answer('fa-box-codex')).fullAccess).toBe(true);
-    expect(await answer('fa-box-claude')).not.toHaveProperty('fullAccess');
+    // P35-01: a server's Claude Code runner sends the site's half too
+    expect((await answer('fa-box-claude')).fullAccess).toBe(false);
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET full_access = true WHERE name = 'fa-box-claude'"));
+    expect((await answer('fa-box-claude')).fullAccess).toBe(true);
   });
 });

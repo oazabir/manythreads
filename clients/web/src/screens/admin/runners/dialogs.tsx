@@ -26,7 +26,9 @@ import {
   editChanged,
   emptyForm,
   FULL_ACCESS_WORDS,
+  SERVER_SHARED_SIGNIN_WARNING,
   SHARED_SIGNIN_NOTE,
+  warnsServerSignin,
   kindWords,
   nameProblem,
   suggestName,
@@ -175,6 +177,7 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
               </select>
               <div className="fld-hint">How many bot runs this runner does at the same time. Each {kind === 'codex_cli' ? 'Codex' : 'Claude'} runner needs its own sign-in file; you upload it after adding the runner.</div>
             </div>
+            <p className="fld-hint" data-testid="runner-new-full-access">{FULL_ACCESS_WORDS.newRunner}</p>
           </div>
         ) : null}
 
@@ -589,9 +592,12 @@ export function AdoptDialog({ connection, onClose, onDone }: { connection: OldCo
   );
 }
 
-// ---- full access (Codex pod runner) -----------------------------------------------------------------------------
+// ---- full access (Claude Code and Codex runners) ----------------------------------------------------------------
 
-/** Turn Codex's full access on or off for one pod runner. Turning it on says what it means first; turning it off asks nothing more. Teams that share the runner each have a pod of their own, so any number of teams may be on it. */
+/**
+ * Turn full access on or off for one Claude Code or Codex runner (a pod runner or a server's agent). Turning it on says what it means first; turning it off asks nothing more. Teams that
+ * share the runner each have a pod (or a server user) of their own, so any number of teams may be on it.
+ */
 export function FullAccessDialog({ runner, onClose, onDone }: { runner: BotRunner; onClose: () => void; onDone: (r: BotRunner, text: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -602,7 +608,8 @@ export function FullAccessDialog({ runner, onClose, onDone }: { runner: BotRunne
     setError(null);
     try {
       const res = await updateBotRunner(runner.id, { fullAccess: !on });
-      onDone(res.runner, on ? FULL_ACCESS_WORDS.doneOff(runner.label) : FULL_ACCESS_WORDS.doneOn(runner.label));
+      const server = runner.kind === 'server_agent';
+      onDone(res.runner, on ? (server ? FULL_ACCESS_WORDS.doneOffServer : FULL_ACCESS_WORDS.doneOff)(runner.label) : (server ? FULL_ACCESS_WORDS.doneOnServer : FULL_ACCESS_WORDS.doneOn)(runner.label));
     } catch (err) {
       setError(message(err));
       setBusy(false);
@@ -624,6 +631,8 @@ export function FullAccessDialog({ runner, onClose, onDone }: { runner: BotRunne
       <p className="dlg-text" data-testid="runner-full-access-state">{on ? 'Full access is on.' : FULL_ACCESS_WORDS.off}</p>
       <p className="dlg-text" data-testid="runner-full-access-words">{FULL_ACCESS_WORDS.what}</p>
       <p className="fld-hint">{FULL_ACCESS_WORDS.who}</p>
+      {runner.kind === 'server_agent' ? <p className="fld-hint" data-testid="runner-full-access-server">{FULL_ACCESS_WORDS.server}</p> : null}
+      {warnsServerSignin(runner) ? <p className="fld-hint rn-warn" data-testid="runner-server-signin-warning">{SERVER_SHARED_SIGNIN_WARNING}</p> : null}
       <FormError text={error} />
     </Dialog>
   );

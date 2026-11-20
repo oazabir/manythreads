@@ -1,6 +1,7 @@
 import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lastLine, redact } from '../process.ts';
+import { fullAccessOn } from '../full-access.ts';
 import { sessionUuid } from '../sessions.ts';
 import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 
@@ -12,7 +13,7 @@ import type { Driver, DriverJob, DriverResult, Usage } from './types.ts';
 //          [--model m] [--effort e] (--session-id <uuid> | --resume <uuid> | --no-session-persistence)
 //
 // The prompt goes to stdin. Permissions stay in the default mode: a tool that is not pre-approved is refused (nobody is there to
-// answer), and the bypass flags are never passed.
+// answer). With full access (P35-01, `fullAccessOn`) `--restricted` is left out (the CLI refuses a bypass with it) and `--dangerously-skip-permissions` is passed.
 
 export const MCP_SERVER_NAME = 'manythreads';
 const MCP_ALLOW = `mcp__${MCP_SERVER_NAME}__*`;
@@ -47,7 +48,9 @@ export function claudeArgs(job: DriverJob, mode: 'new' | 'resume' | 'none', uuid
   const { tools, allowed } = claudeToolFlags(mt.tools, job.profile.extraAllowedTools);
   // `--restricted`: the user's, project's and local settings files are ignored (so the operator's own CLAUDE.md, memory and hooks never reach a
   // bot), file tools stay inside the working directory, and bypassing permissions is refused. Only the tools `--tools` names are available.
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--restricted', '--strict-mcp-config'];
+  // Full access (P35-01): no `--restricted` (it refuses the bypass) and `--dangerously-skip-permissions`; the pod or the team's user is the boundary, `--tools` still limits what exists.
+  const full = fullAccessOn(job);
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', ...(full ? ['--dangerously-skip-permissions'] : ['--restricted']), '--strict-mcp-config'];
   if (files.mcp !== null) args.push('--mcp-config', files.mcp);
   if (files.instructions !== null) args.push('--append-system-prompt-file', files.instructions);
   args.push('--tools', tools.join(','));

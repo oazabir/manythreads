@@ -26,7 +26,7 @@ export const AgentBridgeRunExtension = z.strictObject({
   budgetSeconds: z.number().int().positive().nullable(),
   /** The most turns the agent may take; null for no limit. */
   maxTurns: z.number().int().positive().nullable(),
-  /** Codex on an enrolled server: the admin's switch for full access on the runner (the site's half). The bridge runs without asking only when its own config also allows it (docs/plans/agents-anywhere.md section 4). */
+  /** Claude Code or Codex on an enrolled server (P35-01): the admin's switch for full access on the runner (the site's half). The bridge runs without asking only when its own config also allows it (docs/plans/agents-anywhere.md section 4). */
   fullAccess: z.boolean().optional(),
 });
 export type AgentBridgeRunExtension = z.infer<typeof AgentBridgeRunExtension>;

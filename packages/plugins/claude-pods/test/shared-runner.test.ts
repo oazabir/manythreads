@@ -235,7 +235,7 @@ describe('two teams on one runner', () => {
 });
 
 describe('full access per team pod', () => {
-  it('is written into the profiles of every team pod of a Codex runner (no one-team limit), and never for Claude Code', async () => {
+  it('is written into the profiles of every team pod of a Codex or Claude Code runner (no one-team limit), and only when the runner says so', async () => {
     const codex = setup([runner('cx', 'codex', { fullAccess: true })]);
     await codex.r.reconcileAll();
     for (const team of ['engineering', 'marketing']) {
@@ -249,7 +249,10 @@ describe('full access per team pod', () => {
     for (const p of Object.values(configOf(off.k8s, 'cx', 'engineering', 'codex').profiles) as any[]) expect(p.fullAccess).toBeUndefined();
     const claude = setup([runner('cl', 'claude', { fullAccess: true })]);
     await claude.r.reconcileAll();
-    for (const team of ['engineering', 'marketing']) for (const p of Object.values(configOf(claude.k8s, 'cl', team).profiles) as any[]) expect(p.fullAccess).toBeUndefined();
+    for (const team of ['engineering', 'marketing']) for (const p of Object.values(configOf(claude.k8s, 'cl', team).profiles) as any[]) expect(p.fullAccess).toBe(true);
+    const claudeOff = setup([runner('cl', 'claude', { fullAccess: false })]);
+    await claudeOff.r.reconcileAll();
+    for (const p of Object.values(configOf(claudeOff.k8s, 'cl', 'engineering').profiles) as any[]) expect(p.fullAccess).toBeUndefined();
   });
 });
 

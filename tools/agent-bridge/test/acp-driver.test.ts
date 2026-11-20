@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { FULL_ACCESS_NOT_OFFERED } from '../src/full-access.ts';
 import { acpHarness, post, runToEnd, startRun, status, watch, type AcpHarness, type Flavor, type Frame } from './acp-support.ts';
 
 // The acp driver end to end: the bridge's HTTP face, a run, the fake ACP agent as a child process (its frames follow the recorded fixtures; the real adapters are
@@ -139,6 +140,55 @@ describe('codex full access (P26-06): the profile\'s key and the run\'s key', ()
     await h.close();
     h = await acpHarness({ flavor: 'codex', script: ASKS, profile: { fullAccess: true } });
     expect(await runOnce({ fullAccess: false })).toEqual({ asked: true, mode: 'workspace-write' });
+  });
+});
+
+describe('claude full access (P35-01): bypassPermissions with the same two keys', () => {
+  const ASKS = script('claude', {
+    work: [
+      { do: 'permission', step: { title: 'git commit -m x', genericTitle: 'Terminal', kind: 'execute', toolName: 'Bash', input: { command: 'git commit -m x' } }, onReject: [{ do: 'text', text: 'Declined.' }] },
+      { do: 'text', text: 'Done.' },
+    ],
+  });
+
+  /** Runs once (optionally in a thread) and answers the one command question with a No if it is asked; returns whether it was asked and the mode of the session it ran in. */
+  const runOnce = async (body: Record<string, unknown>, sessionId?: string): Promise<{ asked: boolean; mode: unknown; event: unknown; error: unknown }> => {
+    const id = await startRun(h!, { input: 'go', ...(sessionId !== undefined ? { session_id: sessionId } : {}), manythreads: { tools: ['shell'], mcp: MCP, ...body } });
+    const w = watch(h!, id);
+    let asked = false;
+    const first = await w.until((f) => f['event'] === 'approval.request' || f['event'] === 'run.completed' || f['event'] === 'run.failed');
+    if (first['event'] === 'approval.request') {
+      asked = JSON.stringify(first).includes('git commit');
+      await post(h!, id, 'approval', { choice: 'deny', request_id: first['request_id'] });
+    }
+    await w.done;
+    const sessions = [...h!.sessions()].sort((a, b) => String(a['updatedAt']).localeCompare(String(b['updatedAt'])));
+    return { asked, mode: sessions.at(-1)?.['mode'], event: last(w.frames)['event'], error: last(w.frames)['error'] };
+  };
+
+  it('a full-access profile puts Claude in bypassPermissions and no command is asked (the session options are checked in acp-frames.test.ts)', async () => {
+    h = await acpHarness({ flavor: 'claude', script: ASKS, profile: { fullAccess: true } });
+    expect(await runOnce({})).toEqual({ asked: false, mode: 'bypassPermissions', event: 'run.completed', error: undefined });
+  });
+
+  it('"allowed" needs the run to say yes; a run that says no is back in default and asks', async () => {
+    h = await acpHarness({ flavor: 'claude', script: ASKS, profile: { fullAccess: 'allowed' } });
+    expect(await runOnce({})).toMatchObject({ asked: true, mode: 'default', event: 'run.completed' });
+    expect(await runOnce({ fullAccess: true })).toMatchObject({ asked: false, mode: 'bypassPermissions', event: 'run.completed' });
+  });
+
+  it('a resumed session follows the switch when it flips, both ways (the adapter keeps the old mode only when it is offered)', async () => {
+    h = await acpHarness({ flavor: 'claude', script: ASKS, profile: { fullAccess: 'allowed' } });
+    expect(await runOnce({ fullAccess: false }, 'thread-1')).toMatchObject({ asked: true, mode: 'default', event: 'run.completed' });
+    expect(await runOnce({ fullAccess: true }, 'thread-1')).toMatchObject({ asked: false, mode: 'bypassPermissions', event: 'run.completed' });
+    expect(await runOnce({ fullAccess: false }, 'thread-1')).toMatchObject({ asked: true, mode: 'default', event: 'run.completed' });
+    // one session all along: the second and third runs resumed it
+    expect(h.sessions()).toHaveLength(1);
+  });
+
+  it('an adapter that does not offer bypassPermissions (as root, no IS_SANDBOX) fails the run in plain words and never asks about each command', async () => {
+    h = await acpHarness({ flavor: 'claude', script: { ...ASKS, faults: { noBypass: true } }, profile: { fullAccess: true } });
+    expect(await runOnce({})).toMatchObject({ asked: false, event: 'run.failed', error: FULL_ACCESS_NOT_OFFERED });
   });
 });
 

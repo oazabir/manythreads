@@ -1,6 +1,7 @@
 import { HERMES_GROUPS, type AgentKind, type ProfileConfig } from '../config.ts';
 import type { DriverJob } from '../drivers/types.ts';
 import { claudeToolFlags, MCP_SERVER_NAME } from '../drivers/claude-code.ts';
+import { CLAUDE_FULL_ACCESS_MODE, CODEX_FULL_ACCESS_MODE, fullAccessOn } from '../full-access.ts';
 
 // What differs between the adapters (docs/spikes/acp-measured.md): the program, how each is held to the bot's grants, the mode it must be put in, and the
 // ids of the permission options it offers. The ids are the adapter's own: the bridge answers with the id of the option whose KIND it wants, never with the
@@ -39,26 +40,16 @@ export function adapterEnv(job: DriverJob, mode: string | null): NodeJS.ProcessE
   return env;
 }
 
-/** codex-acp's start mode with no sandbox and no command questions (the `codex --yolo` equivalent; the name is the adapter's and the version is pinned). */
-export const CODEX_FULL_ACCESS_MODE = 'agent-full-access';
+export { CLAUDE_FULL_ACCESS_MODE, CODEX_FULL_ACCESS_MODE, fullAccessOn, NO_TEAM_USERS_FULL_ACCESS } from '../full-access.ts';
 
 /**
- * Whether this run's Codex runs with full access: the profile allows it (`fullAccess`) and the run does not take it back (P26-06). `true` follows the run unless it says no; `"allowed"`
- * (an enrolled server) needs the run to say yes, so the machine's key and the site's key are both turned.
+ * The mode each adapter must be put in, or null to leave it. Claude starts in `auto`, which decides permissions itself: it must be `default` (every tool outside the allowed list asks), or
+ * `bypassPermissions` with full access. Codex follows the grants; a bot with no file or shell grant stays read-only even on a full-access runner.
  */
-export function fullAccessOn(job: Pick<DriverJob, 'profile' | 'request'>): boolean {
-  if (job.profile.agent !== 'codex') return false;
-  const asked = job.request.manythreads.fullAccess;
-  if (job.profile.fullAccess === true) return asked !== false;
-  if (job.profile.fullAccess === 'allowed') return asked === true;
-  return false;
-}
-
-/** The mode each adapter must be put in, or null to leave it. Claude starts in `auto`, which decides permissions itself: it must be `default`. Codex follows the grants; a bot with no file or shell grant stays read-only even on a full-access runner. */
 export function desiredMode(job: DriverJob): string | null {
   switch (flavorOf(job.profile.agent)) {
     case 'claude':
-      return 'default';
+      return fullAccessOn(job) ? CLAUDE_FULL_ACCESS_MODE : 'default';
     case 'codex': {
       const tools = job.request.manythreads.tools;
       if (!(tools.includes('files') || tools.includes('shell'))) return 'read-only';
@@ -76,6 +67,10 @@ const CLAUDE_EXTRA_TOOLS = ['Agent', 'TaskCreate', 'TaskUpdate', 'TaskList'] as 
  * The `_meta` sent with `session/new`, `resume` and `load`. Claude: the CLI driver's grants as the adapter's `options`; `settingSources: []` and `restricted` keep the
  * operator's own settings, memory and hooks out, and `strict-mcp-config` keeps the signed-in account's claude.ai connectors out (measured: without it Gmail, Drive and
  * others were in the session). The proof is the tools the agent lists, not this object.
+ *
+ * Full access (P35-01, plan correction 1): the CLI refuses `bypassPermissions` with `--restricted`, so a full-access run drops `restricted` and says
+ * `allowDangerouslySkipPermissions: true`. What that gives up: file tools may leave the work folder and the agent may write its own settings and git config; the boundary is the pod
+ * or the team's Unix user. `settingSources: []` and `strict-mcp-config` stay, and the tools list is unchanged (full access removes questions, not the grant model).
  */
 export function sessionMeta(job: DriverJob): Record<string, unknown> | undefined {
   if (flavorOf(job.profile.agent) !== 'claude') return undefined;
@@ -84,14 +79,15 @@ export function sessionMeta(job: DriverJob): Record<string, unknown> | undefined
     if (!tools.includes(t)) tools.push(t);
     if (!allowed.includes(t)) allowed.push(t);
   }
+  const full = fullAccessOn(job);
   return {
     claudeCode: {
       options: {
         settingSources: [],
         tools,
         allowedTools: allowed,
-        extraArgs: { restricted: null, 'strict-mcp-config': null },
-        allowDangerouslySkipPermissions: false,
+        extraArgs: full ? { 'strict-mcp-config': null } : { restricted: null, 'strict-mcp-config': null },
+        allowDangerouslySkipPermissions: full,
       },
     },
   };

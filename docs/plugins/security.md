@@ -228,6 +228,27 @@ The network policy `manythreads-claude-pods` applies to every container of the p
 
 **The clone is the bot's, also for the pod's own fetch (P19-09 review).** The repo-sync container fetches into clones the bot can write. It no longer reads a clone's config or hooks: git runs with a fresh environment, in a private git folder on a memory volume that only that container mounts, and fetches the address on the project list (a clone whose origin differs is left alone). So a planted `uploadpack`, `core.sshCommand`, include, `insteadOf`, hooks folder or hook file starts nothing and moves no fetch to another address ([claude-pods](./claude-pods.md)). Not covered: the project list file sits in a volume the run container can write, so the list itself is only as trusted as the run container (the script checks every field of every line, public addresses only); the clone's files and objects are the bot's data and are only read as data.
 
+## Full access for Claude Code and Codex (P35-01)
+
+**Owner decision, 2026-11-20:** Claude Code and Codex run with **full access by default** on every pod runner and enrolled-server runner; an admin can switch it off per runner
+(binding rule: `docs/engineering/conventions.md`, "Full access for Claude Code and Codex"; plan `docs/plans/full-access-default.md`). Full access means Codex runs as
+`--dangerously-bypass-approvals-and-sandbox` (codex-acp `agent-full-access`) and Claude Code as `--dangerously-skip-permissions` (`bypassPermissions`) **without `--restricted`**,
+so commands and file edits are not asked about. What stays: the bot's tool grants (the `--tools` list), `settingSources: []` and `--strict-mcp-config` (the operator's settings,
+memory, hooks and claude.ai connectors stay out), `approvals.ask` and BOT.md approval rules, `needsApproval` on tagged tools, the platform's MCP guards (publish, deploy,
+mail), the egress proxy and the DLP guardrails. Full access removes only the agent CLI's own command and file-edit questions.
+
+| Where | The boundary of a full-access command | Needs |
+| --- | --- | --- |
+| An agent pod (`claude_cli`, `codex_cli`) | the pod: non-root (uid 1000), NetworkPolicy (the site and public port 443 only), egress proxy, no host mounts, no Kubernetes token in the run container; one pod per team | the runner's switch (the controller writes `fullAccess: true`) and a run that does not say no |
+| An enrolled server (`server_agent`, agent `claude-code` or `codex`) | the team's Unix user `mt-team-<team>`: its own home and Codex home, the shared Claude sign-in folder, the machine's network | the machine's key (`"allowed"`, the installer's default unless `--no-full-access`), team users (`teamUsers`), and the runner's switch |
+| The host bridge (a Hermes gateway runner whose bridge runs Claude Code or Codex), Hermes, the LLM gateway | never | (none) |
+
+What the owner accepted with it: a bot's commands can delete its team's work folder, write its own agent settings and git config, read the shared sign-in (every team of a runner
+or a server holds a working copy, so a bot could use or copy the account; the Runners page warns on a shared server runner), and run network calls through the egress proxy.
+Prompt injection from fetched pages now runs commands without a person seeing them; the DLP and egress guards still apply. Claude Code refuses a bypass as root unless
+`IS_SANDBOX` is set: the bridge never sets it and a profile may not set or pass it, so a root adapter fails the run rather than asking about each command. Existing runners were
+switched on once by an audited data step (`bot-runners/src/data-steps.ts`, one `bot_runner.runner.updated` per runner, the system actor).
+
 ## The Claude sign-in file
 The file an admin uploads for a Claude Code runner is a live login. It is read once in the upload route, handed to the pod provider and dropped; it lives only in
 the runner's Secret and the pod's state volume. Never in the database, an event, an audit row, a log or an answer (tests plant a canary string in a made-up file
