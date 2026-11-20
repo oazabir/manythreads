@@ -194,3 +194,9 @@ accepts a team's write-back (if Codex runs correctly with a copy whose refresh t
 shared server; until then, teams that distrust each other should not share a server's Codex sign-in. Same for Claude (`auth/claude`). **Also:** in the gate's
 window all teams' Codex runs go one at a time (could last long on a shared server); CI does not run `container-test` today (a new job); deleting the shared
 sessions loses thread context (they could be sorted per team by `cwd` instead).
+
+## Owner decision (2026-11-20): accept the shared sign-in for now
+Asked about R1 (with full access, a team on a shared server holds a working copy of the one Claude/Codex sign-in): **accept for now.** Only Engineering uses
+the devbox server today. Build the per-team Codex folders as planned; the Runners page warns that teams sharing a server share its sign-in; per-team sign-ins
+become a later Phase 35 row.
+

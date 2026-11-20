@@ -965,7 +965,7 @@ A pass over the screens people use all day (channel, composer, message kinds, th
 | P34-14 | Approvals (owner 2026-11-19): `approvals.ask` takes an optional `approvers` list (@handle, role:<tag>, person:<id>) of team members who can read the conversation; when a bot names who decides, only they answer (the person it works for only if named); asks without names and command approvals keep the 0006 rule; the card names whom it waits for | Built, live (f71c2640; checked live: a bot named @nadia, Omar cannot decide, the card says "Waiting for Nadia to answer.") |
 
 
-### Phase 35 · An engineering team that hands work to AI (owner, 2026-11-20) — 0 built, 0 partly, 9 not built
+### Phase 35 · An engineering team that hands work to AI (owner, 2026-11-20) — 0 built, 0 partly, 10 not built
 
 The owner asked (2026-11-20) for the features that let an engineering team make the best use of AI, to be added and built after the approved Next ten. The six P26 proofs showed the bots can deliver; what is left is that a person still babysits each delivery, reviews it outside the platform, cannot see what it cost, and copies work in by hand. Each row gets its own plan and independent review when it starts (`docs/plans/`), as every task does.
 
@@ -980,6 +980,7 @@ The owner asked (2026-11-20) for the features that let an engineering team make 
 | P35-07 | **Incidents:** `/incident <title>` opens a channel, pages the on-call role, the alert-triage bot gathers logs and a timeline in the thread, status updates on a rhythm, and a post-mortem page drafted at the end (P18-07) | Not built |
 | P35-08 | **Screen sharing in calls** for pairing and demos (P17-02 with the camera part of P17-01), after the call card of the Next ten (P15-25..28) | Not built |
 | P35-09 | **Ready for a second team:** the one-line install proved on a fresh VM (P27-21..24, needs the owner's VM, GHCR token and model key), Codex for several teams on one server (P31-01), async stand-ups by DM (P18-04) | Not built |
+| P35-10 | **One Claude/Codex sign-in per team on a shared server** (owner 2026-11-20 accepted the shared sign-in for now; with full access a team on a shared server holds a working copy of the one sign-in, `docs/plans/codex-teams-and-oom.md` R1); until then the Runners page warns that teams sharing a server share its sign-in | Not built |
 
 ---
 
