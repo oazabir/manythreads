@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/api/client';
 import { id, meeting, person, summary } from './meetings-fixtures';
 
-// P33: the calmer channel header. The members panel (who is in, who is not, the filter, Add), the voice room card (Join, End room, nothing when not live) and the
+// P33: the calmer channel header. The members panel (who is in, who is not, the filter, Add), the call card (Join call, End call, nothing when not live) and the
 // voice icon (start, scroll to the room's message, join straight away). The rules themselves (split, filter, which action) are plain functions; the rest renders the real components.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -57,7 +57,7 @@ vi.mock('../src/api/endpoints', () => ({
   addChannelMember: (channelId: string, personId: string) => h.addChannelMember(channelId, personId),
 }));
 vi.mock('../src/shell/context', () => ({ useShell: () => ({ guest: h.state.guest, team: { slug: 'engineering' } }) }));
-vi.mock('../src/channels/hooks', () => ({ usePeople: () => ({ me: { personId: OMAR, actorId: h.state.selfActor } }) }));
+vi.mock('../src/channels/hooks', () => ({ usePeople: () => ({ me: { personId: OMAR, actorId: h.state.selfActor }, byActor: () => undefined }) }));
 vi.mock('../src/kernel/panel', () => ({
   usePanel: () => ({ push: (e: { type: string; id: string }) => void h.state.pushed.push(e), top: () => h.state.entries.at(-1) ?? null, entries: h.state.entries, close: h.close, back: h.back }),
 }));
@@ -75,7 +75,7 @@ vi.mock('../src/meetings/store', () => ({
 }));
 
 const { splitMembers, matchesFilter, canAddMembers, nextToFocus, noAddNote } = await import('../src/shell/membersModel');
-const { roomOfMessage, roomCardFacts, endQuestion, voiceIconAction } = await import('../src/meetings/roomCard');
+const { roomOfMessage, callCardFacts, cardFromSummary, endQuestion, voiceIconAction } = await import('../src/meetings/roomCard');
 const { MembersPanel } = await import('../src/shell/MembersPanel');
 const { MembersButton } = await import('../src/shell/MembersButton');
 const { chipPlan } = await import('../src/meetings/schedule/model');
@@ -302,7 +302,7 @@ describe('the Members panel', () => {
   });
 });
 
-describe('the voice room card', () => {
+describe('the call card of an older start message without a stamp (P33 fallback, from the live list)', () => {
   const THREAD = id(300);
   const live = (startedBy = OMAR_ACTOR) => summary([person(id(1), 'Omar'), person(id(2), 'Nadia')], { startedBy: startedBy as never, channelId: CHANNEL as never });
   const mount = (messageId = THREAD): void => void act(() => root.render(createElement(VoiceRoomCard, { messageId, channelId: CHANNEL })));
@@ -315,24 +315,38 @@ describe('the voice room card', () => {
     expect(roomOfMessage([{ ...room, meeting: meeting({ threadRootId: null }) }], THREAD)).toBeUndefined();
   });
 
-  it('says who is in the room and who may end it', () => {
+  it('says who is in the call and who may end it', () => {
     const room = live(id(2));
-    expect(roomCardFacts(room, id(2), null)).toMatchObject({ countText: '2 in the room', canEnd: true, inRoom: false });
-    expect(roomCardFacts(room, id(1), null).canEnd).toBe(false);
-    expect(roomCardFacts(room, id(2), room.meeting.id).inRoom).toBe(true);
-    expect(endQuestion(3)).toBe('End the voice room for everyone? The 3 people in it will leave.');
+    const card = cardFromSummary(room, 'Nadia');
+    expect(callCardFacts(card, { selfActor: id(2), joinedMeetingId: null })).toMatchObject({ countText: '2 in the call', canEnd: true, inCall: false, presentCount: 2 });
+    expect(callCardFacts(card, { selfActor: id(1), joinedMeetingId: null }).canEnd).toBe(false);
+    expect(callCardFacts(card, { selfActor: id(2), joinedMeetingId: room.meeting.id }).inCall).toBe(true);
+    expect(endQuestion(3)).toBe('End the call for everyone? The 3 people in it will leave.');
   });
 
   it('shows Join while the room is live, and joining goes to that room', () => {
     h.state.live = live('someone-else');
     mount();
     expect(must('room-card').textContent).toContain('Voice room · 10:00');
-    expect(must('room-card-count').textContent).toContain('2 in the room');
+    expect(must('room-card-count').textContent).toContain('2 in the call');
+    expect(must('room-card-join').textContent).toBe('Join call');
     click(must('room-card-join'));
     expect(h.joinRoom).toHaveBeenCalledWith(meeting().id, CHANNEL);
   });
 
-  it('shows End room to the person who started it only', () => {
+  it('joins from a press anywhere on the card, but not from End call or while the question is open', () => {
+    h.state.live = live('a-omar');
+    mount();
+    click(must('room-card').querySelector<HTMLElement>('.room-card-title')!);
+    expect(h.joinRoom).toHaveBeenCalledTimes(1);
+    h.joinRoom.mockClear();
+    click(must('room-card-end'));
+    expect(h.joinRoom).not.toHaveBeenCalled();
+    click(must('room-end-confirm').querySelector<HTMLElement>('.room-end-q')!);
+    expect(h.joinRoom).not.toHaveBeenCalled();
+  });
+
+  it('shows End call to the person who started it only', () => {
     h.state.live = live('someone-else');
     mount();
     expect(q('room-card-end')).toBeNull();
@@ -351,11 +365,11 @@ describe('the voice room card', () => {
     expect(host.innerHTML).toBe('');
   });
 
-  it('says "You are in this room" instead of offering Join when the reader is in it', () => {
+  it('says "You are in this call" instead of offering Join when the reader is in it', () => {
     h.state.live = live('a-omar');
     h.state.call = { phase: 'connected', meeting: { id: meeting().id, channelId: CHANNEL, startedBy: 'a-omar' } };
     mount();
-    expect(must('room-card-in').textContent).toContain('You are in this room');
+    expect(must('room-card-in').textContent).toContain('You are in this call');
     expect(q('room-card-join')).toBeNull();
   });
 
@@ -364,7 +378,7 @@ describe('the voice room card', () => {
     mount();
     click(must('room-card-end'));
     expect(h.endMeeting).not.toHaveBeenCalled();
-    expect(must('room-end-confirm').textContent).toContain('End the voice room for everyone? The 2 people in it will leave.');
+    expect(must('room-end-confirm').textContent).toContain('End the call for everyone? The 2 people in it will leave.');
     expect(q('room-card-join')).toBeNull();
     click(must('room-end-confirm-yes'));
     await settle();
@@ -373,7 +387,7 @@ describe('the voice room card', () => {
     expect(h.refresh).toHaveBeenCalled();
   });
 
-  it('stays on "Ending..." until the list of live rooms has been asked again', async () => {
+  it('stays on "Ending..." until the list of live calls has been asked again', async () => {
     h.state.live = live('a-omar');
     let answer: () => void = () => undefined;
     h.refresh.mockReturnValueOnce(new Promise<void>((r) => (answer = r)));
@@ -388,14 +402,21 @@ describe('the voice room card', () => {
     expect(q('room-end-confirm')).toBeNull();
   });
 
-  it('says it could not end the room when the room is still live after the new list', async () => {
+  it('treats a successful end as ended even when the new list still has the call, and shows a problem only when the end request fails', async () => {
     h.state.live = live('a-omar');
     h.state.rooms = [h.state.live];
     mount();
     click(must('room-card-end'));
     click(must('room-end-confirm-yes'));
     await settle();
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe('Could not end the voice room. Try again.');
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(q('room-end-confirm')).toBeNull();
+    h.endMeeting.mockReset().mockRejectedValueOnce(new ApiError({ code: 'internal', message: 'boom', status: 500 }));
+    click(must('room-card-end'));
+    click(must('room-end-confirm-yes'));
+    await settle();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('Could not end the call. Try again.');
+    expect(q('room-end-confirm')).not.toBeNull();
   });
 
   it('closes the question and asks again for the list when the room is already over (404) or just ended (409)', async () => {
@@ -444,7 +465,7 @@ describe('the voice room card', () => {
     expect(q('room-card-end')).not.toBeNull();
   });
 
-  it('Cancel gives the keyboard back to the End room button', () => {
+  it('Cancel gives the keyboard back to the End call button', () => {
     h.state.live = live('a-omar');
     mount();
     click(must('room-card-end'));
@@ -453,7 +474,7 @@ describe('the voice room card', () => {
     expect(document.activeElement).toBe(must('room-card-end'));
   });
 
-  it('Esc gives the keyboard back to the End room button', () => {
+  it('Esc gives the keyboard back to the End call button', () => {
     h.state.live = live('a-omar');
     mount();
     click(must('room-card-end'));

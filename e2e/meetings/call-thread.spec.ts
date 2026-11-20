@@ -45,6 +45,9 @@ test('joining opens the call thread in the right panel; Nadia and Rafi write in 
   rootId = room.thread_root_id!;
   await expect(threadOf(nadia)).toBeVisible();
   await expect(threadOf(nadia)).toHaveAttribute('data-root-id', rootId);
+  // the thread's root is the call card while the call is live, never the stored start text (P15-26, correction 8)
+  await expect(threadOf(nadia).getByTestId('room-card')).toBeVisible();
+  await expect(threadOf(nadia)).not.toContainText('Started a call:');
 
   rafi = await openAs(browser, playwright, stack, 'rafi');
   await enterRoom(rafi);
@@ -126,4 +129,6 @@ test('after the call the thread stays and the meeting page links to it', async (
   await expect(threadOf(a)).toContainText('Can everyone see the build link?');
   await expect(threadOf(a)).toContainText('release-checklist.md');
   await expect(threadOf(a)).toContainText('Answering:');
+  // once the call is over, the root is its one muted event line
+  await expect(threadOf(a).locator('[data-testid="call-event"][data-state="ended"]')).toContainText('Nadia started a call');
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { createContext, useCallback, useMemo, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 
 /**
  * Touch gestures of a message row on a phone (P21-23, B10). A finger dragged to the right across a row opens its thread to reply; a finger held still
@@ -53,7 +53,13 @@ export function releasePress(p: Press, x: number, y: number): 'reply' | 'none' {
 }
 
 /** What a press on this part of a row must leave alone: a link, a button, a picture, a text box: they have their own touch behaviour. */
-export const GESTURE_IGNORES = 'a,button,textarea,input,select,summary,video,audio,iframe,[contenteditable],.acts,.edit-box,.poll,.vpop,.msg-imgs,.lp-card';
+export const GESTURE_IGNORES = 'a,button,textarea,input,select,summary,video,audio,iframe,[contenteditable],.acts,.edit-box,.poll,.vpop,.msg-imgs,.lp-card,.room-card';
+
+/**
+ * The row's `justFired()` for what is drawn inside it: a control that acts on a plain click (the call card joins on a press anywhere on it) ignores the click the
+ * browser makes out of a held finger or a swipe.
+ */
+export const RowGestureContext = createContext<() => boolean>(() => false);
 
 type Options = {
   /** False where the row has nothing to open (inside a thread, or a message nobody can reply to). */

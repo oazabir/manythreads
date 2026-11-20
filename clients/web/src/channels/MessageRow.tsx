@@ -7,7 +7,9 @@ import { AuthorLine } from '../components/AuthorLine';
 import { MessageVia } from './MessageVia';
 import { RunOriginCard } from './RunOriginCard';
 import { TaskView } from '../taskview/TaskView';
-import { VoiceRoomCard } from '../meetings/VoiceRoomCard';
+import { CallCardMessage, VoiceRoomCard } from '../meetings/VoiceRoomCard';
+import { callCards } from '../meetings/callCards';
+import { callCopyText } from '../meetings/roomCard';
 import { TodoMessage } from './todo-card/TodoMessage';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { useCoarsePointer } from '../shell/useCoarsePointer';
@@ -34,7 +36,7 @@ import { splitAttachments } from './images';
 import { PendingVoice } from './voice/PendingVoice';
 import { VoicePlayer, VoiceTranscript } from './voice/VoicePlayer';
 import { voiceClip, withoutClip } from './voice/playerFormat';
-import { useRowGestures } from './gestures';
+import { RowGestureContext, useRowGestures } from './gestures';
 import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
@@ -144,6 +146,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const authorPerson = m.author?.kind === 'bot' || m.author?.kind === 'system' ? undefined : people.byActor(m.authorId);
   const mark = authorMark(m.author);
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
+  // a call's start message (P15-26): the call card or its event line in place of the text, without the author's picture and name (the card says who started it)
+  const callMeta = deleted ? undefined : m.meta.meeting;
   const [tapped, setTapped] = useState(false);
   // a long text is cut to four lines with "Show more"; the rows opened in this tab stay open (P21-03)
   const [opened, setOpened] = useState(() => isExpanded(m.id));
@@ -170,7 +174,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     return () => clearTimeout(t);
   }, [done]);
   // measured once per text, when the row is drawn (never on hover): taller than six lines is cut
-  const plainText = !deleted && editing === null && !m.meta.answer && !m.meta.surfaceRef && !m.meta.todoRef && !m.poll;
+  const plainText = !deleted && editing === null && !m.meta.answer && !m.meta.surfaceRef && !m.meta.todoRef && !m.meta.meeting && !m.poll;
   useLayoutEffect(() => {
     const el = txt.current;
     if (el && plainText) setTall(el.scrollHeight > CLAMP_LINES * LINE_PX + 2);
@@ -217,8 +221,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     setMenu(null);
     setConfirm(false);
   }, box);
-  // a message that carries an Answer is deleted and shared again, never edited (the server answers 409): its text is the payload's body
-  const canEdit = own && !deleted && m.meta.answer === undefined && m.poll === undefined;
+  // a message that carries an Answer is deleted and shared again, never edited (the server answers 409): its text is the payload's body. A call's start
+  // message is the call card: its stored text is never shown, so it is not edited either
+  const canEdit = own && !deleted && m.meta.answer === undefined && m.meta.meeting === undefined && m.poll === undefined;
   const canDelete = !deleted && (own || people.canModerate);
   useEffect(() => {
     if (!canEdit) return;
@@ -268,7 +273,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const bar = rowBar({ coarse, hot, tapped, menuOpen: menu !== null, deleted });
   return (
     <div
-      className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''} ${continued ? 'run' : ''}`}
+      className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''} ${continued ? 'run' : ''} ${callMeta ? 'msg-call' : ''}`}
       data-testid="message"
       data-message-id={m.id}
       data-has-thread={hasThread ? '' : undefined}
@@ -356,7 +361,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           {menu === 'more' ? (
             <RowMenu className="more-menu" label="Message">
               <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyLink(); }}>Copy link<kbd>{COPY_LINK_KEYS}</kbd></button>
-              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyText(m.bodyPlain || m.body).then((ok) => setDone(ok ? 'Text copied' : 'Could not copy the text')); }}>Copy text</button>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyText(callMeta ? callCopyText(callCards().card(callMeta.meetingId), name, m.createdAt) : m.bodyPlain || m.body).then((ok) => setDone(ok ? 'Text copied' : 'Could not copy the text')); }}>Copy text</button>
               <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setForwarding(true); }}>Forward…</button>
               {teamSlug !== null && teamSlug !== GUEST_SLUG ? (
                 <button type="button" role="menuitem" className="menu-item" data-testid="send-to-memory" onClick={() => { setMenu(null); setSendingToMemory(true); }}>Send to memory…</button>
@@ -377,7 +382,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           ) : null}
         </div>
       )}
-      {continued ? (
+      {callMeta ? (
+        // the column of the picture stays empty: the card and the event line start where text starts
+        <span className="msg-call-gutter" aria-hidden="true" />
+      ) : continued ? (
         <time className="run-time" dateTime={m.createdAt} title={fullStamp(m.createdAt)} data-vt-mask>{clock(m.createdAt)}</time>
       ) : authorPerson ? (
         <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} /></PersonLink>
@@ -385,11 +393,15 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} avatar={m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null} {...(m.author?.kind === 'bot' ? { badge: 'bot' as const } : {})} />
       )}
       <div className="msg-main">
-        <AuthorLine name={name} person={authorPerson ? { personId: authorPerson.personId, email: authorPerson.email } : undefined} mark={mark} createdAt={m.createdAt} continued={continued}>
-          {m.meta.via ? <MessageVia via={m.meta.via} /> : null}
-          {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
-          {done ? <span className="row-done" role="status">{done}</span> : null}
-        </AuthorLine>
+        {callMeta ? (
+          done ? <span className="row-done msg-call-done" role="status">{done}</span> : null
+        ) : (
+          <AuthorLine name={name} person={authorPerson ? { personId: authorPerson.personId, email: authorPerson.email } : undefined} mark={mark} createdAt={m.createdAt} continued={continued}>
+            {m.meta.via ? <MessageVia via={m.meta.via} /> : null}
+            {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
+            {done ? <span className="row-done" role="status">{done}</span> : null}
+          </AuthorLine>
+        )}
         {m.author?.kind === 'bot' && m.meta.runId && !deleted ? <RunOriginCard runId={m.meta.runId} /> : null}
         {clip ? (
           // the player row and, under it, the transcript the server writes as the message's own text (no card, P32-10); the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
@@ -462,6 +474,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             messageId={m.id}
             tools={answerTools !== undefined && m.channelId === answerTools.channelId && m.meta.answer.answeredFor.personId === people.me?.personId ? answerTools : undefined}
           />
+        ) : callMeta ? (
+          // a call's start message: the card while the call is live, one muted event line once it is over (P15-26, P34-02); in the thread pane too
+          <RowGestureContext.Provider value={justFired}>
+            <CallCardMessage meetingId={callMeta.meetingId} channelId={m.channelId} starterName={name} startedAt={m.createdAt} />
+          </RowGestureContext.Provider>
         ) : m.meta.meetingNotes ? (
           // the note-taker's message after a meeting: its words with Open the notes, Share and Save to team meeting notes (P15-23)
           <MeetingNotesMessage meetingId={m.meta.meetingNotes.meetingId} body={m.body} teamSlug={teamSlug} />
@@ -488,8 +505,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             Also sent from a thread · View thread
           </button>
         ) : null}
-        {/* the card of the voice room this message started, while that room is live (P33-03) */}
-        {!inThread && !deleted ? <VoiceRoomCard messageId={m.id} channelId={m.channelId} /> : null}
+        {/* an older start message with no stamp: P33's card from the live list, while that room is live (removed in S7) */}
+        {!inThread && !deleted && !m.meta.meeting ? <VoiceRoomCard messageId={m.id} channelId={m.channelId} starterName={name} /> : null}
         {deleted ? null : <MessageImages files={attached.images} />}
         {!deleted && attached.files.length > 0 ? (
           <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>

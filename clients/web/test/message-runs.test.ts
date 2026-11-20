@@ -101,6 +101,14 @@ describe('continuesRun (P21-01)', () => {
     expect(continuesRun(msg({ forward: {} as never }), cur)).toBe(false);
   });
 
+  it('a call\'s start message (stamped `meta.meeting`, P15-26) stands alone: it joins no run, and the next message by the same person starts a new one', () => {
+    const stamped = (over: Partial<ChannelMessage> = {}): ChannelMessage => msg({ meta: { meeting: { meetingId: uuid(700) } } as never, ...over });
+    expect(continuesRun(msg(), stamped({ createdAt: at(1_000) }))).toBe(false);
+    expect(continuesRun(stamped(), msg({ createdAt: at(1_000) }))).toBe(false);
+    expect(continuesRun(stamped(), stamped({ createdAt: at(1_000) }))).toBe(false);
+    expect(pendingContinues(stamped(), uuid(2), at(1_000))).toBe(false);
+  });
+
   it('a deleted message and a system message never join', () => {
     expect(continuesRun(msg({ deletedAt: at(10) }), msg({ createdAt: at(1_000) }))).toBe(false);
     expect(continuesRun(msg(), msg({ createdAt: at(1_000), deletedAt: at(2_000) }))).toBe(false);

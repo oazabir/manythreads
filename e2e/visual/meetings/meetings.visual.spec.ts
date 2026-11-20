@@ -115,7 +115,7 @@ async function intoRoom(page: Page, channel: string): Promise<void> {
 }
 
 /**
- * A room in `channel` made through the routes (as the seed does), run by `fn`, and always ended afterwards. Its "Started a voice room" message is taken
+ * A room in `channel` made through the routes (as the seed does), run by `fn`, and always ended afterwards. Its start message (the call card) is taken
  * out again, so the next plate finds the channel as the seed left it whatever ran before it (a failed test also restarts the worker and the stack).
  */
 async function withRoom(channel: string, organizer: StackApi, fn: (meetingId: string) => Promise<void>): Promise<void> {

@@ -63,15 +63,15 @@ export function filterTargets(targets: readonly ForwardTarget[], query: string):
   return targets.filter((t) => t.label.toLowerCase().replace(/^#/, '').includes(q) || t.hint.toLowerCase().includes(q));
 }
 
-/** The newest message of the reader's own that the Up arrow in an empty composer may open for editing: not deleted, not a bot's Answer. */
+/** The newest message of the reader's own that the Up arrow in an empty composer may open for editing: not deleted, not a bot's Answer, not a call's start message. */
 export function lastEditableOwn(
-  items: readonly { id: string; authorId: string; deletedAt: string | null; meta: { answer?: unknown } }[],
+  items: readonly { id: string; authorId: string; deletedAt: string | null; meta: { answer?: unknown; meeting?: unknown } }[],
   selfActor: string | null,
 ): string | null {
   if (selfActor === null) return null;
   for (let i = items.length - 1; i >= 0; i--) {
     const m = items[i];
-    if (m && m.authorId === selfActor && m.deletedAt === null && m.meta.answer === undefined) return m.id;
+    if (m && m.authorId === selfActor && m.deletedAt === null && m.meta.answer === undefined && m.meta.meeting === undefined) return m.id;
   }
   return null;
 }
@@ -83,7 +83,7 @@ export function lastEditableOwn(
 export const NO_THREAD_CLICK = [
   'a,button,textarea,.acts,.dlg-scrim,.vpop,.pcard-avatar',
   'input,select,label,summary,details,img,video,audio,iframe,[role=button],[role=menu],[contenteditable]',
-  '.m,.tv,.chref,.show-more,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap',
+  '.m,.tv,.chref,.show-more,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap,.room-card',
 ].join(',');
 
 /** A click on a message row opens its thread only for a plain single click on the row's own text, space and picture-free parts. */

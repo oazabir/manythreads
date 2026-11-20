@@ -36,9 +36,12 @@ test('Nadia starts a room, Rafi joins, both call bars show both people', async (
   await expect(nadia.page.getByTestId('call-face')).toHaveCount(1);
 
   rafi = await openAs(browser, playwright, stack, 'rafi');
-  // the room is live for Rafi: the icon says so (with a green dot), and the card under "Started a voice room" has Join and shows who is in it
+  // the room is live for Rafi: the icon says so (with a green dot), and the call card drawn in place of its start message has Join call, Live and who started it
   await expect(rafi.page.getByTestId('call-start')).toHaveAccessibleName('A voice room is live: join it from its message');
   await expect(rafi.page.getByTestId('room-card')).toBeVisible();
+  await expect(rafi.page.getByTestId('room-card-join')).toHaveText('Join call');
+  await expect(rafi.page.getByTestId('room-card-live')).toHaveText(/^Live \d+:\d{2}/);
+  await expect(rafi.page.getByTestId('room-card-by')).toContainText('Started by Nadia');
   await expect(rafi.page.getByTestId('room-card-end')).toHaveCount(0);
   await enterRoom(rafi);
 
@@ -102,4 +105,8 @@ test('Rafi leaves, then Nadia ends the room for everyone', async () => {
   // nobody is in a live room any more: the channel offers a new one
   await expect(a.page.getByTestId('call-start')).toHaveAccessibleName('Start a voice room');
   await expect(a.page.getByTestId('room-card')).toHaveCount(0);
+  // the start message is now one muted event line: who started it, how long, how many joined (P34-02)
+  const line = a.page.locator('[data-testid="call-event"][data-state="ended"]').last();
+  await expect(line).toBeVisible();
+  await expect(line).toContainText(/Nadia started a call · \d{2}:\d{2} · .+ · 2 joined/);
 });

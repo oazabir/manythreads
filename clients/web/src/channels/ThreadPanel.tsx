@@ -30,6 +30,8 @@ import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRo
 import { lastEditableOwn } from './messageActions';
 import { ScheduledStrip } from './ScheduledStrip';
 import { channelStore, threadKey } from './store';
+import { useCallCard } from '../meetings/callCards';
+import { startLine } from '../meetings/roomCard';
 import { atBottom, jumpAriaLabel, jumpLabel, newReplyCount } from './threadJump';
 
 /** The right-panel entry `thread:<root message id>`. */
@@ -392,7 +394,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     <div className={`thread ${variant}`} data-testid="thread-view" data-root-id={rootId}>
       {variant === 'main' ? (
         <div className="chead thread-head">
-          <h3 className="thread-title">{threadState?.title ?? root.bodyPlain.slice(0, 80)}</h3>
+          <h3 className="thread-title">{threadState?.title ?? (root.meta.meeting ? <CallThreadTitle meetingId={root.meta.meeting.meetingId} starterName={people.byActor(root.authorId)?.name ?? root.author?.displayName ?? 'Someone'} startedAt={root.createdAt} /> : root.bodyPlain.slice(0, 80))}</h3>
           {channelName || tl.channel?.kind === 'dm' ? <span className="topic" data-testid="thread-place">{channelName ? `Thread in #${channelName}` : 'Thread in a direct message'}</span> : null}
           <div className="right chead-tools thread-tools" data-testid="thread-tools">{tools}</div>
         </div>
@@ -425,3 +427,9 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
 const AWAIT_REPLY_MS = 3 * 60_000;
 
 const isThreadHidden = (status: number | undefined): boolean => status === 403 || status === 404 || status === 400;
+
+/** The title of a call's thread (its root is the call's start message, P15-26): the call's title once its card is known, else "Omar started a call · 22:14", never the stored start text. */
+function CallThreadTitle({ meetingId, starterName, startedAt }: { meetingId: string; starterName: string; startedAt: string }) {
+  const entry = useCallCard(meetingId);
+  return <>{entry?.status === 'ok' ? entry.card.title : startLine(starterName, startedAt)}</>;
+}

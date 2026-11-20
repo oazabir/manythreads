@@ -130,6 +130,17 @@ export function transcriptShows(voice: VoiceMeta): { endMs: number; seconds: num
   return { endMs, seconds: Math.floor(endMs / 1000), longer: voice.durationMs > endMs };
 }
 
+/**
+ * The one small caption under the server's words (owner decision b, 2026-11-19): only what is unusual is said. Words that cover the whole clip need no caption
+ * ("Transcript" under every voice message repeated itself); words that stop before the clip does say so ("Transcript of the first 20 seconds"). A transcript the
+ * sender corrected is their own text and gets none. Failed, missing and device transcripts keep their own lines.
+ */
+export function transcriptCaption(voice: VoiceMeta): { lead: string; first: string } | null {
+  if (voice.transcript !== 'server') return null;
+  const shows = transcriptShows(voice);
+  return shows.longer ? { lead: 'Transcript', first: ` of the first ${shows.seconds} seconds` } : null;
+}
+
 /** `0:00–0:10`: the stretch of the clip the transcript covers. */
 export function rangeLabel(voice: VoiceMeta): string {
   return `0:00\u2013${formatClock(transcriptShows(voice).endMs)}`;

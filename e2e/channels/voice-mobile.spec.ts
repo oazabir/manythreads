@@ -54,7 +54,7 @@ test('hold to record, release to send: no preview, the flat voice message fits t
     const row = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
     await expect(row).toBeVisible();
     await expect(row.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
-    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript$/);
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveCount(0);
 
     // the voice message is flat (P32-10): no card, inside the row and the screen, its left edge at the message text's; the play button is finger-sized
     const card = (await row.getByTestId('voice-message').boundingBox())!;
@@ -74,10 +74,11 @@ test('hold to record, release to send: no preview, the flat voice message fits t
     const player = (await row.getByTestId('voice-player').boundingBox())!;
     expect(words.y).toBeGreaterThanOrEqual(player.y + player.height - 1);
     expect(Math.abs(words.x - player.x)).toBeLessThanOrEqual(1);
-    // the length and the played dot are there; the sent time and a second picture are not
+    // the length is there (it says whether it was played; no played dot); the sent time and a second picture are not
     await expect(row.getByTestId('voice-time')).toBeVisible();
     await expect(row.getByTestId('voice-sent')).toHaveCount(0);
-    await expect(row.getByTestId('voice-badge')).toBeVisible();
+    await expect(row.getByTestId('voice-played')).toHaveAccessibleName('Not played yet');
+    await expect(row.locator('.vp-heard')).toHaveCount(0);
     await expect(row.getByTestId('voice-player').locator('.av')).toHaveCount(0);
     const speed = (await row.getByTestId('voice-speed').boundingBox())!;
     expect(speed.width).toBeGreaterThanOrEqual(44);

@@ -6,9 +6,18 @@ export const RUN_GAP_MS = 5 * 60_000;
 
 type RunMessage = Pick<ChannelMessage, 'authorId' | 'createdAt' | 'deletedAt' | 'replyCount' | 'reactions' | 'meta' | 'author' | 'forward' | 'poll'>;
 
-/** A message that must show its own header: an Answer, a screen, a poll or a forward is a card, not a line of talk. */
-const standsAlone = (m: RunMessage): boolean =>
-  m.deletedAt !== null || m.meta.answer !== undefined || m.meta.surfaceRef !== undefined || m.poll !== undefined || m.forward !== undefined || m.author?.kind === 'system';
+/**
+ * A message that never shares a run: an Answer, a screen, a poll or a forward is a card, not a line of talk, and a call's start message (`meta.meeting`, P15-26) is
+ * the call card or its event line, drawn without the author's picture, so neither it nor the message after it joins a run.
+ */
+export const standsAlone = (m: RunMessage): boolean =>
+  m.deletedAt !== null ||
+  m.meta.answer !== undefined ||
+  m.meta.surfaceRef !== undefined ||
+  m.meta.meeting !== undefined ||
+  m.poll !== undefined ||
+  m.forward !== undefined ||
+  m.author?.kind === 'system';
 
 /**
  * Whether a message this tab is still sending (`createdAt` is the tab's clock) continues the run of `prev`, the message or sending row above it: the reader's

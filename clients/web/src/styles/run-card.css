@@ -657,9 +657,9 @@
   font-weight: 400;
 }
 
+/* the run's summary line keeps to the text column on the phone as on desktop (P34-02): a row's picture column is there at every width */
 @media (width <= 480px) {
-  .rc.rcCont,
-  .rcEnd {
+  .rc.rcCont {
     margin-inline-start: 0;
   }
 

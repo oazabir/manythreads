@@ -4,14 +4,15 @@ import type { VoiceMeta } from '@manythreads/shared';
 import { proIcon } from '../../components/proicon';
 import { isApiError } from '../../api/client';
 import { channelStore } from '../store';
-import { BAR_COUNT, barHeights, formatClock, playedBars, positionAt, rangeLabel, seekForKey, speedAria, speedLabel, transcriptNote, transcriptShows, valueText } from './playerFormat';
+import { BAR_COUNT, barHeights, formatClock, playedBars, positionAt, rangeLabel, seekForKey, speedAria, speedLabel, transcriptCaption, transcriptNote, valueText } from './playerFormat';
 import { isPlayed, markPlayed, subscribePlayed } from './played';
 import { usePlayback } from './usePlayback';
 
 /*
  * The voice message a row draws (P14-17, flattened in P32-10): no card. One compact row (play and pause, a waveform with a dot at the play position that
- * is also the seek bar, the length, a small dot that is filled until this reader has played the message, and a speed button as plain text), and under it
- * the transcript the server writes as the message's ordinary text with one small muted caption after it (decision D13).
+ * is also the seek bar, the length, which is quieter until this reader has played the message and darker and bolder after (owner decision b: no "played" dot), and a speed
+ * button as plain text), and under it the transcript the server writes as the message's ordinary text, with a small muted caption only when the words cover
+ * part of the clip (decision D13, owner decision b).
  * Everything works from the keyboard (Space or Enter plays, the arrows move by five seconds, Home and End jump) and nothing needs a hover.
  * The clip is fetched on the first press, not when the row is drawn. See `usePlayback.ts` for how it plays.
  */
@@ -38,7 +39,7 @@ export function VoicePlayer({ voice, who, messageId }: { voice: VoiceMeta; who?:
   const played = playedBars(p.positionMs, voice.durationMs);
   const name = who ? `Voice message from ${who}` : 'Voice message';
   const fraction = voice.durationMs > 0 ? Math.min(1, Math.max(0, p.positionMs / voice.durationMs)) : 0;
-  // the dot after the length is filled until this reader plays the message
+  // the length is quieter until this reader plays the message
   const heard = useSyncExternalStore(subscribePlayed, () => (messageId ? isPlayed(messageId) : false), () => false);
   useEffect(() => {
     if (p.playing && messageId) markPlayed(messageId);
@@ -102,12 +103,11 @@ export function VoicePlayer({ voice, who, messageId }: { voice: VoiceMeta; who?:
         ))}
         <span className="vp-dot" aria-hidden="true" style={{ left: `${(fraction * 100).toFixed(2)}%` }} data-testid="voice-dot" />
       </div>
-      {/* the length and, after it, a small dot that is filled until this reader has played the message and an empty ring after: one unit, so a wrap never splits them */}
-      <span className="vp-clock">
+      {/* the length: quieter until this reader has played the message, darker and bolder after (not by colour alone); "Played" on hover and for a screen reader */}
+      <span className={`vp-clock ${heard ? 'heard' : ''}`} role="img" aria-label={heard ? 'Played' : 'Not played yet'} title={heard ? 'Played' : undefined} data-testid="voice-played">
         <span className="vp-time" aria-hidden="true" data-testid="voice-time">
           {formatClock(started ? p.positionMs : voice.durationMs)}
         </span>
-        <span className={`vp-heard ${heard ? 'heard' : ''}`} role="img" aria-label={heard ? 'played' : 'not played yet'} data-testid="voice-badge" />
       </span>
       <button type="button" className="vp-speed" aria-label={speedAria(p.speed)} onClick={p.cycleSpeed} data-testid="voice-speed">
         {speedLabel(p.speed)}
@@ -165,16 +165,17 @@ export function VoiceTranscript({ voice, body, own, channelId, rootId, messageId
       );
     case 'server':
     case 'edited': {
-      const shows = transcriptShows(voice);
-      const first = voice.transcript === 'server' && shows.longer;
+      const caption = transcriptCaption(voice);
       return (
         <div className="vt" data-testid="voice-transcript" data-state={voice.transcript}>
           <div className="vt-body">{body}</div>
-          {/* the one small caption after the words: what they are, and (a long clip) how much of the clip they cover */}
-          <p className="vt-cap" data-testid="voice-transcript-heading" title={`Transcript · ${rangeLabel(voice)}`}>
-            {voice.transcript === 'edited' ? 'Transcript (edited)' : 'Transcript'}
-            {first ? <span data-testid="voice-first-seconds">{` of the first ${shows.seconds} seconds`}</span> : null}
-          </p>
+          {/* a caption only when it says something unusual: the words cover only the first seconds of a long clip */}
+          {caption ? (
+            <p className="vt-cap" data-testid="voice-transcript-heading" title={`Transcript · ${rangeLabel(voice)}`}>
+              {caption.lead}
+              <span data-testid="voice-first-seconds">{caption.first}</span>
+            </p>
+          ) : null}
         </div>
       );
     }

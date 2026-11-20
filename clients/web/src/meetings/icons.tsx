@@ -18,6 +18,8 @@ export const ChatIcon = proIcon(ProChat);
 export const CaptionsIcon = proIcon(ClosedCaptionsIcon);
 export const SlidersIcon = proIcon(TuneIcon);
 export const WaveIcon = proIcon(SoundwaveIcon);
+/** The small headset at the start of a call's event line (P34-02). */
+export const EventHeadphonesIcon = proIcon(ProHeadphones, 14);
 
 /* Bundle C: the note-taker (a bot), recording, sharing, the board an action item goes to, and a time in the transcript. */
 export const BotIcon = proIcon(AndroidIcon);

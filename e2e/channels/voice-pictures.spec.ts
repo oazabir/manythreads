@@ -137,7 +137,7 @@ for (const look of LOOKS) {
         await first.getByTestId('voice-play').click();
         await expect(first.getByTestId('voice-player')).toHaveAttribute('data-state', 'playing');
         await first.getByTestId('voice-play').click();
-        await expect(first.getByTestId('voice-badge')).toHaveAccessibleName('played');
+        await expect(first.getByTestId('voice-played')).toHaveAccessibleName('Played');
         await first.evaluate((el) => el.scrollIntoView({ block: 'center' }));
         await shot('played-and-not-played');
 

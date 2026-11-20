@@ -190,6 +190,11 @@ for (const look of LOOKS) {
         await nadia.page.getByTestId('call-leave').click();
         await expect(nadia.page.getByTestId('call-dock')).toBeHidden(T);
         await endLive(nadiaApi);
+        // the call is over: its start message is one muted event line (P34-02), the same height as the line drawn before a card loads
+        const over = nadia.page.locator(`[data-testid="call-event"][data-meeting-id="${started.meeting.id}"][data-state="ended"]`);
+        await expect(over).toBeVisible(T);
+        await over.scrollIntoViewIfNeeded();
+        await over.screenshot({ path: `${base}call-event-ended.png` });
 
         // 5. a 44-character channel name
         const long = await openLooking(browser, playwright, 'omar', `/t/engineering/c/${LONG}`, look, size.mobile);

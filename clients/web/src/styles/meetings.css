@@ -817,7 +817,8 @@
   gap: 8px;
 }
 
-/* ---- the card under "Started a voice room" (P33-03): the room's title, who is in it, Join, and for the starter End room ---- */
+/* ---- the call card (P33-03, P15-26), in place of a call's start message while the call is live: the title, Audio, Live with the running time, who started it, who
+   is in it, the note-taker, Join call (the whole card joins), and for the starter End call ---- */
 .room-card {
   display: grid;
   gap: 8px;
@@ -872,6 +873,45 @@
 
 .room-card-faces {
   display: inline-flex;
+}
+
+.room-card[data-joinable] {
+  cursor: pointer;
+}
+
+.room-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.room-card-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ok-ink);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.room-card-by {
+  min-width: 0;
+}
+
+.room-card-more {
+  color: var(--ok-ink);
+  font-weight: 600;
 }
 
 .room-card .room-card-faces .av {

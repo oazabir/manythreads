@@ -2942,3 +2942,54 @@
     padding-inline-end: 96px;
   }
 }
+
+/* ---- event and status lines (P34-02): a call that is over, a to-do list that moved. A small icon, muted, one line; the whole text on hover ---- */
+.ev-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.ev-ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+}
+
+.ev-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ev-sep {
+  flex: none;
+  color: var(--faint);
+}
+
+.ev-link {
+  flex: none;
+  color: var(--human);
+  font-weight: 600;
+}
+
+/* a call's start message has no picture and no author line: its "Text copied" note sits over the lower end of the row, so the row never changes height, and
+   above the hover bar (top end, z-index 2), so the bar never covers it */
+.msg-call .msg-call-done {
+  position: absolute;
+  inset-block-end: 2px;
+  inset-inline-end: 8px;
+  z-index: 3;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ok-ink);
+  font-size: var(--fs-tiny);
+}

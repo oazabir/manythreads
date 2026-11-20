@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FileSummary, VoiceMeta } from '@manythreads/shared';
 import {
-  barHeights, clampPosition, formatClock, nextSpeed, playedBars, positionAt, seekBy, seekForKey, speedAria, speedLabel, rangeLabel, transcriptNote, transcriptShows, valueText,
+  barHeights, clampPosition, formatClock, nextSpeed, playedBars, positionAt, seekBy, seekForKey, speedAria, speedLabel, rangeLabel, transcriptCaption, transcriptNote, transcriptShows, valueText,
   voiceClip, voiceHitLength, withoutClip,
 } from '../src/channels/voice/playerFormat';
 
@@ -96,6 +96,15 @@ describe('voice player format (P14-17)', () => {
     expect(transcriptShows(voice({ durationMs: 9_000 }))).toMatchObject({ endMs: 9_000, longer: false });
     expect(transcriptShows(voice({ durationMs: 40_000 }))).toMatchObject({ endMs: 20_000, longer: true });
     expect(transcriptShows(voice({ durationMs: 5_000, transcriptEndMs: 20_000 }))).toMatchObject({ endMs: 5_000, longer: false });
+  });
+
+  it('captions the server\'s words only when they cover part of the clip (owner decision b)', () => {
+    expect(transcriptCaption(voice({ transcript: 'server', durationMs: 10_400, transcriptEndMs: 10_400 }))).toBeNull();
+    expect(transcriptCaption(voice({ transcript: 'server', durationMs: 95_000, transcriptEndMs: 20_000 }))).toEqual({ lead: 'Transcript', first: ' of the first 20 seconds' });
+    expect(transcriptCaption(voice({ transcript: 'server', durationMs: 40_000 }))).toEqual({ lead: 'Transcript', first: ' of the first 20 seconds' });
+    // the sender's corrected words, and the states with lines of their own, get no caption here
+    expect(transcriptCaption(voice({ transcript: 'edited', durationMs: 95_000, transcriptEndMs: 20_000 }))).toBeNull();
+    for (const t of ['pending', 'failed', 'none', 'device'] as const) expect(transcriptCaption(voice({ transcript: t, durationMs: 95_000 }))).toBeNull();
   });
 
   it('recognises the stand-in line of a voice message with no transcript in a search hit', () => {

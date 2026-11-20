@@ -103,7 +103,7 @@ test('records, pauses, resumes and sends: a row at once, then "Writing the trans
     await expect(row.getByTestId('voice-player')).toHaveAccessibleName(/^Voice message from Omar, 0:0[3-9]$/);
     await expect(row.getByTestId('voice-writing')).toHaveText('Writing the transcript…');
     await expect(row.getByTestId('voice-writing')).toHaveAttribute('role', 'status');
-    await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('not played yet');
+    await expect(row.getByTestId('voice-played')).toHaveAccessibleName('Not played yet');
     await expect(row.getByTestId('voice-sent')).toHaveCount(0); // the row's own time is the only one
     // the stand-in line is never drawn as the words
     await expect(row).not.toContainText('Voice message (');
@@ -113,8 +113,9 @@ test('records, pauses, resumes and sends: a row at once, then "Writing the trans
     // the server writes the words; the push brings them
     await expect.poll(async () => (await listOf(omar, dev)).find((m) => m.meta.voice)?.meta.voice?.transcript, { timeout: 20_000 }).toBe('server');
     pushes.release();
-    await expect(row.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript$/);
+    // owner decision b: words that cover the whole clip have no caption
     await expect(row.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveCount(0);
     await expect(row.getByTestId('voice-writing')).toHaveCount(0);
     // the words are drawn once, inside the transcript block
     await expect(row.getByTestId('voice-words')).toHaveCount(1);
@@ -225,7 +226,7 @@ test('sliding away while holding cancels the recording and nothing is uploaded',
   }
 });
 
-test('a reader plays it: the badge turns grey, speed changes, the place is remembered', async ({ browser, playwright }) => {
+test('a reader plays it: the length turns from quiet to dark and bold ("Played"), speed changes, the place is remembered', async ({ browser, playwright }) => {
   // a clip long enough that "where they stopped" is more than a second from both ends
   const author = await openVoice(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
@@ -242,15 +243,18 @@ test('a reader plays it: the badge turns grey, speed changes, the place is remem
     const player = row.getByTestId('voice-player');
     await expect(player).toBeVisible();
     await expect(player).toHaveAttribute('data-state', 'idle');
-    await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('not played yet');
-    await expect(row.getByTestId('voice-transcript-heading')).toBeVisible();
+    await expect(row.getByTestId('voice-played')).toHaveAccessibleName('Not played yet');
+    // a short clip's words cover all of it: no caption (owner decision b)
+    await expect(row.getByTestId('voice-words')).toBeVisible();
+    await expect(row.getByTestId('voice-transcript-heading')).toHaveCount(0);
     // a reader has no controls of the author's on this message
     await expect(row.getByTestId('voice-try-again')).toHaveCount(0);
 
     await row.getByTestId('voice-play').click();
     await expect(player).toHaveAttribute('data-state', 'playing');
     await expect(row.getByRole('button', { name: 'Pause voice message' })).toBeVisible();
-    await expect(row.getByTestId('voice-badge')).toHaveAccessibleName('played');
+    await expect(row.getByTestId('voice-played')).toHaveAccessibleName('Played');
+    await expect(row.getByTestId('voice-played')).toHaveAttribute('title', 'Played');
     await expect(row.getByTestId('voice-speed')).toHaveText('1×');
     await row.getByTestId('voice-speed').click();
     await expect(row.getByTestId('voice-speed')).toHaveAccessibleName('Playback speed 1.5 times');
@@ -270,7 +274,7 @@ test('a reader plays it: the badge turns grey, speed changes, the place is remem
     const again = messagesIn(page).filter({ has: page.getByTestId('voice-player') }).last();
     await expect(again.getByTestId('voice-seek')).toHaveAttribute('aria-valuenow', String(stoppedAt));
     await expect(again.getByTestId('voice-speed')).toHaveText('2×');
-    await expect(again.getByTestId('voice-badge')).toHaveAccessibleName('played');
+    await expect(again.getByTestId('voice-played')).toHaveAccessibleName('Played');
     expect(id).not.toBe('');
 
     // arrow keys move by five seconds inside the clip and never past its ends
@@ -343,7 +347,7 @@ test('a voice message in a thread and in a DM, with the transcript in the thread
     await recordClip(panel);
     await expect(panel.getByTestId('voice-player')).toHaveCount(1);
     await expect(panel.getByTestId('voice-words')).toHaveText(FAKE_TEXT);
-    await expect(panel.getByTestId('voice-transcript-heading')).toHaveText(/^Transcript$/);
+    await expect(panel.getByTestId('voice-transcript-heading')).toHaveCount(0);
 
     // DM: Omar starts a conversation with Nadia and sends a clip
     await page.goto('/t/engineering/threads');

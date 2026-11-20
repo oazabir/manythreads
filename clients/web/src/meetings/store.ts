@@ -18,6 +18,7 @@ import { loadEngine } from './engine';
 import { loadAdapter } from './media';
 import { LIVE_POLL_MS, activeRings, liveByChannel, type Ring } from './model';
 import { roomOfMessage } from './roomCard';
+import { callCards } from './callCards';
 import { browserStorage, loadPrefs } from './prefs';
 import { browserAudioContext, createSounds, type Sounds } from './sounds';
 
@@ -52,6 +53,8 @@ export type LiveDeps = {
   /** A system notice for a ring when the tab is hidden. */
   notify: (title: string, tag: string) => void;
   hidden: () => boolean;
+  /** The socket came back after a gap: what else the page keeps about calls asks again (the call cards, P15-26). */
+  onReconnected?: () => void;
 };
 
 const EMPTY: LiveSnapshot = { status: 'loading', rooms: [], byChannel: new Map(), rings: [] };
@@ -91,7 +94,13 @@ export class LiveRoomsStore {
   /** Listens to the tab's socket and starts the half-minute check. */
   attach(client: RealtimeClient): void {
     this.detach.forEach((d) => d());
-    this.detach = [client.onPush((p) => this.handlePush(p)), client.onReconnected(() => void this.refresh())];
+    this.detach = [
+      client.onPush((p) => this.handlePush(p)),
+      client.onReconnected(() => {
+        void this.refresh();
+        this.deps.onReconnected?.();
+      }),
+    ];
   }
 
   start(): void {
@@ -274,7 +283,11 @@ export function liveRooms(): LiveRoomsStore {
     clearTimeout: (h) => globalThis.clearTimeout(h as number),
     setInterval: (fn, ms) => globalThis.setInterval(fn, ms),
     clearInterval: (h) => globalThis.clearInterval(h as number),
-    onRoomChanged: (id) => callController().noteChanged(id),
+    onRoomChanged: (id) => {
+      callController().noteChanged(id);
+      // the call card of this call, if the page drew it, asks again for this one call
+      callCards().changed(id);
+    },
     currentRoom: () => {
       const m = callController().getState().meeting;
       return m ? { meetingId: m.id, threadRootId: m.threadRootId } : null;
@@ -291,6 +304,16 @@ export function liveRooms(): LiveRoomsStore {
       }
     },
     hidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+    onReconnected: () => callCards().refreshAll(),
+  });
+  // a card drawn as live whose call left the live list is asked again (a lost push heals with the list's half-minute check)
+  const rooms = live;
+  let seen: LiveSnapshot['rooms'] | null = null;
+  rooms.subscribe(() => {
+    const snap = rooms.snapshot();
+    if (snap.status !== 'ok' || snap.rooms === seen) return;
+    seen = snap.rooms;
+    callCards().liveListChanged(new Set(snap.rooms.map((r) => r.meeting.id)));
   });
   return live;
 }

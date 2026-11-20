@@ -112,18 +112,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* "played": a small dot after the length, filled until this reader plays the message, an empty ring after (the shape differs, not only the colour) */
-.vp-heard {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-pill);
-  background: var(--ok);
+/*
+ * "played" (owner decision b): the length is quieter until this reader plays the message and plain after; "Played" on hover and for a screen reader. Both
+ * colours keep small text readable (4.5:1), and the weight changes too, so the state is not told by colour alone.
+ */
+.vp-clock .vp-time {
+  color: var(--mute);
+  font-weight: 400;
 }
 
-.vp-heard.heard {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--faint);
+.vp-clock.heard .vp-time {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* the speed as plain small text */

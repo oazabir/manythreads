@@ -185,9 +185,4 @@
   margin-inline-start: 0;
 }
 
-/* an earlier list message, after the list passed to another bot: one quiet line */
-.tdMoved {
-  margin: 0;
-  color: var(--mute);
-  font-size: var(--fs-caption);
-}
+/* an earlier list message, after the list passed to another bot, is one quiet status line: `.ev-line` (channels.css, P34-02) */

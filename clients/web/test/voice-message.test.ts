@@ -84,14 +84,17 @@ const q = (id: string): HTMLElement | null => host.querySelector(`[data-testid="
 const text = (id: string): string => q(id)?.textContent ?? '';
 
 describe('a voice message in a row', () => {
-  it('draws one flat player row: play, waveform with a dot, the length, the played dot and the speed; no card, no second picture, no sent time', async () => {
+  it('draws one flat player row: play, waveform with a dot, the length (quieter until played, no played dot) and the speed; no card, no second picture, no sent time', async () => {
     await draw(message(voice()));
     expect(q('voice-message')).not.toBeNull();
     expect(host.querySelector('.vp-play')).not.toBeNull();
     expect(q('voice-seek')?.getAttribute('role')).toBe('slider');
     expect(q('voice-dot')).not.toBeNull();
     expect(text('voice-time')).toBe('0:19');
-    expect(q('voice-badge')?.getAttribute('aria-label')).toBe('not played yet');
+    expect(q('voice-played')?.getAttribute('aria-label')).toBe('Not played yet');
+    expect(q('voice-played')?.getAttribute('title')).toBeNull();
+    // owner decision b: the played dot is gone
+    expect(host.querySelector('.vp-heard')).toBeNull();
     expect(q('voice-speed')).not.toBeNull();
     // the row's own avatar is the only picture; the sent time is the row's (the player does not repeat it)
     expect(host.querySelector('.vp-who, .vp-mic, .vp-sent')).toBeNull();
@@ -125,14 +128,13 @@ describe('a voice message in a row', () => {
     expect(q('voice-writing')?.getAttribute('aria-live')).toBeNull();
   });
 
-  it('server: the words drawn once, as the message text, with the caption after them', async () => {
+  it('server: the words drawn once, as the message text, and no caption when they cover the whole clip (owner decision b)', async () => {
     const m = message(voice({ transcript: 'server', durationMs: 10_400, transcriptEndMs: 10_400 }), { body: 'Hello **there**\nsecond line', bodyPlain: 'Hello there second line' });
     await draw(m);
-    expect(text('voice-transcript-heading')).toBe('Transcript');
-    expect(q('voice-transcript-heading')?.getAttribute('title')).toBe('Transcript · 0:00–0:10');
-    // the words come first and the caption after them; no bold heading or rule
+    expect(q('voice-transcript-heading')).toBeNull();
+    expect(host.querySelector('.vt-cap')).toBeNull();
+    // no bold heading or rule either
     expect(q('voice-words')?.classList.contains('txt')).toBe(true);
-    expect(q('voice-words')?.compareDocumentPosition(q('voice-transcript-heading') as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(host.querySelector('.vt-head')).toBeNull();
     expect(host.querySelectorAll('[data-testid="voice-words"]')).toHaveLength(1);
     expect(q('voice-words')?.textContent).toBe('Hello **there**\nsecond line');
@@ -146,11 +148,14 @@ describe('a voice message in a row', () => {
     await draw(message(voice({ transcript: 'server', durationMs: 95_000, transcriptEndMs: 20_000 }), { body: 'Words.' }));
     expect(text('voice-transcript-heading')).toBe('Transcript of the first 20 seconds');
     expect(text('voice-first-seconds')).toBe(' of the first 20 seconds');
+    expect(q('voice-transcript-heading')?.getAttribute('title')).toBe('Transcript · 0:00–0:20');
+    // the words come first and the caption after them
+    expect(q('voice-words')?.compareDocumentPosition(q('voice-transcript-heading') as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('edited: the caption says so and nothing about a range', async () => {
-    await draw(message(voice({ transcript: 'edited' }), { body: 'Corrected words.', editedAt: '2026-09-07T18:10:00.000Z' }));
-    expect(text('voice-transcript-heading')).toBe('Transcript (edited)');
+  it('edited: the sender\'s own words, with no caption (the row\'s edited mark says it was changed)', async () => {
+    await draw(message(voice({ transcript: 'edited', durationMs: 95_000, transcriptEndMs: 20_000 }), { body: 'Corrected words.', editedAt: '2026-09-07T18:10:00.000Z' }));
+    expect(q('voice-transcript-heading')).toBeNull();
     expect(text('voice-words')).toContain('Corrected words.');
     expect(host.querySelectorAll('[data-testid="voice-words"]')).toHaveLength(1);
   });
@@ -204,14 +209,15 @@ describe('a voice message in a row', () => {
     expect(host.textContent).not.toContain('Add a transcript');
   });
 
-  it('the dot is filled until this reader plays the message, then it is a ring and says played', async () => {
+  it('the length is quieter until this reader plays the message, then darker and bolder, with "Played" on hover and for a screen reader', async () => {
     const m = message(voice());
     await draw(m);
-    expect(q('voice-badge')?.classList.contains('heard')).toBe(false);
+    expect(q('voice-played')?.classList.contains('heard')).toBe(false);
     const { markPlayed } = await import('../src/channels/voice/played');
     await act(async () => markPlayed(m.id));
-    expect(q('voice-badge')?.getAttribute('aria-label')).toBe('played');
-    expect(q('voice-badge')?.classList.contains('heard')).toBe(true);
+    expect(q('voice-played')?.getAttribute('aria-label')).toBe('Played');
+    expect(q('voice-played')?.getAttribute('title')).toBe('Played');
+    expect(q('voice-played')?.classList.contains('heard')).toBe(true);
   });
 });
 

@@ -73,7 +73,7 @@ export async function closePerson(p: Person | undefined): Promise<void> {
 export const dock = (p: Person) => p.page.getByTestId('call-dock');
 
 /**
- * Presses the voice icon (a new room) or, when a room is live in a channel, Join on its card under "Started a voice room" (the icon only scrolls there),
+ * Presses the voice icon (a new room) or, when a room is live in a channel, Join call on the call card of its start message (the icon only scrolls there),
  * and waits until the call bar is connected. (Starting while a room is live joins it, so a page that has not heard of the room yet still ends up in it.) On a phone
  * the icon's item in the channel details menu is pressed instead.
  */
