@@ -54,7 +54,8 @@ $K wait --for=condition=complete "job/build-$TAG" --timeout=40m || { $K logs "jo
 
 It takes 10 to 25 minutes. Watch with `$K logs -f "job/build-$TAG" -c build-server` (or `fetch`, `build-web`). If `fetch` says *tree mismatch*, the
 patches do not give the tree you tested: you made them from a different commit than `$SHA`, or `$BASE` is wrong. Fix that; do not edit the check.
-One build at a time (disk is small). Delete old build Jobs when done: `$K delete job build-<oldtag>`.
+One build at a time (disk is small). A finished build Job deletes itself after an hour (`ttlSecondsAfterFinished`); to free its space sooner: `$K delete job build-<oldtag>`.
+The builds keep a layer cache in the registry (`<namespace>/cache`): after the first build, a change that leaves `pnpm-lock.yaml` and the package manifests alone skips the install.
 
 ## 4. Install
 

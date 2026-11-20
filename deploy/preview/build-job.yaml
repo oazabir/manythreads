@@ -21,6 +21,9 @@
 # Scratch disk: each step asks for its request explicitly. A container that names only a limit is given a request equal to it, and 10 GiB
 # was more than the target's 8 GiB of disk requests. The kaniko steps may grow to 8 GiB, which fits beside a running preview (16 GiB of limits).
 # Disk: the images are built in the container's own storage on the node (limit below); the node's disk is small, so run one build at a time.
+# Layer cache (P31-05): both builds keep their RUN layers in <registry>/<namespace>/cache. The Dockerfiles install from the package manifests before
+# the sources arrive, so a source-only change reuses the install layer (about 1.3 GB) and pushes only the sources; a lockfile change installs again.
+# The registry's nightly clean-up keeps the newest cache entries.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -31,7 +34,7 @@ metadata:
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 2400
-  ttlSecondsAfterFinished: 86400
+  ttlSecondsAfterFinished: 3600   # gone an hour after it finished, with its pods and their scratch space (P31-05)
   template:
     metadata:
       labels:
@@ -99,6 +102,8 @@ spec:
             - --context=dir:///workspace/ctx-server
             - --dockerfile=/workspace/server.Dockerfile
             - --destination=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/server:__TAG__
+            - --cache=true
+            - --cache-repo=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/cache
             - --insecure
             - --insecure-registry=registry.manythreads-registry.svc.cluster.local:5000
             - --push-retry=3
@@ -116,6 +121,8 @@ spec:
             - --context=dir:///workspace/ctx-web
             - --dockerfile=/workspace/web.Dockerfile
             - --destination=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/web:__TAG__
+            - --cache=true
+            - --cache-repo=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/cache
             - --insecure
             - --insecure-registry=registry.manythreads-registry.svc.cluster.local:5000
             - --push-retry=3

@@ -81,7 +81,12 @@ Names: a build pushes to `registry.manythreads-registry.svc.cluster.local:5000/<
 
 **There is no sign-in on the registry.** Anyone in a deploy-target namespace can push and pull any image in it, including over another team's path; that is why only deploy targets are let in. **There is also no isolation between targets in it: before a second deploy target is added, the registry must get sign-in (per-target credentials and paths) or one registry per target,** otherwise one team's deployer can overwrite or read another team's images. The network policy allows ingress on 5000 from namespaces labelled
 `manythreads.io/deploy-target=true` and from `registry.nodeCidrs` (default the node IP `10.0.2.15/32`); the registry may call nothing. Also keep port 30500 closed to the outside on the host firewall.
-Deleting tags needs the registry's API and a garbage-collection run; the deployer cannot do either (no rights in that namespace), so an operator cleans up.
+Deleting tags needs the registry's API and a garbage-collection run; the deployer cannot do either (no rights in that namespace). The chart's nightly
+clean-up does it (P31-05; `registry.cleanup.*`, `templates/registry.yaml`, the script `files/registry-clean.mjs`): it keeps everything under `platform/*`,
+the newest `keepTags` (2) tags of every other repository by image time, any tag or digest a pod in a deploy target uses, and kaniko's cache entries
+(`<ns>/cache`) whose layers a kept image already holds or that are younger than `keepCacheDays` (14, kaniko's own cache ttl). When it deleted something it stops the registry,
+runs `registry garbage-collect` (never `--delete-untagged`), and starts it again (a minute or so). A night with a test-site build running is skipped;
+`tools/devbox/deploy.sh` waits for a clean-up that is running. A finished build Job deletes itself after an hour.
 
 ## Host step (once, as root on the node)
 

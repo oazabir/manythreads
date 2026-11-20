@@ -146,10 +146,19 @@ PG_REF=platform/postgres-cnpg:19beta4-202609281634-u999
 # First install on an empty cluster: the registry is part of the chart, but the database image has to be in it BEFORE the chart is installed. So start
 # the registry alone from the chart's own template, and mark its objects as the release's so that the install below adopts them instead of
 # refusing ("exists and cannot be imported into the current release"). A cluster that already has the registry skips this.
+# The registry's nightly clean-up stops the registry for its garbage collection (templates/registry.yaml, P31-05): wait for it to finish, or this
+# deploy would take the stopped registry for a first install below, and the upgrade would start it in the middle of the collection.
+for _ in $(seq 1 60); do
+  CLEANING=$(kubectl get jobs -A -l app.kubernetes.io/component=registry-clean -o jsonpath='{range .items[?(@.status.active)]}{.metadata.name} {end}' 2>/dev/null || true)
+  [ -z "$CLEANING" ] && break
+  echo "the registry clean-up is running ($CLEANING): waiting"
+  sleep 10
+done
+[ -z "${CLEANING:-}" ] || { echo "ERROR: the registry clean-up is still running after 10 minutes; not deploying"; exit 1; }
 if ! curl -sf -o /dev/null "http://127.0.0.1:30500/v2/"; then
   echo "--- registry is not running (first install): starting it from the chart"
   REG_NS=$(helm template manythreads ./deploy/helm/manythreads -n manythreads -f deploy/helm/manythreads/values-live.yaml --set registry.enabled=true \
-    -s templates/registry.yaml | tee /tmp/manythreads-registry.yaml | python3 -c 'import sys,yaml; print(next(d["metadata"]["name"] for d in yaml.safe_load_all(sys.stdin) if d and d["kind"]=="Namespace"))')
+    --set registry.cleanup.enabled=false -s templates/registry.yaml | tee /tmp/manythreads-registry.yaml | python3 -c 'import sys,yaml; print(next(d["metadata"]["name"] for d in yaml.safe_load_all(sys.stdin) if d and d["kind"]=="Namespace"))')
   kubectl apply -f /tmp/manythreads-registry.yaml
   for o in "namespace/$REG_NS" $(kubectl get -n "$REG_NS" networkpolicy,persistentvolumeclaim,service,deployment -o name); do
     if [ "${o%%/*}" = namespace ]; then

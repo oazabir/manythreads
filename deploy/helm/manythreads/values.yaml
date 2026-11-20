@@ -507,3 +507,12 @@ registry:
   nodePort: 30500
   # Addresses the node's own pulls arrive from after the NodePort translation. Block 30500 from outside on the host firewall too.
   nodeCidrs: ["10.0.2.15/32"]
+  # The nightly clean-up (templates/registry.yaml, files/registry-clean.mjs): keeps all of platform/*, the newest `keepTags` tags of every other repository
+  # and any a deploy target's pod uses, and kaniko's cache entries that cost no space or are younger than `keepCacheDays` (kaniko's own cache ttl is
+  # two weeks); then stops the registry for its garbage collection (a minute or so) and starts it again. Skipped on a night a test-site build runs.
+  # Known gap: a deploy that is already running at the scheduled time is not waited for (deploy.sh waits only for a clean-up that started first).
+  cleanup:
+    enabled: true
+    schedule: "40 2 * * *"
+    keepTags: 2
+    keepCacheDays: 14

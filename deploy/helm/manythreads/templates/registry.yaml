@@ -118,4 +118,201 @@ spec:
       ports:
         - { port: 5000, protocol: TCP }
     {{- end }}
+    {{- if $r.cleanup.enabled }}
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/component: registry-clean } }
+      ports:
+        - { port: 5000, protocol: TCP }
+    {{- end }}
+{{- if $r.cleanup.enabled }}
+{{- /*
+  The nightly clean-up (P31-05; files/registry-clean.mjs says what it keeps). Three steps in one pod, in order:
+    clean     (server image, node) skips the night when a test-site build Job runs; deletes old tags through the HTTP API; when it deleted any, scales
+              the registry to 0 and waits for its pod to stop (a garbage collection beside a running registry can drop a layer a push just wrote)
+    gc        (the registry's own image) `registry garbage-collect` on the volume, only when `clean` stopped the registry; NEVER --delete-untagged
+              (MISTAKES.md: it removed the database index's child manifests); a failure is written down and the pod goes on, so the next step runs
+    scale-up  scales the registry back to 1 whenever `clean` stopped it, then fails the Job if the collection failed
+  deploy.sh waits for a running clean-up before it upgrades the release (an upgrade would start the registry in the middle of a collection).
+*/ -}}
+{{- $c := $r.cleanup }}
+{{- $targets := list }}
+{{- if .Values.hermesPods.enabled }}{{ range .Values.hermesPods.deployTargets }}{{ $targets = append $targets .namespace }}{{ end }}{{ end }}
+{{- if not (regexMatch "^[0-9]+$" (toString $c.keepTags)) }}{{ fail "registry.cleanup.keepTags must be a whole number" }}{{ end }}
+{{- if lt (int $c.keepTags) 1 }}{{ fail "registry.cleanup.keepTags must be at least 1" }}{{ end }}
+{{- if not (regexMatch "^[1-9][0-9]*$" (toString $c.keepCacheDays)) }}{{ fail "registry.cleanup.keepCacheDays must be a whole number of days, at least 1" }}{{ end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: registry-clean
+  namespace: {{ $ns }}
+automountServiceAccountToken: false
+---
+# Only the registry: read and change its replica count, and list its pods to see it stop and start.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: registry-clean
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    resourceNames: [registry]
+    verbs: [get, patch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: registry-clean
+  namespace: {{ $ns }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: registry-clean }
+subjects:
+  - { kind: ServiceAccount, name: registry-clean, namespace: {{ $ns }} }
+{{- range $targets }}
+---
+# In the deploy target {{ . }}: read-only, the pods (which images they use) and the Jobs (is a build running).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: registry-clean-reader
+  namespace: {{ . }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: registry-clean-reader
+  namespace: {{ . }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: registry-clean-reader }
+subjects:
+  - { kind: ServiceAccount, name: registry-clean, namespace: {{ $ns }} }
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: registry-clean-script
+  namespace: {{ $ns }}
+data:
+  registry-clean.mjs: |
+{{ .Files.Get "files/registry-clean.mjs" | indent 4 }}
+---
+# Out: the registry (5000) and the Kubernetes API, nothing else (the registry is reached by its Service address from the pod's environment: no DNS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: registry-clean
+  namespace: {{ $ns }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/component: registry-clean } }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/component: registry } }
+      ports:
+        - { port: 5000, protocol: TCP }
+    - to:
+        - ipBlock: { cidr: {{ include "manythreads.apiServerCidr" . }} }
+      ports:
+        - { port: {{ .Values.hermesPods.apiServer.port }}, protocol: TCP }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: registry-clean
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/component: registry-clean
+spec:
+  schedule: {{ $c.schedule | quote }}
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 1200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: registry
+            app.kubernetes.io/component: registry-clean
+        spec:
+          restartPolicy: Never
+          serviceAccountName: registry-clean
+          automountServiceAccountToken: true
+          initContainers:
+            - name: clean
+              image: {{ include "manythreads.imageRef" (dict "image" .Values.server.image "tag" .Values.imageTag) }}
+              imagePullPolicy: {{ .Values.imagePullPolicy }}
+              command: ["node", "/scripts/registry-clean.mjs", "clean"]
+              env: &cleanEnv
+                - { name: REGISTRY_URL, value: "http://$(REGISTRY_SERVICE_HOST):$(REGISTRY_SERVICE_PORT)" }
+                - { name: REGISTRY_NAMESPACE, value: {{ $ns | quote }} }
+                - { name: REGISTRY_PULL_HOSTS, value: "registry.local:5000 registry.{{ $ns }}.svc.cluster.local:5000" }
+                - { name: TARGET_NAMESPACES, value: {{ join " " $targets | quote }} }
+                - { name: KEEP_TAGS, value: {{ $c.keepTags | quote }} }
+                - { name: KEEP_CACHE_DAYS, value: {{ $c.keepCacheDays | quote }} }
+                - { name: STATUS_DIR, value: /status }
+                - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+              resources: &cleanResources
+                requests: { cpu: 20m, memory: 64Mi, ephemeral-storage: 16Mi }
+                limits: { memory: 256Mi, ephemeral-storage: 64Mi }
+              securityContext: &cleanSecurity
+                runAsNonRoot: true
+                runAsUser: 1000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+                seccompProfile: { type: RuntimeDefault }
+              volumeMounts: &cleanMounts
+                - { name: script, mountPath: /scripts, readOnly: true }
+                - { name: status, mountPath: /status }
+            - name: gc
+              image: {{ $r.image }}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  [ -f /status/gc ] || { echo "nothing was deleted: no garbage collection"; exit 0; }
+                  if registry garbage-collect /etc/docker/registry/config.yml; then echo "garbage collection done"; else touch /status/gc-failed; fi
+                  df -h /var/lib/registry
+              env:
+                - { name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY, value: /var/lib/registry }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { memory: 512Mi }
+              volumeMounts:
+                - { name: data, mountPath: /var/lib/registry }
+                - { name: status, mountPath: /status }
+          containers:
+            - name: scale-up
+              image: {{ include "manythreads.imageRef" (dict "image" .Values.server.image "tag" .Values.imageTag) }}
+              imagePullPolicy: {{ .Values.imagePullPolicy }}
+              command: ["node", "/scripts/registry-clean.mjs", "scale-up"]
+              env: *cleanEnv
+              resources: *cleanResources
+              securityContext: *cleanSecurity
+              volumeMounts: *cleanMounts
+          volumes:
+            - name: script
+              configMap: { name: registry-clean-script }
+            - name: status
+              emptyDir: { sizeLimit: 1Mi }
+            - name: data
+              persistentVolumeClaim: { claimName: registry-data }
+{{- end }}
 {{- end }}
