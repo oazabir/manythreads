@@ -2994,13 +2994,20 @@
   font-size: var(--fs-tiny);
 }
 
-/* ---- pinned messages (P31-07): the mark beside the author's name, and the right panel's pinned list ---- */
-.who .msg-pinned {
+/* ---- pinned messages (P31-07): the mark beside the author's name (on a call's row: after the event line's text, or last in the live card's meta line;
+   it never shrinks or wraps, the text beside it ellipsizes), and the right panel's pinned list ---- */
+.who .msg-pinned,
+.msg-call .msg-pinned {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   color: var(--warn-ink);
   font-size: var(--fs-tiny);
+}
+
+.msg-call .msg-pinned {
+  flex: none;
+  white-space: nowrap;
 }
 
 .pnp {

@@ -852,7 +852,16 @@
   min-width: 0;
 }
 
+/* the title and, on a pinned call, the Pinned mark after it (P31-07): the title ellipsizes, the mark never shrinks (channels.css) */
+.room-card-titleline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .room-card-title {
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   color: var(--ink);
