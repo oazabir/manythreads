@@ -46,9 +46,10 @@ export default defineJourney({
       expect: TID.threadView,
       next: { testid: LOCAL.followState },
       run: async ({ page }) => {
-        const follow = page.getByRole('switch', { name: 'Follow thread' });
-        if ((await follow.getAttribute('aria-checked')) !== 'true') await follow.click();
-        await expect(page.getByTestId(LOCAL.followState)).toContainText('Following');
+        // the thread's Follow toggle is an icon button in its header row (P34-06)
+        const follow = page.getByTestId(LOCAL.followState);
+        if ((await follow.getAttribute('aria-pressed')) !== 'true') await follow.click();
+        await expect(follow).toHaveAttribute('aria-pressed', 'true');
       },
     },
     {

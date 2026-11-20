@@ -133,12 +133,6 @@
   cursor: pointer;
 }
 
-.ch-main .ph-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ch-row-title {
   flex: 1;
   min-width: 0;

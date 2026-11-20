@@ -6,8 +6,8 @@ import type { PersonaKey } from '../support/env.ts';
 
 /*
  * The one page header (P21-12) and the look tokens (P21-20): every route has exactly one h1 (the page's own; the shell draws a fallback h1 only while no
- * page header is mounted, so the two can coexist for one render and the checks poll), the skip link, one bell in the band, the phone trail,
- * the bot crumb tail, and the focus ring. Runs on desktop and mobile-web.
+ * page header is mounted, so the two can coexist for one render and the checks poll), the skip link, one bell in the band, no trail on a top-level screen
+ * and one link back on a bot's page (P34-06), and the focus ring. Runs on desktop and mobile-web.
  */
 test.use({ actionTimeout: 10_000 });
 test.describe.configure({ mode: 'serial' });
@@ -167,75 +167,60 @@ test('exactly one bell in the band on Approvals, Threads and Files, and no secon
   }
 });
 
-test('the trail: the phone shows only the last crumb, a desktop shows the whole path', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper');
-  try {
-    const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
-    await expect(crumbs).toBeVisible();
-    await expect(crumbs.locator('li:visible').last()).toHaveText('Brain');
-    if (isMobile) await expect(crumbs.locator('li:visible')).toHaveCount(1);
-    else await expect(crumbs.locator('li:visible')).toHaveText(['Engineering', 'Bots', 'Brain']);
+// P34-06 (owner, 2026-11-19, reversing P21-12's trail): a top-level screen's band is its title (the page's one h1) with the tools on the right, as a channel's;
+// no "Engineering / Boards" above it. A screen inside a list (a bot's page) keeps one link back to that list.
+const TOP_LEVEL = ['threads', 'dms', 'search', 'chat', 'activity', 'files', 'boards', 'approvals'];
 
-    await page.goto('/t/engineering/boards');
-    await expectOneH1(page, 'boards');
-    await expect(crumbs.locator('li:visible').last()).toHaveText('Boards');
-    if (isMobile) await expect(crumbs.locator('li:visible')).toHaveCount(1);
-    else await expect(crumbs.locator('li:visible')).toHaveText(['Engineering', 'Boards']);
-  } finally {
-    await context.close();
-  }
-});
-
-test('every pair of crumbs has a visible "/" between them on a desktop, and a phone shows only the last crumb', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper');
+test('top-level screens have no trail: the one h1 is the title in the band', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/boards');
   try {
-    for (const path of ['/t/engineering/bots/helper', '/t/engineering/boards', '/t/engineering/files']) {
-      await page.goto(path);
-      await expectOneH1(page, path);
-      const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' }).locator('li');
-      await expect(crumbs.first()).toBeAttached();
-      await expect.poll(() => crumbs.count(), { message: `crumbs of ${path}` }).toBeGreaterThan(1);
-      const parts = await crumbs.evaluateAll((els) => els.map((li) => {
-        const before = getComputedStyle(li, '::before');
-        const r = li.getBoundingClientRect();
-        // the words only (a range leaves the "/" out), whether the crumb is a link or plain text
-        const range = document.createRange();
-        range.selectNodeContents(li);
-        const t = range.getBoundingClientRect();
-        return { text: (li.textContent ?? '').trim(), content: before.content, display: before.display, width: r.width, textLeft: t.left, liLeft: r.left };
-      }));
-      expect(parts.length, path).toBeGreaterThan(1);
-      parts.forEach((p, i) => {
-        if (isMobile) return;
-        expect(p.width, `${path}: crumb "${p.text}" has width`).toBeGreaterThan(0);
-        if (i === 0) return;
-        expect(p.content, `${path}: "/" before "${p.text}"`).toBe('"/"');
-        expect(p.display, `${path}: "/" before "${p.text}" is drawn`).not.toBe('none');
-        // room for the slash ahead of the words, inside the crumb's own box
-        expect(p.textLeft - p.liLeft, `${path}: the "/" has room before "${p.text}"`).toBeGreaterThan(6);
-      });
+    for (const r of TOP_LEVEL) {
+      await page.goto(`/t/engineering/${r}`);
+      await expectOneH1(page, r);
+      // the band has no trail (Files keeps its own folder trail inside the page)
+      await expect(page.locator('[data-landmark="header"]').getByRole('navigation', { name: 'Breadcrumb' }), `${r}: no trail`).toHaveCount(0);
+      await expect(page.getByTestId('header-back'), `${r}: no way back on a top-level screen`).toHaveCount(0);
+      // on a wide screen the Threads inbox draws its own bands (the list's and the open thread's), so its title is not in the shell band
+      if (!(r === 'threads' && !isMobile)) await expect(page.locator('[data-landmark="header"] h1'), `${r}: the title is in the band`).toHaveCount(1);
     }
   } finally {
     await context.close();
   }
 });
 
-test('the bot crumb tail clears when you leave the bot page', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper');
+test('the band of a page is as tall as a channel\'s and has one title row', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await open(browser, playwright, isMobile, 'omar', `/t/engineering/c/${channel}`);
   try {
-    const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' });
-    await expect(crumbs).toContainText('Brain');
-    // leave by the app's own navigation (no reload), so the shell's state is what is tested
-    if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.locator('[data-landmark="sidebar"]').getByRole('link', { name: /^Boards/ }).click();
-    await expect(page).toHaveURL(/\/t\/engineering\/boards$/);
-    await expectOneH1(page, 'boards');
-    await expect(crumbs).not.toContainText('Brain');
-    await expect(crumbs).toContainText('Boards');
-    // and back to the roster: the section crumb is the last one again, with no stale bot name
-    await page.goto('/t/engineering/bots');
+    const band = page.locator('header.chead[data-landmark="header"]');
+    await expectOneH1(page, 'channel');
+    const channelHeight = (await band.boundingBox())!.height;
+    for (const r of ['boards', 'search', 'files']) {
+      await page.goto(`/t/engineering/${r}`);
+      await expectOneH1(page, r);
+      const box = (await band.boundingBox())!;
+      expect(Math.abs(box.height - channelHeight), `${r}: band ${box.height} px, channel ${channelHeight} px`).toBeLessThanOrEqual(1);
+      const title = (await page.locator('header.chead h1').boundingBox())!;
+      expect(title.y, `${r}: the title is inside the band`).toBeGreaterThanOrEqual(box.y - 0.5);
+      expect(title.y + title.height, r).toBeLessThanOrEqual(box.y + box.height + 0.5);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('a bot\'s page keeps one link back to Bots, and leaving it takes the link away', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await open(browser, playwright, isMobile, 'omar', '/t/engineering/bots/helper/settings');
+  try {
+    await expectOneH1(page, 'bot settings');
+    const back = page.getByTestId('header-back');
+    await expect(back).toBeVisible();
+    await expect(back).toHaveAccessibleName('Back to Bots');
+    await expect(back).toHaveAttribute('href', '/t/engineering/bots');
+    await back.click();
+    await expect(page).toHaveURL(/\/t\/engineering\/bots$/);
     await expectOneH1(page, 'bots');
-    await expect(crumbs).not.toContainText('Brain');
+    await expect(page.getByTestId('header-back')).toHaveCount(0);
+    await expect(h1s(page)).toHaveText('Bots');
   } finally {
     await context.close();
   }

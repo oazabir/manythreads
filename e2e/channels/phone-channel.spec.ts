@@ -317,9 +317,9 @@ test('the bot page header at 390: the name, its description, then one row of act
     await expect(page.getByRole('menu', { name: 'More actions' })).toBeInViewport();
     await page.keyboard.press('Escape');
 
-    // the roster: the count line is under the title
+    // the roster: the count line is under the title (the title is in the band since P34-06, the count on the page under it)
     await page.goto('/t/engineering/bots');
-    const title = await page.locator('[data-landmark="page-header"] [data-landmark="title"]').boundingBox();
+    const title = await page.locator('[data-landmark="header"] [data-landmark="title"]').boundingBox();
     const count = await page.getByTestId('roster-count').boundingBox();
     expect(count!.y).toBeGreaterThanOrEqual(title!.y + title!.height - 0.5);
     expect(await noSidewaysScroll(page)).toBe(true);

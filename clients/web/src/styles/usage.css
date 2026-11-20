@@ -54,7 +54,7 @@
 }
 
 .usage-kpi-n {
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-h1);
   line-height: 1.2;
   color: var(--ink);
@@ -85,7 +85,7 @@
   justify-content: space-between;
   padding: 0 0 2px;
   text-align: right;
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 

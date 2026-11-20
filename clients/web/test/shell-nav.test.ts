@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NavContribution, sortNav } from '@manythreads/shared';
-import { crumbsFor } from '../src/shell/breadcrumb';
+import { headerBackFor } from '../src/shell/headerBack';
 import { CORE_NAV, channelPath, navCount, navHref, teamSwitchPath, viewTitle, visibleNav } from '../src/shell/nav';
 
 const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id' | 'order'>): NavContribution =>
@@ -115,8 +115,8 @@ describe('team switching and titles', () => {
     expect(teamSwitchPath('/t/engineering/bots/brain/chat', 'support')).toBe('/t/support/bots');
   });
 
-  it('names the phone pages in the breadcrumb trail', () => {
-    expect(crumbsFor('/t/eng/dms', 'Engineering').map((c) => c.label)).toEqual(['Engineering', 'Messages']);
-    expect(crumbsFor('/t/eng/activity', 'Engineering').map((c) => c.label)).toEqual(['Engineering', 'Activity']);
+  it('the phone pages are top-level: their band is the title with no trail (P34-06)', () => {
+    expect(headerBackFor('/t/eng/dms')).toBeNull();
+    expect(headerBackFor('/t/eng/activity')).toBeNull();
   });
 });

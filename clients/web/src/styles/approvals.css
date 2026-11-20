@@ -68,7 +68,7 @@
 .apr-when {
   margin-left: auto;
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 
@@ -111,7 +111,6 @@
 
 .apr-kv dt {
   color: var(--faint);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
 }
 

@@ -21,11 +21,6 @@
   overflow-wrap: anywhere;
 }
 
-.pp-back {
-  margin: 0 0 10px;
-  font-size: var(--fs-caption);
-}
-
 .pp-list {
   margin-top: 12px;
   border: 1px solid var(--rule);
@@ -78,7 +73,7 @@
 }
 
 .pp-delta {
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-caption);
 }
 

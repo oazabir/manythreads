@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useMatch } from 'react-router';
 import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -6,7 +7,7 @@ import { channelPath } from '../shell/nav';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
-import { usePanelSub } from '../kernel/panel/sub';
+import { usePanelSub, usePanelTools } from '../kernel/panel/sub';
 import { ThreadApprovals, useThreadApprovals } from '../screens/approvals/ThreadApprovals';
 import { ThreadDock } from '../taskview/ThreadDock';
 import { ThreadRail } from '../taskview/ThreadRail';
@@ -17,7 +18,8 @@ import { useThreadTodo } from '../todo/useThreadTodo';
 import { placeRuns } from './run-card/place';
 import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, FilesIcon, SidePanelIcon, ThreadsIcon } from '../shell/icons';
+import { ArrowDownIcon, ArrowUpIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
+import { ThreadTools, threadTools } from './ThreadTools';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -77,7 +79,9 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const tl = useTimeline(threadKey(rootId));
   const feed = useChannelFeed(slug);
   const inChannel = useMatch('/t/:team/c/:channel');
-  const hint = channelHint ?? (inChannel?.params.channel ? (findChannel(feed.groups, inChannel.params.channel)?.id ?? null) : null);
+  const channelOnScreen = inChannel?.params.channel ? (findChannel(feed.groups, inChannel.params.channel)?.id ?? null) : null;
+  const hint = channelHint ?? channelOnScreen;
+  const panelTools = usePanelTools();
   const names = useMemo(() => feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, ''))), [feed.groups]);
   const typing = useTyping(threadKey(rootId));
   const scroller = useRef<HTMLDivElement>(null);
@@ -232,13 +236,22 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       setBusy(false);
     }
   };
-  const followRow = threadState ? (
-    <div className="follow">
-      <button type="button" role="switch" aria-checked={threadState.followed} aria-label="Follow thread" className={`tog ${threadState.followed ? 'on' : ''}`} disabled={busy} onClick={() => void toggleFollow()} />
-      <span data-testid="follow-state">{threadState.followed ? 'Following · you will be notified of replies' : 'Not following · follow to be notified of replies'}</span>
-    </div>
-  ) : null;
   const teamForLink = slug ?? '';
+  // the thread's own controls, one row of icon buttons in its header (P34-06): in the panel before Expand and Close, on the Threads page with Overview
+  const channelHref = channelName && teamForLink ? `${channelPath(teamForLink, channelName)}?message=${rootId}` : null;
+  const tools = (
+    <ThreadTools
+      tools={threadTools({ variant, canFollow: threadState !== null, channelLink: channelHref !== null, channelInView: channelOnScreen !== null && channelOnScreen === channelId })}
+      followed={threadState?.followed ?? false}
+      busy={busy}
+      onFollow={() => void toggleFollow()}
+      channelHref={channelHref}
+      channelName={channelName}
+      railOpen={railOpen}
+      railId={railId}
+      onRail={() => setRail(!railOpen)}
+    />
+  );
   // Waiting for an answer: the newest message is the reader's own, it is recent, and nothing of theirs is still being sent.
   const newestMessage = tl.items.at(-1) ?? root;
   const waiting =
@@ -257,7 +270,6 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     >
       <div className="root">
         <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
-        {variant === 'panel' ? followRow : null}
         {variant === 'panel' ? <Linked rootId={rootId} /> : null}
       </div>
       {tl.cursor ? (
@@ -382,19 +394,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         <div className="chead thread-head">
           <h3 className="thread-title">{threadState?.title ?? root.bodyPlain.slice(0, 80)}</h3>
           {channelName || tl.channel?.kind === 'dm' ? <span className="topic" data-testid="thread-place">{channelName ? `Thread in #${channelName}` : 'Thread in a direct message'}</span> : null}
-          <div className="right">
-            {threadState ? (
-              <button type="button" className="btn s" aria-pressed={threadState.followed} disabled={busy} onClick={() => void toggleFollow()}>
-                {threadState.followed ? <>Following <CheckIcon size={12} /></> : 'Follow'}
-              </button>
-            ) : null}
-            {channelName && teamForLink ? <Link className="btn s" to={`${channelPath(teamForLink, channelName)}?message=${rootId}`}>Open channel</Link> : null}
-            <button type="button" className="btn s trToggle" aria-expanded={railOpen} aria-controls={railId} data-testid="rail-toggle" onClick={() => setRail(!railOpen)}>
-              <SidePanelIcon />
-              <span className="trToggleText">{railOpen ? 'Hide overview' : 'Overview'}</span>
-            </button>
-          </div>
+          <div className="right chead-tools thread-tools" data-testid="thread-tools">{tools}</div>
         </div>
+      ) : panelTools ? (
+        createPortal(tools, panelTools)
       ) : null}
       {kind === 'main' ? (
         <div className="thread-split" data-rail={railOpen ? 'open' : 'closed'}>

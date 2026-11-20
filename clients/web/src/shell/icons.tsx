@@ -164,6 +164,10 @@ export const ThumbDownIcon = proIcon(ThumbsDownIcon, 14);
 export const RailIcon = proIcon(PanelLeftIcon, 16);
 /** The thread's side rail (P29-20): a panel on the right. */
 export const SidePanelIcon = proIcon(PanelRightIcon, 16);
+/** Follow a thread (be told of its replies): the thread's header toggle (P34-06). */
+export const FollowIcon = proIcon(EyeIcon);
+/** Open the thread where it lives, in its channel. */
+export const OpenChannelIcon = proIcon(OpenIcon);
 export const SavePageIcon = proIcon(SaveIcon, 14);
 export const RegenerateIcon = proIcon(ArrowSyncIcon, 14);
 export const NextIcon = proIcon(ChevronRightIcon, 14);

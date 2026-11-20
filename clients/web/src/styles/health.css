@@ -78,7 +78,7 @@
 }
 
 .health-pct {
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-small);
   color: var(--ink);
 }

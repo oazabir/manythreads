@@ -221,6 +221,7 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
         <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} avatar={picture} />
         <div className="b-head-who">
           <PageHeader
+            inline
             title={<>{bot.name}<span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span></>}
             testIds={{ title: 'bot-title' }}
             description={<><span title={path} data-testid="bot-head-runtime">{bot.runtime === 'hermes' ? 'Hermes' : 'Rules'}</span>{bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}</>}

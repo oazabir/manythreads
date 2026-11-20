@@ -77,9 +77,9 @@ export default defineJourney({
         const request = pages.channel.message('write the release post for v2.14.0');
         const thread = await pages.channel.openThread(request);
         await expect(thread.replies).toHaveCount(2, { timeout: 60_000 });
-        const follow = page.getByRole('switch', { name: 'Follow thread' });
-        if ((await follow.getAttribute('aria-checked')) !== 'true') await follow.click();
-        await expect(page.getByTestId('follow-state')).toContainText('Following');
+        const follow = page.getByTestId('thread-follow');
+        if ((await follow.getAttribute('aria-pressed')) !== 'true') await follow.click();
+        await expect(follow).toHaveAttribute('aria-pressed', 'true');
       },
     },
   ],

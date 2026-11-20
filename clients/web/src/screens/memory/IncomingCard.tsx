@@ -88,7 +88,7 @@ export function IncomingCard({ slug, link, canManage, digests = [], concepts = 0
               <ul className="ms-digest-list" aria-label={`Digests from ${link.fromName}`}>
                 {digests.slice(0, 5).map((d) => (
                   <li key={`${d.period}-${d.at}`} className="ms-digest" data-testid="incoming-digest">
-                    <span className="mono">{d.period}</span>
+                    <span className="small-note">{d.period}</span>
                     <span>{digestStateWords(d.state)}</span>
                     {d.state === 'filed' && d.concepts > 0 ? <span>{String(d.concepts)} {d.concepts === 1 ? 'concept' : 'concepts'}</span> : null}
                     {d.reason && d.state !== 'filed' ? <span className="faint">{d.reason}</span> : null}

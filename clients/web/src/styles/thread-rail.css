@@ -24,30 +24,6 @@
   container: thread / inline-size;
 }
 
-.trToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* a narrow thread keeps the button to its icon (the words stay for a screen reader) so the header's other buttons still fit */
-@container thread (width < 560px) {
-  .trToggle {
-    justify-content: center;
-    min-inline-size: 44px;
-  }
-
-  .trToggleText {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
 .trRail {
   position: absolute;
   inset-block: 0;
@@ -417,7 +393,6 @@
   border-radius: var(--radius-xs);
   background: var(--bot-grey);
   color: var(--on-color);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }

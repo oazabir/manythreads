@@ -5,7 +5,7 @@ import { BackIcon, CloseIcon, ExpandIcon, RestoreIcon } from '../../shell/icons'
 import { useNarrow } from '../../shell/useNarrow';
 import { PANEL_MIN, PANEL_STEP, clampPanelWidth, maxPanelWidth, threadLayout, usePanelWidth, widthFromPointer } from './panelSize';
 import { panelRegistry } from './registry';
-import { PanelSubContext, PanelTitleContext } from './sub';
+import { PanelSubContext, PanelTitleContext, PanelToolsContext } from './sub';
 import { useEscapeToClose, usePanel } from './usePanel';
 
 /** The right-hand panel (landmark `right-panel`): hidden until an entry is open; the top entry is rendered, Back walks down. */
@@ -13,6 +13,7 @@ export function RightPanel() {
   const panel = usePanel();
   const [sub, setSub] = useState<string | null>(null);
   const [title, setTitle] = useState<string | null>(null);
+  const [tools, setTools] = useState<HTMLElement | null>(null);
   const narrow = useNarrow();
   const size = usePanelWidth();
   const [viewport, setViewport] = useState(() => window.innerWidth);
@@ -106,18 +107,24 @@ export function RightPanel() {
               <h2 className="panel-title" data-testid="panel-title">{title ?? def?.label ?? 'Panel'}</h2>
               {sub ? <p className="panel-sub" data-testid="thread-channel" data-vt-mask={top.type === 'file' ? true : undefined}>{sub}</p> : null}
             </div>
-            {resizable && isThread && !auto ? (
-              <button type="button" className="icon-btn panel-expand" aria-label={expanded ? 'Restore' : 'Expand thread'} aria-pressed={expanded} title={expanded ? 'Restore' : 'Expand thread'} data-testid="panel-expand" onClick={() => setExpanded((v) => !v)}>
-                {expanded ? <RestoreIcon /> : <ExpandIcon />}
-              </button>
-            ) : null}
-            <button type="button" className="icon-btn panel-close" aria-label="Close panel" onClick={panel.close}><CloseIcon /></button>
+            {/* one row of icon buttons on the right (P34-06): the entry's own (a thread's Follow and Open channel), then Expand and Close */}
+            <div className="panel-tools" data-testid="panel-tools">
+              <div className="panel-tools-own" ref={setTools} />
+              {resizable && isThread && !auto ? (
+                <button type="button" className="icon-btn panel-expand" aria-label={expanded ? 'Restore' : 'Expand thread'} aria-pressed={expanded} title={expanded ? 'Restore' : 'Expand thread'} data-testid="panel-expand" onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? <RestoreIcon /> : <ExpandIcon />}
+                </button>
+              ) : null}
+              <button type="button" className="icon-btn panel-close" aria-label="Close panel" title="Close" onClick={panel.close}><CloseIcon /></button>
+            </div>
           </header>
           <div className="panel-body" data-landmark="panel-body" data-panel-entry={`${top.type}:${top.id}`}>
             {def ? (
               <PanelSubContext.Provider value={setSub}>
                 <PanelTitleContext.Provider value={setTitle}>
-                  <def.Component entry={top} />
+                  <PanelToolsContext.Provider value={tools}>
+                    <def.Component entry={top} />
+                  </PanelToolsContext.Provider>
                 </PanelTitleContext.Provider>
               </PanelSubContext.Provider>
             ) : (

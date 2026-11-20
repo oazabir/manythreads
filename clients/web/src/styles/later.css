@@ -29,7 +29,6 @@
   padding: 8px 16px 4px;
   border-bottom: 1px solid var(--hairline);
   color: var(--faint);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -55,7 +54,6 @@
 .lt-where {
   margin: 0;
   color: var(--faint);
-  font-family: var(--mono);
   font-size: var(--fs-caption);
 }
 
@@ -131,7 +129,7 @@
 
 .lt-when {
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
   white-space: nowrap;
 }

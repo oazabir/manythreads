@@ -21,3 +21,10 @@ export function usePanelTitle(text: string | null | undefined): void {
     return () => set(null);
   }, [set, text]);
 }
+
+/**
+ * The element in the panel's header where the entry on screen puts its own icon buttons, before Expand and Close (a thread's Follow and Open channel,
+ * P34-06): one row of tools, as in the channel's header. Null until the header has mounted.
+ */
+export const PanelToolsContext = createContext<HTMLElement | null>(null);
+export const usePanelTools = (): HTMLElement | null => useContext(PanelToolsContext);

@@ -29,6 +29,13 @@ a.btn.primary {
   color: var(--mute);
 }
 
+/* the same small muted line in the body font, for words, names and counts: monospace is for code only (P34-06) */
+.small-note {
+  font-size: var(--fs-caption);
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
 .loading {
   color: var(--faint);
   font-size: var(--fs-small);
@@ -135,7 +142,6 @@ a.btn.primary {
   border-radius: var(--radius-sm);
   background: var(--ink);
   color: var(--on-ink);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
@@ -220,7 +226,6 @@ a.btn.primary {
 
 .rule-ok {
   color: var(--ok-ink);
-  font-family: var(--mono);
 }
 
 .fld-hint {
@@ -525,7 +530,7 @@ a.btn.primary {
 
 .bh .cnt {
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
   font-weight: 400;
 }
@@ -604,7 +609,6 @@ a.btn.primary {
 .mono-list span {
   margin-right: 10px;
   color: var(--mute);
-  font-family: var(--mono);
   font-size: var(--fs-caption);
 }
 
@@ -734,7 +738,6 @@ a.btn.primary {
   border-radius: var(--radius-sm);
   background: var(--shell);
   color: var(--mute);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   white-space: nowrap;
 }
@@ -870,7 +873,6 @@ a.btn.primary {
 }
 
 .status {
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 400;
 }
@@ -1065,7 +1067,7 @@ a.btn.primary {
   display: inline-flex;
   align-items: center;
   color: var(--faint);
-  font-family: var(--mono);
+  font-family: var(--mono); /* the team address `/slug` is typed as written (P34-06 review) */
   font-size: var(--fs-tiny);
 }
 
@@ -1096,7 +1098,6 @@ a.btn.primary {
 .tpl .ch span {
   margin-right: 0;
   color: var(--mute);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
 }
 

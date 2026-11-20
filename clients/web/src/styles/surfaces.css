@@ -99,7 +99,7 @@
 .sf-reject-name {
   margin-top: 2px;
   color: var(--mute);
-  font-family: var(--mono);
+  font-family: var(--mono); /* a component name is code (P34-06 review) */
   font-size: 0.85em;
   overflow-wrap: anywhere;
 }
@@ -573,7 +573,7 @@ ol.sf-list {
 
 .sf-diff-count {
   color: var(--mute);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .sf-diff-body {

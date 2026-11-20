@@ -501,7 +501,6 @@
   border-radius: var(--radius-sm);
   background: var(--bot-grey);
   color: var(--on-grey);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
@@ -565,7 +564,7 @@
 
 .frow .sz {
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 
@@ -1170,7 +1169,7 @@
 .t2 {
   margin-left: auto;
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 

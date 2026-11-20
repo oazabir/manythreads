@@ -103,7 +103,7 @@ export const LOCAL = {
   notification: 'notification',
   notificationOpen: 'notification-open',
   threadRow: 'thread-row',
-  followState: 'follow-state',
+  followState: 'thread-follow',
   teamSwitch: 'team-switch',
 } as const;
 

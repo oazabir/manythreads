@@ -169,7 +169,7 @@
 
 .audit-table td:first-child {
   white-space: nowrap;
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
   color: var(--mute);
 }

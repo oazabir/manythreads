@@ -85,7 +85,7 @@ function PersonRow({ m, slug, canManage, tagNames, act }: { m: RosterMember; slu
             <option value="member">Member</option>
           </select>
         ) : (
-          <span className="mono">{m.role === 'lead' ? 'Team lead' : 'Member'}</span>
+          <span className="small-note">{m.role === 'lead' ? 'Team lead' : 'Member'}</span>
         )}
         {m.tags.map((t) => (
           <span key={t} className="tagx" title={t}>
@@ -251,7 +251,7 @@ export function Roster() {
               <h2 className="bh" id="memory">Memory</h2>
               <div className="mrow memory-row">
                 <div>Team bank<div className="d">Built from everything that happens in this team's channels</div></div>
-                <div className="mono" title={`team:${t.slug}`}>Kept apart from other teams</div>
+                <div className="small-note" title={`team:${t.slug}`}>Kept apart from other teams</div>
               </div>
             </section>
           </div>
@@ -319,7 +319,7 @@ export function TeamChannels() {
             <p className="lede">Channel names stored in the template definition for {team.name}. They become real channels when the template is applied.</p>
             <section className="block" aria-label="Channels" data-landmark="channels">
               {def ? def.channels.map((c) => (
-                <div className="mrow chan-row" key={c.name}><span className="mono">{c.name}</span><span className="d">{c.purpose}</span></div>
+                <div className="mrow chan-row" key={c.name}><span className="small-note">{c.name}</span><span className="d">{c.purpose}</span></div>
               )) : <p className="note-row">No channels yet.</p>}
             </section>
           </>

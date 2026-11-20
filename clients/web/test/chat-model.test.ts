@@ -2,7 +2,7 @@ import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { ChannelMessage, ChatThreadState, ConversationListItem } from '@manythreads/shared';
-import { crumbsFor } from '../src/shell/breadcrumb';
+import { headerBackFor } from '../src/shell/headerBack';
 import { EmptyChat, greetingFor } from '../src/screens/chat/EmptyChat';
 import { HistoryRail } from '../src/screens/chat/HistoryRail';
 import { ReplyActions } from '../src/screens/chat/ReplyActions';
@@ -274,8 +274,8 @@ describe('the pieces of the screen', () => {
     expect(off).toContain('Brain is turned off.');
     expect(off).not.toContain('chat-prompt');
   });
-  it('names the Chat page in the trail, and a link to one chat under Bots', () => {
-    expect(crumbsFor('/t/eng/chat', 'Engineering').map((c) => c.label)).toEqual(['Engineering', 'Chat']);
-    expect(crumbsFor('/t/eng/chat/0194f0a0', 'Engineering', 'Brain').map((c) => c.label)).toEqual(['Engineering', 'Bots', 'Brain']);
+  it('the Chat page is top-level (no trail, P34-06); a link to one chat goes back to Bots', () => {
+    expect(headerBackFor('/t/eng/chat')).toBeNull();
+    expect(headerBackFor('/t/eng/chat/0194f0a0')).toEqual({ label: 'Bots', to: '/t/eng/bots' });
   });
 });

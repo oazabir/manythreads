@@ -16,16 +16,16 @@ import { RightPanel, usePanel } from '../kernel/panel';
 import { useRealtime } from '../realtime';
 import { AccountMenu } from './AccountMenu';
 import { BottomBar } from './BottomBar';
-import { crumbsFor } from './breadcrumb';
+import { headerBackFor } from './headerBack';
 import { ShellContext, type ShellValue } from './context';
 import { useNavCounts } from './counts';
-import { MenuIcon } from './icons';
+import { BackIcon, MenuIcon } from './icons';
 import { headerRoom, useElementWidth } from './headerRoom';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { SetupCard } from './SetupCard';
 import { Sidebar } from './Sidebar';
-import { CrumbTailContext, HeaderActionsContext, HeaderTitleContext, HeaderTopicContext, PageHeaderRegistry } from './topic';
+import { CrumbTailContext, HeaderActionsContext, HeaderTitleContext, HeaderTitleSlotContext, HeaderTopicContext, PageHeaderRegistry } from './topic';
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
@@ -51,11 +51,13 @@ export function Shell() {
   const [topic, setTopic] = useState<string | null>(null);
   const [titleNode, setTitleNode] = useState<ReactNode>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  // where a page's PageHeader draws its h1: in the band, so the page's header is one row like a channel's (P34-06)
+  const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);
   // how much room the header has: with a right panel open on a small screen it is tight (styles/channels.css)
   const [headerEl, setHeaderEl] = useState<HTMLElement | null>(null);
   const room = headerRoom(useElementWidth(headerEl), narrow);
   const [crumbTail, setCrumbTail] = useState<string | null>(null);
-  // how many PageHeaders are on screen: while one is, the band shows the trail and the page's own h1 is the title
+  // how many PageHeaders are on screen: while one is, its h1 is the band's title and the shell draws none of its own
   const [headers, setHeaders] = useState(0);
   const registerHeader = useCallback((delta: 1 | -1) => setHeaders((n) => Math.max(0, n + delta)), []);
 
@@ -96,7 +98,8 @@ export function Shell() {
   const inboxOwnsHeader = onThreads && !narrow && !guest && team !== null;
   const title = dmId ? (dm ? dmLabel(dm, session.person.id) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
   const onChat = dmId !== null || /^\/t\/[^/]+\/c\//.test(loc.pathname);
-  const trail = crumbsFor(loc.pathname, team?.name ?? null, crumbTail);
+  // a top-level screen has no trail (owner, 2026-11-19); a screen inside a section's list keeps one link back to it
+  const back = headerBackFor(loc.pathname);
   // the tab says where the person is and how much waits (a guest has no team); a page title set by a PageHeader h1 wins over the generic one
   const place = dmId ? title : crumbTail ?? title;
   useTabState({ place, team: team?.name ?? null, enabled: !teamsLoading });
@@ -116,6 +119,7 @@ export function Shell() {
       <HeaderActionsContext.Provider value={actionsSlot}>
       <CrumbTailContext.Provider value={setCrumbTail}>
       <PageHeaderRegistry.Provider value={registerHeader}>
+      <HeaderTitleSlotContext.Provider value={inboxOwnsHeader ? null : titleSlot}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <a className="skip-link" href="#content" onClick={(e) => { e.preventDefault(); document.getElementById('content')?.focus(); }}>{onChat ? 'Skip to messages' : 'Skip to content'}</a>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
@@ -140,17 +144,15 @@ export function Shell() {
             <button type="button" className="icon-btn menu-btn" aria-label="Open menu" aria-controls="shell-rail" aria-expanded={drawerOpen} onClick={() => setOpenedAt(loc.pathname + loc.search)}>
               <MenuIcon />
             </button>
-            {pageOwnsTitle ? (
-              <nav className="crumbs" aria-label="Breadcrumb">
-                <ol>
-                  {trail.map((c, i) => (
-                    <li key={`${i}-${c.label}`} className={i === trail.length - 1 ? 'crumb-last' : undefined} aria-current={i === trail.length - 1 ? 'page' : undefined}>
-                      {c.to ? <Link to={c.to}>{c.label}</Link> : c.label}
-                    </li>
-                  ))}
-                </ol>
-              </nav>
-            ) : (
+            {back && !onChat ? (
+              <Link className="chead-back" to={back.to} aria-label={`Back to ${back.label}`} title={`Back to ${back.label}`} data-testid="header-back">
+                <BackIcon />
+                <span className="chead-back-label" aria-hidden="true">{back.label}</span>
+              </Link>
+            ) : null}
+            {/* a PageHeader draws its h1 in here; the shell's own title is drawn only while no page header is mounted */}
+            <div className="chead-place" ref={setTitleSlot} />
+            {pageOwnsTitle ? null : (
               <>
                 <h1 className="chead-title">
                   <span className="sr-only">{`${session.workspace.name}: `}</span>
@@ -175,6 +177,7 @@ export function Shell() {
         <RightPanel />
         {narrow && !guest && team ? <BottomBar slug={team.slug} onSearch={openSearch} /> : null}
       </div>
+      </HeaderTitleSlotContext.Provider>
       </PageHeaderRegistry.Provider>
       </CrumbTailContext.Provider>
       </HeaderActionsContext.Provider>

@@ -537,7 +537,6 @@
 }
 
 .b-trg-type {
-  font-family: var(--mono);
   font-size: var(--fs-caption);
   color: var(--agent-ink);
 }
@@ -564,7 +563,6 @@
 }
 
 .b-run-trigger {
-  font-family: var(--mono);
   font-size: var(--fs-caption);
 }
 
@@ -677,7 +675,7 @@
 }
 
 .b-ev-case-id {
-  font-family: var(--mono);
+  font-family: var(--mono); /* an eval case id is code (P34-06 review) */
   font-size: var(--fs-caption);
 }
 

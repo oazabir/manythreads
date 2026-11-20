@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PageHeader } from '../src/components/PageHeader';
-import { crumbsFor } from '../src/shell/breadcrumb';
+import { headerBackFor } from '../src/shell/headerBack';
 
 describe('PageHeader', () => {
   it('draws one h1 with its description and actions', () => {
@@ -21,20 +21,13 @@ describe('PageHeader', () => {
   });
 });
 
-describe('crumbsFor', () => {
-  it('names the team and the section', () => {
-    expect(crumbsFor('/t/eng/boards', 'Engineering').map((c) => c.label)).toEqual(['Engineering', 'Boards']);
+// the trail of P21-12 is gone (P34-06, owner 2026-11-19): a top-level screen has none, a screen inside a list has one link back (header-pattern.test.ts)
+describe('headerBackFor', () => {
+  it('gives a top-level screen no way back', () => {
+    for (const p of ['/t/eng/boards', '/t/eng/agents', '/t/eng/projects', '/settings/account']) expect(headerBackFor(p), p).toBeNull();
   });
-  it('adds the item and links the section', () => {
-    const c = crumbsFor('/t/eng/bots/brain', 'Engineering', 'Brain');
-    expect(c.map((x) => x.label)).toEqual(['Engineering', 'Bots', 'Brain']);
-    expect(c[1]?.to).toBe('/t/eng/bots');
-  });
-  it('never reads Home over Agents or Projects', () => {
-    for (const p of ['/t/eng/agents', '/t/eng/projects']) expect(crumbsFor(p, 'Engineering').map((c) => c.label)).not.toContain('Home');
-  });
-  it('gives no team crumb without a team', () => {
-    expect(crumbsFor('/settings/account', null)).toEqual([]);
+  it('a bot\'s page goes back to Bots, never to Home', () => {
+    expect(headerBackFor('/t/eng/bots/brain')).toEqual({ label: 'Bots', to: '/t/eng/bots' });
   });
 });
 

@@ -180,7 +180,7 @@ function PersonalFileDetail({ concept, panel, onChanged, onGone }: { concept: Me
         {isStale(concept) ? <span className="mm-chip mm-chip-stale">stale</span> : null}
         {concept.status === 'deprecated' ? <span className="mm-chip mm-chip-deprecated">deprecated</span> : null}
       </div>
-      <div className="mm-tags mono" title={concept.path}>{friendlyPath(concept.path)}</div>
+      <div className="mm-tags small-note" title={concept.path}>{friendlyPath(concept.path)}</div>
       {concept.tags.length > 0 ? <div className="mm-tags">{concept.tags.join(', ')}</div> : null}
 
       {file.status === 'error' ? <p className="mi-error" role="alert" data-testid="personal-file-error">This file could not be opened: {file.error.message}</p> : null}

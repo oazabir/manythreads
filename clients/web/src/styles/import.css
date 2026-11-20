@@ -25,7 +25,6 @@
 
 .imp-status {
   margin-left: 8px;
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 400;
   color: var(--faint);

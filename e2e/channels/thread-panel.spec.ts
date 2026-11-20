@@ -135,15 +135,17 @@ test('following: the toggle in the panel is the same state the Threads inbox lis
   const rafi = await openAs(browser, 'rafi', `/t/engineering/c/${name}?panel=thread:${root.id}`);
   const panel = rafi.page.locator('[data-landmark="right-panel"]');
   try {
-    const toggle = panel.getByRole('switch', { name: 'Follow thread' });
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    // Follow is an icon toggle in the panel's header row (P34-06), before Expand and Close; its tooltip says what it does
+    const head = panel.locator('[data-landmark="panel-header"]');
+    const toggle = head.getByRole('button', { name: 'Follow thread' });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
     await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    await expect(panel.getByTestId('follow-state')).toContainText('Following');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveAttribute('title', /^Following/);
     await rafi.page.reload();
-    await expect(panel.getByRole('switch', { name: 'Follow thread' })).toHaveAttribute('aria-checked', 'true');
-    await panel.getByRole('switch', { name: 'Follow thread' }).click();
-    await expect(panel.getByRole('switch', { name: 'Follow thread' })).toHaveAttribute('aria-checked', 'false');
+    await expect(head.getByRole('button', { name: 'Follow thread' })).toHaveAttribute('aria-pressed', 'true');
+    await head.getByRole('button', { name: 'Follow thread' }).click();
+    await expect(head.getByRole('button', { name: 'Follow thread' })).toHaveAttribute('aria-pressed', 'false');
   } finally {
     await rafi.context.close();
     await omar.ctx.dispose();

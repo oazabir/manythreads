@@ -56,7 +56,7 @@
 
 .sch-when {
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
   white-space: nowrap;
 }
@@ -142,7 +142,7 @@
 
 .sch-time {
   color: var(--human);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 

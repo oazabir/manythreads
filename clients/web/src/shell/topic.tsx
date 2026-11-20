@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, type ReactNode } from 'react';
 
 /** What a screen says beside its title in the centre header (a channel's purpose, as the plate's "Ship coordination"). */
 export const HeaderTopicContext = createContext<(text: string | null) => void>(() => undefined);
@@ -26,7 +26,7 @@ export function useHeaderTitle(node: ReactNode): void {
 export const HeaderActionsContext = createContext<HTMLElement | null>(null);
 export const useHeaderActionsSlot = (): HTMLElement | null => useContext(HeaderActionsContext);
 
-/** The last crumb of the shell band's trail (a bot's name under Bots): a screen names the item it shows while it is mounted. */
+/** The item a screen shows (a bot's name under Bots), named while it is mounted: the browser tab says it (the band has no trail any more, P34-06). */
 export const CrumbTailContext = createContext<(label: string | null) => void>(() => undefined);
 export function useCrumbTail(label: string | null | undefined): void {
   const set = useContext(CrumbTailContext);
@@ -37,6 +37,14 @@ export function useCrumbTail(label: string | null | undefined): void {
 }
 
 /**
+ * Where a page's title goes in the shell's band (P34-06): a `PageHeader` inside the shell draws its h1 there, so a screen's header is one row, the title
+ * on the left and the tools on the right, like a channel's. Null outside the shell (the settings and account frames) and while a screen draws its own
+ * bands (the Threads inbox on a wide screen): the header is then drawn where the screen puts it.
+ */
+export const HeaderTitleSlotContext = createContext<HTMLElement | null>(null);
+export const useHeaderTitleSlot = (): HTMLElement | null => useContext(HeaderTitleSlotContext);
+
+/**
  * How many page headers are mounted. The shell draws a fallback title only while none is, so a screen that has not moved to `PageHeader`
  * still has exactly one h1 and a migrated one never makes two.
  */
@@ -45,7 +53,8 @@ export const PageHeaderRegistry = createContext<(delta: 1 | -1) => void>(() => u
 /** For a screen that draws its own h1 inside a list pane (the conversation list): tells the shell not to add a title of its own. */
 export function useOwnsPageTitle(): void {
   const register = useContext(PageHeaderRegistry);
-  useEffect(() => {
+  // before the browser paints, so the shell's fallback title and the page's own are never both drawn
+  useLayoutEffect(() => {
     register(1);
     return () => register(-1);
   }, [register]);

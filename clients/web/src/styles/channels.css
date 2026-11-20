@@ -518,7 +518,6 @@
   border-radius: var(--radius-xs);
   background: var(--bot-grey);
   color: var(--on-grey);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
@@ -1927,15 +1926,6 @@
   border-bottom: 1px solid var(--rule);
 }
 
-.thread .follow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  color: var(--mute);
-  font-size: var(--fs-caption);
-}
-
 .thread .linked {
   margin: 10px 0;
   padding: 8px 10px;
@@ -2007,10 +1997,8 @@
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-family: var(--font-display);
-  font-size: var(--fs-h2);
-  font-weight: var(--fw-display);
-  letter-spacing: var(--ls-title);
+  font-size: var(--fs-h2); /* the band's one title style (P34-06): the channel header's size and weight */
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2024,17 +2012,10 @@
 
 .thread-head .right {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-left: auto;
-}
-
-.thread-head .btn {
-  white-space: nowrap;
-}
-
-.thread-head a.btn {
-  text-decoration: none;
 }
 
 /* ---- Threads inbox ---- */
@@ -2066,8 +2047,15 @@
   align-items: center;
   gap: 10px;
   min-height: 50px;
-  padding: 11px 16px;
+  padding: 11px 20px;
   border-bottom: 1px solid var(--rule);
+}
+
+/* the band's inset on a phone, as the shell's header there */
+@media (width <= 760px) {
+  .inh {
+    padding-inline: 12px;
+  }
 }
 
 .inh-title {
@@ -2137,7 +2125,6 @@
 .trow .ch {
   display: block;
   color: var(--faint);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
 }
 
@@ -2169,7 +2156,7 @@
   flex-direction: column;
   align-items: flex-end;
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 
@@ -2430,7 +2417,7 @@
 
 .vpop-item time {
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
 }
 

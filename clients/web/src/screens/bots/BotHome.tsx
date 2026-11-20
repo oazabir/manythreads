@@ -27,6 +27,7 @@ export function NoChat({ bot, team, canEdit }: { bot: BotSummary; team: string; 
   return (
     <div className="bh-empty" data-testid="bot-no-chat" data-bot={bot.slug}>
       <PageHeader
+        inline
         title={`No chat is available with ${bot.name}.`}
         testIds={{ title: 'bot-no-chat-title', description: 'bot-no-chat-why' }}
         description={whyNoChat(bot)}

@@ -41,9 +41,15 @@
 }
 
 .icon-btn:hover,
-.icon-btn[aria-expanded="true"] {
+.icon-btn[aria-expanded="true"],
+.icon-btn[aria-pressed="true"] {
   background: var(--nav-on);
   color: var(--ink);
+}
+
+.icon-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* ---- rail ---- */
@@ -284,18 +290,29 @@ a.it:hover {
   white-space: nowrap;
 }
 
+/*
+ * The sidebar's section headings, one style (P34-06): a channel group ("Channels", a group the person made) and a section ("Direct messages",
+ * "Projects", "Bots") have the same size, weight, colour, casing and spacing; only the group's caret and the section's fold button differ.
+ */
+.grp,
+.sec {
+  padding: 12px 8px 4px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: normal;
+  line-height: 1.4;
+  text-transform: none;
+}
+
 .grp {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 12px 8px 4px;
   border: 0;
   background: none;
-  color: var(--faint);
-  font: inherit;
-  font-size: var(--fs-caption);
-  font-weight: 500;
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -303,10 +320,6 @@ a.it:hover {
 .sec {
   display: flex;
   align-items: baseline;
-  padding: 14px 8px 4px;
-  color: var(--faint);
-  font-size: var(--fs-tiny);
-  letter-spacing: 0.01em;
   text-decoration: none;
 }
 
@@ -326,7 +339,7 @@ a.it:hover {
   place-items: center;
   width: 22px;
   height: 22px;
-  margin: 10px 0 0 4px;
+  margin: 8px 0 0 4px;
   padding: 0;
   border: 0;
   background: none;
@@ -612,28 +625,50 @@ a.sec:hover {
   border-bottom: 1px solid var(--rule);
 }
 
-.panel-head .icon-btn:first-child:not(.panel-close) {
+.panel-head > .icon-btn:first-child {
   margin-left: -8px;
 }
 
+/* the band's pattern (P34-06): the title and its place on one line ("Thread  # dev"), as a channel's name and topic */
 .panel-titles {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
 
 .panel-title {
+  min-width: 0;
   margin: 0;
-  font-size: var(--fs-body);
+  overflow: hidden;
+  font-size: var(--fs-h2);
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel-sub {
+  flex-shrink: 100;
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: var(--faint);
   font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.panel-close {
+.panel-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
+}
+
+.panel-tools-own {
+  display: contents;
 }
 
 .panel-body {
@@ -657,7 +692,6 @@ a.sec:hover {
 .panel-empty-id {
   margin: 10px 0 0;
   color: var(--faint);
-  font-family: var(--mono);
   font-size: var(--fs-caption);
   overflow-wrap: anywhere;
 }
@@ -741,7 +775,7 @@ a.sec:hover {
   }
 
   .rail .sec {
-    padding: 14px 14px 4px;
+    padding: 12px 14px 4px;
   }
 
   .right-panel:not([hidden]) {
@@ -913,53 +947,68 @@ a.sec:hover {
   }
 }
 
-/* ---- the trail in the band of a page that is not a channel (P21-12): Engineering / Boards ---- */
-.crumbs {
-  min-width: 0;
-  color: var(--mute);
-  font-size: var(--fs-small);
-}
-
-.crumbs ol {
+/* ---- a page's own title in the band (P34-06): one row like a channel's, no trail; a screen inside a list keeps one link back ---- */
+.chead-place {
   display: flex;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
-.crumbs li {
+.chead-place:empty {
+  display: none;
+}
+
+.chead-place > .chead-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.crumbs li + li::before {
-  content: "/";
-  margin: 0 6px;
-  color: var(--faint);
-}
-
-.crumbs a {
-  color: inherit;
+.chead-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  margin-left: -8px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--mute);
+  font-size: var(--fs-small);
   text-decoration: none;
 }
 
-.crumbs a:hover {
+.chead-back:hover {
+  background: var(--nav-on);
   color: var(--ink);
-  text-decoration: underline;
 }
 
-.crumbs .crumb-last {
-  color: var(--ink);
+.ph-band-actions {
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto; /* several actions at 761-1000 px with a panel open scroll inside the band instead of pushing out of it (P34-06 review) */
+  scrollbar-width: none;
 }
 
 @media (width <= 760px) {
-  .crumbs li:not(.crumb-last) {
+  /* on a phone the link back is the arrow alone, so the title keeps the row */
+  .chead-back {
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .chead-back-label {
     display: none;
   }
 
-  .crumbs li + li::before {
-    content: none;
+  /* the panel's row of tools is a finger wide on a phone, as the band's */
+  .panel-head .icon-btn {
+    width: 40px;
+    height: 40px;
   }
 }
 

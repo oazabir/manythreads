@@ -12,7 +12,7 @@ const state: { bot: Partial<BotSummary>; canEdit: boolean } = { bot: {}, canEdit
 vi.mock('../src/screens/bots/store', () => ({
   useBot: () => ({ slug: 'engineering', canEdit: state.canEdit, q: { status: 'ok', data: { bot: { name: 'Coder', slug: 'coder', kind: 'agent', avatar: null, status: 'active', conversational: true, ...state.bot } }, reload: () => undefined } }),
 }));
-vi.mock('../src/shell/topic', () => ({ useCrumbTail: () => undefined, useOwnsPageTitle: () => undefined }));
+vi.mock('../src/shell/topic', () => ({ useCrumbTail: () => undefined, useOwnsPageTitle: () => undefined, useHeaderTitleSlot: () => null, useHeaderActionsSlot: () => null }));
 const { BotHome, allowsChat, whyNoChat } = await import('../src/screens/bots/BotHome');
 const { botChatPath, botSettingsPath } = await import('../src/screens/bots/botPaths');
 

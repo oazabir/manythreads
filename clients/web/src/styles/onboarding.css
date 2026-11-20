@@ -58,7 +58,7 @@
   border: 1px solid var(--rule);
   border-radius: 50%;
   color: var(--mute);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-caption);
 }
 
@@ -265,7 +265,7 @@
 
 .ob-card-title .cnt {
   color: var(--faint);
-  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-tiny);
   font-weight: 400;
 }

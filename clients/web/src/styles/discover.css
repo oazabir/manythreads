@@ -379,7 +379,6 @@
   border-radius: var(--radius-sm);
   background: var(--bot-grey);
   color: var(--on-grey);
-  font-family: var(--mono);
   font-size: var(--fs-tiny);
   font-weight: 600;
 }
