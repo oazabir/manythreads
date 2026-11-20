@@ -47,6 +47,8 @@ import { MEETING_COLUMNS, loadMeeting, summaries, toMeeting, type MeetingRow } f
 import { announceRoom, ringDirectMessage } from './live.ts';
 import { MEETING_SERVICE_SEATS, assertRoomHasSpace, roomCap } from './limits.ts';
 import { emitJoined, endRoom, scheduleAutoEnd } from './service.ts';
+import { channelFacts, inviteToCall } from './invites.ts';
+import { addNotetaker } from './notetaker.ts';
 
 // The routes of voice rooms (docs/plugins/meetings.md). Every route but the media server's webhook runs as the caller, so the row-level security of the tables
 // decides who sees a room: whoever can read the channel. Starting needs the right to post there. Nothing here hands a media token to a bot.
@@ -63,9 +65,14 @@ export async function callerPerson(tx: PluginTx): Promise<Caller> {
   return { actorId: row.actor, personId: row.person };
 }
 
-/** "Voice room · 14:02" (UTC): the title of a room whose starter wrote none. */
-export function defaultTitle(now: Date): string {
-  return `Voice room · ${now.toISOString().slice(11, 16)}`;
+/**
+ * The title of a call whose starter wrote none (the time in UTC): "Call · #dev · 14:02" in a channel, "Call · 14:02" in a direct message or any other conversation, whose
+ * name is no title.
+ */
+export function defaultTitle(now: Date, channel: { kind: string; name: string } | null): string {
+  const time = now.toISOString().slice(11, 16);
+  const name = channel?.kind === 'channel' ? [...channel.name.replace(/^#/, '')].slice(0, 80).join('') : '';
+  return name === '' ? `Call · ${time}` : `Call · #${name} · ${time}`;
 }
 
 /**
@@ -122,21 +129,34 @@ export function startMessageBody(title: string): string {
  * Gets or makes the one live room of a channel and puts the caller in it. Used by the start route and by the join route of a planned room (`scheduledMeetingId`: the new room remembers
  * its plan, and the database marks the plan `started`). A second start in the same moment, or while a room is live, comes back with the room that is there (`created: false`).
  *
- * A new room makes every database write first (the started event, the start message stamped with `meta.meeting`, the thread, the starter's place, `onCreated`, the ring of a
- * direct message) and asks the media server for the room last, just before the token: the media room lives outside the transaction, so a start the database refuses leaves no
- * media room behind. The start message is the call card; when it cannot be written the start fails with the reason instead of opening a call without one.
+ * A new room makes every database write first (the started event, the start message stamped with `meta.meeting`, the thread, the starter's place, the invitations, the
+ * note-taker, `onCreated`, the ring of a direct message) and asks the media server for the room last, just before the token: the media room lives outside the transaction, so a
+ * start the database refuses leaves no media room behind (review correction 5). The start message is the call card; when it cannot be written the start fails with the reason
+ * instead of opening a call without one. Joining a call that was already live invites nobody and adds no note-taker (`invited: 0`).
+ *
+ * `inviteeIds` are asked to a new call in a channel (P15-27); in a direct message everyone is rung instead, so they are not used there. `notetakerBotId` is added as the call
+ * opens, through the same checks as the add route; a refusal fails the whole start with the reason.
  */
 export async function startRoom(
   ctx: PluginContext,
   tx: PluginTx,
-  input: { channelId: string; title: string | undefined; caller: Caller; scheduledMeetingId?: string; onCreated?: (m: MeetingRow) => Promise<void> },
-): Promise<{ m: MeetingRow; created: boolean; join: MeetingJoin }> {
+  input: {
+    channelId: string;
+    title: string | undefined;
+    caller: Caller;
+    scheduledMeetingId?: string;
+    inviteeIds?: readonly string[];
+    notetakerBotId?: string | null;
+    onCreated?: (m: MeetingRow) => Promise<void>;
+  },
+): Promise<{ m: MeetingRow; created: boolean; join: MeetingJoin; invited: number }> {
   const { channelId, caller } = input;
   const media = requireMedia(ctx);
   // Whoever may post in the channel may start a room there; a channel the caller cannot read looks the same as one they cannot post in.
   const can = (await tx.query<{ ok: boolean | null }>("SELECT app.lookup_channel_can($1::uuid, 'post') AS ok", [channelId])).rows[0]?.ok;
   if (can !== true) throw forbidden('You cannot start a voice room in this channel');
   const now = ctx.runtime.now();
+  const channel = (await channelFacts(tx, channelId)) ?? null;
   const ids = (await tx.query<{ id: string; workspace_id: string }>('SELECT uuidv7() AS id, app.workspace_id() AS workspace_id')).rows[0]!;
   // One live room per channel: a second start in the same moment, or while a room is live, comes back with the room that is there.
   const row = await ctx.db.getOneOrCreate<{ id: string }>(tx, {
@@ -145,7 +165,7 @@ export async function startRoom(
       id: ids.id,
       workspace_id: ids.workspace_id,
       channel_id: channelId,
-      title: input.title ?? defaultTitle(now),
+      title: input.title ?? defaultTitle(now, channel),
       started_by: caller.actorId,
       organizer_id: caller.actorId,
       ...(input.scheduledMeetingId ? { scheduled_meeting_id: input.scheduledMeetingId } : {}),
@@ -157,7 +177,7 @@ export async function startRoom(
   const created = row.id === ids.id;
   const m = await loadMeeting(tx, row.id);
   if (!m) throw notFound('That voice room is not available');
-  if (!created) return { m, created, join: await joinAndToken(ctx, tx, media, m, caller) };
+  if (!created) return { m, created, join: await joinAndToken(ctx, tx, media, m, caller), invited: 0 };
 
   await ctx.audit.emit(
     tx,
@@ -191,6 +211,10 @@ export async function startRoom(
   await tx.query('UPDATE app.meetings SET thread_root_id = $2::uuid WHERE id = $1::uuid', [m.id, root.id]);
   m.thread_root_id = root.id;
   const name = await enterRoom(ctx, tx, m, caller);
+  // the people asked to the call (the database refuses the whole list if one of them cannot read the channel), then the note-taker
+  const invited = channel?.kind === 'dm' ? [] : await inviteToCall(ctx, tx, m, caller, input.inviteeIds ?? [], true);
+  if (input.notetakerBotId) await addNotetaker(ctx, tx, m, caller, input.notetakerBotId, { atStart: true });
+  // no second push for the invitations: the join above already told the readers, and a push is delivered at the commit, when the invitations are there to read
   if (input.onCreated) await input.onCreated(m);
   // a new call in a direct message rings the other people for thirty seconds (a job writes "Missed call" if nobody picks up)
   await ringDirectMessage(ctx, tx, m, { actorId: caller.actorId, personId: caller.personId });
@@ -201,7 +225,7 @@ export async function startRoom(
   } catch (err) {
     throw mediaFailure(err);
   }
-  return { m, created, join: await mediaToken(media, m, caller, name) };
+  return { m, created, join: await mediaToken(media, m, caller, name), invited: invited.length };
 }
 
 export function registerMeetingRoutes(ctx: PluginContext): void {
@@ -224,8 +248,16 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
       const caller = await callerPerson(tx);
       // nothing is written for a call that cannot be made (P17-01 brings video)
       if (body.kind === 'video') throw conflict('Video calls are not available yet');
-      const { m, created, join } = await startRoom(ctx, tx, { channelId, title: body.title, caller });
-      return json(StartMeetingResponse.parse({ meeting: toMeeting(m), created, join }), 200);
+      const { m, created, join, invited } = await startRoom(ctx, tx, {
+        channelId,
+        title: body.title,
+        caller,
+        ...(body.inviteeIds ? { inviteeIds: body.inviteeIds } : {}),
+        ...(body.notetakerBotId ? { notetakerBotId: body.notetakerBotId } : {}),
+      });
+      // the note-taker may have been added: the answer shows the call as it is now
+      const fresh = created && body.notetakerBotId ? ((await loadMeeting(tx, m.id)) ?? m) : m;
+      return json(StartMeetingResponse.parse({ meeting: toMeeting(fresh), created, join, invited }), 200);
     }),
   });
 

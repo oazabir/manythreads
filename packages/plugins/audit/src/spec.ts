@@ -838,6 +838,19 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     if (!teamId) return null;
     return { action: 'meeting.started', who: actor(e['startedBy']), teamId, target: of('meeting', uuid(e['meetingId'])) };
   },
+  // People asked to a call (P15-27): who asked and how many, never who (the people are in the event log) or the call's title. A direct-message call invites nobody.
+  'meetings.invite.sent': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    const n = Array.isArray(e['personIds']) ? e['personIds'].length : 0;
+    return {
+      action: 'meeting.invited',
+      who: actor(e['invitedBy']),
+      teamId,
+      target: of('meeting', uuid(e['meetingId'])),
+      reason: `Invited ${plural(n, 'person', 'people')}${e['first'] === true ? ' as the call started' : ''}`,
+    };
+  },
   'meetings.meeting.ended': (e) => {
     const teamId = team(e['teamId']);
     if (!teamId) return null;

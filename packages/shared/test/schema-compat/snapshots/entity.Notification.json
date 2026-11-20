@@ -16,7 +16,8 @@
         "message",
         "reminder",
         "meeting_actions",
-        "meeting_soon"
+        "meeting_soon",
+        "meeting_invite"
       ]
     },
     "refType": {
@@ -25,7 +26,8 @@
         "message",
         "reminder",
         "meeting",
-        "scheduled_meeting"
+        "scheduled_meeting",
+        "meeting_invite"
       ]
     },
     "refId": {

@@ -23,6 +23,7 @@ import { registerRingEndJob } from './live.ts';
 import { registerMeetingJobs } from './jobs.ts';
 import { registerMeetingRoutes } from './routes.ts';
 import { registerCallCardRoutes } from './routes-cards.ts';
+import { registerInviteRoutes } from './invites.ts';
 import { registerMediaWebhook } from './webhook.ts';
 
 /**
@@ -51,6 +52,8 @@ export default definePlugin({
         'meetings.notetaker.removed',
         'meetings.recording.started',
         'meetings.recording.stopped',
+        // the people asked to a call (P15-27); the notifications plugin tells them
+        'meetings.invite.sent',
         // Bundle D (docs/plugins/meetings.md "Bundle D contracts"): rooms planned ahead on a calendar
         'meetings.scheduled.created',
         'meetings.scheduled.changed',
@@ -77,6 +80,7 @@ export default definePlugin({
   register(ctx) {
     registerMeetingRoutes(ctx);
     registerCallCardRoutes(ctx);
+    registerInviteRoutes(ctx);
     registerConsentRoutes(ctx);
     registerRingEndJob(ctx);
     registerMediaWebhook(ctx);

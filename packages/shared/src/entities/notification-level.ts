@@ -39,7 +39,8 @@ export function levelAllows(level: NotificationLevel, kind: NotificationKind): b
   if (kind === 'reminder' || kind === 'meeting_actions' || kind === 'meeting_soon') return true;
   if (level === 'nothing') return false;
   if (level === 'all') return true;
-  return kind === 'mention' || kind === 'reply';
+  // An invitation to a call names the person, like a mention: "mentions" lets it through, "nothing" silences it (it is about that channel).
+  return kind === 'mention' || kind === 'reply' || kind === 'meeting_invite';
 }
 
 /** Plain words for a level (the settings screen and the channel bell menu). */

@@ -8,6 +8,7 @@
     "message",
     "reminder",
     "meeting_actions",
-    "meeting_soon"
+    "meeting_soon",
+    "meeting_invite"
   ]
 }

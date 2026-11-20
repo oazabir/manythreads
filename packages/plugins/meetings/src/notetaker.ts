@@ -52,7 +52,8 @@ const AnnouncePayload = z.object({
   workspaceId: z.uuid(),
   actorId: z.uuid(),
   botId: z.uuid(),
-  what: z.enum(['added', 'removed']),
+  // `started`: added as the call opened (nobody else was there yet, so nobody is asked again)
+  what: z.enum(['added', 'removed', 'started']),
 });
 
 interface Caller {
@@ -111,7 +112,7 @@ async function loadTeamNotetakerAllowed(ctx: PluginContext, tx: PluginTx, teamId
 
 // ---- who may be added ---------------------------------------------------------------------------------------------------------------------
 
-interface BotRow extends Record<string, unknown> {
+export interface BotRow extends Record<string, unknown> {
   id: string;
   slug: string;
   name: string;
@@ -119,22 +120,25 @@ interface BotRow extends Record<string, unknown> {
   avatar: string | null;
 }
 
-const toBot = (r: BotRow): MeetingNotetakerBot => MeetingNotetakerBot.parse({ botId: r.id, slug: r.slug, name: r.name, role: r.role, avatar: r.avatar });
+export const toBot = (r: BotRow): MeetingNotetakerBot => MeetingNotetakerBot.parse({ botId: r.id, slug: r.slug, name: r.name, role: r.role, avatar: r.avatar });
 
-/** The active bots the caller can see whose BOT.md lists the trigger `meeting`, of the room's team or workspace-wide (the same rule the SQL function applies, plus the trigger). */
-async function eligibleBots(tx: PluginTx, m: MeetingRow): Promise<BotRow[]> {
+/**
+ * The active bots the caller can see whose BOT.md lists the trigger `meeting`, of the room's team (`teamId`; null in a direct message) or workspace-wide (the same rule
+ * the SQL function applies, plus the trigger).
+ */
+export async function eligibleBots(tx: PluginTx, teamId: string | null): Promise<BotRow[]> {
   return (
     await tx.query<BotRow>(
       `SELECT b.id, b.slug, b.name, b.role, b.avatar FROM app.bots b
         WHERE b.status = 'active' AND b.triggers @> '[{"type": "meeting"}]'::jsonb
           AND (b.visibility = 'workspace' OR ($1::uuid IS NOT NULL AND b.team_id = $1::uuid))
         ORDER BY b.name, b.id LIMIT 50`,
-      [m.team_id],
+      [teamId],
     )
   ).rows;
 }
 
-interface Availability {
+export interface Availability {
   canAdd: boolean;
   reason: string | null;
   /** The status a refused add answers with: 403 for a switch somebody turned off, 409 for a state that may pass. */
@@ -145,36 +149,57 @@ const open = (): Availability => ({ canAdd: true, reason: null, status: 409 });
 const shut = (reason: string, status: 403 | 409 = 409): Availability => ({ canAdd: false, reason, status });
 
 /** How many rooms with a note-taker this server holds besides `exceptMeetingId` (the database's view: the rooms live now with a note-taker set). */
-async function otherNotetakerRooms(ctx: PluginContext, exceptMeetingId: string): Promise<number> {
+async function otherNotetakerRooms(ctx: PluginContext, exceptMeetingId: string | null): Promise<number> {
   return ctx.db.system(
     async (tx) =>
-      (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.meetings WHERE state = 'live' AND notetaker_bot_id IS NOT NULL AND id <> $1::uuid", [exceptMeetingId])).rows[0]?.n ?? 0,
+      (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.meetings WHERE state = 'live' AND notetaker_bot_id IS NOT NULL AND id IS DISTINCT FROM $1::uuid", [exceptMeetingId])).rows[0]
+        ?.n ?? 0,
   );
 }
 
-/** Whether a note-taker may be added to this room right now, and if not, why, in plain words. */
-export async function notetakerAvailability(ctx: PluginContext, tx: PluginTx, m: MeetingRow, callerActorId: string): Promise<Availability> {
+/** The media server's part: it is set up and can host a listener. Null when it can. */
+function mediaAvailability(ctx: PluginContext): Availability | null {
   const media = currentMedia(ctx);
   if (!media) return shut(NOT_SET_UP);
   const status = media.status();
   if (!status.configured) return shut(status.reason ?? NOT_SET_UP);
   if (typeof media.listen !== 'function') return shut('This media server cannot host a note-taker.');
+  return null;
+}
+
+/** The place's part: the workspace and the team allow note-takers, transcription is allowed, a speech model is set up, and this server has room for one more. */
+async function placeAvailability(ctx: PluginContext, tx: PluginTx, teamId: string | null, exceptMeetingId: string | null): Promise<Availability> {
+  const settings = await loadMeetingsSettings(tx);
+  if (!settings.notetakerAllowed) return shut('Note-takers are switched off for this workspace. A workspace admin can allow them.', 403);
+  if (teamId !== null && !(await loadTeamNotetakerAllowed(ctx, tx, teamId))) {
+    return shut('Note-takers are switched off for this team. A team lead can allow them in the team’s TEAM.md.', 403);
+  }
+  // transcription switched off (by the workspace or the team) means nothing is written down, by a person's device or by a bot
+  const limits = await transcribeLimits(ctx, tx, teamId);
+  if (limits.allowed.length === 0) return shut(limits.reason ?? 'Transcription is not allowed here.', 403);
+  const transcriber = ctx.providers.get<LlmTranscriber>('llm');
+  if (!transcriber || typeof transcriber.transcribe !== 'function') return shut('Transcription on the server is not set up. Ask a workspace admin to connect a speech model.');
+  if ((await otherNotetakerRooms(ctx, exceptMeetingId)) >= maxRooms()) return shut('The note-taker is busy, try again in a minute.');
+  return open();
+}
+
+/**
+ * Whether a note-taker could be added to a call that starts now in a channel of `teamId` (null: a direct message): the media server and the place, without a room. The
+ * start dialog asks this before there is a call (P15-25); the start itself checks the room as well.
+ */
+export async function notetakerPlaceAvailability(ctx: PluginContext, tx: PluginTx, teamId: string | null): Promise<Availability> {
+  return mediaAvailability(ctx) ?? (await placeAvailability(ctx, tx, teamId, null));
+}
+
+/** Whether a note-taker may be added to this room right now, and if not, why, in plain words. */
+export async function notetakerAvailability(ctx: PluginContext, tx: PluginTx, m: MeetingRow, callerActorId: string): Promise<Availability> {
+  const media = mediaAvailability(ctx);
+  if (media) return media;
   if (m.state !== 'live') return shut('This voice room has ended.');
   const here = await tx.query('SELECT 1 FROM app.meeting_participants WHERE meeting_id = $1::uuid AND actor_id = $2::uuid AND left_at IS NULL', [m.id, callerActorId]);
   if (here.rows.length === 0) return shut('Join the voice room to add a note-taker.', 403);
   if (m.notetaker_bot_id) return shut('This room already has a note-taker.');
-  const settings = await loadMeetingsSettings(tx);
-  if (!settings.notetakerAllowed) return shut('Note-takers are switched off for this workspace. A workspace admin can allow them.', 403);
-  if (m.team_id !== null && !(await loadTeamNotetakerAllowed(ctx, tx, m.team_id))) {
-    return shut('Note-takers are switched off for this team. A team lead can allow them in the team’s TEAM.md.', 403);
-  }
-  // transcription switched off (by the workspace or the team) means nothing is written down, by a person's device or by a bot
-  const limits = await transcribeLimits(ctx, tx, m.team_id);
-  if (limits.allowed.length === 0) return shut(limits.reason ?? 'Transcription is not allowed here.', 403);
-  const transcriber = ctx.providers.get<LlmTranscriber>('llm');
-  if (!transcriber || typeof transcriber.transcribe !== 'function') return shut('Transcription on the server is not set up. Ask a workspace admin to connect a speech model.');
-  if ((await otherNotetakerRooms(ctx, m.id)) >= maxRooms()) return shut('The note-taker is busy, try again in a minute.');
-  return open();
+  return placeAvailability(ctx, tx, m.team_id, m.id);
 }
 
 async function currentNotetaker(ctx: PluginContext, tx: PluginTx, m: MeetingRow): Promise<MeetingNotetaker | null> {
@@ -209,6 +234,45 @@ async function emitConsentReset(ctx: PluginContext, tx: PluginTx, m: MeetingRow,
   );
 }
 
+/**
+ * Adds `botId` as the room's note-taker, as the caller (who must be in the room): every check first (the media server, the room, the place, the bot), then the change, its
+ * event, the push to the room's readers and the jobs that post the line in the call thread and start the listener after the commit. A refusal throws with the reason
+ * (403 for a switch somebody turned off, 409 for a state that may pass) before anything is written. The add route uses it, and the start route as the call opens
+ * (`atStart`): then the starter is the only person in the room and has not been asked yet, so nobody is asked again (no consent reset event; review correction 5).
+ */
+export async function addNotetaker(ctx: PluginContext, tx: PluginTx, m: MeetingRow, caller: Caller, botId: string, options: { atStart?: boolean } = {}): Promise<MeetingNotetaker> {
+  const available = await notetakerAvailability(ctx, tx, m, caller.actorId);
+  if (!available.canAdd) throw new HttpError(available.status, available.status === 403 ? 'forbidden' : 'conflict', available.reason ?? 'A note-taker cannot be added now.');
+  const bot = (await eligibleBots(tx, m.team_id)).find((b) => b.id === botId);
+  if (!bot) throw new HttpError(409, 'conflict', 'This bot cannot be the note-taker of this room.');
+
+  const changed = (await tx.query<{ changed: boolean }>('SELECT app.meetings_set_notetaker($1::uuid, $2::uuid) AS changed', [m.id, bot.id])).rows[0]?.changed === true;
+  const after = (await loadMeeting(tx, m.id)) ?? m;
+  if (changed) {
+    await ctx.audit.emit(
+      tx,
+      MeetingsNotetakerAddedEvent.parse({
+        type: 'meetings.notetaker.added',
+        schemaVersion: 1,
+        workspaceId: m.workspace_id,
+        teamId: m.team_id,
+        channelId: m.channel_id,
+        meetingId: m.id,
+        botId: bot.id,
+        addedBy: caller.actorId,
+        at: ctx.runtime.now().toISOString(),
+      }),
+    );
+    // everybody was asked again by the SQL function: say so as turning transcription on does (not as the call opens: only the starter is there, and was never asked)
+    if (!options.atStart) await emitConsentReset(ctx, tx, after, caller.actorId);
+    await announceRoom(ctx, tx, after);
+    const what = options.atStart ? 'started' : 'added';
+    await ctx.jobs.enqueue(tx, ANNOUNCE_QUEUE, { meetingId: m.id, workspaceId: m.workspace_id, actorId: caller.actorId, botId: bot.id, what }, { dedupeKey: `announce:added:${m.id}:${bot.id}` });
+    await ctx.jobs.enqueue(tx, LISTENER_START_QUEUE, { meetingId: m.id, workspaceId: m.workspace_id }, { dedupeKey: `listener:${m.id}` });
+  }
+  return MeetingNotetaker.parse({ bot: toBot(bot), listening: isListening(ctx, m.id) });
+}
+
 export function registerNotetaker(ctx: PluginContext): void {
   // ---- who can be added, and what is there now ----------------------------------------------------------------------------------
   ctx.http.route({
@@ -221,7 +285,7 @@ export function registerNotetaker(ctx: PluginContext): void {
       const caller = await callerPerson(tx);
       const m = await loadMeeting(tx, meetingId);
       if (!m) throw notFound('That voice room is not available');
-      const bots = await eligibleBots(tx, m);
+      const bots = await eligibleBots(tx, m.team_id);
       const current = await currentNotetaker(ctx, tx, m);
       const available = await notetakerAvailability(ctx, tx, m, caller.actorId);
       return json(ListMeetingNotetakersResponse.parse({ bots: bots.map(toBot), current, canAdd: available.canAdd, reason: available.reason }));
@@ -244,35 +308,8 @@ export function registerNotetaker(ctx: PluginContext): void {
         const same = await currentNotetaker(ctx, tx, m);
         if (same) return json(SetMeetingNotetakerResponse.parse({ notetaker: same }));
       }
-      const available = await notetakerAvailability(ctx, tx, m, caller.actorId);
-      if (!available.canAdd) throw new HttpError(available.status, available.status === 403 ? 'forbidden' : 'conflict', available.reason ?? 'A note-taker cannot be added now.');
-      const bot = (await eligibleBots(tx, m)).find((b) => b.id === botId);
-      if (!bot) throw new HttpError(409, 'conflict', 'This bot cannot be the note-taker of this room.');
-
-      const changed = (await tx.query<{ changed: boolean }>('SELECT app.meetings_set_notetaker($1::uuid, $2::uuid) AS changed', [m.id, bot.id])).rows[0]?.changed === true;
-      const after = (await loadMeeting(tx, m.id)) ?? m;
-      if (changed) {
-        await ctx.audit.emit(
-          tx,
-          MeetingsNotetakerAddedEvent.parse({
-            type: 'meetings.notetaker.added',
-            schemaVersion: 1,
-            workspaceId: m.workspace_id,
-            teamId: m.team_id,
-            channelId: m.channel_id,
-            meetingId: m.id,
-            botId: bot.id,
-            addedBy: caller.actorId,
-            at: ctx.runtime.now().toISOString(),
-          }),
-        );
-        // everybody was asked again by the SQL function: say so as turning transcription on does
-        await emitConsentReset(ctx, tx, after, caller.actorId);
-        await announceRoom(ctx, tx, after);
-        await ctx.jobs.enqueue(tx, ANNOUNCE_QUEUE, { meetingId: m.id, workspaceId: m.workspace_id, actorId: caller.actorId, botId: bot.id, what: 'added' }, { dedupeKey: `announce:added:${m.id}:${bot.id}` });
-        await ctx.jobs.enqueue(tx, LISTENER_START_QUEUE, { meetingId: m.id, workspaceId: m.workspace_id }, { dedupeKey: `listener:${m.id}` });
-      }
-      return json(SetMeetingNotetakerResponse.parse({ notetaker: { bot: toBot(bot), listening: isListening(ctx, m.id) } }));
+      const notetaker = await addNotetaker(ctx, tx, m, caller, botId);
+      return json(SetMeetingNotetakerResponse.parse({ notetaker }));
     }),
   });
 
@@ -338,7 +375,9 @@ export function registerNotetaker(ctx: PluginContext): void {
       const body =
         p.what === 'added'
           ? `${plain(facts.who)} added ${plain(facts.bot)}. It listens on the server and writes notes for ${plain(facts.organizer)}. Everyone is asked again whether it may transcribe their voice.`
-          : `${plain(facts.who)} removed ${plain(facts.bot)}.`;
+          : p.what === 'started'
+            ? `${plain(facts.bot)} takes notes in this call. It listens on the server and writes notes for ${plain(facts.organizer)}. Everyone is asked before their voice is written down.`
+            : `${plain(facts.who)} removed ${plain(facts.bot)}.`;
       try {
         await ctx.db.as({ actorId: p.actorId, kind: 'person', workspaceId: p.workspaceId, personId: null, sessionId: null }, async (tx) => {
           await messages.post(tx, { channelId: facts.channelId, body, threadRootId: facts.threadRootId, skipRefs: true });

@@ -9,7 +9,8 @@ The web part is in `clients/web/src/meetings` (the call bar) and `clients/web/sr
 ## What a person gets
 
 - **Start** in a channel (`POST /api/channels/:channelId/meetings`): whoever may post there. One live room per channel: starting while one is live returns that room (`created: false`) and joins the person to it.
-  The title defaults to "Voice room · 14:02" (UTC). A **call thread** is created at the same time, a message in the channel the room points at (`threadRootId`); people in the call reply there with the
+  The title defaults to "Call · #dev · 14:02" in a channel and "Call · 14:02" in a direct message (UTC). The start may also ask people and add the note-taker (see
+  [Starting a call and inviting people](#starting-a-call-and-inviting-people-p15-25-p15-27)). A **call thread** is created at the same time, a message in the channel the room points at (`threadRootId`); people in the call reply there with the
   channel's own messages, files and @mentions. That message is the call's **start message** and carries the call card (see [The call card](#the-call-card-p15-26)); if it cannot be written the start fails
   with a plain reason and nothing is left behind. `kind` is `audio` (the default); `video` answers 409 "Video calls are not available yet" until P17-01. A call in a direct message is a room in the DM's
   channel (`teamId` is null; only that conversation sees it).
@@ -62,6 +63,15 @@ The words used here: a **stamp** is a key in a message's `meta` that only the pl
   (`joined`: in the call now; `canEnd`: the starter, a lead or an admin, while live; `canInvite`: may post in the channel, while live) and `notesLink` (the meeting page, `/t/<team>/meetings/<id>`
   or `/meetings/<id>`, only when `app.meetings_can_read_notes` says yes and the notes are written). The team's slug, the bot's name and whether the notes are written are read as the system,
   for calls the caller has already read. `meetings.meeting.started` carries the call's `kind`.
+- **The web** (`clients/web/src/meetings/VoiceRoomCard.tsx`, `callCards.ts`, `roomCard.ts`). A stamped message draws, in place of its text and without the author's picture and
+  name, the call card while the call is live (title; Audio; Live with the running time; "Started by Nadia · 14:02"; up to five faces and "+N"; "Note-taker listening"
+  while the bot listens; Join call, which the whole card also does, or "You are in this call"; End call for the starter, asked once) and, once it is over, one muted
+  event line: "Omar started a call · 22:14 · 14 min · 3 joined", with Notes when `notesLink` is given. Until its card arrives (or for a call the reader may not
+  read) the row draws "Omar started a call · 22:14" in the same one-line slot, so it never changes height. The page asks for the cards of the stamped messages it
+  draws, 100 ms of them in one request, and asks again for one call on its `meeting.changed` push, when the socket comes back, and when a call drawn as live leaves
+  the live list. A stamped message never joins a run of its author's messages, cannot be edited, copies the card's line as its text, and is drawn the same way at the
+  top of its thread. The same muted line is used for other status lines (a to-do list that moved). A start message without a stamp keeps P33's card under its text,
+  from the live list, until step S7 of `docs/plans/calls-card.md`.
 
 ## Jobs
 
@@ -74,11 +84,41 @@ Queues the plugin registers (all run on the server; the ones marked "detached" d
 | `meetings.ringend` | 30 seconds after a direct-message call started with nobody else in it: a "Missed call" message |
 | `meetings.transcript` | 2 min 10 s after the end (and again, debounced 30 s, after a correction): writes `transcript.md` |
 | `meetings.notes` | the Scribe's notes for a room without a note-taker, then the memory filing |
-| `meetings.notetaker.announce` | the line in the call thread when a note-taker is added or removed |
+| `meetings.notetaker.announce` | the line in the call thread when a note-taker is added or removed (or added as the call starts: "Note-taker takes notes in this call. …") |
 | `meetings.listener.start`, `meetings.listener.sweep` | start the note-taker's listener after the change is committed; the sweep starts one for a room that has a note-taker and no listener in this process (after a restart) |
 | `meetings.notetaker.notes` | notes of a room that had a note-taker (written into the organizer's Personal folder) |
 | `meetings.question` | a question put to the note-taker: the check, then the answer |
 | `meetings.recorder.start`, `meetings.recorder.sweep` | recording (see "Recording") |
+
+## Starting a call and inviting people (P15-25, P15-27)
+
+An **invitation** says who is told about a live call: an inbox item and a push from the notifications plugin. It never decides who may join, which stays "whoever can read the channel".
+
+- **The dialog's options** (`GET /api/channels/:channelId/calls/options`, 60 a minute, `invites.ts`): `canStart` (false with a reason for a person who may not post: "Guests cannot start a
+  call here" for a guest, "This channel is archived, …", or "You cannot start a call in this channel"; also false with the media server's reason when none is set up), `directMessage`, the
+  `defaultTitle`, the `live` call if one is going (the dialog joins it), `people` (the readers of the channel, `app.channel_audience`, named through the caller's own view of `people`, the caller
+  first with `you: true` and always there; a guest sees only themself; empty when the caller may not post; at most 200, `peopleTotal` says how many match, and `?q=` narrows them
+  on the server to names with a word starting with it or handles, the e-mail address, starting with it), `notetaker` (the eligible bots, the first as `defaultBotId`, and whether one could be added now:
+  the media server and the place, that is the workspace and team switches, transcription, a speech model and the server's room for one more, without the room checks; with the reason when not)
+  and `guestLinks` (`available: false`, "Guest links are not available yet", until P17-04). Not read-only: the team's TEAM.md is read.
+- **The start body** grows, every field optional (`{ title }` still works): `kind`, `inviteeIds` (at most 100), `allowGuests` (only `false`, until P17-04; `true` is a 400) and
+  `notetakerBotId`. One transaction, in this order: the call, the started event, the stamped start message, the thread, the starter's place, the invitations
+  (`app.meetings_invite`, then `meetings.invite.sent` with `first: true`), the note-taker (`addNotetaker` with `atStart`: the same checks as the add route, no "asked again" consent event,
+  since only the starter is there and was never asked), a planned room's `onCreated`, the DM ring, and only then the media room. Any refusal (a person who cannot read the channel, 403 "You cannot
+  invite these people to this call." — the database's own words are never forwarded, each known refusal has a fixed sentence; a note-taker that cannot come, 409 or 403 with the reason) undoes the whole start, so no call, card, invitation, event or media room is left.
+  The answer's `invited` is how many were asked. Starting while a call is live only joins it: nobody is invited, no note-taker is added, `invited: 0`. In a direct message `inviteeIds` are
+  not used: everyone in the conversation is rung, and the ring is the invitation.
+- **Invite more** (`POST /api/meetings/:meetingId/invites` `{ personIds }`, 1 to 100, 20 a minute): a live call with a channel, by whoever may post in it (a reader of a private
+  channel who is not in it finds no call, 404). `meetings.invite.sent` with `first: false`, then the `meeting.changed` push. 409 in a direct message and for an ended call. Answers the people
+  newly asked.
+- **`app.meeting_invites`** (migration 0008): one row per call and person asked, with the name copied when asked, who asked and when, and the call's channel (a composite foreign key on
+  `meetings (id, channel_id)`, so the row is always in its call's channel). Readable by whoever reads the channel; nobody writes it but `app.meetings_invite` and the system role (a direct
+  INSERT is 42501). `app.meetings_invite(meeting, person ids)` is a definer owned by the system role, so it checks the caller by `session_user` and the caller's own rights
+  (`app.lookup_channel_can(…, 'post')`), never `app.is_system()`, which is always true inside it. It refuses a call with no channel, in a direct message, or that has ended, more than 100 ids, and the whole
+  list when any id is not a reader of the channel now; it leaves out the caller and the people asked before and returns the new ones.
+- **On the card** (`GET /api/meetings/cards`): `invited.count` and the first five `invited.names` in the order they were asked, through the caller's row policies; `you.canInvite` is
+  "may post in the channel, while live, not a direct message".
+- **Audit:** `meetings.invite.sent` becomes `meeting.invited`, "Invited 3 people as the call started" (a count, never who or the title); a direct-message call has no row.
 
 ## Access loss
 
@@ -89,14 +129,14 @@ hears a person only while they are present with consent yes, so a removed person
 ## Events
 
 Emitted here: `meetings.meeting.started`, `meetings.meeting.ended`, `meetings.participant.joined`, `meetings.participant.left`, `meetings.consent.changed`, `meetings.transcript.written`, `meetings.notes.written` (with
-`actionOwnerIds`), `meetings.notes.shared`, `meetings.notes.saved`, `meetings.notetaker.added`, `meetings.notetaker.removed`, `meetings.recording.started`, `meetings.recording.stopped`; also `channel.channel.created`
+`actionOwnerIds`), `meetings.notes.shared`, `meetings.notes.saved`, `meetings.notetaker.added`, `meetings.notetaker.removed`, `meetings.recording.started`, `meetings.recording.stopped`, `meetings.invite.sent` (the people asked to a call: ids, `first`); also `channel.channel.created`
 (the note-taker's first conversation with the organizer). Payloads hold ids and times, never a title or any text. Consumed: `channel.member.removed`, `team.member.removed`, `channel.message.posted` (a voice message of a client from before P32, with its own words, in a
 call thread becomes a line; a mention of the note-taker in the thread is a question), `channel.message.transcribed` (a voice message of the current client becomes a line when the server's words, or the author's own, are in it: state `server` or `edited`; `failed` and `none` add no line), `meetings.meeting.ended` (the transcript job) and `meetings.transcript.written` (the notes job). The audit plugin records
-started, ended, consent changed, note-taker added and removed, recording started and stopped, notes shared and saved (ids only).
+started, ended, people invited, consent changed, note-taker added and removed, recording started and stopped, notes shared and saved (ids only).
 
 ## Limits
 
-Per person a minute: starting a room 10, joining 60, token renewals 60 (`docs/deploy/rate-limits.md`); heartbeat 20; end 30; lines posted 240 (a batch holds at most 20); corrections 60; audio chunks 120. Per room a
+Per person a minute: starting a room 10, joining 60, token renewals 60 (`docs/deploy/rate-limits.md`); the start dialog's options 60; Invite more 20; heartbeat 20; end 30; lines posted 240 (a batch holds at most 20); corrections 60; audio chunks 120. Per room a
 minute: 1000 lines (429 after), 6 questions to the note-taker answered a minute and 20 model checks ("is this a question for it?") a minute per room, past which a line that names the note-taker is dropped. The media server's webhook: 120 a minute per address. A line is at most 4000 characters (a longer one is refused with 413); the server strips control
 and bidirectional characters before storing it; a transcript file is at most 2 MB and then says "transcript truncated". People in a room: `meeting_settings.room_cap` (25). Note-taker rooms in one server process:
 `MANYTHREADS_NOTETAKER_MAX_ROOMS` (10).

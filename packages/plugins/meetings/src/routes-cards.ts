@@ -15,10 +15,17 @@ interface PersonRow extends Record<string, unknown> {
   left_at: Date | null;
 }
 
+interface InviteRow extends Record<string, unknown> {
+  meeting_id: string;
+  display_name: string;
+  n: number;
+}
+
 interface RightsRow extends Record<string, unknown> {
   id: string;
   can_end: boolean;
   can_post: boolean;
+  is_dm: boolean;
   can_notes: boolean;
   starter_name: string | null;
 }
@@ -42,6 +49,7 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
                 (m.started_by = app.actor()
                  OR coalesce(CASE WHEN m.channel_id IS NOT NULL THEN app.lookup_channel_can(m.channel_id, 'manage') ELSE app.lookup_can_team(m.team_id, 'manage') END, false)) AS can_end,
                 coalesce(m.channel_id IS NOT NULL AND app.lookup_channel_can(m.channel_id, 'post'), false) AS can_post,
+                coalesce((SELECT c.kind = 'dm' FROM app.channels c WHERE c.id = m.channel_id), false) AS is_dm,
                 coalesce(app.meetings_can_read_notes(m.id), false) AS can_notes,
                 app.meetings_organizer_name(m.started_by) AS starter_name
            FROM app.meetings m WHERE m.id = ANY ($1::uuid[])`,
@@ -49,6 +57,17 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
       )
     ).rows.map((r) => [r.id, r] as const),
   );
+  // the people asked (P15-27), through the caller's row policies: how many, and the first names in the order they were asked
+  const invites = (
+    await tx.query<InviteRow>(
+      `SELECT i.meeting_id::text, i.display_name, i.n FROM (
+         SELECT meeting_id, display_name, count(*) OVER (PARTITION BY meeting_id)::int AS n,
+                row_number() OVER (PARTITION BY meeting_id ORDER BY invited_at, person_id) AS rn
+           FROM app.meeting_invites WHERE meeting_id = ANY ($1::uuid[])) i
+        WHERE i.rn <= $2 ORDER BY i.meeting_id, i.rn`,
+      [found, CALL_CARD_FACES],
+    )
+  ).rows;
   const notesFor = found.filter((id) => rights.get(id)?.can_notes === true);
   const teamIds = [...new Set(rows.map((r) => r.team_id).filter((t): t is string => t !== null))];
   const botIds = [...new Set(rows.map((r) => r.notetaker_bot_id).filter((b): b is string => b !== null))];
@@ -89,13 +108,16 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
       present: here.slice(0, CALL_CARD_FACES).map((p) => ({ actorId: p.actor_id, displayName: p.display_name })),
       presentCount: here.length,
       joinedCount: all.length,
-      // invitations come with P15-27 (meeting_invites); until then nobody is invited
-      invited: { count: 0, names: [] },
+      invited: (() => {
+        const mine = invites.filter((i) => i.meeting_id === m.id);
+        return { count: mine[0]?.n ?? 0, names: mine.map((i) => i.display_name) };
+      })(),
       notetaker: bot === undefined ? null : { name: bot, listening: live && isListening(ctx, m.id) },
       you: {
         joined: here.some((p) => p.actor_id === caller.actorId),
         canEnd: live && right?.can_end === true,
-        canInvite: live && right?.can_post === true,
+        // a direct message invites nobody: everyone in it was rung
+        canInvite: live && right?.can_post === true && right.is_dm !== true,
       },
       notesLink: names.written.has(m.id) ? (slug !== undefined ? `/t/${slug}/meetings/${m.id}` : `/meetings/${m.id}`) : null,
     });

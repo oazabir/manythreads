@@ -59,7 +59,7 @@ describe('start: one live room per channel, get or create', () => {
     first = StartMeetingResponse.parse(res.body);
     expect(first.created).toBe(true);
     expect(first.meeting).toMatchObject({ state: 'live', channelId: general, startedBy: nadia.actorId, organizerId: nadia.actorId, endedAt: null, transcription: 'off', recording: false });
-    expect(first.meeting.title).toMatch(/^Voice room \u00b7 \d\d:\d\d$/);
+    expect(first.meeting.title).toMatch(/^Call \u00b7 #general \u00b7 \d\d:\d\d$/);
     expect(first.join.identity).toBe(nadia.actorId);
     expect(first.join.roomName).toBe(first.meeting.id);
     const lifetime = (new Date(first.join.expiresAt).getTime() - Date.now()) / 1000;

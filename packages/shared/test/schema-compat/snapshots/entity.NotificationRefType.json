@@ -5,6 +5,7 @@
     "message",
     "reminder",
     "meeting",
-    "scheduled_meeting"
+    "scheduled_meeting",
+    "meeting_invite"
   ]
 }

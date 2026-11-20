@@ -379,3 +379,42 @@ describe('the meeting_soon kind (migration 0007, Bundle D)', () => {
     expect(await code(forge(nadia))).toBe('42501');
   });
 });
+
+describe('the meeting_invite kind (migration 0008, P15-27)', () => {
+  const call = '0198f0a0-0000-7000-8000-0000000000bb';
+  const add = (who: Persona, kind = 'meeting_invite', refType = 'meeting_invite'): Promise<unknown> =>
+    sys((tx) =>
+      tx.query(
+        `INSERT INTO app.notifications (workspace_id, person_id, kind, ref_type, ref_id, channel_id, actor_id, actor_name, preview)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'Nadia', 'Nadia invited you to Design review')`,
+        [omar.workspaceId, who.personId, kind, refType, call, general, nadia.actorId],
+      ),
+    );
+
+  it('the platform writes one per person and call, apart from the same meeting’s action items; the person reads it, nobody else does', async () => {
+    await add(rafi);
+    expect(await code(add(rafi))).toBe('23505');
+    // action items of the same meeting are another reference type, so both rows exist
+    await add(rafi, 'meeting_actions', 'meeting');
+    const mine = await q<{ kind: string; ref_type: string }>(rafi, 'SELECT kind, ref_type FROM app.notifications WHERE ref_id = $1 ORDER BY kind', [call]);
+    expect(mine).toEqual([
+      { kind: 'meeting_actions', ref_type: 'meeting' },
+      { kind: 'meeting_invite', ref_type: 'meeting_invite' },
+    ]);
+    expect(await q(nadia, 'SELECT 1 FROM app.notifications WHERE ref_id = $1', [call])).toEqual([]);
+    // a kind the CHECK does not know is refused
+    expect(await code(add(nadia, 'meeting_invited'))).toBe('23514');
+  });
+
+  it('a person cannot write one, for themselves or anyone else', async () => {
+    const forge = (p: Persona): Promise<unknown> =>
+      as(p, (tx) =>
+        tx.query(
+          `INSERT INTO app.notifications (workspace_id, person_id, kind, ref_type, ref_id, channel_id, actor_id, actor_name, preview)
+           VALUES ($1, $2, 'meeting_invite', 'meeting_invite', uuidv7(), $3, $4, 'x', 'forged')`,
+          [omar.workspaceId, p.personId, general, p.actorId],
+        ),
+      );
+    expect(await code(forge(nadia))).toBe('42501');
+  });
+});

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   CALL_CARDS_MAX,
+  CALL_INVITES_MAX,
+  CALL_OPTIONS_PEOPLE_MAX,
+  CallStartOptionsQuery,
   CallCard,
+  CallStartOptionsResponse,
+  InviteToMeetingRequest,
+  StartMeetingResponse,
   ListCallCardsQuery,
   ListCallCardsResponse,
   Meeting,
@@ -36,6 +42,59 @@ describe('the start request', () => {
     expect(StartMeetingRequest.parse({ kind: 'video' }).kind).toBe('video');
     expect(StartMeetingRequest.safeParse({ kind: 'screen' }).success).toBe(false);
     expect(StartMeetingRequest.safeParse({ title: 'x', meta: {} }).success).toBe(false);
+  });
+
+  it('takes the dialog’s people, the note-taker and a guest switch that can only be off (P15-25)', () => {
+    const full = { title: 'Design review', kind: 'audio', inviteeIds: [uuid(10), uuid(11)], allowGuests: false, notetakerBotId: uuid(12) } as const;
+    expect(StartMeetingRequest.parse(full)).toEqual(full);
+    expect(StartMeetingRequest.parse({ notetakerBotId: null }).notetakerBotId).toBeNull();
+    expect(StartMeetingRequest.safeParse({ allowGuests: true }).success).toBe(false);
+    expect(StartMeetingRequest.safeParse({ inviteeIds: ['Nadia'] }).success).toBe(false);
+    expect(StartMeetingRequest.safeParse({ inviteeIds: Array.from({ length: CALL_INVITES_MAX + 1 }, (_, i) => uuid(100 + i)) }).success).toBe(false);
+    expect(StartMeetingRequest.safeParse({ notetakerBotId: 'note-taker' }).success).toBe(false);
+  });
+});
+
+describe('inviting people', () => {
+  it('the start answer says how many were asked (0 when an older server leaves it out)', () => {
+    const answer = {
+      meeting: {
+        id: meetingId, workspaceId: uuid(1), teamId: uuid(2), channelId: uuid(3), title: 'Call', state: 'live', kind: 'audio', startedBy: uuid(4), organizerId: uuid(4),
+        notetakerBotId: null, startedAt: '2026-11-20T10:00:00.000Z', endedAt: null, endReason: null, transcription: 'off', recording: false, transcriptPath: null, transcriptFileId: null,
+        threadRootId: uuid(5),
+      },
+      created: true,
+      join: { provider: 'fake', url: 'wss://media.example/', token: 't', identity: uuid(4), roomName: meetingId, expiresAt: '2026-11-20T10:10:00.000Z' },
+    };
+    expect(StartMeetingResponse.parse(answer).invited).toBe(0);
+    expect(StartMeetingResponse.parse({ ...answer, invited: 3 }).invited).toBe(3);
+  });
+
+  it('"Invite more" takes one to a hundred person ids and nothing else', () => {
+    expect(InviteToMeetingRequest.parse({ personIds: [uuid(10)] })).toEqual({ personIds: [uuid(10)] });
+    expect(InviteToMeetingRequest.safeParse({ personIds: [] }).success).toBe(false);
+    expect(InviteToMeetingRequest.safeParse({ personIds: Array.from({ length: CALL_INVITES_MAX + 1 }, (_, i) => uuid(100 + i)) }).success).toBe(false);
+    expect(InviteToMeetingRequest.safeParse({ personIds: [uuid(10)], message: 'come' }).success).toBe(false);
+  });
+
+  it('the dialog’s options: guest links are never available yet', () => {
+    const options = {
+      canStart: true,
+      reason: null,
+      directMessage: false,
+      defaultTitle: 'Call · #dev · 14:02',
+      live: null,
+      people: [{ personId: uuid(10), displayName: 'Nadia', you: true }],
+      peopleTotal: 1240,
+      notetaker: { bots: [], defaultBotId: null, available: false, reason: 'No note-taker bot is set up here.' },
+      guestLinks: { available: false, reason: 'Guest links are not available yet' },
+    };
+    expect(CallStartOptionsResponse.parse(options)).toEqual(options);
+    expect(CallStartOptionsResponse.safeParse({ ...options, guestLinks: { available: true, reason: '' } }).success).toBe(false);
+    const many = Array.from({ length: CALL_OPTIONS_PEOPLE_MAX + 1 }, (_, i) => ({ personId: uuid(100 + i), displayName: `P${String(i)}`, you: i === 0 }));
+    expect(CallStartOptionsResponse.safeParse({ ...options, people: many }).success).toBe(false);
+    expect(CallStartOptionsQuery.parse({ q: '  ra ' })).toEqual({ q: 'ra' });
+    expect(CallStartOptionsQuery.safeParse({ q: 'x'.repeat(81) }).success).toBe(false);
   });
 });
 

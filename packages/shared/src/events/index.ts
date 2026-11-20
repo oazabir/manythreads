@@ -190,6 +190,7 @@ export * from './connections.inbox.claimed.ts';
 export * from './connections.oauth_app.changed.ts';
 export * from './connections.sign_in.expired.ts';
 export * from './meetings.meeting.started.ts';
+export * from './meetings.invite.sent.ts';
 export * from './meetings.meeting.ended.ts';
 export * from './meetings.participant.joined.ts';
 export * from './meetings.participant.left.ts';

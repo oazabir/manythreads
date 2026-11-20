@@ -14,7 +14,7 @@ const TITLE_MAX = 160;
 /** What a notification is, as far as its push is concerned. */
 export interface PushFacts {
   notificationId: string;
-  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder' | 'meeting_actions' | 'meeting_soon';
+  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder' | 'meeting_actions' | 'meeting_soon' | 'meeting_invite';
   keyword: string | null;
   actorName: string;
   preview: string;
@@ -45,13 +45,18 @@ export function buildPushPayload(f: PushFacts): PushPayload {
   if (f.kind === 'reminder') title = `Reminder${where}`;
   else if (f.kind === 'meeting_actions') title = 'You have action items from a meeting';
   else if (f.kind === 'meeting_soon') title = `A meeting starts in 5 minutes${where}`;
+  else if (f.kind === 'meeting_invite') title = `You are invited to a call${where}`;
   else if (f.kind === 'dm') title = `${sender} sent you a message`;
   else if (f.kind === 'reply') title = `${sender} replied in a thread${where}`;
   else if (f.kind === 'message') title = where !== '' ? `${sender}${where}` : `${sender} sent you a message`;
   else if (f.keyword !== null) title = `${sender} wrote “${clip(f.keyword, 40)}”${where}`;
   else title = `${sender} mentioned you${where}`;
-  const params = new URLSearchParams({ channel: f.channelId, message: f.messageId });
-  if (f.threadRootId) params.set('root', f.threadRootId);
+  // An invitation to a call opens the call card: its start message (`threadRootId`), a top-level message, so no thread root goes with it.
+  const params =
+    f.kind === 'meeting_invite'
+      ? new URLSearchParams(f.threadRootId ? { channel: f.channelId, message: f.threadRootId } : { channel: f.channelId })
+      : new URLSearchParams({ channel: f.channelId, message: f.messageId });
+  if (f.threadRootId && f.kind !== 'meeting_invite') params.set('root', f.threadRootId);
   return PushPayload.parse({
     v: 1,
     title: clip(title, TITLE_MAX),

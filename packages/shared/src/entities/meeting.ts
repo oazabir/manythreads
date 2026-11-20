@@ -387,7 +387,7 @@ export const CallCard = z.object({
   presentCount: z.number().int().min(0),
   /** Everyone who was in the call at any time. */
   joinedCount: z.number().int().min(0),
-  /** The people asked to the call (invitations come with P15-27; until then the count is 0). */
+  /** The people asked to the call (P15-27): how many, and the first five names in the order they were asked. */
   invited: z.object({ count: z.number().int().min(0), names: z.array(z.string()).max(CALL_CARD_FACES) }),
   /** The note-taker bot of the call, and whether it is listening now. */
   notetaker: z.object({ name: z.string(), listening: z.boolean() }).nullable(),
@@ -403,3 +403,13 @@ export const CallCard = z.object({
   notesLink: z.string().nullable(),
 });
 export type CallCard = z.infer<typeof CallCard>;
+
+/** At most this many people one start or one "Invite more" asks to a call. */
+export const CALL_INVITES_MAX = 100;
+
+/**
+ * One person the start dialog can ask to a call (P15-25): a reader of the channel (in a direct message, its people). `you` is the caller, listed first, always in the call
+ * and never invited.
+ */
+export const CallInvitee = z.object({ personId: PersonId, displayName: z.string(), you: z.boolean() });
+export type CallInvitee = z.infer<typeof CallInvitee>;

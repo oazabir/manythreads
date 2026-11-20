@@ -20,6 +20,7 @@ const SAMPLES = {
   'meetings.recording.stopped': { ...base, type: 'meetings.recording.stopped', reason: 'consent_withdrawn', stoppedBy: null },
   'meetings.notes.shared': { ...base, type: 'meetings.notes.shared', sharedBy: uuid(5), granteeKind: 'person', granteeId: uuid(8), revoked: false },
   'meetings.notes.saved': { ...base, type: 'meetings.notes.saved', savedBy: uuid(5), path: 'meetings/2026/11/03-1000-standup', toMemory: true },
+  'meetings.invite.sent': { ...base, type: 'meetings.invite.sent', invitedBy: uuid(5), personIds: [uuid(8), uuid(9)], first: true },
 } as const;
 const TYPES = Object.keys(SAMPLES) as (keyof typeof SAMPLES)[];
 
@@ -77,6 +78,14 @@ describe('voice room events', () => {
   it('consent answers are a known subject and a known value', () => {
     expect(() => parseEvent({ ...SAMPLES['meetings.consent.changed'], subject: 'camera' })).toThrow();
     expect(() => parseEvent({ ...SAMPLES['meetings.consent.changed'], value: 'maybe' })).toThrow();
+  });
+
+  it('an invitation names one to a hundred people by id, and needs the channel', () => {
+    expect(() => parseEvent({ ...SAMPLES['meetings.invite.sent'], personIds: [] })).toThrow();
+    expect(() => parseEvent({ ...SAMPLES['meetings.invite.sent'], personIds: Array.from({ length: 101 }, (_, i) => uuid(100 + i)) })).toThrow();
+    expect(() => parseEvent({ ...SAMPLES['meetings.invite.sent'], personIds: ['Nadia'] })).toThrow();
+    expect(() => parseEvent({ ...SAMPLES['meetings.invite.sent'], channelId: null })).toThrow();
+    expect(parseEvent({ ...SAMPLES['meetings.invite.sent'], teamId: null, first: false })).toMatchObject({ teamId: null, first: false });
   });
 
   it('written transcripts and notes name a known place', () => {

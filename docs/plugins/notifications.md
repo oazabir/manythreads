@@ -15,6 +15,7 @@ Four kinds, each made by a subscription of the plugin's outbox consumer (it runs
 | `channel.message.posted` in a **direct message** (or group conversation) | `dm` | every other member |
 | `channel.message.posted` as a **reply** in a team channel's thread | `reply` | the followers of the thread (`app.thread_follower_ids`) |
 | `reminders.reminder.due` | `reminder` | the person who asked to be reminded (see below) |
+| `meetings.invite.sent` | `meeting_invite` | each person asked to a live call who can read its channel (see [An invitation to a call](#an-invitation-to-a-call-p15-27-migration-0008)) |
 | `channel.message.deleted` | | the message's notifications are deleted (`message` and `reminder` rows) |
 | `channel.member.removed` | | if the person can no longer read the channel (private channel, DM), what it notified them of is deleted |
 
@@ -205,11 +206,21 @@ own rules. See [reminders.md](./reminders.md).
 "2 action items from <title>"). Only owners who are people of the workspace and can read the room's channel get one; the row is unique for a person and a meeting, so the event can be replayed. It follows the person's
 "mentions" switch, is held by Do not disturb like any other, is never silenced by a channel level (it is addressed to the person) and opens `/meetings/<id>`.
 
+## An invitation to a call (P15-27, migration `0008`)
+
+`meetings.invite.sent` (consumed by `src/meeting-invite.ts`; the meetings plugin says it when people are asked to a live call, as it starts or with "Invite more") makes one `meeting_invite`
+notification for each person asked who can still read the call's channel: `ref_type` `meeting_invite` (its own type: `meeting` is already the action items of the same meeting, and the
+table keeps one row per person and reference), `ref_id` the meeting, `thread_root_id` the call's start message (the call card), `actor_name` the person who asked, `preview` "Nadia invited
+you to Design review". A call that has ended by the time the event is read makes nothing, and neither does a call in a direct message: everyone there is rung, and the ring is the
+invitation. The event delivered twice writes one row. The person's own settings apply as for a mention: a muted channel (the membership or the settings' `mutedChannels`), the
+channel level "nothing" and the "mentions" switch turned off in the app leave them out ("mentions" and "all" let it through); Do not disturb holds it. Its browser push says "You are invited to a call" ("… in #dev" only for a channel everyone on the team can read; a private channel gets the fixed body) and opens
+`/open?channel=<id>&message=<start message>`, the card itself.
+
 ## Manifest
 
 `notifications` / `0.1.0` / `server`, `dependsOn: ['channels', 'presence', 'meetings']`, `extends: ['event.emit', 'event.subscribe', 'job.register']` (the jobs `notifications.release_held`, `notifications.push` and `notifications.digest`), emits
 `notifications.notification.created`, `notifications.digest.sent`, `notifications.digest.unsubscribed`, consumes `channel.mention.created`,
-`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`, `meetings.notes.written`, `connections.sign_in.expired`, `scheduled_jobs.scheduled_job.stopped` (a person's routine was switched off by the platform: the notice sits in their Reminders conversation and reaches the bell as a `reminder`).
+`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`, `meetings.notes.written`, `meetings.scheduled.starting_soon`, `meetings.invite.sent`, `connections.sign_in.expired`, `scheduled_jobs.scheduled_job.stopped` (a person's routine was switched off by the platform: the notice sits in their Reminders conversation and reaches the bell as a `reminder`).
 
 ## Tests
 
