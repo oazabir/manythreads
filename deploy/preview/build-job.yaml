@@ -94,6 +94,11 @@ spec:
               git archive HEAD | tar -x -C /workspace/ctx-web
               (cd /workspace/ctx-server && rm -rf e2e docs deploy tools)
               (cd /workspace/ctx-web && rm -rf e2e docs tools)
+              # The tested tree in both folders (P31-05). kaniko keys `COPY --from=manifests` differently when that stage came from its cache, so a
+              # build whose folder had not changed (only deploy/ or docs/ did) missed the install layer and pushed 1.3 GB again (measured
+              # 2026-11-20); with this file the manifests stage always runs and the install is reused whenever the manifests are the same.
+              echo "$TREE" > /workspace/ctx-server/.build-source
+              echo "$TREE" > /workspace/ctx-web/.build-source
               cd /workspace && rm -rf src
           volumeMounts:
             - { name: workspace, mountPath: /workspace }
