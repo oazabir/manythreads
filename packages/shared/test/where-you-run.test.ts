@@ -49,6 +49,13 @@ describe('where you run', () => {
     expect(whereYouRun({ place: 'hermes_pod', agent: 'hermes', ...base })).not.toContain('mt-git');
   });
 
+  it('tells Claude to run one command per call (item 10 proof: a read-only Engineer joined cd, mt-git, head and grep, and the run waited on an approval)', () => {
+    for (const place of ['agent_pod', 'server'] as const) {
+      expect(whereYouRun({ place, agent: 'claude', ...base })).toContain('one command per call, never joined with `&&`, `;` or `|`');
+      expect(whereYouRun({ place, agent: 'codex', ...base })).not.toContain('one command per call');
+    }
+  });
+
   it('gives the deployer its kube context and the 45-minute budget, and nobody else', () => {
     const deployer = whereYouRun({ place: 'agent_pod', agent: 'codex', teamSlug: 'engineering', botSlug: 'deployer', kubeconfig: '/deploy/engineering/deployer.kubeconfig' });
     expect(deployer).toContain('/deploy/engineering/deployer.kubeconfig');

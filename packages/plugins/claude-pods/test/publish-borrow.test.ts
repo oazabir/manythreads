@@ -61,9 +61,15 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("mt-publish.sh with a working clone", () => {
-  it("pushes from a private copy that borrows the clone’s objects and holds only the commit it made", async () => {
-    const clone = join(root, "work/team-a/builder/widgets");
+// `recordOnly`: the clone has the card's branch only as `refs/record/<branch>` (brought in by `mt-git record-fetch`), as the Committer's had in the item 10 Claude proof
+async function publishFrom(name: string, recordOnly: boolean): Promise<void> {
+  {
+    const base = join(root, name);
+    mkdirSync(base);
+    // a GitHub of its own: the other case's pull request on the same branch would answer as already open
+    await gh.stop();
+    gh = await startFakeGithub({ token: TOKEN, owner: "acme", repo: "widgets" });
+    const clone = join(base, "work/team-a/builder/widgets");
     mkdirSync(clone, { recursive: true });
     git(clone, "init", "-q", "-b", "main");
     // a history of some weight (4 MiB that does not compress): copied, it would show as a pack in the private copy
@@ -76,11 +82,16 @@ describe("mt-publish.sh with a working clone", () => {
     git(clone, "add", ".");
     git(clone, "commit", "-q", "-m", "the change");
     const head = git(clone, "rev-parse", "HEAD");
-    git(root, "init", "-q", "--bare", "-b", "main", "origin.git");
+    if (recordOnly) {
+      git(clone, "update-ref", `refs/record/${BRANCH}`, head);
+      git(clone, "switch", "-q", "main");
+      git(clone, "branch", "-q", "-D", BRANCH);
+    }
+    git(base, "init", "-q", "--bare", "-b", "main", "origin.git");
     const main = git(clone, "rev-parse", "main");
-    git(clone, "push", "-q", join(root, "origin.git"), "main"); // the origin has the project's main branch
+    git(clone, "push", "-q", join(base, "origin.git"), "main"); // the origin has the project's main branch
 
-    const push = join(root, "push");
+    const push = join(base, "push");
     mkdirSync(push, { mode: 0o700 });
     writeFileSync(
       join(push, "widgets"),
@@ -89,8 +100,8 @@ describe("mt-publish.sh with a working clone", () => {
     );
 
     // a `git` in front of the real one: at `push`, it notes how many object files the repository it runs in holds of its own
-    const bin = join(root, "bin");
-    const seen = join(root, "seen.txt");
+    const bin = join(base, "bin");
+    const seen = join(base, "seen.txt");
     mkdirSync(bin);
     writeFileSync(
       join(bin, "git"),
@@ -98,7 +109,7 @@ describe("mt-publish.sh with a working clone", () => {
     );
     chmodSync(join(bin, "git"), 0o755);
 
-    const scratch = join(root, "scratch");
+    const scratch = join(base, "scratch");
     mkdirSync(scratch);
     // spawned, not spawnSync: the double of GitHub answers from this same process
     const r = await new Promise<{ status: number | null; stderr: string }>(
@@ -114,7 +125,7 @@ describe("mt-publish.sh with a working clone", () => {
               MT_SOURCE_DIR: clone,
               MT_PUSH_DIR: push,
               MT_REPO_USER: ME,
-              MT_PUSH_URL: join(root, "origin.git"),
+              MT_PUSH_URL: join(base, "origin.git"),
               MT_GITHUB_API: gh.url,
               MT_PR_TRIES: "2",
               MT_PR_WAIT: "0",
@@ -131,13 +142,22 @@ describe("mt-publish.sh with a working clone", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
     // the origin got ONE new commit on its main branch (the squash of the card), not the clone's own commit
-    const made = git(join(root, "origin.git"), "rev-parse", `refs/heads/${BRANCH}`);
+    const made = git(join(base, "origin.git"), "rev-parse", `refs/heads/${BRANCH}`);
     expect(made).not.toBe(head);
-    expect(git(join(root, "origin.git"), "rev-parse", `${made}^`)).toBe(main);
+    expect(git(join(base, "origin.git"), "rev-parse", `${made}^`)).toBe(main);
     const [count, alternates] = readFileSync(seen, "utf8").trim().split("\n");
     // the copy holds the objects it made itself (that one commit; the history is borrowed): never a copy of the 4 MiB the clone holds
     expect(Number(count)).toBeLessThanOrEqual(2);
     expect(alternates).toBe(join(clone, ".git/objects"));
+  }
+}
+
+describe("mt-publish.sh with a working clone", () => {
+  it("pushes from a private copy that borrows the clone’s objects and holds only the commit it made", async () => {
+    await publishFrom("own-branch", false);
+  });
+  it("publishes the branch mt-git record-fetch brought in when the clone has no branch of that name", async () => {
+    await publishFrom("record-branch", true);
   });
 });
 

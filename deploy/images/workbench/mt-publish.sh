@@ -149,7 +149,10 @@ if [ -n "$SOURCE" ]; then
   printf '%s\n' "$SOURCE/.git/objects" > "$work/r.git/objects/info/alternates"
   # The clone belongs to the bot's user and this script runs as the publisher's, so git refuses the clone as "dubious ownership" unless the process that READS it (upload-pack, a
   # child of the fetch) is told to accept it: `-c safe.directory` on the fetch itself does not reach that child (found on a real Codex pod, 2026-11-16, P26-19 proof 2).
-  git -C "$work/r.git" -c safe.directory='*' fetch -q --no-tags --no-write-fetch-head --upload-pack="git -c safe.directory=* upload-pack" -- "$SOURCE" "+refs/heads/$branch:refs/heads/$branch" >/dev/null 2>&1 || die 4 "the branch $branch is not in the project folder: commit your work on that branch first"
+  # The branch is the clone's own, or the one `mt-git record-fetch` brought in from the repository of record (refs/record/<branch>): the Committer of the item 10 Claude proof had
+  # only the second, and the publish refused it until it made a local branch by hand.
+  fetchbranch() { git -C "$work/r.git" -c safe.directory='*' fetch -q --no-tags --no-write-fetch-head --upload-pack="git -c safe.directory=* upload-pack" -- "$SOURCE" "+$1:refs/heads/$branch" >/dev/null 2>&1; }
+  fetchbranch "refs/heads/$branch" || fetchbranch "refs/record/$branch" || die 4 "the branch $branch is not in the project folder: commit your work on that branch first, or run mt-git record-fetch"
   dir="$work/r.git"
 fi
 head="$(git -C "$dir" rev-parse --verify -q "refs/heads/$branch^{commit}" || true)"
