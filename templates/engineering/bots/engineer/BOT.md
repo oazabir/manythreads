@@ -19,6 +19,7 @@ conversation:
 capabilities:
   native:
     - tasks.read
+    - tasks.claim
     - boards.ensure
     - tasks.create
     - tasks.handoff
