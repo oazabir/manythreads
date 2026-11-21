@@ -89,8 +89,17 @@ export function MembersPanel({ entry }: { entry: PanelEntry }) {
         {p.personId === self ? <span className="mpn-you">(you)</span> : null}
       </button>
       {!inside && canAdd ? (
-        <button type="button" className="btn s mpn-add" data-testid="member-add" aria-label={`Add ${p.displayName} to #${channelName}`} disabled={adding === p.personId} aria-disabled={adding !== null && adding !== p.personId ? true : undefined} onClick={() => void add(p)}>
-          {adding === p.personId ? 'Adding…' : 'Add'}
+        // the reader's own row says Join: adding yourself is joining the channel
+        <button
+          type="button"
+          className="btn s mpn-add"
+          data-testid="member-add"
+          aria-label={p.personId === self ? `Join #${channelName}` : `Add ${p.displayName} to #${channelName}`}
+          disabled={adding === p.personId}
+          aria-disabled={adding !== null && adding !== p.personId ? true : undefined}
+          onClick={() => void add(p)}
+        >
+          {p.personId === self ? (adding === p.personId ? 'Joining…' : 'Join') : adding === p.personId ? 'Adding…' : 'Add'}
         </button>
       ) : null}
     </li>
