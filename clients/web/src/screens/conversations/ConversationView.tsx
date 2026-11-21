@@ -23,6 +23,8 @@ import { fetchConversations, openConversation } from './api';
 import { viewOf, type View } from '../workshop/model';
 import { ViewTabs, viewPanelProps } from '../workshop/parts';
 import { WorkshopTab } from '../workshop/WorkshopTab';
+import { PaneResizer } from '../../kernel/panes/PaneResizer';
+import { PANES } from '../../kernel/panes/paneWidth';
 
 /*
  * Talking to a bot (SPEC §6.2, PLAN P5-16, `[proto §12]`): at `/t/:team/bots/:botSlug/chat`. On the left the bot's conversations with the
@@ -231,6 +233,7 @@ export function ConversationView() {
     <div className={`inbox cv ${narrow ? 'narrow' : ''} ${narrow && thread !== null ? 'cv-thread' : ''}`} data-testid="conversation-view" data-bot={botSlug} data-channel-id={bot?.channelId ?? ''} {...viewPanelProps('chat')}>
       {showList ? (
         <div className="inl" data-landmark="conversation-list">
+          {narrow ? null : <PaneResizer spec={PANES.list} edge="end" />}
           <header className="inh cv-head">
             <OwnsPageTitle />
             <h1 className="inh-title cv-title">

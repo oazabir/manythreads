@@ -1,0 +1,132 @@
+/*
+ * The bar on the edge of a side-by-side pane that changes its width (kernel/panes/PaneResizer.tsx; owner, 2026-11-21). It looks like the right panel's
+ * (`.panel-resizer`, shell.css): an invisible 7 px strip that shows a line in the accent colour on hover, on keyboard focus and while dragged. Each pane's own
+ * rule reads its width from `--pane-<id>` and caps it against its neighbour; this file only places the bar and makes the panes hold it.
+ */
+
+.pane-resizer {
+  position: absolute;
+  inset-block: 0;
+  z-index: 6;
+  inline-size: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+/* inside the pane, on its edge: a pane may clip what lies outside it. On an end edge the pane's own scroller ends there too, so the bar is only 4 px
+   wide: the scrollbar beside it stays easy to grab */
+.pane-resizer[data-edge="end"] {
+  inset-inline-end: 0;
+  inline-size: 4px;
+}
+
+.pane-resizer[data-edge="start"] {
+  inset-inline-start: 0;
+}
+
+.pane-resizer::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inline-size: 2px;
+  background: transparent;
+  transition: background var(--dur-fast);
+}
+
+.pane-resizer[data-edge="end"]::after {
+  inset-inline-end: 0;
+}
+
+.pane-resizer[data-edge="start"]::after {
+  inset-inline-start: 0;
+}
+
+.pane-resizer:hover::after,
+.pane-resizer:focus-visible::after,
+.pane-resizer[data-dragging]::after {
+  background: var(--human);
+}
+
+/* no text is selected under a drag */
+.pane-resizer[data-dragging] {
+  user-select: none;
+}
+
+body:has(.pane-resizer[data-dragging]) {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* the panes that hold a bar */
+.inl,
+.ch-rail,
+.settings .tabs,
+.bd-panel-pane,
+.ftree-pane {
+  position: relative;
+}
+
+@media (width > 760px) {
+  .rail {
+    position: relative;
+  }
+}
+
+/* the Files tree: the pane takes the width, the tree inside it scrolls */
+.ftree-pane {
+  display: flex;
+  flex: none;
+  inline-size: min(var(--pane-files-tree, 225px), calc(100% - 360px));
+  min-block-size: 0;
+}
+
+.ftree-pane > .ftree {
+  flex: 1;
+  width: auto;
+  min-inline-size: 0;
+}
+
+/* the board's card panel */
+.bd-panel-pane {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.bd-panel-pane > .bd-panel {
+  flex: 1;
+}
+
+/* the thread's overview has an edge to drag only beside the messages (thread-rail.css); over them as a sheet it has none */
+.trRail > .pane-resizer {
+  display: none;
+}
+
+@media (width > 760px) {
+  @container thsplit (width >= 720px) {
+    .trRail > .pane-resizer {
+      display: block;
+    }
+  }
+}
+
+/* the card panel sits under the columns below 1100 px (boards.css) */
+@media (width <= 1100px) {
+  .bd-panel-pane > .pane-resizer {
+    display: none;
+  }
+}
+
+@media (width <= 600px) {
+  .settings .tabs > .pane-resizer {
+    display: none;
+  }
+}
+
+/* phone: panes stack or become drawers; nothing to drag */
+@media (width <= 760px) {
+  .pane-resizer {
+    display: none;
+  }
+}

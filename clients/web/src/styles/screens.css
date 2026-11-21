@@ -373,7 +373,9 @@ a.btn.primary {
 /* ---- settings frame (proto §03 plate 1 look) ---- */
 .settings {
   display: grid;
-  grid-template-columns: 214px 1fr;
+
+  /* the menu's width is the person's (styles/panes.css), never more than leaves 360 px for the page */
+  grid-template-columns: min(var(--pane-settings-nav, 214px), calc(100% - 360px)) 1fr;
   min-height: 100vh;
   background: var(--surface);
 }

@@ -22,24 +22,25 @@ export type ThreadLayout = 'side' | 'fill' | 'sheet';
  * Where a panel entry is drawn for this window (never stored, so it follows the window both ways): a phone gets the sheet; a thread fills the area
  * beside the rail when the person expanded it or the window is too narrow to hold it beside the channel; everything else sits at the side.
  */
-export function threadLayout(a: { viewport: number; narrow: boolean; isThread: boolean; expanded: boolean }): ThreadLayout {
+export function threadLayout(a: { viewport: number; narrow: boolean; isThread: boolean; expanded: boolean; rail?: number }): ThreadLayout {
   if (a.narrow) return 'sheet';
-  if (a.isThread && (a.expanded || a.viewport < SIDE_BY_SIDE_MIN)) return 'fill';
+  const sideBySide = a.rail === undefined ? SIDE_BY_SIDE_MIN : a.rail + CENTER_MIN + PANEL_MIN;
+  if (a.isThread && (a.expanded || a.viewport < sideBySide)) return 'fill';
   return 'side';
 }
 
 const KEY = 'manythreads.panel-width';
 
-/** The widest the panel may be in a window `viewport` px wide. Never below MIN, so a small window still gets a usable panel. */
-export const maxPanelWidth = (viewport: number): number => Math.max(PANEL_MIN, viewport - RAIL_WIDTH - CENTER_MIN);
+/** The widest the panel may be in a window `viewport` px wide beside a sidebar `rail` px wide (the person may resize it). Never below MIN, so a small window still gets a usable panel. */
+export const maxPanelWidth = (viewport: number, rail: number = RAIL_WIDTH): number => Math.max(PANEL_MIN, viewport - rail - CENTER_MIN);
 
-export const clampPanelWidth = (width: number, viewport: number): number => {
+export const clampPanelWidth = (width: number, viewport: number, rail: number = RAIL_WIDTH): number => {
   const w = Number.isFinite(width) ? Math.round(width) : PANEL_DEFAULT;
-  return Math.min(maxPanelWidth(viewport), Math.max(PANEL_MIN, w));
+  return Math.min(maxPanelWidth(viewport, rail), Math.max(PANEL_MIN, w));
 };
 
 /** The width for a drag whose pointer is at `clientX`: the panel's right edge is the window's right edge. */
-export const widthFromPointer = (clientX: number, viewport: number): number => clampPanelWidth(viewport - clientX, viewport);
+export const widthFromPointer = (clientX: number, viewport: number, rail: number = RAIL_WIDTH): number => clampPanelWidth(viewport - clientX, viewport, rail);
 
 const read = (): number | null => {
   try {

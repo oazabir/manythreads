@@ -16,6 +16,8 @@ import { CardPanel } from './CardPanel';
 import { BoardTemplates } from './BoardTemplates';
 import { templateRequest, type BoardTemplate, type BoardTemplateId } from './templates';
 import { useChannelFeed } from '../../shell/channelFeed';
+import { PaneResizer } from '../../kernel/panes/PaneResizer';
+import { PANES } from '../../kernel/panes/paneWidth';
 
 /*
  * The board itself (SPEC §6.5, PLAN P6-07): a saved view's columns, the cards in each, and a drag that is a task call. A card may only
@@ -440,6 +442,9 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
         {busy ? <p className="bd-muted" role="status">Moving…</p> : null}
       </div>
 
+      {selectedCard ? (
+        <div className="bd-panel-pane">
+          <PaneResizer spec={PANES.boardPanel} edge="start" />
       {board && current ? (
         <CardPanel
           key={`${current.id}:${revision}`}
@@ -460,6 +465,8 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
           <p className="bd-muted">This card is no longer on this board.</p>
           <button type="button" className="btn s" onClick={() => selectCard(null)}>Close</button>
         </aside>
+      ) : null}
+        </div>
       ) : null}
     </div>
   );

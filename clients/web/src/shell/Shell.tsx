@@ -32,6 +32,8 @@ import { useNarrow } from './useNarrow';
 import { useEdgeSwipe } from './useEdgeSwipe';
 import { useTabState } from './useTabState';
 import { recalledTeam, rememberTeam } from './views';
+import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { PANES } from '../kernel/panes/paneWidth';
 
 /**
  * The app shell (PLAN P3-12): workspace and team switch, search, the sidebar contract, the account menu; the centre column
@@ -123,6 +125,7 @@ export function Shell() {
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <a className="skip-link" href="#content" onClick={(e) => { e.preventDefault(); document.getElementById('content')?.focus(); }}>{onChat ? 'Skip to messages' : 'Skip to content'}</a>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
+          {narrow ? null : <PaneResizer spec={PANES.sidebar} edge="end" />}
           <div className="region team-switch" data-landmark="team-switch">
             <TeamSwitch />
           </div>

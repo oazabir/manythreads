@@ -7,6 +7,8 @@ import { useDismiss } from '../../shell/useDismiss';
 import { railTitle, shortTitle, type RailGroup } from './model';
 import { EmptyState } from '../../components/EmptyState';
 import { SkeletonRows } from '../../components/Skeleton';
+import { PaneResizer } from '../../kernel/panes/PaneResizer';
+import { PANES } from '../../kernel/panes/paneWidth';
 
 export type RailActions = {
   onOpen: (root: string) => void;
@@ -123,6 +125,7 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
       data-testid="chat-rail"
       {...(drawer === false ? { inert: true } : {})}
     >
+      {drawer === null ? <PaneResizer spec={PANES.chatHistory} edge="end" /> : null}
       <div className="ch-rail-head">
         <button ref={newButton} type="button" className="btn primary ch-new" onClick={onNew} data-testid="chat-new" title="New chat (Ctrl+Shift+O)">
           <AddIcon /> <span>New chat</span>

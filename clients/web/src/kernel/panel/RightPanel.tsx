@@ -7,6 +7,7 @@ import { PANEL_MIN, PANEL_STEP, clampPanelWidth, maxPanelWidth, threadLayout, us
 import { panelRegistry } from './registry';
 import { PanelSubContext, PanelTitleContext, PanelToolsContext } from './sub';
 import { useEscapeToClose, usePanel } from './usePanel';
+import { PANES, usePaneWidth } from '../panes/paneWidth';
 
 /** The right-hand panel (landmark `right-panel`): hidden until an entry is open; the top entry is rendered, Back walks down. */
 export function RightPanel() {
@@ -16,6 +17,8 @@ export function RightPanel() {
   const [tools, setTools] = useState<HTMLElement | null>(null);
   const narrow = useNarrow();
   const size = usePanelWidth();
+  // the sidebar's width, which the person may change too (kernel/panes): the panel leaves the channel its room beside whatever it is
+  const railAsked = usePaneWidth(PANES.sidebar).width;
   const [viewport, setViewport] = useState(() => window.innerWidth);
   const [expanded, setExpanded] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -36,9 +39,11 @@ export function RightPanel() {
   // Esc first brings an expanded thread back to its width; only then does it close the panel
   useEscapeToClose(panel.open, expanded ? () => setExpanded(false) : panel.close);
 
-  const shown = clampPanelWidth(size.width, viewport);
+  // as drawn: the stylesheet caps the sidebar to leave 360 px beside it (shell.css)
+  const rail = Math.min(railAsked, Math.max(0, viewport - 360));
+  const shown = clampPanelWidth(size.width, viewport, rail);
   // where the entry is drawn follows the window (never stored): a thread that no longer fits beside the channel fills the area, and goes back to the person's width when the window is wide again
-  const layout = threadLayout({ viewport, narrow, isThread, expanded });
+  const layout = threadLayout({ viewport, narrow, isThread, expanded, rail });
   const resizable = layout !== 'sheet';
   const fill = layout === 'fill';
   const auto = fill && !expanded;
@@ -49,20 +54,20 @@ export function RightPanel() {
     setDragging(true);
   };
   const onMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (dragging) size.set(widthFromPointer(e.clientX, window.innerWidth));
+    if (dragging) size.set(widthFromPointer(e.clientX, window.innerWidth, rail));
   };
   const onUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (!dragging) return;
     setDragging(false);
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    size.keep(widthFromPointer(e.clientX, window.innerWidth));
+    size.keep(widthFromPointer(e.clientX, window.innerWidth, rail));
   };
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     // the bar is on the panel's left edge: left makes the panel wider, right narrower
     const by = e.key === 'ArrowLeft' ? PANEL_STEP : e.key === 'ArrowRight' ? -PANEL_STEP : 0;
     if (by === 0) return;
     e.preventDefault();
-    size.keep(clampPanelWidth(shown + by, window.innerWidth));
+    size.keep(clampPanelWidth(shown + by, window.innerWidth, rail));
   };
 
   return (
@@ -84,7 +89,7 @@ export function RightPanel() {
               aria-orientation="vertical"
               aria-label="Resize panel"
               aria-valuemin={PANEL_MIN}
-              aria-valuemax={maxPanelWidth(viewport)}
+              aria-valuemax={maxPanelWidth(viewport, rail)}
               aria-valuenow={shown}
               tabIndex={0}
               data-testid="panel-resizer"

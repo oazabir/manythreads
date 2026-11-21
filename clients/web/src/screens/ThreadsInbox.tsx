@@ -27,6 +27,8 @@ import { ThreadGridCard } from '../inbox/ThreadGridCard';
 import { readLayout, writeLayout, type ThreadsLayout } from '../inbox/viewMode';
 import { EmptyState, type EmptyStateAction } from '../components/EmptyState';
 import { SkeletonRows } from '../components/Skeleton';
+import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { PANES } from '../kernel/panes/paneWidth';
 
 type Tab = 'followed' | 'unread' | 'mine' | 'later';
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -383,6 +385,7 @@ export function ThreadsInbox() {
     <div className={`inbox ${stacked ? 'narrow' : ''} ${grid ? 'grid' : ''}`} data-testid="threads-inbox">
       {showList ? (
         <div className="inl" data-landmark="thread-list">
+          {stacked ? null : <PaneResizer spec={PANES.list} edge="end" />}
           {header}
           {q.status === 'ok' && (loaded.length > 0 || filtering || peopleOnly) ? (
             <FilterBar

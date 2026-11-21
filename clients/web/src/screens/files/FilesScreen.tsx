@@ -36,6 +36,8 @@ import { useFolders } from './useFolders';
 import { NewFolderIcon, UploadIcon } from './icons';
 import { savePersonalSpaceZip } from './personalApi';
 import { OpenMeeting } from '../meetings/OpenMeeting';
+import { PaneResizer } from '../../kernel/panes/PaneResizer';
+import { PANES } from '../../kernel/panes/paneWidth';
 
 type Upload = { id: number; name: string; state: 'sending' | 'done' | 'error'; fraction: number; message?: string };
 
@@ -533,7 +535,12 @@ export function FilesScreen() {
     >
       <PageHeader title="Files" description={description} actions={narrow ? undefined : actions} />
       <div className="fbody">
-        {narrow ? null : tree}
+        {narrow ? null : (
+          <div className="ftree-pane">
+            {tree}
+            <PaneResizer spec={PANES.filesTree} edge="end" />
+          </div>
+        )}
         {open ? (
           <div className="flist file-open" data-landmark="list">
             <FileCrumb narrow={narrow} onBrowse={() => setDialog('sheet')} />

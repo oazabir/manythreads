@@ -19,7 +19,8 @@
 
 /* The card panel takes its column only while a card is open; without one the columns get the whole width. */
 .bd-body.with-panel {
-  grid-template-columns: minmax(0, 1fr) 340px;
+  /* the card panel's width is the person's (styles/panes.css), never more than leaves 320 px (and the gap) for the columns */
+  grid-template-columns: minmax(0, 1fr) min(var(--pane-board-panel, 340px), calc(100% - 336px));
 }
 
 .bd-main {

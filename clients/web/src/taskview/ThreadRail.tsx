@@ -11,6 +11,8 @@ import { STATUS_WORD, todoTitle } from '../channels/todo-card/words';
 import { CaretIcon, CheckIcon, CloseIcon, ItemBlockedIcon, ItemWaitingIcon } from '../shell/icons';
 import { fetchThreadFiles } from './api';
 import { attachmentKey, earlierLabel, listStage, OUTPUTS_CAP, planOutputs, timelineOf, typeLabel } from './railRules';
+import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { PANES } from '../kernel/panes/paneWidth';
 
 export { attachmentKey };
 
@@ -229,6 +231,8 @@ export function ThreadRail({ rootId, id, open, onClose, todo, run, approvals, fi
   if (!open) return null;
   return (
     <aside id={id} className="trRail" aria-labelledby={heading} data-testid="thread-rail">
+      {/* beside the messages only (a wide thread); over them as a sheet it has no edge to drag (styles/panes.css) */}
+      <PaneResizer spec={PANES.threadRail} edge="start" />
       <header className="trHead">
         <h2 id={heading} className="trTop">Thread overview</h2>
         <button ref={closeRef} type="button" className="trClose" aria-label="Close the overview" onClick={onClose} data-testid="rail-close">

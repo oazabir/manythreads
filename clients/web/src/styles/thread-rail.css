@@ -439,9 +439,11 @@
 /* beside the messages: the thread's own width is 720 px or more (the pane of the Threads view is about 780 px wide on a 1440 px screen, so 900 would never be reached there) */
 @container thsplit (width >= 720px) {
   .trRail {
-    position: static;
+    position: relative;
     flex: none;
-    inline-size: 300px;
+
+    /* the person's width (styles/panes.css), never more than leaves 360 px for the messages */
+    inline-size: min(var(--pane-thread-rail, 300px), calc(100cqi - 360px));
     box-shadow: none;
   }
 }

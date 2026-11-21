@@ -12,6 +12,8 @@ import { laterStore } from './store';
 import { presetTime, remindWhen, REMIND_PRESETS } from './times';
 import { EmptyState } from '../components/EmptyState';
 import { SkeletonRows } from '../components/Skeleton';
+import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { PANES } from '../kernel/panes/paneWidth';
 
 /*
  * The Later tab of the Threads inbox (PLAN P14-04): on the left the person's saved messages (reminders that are due on top), on the right the
@@ -246,6 +248,7 @@ export function LaterTab({
     <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="threads-inbox" data-tab="later">
       {showList ? (
         <div className="inl" data-landmark="thread-list">
+          {narrow ? null : <PaneResizer spec={PANES.list} edge="end" />}
           {header}
           <LaterListBody view={view} setView={setView} selected={selected} onSelect={onSelect} q={q} />
         </div>

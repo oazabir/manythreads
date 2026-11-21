@@ -15,6 +15,8 @@ import { callInFlight, oldestFirst, waitAge } from './state';
 import { EmptyState } from '../../components/EmptyState';
 import { SkeletonRows } from '../../components/Skeleton';
 import { ApprovalsIcon } from '../../shell/icons';
+import { PaneResizer } from '../../kernel/panes/PaneResizer';
+import { PANES } from '../../kernel/panes/paneWidth';
 
 /*
  * The Approvals inbox (SPEC §7.3, `[proto §11 plate 5]`): everything that waits for a person, in one place — a tool call flagged
@@ -92,6 +94,7 @@ export function ApprovalsScreen() {
       <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="approvals-inbox">
         {showList ? (
           <div className="inl" data-landmark="approval-list">
+            {narrow ? null : <PaneResizer spec={PANES.list} edge="end" />}
             <header className="inh" data-landmark={narrow ? undefined : 'header'}>
               <div className="tabs2" role="tablist" aria-label="Approvals">
                 {TABS.map((t) => (

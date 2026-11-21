@@ -17,6 +17,8 @@ import { CONNECTIONS_ADMIN_READY } from '../screens/admin/connections/Connection
 import { ACCOUNT_CHAT_APPS_READY } from '../screens/bridges/AccountChatApps';
 import { ADMIN_CHAT_APPS_READY } from '../screens/bridges/AdminChatApps';
 import { useDocumentTitle } from '../shell/usePageTitle';
+import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { PANES } from '../kernel/panes/paneWidth';
 
 /** The card for sign-in, bootstrap, invite and error pages. A `tagline` makes it the sign-in card: the product name large with the line under it, and a wider card on a desktop. */
 export function AuthFrame({ title, lede, children, footer, tagline }: { title: string; lede?: ReactNode; children: ReactNode; footer?: ReactNode; tagline?: string }) {
@@ -180,6 +182,7 @@ export function SettingsFrame() {
     <TeamsContext.Provider value={teamsValue}>
       <div className="settings" data-testid="app-frame">
         <aside className="tabs" data-landmark="nav">
+          <PaneResizer spec={PANES.settingsNav} edge="end" />
           <div className="tabs-sticky">
             <Link to="/" className="tabs-brand"><Brand name={session.workspace.name} mark={session.workspace.name.slice(0, 1)} /></Link>
             <Link to="/" className="tab back"><BackIcon size={12} /> Back to manythreads</Link>

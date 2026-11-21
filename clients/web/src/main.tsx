@@ -27,6 +27,7 @@ import './styles/run-card.css';
 import './styles/todo-card.css';
 import './styles/task-view.css';
 import './styles/thread-rail.css';
+import './styles/panes.css';
 import './styles/conversations.css';
 import './styles/chat.css';
 import './styles/answer.css';
@@ -70,6 +71,7 @@ import './styles/motion.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
 import { THEME_EVENT, syncThemeColour } from './shell/appearance';
+import { applyPaneWidths } from './kernel/panes/paneWidth';
 
 configureApi();
 // the phone browser bar follows the sidebar colour: once the styles are in, and again when the device switches light and dark while the choice is System
@@ -77,4 +79,6 @@ syncThemeColour();
 window.addEventListener(THEME_EVENT, () => syncThemeColour());
 
 const root = document.getElementById('root');
+// the widths the person gave the panes on this device, before the first paint
+applyPaneWidths();
 if (root) createRoot(root).render(<App />);
