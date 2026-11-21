@@ -15,6 +15,8 @@
 // The one place a bot's work can leave its clone is the team's repository of record in the same pod (P26-09): `mt-git record-push <branch>` pushes one branch there and
 // `mt-git record-fetch` brings that repository's branches in as refs/record/<branch>. The folder is derived from the clone's own place (/work/<team>/<bot>/<project> ->
 // /work/<team>/repos/<project>.git), never from the clone's config, a variable or an argument; its `update` hook (written by repo-sync.sh) refuses main, deletes and forced pushes.
+// `mt-git fast-forward <commit sha | refs/record/<branch>>` moves the current branch forward to a commit that already contains it (`merge --ff-only`): after another bot pushed
+// to the card's branch, a bot brings its own up to date with record-fetch then fast-forward, and nothing is lost or rewritten (P31-03: a bot asked a person to edit a ref file by hand).
 // No push to anywhere else, fetch from anywhere else, pull, clone, reset, rebase, restore, clean, remote, config, stash, tag or branch deletion is on the list. Exit 2 means "mt-git refused"; any other
 // code is git's own.
 import { spawnSync } from 'node:child_process';
@@ -326,7 +328,7 @@ function runRecord(root, cwd, args) {
 
 function main() {
   const [sub, ...rest] = process.argv.slice(2);
-  if (sub === undefined) refuse('usage: mt-git status|diff|log|add|commit|switch|checkout -b|branch --show-current|show|rev-parse|record-push|record-fetch [options] [paths]');
+  if (sub === undefined) refuse('usage: mt-git status|diff|log|add|commit|switch|checkout -b|branch --show-current|show|rev-parse|fast-forward|record-push|record-fetch [options] [paths]');
 
   const cwd = realpathSync(process.cwd());
   let argv; // what goes after the subcommand name
@@ -343,6 +345,15 @@ function main() {
     const rec = recordOf(root);
     if (sub === 'record-fetch') runRecord(root, cwd, ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', '--', rec, '+refs/heads/*:refs/record/*']);
     runRecord(root, cwd, ['push', '--quiet', '--no-verify', '--no-recurse-submodules', '--', rec, `refs/heads/${rest[0]}:refs/heads/${rest[0]}`]);
+  } else if (sub === 'fast-forward') {
+    // one target: a commit by its full or short sha, or a branch the repository of record holds (after record-fetch); never an option, a range or a path
+    const t = rest[0] ?? '';
+    const record = t.startsWith('refs/record/') ? t.slice('refs/record/'.length) : null;
+    const ok = rest.length === 1 && (/^[0-9a-f]{7,40}$/.test(t) || (record !== null && RECORD_BRANCH.test(record) && !record.endsWith('.lock') && !record.includes('..')));
+    if (!ok) refuse('fast-forward: give one commit sha or refs/record/<branch> (run mt-git record-fetch first)');
+    // `merge --ff-only` only moves the branch forward: a branch that has commits of its own the target lacks is refused by git, and nothing is rewritten
+    argv = ['--ff-only', '--no-edit', '--no-stat', '--no-verify', '--quiet', t];
+    write = true;
   } else if (sub === 'branch') {
     if (rest.length !== 1 || rest[0] !== '--show-current') refuse('branch: only "mt-git branch --show-current" is allowed');
     argv = ['--show-current'];
@@ -378,7 +389,7 @@ function main() {
     if (sub === 'diff' || sub === 'log' || sub === 'show') argv = ['--no-ext-diff', '--no-textconv', ...argv];
     if (sub === 'diff' || sub === 'status') argv = [`--ignore-submodules=all`, ...argv];
   } else {
-    refuse(`"${sub.slice(0, 40)}" is not a command mt-git runs (allowed: status, diff, log, add, commit, switch, checkout -b, branch --show-current, show, rev-parse, record-push, record-fetch)`);
+    refuse(`"${sub.slice(0, 40)}" is not a command mt-git runs (allowed: status, diff, log, add, commit, switch, checkout -b, branch --show-current, show, rev-parse, fast-forward, record-push, record-fetch)`);
   }
 
   const root = findRoot(cwd);
@@ -387,7 +398,7 @@ function main() {
 
   const args = [];
   for (const c of FIXED_CONFIG) args.push('-c', c);
-  args.push(sub, ...argv);
+  args.push(sub === 'fast-forward' ? 'merge' : sub, ...argv);
   const r = spawnSync(GIT, args, { cwd, env: cleanEnv(root, cwd, write), stdio: 'inherit' });
   if (r.error) refuse(`git could not run: ${r.error.code ?? 'error'}`);
   process.exit(r.status ?? (r.signal ? 1 : 0));

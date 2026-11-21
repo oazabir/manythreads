@@ -114,6 +114,61 @@ describe('the repository of record', () => {
   });
 });
 
+describe('mt-git fast-forward (P31-03: a bot behind its card branch asked a person to edit a ref file)', () => {
+  beforeEach(() => {
+    sync();
+    ok(git(coder, ['config', 'user.name', 't']));
+    ok(git(tester, ['config', 'user.name', 't']));
+    ok(git(tester, ['config', 'user.email', 't@t']));
+  });
+
+  it('brings the branch a bot is on up to the one the record holds, after another bot pushed to it', () => {
+    cardInCoder('card-cccc3333');
+    expect(mt(coder, ['record-push', 'card-cccc3333']).code).toBe(0);
+    expect(mt(tester, ['record-fetch']).code).toBe(0);
+    expect(mt(tester, ['checkout', '-b', 'card-cccc3333', 'refs/record/card-cccc3333']).code).toBe(0);
+    // the coder adds a fix and pushes again: the tester's branch is now behind
+    writeFileSync(join(coder, 'c.txt'), 'fix\n');
+    ok(git(coder, ['add', 'c.txt']));
+    ok(git(coder, ['commit', '-q', '-m', 'fix']));
+    const head = git(coder, ['rev-parse', 'HEAD']).stdout.trim();
+    expect(mt(coder, ['record-push', 'card-cccc3333']).code).toBe(0);
+    expect(mt(tester, ['record-fetch']).code).toBe(0);
+    const ff = mt(tester, ['fast-forward', 'refs/record/card-cccc3333']);
+    expect(ff.code, ff.all).toBe(0);
+    expect(git(tester, ['rev-parse', 'HEAD']).stdout.trim()).toBe(head);
+    expect(git(tester, ['branch', '--show-current']).stdout.trim()).toBe('card-cccc3333');
+    expect(readFileSync(join(tester, 'c.txt'), 'utf8')).toBe('fix\n');
+    // and by a commit's sha (the short form too); already there is no change
+    expect(mt(tester, ['fast-forward', head.slice(0, 8)]).code).toBe(0);
+  });
+
+  it('refuses a branch with commits of its own (nothing is rewritten), and anything but one sha or refs/record/<branch>', () => {
+    cardInCoder('card-dddd4444');
+    expect(mt(coder, ['record-push', 'card-dddd4444']).code).toBe(0);
+    expect(mt(tester, ['record-fetch']).code).toBe(0);
+    expect(mt(tester, ['checkout', '-b', 'mine', 'refs/record/card-dddd4444']).code).toBe(0);
+    writeFileSync(join(tester, 'd.txt'), 'own\n');
+    ok(git(tester, ['add', 'd.txt']));
+    ok(git(tester, ['commit', '-q', '-m', 'own']));
+    const own = git(tester, ['rev-parse', 'HEAD']).stdout.trim();
+    writeFileSync(join(coder, 'e.txt'), 'theirs\n');
+    ok(git(coder, ['add', 'e.txt']));
+    ok(git(coder, ['commit', '-q', '-m', 'theirs']));
+    expect(mt(coder, ['record-push', 'card-dddd4444']).code).toBe(0);
+    expect(mt(tester, ['record-fetch']).code).toBe(0);
+    const diverged = mt(tester, ['fast-forward', 'refs/record/card-dddd4444']);
+    expect(diverged.code).not.toBe(0);
+    expect(diverged.code).not.toBe(2); // git's own refusal, not the wrapper's
+    expect(git(tester, ['rev-parse', 'HEAD']).stdout.trim()).toBe(own);
+    for (const bad of [[], ['--hard'], ['HEAD~1'], ['main'], ['refs/heads/main'], ['refs/record/../x'], ['refs/record/a..b'], ['abc'], ['refs/record/card-dddd4444', 'x'], ['-s', 'ours']]) {
+      const r = mt(tester, ['fast-forward', ...bad]);
+      expect(r.code, bad.join(' ')).toBe(2);
+    }
+    expect(git(tester, ['rev-parse', 'HEAD']).stdout.trim()).toBe(own);
+  });
+});
+
 describe('mt-git record-push and record-fetch', () => {
   beforeEach(() => {
     ok(git(root, ['--version']));

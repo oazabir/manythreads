@@ -37,6 +37,7 @@ export const GIT_TOOLS: readonly string[] = [
   `Bash(${GIT_WRAPPER} switch:*)`,
   `Bash(${GIT_WRAPPER} checkout -b:*)`,
   `Bash(${GIT_WRAPPER} branch --show-current)`,
+  `Bash(${GIT_WRAPPER} fast-forward:*)`,
 ];
 /** The two commands that move a branch between the bots of a pod through the team's repository of record (mt-git.mjs). */
 export const RECORD_TOOLS: readonly string[] = [`Bash(${GIT_WRAPPER} record-push:*)`, `Bash(${GIT_WRAPPER} record-fetch)`];
@@ -107,10 +108,10 @@ function shareLines(w: WhereYouRun): string[] {
   if (w.place === 'hermes_pod') {
     return [`${card} Share it with \`git push origin <branch>\` (never \`main\`); read somebody else's with \`git fetch origin\` and \`git switch --detach <commit sha>\`.`];
   }
-  const record = `Share it with \`mt-git record-push <branch>\` (never \`main\`) and bring the others' in with \`mt-git record-fetch\`: their branches appear as \`refs/record/<branch>\` (start your own from one with \`mt-git checkout -b <branch> refs/record/<branch>\`).`;
+  const record = `Share it with \`mt-git record-push <branch>\` (never \`main\`) and bring the others' in with \`mt-git record-fetch\`: their branches appear as \`refs/record/<branch>\` (start your own from one with \`mt-git checkout -b <branch> refs/record/<branch>\`; when another bot pushed to the branch you are on, bring yours up to it with \`mt-git record-fetch\` then \`mt-git fast-forward refs/record/<branch>\`, never by editing files under \`.git\`).`;
   if (w.agent === 'claude') {
     return [
-      'For git, use `mt-git` in place of `git`: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>` and `branch --show-current`, inside the project folder. Plain `git` is not available to you, and `mt-git` refuses any other command or option.',
+      'For git, use `mt-git` in place of `git`: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>`, `branch --show-current` and `fast-forward <commit or refs/record/branch>`, inside the project folder. Plain `git` is not available to you, and `mt-git` refuses any other command or option.',
       `${card} ${record}`,
     ];
   }

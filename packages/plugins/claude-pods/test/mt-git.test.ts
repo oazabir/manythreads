@@ -70,6 +70,7 @@ describe('the allowed tool strings', () => {
       'Bash(mt-git switch:*)',
       'Bash(mt-git checkout -b:*)',
       'Bash(mt-git branch --show-current)',
+      'Bash(mt-git fast-forward:*)',
     ]);
   });
 
