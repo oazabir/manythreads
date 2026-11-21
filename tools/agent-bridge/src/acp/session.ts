@@ -46,11 +46,17 @@ export const CONTINUE_MIN_BUDGET_MS = 120_000;
 export const CONTINUE_DONE = 'ALL DONE';
 export const CONTINUE_PROMPT = `You ended your turn, but this card has not been handed off or completed yet. Carry on from where you stopped: finish the step you are on, run a long command in this same turn and check it until it ends (never leave it in the background), then hand the card off (tasks.handoff), complete it (tasks.complete), or post the result (messages.post). If everything is already done, reply with the single line ${CONTINUE_DONE}.`;
 
-/** The answer without the closing `ALL DONE` line of an extra turn (the agent's own words before it stay). */
+/**
+ * The answer without the closing `ALL DONE` of the extra turns (the agent's own words before it stay). Each extra turn may say it, and the adapters join two turns'
+ * text with nothing between, so the end can read "ALL DONEALL DONE" (seen 2026-11-21): every closing mark goes.
+ */
 export function withoutDoneMark(answer: string): string {
-  const text = answer.trimEnd();
-  const bare = text.endsWith('.') ? text.slice(0, -1) : text;
-  return bare.endsWith(CONTINUE_DONE) ? bare.slice(0, -CONTINUE_DONE.length).trimEnd() : text;
+  let text = answer.trimEnd();
+  for (;;) {
+    const bare = text.endsWith('.') ? text.slice(0, -1) : text;
+    if (!bare.endsWith(CONTINUE_DONE)) return text;
+    text = bare.slice(0, -CONTINUE_DONE.length).trimEnd();
+  }
 }
 
 /** The platform's tools that end a bot's part of the work: a hand-off, a completion, a post, a question to a person. */

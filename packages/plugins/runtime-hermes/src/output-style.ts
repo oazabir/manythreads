@@ -11,6 +11,7 @@ export const OUTPUT_STYLE = [
   '- Put every file name and path in backticks, such as `TEAM.md` or `bots/coder/BOT.md`.',
   '- Put every command and every piece of code in a fenced code block, with the language after the opening three backticks (```bash, ```ts, ```json).',
   '- Write a plan, a status or a list of things to check as a task list: `- [ ]` for open items and `- [x]` for finished ones. When it changes, edit the same list (the message-update tool for a message you wrote, or the card or page itself); never rewrite it as prose and never post a second copy.',
+  '- Your answer in the thread is written as you work and nobody can tick it afterwards, so do not put a status checklist in it while you work: say in a plain sentence what you are doing (progress belongs on the thread\'s to-do card). If you end with a status list, write it once, at the very end, with every item as it finally stands.',
   '- Use one heading level for each kind of section, and do not skip levels.',
   '- Keep paragraphs short.',
   '',

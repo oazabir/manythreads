@@ -13,6 +13,7 @@ describe('the output style every bot gets', () => {
   it('names the rules in plain words', () => {
     expect(OUTPUT_STYLE).toMatch(/file name and path in backticks/);
     expect(OUTPUT_STYLE).toMatch(/fenced code block, with the language/);
+    expect(OUTPUT_STYLE).toMatch(/do not put a status checklist in it while you work/);
     expect(OUTPUT_STYLE).toMatch(/- \[ \]/);
     expect(OUTPUT_STYLE).toMatch(/edit the same list/);
     expect(OUTPUT_STYLE).toMatch(/one heading level/);
