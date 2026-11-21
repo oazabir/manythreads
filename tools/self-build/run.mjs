@@ -4,7 +4,7 @@
 //   node tools/self-build/run.mjs watch <rootId> [--minutes 90]           follow the thread, print each new message (who + first lines), stop on quiet or time
 //   node tools/self-build/run.mjs say <rootId> <text>                     reply in the thread (e.g. to nudge a bot: @coder ...)
 //   node tools/self-build/run.mjs get <path>                              GET an API path as MT_USER and print the JSON (a project's credential status, a card)
-//   node tools/self-build/run.mjs post <path>                             POST an empty body (e.g. /api/workspace/llm/aliases/code/test, a project's push-credential/test)
+//   node tools/self-build/run.mjs post <path> [<json body>]                POST a body (empty when left out; e.g. /api/workspace/llm/aliases/code/test)
 //   node tools/self-build/run.mjs put <path> '<json>'                     PUT a JSON body (e.g. save an LLM alias again with the same values)
 //   node tools/self-build/run.mjs shot <url> <out.png>                    screenshot a page with Playwright (the proof kept for each stage)
 //
@@ -143,7 +143,7 @@ try {
   else if (cmd === 'watch' && a) await watch(a);
   else if (cmd === 'say' && a && b) await say(a, b);
   else if (cmd === 'get' && a) await get(a);
-  else if (cmd === 'post' && a) await get(a, 'POST');
+  else if (cmd === 'post' && a) await get(a, 'POST', b === undefined ? undefined : JSON.parse(b)); // the body was dropped before (2026-11-21): every post sent {}
   else if (cmd === 'put' && a && b) await get(a, 'PUT', JSON.parse(b));
   else if (cmd === 'shot' && a && b) await shot(a, b);
   else { console.error('usage: run.mjs start <file> | watch <rootId> | say <rootId> <text> | get <path> | shot <url> <out.png>'); process.exit(2); }
