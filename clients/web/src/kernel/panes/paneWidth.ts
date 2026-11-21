@@ -23,7 +23,7 @@ export interface PaneSpec {
 
 export const PANES = {
   sidebar: { id: 'sidebar', label: 'Resize sidebar', def: 248, min: 200, max: 440, rest: 360 },
-  list: { id: 'list', label: 'Resize list', def: 420, min: 280, max: 720, rest: 360 },
+  list: { id: 'list', label: 'Resize list', def: 420, min: 340, max: 720, rest: 360 },
   threadRail: { id: 'thread-rail', label: 'Resize thread overview', def: 300, min: 240, max: 560, rest: 360 },
   chatHistory: { id: 'chat-history', label: 'Resize chat history', def: 280, min: 200, max: 480, rest: 360 },
   filesTree: { id: 'files-tree', label: 'Resize folder tree', def: 225, min: 160, max: 520, rest: 360 },
