@@ -3,6 +3,12 @@ import { IsoDateTime } from '../common/time.ts';
 import { ActorId, BoardId, ChannelId, EnvironmentId, HandoffId, RunnerId, TaskClaimId, TaskEventId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
 import { JsonObject } from './kernel.ts';
 
+/**
+ * The longest a card's description may be (P31-03, 2026-11-21: 8000 until then). Every bot of the chain adds its `## <role> · round N` section, and on a
+ * live delivery the Committer, the last of them, found no room left; the database check and the two doors that write it say the same number (tasks migration 0019).
+ */
+export const TASK_DESCRIPTION_MAX = 32_000;
+
 // Phase 6 task substrate (SPEC §8, PLAN A.6). Every enum here matches a CHECK of the tasks plugin's migration 0001_tasks.sql;
 // the enum columns are listed in the kernel's schema-enums map, so SQL and Zod cannot drift.
 
@@ -81,7 +87,7 @@ export const Task = z.object({
   workspaceId: WorkspaceId,
   teamId: TeamId,
   title: z.string().min(1).max(200),
-  description: z.string().max(8000),
+  description: z.string().max(TASK_DESCRIPTION_MAX),
   state: TaskState,
   kind: TaskKind,
   priority: TaskPriority,

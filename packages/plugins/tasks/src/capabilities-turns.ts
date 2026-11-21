@@ -1,4 +1,5 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import { TASK_DESCRIPTION_MAX } from '@manythreads/shared';
 import { emitUpdated } from './emit.ts';
 import { TASK_SELECT, toTask, type TaskRow } from './rows.ts';
 
@@ -8,7 +9,7 @@ import { TASK_SELECT, toTask, type TaskRow } from './rows.ts';
  * keeps the working state of a card (a checklist, a running count) between turns. Neither can touch a card the caller does not hold.
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const MAX_DESCRIPTION = 8000;
+export const MAX_DESCRIPTION = TASK_DESCRIPTION_MAX;
 
 async function cardOf(tx: PluginTx, taskId: string) {
   const row = (await tx.query<TaskRow>(`${TASK_SELECT} WHERE t.id = $1::uuid`, [taskId])).rows[0];

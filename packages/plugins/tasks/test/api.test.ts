@@ -100,6 +100,14 @@ describe('tasks API', () => {
     expect(ListTaskEventsResponse.parse((await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}/events`)).body).items.map((e) => e.type)).toEqual(['created']);
   });
 
+  it('keeps a description of 32000 characters and refuses a longer one (P31-03: 8000 left the last bot of a chain no room)', async () => {
+    const task = await createTask({ description: 'd'.repeat(32_000) });
+    const kept = await ownerSql(server.db.ownerUrl, 'SELECT char_length(description)::int AS n FROM app.tasks WHERE id = $1', [task.id]);
+    expect(kept[0]?.['n']).toBe(32_000);
+    // the table's own check says the same number as the request schema
+    await expect(ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET description = repeat($2, 32001) WHERE id = $1', [task.id, 'd'])).rejects.toThrow(/tasks_description_check/);
+  });
+
   it('lets one claim win: the second caller gets already_owned and nothing changes', async () => {
     const task = await createTask();
     const [a, b] = await Promise.all([

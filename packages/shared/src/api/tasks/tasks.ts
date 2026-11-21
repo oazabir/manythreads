@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ProjectName } from '../../entities/project.ts';
-import { Handoff, Task, TaskEvent, TaskKind, TaskPriority, TaskState } from '../../entities/task.ts';
+import { Handoff, Task, TASK_DESCRIPTION_MAX, TaskEvent, TaskKind, TaskPriority, TaskState } from '../../entities/task.ts';
 import { ActorId, BoardId, EnvironmentId, TaskId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
@@ -34,7 +34,7 @@ export const listTasksRoute = { method: 'GET', path: '/api/teams/:slug/tasks' } 
 
 export const CreateTaskRequest = z.strictObject({
   title: z.string().trim().min(1).max(200),
-  description: z.string().max(8000).default(''),
+  description: z.string().max(TASK_DESCRIPTION_MAX).default(''),
   kind: TaskKind.default('code'),
   priority: TaskPriority.default('normal'),
   branch: z.string().trim().min(1).max(200),
@@ -72,7 +72,7 @@ export const updateTaskRoute = { method: 'PATCH', path: '/api/teams/:slug/tasks/
 export const TickTaskRequest = z.strictObject({
   nth: z.number().int().min(0).max(1000),
   checked: z.boolean(),
-  text: z.string().max(8000),
+  text: z.string().max(TASK_DESCRIPTION_MAX),
 });
 export type TickTaskRequest = z.infer<typeof TickTaskRequest>;
 export const TickTaskResponse = z.object({ task: Task });

@@ -58,7 +58,8 @@ describe('tasks.describe', () => {
   it('refuses a description that is not text or is too long', async () => {
     const h = harness({ owns: true });
     expect(await h.run('tasks.describe', { taskId: TASK, description: 5 })).toMatchObject({ code: 'invalid_input' });
-    expect(await h.run('tasks.describe', { taskId: TASK, description: 'x'.repeat(8001) })).toMatchObject({ code: 'invalid_input' });
+    // 32000 since P31-03 (the last bot of a chain had no room for its section at 8000)
+    expect(await h.run('tasks.describe', { taskId: TASK, description: 'x'.repeat(32_001) })).toMatchObject({ code: 'invalid_input' });
     expect(await h.run('tasks.describe', { taskId: TASK, description: 'a\u0000b' })).toMatchObject({ code: 'invalid_input' });
   });
 });
