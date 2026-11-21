@@ -11,7 +11,8 @@ import { CallCardMessage, VoiceRoomCard } from '../meetings/VoiceRoomCard';
 import { callCards } from '../meetings/callCards';
 import { callCopyText } from '../meetings/roomCard';
 import { TodoMessage } from './todo-card/TodoMessage';
-import { MoreIcon, PinMarkIcon, PinMessageIcon, ReplyIcon, SmileIcon, UnpinMessageIcon } from '../shell/icons';
+import { PinnedMark } from './PinnedMark';
+import { MoreIcon, PinMessageIcon, ReplyIcon, SmileIcon, UnpinMessageIcon } from '../shell/icons';
 import { useCoarsePointer } from '../shell/useCoarsePointer';
 import { rowBar } from './rowBar';
 import { EmojiPicker } from './EmojiPicker';
@@ -48,6 +49,9 @@ import { withoutOwnName } from './displayText';
 import { PersonLink } from '../presence/ProfileCard';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+// the mark lives in its own module so the call card can draw it without importing this row (P31-07)
+export { PinnedMark };
+
 export const COPY_LINK_KEYS = isMac ? '⌘⇧C' : 'Ctrl+Shift+C';
 
 export const QUICK_EMOJI = ['👍', '✅', '🎉', '❤️', '👀', '🚀', '😄', '🙏'] as const;
@@ -81,16 +85,6 @@ function ReplyAvatars({ authors, people }: { authors: readonly NonNullable<Chann
           <Avatar key={a.actorId} name={a.displayName} kind={a.kind === 'bot' || a.kind === 'system' ? 'agent' : 'person'} avatar={a.kind === 'bot' ? people.botAvatar(a.actorId) : null} />
         );
       })}
-    </span>
-  );
-}
-
-/** "Pinned" beside the author's name on a pinned message (P31-07), with who pinned it in the tooltip when the roster knows them. */
-export function PinnedMark({ by, people }: { by: string | null; people: People }) {
-  const who = by ? (people.byActor(by)?.name ?? people.botName?.(by)) : undefined;
-  return (
-    <span className="msg-pinned" data-testid="pinned-mark" title={who ? `Pinned by ${who}` : 'Pinned to the channel'}>
-      <PinMarkIcon /> Pinned
     </span>
   );
 }
@@ -504,7 +498,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : callMeta ? (
           // a call's start message: the card while the call is live, one muted event line once it is over (P15-26, P34-02); in the thread pane too
           <RowGestureContext.Provider value={justFired}>
-            <CallCardMessage meetingId={callMeta.meetingId} channelId={m.channelId} starterName={name} startedAt={m.createdAt} />
+            <CallCardMessage meetingId={callMeta.meetingId} channelId={m.channelId} starterName={name} startedAt={m.createdAt} pinned={deleted ? undefined : m.pinned} />
           </RowGestureContext.Provider>
         ) : m.meta.meetingNotes ? (
           // the note-taker's message after a meeting: its words with Open the notes, Share and Save to team meeting notes (P15-23)

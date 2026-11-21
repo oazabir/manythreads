@@ -1,9 +1,10 @@
 import { useContext, useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from 'react';
 import { Link } from 'react-router';
-import type { CallCard } from '@manythreads/shared';
+import type { CallCard, ChannelMessage } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { RowGestureContext } from '../channels/gestures';
 import { usePeople } from '../channels/hooks';
+import { PinnedMark } from '../channels/PinnedMark';
 import { channelStore } from '../channels/store';
 import { Avatar } from '../components/ui';
 import { isMockMode } from '../api/setup';
@@ -25,8 +26,20 @@ import { callController, liveRooms, useCall, useRoomOfMessage } from './store';
  * A start message written before the stamp (none should be left after migration 0007) keeps P33's card from the live list (`VoiceRoomCard`) until S7.
  */
 
-/** The card or the event line of a stamped start message. `starterName` and `startedAt` come from the message, for the line drawn before the card loads. */
-export function CallCardMessage({ meetingId, channelId, starterName, startedAt }: { meetingId: string; channelId: string; starterName: string; startedAt: string }) {
+/** A message's pin (P31-07), carrying who pinned it; unset when the message is not pinned. */
+type Pin = ChannelMessage['pinned'];
+
+/** The "Pinned" mark of a pinned call row, with who pinned it from the roster; nothing when it is not pinned. */
+function CallPinnedMark({ pinned }: { pinned: Pin | undefined }) {
+  const people = usePeople();
+  return pinned ? <PinnedMark by={pinned.by} people={people} /> : null;
+}
+
+/**
+ * The card or the event line of a stamped start message. `starterName` and `startedAt` come from the message, for the line drawn before the card loads;
+ * `pinned` is the message's pin (the row leaves it out on a deleted message), drawn once in whichever of the three it shows.
+ */
+export function CallCardMessage({ meetingId, channelId, starterName, startedAt, pinned }: { meetingId: string; channelId: string; starterName: string; startedAt: string; pinned?: Pin }) {
   const entry = useCallCard(meetingId);
   if (entry?.status === 'ok') {
     const card = entry.card;
@@ -39,26 +52,29 @@ export function CallCardMessage({ meetingId, channelId, starterName, startedAt }
           // is enough: the card turns into its event line here
           freshen={() => Promise.all([callCards().refresh(card.meetingId), liveRooms().refresh()]).then(() => undefined)}
           endedHere={() => callCards().markEnded(card.meetingId)}
+          pinned={pinned}
         />
       );
     }
-    return <CallEventLine card={card} />;
+    return <CallEventLine card={card} pinned={pinned} />;
   }
   return (
     <p className="ev-line" data-testid="call-event" data-state="start" data-meeting-id={meetingId}>
       <span className="ev-ic" aria-hidden="true"><EventHeadphonesIcon /></span>
       <span className="ev-text" title={startLine(starterName, startedAt)}>{startLine(starterName, startedAt)}</span>
+      <CallPinnedMark pinned={pinned} />
     </p>
   );
 }
 
 /** The ended call as one muted line, with Notes when the reader may read them and they are written. */
-export function CallEventLine({ card }: { card: CallCard }) {
+export function CallEventLine({ card, pinned }: { card: CallCard; pinned?: Pin }) {
   const text = eventLine(card);
   return (
     <p className="ev-line" data-testid="call-event" data-state={card.state} data-meeting-id={card.meetingId}>
       <span className="ev-ic" aria-hidden="true"><EventHeadphonesIcon /></span>
       <span className="ev-text" title={text}>{text}</span>
+      <CallPinnedMark pinned={pinned} />
       {card.notesLink ? (
         <>
           <span className="ev-sep" aria-hidden="true">·</span>
@@ -98,7 +114,7 @@ const stop = (e: SyntheticEvent): void => e.stopPropagation();
  * The live card. `freshen` asks again for what the card is drawn from (End call waits for it); `endedHere` turns the card into its ended state without the
  * server, once the end route has answered.
  */
-export function CallCardBody({ card, channelId, freshen, endedHere }: { card: CallCard; channelId: string; freshen: () => Promise<void>; endedHere: () => void }) {
+export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { card: CallCard; channelId: string; freshen: () => Promise<void>; endedHere: () => void; pinned?: Pin }) {
   const call = useCall();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -168,7 +184,11 @@ export function CallCardBody({ card, channelId, freshen, endedHere }: { card: Ca
       <div className="room-card-head">
         <span className="room-card-ico" aria-hidden="true"><WaveIcon /></span>
         <div className="room-card-text">
-          <p className="room-card-title" title={facts.title}>{facts.title}</p>
+          {/* the pin mark sits after the title, which ellipsizes: the meta line below already wraps in the thread pane, so it would add a line there */}
+          <div className="room-card-titleline">
+            <p className="room-card-title" title={facts.title}>{facts.title}</p>
+            {pinned ? <PinnedMark by={pinned.by} people={people} /> : null}
+          </div>
           <p className="room-card-meta">
             <span className="room-card-chip" data-testid="room-card-kind">{facts.kind}</span>
             <span className="room-card-chip room-card-livechip" data-testid="room-card-live">
