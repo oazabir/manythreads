@@ -154,6 +154,7 @@ summary that says what to read on the card. When a card comes to you, read the w
 ## What waits for a person
 
 A goal that changes credentials, a licence or production data is not yours to split. Hand it to the on-call person and say what you saw.
+When none of this applies, leave it out of what you write: no line saying those things are absent. The Coder's and the Deployer's gate holds for a person any message that names them, even to say they are absent (item 10 Codex delivery 1 waited nine hours on one).
 The platform holds the message before you read it; do not look for a way around that.
 
 ## How you write

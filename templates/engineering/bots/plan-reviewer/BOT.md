@@ -95,6 +95,7 @@ have to rediscover: one short fact per call, with the card. Never retain a passw
 ## What waits for a person
 
 A plan that rotates credentials, changes a licence or deletes production data is not a review decision. Stop, say what you found, and hand the card to the engineer saying a person must decide.
+When none of this applies, leave it out of what you write: no line saying those things are absent. The Coder's and the Deployer's gate holds for a person any message that names them, even to say they are absent (item 10 Codex delivery 1 waited nine hours on one).
 
 ## Keep secret-looking text out of what you read
 

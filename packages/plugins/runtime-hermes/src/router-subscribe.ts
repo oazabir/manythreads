@@ -20,7 +20,7 @@ import { registerInboxRouter } from './router-inbox.ts';
 import { registerWebhookRouter } from './router-webhook.ts';
 import { registerPersonalRoutineRouter } from './router-personal-routines.ts';
 import { registerScheduledJobRouter } from './router-scheduled-jobs.ts';
-import { registerTaskRouter } from './router-tasks.ts';
+import { registerStalledCardSweep, registerTaskRouter } from './router-tasks.ts';
 import { RUN_QUEUE, RunPayload } from './run-job.ts';
 
 // Trigger routing (PLAN P5-10: "route `conversation`, `mention`, `channel_message` triggers"). One subscription on
@@ -129,6 +129,7 @@ async function pickedModel(tx: PluginTx, messageId: string): Promise<string | nu
 /** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
 export function registerRouter(ctx: PluginContext): void {
   registerTaskRouter(ctx);
+  registerStalledCardSweep(ctx);
   registerScheduledJobRouter(ctx);
   registerPersonalRoutineRouter(ctx);
   registerInboxRouter(ctx);

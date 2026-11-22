@@ -255,3 +255,131 @@ export function registerTaskRouter(ctx: PluginContext): void {
     });
   });
 }
+
+// ---- stalled cards (P31-03, item 10 proof 2026-11-21/22) -----------------------------------------------------------------------------------
+//
+// A hand-off wakes the new owner once. When that run fails (the Codex Coder ran out of its budget waiting on a test suite) or never starts (a wake
+// lost while the server restarted), nothing woke the card again and the chain sat idle for hours. The sweep below, every five minutes, finds a card
+// a bot owns that has not changed for STALL_MINUTES, where since its last hand-off the owner's last run on it (or in its thread) failed or there was none, nothing of
+// it is running or queued there, and no approval it filed is waiting (a card held for a person stays held). It starts the owner again with a note saying
+// so, at most MAX_RESUMES times per hand-off: the latches are `outbox_processed` rows keyed by the hand-off and the try, like a first wake. After
+// that the card is left and its history says why (`runtime.task.not_woken`, `wake_limit`). A run that stopped (an approval it waits on, a person, a budget or rate limit) is not resumed.
+
+export const RESUME_QUEUE = 'runtime-hermes.resume-stalled';
+const STALL_MINUTES = 15;
+const MAX_RESUMES = 2;
+/** A hand-off older than this is left alone: the sweep is for a delivery that is moving, not for an old card somebody forgot. */
+const RESUME_WINDOW_HOURS = 48;
+
+export const RESUME_NOTE =
+  'Your previous run on this card ended before you handed it over (it failed, ran out of time, or never started). Read the card and the thread, check what is already done on the branch, continue from there and hand the card over as your steps say.';
+
+interface StalledRow {
+  task_id: string;
+  team_id: string;
+  workspace_id: string;
+  owner_id: string;
+  handoff_id: string;
+  from_actor_id: string;
+  note: string;
+  [key: string]: unknown;
+}
+
+const latchTaken = async (tx: PluginTx, key: string): Promise<boolean> =>
+  (await tx.query(`SELECT 1 FROM app.outbox_processed WHERE subscriber = 'runtime-hermes:task_assigned' AND event_id = md5($1)::uuid`, [key])).rows.length > 0;
+
+/** Wake one stalled card's owner again, or note that every try was used. True when a run was queued. */
+async function resumeOne(ctx: PluginContext, tx: PluginTx, row: StalledRow): Promise<boolean> {
+  const bot = await wakeableBot(tx, row.owner_id, row.team_id);
+  if (!bot) return false;
+  const card = await loadCard(tx, row.task_id, row.team_id);
+  if (!card || card.owner_id !== row.owner_id) return false;
+  let attempt = 0;
+  for (let n = 1; n <= MAX_RESUMES; n += 1) {
+    if (!(await latchTaken(tx, `runtime-hermes:${bot.id}:task-resume:${row.handoff_id}:${n}`))) {
+      attempt = n;
+      break;
+    }
+  }
+  if (attempt === 0) {
+    // every try was used: say so once on the card's history and leave it for a person
+    if (await firstDelivery(tx, `runtime-hermes:${bot.id}:task-resume:${row.handoff_id}:gave-up`)) {
+      await notWoken(ctx, tx, { workspaceId: row.workspace_id, teamId: row.team_id, taskId: row.task_id, botId: bot.id, reason: 'wake_limit' });
+    }
+    return false;
+  }
+  await enqueueTaskRun(ctx, tx, {
+    event: 'assigned',
+    workspaceId: row.workspace_id,
+    teamId: row.team_id,
+    bot,
+    botActorId: row.owner_id,
+    card,
+    fromActorId: row.from_actor_id,
+    note: `${RESUME_NOTE}\n\nThe hand-off note was:\n${row.note}`,
+    dedupeKey: `runtime-hermes:${bot.id}:task-resume:${row.handoff_id}:${attempt}`,
+  });
+  return true;
+}
+
+/** Wake the owners of stalled cards again. Returns how many runs were queued. */
+export async function resumeStalledCards(ctx: PluginContext, tx: PluginTx, now: Date): Promise<number> {
+  const stalled = (
+    await tx.query<StalledRow>(
+      `WITH last_handoff AS (
+         SELECT DISTINCT ON (h.task_id) h.task_id, h.id, h.from_actor_id, h.to_actor_id, h.note, h.applied_at
+           FROM app.handoffs h
+          WHERE h.applied_at IS NOT NULL AND h.applied_at > $1::timestamptz - make_interval(hours => $3)
+          ORDER BY h.task_id, h.applied_at DESC, h.id DESC
+       )
+       SELECT t.id AS task_id, t.team_id, t.workspace_id, t.owner_id, lh.id AS handoff_id, lh.from_actor_id, lh.note
+         FROM app.tasks t
+         JOIN last_handoff lh ON lh.task_id = t.id AND lh.to_actor_id = t.owner_id
+         JOIN app.actors a ON a.id = t.owner_id AND a.kind = 'bot'
+         -- only a bot that can be woken (the same rule as a hand-off), so a card that cannot be helped never fills the batch
+         JOIN app.bots b ON b.id = a.ref_id AND b.team_id = t.team_id AND b.status = 'active'
+                        AND jsonb_path_exists(b.triggers, '$[*] ? (@.type == "task_assigned")')
+        WHERE t.state IN ('open', 'in_progress', 'verify')
+          AND t.thread_root_id IS NOT NULL
+          AND t.updated_at < $1::timestamptz - make_interval(mins => $2)
+          -- every try used: the card is left for a person (its history says so), and it never comes back in the batch
+          AND NOT EXISTS (SELECT 1 FROM app.outbox_processed o WHERE o.subscriber = 'runtime-hermes:task_assigned'
+                            AND o.event_id = md5('runtime-hermes:' || b.id::text || ':task-resume:' || lh.id::text || ':gave-up')::uuid)
+          -- nothing of the owner is running or queued on this card or in its thread (an answered approval or a person's @mention wakes it there
+          -- without the card's id)
+          AND NOT EXISTS (SELECT 1 FROM app.bot_runs r WHERE r.ended_at IS NULL AND (r.task_id = t.id OR (r.bot_id = b.id AND r.reply_root_id = t.thread_root_id)))
+          AND NOT EXISTS (SELECT 1 FROM app.jobs j WHERE j.queue = $4 AND j.state IN ('ready', 'running')
+                            AND (j.payload ->> 'taskId' = t.id::text OR (j.payload ->> 'botId' = b.id::text AND j.payload ->> 'replyRootId' = t.thread_root_id::text)))
+          AND NOT EXISTS (SELECT 1 FROM app.approvals p WHERE p.status = 'pending' AND p.bot_id = b.id AND p.created_at >= lh.applied_at)
+          -- the owner's last run on the card (or in its thread) since the hand-off failed, or there was none. A run that stopped (it waits on an
+          -- approval, a person stopped it, a budget or a rate limit refused it) is not a stall: waking it again would not help.
+          AND COALESCE((
+                SELECT r.status = 'failed'
+                  FROM app.bot_runs r
+                 WHERE r.bot_id = b.id AND (r.task_id = t.id OR r.reply_root_id = t.thread_root_id) AND r.started_at >= lh.applied_at AND NOT r.rehearsal
+                 ORDER BY r.started_at DESC, r.id DESC LIMIT 1
+              ), true)
+        ORDER BY t.updated_at
+        LIMIT 20`,
+      [now.toISOString(), STALL_MINUTES, RESUME_WINDOW_HOURS, RUN_QUEUE],
+    )
+  ).rows;
+  let queued = 0;
+  // Each card is woken in a transaction of its own workspace: the thread check (`app.channel_actor_can_post`) reads the workspace from the
+  // transaction, and the cron job's own has none (the event that wakes a hand-off carries it).
+  for (const row of stalled) {
+    if (await ctx.db.system((own) => resumeOne(ctx, own, row), { workspaceId: row.workspace_id })) queued += 1;
+  }
+  return queued;
+}
+
+export function registerStalledCardSweep(ctx: PluginContext): void {
+  ctx.jobs.register(
+    RESUME_QUEUE,
+    async (_payload, tx, job) => {
+      const n = await resumeStalledCards(ctx, tx, new Date());
+      if (n > 0) job.log.info(`runtime-hermes: woke the owners of ${n} stalled card(s) again`);
+    },
+    { cron: '*/5 * * * *' },
+  );
+}

@@ -531,6 +531,51 @@ describe('where the card is announced, and what is on the record when nobody can
     expect(spoolLines().filter((l) => l['homeName']?.startsWith('ta-coder7-'))).toHaveLength(1);
   });
 
+  it('a card whose owner\'s run failed is woken again by the sweep, twice at most, and then its history says so; a run that ended well is left alone (item 10 proof)', async () => {
+    const orch = await loadBot('ta-orch9', botMd({ name: 'TaOrch9', model: 'smart', capabilities: 'messages.post', handover: ['ta-coder9'] }));
+    const coder = await loadBot('ta-coder9', botMd({ name: 'TaCoder9', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: task_assigned'] }));
+    const taskId = await cardOwnedBy(orch, 'Stalled card');
+    const moved = await handoff(orch, taskId, 'ta-coder9', 'Please fix the stalled page');
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    await until(async () => ((await runsOf(coder.botId)).length === 1 && (await finished(coder.botId)) ? true : null), 30_000, 'the first run');
+
+    // the card has sat for twenty minutes; `sweep` runs the job the cron would, and waits until the worker has taken it
+    const age = () => w.system((tx) => tx.query(`UPDATE app.tasks SET updated_at = now() - interval '20 minutes' WHERE id = $1`, [taskId]));
+    const sweep = async (): Promise<void> => {
+      const id = await w.system(async (tx) => (await tx.query<{ id: string }>(`INSERT INTO app.jobs (queue, payload) VALUES ('runtime-hermes.resume-stalled', '{}') RETURNING id`)).rows[0]!.id);
+      await until(async () => w.system(async (tx) => (await tx.query<{ state: string }>(`SELECT state FROM app.jobs WHERE id = $1`, [id])).rows[0]?.state === 'done'), 30_000, 'the sweep job');
+    };
+    const failLast = () => w.system((tx) => tx.query(`UPDATE app.bot_runs SET status = 'failed' WHERE id = (SELECT id FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1)`, [coder.botId]));
+
+    // a run that ended well: nothing to wake
+    await age();
+    await sweep();
+    expect(await runsOf(coder.botId)).toHaveLength(1);
+
+    for (const n of [2, 3]) {
+      await failLast();
+      await age();
+      await sweep();
+      const runs = await until(async () => {
+        const all = await runsOf(coder.botId);
+        return all.length === n && all[n - 1]!.status !== 'running' ? all : null;
+      }, 30_000, `resumed run ${n}`);
+      expect(runs[n - 1]!.trigger_type).toBe('task_assigned');
+      const prompts = spoolLines().filter((l) => l['homeName']?.startsWith('ta-coder9-')).map((l) => l['prompt'] ?? '');
+      expect(prompts[n - 1]).toContain('Your previous run on this card ended before you handed it over');
+      expect(prompts[n - 1]).toContain('Please fix the stalled page');
+    }
+
+    // the third stall is not woken: the history says so, once
+    await failLast();
+    await age();
+    await sweep();
+    await sweep();
+    expect(await runsOf(coder.botId)).toHaveLength(3);
+    const limits = (await historyOf(taskId)).filter((e) => e.type === 'not_woken' && e.data['reason'] === 'wake_limit');
+    expect(limits).toHaveLength(1);
+  });
+
   it('a team with no public channel: the handover stands, and the card history says the owner was not woken (and why)', async () => {
     const orch = await loadBot('ta-orch8', botMd({ name: 'TaOrch8', model: 'smart', capabilities: 'messages.post', handover: ['ta-coder8'] }));
     const coder = await loadBot('ta-coder8', botMd({ name: 'TaCoder8', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: task_assigned'] }));

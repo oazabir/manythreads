@@ -6,6 +6,7 @@
 //   node tools/self-build/run.mjs get <path>                              GET an API path as MT_USER and print the JSON (a project's credential status, a card)
 //   node tools/self-build/run.mjs post <path> [<json body>]                POST a body (empty when left out; e.g. /api/workspace/llm/aliases/code/test)
 //   node tools/self-build/run.mjs put <path> '<json>'                     PUT a JSON body (e.g. save an LLM alias again with the same values)
+//   node tools/self-build/run.mjs delete <path>                           DELETE an API path (e.g. unbind an LLM alias so the gateway drops its entry)
 //   node tools/self-build/run.mjs shot <url> <out.png>                    screenshot a page with Playwright (the proof kept for each stage)
 //
 // Sign-in: MT_BASE (the site's address, required) and the person named by MT_USER (required: the <NAME> prefix of its two entries) in ~/manythreads.passwords.env
@@ -145,6 +146,7 @@ try {
   else if (cmd === 'get' && a) await get(a);
   else if (cmd === 'post' && a) await get(a, 'POST', b === undefined ? undefined : JSON.parse(b)); // the body was dropped before (2026-11-21): every post sent {}
   else if (cmd === 'put' && a && b) await get(a, 'PUT', JSON.parse(b));
+  else if (cmd === 'delete' && a) await get(a, 'DELETE');
   else if (cmd === 'shot' && a && b) await shot(a, b);
   else { console.error('usage: run.mjs start <file> | watch <rootId> | say <rootId> <text> | get <path> | shot <url> <out.png>'); process.exit(2); }
 } catch (e) {
