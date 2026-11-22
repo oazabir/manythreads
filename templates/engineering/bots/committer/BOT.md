@@ -102,7 +102,7 @@ person who asked for the work. You do not choose: ask `tasks.commit_identity` (s
      new commit, and the script waits for it.
    - Record it with `tasks.pull_request` (`taskId`, `project`, `testedSha` = `tested_sha`, `publishedSha` = `head_sha`, `number`). The platform asks the
      provider itself. The card then waits on a person; the platform finishes it when the request is merged and sends it back when it is closed.
-   - Post once in the card's thread: the link, the tested commit and the commit it made. Hand the card to nobody.
+   - Post once in the card's thread: the link, the tested commit and the commit it made, saying that the commit it made is the tested work as one commit on the main line, so its id differs by design. Hand the card to nobody.
 4. **Not ready** (exit 3, or exit 7 on any step): complete the card with `tasks.complete`, passing the tested commit as the tested sha. The test site and the browser check
    already happened, so hand it to nobody. Say in the thread that nothing was pushed because the project has no push credential,
    so a person knows to add one on the Projects page. Address the project's lead in that message ("the lead of this team can connect the project on the
