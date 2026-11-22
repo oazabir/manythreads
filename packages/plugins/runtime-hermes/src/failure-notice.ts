@@ -69,7 +69,7 @@ export function classifyFailure(error: string | undefined, failure?: BotRuntimeF
   const bridge = bridgeFailureOf(text);
   if (bridge !== null) return bridge;
   if (looksLikeRejectedKey(text) || /\b(403|429|5\d\d)\b|litellm|proxy server|model gateway|rate.?limit|overloaded|api[ _-]?error|connection error/i.test(text)) return 'gateway';
-  if (/timed? ?out|time limit|exceeded .*budget|was stopped \(SIG/i.test(text)) return 'timeout';
+  if (/timed? ?out|time limit|exceeded .*budget|budget exceeded|was stopped \(SIG/i.test(text)) return 'timeout';
   if (/runner/i.test(text)) return 'runner_offline';
   return 'other';
 }

@@ -17,6 +17,8 @@ describe('classifyFailure', () => {
     expect(classifyFailure('The agent did not take the model "gpt-x" that the profile pins (unknown model).')).toBe('runner_refused');
     expect(classifyFailure('This agent has no "plan" mode, so its tools cannot be limited to what the bot may do.')).toBe('runner_refused');
     expect(classifyFailure('turn limit exceeded')).toBe('steps');
+    // the bridge stops a run at its budget with this reason (item 10 Codex delivery 1: the Coder's run said "something went wrong" instead)
+    expect(classifyFailure('budget exceeded')).toBe('timeout');
     expect(classifyFailure('something else entirely')).toBe('other');
   });
   it('keeps the other categories', () => {
