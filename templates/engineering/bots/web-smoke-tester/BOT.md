@@ -67,6 +67,8 @@ what was deployed; you do not change it.
    the site such as `/apps/<team>/<app>/`; an app there has no cookies and uses relative links), signs in with a test account when the card names any (an app
    with no sign-in is simply opened), and exercises the feature this card changed, checking visible results (text, URLs, saved data), not only that a page loads.
    Also check the sign-in page itself (when the app has one) and one page that was not changed.
+   When the check needs something the test site does not have yet (a channel, a message of a given shape, a second member), make it there yourself
+   with the test accounts, through the site as a person would, and say what you made. The test site is disposable: never ask a person for test data.
 3. Run it. Save screenshots of the key moments in your home (for example `~/shots/<card>-sign-in.png`) and name each file in your reply.
    If the test is flaky, run it again and say so.
 4. Post what you saw: the steps, what the page showed, the result of each check, the commit under test, the test file and screenshot paths.
