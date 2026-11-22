@@ -260,7 +260,7 @@ export function registerTaskRouter(ctx: PluginContext): void {
 //
 // A hand-off wakes the new owner once. When that run fails (the Codex Coder ran out of its budget waiting on a test suite) or never starts (a wake
 // lost while the server restarted), nothing woke the card again and the chain sat idle for hours. The sweep below, every five minutes, finds a card
-// a bot owns that has not changed for STALL_MINUTES, where since its last hand-off the owner's last run on it (or in its thread) failed or there was none, nothing of
+// a bot owns that has not changed for STALL_MINUTES, where since its last hand-off the owner's last run on it (or in its thread) failed, ended without handing it on, or there was none, nothing of
 // it is running or queued there, and no approval it filed is waiting (a card held for a person stays held). It starts the owner again with a note saying
 // so, at most MAX_RESUMES times per hand-off: the latches are `outbox_processed` rows keyed by the hand-off and the try, like a first wake. After
 // that the card is left and its history says why (`runtime.task.not_woken`, `wake_limit`). A run that stopped (an approval it waits on, a person, a budget or rate limit) is not resumed.
@@ -272,7 +272,7 @@ const MAX_RESUMES = 2;
 const RESUME_WINDOW_HOURS = 48;
 
 export const RESUME_NOTE =
-  'Your previous run on this card ended before you handed it over (it failed, ran out of time, or never started). Read the card and the thread, check what is already done on the branch, continue from there and hand the card over as your steps say.';
+  'Your previous run on this card ended while the card was still yours (it failed, ran out of time, never started, or ended without a hand-off). Read the card and the thread, check what is already done on the branch, continue from there and hand the card over as your steps say.';
 
 interface StalledRow {
   task_id: string;
@@ -351,10 +351,13 @@ export async function resumeStalledCards(ctx: PluginContext, tx: PluginTx, now: 
           AND NOT EXISTS (SELECT 1 FROM app.jobs j WHERE j.queue = $4 AND j.state IN ('ready', 'running')
                             AND (j.payload ->> 'taskId' = t.id::text OR (j.payload ->> 'botId' = b.id::text AND j.payload ->> 'replyRootId' = t.thread_root_id::text)))
           AND NOT EXISTS (SELECT 1 FROM app.approvals p WHERE p.status = 'pending' AND p.bot_id = b.id AND p.created_at >= lh.applied_at)
-          -- the owner's last run on the card (or in its thread) since the hand-off failed, or there was none. A run that stopped (it waits on an
-          -- approval, a person stopped it, a budget or a rate limit refused it) is not a stall: waking it again would not help.
+          -- a card with an open pull request waits for a person to merge it
+          AND t.pull_request_state IS DISTINCT FROM 'open'
+          -- the owner's last run on the card (or in its thread) since the hand-off failed, ended without handing the card on, or there was none.
+          -- A run that stopped (it waits on an approval, a person stopped it, a budget or a rate limit refused it) is not a stall: waking it again
+          -- would not help.
           AND COALESCE((
-                SELECT r.status = 'failed'
+                SELECT r.status IN ('failed', 'done')
                   FROM app.bot_runs r
                  WHERE r.bot_id = b.id AND (r.task_id = t.id OR r.reply_root_id = t.thread_root_id) AND r.started_at >= lh.applied_at AND NOT r.rehearsal
                  ORDER BY r.started_at DESC, r.id DESC LIMIT 1

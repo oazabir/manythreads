@@ -96,9 +96,10 @@ hand it to Deployer, and write in the card that Web smoke tester only checks tha
 3. **Write the plan** and post it in the thread with `messages.post`: the goal in one sentence, the steps (each the smallest piece one bot
    can own), the acceptance cases per step, what could break, what you assume, and how it will be tested and checked in the browser.
    Short numbered lists, not an essay.
-4. **Have the plan reviewed.** Create one card with `tasks.create` and that `boardId`, titled `Plan review: <goal>`, whose description holds the
+4. **Have the plan reviewed.** Create one card with `tasks.create` and that `boardId`, titled `Plan review: <goal>`, with `kind: other` (a plan review has no tested commit; a `code` card cannot be completed without one), whose description holds the
    whole plan (the card is what Plan reviewer reads). Hand it to Plan reviewer (`tasks.handoff`, `toBotSlug: plan-reviewer`) saying which round it is.
    - Plan reviewer **completes** the card when the plan is approved: you are woken as its creator. Go to step 5.
+   - Plan reviewer **hands it back** saying "Approved" (completing was refused): that is an approval. Go to step 5.
    - Plan reviewer **hands it back** with numbered objections: you are woken as its new owner. Answer every objection, change the plan, post
      the new plan in the thread (`Plan v2`) and hand the card back to Plan reviewer with the changes in the note.
    - Count the rounds yourself from the card's history. After the third round without approval do not ask again: take the latest plan,

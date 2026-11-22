@@ -531,7 +531,7 @@ describe('where the card is announced, and what is on the record when nobody can
     expect(spoolLines().filter((l) => l['homeName']?.startsWith('ta-coder7-'))).toHaveLength(1);
   });
 
-  it('a card whose owner\'s run failed is woken again by the sweep, twice at most, and then its history says so; a run that ended well is left alone (item 10 proof)', async () => {
+  it('a card whose owner\'s run failed or ended without a hand-off is woken again by the sweep, twice at most, and then its history says so; a run that stopped is left alone (item 10 proof)', async () => {
     const orch = await loadBot('ta-orch9', botMd({ name: 'TaOrch9', model: 'smart', capabilities: 'messages.post', handover: ['ta-coder9'] }));
     const coder = await loadBot('ta-coder9', botMd({ name: 'TaCoder9', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: task_assigned'] }));
     const taskId = await cardOwnedBy(orch, 'Stalled card');
@@ -547,13 +547,19 @@ describe('where the card is announced, and what is on the record when nobody can
     };
     const failLast = () => w.system((tx) => tx.query(`UPDATE app.bot_runs SET status = 'failed' WHERE id = (SELECT id FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1)`, [coder.botId]));
 
-    // a run that ended well: nothing to wake
+    const stopLast = () => w.system((tx) => tx.query(`UPDATE app.bot_runs SET status = 'stopped' WHERE id = (SELECT id FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1)`, [coder.botId]));
+    const markDone = () => w.system((tx) => tx.query(`UPDATE app.bot_runs SET status = 'done' WHERE id = (SELECT id FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1)`, [coder.botId]));
+
+    // a run that stopped (an approval it waits on, a budget, a person) is not a stall
+    await stopLast();
     await age();
     await sweep();
     expect(await runsOf(coder.botId)).toHaveLength(1);
 
+    // the first resume follows a run that ended without handing the card on, the second a run that failed
     for (const n of [2, 3]) {
-      await failLast();
+      if (n === 2) await markDone();
+      else await failLast();
       await age();
       await sweep();
       const runs = await until(async () => {
@@ -562,7 +568,7 @@ describe('where the card is announced, and what is on the record when nobody can
       }, 30_000, `resumed run ${n}`);
       expect(runs[n - 1]!.trigger_type).toBe('task_assigned');
       const prompts = spoolLines().filter((l) => l['homeName']?.startsWith('ta-coder9-')).map((l) => l['prompt'] ?? '');
-      expect(prompts[n - 1]).toContain('Your previous run on this card ended before you handed it over');
+      expect(prompts[n - 1]).toContain('Your previous run on this card ended while the card was still yours');
       expect(prompts[n - 1]).toContain('Please fix the stalled page');
     }
 
