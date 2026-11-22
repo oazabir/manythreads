@@ -187,8 +187,6 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   }, [m.body, plainText]);
   // the thread pane draws every message whole (P34-01): it is where a long message is read
   const clamped = plainText && tall && !opened && !highlight && !expand && !inThread;
-  // the header already names the author: a handover's "Name → @bot:" is drawn "→ @bot:"
-  const shown = withoutOwnName(m.body, name);
   // a jump target or the first unread message was drawn whole: it stays whole when the highlight or the "New" line goes (no jump in the list)
   useEffect(() => {
     if (highlight || expand) {
@@ -437,10 +435,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 messageId={m.id}
                 body={
                   clip.voice.transcript === 'server' ? (
-                    <div className="txt vt-plain" data-testid="voice-words">{shown}</div>
+                    <div className="txt vt-plain" data-testid="voice-words">{m.body}</div>
                   ) : (
                     <>
-                      <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`} data-testid="voice-words"><Markdown source={shown} teamSlug={teamSlug} /></div>
+                      <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`} data-testid="voice-words"><Markdown source={m.body} teamSlug={teamSlug} /></div>
                       {clamped ? <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button> : null}
                     </>
                   )
@@ -514,7 +512,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
         ) : clip ? null : (
           <>
-            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={shown} teamSlug={teamSlug} /></div>
+            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={withoutOwnName(m.body, name)} teamSlug={teamSlug} /></div>
             {clamped ? (
               <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
             ) : null}

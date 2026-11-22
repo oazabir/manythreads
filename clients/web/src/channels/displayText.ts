@@ -4,13 +4,13 @@
 
 /**
  * A handover message starts with its author's own name ("Web smoke tester → @committer: done"), and the row already shows that name in its
- * header, so the row draws "→ @committer: done". Only an exact match of the name followed by the arrow is taken off; any other text is as written.
+ * header, so the row draws "→ @committer: done". Match the header name literally and require a Markdown mention followed by a colon.
  */
 export function withoutOwnName(body: string, authorName: string): string {
-  const name = authorName.trim();
-  if (name === '') return body;
-  const lead = `${name} → `;
-  return body.startsWith(lead) && body.length > lead.length ? `→ ${body.slice(lead.length)}` : body;
+  const lead = `${authorName} → `;
+  if (authorName === '' || !body.startsWith(lead)) return body;
+  const recipient = /^@[\p{L}\p{N}](?:[\p{L}\p{N}_.-]{0,62}[\p{L}\p{N}])?:/u;
+  return recipient.test(body.slice(lead.length)) ? body.slice(authorName.length + 1) : body;
 }
 
 /** A code span that looks like a commit hash: only hex digits, more than twelve of them, at least one a number and one a letter (a long number, a timestamp or an order id is not a hash). */
