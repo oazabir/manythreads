@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Board, BoardColumn, BotSummary, RosterMember, Task, TaskEvent } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { SkeletonRows } from '../../components/Skeleton';
@@ -37,6 +37,41 @@ type Props = {
 };
 
 const SHA_RE = /^[0-9a-f]{7,64}$/;
+
+function TestedCommit({ sha }: { sha: string }) {
+  const [feedback, setFeedback] = useState('');
+  const attempt = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => {
+    attempt.current += 1;
+    clearTimeout(timer.current);
+  }, []);
+
+  const copy = async (): Promise<void> => {
+    const currentAttempt = ++attempt.current;
+    clearTimeout(timer.current);
+    setFeedback('');
+    try {
+      await navigator.clipboard.writeText(sha);
+    } catch {
+      if (attempt.current === currentAttempt) setFeedback('Copy failed');
+      return;
+    }
+
+    if (attempt.current !== currentAttempt) return;
+    setFeedback('Copied');
+    timer.current = setTimeout(() => setFeedback(''), 2000);
+  };
+
+  return (
+    <>
+      <span className="mono">{sha}</span>{' '}
+      <button type="button" className="btn s" onClick={() => void copy()}>Copy</button>
+      <div role="status" aria-live="polite">{feedback}</div>
+    </>
+  );
+}
 
 export function CardPanel({ slug, task, board, roster, bots, botsAtWork, placeId, revision, onMove, onChanged, onRefresh }: Props) {
   const [ticks, setTicks] = useState(0);
@@ -140,7 +175,11 @@ export function CardPanel({ slug, task, board, roster, bots, botsAtWork, placeId
         <dt>Base commit</dt>
         <dd className="mono">{task.baseSha ?? '—'}</dd>
         <dt>Tested commit</dt>
-        <dd className="mono">{task.testedSha ?? '—'}</dd>
+        <dd>
+          {task.testedSha === null ? <span className="mono">—</span> : (
+            <TestedCommit key={`${task.id}:${task.testedSha}`} sha={task.testedSha} />
+          )}
+        </dd>
         {task.pullRequest ? (
           <>
             <dt>Pull request</dt>
