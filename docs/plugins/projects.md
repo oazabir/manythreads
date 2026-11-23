@@ -26,7 +26,7 @@ nested groups (`<host>/<group>/<subgroup>/<project>`, 2 to 20 segments). GitLab 
 Changing the provider of a project drops its token (set it again for the new provider).
 
 **The bot account.** For each project the lead gives the **bot username** and a **token** of that account (GitHub: a fine-grained token with write access to
-contents and pull requests; GitLab: a project or personal access token with `api` scope and the Developer role or more on the project). The provider is
+contents and pull requests, plus read access to checks and commit statuses so a card's Review shows the checks (P35-02); GitLab: a project or personal access token with `api` scope and the Developer role or more on the project). The provider is
 asked before anything is kept: the token must belong to that username, must be able to write to the project, and must not be refused; the check also
 learns the account's numeric id and the token's expiry. A project can be added without the bot account and have it set later.
 

@@ -125,12 +125,12 @@ export const TOKEN_HELP: Record<ProjectProvider, { page: (host: string | null) =
   github: {
     page: (host) => (host === null || host === 'github.com' ? 'https://github.com/settings/personal-access-tokens/new' : `https://${host}/settings/personal-access-tokens/new`),
     placeholder: 'github_pat_…',
-    hint: 'A token of the bot account with write access to this one repository: contents and pull requests.',
+    hint: 'A token of the bot account for this one repository: contents and pull requests (read and write), checks and commit statuses (read, so the card shows the checks).',
   },
   gitlab: {
     page: (host) => `https://${host ?? 'gitlab.com'}/-/user_settings/personal_access_tokens`,
     placeholder: 'glpat-…',
-    hint: 'A token of the bot account with the api scope. The account needs the Developer role (or higher) on this project.',
+    hint: 'A token of the bot account with the api scope. The account needs the Developer role (or higher) on this project, and Maintainer to merge from the card into a protected branch.',
   },
 };
 

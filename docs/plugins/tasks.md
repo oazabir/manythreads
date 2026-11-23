@@ -92,6 +92,19 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
   up to half an hour, or as long as GitHub's `Retry-After` says; the job logs the status code and the project name, never the token or GitHub's reply.
   The origin must start with a prefix in `hermesPods.repoOriginAllow`. A **bot** cannot release or describe a card that waits on a person (that wait is a
   person's to end); a person can still release it from the board.
+- **Reviewing the pull request on the card (P35-02, `docs/plans/review-in-thread.md`).** Anyone who can read the team reads the request's files and
+  the head's checks through the server (`review.ts`, `review-routes.ts`): GitHub `/pulls/:n/files` or GitLab `/merge_requests/:iid/diffs`, 30 files a page,
+  a patch over 64 KB (or past 256 KB on a page) kept as its name only; GitHub check runs plus commit statuses, or the GitLab pipeline at the head. Each
+  answer says whether the request is still at the recorded head (the tested commit). A **lead** (or workspace admin) decides, only at the recorded head
+  and only while the provider's request is still at it: Approve (a provider review; GitHub refuses one from the request's own author, the bot account, so
+  it falls back to a comment), Request changes (a provider review comment, then `app.tasks_handoff` to the team's `coder` with the comment in the note:
+  the same card goes round again and the Committer updates the same request), Merge (refused when a check fails; the provider merges with `sha` = the
+  recorded head, so a push after the test is refused by the provider too; `app.tasks_merged_here` then finishes the card at once through the sync's own
+  door). Every decision goes through `app.tasks_review_pull_request` (migration 0020), which writes a `pull_request_reviewed` history line (verdict,
+  number, head; never the comment); a provider refusal after it rolls the line back. The project token needs read access to checks (GitHub: Checks and
+  Commit statuses) for the checks list; without it the card says so. The Deployer records where the tested commit runs with `tasks.test_site`
+  (`app.tasks_set_test_site`, owner or lead, https only); the card shows it. The thread of a card whose request waits says so above the composer
+  (`GET /api/threads/:rootId/pull-requests`, a database read only).
 - **Board moves.** `POST …/boards/:boardId/move` calls `app.tasks_board_move`, which applies the same state-transition table as `PATCH
   /tasks/:id`; a move that the card's rules refuse answers 409 with the reason, never a silent state.
 
@@ -112,6 +125,8 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 | GET | `/boards/:boardId/places` | reader: where cards sit and how many each column holds |
 | GET | `/tasks/activity` | reader: which bots have a run in progress (`running`) or waiting to start (`queued`) on which cards, for the bot icon on a card (`app.tasks_card_activity`; only cards the caller can read). The plugin listens to `bots.run.opened` and `bots.run.closed` and pushes `tasks.activity.changed {teamId}` to the team's people as a hint to read again |
 | GET/POST | `/runners`, PATCH `/runners/:runnerId` | reader / manager |
+| GET | `/tasks/:taskId/pull-request/diff?page=`, `/pull-request/checks` | any team reader (the server reads the provider with the project's token) |
+| POST | `/tasks/:taskId/pull-request/approve`, `/request-changes`, `/merge` (`{headSha}`; `comment` for changes) | **lead or workspace admin**, at the recorded head only |
 
 Claim, handoff and deploy are rate limited (120, 120 and 30 per minute per actor). Every route validates its body and its response with the
 shared schemas under `packages/shared/src/api/tasks/`.
