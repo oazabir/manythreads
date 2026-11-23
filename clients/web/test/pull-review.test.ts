@@ -176,6 +176,11 @@ describe('the Review of a card', () => {
     await show(task({ state: 'in_progress', pullRequest: { project: 'widgets', number: 24, url: 'https://github.com/acme/widgets/pull/24', state: 'withdrawn', mergeSha: null } }));
     expect(q('pull-review')).toBeNull();
     expect(q('pull-review-said')!.textContent).toContain('Sent to Coder');
+    // the board makes the panel again after a change: the answer is still there
+    act(() => root.unmount());
+    root = createRoot(host);
+    await show(task({ state: 'in_progress', pullRequest: { project: 'widgets', number: 24, url: 'https://github.com/acme/widgets/pull/24', state: 'withdrawn', mergeSha: null } }));
+    expect(q('pull-review-said')!.textContent).toContain('Sent to Coder');
   });
 
   it('refuses Merge on the card when the request moved after the test or a check failed; otherwise asks once more, then merges', async () => {

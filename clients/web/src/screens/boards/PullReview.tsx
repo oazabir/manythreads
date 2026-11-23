@@ -25,6 +25,14 @@ const STATUS_WORD: Record<PullRequestFile['status'], string> = {
 const CHECK_WORD = { passing: 'passed', failing: 'failed', pending: 'running', skipped: 'skipped' } as const;
 const SUMMARY_WORD = { passing: 'All checks passed', failing: 'A check failed', pending: 'Checks are still running', none: 'No checks reported' } as const;
 
+/** The last answer of a decision per card, for a minute: the board makes the card panel again after every change (its key holds the board's revision), and the person must still read what happened. */
+const lastSaid = new Map<string, { text: string; at: number }>();
+const SAID_MS = 60_000;
+const recentSaid = (taskId: string): string | null => {
+  const s = lastSaid.get(taskId);
+  return s && Date.now() - s.at < SAID_MS ? s.text : null;
+};
+
 function FileDiff({ file }: { file: PullRequestFile }) {
   if (file.binary) return <p className="pr-note">A binary file: its content is not shown.</p>;
   if (file.patch === null) return <p className="pr-note">{file.truncated ? 'Too large to show here: open the pull request for this file.' : 'No lines changed.'}</p>;
@@ -55,7 +63,12 @@ export function PullReview({ slug, task, onChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [readProblem, setReadProblem] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [said, setSaid] = useState<string | null>(null);
+  const [said, setSaidState] = useState<string | null>(() => recentSaid(task.id));
+  const setSaid = (text: string | null): void => {
+    if (text === null) lastSaid.delete(task.id);
+    else lastSaid.set(task.id, { text, at: Date.now() });
+    setSaidState(text);
+  };
   const [busy, setBusy] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [comment, setComment] = useState('');
