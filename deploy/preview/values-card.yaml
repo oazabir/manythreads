@@ -1,0 +1,40 @@
+# A card's test site (P35-03, docs/plans/test-site-per-card.md): the preview install made smaller, so two of them fit beside the live site on the
+# devbox. Applied AFTER values-preview.yaml, in the slot the card leased (deploy/preview/README.md):
+#   helm upgrade --install manythreads ./deploy/helm/manythreads -n <slot namespace> \
+#     -f deploy/preview/values-preview.yaml -f deploy/preview/values-card.yaml \
+#     --set domain=<slot host> --set server.image=registry.local:5000/<slot namespace>/server \
+#     --set web.image=registry.local:5000/<slot namespace>/web --set imageTag=<tag>
+# About 0.6Gi requested and 2.6Gi at the limits in all. The server removes the whole site when the card is done, its pull request is closed, or it sat a
+# day without a deploy; nothing here is kept: the database's 1Gi volume goes with its claim, and the server keeps no blobs or repositories on a volume.
+
+postgres:
+  storage:
+    size: 1Gi
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 768Mi }
+
+server:
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { memory: 1536Mi }
+  # an emptyDir each (server.yaml): a card site's attachments and repositories live and die with its pod
+  blobs:
+    persistence: { enabled: false }
+  repos:
+    persistence: { enabled: false }
+
+web:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+mailpit:
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 128Mi }
+
+seed:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 768Mi }

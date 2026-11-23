@@ -22,8 +22,7 @@ cluster (the P31-05 build Job), its link on the card, removed when the card clos
 - **A pool of two slots, not a namespace per card.** A card leases a slot (`test-manythreads` at test.manythreads.kahf.to, and a new
   `test-card-2` at test2.manythreads.kahf.to) for as long as it is open; a third card is told the slots are busy and by whom. Hosts per card
   (`card-<8>.test…`) would need a controller with cluster rights to change the admission annotation: deferred.
-- **Smaller sites.** `values-card.yaml`: about 0.6 GiB requested and 2.6 GiB at the limit per site, Postgres on an emptyDir (nothing left on disk
-  after a teardown), no blob or repo volumes. One build at a time across the slots (a build lock on the lease).
+- **Smaller sites.** `values-card.yaml`: about 0.6 GiB requested and 2.6 GiB at the limit per site, Postgres on a 1Gi volume removed with the site, no blob or repo volumes. One build at a time across the slots (a build lock on the lease).
 - **The server tears a site down,** not a bot: when the card is done (merged or completed), when its pull request is closed, after 24 hours without a
   deploy, and after 72 hours whatever happens. It deletes the release's objects with the slot's own deployer token and clears the card's link.
 - **Approval chain:** an environment may name up to three role tags; a protected deploy asks them in order, one person per step, and nobody decides
@@ -34,8 +33,8 @@ cluster (the P31-05 build Job), its link on the card, removed when the card clos
 
 ## Steps (one commit each, `P35-03: …`)
 1. Chart: a second target `test-card-2` (host test2…); a smaller quota per target; the build Job shares one layer cache across slots. Render test.
-2. `deploy/preview/values-card.yaml` and a chart flag `postgres.ephemeral` (statefulset on an emptyDir). Render test: no volume claims, every
-   container capped.
+2. `deploy/preview/values-card.yaml`: the preview made smaller (CNPG on 1Gi, whose volume goes with its claim at teardown; the chart's statefulset mode
+   is unused and the pinned CNPG image has no docker entrypoint, so no emptyDir database). Render test: no volume claims, every container capped.
 3. Tasks 0021: `app.test_site_slots` (seeded from the targets), `tasks_lease_test_site` (idempotent for the card; busy names the holders; one build
    lock of 40 minutes), `tasks.test_site_lease`; `tasks.test_site` accepts only the leased slot's host. DB tests: two cards, a third is busy, races.
 4. The Deployer's BOT.md and `deploy/preview/README.md` take the namespace and host from the lease; busy is said in the thread and the card goes back to
