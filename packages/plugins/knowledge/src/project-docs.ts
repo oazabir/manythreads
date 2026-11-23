@@ -1,6 +1,8 @@
 import type { PluginContext, PluginTx, ProjectCredentialsProvider, RepoProvider } from '@manythreads/sdk';
 import { isRepoOriginAllowed, parseGitRepo, parseRepoOriginAllow, type GitRepo } from '@manythreads/shared';
+import { maxExtractBytes } from './extract/index.ts';
 import { repoFolderOf } from './rows.ts';
+import { resyncBase } from './sync.ts';
 
 /*
  * Project docs as knowledge (P35-06, owner 2026-11-20: "the team repo's code, ADRs and docs indexed as a knowledge base"). Every six hours, for each GitHub
@@ -88,10 +90,10 @@ interface ProjectRow extends Record<string, unknown> {
 }
 
 /** The project's base `<name>-docs`, made the first time as a lead would make it (an upload source and the repo folder). */
-async function ensureBase(ctx: PluginContext, tx: PluginTx, p: ProjectRow): Promise<string> {
+async function ensureBase(ctx: PluginContext, tx: PluginTx, p: ProjectRow): Promise<{ id: string; slug: string }> {
   const slug = `${p.name}-docs`.slice(0, 60);
   const found = (await tx.query<{ id: string }>('SELECT id FROM app.knowledge_bases WHERE team_id = $1 AND slug = $2', [p.team_id, slug])).rows[0];
-  if (found) return slug;
+  if (found) return { id: found.id, slug };
   const made = (
     await tx.query<{ id: string }>('INSERT INTO app.knowledge_bases (workspace_id, team_id, slug, name, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id', [
       p.workspace_id,
@@ -103,7 +105,7 @@ async function ensureBase(ctx: PluginContext, tx: PluginTx, p: ProjectRow): Prom
   ).rows[0]!;
   await tx.query(`INSERT INTO app.knowledge_sources (base_id, team_id, kind) VALUES ($1, $2, 'upload'), ($1, $2, 'repo')`, [made.id, p.team_id]);
   await ctx.audit.emit(tx, { type: 'knowledge.base.created', workspaceId: p.workspace_id, teamId: p.team_id, baseId: made.id, slug, createdBy: p.created_by, at: new Date().toISOString() });
-  return slug;
+  return { id: made.id, slug };
 }
 
 export interface MirrorResult {
@@ -144,8 +146,13 @@ export async function mirrorProjectDocs(ctx: PluginContext, log: (line: string) 
       continue;
     }
     out.projects++;
-    const slug = await ctx.db.system((tx) => ensureBase(ctx, tx, p), { workspaceId: p.workspace_id });
-    const folder = repoFolderOf(slug);
+    const base = await ctx.db.system((tx) => ensureBase(ctx, tx, p), { workspaceId: p.workspace_id });
+    const folder = repoFolderOf(base.slug);
+    // the base reads its folder now (a repo source has no rhythm of its own; unchanged files cost one hash comparison)
+    const reread = (): Promise<unknown> =>
+      ctx.db
+        .system((tx) => resyncBase(ctx, tx, { id: base.id, slug: base.slug, teamId: p.team_id, workspaceId: p.workspace_id }, maxExtractBytes(), { urls: false }), { workspaceId: p.workspace_id })
+        .catch((err: unknown) => log(`knowledge project docs: ${p.name}: the base could not be read again: ${err instanceof Error ? err.message : String(err)}`));
     const have = await ctx.db.system(async (tx) => {
       try {
         return await repoStore.list(tx, p.team_id, folder);
@@ -162,7 +169,10 @@ export async function mirrorProjectDocs(ctx: PluginContext, log: (line: string) 
       if (bytes) changes.push({ path: `${folder}/${name}`, op: 'put', content: bytes });
     }
     for (const [name] of haveSha) if (!wanted.has(name) && /\.(md|markdown)$/i.test(name)) changes.push({ path: `${folder}/${name}`, op: 'delete' });
-    if (changes.length === 0) continue;
+    if (changes.length === 0) {
+      await reread();
+      continue;
+    }
     await ctx.db.system(
       (tx) => repoStore.write(tx, p.team_id, { id: tx.actor.id, kind: 'system', name: 'manythreads' }, changes, `knowledge: ${p.name} docs from ${p.repo_url} (${p.default_branch})`),
       { workspaceId: p.workspace_id },
@@ -170,6 +180,7 @@ export async function mirrorProjectDocs(ctx: PluginContext, log: (line: string) 
     out.written += changes.filter((c) => c.op === 'put').length;
     out.removed += changes.filter((c) => c.op === 'delete').length;
     log(`knowledge project docs: ${p.name}: ${changes.length} file(s) brought up to date in ${folder}`);
+    await reread();
   }
   return out;
 }
