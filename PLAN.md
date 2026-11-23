@@ -923,6 +923,7 @@ A voice message is recorded in a bar like a phone messaging app and sent at once
 | P32-09 | Deploy and a live check with the real Parakeet (a real clip, a clip over 20 s, a voice DM to a bot); docs and notices | Built, checked live 2026-11-18 (a 9 s and a 27 s clip transcribed in 2.4 s and 4.0 s; a voice message to a bot covered by router tests only) |
 | P32-10 | Voice messages flat in the list (owner 2026-11-18): no card, one player row, the transcript as the message's own text with a small caption, played dot, grouped like text | Built, live (ef4c21e1, 0f4a5743, 78771cee; deployed eed83972) |
 | P32-11 | Grouping: a message's own POST answer has no `author`, so it did not group under a pushed one until a reload (text too); the pending row continues the run | Built, live (be929c11) |
+| P32-13 | **Autoplay of incoming voice messages (owner 2026-11-23):** an "Autoplay voice" box in the header of a thread and of a direct-message conversation; with it on, a voice message from someone else arriving in the open thread or DM plays by itself, in place (nothing opens), one after another; a small player in the top right corner pauses, resumes and closes | Built, live 2026-11-23 (0c18580d); e2e `channels/voice-autoplay.spec.ts` (2 passed: DM plays, pause and resume, stays in place; a channel does not) |
 
 
 ### Phase 33 · A calmer channel header (owner, 2026-11-18) — 10 built, live
