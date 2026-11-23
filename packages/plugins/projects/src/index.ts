@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerCredentialCheck } from './credential-check.ts';
+import { registerIssueSync } from './issues.ts';
 import { registerProjectRoutes } from './routes.ts';
 
 /**
@@ -13,12 +14,13 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     extends: ['event.emit', 'job.register'],
-    events: { emits: ['project.project.created', 'project.project.updated', 'project.project.deleted'], consumes: [] },
+    events: { emits: ['project.project.created', 'project.project.updated', 'project.project.deleted', 'project.issue.opened'], consumes: [] },
     migrations: 'migrations',
     dependsOn: ['teams', 'channels'],
   },
   register(ctx) {
     registerProjectRoutes(ctx);
     registerCredentialCheck(ctx);
+    registerIssueSync(ctx);
   },
 });

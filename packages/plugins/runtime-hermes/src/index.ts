@@ -1,4 +1,5 @@
 import { createMeetingRunsProvider } from './meeting-run.ts';
+import { registerStalledCardSweep } from './router-tasks.ts';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { definePlugin, type BotRunnersProvider, type RunnerDoor } from '@manythreads/sdk';
@@ -63,7 +64,7 @@ export default definePlugin({
         // the webhook trigger tells a lead once a minute when a bot cannot post in the endpoint's channel or is over its hourly cap (the webhooks plugin owns the type and the other reasons)
         'webhooks.provider_event.refused',
       ],
-      consumes: ['channel.message.posted', 'channel.message.transcribed', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed', 'conversations.turn.regenerated', 'webhooks.provider_event.received', 'bots.run.closed'],
+      consumes: ['channel.message.posted', 'channel.message.transcribed', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'scheduled_jobs.scheduled_job.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed', 'conversations.turn.regenerated', 'webhooks.provider_event.received', 'bots.run.closed', 'project.issue.opened'],
     },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
@@ -108,6 +109,8 @@ export default definePlugin({
     registerProfileChanges(ctx, profiles.notify);
     registerConnectionRoutes(ctx, {}, profiles.notify);
     registerRouter(ctx);
+    // the stalled-card sweep is a timed job, registered with the plugin and not inside the router (whose only work is to subscribe)
+    registerStalledCardSweep(ctx);
     registerChatRouter(ctx);
     registerStopRoute(ctx);
     registerActivityRoutes(ctx);

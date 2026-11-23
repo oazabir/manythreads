@@ -210,6 +210,7 @@ import { TeamTagDeletedEvent } from './team.tag.deleted.ts';
 import { TeamTagAssignedEvent } from './team.tag.assigned.ts';
 import { TeamTagRemovedEvent } from './team.tag.removed.ts';
 import { ProjectCreatedEvent } from './project.project.created.ts';
+import { ProjectIssueOpenedEvent } from './project.issue.opened.ts';
 import { ProjectUpdatedEvent } from './project.project.updated.ts';
 import { ProjectDeletedEvent } from './project.project.deleted.ts';
 import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
@@ -341,6 +342,7 @@ export const eventRegistry = {
   'team.tag.assigned': { 1: TeamTagAssignedEvent },
   'team.tag.removed': { 1: TeamTagRemovedEvent },
   'project.project.created': { 1: ProjectCreatedEvent },
+  'project.issue.opened': { 1: ProjectIssueOpenedEvent },
   'project.project.updated': { 1: ProjectUpdatedEvent },
   'project.project.deleted': { 1: ProjectDeletedEvent },
   'identity.provider.changed': { 1: IdentityProviderChangedEvent },

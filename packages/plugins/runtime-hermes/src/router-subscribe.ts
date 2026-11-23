@@ -7,20 +7,19 @@ import {
   type PluginEvent,
   type PluginTx,
 } from '@manythreads/sdk';
+import { registerIssueRouter } from './router-issues.ts';
 import {
   ApprovalsApprovalDecidedEvent,
   ChannelMessagePostedEvent,
   ChannelMessageTranscribedEvent,
-  isRepoOriginAllowed,
-  parseRepoOriginAllow,
   type BotTrigger,
 } from '@manythreads/shared';
-import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView, type ProjectNote } from './match.ts';
+import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView } from './match.ts';
 import { registerInboxRouter } from './router-inbox.ts';
 import { registerWebhookRouter } from './router-webhook.ts';
 import { registerPersonalRoutineRouter } from './router-personal-routines.ts';
 import { registerScheduledJobRouter } from './router-scheduled-jobs.ts';
-import { registerStalledCardSweep, registerTaskRouter } from './router-tasks.ts';
+import { registerTaskRouter } from './router-tasks.ts';
 import { RUN_QUEUE, RunPayload } from './run-job.ts';
 
 // Trigger routing (PLAN P5-10: "route `conversation`, `mention`, `channel_message` triggers"). One subscription on
@@ -79,19 +78,8 @@ interface BotRow {
   [key: string]: unknown;
 }
 
-/** The project the channel is tied to, if any (the projects plugin's table; read in the outbox's system transaction). */
-export async function projectOfChannel(tx: PluginTx, channelId: string): Promise<ProjectNote | null> {
-  const row = (
-    await tx.query<{ name: string; repo_url: string; default_branch: string }>(
-      'SELECT name, repo_url, default_branch FROM app.projects WHERE channel_id = $1::uuid',
-      [channelId],
-    )
-  ).rows[0];
-  if (!row) return null;
-  // the same allowlist the pod controller applies (the server's own setting), so the note never promises a copy the pod does not hold
-  const allow = parseRepoOriginAllow(process.env['MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW']);
-  return { name: row.name, repoUrl: row.repo_url, defaultBranch: row.default_branch, cloned: isRepoOriginAllowed(row.repo_url, allow) };
-}
+import { projectOfChannel } from './project-note.ts';
+export { projectOfChannel };
 
 /** Did the bot page's Test action file this message as its rehearsal question (bots migration 0018)? */
 async function isRehearsalQuestion(tx: PluginTx, messageId: string): Promise<boolean> {
@@ -129,11 +117,11 @@ async function pickedModel(tx: PluginTx, messageId: string): Promise<string | nu
 /** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
 export function registerRouter(ctx: PluginContext): void {
   registerTaskRouter(ctx);
-  registerStalledCardSweep(ctx);
   registerScheduledJobRouter(ctx);
   registerPersonalRoutineRouter(ctx);
   registerInboxRouter(ctx);
   registerWebhookRouter(ctx);
+  registerIssueRouter(ctx);
   // A voice message is answered once, on the words (P32-04, decision D13): `channel.message.posted` leaves one that the server is still transcribing (or has
   // transcribed already, or failed to) alone, and `channel.message.transcribed` routes it with the transcript as its text (or, when the server could not write
   // one, with the stand-in line, as a message that never had a transcript). A voice message that never went to the server (the switch was off, an old

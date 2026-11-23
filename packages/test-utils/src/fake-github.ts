@@ -46,6 +46,8 @@ export interface FakeGithub {
   pulls: Map<number, FakePull>;
   /** Check runs and statuses per commit sha (lower case). */
   checks: Map<string, FakeChecks>;
+  /** Issues of the repository (P35-04): a test adds them; comments posted on them are kept on each. */
+  issues: Map<number, { number: number; title: string; body: string; state: 'open' | 'closed'; labels: string[]; pullRequest?: boolean; comments: string[] }>;
   calls: FakeGithubCall[];
   /** The next `count` requests answer `status` with these headers (a rate limit, an outage), before any other handling. */
   failNext(status: number, headers?: Record<string, string>, count?: number): void;
@@ -63,6 +65,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
 export async function startFakeGithub(options: { token: string; ownPulls?: boolean; owner?: string; repo?: string; login?: string; canPush?: boolean; readOnlyRepos?: string[]; expires?: string }): Promise<FakeGithub> {
   const pulls = new Map<number, FakePull>();
   const checks = new Map<string, FakeChecks>();
+  const issues: FakeGithub['issues'] = new Map();
   const calls: FakeGithubCall[] = [];
   let failing: { status: number; headers: Record<string, string>; left: number } | null = null;
   let next = 1;
@@ -125,6 +128,24 @@ export async function startFakeGithub(options: { token: string; ownPulls?: boole
         Object.assign(p, { state: 'closed', merged: true, mergeSha: sha });
         return send(200, { sha, merged: true, message: 'Pull Request successfully merged' });
       }
+      // issues (GitHub lists pull requests among them, marked `pull_request`), filtered by state and label; a comment on one
+      const issueList = /^\/repos\/([^/]+)\/([^/]+)\/issues$/.exec(url.pathname);
+      if (req.method === 'GET' && issueList) {
+        const state = url.searchParams.get('state') ?? 'open';
+        const label = url.searchParams.get('labels');
+        const list = [...issues.values()].filter((i) => (state === 'all' || i.state === state) && (!label || i.labels.includes(label)));
+        return send(
+          200,
+          list.map((i) => ({ number: i.number, title: i.title, body: i.body, state: i.state, labels: i.labels.map((name) => ({ name })), html_url: `https://github.com/${issueList[1]}/${issueList[2]}/issues/${i.number}`, ...(i.pullRequest ? { pull_request: {} } : {}) })),
+        );
+      }
+      const issueComment = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)\/comments$/.exec(url.pathname);
+      if (req.method === 'POST' && issueComment) {
+        const i = issues.get(Number(issueComment[3]));
+        if (!i) return send(404, { message: 'Not Found' });
+        i.comments.push((JSON.parse(body || '{}') as { body?: string }).body ?? '');
+        return send(201, { id: i.comments.length });
+      }
       // a commit's check runs and its combined status
       const commit = /^\/repos\/([^/]+)\/([^/]+)\/commits\/([0-9a-f]+)\/(check-runs|status)$/.exec(url.pathname);
       if (req.method === 'GET' && commit) {
@@ -181,6 +202,7 @@ export async function startFakeGithub(options: { token: string; ownPulls?: boole
     url: base,
     pulls,
     checks,
+    issues,
     calls,
     failNext: (status, headers = {}, count = 1) => {
       failing = { status, headers, left: count };
