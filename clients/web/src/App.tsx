@@ -40,6 +40,7 @@ import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/view
 import { BotPage } from './screens/bots/BotPage';
 import { BotHome } from './screens/bots/BotHome';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
+import { DeliveriesScreen } from './screens/deliveries/DeliveriesScreen';
 import { AgentsScreen } from './screens/agents/AgentsScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { BotRoster } from './screens/bots/BotRoster';
@@ -141,6 +142,7 @@ function AppRoutes() {
             <Route path="/t/:team/jobs" element={<RequireTeam><ScheduledJobsScreen /></RequireTeam>} />
             <Route path="/t/:team/rhythms" element={<OldJobsAddress />} />
             <Route path="/t/:team/approvals" element={<RequireTeam><ApprovalsScreen /></RequireTeam>} />
+            <Route path="/t/:team/deliveries" element={<RequireTeam><DeliveriesScreen /></RequireTeam>} />
             <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
             <Route path="/t/:team/agents" element={<RequireTeam><AgentsScreen /></RequireTeam>} />
             <Route path="/t/:team/projects" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />

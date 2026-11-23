@@ -1,0 +1,74 @@
+/* P35-05: the delivery dashboard (screens/deliveries/DeliveriesScreen.tsx). Classes are `dl-*`. */
+
+.dl-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dl-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px 24px 32px;
+}
+
+.dl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.dl-table th,
+.dl-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.dl-table th {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.dl-title a {
+  font-weight: 600;
+}
+
+.dl-sub {
+  display: block;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.dl-pr {
+  display: block;
+  white-space: nowrap;
+}
+
+.dl-bad {
+  color: var(--alert-ink);
+}
+
+.dl-warn {
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+.dl-h {
+  margin: 12px 0 0;
+  font-size: var(--fs-body);
+}
+
+.dl-empty {
+  color: var(--mute);
+}
+
+@media (width <= 760px) {
+  .dl-body {
+    padding: 8px 12px 24px;
+    overflow-x: auto;
+  }
+}

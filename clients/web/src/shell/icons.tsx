@@ -26,6 +26,7 @@ export const OrgIcon = proIcon(BuildingMultipleIcon);
 export const ScheduledJobsIcon = proIcon(ArrowSyncIcon);
 export const ThreadsIcon = proIcon(CommentMultipleIcon);
 export const ApprovalsIcon = proIcon(CheckmarkCircleIcon);
+export const DeliveriesIcon = proIcon(BarChartIcon);
 export const DmIcon = proIcon(CommentIcon);
 export const ChatNavIcon = proIcon(ChatIcon);
 
@@ -47,7 +48,7 @@ export const BackIcon = proIcon(ChevronLeftIcon, 14);
 export const GearIcon = proIcon(SettingsIcon);
 export const LockIcon = proIcon(ProLock, 12);
 
-export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
+export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon } as const;
 
 export const ReplyIcon = proIcon(ArrowReplyIcon, 14);
 export const SmileIcon = proIcon(EmojiIcon, 14);

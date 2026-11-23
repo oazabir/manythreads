@@ -11,6 +11,8 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards' },
   { id: 'org', order: 23, label: 'Org chart', kind: 'item', path: '/org', icon: 'org' },
   { id: 'jobs', order: 26, label: 'Jobs', kind: 'item', path: '/jobs', icon: 'jobs' },
+  // P35-05: the delivery dashboard
+  { id: 'deliveries', order: 27, label: 'Deliveries', kind: 'item', path: '/deliveries', icon: 'deliveries' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
@@ -55,7 +57,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
+const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {
