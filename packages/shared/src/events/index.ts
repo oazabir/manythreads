@@ -30,6 +30,7 @@ export * from './project.issue.opened.ts';
 export * from './channel.incident.changed.ts';
 export * from './channel.standup.digested.ts';
 export * from './meetings.appointment.changed.ts';
+export * from './meetings.appointment.starting_soon.ts';
 export * from './project.project.updated.ts';
 export * from './project.project.deleted.ts';
 export * from './identity.provider.changed.ts';

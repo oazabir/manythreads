@@ -214,6 +214,7 @@ import { ProjectIssueOpenedEvent } from './project.issue.opened.ts';
 import { ChannelIncidentChangedEvent } from './channel.incident.changed.ts';
 import { ChannelStandupDigestedEvent } from './channel.standup.digested.ts';
 import { MeetingsAppointmentChangedEvent } from './meetings.appointment.changed.ts';
+import { MeetingsAppointmentStartingSoonEvent } from './meetings.appointment.starting_soon.ts';
 import { ProjectUpdatedEvent } from './project.project.updated.ts';
 import { ProjectDeletedEvent } from './project.project.deleted.ts';
 import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
@@ -349,6 +350,7 @@ export const eventRegistry = {
   'channel.incident.changed': { 1: ChannelIncidentChangedEvent },
   'channel.standup.digested': { 1: ChannelStandupDigestedEvent },
   'meetings.appointment.changed': { 1: MeetingsAppointmentChangedEvent },
+  'meetings.appointment.starting_soon': { 1: MeetingsAppointmentStartingSoonEvent },
   'project.project.updated': { 1: ProjectUpdatedEvent },
   'project.project.deleted': { 1: ProjectDeletedEvent },
   'identity.provider.changed': { 1: IdentityProviderChangedEvent },

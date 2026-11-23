@@ -6,14 +6,18 @@ import {
   ListAppointmentsQuery,
   ListAppointmentsResponse,
   MeetingsAppointmentChangedEvent,
+  MeetingsAppointmentStartingSoonEvent,
   UpdateAppointmentRequest,
   cancelAppointmentRoute,
+  joinAppointmentRoute,
+  OpenMeetingSpaceResponse,
   createAppointmentRoute,
   listAppointmentsRoute,
   updateAppointmentRoute,
   type Appointment,
 } from '@manythreads/shared';
-import { callerPerson } from './routes.ts';
+import { callerPerson, startRoom } from './routes.ts';
+import { loadMeeting, toMeeting } from './rows.ts';
 
 /*
  * The team schedule (P36-04, docs/plans/team-schedule.md). Every route reads as the caller: a member of a team sees its appointments, an invited person of
@@ -193,6 +197,24 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
   });
 
   ctx.http.route({
+    ...joinAppointmentRoute,
+    schema: { response: OpenMeetingSpaceResponse },
+    rateLimit: { limit: 30, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const { id } = AppointmentParams.parse(req.params);
+      const a = await loadOne(tx, id);
+      if (a.status === 'cancelled') throw conflict('This appointment is cancelled');
+      const caller = await callerPerson(tx);
+      // only the people of its space (the maker and the invited) can be in its call; a member of the team who is not invited sees it but is not in it
+      const member = (await tx.query<{ ok: boolean }>("SELECT coalesce(app.lookup_channel_can($1::uuid, 'post'), false) AS ok", [a.channelId])).rows[0]?.ok === true;
+      if (!member) throw forbidden('Only the people invited can join this meeting. Ask its maker to invite you.');
+      const { m, created, join, invited } = await startRoom(ctx, tx, { channelId: a.channelId, title: a.title, caller, kind: a.kind });
+      const fresh = (await loadMeeting(tx, m.id)) ?? m;
+      return json(OpenMeetingSpaceResponse.parse({ meeting: toMeeting(fresh), created, join, invited, channelId: a.channelId }));
+    }),
+  });
+
+  ctx.http.route({
     ...cancelAppointmentRoute,
     schema: { response: AppointmentResponse },
     rateLimit: { limit: 30, windowMs: 60_000 },
@@ -206,4 +228,43 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
       return json(AppointmentResponse.parse({ appointment: await loadOne(tx, id) }));
     }),
   });
+}
+
+/** One pass of the reminder (P36-07): every appointment that starts within five minutes and was not reminded is said once to its maker and its invited. */
+export async function appointmentReminderPass(ctx: PluginContext): Promise<number> {
+  return ctx.db.system(async (tx) => {
+    const due = (
+      await tx.query<{ id: string; workspace_id: string; space_channel_id: string; people: string[] }>(
+        `UPDATE app.appointments a SET reminded_at = now()
+          WHERE a.status = 'scheduled' AND a.reminded_at IS NULL AND a.starts_at > now() AND a.starts_at <= now() + interval '5 minutes'
+          RETURNING a.id, a.workspace_id, a.space_channel_id,
+                    array_remove(array_append(ARRAY(SELECT i.person_id FROM app.appointment_invitees i WHERE i.appointment_id = a.id), a.created_by_person_id), NULL) AS people`,
+      )
+    ).rows;
+    for (const r of due) {
+      await ctx.audit.emit(
+        tx,
+        MeetingsAppointmentStartingSoonEvent.parse({
+          type: 'meetings.appointment.starting_soon',
+          schemaVersion: 1,
+          workspaceId: r.workspace_id,
+          appointmentId: r.id,
+          channelId: r.space_channel_id,
+          personIds: r.people,
+          at: ctx.runtime.now().toISOString(),
+        }),
+      );
+    }
+    return due.length;
+  });
+}
+
+export function registerAppointmentReminder(ctx: PluginContext): void {
+  ctx.jobs.register(
+    'meetings.appointment-reminders',
+    async () => {
+      await appointmentReminderPass(ctx);
+    },
+    { cron: '* * * * *', maxAttempts: 1, concurrency: 1, detached: true },
+  );
 }

@@ -18,11 +18,11 @@ import {
 // P14-09: what each notification level lets through, and what counts as a keyword in a message.
 
 describe('levelAllows', () => {
-  const kinds: NotificationKind[] = ['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions', 'meeting_soon', 'meeting_invite'];
+  const kinds: NotificationKind[] = ['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions', 'meeting_soon', 'meeting_invite', 'appointment_invite', 'appointment_soon'];
   const table: Record<NotificationLevel, Record<NotificationKind, boolean>> = {
-    all: { mention: true, reply: true, dm: true, message: true, reminder: true, meeting_actions: true, meeting_soon: true, meeting_invite: true },
-    mentions: { mention: true, reply: true, dm: false, message: false, reminder: true, meeting_actions: true, meeting_soon: true, meeting_invite: true },
-    nothing: { mention: false, reply: false, dm: false, message: false, reminder: true, meeting_actions: true, meeting_soon: true, meeting_invite: false },   // an invitation is about the channel, so "nothing" silences it; action items handed to a person are addressed to them, like a reminder: a reminder is the person's own doing: no level silences it
+    all: { mention: true, reply: true, dm: true, message: true, reminder: true, meeting_actions: true, meeting_soon: true, meeting_invite: true, appointment_invite: true, appointment_soon: true },
+    mentions: { mention: true, reply: true, dm: false, message: false, reminder: true, meeting_actions: true, meeting_soon: true, meeting_invite: true, appointment_invite: true, appointment_soon: true },
+    nothing: { mention: false, reply: false, dm: false, message: false, reminder: true, meeting_actions: true, meeting_soon: true, meeting_invite: false, appointment_invite: true, appointment_soon: true },   // an appointment is addressed to the person invited (its own private space): no level of a channel silences it; an invitation is about the channel, so "nothing" silences it; action items handed to a person are addressed to them, like a reminder: a reminder is the person's own doing: no level silences it
   };
   for (const level of Object.keys(table) as NotificationLevel[]) {
     it(`level ${level}`, () => {

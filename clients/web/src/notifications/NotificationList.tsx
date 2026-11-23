@@ -76,6 +76,11 @@ export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; o
       void navigate(`/meetings/${n.refId}`);
       return;
     }
+    // an appointment (P36-06, P36-07) opens its meeting space, where its call is
+    if (n.kind === 'appointment_invite' || n.kind === 'appointment_soon') {
+      void openMessage({ channelId: n.channelId, channelKind: n.channelKind, channelName: n.channelName, messageId: '', threadRootId: null, channelOnly: true });
+      return;
+    }
     // an invitation to a call names the call (`refId`); it opens the call's start message (or, without one, the channel), whose card has Join. Join also
     // joins the call, once a fresh live list says it is still going
     if (n.kind === 'meeting_invite') {

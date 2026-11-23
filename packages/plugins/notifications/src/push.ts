@@ -14,7 +14,7 @@ const TITLE_MAX = 160;
 /** What a notification is, as far as its push is concerned. */
 export interface PushFacts {
   notificationId: string;
-  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder' | 'meeting_actions' | 'meeting_soon' | 'meeting_invite';
+  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder' | 'meeting_actions' | 'meeting_soon' | 'meeting_invite' | 'appointment_invite' | 'appointment_soon';
   keyword: string | null;
   actorName: string;
   preview: string;
@@ -46,6 +46,9 @@ export function buildPushPayload(f: PushFacts): PushPayload {
   else if (f.kind === 'meeting_actions') title = 'You have action items from a meeting';
   else if (f.kind === 'meeting_soon') title = `A meeting starts in 5 minutes${where}`;
   else if (f.kind === 'meeting_invite') title = `You are invited to a call${where}`;
+  // an appointment's space is private: its title is the preview, which shows only where the body may (a private space gets the fixed line)
+  else if (f.kind === 'appointment_invite') title = `${sender} invited you to a meeting`;
+  else if (f.kind === 'appointment_soon') title = 'A meeting starts in 5 minutes';
   else if (f.kind === 'dm') title = `${sender} sent you a message`;
   else if (f.kind === 'reply') title = `${sender} replied in a thread${where}`;
   else if (f.kind === 'message') title = where !== '' ? `${sender}${where}` : `${sender} sent you a message`;
@@ -55,6 +58,8 @@ export function buildPushPayload(f: PushFacts): PushPayload {
   const params =
     f.kind === 'meeting_invite'
       ? new URLSearchParams(f.threadRootId ? { channel: f.channelId, message: f.threadRootId } : { channel: f.channelId })
+      : f.kind === 'appointment_invite' || f.kind === 'appointment_soon'
+        ? new URLSearchParams({ channel: f.channelId })
       : new URLSearchParams({ channel: f.channelId, message: f.messageId });
   if (f.threadRootId && f.kind !== 'meeting_invite') params.set('root', f.threadRootId);
   return PushPayload.parse({

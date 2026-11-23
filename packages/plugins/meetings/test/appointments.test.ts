@@ -1,7 +1,8 @@
-import { AppointmentResponse, ListAppointmentsResponse } from '@manythreads/shared';
+import { enqueue } from '@manythreads/kernel';
+import { AppointmentResponse, ListAppointmentsResponse, OpenMeetingSpaceResponse } from '@manythreads/shared';
 import { relaxedRateLimiter } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createWorld, ensureChannels, personas, type World } from '../../channels/test/world.ts';
+import { createWorld, ensureChannels, eventually, personas, type World } from '../../channels/test/world.ts';
 
 // P36-04 through the real server: Nadia makes an appointment on Engineering's schedule inviting Sameera (Customer support). Every member of Engineering sees
 // it on the team's common schedule; Sameera sees it because she is invited; Tariq (Marketing, not invited) does not. Its meeting space holds the maker and the
@@ -71,5 +72,28 @@ describe('the team schedule (P36-04)', () => {
     expect((await w.call(nadia, 'POST', '/api/teams/marketing/appointments', { title: 'Not mine', startsAt: day(9), endsAt: day(10) })).status).toBe(403);
     expect((await w.call(nadia, 'POST', '/api/teams/engineering/appointments', { title: 'Backwards', startsAt: day(10), endsAt: day(9) })).status).toBe(400);
     expect((await w.call(nadia, 'POST', '/api/teams/engineering/appointments', { title: 'Too long', startsAt: day(1), endsAt: new Date(Date.UTC(2030, 0, 17)).toISOString() })).status).toBe(400);
+  });
+
+  it('the invited are told (P36-06); five minutes before, the reminder goes to the maker and the invited (P36-07); Join opens its call with its kind', async () => {
+    const soon = new Date(Date.now() + 3 * 60_000).toISOString();
+    const later = new Date(Date.now() + 63 * 60_000).toISOString();
+    const made = AppointmentResponse.parse((await w.call<AppointmentResponse>(nadia, 'POST', '/api/teams/engineering/appointments', { title: 'Standup with support', startsAt: soon, endsAt: later, kind: 'video', inviteeIds: [sameera.personId] })).body).appointment;
+    const notes = (person: string, kind: string) =>
+      w.system((tx) => tx.query<{ preview: string; channel_id: string }>('SELECT preview, channel_id FROM app.notifications WHERE person_id = $1 AND kind = $2 AND ref_id = $3', [person, kind, made.id])).then((r) => r.rows);
+    await eventually(async () => ((await notes(sameera.personId, 'appointment_invite')).length === 1 ? true : undefined), 20_000, 'the invitation');
+    const invite = (await notes(sameera.personId, 'appointment_invite'))[0]!;
+    expect(invite.preview).toContain('invited you to Standup with support');
+    expect(invite.channel_id).toBe(made.channelId);
+    // the reminder job: it starts in three minutes
+    const job = await w.system(async (tx) => (await enqueue(tx, 'meetings.appointment-reminders', {})).id);
+    await eventually(async () => ((await w.system((tx) => tx.query<{ state: string }>('SELECT state FROM app.jobs WHERE id = $1', [job]))).rows[0]?.state === 'done' ? true : undefined), 20_000, 'the reminder job');
+    await eventually(async () => ((await notes(sameera.personId, 'appointment_soon')).length === 1 && (await notes(nadia.personId, 'appointment_soon')).length === 1 ? true : undefined), 20_000, 'the reminders');
+    expect((await notes(sameera.personId, 'appointment_soon'))[0]!.preview).toBe('Standup with support starts in 5 minutes');
+    // Join: the call in its space, a video call; Rafi (on the team, not invited) cannot join it
+    const joined = await w.call<OpenMeetingSpaceResponse>(sameera, 'POST', `/api/appointments/${made.id}/join`);
+    expect(joined.status, JSON.stringify(joined.body)).toBe(200);
+    expect(OpenMeetingSpaceResponse.parse(joined.body)).toMatchObject({ channelId: made.channelId, created: true, meeting: { kind: 'video', channelId: made.channelId } });
+    expect(OpenMeetingSpaceResponse.parse((await w.call(nadia, 'POST', `/api/appointments/${made.id}/join`)).body).created).toBe(false);
+    expect((await w.call(rafi, 'POST', `/api/appointments/${made.id}/join`)).status).toBe(403);
   });
 });

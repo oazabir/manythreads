@@ -64,3 +64,5 @@ export const createAppointmentRoute = { method: 'POST', path: '/api/teams/:slug/
 export const updateAppointmentRoute = { method: 'PATCH', path: '/api/appointments/:id' } as const;
 export const cancelAppointmentRoute = { method: 'POST', path: '/api/appointments/:id/cancel' } as const;
 export const AppointmentParams = z.object({ id: z.uuid() });
+/** Join an appointment (P36-07): its call in its meeting space, started with its kind, or joined when it is live. The answer is the open-meeting answer. */
+export const joinAppointmentRoute = { method: 'POST', path: '/api/appointments/:id/join' } as const;

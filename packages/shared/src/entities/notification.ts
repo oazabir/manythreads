@@ -11,7 +11,7 @@ import { ChannelKind } from './channel.ts';
  * (`meeting_actions`, P15-12), a planned room that starts in five minutes (`meeting_soon`, P16-05), or an invitation to a live call (`meeting_invite`, P15-27).
  * Matches the SQL CHECK exactly.
  */
-export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions', 'meeting_soon', 'meeting_invite']);
+export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder', 'meeting_actions', 'meeting_soon', 'meeting_invite', 'appointment_invite', 'appointment_soon']);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 /**
@@ -20,7 +20,7 @@ export type NotificationKind = z.infer<typeof NotificationKind>;
  * meeting's id (not a message), and opening it goes to the meeting page. `meeting_invite` is an invitation to a call: `refId` is the meeting's id and `threadRootId` its start
  * message (the call card), which opening it goes to.
  */
-export const NotificationRefType = z.enum(['message', 'reminder', 'meeting', 'scheduled_meeting', 'meeting_invite']);
+export const NotificationRefType = z.enum(['message', 'reminder', 'meeting', 'scheduled_meeting', 'meeting_invite', 'appointment_invite', 'appointment']);
 export type NotificationRefType = z.infer<typeof NotificationRefType>;
 
 /**

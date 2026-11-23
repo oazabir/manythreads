@@ -69,6 +69,9 @@ export function notificationTitle(n: Pick<InboxItem, 'kind' | 'actorName' | 'cha
   if (n.kind === 'meeting_actions') return `${n.actorName} gave you action items${where}`;
   if (n.kind === 'meeting_soon') return `A meeting starts in 5 minutes${where}`;
   if (n.kind === 'meeting_invite') return `${n.actorName} invited you to a call${where}`;
+  // the team schedule (P36-06, P36-07): the preview names the meeting and its time
+  if (n.kind === 'appointment_invite') return `${n.actorName} invited you to a meeting`;
+  if (n.kind === 'appointment_soon') return 'A meeting starts in 5 minutes';
   return `${n.actorName} sent you a message`;
 }
 

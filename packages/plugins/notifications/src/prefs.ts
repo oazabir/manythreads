@@ -24,7 +24,7 @@ export function normalizePrefs(raw: unknown): NotificationPrefs {
  */
 export function prefKey(kind: NotificationKind): 'mention' | 'reply' | 'dm' {
   if (kind === 'message') return 'dm';
-  return kind === 'reminder' || kind === 'meeting_actions' || kind === 'meeting_soon' || kind === 'meeting_invite' ? 'mention' : kind;
+  return kind === 'reminder' || kind === 'meeting_actions' || kind === 'meeting_soon' || kind === 'meeting_invite' || kind === 'appointment_invite' || kind === 'appointment_soon' ? 'mention' : kind;
 }
 
 /** Does a person with these settings want `kind` for a message in `channelId`, in the app? */

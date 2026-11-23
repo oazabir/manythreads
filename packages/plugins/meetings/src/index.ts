@@ -1,5 +1,5 @@
 import { registerMeetingSpaceRoutes } from './routes-spaces.ts';
-import { registerAppointmentRoutes } from './routes-appointments.ts';
+import { registerAppointmentReminder, registerAppointmentRoutes } from './routes-appointments.ts';
 import { definePlugin } from '@manythreads/sdk';
 import { registerAudioRoutes } from './routes-audio.ts';
 import { registerCaptions } from './captions.ts';
@@ -42,6 +42,7 @@ export default definePlugin({
     events: {
       emits: [
         'meetings.appointment.changed',
+        'meetings.appointment.starting_soon',
         'meetings.meeting.started',
         'meetings.meeting.ended',
         'meetings.participant.joined',
@@ -84,6 +85,7 @@ export default definePlugin({
     registerMeetingRoutes(ctx);
     registerMeetingSpaceRoutes(ctx);
     registerAppointmentRoutes(ctx);
+    registerAppointmentReminder(ctx);
     registerCallCardRoutes(ctx);
     registerInviteRoutes(ctx);
     registerConsentRoutes(ctx);
