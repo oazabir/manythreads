@@ -160,6 +160,24 @@ describe('the Review of a card', () => {
     expect(host.textContent).toContain('only a lead of this team');
   });
 
+  it('keeps the answer in sight when the decision moved the card on (the Review itself goes)', async () => {
+    api.fetchPullRequestDiff.mockResolvedValue(diff());
+    api.fetchPullRequestChecks.mockResolvedValue(checks());
+    api.requestPullRequestChanges.mockResolvedValue({ asComment: true, merged: false, mergeSha: null, handedTo: 'Coder' });
+    await show(task());
+    await click('pull-review-request-changes');
+    const box = q('pull-review-comment') as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'Add an aria-label.');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click('pull-review-send-changes');
+    // the board reads the card again: it is the Coder's now, and its request is withdrawn
+    await show(task({ state: 'in_progress', pullRequest: { project: 'widgets', number: 24, url: 'https://github.com/acme/widgets/pull/24', state: 'withdrawn', mergeSha: null } }));
+    expect(q('pull-review')).toBeNull();
+    expect(q('pull-review-said')!.textContent).toContain('Sent to Coder');
+  });
+
   it('refuses Merge on the card when the request moved after the test or a check failed; otherwise asks once more, then merges', async () => {
     api.fetchPullRequestDiff.mockResolvedValue(diff({ atRecordedHead: false, headSha: 'f'.repeat(40) }));
     api.fetchPullRequestChecks.mockResolvedValue(checks());

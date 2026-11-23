@@ -196,3 +196,14 @@
   background: var(--surface);
   font-size: var(--fs-caption);
 }
+
+/* code in the narrow card panel: each line kept whole, the diff scrolls sideways instead of wrapping every line */
+.pr-file > .diff .add,
+.pr-file > .diff .del,
+.pr-file > .diff .ctx,
+.pr-file > .diff .hh {
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+  overflow-wrap: normal;
+}

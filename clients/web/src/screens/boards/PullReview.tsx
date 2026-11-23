@@ -85,7 +85,13 @@ export function PullReview({ slug, task, onChanged }: Props) {
     };
   }, [slug, task.id, open, reload, task.testedSha]);
 
-  if (!pr || !open) return null;
+  // a decision that moved the card on (changes sent to the Coder, a merge) keeps its answer in sight after the Review itself goes
+  if (!pr || !open)
+    return said ? (
+      <p className="pr-said" role="status" data-testid="pull-review-said">
+        {said}
+      </p>
+    ) : null;
   const first = pages[0];
   const files = pages.flatMap((p) => p.files);
   const next = pages.at(-1)?.nextPage ?? null;
