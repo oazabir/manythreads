@@ -36,10 +36,15 @@ const stage = mkdtempSync(join(tmpdir(), 'bridge-bundle-'));
 try {
   // 1. the bridge as one file (ws and the ACP client library inside; Node's own modules stay outside). The version is filled in after the files' hash is known, so the
   //    bundle is built twice only in the sense that the define comes from the first pass over the sources.
-  const sources = (dir) =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? sources(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []));
+  //    The hash covers every file esbuild puts into the two bundles, workspace packages included: hashing only the bridge's own sources left the version unchanged when
+  //    a bundled @manythreads/shared file changed (the "where you run" text, 2026-11-23), so an enrolled server's `--update` saw nothing new and kept the old text.
+  const inputs = new Set();
+  for (const entry of ['main.ts', 'team-helper-main.ts']) {
+    const probe = await build({ entryPoints: [join(bridge, 'src', entry)], bundle: true, platform: 'node', target: 'node22', format: 'esm', write: false, metafile: true, absWorkingDir: repo, logLevel: 'silent' });
+    for (const f of Object.keys(probe.metafile.inputs)) inputs.add(resolve(repo, f));
+  }
   const hash = createHash('sha256');
-  for (const f of [...sources(join(bridge, 'src')), join(bridge, 'install', 'agents', 'package.json'), join(bridge, 'install', 'agents', 'package-lock.json'), ...TOOLS].sort()) {
+  for (const f of [...inputs, join(bridge, 'install', 'agents', 'package.json'), join(bridge, 'install', 'agents', 'package-lock.json'), ...TOOLS].sort()) {
     hash.update(f.startsWith(bridge) ? f.slice(bridge.length) : f.slice(repo.length));
     hash.update(readFileSync(f));
   }
