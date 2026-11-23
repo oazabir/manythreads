@@ -3,7 +3,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 /*
  * The widths of the site's side-by-side panes (owner, 2026-11-21: "add resizers in all such panes throughout the site"): the sidebar, the list beside a thread
  * (Threads, Later, Approvals, a bot's conversations), the thread's side rail, the Chat history, the Files tree, the board's card panel and the settings menu.
- * The person drags the bar on the pane's edge (or uses the arrow keys; a double click restores the default). Each width is kept per device under its own key;
+ * The person drags the bar on the pane's edge (or uses the arrow keys, Home for the least width and End for the most; a double click restores the default). Each width is kept per device under its own key;
  * a blocked storage keeps it until the page closes. The right panel keeps its own width (kernel/panel/panelSize.ts).
  *
  * A stored width is only what the person asked for: the stylesheet also caps it against the room the pane's neighbour needs (`min(var(--…), calc(100% - …))`),
