@@ -3,7 +3,7 @@ import { clampPane, PANE_STEP, usePaneWidth, widthForPointer, type PaneSpec } fr
 
 /**
  * The bar on a pane's edge that changes its width (the right panel has its own, kernel/panel/RightPanel.tsx, which looks the same and is dragged
- * and moved by the arrow keys the same way, but has no Home/End):
+ * and moved by the arrow keys the same way):
  * drag it, or focus it and press the arrow keys; Home gives the pane's least width and End its most. Escape cancels a drag and a double click restores the default. It sits inside the pane (which is `position: relative`), on its
  * `end` edge (a pane on the left) or its `start` edge (a pane on the right). The width it sets reaches the stylesheet as `--pane-<id>` on the page's root
  * (paneWidth.ts). Not drawn at phone width (styles/panes.css).
