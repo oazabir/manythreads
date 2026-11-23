@@ -4,7 +4,8 @@ import { clampPane, PANE_STEP, usePaneWidth, widthForPointer, type PaneSpec } fr
 /**
  * The bar on a pane's edge that changes its width (the right panel has its own, kernel/panel/RightPanel.tsx, which looks the same and is dragged
  * and moved by the arrow keys the same way):
- * drag it, or focus it and press the arrow keys; Home gives the pane's least width and End its most. Escape cancels a drag and a double click restores the default. It sits inside the pane (which is `position: relative`), on its
+ * Drag it, or focus it and resize with the arrow keys. PageUp grows and PageDown shrinks by five steps. Home gives the pane's least width and End its most.
+ * Escape cancels a drag and a double click restores the default. It sits inside the pane (which is `position: relative`), on its
  * `end` edge (a pane on the left) or its `start` edge (a pane on the right). The width it sets reaches the stylesheet as `--pane-<id>` on the page's root
  * (paneWidth.ts). Not drawn at phone width (styles/panes.css).
  */
@@ -67,10 +68,13 @@ export function PaneResizer({ spec, edge }: { spec: PaneSpec; edge: 'start' | 'e
     }
     // the arrow points where the bar moves: on a pane's end edge right is wider, on its start edge left is wider
     const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
-    if (dir === 0) return;
+    let steps = edge === 'end' ? dir : -dir;
+    if (e.key === 'PageUp') steps = 5;
+    if (e.key === 'PageDown') steps = -5;
+    if (steps === 0) return;
     e.preventDefault();
     const shown = e.currentTarget.parentElement?.getBoundingClientRect().width || size.width;
-    size.keep(clampPane(spec, shown + (edge === 'end' ? dir : -dir) * PANE_STEP));
+    size.keep(clampPane(spec, shown + steps * PANE_STEP));
   };
   return (
     <div
