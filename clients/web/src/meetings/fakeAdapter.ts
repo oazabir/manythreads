@@ -1,5 +1,5 @@
 import type { MeetingJoin } from '@manythreads/shared';
-import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter } from './media';
+import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter, VideoTile } from './media';
 
 /*
  * An in-memory room for the unit tests and the browser tests (the server's `fake` media provider hands out tokens for it). It records what the page asked of the
@@ -8,7 +8,13 @@ import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter } from './m
 
 export interface FakeAdapter extends MediaAdapter {
   readonly joins: MeetingJoin[];
-  readonly state: { connected: boolean; micOn: boolean; deafened: boolean; inputId: string | null; outputId: string | null; options: AudioOptions | null };
+  readonly state: { connected: boolean; micOn: boolean; deafened: boolean; cameraOn: boolean; screenOn: boolean; inputId: string | null; outputId: string | null; options: AudioOptions | null };
+  /** Another person turned a camera or a screen on or off (P35-08). */
+  remoteVideo(actorId: string, source: VideoTile['source'], on: boolean): void;
+  /** Make the next `setScreen(true)` fail like a cancelled picker (once). */
+  cancelScreenPicker(): void;
+  /** Tile keys a `<video>` was attached to and not detached yet. */
+  readonly attached: Set<string>;
   /** Make the next `connect` fail with this message (once). */
   failNextConnect(message: string): void;
   /** Make the next `setMic(true)` fail like a refused permission (once). */
@@ -42,6 +48,15 @@ export function createFakeAdapter(): FakeAdapter {
   let events: AdapterEvents | null = null;
   let failConnect: string | null = null;
   let refuseMic = false;
+  let cancelScreen = false;
+  let me = '';
+  const remote = new Map<string, VideoTile>();
+  const tiles = (): VideoTile[] => [
+    ...(state.cameraOn ? [{ key: `${me}:camera`, actorId: me, source: 'camera' as const, local: true }] : []),
+    ...(state.screenOn ? [{ key: `${me}:screen`, actorId: me, source: 'screen' as const, local: true }] : []),
+    ...remote.values(),
+  ];
+  const report = (): void => events?.videos(tiles());
   let devices: DeviceLists = {
     inputs: [
       { id: 'mic-built-in', label: 'Built-in microphone' },
@@ -54,10 +69,20 @@ export function createFakeAdapter(): FakeAdapter {
     inputId: 'mic-built-in',
     outputId: 'out-built-in',
   };
-  const state: FakeAdapter['state'] = { connected: false, micOn: false, deafened: false, inputId: null, outputId: null, options: null };
+  const state: FakeAdapter['state'] = { connected: false, micOn: false, deafened: false, cameraOn: false, screenOn: false, inputId: null, outputId: null, options: null };
   const adapter: FakeAdapter = {
     joins: [],
     state,
+    attached: new Set<string>(),
+    remoteVideo(actorId, source, on) {
+      const key = `${actorId}:${source}`;
+      if (on) remote.set(key, { key, actorId, source, local: false });
+      else remote.delete(key);
+      report();
+    },
+    cancelScreenPicker() {
+      cancelScreen = true;
+    },
     failNextConnect(message) {
       failConnect = message;
     },
@@ -88,6 +113,7 @@ export function createFakeAdapter(): FakeAdapter {
         throw new Error(message);
       }
       events = ev;
+      me = join.identity;
       adapter.joins.push(join);
       state.connected = true;
       state.options = options;
@@ -106,6 +132,24 @@ export function createFakeAdapter(): FakeAdapter {
     setDeafened(on) {
       state.deafened = on;
     },
+    async setCamera(on) {
+      state.cameraOn = on;
+      report();
+    },
+    async setScreen(on) {
+      if (on && cancelScreen) {
+        cancelScreen = false;
+        const err = new Error('Permission denied');
+        err.name = 'NotAllowedError';
+        throw err;
+      }
+      state.screenOn = on;
+      report();
+    },
+    attachVideo(key) {
+      adapter.attached.add(key);
+      return () => adapter.attached.delete(key);
+    },
     async devices() {
       return { ...devices, inputId: state.inputId ?? devices.inputId, outputId: state.outputId ?? devices.outputId };
     },
@@ -118,6 +162,9 @@ export function createFakeAdapter(): FakeAdapter {
     async disconnect() {
       state.connected = false;
       state.micOn = false;
+      state.cameraOn = false;
+      state.screenOn = false;
+      remote.clear();
       events = null;
     },
   };

@@ -3,7 +3,7 @@ import { isApiError } from '../api/client';
 import { canOfferServer, enginePlan, planConsent, micMayOpen, writtenOnServer, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
 import type { CallApi, addNotetaker, answerRecordConsent, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
 import type { StreamStatus, TranscribeEngine } from './engine';
-import { AUDIO_DEFAULTS, type AdapterEvents, type AdapterLoader, type Connection, type DeviceLists, type MediaAdapter } from './media';
+import { AUDIO_DEFAULTS, type AdapterEvents, type AdapterLoader, type Connection, type DeviceLists, type MediaAdapter, type VideoTile } from './media';
 import {
   HEARTBEAT_EVERY_MS,
   LIVE_POLL_MS,
@@ -78,7 +78,16 @@ export type CallState = {
   notice: string | null;
   /** The server's or the library's plain words for why the last start or join failed. */
   error: string | null;
+  /** The cameras and shared screens in the room (P35-08), this person's own included. */
+  videos: readonly VideoTile[];
 };
+
+/** Whether this person's camera or screen is on, and who else is sharing a screen (one sharer at a time). */
+export const videoState = (videos: readonly VideoTile[]) => ({
+  cameraOn: videos.some((v) => v.local && v.source === 'camera'),
+  screenOn: videos.some((v) => v.local && v.source === 'screen'),
+  otherSharer: videos.find((v) => !v.local && v.source === 'screen')?.actorId ?? null,
+});
 
 /** The calls for the note-taker, recording and the transcript history (Bundle C), kept apart from `CallApi` so that file stays as it was. */
 export type RoomApi = {
@@ -139,6 +148,7 @@ const IDLE = (prefs: CallPrefs): CallState => ({
   chatOpen: false,
   notice: null,
   error: null,
+  videos: [],
 });
 
 const GONE_STATUSES = new Set([403, 404]);
@@ -349,6 +359,10 @@ export class CallController {
         this.set({ speaking: new Set(ids) });
       },
       devices: () => void this.refreshDevices(),
+      videos: (tiles) => {
+        if (gen !== this.generation) return;
+        this.set({ videos: tiles });
+      },
       micFailed: () => {
         if (gen !== this.generation) return;
         this.micOpen = false;
@@ -506,6 +520,8 @@ export class CallController {
       const old = this.adapter;
       this.adapter = null;
       this.micOpen = false;
+      // a camera and a shared screen do not come back by themselves after a new connection: the person turns them on again
+      this.set({ videos: [] });
       await old?.disconnect().catch(() => undefined);
       const adapter = await this.deps.loadAdapter(res.join.provider);
       await adapter.connect(res.join, { ...AUDIO_DEFAULTS, inputId: this.state.prefs.inputId, outputId: this.state.prefs.outputId }, this.eventsFor(gen));
@@ -672,6 +688,42 @@ export class CallController {
     } catch {
       this.set({ notice: 'Could not save your answer. Try again.' });
     }
+  }
+
+  // ---- camera and screen (P35-08) -------------------------------------------------------------------------------------------------------------------
+  async toggleCamera(): Promise<void> {
+    const adapter = this.adapter;
+    if (!adapter || this.state.phase !== 'connected') return;
+    const { cameraOn } = videoState(this.state.videos);
+    try {
+      await adapter.setCamera(!cameraOn);
+    } catch {
+      this.set({ notice: 'Your camera could not be opened: allow it in your browser’s address bar, or close the app that is using it.' });
+    }
+  }
+
+  /** Shares a screen, or stops sharing. Only one person shares at a time: while someone else does, the page says who instead. */
+  async toggleScreen(): Promise<void> {
+    const adapter = this.adapter;
+    if (!adapter || this.state.phase !== 'connected') return;
+    const { screenOn, otherSharer } = videoState(this.state.videos);
+    if (!screenOn && otherSharer) {
+      const name = this.state.present.find((p) => p.actorId === otherSharer)?.displayName ?? 'Someone';
+      this.set({ notice: `${name} is sharing their screen. Ask them to stop first: one screen is shared at a time.` });
+      return;
+    }
+    try {
+      await adapter.setScreen(!screenOn);
+    } catch (e) {
+      // the person closed the browser's picker: nothing to say
+      if (e instanceof Error && (e.name === 'NotAllowedError' || e.name === 'AbortError')) return;
+      this.set({ notice: 'Your screen could not be shared. Try again, or pick a single window or tab.' });
+    }
+  }
+
+  /** Draws a camera or a screen in a `<video>`; the returned function takes it off. Nothing happens outside a room. */
+  attachVideo(key: string, el: HTMLVideoElement): () => void {
+    return this.adapter?.attachVideo(key, el) ?? (() => undefined);
   }
 
   toggleMute(): void {

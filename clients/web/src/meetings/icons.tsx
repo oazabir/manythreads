@@ -1,5 +1,5 @@
 import {
-  AndroidIcon, BoardIcon as BoardIcon_, CallIcon, ChatIcon as ProChat, ClockIcon as ProClock, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, RecordIcon, ShareIcon as ProShare, SoundwaveIcon, TuneIcon,
+  AndroidIcon, BoardIcon as BoardIcon_, CallIcon, ChatIcon as ProChat, ClockIcon as ProClock, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, RecordIcon, ShareIcon as ProShare, SoundwaveIcon, TuneIcon, VideoIcon as ProVideo, LaptopIcon, FullScreenMaximizeIcon, FullScreenMinimizeIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -27,3 +27,9 @@ export const RecordDotIcon = proIcon(RecordIcon);
 export const ShareIcon = proIcon(ProShare);
 export const BoardIcon = proIcon(BoardIcon_);
 export const ClockIcon = proIcon(ProClock);
+
+/* P35-08: the camera, the shared screen, and the stage's full-size switch. */
+export const CameraIcon = proIcon(ProVideo);
+export const ScreenIcon = proIcon(LaptopIcon);
+export const MaximizeIcon = proIcon(FullScreenMaximizeIcon);
+export const MinimizeIcon = proIcon(FullScreenMinimizeIcon);

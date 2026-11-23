@@ -715,3 +715,50 @@ describe('recording on the call (P15-15)', () => {
     expect(t.c.getState().notice).toBe('Recording is switched off.');
   });
 });
+
+describe('camera and screen on the call (P35-08)', () => {
+  it('turns the camera on and off, and the tile is this person’s own', async () => {
+    const t = await connected();
+    await t.c.toggleCamera();
+    expect(t.media().state.cameraOn).toBe(true);
+    expect(t.c.getState().videos).toEqual([expect.objectContaining({ source: 'camera', local: true })]);
+    await t.c.toggleCamera();
+    expect(t.media().state.cameraOn).toBe(false);
+    expect(t.c.getState().videos).toEqual([]);
+  });
+
+  it('shares a screen and stops; a cancelled picker says nothing', async () => {
+    const t = await connected();
+    t.media().cancelScreenPicker();
+    await t.c.toggleScreen();
+    expect(t.media().state.screenOn).toBe(false);
+    expect(t.c.getState().notice).toBeNull();
+    await t.c.toggleScreen();
+    expect(t.media().state.screenOn).toBe(true);
+    expect(t.c.getState().videos).toEqual([expect.objectContaining({ source: 'screen', local: true })]);
+    await t.c.toggleScreen();
+    expect(t.media().state.screenOn).toBe(false);
+  });
+
+  it('one screen at a time: while someone else shares, sharing is refused with their name', async () => {
+    const t = await connected();
+    t.media().remoteVideo(NADIA, 'screen', true);
+    expect(t.c.getState().videos).toEqual([expect.objectContaining({ actorId: NADIA, source: 'screen', local: false })]);
+    await t.c.toggleScreen();
+    expect(t.media().state.screenOn).toBe(false);
+    expect(t.c.getState().notice).toMatch(/is sharing their screen/);
+    t.media().remoteVideo(NADIA, 'screen', false);
+    await t.c.toggleScreen();
+    expect(t.media().state.screenOn).toBe(true);
+  });
+
+  it('a new connection starts with no video, and leaving clears it', async () => {
+    const t = await connected();
+    await t.c.toggleCamera();
+    t.media().lose();
+    await t.clock.advance(5_000);
+    expect(t.c.getState().videos).toEqual([]);
+    await t.c.leave();
+    expect(t.c.getState().videos).toEqual([]);
+  });
+});

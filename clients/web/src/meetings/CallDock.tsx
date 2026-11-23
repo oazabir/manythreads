@@ -3,12 +3,13 @@ import { usePeople } from '../channels/hooks';
 import { Avatar } from '../components/ui';
 import { useDismiss } from '../shell/useDismiss';
 import { useNarrow } from '../shell/useNarrow';
-import type { CallState } from './controller';
+import { videoState, type CallState } from './controller';
+import { CallStage } from './CallStage';
 import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenOnServer } from './consent';
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
 import { EndRoomConfirm } from './EndRoomConfirm';
-import { CaptionsIcon, ChatIcon, HeadphonesIcon, LeaveIcon, MicIcon, SlidersIcon } from './icons';
+import { CameraIcon, CaptionsIcon, ChatIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
 import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, notetakerBadge, rosterOf, visibleCaptions } from './model';
 import { NotetakerButton, NotetakerMenu } from './NotetakerPicker';
 import { RecordConsentPrompt, RecordingChip, RecordingToggle } from './RecordingToggle';
@@ -193,6 +194,9 @@ export function CallDock() {
   const lost = call.phase === 'lost';
   const sheetOpen = !narrow || open;
   const micLabel = call.deafened ? 'Unmute and listen again' : call.muted ? 'Unmute' : 'Mute';
+  const video = videoState(call.videos);
+  const sharerName = video.otherSharer ? (call.present.find((p) => p.actorId === video.otherSharer)?.displayName ?? 'Someone') : null;
+  const screenLabel = video.screenOn ? 'Stop sharing your screen' : sharerName ? `${sharerName} is sharing their screen` : 'Share your screen';
 
   return (
     <section ref={dock} className={`call-dock ${narrow ? 'sheet' : ''} ${sheetOpen ? 'open' : ''}`} aria-label="Voice room" data-testid="call-dock" data-phase={call.phase}>
@@ -203,6 +207,7 @@ export function CallDock() {
       {call.phase === 'connected' ? <RecordConsentPrompt call={call} /> : null}
       <EngineNotice call={call} />
       {call.notice ? <p className="call-notice" role="status" data-testid="call-notice">{call.notice}</p> : null}
+      {call.phase === 'connected' ? <CallStage call={call} /> : null}
       <div className="call-row">
         <div className="call-id">
           <span className={`call-live ${lost ? 'off' : ''}`} aria-hidden="true" />
@@ -237,6 +242,12 @@ export function CallDock() {
               </button>
               <button type="button" className={`call-btn ${call.deafened ? 'on' : ''}`} aria-pressed={call.deafened} aria-label={call.deafened ? 'Hear the room again' : 'Deafen: stop hearing the room'} title={call.deafened ? 'Hear the room again' : 'Deafen'} disabled={connecting} onClick={() => c.toggleDeafen()} data-testid="call-deafen">
                 <HeadphonesIcon off={call.deafened} />
+              </button>
+              <button type="button" className={`call-btn ${video.cameraOn ? 'live' : ''}`} aria-pressed={video.cameraOn} aria-label={video.cameraOn ? 'Turn your camera off' : 'Turn your camera on'} title={video.cameraOn ? 'Camera off' : 'Camera on'} disabled={connecting || call.phase !== 'connected'} onClick={() => void c.toggleCamera()} data-testid="call-camera">
+                <CameraIcon />
+              </button>
+              <button type="button" className={`call-btn ${video.screenOn ? 'live' : ''}`} aria-pressed={video.screenOn} aria-label={screenLabel} title={screenLabel} disabled={connecting || call.phase !== 'connected'} onClick={() => void c.toggleScreen()} data-testid="call-screen">
+                <ScreenIcon />
               </button>
               {call.pushToTalk ? (
                 <button

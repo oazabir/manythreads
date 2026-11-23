@@ -67,6 +67,10 @@
   --msg-hover: #F7F8F9;
   --txt: #2A3340;
   --zip: #8E5A2E;
+
+  /* P35-08: behind a camera or a shared screen, and the name on it: dark in both themes, as video is */
+  --stage-bg: #0F1115;
+  --stage-ink: #FFFFFF;
   --dot-off: #C3C8CE;
   --presence-ring: #78808B;
   --toggle-off: #CFD4DA;
@@ -148,6 +152,8 @@
   --msg-hover: #1D2229;
   --txt: #D5DAE1;
   --zip: #D9A06E;
+  --stage-bg: #0B0D10;
+  --stage-ink: #FFFFFF;
   --dot-off: #4A525D;
   --presence-ring: #8C96A3;
   --toggle-off: #3A424D;

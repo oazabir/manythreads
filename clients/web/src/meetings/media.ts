@@ -20,7 +20,13 @@ export type AdapterEvents = {
   devices(): void;
   /** The microphone could not be opened (permission refused, no microphone). */
   micFailed(reason: string): void;
+  /** The cameras and shared screens in the room changed (P35-08): one tile per person and source, this person's own included. */
+  videos(tiles: VideoTile[]): void;
 };
+
+/** A camera or a shared screen in the room (P35-08). `key` is what `attachVideo` takes. */
+export type VideoSource = 'camera' | 'screen';
+export type VideoTile = { key: string; actorId: string; source: VideoSource; local: boolean };
 
 export type AudioOptions = {
   /** Always true: the browser's own echo cancellation, noise suppression and level control are on for the microphone. */
@@ -43,6 +49,12 @@ export interface MediaAdapter {
   devices(): Promise<DeviceLists>;
   useInput(deviceId: string): Promise<void>;
   useOutput(deviceId: string): Promise<void>;
+  /** Turns this person's camera on or off (P35-08). Rejects when the camera is refused or in use. */
+  setCamera(on: boolean): Promise<void>;
+  /** Shares a screen, window or tab, with the tab's sound when the browser offers it (P35-08); off stops it. Rejects when the person cancels the picker. */
+  setScreen(on: boolean): Promise<void>;
+  /** Draws a tile's video in `el`; the returned function takes it off again. */
+  attachVideo(key: string, el: HTMLVideoElement): () => void;
   disconnect(): Promise<void>;
 }
 
