@@ -297,7 +297,7 @@ export function CardPanel({ slug, task, board, roster, bots, botsAtWork, placeId
         <ol className="bd-history" data-testid="card-history">
           {events.map((e) => (
             <li key={e.id} data-event={e.type}>
-              <span className="bd-who">{nameOf(e.actorId)}</span> {eventLine(e, nameOf)}
+              <span className="bd-who">{e.actorId === null ? 'manythreads' : nameOf(e.actorId)}</span> {eventLine(e, nameOf)}
               <span className="bd-when"><Time iso={e.createdAt} /></span>
             </li>
           ))}
