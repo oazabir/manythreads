@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AUTH_WORDS, classifyMethod, failureWords, findSignInPage } from '../src/acp/auth.ts';
 import { plainChunks, plainText, ptySupported, startPty } from '../src/acp/pty.ts';
-import { acpHarness, type AcpHarness, type Flavor } from './acp-support.ts';
+import { acpHarness, startRun, type AcpHarness, type Flavor } from './acp-support.ts';
 import { KEY } from './support.ts';
 
 // Sign-in and sign-out through the bridge (P25-09), against the fake ACP agent: its device code, its API-key and terminal methods, its `auth/status` and `logout`, and its
@@ -499,4 +499,38 @@ describe('helpers', () => {
     expect(classifyMethod('codex', { id: 'chat-gpt' })).toBeNull();
     expect(classifyMethod('hermes', { id: 'custom' })).toBeNull();
   });
+});
+
+describe('a Codex sign-out stops what uses it (P31-01b)', () => {
+  it('stops the live Codex runs with a plain reason and removes the teams\' copies', async () => {
+    let cleaned = 0;
+    h = await acpHarness({
+      flavor: 'codex',
+      script: { flavor: 'codex', auth: { signedIn: true }, scenarios: { slow: [{ do: 'text', text: 'working' }, { do: 'sleep', ms: 30_000 }, { do: 'text', text: 'never' }] }, default: 'slow' },
+      afterCodexSignOut: async () => {
+        cleaned += 1;
+      },
+    });
+    const id = await startRun(h, { input: 'go' });
+    await until(
+      async () => (await api('GET', `/p/default/v1/runs/${id}`)).body,
+      (r: Json) => JSON.stringify(r).includes('working') || r['status'] === 'running',
+    );
+    const out = await api('POST', '/v1/auth/logout');
+    expect(out.status).toBe(200);
+    expect(cleaned).toBe(1);
+    const run = await until(
+      async () => (await api('GET', `/p/default/v1/runs/${id}`)).body,
+      (r: Json) => r['status'] !== 'running',
+    );
+    expect(JSON.stringify(run)).toContain('The Codex sign-in was removed');
+    expect(h.logs.some((l) => l.includes('codex sign-out: 1 live run(s) stopped'))).toBe(true);
+  }, 40_000);
+
+  it('a Claude sign-out stops no run and removes nothing', async () => {
+    let cleaned = 0;
+    h = await acpHarness({ flavor: 'claude', script: script('claude', { signedIn: true }), afterCodexSignOut: async () => void (cleaned += 1) });
+    await api('POST', '/v1/auth/logout');
+    expect(cleaned).toBe(0);
+  }, 40_000);
 });

@@ -40,6 +40,8 @@ export interface AcpOptions {
   extraProfiles?: Record<string, Record<string, unknown>>;
   /** The sign-in service's waits and hooks (`startBridge`'s `auth`). */
   auth?: NonNullable<Parameters<typeof startBridge>[0]['auth']>;
+  /** What a Codex sign-out runs to remove the teams' copies (`startBridge`'s `afterCodexSignOut`). */
+  afterCodexSignOut?: () => Promise<void>;
 }
 
 const PASS = ['FAKE_ACP_SCRIPT_JSON', 'FAKE_ACP_FLAVOR', 'FAKE_ACP_STATE_DIR'];
@@ -71,7 +73,7 @@ export async function acpHarness(o: AcpOptions = {}): Promise<AcpHarness> {
     ...o.config,
   });
   const logs: string[] = [];
-  const bridge = await startBridge({ config, apiKey: KEY, stateDir: join(dir, 'state'), port: 0, log: (line) => logs.push(line), tmpRoot: dir, ...(o.auth ? { auth: o.auth } : {}) });
+  const bridge = await startBridge({ config, apiKey: KEY, stateDir: join(dir, 'state'), port: 0, log: (line) => logs.push(line), tmpRoot: dir, ...(o.auth ? { auth: o.auth } : {}), ...(o.afterCodexSignOut ? { afterCodexSignOut: o.afterCodexSignOut } : {}) });
   return {
     bridge,
     logs,

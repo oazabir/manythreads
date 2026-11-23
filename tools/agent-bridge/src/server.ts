@@ -6,6 +6,8 @@ import { profileFor } from './config.ts';
 import { AuthRefused, AuthService, cleanSecret, type AuthServiceOptions } from './acp/auth.ts';
 import { parseRepoList, writeRepoList } from './repos.ts';
 import { parseRunRequest } from './request.ts';
+import { flavorOf } from './acp/adapter.ts';
+import { cleanTeamCodex, hasTeamUsers } from './server-team.ts';
 import { IdempotencyConflict, RunManager, TooManyRuns, UnknownProfile, type Run } from './runs.ts';
 import { SessionStore } from './sessions.ts';
 import { SigninGate } from './signin.ts';
@@ -29,6 +31,11 @@ import { SigninGate } from './signin.ts';
 // Every request carries `Authorization: Bearer <key>`.
 
 export interface BridgeOptions {
+  /**
+   * After the Codex sign-in was removed here (P31-01b): what removes each team's copy of it. The default asks the root helper (`clean-codex`) for every team
+   * that has a user on this server; tests pass their own.
+   */
+  afterCodexSignOut?: () => Promise<void>;
   config: BridgeConfig;
   apiKey: string;
   stateDir: string;
@@ -281,7 +288,18 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
         if (what === 'status') return send(res, 200, { auth: await authService.status(chosen) });
         const body = await readJsonObject(req, res, bodyTimeoutMs);
         if (body === null) return;
-        if (what === 'logout') return send(res, 200, { auth: await authService.logout(chosen) });
+        if (what === 'logout') {
+          const auth = await authService.logout(chosen);
+          // the Codex sign-in is gone: no run goes on with its copy, and no team keeps one (P31-01b). Claude has one folder per profile and no copies.
+          if (flavorOf(chosen.profile.agent) === 'codex') {
+            const stopped = manager.stopAgent('codex', 'The Codex sign-in was removed, so this run stopped. Sign in again on the Runners page.');
+            if (stopped > 0) log(`codex sign-out: ${stopped} live run(s) stopped`);
+            const server = options.config.server;
+            const clean = options.afterCodexSignOut ?? (hasTeamUsers(server) && server.agents.codex !== undefined ? () => cleanTeamCodex(server, log) : undefined);
+            await clean?.().catch((err: unknown) => log(`codex sign-out: the teams' copies could not all be removed: ${err instanceof Error ? err.message : String(err)}`));
+          }
+          return send(res, 200, { auth });
+        }
         if (sub === 'cancel') {
           const id = body['attemptId'];
           if (id !== undefined && typeof id !== 'string') return fail(res, 400, '"attemptId" must be a string', 'bad_request');

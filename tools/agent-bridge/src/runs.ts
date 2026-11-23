@@ -6,6 +6,7 @@ import { parseServerProfileName, profileFor, type BridgeConfig } from './config.
 import { prepareServerRun, type ServerRunSupport } from './server-run.ts';
 import { ensureTeamUser, hasTeamUsers, TeamRun } from './server-team.ts';
 import { acpDriver } from './drivers/acp.ts';
+import { flavorOf } from './acp/adapter.ts';
 import { NO_TEAM_USERS_FULL_ACCESS } from './full-access.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
@@ -187,6 +188,22 @@ export class RunManager {
     const sessionKey = request.sessionId === null ? run.id : `${profile}\0${request.sessionId}`;
     void this.queue.run(sessionKey, () => this.drive(run, target.name, target.profile, request));
     return { run, created: true };
+  }
+
+  /**
+   * Stops every live run of one agent (P31-01b): after its sign-in was removed, a run that holds a copy of it must not go on with it. Returns how many were
+   * asked to stop.
+   */
+  stopAgent(flavor: 'claude' | 'codex', reason: string): number {
+    let n = 0;
+    for (const run of this.runs.values()) {
+      if (run.status !== 'running') continue;
+      const target = profileFor(this.opts.config, run.profile);
+      if (!target || flavorOf(target.profile.agent) !== flavor) continue;
+      this.stop(run, reason);
+      n += 1;
+    }
+    return n;
   }
 
   /** Ask a run to stop: SIGTERM to its process group, SIGKILL after the grace. The run ends as cancelled (or failed with `reason`). */
