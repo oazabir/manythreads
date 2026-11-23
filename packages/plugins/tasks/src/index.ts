@@ -7,6 +7,7 @@ import { registerJobs } from './jobs.ts';
 import { registerPullRequestSync } from './pull-requests.ts';
 import { registerTodo } from './todo.ts';
 import { registerTestSiteCapabilities } from './test-sites.ts';
+import { registerTestSiteTeardown } from './teardown.ts';
 import { registerRoutes } from './routes.ts';
 import { registerDecisionRoutes, registerReviewRoutes } from './review-routes.ts';
 
@@ -61,6 +62,7 @@ export default definePlugin({
     registerTestSiteCapabilities(ctx);
     registerJobs(ctx);
     registerPullRequestSync(ctx);
+    registerTestSiteTeardown(ctx);
     registerApprovalSubscriber(ctx);
     registerNotWokenSubscriber(ctx);
     registerActivitySubscribers(ctx);

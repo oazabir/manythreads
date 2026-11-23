@@ -36,6 +36,13 @@ const PATHS: Record<string, { prefix: string; plural: string }> = {
   ServiceAccount: { prefix: '/api/v1', plural: 'serviceaccounts' },
   Role: { prefix: '/apis/rbac.authorization.k8s.io/v1', plural: 'roles' },
   RoleBinding: { prefix: '/apis/rbac.authorization.k8s.io/v1', plural: 'rolebindings' },
+  // what a test site (P35-03) is made of, for its teardown
+  StatefulSet: { prefix: '/apis/apps/v1', plural: 'statefulsets' },
+  Ingress: { prefix: '/apis/networking.k8s.io/v1', plural: 'ingresses' },
+  Job: { prefix: '/apis/batch/v1', plural: 'jobs' },
+  Cluster: { prefix: '/apis/postgresql.cnpg.io/v1', plural: 'clusters' },
+  Certificate: { prefix: '/apis/cert-manager.io/v1', plural: 'certificates' },
+  Issuer: { prefix: '/apis/cert-manager.io/v1', plural: 'issuers' },
 };
 
 export function resourcePath(kind: string, namespace: string, name?: string): string {
@@ -126,7 +133,8 @@ export class HttpK8s implements K8s {
   }
 
   async delete(kind: string, namespace: string, name: string): Promise<void> {
-    const res = await this.call('DELETE', resourcePath(kind, namespace, name));
+    // Background: what the object owns (a Job's pods, a Deployment's ReplicaSets) goes with it; a Job deleted through the API would otherwise leave its pods
+    const res = await this.call('DELETE', `${resourcePath(kind, namespace, name)}?propagationPolicy=Background`);
     if (res.status !== 404 && (res.status < 200 || res.status >= 300)) throw new K8sError(res.status, `delete ${kind}/${name}: ${res.status} ${statusMessage(res.text)}`);
   }
 

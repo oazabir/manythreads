@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 const chart = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../deploy/helm/manythreads');
 const haveHelm = spawnSync('helm', ['version', '--short'], { encoding: 'utf8' }).status === 0;
 const render = (extra: string[]): { code: number; out: string } => {
-  const r = spawnSync('helm', ['template', 't', chart, '-f', resolve(chart, 'values-live.yaml'), ...extra], { encoding: 'utf8' });
+  const r = spawnSync('helm', ['template', 't', chart, '-n', 'default', '-f', resolve(chart, 'values-live.yaml'), ...extra], { encoding: 'utf8' });
   return { code: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
 };
 const docsOf = (out: string, kind: string): string[] => out.split(/^---$/m).filter((d) => new RegExp(`^kind: ${kind}$`, 'm').test(d));
