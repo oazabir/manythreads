@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
 import { apiOn, type StackApi } from '../support/stack-browser.ts';
-import { actorOf, closePerson, dock, enterRoom, leave, meetingsStack, openAs, showSpeaking, turnOnTranscription, answerConsent, say, type Person } from './support.ts';
+import { actorOf, closePerson, dock, enterRoom, lastMeeting, leave, mediaState, meetingsStack, openAs, showSpeaking, turnOnTranscription, answerConsent, say, type Person } from './support.ts';
 
 /**
  * The voice room (PLAN P15-17, e2e/meetings, §3 criterion 1). Nadia starts a room in #dev and Rafi joins it from his own browser. Both call bars show
@@ -17,6 +17,7 @@ let stack: Stack;
 let omar: StackApi;
 let nadia: Person | undefined;
 let rafi: Person | undefined;
+let omarPage: Person | undefined;
 
 test.beforeAll(async ({ playwright }) => {
   stack = await meetingsStack('content');
@@ -25,6 +26,7 @@ test.beforeAll(async ({ playwright }) => {
 test.afterAll(async () => {
   await closePerson(nadia);
   await closePerson(rafi);
+  await closePerson(omarPage);
   await omar?.ctx.dispose();
   await stack?.stop();
 });
@@ -54,6 +56,31 @@ test('Nadia starts a call from the dialog inviting Rafi, Rafi joins, both call b
   }
   await expect(nadia.page.getByTestId('call-roster')).toContainText('Rafi');
   await expect(rafi.page.getByTestId('call-roster')).toContainText('Nadia');
+});
+
+test('both may speak and hear (P36-01): each one\'s media token publishes and subscribes', async () => {
+  const meeting = await lastMeeting(stack, 'dev');
+  const state = await mediaState(stack, omar, meeting.id);
+  for (const who of ['nadia', 'rafi'] as const) {
+    const tokens = state.tokens.filter((t) => t.identity === actorOf(who));
+    expect(tokens.length, who).toBeGreaterThan(0);
+    expect(tokens.every((t) => t.kind === 'person' && t.canPublish && t.canSubscribe && !t.listenOnly), who).toBe(true);
+  }
+});
+
+test('one call per channel (P36-01): Omar presses the call button while it is live and joins the same call, not a new one', async ({ browser, playwright }) => {
+  const before = await lastMeeting(stack, 'dev');
+  omarPage = await openAs(browser, playwright, stack, 'omar');
+  await expect(omarPage.page.getByTestId('call-start')).toHaveAccessibleName('Join call');
+  await enterRoom(omarPage);
+  for (const p of [nadia!, rafi!, omarPage]) await expect(p.page.getByTestId('call-face')).toHaveCount(3);
+  expect((await lastMeeting(stack, 'dev')).id).toBe(before.id);
+  const live = await stack.sql<{ n: string }>(
+    `SELECT count(*)::text AS n FROM app.meetings m JOIN app.channels c ON c.id = m.channel_id WHERE c.name = 'dev' AND m.state <> 'ended'`,
+  );
+  expect(live[0]!.n).toBe('1');
+  await leave(omarPage);
+  for (const p of [nadia!, rafi!]) await expect(p.page.getByTestId('call-face')).toHaveCount(2);
 });
 
 test('the speaking ring follows who the media server reports, on both pages', async () => {
@@ -111,5 +138,6 @@ test('Rafi leaves, then Nadia ends the room for everyone', async () => {
   // the start message is now one muted event line: who started it, how long, how many joined (P34-02)
   const line = a.page.locator('[data-testid="call-event"][data-state="ended"]').last();
   await expect(line).toBeVisible();
-  await expect(line).toContainText(/Nadia started a call · \d{2}:\d{2} · .+ · 2 joined/);
+  // Nadia, Rafi and Omar (who joined the live call instead of starting another) joined
+  await expect(line).toContainText(/Nadia started a call · \d{2}:\d{2} · .+ · 3 joined/);
 });
