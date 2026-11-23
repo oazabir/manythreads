@@ -5,6 +5,7 @@ import { registerConnectorRoutes } from './connector-routes.ts';
 import { registerConnectorSync } from './connector-sync.ts';
 import { registerJobs } from './jobs.ts';
 import { registerProjectDocs } from './project-docs.ts';
+import { registerAnsweredBefore } from './answered-before.ts';
 import { registerPersonalRoutes } from './personal-routes.ts';
 import { registerRoutes } from './routes.ts';
 
@@ -35,6 +36,7 @@ export default definePlugin({
     registerPersonalRoutes(ctx);
     registerJobs(ctx);
     registerProjectDocs(ctx);
+    registerAnsweredBefore(ctx);
     // Bundle D: one call per module, each a stub until its work package fills it in.
     registerConnectorRoutes(ctx);
     registerConnectorSync(ctx);

@@ -212,17 +212,21 @@ export function registerChannelRoutes(deps: Deps): void {
       const channel = await requireChannel(tx, channelId);
       if (!(await can(tx, channelId, 'manage'))) throw forbidden('Only a team lead or workspace admin can change a channel');
       if (channel.archived_at) throw conflict('This channel is archived');
-      const changes: { name?: string; purpose?: string; groupId?: string | null } = {};
+      const changes: { name?: string; purpose?: string; groupId?: string | null; help?: boolean } = {};
       if (body.name !== undefined && stripHash(body.name) !== channel.name) changes.name = stripHash(body.name);
       if (body.purpose !== undefined && body.purpose !== channel.purpose) changes.purpose = body.purpose;
       if (body.groupId !== undefined && body.groupId !== channel.group_id) changes.groupId = body.groupId;
+      if (body.help !== undefined && body.help !== (channel.help ?? false)) {
+        if (channel.kind !== 'channel') throw invalid('Only a channel can be a help channel');
+        changes.help = body.help;
+      }
       if (Object.keys(changes).length === 0) return json(UpdateChannelResponse.parse({ channel: toChannel(channel), changed: false }));
       const res = await tx
         .query<ChannelRow>(
           `UPDATE app.channels c SET name = coalesce($2, name), purpose = coalesce($3, purpose),
-                  group_id = CASE WHEN $4::boolean THEN $5::uuid ELSE group_id END, updated_at = now()
+                  group_id = CASE WHEN $4::boolean THEN $5::uuid ELSE group_id END, help = coalesce($6, help), updated_at = now()
             WHERE c.id = $1 RETURNING ${CHANNEL_COLUMNS}`,
-          [channelId, changes.name ?? null, changes.purpose ?? null, 'groupId' in changes, changes.groupId ?? null],
+          [channelId, changes.name ?? null, changes.purpose ?? null, 'groupId' in changes, changes.groupId ?? null, changes.help ?? null],
         )
         .catch((err: unknown) => {
           if ((err as { code?: string }).code === '23505') throw conflict(`A channel named "#${changes.name ?? ''}" already exists in this team`);

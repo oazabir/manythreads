@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { leaveChannel } from '../api/endpoints';
+import { leaveChannel, saveChannelHelp } from '../api/endpoints';
+import { announceChannelChanged } from '../channels/slashDeps';
 import { ChannelLevelOptions } from '../notifications/ChannelBell';
 import { WebhooksDialog } from '../webhooks/WebhooksDialog';
 import { isMockMode } from '../api/setup';
@@ -32,7 +33,7 @@ const TOOL_ICON: Record<HeaderToolKey, (dm: boolean) => ReactNode> = {
  * On a phone the header is the name and the bell (owner, 2026-11-19, P34-05): the menu starts with the header's tools (search, the planned room, the voice room,
  * Members, Add a bookmark), each doing what its hidden button does (`headerMenu.ts`); the CSS shows those items only when the header's `data-room` is `phone`.
  */
-export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail, botBoard }: {
+export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail, botBoard, help = false }: {
   channelId: string;
   name: string;
   teamSlug: string;
@@ -46,6 +47,8 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   trail?: ReactNode;
   /** The channel's Bot Board, when it has one: a phone has no room for its icon in the header, so the menu carries it (P33-01). */
   botBoard?: { to: string; name: string } | undefined;
+  /** A help channel (P18-09): its composer shows earlier answers. A lead turns it on and off here. */
+  help?: boolean;
 }) {
   const { guest } = useShell();
   const navigate = useNavigate();
@@ -93,6 +96,12 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
       close();
       void navigate(`/t/${encodeURIComponent(teamSlug)}`);
     }, (e: unknown) => setProblem(e instanceof Error ? e.message : 'Could not leave the channel. Try again.'));
+  };
+  const toggleHelp = (): void => {
+    saveChannelHelp(channelId, !help).then(() => {
+      announceChannelChanged(channelId);
+      close();
+    }, (e: unknown) => setProblem(e instanceof Error ? e.message : 'Could not change the channel. Try again.'));
   };
   const tools = useHeaderItems(channelId);
   const hasMembersTool = tools.some((t) => t.key === 'members');
@@ -145,6 +154,11 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
               ) : null}
               {!dm && !isMockMode() ? (
                 <button type="button" role="menuitem" className="menu-item chd-phone-only" data-testid="details-schedule" aria-haspopup="dialog" onClick={() => { close(); setScheduling(true); }}><ScheduleCalendarIcon /> Schedule a room</button>
+              ) : null}
+              {!dm && canManage ? (
+                <button type="button" role="menuitem" className="menu-item" data-testid="details-help" aria-pressed={help} onClick={toggleHelp}>
+                  {help ? 'Stop being a help channel' : 'Make this a help channel'}
+                </button>
               ) : null}
               {!dm && canManage ? (
                 <button type="button" role="menuitem" className="menu-item" data-testid="webhooks-open" aria-haspopup="dialog" onClick={() => { close(); setHooks(true); }}>Integrations</button>

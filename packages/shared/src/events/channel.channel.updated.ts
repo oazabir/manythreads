@@ -12,6 +12,7 @@ export const ChannelChannelUpdatedEvent = z.object({
     name: z.string().optional(),
     purpose: z.string().optional(),
     groupId: ChannelGroupId.nullable().optional(),
+    help: z.boolean().optional(),
   }),
 });
 export type ChannelChannelUpdatedEvent = z.infer<typeof ChannelChannelUpdatedEvent>;

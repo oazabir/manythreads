@@ -38,6 +38,8 @@ export const Channel = z.object({
   dmKey: z.string().nullable(),
   botId: BotId.nullable(),
   position: z.number().int(),
+  /** A help channel (P18-09): the composer suggests earlier answers before a question is posted. */
+  help: z.boolean().default(false),
   archivedAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
 });

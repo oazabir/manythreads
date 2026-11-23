@@ -56,11 +56,12 @@ export type ChannelRow = {
   dm_key: string | null;
   bot_id: string | null;
   position: number;
+  help?: boolean;
   archived_at: Date | null;
   created_at: Date;
 };
 export const CHANNEL_COLUMNS =
-  'c.id, c.workspace_id, c.team_id, c.group_id, c.name, c.kind, c.private, c.purpose, c.dm_key, c.bot_id, c.position, c.archived_at, c.created_at';
+  'c.id, c.workspace_id, c.team_id, c.group_id, c.name, c.kind, c.private, c.purpose, c.dm_key, c.bot_id, c.position, c.help, c.archived_at, c.created_at';
 export const toChannel = (r: ChannelRow): Channel =>
   Channel.parse({
     id: r.id,
@@ -74,6 +75,7 @@ export const toChannel = (r: ChannelRow): Channel =>
     dmKey: r.dm_key,
     botId: r.bot_id,
     position: r.position,
+    help: r.help ?? false,
     archivedAt: iso(r.archived_at),
     createdAt: r.created_at.toISOString(),
   });

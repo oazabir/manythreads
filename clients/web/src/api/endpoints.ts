@@ -476,6 +476,8 @@ import {
   leaveChannelRoute,
   listRemindersRoute,
   updateChannelRoute,
+  answeredBeforeRoute,
+  AnsweredBeforeResponse,
   ImportRun,
   ListImportsResponse,
   cancelImportRoute,
@@ -688,6 +690,11 @@ export const addChannelMember = (channelId: string, personId: string) =>
 /** Changes a channel's topic (its purpose line); an empty string clears it. */
 export const saveChannelTopic = (channelId: string, purpose: string) =>
   call(updateChannelRoute, { request: UpdateChannelRequest, response: UpdateChannelResponse }, { purpose }, { channelId });
+/** Marks a channel as a help channel, or stops it being one (P18-09; a team lead or workspace admin). */
+export const saveChannelHelp = (channelId: string, help: boolean) =>
+  call(updateChannelRoute, { request: UpdateChannelRequest, response: UpdateChannelResponse }, { help }, { channelId });
+/** Earlier answers for the question being written in a help channel (P18-09). Nothing is posted. */
+export const fetchAnsweredBefore = (channelId: string, q: string) => call(answeredBeforeRoute, { response: AnsweredBeforeResponse }, { q }, { channelId });
 
 // ---- /remind (P14-04): the reminders a person asked for with the command ------------------------------------
 export const fetchReminders = (state: 'pending' | 'history') => call(listRemindersRoute, { request: ListRemindersQuery, response: ListRemindersResponse }, { state });

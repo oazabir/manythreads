@@ -43,6 +43,8 @@ export const UpdateChannelRequest = z
     name: ChannelNameInput.optional(),
     purpose: ChannelPurpose.optional(),
     groupId: ChannelGroupId.nullable().optional(),
+    /** Mark a channel as a help channel (P18-09). */
+    help: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'nothing to change' });
 export type UpdateChannelRequest = z.infer<typeof UpdateChannelRequest>;

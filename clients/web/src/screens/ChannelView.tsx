@@ -36,6 +36,7 @@ import { headerTopic, projectOfChannel } from './projects/commands';
 import { useRealtimeStatus } from '../realtime';
 import { ScheduledStrip } from '../channels/ScheduledStrip';
 import { useChannelChanged } from '../channels/useSlash';
+import { AnsweredBefore } from '../channels/AnsweredBefore';
 
 export function NoChannelAccess() {
   return (
@@ -87,10 +88,11 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const botBoardName = botBoard?.name ?? '';
   const botBoardLink = useMemo(() => (botBoardTo ? { to: botBoardTo, name: botBoardName } : undefined), [botBoardTo, botBoardName]);
   const detailsManage = info.status === 'ok' && info.data.canManage;
+  const detailsHelp = info.status === 'ok' && info.data.channel.help;
   const detailsLabel = dm ? dm.label : `#${name}`;
   const detailsNode = useMemo(
-    () => <ChannelDetails key={channelId} channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} botBoard={botBoardLink} />,
-    [channelId, name, teamSlug, dm, detailsManage, detailsLabel, botBoardLink],
+    () => <ChannelDetails key={channelId} channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} botBoard={botBoardLink} help={detailsHelp} />,
+    [channelId, name, teamSlug, dm, detailsManage, detailsLabel, botBoardLink, detailsHelp],
   );
   useHeaderTitle(detailsNode);
   useHeaderTopic(!dm && info.status === 'ok' ? headerTopic(project, info.data.channel.purpose) : null);
@@ -418,6 +420,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           onVoiceSent={() => api.current?.scrollToBottom()}
           slash={{ teamSlug, origin: dm ? 'a direct message' : `#${name}` }}
           sendLater
+          {...(!dm && info.status === 'ok' && info.data.channel.help ? { assist: (text: string) => <AnsweredBefore channelId={channelId} teamSlug={teamSlug} text={text} /> } : {})}
           onEditLast={() => {
             const id = lastEditableOwn(tl.items, self);
             if (!id) return;

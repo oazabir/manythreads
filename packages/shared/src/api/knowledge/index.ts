@@ -134,3 +134,4 @@ export type DeleteKnowledgeSourceResponse = z.infer<typeof DeleteKnowledgeSource
 export const deleteKnowledgeSourceRoute = { method: 'DELETE', path: '/api/teams/:slug/knowledge/:base/sources/:sourceId' } as const satisfies ApiRoute;
 
 export * from './connector-sources.ts';
+export * from './answered-before.ts';

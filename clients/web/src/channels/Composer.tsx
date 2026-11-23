@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type CustomEmoji, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
@@ -116,6 +116,8 @@ export type ComposerProps = {
   sendLater?: boolean;
   /** Commands the screen answers itself (the Chat screen's `/new`, `/model`): offered in a menu while the first word is typed, run instead of sent. Not with `slash`. */
   commands?: readonly LocalCommand[];
+  /** Drawn above the box with what is being written (P18-09: earlier answers in a help channel). Never sends anything itself. */
+  assist?: (text: string) => ReactNode;
 };
 
 /** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
@@ -167,7 +169,7 @@ export function Composer(props: ComposerProps) {
   return <ComposerBody {...props} />;
 }
 
-function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, commands }: ComposerProps) {
+function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, commands, assist }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const guest = useContext(ShellContext)?.guest ?? false;
   const rec = useRecorder();
@@ -901,6 +903,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
       onDragLeave={() => setDrag(false)}
       onDrop={onDrop}
     >
+      {assist && !voiceActive ? assist(text) : null}
       <div className="cbox">
         {voiceActive ? null : <ComposerToolbar layout={layout} tools={tools} mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />}
         {emojiOpen ? (
