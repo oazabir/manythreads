@@ -502,6 +502,50 @@ describe('tasks API', () => {
     expect(again.outcome).toBe('needs_approval');
   });
 
+  it('asks an environment’s approval chain in order, one person per step, and records the deploy once after the last (P35-03)', async () => {
+    const tag = (personId: string, t: string) => call(omar, 'PUT', `/api/teams/engineering/members/${personId}/tags/${encodeURIComponent(t)}`);
+    expect((await tag(priya.personId, 'role:release')).status).toBe(200);
+    const tagged = await tag(rafi.personId, 'role:sec-review');
+    expect(tagged.status, JSON.stringify(tagged.body)).toBe(200);
+    const names = (await ownerSql<{ name: string }>(server.db.ownerUrl, "SELECT name FROM app.roles WHERE name LIKE '%release%' OR name LIKE '%sec-review%' ORDER BY name")).map((r) => r.name);
+    const release = names.find((n) => n.includes('release'))!;
+    const security = names.find((n) => n.includes('sec-review'))!;
+    // a chain naming a role nobody has is refused: nobody could decide it
+    expect((await call(omar, 'POST', '/api/teams/engineering/environments', { name: 'prod-nobody', protected: true, approvalChain: ['no-such-role'] })).status).toBe(409);
+    const envRes = await call(omar, 'POST', '/api/teams/engineering/environments', { name: 'prod-chain', protected: true, approvalChain: [release, security] });
+    expect(envRes.status, JSON.stringify(envRes.body)).toBe(201);
+    const envId = String((envRes.body['environment'] as Record<string, unknown>)['id']);
+    expect((envRes.body['environment'] as Record<string, unknown>)['approvalChain']).toEqual([release, security]);
+    const deploys = async () => (await ownerSql<{ n: number }>(server.db.ownerUrl, 'SELECT count(*)::int AS n FROM app.deploys WHERE environment_id = $1', [envId]))[0]!.n;
+    const task = await createTask();
+    const first = DeployResponse.parse((await call(nadia, 'POST', `/api/teams/engineering/environments/${envId}/deploy`, { taskId: task.id })).body);
+    expect(first.outcome).toBe('needs_approval');
+    // step 1 is the release role's: a lead without it, and the requester, may not decide it
+    const lead = await call(omar, 'POST', `/api/teams/engineering/approvals/${first.approvalId}/approve`, { note: '' });
+    expect(lead.status, JSON.stringify(lead.body)).toBe(403);
+    expect((await call(nadia, 'POST', `/api/teams/engineering/approvals/${first.approvalId}/approve`, { note: '' })).status).toBe(403);
+    expect((await call(priya, 'POST', `/api/teams/engineering/approvals/${first.approvalId}/approve`, { note: 'step 1' })).status).toBe(200);
+    // the request moves to step 2; nothing is deployed yet
+    const step2 = await expect
+      .poll(async () => (await ownerSql<{ approval_id: string; chain_step: number }>(server.db.ownerUrl, 'SELECT approval_id, chain_step FROM app.deploy_requests WHERE environment_id = $1', [envId]))[0], { timeout: 10_000 })
+      .toMatchObject({ chain_step: 1 });
+    void step2;
+    const next = (await ownerSql<{ approval_id: string }>(server.db.ownerUrl, 'SELECT approval_id FROM app.deploy_requests WHERE environment_id = $1', [envId]))[0]!.approval_id;
+    expect(await deploys()).toBe(0);
+    // the one who decided step 1 may not decide step 2, even holding its role
+    expect((await tag(priya.personId, 'role:sec-review')).status).toBe(200);
+    expect((await call(priya, 'POST', `/api/teams/engineering/approvals/${next}/approve`, { note: '' })).status).toBe(403);
+    expect((await call(rafi, 'POST', `/api/teams/engineering/approvals/${next}/approve`, { note: 'step 2' })).status).toBe(200);
+    await expect.poll(deploys, { timeout: 10_000 }).toBe(1);
+
+    // a denial at a step ends the request: nothing deployed
+    const again = DeployResponse.parse((await call(nadia, 'POST', `/api/teams/engineering/environments/${envId}/deploy`, { taskId: task.id })).body);
+    expect((await call(priya, 'POST', `/api/teams/engineering/approvals/${again.approvalId}/deny`, { note: 'not today' })).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(await deploys()).toBe(1);
+    expect((await ownerSql<{ n: number }>(server.db.ownerUrl, 'SELECT count(*)::int AS n FROM app.deploy_requests WHERE environment_id = $1 AND chain_step > 0 AND applied_at IS NULL', [envId]))[0]!.n).toBe(0);
+  });
+
   it('refuses a deploy outside the environment window', async () => {
     const tomorrow = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][(new Date().getUTCDay() + 1) % 7] as string;
     const envRes = await call(omar, 'POST', '/api/teams/engineering/environments', {

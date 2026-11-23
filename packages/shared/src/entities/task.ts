@@ -189,6 +189,8 @@ export const Environment = z.object({
   autoRollback: z.boolean(),
   /** The name of the credential this environment uses; the secret itself is never in this row. */
   credentialRef: z.string().max(200),
+  /** Role tags asked in order before a deploy that needs approval (P35-03); empty = one approval by a lead. */
+  approvalChain: z.array(z.string()).default([]),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

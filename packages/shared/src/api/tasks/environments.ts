@@ -20,6 +20,8 @@ export const CreateEnvironmentRequest = z
     deployCap: z.number().int().min(1).max(1000).nullable().default(null),
     autoRollback: z.boolean().default(true),
     credentialRef: z.string().trim().max(200).default(''),
+    /** P35-03: role tags asked in order before a deploy that needs approval (one person per step); empty = one approval by a lead. */
+    approvalChain: z.array(z.string().trim().min(1).max(64)).max(3).default([]),
   })
   .superRefine((v, ctx) => {
     for (const [i, w] of v.windows.entries()) {
@@ -43,6 +45,7 @@ export const UpdateEnvironmentRequest = z
     deployCap: z.number().int().min(1).max(1000).nullable().optional(),
     autoRollback: z.boolean().optional(),
     credentialRef: z.string().trim().max(200).optional(),
+    approvalChain: z.array(z.string().trim().min(1).max(64)).max(3).optional(),
   })
   .superRefine((v, ctx) => {
     for (const [i, w] of (v.windows ?? []).entries()) {

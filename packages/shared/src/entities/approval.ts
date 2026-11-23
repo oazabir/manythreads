@@ -81,6 +81,8 @@ export const ApprovalApprovers = z.strictObject({
    * beside them. Absent on every other approval.
    */
   named: z.boolean().optional(),
+  /** A step of an environment's approval chain (P35-03): who decided the earlier steps, and so may not decide this one. Absent on every other approval. */
+  exclude: z.array(z.uuid()).max(3).optional(),
 });
 export type ApprovalApprovers = z.infer<typeof ApprovalApprovers>;
 

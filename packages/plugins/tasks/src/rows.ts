@@ -137,6 +137,7 @@ export interface EnvironmentRow extends Record<string, unknown> {
   needs_approval: boolean;
   windows: Array<{ days: string[]; from: string; to: string }>;
   deploy_cap: number | null;
+  approval_chain?: string[];
   auto_rollback: boolean;
   credential_ref: string;
   created_at: Date;
@@ -153,6 +154,7 @@ export function toEnvironment(r: EnvironmentRow): Environment {
     needsApproval: r.needs_approval,
     windows: r.windows ?? [],
     deployCap: r.deploy_cap,
+    approvalChain: r.approval_chain ?? [],
     autoRollback: r.auto_rollback,
     credentialRef: r.credential_ref,
     createdAt: iso(r.created_at),

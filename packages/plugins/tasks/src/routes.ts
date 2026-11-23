@@ -79,6 +79,14 @@ import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
 import { handoverAllowlist, handoverPeople, isCardCreator, mayHandoffToActor } from './handoff.ts';
 import { TASK_SELECT, actorOf, toBoard, toEnvironment, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
 
+/** P35-03: every role tag of an approval chain must exist in the workspace, or the step it names could never be decided. */
+async function requireRoles(tx: PluginTx, names: readonly string[]): Promise<void> {
+  if (names.length === 0) return;
+  const found = (await tx.query<{ name: string }>('SELECT name FROM app.roles WHERE name = ANY ($1::text[])', [names])).rows.map((r) => r.name);
+  const missing = names.filter((n) => !found.includes(n));
+  if (missing.length > 0) throw conflict(`No role tag ${missing.map((m) => `"${m}"`).join(', ')} in this workspace: an approval step needs people who can decide it`);
+}
+
 /** The card of this team, or 404 (a card of another team and a missing one answer the same). */
 async function taskOf(tx: PluginTx, teamId: string, taskId: string): Promise<Task> {
   const row = (await tx.query<TaskRow>(`${TASK_SELECT} WHERE t.id = $1::uuid AND t.team_id = $2::uuid`, [taskId, teamId])).rows[0];
@@ -473,12 +481,13 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
       const body = CreateEnvironmentRequest.parse(req.body);
+      await requireRoles(tx, body.approvalChain);
       const row = (
         await tx.query<EnvironmentRow>(
-          `INSERT INTO app.environments (workspace_id, team_id, name, protected, needs_approval, windows, deploy_cap, auto_rollback, credential_ref, created_by)
-           VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::uuid)
+          `INSERT INTO app.environments (workspace_id, team_id, name, protected, needs_approval, windows, deploy_cap, auto_rollback, credential_ref, created_by, approval_chain)
+           VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7, $8, $9, $10::uuid, $11::text[])
            RETURNING *`,
-          [team.workspace_id, team.id, body.name, body.protected, body.needsApproval, JSON.stringify(body.windows), body.deployCap, body.autoRollback, body.credentialRef, tx.actor.id],
+          [team.workspace_id, team.id, body.name, body.protected, body.needsApproval, JSON.stringify(body.windows), body.deployCap, body.autoRollback, body.credentialRef, tx.actor.id, body.approvalChain],
         )
       ).rows[0];
       if (!row) throw conflict('Could not create the environment');
@@ -506,6 +515,10 @@ export function registerRoutes(ctx: PluginContext): void {
       if (body.deployCap !== undefined) set('deploy_cap', body.deployCap);
       if (body.autoRollback !== undefined) set('auto_rollback', body.autoRollback);
       if (body.credentialRef !== undefined) set('credential_ref', body.credentialRef);
+      if (body.approvalChain !== undefined) {
+        await requireRoles(tx, body.approvalChain);
+        set('approval_chain', body.approvalChain, '::text[]');
+      }
       if (sets.length === 0) {
         const current = (await tx.query<EnvironmentRow>('SELECT * FROM app.environments WHERE id = $1::uuid AND team_id = $2::uuid', [environmentId, team.id])).rows[0];
         if (!current) throw notFound('No such environment');

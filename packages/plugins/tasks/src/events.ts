@@ -57,8 +57,9 @@ export function registerApprovalSubscriber(ctx: PluginContext): void {
       return;
     }
 
-    // A deploy request: approving it records the deploy in the ledger (and on the card), once.
-    await tx.query('SELECT * FROM app.tasks_apply_deploy($1::uuid)', [event.approvalId]);
+    // A deploy request: approving its last step records the deploy in the ledger (and on the card), once; an earlier step of an environment's
+    // approval chain (P35-03) files the next step instead.
+    await tx.query('SELECT * FROM app.tasks_advance_deploy($1::uuid)', [event.approvalId]);
   });
 }
 
