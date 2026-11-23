@@ -166,6 +166,8 @@ export class CallController {
   private readonly listeners = new Set<() => void>();
   private hooks: CallHooks = { openChat: () => undefined };
   private adapter: MediaAdapter | null = null;
+  /** Turn the camera on once connected: the person started this video call from the dialog. */
+  private cameraOnJoin = false;
   private engine: TranscribeEngine | null = null;
   private engineMode: EnginePlan = 'none';
   private engineChain: Promise<void> = Promise.resolve();
@@ -258,6 +260,8 @@ export class CallController {
     }
     // no other start or join could begin while the server was answering (`dialogStarting`): only now is the call the person was in left
     await this.teardownForNewRoom();
+    // the person who starts a video call is in it with their camera on; whoever joins it later turns theirs on when they want (P36-02)
+    this.cameraOnJoin = res.created && res.meeting.kind === 'video';
     const gen = ++this.generation;
     this.set({ ...IDLE(this.state.prefs), myActorId: this.state.myActorId, phase: 'starting', channelId });
     void this.enter(res.meeting, res.join, gen).catch(() => undefined);
@@ -336,6 +340,10 @@ export class CallController {
     if (gen !== this.generation) return;
     await this.applyConsentAndMic();
     void this.refreshDevices();
+    if (this.cameraOnJoin && gen === this.generation) {
+      this.cameraOnJoin = false;
+      await this.toggleCamera();
+    }
   }
 
   private eventsFor(gen: number): AdapterEvents {

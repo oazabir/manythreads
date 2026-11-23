@@ -762,3 +762,26 @@ describe('camera and screen on the call (P35-08)', () => {
     expect(t.c.getState().videos).toEqual([]);
   });
 });
+
+describe('video calls (P36-02)', () => {
+  it('the person who starts a video call is in it with the camera on', async () => {
+    const r = rig({ room: { kind: 'video' } });
+    const c = new CallController(r.deps);
+    c.setSelf(ME);
+    await c.startFromDialog(CHANNEL, { kind: 'video' });
+    await settle();
+    expect(r.server.calls[0]).toBe(`start ${CHANNEL} {"kind":"video"}`);
+    expect(c.getState().phase).toBe('connected');
+    expect(r.adapters[0]!.state.cameraOn).toBe(true);
+    expect(c.getState().videos).toEqual([expect.objectContaining({ source: 'camera', local: true })]);
+  });
+
+  it('an audio call starts with the camera off', async () => {
+    const r = rig();
+    const c = new CallController(r.deps);
+    c.setSelf(ME);
+    await c.startFromDialog(CHANNEL, {});
+    await settle();
+    expect(r.adapters[0]!.state.cameraOn).toBe(false);
+  });
+});

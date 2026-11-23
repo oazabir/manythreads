@@ -98,17 +98,20 @@ describe('starting a call posts its card', () => {
     expect(await stamped(ch)).toEqual(before);
   });
 
-  it('refuses video with 409 and writes nothing', async () => {
+  it('starts a video call (P36-02); a start of either kind while it is live joins it: one call per channel in total', async () => {
     const ch = await channel();
-    const roomsBefore = lastFakeMedia().rooms.size;
-    const res = await start(nadia, ch, { kind: 'video', title: 'Face to face' });
-    expect(res.status).toBe(409);
-    expect(JSON.stringify(res.body)).toContain('Video calls are not available yet');
-    expect(await liveRooms(ch)).toBe(0);
-    expect(await stamped(ch)).toEqual([]);
-    expect(lastFakeMedia().rooms.size).toBe(roomsBefore);
-    // the older page's body (title only) and an explicit audio both still start
-    expect((await start(nadia, ch, { kind: 'audio' })).status).toBe(200);
+    const video = await start(nadia, ch, { kind: 'video', title: 'Face to face' });
+    expect(video.status, JSON.stringify(video.body)).toBe(200);
+    const room = StartMeetingResponse.parse(video.body);
+    expect(room).toMatchObject({ created: true, meeting: { kind: 'video' } });
+    expect(await liveRooms(ch)).toBe(1);
+    // an audio start in the same channel joins the live video call; it does not make a second one
+    const again = StartMeetingResponse.parse((await start(rafi, ch, { kind: 'audio' })).body);
+    expect(again).toMatchObject({ created: false, meeting: { id: room.meeting.id, kind: 'video' } });
+    expect(await liveRooms(ch)).toBe(1);
+    expect((await w.call(nadia, 'POST', `/api/meetings/${room.meeting.id}/end`)).status).toBe(200);
+    // the older page's body (title only) and an explicit audio both still start an audio call
+    expect(StartMeetingResponse.parse((await start(nadia, ch, { kind: 'audio' })).body).meeting.kind).toBe('audio');
   });
 
   it('a card that cannot be written fails the start with a plain reason and leaves no room, no event and no media room', async () => {

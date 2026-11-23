@@ -147,6 +147,8 @@ export async function startRoom(
     scheduledMeetingId?: string;
     inviteeIds?: readonly string[];
     notetakerBotId?: string | null;
+    /** A video call (P36-02); audio when absent. A start while a call is live joins that call, whichever kind it is: one call per channel in total. */
+    kind?: 'audio' | 'video';
     onCreated?: (m: MeetingRow) => Promise<void>;
   },
 ): Promise<{ m: MeetingRow; created: boolean; join: MeetingJoin; invited: number }> {
@@ -168,6 +170,7 @@ export async function startRoom(
       title: input.title ?? defaultTitle(now, channel),
       started_by: caller.actorId,
       organizer_id: caller.actorId,
+      kind: input.kind ?? 'audio',
       ...(input.scheduledMeetingId ? { scheduled_meeting_id: input.scheduledMeetingId } : {}),
     },
     conflict: ['channel_id'],
@@ -246,12 +249,11 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
       const { channelId } = StartMeetingPathParams.parse(req.params);
       const body = StartMeetingRequest.parse(req.body ?? {});
       const caller = await callerPerson(tx);
-      // nothing is written for a call that cannot be made (P17-01 brings video)
-      if (body.kind === 'video') throw conflict('Video calls are not available yet');
       const { m, created, join, invited } = await startRoom(ctx, tx, {
         channelId,
         title: body.title,
         caller,
+        ...(body.kind ? { kind: body.kind } : {}),
         ...(body.inviteeIds ? { inviteeIds: body.inviteeIds } : {}),
         ...(body.notetakerBotId ? { notetakerBotId: body.notetakerBotId } : {}),
       });

@@ -69,7 +69,7 @@ export function useCallPeople(channelId: string, o: { withCaller: boolean }) {
  * everyone in it is rung. `onClose` runs on Cancel and Esc; `onStarted` (else `onClose`) once a call has been started or joined, so the opener can put the
  * keyboard on the call bar. At most 100 people can be asked; Start call says so instead of sending more.
  */
-export function StartCallDialog({ channelId, onClose, onStarted }: { channelId: string; onClose: () => void; onStarted?: () => void }) {
+export function StartCallDialog({ channelId, onClose, onStarted, kind = 'audio' }: { channelId: string; onClose: () => void; onStarted?: () => void; kind?: 'audio' | 'video' }) {
   const { loaded, find, setFind, rows, server, searching, searchFailed } = useCallPeople(channelId, { withCaller: true });
   const call = useCall();
   const elsewhere = call.meeting !== null && call.meeting.channelId !== channelId && (call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'lost');
@@ -123,7 +123,7 @@ export function StartCallDialog({ channelId, onClose, onStarted }: { channelId: 
   const start = async (): Promise<void> => {
     setBusy(true);
     setError(null);
-    const body = buildStartBody({ title, picked, lockedIds, dm, notetakerBotId: on ? (bot?.botId ?? null) : null });
+    const body = buildStartBody({ title, picked, lockedIds, dm, notetakerBotId: on ? (bot?.botId ?? null) : null, kind });
     try {
       const res = await callController().startFromDialog(channelId, body);
       if (!res.created) setJoined(true);
@@ -165,7 +165,7 @@ export function StartCallDialog({ channelId, onClose, onStarted }: { channelId: 
   );
 
   return (
-    <Dialog title="Start an audio call" onClose={onClose} testId="call-start-dialog" sheet footer={footer}>
+    <Dialog title={kind === 'video' ? 'Start a video call' : 'Start an audio call'} onClose={onClose} testId="call-start-dialog" sheet footer={footer}>
       {joined ? (
         <p className="dlg-text" role="status" data-testid="call-start-joined">
           A call was already going: you joined it. Nobody was invited — use Invite more on its card. The note-taker choice was not used.

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { isMockMode } from '../api/setup';
 import { useShell } from '../shell/context';
 import { useHeaderItem } from '../shell/headerMenu';
-import { HeadphonesIcon, PhoneIcon, WaveIcon } from './icons';
+import { CameraIcon, HeadphonesIcon, PhoneIcon, WaveIcon } from './icons';
 import { voiceIconAction } from './roomCard';
 import { StartCallDialog } from './StartCallDialog';
 import { callButtonWords } from './startCall';
@@ -59,7 +59,8 @@ export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { cha
   const live = useLiveRoom(channelId);
   const { guest } = useShell();
   const mock = isMockMode();
-  const [dialog, setDialog] = useState(false);
+  // which start dialog is open: an audio call, a video call (P36-02), or none
+  const [dialog, setDialog] = useState<false | 'audio' | 'video'>(false);
   const inHere = call.meeting?.channelId === channelId && (call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost');
   const busy = call.phase === 'starting' || call.phase === 'connecting';
   const root = live?.meeting.threadRootId ?? null;
@@ -79,7 +80,7 @@ export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { cha
       return;
     }
     if (words.blocked !== null) return;
-    setDialog(true);
+    setDialog('audio');
   };
   // on a phone the icon is not in the header: the details menu carries the same action under the same name (P34-05); while in the call it is a state there too
   useHeaderItem(
@@ -95,6 +96,7 @@ export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { cha
   const startDialog = dialog ? (
     <StartCallDialog
       channelId={channelId}
+      kind={dialog}
       onClose={() => setDialog(false)}
       onStarted={() => {
         setDialog(false);
@@ -130,6 +132,12 @@ export function VoiceButton({ channelId, dm, messageLoaded, showMessage }: { cha
         {dm ? <PhoneIcon /> : <HeadphonesIcon />}
         {live ? <span className="chv-live-dot" aria-hidden="true" /> : null}
       </button>
+      {/* a video call (P36-02): only while no call is live here, since a channel has one call at a time (Join joins whichever kind is live) */}
+      {!live && words.blocked === null ? (
+        <button type="button" className="icon-btn chv-tool chv-voice call-start-video" data-testid="call-start-video" disabled={busy} aria-haspopup="dialog" aria-label="Video call" title={dm ? 'Video call: ring everyone in this conversation' : 'Video call: start a call with cameras here'} onClick={() => setDialog('video')}>
+          <CameraIcon />
+        </button>
+      ) : null}
       {startDialog}
     </>
   );

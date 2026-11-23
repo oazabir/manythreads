@@ -42,8 +42,10 @@ export function notetakerChoice(n: CallStartOptionsResponse['notetaker']): { off
  * The body of the start request. The title is sent only when one is typed (the server writes its own default otherwise); invitees only outside a direct message
  * and never the caller; the note-taker only while its switch is on.
  */
-export function buildStartBody(o: { title: string; picked: readonly string[]; lockedIds: readonly string[]; dm: boolean; notetakerBotId: string | null }): StartMeetingRequest {
+export function buildStartBody(o: { title: string; picked: readonly string[]; lockedIds: readonly string[]; dm: boolean; notetakerBotId: string | null; kind?: 'audio' | 'video' }): StartMeetingRequest {
   const body: StartMeetingRequest = {};
+  // a video call (P36-02); an audio call sends no kind, as the older pages did
+  if (o.kind === 'video') body.kind = 'video';
   const title = o.title.trim().slice(0, START_TITLE_MAX);
   if (title !== '') body.title = title;
   const invitees = o.dm ? [] : o.picked.filter((id) => !o.lockedIds.includes(id));
