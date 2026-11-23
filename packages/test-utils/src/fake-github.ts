@@ -18,6 +18,16 @@ export interface FakePull {
   state: 'open' | 'closed';
   merged: boolean;
   mergeSha: string | null;
+  /** The request's files as GitHub's `/pulls/:n/files` lists them (raw objects: `filename`, `status`, `patch`...); a test sets them. */
+  files?: unknown[];
+}
+
+/** What GitHub reports for one commit: its check runs and its commit statuses (raw objects), keyed by the commit in `FakeGithub.checks`. */
+export interface FakeChecks {
+  runs: unknown[];
+  statuses: unknown[];
+  /** Answer this status instead (403: the token may not read checks). */
+  status?: number;
 }
 
 export interface FakeGithubCall {
@@ -32,6 +42,8 @@ export interface FakeGithub {
   /** `http://127.0.0.1:<port>`: use as the API base. */
   url: string;
   pulls: Map<number, FakePull>;
+  /** Check runs and statuses per commit sha (lower case). */
+  checks: Map<string, FakeChecks>;
   calls: FakeGithubCall[];
   /** The next `count` requests answer `status` with these headers (a rate limit, an outage), before any other handling. */
   failNext(status: number, headers?: Record<string, string>, count?: number): void;
@@ -48,6 +60,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
 
 export async function startFakeGithub(options: { token: string; owner?: string; repo?: string; login?: string; canPush?: boolean; readOnlyRepos?: string[]; expires?: string }): Promise<FakeGithub> {
   const pulls = new Map<number, FakePull>();
+  const checks = new Map<string, FakeChecks>();
   const calls: FakeGithubCall[] = [];
   let failing: { status: number; headers: Record<string, string>; left: number } | null = null;
   let next = 1;
@@ -76,6 +89,25 @@ export async function startFakeGithub(options: { token: string; owner?: string; 
         // any repository of the owner: the token is a stand-in for one that can see all of the account's repositories
         if (options.owner && repoOnly[1] !== options.owner) return send(404, { message: 'Not Found' });
         return send(200, { full_name: `${repoOnly[1]}/${repoOnly[2]}`, permissions: { push: (options.canPush ?? true) && !options.readOnlyRepos?.includes(repoOnly[2]!) } });
+      }
+      // a pull request's files, 30 (or per_page) a page, with GitHub's Link header when there is a next page
+      const files = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/files$/.exec(url.pathname);
+      if (req.method === 'GET' && files) {
+        const p = pulls.get(Number(files[3]));
+        if (!p || (options.owner && files[1] !== options.owner)) return send(404, { message: 'Not Found' });
+        const per = Number(url.searchParams.get('per_page') ?? '30');
+        const page = Number(url.searchParams.get('page') ?? '1');
+        const all = p.files ?? [];
+        const slice = all.slice((page - 1) * per, page * per);
+        const more = page * per < all.length;
+        return send(200, slice, more ? { link: `<${base}${url.pathname}?per_page=${per}&page=${page + 1}>; rel="next"` } : {});
+      }
+      // a commit's check runs and its combined status
+      const commit = /^\/repos\/([^/]+)\/([^/]+)\/commits\/([0-9a-f]+)\/(check-runs|status)$/.exec(url.pathname);
+      if (req.method === 'GET' && commit) {
+        const c = checks.get(commit[3]!) ?? { runs: [], statuses: [] };
+        if (c.status) return send(c.status, { message: 'Resource not accessible by personal access token' });
+        return commit[4] === 'check-runs' ? send(200, { total_count: c.runs.length, check_runs: c.runs }) : send(200, { state: 'pending', statuses: c.statuses });
       }
       const m = /^\/repos\/([^/]+)\/([^/]+)\/pulls(?:\/(\d+))?$/.exec(url.pathname);
       if (!m || (options.owner && m[1] !== options.owner) || (options.repo && m[2] !== options.repo)) return send(404, { message: 'Not Found' });
@@ -125,6 +157,7 @@ export async function startFakeGithub(options: { token: string; owner?: string; 
   return {
     url: base,
     pulls,
+    checks,
     calls,
     failNext: (status, headers = {}, count = 1) => {
       failing = { status, headers, left: count };

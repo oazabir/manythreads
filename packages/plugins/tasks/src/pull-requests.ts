@@ -47,10 +47,10 @@ export function pullRequestDeps(ctx: PluginContext): PullRequestDeps {
 const repoName = (r: GitRepo): string => r.path.toLowerCase();
 
 /** The provider a stored credential was issued by: a document written before GitLab was supported has no identity and is GitHub's. */
-const providerOf = (cred: { identity?: { provider: 'github' | 'gitlab' } }): 'github' | 'gitlab' => cred.identity?.provider ?? 'github';
+export const providerOf = (cred: { identity?: { provider: 'github' | 'gitlab' } }): 'github' | 'gitlab' => cred.identity?.provider ?? 'github';
 
 /** Ask the project's own provider for the request `number`. */
-function getRequest(deps: PullRequestDeps, repo: GitRepo, token: string, number: number, failures: number): Promise<PullAnswer> {
+export function getRequest(deps: PullRequestDeps, repo: GitRepo, token: string, number: number, failures: number): Promise<PullAnswer> {
   const common = { fetch: deps.fetch, now: deps.now } as GithubOptions;
   return repo.provider === 'github'
     ? getPull({ ...common, apiBase: deps.apiBaseOverride ?? repo.apiBase, token, owner: repo.owner, repo: repo.repo, number, failures })

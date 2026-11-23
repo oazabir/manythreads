@@ -7,6 +7,7 @@ import { registerJobs } from './jobs.ts';
 import { registerPullRequestSync } from './pull-requests.ts';
 import { registerTodo } from './todo.ts';
 import { registerRoutes } from './routes.ts';
+import { registerReviewRoutes } from './review-routes.ts';
 
 export { CLAIM_SWEEP_QUEUE } from './jobs.ts';
 export { TASK_SELECT, toTask, type TaskRow } from './rows.ts';
@@ -50,6 +51,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerRoutes(ctx);
+    registerReviewRoutes(ctx);
     registerCapabilities(ctx);
     registerTurnCapabilities(ctx);
     registerJobs(ctx);
