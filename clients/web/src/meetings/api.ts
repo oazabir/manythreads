@@ -1,4 +1,13 @@
 import {
+  listAppointmentsRoute,
+  ListAppointmentsResponse,
+  createAppointmentRoute,
+  CreateAppointmentRequest,
+  AppointmentResponse,
+  updateAppointmentRoute,
+  UpdateAppointmentRequest,
+  cancelAppointmentRoute,
+  joinAppointmentRoute,
   openMeetingSpaceRoute,
   OpenMeetingSpaceRequest,
   OpenMeetingSpaceResponse,
@@ -222,3 +231,12 @@ export const openMeetingSpace = (body: OpenMeetingSpaceRequest) => call(openMeet
 export const fetchMeetingSpaces = () => call(listMeetingSpacesRoute, { response: ListMeetingSpacesResponse });
 /** Who can be invited to a meeting, from every team, by name. */
 export const fetchMeetingPeople = (q = '') => call(meetingPeopleRoute, { response: MeetingPeopleResponse }, { q });
+
+/** The appointments the person may see in a window, across all their teams (P36-05). */
+export const fetchAppointments = (from: string, to: string) => call(listAppointmentsRoute, { response: ListAppointmentsResponse }, { from, to });
+export const createAppointment = (teamSlug: string, body: CreateAppointmentRequest) =>
+  call(createAppointmentRoute, { request: CreateAppointmentRequest, response: AppointmentResponse }, body, { slug: teamSlug });
+export const updateAppointment = (id: string, body: UpdateAppointmentRequest) => call(updateAppointmentRoute, { request: UpdateAppointmentRequest, response: AppointmentResponse }, body, { id });
+export const cancelAppointment = (id: string) => call(cancelAppointmentRoute, { response: AppointmentResponse }, undefined, { id });
+/** Its call in its meeting space: started with its kind, or joined when live (P36-07). */
+export const joinAppointment = (id: string) => call(joinAppointmentRoute, { response: OpenMeetingSpaceResponse }, undefined, { id });

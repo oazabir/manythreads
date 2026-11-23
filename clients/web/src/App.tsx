@@ -42,6 +42,7 @@ import { BotHome } from './screens/bots/BotHome';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
 import { DeliveriesScreen } from './screens/deliveries/DeliveriesScreen';
 import { DraftsScreen } from './screens/drafts/DraftsScreen';
+import { ScheduleScreen } from './screens/schedule/ScheduleScreen';
 import { AgentsScreen } from './screens/agents/AgentsScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { BotRoster } from './screens/bots/BotRoster';
@@ -145,6 +146,7 @@ function AppRoutes() {
             <Route path="/t/:team/approvals" element={<RequireTeam><ApprovalsScreen /></RequireTeam>} />
             <Route path="/t/:team/deliveries" element={<RequireTeam><DeliveriesScreen /></RequireTeam>} />
             <Route path="/t/:team/drafts" element={<RequireTeam><DraftsScreen /></RequireTeam>} />
+            <Route path="/t/:team/schedule" element={<RequireTeam><ScheduleScreen /></RequireTeam>} />
             <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
             <Route path="/t/:team/agents" element={<RequireTeam><AgentsScreen /></RequireTeam>} />
             <Route path="/t/:team/projects" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />

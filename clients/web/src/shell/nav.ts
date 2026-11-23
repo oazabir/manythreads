@@ -7,6 +7,8 @@ import { NavContribution, sortNav } from '@manythreads/shared';
  */
 export const CORE_NAV: NavContribution[] = [
   { id: 'chat', order: 5, label: 'Chat', kind: 'item', path: '/chat', icon: 'chat', badge: { source: 'chat.unread', tone: 'unread' } },
+  // the team schedule (P36-05): every team's appointments in one calendar
+  { id: 'schedule', order: 8, label: 'Schedule', kind: 'item', path: '/schedule', icon: 'schedule' },
   { id: 'files', order: 10, label: 'Files', kind: 'item', path: '/files', icon: 'files' },
   { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards' },
   { id: 'org', order: 23, label: 'Org chart', kind: 'item', path: '/org', icon: 'org' },
@@ -59,7 +61,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', drafts: 'Drafts', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
+const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', drafts: 'Drafts', schedule: 'Schedule', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {
