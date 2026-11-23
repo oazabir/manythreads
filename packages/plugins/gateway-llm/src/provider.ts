@@ -5,6 +5,7 @@ import { chat, type ChatTx, type LlmChatRequest, type LlmChatResult } from './ch
 import { evalComplete, type LlmEvalRequest, type LlmEvalResult } from './eval-complete.ts';
 import { assertFakeAsrAllowed, transcribe } from './transcribe.ts';
 import { clipStatus, transcribeClip } from './transcribe-clip.ts';
+import { embedTexts, type EmbedRequest, type EmbedResult } from './embed.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
 // The `provider.llm` contract (SPEC §10.2, PLAN P5-06 and P5-07). A bot's runtime does not reach LiteLLM itself; it is
@@ -56,6 +57,8 @@ export interface LlmProviderServices extends ProviderImpl {
   transcribeClip(request: LlmClipRequest, inTx: ClipInTx): Promise<LlmClipResult>;
   /** Whether a clip would be sent now (the model is set up and local, or the test stand-in is on). Reads only. */
   clipStatus(tx: PluginTx, workspaceId: string): Promise<{ ready: true } | { ready: false; reason: string }>;
+  /** Text embeddings through the `embed` alias (P35-06): the knowledge plugin's door (`embedderOf`). Never throws; an unbound alias is `unbound`. */
+  embed(tx: PluginTx, request: EmbedRequest): Promise<EmbedResult>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
@@ -83,6 +86,7 @@ export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
     transcribe: (tx, request) => transcribe(ctx, tx, request),
     transcribeClip: (request, inTx) => transcribeClip(ctx, request, inTx),
     clipStatus: (tx, workspaceId) => clipStatus(tx, workspaceId),
+    embed: (tx, request) => embedTexts(ctx, tx, request),
   };
   ctx.providers.register('llm', impl);
   return impl;
