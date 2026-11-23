@@ -48,7 +48,7 @@ The chart would make the same Secrets itself when they are missing; this only do
 
 ```sh
 sed -e "s/__TAG__/$TAG/g" -e "s/__BASE_COMMIT__/$BASE/" -e "s/__TREE_SHA__/$TREE/" \
-    -e "s/__PATCH_CONFIGMAP__/patches-$TAG/" -e "s/__NAMESPACE__/$NS/g" deploy/preview/build-job.yaml | $K create -f -
+    -e "s/__PATCH_CONFIGMAP__/patches-$TAG/" -e "s/__NAMESPACE__/$NS/g" -e "s/__CACHE_NAMESPACE__/test-manythreads/g" deploy/preview/build-job.yaml | $K create -f -
 $K wait --for=condition=complete "job/build-$TAG" --timeout=40m || { $K logs "job/build-$TAG" --all-containers --tail=60; false; }
 ```
 

@@ -15,6 +15,7 @@
 #   __TREE_SHA__        `git rev-parse <tested commit>^{tree}` of your tested commit (40 hex digits)
 #   __PATCH_CONFIGMAP__ name of the ConfigMap holding the `git format-patch` files (kept empty of patches = build the base commit unchanged)
 #   __NAMESPACE__       the deploy target's namespace (it is part of the image path: <registry>/<namespace>/server:<tag>)
+#   __CACHE_NAMESPACE__ whose layer cache the build uses: test-manythreads for every slot of a team (P35-03), so a second slot does not start cold
 #
 # Both Dockerfiles use only plain Dockerfile steps (COPY, RUN, ENV, USER, multi-stage `COPY --from`): nothing needs BuildKit, which kaniko is not.
 # Their `# syntax=` first line is a comment to kaniko. Memory: the install of this monorepo peaks near 3 GiB, so the build containers may use 4 GiB (the target's quota allows 8 GiB of memory limits in all: one build at a time plus an install).
@@ -110,7 +111,7 @@ spec:
             - --dockerfile=/workspace/server.Dockerfile
             - --destination=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/server:__TAG__
             - --cache=true
-            - --cache-repo=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/cache
+            - --cache-repo=registry.manythreads-registry.svc.cluster.local:5000/__CACHE_NAMESPACE__/cache
             - --insecure
             - --insecure-registry=registry.manythreads-registry.svc.cluster.local:5000
             - --push-retry=3
@@ -129,7 +130,7 @@ spec:
             - --dockerfile=/workspace/web.Dockerfile
             - --destination=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/web:__TAG__
             - --cache=true
-            - --cache-repo=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/cache
+            - --cache-repo=registry.manythreads-registry.svc.cluster.local:5000/__CACHE_NAMESPACE__/cache
             - --insecure
             - --insecure-registry=registry.manythreads-registry.svc.cluster.local:5000
             - --push-retry=3

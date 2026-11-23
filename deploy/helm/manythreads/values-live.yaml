@@ -60,6 +60,27 @@ hermesPods:
       namespace: test-manythreads
       hosts: [test.manythreads.kahf.to]
       podSecurity: baseline
+    # P35-03 (docs/plans/test-site-per-card.md): the second test-site slot a card leases. Its own smaller quota: one small card site
+    # (deploy/preview/values-card.yaml, about 2.6Gi at its limits) and one build (kaniko, 4Gi), never two builds at once (the lease's build lock); the node
+    # has 15 GB and also carries the live site and slot 1, so the two slots' ceilings stay below what it can spare.
+    - team: engineering
+      namespace: test-card-2
+      hosts: [test2.manythreads.kahf.to]
+      podSecurity: baseline
+      quota:
+        pods: "20"
+        requests.cpu: "3"
+        requests.memory: 3Gi
+        limits.memory: 7Gi
+        requests.ephemeral-storage: 6Gi
+        limits.ephemeral-storage: 12Gi
+        persistentvolumeclaims: "4"
+        requests.storage: 6Gi
+        services: "12"
+        count/ingresses.networking.k8s.io: "4"
+        count/jobs.batch: "12"
+        count/secrets: "60"
+        count/configmaps: "40"
 # Images built inside the cluster for that copy. Needs the one host step in docs/deploy-preview.md (registries.yaml) before a pod can pull from it.
 registry:
   enabled: true

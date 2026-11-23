@@ -48,7 +48,10 @@ describe.skipIf(!haveHelm)('the workloads the chart renders', () => {
   it('live values: nothing is removed; the new objects are the release policies, the hindsight Database, the split-off internet policy, the Claude pod policies and controller role (the live values switch the Claude pods on) and the registry clean-up (P31-05)', () => {
     const now = render('live').map(idOf).sort();
     expect(before.live.filter((i) => !now.includes(i))).toEqual([]);
-    expect(now.filter((i) => !before.live.includes(i))).toEqual([
+    // the second test-site slot (P35-03) is a whole deploy target of its own, the same objects as test-manythreads
+    const slot2 = now.filter((i) => i.includes('test-card-2'));
+    expect(slot2).toEqual(now.filter((i) => i.includes('/test-manythreads/') || i === 'Namespace/-/test-manythreads').map((i) => i.replace('test-manythreads', 'test-card-2')).sort());
+    expect(now.filter((i) => !before.live.includes(i) && !slot2.includes(i))).toEqual([
       'ConfigMap/manythreads-registry/registry-clean-script',
       'CronJob/manythreads-registry/registry-clean',
       'Database/-/manythreads-pg-hindsight',
