@@ -53,6 +53,7 @@ describe('where you run', () => {
     for (const place of ['agent_pod', 'server'] as const) {
       expect(whereYouRun({ place, agent: 'claude', ...base })).toContain('one command per call, never joined with `&&`, `;` or `|`');
       expect(whereYouRun({ place, agent: 'codex', ...base })).not.toContain('one command per call');
+      expect(whereYouRun({ place, agent: 'claude', ...base })).toContain('read that file with your Read tool, in parts, never with `python3`');
     }
   });
 

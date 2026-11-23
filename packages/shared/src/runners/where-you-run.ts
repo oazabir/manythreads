@@ -112,7 +112,7 @@ function shareLines(w: WhereYouRun): string[] {
   if (w.agent === 'claude') {
     return [
       'For git, use `mt-git` in place of `git`: `status`, `diff`, `log`, `show`, `rev-parse`, `add`, `commit -m "<text>"`, `switch`, `checkout -b <branch>`, `branch --show-current` and `fast-forward <commit or refs/record/branch>`, inside the project folder. Plain `git` is not available to you, and `mt-git` refuses any other command or option.',
-      'Run each command by itself: go into the project folder with a `cd` of its own (it lasts for your later commands), then one command per call, never joined with `&&`, `;` or `|` (read a file with your Read tool and search with Grep, not `head` or `grep` behind a pipe). A command joined to another is not on your allowed list and waits for a person to approve it.',
+      'Run each command by itself: go into the project folder with a `cd` of its own (it lasts for your later commands), then one command per call, never joined with `&&`, `;` or `|` (read a file with your Read tool and search with Grep, not `head` or `grep` behind a pipe). A tool result too long to show is saved to a file: read that file with your Read tool, in parts, never with `python3`, `cat` or `jq`. A command joined to another, or one of those, is not on your allowed list and waits for a person to approve it.',
       `${card} ${record}`,
     ];
   }
