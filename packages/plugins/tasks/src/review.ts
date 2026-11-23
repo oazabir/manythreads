@@ -67,9 +67,13 @@ const httpsLink = (v: unknown): string | null => (typeof v === 'string' && /^htt
 function tally(patch: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;
+  // GitLab's diff has no file header: every +/- line after the first hunk header is a line of the change (a removed `--` line starts with `---`)
+  let inHunk = false;
   for (const line of patch.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) additions++;
-    else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+    if (line.startsWith('@@')) inHunk = true;
+    else if (!inHunk) continue;
+    else if (line.startsWith('+')) additions++;
+    else if (line.startsWith('-')) deletions++;
   }
   return { additions, deletions };
 }
@@ -204,7 +208,8 @@ export async function submitReview(t: ProviderTarget, number: number, head: stri
   if (verdict === 'approve') {
     const r = await providerCall(t, `/merge_requests/${number}/approve`, { method: 'POST', body: { sha: head } });
     if (r.ok) return { ok: true, fallback: false };
-    if (r.refused || (r.status !== 403 && r.status !== 405 && r.status !== 409 && r.status !== 401)) return r;
+    // GitLab answers 401 when its approval rules say no (the author may not approve, or it is approved already): that is not a refused token, and the comment says it
+    if (r.status !== 401 && r.status !== 403 && r.status !== 405 && r.status !== 409) return r;
   }
   const n = await providerCall(t, `/merge_requests/${number}/notes`, { method: 'POST', body: { body: words } });
   return n.ok ? { ok: true, fallback: verdict === 'approve' } : n;
@@ -223,9 +228,12 @@ export async function mergeRequest(t: ProviderTarget, number: number, head: stri
   const r = await providerCall(t, `/merge_requests/${number}/merge`, { method: 'PUT', body: { sha: head } });
   if (r.ok) {
     const b = r.body as { merge_commit_sha?: unknown; squash_commit_sha?: unknown } | null;
-    return { ok: true, mergeSha: pick(b?.merge_commit_sha) ?? pick(b?.squash_commit_sha) ?? head };
+    // no merge or squash commit in the answer: leave it unknown (the sync reads it later), never guess the head
+    return { ok: true, mergeSha: pick(b?.merge_commit_sha) ?? pick(b?.squash_commit_sha) };
   }
   if (r.status === 409) return { ...r, words: 'The merge request moved past the tested commit: it was not merged. Test the new commit first.' };
+  // 401 here is GitLab's "this user may not merge" (a protected branch), not a refused token: said in words, the token is left alone
+  if (r.status === 401 || r.status === 403) return { ok: false, status: r.status, why: r.why, words: "GitLab will not let the bot account merge into this branch (it may need the Maintainer role)." };
   if (r.status === 405 || r.status === 406 || r.status === 422) return { ...r, words: 'GitLab will not merge it yet (an approval rule, a pipeline, or a conflict with the main branch).' };
   return r;
 }

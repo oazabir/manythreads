@@ -2,7 +2,7 @@ import type { PluginContext, PluginTx, ProjectCredentialsProvider } from '@manyt
 import { parseGitRepo } from '@manythreads/shared';
 import { startFakeGithub, type FakeGithub } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { listRequestChecks, listRequestFiles, MAX_PAGE_PATCH_BYTES, MAX_PATCH_BYTES, summarize, type ProviderTarget } from '../src/review.ts';
+import { listRequestChecks, listRequestFiles, MAX_PAGE_PATCH_BYTES, MAX_PATCH_BYTES, mergeRequest, submitReview, summarize, type ProviderTarget } from '../src/review.ts';
 import { registerDecisionRoutes, registerReviewRoutes } from '../src/review-routes.ts';
 import type { PullRequestDeps } from '../src/pull-requests.ts';
 
@@ -217,6 +217,7 @@ describe('the decisions: approve, request changes, merge', () => {
       sql.push({ text, params });
       if (text.includes('FROM app.teams WHERE slug')) return Promise.resolve({ rows: [{ id: TEAM, workspace_id: 'w', archived_at: null }] });
       if (text.includes('pull_request_head_sha AS head_sha')) return Promise.resolve({ rows: [{ team_slug: 'engineering', number: n, project: 'widgets', origin: ORIGIN, head_sha: HEAD, state: 'open' }] });
+      if (text.includes("app.can('team'")) return Promise.resolve({ rows: [{ ok: door.o_outcome !== 'not_lead' }] });
       if (text.includes('tasks_review_pull_request')) return Promise.resolve({ rows: [door] });
       if (text.includes('tasks_actor_of')) return Promise.resolve({ rows: [{ kind: 'person', ref_id: ME, name: 'Omar' }] });
       if (text.includes('tasks_bot_of')) return Promise.resolve({ rows: [{ id: CODER, name: 'Coder' }] });
@@ -283,7 +284,7 @@ describe('the decisions: approve, request changes, merge', () => {
 
   it('says the door’s refusal: a person who is not a lead gets 403', async () => {
     const d = await decisions({}, { o_outcome: 'not_lead', o_reason: 'only a lead of this team can approve, ask for changes or merge' });
-    expect(await d.call('approve', { headSha: HEAD })).toMatchObject({ status: 403, body: { message: expect.stringContaining('only a lead') } });
+    expect(await d.call('approve', { headSha: HEAD })).toMatchObject({ status: 403, body: { message: expect.stringContaining('lead') } });
     expect(gh.pulls.get(d.n)!.reviews).toBeUndefined();
   });
 
@@ -305,11 +306,57 @@ describe('the decisions: approve, request changes, merge', () => {
     gh.checks.set(HEAD, { runs: [{ name: 'test', status: 'completed', conclusion: 'failure' }], statuses: [] });
     expect(await failing.call('merge', { headSha: HEAD })).toMatchObject({ status: 409, body: { message: expect.stringContaining('check failed') } });
     expect(gh.pulls.get(failing.n)!.merged).toBe(false);
+    // checks that cannot be read (GitHub down) refuse the merge too
+    gh.checks.set(HEAD, { runs: [], statuses: [], status: 500 });
+    const unknown = await decisions({ headSha: HEAD });
+    expect((await unknown.call('merge', { headSha: HEAD })).status).toBe(502);
+    expect(gh.pulls.get(unknown.n)!.merged).toBe(false);
     gh.checks.set(HEAD, { runs: [{ name: 'test', status: 'completed', conclusion: 'success' }], statuses: [] });
     const d = await decisions({ headSha: HEAD });
     expect(await d.call('merge', { headSha: HEAD })).toMatchObject({ status: 200, body: { merged: true, mergeSha: 'e'.repeat(40) } });
     expect(gh.pulls.get(d.n)).toMatchObject({ merged: true });
     expect(d.sql.find((s) => s.text.includes('tasks_merged_here'))?.params).toEqual([TASK, 'e'.repeat(40)]);
     expect(d.emitted.map((e) => e.type)).toEqual(['tasks.task.completed', 'tasks.task.updated']);
+  });
+});
+
+describe('GitLab decisions', () => {
+  const gitlab = (answer: (url: string, init: RequestInit) => Response) => {
+    const asked: string[] = [];
+    const t: ProviderTarget = {
+      repo: parseGitRepo('https://gitlab.example.test/grp/app', 'gitlab')!,
+      token: 'glpat-x',
+      apiBase: 'https://gitlab.example.test/api/v4',
+      fetch: (async (url: string, init: RequestInit) => {
+        asked.push(`${init.method} ${url.replace('https://gitlab.example.test/api/v4/projects/grp%2Fapp', '')}`);
+        return answer(url, init);
+      }) as unknown as typeof fetch,
+    };
+    return { t, asked };
+  };
+
+  it('takes GitLab’s 401 on approve as its approval rule (the author may not approve), not as a refused token: a note says it', async () => {
+    const g = gitlab((url) => (url.endsWith('/approve') ? new Response('{"message":"401 Unauthorized"}', { status: 401 }) : new Response('{"id":1}', { status: 201 })));
+    expect(await submitReview(g.t, 7, HEAD, 'approve', 'Approved by Omar')).toEqual({ ok: true, fallback: true });
+    expect(g.asked).toEqual(['POST /merge_requests/7/approve', 'POST /merge_requests/7/notes']);
+  });
+
+  it('says in words when GitLab will not let the bot account merge (401 on merge), and never marks the token refused', async () => {
+    const g = gitlab(() => new Response('{"message":"401 Unauthorized"}', { status: 401 }));
+    const r = await mergeRequest(g.t, 7, HEAD);
+    expect(r).toMatchObject({ ok: false, status: 401, words: expect.stringContaining('Maintainer') });
+    expect((r as { refused?: boolean }).refused).toBeUndefined();
+  });
+
+  it('leaves the merge commit unknown when GitLab does not say it', async () => {
+    const g = gitlab(() => new Response(JSON.stringify({ state: 'merged', merge_commit_sha: null }), { status: 200 }));
+    expect(await mergeRequest(g.t, 7, HEAD)).toEqual({ ok: true, mergeSha: null });
+  });
+
+  it('counts a removed line that starts with -- (GitLab diffs have no file header)', async () => {
+    const g = gitlab(() => new Response(JSON.stringify([{ old_path: 'a.sql', new_path: 'a.sql', diff: '@@ -1,2 +1,1 @@\n--- a comment\n+++ x\n keep\n' }]), { status: 200 }));
+    const r = await listRequestFiles(g.t, 7, 1);
+    if (!r.ok) throw new Error(r.why);
+    expect(r.files[0]).toMatchObject({ additions: 1, deletions: 1 });
   });
 });
