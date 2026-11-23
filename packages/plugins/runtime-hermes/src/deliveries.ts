@@ -1,4 +1,4 @@
-import { json, requireTeam, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { json, requireTeam, route, type MessageProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { BotWeek, Delivery, DeliveriesQuery, DeliveriesResponse, deliveriesRoute } from '@manythreads/shared';
 
 /*
@@ -123,4 +123,63 @@ export function registerDeliveryRoutes(ctx: PluginContext): void {
       return json(DeliveriesResponse.parse({ days, ...read }));
     }),
   });
+}
+
+export const WEEKLY_REPORT_QUEUE = 'runtime-hermes.delivery-report';
+
+/** The words of the week's report: the deliveries, finished and open, their runs and nudges, and the bots' failures. No money (spend is for admins). */
+export function weeklyReport(read: { deliveries: Delivery[]; bots: BotWeek[] }): string {
+  const done = read.deliveries.filter((d) => d.finishedAt !== null);
+  const open = read.deliveries.filter((d) => d.finishedAt === null);
+  const runs = read.deliveries.reduce((n, d) => n + d.runs, 0);
+  const failed = read.deliveries.reduce((n, d) => n + d.failedRuns, 0);
+  const nudges = read.deliveries.reduce((n, d) => n + d.nudges, 0);
+  const prs = read.deliveries.flatMap((d) => d.pullRequests.filter((p) => p.state === 'merged').map((p) => `#${p.number}`));
+  const lines = [
+    `**The week's deliveries:** ${done.length} finished, ${open.length} open; ${runs} bot runs (${failed} failed); ${nudges} nudge${nudges === 1 ? '' : 's'} from people; merged ${prs.length > 0 ? prs.join(', ') : 'nothing'}.`,
+    '',
+    ...done.slice(0, 10).map((d) => `- ${d.title} — ${d.minutes ?? '?'} min, ${d.runs} runs, ${d.nudges} nudges`),
+    ...(open.length > 0 ? ['', `Still open: ${open.slice(0, 5).map((d) => d.title).join('; ')}`] : []),
+    ...(read.bots.some((b) => b.failedRuns > 0) ? ['', `Failures: ${read.bots.filter((b) => b.failedRuns > 0).map((b) => `${b.name} ${b.failedRuns}`).join(', ')}`] : []),
+    '',
+    'Details on the Deliveries page.',
+  ];
+  return lines.join('\n').slice(0, 3900);
+}
+
+/**
+ * Every Monday at 08:00 (UTC) each team with deliveries in the last seven days gets the report, posted by its Engineer in the channel most of the week's
+ * deliveries were in. A team with no delivery gets nothing.
+ */
+export function registerWeeklyReport(ctx: PluginContext): void {
+  ctx.jobs.register(
+    WEEKLY_REPORT_QUEUE,
+    async (_payload, _tx, job) => {
+      const teams = await ctx.db.system((tx) =>
+        tx.query<{ id: string; workspace_id: string; engineer: string | null }>(
+          `SELECT t.id, t.workspace_id,
+                  (SELECT a.id FROM app.actors a JOIN app.bots b ON b.id = a.ref_id AND a.kind = 'bot' WHERE b.team_id = t.id AND b.slug = 'engineer' AND b.status = 'active' LIMIT 1) AS engineer
+             FROM app.teams t WHERE t.archived_at IS NULL AND EXISTS (SELECT 1 FROM app.bot_runs r WHERE r.team_id = t.id AND r.started_at > now() - interval '7 days')`,
+        ),
+      );
+      const messages = ctx.providers.get<MessageProvider>('messages');
+      for (const t of teams.rows) {
+        if (!t.engineer || !messages) continue;
+        const read = await ctx.db.system((tx) => readDeliveries(tx, t.id, 7), { workspaceId: t.workspace_id });
+        if (read.deliveries.length === 0) continue;
+        const counts = new Map<string, number>();
+        for (const d of read.deliveries) counts.set(d.channelId, (counts.get(d.channelId) ?? 0) + 1);
+        const channelId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+        try {
+          await ctx.db.as({ actorId: t.engineer, kind: 'bot', workspaceId: t.workspace_id, personId: null, sessionId: null }, (tx) =>
+            messages.post(tx, { channelId, body: weeklyReport(read), threadRootId: null, skipRefs: true }),
+          );
+          job.log.info(`delivery report: posted for team ${t.id} (${read.deliveries.length} deliveries)`);
+        } catch (err) {
+          job.log.info(`delivery report: team ${t.id} not posted (${err instanceof Error ? err.message.slice(0, 120) : 'error'})`);
+        }
+      }
+    },
+    { cron: '0 8 * * 1', detached: true },
+  );
 }

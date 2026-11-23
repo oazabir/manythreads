@@ -67,3 +67,22 @@ describe('the delivery dashboard', () => {
     expect((await get(nadia, '/api/teams/engineering/deliveries?days=99')).status).not.toBe(200);
   });
 });
+
+describe('the weekly report', () => {
+  it('says what finished and what is open, the runs, failures and nudges, and what merged; never the money', async () => {
+    const { weeklyReport } = await import('../src/deliveries.ts');
+    const base = { channelId: randomUUID(), channelName: 'dev', startedAt: new Date().toISOString(), bots: ['coder'], cards: 1, approvals: 0, spendUsd: 3.5 };
+    const text = weeklyReport({
+      deliveries: [
+        { ...base, rootId: randomUUID(), title: 'Keep the sort', finishedAt: new Date().toISOString(), minutes: 42, runs: 6, failedRuns: 1, runMinutes: 30, doneCards: 1, pullRequests: [{ number: 12, url: null, state: 'merged' }], nudges: 1 },
+        { ...base, rootId: randomUUID(), title: 'Dark mode', finishedAt: null, minutes: null, runs: 2, failedRuns: 0, runMinutes: 5, doneCards: 0, pullRequests: [], nudges: 0 },
+      ],
+      bots: [{ slug: 'coder', name: 'Coder', runner: null, runs: 8, failedRuns: 1, avgMinutes: 4, spendUsd: 3.5 }],
+    });
+    expect(text).toContain('1 finished, 1 open; 8 bot runs (1 failed); 1 nudge from people; merged #12');
+    expect(text).toContain('- Keep the sort — 42 min, 6 runs, 1 nudges');
+    expect(text).toContain('Still open: Dark mode');
+    expect(text).toContain('Failures: Coder 1');
+    expect(text).not.toContain('$');
+  });
+});
