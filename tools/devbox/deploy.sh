@@ -217,11 +217,6 @@ CP_ARGS=()
 CP_TAG=""
 claude_pod_value() { sed -n '/^claudePod:/,/^[^ #]/p' deploy/helm/manythreads/values-live.yaml | grep -E "^  $1:" | head -n 1 | sed -E "s/^  $1:[[:space:]]*//; s/[[:space:]]*#.*$//"; }
 if [ "$(claude_pod_value enabled)" = "true" ]; then
-  FREE_GB=$(df -BG --output=avail / | tail -n 1 | tr -dc '0-9')
-  if [ "${FREE_GB:-0}" -lt 10 ]; then
-    echo "ERROR: only ${FREE_GB}G free on /; the Claude pod image is not built (free some space first, see devbox.md)"
-    exit 1
-  fi
   CP_STAGE=$(mktemp -d)
   cp -r deploy/images/agent-pod/. "$CP_STAGE/"
   # the publisher container (P19-09) runs the workbench's push script, so it travels in the same image
@@ -243,7 +238,16 @@ if [ "$(claude_pod_value enabled)" = "true" ]; then
   CP_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$CP_STAGE" -cf - . | sha256sum | cut -c1-10)
   if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/$CP_NAME:$CP_TAG\$"; then
     echo "--- build manythreads/$CP_NAME:$CP_TAG"
-    docker image inspect "manythreads/$CP_NAME:$CP_TAG" >/dev/null 2>&1 || docker build -f "$CP_STAGE/Dockerfile" -t "manythreads/$CP_NAME:$CP_TAG" "$CP_STAGE"
+    if ! docker image inspect "manythreads/$CP_NAME:$CP_TAG" >/dev/null 2>&1; then
+      # the space is asked for only when the image is really built (2026-11-23: an image k3s already held stopped a deploy at 9 GB free)
+      FREE_GB=$(df -BG --output=avail / | tail -n 1 | tr -dc '0-9')
+      if [ "${FREE_GB:-0}" -lt 10 ]; then
+        rm -rf "$CP_STAGE"
+        echo "ERROR: only ${FREE_GB}G free on /; the Claude pod image is not built (free some space first, see devbox.md)"
+        exit 1
+      fi
+      docker build -f "$CP_STAGE/Dockerfile" -t "manythreads/$CP_NAME:$CP_TAG" "$CP_STAGE"
+    fi
     IMAGES+=("manythreads/$CP_NAME:$CP_TAG")
   fi
   rm -rf "$CP_STAGE"
