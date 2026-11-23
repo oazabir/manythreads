@@ -56,7 +56,7 @@ describe('web-static', () => {
       expect(res.headers['content-security-policy'], url).toBe(APP_CSP);
       expect(res.headers['cache-control'], url).toBe('no-cache');
       expect(res.headers['x-content-type-options'], url).toBe('nosniff');
-      expect(res.headers['permissions-policy'], url).toBe('microphone=(self), camera=(self)');
+      expect(res.headers['permissions-policy'], url).toBe('microphone=(self), camera=(self), display-capture=(self)');
       expect(res.body, url).toContain('<title>manythreads</title>');
     }
   });
@@ -131,6 +131,6 @@ describe('web-static', () => {
     const nginx = readFileSync(new URL('../../../deploy/docker/nginx.conf', import.meta.url), 'utf8');
     expect(nginx).toContain(`add_header Content-Security-Policy "${APP_CSP}" always;`);
     expect(nginx).toContain(`add_header Content-Security-Policy "${MERMAID_CSP}" always;`);
-    expect(nginx).toContain('add_header Permissions-Policy "microphone=(self), camera=(self)" always;');
+    expect(nginx).toContain('add_header Permissions-Policy "microphone=(self), camera=(self), display-capture=(self)" always;');
   });
 });
