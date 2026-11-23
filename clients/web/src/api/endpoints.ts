@@ -479,6 +479,10 @@ import {
   answeredBeforeRoute,
   AnsweredBeforeResponse,
   openIncidentRoute,
+  getStandupRoute,
+  saveStandupRoute,
+  StandupResponse,
+  SaveStandupRequest,
   OpenIncidentRequest,
   IncidentResponse,
   resolveIncidentRoute,
@@ -698,6 +702,10 @@ export const saveChannelTopic = (channelId: string, purpose: string) =>
 /** Marks a channel as a help channel, or stops it being one (P18-09; a team lead or workspace admin). */
 export const saveChannelHelp = (channelId: string, help: boolean) =>
   call(updateChannelRoute, { request: UpdateChannelRequest, response: UpdateChannelResponse }, { help }, { channelId });
+/** A channel's stand-up (P18-04), or null when it has none. */
+export const fetchStandup = (channelId: string) => call(getStandupRoute, { response: StandupResponse }, undefined, { channelId });
+/** Turns a channel's stand-up on, changes it, or turns it off (a team lead or workspace admin). */
+export const saveStandup = (channelId: string, standup: SaveStandupRequest) => call(saveStandupRoute, { request: SaveStandupRequest, response: StandupResponse }, standup, { channelId });
 /** Opens an incident (P35-07): its channel, the opening message that pages @on-call, the triage bot. */
 export const openIncident = (teamSlug: string, title: string, fromChannelId: string) =>
   call(openIncidentRoute, { request: OpenIncidentRequest, response: IncidentResponse }, { title, fromChannelId: fromChannelId as NonNullable<OpenIncidentRequest['fromChannelId']> }, { slug: teamSlug });

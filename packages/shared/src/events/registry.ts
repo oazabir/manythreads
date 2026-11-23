@@ -212,6 +212,7 @@ import { TeamTagRemovedEvent } from './team.tag.removed.ts';
 import { ProjectCreatedEvent } from './project.project.created.ts';
 import { ProjectIssueOpenedEvent } from './project.issue.opened.ts';
 import { ChannelIncidentChangedEvent } from './channel.incident.changed.ts';
+import { ChannelStandupDigestedEvent } from './channel.standup.digested.ts';
 import { ProjectUpdatedEvent } from './project.project.updated.ts';
 import { ProjectDeletedEvent } from './project.project.deleted.ts';
 import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
@@ -345,6 +346,7 @@ export const eventRegistry = {
   'project.project.created': { 1: ProjectCreatedEvent },
   'project.issue.opened': { 1: ProjectIssueOpenedEvent },
   'channel.incident.changed': { 1: ChannelIncidentChangedEvent },
+  'channel.standup.digested': { 1: ChannelStandupDigestedEvent },
   'project.project.updated': { 1: ProjectUpdatedEvent },
   'project.project.deleted': { 1: ProjectDeletedEvent },
   'identity.provider.changed': { 1: IdentityProviderChangedEvent },

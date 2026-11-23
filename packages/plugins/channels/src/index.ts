@@ -7,6 +7,7 @@ import { registerEmojiRoutes } from './routes-emoji.ts';
 import { registerBookmarkRoutes } from './routes-bookmarks.ts';
 import { registerPinRoutes } from './routes-pins.ts';
 import { registerIncidents } from './incidents.ts';
+import { registerStandups } from './standups.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
 import { registerMentionRoutes } from './routes-mentions.ts';
@@ -59,8 +60,9 @@ export default definePlugin({
         'channel.poll.voted',
         'channel.poll.closed',
         'channel.incident.changed',
+        'channel.standup.digested',
       ],
-      consumes: ['team.template.applied'],
+      consumes: ['team.template.applied', 'channel.message.posted'],
     },
     migrations: 'migrations',
   },
@@ -68,6 +70,7 @@ export default definePlugin({
     const deps = { ctx };
     registerChannelRoutes(deps);
     registerIncidents(deps);
+    registerStandups(deps);
     registerMessageRoutes(deps);
     registerMentionRoutes(deps);
     registerBookmarkRoutes(deps);

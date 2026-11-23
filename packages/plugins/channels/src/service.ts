@@ -321,6 +321,11 @@ export interface PostMessageInput {
   confirmBroadcast?: boolean;
   /** Imported history (the import plugin; system transactions only): keeps its original time, raises no event, push, unread count or mention. */
   imported?: ImportedMessage;
+  /**
+   * The author when the platform posts for a bot outside a run (system transactions only; P18-04's stand-up question in a person's conversation with the
+   * bot, which the bot itself may read only inside a live run). Everything else is as for any message: the event, the push, the unread count.
+   */
+  systemAuthorId?: string;
 }
 
 export interface PostedMessage {
@@ -363,8 +368,10 @@ function checkVoiceFile(voice: VoiceMeta, attachmentIds: readonly string[], card
 export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMessageInput): Promise<PostedMessage> {
   if (input.imported) return postImportedMessage(tx, input, input.imported);
   const { ctx } = deps;
+  if (input.systemAuthorId !== undefined && tx.actor.kind !== 'system') throw forbidden('Only the platform posts as another author');
   const channel = await requireChannel(tx, input.channelId);
-  await requirePost(tx, channel);
+  if (input.systemAuthorId === undefined) await requirePost(tx, channel);
+  else if (channel.archived_at) throw conflict('This channel is archived');
   if (input.threadRootId) {
     const root = (
       await tx.query<{ thread_root_id: string | null; deleted_at: Date | null }>(
@@ -408,8 +415,8 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
   const meta = { ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}), ...(voice ? { voice: voice.voice } : {}), ...(input.meta ?? {}) };
   const res = await tx.query<MessageRow>(
     `INSERT INTO app.messages AS m (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
-     VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::jsonb) RETURNING ${MESSAGE_COLUMNS}`,
-    [input.channelId, body, toPlainText(body), input.threadRootId ?? null, JSON.stringify(meta)],
+     VALUES (app.workspace_id(), $1, coalesce($6::uuid, app.actor()), $2, $3, $4, $5::jsonb) RETURNING ${MESSAGE_COLUMNS}`,
+    [input.channelId, body, toPlainText(body), input.threadRootId ?? null, JSON.stringify(meta), input.systemAuthorId ?? null],
   );
   const row = res.rows[0]!;
   if (voice?.queue) await ctx.jobs.enqueue(tx, VOICE_QUEUE, { workspaceId: tx.actor.workspaceId, messageId: row.id }, { dedupeKey: `voice:${row.id}` });

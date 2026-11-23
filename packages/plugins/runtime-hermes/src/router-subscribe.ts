@@ -9,6 +9,7 @@ import {
 } from '@manythreads/sdk';
 import { registerIssueRouter } from './router-issues.ts';
 import { registerIncidentRouter } from './router-incidents.ts';
+import { registerStandupRouter } from './router-standups.ts';
 import {
   ApprovalsApprovalDecidedEvent,
   ChannelMessagePostedEvent,
@@ -124,6 +125,7 @@ export function registerRouter(ctx: PluginContext): void {
   registerWebhookRouter(ctx);
   registerIssueRouter(ctx);
   registerIncidentRouter(ctx);
+  registerStandupRouter(ctx);
   // A voice message is answered once, on the words (P32-04, decision D13): `channel.message.posted` leaves one that the server is still transcribing (or has
   // transcribed already, or failed to) alone, and `channel.message.transcribed` routes it with the transcript as its text (or, when the server could not write
   // one, with the stand-in line, as a message that never had a transcript). A voice message that never went to the server (the switch was off, an old
@@ -156,6 +158,17 @@ async function failureAnnounced(tx: PluginTx, workspaceId: string, messageId: st
     [workspaceId, messageId, messageId, eventId ?? null],
   );
   return res.rows.length > 0;
+}
+
+/** Whether a message in a bot conversation answers a stand-up asked there (an open ask, asked before it, or already answered by it). */
+async function answersStandup(tx: PluginTx, channelId: string, messageId: string): Promise<boolean> {
+  const res = await tx.query<{ ok: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM app.standup_asks k JOIN app.messages q ON q.id = k.question_message_id
+                     WHERE k.conversation_id = $1 AND k.skipped IS NULL AND k.asked_at > now() - interval '20 hours' AND q.id < $2
+                       AND (k.answer_message_id = $2 OR k.answered_at IS NULL)) AS ok`,
+    [channelId, messageId],
+  );
+  return res.rows[0]?.ok === true;
 }
 
 /** Decide, then enqueue one run per bot that the message fires, for a message that was just posted or whose transcript just ended. */
@@ -202,6 +215,9 @@ async function routeMessage(
   if (message.channel_team === null || message.channel_archived !== null) return;
   if (message.channel_private && !conversation) return;
   if (conversation && message.channel_bot_id === null) return;
+  // A stand-up's answer (P18-04): the person's first message after the stand-up question in their conversation with the bot is recorded by the channels
+  // plugin and goes into the digest; it is not a question for the bot, so it starts no run.
+  if (conversation && (await answersStandup(tx, message.channel_id, message.id))) return;
 
   const view: MessageView = {
     channelName: message.channel_name,

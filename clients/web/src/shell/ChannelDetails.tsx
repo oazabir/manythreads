@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { leaveChannel, saveChannelHelp } from '../api/endpoints';
 import { announceChannelChanged } from '../channels/slashDeps';
+import { StandupDialog } from '../channels/StandupDialog';
 import { ChannelLevelOptions } from '../notifications/ChannelBell';
 import { WebhooksDialog } from '../webhooks/WebhooksDialog';
 import { isMockMode } from '../api/setup';
@@ -56,6 +57,7 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   const [view, setView] = useState<'menu' | 'notify' | 'members'>('menu');
   const [hooks, setHooks] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [standup, setStandup] = useState(false);
   const panel = usePanel();
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -161,6 +163,11 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
                 </button>
               ) : null}
               {!dm && canManage ? (
+                <button type="button" role="menuitem" className="menu-item" data-testid="details-standup" aria-haspopup="dialog" onClick={() => { close(); setStandup(true); }}>
+                  Stand-up…
+                </button>
+              ) : null}
+              {!dm && canManage ? (
                 <button type="button" role="menuitem" className="menu-item" data-testid="webhooks-open" aria-haspopup="dialog" onClick={() => { close(); setHooks(true); }}>Integrations</button>
               ) : null}
               {!dm && !guest ? (
@@ -190,6 +197,7 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
         </div>
       ) : null}
       {scheduling ? <ScheduleRoomDialog channelId={channelId} channelLabel={`#${name}`} onClose={() => setScheduling(false)} onCreated={() => { setScheduling(false); notifyScheduledChanged(channelId); }} /> : null}
+      {standup ? <StandupDialog channelId={channelId} channelName={name} teamSlug={teamSlug} onClose={() => setStandup(false)} /> : null}
       {hooks ? <WebhooksDialog channelId={channelId} channelName={name} onClose={() => setHooks(false)} /> : null}
     </div>
   );
