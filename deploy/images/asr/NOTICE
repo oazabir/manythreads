@@ -37,3 +37,8 @@ Each package's own licence file is installed beside it in the image (site-packag
 Base image
 ----------
 python:3.12-slim (Docker Official Image; Python is under the PSF licence, Debian packages under their own licences, each in /usr/share/doc/<package>/copyright).
+
+Since P35-06 the image also serves text embeddings:
+- fastembed (Qdrant), Apache License 2.0 — https://github.com/qdrant/fastembed
+- BAAI/bge-base-en-v1.5 (Beijing Academy of Artificial Intelligence), MIT License — https://huggingface.co/BAAI/bge-base-en-v1.5
+- tokenizers (Hugging Face), Apache License 2.0

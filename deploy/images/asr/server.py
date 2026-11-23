@@ -5,6 +5,7 @@ An OpenAI-compatible subset on top of NVIDIA Parakeet TDT 0.6B v3 (int8, CPU, th
   GET  /health                     answers at once, also while a clip is being worked on
   GET  /v1/models
   POST /v1/audio/transcriptions    multipart `file`; any `model` is accepted and `language` is ignored
+  POST /v1/embeddings              JSON `input` (a string or up to 64 strings); BAAI/bge-base-en-v1.5, 768 dimensions (P35-06, the knowledge embeddings)
 
 The LLM gateway runs with drop_params, so no extra form field reaches this pod; the cut is decided from the input type instead:
   - input that is not WAV (a voice clip from a browser) is cut at 20 seconds;
@@ -26,6 +27,7 @@ from contextlib import asynccontextmanager
 import numpy as np
 import onnxruntime as ort
 import onnx_asr
+from fastembed import TextEmbedding
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -78,6 +80,10 @@ def threads() -> int:
 
 state: dict = {"model": None, "in_flight": 0}
 executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="recognize")
+embed_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embed")
+EMBED_MODEL = "BAAI/bge-base-en-v1.5"
+EMBED_MAX_INPUTS = 64
+EMBED_MAX_CHARS = 8_000
 slot = asyncio.Semaphore(1)
 
 
@@ -90,6 +96,8 @@ async def lifespan(_app: FastAPI):
     model = onnx_asr.load_model(MODEL_NAME, quantization="int8", sess_options=opts)
     vad = onnx_asr.load_vad("silero", sess_options=opts)
     state["model"] = model.with_vad(vad)
+    # the embedding model lives beside the speech model, in its own thread pool: an embedding never waits on a long clip, nor a clip on embeddings
+    state["embedder"] = TextEmbedding(EMBED_MODEL, threads=max(1, threads() // 2))
     log.info("model %s and the silero VAD loaded in %.1fs, %d threads", MODEL_NAME, time.monotonic() - started, threads())
     yield
 
@@ -149,7 +157,32 @@ async def health():
 
 @app.get("/v1/models")
 async def models():
-    return {"object": "list", "data": [{"id": MODEL_NAME, "object": "model", "owned_by": "nvidia"}]}
+    return {"object": "list", "data": [{"id": MODEL_NAME, "object": "model", "owned_by": "nvidia"}, {"id": EMBED_MODEL, "object": "model", "owned_by": "baai"}]}
+
+
+@app.post("/v1/embeddings")
+async def embeddings(request: Request):
+    """OpenAI's embeddings shape: `input` is one string or a list of strings; any `model` is accepted (the gateway names its alias's model)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return error(400, "The body must be JSON.")
+    raw = body.get("input") if isinstance(body, dict) else None
+    texts = [raw] if isinstance(raw, str) else raw
+    if not isinstance(texts, list) or not texts or len(texts) > EMBED_MAX_INPUTS or not all(isinstance(t, str) for t in texts):
+        return error(400, f"input must be a string or a list of 1 to {EMBED_MAX_INPUTS} strings.")
+    texts = [t[:EMBED_MAX_CHARS] for t in texts]
+    embedder = state.get("embedder")
+    if embedder is None:
+        return error(503, "The embedding model is still loading.", "server_error")
+    vectors = await asyncio.get_running_loop().run_in_executor(embed_executor, lambda: [v.tolist() for v in embedder.embed(texts)])
+    tokens = sum(len(t.split()) for t in texts)
+    return {
+        "object": "list",
+        "model": EMBED_MODEL,
+        "data": [{"object": "embedding", "index": i, "embedding": v} for i, v in enumerate(vectors)],
+        "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
+    }
 
 
 async def decode(path: str, demuxer: str, cut: float) -> np.ndarray:

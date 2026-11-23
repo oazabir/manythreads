@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# The speech-to-text server (PLAN D13, docs/deploy.md "Speech to text"): NVIDIA Parakeet TDT 0.6B v3 (int8, CPU) through onnx-asr (MIT), behind a small OpenAI-compatible
+# The speech-to-text server (PLAN D13, docs/deploy.md "Speech to text"), and since P35-06 the knowledge embeddings: NVIDIA Parakeet TDT 0.6B v3 (int8, CPU) through onnx-asr (MIT), behind a small OpenAI-compatible
 # server (server.py). The model is downloaded once while the image is built; the pod never downloads anything (HF_HUB_OFFLINE=1), so the air-gapped preset works and a restart does
 # not depend on Hugging Face being up. Build:
 #   docker build -t manythreads/asr:<tag> deploy/images/asr        (tools/devbox/deploy.sh does this when asr.enabled is true in values-live.yaml)
@@ -25,6 +25,11 @@ ENV HF_HOME=/home/asr/hf
 # istupakov/silero-vad-onnx (MIT) into HF_HOME. The VAD cuts every clip into speech segments before Parakeet reads it: Parakeet alone returns empty or cut text on whole 10-20 s inputs.
 RUN python -c "import onnx_asr; onnx_asr.load_model('nemo-parakeet-tdt-0.6b-v3', quantization='int8'); onnx_asr.load_vad('silero')" \
  && du -sh /home/asr/hf
+# P35-06: the knowledge embeddings, from the same server and the same runtime (onnxruntime): BAAI/bge-base-en-v1.5 (MIT, 768 dimensions, the size of
+# knowledge_chunks.embedding) through fastembed (Apache-2.0), downloaded here once like the speech model.
+ENV FASTEMBED_CACHE_PATH=/home/asr/fastembed
+RUN python -c "from fastembed import TextEmbedding; m = TextEmbedding('BAAI/bge-base-en-v1.5'); print(len(next(iter(m.embed(['ok'])))))" \
+ && du -sh /home/asr/fastembed
 
 WORKDIR /app
 COPY --chown=asr:asr server.py NOTICE /app/

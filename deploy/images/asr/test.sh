@@ -196,4 +196,14 @@ if [ "$STARTED" = 1 ]; then
 fi
 
 echo
+# P35-06: the knowledge embeddings. 768 numbers per text; a sentence is nearer its paraphrase than an unrelated one; a bad input is refused.
+EMB="$(curl -s -X POST "$URL/v1/embeddings" -H 'content-type: application/json' -d '{"model":"x","input":["The deploy failed because the disk was full.","Deploying stopped: no space left on the disk.","My cat likes warm milk."]}')"
+check "embeddings: three vectors of 768" "$(printf '%s' "$EMB" | head -c 200)" python3 -I -c 'import json,sys; d=json.loads(sys.argv[1]); assert len(d["data"])==3 and all(len(x["embedding"])==768 for x in d["data"])' "$EMB"
+check "embeddings: a paraphrase is nearer than an unrelated sentence" "cosines" python3 -I -c '
+import json,math,sys
+v=[x["embedding"] for x in json.loads(sys.argv[1])["data"]]
+cos=lambda a,b: sum(i*j for i,j in zip(a,b))/(math.sqrt(sum(i*i for i in a))*math.sqrt(sum(j*j for j in b)))
+assert cos(v[0],v[1]) > cos(v[0],v[2]) + 0.1, (cos(v[0],v[1]), cos(v[0],v[2]))' "$EMB"
+check "embeddings: an input that is not text is refused (400)" "status" test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/embeddings" -H 'content-type: application/json' -d '{"input":[1,2]}')" = 400
+
 if [ "$FAILS" = 0 ]; then echo "all cases passed"; else echo "$FAILS case(s) failed"; exit 1; fi
