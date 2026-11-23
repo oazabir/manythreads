@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { FollowIcon, OpenChannelIcon, SidePanelIcon } from '../shell/icons';
 
@@ -27,7 +28,7 @@ export function threadTools(o: { variant: 'panel' | 'main'; canFollow: boolean; 
 export const followTip = (followed: boolean): string =>
   followed ? 'Following: you are notified of replies. Press to stop.' : 'Follow: be notified of replies';
 
-export function ThreadTools({ tools, followed, busy, onFollow, channelHref, channelName, railOpen, railId, onRail }: {
+export function ThreadTools({ tools, followed, busy, onFollow, channelHref, channelName, railOpen, railId, onRail, extra }: {
   tools: readonly ThreadToolKey[];
   followed: boolean;
   busy: boolean;
@@ -37,9 +38,12 @@ export function ThreadTools({ tools, followed, busy, onFollow, channelHref, chan
   railOpen: boolean;
   railId: string;
   onRail: () => void;
+  /** Drawn before the icon buttons (the voice autoplay switch). */
+  extra?: ReactNode;
 }) {
   return (
     <>
+      {extra}
       {tools.map((t) => {
         if (t === 'follow') {
           return (

@@ -25,6 +25,16 @@ let durationMs = 0; // the length of the clip in the element, from the message
 let token = 0; // bumped for every load, so a late answer for an earlier clip is ignored
 let frame = 0;
 let lastSaved = 0;
+const endedListeners = new Set<() => void>();
+
+/** Called when a clip plays to its end (the autoplay queue starts the next one). */
+export function onClipEnded(fn: () => void): () => void {
+  endedListeners.add(fn);
+  return () => endedListeners.delete(fn);
+}
+
+/** Whether a clip is playing now (the autoplay queue waits for it). */
+export const clipPlaying = (): boolean => state.playing || state.status === 'loading';
 
 function set(patch: Partial<PlayState>): void {
   state = { ...state, ...patch };
@@ -41,6 +51,7 @@ function element(): HTMLAudioElement {
     if (state.fileId) clearPosition(state.fileId);
     set({ playing: false, positionMs: 0 });
     a.currentTime = 0;
+    for (const l of endedListeners) l();
   });
   a.addEventListener('pause', () => {
     // the browser paused it (headphones pulled, another app took the sound)

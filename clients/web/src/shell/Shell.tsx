@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AutoplayMini } from '../channels/voice/AutoplayMini';
 import { Link, Outlet, useLocation, useMatch } from 'react-router';
 import { dmLabel, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
@@ -123,6 +124,8 @@ export function Shell() {
       <PageHeaderRegistry.Provider value={registerHeader}>
       <HeaderTitleSlotContext.Provider value={inboxOwnsHeader ? null : titleSlot}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
+        {/* an incoming voice message that plays by itself: the small player in the top right corner (owner 2026-11-23) */}
+        <AutoplayMini />
         <a className="skip-link" href="#content" onClick={(e) => { e.preventDefault(); document.getElementById('content')?.focus(); }}>{onChat ? 'Skip to messages' : 'Skip to content'}</a>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
           {narrow ? null : <PaneResizer spec={PANES.sidebar} edge="end" />}

@@ -7,6 +7,7 @@ import { channelStore } from '../store';
 import { BAR_COUNT, barHeights, formatClock, playedBars, positionAt, rangeLabel, seekForKey, speedAria, speedLabel, transcriptCaption, transcriptNote, valueText } from './playerFormat';
 import { isPlayed, markPlayed, subscribePlayed } from './played';
 import { usePlayback } from './usePlayback';
+import { autoplayIncoming, shouldAutoplay, useAutoplay, useAutoplayZone } from './autoplay';
 
 /*
  * The voice message a row draws (P14-17, flattened in P32-10): no card. One compact row (play and pause, a waveform with a dot at the play position that
@@ -31,7 +32,7 @@ export function VoiceHitLabel({ length }: { length: string }) {
   );
 }
 
-export function VoicePlayer({ voice, who, messageId }: { voice: VoiceMeta; who?: string; messageId?: string }) {
+export function VoicePlayer({ voice, who, messageId, createdAt, own = false }: { voice: VoiceMeta; who?: string; messageId?: string; createdAt?: string; own?: boolean }) {
   const p = usePlayback(voice.fileId, voice.durationMs);
   const heights = useMemo(() => barHeights(voice.peaks, BAR_COUNT), [voice.peaks]);
   const track = useRef<HTMLDivElement>(null);
@@ -44,6 +45,18 @@ export function VoicePlayer({ voice, who, messageId }: { voice: VoiceMeta; who?:
   useEffect(() => {
     if (p.playing && messageId) markPlayed(messageId);
   }, [p.playing, messageId]);
+  // an incoming voice message in an open thread or direct-message conversation plays by itself when the reader turned autoplay on (it plays here, in place:
+  // nothing opens or scrolls)
+  const [autoplay] = useAutoplay();
+  const zone = useAutoplayZone();
+  useEffect(() => {
+    if (!messageId || !createdAt) return;
+    if (shouldAutoplay({ on: autoplay, zone, own, played: isPlayed(messageId), createdAt })) {
+      autoplayIncoming({ messageId, fileId: voice.fileId, durationMs: voice.durationMs, who: who ?? 'Someone' });
+    }
+    // once, when the message is drawn: turning the switch on later does not play the history
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messageId]);
 
   const seekFromPointer = (e: PointerEvent<HTMLDivElement>): void => {
     const box = track.current?.getBoundingClientRect();

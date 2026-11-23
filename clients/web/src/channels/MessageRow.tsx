@@ -425,7 +425,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         {clip ? (
           // the player row and, under it, the transcript the server writes as the message's own text (no card, P32-10); the words are drawn here and nowhere else (below, the text branch draws nothing for a voice message)
           <div className="vm" data-testid="voice-message">
-            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} />
+            <VoicePlayer voice={clip.voice} who={name} messageId={m.id} createdAt={m.createdAt} own={own} />
             {editing === null && !deleted ? (
               <VoiceTranscript
                 voice={clip.voice}

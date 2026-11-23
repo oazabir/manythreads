@@ -18,6 +18,8 @@ import { SkeletonMessages } from '../components/Skeleton';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { DmLead, DmTrail } from '../dms/DmHeadTitle';
+import { AutoplaySwitch } from '../channels/voice/AutoplaySwitch';
+import { AutoplayZone } from '../channels/voice/autoplay';
 import { ChannelSearch } from '../search/ChannelSearch';
 import { ChannelDetails } from '../shell/ChannelDetails';
 import { MembersButton } from '../shell/MembersButton';
@@ -330,7 +332,10 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   );
 
   return (
+    // a direct-message conversation is where incoming voice messages may play by themselves (when the reader turned autoplay on); a channel is not
+    <AutoplayZone.Provider value={dm !== undefined}>
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
+      {headerSlot && dm ? createPortal(<AutoplaySwitch />, headerSlot) : null}
       {/* the header's tools, in the order the stylesheet gives them: search, planned-room chip, Bot Board, Schedule a room, voice, members, bookmark (P33-01) */}
       {headerSlot ? createPortal(<ChannelSearch channelId={channelId} placeholder={dm ? 'Search this conversation' : `Search #${name}`} />, headerSlot) : null}
       {headerSlot && !dm ? createPortal(<ScheduledChip channelId={channelId} />, headerSlot) : null}
@@ -430,5 +435,6 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
         </p>
       ) : null}
     </div>
+    </AutoplayZone.Provider>
   );
 }

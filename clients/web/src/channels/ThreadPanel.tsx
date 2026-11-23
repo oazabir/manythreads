@@ -21,6 +21,8 @@ import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
 import { ArrowDownIcon, ArrowUpIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import { ThreadTools, threadTools } from './ThreadTools';
+import { AutoplaySwitch } from './voice/AutoplaySwitch';
+import { AutoplayZone } from './voice/autoplay';
 import type { AnswerTools } from './AnswerShare';
 import { Composer, type SendOptions } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -255,6 +257,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       railOpen={railOpen}
       railId={railId}
       onRail={() => setRail(!railOpen)}
+      extra={<AutoplaySwitch />}
     />
   );
   // Waiting for an answer: the newest message is the reader's own, it is recent, and nothing of theirs is still being sent.
@@ -395,6 +398,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     </>
   );
   return (
+    // an open thread is where incoming voice messages may play by themselves (when the reader turned autoplay on)
+    <AutoplayZone.Provider value={true}>
     <div className={`thread ${variant}`} data-testid="thread-view" data-root-id={rootId}>
       {variant === 'main' ? (
         <div className="chead thread-head">
@@ -424,6 +429,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         column
       )}
     </div>
+    </AutoplayZone.Provider>
   );
 }
 
