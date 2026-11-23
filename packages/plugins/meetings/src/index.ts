@@ -1,3 +1,4 @@
+import { registerMeetingSpaceRoutes } from './routes-spaces.ts';
 import { definePlugin } from '@manythreads/sdk';
 import { registerAudioRoutes } from './routes-audio.ts';
 import { registerCaptions } from './captions.ts';
@@ -79,6 +80,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerMeetingRoutes(ctx);
+    registerMeetingSpaceRoutes(ctx);
     registerCallCardRoutes(ctx);
     registerInviteRoutes(ctx);
     registerConsentRoutes(ctx);

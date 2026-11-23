@@ -1,3 +1,4 @@
+import type { ChannelKind } from '@manythreads/shared';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { LEVEL_LABEL, type NotificationLevel } from '@manythreads/shared';
 import { BellIcon, BellOffIcon } from '../shell/icons';
@@ -6,7 +7,7 @@ import { levelsStore } from './levelsStore';
 import { LEVEL_HELP, LEVEL_ORDER, levelOf } from './settingsModel';
 import { CheckIcon } from '../shell/icons';
 
-export type ChannelBellTarget = { channelId: string; channelName: string | null; channelKind: 'channel' | 'dm' | 'bot_conversation' };
+export type ChannelBellTarget = { channelId: string; channelName: string | null; channelKind: ChannelKind };
 
 /**
  * The bell in a channel's header: what this channel may interrupt the person with. Three levels (all messages, mentions and keywords only,

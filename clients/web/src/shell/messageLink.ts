@@ -1,3 +1,4 @@
+import type { ChannelKind } from '@manythreads/shared';
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { fetchChannel } from '../api/endpoints';
@@ -12,7 +13,7 @@ export const GUEST_SLUG = 'shared';
 /** Where a message lives, from a search hit or a notification. `teamId` is unknown for a notification (it is looked up). */
 export type MessageTarget = {
   channelId: string;
-  channelKind: 'channel' | 'dm' | 'bot_conversation';
+  channelKind: ChannelKind;
   channelName: string | null;
   teamId?: string | null;
   messageId: string;

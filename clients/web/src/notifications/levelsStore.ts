@@ -1,3 +1,4 @@
+import type { ChannelKind } from '@manythreads/shared';
 import type { GetNotificationLevelsResponse, NotificationLevel } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchNotificationLevels, saveChannelLevel, saveWorkspaceLevel } from '../api/endpoints';
@@ -55,7 +56,7 @@ export class LevelsStore {
   }
 
   /** Sets one channel's level for the person (`null`: follow the default). Throws a sentence for the screen when the server refuses. */
-  async setChannel(channel: { channelId: string; channelName: string | null; channelKind: 'channel' | 'dm' | 'bot_conversation' }, level: NotificationLevel | null): Promise<void> {
+  async setChannel(channel: { channelId: string; channelName: string | null; channelKind: ChannelKind }, level: NotificationLevel | null): Promise<void> {
     const before = this.snap.levels;
     if (before) this.set({ levels: withChannelLevel(before, channel, level) });
     try {

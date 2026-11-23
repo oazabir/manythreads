@@ -8,7 +8,7 @@ import { BotId, ChannelGroupId, ChannelId, PersonId, TeamId, WorkspaceId } from 
 export const ChannelName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'lowercase channel name like "dev"');
 export type ChannelName = z.infer<typeof ChannelName>;
 
-export const ChannelKind = z.enum(['channel', 'dm', 'bot_conversation']);
+export const ChannelKind = z.enum(['channel', 'dm', 'bot_conversation', 'meeting']);
 export type ChannelKind = z.infer<typeof ChannelKind>;
 
 /** A sidebar group of one team ("Channels", "Product", "Operations"). */

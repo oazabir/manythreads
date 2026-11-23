@@ -40,7 +40,7 @@ export type StartMeetingPathParams = z.infer<typeof StartMeetingPathParams>;
 
 /**
  * Start a call in a channel (P15-25). Every field is optional (an older page sends `{ title }` only). The title defaults to "Call · #dev · 14:02" ("Call · 14:02" in a
- * direct message; the time in UTC). `kind` defaults to `audio`; `video` answers 409 "Video calls are not available yet" until P17-01. `inviteeIds` are people asked to the
+ * direct message; the time in UTC). `kind` defaults to `audio` (`video` is a video call, P36-02). `inviteeIds` are people asked to the
  * call (each must be able to read the channel, or the whole start is refused with 403; the caller is left out; ignored in a direct message, where everyone is rung).
  * `allowGuests` can only be false until guest links exist (P17-04). `notetakerBotId` adds that note-taker as the call opens; when it cannot be added the start answers 409
  * (or 403 for a switch somebody turned off) with the reason and nothing is written. Asking again while a call is live only joins it (`created: false`, nobody invited).
@@ -189,3 +189,35 @@ export const mediaStatusRoute = { method: 'GET', path: '/api/meetings/media-stat
 
 /** The media server's signed notices (a person connected or dropped, a room closed). Public: the signature is the credential. The body is the provider's own JSON. */
 export const mediaWebhookRoute = { method: 'POST', path: '/api/meetings/media-webhook' } as const satisfies ApiRoute;
+
+/**
+ * Meetings without a channel (P36-03, docs/plans/meetings-without-a-channel.md): a meeting space is a team-less private channel of kind `meeting` whose members are
+ * the person who opens it and the people invited, from any team. Opening one starts its call at once (the invited are told as for any call).
+ */
+export const OpenMeetingSpaceRequest = z.strictObject({
+  title: MeetingTitle,
+  /** The team the meeting is for (the caller must be on it); its people may come from any team. */
+  teamSlug: Team.shape.slug,
+  kind: MeetingKind.optional(),
+  inviteeIds: z.array(PersonId).max(CALL_INVITES_MAX).default([]),
+});
+export type OpenMeetingSpaceRequest = z.input<typeof OpenMeetingSpaceRequest>;
+export const OpenMeetingSpaceResponse = StartMeetingResponse.extend({ channelId: ChannelId });
+export type OpenMeetingSpaceResponse = z.infer<typeof OpenMeetingSpaceResponse>;
+export const openMeetingSpaceRoute = { method: 'POST', path: '/api/meetings/spaces' } as const;
+
+export const MeetingSpace = z.object({
+  channelId: ChannelId,
+  title: z.string(),
+  /** The team it is for (null when that team is gone). */
+  teamId: z.string().nullable(),
+  createdAt: z.string(),
+  /** How many people are in the space. */
+  memberCount: z.number().int(),
+  /** The call that is live in it now, if any. */
+  liveMeetingId: MeetingId.nullable(),
+});
+export type MeetingSpace = z.infer<typeof MeetingSpace>;
+export const ListMeetingSpacesResponse = z.object({ spaces: z.array(MeetingSpace) });
+export type ListMeetingSpacesResponse = z.infer<typeof ListMeetingSpacesResponse>;
+export const listMeetingSpacesRoute = { method: 'GET', path: '/api/meetings/spaces' } as const;
