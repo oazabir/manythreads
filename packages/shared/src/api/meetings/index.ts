@@ -221,3 +221,12 @@ export type MeetingSpace = z.infer<typeof MeetingSpace>;
 export const ListMeetingSpacesResponse = z.object({ spaces: z.array(MeetingSpace) });
 export type ListMeetingSpacesResponse = z.infer<typeof ListMeetingSpacesResponse>;
 export const listMeetingSpacesRoute = { method: 'GET', path: '/api/meetings/spaces' } as const;
+
+/** Who can be invited to a meeting (P36-03): active people of the workspace who are not guests, from every team, by name; at most 50, the caller left out. */
+export const MeetingPeopleQuery = z.object({ q: z.string().trim().max(80).default('') });
+export const MeetingPerson = z.object({ personId: PersonId, name: z.string() });
+export type MeetingPerson = z.infer<typeof MeetingPerson>;
+export const MeetingPeopleResponse = z.object({ people: z.array(MeetingPerson) });
+export type MeetingPeopleResponse = z.infer<typeof MeetingPeopleResponse>;
+export const meetingPeopleRoute = { method: 'GET', path: '/api/meetings/people' } as const;
+export * from './appointments.ts';

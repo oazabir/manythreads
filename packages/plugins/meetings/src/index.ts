@@ -1,4 +1,5 @@
 import { registerMeetingSpaceRoutes } from './routes-spaces.ts';
+import { registerAppointmentRoutes } from './routes-appointments.ts';
 import { definePlugin } from '@manythreads/sdk';
 import { registerAudioRoutes } from './routes-audio.ts';
 import { registerCaptions } from './captions.ts';
@@ -40,6 +41,7 @@ export default definePlugin({
     extends: ['event.emit', 'event.subscribe', 'job.register'],
     events: {
       emits: [
+        'meetings.appointment.changed',
         'meetings.meeting.started',
         'meetings.meeting.ended',
         'meetings.participant.joined',
@@ -81,6 +83,7 @@ export default definePlugin({
   register(ctx) {
     registerMeetingRoutes(ctx);
     registerMeetingSpaceRoutes(ctx);
+    registerAppointmentRoutes(ctx);
     registerCallCardRoutes(ctx);
     registerInviteRoutes(ctx);
     registerConsentRoutes(ctx);

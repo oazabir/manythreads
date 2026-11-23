@@ -59,4 +59,16 @@ describe('meetings without a channel (P36-03)', () => {
     expect(video.status).toBe(201);
     expect(OpenMeetingSpaceResponse.parse(video.body).meeting.kind).toBe('video');
   });
+
+  it('lists who can be invited across teams by name, leaving out guests and the caller', async () => {
+    const all = await w.call<{ people: Array<{ personId: string; name: string }> }>(nadia, 'GET', '/api/meetings/people');
+    expect(all.status).toBe(200);
+    const ids = all.body.people.map((p) => p.personId);
+    expect(ids).toContain(sameera.personId);
+    expect(ids).toContain(tariq.personId);
+    expect(ids).not.toContain(lena.personId);
+    expect(ids).not.toContain(nadia.personId);
+    const some = await w.call<{ people: Array<{ personId: string }> }>(nadia, 'GET', '/api/meetings/people?q=sam');
+    expect(some.body.people.map((p) => p.personId)).toEqual([sameera.personId]);
+  });
 });

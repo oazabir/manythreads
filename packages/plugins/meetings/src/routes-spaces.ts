@@ -1,5 +1,5 @@
 import { conflict, forbidden, invalid, json, route, type PluginContext } from '@manythreads/sdk';
-import { ListMeetingSpacesResponse, OpenMeetingSpaceRequest, OpenMeetingSpaceResponse, listMeetingSpacesRoute, openMeetingSpaceRoute } from '@manythreads/shared';
+import { ListMeetingSpacesResponse, MeetingPeopleQuery, MeetingPeopleResponse, OpenMeetingSpaceRequest, OpenMeetingSpaceResponse, listMeetingSpacesRoute, meetingPeopleRoute, openMeetingSpaceRoute } from '@manythreads/shared';
 import { callerPerson, startRoom } from './routes.ts';
 import { loadMeeting, toMeeting } from './rows.ts';
 
@@ -62,6 +62,27 @@ export function registerMeetingSpaceRoutes(ctx: PluginContext): void {
           spaces: rows.map((r) => ({ channelId: r.channel_id, title: r.title, teamId: r.team_id, createdAt: r.created_at.toISOString(), memberCount: r.members, liveMeetingId: r.live })),
         }),
       );
+    }),
+  });
+
+  ctx.http.route({
+    ...meetingPeopleRoute,
+    schema: { response: MeetingPeopleResponse },
+    rateLimit: { limit: 120, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const { q } = MeetingPeopleQuery.parse(req.query);
+      await callerPerson(tx);
+      const rows = (
+        await tx.query<{ person_id: string; name: string }>(
+          `SELECT p.id AS person_id, p.display_name AS name
+             FROM app.people p JOIN app.workspace_members wm ON wm.person_id = p.id AND wm.workspace_id = p.workspace_id
+            WHERE p.workspace_id = app.workspace_id() AND p.status = 'active' AND wm.role <> 'guest' AND p.id <> app.person_id()
+              AND ($1 = '' OR p.display_name ILIKE '%' || replace(replace($1, '%', ''), '_', '') || '%')
+            ORDER BY p.display_name LIMIT 50`,
+          [q],
+        )
+      ).rows;
+      return json(MeetingPeopleResponse.parse({ people: rows.map((r) => ({ personId: r.person_id, name: r.name })) }));
     }),
   });
 }
