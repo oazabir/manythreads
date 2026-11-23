@@ -58,7 +58,8 @@ export async function pastThreads(tx: PluginTx, teamId: string, question: string
     )
   ).rows;
   return rows
-    .map((r) => ({ r, held: termsHeld(`${r.title} ${r.root_text}`, terms) }))
+    // the title and the start of the question: a long plan or log in a thread's first message holds most common words and is not the same question
+    .map((r) => ({ r, held: termsHeld(`${r.title} ${r.root_text.slice(0, 300)}`, terms) }))
     .filter((x) => closeEnough(x.held, terms.length))
     .sort((a, b) => b.held - a.held)
     .slice(0, THREADS)
