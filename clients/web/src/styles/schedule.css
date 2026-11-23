@@ -244,6 +244,9 @@
   display: grid;
   flex: 1;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+
+  /* the row of weekday names is as tall as its words; the weeks share the rest */
+  grid-template-rows: auto;
   grid-auto-rows: minmax(96px, 1fr);
   margin: 0 24px 16px;
   overflow: auto;
@@ -277,7 +280,19 @@
 .sc-mday .sc-appt {
   position: static;
   flex-direction: row;
+  align-items: baseline;
   gap: 6px;
+}
+
+/* in a month cell the time comes first and stays whole; the title takes the rest */
+.sc-mday .sc-appt-time {
+  order: -1;
+  flex: none;
+}
+
+.sc-mday .sc-appt-title {
+  flex: 1;
+  min-width: 0;
 }
 
 .sc-mnum {

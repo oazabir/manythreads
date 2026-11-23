@@ -82,7 +82,7 @@ export function ScheduleScreen() {
     }
   };
 
-  const block = (a: Appointment, style?: React.CSSProperties) => (
+  const block = (a: Appointment, style?: React.CSSProperties, compact = false) => (
     <button
       key={a.id}
       type="button"
@@ -94,7 +94,7 @@ export function ScheduleScreen() {
       title={`${a.title} · ${timeRange(a.startsAt, a.endsAt)} · ${a.team.name}`}
     >
       <span className="sc-appt-title">{a.kind === 'video' ? '▶ ' : ''}{a.title}</span>
-      <span className="sc-appt-time">{timeRange(a.startsAt, a.endsAt)}</span>
+      <span className="sc-appt-time">{compact ? timeRange(a.startsAt, a.endsAt).split(' – ')[0] : timeRange(a.startsAt, a.endsAt)}</span>
     </button>
   );
 
@@ -145,7 +145,7 @@ export function ScheduleScreen() {
             return (
               <div key={d.toISOString()} className={`sc-mday ${d.getMonth() !== anchor.getMonth() ? 'other' : ''} ${sameDay(d, new Date(now)) ? 'today' : ''}`} onDoubleClick={() => setForm({ start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 10) })}>
                 <button type="button" className="sc-mnum" onClick={() => { setAnchor(d); setView('day'); }}>{d.getDate()}</button>
-                {these.slice(0, 3).map((a) => block(a))}
+                {these.slice(0, 3).map((a) => block(a, undefined, true))}
                 {these.length > 3 ? <button type="button" className="sc-more" onClick={() => { setAnchor(d); setView('day'); }}>+{these.length - 3} more</button> : null}
               </div>
             );

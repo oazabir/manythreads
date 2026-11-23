@@ -84,7 +84,8 @@ export const onDay = <T extends { startsAt: string; endsAt: string }>(items: rea
 
 /** "14:00 – 15:30" in the person's time. */
 export const timeRange = (startsAt: string, endsAt: string): string => {
-  const f = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // 24-hour, as the calendar's hour labels are
+  const f = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   return `${f(startsAt)} – ${f(endsAt)}`;
 };
 
