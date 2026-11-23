@@ -14,6 +14,7 @@ const api = {
   approvePullRequest: vi.fn(),
   requestPullRequestChanges: vi.fn(),
   mergePullRequest: vi.fn(),
+  fetchThreadPullRequests: vi.fn(),
 };
 vi.mock('../src/screens/boards/api', () => ({
   fetchPullRequestDiff: (...a: unknown[]) => api.fetchPullRequestDiff(...a),
@@ -21,8 +22,11 @@ vi.mock('../src/screens/boards/api', () => ({
   approvePullRequest: (...a: unknown[]) => api.approvePullRequest(...a),
   requestPullRequestChanges: (...a: unknown[]) => api.requestPullRequestChanges(...a),
   mergePullRequest: (...a: unknown[]) => api.mergePullRequest(...a),
+  fetchThreadPullRequests: (...a: unknown[]) => api.fetchThreadPullRequests(...a),
 }));
 const { PullReview } = await import('../src/screens/boards/PullReview');
+const { ReviewLine } = await import('../src/taskview/ReviewLine');
+const { MemoryRouter } = await import('react-router');
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -182,5 +186,21 @@ describe('the Review of a card', () => {
     await click('pull-review-merge-now');
     expect(api.mergePullRequest).toHaveBeenCalledWith('engineering', task().id, { headSha: HEAD });
     expect(q('pull-review-said')!.textContent).toContain('The card is done');
+  });
+});
+
+describe('the thread’s Review line', () => {
+  it('says which pull request waits for review and links to its card on the board; nothing when there is none', async () => {
+    api.fetchThreadPullRequests.mockResolvedValue({ items: [{ taskId: task().id, boardId: '00000000-0000-7000-8000-0000000c0021', teamSlug: 'engineering', title: 'Fix', number: 24, testedSha: HEAD }] });
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, createElement(ReviewLine, { rootId: '00000000-0000-7000-8000-0000000d0001', revision: '' })));
+    });
+    expect(q('thread-review-line')!.textContent).toContain('Pull request #24 waits for review');
+    expect(q('thread-review-open')!.getAttribute('href')).toBe(`/t/engineering/boards?board=00000000-0000-7000-8000-0000000c0021&card=${task().id}`);
+    api.fetchThreadPullRequests.mockResolvedValue({ items: [] });
+    await act(async () => {
+      root.render(createElement(MemoryRouter, null, createElement(ReviewLine, { rootId: '00000000-0000-7000-8000-0000000d0001', revision: 'r2' })));
+    });
+    expect(q('thread-review-line')).toBeNull();
   });
 });

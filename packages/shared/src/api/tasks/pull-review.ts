@@ -74,3 +74,17 @@ export type PullRequestDecisionResponse = z.infer<typeof PullRequestDecisionResp
 export const approvePullRequestRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/pull-request/approve' } as const;
 export const requestPullRequestChangesRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/pull-request/request-changes' } as const;
 export const mergePullRequestRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/pull-request/merge' } as const;
+
+/** The cards of a thread whose pull request waits for a person (a database read only: the thread does not ask the provider). */
+export const ThreadPullRequest = z.object({
+  taskId: z.uuid(),
+  boardId: z.uuid().nullable(),
+  teamSlug: z.string(),
+  title: z.string(),
+  number: z.number().int().positive(),
+  testedSha: z.string().nullable(),
+});
+export type ThreadPullRequest = z.infer<typeof ThreadPullRequest>;
+export const ThreadPullRequestsResponse = z.object({ items: z.array(ThreadPullRequest) });
+export type ThreadPullRequestsResponse = z.infer<typeof ThreadPullRequestsResponse>;
+export const threadPullRequestsRoute = { method: 'GET', path: '/api/threads/:rootId/pull-requests' } as const;

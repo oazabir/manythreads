@@ -612,6 +612,10 @@ describe('reviewing the pull request on the card (P35-02)', () => {
     gh.pulls.get(n)!.files = [{ filename: 'src/a.ts', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' }];
     expect(await record(bot, id, SHA, 'widgets', n)).toMatchObject({ o_outcome: 'recorded' });
 
+    // the thread's line: the card of this thread whose request waits
+    const rootId = String(root.body['id']);
+    expect((await call(person(nadia), 'GET', `/api/threads/${rootId}/pull-requests`)).body).toMatchObject({ items: [{ taskId: id, number: n, teamSlug: 'engineering' }] });
+
     const base = `/api/teams/engineering/tasks/${id}/pull-request`;
     const diff = await call(person(nadia), 'GET', `${base}/diff`);
     expect(diff.status, diff.text).toBe(200);
@@ -629,6 +633,7 @@ describe('reviewing the pull request on the card (P35-02)', () => {
 
     const asked = await call(person(omar), 'POST', `${base}/request-changes`, { headSha: SHA, comment: 'Name the binary files in the list.' });
     expect(asked.status, asked.text).toBe(200);
+    expect((await call(person(nadia), 'GET', `/api/threads/${rootId}/pull-requests`)).body).toEqual({ items: [] });
     const back = await card(id);
     expect(back).toMatchObject({ ownerId: coder.actorId, state: 'in_progress', pullRequest: { number: n, state: 'withdrawn' } });
     const lines = await history(id);

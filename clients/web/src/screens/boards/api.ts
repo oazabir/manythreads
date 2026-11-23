@@ -9,6 +9,8 @@ import {
   pullRequestDiffRoute,
   PullRequestDiffResponse,
   requestPullRequestChangesRoute,
+  threadPullRequestsRoute,
+  ThreadPullRequestsResponse,
   AddBoardColumnRequest,
   BoardColumnsResponse,
   BoardPlacesResponse,
@@ -154,6 +156,9 @@ export const fetchPullRequestDiff = (slug: string, taskId: string, page: number)
   call(pullRequestDiffRoute, { response: PullRequestDiffResponse }, page > 1 ? { page: String(page) } : undefined, { slug, taskId });
 
 export const fetchPullRequestChecks = (slug: string, taskId: string) => call(pullRequestChecksRoute, { response: PullRequestChecksResponse }, undefined, { slug, taskId });
+
+/** The cards of a thread whose pull request waits for a person (the thread's Review line). */
+export const fetchThreadPullRequests = (rootId: string) => call(threadPullRequestsRoute, { response: ThreadPullRequestsResponse }, undefined, { rootId });
 
 export const approvePullRequest = (slug: string, taskId: string, body: PullRequestDecisionRequest) =>
   call(approvePullRequestRoute, { request: PullRequestDecisionRequest, response: PullRequestDecisionResponse }, body, { slug, taskId });

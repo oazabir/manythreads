@@ -175,3 +175,24 @@
   color: var(--ok-ink);
   font-size: var(--fs-caption);
 }
+
+/* the thread's line above the composer (taskview/ReviewLine.tsx) */
+.pr-line-list {
+  display: grid;
+  gap: 4px;
+  margin: 0 12px 6px;
+}
+
+.pr-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--fs-caption);
+}

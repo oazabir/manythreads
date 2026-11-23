@@ -9,6 +9,7 @@ import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub, usePanelTools } from '../kernel/panel/sub';
 import { ThreadApprovals, useThreadApprovals } from '../screens/approvals/ThreadApprovals';
+import { ReviewLine } from '../taskview/ReviewLine';
 import { ThreadDock } from '../taskview/ThreadDock';
 import { ThreadRail } from '../taskview/ThreadRail';
 import { attachmentKey, readRailOpen, writeRailOpen } from '../taskview/railRules';
@@ -362,6 +363,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       {ends}
     </div>
     {/* the to-do, the run and the question a bot waits on, always in sight above the composer (P29-12) */}
+    <ReviewLine rootId={rootId} revision={runState.runs.map((r) => `${r.runId}:${r.state}`).join(',')} />
     <ThreadDock rootId={rootId} railOpen={kind === 'main' && railOpen} slug={slug ?? null} people={people} runs={runState.runs} todo={todoState.todo} approvals={approvals.items} reloadApprovals={approvals.reload} />
     {info.status === 'ok' && !canReply ?<p className="read-only">You can read this thread but not reply.</p> : null}
     {canReply && replyBlocked !== null ? (

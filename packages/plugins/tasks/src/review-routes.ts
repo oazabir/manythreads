@@ -9,6 +9,8 @@ import {
   PullRequestDecisionRequest,
   PullRequestDecisionResponse,
   requestPullRequestChangesRoute,
+  threadPullRequestsRoute,
+  ThreadPullRequestsResponse,
   parseGitRepo,
   pullRequestChecksRoute,
   PullRequestChecksResponse,
@@ -91,6 +93,31 @@ export async function openRequest(deps: PullRequestDeps, tx: PluginTx, teamId: s
 }
 
 export function registerReviewRoutes(ctx: PluginContext, depsOf: (ctx: PluginContext) => PullRequestDeps = pullRequestDeps): void {
+  // the thread's line "Pull request #24 waits for review": the cards of this thread (that the caller may read) whose pull request is open
+  ctx.http.route({
+    ...threadPullRequestsRoute,
+    schema: { response: ThreadPullRequestsResponse },
+    readOnly: true,
+    handler: route(async (req, tx) => {
+      const { rootId } = req.params as { rootId: string };
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rootId)) throw new HttpError(400, 'validation_failed', 'rootId is a message id');
+      const rows = (
+        await tx.query<{ id: string; board_id: string | null; slug: string; title: string; pull_request_number: number; tested_sha: string | null }>(
+          `SELECT t.id, t.board_id, te.slug, t.title, t.pull_request_number, t.tested_sha
+             FROM app.tasks t JOIN app.teams te ON te.id = t.team_id
+            WHERE t.thread_root_id = $1::uuid AND t.pull_request_state = 'open' AND t.state = 'waiting_on_person'
+            ORDER BY t.updated_at DESC LIMIT 5`,
+          [rootId],
+        )
+      ).rows;
+      return json(
+        ThreadPullRequestsResponse.parse({
+          items: rows.map((r) => ({ taskId: r.id, boardId: r.board_id, teamSlug: r.slug, title: r.title, number: r.pull_request_number, testedSha: r.tested_sha })),
+        }),
+      );
+    }),
+  });
+
   ctx.http.route({
     ...pullRequestDiffRoute,
     schema: { response: PullRequestDiffResponse },

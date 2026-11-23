@@ -13,6 +13,9 @@ ALTER TABLE app.tasks
   ADD COLUMN test_site_url text
     CHECK (test_site_url IS NULL OR (length(test_site_url) <= 300 AND test_site_url ~ '^https://[^/@?#[:space:]\\%]+(/[^@#[:space:]\\]*)?$'));
 
+-- the thread's line "Pull request #N waits for review" reads the open requests of one thread
+CREATE INDEX tasks_thread_open_pull_request ON app.tasks (thread_root_id) WHERE pull_request_state = 'open';
+
 ALTER TABLE app.task_events DROP CONSTRAINT task_events_type_check;
 ALTER TABLE app.task_events ADD CONSTRAINT task_events_type_check
   CHECK (type IN ('created', 'claimed', 'released', 'state_changed', 'handed_off', 'completed', 'reworked', 'deployed', 'not_woken',
