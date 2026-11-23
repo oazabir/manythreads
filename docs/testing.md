@@ -3,6 +3,19 @@
 How tests and screenshot runs get an authenticated caller. Real people sign in with a session cookie
 (`manythreads_session`, HttpOnly) plus a readable CSRF cookie (`manythreads_csrf`); both get a `__Host-` prefix when cookies are Secure (never in tests, which run on http); tests have three ways in.
 
+## 0. Running the checks as a bot on an enrolled server (P31-06, 2026-11-23)
+
+The Tester (and any bot) on the devbox's enrolled server runs the same checks as a person, as its team's Unix user, with no Docker:
+
+- **Database tests** (`vitest` projects `unit`, `rls`, `events`) reach the devbox's test database, `localhost:55432` (the default of
+  `packages/test-utils/src/db.ts`; another server sets `MANYTHREADS_TEST_DATABASE_URL`). Each run makes and drops its own databases.
+  Not while the project's CI runs against the same database (`docs/engineering/build-and-test.md`).
+- **Browser specs**: the bridge installs Chromium and passes `PLAYWRIGHT_BROWSERS_PATH` to every run. From the clone:
+  `cd e2e && timeout 900 ./node_modules/.bin/playwright test <area>/<name>.spec.ts --project=desktop --workers=1 --retries=0 --reporter=line`
+  (the spec builds and serves the web client itself; proved 2026-11-23 with `channels/thread-resize.spec.ts` as `mt-team-engineering`: 2 passed).
+  One worker only: the server also runs the live site.
+- "NOT RUN" is written only with the exact reason the run failed (the command and its last lines), never because a check "needs Docker".
+
 ## 1. Sessions through the real routes (preferred)
 
 `packages/test-utils` has a cookie-jar client that behaves like the web client (keeps both cookies, sends `x-csrf-token`

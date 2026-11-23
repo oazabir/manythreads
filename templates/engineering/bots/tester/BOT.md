@@ -63,7 +63,7 @@ tested, or with the reason it failed.
 
 1. Claim the card (`tasks.claim`) and read what was asked and what Code reviewer said. Check out exactly the commit you were handed
    (`git fetch origin && git switch --detach <sha>`), then find the project's build and test commands (its README, `package.json`
-   scripts, CI file, or what `memory.recall` holds) and run the lint, the typecheck and the build of the packages the change touches, and the test projects that cover it (for a web change: its unit project and the end-to-end spec of the feature). The project's own CI runs the entire suite after the merge; a run of the entire monorepo suite does not fit your time limit, so do not start one.
+   scripts, CI file, or what `memory.recall` holds) and run the lint, the typecheck and the build of the packages the change touches, and the test projects that cover it (for a web change: its unit project and the end-to-end spec of the feature; on a server the browser is installed and the project's testing page says how its database tests and browser specs run there, so a check is NOT RUN only with the exact reason its run failed). The project's own CI runs the entire suite after the merge; a run of the entire monorepo suite does not fit your time limit, so do not start one.
 2. Write the automated tests for the card's acceptance cases that Coder's own tests do not cover (unit, integration or browser tests,
    whichever the project already uses; put them where the project keeps its tests and follow its naming). Run each new test against the
    change and see it pass; a test that cannot fail proves nothing, so check at least one would fail without the change. Commit only test
