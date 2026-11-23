@@ -32,6 +32,19 @@ export function embedderOf(ctx: PluginContext): Embedder | null {
   return (tx, request) => (embed as (this: unknown, tx: PluginTx, request: EmbedRequest) => Promise<EmbedResult>).call(llm, tx, request);
 }
 
+/** `hybrid` when the gateway has the door AND the workspace bound an `embed` model; `lexical` otherwise (the door alone embeds nothing). */
+export async function searchModeOf(ctx: PluginContext, workspaceId: string): Promise<'lexical' | 'hybrid'> {
+  if (!embedderOf(ctx)) return 'lexical';
+  const llm = ctx.providers.get('llm');
+  const ready = llm?.['embedReady'];
+  if (typeof ready !== 'function') return 'lexical';
+  try {
+    return (await (ready as (this: unknown, w: string) => Promise<boolean>).call(llm, workspaceId)) ? 'hybrid' : 'lexical';
+  } catch {
+    return 'lexical';
+  }
+}
+
 /** A vector as the text pgvector reads. Refuses anything that is not exactly the right number of finite numbers. */
 export function vectorLiteral(vector: readonly number[]): string | null {
   if (vector.length !== EMBEDDING_DIMENSIONS) return null;

@@ -59,6 +59,8 @@ export interface LlmProviderServices extends ProviderImpl {
   clipStatus(tx: PluginTx, workspaceId: string): Promise<{ ready: true } | { ready: false; reason: string }>;
   /** Text embeddings through the `embed` alias (P35-06): the knowledge plugin's door (`embedderOf`). Never throws; an unbound alias is `unbound`. */
   embed(tx: PluginTx, request: EmbedRequest): Promise<EmbedResult>;
+  /** Whether the workspace has an `embed` model bound (read as the system: the aliases are for admins only, and a member's search asks too). */
+  embedReady(workspaceId: string): Promise<boolean>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
@@ -87,6 +89,8 @@ export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
     transcribeClip: (request, inTx) => transcribeClip(ctx, request, inTx),
     clipStatus: (tx, workspaceId) => clipStatus(tx, workspaceId),
     embed: (tx, request) => embedTexts(ctx, tx, request),
+    embedReady: (workspaceId) =>
+      ctx.db.system(async (tx) => (await tx.query('SELECT 1 FROM app.llm_aliases WHERE workspace_id = $1::uuid AND alias = $2', [workspaceId, 'embed'])).rows.length > 0, { workspaceId }),
   };
   ctx.providers.register('llm', impl);
   return impl;

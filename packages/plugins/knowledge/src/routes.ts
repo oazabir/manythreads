@@ -37,7 +37,7 @@ import {
 import { enqueueBaseConnectorPasses } from './connector-sync.ts';
 import { findDocument, ingest, kindOfName, removeFromRepo, sha256Hex, type BaseRef, type TeamBaseRef } from './ingest.ts';
 import { ExtractError, maxExtractBytes } from './extract/index.ts';
-import { embedderOf } from './embed.ts';
+import { searchModeOf } from './embed.ts';
 import { queryVector } from './capability.ts';
 import { BASE_SELECT, DOC_COLUMNS, DOC_FROM, SOURCE_COLUMNS, toBase, toDocument, toSource, type BaseRow, type DocRow, type SourceRow } from './rows.ts';
 import { fetchFailureWords, fetchSourcePage, nameOfSource } from './web.ts';
@@ -237,7 +237,7 @@ export function registerRoutes(ctx: PluginContext): void {
     return storage;
   };
   const now = (): string => ctx.runtime.now().toISOString();
-  const searchModeNow = (): 'lexical' | 'hybrid' => (embedderOf(ctx) ? 'hybrid' : 'lexical');
+  const searchModeNow = (workspaceId: string): Promise<'lexical' | 'hybrid'> => searchModeOf(ctx, workspaceId);
 
   ctx.http.route({
     ...listKnowledgeBasesRoute,
@@ -247,7 +247,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const { slug } = KnowledgeTeamParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       const rows = await tx.query<BaseRow>(`${BASE_SELECT} WHERE b.team_id = $1 ORDER BY lower(b.name), b.id`, [team.id]);
-      return json({ bases: rows.rows.map(toBase), canWrite: await canWrite(tx, team), searchMode: searchModeNow() });
+      return json({ bases: rows.rows.map(toBase), canWrite: await canWrite(tx, team), searchMode: await searchModeNow(tx.actor.workspaceId) });
     }),
   });
 
@@ -300,7 +300,7 @@ export function registerRoutes(ctx: PluginContext): void {
         documents: (await documentsOf(tx, base.id)).map(toDocument),
         sources: (await sourcesOf(tx, base.id)).map(toSource),
         canWrite: await canWrite(tx, team),
-        searchMode: searchModeNow(),
+        searchMode: await searchModeNow(tx.actor.workspaceId),
       });
     }),
   });

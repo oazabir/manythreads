@@ -20,7 +20,7 @@ import {
   searchPersonalKnowledgeRoute,
   uploadPersonalKnowledgeDocumentRoute,
 } from '@manythreads/shared';
-import { embedderOf } from './embed.ts';
+import { searchModeOf } from './embed.ts';
 import { queryVector } from './capability.ts';
 import type { BaseRef } from './ingest.ts';
 import { BASE_SELECT, DOC_COLUMNS, DOC_FROM, SOURCE_COLUMNS, toDocument, toPersonalBase, toSource, type BaseRow, type DocRow, type SourceRow } from './rows.ts';
@@ -54,7 +54,7 @@ const refOf = (me: Me, base: BaseRow): BaseRef => ({ id: base.id, teamId: null, 
 
 export function registerPersonalRoutes(ctx: PluginContext): void {
   const now = (): string => ctx.runtime.now().toISOString();
-  const searchModeNow = (): 'lexical' | 'hybrid' => (embedderOf(ctx) ? 'hybrid' : 'lexical');
+  const searchModeNow = (workspaceId: string): Promise<'lexical' | 'hybrid'> => searchModeOf(ctx, workspaceId);
   const changed = async (tx: PluginTx, me: Me, baseId: string, change: 'created' | 'deleted' | 'document_removed', documents: number): Promise<void> => {
     await ctx.audit.emit(tx, { type: 'knowledge.personal_base.changed', workspaceId: me.workspaceId, personId: me.personId, baseId, change, documents, at: now() });
   };
@@ -66,7 +66,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
     handler: route(async (_req, tx) => {
       const me = await requireMe(tx);
       const rows = await tx.query<BaseRow>(`${BASE_SELECT} WHERE b.owner_person_id = $1 ORDER BY lower(b.name), b.id`, [me.personId]);
-      return json({ bases: rows.rows.map(toPersonalBase), searchMode: searchModeNow() });
+      return json({ bases: rows.rows.map(toPersonalBase), searchMode: await searchModeNow(tx.actor.workspaceId) });
     }),
   });
 
@@ -102,7 +102,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
       const base = await requireBase(tx, me, params.base);
       const docs = (await tx.query<DocRow>(`SELECT ${DOC_COLUMNS} FROM ${DOC_FROM} WHERE d.base_id = $1 ORDER BY lower(d.name), d.id`, [base.id])).rows;
       const sources = (await tx.query<SourceRow>(`SELECT ${SOURCE_COLUMNS} FROM app.knowledge_sources s WHERE s.base_id = $1 ORDER BY s.created_at, s.id`, [base.id])).rows;
-      return json({ base: toPersonalBase(base), documents: docs.map(toDocument), sources: sources.map(toSource), searchMode: searchModeNow() });
+      return json({ base: toPersonalBase(base), documents: docs.map(toDocument), sources: sources.map(toSource), searchMode: await searchModeNow(tx.actor.workspaceId) });
     }),
   });
 

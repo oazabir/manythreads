@@ -49,6 +49,7 @@ beforeAll(async () => {
     runtime: { publicUrl: 'http://localhost:3000', now: () => new Date() },
     secrets: createSecretService(),
     emit: async (_tx: unknown, event: PluginEvent) => void emitted.push(event),
+    systemPool: sysPool,
   } as never;
   for (const guardrail of [guardrailsEgress, guardrailsDlp]) await guardrail.register(createPluginContext(guardrail.manifest, deps));
   ctx = createPluginContext(gatewayLlm.manifest, deps);
@@ -93,6 +94,9 @@ describe('the embedding door (P35-06)', () => {
     const p = proxy(vectors);
     expect(await call(['a'], 'passage', p.fetch)).toMatchObject({ ok: false, reason: 'unbound' });
     expect(p.seen).toEqual([]);
+    expect(await gateway.embedReady(omar.workspaceId)).toBe(false);
+    await bind('openai/BAAI/bge-base-en-v1.5');
+    expect(await gateway.embedReady(omar.workspaceId)).toBe(true);
   });
 
   it('embeds through the proxy with the master key, in order, with the BGE instruction on a question only, and writes a spend line', async () => {
