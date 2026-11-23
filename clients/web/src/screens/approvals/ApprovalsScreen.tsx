@@ -8,6 +8,7 @@ import { useShell } from '../../shell/context';
 import { BackIcon } from '../../shell/icons';
 import { useNarrow } from '../../shell/useNarrow';
 import { ApprovalCard } from './ApprovalCard';
+import { ApprovalInThread } from './ApprovalInThread';
 import { fetchApprovals } from './api';
 import { useApprovalsChanged, usePollWhileQueued } from './live';
 import { ApprovalRow } from './ApprovalRow';
@@ -141,7 +142,10 @@ export function ApprovalsScreen() {
                 <span>Approvals</span>
               </button>
             ) : null}
-            {current ? (
+            {current && current.threadRootId ? (
+              // raised in a thread: the thread, with the approval in it highlighted
+              <ApprovalInThread key={current.id} approval={current} slug={slug} onDecided={q.reload} />
+            ) : current ? (
               <div className="apr-detail">
                 <ApprovalCard key={`${current.id}:${current.status}:${current.outcome}`} approval={current} slug={slug} onDecided={q.reload} />
               </div>
