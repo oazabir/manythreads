@@ -200,7 +200,24 @@ body="$(head -c 8000 || true)"
 msg="$title"$'\n\n'
 [ -z "$body" ] || msg="$msg$body"$'\n\n'
 msg="${msg}Card: $card"
-new="$(printf '%s\n' "$msg" | GIT_AUTHOR_NAME="$a_name" GIT_AUTHOR_EMAIL="$a_email" GIT_COMMITTER_NAME="$bot_name" GIT_COMMITTER_EMAIL="$bot_email" GIT_AUTHOR_DATE="$when" GIT_COMMITTER_DATE="$when" git -C "$dir" commit-tree "$tree" -p "$basetip")" || die 2 "cannot make the commit"
+# A card published before (a person asked for changes, the chain ran again): the origin already has the card's branch at the earlier publish, and a fresh commit on
+# the main tip would not fast-forward it (P35-02 proof, 2026-11-23: GitHub refused the push and the bots opened a second pull request). The new commit then
+# sits on the earlier one, with the main tip as a second parent when main moved since, so the push stays a plain one and the same request moves to it.
+prevref="refs/mt-publish/prev-$$"
+parents=(-p "$basetip")
+if git -C "$dir" -c credential.helper= fetch -q --no-tags --no-write-fetch-head -- "$pushurl" "refs/heads/$branch:$prevref" >/dev/null 2>&1; then
+  prev="$(git -C "$dir" rev-parse --verify -q "$prevref^{commit}" || true)"
+  # only an earlier publish of this very card (its message ends with "Card: <id>"); a branch that holds other work is still refused by the plain push below
+  if [ -n "$prev" ] && ! git -C "$dir" log -1 --format=%B "$prev" | grep -qxF "Card: $card"; then prev=""; fi
+  if [ -n "$prev" ]; then
+    if git -C "$dir" merge-base --is-ancestor "$basetip" "$prev"; then parents=(-p "$prev"); else parents=(-p "$prev" -p "$basetip"); fi
+  fi
+fi
+if [ -n "${prev:-}" ] && [ "$(git -C "$dir" rev-parse "$prev^{tree}")" = "$tree" ]; then
+  new="$prev" # the same work is already published: the request stays where it is
+else
+  new="$(printf '%s\n' "$msg" | GIT_AUTHOR_NAME="$a_name" GIT_AUTHOR_EMAIL="$a_email" GIT_COMMITTER_NAME="$bot_name" GIT_COMMITTER_EMAIL="$bot_email" GIT_AUTHOR_DATE="$when" GIT_COMMITTER_DATE="$when" git -C "$dir" commit-tree "$tree" "${parents[@]}")" || die 2 "cannot make the commit"
+fi
 [[ "$new" =~ ^[0-9a-f]{40,64}$ ]] || die 2 "cannot make the commit"
 
 # Push the one branch, as a plain (never forced) push of the exact commit. A branch that already exists on the origin elsewhere is refused by the origin.

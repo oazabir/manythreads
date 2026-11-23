@@ -290,6 +290,46 @@ describe('mt-publish.sh publish', () => {
     expect(gh.pulls.size).toBe(1);
   });
 
+  it('publishes the same card again after changes were asked: the new commit sits on the earlier one, the push fast-forwards and the same request moves (P35-02)', async () => {
+    const first = await publish();
+    expect(first.code).toBe(0);
+    const n = Number(/pull_request_number=(\d+)/.exec(first.out)![1]);
+    gh.pulls.get(n)!.headSha = sha(first.out);
+    // the Coder's fix on the card branch, and meanwhile main moved on the origin
+    const work = join(root, 'work');
+    writeFileSync(join(work, 'b.txt'), 'fixed\n');
+    git(work, 'add', '.');
+    git(work, 'commit', '-m', 'the fix');
+    const fixed = git(work, 'rev-parse', 'HEAD');
+    git(work, 'push', join(root, 'repos/widgets.git'), BRANCH);
+    git(work, 'checkout', '-q', 'main');
+    writeFileSync(join(work, 'c.txt'), 'main moved\n');
+    git(work, 'add', '.');
+    git(work, 'commit', '-m', 'elsewhere');
+    git(work, 'push', join(root, 'origin.git'), 'main');
+    // GitHub moves the open request to the branch's new head after the push: the double follows the origin while the publish waits for it
+    const running = publish(fixed);
+    let finished = false;
+    void running.then(() => (finished = true));
+    while (!finished) {
+      const at = spawnSync('git', ['-C', join(root, 'origin.git'), 'rev-parse', `refs/heads/${BRANCH}`], { encoding: 'utf8' }).stdout.trim();
+      if (at && at !== sha(first.out)) gh.pulls.get(n)!.headSha = at;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const again = await running;
+    expect(again.err).toBe('');
+    expect(again.code).toBe(0);
+    const pushed = git(join(root, 'origin.git'), 'rev-parse', `refs/heads/${BRANCH}`);
+    expect(pushed).toBe(sha(again.out));
+    // the earlier publish is in its history (a plain push), main's new tip too, and the tree has all three changes
+    expect(spawnSync('git', ['-C', join(root, 'origin.git'), 'merge-base', '--is-ancestor', sha(first.out), pushed]).status).toBe(0);
+    expect(git(join(root, 'origin.git'), 'show', `${pushed}:b.txt`)).toBe('fixed');
+    expect(git(join(root, 'origin.git'), 'show', `${pushed}:c.txt`)).toBe('main moved');
+    expect(git(join(root, 'origin.git'), 'show', `${pushed}:a.txt`)).toBe('two');
+    expect(again.out).toContain(`pull_request_number=${n}`);
+    expect(gh.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
+
   it('refuses a card id, commit or title that is not well formed', async () => {
     expect((await run(PUBLISH, ['publish', 'widgets', 'card-1a2b3c4d', headSha, 't'])).code).toBe(2);
     expect((await run(PUBLISH, ['publish', 'widgets', CARD, 'HEAD', 't'])).code).toBe(2);
