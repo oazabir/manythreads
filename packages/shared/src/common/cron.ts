@@ -95,3 +95,20 @@ export function nextCronRun(expr: string, from: Date, limitDays = 366 * 4): Date
   }
   return null;
 }
+
+/** Every time from `from` (inclusive) to `to` (exclusive) at which the expression fires, minute by minute in UTC; at most `max` (the Schedule screen draws a team's routines, P36-04). A bad expression has none. */
+export function cronRunsBetween(expr: string, from: Date, to: Date, max = 500): Date[] {
+  let spec: CronSpec;
+  try {
+    spec = parseCron(expr);
+  } catch {
+    return [];
+  }
+  const out: Date[] = [];
+  const start = Math.ceil(from.getTime() / 60_000) * 60_000;
+  for (let t = start; t < to.getTime() && out.length < max; t += 60_000) {
+    const d = new Date(t);
+    if (cronMatches(spec, d)) out.push(d);
+  }
+  return out;
+}

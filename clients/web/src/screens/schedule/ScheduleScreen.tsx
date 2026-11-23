@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import type { Appointment } from '@manythreads/shared';
+import { cronRunsBetween, type Appointment } from '@manythreads/shared';
+import { fetchScheduledJobs } from '../boards/api';
 import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
 import { PageHeader } from '../../components/PageHeader';
@@ -52,6 +53,34 @@ export function ScheduleScreen() {
     return (teamId: string): number => (order.get(teamId) ?? (PALETTE - 1)) + 1;
   }, [teams]);
   const all = q.status === 'ok' ? q.data.appointments : [];
+  // the teams' routines beside the appointments (P36-04): each enabled one's runs in the window, from its schedule; one that runs more than twice a day
+  // (a heartbeat) would bury the calendar and is left out
+  const [routinesOn, setRoutinesOn] = useState(true);
+  const slugs = teams.map((t) => t.slug).join(',');
+  const jobsQ = useQuery(`schedule-routines:${slugs}`, async () => {
+    const lists = await Promise.all(teams.map(async (t) => ({ team: t, items: (await fetchScheduledJobs(t.slug).catch(() => ({ items: [] }))).items })));
+    return lists;
+  });
+  const routines = useMemo(() => {
+    if (jobsQ.status !== 'ok') return [];
+    const out: Array<{ key: string; teamId: string; teamSlug: string; name: string; at: Date }> = [];
+    const windowDays = Math.max(1, (Date.parse(to) - Date.parse(from)) / 86_400_000);
+    for (const { team: t, items: jobs } of jobsQ.data) {
+      for (const j of jobs) {
+        if (!j.enabled) continue;
+        const runs = cronRunsBetween(j.schedule, new Date(from), new Date(to), 200);
+        if (runs.length / windowDays > 2) continue;
+        for (const at of runs) out.push({ key: `${j.id}:${at.toISOString()}`, teamId: t.id, teamSlug: t.slug, name: j.name, at });
+      }
+    }
+    return out;
+  }, [jobsQ, from, to]);
+  const shownRoutines = routinesOn ? routines.filter((r) => !hidden.has(r.teamId)) : [];
+  const routineBlock = (r: (typeof routines)[number], style?: React.CSSProperties) => (
+    <button key={r.key} type="button" className={`sc-routine c${colourOf(r.teamId)}`} style={style} onClick={() => void navigate(`/t/${encodeURIComponent(r.teamSlug)}/jobs`)} title={`Routine: ${r.name} · ${r.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`} data-testid="schedule-routine">
+      ⟳ {r.name}
+    </button>
+  );
   const items = all.filter((a) => !hidden.has(a.team.id));
   const grid = useRef<HTMLDivElement>(null);
 
@@ -134,6 +163,11 @@ export function ScheduleScreen() {
             <span className="sc-dot" aria-hidden="true" /> {t.name}
           </button>
         ))}
+        {routines.length > 0 ? (
+          <button type="button" className={`sc-chip ${routinesOn ? '' : 'off'}`} aria-pressed={routinesOn} onClick={() => setRoutinesOn((v) => !v)} data-testid="schedule-routines">
+            ⟳ Routines
+          </button>
+        ) : null}
         {q.status === 'error' ? <span className="dlg-error" role="alert">The schedule could not be loaded.</span> : null}
       </div>
 
@@ -146,6 +180,7 @@ export function ScheduleScreen() {
               <div key={d.toISOString()} className={`sc-mday ${d.getMonth() !== anchor.getMonth() ? 'other' : ''} ${sameDay(d, new Date(now)) ? 'today' : ''}`} onDoubleClick={() => setForm({ start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 10) })}>
                 <button type="button" className="sc-mnum" onClick={() => { setAnchor(d); setView('day'); }}>{d.getDate()}</button>
                 {these.slice(0, 3).map((a) => block(a, undefined, true))}
+                {shownRoutines.filter((r) => sameDay(r.at, d)).slice(0, 2).map((r) => routineBlock(r))}
                 {these.length > 3 ? <button type="button" className="sc-more" onClick={() => { setAnchor(d); setView('day'); }}>+{these.length - 3} more</button> : null}
               </div>
             );
@@ -178,6 +213,9 @@ export function ScheduleScreen() {
                 }}
                 data-testid="schedule-day"
               >
+                {shownRoutines
+                  .filter((r) => sameDay(r.at, d))
+                  .map((r) => routineBlock(r, { top: `${((r.at.getTime() - d.getTime()) / 86_400_000) * 100}%` }))}
                 {placeInDay(items, d).map((p) =>
                   block(p.item, { top: `${p.top * 100}%`, height: `${p.height * 100}%`, left: `${(p.lane / p.lanes) * 100}%`, width: `calc(${100 / p.lanes}% - 4px)` }),
                 )}
