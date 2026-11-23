@@ -52,7 +52,8 @@ describe('answered before (P18-09)', () => {
     expect(termsHeld('Rotate the deploy token for the preview cluster', terms)).toBe(4);
     expect(closeEnough(1, 4)).toBe(false);
     expect(closeEnough(2, 4)).toBe(true);
-    expect(closeEnough(2, 6)).toBe(false);
+    expect(closeEnough(2, 5)).toBe(false);
+    expect(closeEnough(3, 6)).toBe(true);
   });
 
   it('a channel that is not a help channel shows nothing; a member cannot mark one, a lead can', async () => {

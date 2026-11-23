@@ -32,8 +32,8 @@ export function termsHeld(text: string, terms: readonly string[]): number {
   return terms.filter((t) => words.some((w) => w.startsWith(t))).length;
 }
 
-/** Enough in common to be worth showing: at least two of the question's words, and at least two in five of them. */
-export const closeEnough = (held: number, of: number): boolean => held >= Math.min(2, of) && held * 5 >= of * 2;
+/** Enough in common to be worth showing: at least two of the question's words, and at least half of them (two in five let unrelated threads in, live). */
+export const closeEnough = (held: number, of: number): boolean => held >= Math.min(2, of) && held * 2 >= of;
 
 export async function pastThreads(tx: PluginTx, teamId: string, question: string, excludeRoot: string | null = null): Promise<AnsweredBeforeItem[]> {
   const terms = queryTerms(question);
@@ -67,7 +67,7 @@ export async function pastThreads(tx: PluginTx, teamId: string, question: string
       rootId: r.root_message_id,
       channelId: r.channel_id,
       channelName: r.channel_name,
-      title: (r.title || r.root_text).slice(0, 200),
+      title: ((r.title || r.root_text).split('\n').find((l) => l.trim() !== '') ?? '').trim().slice(0, 200),
       answer: r.answer,
       replyCount: r.reply_count,
       lastReplyAt: r.last_reply_at.toISOString(),
@@ -89,8 +89,10 @@ export function registerAnsweredBefore(ctx: PluginContext): void {
       if (!channel.help || channel.kind !== 'channel' || !channel.team_id) return json(AnsweredBeforeResponse.parse({ help: false, items: [] }));
       const threads = await pastThreads(tx, channel.team_id, q);
       const vector = await queryVector(ctx, tx, q);
-      const hits = await searchKnowledge(tx, { teamIds: [channel.team_id], personId: null, baseSlugs: null, query: q, limit: PASSAGES }, vector);
-      const passages: AnsweredBeforeItem[] = hits.slice(0, PASSAGES).map((h) => ({
+      const hits = await searchKnowledge(tx, { teamIds: [channel.team_id], personId: null, baseSlugs: null, query: q, limit: PASSAGES * 3 }, vector);
+      // a passage is shown by the same rule as a thread: the nearest passage of an unrelated document is not an earlier answer
+      const terms = queryTerms(q);
+      const passages: AnsweredBeforeItem[] = hits.filter((h) => closeEnough(termsHeld(`${h.documentName} ${h.section ?? ''} ${h.text}`, terms), terms.length)).slice(0, PASSAGES).map((h) => ({
         kind: 'knowledge',
         base: h.baseSlug,
         document: h.documentName,
