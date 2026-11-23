@@ -31,8 +31,8 @@ async function ffmpeg(onProgress: TranscodeProgress): Promise<import('@ffmpeg/ff
       onProgress(0, 'loading');
       const [{ FFmpeg }, core, wasm] = await Promise.all([
         import('@ffmpeg/ffmpeg'),
-        import('@ffmpeg/core/dist/esm/ffmpeg-core.js?url'),
-        import('@ffmpeg/core/dist/esm/ffmpeg-core.wasm?url'),
+        import('@ffmpeg/core?url'),
+        import('@ffmpeg/core/wasm?url'),
       ]);
       const ff = new FFmpeg();
       await ff.load({ coreURL: core.default, wasmURL: wasm.default });
