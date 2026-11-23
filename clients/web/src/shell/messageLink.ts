@@ -24,6 +24,8 @@ export type MessageTarget = {
 };
 
 export const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
+/** A meeting space (P36-03): a conversation of its own, under the team in sight. */
+export const meetingPath = (slug: string, channelId: string): string => `/t/${slug}/meeting/${channelId}`;
 
 /**
  * The location of a message: its channel with `?message=<id>` (the channel view scrolls to it and flashes it), or for a reply its
@@ -33,11 +35,12 @@ export function messageLocation(slug: string, t: MessageTarget, under: readonly 
   const target = t.threadRootId ?? t.messageId;
   if (t.channelOnly) {
     if (t.channelKind === 'bot_conversation') return { pathname: `/t/${slug}/chat/${t.channelId}`, search: '', state: null };
+    if (t.channelKind === 'meeting') return { pathname: meetingPath(slug, t.channelId), search: '', state: null };
     return { pathname: t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName), search: '', state: null };
   }
   // a conversation with a bot has no name to put in a URL: the conversation view finds the bot from the channel and opens the thread
   if (t.channelKind === 'bot_conversation') return { pathname: `/t/${slug}/chat/${t.channelId}`, search: `?thread=${target}`, state: null };
-  const pathname = t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);
+  const pathname = t.channelKind === 'meeting' ? meetingPath(slug, t.channelId) : t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);
   const stack = t.threadRootId ? [...under, { type: 'thread', id: t.threadRootId }] : [...under];
   const next = writePanel({ search: `?message=${target}`, state: null }, stack, false);
   return { pathname, search: next.search, state: next.state };

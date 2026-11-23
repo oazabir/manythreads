@@ -1,4 +1,6 @@
 import { Link, Navigate, useParams } from 'react-router';
+import { fetchChannel } from '../api/endpoints';
+import { useQuery } from '../app/useQuery';
 import { dmHeaderTitle, useDms } from '../dms/store';
 import { ChannelBody, NoChannelAccess } from '../screens/ChannelView';
 import { useChannelFeed } from './channelFeed';
@@ -72,4 +74,15 @@ export function DirectMessageView() {
   if (!dm) return <NoChannelAccess />;
   const head = dmHeaderTitle(dm, session.person.id);
   return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: head.name, personId: head.kind === 'person' ? head.personId : undefined }} />;
+}
+
+/** `/t/:team/meeting/:id`: a meeting space (P36-03), a team-less conversation of the people invited, drawn as a conversation with the meeting's title. */
+export function MeetingSpaceView() {
+  const { id = '' } = useParams();
+  const { team, teamSlug } = useShell();
+  const slug = team?.slug ?? teamSlug ?? '';
+  const info = useQuery(`channel:${id}`, () => fetchChannel(id));
+  if (info.status === 'loading') return <div className="view-empty" aria-busy="true" />;
+  if (info.status === 'error' || info.data.channel.kind !== 'meeting') return <NoChannelAccess />;
+  return <ChannelBody key={id} channelId={id} name="" teamSlug={slug} dm={{ label: info.data.channel.purpose || 'Meeting', personId: undefined }} />;
 }

@@ -3228,3 +3228,14 @@
   flex-wrap: wrap;
   gap: 4px 12px;
 }
+
+/* P36-03: the New meeting dialog's people list (meetings/NewMeetingDialog.tsx). */
+.nm-people {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}

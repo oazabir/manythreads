@@ -36,7 +36,7 @@ import { LlmSettings } from './screens/admin/llm/LlmSettings';
 import { MemorySharing } from './screens/admin/memory/MemorySharing';
 import { RunnersPage } from './screens/admin/runners/RunnersPage';
 import { BrainSettings } from './screens/admin/brain/BrainSettings';
-import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
+import { DirectMessageView, HomeView, MeetingSpaceView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
 import { BotHome } from './screens/bots/BotHome';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
@@ -159,6 +159,7 @@ function AppRoutes() {
             <Route path="/t/:team/chat/:channelId" element={<RequireTeam><ConversationRedirect /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
+            <Route path="/t/:team/meeting/:id" element={<RequireTeam><MeetingSpaceView /></RequireTeam>} />
           </Route>
           <Route path="/settings/connections" element={<PersonConnections />} />
           <Route element={<AdminOnly />}>

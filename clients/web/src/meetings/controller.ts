@@ -248,6 +248,16 @@ export class CallController {
    * successful answer is the old call left and the new one entered (the call bar takes over while the media connects). While another start or join is under way,
    * or when the person is already in this channel's call, it throws a `CallBusyError` with words the dialog shows.
    */
+  /** A meeting the server has just opened with its call (P36-03): leave the call the person was in and enter this one, the camera on for a video meeting. */
+  async enterOpened(res: StartMeetingResponse): Promise<void> {
+    if (this.dialogStarting || this.state.phase === 'starting' || this.state.phase === 'connecting') throw new CallBusyError('A call is still connecting. Wait for it, then try again.');
+    await this.teardownForNewRoom();
+    this.cameraOnJoin = res.meeting.kind === 'video';
+    const gen = ++this.generation;
+    this.set({ ...IDLE(this.state.prefs), myActorId: this.state.myActorId, phase: 'starting', channelId: res.meeting.channelId });
+    void this.enter(res.meeting, res.join, gen).catch(() => undefined);
+  }
+
   async startFromDialog(channelId: string, body: StartMeetingRequest): Promise<StartMeetingResponse> {
     if (this.dialogStarting || this.state.phase === 'starting' || this.state.phase === 'connecting') throw new CallBusyError('A call is still connecting. Wait for it, then try again.');
     if (this.state.meeting && this.state.meeting.channelId === channelId && this.active) throw new CallBusyError('You are already in the call here.');

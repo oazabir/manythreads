@@ -1,4 +1,11 @@
 import {
+  openMeetingSpaceRoute,
+  OpenMeetingSpaceRequest,
+  OpenMeetingSpaceResponse,
+  listMeetingSpacesRoute,
+  ListMeetingSpacesResponse,
+  meetingPeopleRoute,
+  MeetingPeopleResponse,
   CancelScheduledMeetingResponse,
   CreateScheduledMeetingRequest,
   CreateScheduledMeetingResponse,
@@ -208,3 +215,10 @@ export const cancelScheduledMeeting = (scheduledMeetingId: string) =>
   call(cancelScheduledMeetingRoute, { response: CancelScheduledMeetingResponse }, undefined, { scheduledMeetingId });
 export const joinScheduledMeeting = (scheduledMeetingId: string) =>
   call(joinScheduledMeetingRoute, { response: JoinScheduledMeetingResponse }, undefined, { scheduledMeetingId });
+
+/** Opens a meeting space with its call (P36-03). */
+export const openMeetingSpace = (body: OpenMeetingSpaceRequest) => call(openMeetingSpaceRoute, { request: OpenMeetingSpaceRequest, response: OpenMeetingSpaceResponse }, body);
+/** The meeting spaces this person is in, newest first. */
+export const fetchMeetingSpaces = () => call(listMeetingSpacesRoute, { response: ListMeetingSpacesResponse });
+/** Who can be invited to a meeting, from every team, by name. */
+export const fetchMeetingPeople = (q = '') => call(meetingPeopleRoute, { response: MeetingPeopleResponse }, { q });
