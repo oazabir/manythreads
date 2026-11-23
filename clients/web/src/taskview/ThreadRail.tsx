@@ -12,6 +12,7 @@ import { CaretIcon, CheckIcon, CloseIcon, ItemBlockedIcon, ItemWaitingIcon } fro
 import { fetchThreadFiles } from './api';
 import { attachmentKey, earlierLabel, listStage, OUTPUTS_CAP, planOutputs, timelineOf, typeLabel } from './railRules';
 import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { ThreadNote } from './ThreadNote';
 import { PANES } from '../kernel/panes/paneWidth';
 
 export { attachmentKey };
@@ -240,6 +241,7 @@ export function ThreadRail({ rootId, id, open, onClose, todo, run, approvals, fi
         </button>
       </header>
       <div className="trScroll">
+        <ThreadNote rootId={rootId} />
         <Progress todo={todo} run={run && !runEnded(run.state) ? run : null} approvals={approvals} ownerName={ownerName} />
         <Outputs rootId={rootId} fileKey={fileKey} open={open} />
       </div>

@@ -416,10 +416,9 @@
   min-width: 0;
   margin-block-start: 6px;
   margin-inline-start: 16px;
-  padding: 5px 10px 6px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  background: var(--shell);
+
+  /* the last reply sits under the thread with its connector line, with no box of its own (owner, 2026-11-23) */
+  padding: 2px 10px;
 }
 
 .thc-blk::before {
@@ -482,11 +481,6 @@
   -webkit-line-clamp: 4;
 }
 
-.thc-blk[data-kind="mention"] {
-  border-color: var(--human-border);
-  background: var(--human-wash);
-}
-
 .thc-blk[data-kind="mention"]::before {
   border-color: var(--human-border);
 }
@@ -498,11 +492,6 @@
 
 .thc-blk[data-kind="mention"] .thc-blk-text {
   color: var(--ink);
-}
-
-/* the selected row is already washed blue: the blocks keep their own surface */
-.thc.on .thc-blk:not([data-kind="mention"]) {
-  background: var(--surface);
 }
 
 /* the "Needs you" group's heading */

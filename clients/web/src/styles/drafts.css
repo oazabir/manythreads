@@ -1,0 +1,72 @@
+/* The Drafts page (screens/drafts/DraftsScreen.tsx). Classes are `dr-*`. */
+.dr-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dr-body {
+  padding: 8px 24px 32px;
+}
+
+.dr-empty {
+  color: var(--mute);
+}
+
+.dr-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dr-item {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.dr-item:hover,
+.dr-item:focus-visible {
+  background: var(--msg-hover);
+}
+
+.dr-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dr-place {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dr-when {
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.dr-text {
+  overflow: hidden;
+  color: var(--txt);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (width <= 760px) {
+  .dr-body {
+    padding: 8px 12px 24px;
+  }
+}

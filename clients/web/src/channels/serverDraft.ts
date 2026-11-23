@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { DRAFT_MAX_CHARS, type SaveDraftRequest } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { deleteDraft, fetchDrafts, saveDraft } from '../api/endpoints';
+import { noteDraft } from './draftPlaces';
 
 /*
  * The text a person has typed and not sent (PLAN P14-02), kept in two places. The browser keeps a copy at once (so a reload loses nothing and the box works
@@ -56,6 +57,7 @@ export function writeSynced(key: string, synced: SyncedDraft | null): void {
 
 /** The local copy of a box. An empty text removes it, and with it the memory of what the server held (a cleared or sent box starts over). */
 export function writeDraft(key: string, text: string): void {
+  noteDraft(key, text);
   try {
     if (text === '') {
       window.localStorage.removeItem(DRAFT_PREFIX + key);

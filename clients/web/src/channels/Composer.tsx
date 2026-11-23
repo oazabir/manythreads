@@ -41,6 +41,7 @@ import { SendLaterMenu } from './SendLater';
 import { needsBroadcastAgreement, scheduledErrorText, scheduledStore } from './scheduled';
 import { broadcastAsk, broadcastAskFromRefusal, type BroadcastAsk } from './broadcast';
 import { readDraft, useServerDraft, writeDraft } from './serverDraft';
+import { placeDraft } from './draftPlaces';
 
 /*
  * The one composer of every conversation (channel, thread panel and full thread, direct message, Brain chat and a bot conversation; P34-03): the same
@@ -120,6 +121,8 @@ export type ComposerProps = {
   commands?: readonly LocalCommand[];
   /** Drawn above the box with what is being written (P18-09: earlier answers in a help channel). Never sends anything itself. */
   assist?: (text: string) => ReactNode;
+  /** Where the Drafts page takes the person back to this box, and what it calls it; the page in sight and `label` when absent. */
+  draftPlace?: { path: string; label: string };
 };
 
 /** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
@@ -171,7 +174,7 @@ export function Composer(props: ComposerProps) {
   return <ComposerBody {...props} />;
 }
 
-function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, commands, assist }: ComposerProps) {
+function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, onVoiceSent, voice = true, autoFocus = false, onEditLast, slash, sendLater = false, commands, assist, draftPlace }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const guest = useContext(ShellContext)?.guest ?? false;
   const rec = useRecorder();
@@ -243,6 +246,13 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   }, [voiceActive]);
   const lastTyping = useRef(0);
   const typingOff = useRef(false);
+
+  // The Drafts page lists this box's draft with the page it belongs to (owner, 2026-11-23).
+  const placePath = draftPlace?.path;
+  const placeLabel = draftPlace?.label ?? label;
+  useEffect(() => {
+    placeDraft(draftKey, placePath ?? `${window.location.pathname}${window.location.search}`, placeLabel);
+  }, [draftKey, placePath, placeLabel]);
 
   // A different conversation: its own draft, and nothing of the last one's files.
   useEffect(() => {

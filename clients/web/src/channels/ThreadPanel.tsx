@@ -376,6 +376,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         {!answerTools ? <ScheduledStrip channelId={channelId} threadRootId={rootId} /> : null}
         <Composer
           draftKey={`thread:${rootId}`}
+          // the Threads page opens any thread from its link, wherever this reply box was opened
+          {...(slug ? { draftPlace: { path: `/t/${encodeURIComponent(slug)}/threads?thread=${rootId}`, label: channelName ? `Thread in #${channelName}` : 'Thread' } } : {})}
           placeholder={kind === 'main' ? 'Reply in thread…' : 'Reply…'}
           label="Reply in thread"
           channelId={channelId}
