@@ -6,6 +6,7 @@ import { Markdown } from '../../channels/MessageMarkdown';
 import { Alert, Time } from '../../components/ui';
 import { STATE_LABEL, dropTargets, eventLine, ownerLabel, refusalText } from './board';
 import { BotActivity } from './BotActivity';
+import { PullReview } from './PullReview';
 import type { CardBot } from './activity';
 import { claimTask, completeTask, fetchTask, fetchTaskEvents, handoffTask, releaseTask, reworkTask, tickTask } from './api';
 import { taskItemAt } from '../../channels/markdown';
@@ -163,6 +164,8 @@ export function CardPanel({ slug, task, board, roster, bots, botsAtWork, placeId
           {task.blockerReason}
         </p>
       ) : null}
+
+      <PullReview slug={slug} task={task} onChanged={onChanged} />
 
       {problem ? <Alert>{problem}</Alert> : null}
       {filed ? <p className="bd-filed" role="status">{filed}</p> : null}

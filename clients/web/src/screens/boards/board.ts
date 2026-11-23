@@ -246,6 +246,16 @@ export function eventLine(e: TaskEvent, nameOf: (id: string | null) => string): 
     }
     case 'deployed':
       return `deployed to ${text(d, 'environment') ?? 'an environment'}`;
+    case 'pull_request_reviewed': {
+      const n = String(d['pullRequest'] ?? '');
+      const at = text(d, 'headSha')?.slice(0, 12) ?? '';
+      const verdict = text(d, 'verdict');
+      if (verdict === 'approved') return `approved pull request #${n} at ${at}`;
+      if (verdict === 'changes_requested') return `asked for changes on pull request #${n} at ${at}`;
+      return `merged pull request #${n} at ${at}`;
+    }
+    case 'test_site':
+      return text(d, 'url') ? `put the test site at ${text(d, 'url')}` : 'took the test site address off the card';
     default:
       return e.type;
   }

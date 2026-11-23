@@ -1,0 +1,177 @@
+/* P35-02: the Review section of a card (screens/boards/PullReview.tsx). Classes are `pr-*`; the hunks reuse the shared `.diff` drawing (files.css). */
+
+.pr-review {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.pr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pr-title {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+
+.pr-facts {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.pr-facts dt {
+  color: var(--faint);
+}
+
+.pr-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pr-plus {
+  color: var(--ok-ink);
+}
+
+.pr-minus {
+  color: var(--alert-ink);
+}
+
+.pr-note {
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.pr-warn {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+}
+
+.pr-checks {
+  display: grid;
+  gap: 4px;
+}
+
+.pr-summary {
+  margin: 0;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.pr-summary.passing {
+  color: var(--ok-ink);
+}
+
+.pr-summary.failing {
+  color: var(--alert-ink);
+}
+
+.pr-summary.pending {
+  color: var(--warn-ink);
+}
+
+.pr-check-list,
+.pr-files {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-caption);
+}
+
+.pr-chip {
+  display: inline-block;
+  min-width: 52px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.pr-chip.passing {
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.pr-chip.failing {
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.pr-chip.pending {
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.pr-chip.skipped {
+  color: var(--faint);
+}
+
+.pr-file > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.pr-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pr-badge {
+  color: var(--faint);
+}
+
+.pr-count {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.pr-file > .diff,
+.pr-file > .pr-note {
+  margin-top: 4px;
+}
+
+.pr-ask {
+  display: grid;
+  gap: 6px;
+}
+
+.pr-ask textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-confirm {
+  font-size: var(--fs-caption);
+}
+
+.pr-said {
+  margin: 0;
+  color: var(--ok-ink);
+  font-size: var(--fs-caption);
+}

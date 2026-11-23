@@ -1,4 +1,14 @@
 import {
+  approvePullRequestRoute,
+  mergePullRequestRoute,
+  PullRequestChangesRequest,
+  pullRequestChecksRoute,
+  PullRequestChecksResponse,
+  PullRequestDecisionRequest,
+  PullRequestDecisionResponse,
+  pullRequestDiffRoute,
+  PullRequestDiffResponse,
+  requestPullRequestChangesRoute,
   AddBoardColumnRequest,
   BoardColumnsResponse,
   BoardPlacesResponse,
@@ -137,6 +147,22 @@ export const reworkTask = (slug: string, taskId: string, body: ReworkTaskRequest
 /** Tick or untick one box of a card's description checklist: the server changes that one character and adds a line to the card's history. */
 export const tickTask = (slug: string, taskId: string, body: TickTaskRequest) =>
   call(tickTaskRoute, { request: TickTaskRequest, response: TickTaskResponse }, body, { slug, taskId });
+
+// ---- reviewing the card's pull request (P35-02) ---------------------------------------------------------------------
+
+export const fetchPullRequestDiff = (slug: string, taskId: string, page: number) =>
+  call(pullRequestDiffRoute, { response: PullRequestDiffResponse }, page > 1 ? { page: String(page) } : undefined, { slug, taskId });
+
+export const fetchPullRequestChecks = (slug: string, taskId: string) => call(pullRequestChecksRoute, { response: PullRequestChecksResponse }, undefined, { slug, taskId });
+
+export const approvePullRequest = (slug: string, taskId: string, body: PullRequestDecisionRequest) =>
+  call(approvePullRequestRoute, { request: PullRequestDecisionRequest, response: PullRequestDecisionResponse }, body, { slug, taskId });
+
+export const requestPullRequestChanges = (slug: string, taskId: string, body: PullRequestChangesRequest) =>
+  call(requestPullRequestChangesRoute, { request: PullRequestChangesRequest, response: PullRequestDecisionResponse }, body, { slug, taskId });
+
+export const mergePullRequest = (slug: string, taskId: string, body: PullRequestDecisionRequest) =>
+  call(mergePullRequestRoute, { request: PullRequestDecisionRequest, response: PullRequestDecisionResponse }, body, { slug, taskId });
 
 export const handoffTask = (slug: string, taskId: string, body: HandoffTaskRequest) =>
   call(handoffTaskRoute, { request: HandoffTaskRequest, response: HandoffTaskResponse }, body, { slug, taskId });
