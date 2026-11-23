@@ -8,6 +8,7 @@ import {
   type PluginTx,
 } from '@manythreads/sdk';
 import { registerIssueRouter } from './router-issues.ts';
+import { registerIncidentRouter } from './router-incidents.ts';
 import {
   ApprovalsApprovalDecidedEvent,
   ChannelMessagePostedEvent,
@@ -122,6 +123,7 @@ export function registerRouter(ctx: PluginContext): void {
   registerInboxRouter(ctx);
   registerWebhookRouter(ctx);
   registerIssueRouter(ctx);
+  registerIncidentRouter(ctx);
   // A voice message is answered once, on the words (P32-04, decision D13): `channel.message.posted` leaves one that the server is still transcribing (or has
   // transcribed already, or failed to) alone, and `channel.message.transcribed` routes it with the transcript as its text (or, when the server could not write
   // one, with the stand-in line, as a message that never had a transcript). A voice message that never went to the server (the switch was off, an old

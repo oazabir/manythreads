@@ -12,3 +12,4 @@ export * from './polls.ts';
 export * from './custom-emoji.ts';
 export * from './drafts.ts';
 export * from './broadcast.ts';
+export * from './incidents.ts';

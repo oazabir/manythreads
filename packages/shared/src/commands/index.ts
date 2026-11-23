@@ -50,6 +50,7 @@ export type SlashCommand = {
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: 'ask', usage: '/ask <bot> <question>', summary: 'Ask one of the team’s bots a question. It answers in this conversation.', args: 'required', needs: 'team_member', source: 'builtin', firstWordIsBot: true },
+  { name: 'incident', usage: '/incident <title> · /incident resolve <summary>', summary: 'Open an incident: its own channel, @on-call paged, a voice room and the triage bot. In the incident’s channel, resolve it.', args: 'required', needs: 'team_member', source: 'builtin' },
   { name: 'task', usage: '/task <title>', summary: 'Create a card on the team’s board, from this conversation.', args: 'required', needs: 'team_member', source: 'builtin' },
   { name: 'remind', usage: '/remind me|@person|#channel <when> <what>', summary: 'Be reminded later, or remind someone: “/remind me in 20 minutes call the bank”. /remind list shows yours.', args: 'required', needs: 'anyone', source: 'builtin' },
   { name: 'status', usage: '/status [emoji] <text>', summary: 'Set your status, like “🌴 on holiday”. /status clear removes it.', args: 'required', needs: 'anyone', source: 'builtin' },

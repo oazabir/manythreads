@@ -478,6 +478,11 @@ import {
   updateChannelRoute,
   answeredBeforeRoute,
   AnsweredBeforeResponse,
+  openIncidentRoute,
+  OpenIncidentRequest,
+  IncidentResponse,
+  resolveIncidentRoute,
+  ResolveIncidentRequest,
   ImportRun,
   ListImportsResponse,
   cancelImportRoute,
@@ -693,6 +698,12 @@ export const saveChannelTopic = (channelId: string, purpose: string) =>
 /** Marks a channel as a help channel, or stops it being one (P18-09; a team lead or workspace admin). */
 export const saveChannelHelp = (channelId: string, help: boolean) =>
   call(updateChannelRoute, { request: UpdateChannelRequest, response: UpdateChannelResponse }, { help }, { channelId });
+/** Opens an incident (P35-07): its channel, the opening message that pages @on-call, the triage bot. */
+export const openIncident = (teamSlug: string, title: string, fromChannelId: string) =>
+  call(openIncidentRoute, { request: OpenIncidentRequest, response: IncidentResponse }, { title, fromChannelId: fromChannelId as NonNullable<OpenIncidentRequest['fromChannelId']> }, { slug: teamSlug });
+/** Resolves the incident of this channel and drafts its post-mortem page (P35-07). */
+export const resolveIncident = (channelId: string, summary: string) =>
+  call(resolveIncidentRoute, { request: ResolveIncidentRequest, response: IncidentResponse }, summary ? { summary } : {}, { channelId });
 /** Earlier answers for the question being written in a help channel (P18-09). Nothing is posted. */
 export const fetchAnsweredBefore = (channelId: string, q: string) => call(answeredBeforeRoute, { response: AnsweredBeforeResponse }, { q }, { channelId });
 

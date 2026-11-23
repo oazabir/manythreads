@@ -116,6 +116,9 @@ export type SlashPlan =
   /** Post this text (with the files, if any) the way any message is posted. */
   | { do: 'post'; body: string }
   | { do: 'task'; title: string }
+  /** `/incident <title>`: open an incident (P35-07); `/incident resolve <summary>` in its channel closes it. */
+  | { do: 'incident'; title: string }
+  | { do: 'incident-resolve'; summary: string }
   | { do: 'help' }
   /** `/poll` alone opens the dialog empty; with a question and options it asks the poll at once. */
   | { do: 'poll'; question: string | null; options: string[]; prefill?: { question: string; options: string[] } }
@@ -255,6 +258,14 @@ export function planSlash(text: string, who: SlashWho, hasFiles = false, env: Sl
       const line = args.replace(/\s*\n\s*/g, ' ');
       if (line === '') return { do: 'say', message: 'Say what you are doing after /me, for example /me is at lunch.' };
       return { do: 'post', body: `*${who.selfName ? `${who.selfName} ` : ''}${line}*` };
+    }
+    case 'incident': {
+      const line = args.replace(/\s*\n\s*/g, ' ');
+      const m = /^resolve(?:\s+(.*))?$/i.exec(line);
+      if (m) return { do: 'incident-resolve', summary: (m[1] ?? '').trim() };
+      if (line === '') return { do: 'say', message: 'Say what is wrong after /incident, for example /incident Checkout errors on the payment page.' };
+      if (line.length > TITLE_MAX) return { do: 'say', message: `An incident title can be at most ${TITLE_MAX} characters. This one has ${line.length}.` };
+      return { do: 'incident', title: line };
     }
     case 'task': {
       const title = args.replace(/\s*\n\s*/g, ' ');

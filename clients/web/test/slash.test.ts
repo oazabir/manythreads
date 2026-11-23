@@ -288,3 +288,14 @@ describe('taskFailureText', () => {
     expect(taskFailureText(undefined, undefined)).toContain('could not be created');
   });
 });
+
+describe('/incident (P35-07)', () => {
+  it('opens an incident with a title, resolves with a summary, and asks for a title when there is none', () => {
+    expect(planSlash('/incident Checkout errors on payment', member)).toEqual({ do: 'incident', title: 'Checkout errors on payment' });
+    expect(planSlash('/incident resolve Rolled back the deploy', member)).toEqual({ do: 'incident-resolve', summary: 'Rolled back the deploy' });
+    expect(planSlash('/incident resolve', member)).toEqual({ do: 'incident-resolve', summary: '' });
+    expect(planSlash('/incident resolved logins again', member)).toEqual({ do: 'incident', title: 'resolved logins again' });
+    expect(planSlash('/incident', member)).toMatchObject({ do: 'say', message: expect.stringContaining('/incident') });
+    expect(planSlash(`/incident ${'x'.repeat(201)}`, member)).toMatchObject({ do: 'say', message: expect.stringContaining('200') });
+  });
+});

@@ -27,6 +27,7 @@ export * from './team.tag.assigned.ts';
 export * from './team.tag.removed.ts';
 export * from './project.project.created.ts';
 export * from './project.issue.opened.ts';
+export * from './channel.incident.changed.ts';
 export * from './project.project.updated.ts';
 export * from './project.project.deleted.ts';
 export * from './identity.provider.changed.ts';

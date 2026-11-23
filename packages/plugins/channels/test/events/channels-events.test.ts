@@ -78,7 +78,9 @@ describe('channel events', () => {
     expect(Object.keys(eventRegistry['channel.message.transcribed'])).toEqual(['1']);
     // the pin event (P31-07) is checked in test/pins.test.ts and the shared contract test
     expect(Object.keys(eventRegistry['channel.message.pin_changed'])).toEqual(['1']);
-    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed', 'channel.custom_emoji.changed', 'channel.markdown.repaired', 'channel.message.transcribed', 'channel.message.pin_changed', ...POLL_EVENTS].sort());
+    // the incident event (P35-07) is checked in test/incidents.test.ts and the shared contract test
+    expect(Object.keys(eventRegistry['channel.incident.changed'])).toEqual(['1']);
+    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed', 'channel.custom_emoji.changed', 'channel.markdown.repaired', 'channel.message.transcribed', 'channel.message.pin_changed', 'channel.incident.changed', ...POLL_EVENTS].sort());
   });
 
   it('every stored event parses against its registered schema', async () => {

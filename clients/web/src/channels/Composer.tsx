@@ -2,7 +2,9 @@ import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, u
 import { Link, useNavigate } from 'react-router';
 import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type CustomEmoji, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { fetchBroadcastReach, sendTyping, uploadChannelFile } from '../api/endpoints';
+import { fetchBroadcastReach, openIncident, resolveIncident, sendTyping, uploadChannelFile } from '../api/endpoints';
+import { callController } from '../meetings/store';
+import { channelPath } from '../shell/nav';
 import { createTask, fetchChannelBoards } from '../screens/boards/api';
 import { botBoardOf, branchFor } from '../screens/boards/board';
 import { Avatar } from '../components/ui';
@@ -519,6 +521,50 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   };
 
   /** `/task`: a card on the channel's own board when it has one, else the team's default board; the box is emptied only once the card exists. */
+  /**
+   * `/incident` (P35-07): open one, then go to its channel and start its voice room; or resolve the incident of this channel. Only the command's text is
+   * cleared, and only when the box still holds it.
+   */
+  const incidentBusy = useRef(false);
+  const runIncident = async (plan: { do: 'incident'; title: string } | { do: 'incident-resolve'; summary: string }): Promise<void> => {
+    if (!slash || incidentBusy.current) return;
+    incidentBusy.current = true;
+    const sent = area.current?.value ?? '';
+    const clearIfSame = (): void => {
+      if ((area.current?.value ?? '') === sent) clearBox();
+    };
+    try {
+      if (plan.do === 'incident') {
+        const res = await openIncident(slash.teamSlug, plan.title, channelId);
+        clearIfSame();
+        void navigate(channelPath(slash.teamSlug, res.incident.channelName));
+        // the incident's voice room: the person who opened it is in it first, and the others join from the header
+        void callController().start(res.incident.channelId).catch(() => undefined);
+      } else {
+        const res = await resolveIncident(channelId, plan.summary);
+        clearIfSame();
+        setNotice({ tone: 'ok', text: res.incident.postmortemPath ? `Resolved. The post-mortem draft is ${res.incident.postmortemPath} in Files.` : 'Resolved.' });
+      }
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      setNotice({
+        tone: 'bad',
+        text:
+          status === 404
+            ? 'This channel is not an incident. Type /incident resolve in the incident’s own channel.'
+            : status === 409
+              ? 'This incident is already resolved.'
+              : status === 403
+                ? 'Only a member of the team can open an incident.'
+                : e instanceof Error && e.message
+                  ? e.message
+                  : 'The incident could not be changed. Try again.',
+      });
+    } finally {
+      incidentBusy.current = false;
+    }
+  };
+
   const makeCard = async (title: string): Promise<void> => {
     if (!slash || makingCard.current) return;
     makingCard.current = true;
@@ -646,6 +692,11 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
       if (plan.do === 'task') {
         setNotice(null);
         void makeCard(plan.title);
+        return;
+      }
+      if (plan.do === 'incident' || plan.do === 'incident-resolve') {
+        setNotice(null);
+        void runIncident(plan);
         return;
       }
       if (plan.do === 'remind-list') {

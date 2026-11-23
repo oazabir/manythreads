@@ -74,7 +74,7 @@ describe('the list', () => {
 
   it('has every built-in command, each from the platform and with a hint of its words', () => {
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
-      'ask', 'task', 'remind', 'status', 'dnd', 'away', 'invite', 'leave', 'mute', 'topic', 'me', 'shrug', 'poll', 'help',
+      'ask', 'incident', 'task', 'remind', 'status', 'dnd', 'away', 'invite', 'leave', 'mute', 'topic', 'me', 'shrug', 'poll', 'help',
     ]);
     for (const c of SLASH_COMMANDS) {
       expect(c.source).toBe('builtin');
