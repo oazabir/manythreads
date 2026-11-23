@@ -3,7 +3,7 @@ import { parseGitRepo } from '@manythreads/shared';
 import { startFakeGithub, type FakeGithub } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listRequestChecks, listRequestFiles, MAX_PAGE_PATCH_BYTES, MAX_PATCH_BYTES, summarize, type ProviderTarget } from '../src/review.ts';
-import { registerReviewRoutes } from '../src/review-routes.ts';
+import { registerDecisionRoutes, registerReviewRoutes } from '../src/review-routes.ts';
 import type { PullRequestDeps } from '../src/pull-requests.ts';
 
 // P35-02 steps 1 and 2: the card's Review reads the pull request's files and the head's checks through the server, with the project's token. GitHub is the
@@ -188,5 +188,128 @@ describe('the review routes', () => {
     expect(r.status).toBe(409);
     expect(bad.refused).toEqual(['widgets']);
     expect(JSON.stringify(r.body)).not.toContain('ghp_');
+  });
+});
+
+describe('the decisions: approve, request changes, merge', () => {
+  const ME = '01a16e30-0000-7000-8000-0000000000a1';
+  const CODER = '01a16e30-0000-7000-8000-0000000000d1';
+  const HANDOFF = '01a16e30-0000-7000-8000-0000000000e1';
+
+  async function decisions(pull: { headSha?: string; files?: unknown[] } = {}, door: { o_outcome: string; o_reason: string } = { o_outcome: 'recorded', o_reason: '' }, ownPulls = false) {
+    const own = ownPulls ? await startFakeGithub({ token: TOKEN, owner: 'acme', repo: 'widgets', ownPulls: true }) : gh;
+    const r = await fetch(`${own.url}/repos/acme/widgets/pulls`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 't', head: 'card-01a16e30', base: 'main', head_sha: pull.headSha ?? HEAD }),
+    });
+    const n = ((await r.json()) as { number: number }).number;
+    const sql: { text: string; params: unknown[] }[] = [];
+    const emitted: { type: string }[] = [];
+    let state = 'waiting_on_person';
+    const card = () => ({
+      id: TASK, workspace_id: '01a16e30-0000-7000-8000-0000000000c1', team_id: TEAM, title: 'Fix', description: '', state, kind: 'code', priority: 'normal',
+      owner_id: state === 'in_progress' ? CODER : ME, branch: 'card-01a16e30', base_sha: null, tested_sha: HEAD, environment_id: null, board_id: null, thread_root_id: null,
+      blocker_reason: '', rework_count: 0, handoff_count: 1, created_by: ME, created_at: new Date(), updated_at: new Date(), completed_at: state === 'done' ? new Date() : null,
+      pull_request_project: 'widgets', pull_request_number: n, pull_request_url: `${ORIGIN}/pull/${n}`, pull_request_state: state === 'done' ? 'merged' : 'open', pull_request_merge_sha: null,
+    });
+    const query = (text: string, params: unknown[] = []) => {
+      sql.push({ text, params });
+      if (text.includes('FROM app.teams WHERE slug')) return Promise.resolve({ rows: [{ id: TEAM, workspace_id: 'w', archived_at: null }] });
+      if (text.includes('pull_request_head_sha AS head_sha')) return Promise.resolve({ rows: [{ team_slug: 'engineering', number: n, project: 'widgets', origin: ORIGIN, head_sha: HEAD, state: 'open' }] });
+      if (text.includes('tasks_review_pull_request')) return Promise.resolve({ rows: [door] });
+      if (text.includes('tasks_actor_of')) return Promise.resolve({ rows: [{ kind: 'person', ref_id: ME, name: 'Omar' }] });
+      if (text.includes('tasks_bot_of')) return Promise.resolve({ rows: [{ id: CODER, name: 'Coder' }] });
+      if (text.includes('app.tasks_handoff(')) {
+        state = 'in_progress';
+        return Promise.resolve({ rows: [{ o_outcome: 'moved', o_handoff_id: HANDOFF, o_reason: '' }] });
+      }
+      if (text.includes('FROM app.handoffs')) {
+        return Promise.resolve({ rows: [{ id: HANDOFF, task_id: TASK, team_id: TEAM, from_actor_id: ME, to_actor_id: CODER, mode: 'bot', note: String(sql.find((s) => s.text.includes('tasks_handoff('))?.params[3]), approval_id: null, applied_at: new Date(), created_at: new Date() }] });
+      }
+      if (text.includes('tasks_merged_here')) {
+        state = 'done';
+        return Promise.resolve({ rows: [{ out: 'merged' }] });
+      }
+      if (text.includes('FROM app.tasks t')) return Promise.resolve({ rows: [card()] });
+      return Promise.resolve({ rows: [] });
+    };
+    const tx = { actor: { id: ME, kind: 'person', workspaceId: 'w' }, query } as unknown as PluginTx;
+    const credentials = { id: 'project.credentials', read: async () => ({ token: TOKEN, origin: ORIGIN, branch: 'main' }), setRefused: async () => undefined } as unknown as ProjectCredentialsProvider;
+    const deps: PullRequestDeps = { credentials: () => credentials, originAllow: ['https://github.com/acme/'], apiBaseOverride: own.url };
+    const routes = new Map<string, { handler: unknown }>();
+    const ctx = {
+      http: { route: (r: { path: string; handler: never }) => routes.set(r.path, r) },
+      audit: { emit: async (_tx: unknown, e: { type: string }) => void emitted.push(e) },
+      providers: { get: () => undefined },
+    } as unknown as PluginContext;
+    registerDecisionRoutes(ctx, () => deps);
+    const call = async (what: 'approve' | 'request-changes' | 'merge', body: Record<string, unknown>) => {
+      const h = routes.get(`/api/teams/:slug/tasks/:taskId/pull-request/${what}`)!.handler as (q: unknown, t: PluginTx) => Promise<{ status: number; body: unknown }>;
+      try {
+        return await h({ params: { slug: 'engineering', taskId: TASK }, query: {}, body }, tx);
+      } catch (e) {
+        return { status: (e as { status?: number }).status ?? 500, body: { message: (e as Error).message } };
+      }
+    };
+    return { n, own, sql, emitted, call };
+  }
+
+  it('approves at the tested head, through the door, as a review on GitHub', async () => {
+    const d = await decisions();
+    const r = await d.call('approve', { headSha: HEAD });
+    expect(r).toMatchObject({ status: 200, body: { asComment: false, merged: false } });
+    expect(d.sql.find((s) => s.text.includes('tasks_review_pull_request'))?.params).toEqual([TASK, 'approved', HEAD]);
+    expect(gh.pulls.get(d.n)!.reviews).toEqual([{ event: 'APPROVE', commitId: HEAD, body: expect.stringContaining('Approved by Omar') }]);
+  });
+
+  it('falls back to a comment when GitHub refuses a review by the request’s own author (the bot account)', async () => {
+    const d = await decisions({}, undefined, true);
+    expect(await d.call('approve', { headSha: HEAD })).toMatchObject({ status: 200, body: { asComment: true } });
+    expect(d.own.pulls.get(d.n)!.reviews).toEqual([{ event: 'COMMENT', commitId: HEAD, body: expect.stringContaining('Approved by Omar') }]);
+    await d.own.stop();
+  });
+
+  it('refuses a decision about another commit than the tested one, and one after the request moved, before anything is written', async () => {
+    const d = await decisions();
+    expect((await d.call('approve', { headSha: 'b'.repeat(40) })).status).toBe(409);
+    gh.pulls.get(d.n)!.headSha = 'f'.repeat(40);
+    const moved = await d.call('merge', { headSha: HEAD });
+    expect(moved.status).toBe(409);
+    expect(JSON.stringify(moved.body)).toContain('moved');
+    expect(d.sql.some((s) => s.text.includes('tasks_review_pull_request'))).toBe(false);
+    expect(gh.pulls.get(d.n)!.merged).toBe(false);
+  });
+
+  it('says the door’s refusal: a person who is not a lead gets 403', async () => {
+    const d = await decisions({}, { o_outcome: 'not_lead', o_reason: 'only a lead of this team can approve, ask for changes or merge' });
+    expect(await d.call('approve', { headSha: HEAD })).toMatchObject({ status: 403, body: { message: expect.stringContaining('only a lead') } });
+    expect(gh.pulls.get(d.n)!.reviews).toBeUndefined();
+  });
+
+  it('asks for changes: a change request on GitHub, then the same card goes to the Coder with the comment as its note', async () => {
+    const d = await decisions();
+    const r = await d.call('request-changes', { headSha: HEAD, comment: 'Keep the width when the window shrinks.' });
+    expect(r).toMatchObject({ status: 200, body: { handedTo: 'Coder' } });
+    expect(gh.pulls.get(d.n)!.reviews?.[0]).toMatchObject({ event: 'REQUEST_CHANGES', body: expect.stringContaining('Keep the width') });
+    const handoff = d.sql.find((s) => s.text.includes('app.tasks_handoff('))!;
+    expect(handoff.params.slice(0, 3)).toEqual([TASK, CODER, 'bot']);
+    expect(String(handoff.params[3])).toContain(`pull request #${d.n}`);
+    expect(String(handoff.params[3])).toContain('Keep the width when the window shrinks.');
+    expect(d.emitted.map((e) => e.type)).toEqual(['tasks.task.handed_off', 'tasks.task.updated']);
+    expect((await d.call('request-changes', { headSha: HEAD, comment: '   ' })).status).not.toBe(200);
+  });
+
+  it('merges at the tested head and finishes the card at once; a failing check refuses the merge', async () => {
+    const failing = await decisions({ headSha: HEAD });
+    gh.checks.set(HEAD, { runs: [{ name: 'test', status: 'completed', conclusion: 'failure' }], statuses: [] });
+    expect(await failing.call('merge', { headSha: HEAD })).toMatchObject({ status: 409, body: { message: expect.stringContaining('check failed') } });
+    expect(gh.pulls.get(failing.n)!.merged).toBe(false);
+    gh.checks.set(HEAD, { runs: [{ name: 'test', status: 'completed', conclusion: 'success' }], statuses: [] });
+    const d = await decisions({ headSha: HEAD });
+    expect(await d.call('merge', { headSha: HEAD })).toMatchObject({ status: 200, body: { merged: true, mergeSha: 'e'.repeat(40) } });
+    expect(gh.pulls.get(d.n)).toMatchObject({ merged: true });
+    expect(d.sql.find((s) => s.text.includes('tasks_merged_here'))?.params).toEqual([TASK, 'e'.repeat(40)]);
+    expect(d.emitted.map((e) => e.type)).toEqual(['tasks.task.completed', 'tasks.task.updated']);
   });
 });

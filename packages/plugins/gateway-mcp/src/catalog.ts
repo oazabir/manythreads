@@ -599,6 +599,21 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     },
     kind: 'write',
   },
+  'tasks.test_site': {
+    name: 'tasks.test_site',
+    description:
+      'Record on a card the address where its tested commit now runs (the test site you deployed it to), so the person who reviews the pull request can open it from the card. Only the card’s owner (or a lead); https only; an empty url clears it. Recorded in the card’s history.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'The card.' },
+        url: { type: 'string', maxLength: 300, description: 'The https address of the test site, or an empty string to clear it.' },
+      },
+      required: ['taskId', 'url'],
+      additionalProperties: false,
+    },
+    kind: 'write',
+  },
   'tasks.deploy': {
     name: 'tasks.deploy',
     description:

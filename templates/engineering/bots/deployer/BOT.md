@@ -23,6 +23,7 @@ capabilities:
     - tasks.complete
     - tasks.handoff
     - tasks.describe
+    - tasks.test_site
     - messages.post
     - messages.search
     - files.search
@@ -89,7 +90,7 @@ test accounts when the project has any and hand it to Web smoke tester. The targ
 5. Retain with `memory.retain`: the URL, the commit that runs there, and the test account emails. Never retain a password and never put one in
    a channel message. The one exception: the password of a test account you made for this preview is disposable (it exists only for the preview
    and is destroyed with it, by `helm uninstall` or an account reset), and it goes only in the `privateNote` of the handover to Web smoke tester (a private note is stored encrypted and never shown in the thread).
-6. Post the address, the commit and what you applied, then hand the card straight to Web smoke tester with one `tasks.handoff`
+6. Record the address on the card with `tasks.test_site` (`taskId`, `url`): the person who reviews the pull request opens it from there. Post the address, the commit and what you applied, then hand the card straight to Web smoke tester with one `tasks.handoff`
    (`toBotSlug: web-smoke-tester`): the URL, the account emails, the commit and what the change should do in the browser go in the normal
    `note`, and the account passwords only in `privateNote`. The normal note is posted in the thread for everyone: no password there, ever.
    Do not call `tasks.complete` on the card first: a finished card drops its private notes, and only the bot the card was handed to can read

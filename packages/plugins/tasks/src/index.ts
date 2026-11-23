@@ -7,7 +7,7 @@ import { registerJobs } from './jobs.ts';
 import { registerPullRequestSync } from './pull-requests.ts';
 import { registerTodo } from './todo.ts';
 import { registerRoutes } from './routes.ts';
-import { registerReviewRoutes } from './review-routes.ts';
+import { registerDecisionRoutes, registerReviewRoutes } from './review-routes.ts';
 
 export { CLAIM_SWEEP_QUEUE } from './jobs.ts';
 export { TASK_SELECT, toTask, type TaskRow } from './rows.ts';
@@ -39,6 +39,7 @@ export default definePlugin({
       { name: 'tasks.pull_request', destructive: false },
       { name: 'tasks.commit_identity', destructive: false },
       { name: 'tasks.deploy', destructive: false },
+      { name: 'tasks.test_site', destructive: false },
       // The thread's to-do list (P25-10): every bot has it with no BOT.md line, like `approvals.ask`. It changes only the bot's own list in the thread it answers in.
       { name: 'tasks.todo', destructive: false, default: true },
     ],
@@ -52,6 +53,7 @@ export default definePlugin({
   register(ctx) {
     registerRoutes(ctx);
     registerReviewRoutes(ctx);
+    registerDecisionRoutes(ctx);
     registerCapabilities(ctx);
     registerTurnCapabilities(ctx);
     registerJobs(ctx);

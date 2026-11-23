@@ -20,6 +20,8 @@ export interface FakePull {
   mergeSha: string | null;
   /** The request's files as GitHub's `/pulls/:n/files` lists them (raw objects: `filename`, `status`, `patch`...); a test sets them. */
   files?: unknown[];
+  /** Reviews submitted on it (`event` and `commit_id` as sent). */
+  reviews?: { event: string; commitId: string; body: string }[];
 }
 
 /** What GitHub reports for one commit: its check runs and its commit statuses (raw objects), keyed by the commit in `FakeGithub.checks`. */
@@ -58,7 +60,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function startFakeGithub(options: { token: string; owner?: string; repo?: string; login?: string; canPush?: boolean; readOnlyRepos?: string[]; expires?: string }): Promise<FakeGithub> {
+export async function startFakeGithub(options: { token: string; ownPulls?: boolean; owner?: string; repo?: string; login?: string; canPush?: boolean; readOnlyRepos?: string[]; expires?: string }): Promise<FakeGithub> {
   const pulls = new Map<number, FakePull>();
   const checks = new Map<string, FakeChecks>();
   const calls: FakeGithubCall[] = [];
@@ -101,6 +103,27 @@ export async function startFakeGithub(options: { token: string; owner?: string; 
         const slice = all.slice((page - 1) * per, page * per);
         const more = page * per < all.length;
         return send(200, slice, more ? { link: `<${base}${url.pathname}?per_page=${per}&page=${page + 1}>; rel="next"` } : {});
+      }
+      // a review: the token's own account opened every pull request of this double when `ownPulls` (GitHub refuses an approval or a change request by the author)
+      const review = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/.exec(url.pathname);
+      if (req.method === 'POST' && review) {
+        const p = pulls.get(Number(review[3]));
+        if (!p) return send(404, { message: 'Not Found' });
+        const doc = JSON.parse(body || '{}') as { event?: string; commit_id?: string; body?: string };
+        if (options.ownPulls && doc.event !== 'COMMENT') return send(422, { message: 'Unprocessable Entity', errors: ['Can not approve your own pull request'] });
+        (p.reviews ??= []).push({ event: doc.event ?? '', commitId: doc.commit_id ?? '', body: doc.body ?? '' });
+        return send(200, { id: p.reviews.length, state: doc.event });
+      }
+      // a merge, refused (409) when `sha` is not the head: GitHub's own rule for "merge only at this commit"
+      const merge = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/merge$/.exec(url.pathname);
+      if (req.method === 'PUT' && merge) {
+        const p = pulls.get(Number(merge[3]));
+        if (!p || p.state !== 'open') return send(p ? 405 : 404, { message: p ? 'Pull Request is not mergeable' : 'Not Found' });
+        const doc = JSON.parse(body || '{}') as { sha?: string };
+        if (doc.sha && doc.sha !== p.headSha) return send(409, { message: 'Head branch was modified. Review and try the merge again.' });
+        const sha = 'e'.repeat(40);
+        Object.assign(p, { state: 'closed', merged: true, mergeSha: sha });
+        return send(200, { sha, merged: true, message: 'Pull Request successfully merged' });
       }
       // a commit's check runs and its combined status
       const commit = /^\/repos\/([^/]+)\/([^/]+)\/commits\/([0-9a-f]+)\/(check-runs|status)$/.exec(url.pathname);

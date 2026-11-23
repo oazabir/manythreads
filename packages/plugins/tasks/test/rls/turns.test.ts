@@ -4,7 +4,7 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { KAHF_WORKSPACE_ID, TEAM_IDS, createPersonas, personas, startTestServer, type TestServer } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { registerCapabilities } from '../../src/capabilities.ts';
-import { registerTurnCapabilities } from '../../src/capabilities-turns.ts';
+import { MAX_DESCRIPTION, registerTurnCapabilities } from '../../src/capabilities-turns.ts';
 
 // `tasks.release` and `tasks.describe` against the real database: who may use them, and the refusals that keep a finished card, a card that
 // waits on a person and a card with a handover in flight out of a bot's hands.
@@ -131,6 +131,6 @@ describe('tasks.describe and tasks.release', () => {
     const id = await card();
     await tool('tasks.claim', a, { taskId: id });
     expect(await tool('tasks.describe', a, { taskId: id, description: 'a\u0000b' })).toMatchObject({ ok: false, code: 'invalid_input' });
-    expect(await tool('tasks.describe', a, { taskId: id, description: 'x'.repeat(8001) })).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(await tool('tasks.describe', a, { taskId: id, description: 'x'.repeat(MAX_DESCRIPTION + 1) })).toMatchObject({ ok: false, code: 'invalid_input' });
   });
 });

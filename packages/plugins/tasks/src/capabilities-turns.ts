@@ -24,6 +24,7 @@ const REFUSALS: Record<string, string> = {
   handoff_pending: 'a handover of this card waits for approval; it is not yours to change or give back until that is decided',
   claim_expired: 'your claim on the card has expired: claim it again first',
   invalid_input: 'the description is not valid text',
+  not_valid_url: 'the url must be an https address of at most 300 characters, or empty to clear it',
 };
 const refusal = (code: string): { ok: false; code: string; message: string } => ({ ok: false, code, message: REFUSALS[code] ?? code });
 
@@ -55,5 +56,20 @@ export function registerTurnCapabilities(ctx: PluginContext): void {
     const after = (await cardOf(tx, taskId)) ?? before;
     await emitUpdated(ctx, tx, before, after);
     return { ok: true, taskId, description: after.description };
+  });
+
+  // P35-02: where the card's tested commit runs, for the person who reviews the pull request on the card (the Deployer records it after its deploy).
+  ctx.capabilities.register('tasks.test_site', async (input, tx) => {
+    const taskId = String(input['taskId'] ?? '');
+    if (!UUID.test(taskId)) return { ok: false, code: 'invalid_input', message: 'taskId must be the card id (a uuid)' };
+    const url = typeof input['url'] === 'string' ? input['url'].trim() : '';
+    if (url !== '' && (url.length > 300 || !/^https:\/\/[^/@?#\s\\%]+(\/[^@#\s\\]*)?$/.test(url))) return refusal('not_valid_url');
+    const before = await cardOf(tx, taskId);
+    if (!before) return { ok: false, code: 'not_found', message: 'no such card' };
+    const outcome = (await tx.query<{ outcome: string }>('SELECT app.tasks_set_test_site($1::uuid, $2) AS outcome', [taskId, url])).rows[0]?.outcome;
+    if (outcome !== 'recorded') return refusal(outcome === 'invalid_input' ? 'not_valid_url' : outcome === 'not_owner' ? 'not_owner' : (outcome ?? 'conflict'));
+    const after = (await cardOf(tx, taskId)) ?? before;
+    await emitUpdated(ctx, tx, before, after);
+    return { ok: true, taskId, testSiteUrl: after.testSiteUrl ?? null };
   });
 }

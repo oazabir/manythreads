@@ -593,3 +593,89 @@ describe('whose name the commit of a card carries', () => {
   });
 });
 
+
+describe('reviewing the pull request on the card (P35-02)', () => {
+  it('lets anyone of the team read the files and checks, and only a lead decide: approve, ask for changes (the same card goes to the Coder), merge at the tested head', async () => {
+    // a test above removed the project's token: a lead saves it again
+    const saved = await call(person(omar), 'PUT', credPath(), { username: 'octocat', token: TOKEN });
+    expect(saved.status, saved.text).toBe(200);
+    const coder = await makeBot('coder');
+    const id = await ownedCard('Review in the thread');
+    // a bot's card lives in its own thread (here in a channel with no project), where the hand-back is posted
+    const ch = await call(person(omar), 'POST', '/api/teams/engineering/channels', { name: 'review-chan' });
+    expect(ch.status, ch.text).toBe(201);
+    const channelId = (ch.body['channel'] as { id: string }).id;
+    const root = await call(person(omar), 'POST', `/api/channels/${channelId}/messages`, { channelId, body: 'review this', threadRootId: null });
+    expect(root.status, root.text).toBe(201);
+    await ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET thread_root_id = $2 WHERE id = $1', [id, String(root.body['id'])]);
+    const n = await openPull(id);
+    gh.pulls.get(n)!.files = [{ filename: 'src/a.ts', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' }];
+    expect(await record(bot, id, SHA, 'widgets', n)).toMatchObject({ o_outcome: 'recorded' });
+
+    const base = `/api/teams/engineering/tasks/${id}/pull-request`;
+    const diff = await call(person(nadia), 'GET', `${base}/diff`);
+    expect(diff.status, diff.text).toBe(200);
+    expect(diff.body).toMatchObject({ number: n, atRecordedHead: true, files: [{ path: 'src/a.ts', patch: '@@ -1 +1 @@\n-a\n+b' }] });
+    expect((await call(person(nadia), 'GET', `${base}/checks`)).body).toMatchObject({ summary: 'none', atRecordedHead: true });
+
+    // a member reads but does not decide; nothing reaches GitHub
+    const refused = await call(person(nadia), 'POST', `${base}/approve`, { headSha: SHA });
+    expect(refused.status, refused.text).toBe(403);
+    expect(gh.pulls.get(n)!.reviews).toBeUndefined();
+
+    const approved = await call(person(omar), 'POST', `${base}/approve`, { headSha: SHA });
+    expect(approved.status, approved.text).toBe(200);
+    expect(gh.pulls.get(n)!.reviews).toEqual([expect.objectContaining({ event: 'APPROVE', commitId: SHA })]);
+
+    const asked = await call(person(omar), 'POST', `${base}/request-changes`, { headSha: SHA, comment: 'Name the binary files in the list.' });
+    expect(asked.status, asked.text).toBe(200);
+    const back = await card(id);
+    expect(back).toMatchObject({ ownerId: coder.actorId, state: 'in_progress', pullRequest: { number: n, state: 'withdrawn' } });
+    const lines = await history(id);
+    expect(lines.filter((l) => l.type === 'pull_request_reviewed').map((l) => l.data['verdict'])).toEqual(['approved', 'changes_requested']);
+    expect(JSON.stringify(lines)).not.toContain('Name the binary files');
+    const handoffs = await ownerSql<{ note: string }>(server.db.ownerUrl, 'SELECT note FROM app.handoffs WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1', [id]);
+    expect(handoffs[0]!.note).toContain('Name the binary files in the list.');
+
+    // the Coder's fix is tested again and the same pull request is recorded again, now at the new commit
+    const fixed = 'c'.repeat(40);
+    gh.pulls.get(n)!.headSha = fixed;
+    // as the Committer records it: the one commit `mt-publish` made (squashed), so the card's old tested commit does not have to be its prefix
+    const again = await withActor({ kind: 'bot', id: coder.actorId, workspaceId: KAHF_WORKSPACE_ID } as unknown as Parameters<typeof withActor>[0], async (tx) =>
+      (
+        await tx.query<{ o_outcome: string }>('SELECT * FROM app.tasks_record_pull_request($1::uuid, $2, $3, $4::integer, $5, $6, $7, $8, $9, true)', [
+          id, fixed, 'widgets', n, `${ORIGIN}/pull/${n}`, ORIGIN, `card-${id.slice(0, 8)}`, fixed, 'main',
+        ])
+      ).rows[0]!, { pool: server.pools.app });
+    expect(again).toMatchObject({ o_outcome: 'recorded' });
+
+    // the record is the tested head: a decision about the old commit is refused, a push after the test refuses the merge
+    expect((await call(person(omar), 'POST', `${base}/merge`, { headSha: SHA })).status).toBe(409);
+    gh.pulls.get(n)!.headSha = 'd'.repeat(40);
+    expect((await call(person(omar), 'POST', `${base}/merge`, { headSha: fixed })).status).toBe(409);
+    expect(gh.pulls.get(n)!.merged).toBe(false);
+    gh.pulls.get(n)!.headSha = fixed;
+
+    const merged = await call(person(omar), 'POST', `${base}/merge`, { headSha: fixed });
+    expect(merged.status, merged.text).toBe(200);
+    expect(gh.pulls.get(n)!.merged).toBe(true);
+    // finished at once, not at the next sync
+    expect(await card(id)).toMatchObject({ state: 'done', pullRequest: { state: 'merged', mergeSha: 'e'.repeat(40) } });
+    expect((await history(id)).filter((l) => l.type === 'pull_request_reviewed').map((l) => l.data['verdict'])).toEqual(['approved', 'changes_requested', 'merge_asked']);
+  });
+
+  it('keeps the test site address only from the card’s owner or a lead, https only', async () => {
+    const id = await ownedCard('Test site');
+    const set = (who: { actorId: string }, url: string, kind: 'bot' | 'person' = 'bot') =>
+      withActor({ kind, id: who.actorId, workspaceId: KAHF_WORKSPACE_ID } as unknown as Parameters<typeof withActor>[0], async (tx) => (await tx.query<{ o: string }>('SELECT app.tasks_set_test_site($1::uuid, $2) AS o', [id, url])).rows[0]!.o, {
+        pool: server.pools.app,
+      });
+    expect(await set(other, 'https://test.example.test/')).toBe('not_owner');
+    expect(await set(bot, 'http://test.example.test/')).toBe('invalid_input');
+    expect(await set(bot, 'https://test.example.test/')).toBe('recorded');
+    expect((await card(id)).testSiteUrl).toBe('https://test.example.test/');
+    expect(await set(omar, '', 'person')).toBe('recorded');
+    expect((await card(id)).testSiteUrl).toBeNull();
+    expect((await history(id)).filter((l) => l.type === 'test_site')).toHaveLength(2);
+  });
+});

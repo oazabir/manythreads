@@ -48,6 +48,10 @@ export const TaskEventType = z.enum([
   'pull_request_closed',
   /** The description changed: its owner rewrote it, or a person ticked a checklist box (`data.tick` has the box's number and new state). `data` has the lengths before and after and a sha256 of the new text, never the text. */
   'described',
+  /** A lead decided on the card's pull request at its tested head (P35-02): `data.verdict` is approved, changes_requested or merge_asked, with `pullRequest` and `headSha`; never the comment. */
+  'pull_request_reviewed',
+  /** The address where the card's tested commit runs was set or cleared (`data.url`). */
+  'test_site',
 ]);
 export type TaskEventType = z.infer<typeof TaskEventType>;
 
@@ -107,6 +111,8 @@ export const Task = z.object({
   threadRootId: z.uuid().nullable(),
   /** The pull request the card waits on, once the tested branch was published; null for a card with none. */
   pullRequest: TaskPullRequest.nullable(),
+  /** Where the card's tested commit runs (the team's test site, or the card's own with P35-03); https only. Absent on a card from before 0020. */
+  testSiteUrl: z.string().max(300).nullable().optional(),
   /** Why the card waits on a person, in words; empty otherwise. */
   blockerReason: z.string().max(500),
   /** How many times the work was sent back (bounded by `MAX_REWORKS`). */

@@ -52,3 +52,25 @@ export const PullRequestChecksResponse = z.object({
 });
 export type PullRequestChecksResponse = z.infer<typeof PullRequestChecksResponse>;
 export const pullRequestChecksRoute = { method: 'GET', path: '/api/teams/:slug/tasks/:taskId/pull-request/checks' } as const;
+
+/** A lead's decision, always about the head commit the reviewer saw: refused when the request is no longer at it, or it is not the tested commit. */
+export const PullRequestDecisionRequest = z.object({ headSha: z.string().regex(/^[0-9a-f]{7,64}$/) });
+export type PullRequestDecisionRequest = z.infer<typeof PullRequestDecisionRequest>;
+
+/** Asking for changes: the comment goes to the provider and, as the hand-off note, to the Coder, who works on the same card again. */
+export const PullRequestChangesRequest = PullRequestDecisionRequest.extend({ comment: z.string().trim().min(1).max(800) });
+export type PullRequestChangesRequest = z.infer<typeof PullRequestChangesRequest>;
+
+export const PullRequestDecisionResponse = z.object({
+  /** The provider took a comment instead of the review itself (it refuses a review by the request's own author, the bot account). */
+  asComment: z.boolean(),
+  /** Merge only: the card is done (the provider merged at the tested commit). */
+  merged: z.boolean(),
+  mergeSha: z.string().nullable(),
+  /** Request changes only: the bot the card went back to. */
+  handedTo: z.string().nullable(),
+});
+export type PullRequestDecisionResponse = z.infer<typeof PullRequestDecisionResponse>;
+export const approvePullRequestRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/pull-request/approve' } as const;
+export const requestPullRequestChangesRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/pull-request/request-changes' } as const;
+export const mergePullRequestRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/pull-request/merge' } as const;

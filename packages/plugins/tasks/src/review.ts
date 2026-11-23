@@ -183,3 +183,49 @@ export async function listRequestChecks(t: ProviderTarget, number: number, head:
   const state = GITLAB_PIPELINE[str(atHead.status) ?? ''] ?? 'pending';
   return { ok: true, checks: [{ name: `Pipeline #${count(atHead.id)}`, state, link: httpsLink(atHead.web_url) }], unreadable: null };
 }
+
+/** What a decision did on the provider: `fallback` when the provider would not take the review itself (the bot account opened the request) and a comment says it. */
+export type ReviewOutcome = { ok: true; fallback: boolean } | ProviderFail;
+
+/**
+ * Approve (or ask for changes on) the request at `head`, signed by the bot account the token belongs to, saying who decided. GitHub refuses a review by
+ * the request's own author (422; the bot account opened it), GitLab an approval by it (401 on approve is the token, 403/405/409 the rule): both fall back to a
+ * comment, so the provider still shows the decision.
+ */
+export async function submitReview(t: ProviderTarget, number: number, head: string, verdict: 'approve' | 'request_changes', words: string): Promise<ReviewOutcome> {
+  if (t.repo.provider === 'github') {
+    const event = verdict === 'approve' ? 'APPROVE' : 'REQUEST_CHANGES';
+    const r = await providerCall(t, `/pulls/${number}/reviews`, { method: 'POST', body: { commit_id: head, event, body: words } });
+    if (r.ok) return { ok: true, fallback: false };
+    if (r.status !== 422) return r;
+    const c = await providerCall(t, `/pulls/${number}/reviews`, { method: 'POST', body: { commit_id: head, event: 'COMMENT', body: words } });
+    return c.ok ? { ok: true, fallback: true } : c;
+  }
+  if (verdict === 'approve') {
+    const r = await providerCall(t, `/merge_requests/${number}/approve`, { method: 'POST', body: { sha: head } });
+    if (r.ok) return { ok: true, fallback: false };
+    if (r.refused || (r.status !== 403 && r.status !== 405 && r.status !== 409 && r.status !== 401)) return r;
+  }
+  const n = await providerCall(t, `/merge_requests/${number}/notes`, { method: 'POST', body: { body: words } });
+  return n.ok ? { ok: true, fallback: verdict === 'approve' } : n;
+}
+
+/** Merge the request only at `head` (P6-04): the provider itself refuses when the request moved. A plain merge (the Committer already made one commit). */
+export async function mergeRequest(t: ProviderTarget, number: number, head: string): Promise<{ ok: true; mergeSha: string | null } | (ProviderFail & { words?: string })> {
+  const pick = (v: unknown): string | null => (typeof v === 'string' && /^[0-9a-f]{7,64}$/i.test(v) ? v.toLowerCase() : null);
+  if (t.repo.provider === 'github') {
+    const r = await providerCall(t, `/pulls/${number}/merge`, { method: 'PUT', body: { sha: head, merge_method: 'merge' } });
+    if (r.ok) return { ok: true, mergeSha: pick((r.body as { sha?: unknown } | null)?.sha) };
+    if (r.status === 409) return { ...r, words: 'The pull request moved past the tested commit: it was not merged. Test the new commit first.' };
+    if (r.status === 405) return { ...r, words: 'GitHub will not merge it yet (a required review or check, or a conflict with the main branch).' };
+    return r;
+  }
+  const r = await providerCall(t, `/merge_requests/${number}/merge`, { method: 'PUT', body: { sha: head } });
+  if (r.ok) {
+    const b = r.body as { merge_commit_sha?: unknown; squash_commit_sha?: unknown } | null;
+    return { ok: true, mergeSha: pick(b?.merge_commit_sha) ?? pick(b?.squash_commit_sha) ?? head };
+  }
+  if (r.status === 409) return { ...r, words: 'The merge request moved past the tested commit: it was not merged. Test the new commit first.' };
+  if (r.status === 405 || r.status === 406 || r.status === 422) return { ...r, words: 'GitLab will not merge it yet (an approval rule, a pipeline, or a conflict with the main branch).' };
+  return r;
+}
