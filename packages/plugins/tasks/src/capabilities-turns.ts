@@ -25,6 +25,7 @@ const REFUSALS: Record<string, string> = {
   claim_expired: 'your claim on the card has expired: claim it again first',
   invalid_input: 'the description is not valid text',
   not_valid_url: 'the url must be an https address of at most 300 characters, or empty to clear it',
+  not_leased: 'this team’s test sites are leased: lease one for the card with tasks.test_site_lease and record that slot’s address',
 };
 const refusal = (code: string): { ok: false; code: string; message: string } => ({ ok: false, code, message: REFUSALS[code] ?? code });
 
@@ -67,7 +68,7 @@ export function registerTurnCapabilities(ctx: PluginContext): void {
     const before = await cardOf(tx, taskId);
     if (!before) return { ok: false, code: 'not_found', message: 'no such card' };
     const outcome = (await tx.query<{ outcome: string }>('SELECT app.tasks_set_test_site($1::uuid, $2) AS outcome', [taskId, url])).rows[0]?.outcome;
-    if (outcome !== 'recorded') return refusal(outcome === 'invalid_input' ? 'not_valid_url' : outcome === 'not_owner' ? 'not_owner' : (outcome ?? 'conflict'));
+    if (outcome !== 'recorded') return refusal(outcome === 'invalid_input' ? 'not_valid_url' : (outcome ?? 'conflict'));
     const after = (await cardOf(tx, taskId)) ?? before;
     await emitUpdated(ctx, tx, before, after);
     return { ok: true, taskId, testSiteUrl: after.testSiteUrl ?? null };

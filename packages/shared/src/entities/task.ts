@@ -52,6 +52,10 @@ export const TaskEventType = z.enum([
   'pull_request_reviewed',
   /** The address where the card's tested commit runs was set or cleared (`data.url`). */
   'test_site',
+  /** The card leased one of its team's test-site slots (`data.namespace`, `data.host`; P35-03). */
+  'test_site_leased',
+  /** The server removed the card's test site and freed its slot (`data.namespace`, `data.reason`). */
+  'test_site_removed',
 ]);
 export type TaskEventType = z.infer<typeof TaskEventType>;
 

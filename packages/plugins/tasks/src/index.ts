@@ -6,6 +6,7 @@ import { registerApprovalSubscriber, registerNotWokenSubscriber } from './events
 import { registerJobs } from './jobs.ts';
 import { registerPullRequestSync } from './pull-requests.ts';
 import { registerTodo } from './todo.ts';
+import { registerTestSiteCapabilities } from './test-sites.ts';
 import { registerRoutes } from './routes.ts';
 import { registerDecisionRoutes, registerReviewRoutes } from './review-routes.ts';
 
@@ -40,6 +41,7 @@ export default definePlugin({
       { name: 'tasks.commit_identity', destructive: false },
       { name: 'tasks.deploy', destructive: false },
       { name: 'tasks.test_site', destructive: false },
+      { name: 'tasks.test_site_lease', destructive: false },
       // The thread's to-do list (P25-10): every bot has it with no BOT.md line, like `approvals.ask`. It changes only the bot's own list in the thread it answers in.
       { name: 'tasks.todo', destructive: false, default: true },
     ],
@@ -56,6 +58,7 @@ export default definePlugin({
     registerDecisionRoutes(ctx);
     registerCapabilities(ctx);
     registerTurnCapabilities(ctx);
+    registerTestSiteCapabilities(ctx);
     registerJobs(ctx);
     registerPullRequestSync(ctx);
     registerApprovalSubscriber(ctx);

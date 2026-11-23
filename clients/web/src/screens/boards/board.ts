@@ -254,6 +254,10 @@ export function eventLine(e: TaskEvent, nameOf: (id: string | null) => string): 
       if (verdict === 'changes_requested') return `asked for changes on pull request #${n} at ${at}`;
       return `merged pull request #${n} at ${at}`;
     }
+    case 'test_site_leased':
+      return `took the test site ${text(d, 'host') ?? text(d, 'namespace') ?? ''} for this card`;
+    case 'test_site_removed':
+      return text(d, 'reason') ? `removed the card's test site: ${text(d, 'reason')}` : "removed the card's test site";
     case 'test_site':
       return text(d, 'url') ? `put the test site at ${text(d, 'url')}` : 'took the test site address off the card';
     default:

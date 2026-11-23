@@ -614,6 +614,21 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     },
     kind: 'write',
   },
+  'tasks.test_site_lease': {
+    name: 'tasks.test_site_lease',
+    description:
+      'Lease the test site a card’s tested commit goes to: answers the slot’s namespace (also the name of its kube context) and host. The same card always gets the same slot back. With build: true it also takes the team’s build lock for 40 minutes (one build at a time); recording the site with tasks.test_site lets it go. When every slot is in use the answer names the cards that hold them. The server removes a card’s site when the card is done, its pull request is closed, or it sat a day without a deploy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'The card.' },
+        build: { type: 'boolean', description: 'true when you are about to build: takes the build lock.' },
+      },
+      required: ['taskId'],
+      additionalProperties: false,
+    },
+    kind: 'write',
+  },
   'tasks.deploy': {
     name: 'tasks.deploy',
     description:
