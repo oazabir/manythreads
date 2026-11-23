@@ -339,7 +339,7 @@ export function registerPersonalRoutes(ctx: PluginContext): void {
         if (err instanceof BlobNotFoundError) throw notFound('The file is no longer in storage');
         throw err;
       }
-      return fileContentResponse({ mime: version.mime, name: file.name, size: version.size }, stream, req.query['download'] === '1');
+      return fileContentResponse({ mime: version.mime, name: file.name, size: version.size }, stream, req.query['download'] === '1', req.headers['range']);
     }),
   });
 

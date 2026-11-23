@@ -424,3 +424,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.msg-video-cannot {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  color: var(--mute);
+  font-size: var(--fs-small);
+}

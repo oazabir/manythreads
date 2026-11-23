@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import {
   BlobNotFoundError,
   BlobTooLargeError,
@@ -154,23 +155,71 @@ export function storageOf(ctx: PluginContext): BlobStorage {
   return storage;
 }
 
-/** The bytes of a stored file with the headers every download carries (type, disposition, nosniff, a sandbox CSP, no shared cache). */
-export function fileContentResponse(file: { mime: string; name: string; size: string | number }, stream: AsyncIterable<Uint8Array>, forceDownload: boolean): HttpResponse {
+/** One byte range of `size` asked for by a `Range` header (`bytes=a-b`, `bytes=a-`, `bytes=-n`); null for no header or one this does not serve (several ranges). */
+export function parseRange(header: string | string[] | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+  const value = Array.isArray(header) ? header[0] : header;
+  if (!value) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(value.trim());
+  if (!m || (m[1] === '' && m[2] === '')) return null;
+  if (size === 0) return 'unsatisfiable';
+  let start: number;
+  let end: number;
+  if (m[1] === '') {
+    // the last n bytes
+    start = Math.max(0, size - Number(m[2]));
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= size) return 'unsatisfiable';
+  return { start, end };
+}
+
+/** The part of a stream from `start` to `end` (both included), reading and dropping what comes before it. */
+async function* slice(stream: AsyncIterable<Uint8Array>, start: number, end: number): AsyncIterable<Uint8Array> {
+  let at = 0;
+  for await (const chunk of stream) {
+    const from = Math.max(0, start - at);
+    const to = Math.min(chunk.length, end + 1 - at);
+    if (to > from) yield chunk.subarray(from, to);
+    at += chunk.length;
+    if (at > end) return;
+  }
+}
+
+/**
+ * The bytes of a stored file with the headers every download carries (type, disposition, nosniff, a sandbox CSP, no shared cache). One byte range is served
+ * when asked for (`range`): a video plays and seeks in every browser, Safari's included, which asks only for ranges (owner, 2026-11-23: screen recordings).
+ */
+export function fileContentResponse(file: { mime: string; name: string; size: string | number }, stream: AsyncIterable<Uint8Array>, forceDownload: boolean, rangeHeader?: string | string[]): HttpResponse {
   const disposition = forceDownload ? 'attachment' : dispositionFor(file.mime);
-  return {
-    status: 200,
-    body: stream,
-    headers: {
-      'content-type': servedMime(file.mime),
-      'content-length': String(file.size),
-      'content-disposition': `${disposition}; filename="${asciiFallback(file.name)}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
-      'x-content-type-options': 'nosniff',
-      'content-security-policy': "default-src 'none'; sandbox",
-      'cross-origin-resource-policy': 'same-origin',
-      // Access is re-decided on every read, so nothing may serve the bytes from a cache without asking.
-      'cache-control': 'private, no-cache',
-    },
+  const size = Number(file.size);
+  const common = {
+    'content-type': servedMime(file.mime),
+    'content-disposition': `${disposition}; filename="${asciiFallback(file.name)}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': "default-src 'none'; sandbox",
+    'cross-origin-resource-policy': 'same-origin',
+    // Access is re-decided on every read, so nothing may serve the bytes from a cache without asking.
+    'cache-control': 'private, no-cache',
+    'accept-ranges': 'bytes',
   };
+  const range = parseRange(rangeHeader, size);
+  if (range === 'unsatisfiable') {
+    // the bytes are not sent: the storage stream is closed
+    void stream[Symbol.asyncIterator]().return?.()?.catch(() => undefined);
+    return { status: 416, body: '', headers: { ...common, 'content-range': `bytes */${String(size)}` } };
+  }
+  if (range) {
+    return {
+      status: 206,
+      // the server pipes a Node Readable as bytes (a plain async iterable would be serialised)
+      body: Readable.from(slice(stream, range.start, range.end), { objectMode: false }),
+      headers: { ...common, 'content-length': String(range.end - range.start + 1), 'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(size)}` },
+    };
+  }
+  return { status: 200, body: stream, headers: { ...common, 'content-length': String(size) } };
 }
 
 export function registerFileRoutes(ctx: PluginContext): void {
@@ -290,7 +339,7 @@ export function registerFileRoutes(ctx: PluginContext): void {
         if (err instanceof BlobNotFoundError) throw notFound('The file is no longer in storage');
         throw err;
       }
-      return fileContentResponse(file, stream, req.query['download'] === '1');
+      return fileContentResponse(file, stream, req.query['download'] === '1', req.headers['range']);
     }),
   });
 
