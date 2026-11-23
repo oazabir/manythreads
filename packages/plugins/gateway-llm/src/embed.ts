@@ -1,7 +1,7 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import type { LlmAliasName } from '@manythreads/shared';
-import { scrubProxyDetail } from './litellm.ts';
-import { loadEgress, preflight, recordSpend, type RateHit } from './limits.ts';
+import type { PluginContext, PluginTx } from "@manythreads/sdk";
+import type { LlmAliasName } from "@manythreads/shared";
+import { scrubProxyDetail } from "./litellm.ts";
+import { loadEgress, preflight, recordSpend, type RateHit } from "./limits.ts";
 
 /*
  * The embedding door (P35-06; the knowledge plugin's `embedderOf` looks for it): texts in, one vector each, through the workspace's `embed` alias on the
@@ -10,7 +10,7 @@ import { loadEgress, preflight, recordSpend, type RateHit } from './limits.ts';
  * stays by words, as before.
  */
 
-const ALIAS: LlmAliasName = 'embed';
+const ALIAS: LlmAliasName = "embed";
 const TIMEOUT_MS = 30_000;
 const MAX_TEXTS = 64;
 const MAX_CHARS = 2_000;
@@ -19,9 +19,15 @@ const allowRate: RateHit = () => ({ allowed: true, retryAfterMs: 0 });
 export interface EmbedRequest {
   workspaceId: string;
   texts: string[];
-  purpose: 'passage' | 'query';
+  purpose: "passage" | "query";
 }
-export type EmbedResult = { ok: true; vectors: number[][] } | { ok: false; reason: 'unbound' | 'refused' | 'unavailable'; detail: string };
+export type EmbedResult =
+  | { ok: true; vectors: number[][] }
+  | {
+      ok: false;
+      reason: "unbound" | "refused" | "unavailable";
+      detail: string;
+    };
 
 export interface EmbedDeps {
   env?: NodeJS.ProcessEnv;
@@ -29,51 +35,153 @@ export interface EmbedDeps {
 }
 
 /** BGE models are trained to read a search question with this instruction in front of it (passages go as they are). */
-const BGE_QUERY = 'Represent this sentence for searching relevant passages: ';
+const BGE_QUERY = "Represent this sentence for searching relevant passages: ";
 
-export async function embedTexts(ctx: PluginContext, tx: PluginTx, request: EmbedRequest, deps: EmbedDeps = {}): Promise<EmbedResult> {
+export async function embedTexts(
+  ctx: PluginContext,
+  tx: PluginTx,
+  request: EmbedRequest,
+  deps: EmbedDeps = {},
+): Promise<EmbedResult> {
   const env = deps.env ?? process.env;
   if (request.texts.length === 0) return { ok: true, vectors: [] };
-  if (request.texts.length > MAX_TEXTS || request.texts.some((t) => typeof t !== 'string')) return { ok: false, reason: 'refused', detail: `at most ${MAX_TEXTS} texts` };
+  if (
+    request.texts.length > MAX_TEXTS ||
+    request.texts.some((t) => typeof t !== "string")
+  )
+    return {
+      ok: false,
+      reason: "refused",
+      detail: `at most ${MAX_TEXTS} texts`,
+    };
   const target = await loadEgress(tx, request.workspaceId, ALIAS);
-  if (target === null) return { ok: false, reason: 'unbound', detail: 'The embed model is not bound in the Models page.' };
-  const model = (await tx.query<{ model: string }>('SELECT model FROM app.llm_aliases WHERE workspace_id = $1 AND alias = $2', [request.workspaceId, ALIAS])).rows[0]?.model ?? null;
-  const texts = request.texts.map((t) => t.slice(0, MAX_CHARS)).map((t) => (request.purpose === 'query' && /bge/i.test(model ?? '') ? `${BGE_QUERY}${t}` : t));
+  if (target === null)
+    return {
+      ok: false,
+      reason: "unbound",
+      detail: "The embed model is not bound in the Models page.",
+    };
+  const model =
+    (
+      await tx.query<{ model: string }>(
+        "SELECT model FROM app.llm_aliases WHERE workspace_id = $1 AND alias = $2",
+        [request.workspaceId, ALIAS],
+      )
+    ).rows[0]?.model ?? null;
+  const texts = request.texts
+    .map((t) => t.slice(0, MAX_CHARS))
+    .map((t) =>
+      request.purpose === "query" && /bge/i.test(model ?? "")
+        ? `${BGE_QUERY}${t}`
+        : t,
+    );
   // the guardrails see what would leave (a model outside this deployment is held to the workspace's egress rules like any other call)
-  const decision = await preflight(ctx, tx, allowRate, { workspaceId: request.workspaceId, botId: null, teamId: null, sessionId: `embed:${request.purpose}`, alias: ALIAS, text: texts.join('\n').slice(0, 20_000) });
-  if (!decision.allowed) return { ok: false, reason: 'refused', detail: decision.message ?? "The workspace's model limits or guardrails did not allow the call." };
+  const decision = await preflight(ctx, tx, allowRate, {
+    workspaceId: request.workspaceId,
+    botId: null,
+    teamId: null,
+    sessionId: `embed:${request.purpose}`,
+    alias: ALIAS,
+    text: texts.join("\n").slice(0, 20_000),
+  });
+  if (!decision.allowed)
+    return {
+      ok: false,
+      reason: "refused",
+      detail:
+        decision.message ??
+        "The workspace's model limits or guardrails did not allow the call.",
+    };
 
-  const base = (env['MANYTHREADS_LITELLM_URL'] ?? '').trim().replace(/\/+$/, '');
-  if (!base) return { ok: false, reason: 'unavailable', detail: 'No LLM gateway URL is configured.' };
-  const masterKey = (env['MANYTHREADS_LITELLM_MASTER_KEY'] ?? '').trim();
+  const base = (env["MANYTHREADS_LITELLM_URL"] ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+  if (!base)
+    return {
+      ok: false,
+      reason: "unavailable",
+      detail: "No LLM gateway URL is configured.",
+    };
+  const masterKey = (env["MANYTHREADS_LITELLM_MASTER_KEY"] ?? "").trim();
   let vectors: number[][];
   let tokens = 0;
   try {
     const res = await (deps.fetch ?? fetch)(`${base}/embeddings`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(masterKey ? { authorization: `Bearer ${masterKey}` } : {}) },
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(masterKey ? { authorization: `Bearer ${masterKey}` } : {}),
+      },
       body: JSON.stringify({ model: ALIAS, input: texts }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const raw = await res.text();
     if (!res.ok) {
       const detail = `The embedding model did not answer (${res.status}): ${scrubProxyDetail(raw).slice(0, 200)}`;
-      return { ok: false, reason: res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429 ? 'refused' : 'unavailable', detail };
+      return {
+        ok: false,
+        reason:
+          res.status >= 400 &&
+          res.status < 500 &&
+          res.status !== 408 &&
+          res.status !== 429
+            ? "refused"
+            : "unavailable",
+        detail,
+      };
     }
-    const body = JSON.parse(raw) as { data?: Array<{ index?: number; embedding?: unknown }>; usage?: { prompt_tokens?: number } };
-    const data = [...(body.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
-    vectors = data.map((d) => (Array.isArray(d.embedding) ? (d.embedding as unknown[]).map(Number) : []));
-    if (vectors.length !== texts.length || vectors.some((v) => v.length === 0 || v.some((n) => !Number.isFinite(n)))) {
-      return { ok: false, reason: 'unavailable', detail: 'The embedding model answered with the wrong number of vectors.' };
+    const body = JSON.parse(raw) as {
+      data?: Array<{ index?: number; embedding?: unknown }>;
+      usage?: { prompt_tokens?: number };
+    };
+    const data = [...(body.data ?? [])].sort(
+      (a, b) => (a.index ?? 0) - (b.index ?? 0),
+    );
+    vectors = data.map((d) =>
+      Array.isArray(d.embedding) ? (d.embedding as unknown[]).map(Number) : [],
+    );
+    if (
+      vectors.length !== texts.length ||
+      vectors.some((v) => v.length === 0 || v.some((n) => !Number.isFinite(n)))
+    ) {
+      return {
+        ok: false,
+        reason: "unavailable",
+        detail:
+          "The embedding model answered with the wrong number of vectors.",
+      };
     }
-    tokens = typeof body.usage?.prompt_tokens === 'number' ? body.usage.prompt_tokens : 0;
+    tokens =
+      typeof body.usage?.prompt_tokens === "number"
+        ? body.usage.prompt_tokens
+        : 0;
   } catch (err) {
-    const aborted = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return { ok: false, reason: 'unavailable', detail: aborted ? 'The embedding model took too long to answer.' : 'The embedding model did not answer.' };
+    const aborted =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
+    return {
+      ok: false,
+      reason: "unavailable",
+      detail: aborted
+        ? "The embedding model took too long to answer."
+        : "The embedding model did not answer.",
+    };
   }
   // the spend line (cost 0 for a model inside this deployment; the gateway's own price is not known here for another one, so 0 as well, with the tokens)
   try {
-    await recordSpend(tx, { workspaceId: request.workspaceId, teamId: null, botId: null, sessionId: `embed:${request.purpose}`, runId: null, alias: ALIAS, model, promptTokens: tokens, completionTokens: 0, costUsd: 0, purpose: 'embed' });
+    await recordSpend(tx, {
+      workspaceId: request.workspaceId,
+      teamId: null,
+      botId: null,
+      sessionId: `embed:${request.purpose}`,
+      runId: null,
+      alias: ALIAS,
+      model,
+      promptTokens: tokens,
+      completionTokens: 0,
+      costUsd: 0,
+      purpose: "embed",
+    });
   } catch {
     // the vectors are what the caller needs; the line is a record
   }

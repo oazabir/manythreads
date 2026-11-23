@@ -4,6 +4,7 @@ import { createKnowledgeDeployStep } from './deploy.ts';
 import { registerConnectorRoutes } from './connector-routes.ts';
 import { registerConnectorSync } from './connector-sync.ts';
 import { registerJobs } from './jobs.ts';
+import { registerProjectDocs } from './project-docs.ts';
 import { registerPersonalRoutes } from './personal-routes.ts';
 import { registerRoutes } from './routes.ts';
 
@@ -33,6 +34,7 @@ export default definePlugin({
     registerRoutes(ctx);
     registerPersonalRoutes(ctx);
     registerJobs(ctx);
+    registerProjectDocs(ctx);
     // Bundle D: one call per module, each a stub until its work package fills it in.
     registerConnectorRoutes(ctx);
     registerConnectorSync(ctx);
