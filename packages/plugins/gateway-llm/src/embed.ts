@@ -31,17 +31,36 @@ export interface EmbedDeps {
 /** BGE models are trained to read a search question with this instruction in front of it (passages go as they are). */
 const BGE_QUERY = 'Represent this sentence for searching relevant passages: ';
 
-export async function embedTexts(ctx: PluginContext, tx: PluginTx, request: EmbedRequest, deps: EmbedDeps = {}): Promise<EmbedResult> {
+/*
+ * The caller's transaction is never used: the aliases are for workspace admins and the spend ledger is the gateway's, so a member's search (P18-09) could
+ * read neither, and a refused statement would abort the caller's transaction for everything after it (a 500 on the live site, 2026-11-23). The check and
+ * the spend line run in short system transactions of their own, and no transaction is open while the model works.
+ */
+export async function embedTexts(ctx: PluginContext, _tx: PluginTx, request: EmbedRequest, deps: EmbedDeps = {}): Promise<EmbedResult> {
   const env = deps.env ?? process.env;
   if (request.texts.length === 0) return { ok: true, vectors: [] };
   if (request.texts.length > MAX_TEXTS || request.texts.some((t) => typeof t !== 'string')) return { ok: false, reason: 'refused', detail: `at most ${MAX_TEXTS} texts` };
-  const target = await loadEgress(tx, request.workspaceId, ALIAS);
-  if (target === null) return { ok: false, reason: 'unbound', detail: 'The embed model is not bound in the Models page.' };
-  const model = (await tx.query<{ model: string }>('SELECT model FROM app.llm_aliases WHERE workspace_id = $1 AND alias = $2', [request.workspaceId, ALIAS])).rows[0]?.model ?? null;
-  const texts = request.texts.map((t) => t.slice(0, MAX_CHARS)).map((t) => (request.purpose === 'query' && /bge/i.test(model ?? '') ? `${BGE_QUERY}${t}` : t));
-  // the guardrails see what would leave (a model outside this deployment is held to the workspace's egress rules like any other call)
-  const decision = await preflight(ctx, tx, allowRate, { workspaceId: request.workspaceId, botId: null, teamId: null, sessionId: `embed:${request.purpose}`, alias: ALIAS, text: texts.join('\n').slice(0, 20_000) });
-  if (!decision.allowed) return { ok: false, reason: 'refused', detail: decision.message ?? "The workspace's model limits or guardrails did not allow the call." };
+  type Checked = { ok: true; model: string | null; texts: string[] } | { ok: false; result: EmbedResult };
+  let checked: Checked;
+  try {
+    checked = await ctx.db.system(
+      async (sys): Promise<Checked> => {
+        const target = await loadEgress(sys, request.workspaceId, ALIAS);
+        if (target === null) return { ok: false, result: { ok: false, reason: 'unbound', detail: 'The embed model is not bound in the Models page.' } };
+        const model = (await sys.query<{ model: string }>('SELECT model FROM app.llm_aliases WHERE workspace_id = $1 AND alias = $2', [request.workspaceId, ALIAS])).rows[0]?.model ?? null;
+        const texts = request.texts.map((t) => t.slice(0, MAX_CHARS)).map((t) => (request.purpose === 'query' && /bge/i.test(model ?? '') ? `${BGE_QUERY}${t}` : t));
+        // the guardrails see what would leave (a model outside this deployment is held to the workspace's egress rules like any other call)
+        const decision = await preflight(ctx, sys, allowRate, { workspaceId: request.workspaceId, botId: null, teamId: null, sessionId: `embed:${request.purpose}`, alias: ALIAS, text: texts.join('\n').slice(0, 20_000) });
+        if (!decision.allowed) return { ok: false, result: { ok: false, reason: 'refused', detail: decision.message ?? "The workspace's model limits or guardrails did not allow the call." } };
+        return { ok: true, model, texts };
+      },
+      { workspaceId: request.workspaceId },
+    );
+  } catch {
+    return { ok: false, reason: 'unavailable', detail: 'The check before the embedding model could not be made.' };
+  }
+  if (!checked.ok) return checked.result;
+  const { model, texts } = checked;
 
   const base = (env['MANYTHREADS_LITELLM_URL'] ?? '').trim().replace(/\/+$/, '');
   if (!base) return { ok: false, reason: 'unavailable', detail: 'No LLM gateway URL is configured.' };
@@ -73,7 +92,7 @@ export async function embedTexts(ctx: PluginContext, tx: PluginTx, request: Embe
   }
   // the spend line (cost 0 for a model inside this deployment; the gateway's own price is not known here for another one, so 0 as well, with the tokens)
   try {
-    await recordSpend(tx, { workspaceId: request.workspaceId, teamId: null, botId: null, sessionId: `embed:${request.purpose}`, runId: null, alias: ALIAS, model, promptTokens: tokens, completionTokens: 0, costUsd: 0, purpose: 'embed' });
+    await ctx.db.system((sys) => recordSpend(sys, { workspaceId: request.workspaceId, teamId: null, botId: null, sessionId: `embed:${request.purpose}`, runId: null, alias: ALIAS, model, promptTokens: tokens, completionTokens: 0, costUsd: 0, purpose: 'embed' }), { workspaceId: request.workspaceId });
   } catch {
     // the vectors are what the caller needs; the line is a record
   }

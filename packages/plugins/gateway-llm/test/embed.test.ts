@@ -113,6 +113,14 @@ describe('the embedding door (P35-06)', () => {
     expect(lines[0]).toMatchObject({ alias: 'embed', prompt_tokens: 7 });
   });
 
+  it("never uses the caller's transaction (a member's search may not read the aliases or write the ledger, and a refused statement would abort it)", async () => {
+    await bind('openai/BAAI/bge-base-en-v1.5');
+    const p = proxy(vectors);
+    const untouchable = { actor: { kind: 'person', id: 'x', workspaceId: omar.workspaceId }, query: () => Promise.reject(new Error('the caller transaction was used')) } as unknown as PluginTx;
+    const r = await embedTexts(ctx, untouchable, { workspaceId: omar.workspaceId, texts: ['a passage'], purpose: 'passage' }, { env, fetch: p.fetch });
+    expect(r).toMatchObject({ ok: true });
+  });
+
   it('answers unavailable for a model that is down or answers wrongly, refused for a bad input, and never throws', async () => {
     await bind('openai/BAAI/bge-base-en-v1.5');
     expect(await call(['a'], 'passage', proxy(() => ({ status: 503, body: { error: 'down' } })).fetch)).toMatchObject({ ok: false, reason: 'unavailable' });

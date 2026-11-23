@@ -438,10 +438,20 @@ if [ "$TLS_MODE" = letsencrypt ]; then
 fi
 
 echo "--- ensure CNPG operator"
+# The chart is downloaded from GitHub on every deploy. When the operator is already installed, a download GitHub fails (a 500 stopped two deploys on
+# 2026-11-23) only means it is not upgraded this time: the deploy says so and carries on. A first install still stops.
 helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null 2>&1 || true
-helm repo update cnpg >/dev/null
-helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace \
-  --set resources.requests.memory=64Mi --set resources.limits.memory=256Mi --wait --timeout 5m
+CNPG_INSTALLED=false
+helm status cnpg -n cnpg-system >/dev/null 2>&1 && CNPG_INSTALLED=true
+if ! { helm repo update cnpg >/dev/null && helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace \
+  --set resources.requests.memory=64Mi --set resources.limits.memory=256Mi --wait --timeout 5m; }; then
+  if [ "$CNPG_INSTALLED" = true ]; then
+    echo "WARN: the CNPG operator chart could not be fetched or upgraded; the installed operator stays as it is"
+  else
+    echo "ERROR: the CNPG operator could not be installed" >&2
+    exit 1
+  fi
+fi
 
 # The live install runs a real LiteLLM gateway and Hindsight memory engine (values-live.yaml); --demo overrides that with stand-ins.
 HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${CP_ARGS[@]}" "${ASR_ARGS[@]}" "${TLS_ARGS[@]}")
