@@ -29,7 +29,7 @@ export const APP_CSP =
 /** The diagram frame's policy (`location = /mermaid-sandbox.html` of nginx.conf). */
 export const MERMAID_CSP =
   "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
-const PERMISSIONS_POLICY = 'microphone=(self), camera=(self)';
+const PERMISSIONS_POLICY = 'microphone=(self), camera=(self), display-capture=(self)';
 
 /** First path segments that belong to the server, not to the app: an address under them that nothing matched is a JSON 404. */
 const SERVER_PREFIXES = new Set(['api', 'mcp', 'hooks', 'ws', 'healthz', 'readyz', 'metrics']);

@@ -42,6 +42,7 @@ import { needsBroadcastAgreement, scheduledErrorText, scheduledStore } from './s
 import { broadcastAsk, broadcastAskFromRefusal, type BroadcastAsk } from './broadcast';
 import { readDraft, useServerDraft, writeDraft } from './serverDraft';
 import { placeDraft } from './draftPlaces';
+import { CaptureButton } from './capture/CaptureButton';
 
 /*
  * The one composer of every conversation (channel, thread panel and full thread, direct message, Brain chat and a bot conversation; P34-03): the same
@@ -1065,6 +1066,8 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
             <>
               <input ref={fileInput} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(e) => { addFiles(filesOf(e.target.files)); e.target.value = ''; }} />
               <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" hidden={voiceActive} onClick={() => fileInput.current?.click()}><ClipIcon /></button>
+              {/* a screenshot or a screen recording, made smaller here and attached like any file (owner, 2026-11-23) */}
+              {!guest ? <CaptureButton hidden={voiceActive} onAttach={(file) => addFiles([file])} /> : null}
             </>
           ) : null}
           {voiceOn ? <Recorder rec={rec} showMic={text === '' && uploads.length === 0} onSendClip={(clip) => {

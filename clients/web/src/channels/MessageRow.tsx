@@ -41,6 +41,7 @@ import { RowGestureContext, useRowGestures } from './gestures';
 import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
+import { MessageVideos, isPlayableVideo } from './MessageVideos';
 import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import type { LinksAbove } from '../linkpreview/dedupe';
 import { TOMBSTONE, type PendingSend } from './timeline';
@@ -527,8 +528,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         {/* an older start message with no stamp: P33's card from the live list, while that room is live (removed in S7) */}
         {!inThread && !deleted && !m.meta.meeting ? <VoiceRoomCard messageId={m.id} channelId={m.channelId} starterName={name} /> : null}
         {deleted ? null : <MessageImages files={attached.images} />}
-        {!deleted && attached.files.length > 0 ? (
-          <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
+        {deleted ? null : <MessageVideos files={attached.files.filter(isPlayableVideo)} />}
+        {!deleted && attached.files.some((f) => !isPlayableVideo(f)) ? (
+          <div className="atts">{attached.files.filter((f) => !isPlayableVideo(f)).map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
         ) : null}
         <LinkPreviewCards channelId={m.channelId} messageId={m.id} body={m.body} enabled={!deleted} linksAbove={linksAbove} />
         {!deleted && m.reactions.length > 0 ? (

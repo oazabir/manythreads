@@ -12,6 +12,9 @@
     "test": "vitest run --root ../.. --project unit clients/web"
   },
   "dependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "@ffmpeg/util": "0.12.2",
     "@huggingface/transformers": "3.8.1",
     "@manythreads/shared": "workspace:*",
     "@proicons/react": "4.13.7",
@@ -24,6 +27,7 @@
     "@tiptap/react": "^3.31.4",
     "@tiptap/starter-kit": "^3.31.4",
     "@tiptap/suggestion": "^3.31.4",
+    "browser-image-compression": "2.0.2",
     "highlight.js": "^11.12.0",
     "lib0": "^0.2.119",
     "livekit-client": "2.22.4",

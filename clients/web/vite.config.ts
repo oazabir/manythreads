@@ -19,7 +19,8 @@ export default defineConfig({
   // The speech worker (src/speech/worker.ts) is a module worker and loads the model library with import(), so it needs the `es` format (the
   // default `iife` cannot split code). The library is left out of dev pre-bundling: it picks its ONNX Runtime files by address at run time.
   worker: { format: 'es' },
-  optimizeDeps: { exclude: ['@huggingface/transformers'] },
+  // ffmpeg.wasm starts its own worker from its package (a pre-bundled copy would lose it)
+  optimizeDeps: { exclude: ['@huggingface/transformers', '@ffmpeg/ffmpeg', '@ffmpeg/util'] },
   // ONNX Runtime Web has two builds: one with its script and a 21 MB `.wasm` file folded into the bundle, one that expects them to be served.
   // We serve them ourselves (/models/ort/<revision>/, pinned and hash-checked by models.lock.json), so take the second: no second copy in the image.
   resolve: { conditions: [...defaultClientConditions, 'onnxruntime-web-use-extern-wasm'] },
