@@ -9,6 +9,7 @@ import { registerConnectionRoutes, resolveRunnerTarget, resolveTarget } from './
 import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
 import { registerProfileChanges } from './profile-changes.ts';
 import { registerActivityRoutes } from './activity-routes.ts';
+import { registerDeliveryRoutes } from './deliveries.ts';
 import { registerStopRoute } from './live.ts';
 import { registerRunViewSweep } from './run-sweep.ts';
 import { registerChatRouter } from './router-chat.ts';
@@ -114,6 +115,7 @@ export default definePlugin({
     registerChatRouter(ctx);
     registerStopRoute(ctx);
     registerActivityRoutes(ctx);
+    registerDeliveryRoutes(ctx);
     registerRunViewSweep(ctx);
     registerApprovalResume(ctx);
     registerRunJob(ctx);
