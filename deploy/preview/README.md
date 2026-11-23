@@ -13,10 +13,14 @@ Your kubeconfig has one extra *context* (a saved cluster + account + namespace) 
 `--context test-manythreads` on every `kubectl` below and `--kube-context test-manythreads` on every `helm`. Run everything from the root of your
 clone of the manythreads repository. Set these once:
 
+**Which namespace (P35-03):** a team may have more than one test-site slot (`test-manythreads`, `test-card-2`, ...), one card's site in each. The
+`tasks.test_site_lease` tool gives the card its slot: set `NS` to the `namespace` and `HOST` to the `host` it answers (the context has the
+namespace's name). The values below are the first slot's.
+
 ```sh
-NS=test-manythreads
+NS=test-manythreads                            # the leased namespace
 K="kubectl --context $NS"
-HOST=test.manythreads.kahf.to
+HOST=test.manythreads.kahf.to                  # the leased host
 SHA=$(git rev-parse HEAD)                     # the commit you tested
 TAG=$(echo "$SHA" | cut -c1-12)               # names the images and the Job
 BASE=$(git merge-base origin/main "$SHA")     # where your commits branch off the shared history
@@ -66,8 +70,9 @@ on the tested commit:
 ```sh
 git fetch origin && git worktree add --force /tmp/preview-main origin/main
 helm --kube-context "$NS" upgrade --install manythreads /tmp/preview-main/deploy/helm/manythreads -n "$NS" \
-  -f /tmp/preview-main/deploy/preview/values-preview.yaml --set imageTag="$TAG" \
-  --wait --timeout 20m
+  -f /tmp/preview-main/deploy/preview/values-preview.yaml -f /tmp/preview-main/deploy/preview/values-card.yaml \
+  --set domain="$HOST" --set server.image="registry.local:5000/$NS/server" --set web.image="registry.local:5000/$NS/web" \
+  --set imageTag="$TAG" --wait --timeout 20m
 git worktree remove --force /tmp/preview-main
 ```
 
@@ -113,6 +118,9 @@ This password is disposable: it belongs to the preview and is destroyed with it 
 New commits: repeat steps 1, 3 and 4 with the new `$SHA` (a new `$TAG` means new images; the old ones stay in the registry).
 
 ## 8. Tear down
+
+A card's site is removed by the server (P35-03) when the card is done, its pull request is closed, or the site sat a day without a deploy: you do
+not tear it down yourself. The commands below are for a person cleaning a slot by hand.
 
 ```sh
 helm --kube-context "$NS" uninstall manythreads -n "$NS"

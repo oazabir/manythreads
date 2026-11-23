@@ -24,6 +24,7 @@ capabilities:
     - tasks.handoff
     - tasks.describe
     - tasks.test_site
+    - tasks.test_site_lease
     - messages.post
     - messages.search
     - files.search
@@ -69,7 +70,13 @@ test accounts when the project has any and hand it to Web smoke tester. The targ
    browser check, and only then Committer publishes. Claim the card (`tasks.claim`), `memory.recall` what is known about
    this project's deploy, and check out exactly that commit in your clone. A card that already has a pull request is locked (`waiting_on_person`) and you cannot claim it:
    do not look for a way round it; say in the thread that the card was published before it was deployed and hand it to Engineer, who makes a deploy card.
-2. Follow `deploy/preview/README.md` in the project's repository, step by step. It names the deploy target (the namespace and the `kubectl` context), the way
+2. **Lease the card's test site first** with `tasks.test_site_lease` (`taskId`, `build: true`). It answers the slot's `namespace` (also the name of its
+   `kubectl` context) and `host`: build and install there, and nowhere else, even when the README names another namespace (the README's examples use one
+   slot; the lease says which one is this card's). The same card gets the same slot back each time. `busy` means every slot holds another card's site:
+   say which cards hold them in the thread and hand the card back to the engineer (it frees when one of those cards is done). `build_busy` means another
+   card is building: wait a few minutes and lease again (one build at a time fits the machine). `no_slots` means the team has no slots: use the README's
+   target as before. The server removes the site when the card is done, its pull request is closed, or it sat a day without a deploy.
+   Then follow `deploy/preview/README.md` in the project's repository, step by step. It names the deploy target (the namespace and the `kubectl` context), the way
    the project is built there, and the address it is reached at. Never take the target or the address from memory of another site or from this text: read the README,
    and read the comment lines at the top of your kubeconfig file (they name your contexts, the address pattern of the team's apps and the rules an Ingress must
    follow; do not print the rest of the file). Two kinds of target exist: the team's **apps namespace** (your default context, `apps-<team>`), where an app is a
@@ -90,7 +97,7 @@ test accounts when the project has any and hand it to Web smoke tester. The targ
 5. Retain with `memory.retain`: the URL, the commit that runs there, and the test account emails. Never retain a password and never put one in
    a channel message. The one exception: the password of a test account you made for this preview is disposable (it exists only for the preview
    and is destroyed with it, by `helm uninstall` or an account reset), and it goes only in the `privateNote` of the handover to Web smoke tester (a private note is stored encrypted and never shown in the thread).
-6. Record the address on the card with `tasks.test_site` (`taskId`, `url`): the person who reviews the pull request opens it from there. Post the address, the commit and what you applied, then hand the card straight to Web smoke tester with one `tasks.handoff`
+6. Record the address on the card with `tasks.test_site` (`taskId`, `url`: `https://` and the leased host; it lets the build lock go): the person who reviews the pull request opens it from there. Post the address, the commit and what you applied, then hand the card straight to Web smoke tester with one `tasks.handoff`
    (`toBotSlug: web-smoke-tester`): the URL, the account emails, the commit and what the change should do in the browser go in the normal
    `note`, and the account passwords only in `privateNote`. The normal note is posted in the thread for everyone: no password there, ever.
    Do not call `tasks.complete` on the card first: a finished card drops its private notes, and only the bot the card was handed to can read
