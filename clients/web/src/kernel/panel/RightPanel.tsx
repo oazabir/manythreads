@@ -41,6 +41,7 @@ export function RightPanel() {
 
   // as drawn: the stylesheet caps the sidebar to leave 360 px beside it (shell.css)
   const rail = Math.min(railAsked, Math.max(0, viewport - 360));
+  const max = maxPanelWidth(viewport, rail);
   const shown = clampPanelWidth(size.width, viewport, rail);
   // where the entry is drawn follows the window (never stored): a thread that no longer fits beside the channel fills the area, and goes back to the person's width when the window is wide again
   const layout = threadLayout({ viewport, narrow, isThread, expanded, rail });
@@ -64,10 +65,25 @@ export function RightPanel() {
   };
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     // the bar is on the panel's left edge: left makes the panel wider, right narrower
-    const by = e.key === 'ArrowLeft' ? PANEL_STEP : e.key === 'ArrowRight' ? -PANEL_STEP : 0;
-    if (by === 0) return;
+    let width: number;
+    switch (e.key) {
+      case 'Home':
+        width = PANEL_MIN;
+        break;
+      case 'End':
+        width = max;
+        break;
+      case 'ArrowLeft':
+        width = clampPanelWidth(shown + PANEL_STEP, window.innerWidth, rail);
+        break;
+      case 'ArrowRight':
+        width = clampPanelWidth(shown - PANEL_STEP, window.innerWidth, rail);
+        break;
+      default:
+        return;
+    }
     e.preventDefault();
-    size.keep(clampPanelWidth(shown + by, window.innerWidth, rail));
+    size.keep(width);
   };
 
   return (
@@ -89,7 +105,7 @@ export function RightPanel() {
               aria-orientation="vertical"
               aria-label="Resize panel"
               aria-valuemin={PANEL_MIN}
-              aria-valuemax={maxPanelWidth(viewport, rail)}
+              aria-valuemax={max}
               aria-valuenow={shown}
               tabIndex={0}
               data-testid="panel-resizer"
