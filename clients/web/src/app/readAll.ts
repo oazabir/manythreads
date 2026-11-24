@@ -22,31 +22,50 @@ export async function markConversationRead(channelId: string, rootId: string | n
   const type = rootId ? 'thread' : 'channel';
   const id = rootId ?? channelId;
   channelStore.releaseUnreadHold(type, id);
-  await channelStore.markRead(type, id, upTo);
+  if (!(await channelStore.markRead(type, id, upTo))) throw new Error('The read position was not saved.');
 }
 
 const AT_ONCE = 4;
-const INBOX_PAGES = 3;
+/** How many pages of unread threads one Shift+Esc goes through; what is left is reported (`more`), never claimed done. */
+export const INBOX_PAGES = 20;
 
-/** Runs the jobs a few at a time, so a long list is not one burst of requests. */
-async function inBatches<T>(items: readonly T[], work: (item: T) => Promise<void>): Promise<void> {
+/** Runs the jobs a few at a time, so a long list is not one burst of requests; resolves to how many failed. */
+async function inBatches<T>(items: readonly T[], work: (item: T) => Promise<void>): Promise<number> {
+  let failed = 0;
   for (let i = 0; i < items.length; i += AT_ONCE) {
-    await Promise.all(items.slice(i, i + AT_ONCE).map((x) => work(x).catch(() => undefined)));
+    await Promise.all(items.slice(i, i + AT_ONCE).map((x) => work(x).catch(() => void (failed += 1))));
   }
+  return failed;
 }
 
-/** Reads every channel, conversation and thread that has unread messages; resolves to how many it marked. */
-export async function markEverythingRead(slug: string): Promise<number> {
+export interface ReadAllResult {
+  marked: number;
+  /** Conversations whose read position the server did not take. */
+  failed: number;
+  /** Unread threads were left after the last page read (or a page could not be read). */
+  more: boolean;
+}
+
+/** Reads every channel, conversation and thread that has unread messages; says how many it marked, how many failed and whether some were left (issue #28). */
+export async function markEverythingRead(slug: string): Promise<ReadAllResult> {
   const summary = await fetchUnreadSummary();
   let marked = 0;
-  await inBatches(summary.channels, async (c) => {
+  let failed = await inBatches(summary.channels, async (c) => {
     await markConversationRead(c.channelId);
     marked++;
   });
-  for (let page = 0, cursor: string | undefined; page < INBOX_PAGES; page++) {
+  let more = false;
+  for (let page = 0, cursor: string | undefined; ; page++) {
+    if (page >= INBOX_PAGES) {
+      more = true;
+      break;
+    }
     const res = await fetchThreadInbox(slug, 'unread', cursor).catch(() => null);
-    if (!res) break;
-    await inBatches(res.items, async (t) => {
+    if (!res) {
+      more = true;
+      break;
+    }
+    failed += await inBatches(res.items, async (t) => {
       await markConversationRead(t.channel.id, t.rootMessageId);
       marked++;
     });
@@ -54,7 +73,14 @@ export async function markEverythingRead(slug: string): Promise<number> {
     cursor = res.nextCursor;
   }
   await channelStore.refreshSummary();
-  return marked;
+  return { marked, failed, more };
+}
+
+/** What Shift+Esc says when it is done. */
+export function readAllWords(r: ReadAllResult): string {
+  if (r.failed > 0) return `Marked ${r.marked} as read; ${r.failed} could not be marked. Try again.`;
+  if (r.more) return `Marked ${r.marked} as read. More unread threads are left: press Shift+Esc again.`;
+  return r.marked === 0 ? 'Nothing was unread.' : 'Everything marked as read.';
 }
 
 /**

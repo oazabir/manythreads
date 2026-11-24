@@ -68,6 +68,23 @@ describe('the team schedule (P36-04)', () => {
     expect((await w.call(nadia, 'POST', `/api/appointments/${id}/cancel`)).status).toBe(409);
   });
 
+  it('two saves at once end with exactly one of the two lists of people, and the space follows it (issue #28)', async () => {
+    const made = await w.call<AppointmentResponse>(nadia, 'POST', '/api/teams/engineering/appointments', { title: 'Overlap', startsAt: day(18), endsAt: day(19), kind: 'audio', inviteeIds: [sameera.personId] });
+    const a = AppointmentResponse.parse(made.body).appointment;
+    for (let round = 0; round < 3; round += 1) {
+      const [one, two] = await Promise.all([
+        w.call(nadia, 'PATCH', `/api/appointments/${a.id}`, { inviteeIds: [tariq.personId] }),
+        w.call(nadia, 'PATCH', `/api/appointments/${a.id}`, { inviteeIds: [rafi.personId] }),
+      ]);
+      expect([one.status, two.status]).toEqual([200, 200]);
+      const invited = (await w.system((tx) => tx.query<{ person_id: string }>('SELECT person_id::text FROM app.appointment_invitees WHERE appointment_id = $1', [a.id]))).rows.map((r) => r.person_id);
+      // never both, and never the person both saves removed
+      expect([[tariq.personId], [rafi.personId]]).toContainEqual(invited);
+      expect(await members(a.channelId)).toEqual([nadia.personId, ...invited].sort());
+      await w.call(nadia, 'PATCH', `/api/appointments/${a.id}`, { inviteeIds: [sameera.personId] });
+    }
+  });
+
   it('refuses a team the maker is not on, an end before the start, and more than a day', async () => {
     expect((await w.call(nadia, 'POST', '/api/teams/marketing/appointments', { title: 'Not mine', startsAt: day(9), endsAt: day(10) })).status).toBe(403);
     expect((await w.call(nadia, 'POST', '/api/teams/engineering/appointments', { title: 'Backwards', startsAt: day(10), endsAt: day(9) })).status).toBe(400);

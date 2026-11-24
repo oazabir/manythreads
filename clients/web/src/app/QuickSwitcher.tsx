@@ -18,7 +18,7 @@ import { LockIcon, SearchIcon } from '../shell/icons';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { recalledTeam } from '../shell/views';
 import { PANEL_PARAM } from '../kernel/panel';
-import { firstUnreadMessageId, markConversationRead, markEverythingRead, undoMarkRead } from './readAll';
+import { firstUnreadMessageId, markConversationRead, markEverythingRead, readAllWords, undoMarkRead } from './readAll';
 import { sayToast } from '../kernel/toast';
 import { anyDismissOpen } from '../shell/useDismiss';
 import { escMarksRead } from '../channels/messageActions';
@@ -227,7 +227,7 @@ export function QuickSwitcher() {
       const { slug: team } = latest.current;
       if (!team) return;
       void markEverythingRead(team).then(
-        (n) => say(n === 0 ? 'Nothing was unread.' : 'Everything marked as read.'),
+        (r) => say(readAllWords(r)),
         () => say('Could not mark everything as read.'),
       );
     };

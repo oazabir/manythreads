@@ -157,8 +157,11 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { id } = AppointmentParams.parse(req.params);
       const body = UpdateAppointmentRequest.parse(req.body);
+      const seen = await loadOne(tx, id);
+      if (!seen.canEdit) throw forbidden('Only its maker, a team lead or an admin can change this appointment');
+      // two saves at once: the second waits here for the first to commit, then works out its changes from what the first left (issue #28: a removed invitee came back)
+      await tx.query('SELECT 1 FROM app.appointments WHERE id = $1 FOR UPDATE', [id]);
       const before = await loadOne(tx, id);
-      if (!before.canEdit) throw forbidden('Only its maker, a team lead or an admin can change this appointment');
       if (before.status === 'cancelled') throw conflict('This appointment is cancelled');
       span(body.startsAt ?? before.startsAt, body.endsAt ?? before.endsAt);
       const moved = (body.startsAt !== undefined && body.startsAt !== before.startsAt) || (body.endsAt !== undefined && body.endsAt !== before.endsAt);

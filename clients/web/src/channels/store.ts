@@ -564,13 +564,13 @@ export class ChannelStore {
     }
   }
 
-  /** The person has seen everything up to `upTo` in this channel or thread. */
-  async markRead(targetType: 'channel' | 'thread', targetId: string, upTo: string): Promise<void> {
-    if (this.held.has(`${targetType}:${targetId}`)) return;
+  /** The person has seen everything up to `upTo` in this channel or thread. Resolves false when the server did not take it (the caller may say so; issue #28). */
+  async markRead(targetType: 'channel' | 'thread', targetId: string, upTo: string): Promise<boolean> {
+    if (this.held.has(`${targetType}:${targetId}`)) return false;
     const had = this.readStates.get(`${targetType}:${targetId}`);
     // An older position moves nothing, so it is not sent, unless the stored count is still above zero: the position can be a message that was
     // deleted afterwards (newer than everything left) and the count taken before it, and only the server counting again can clear that.
-    if (had?.lastReadId && had.lastReadId >= upTo && had.unreadCount === 0) return;
+    if (had?.lastReadId && had.lastReadId >= upTo && had.unreadCount === 0) return true;
     try {
       const entry = await markRead(targetType, targetId, upTo);
       this.readStates.set(`${targetType}:${targetId}`, entry);
@@ -579,8 +579,10 @@ export class ChannelStore {
         this.put(threadKey(targetId), (t) => (t.thread ? { ...t, thread: { ...t.thread, unreadCount: entry.unreadCount, lastReadId: entry.lastReadId } } : t));
         this.refreshSummarySoon();
       }
+      return true;
     } catch {
       /* try again when the reader scrolls or the next push arrives */
+      return false;
     }
   }
 
