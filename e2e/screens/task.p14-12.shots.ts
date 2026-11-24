@@ -41,7 +41,7 @@ async function sweep(page: Page, path: string): Promise<number> {
   await page.getByTestId('channel-view').waitFor({ timeout: 20_000 }).catch(() => undefined);
   await page.waitForTimeout(2_000);
   for (let i = 0; i < 5; i++) {
-    const x = page.getByRole('button', { name: /Remove bookmark \[verify P14-12\]/ }).first();
+    const x = page.getByRole('button', { name: /Remove link \[verify P14-12\]/ }).first();
     if (!(await x.isVisible())) break;
     await x.click();
     await page.waitForTimeout(1_000);
@@ -262,7 +262,7 @@ test('message actions, end to end', async ({ browser }) => {
     await expect(page.getByTestId('bookmarks-bar')).toBeVisible(T);
     await expect(page.getByTestId('bookmark')).toContainText('runbook');
     made.unshift(async () => {
-      const x = page.getByRole('button', { name: /Remove bookmark \[verify P14-12\]/ });
+      const x = page.getByRole('button', { name: /Remove link \[verify P14-12\]/ });
       if (await x.count()) {
         await x.first().click();
         await expect(page.getByTestId('bookmark').filter({ hasText: TAG })).toHaveCount(0, T);

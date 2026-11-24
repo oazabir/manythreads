@@ -286,7 +286,7 @@ test('bookmarks bar', async ({ browser }) => {
     const nadia = await openAs(browser, 'nadia', `/t/engineering/c/${name}`);
     try {
       await expect(nadia.page.getByTestId('bookmark')).toHaveCount(2);
-      await nadia.page.getByRole('button', { name: 'Remove bookmark Runbook' }).click();
+      await nadia.page.getByRole('button', { name: 'Remove link Runbook' }).click();
       await expect(nadia.page.getByTestId('bookmark')).toHaveCount(1);
     } finally {
       await nadia.context.close();

@@ -155,6 +155,9 @@ describe('the thread pane controls', () => {
 
   it('the Threads page: Follow, Open channel and Overview', () => {
     expect(threadTools({ variant: 'main', canFollow: true, channelLink: true, channelInView: false })).toEqual(['follow', 'open-channel', 'overview']);
+    // the bookmark (P36-08) is last, at the top right, in the panel and on the Threads page, on a server with bookmarks
+    expect(threadTools({ variant: 'main', canFollow: true, channelLink: true, channelInView: false, canBookmark: true })).toEqual(['follow', 'open-channel', 'overview', 'bookmark']);
+    expect(threadTools({ variant: 'panel', canFollow: true, channelLink: true, channelInView: true, canBookmark: true })).toEqual(['follow', 'bookmark']);
     expect(threadTools({ variant: 'main', canFollow: false, channelLink: true, channelInView: true })).toEqual(['open-channel', 'overview']);
   });
 
@@ -165,12 +168,12 @@ describe('the thread pane controls', () => {
         createElement(
           MemoryRouter,
           null,
-          createElement(ThreadTools, { tools: all, followed: true, busy: false, onFollow: () => undefined, channelHref: '/t/eng/c/dev?message=1', channelName: 'dev', railOpen: false, railId: 'r', onRail: () => undefined }),
+          createElement(ThreadTools, { tools: all, followed: true, busy: false, onFollow: () => undefined, channelHref: '/t/eng/c/dev?message=1', channelName: 'dev', railOpen: false, railId: 'r', onRail: () => undefined, bookmarked: true, onBookmark: () => undefined }),
         ),
       ),
     );
     const controls = [...host.querySelectorAll<HTMLElement>('button, a')];
-    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Follow thread', 'Open channel', 'Show overview']);
+    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Follow thread', 'Open channel', 'Show overview', 'Bookmark thread']);
     for (const c of controls) {
       expect(c.classList.contains('icon-btn'), c.outerHTML).toBe(true);
       expect(c.classList.contains('btn'), c.outerHTML).toBe(false);
@@ -181,6 +184,8 @@ describe('the thread pane controls', () => {
     expect(controls[0]?.getAttribute('aria-pressed')).toBe('true');
     expect(controls[2]?.getAttribute('aria-expanded')).toBe('false');
     expect(controls[2]?.getAttribute('data-testid')).toBe('rail-toggle');
+    expect(controls[3]?.getAttribute('aria-pressed')).toBe('true');
+    expect(controls[3]?.getAttribute('data-testid')).toBe('thread-bookmark');
   });
 });
 

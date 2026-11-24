@@ -1,4 +1,18 @@
 import {
+  ListSavedBookmarksQuery,
+  ListSavedBookmarksResponse,
+  RemoveSavedBookmarkResponse,
+  SaveBookmarkRequest,
+  SavedBookmark,
+  SavedBookmarkKeysResponse,
+  listSavedBookmarksRoute,
+  removeSavedBookmarkRoute,
+  saveBookmarkRoute,
+  savedBookmarkKeysRoute,
+  type BookmarkTarget,
+  type SavedBookmarkTab,
+} from '@manythreads/shared';
+import {
   BotUsageResponse,
   TeamUsageResponse,
   UsageQuery,
@@ -795,11 +809,11 @@ export const fetchPollResults = (channelId: string, pollId: string) =>
 /** "Mark unread from here": the caller's read position goes back to just before this message. */
 export const markMessageUnread = (channelId: string, messageId: string) =>
   call(markMessageUnreadRoute, { response: MarkMessageUnreadResponse }, undefined, { channelId, messageId });
-/** The bookmarks bar of a channel. */
-export const fetchBookmarks = (channelId: string) => call(listBookmarksRoute, { response: ListBookmarksResponse }, undefined, { channelId });
-export const addBookmark = (channelId: string, body: AddBookmarkRequest) =>
+/** The links bar of a channel (the channel's shared links under its header; the API still calls them bookmarks, P14-12). */
+export const fetchChannelLinks = (channelId: string) => call(listBookmarksRoute, { response: ListBookmarksResponse }, undefined, { channelId });
+export const addChannelLink = (channelId: string, body: AddBookmarkRequest) =>
   call(addBookmarkRoute, { request: AddBookmarkRequest, response: AddBookmarkResponse }, body, { channelId });
-export const removeBookmark = (channelId: string, bookmarkId: string) =>
+export const removeChannelLink = (channelId: string, bookmarkId: string) =>
   call(removeBookmarkRoute, { response: RemoveBookmarkResponse }, undefined, { channelId, bookmarkId });
 /** Pinned messages of a channel (P31-07): the list, newest pin first, and pinning or unpinning one message. */
 export const fetchPins = (channelId: string) => call(listPinsRoute, { response: ListPinsResponse }, undefined, { channelId });
@@ -842,13 +856,28 @@ export const fetchThread = (rootId: string, query: { before?: string; limit?: nu
 export const followThread = (rootId: string) => call(followThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
 export const unfollowThread = (rootId: string) => call(unfollowThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
 /** One page of the inbox; with `q` or `mentions` (the filter box) the matching threads of the tab, channel-name matches first, no paging. */
-export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'mine', cursor?: string, filter?: { q?: string; mentions?: string; who?: 'people' }) =>
+export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'mine', cursor?: string, filter?: { q?: string; mentions?: string; who?: 'people'; bookmarked?: boolean }) =>
   call(
     listThreadsRoute,
     { request: ListThreadsQuery, response: ListThreadsResponse },
-    { tab, limit: 50, ...(cursor ? { cursor } : {}), ...(filter?.q ? { q: filter.q } : {}), ...(filter?.mentions ? { mentions: filter.mentions } : {}), ...(filter?.who ? { who: filter.who } : {}) } as ListThreadsQuery,
+    {
+      tab,
+      limit: 50,
+      ...(cursor ? { cursor } : {}),
+      ...(filter?.q ? { q: filter.q } : {}),
+      ...(filter?.mentions ? { mentions: filter.mentions } : {}),
+      ...(filter?.who ? { who: filter.who } : {}),
+      ...(filter?.bookmarked ? { bookmarked: '1' } : {}),
+    } as ListThreadsQuery,
     { slug },
   );
+
+// ---- bookmarks (P36-08): the person's own threads and messages kept to find again -------------------------
+export const fetchBookmarkKeys = () => call(savedBookmarkKeysRoute, { response: SavedBookmarkKeysResponse });
+export const fetchSavedBookmarks = (kind: SavedBookmarkTab, cursor?: string) =>
+  call(listSavedBookmarksRoute, { request: ListSavedBookmarksQuery, response: ListSavedBookmarksResponse }, { kind, ...(cursor ? { cursor } : {}) } as ListSavedBookmarksQuery);
+export const saveBookmark = (target: BookmarkTarget) => call(saveBookmarkRoute, { request: SaveBookmarkRequest, response: SavedBookmark }, { target });
+export const removeSavedBookmark = (bookmarkId: string) => call(removeSavedBookmarkRoute, { response: RemoveSavedBookmarkResponse }, undefined, { bookmarkId });
 
 // ---- later and reminders (P14-04) ----------------------------------------------------------------------
 export const fetchLater = (state: 'open' | 'done') => call(listLaterRoute, { request: ListLaterQuery, response: ListLaterResponse }, { state });

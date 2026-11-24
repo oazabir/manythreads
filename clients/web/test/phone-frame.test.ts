@@ -28,12 +28,12 @@ describe('the header tools in the details menu', () => {
 
   it('lists the items of a channel in the header order, whatever order the tools drew in', () => {
     const ch = uuid(1);
-    const offs = [putHeaderItem(ch, entry('bookmark')), putHeaderItem(ch, entry('members')), putHeaderItem(ch, entry('search')), putHeaderItem(ch, entry('voice'))];
-    expect(headerItems(ch).map((e) => e.key)).toEqual(['search', 'voice', 'members', 'bookmark']);
+    const offs = [putHeaderItem(ch, entry('link')), putHeaderItem(ch, entry('members')), putHeaderItem(ch, entry('search')), putHeaderItem(ch, entry('voice'))];
+    expect(headerItems(ch).map((e) => e.key)).toEqual(['search', 'voice', 'members', 'link']);
     offs.forEach((off) => off());
     expect(headerItems(ch)).toEqual([]);
     expect(orderItems([entry('planned'), entry('search')]).map((e) => e.key)).toEqual(['search', 'planned']);
-    expect(HEADER_TOOL_ORDER).toEqual(['search', 'planned', 'voice', 'members', 'bookmark']);
+    expect(HEADER_TOOL_ORDER).toEqual(['search', 'planned', 'voice', 'members', 'link']);
   });
 
   it('keeps the channels apart, and a newer copy of a tool is not taken out by the older one going away', () => {

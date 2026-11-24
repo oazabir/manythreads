@@ -25,10 +25,12 @@ export const NavContribution = z.strictObject({
   label: z.string().min(1).max(40),
   kind: z.enum(['item', 'group-list', 'header']),
   path: z.string().startsWith('/').or(z.string().startsWith('~/')).optional(),
-  icon: z.enum(['chat', 'files', 'boards', 'org', 'jobs', 'threads', 'approvals', 'dm', 'deliveries', 'drafts', 'schedule']).optional(),
+  icon: z.enum(['chat', 'files', 'boards', 'org', 'jobs', 'threads', 'approvals', 'dm', 'deliveries', 'drafts', 'schedule', 'bookmarks']).optional(),
   /** Shown beside the entry while its section has nothing in it (product copy: "No files yet"). */
   emptyState: z.string().min(1).max(60).optional(),
   badge: NavBadge.optional(),
+  /** The entry is drawn only while this count source is above 0 (Bookmarks: `bookmarks.total`, P36-08); it shows no badge for it. */
+  showWhen: z.string().regex(/^[a-z][a-z0-9.-]*$/).max(60).optional(),
   /** A guest sees an entry only when it says so; the channel groups are the one entry guests keep. */
   guests: z.boolean().optional(),
 });

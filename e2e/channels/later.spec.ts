@@ -60,7 +60,7 @@ test.describe('desktop', () => {
       await expect(row(page, 'plain')).toBeVisible(T);
 
       await more(page, 'plain', 'Mark for later');
-      await expect(row(page, 'plain').getByRole('status')).toContainText('Saved for later', T);
+      await expect(row(page, 'plain').getByRole('status')).toContainText('Marked for later', T);
       // the menu now offers to take it off the list again
       await row(page, 'plain').hover();
       await row(page, 'plain').getByRole('button', { name: 'More actions' }).click();

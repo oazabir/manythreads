@@ -29,6 +29,7 @@ import { ForwardDialog } from './ForwardDialog';
 import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
+import { BookmarkMenuItems, BookmarkedMark } from '../bookmarks/BookmarkMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
 import { NO_THREAD_CLICK, copyText, rowShortcut, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
@@ -388,6 +389,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                   {m.pinned ? <><UnpinMessageIcon /> Unpin from channel</> : <><PinMessageIcon /> Pin to channel</>}
                 </button>
               ) : null}
+              {!deleted ? <BookmarkMenuItems messageId={m.id} thread={m.threadRootId === null && (inThread || m.replyCount > 0)} close={() => setMenu(null)} /> : null}
               <LaterMenuItems messageId={m.id} say={setDone} close={() => setMenu(null)} onRemind={() => setMenu('remind')} />
               {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit<kbd>E</kbd></button> : null}
               {canDelete ? (
@@ -419,6 +421,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             {m.meta.via ? <MessageVia via={m.meta.via} /> : null}
             {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
             {m.pinned && !deleted ? <PinnedMark by={m.pinned.by} people={people} /> : null}
+            {!deleted ? <BookmarkedMark messageId={m.id} /> : null}
             {done ? <span className="row-done" role="status">{done}</span> : null}
           </AuthorLine>
         )}

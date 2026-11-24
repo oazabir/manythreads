@@ -3,15 +3,14 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import type { BookmarkKind, ChannelBookmark } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { addBookmark, fetchBookmarks, fetchChannelFiles, fileContentUrl, removeBookmark } from '../api/endpoints';
+import { addChannelLink, fetchChannelLinks, fetchChannelFiles, fileContentUrl, removeChannelLink } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { Dialog } from '../components/Dialog';
 import { useHeaderItem } from '../shell/headerMenu';
-import { BookmarkIcon } from '../shell/icons';
-import { CloseIcon } from '../shell/icons';
+import { CloseIcon, ToolLinkIcon } from '../shell/icons';
 
-/** Where a bookmark leads: a link and a file open in a new tab, a page opens in the team's Files screen. */
-export function bookmarkHref(b: Pick<ChannelBookmark, 'kind' | 'target'>, teamSlug: string | null): { href: string; external: boolean } | null {
+/** Where a channel link leads: a web address and a file open in a new tab, a page opens in the team's Files screen. */
+export function channelLinkHref(b: Pick<ChannelBookmark, 'kind' | 'target'>, teamSlug: string | null): { href: string; external: boolean } | null {
   if (b.kind === 'link') return /^https?:\/\//i.test(b.target) ? { href: b.target, external: true } : null;
   if (b.kind === 'file') return { href: fileContentUrl(b.target), external: true };
   return teamSlug ? { href: `/t/${encodeURIComponent(teamSlug)}/files?open=${encodeURIComponent(b.target)}`, external: false } : null;
@@ -20,24 +19,25 @@ export function bookmarkHref(b: Pick<ChannelBookmark, 'kind' | 'target'>, teamSl
 const KIND_LABEL: Record<BookmarkKind, string> = { link: 'Link', file: 'File', page: 'Page' };
 
 /**
- * The bookmarks bar (PLAN P14-12): links, files and pages a channel keeps under its header. Everyone who can read the channel sees it; everyone
- * who can post adds (a button in the header, `slot`) and removes. A channel with none shows no bar at all, so the channel looks as it did.
+ * The channel's links bar (PLAN P14-12; called "Links" since P36-08, when Bookmarks became a person's own): web addresses, files and pages a channel keeps
+ * under its header. Everyone who can read the channel sees it; everyone who can post adds (a button in the header, `slot`) and removes. A channel with
+ * none shows no bar at all, so the channel looks as it did. The API and its types still call them bookmarks (`ChannelBookmark`).
  */
-export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { channelId: string; teamSlug: string; dm: boolean; canEdit: boolean; slot: HTMLElement | null }) {
-  const list = useQuery(`bookmarks:${channelId}`, () => fetchBookmarks(channelId));
+export function ChannelLinksBar({ channelId, teamSlug, dm, canEdit, slot }: { channelId: string; teamSlug: string; dm: boolean; canEdit: boolean; slot: HTMLElement | null }) {
+  const list = useQuery(`channel-links:${channelId}`, () => fetchChannelLinks(channelId));
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const items = list.status === 'ok' ? list.data.items : [];
-  // on a phone the button is not in the header: the details menu carries "Add a bookmark" (P34-05)
-  useHeaderItem(channelId, canEdit && slot ? { key: 'bookmark', label: 'Add a bookmark', testId: 'details-bookmark-add', popup: true } : null, () => setAdding(true));
+  // on a phone the button is not in the header: the details menu carries "Add a link" (P34-05)
+  useHeaderItem(channelId, canEdit && slot ? { key: 'link', label: 'Add a link', testId: 'details-bookmark-add', popup: true } : null, () => setAdding(true));
 
   const remove = async (b: ChannelBookmark): Promise<void> => {
     setError(null);
     try {
-      await removeBookmark(channelId, b.id);
+      await removeChannelLink(channelId, b.id);
       list.reload();
     } catch {
-      setError('Could not remove the bookmark.');
+      setError('Could not remove the link.');
     }
   };
 
@@ -45,17 +45,17 @@ export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { chann
     <>
       {canEdit && slot
         ? createPortal(
-            <button type="button" className="icon-btn bm-open" aria-label="Add a bookmark" title="Add a bookmark" onClick={() => setAdding(true)} data-testid="bookmark-add">
-              <BookmarkIcon />
+            <button type="button" className="icon-btn bm-open" aria-label="Add a link" title="Add a link" onClick={() => setAdding(true)} data-testid="bookmark-add">
+              <ToolLinkIcon />
             </button>,
             slot,
           )
         : null}
       {items.length > 0 ? (
-        <div className="bmbar" role="region" aria-label="Bookmarks" data-testid="bookmarks-bar">
+        <div className="bmbar" role="region" aria-label="Channel links" data-testid="bookmarks-bar">
           <ul className="bm-list">
             {items.map((b) => {
-              const to = bookmarkHref(b, teamSlug);
+              const to = channelLinkHref(b, teamSlug);
               return (
                 <li key={b.id} className="bm" data-testid="bookmark" data-kind={b.kind}>
                   {to === null ? (
@@ -66,7 +66,7 @@ export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { chann
                     <Link className="bm-link" to={to.href} title={`${KIND_LABEL[b.kind]}: ${b.target}`}>{b.title}</Link>
                   )}
                   {canEdit ? (
-                    <button type="button" className="bm-x" aria-label={`Remove bookmark ${b.title}`} title="Remove" onClick={() => void remove(b)}><CloseIcon size={10} /></button>
+                    <button type="button" className="bm-x" aria-label={`Remove link ${b.title}`} title="Remove" onClick={() => void remove(b)}><CloseIcon size={10} /></button>
                   ) : null}
                 </li>
               );
@@ -76,7 +76,7 @@ export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { chann
         </div>
       ) : null}
       {adding ? (
-        <AddBookmarkDialog
+        <AddChannelLinkDialog
           channelId={channelId}
           dm={dm}
           onClose={() => setAdding(false)}
@@ -90,7 +90,7 @@ export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { chann
   );
 }
 
-function AddBookmarkDialog({ channelId, dm, onClose, onAdded }: { channelId: string; dm: boolean; onClose: () => void; onAdded: () => void }) {
+function AddChannelLinkDialog({ channelId, dm, onClose, onAdded }: { channelId: string; dm: boolean; onClose: () => void; onAdded: () => void }) {
   const [kind, setKind] = useState<BookmarkKind>('link');
   const [target, setTarget] = useState('');
   const [title, setTitle] = useState('');
@@ -104,17 +104,17 @@ function AddBookmarkDialog({ channelId, dm, onClose, onAdded }: { channelId: str
     setBusy(true);
     setError(null);
     try {
-      await addBookmark(channelId, { kind, target: target.trim(), ...(title.trim() === '' ? {} : { title: title.trim() }) });
+      await addChannelLink(channelId, { kind, target: target.trim(), ...(title.trim() === '' ? {} : { title: title.trim() }) });
       onAdded();
     } catch (e) {
       setBusy(false);
-      setError(isApiError(e) && e.status === 409 ? 'That is already there, or the channel has the most bookmarks it keeps.' : isApiError(e) && e.status === 400 ? 'That does not look right. Check the address or the path.' : 'Could not add the bookmark. Try again.');
+      setError(isApiError(e) && e.status === 409 ? 'That is already there, or the channel has the most links it keeps.' : isApiError(e) && e.status === 400 ? 'That does not look right. Check the address or the path.' : 'Could not add the link. Try again.');
     }
   };
 
   return (
     <Dialog
-      title="Add a bookmark"
+      title="Add a link"
       onClose={onClose}
       testId="bookmark-dialog"
       footer={
@@ -124,7 +124,7 @@ function AddBookmarkDialog({ channelId, dm, onClose, onAdded }: { channelId: str
         </>
       }
     >
-      <div className="bm-kinds" role="radiogroup" aria-label="What to bookmark">
+      <div className="bm-kinds" role="radiogroup" aria-label="What to add">
         {(['link', 'file', ...(dm ? [] : ['page'])] as BookmarkKind[]).map((k) => (
           <button key={k} type="button" role="radio" aria-checked={kind === k} className={`bm-kind ${kind === k ? 'on' : ''}`} onClick={() => { setKind(k); setTarget(''); }}>
             {KIND_LABEL[k]}

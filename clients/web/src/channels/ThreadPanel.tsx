@@ -21,6 +21,8 @@ import { RunCard, RunEnd } from './run-card/RunCard';
 import { useShownQuestions } from './run-card/shownQuestions';
 import { ArrowDownIcon, ArrowUpIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import { ThreadTools, threadTools } from './ThreadTools';
+import { bookmarksStore, useBookmarkPending, useBookmarked, useBookmarksReady } from '../bookmarks/store';
+import { toggleThreadBookmark } from '../bookmarks/actions';
 import { AutoplaySwitch } from './voice/AutoplaySwitch';
 import { AutoplayZone } from './voice/autoplay';
 import type { AnswerTools } from './AnswerShare';
@@ -106,6 +108,13 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   // Scrolled away from the top: the "Jump to top" button shows (owner, 2026-11-19). Set only when it changes, as above.
   const [awayFromTop, setAwayFromTop] = useState(false);
   const [busy, setBusy] = useState(false);
+  // the bookmark at the top right of the thread (P36-08)
+  const bookmarksReady = useBookmarksReady();
+  const threadBookmarked = useBookmarked('thread', rootId);
+  const bookmarkBusy = useBookmarkPending('thread', rootId);
+  useEffect(() => {
+    void bookmarksStore.load();
+  }, []);
   // the side rail (P29-20): the to-do timeline and the files, kept open or closed per person in this browser; the full page only
   const railId = useId();
   const [railOpen, setRailOpen] = useState<boolean>(() => readRailOpen() ?? false);
@@ -248,7 +257,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const channelHref = channelName && teamForLink ? `${channelPath(teamForLink, channelName)}?message=${rootId}` : null;
   const tools = (
     <ThreadTools
-      tools={threadTools({ variant, canFollow: threadState !== null, channelLink: channelHref !== null, channelInView: channelOnScreen !== null && channelOnScreen === channelId })}
+      tools={threadTools({ variant, canFollow: threadState !== null, channelLink: channelHref !== null, channelInView: channelOnScreen !== null && channelOnScreen === channelId, canBookmark: bookmarksReady })}
+      bookmarked={threadBookmarked}
+      bookmarkBusy={bookmarkBusy}
+      onBookmark={() => void toggleThreadBookmark(rootId)}
       followed={threadState?.followed ?? false}
       busy={busy}
       onFollow={() => void toggleFollow()}

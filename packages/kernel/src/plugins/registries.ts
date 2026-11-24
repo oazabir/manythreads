@@ -85,6 +85,7 @@ export class ExtensionRegistries {
     'inbox.dropper': new ExtensionRegistry(),
     'connector.calendar': new ExtensionRegistry(),
     'connector.documents': new ExtensionRegistry(),
+    bookmarks: new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

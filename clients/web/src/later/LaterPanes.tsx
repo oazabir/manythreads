@@ -94,14 +94,14 @@ export function LaterListBody({
           <EmptyState
             icon={SaveForLaterIcon}
             testId="later-empty"
-            title={view === 'open' ? 'Nothing saved for later' : 'Nothing finished yet'}
+            title={view === 'open' ? 'Nothing marked for later' : 'Nothing finished yet'}
             action={{ label: view === 'open' ? 'See what is done' : 'Back to to do', onClick: () => setView(view === 'open' ? 'done' : 'open') }}
           >
             {view === 'open' ? 'Open a message’s More menu and choose Mark for later, or Remind me, to find it here.' : 'Items you mark done show up here.'}
           </EmptyState>
         </div>
       ) : (
-        <ul className="inlist" role="listbox" aria-label={view === 'open' ? 'Saved for later' : 'Done'}>
+        <ul className="inlist" role="listbox" aria-label={view === 'open' ? 'Marked for later' : 'Done'}>
           {view === 'open' && dueCount > 0 ? <li className="lt-section" role="presentation" data-testid="later-due-heading">{`Due now · ${dueCount}`}</li> : null}
           {items.map((it, i) => (
             <li key={it.id} role="option" aria-selected={it.id === selected} data-testid="later-row" data-due={it.due} data-available={it.message !== null} data-item-id={it.id}>
@@ -161,7 +161,7 @@ export function LaterDetail({ item, onChanged, onGone }: { item: LaterItem; onCh
   };
 
   return (
-    <section className="lt-detail" aria-label="Saved message" data-testid="later-detail" data-available={m !== null}>
+    <section className="lt-detail" aria-label="Message for later" data-testid="later-detail" data-available={m !== null}>
       {m ? (
         <>
           <p className="lt-where">{channelLabel(item)}</p>
@@ -267,7 +267,7 @@ export function LaterTab({
             <LaterDetail key={item.id} item={item} onChanged={refreshAll} onGone={() => onSelect(null)} />
           ) : (
             <div className="inr-empty">
-              <p className="view-empty-title">{q.status === 'ok' && q.data.items.length === 0 ? 'Nothing here yet' : 'Pick a saved message'}</p>
+              <p className="view-empty-title">{q.status === 'ok' && q.data.items.length === 0 ? 'Nothing here yet' : 'Pick a message'}</p>
               <p className="view-empty-body">Its message, reminder and actions show here.</p>
             </div>
           )}

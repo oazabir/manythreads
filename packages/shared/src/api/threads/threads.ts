@@ -103,6 +103,11 @@ export const ListThreadsQuery = z.object({
    * (owner, 2026-11-19). Unlike `q`, it narrows the list but keeps its pages and cursor.
    */
   who: z.enum(['people']).optional(),
+  /**
+   * `1`: only the threads the caller bookmarked (P36-08), combinable with `who` and `q`. On Followed it lists every bookmarked thread, followed or not; on Unread and
+   * Mine it narrows that tab. A server without the bookmarks plugin answers an empty list. Keeps its pages and cursor.
+   */
+  bookmarked: z.enum(['1']).optional(),
 });
 export type ListThreadsQuery = z.infer<typeof ListThreadsQuery>;
 

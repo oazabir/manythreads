@@ -159,6 +159,12 @@ export const remindersMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/reminders/migrations/', import.meta.url)),
 };
 
+/** Migrations of the bookmarks plugin (`bookmarks`: a person's bookmarked threads, messages and files); pass it in `sources` after the channels and files sources. */
+export const bookmarksMigrationSource: MigrationSource = {
+  namespace: 'bookmarks',
+  dir: fileURLToPath(new URL('../../plugins/bookmarks/migrations/', import.meta.url)),
+};
+
 /**
  * Migrations of the import plugin (`import_runs`, `import_people`, `import_map`, the claim triggers, the replaced `app.message_authors`); pass it in `sources`
  * after `channelsMigrationSource`, `botsMigrationSource`, `webhooksMigrationSource`, `remindersMigrationSource` and `directMessagesMigrationSource`.

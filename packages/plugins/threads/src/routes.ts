@@ -1,4 +1,4 @@
-import { HttpError, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { HttpError, type BookmarksProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
   FollowThreadResponse,
   GetThreadQuery,
@@ -241,7 +241,14 @@ export function registerThreadRoutes(ctx: PluginContext): void {
         const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
         if (role !== 'guest') return json(ListThreadsResponse.parse({ items: [], nextCursor: null }));
       }
-      return json(await listInbox(tx, { personId: person, tab: q.tab, teamId, limit: q.limit, cursor: q.cursor, q: q.q, mentions: idGroups(q.mentions, THREAD_FILTER_MENTIONS_MAX), who: q.who }));
+      // Bookmarked (P36-08): the person's bookmarked threads come from the bookmarks plugin's provider; a server without it has none to list
+      let bookmarked: string[] | undefined;
+      if (q.bookmarked === '1') {
+        const provider = ctx.providers.get<BookmarksProvider>('bookmarks');
+        bookmarked = provider ? await provider.threadRootIds(tx) : [];
+        if (bookmarked.length === 0) return json(ListThreadsResponse.parse({ items: [], nextCursor: null }));
+      }
+      return json(await listInbox(tx, { personId: person, tab: q.tab, teamId, limit: q.limit, cursor: q.cursor, q: q.q, mentions: idGroups(q.mentions, THREAD_FILTER_MENTIONS_MAX), who: q.who, bookmarked }));
     }),
   });
 

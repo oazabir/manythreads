@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
-import { BookmarksBar } from '../channels/BookmarksBar';
+import { ChannelLinksBar } from '../channels/ChannelLinksBar';
 import { Composer, type SendOptions } from '../channels/Composer';
 import { estimateItem, buildListItems, dayAt, messageKey, messageShown, UNREAD_KEY, type ListItem } from '../channels/listItems';
 import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
@@ -338,7 +338,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     <AutoplayZone.Provider value={dm !== undefined}>
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
       {headerSlot && dm ? createPortal(<AutoplaySwitch />, headerSlot) : null}
-      {/* the header's tools, in the order the stylesheet gives them: search, planned-room chip, Bot Board, Schedule a room, voice, members, bookmark (P33-01) */}
+      {/* the header's tools, in the order the stylesheet gives them: search, planned-room chip, Bot Board, Schedule a room, voice, members, links (P33-01) */}
       {headerSlot ? createPortal(<ChannelSearch channelId={channelId} placeholder={dm ? 'Search this conversation' : `Search #${name}`} />, headerSlot) : null}
       {headerSlot && !dm ? createPortal(<ScheduledChip channelId={channelId} />, headerSlot) : null}
       {botBoard && headerSlot
@@ -355,7 +355,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
       {/* the channel's one live region for the cards under its roots: only "N questions are waiting", never the steps */}
       <p className="sr-only" role="status" data-testid="task-view-said">{taskSaid}</p>
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}
-      <BookmarksBar channelId={channelId} teamSlug={teamSlug} dm={dm !== undefined} canEdit={canPost} slot={headerSlot} />
+      <ChannelLinksBar channelId={channelId} teamSlug={teamSlug} dm={dm !== undefined} canEdit={canPost} slot={headerSlot} />
       <div className="chview-list">
         {tl.status === 'loading' || deciding ? (
           <SkeletonMessages count={5} label={dm ? `Loading messages with ${dm.label}` : `Loading messages in #${name}`} />

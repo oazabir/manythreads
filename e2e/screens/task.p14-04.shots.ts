@@ -105,7 +105,7 @@ test('Later and reminders, end to end', async ({ browser }) => {
     // 1. Mark for later, and the choices of Remind me
     await more(plain, 'Mark for later');
     await page.getByRole('menuitem', { name: 'Mark for later' }).click();
-    await expect(plain.getByRole('status')).toContainText('Saved for later', T);
+    await expect(plain.getByRole('status')).toContainText('Marked for later', T);
     await more(timed, 'Remind me…');
     await page.getByRole('menuitem', { name: 'Remind me…' }).click();
     await expect(page.getByRole('menuitem', { name: 'In 20 minutes' })).toBeVisible();

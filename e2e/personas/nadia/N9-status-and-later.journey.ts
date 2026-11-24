@@ -1,4 +1,4 @@
-// N9 · Nadia tells people where she is and keeps her place (PLAN block 14-18 additions): a status, Do not disturb, a reminder, a thread saved for later (P14-01, P14-04, P14-06).
+// N9 · Nadia tells people where she is and keeps her place (PLAN block 14-18 additions): a status, Do not disturb, a reminder, a thread bookmarked (P14-01, P14-04, P14-06, P36-08).
 import { expect } from '@playwright/test';
 import { defineJourney } from '../harness/journey.ts';
 import { TID } from '../../pages/index.ts';
@@ -6,7 +6,7 @@ import { TID } from '../../pages/index.ts';
 export default defineJourney({
   id: 'N9',
   persona: 'nadia',
-  goal: 'Set my status, pause notifications while I watch the canary, ask to be reminded, and save the Deploy plan thread for later.',
+  goal: 'Set my status, pause notifications while I watch the canary, ask to be reminded, and bookmark the Deploy plan thread.',
   markers: [],
   start: 'week-2',
   steps: [
@@ -51,14 +51,14 @@ export default defineJourney({
     {
       id: 'thread-actions',
       expect: TID.threadsInbox,
-      next: { testid: 'thread-action-save', label: 'Save' },
+      next: { testid: 'thread-action-bookmark', label: 'Bookmark thread' },
       run: async ({ pages, page }) => {
         await pages.threads.open();
         const row = page.getByTestId('thread-row').filter({ hasText: 'Deploy plan' }).first();
         await expect(row).toBeVisible();
         // the Actions menu closes on any scroll or resize of the window (ThreadCard.tsx); a late scroll of the list probably shuts it
         // just after the click (cause not proven; seen once in a full run: "thread-action-save" not found). The step opens it again until it stays open; the menu must still show.
-        const save = page.getByTestId('thread-action-save');
+        const save = page.getByTestId('thread-action-bookmark');
         await expect(async () => {
           if (!(await save.isVisible())) await page.getByRole('option', { name: /Deploy plan/ }).getByTestId('thread-actions').click();
           await expect(save).toBeVisible({ timeout: 2_000 });
@@ -66,19 +66,20 @@ export default defineJourney({
       },
     },
     {
-      id: 'saved-for-later',
+      id: 'thread-bookmarked',
       expect: TID.threadsInbox,
       run: async ({ page }) => {
-        await page.getByTestId('thread-action-save').click();
-        await expect(page.getByRole('status').filter({ hasText: 'Saved for later' }).first()).toBeVisible();
+        // the card's menu bookmarks the thread (P36-08; it used to save the first message to Later)
+        await page.getByTestId('thread-action-bookmark').click();
+        await expect(page.getByRole('status').filter({ hasText: 'Thread bookmarked' }).first()).toBeVisible();
       },
     },
     {
-      id: 'later-tab',
+      id: 'bookmarked-filter',
       expect: TID.threadsInbox,
       run: async ({ page }) => {
-        await page.getByRole('tab', { name: /Later/ }).click();
-        await expect(page.getByTestId('later-row').first()).toBeVisible();
+        await page.getByTestId('threads-bookmarked').click();
+        await expect(page.getByTestId('thread-row').filter({ hasText: 'Deploy plan' }).first()).toBeVisible();
       },
     },
   ],
@@ -89,7 +90,7 @@ export default defineJourney({
     expect(dnd[0]?.until, 'notifications are paused').toBeTruthy();
     const reminder = await stack.sql<{ n: string }>(`select count(*)::text as n from app.reminders where state = 'pending' and text like '%canary dashboards%'`);
     expect(Number(reminder[0]?.n ?? 0), 'the reminder waits').toBe(1);
-    const later = await stack.sql<{ n: string }>(`select count(*)::text as n from app.later_items where state = 'open'`);
-    expect(Number(later[0]?.n ?? 0), 'a thread is saved for later').toBeGreaterThanOrEqual(1);
+    const bookmarks = await stack.sql<{ n: string }>(`select count(*)::text as n from app.bookmarks where kind = 'thread'`);
+    expect(Number(bookmarks[0]?.n ?? 0), 'a thread is bookmarked').toBeGreaterThanOrEqual(1);
   },
 });

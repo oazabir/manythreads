@@ -2,7 +2,7 @@ import type { DirectMessageSummary, NavChannelGroup } from '@manythreads/shared'
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
 import { NO_THREAD_CLICK, channelTargets, dmLabel, dmTargets, escMarksRead, filterTargets, messageLinkPath, messageLinkUrl, reactorsText, rowClickOpensThread, rowShortcut, versionTime } from '../src/channels/messageActions';
-import { bookmarkHref } from '../src/channels/BookmarksBar';
+import { channelLinkHref } from '../src/channels/ChannelLinksBar';
 import { outcomeOfError } from '../src/notifications/OpenLink';
 
 const CH = '0190a000-0000-7000-8000-000000000001';
@@ -69,11 +69,11 @@ describe('forward targets', () => {
 
 describe('where a bookmark leads', () => {
   it('opens a link and a file in a new tab, a page in the team\'s Files screen, and refuses a link that is not http(s)', () => {
-    expect(bookmarkHref({ kind: 'link', target: 'https://example.com/a' }, 'engineering')).toEqual({ href: 'https://example.com/a', external: true });
-    expect(bookmarkHref({ kind: 'link', target: 'javascript:alert(1)' }, 'engineering')).toBeNull();
-    expect(bookmarkHref({ kind: 'file', target: CH }, null)).toEqual({ href: `/api/files/${CH}/content`, external: true });
-    expect(bookmarkHref({ kind: 'page', target: 'pages/a b.md' }, 'engineering')).toEqual({ href: '/t/engineering/files?open=pages%2Fa%20b.md', external: false });
-    expect(bookmarkHref({ kind: 'page', target: 'pages/a.md' }, null)).toBeNull();
+    expect(channelLinkHref({ kind: 'link', target: 'https://example.com/a' }, 'engineering')).toEqual({ href: 'https://example.com/a', external: true });
+    expect(channelLinkHref({ kind: 'link', target: 'javascript:alert(1)' }, 'engineering')).toBeNull();
+    expect(channelLinkHref({ kind: 'file', target: CH }, null)).toEqual({ href: `/api/files/${CH}/content`, external: true });
+    expect(channelLinkHref({ kind: 'page', target: 'pages/a b.md' }, 'engineering')).toEqual({ href: '/t/engineering/files?open=pages%2Fa%20b.md', external: false });
+    expect(channelLinkHref({ kind: 'page', target: 'pages/a.md' }, null)).toBeNull();
   });
 });
 

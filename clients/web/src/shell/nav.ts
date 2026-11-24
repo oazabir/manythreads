@@ -18,6 +18,9 @@ export const CORE_NAV: NavContribution[] = [
   // the messages not sent yet, from every box (owner, 2026-11-23)
   { id: 'drafts', order: 32, label: 'Drafts', kind: 'item', path: '/drafts', icon: 'drafts' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
+  // the person's own bookmarks (P36-08): drawn only while there is at least one, with no badge. A guest bookmarks messages of the channels shared with them
+  // (the More menu offers it to everyone, as it offers Later), so a guest gets the entry too, and `/t/shared/bookmarks` is a page a guest can open.
+  { id: 'bookmarks', order: 33, label: 'Bookmarks', kind: 'item', path: '/bookmarks', icon: 'bookmarks', showWhen: 'bookmarks.total', guests: true },
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
   { id: 'direct-messages', order: 45, label: 'Direct messages', kind: 'header', emptyState: 'No conversations yet' },
@@ -25,9 +28,12 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'bots', order: 50, label: 'Bots', kind: 'header', path: '/bots', emptyState: 'No bots yet' },
 ].map((c) => NavContribution.parse(c));
 
-/** What the sidebar shows this person: sorted by order; a guest keeps only the entries that allow guests. */
-export function visibleNav(items: readonly NavContribution[], who: { guest: boolean }): NavContribution[] {
-  return sortNav(items).filter((i) => !who.guest || i.guests === true);
+/**
+ * What the sidebar shows this person: sorted by order; a guest keeps only the entries that allow guests; an entry with `showWhen` only while that count is
+ * above 0 (Bookmarks while the person has one).
+ */
+export function visibleNav(items: readonly NavContribution[], who: { guest: boolean }, counts: Readonly<Record<string, number>> = {}): NavContribution[] {
+  return sortNav(items).filter((i) => (!who.guest || i.guests === true) && (i.showWhen === undefined || (counts[i.showWhen] ?? 0) > 0));
 }
 
 /** Where an entry leads for a team: `/files` is `/t/<team>/files`, `~/roster` is the team's settings page. */
@@ -61,7 +67,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', drafts: 'Drafts', schedule: 'Schedule', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
+const TITLES: Record<string, string> = { chat: 'Chat', threads: 'Threads', drafts: 'Drafts', bookmarks: 'Bookmarks', schedule: 'Schedule', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

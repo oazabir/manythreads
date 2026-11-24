@@ -4,7 +4,7 @@ import {
   ChevronLeftIcon, ClockIcon as ProClock, CommentIcon, CommentMultipleIcon, EmojiIcon, FileMultipleIcon, FolderIcon as ProFolder,
   LinkIcon, LockIcon as ProLock, MenuIcon as ProMenu, MoonIcon as ProMoon, MoreIcon as ProMore, SearchIcon as ProSearch, SendIcon as ProSend, SettingsIcon,
   StarIcon as ProStar, ArrowSyncIcon, TuneIcon, CheckmarkIcon, AddIcon as ProAdd, SubtractIcon as ProSubtract, PencilIcon as ProPencil, MailIcon as ProMail, HashIcon as ProHash, MentionIcon as ProMention,
-  WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon, SparkleIcon, AndroidIcon, ArrowLeftIcon, ArrowRightIcon, DeleteIcon, ArrowLeftRightIcon,
+  WindowMultipleIcon, MailOpenIcon, SparkleIcon, AndroidIcon, ArrowLeftIcon, ArrowRightIcon, DeleteIcon, ArrowLeftRightIcon,
   MicrophoneIcon, PauseIcon as PauseIcon_, PlayIcon as PlayIcon_, SquareIcon,
 } from '@proicons/react';
 import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon } from '@proicons/react';
@@ -50,7 +50,10 @@ export const BackIcon = proIcon(ChevronLeftIcon, 14);
 export const GearIcon = proIcon(SettingsIcon);
 export const LockIcon = proIcon(ProLock, 12);
 
-export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon, drafts: DraftsIcon, schedule: ScheduleNavIcon } as const;
+/** Bookmarks in the sidebar (P36-08). */
+export const BookmarksNavIcon = proIcon(ProBookmark);
+
+export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon, drafts: DraftsIcon, schedule: ScheduleNavIcon, bookmarks: BookmarksNavIcon } as const;
 
 export const ReplyIcon = proIcon(ArrowReplyIcon, 14);
 export const SmileIcon = proIcon(EmojiIcon, 14);
@@ -86,8 +89,14 @@ export const MentionIcon = proIcon(ProMention, 14);
 export const NewWindowIcon = proIcon(WindowMultipleIcon, 14);
 /** An opened envelope: mark as read. */
 export const MarkReadIcon = proIcon(MailOpenIcon, 14);
-/** A bookmark with a plus: save a message for later. */
-export const SaveForLaterIcon = proIcon(BookmarkAddIcon, 14);
+/** A clock: Later, the messages a person marked to come back to (P36-08: the bookmark glyph is Bookmarks' only). */
+export const SaveForLaterIcon = proIcon(ProClock, 14);
+/** A bookmark (P36-08): outline when off, filled when on. The thread pane's toggle, the message menu, the sidebar entry and the Bookmarks page. */
+export const BookmarkToggleIcon = ({ filled = false, size }: { filled?: boolean; size?: number }) => <Bookmark16 filled={filled} {...(size ? { size } : {})} />;
+const Bookmark16 = proIcon(ProBookmark);
+/** The small filled bookmark by a bookmarked message's time. */
+export const BookmarkMarkIcon = () => <Bookmark12 filled />;
+const Bookmark12 = proIcon(ProBookmark, 12);
 /** Two chain links: copy the address of something. */
 export const CopyLinkIcon = proIcon(LinkIcon, 14);
 export const AddIcon = proIcon(ProAdd, 14);

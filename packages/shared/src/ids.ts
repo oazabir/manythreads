@@ -95,6 +95,10 @@ export type NotificationId = z.infer<typeof NotificationId>;
 export const LaterItemId = z.uuid().brand<'LaterItemId'>();
 export type LaterItemId = z.infer<typeof LaterItemId>;
 
+/** One bookmark of one person (P36-08): a thread, a message or a file they keep to find again. */
+export const BookmarkId = z.uuid().brand<'BookmarkId'>();
+export type BookmarkId = z.infer<typeof BookmarkId>;
+
 /** One reminder made with `/remind` (P14-04): for the person themself, for someone else, or for a channel. */
 export const ReminderId = z.uuid().brand<'ReminderId'>();
 export type ReminderId = z.infer<typeof ReminderId>;

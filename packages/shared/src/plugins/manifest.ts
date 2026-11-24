@@ -58,6 +58,8 @@ export const EXTENSION_POINTS = [
   'provider.inbox.dropper',
   // A person's own text files in their Personal space (P20-10): registered by files, read by scheduled-jobs for a routine's contract and output and for the action-items list.
   'provider.personal.files',
+  // The threads a person bookmarked (bookmarks, P36-08): read by threads for the Threads view's Bookmarked filter, so threads never reads the bookmarks table.
+  'provider.bookmarks',
   // A person's calendar and documents at outside services (Bundle D): registered by connections, read by meetings and knowledge through the SDK's `CalendarConnector` and `DocumentsConnector`.
   'provider.connector.calendar',
   'provider.connector.documents',

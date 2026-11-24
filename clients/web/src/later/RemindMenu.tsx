@@ -37,7 +37,7 @@ export function LaterMenuItems({ messageId, onRemind, say, close }: { messageId:
         say('Removed from Later');
       } else {
         await laterStore.save(messageId);
-        say('Saved for later');
+        say('Marked for later');
       }
     } catch (e) {
       say(laterErrorText(e));

@@ -6,10 +6,11 @@ import { Avatar } from '../components/ui';
 import { copyText, messageLinkPath, messageLinkUrl } from '../channels/messageActions';
 import { ago } from '../channels/format';
 import { usePeople } from '../channels/hooks';
-import { laterErrorText, useLater } from '../later/RemindMenu';
-import { laterStore } from '../later/store';
+import { laterErrorText } from '../later/RemindMenu';
+import { toggleThreadBookmark } from '../bookmarks/actions';
+import { bookmarksStore, useBookmarkPending, useBookmarked, useBookmarksReady } from '../bookmarks/store';
 import { useDismiss } from '../shell/useDismiss';
-import { BellIcon, BellOffIcon, CopyLinkIcon, HashIcon, MarkReadIcon, MoreIcon, NewWindowIcon, SaveForLaterIcon } from '../shell/icons';
+import { BellIcon, BellOffIcon, CopyLinkIcon, HashIcon, MarkReadIcon, MoreIcon, NewWindowIcon, BookmarkToggleIcon } from '../shell/icons';
 import { channelLabel, followEntry, markerLabel, repliesLine, withHandles } from './threadCard';
 import { Hl, NeedsChip, ProgressLine, ReplyBlocks } from '../inbox/RowParts';
 import { NO_WORK, type RowWork } from '../inbox/work';
@@ -55,7 +56,7 @@ function Who({ author, size }: { author: Pick<MessageAuthor, 'actorId' | 'displa
 
 export const ThreadCard = memo(function ThreadCard({ item, teamSlug, selected, onOpen, onMarkRead, onChanged, onOpenInChannel, words = NO_WORDS, work = NO_WORK, needs = NOT_NEEDED }: Props) {
   const people = usePeople();
-  const later = useLater();
+  const bookmarksReady = useBookmarksReady();
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const kebab = useRef<HTMLButtonElement>(null);
@@ -66,7 +67,9 @@ export const ThreadCard = memo(function ThreadCard({ item, teamSlug, selected, o
   const unread = item.unreadCount > 0;
   const label = markerLabel(item);
   const rootName = (item.rootAuthor && people.byActor(item.rootAuthor.actorId)?.name) ?? item.rootAuthor?.displayName ?? 'Someone';
-  const saved = laterStore.itemFor(item.rootMessageId);
+  // the thread's bookmark (P36-08; this item used to save the first message to Later)
+  const bookmarked = useBookmarked('thread', item.rootMessageId);
+  const bookmarkBusy = useBookmarkPending('thread', item.rootMessageId);
   const follow = followEntry(item.followed);
   const progress = progressOf(work.todo, work.run ? { botName: work.run.botName, head: work.run.head } : null);
   const extra = item.participantCount - item.participants.length;
@@ -81,7 +84,7 @@ export const ThreadCard = memo(function ThreadCard({ item, teamSlug, selected, o
   const openMenu = (): void => {
     const r = kebab.current?.getBoundingClientRect();
     if (!r) return;
-    void laterStore.load();
+    void bookmarksStore.load();
     setMenu({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
   };
   useLayoutEffect(() => {
@@ -183,9 +186,20 @@ export const ThreadCard = memo(function ThreadCard({ item, teamSlug, selected, o
                 <MarkReadIcon /><span>Mark as read</span>
               </button>
             ) : null}
-            {later.supported ? (
-              <button type="button" role="menuitem" className="thc-item" data-testid="thread-action-save" onClick={() => void run(saved ? 'Removed from Later' : 'Saved for later', () => (saved ? laterStore.remove(saved.id) : laterStore.save(item.rootMessageId)))}>
-                <SaveForLaterIcon /><span>{saved ? 'Remove from saved' : 'Save'}</span>
+            {bookmarksReady ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="thc-item"
+                data-testid="thread-action-bookmark"
+                disabled={bookmarkBusy}
+                onClick={() => {
+                  setMenu(null);
+                  kebab.current?.focus();
+                  void toggleThreadBookmark(item.rootMessageId);
+                }}
+              >
+                <BookmarkToggleIcon filled={bookmarked} size={14} /><span>{bookmarked ? 'Remove bookmark' : 'Bookmark thread'}</span>
               </button>
             ) : null}
             <button type="button" role="menuitem" className="thc-item" data-testid="thread-action-link" onClick={() => void run('Link copied', async () => { if (!(await copyText(messageLinkUrl(window.location.origin, ref)))) throw new Error('Could not copy the link'); })}>

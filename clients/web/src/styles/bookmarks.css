@@ -1,0 +1,146 @@
+/* Bookmarks (P36-08): the page (screens/bookmarks/BookmarksScreen.tsx) and the small mark by a bookmarked message's time (bookmarks/BookmarkMenu.tsx).
+   Classes are `bk-*`; the mark is `.msg-bookmarked`, beside the pinned mark. The tabs are the shared `.tabs2`. */
+.bk-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bk-body {
+  padding: 0 24px 32px;
+}
+
+.bk-tabs {
+  margin-bottom: 8px;
+}
+
+.bk-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.bk-open {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.bk-open:hover,
+.bk-open:focus-visible {
+  background: var(--msg-hover);
+}
+
+.bk-gone {
+  cursor: default;
+  color: var(--mute);
+}
+
+.bk-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bk-place {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bk-when {
+  flex: none;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.bk-title,
+.bk-author {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bk-text,
+.bk-meta {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bk-remove {
+  flex: none;
+}
+
+.bk-more {
+  margin-top: 12px;
+}
+
+.bk-note,
+.bk-empty {
+  padding: 24px 12px;
+  color: var(--mute);
+}
+
+.bk-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.bk-empty-title {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.bk-empty-body {
+  margin: 0;
+}
+
+@media (width <= 600px) {
+  .bk-body {
+    padding: 0 16px 24px;
+  }
+
+  .bk-tabs {
+    flex-wrap: nowrap;
+  }
+}
+
+/* the mark by a bookmarked message's time: a small filled bookmark, the word for screen readers only */
+.who .msg-bookmarked {
+  display: inline-flex;
+  align-items: center;
+  color: var(--mute);
+}

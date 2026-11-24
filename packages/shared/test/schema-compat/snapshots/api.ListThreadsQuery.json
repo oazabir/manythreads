@@ -31,6 +31,18 @@
       "type": "string",
       "maxLength": 3700,
       "pattern": "^[0-9a-f-]{36}([,|][0-9a-f-]{36})*$"
+    },
+    "who": {
+      "type": "string",
+      "enum": [
+        "people"
+      ]
+    },
+    "bookmarked": {
+      "type": "string",
+      "enum": [
+        "1"
+      ]
     }
   }
 }

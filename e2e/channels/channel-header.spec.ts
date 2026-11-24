@@ -26,7 +26,7 @@ const details = (page: Page) => page.getByTestId('channel-details');
 const button = (page: Page) => page.getByTestId('channel-details-button');
 
 /*
- * P34-05 (owner decision e, 2026-11-19): on a phone the header is the channel's name and the bell; search, the voice room, Members, Add a bookmark (and Bot
+ * P34-05 (owner decision e, 2026-11-19): on a phone the header is the channel's name and the bell; search, the voice room, Members, Add a link (and Bot
  * Board, Schedule a room) are items of the details menu. The Members panel opens from the header icon on a wide screen and from "Members (n)" in the menu on a phone.
  */
 async function openMembers(page: Page, isMobile: boolean): Promise<void> {
@@ -387,8 +387,8 @@ test('at 390 px the header is one row, the name and the bell; a 44-character nam
     await expect(details(page)).toBeVisible();
     // the header's tools first, in the header's order, then the menu as it was (the list view of Members steps aside: its twin above opens the panel)
     const items = await details(page).getByRole('menuitem').filter({ visible: true }).allTextContents();
-    expect(items.slice(0, 4).map((t) => t.trim())).toEqual(['Search this conversation', 'Audio call', expect.stringMatching(/^Members \(\d+\)$/), 'Add a bookmark']);
-    await expectItemsFullyShown(page, ['Search this conversation', 'Audio call', /^Members \(\d+\)$/, 'Add a bookmark', 'Notifications', /^Star$/, 'Schedule a room', 'Integrations', 'Files', 'Leave channel']);
+    expect(items.slice(0, 4).map((t) => t.trim())).toEqual(['Search this conversation', 'Audio call', expect.stringMatching(/^Members \(\d+\)$/), 'Add a link']);
+    await expectItemsFullyShown(page, ['Search this conversation', 'Audio call', /^Members \(\d+\)$/, 'Add a link', 'Notifications', /^Star$/, 'Schedule a room', 'Integrations', 'Files', 'Leave channel']);
     // the keyboard starts on the first item
     await expect(details(page).getByRole('menuitem', { name: 'Search this conversation' })).toBeFocused();
   } finally {
@@ -401,7 +401,7 @@ test('at 390 px each tool moved into the details menu does what its header butto
   try {
     await expect(messagesIn(page).first()).toBeVisible(T);
     await expect(page.getByTestId('members-open')).toHaveAttribute('data-count', /^\d+$/, T);
-    // Add a bookmark opens the bookmark dialog; closing it gives the keyboard back to the name
+    // Add a link opens the link dialog; closing it gives the keyboard back to the name
     await button(page).click();
     await details(page).getByTestId('details-bookmark-add').click();
     await expect(details(page)).toHaveCount(0);

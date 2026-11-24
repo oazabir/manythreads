@@ -22,6 +22,7 @@ import {
   BotRunTrigger,
   BotStatus,
   BookmarkKind,
+  BookmarkTargetKind,
   BotVisibility,
   ChannelKind,
   ChatVote,
@@ -150,6 +151,7 @@ import {
   dropTestDatabase,
   approvalsMigrationSource,
   bridgesMigrationSource,
+  bookmarksMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
   conversationsMigrationSource,
@@ -209,6 +211,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'entity_links.dst_type': EntityType,
   'channels.kind': ChannelKind,
   'channel_bookmarks.kind': BookmarkKind,
+  'bookmarks.kind': BookmarkTargetKind,
   'sidebar_prefs.sort': SidebarSort,
   'scheduled_messages.state': ScheduledMessageState,
   'custom_emoji.content_type': CustomEmojiType,
@@ -370,7 +373,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, scheduledJobsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource, bridgesMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, scheduledJobsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource, bridgesMigrationSource, bookmarksMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

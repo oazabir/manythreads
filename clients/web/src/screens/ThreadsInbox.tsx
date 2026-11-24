@@ -28,6 +28,7 @@ import { readLayout, writeLayout, type ThreadsLayout } from '../inbox/viewMode';
 import { EmptyState, type EmptyStateAction } from '../components/EmptyState';
 import { SkeletonRows } from '../components/Skeleton';
 import { PaneResizer } from '../kernel/panes/PaneResizer';
+import { bookmarksStore, useBookmarksReady, useBookmarksSupported, useThreadBookmarkVersion } from '../bookmarks/store';
 import { PANES } from '../kernel/panes/paneWidth';
 
 type Tab = 'followed' | 'unread' | 'mine' | 'later';
@@ -100,7 +101,29 @@ export function ThreadsInbox() {
   const stacked = narrow || grid;
   // "People only" (owner, 2026-11-19): the threads with no bot in them, kept in `?who=people`; the server narrows every read of the list (pages and the filter's)
   const peopleOnly = params.get('who') === 'people' && tab !== 'later';
-  const who = peopleOnly ? ({ who: 'people' } as const) : {};
+  // "Bookmarked" (P36-08): only the threads the person bookmarked, kept in `?bookmarked=1`; the server narrows every read like People only. The list is keyed
+  // on the store's thread version, which moves only when a thread bookmark is confirmed by the server (or changes in another tab), so a message bookmark or an
+  // optimistic change never reads it again. With the filter on, the first read waits for the keys, so it is asked once.
+  const bookmarksReady = useBookmarksReady();
+  const bookmarksSupported = useBookmarksSupported();
+  const threadVersion = useThreadBookmarkVersion();
+  useEffect(() => {
+    void bookmarksStore.load();
+  }, []);
+  const bookmarkedOnly = params.get('bookmarked') === '1' && tab !== 'later' && bookmarksSupported;
+  const waitForKeys = bookmarkedOnly && !bookmarksReady;
+  const who = { ...(peopleOnly ? { who: 'people' as const } : {}), ...(bookmarkedOnly ? { bookmarked: true } : {}) };
+  const narrowed = peopleOnly || bookmarkedOnly ? who : undefined;
+  const narrowKey = `${peopleOnly ? 'people' : 'all'}${bookmarkedOnly ? `:bookmarked${waitForKeys ? '-waiting' : String(threadVersion)}` : ''}`;
+  const setBookmarkedOnly = useCallback(
+    (on: boolean): void => {
+      const sp = new URLSearchParams(window.location.search);
+      if (on) sp.set('bookmarked', '1');
+      else sp.delete('bookmarked');
+      setParams(sp, { replace: true });
+    },
+    [setParams],
+  );
   const setPeopleOnly = useCallback(
     (on: boolean): void => {
       const sp = new URLSearchParams(window.location.search);
@@ -110,8 +133,8 @@ export function ThreadsInbox() {
     },
     [setParams],
   );
-  const q = useQuery(`inbox:${slug}:${tab}:${peopleOnly ? 'people' : 'all'}:${threadsUnread}`, () =>
-    tab === 'later' ? Promise.resolve(NO_THREADS) : fetchThreadInbox(slug, tab, undefined, peopleOnly ? { who: 'people' } : undefined),
+  const q = useQuery(`inbox:${slug}:${tab}:${narrowKey}:${threadsUnread}`, () =>
+    tab === 'later' ? Promise.resolve(NO_THREADS) : waitForKeys ? new Promise<never>(() => undefined) : fetchThreadInbox(slug, tab, undefined, narrowed),
   );
   useEffect(() => {
     void laterStore.load(true);
@@ -120,7 +143,7 @@ export function ThreadsInbox() {
   const listRef = useRef<HTMLUListElement>(null);
 
   // "Show more": the pages after the first, read by cursor and kept until the tab or the team changes
-  const pageKey = `${slug}:${tab}:${peopleOnly ? 'people' : 'all'}`;
+  const pageKey = `${slug}:${tab}:${narrowKey}`;
   const [more, setMore] = useState<{ key: string; items: ThreadInboxItem[]; cursor: string | null; busy: boolean; failed: boolean }>({ key: '', items: [], cursor: null, busy: false, failed: false });
   const extra = more.key === pageKey ? more : null;
   const firstPage = q.status === 'ok' ? q.data : null;
@@ -130,12 +153,12 @@ export function ThreadsInbox() {
     if (!cursor || tab === 'later') return;
     setMore((m) => ({ key: pageKey, items: m.key === pageKey ? m.items : [], cursor, busy: true, failed: false }));
     try {
-      const page = await fetchThreadInbox(slug, tab, cursor, peopleOnly ? { who: 'people' } : undefined);
+      const page = await fetchThreadInbox(slug, tab, cursor, narrowed);
       setMore((m) => ({ key: pageKey, items: [...(m.key === pageKey ? m.items : []), ...page.items], cursor: page.nextCursor, busy: false, failed: false }));
     } catch {
       setMore((m) => ({ key: pageKey, items: m.key === pageKey ? m.items : [], cursor, busy: false, failed: true }));
     }
-  }, [extra, firstPage, tab, slug, pageKey, peopleOnly]);
+  }, [extra, firstPage, tab, slug, pageKey, narrowed]);
 
   // The thread being read stays on the Unread list while it is open, even though reading it just emptied its count there.
   const shown = useRef<ThreadInboxItem[]>([]);
@@ -182,7 +205,7 @@ export function ThreadsInbox() {
   const named = useMemo(() => resolveNames(parsedTyped.names, roster), [parsedTyped.names, roster]);
   const rawWords = useMemo(() => typed.trim().split(/\s+/).filter((w) => w !== '' && !w.startsWith('@')).slice(0, 6).join(' '), [typed]);
   const askServer = filtering && !parsedTyped.empty && named.unmatched.length === 0 && people.settled;
-  const serverKey = askServer ? `${slug}:${tab}:${rawWords}:${mentionsParam(named.groups) ?? ''}:${peopleOnly ? 'people' : 'all'}` : null;
+  const serverKey = askServer ? `${slug}:${tab}:${rawWords}:${mentionsParam(named.groups) ?? ''}:${narrowKey}` : null;
   const sq = useQuery<{ key: string | null; items: ThreadInboxItem[] }>(`inbox-q:${serverKey ?? 'off'}:${threadsUnread}`, () =>
     serverKey === null ? Promise.resolve({ key: null, items: [] }) : fetchThreadInbox(slug, tab as 'followed' | 'unread' | 'mine', undefined, { ...(rawWords ? { q: rawWords } : {}), ...(mentionsParam(named.groups) ? { mentions: mentionsParam(named.groups) } : {}), ...who }).then((r) => ({ key: serverKey, items: r.items })),
   );
@@ -387,13 +410,15 @@ export function ThreadsInbox() {
         <div className="inl" data-landmark="thread-list">
           {stacked ? null : <PaneResizer spec={PANES.list} edge="end" />}
           {header}
-          {q.status === 'ok' && (loaded.length > 0 || filtering || peopleOnly) ? (
+          {q.status === 'ok' && (loaded.length > 0 || filtering || peopleOnly || bookmarkedOnly) ? (
             <FilterBar
               value={text}
               onChange={changeFilter}
               needsFirst={needsFirst}
               onNeedsFirst={setNeedsFirst}
               peopleOnly={peopleOnly}
+              bookmarked={bookmarkedOnly}
+              onBookmarked={bookmarksReady ? setBookmarkedOnly : undefined}
               onPeopleOnly={setPeopleOnly}
               status={filterStatus}
               layout={layout}
@@ -402,7 +427,7 @@ export function ThreadsInbox() {
           ) : null}
           {q.status === 'loading' ? (
             <SkeletonRows rows={5} avatar label="Loading threads" />
-          ) : absent || (q.status === 'ok' && loaded.length === 0 && !filtering && !peopleOnly) ? (
+          ) : absent || (q.status === 'ok' && loaded.length === 0 && !filtering && !peopleOnly && !bookmarkedOnly) ? (
             <div className="inl-empty">
               <EmptyState icon={ReplyIcon} testId="threads-empty" title={EMPTY[tab].title} action={ACTION(slug)[tab]}>
                 <p>{EMPTY[tab].body}</p>
@@ -417,6 +442,12 @@ export function ThreadsInbox() {
             </div>
           ) : searching && items.length === 0 ? (
             <SkeletonRows rows={3} avatar label="Searching threads" />
+          ) : items.length === 0 && bookmarkedOnly && !filtering ? (
+            <div className="inl-empty" data-testid="threads-bookmarked-empty">
+              <p className="view-empty-title">No bookmarked threads</p>
+              <p className="view-empty-body">Use the bookmark at the top right of a thread.</p>
+              <button type="button" className="btn s" onClick={() => setBookmarkedOnly(false)}>Show all threads</button>
+            </div>
           ) : items.length === 0 && peopleOnly && !filtering ? (
             <div className="inl-empty" data-testid="threads-people-empty">
               <p className="view-empty-title">No threads between people only</p>

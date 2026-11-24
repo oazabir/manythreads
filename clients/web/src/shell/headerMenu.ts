@@ -2,15 +2,15 @@ import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 /*
  * The channel header's tools as items of the channel details menu (P34-05). On a phone the header is the channel's name and the bell only (owner decision e,
- * 2026-11-19): search, the planned-room chip, the voice room, Members and Add a bookmark are not drawn there, so each of them hands the details menu an item
+ * 2026-11-19): search, the planned-room chip, the voice room, Members and Add a link are not drawn there, so each of them hands the details menu an item
  * that does what its button does. The tools stay mounted (only hidden), so the item runs the tool's own code: the same search box, the same "join or start",
- * the same Members panel, the same bookmark dialog. Bot Board and Schedule a room were already menu items (P33-08) and stay as they are.
+ * the same Members panel, the same link dialog. Bot Board and Schedule a room were already menu items (P33-08) and stay as they are.
  */
 
-export type HeaderToolKey = 'search' | 'planned' | 'voice' | 'members' | 'bookmark';
+export type HeaderToolKey = 'search' | 'planned' | 'voice' | 'members' | 'link';
 
 /** The order of the items in the menu: the header's own order, left to right (channels.css `.chv-*` order). */
-export const HEADER_TOOL_ORDER: readonly HeaderToolKey[] = ['search', 'planned', 'voice', 'members', 'bookmark'];
+export const HEADER_TOOL_ORDER: readonly HeaderToolKey[] = ['search', 'planned', 'voice', 'members', 'link'];
 
 export type HeaderMenuItem = {
   key: HeaderToolKey;

@@ -53,7 +53,8 @@ describe('sidebar contract', () => {
 
   it('the guest shell keeps only the channel groups', () => {
     expect(visibleNav(CORE_NAV, { guest: true }).map((i) => i.id)).toEqual(['channels']);
-    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(11);
+    // every entry but Bookmarks, which shows only while the person has one (P36-08)
+    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(CORE_NAV.length - 1);
   });
 });
 

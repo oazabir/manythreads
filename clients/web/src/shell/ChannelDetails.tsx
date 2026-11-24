@@ -16,7 +16,7 @@ import { MEMBERS_PANEL } from './membersModel';
 import { useShell } from './context';
 import { FULL_STARS_TEXT, isStarred, starPatch } from './sidebarLayout';
 import { sidebarPrefsStore, useSidebarPrefs } from './sidebarPrefsStore';
-import { BoardsIcon, BookmarkIcon, CaretIcon, MembersIcon, PinMessageIcon, ScheduleCalendarIcon, SearchIcon, StarIcon } from './icons';
+import { BoardsIcon, CaretIcon, MembersIcon, PinMessageIcon, ScheduleCalendarIcon, SearchIcon, StarIcon, ToolLinkIcon } from './icons';
 import { PINS_PANEL } from '../channels/pinsModel';
 import { useDismiss } from './useDismiss';
 
@@ -25,14 +25,14 @@ const TOOL_ICON: Record<HeaderToolKey, (dm: boolean) => ReactNode> = {
   planned: () => <ScheduleCalendarIcon />,
   voice: (dm) => (dm ? <PhoneIcon /> : <HeadphonesIcon />),
   members: () => <MembersIcon />,
-  bookmark: () => <BookmarkIcon />,
+  link: () => <ToolLinkIcon />,
 };
 
 /**
  * The channel's name in the header, as a button that opens the channel's details (P21-06): notifications, star, pinned messages (P31-07), members, integrations,
  * files and Leave. It replaces the separate star, bell and Integrations buttons the header used to carry. A direct message has Notifications and Pinned messages only.
  * On a phone the header is the name and the bell (owner, 2026-11-19, P34-05): the menu starts with the header's tools (search, the planned room, the voice room,
- * Members, Add a bookmark), each doing what its hidden button does (`headerMenu.ts`); the CSS shows those items only when the header's `data-room` is `phone`.
+ * Members, Add a link), each doing what its hidden button does (`headerMenu.ts`); the CSS shows those items only when the header's `data-room` is `phone`.
  */
 export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail, botBoard, help = false }: {
   channelId: string;

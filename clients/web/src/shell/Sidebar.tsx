@@ -54,9 +54,9 @@ function NavHeader({ item, slug }: { item: NavContribution; slug: string }) {
 /** The sidebar contract, drawn from the `surface.nav` contributions in order. */
 export function Sidebar() {
   const session = useSession();
-  const { team, teamSlug, teamsLoading, guest } = useShell();
+  const { team, teamSlug, teamsLoading, guest, counts } = useShell();
   const slug = team?.slug ?? (guest ? (teamSlug ?? GUEST_SLUG) : null);
-  const items = visibleNav(CORE_NAV, { guest });
+  const items = visibleNav(CORE_NAV, { guest }, counts);
 
   if (!slug) {
     if (teamsLoading) return null;

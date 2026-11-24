@@ -88,7 +88,18 @@ const TAB_PREDICATE: Record<ThreadsTab, string> = {
  */
 export async function listInbox(
   tx: PluginTx,
-  input: { personId: string; tab: ThreadsTab; teamId: string | null; limit: number; cursor?: string | undefined; q?: string | undefined; mentions?: readonly (readonly string[])[] | undefined; who?: 'people' | undefined },
+  input: {
+    personId: string;
+    tab: ThreadsTab;
+    teamId: string | null;
+    limit: number;
+    cursor?: string | undefined;
+    q?: string | undefined;
+    mentions?: readonly (readonly string[])[] | undefined;
+    who?: 'people' | undefined;
+    /** Only these threads (the caller's bookmarked ones, P36-08). On Followed they are listed whether followed or not. */
+    bookmarked?: readonly string[] | undefined;
+  },
 ): Promise<ListThreadsResponse> {
   const filtered = input.q !== undefined || (input.mentions?.length ?? 0) > 0;
   const after = !filtered && input.cursor ? decodeCursor(input.cursor) : null;
@@ -116,6 +127,24 @@ export async function listInbox(
     where.push(`(m.deleted_at IS NOT NULL OR m.author_id = ANY (${at}))`);
     where.push(`NOT EXISTS (SELECT 1 FROM app.messages pm WHERE pm.thread_root_id = t.root_message_id AND pm.deleted_at IS NULL AND NOT (pm.author_id = ANY (${at})))`);
   }
+  // Bookmarked (P36-08): the caller's bookmarked threads, a plain predicate (the list keeps its pages). On Followed every bookmarked thread is listed, followed or not;
+  // the other tabs keep their own rule. A thread has a `threads` row only from its first reply, so a bookmarked first message with no reply yet joins the list from
+  // `messages` (read under the caller's own policies, live roots only), shaped as a thread with no replies whose time is the message's own.
+  const bookmarked = input.bookmarked !== undefined;
+  let source = 'app.threads';
+  if (bookmarked) {
+    params.push(input.bookmarked);
+    const at = `$${String(params.length)}::uuid[]`;
+    where.push(`t.root_message_id = ANY (${at})`);
+    source = `(SELECT th.root_message_id, th.channel_id, th.title, th.reply_count, th.last_reply_at FROM app.threads th
+                UNION ALL
+                SELECT bm.id, bm.channel_id, left(bm.body_plain, 120), 0, bm.created_at FROM app.messages bm
+                 WHERE bm.id = ANY (${at}) AND bm.thread_root_id IS NULL AND bm.deleted_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM app.threads tn WHERE tn.root_message_id = bm.id))`;
+  }
+  const tabRule = bookmarked && input.tab === 'followed' ? 'true' : TAB_PREDICATE[input.tab];
+  // a bookmarked thread is listed with or without replies; every other list shows a thread once it has a live reply
+  const replied = bookmarked ? 'true' : 't.reply_count > 0';
   const limit = filtered ? THREAD_FILTER_RESULTS_MAX : input.limit;
   params[5] = limit + 1;
   // channel-name matches first, then the threads whose messages match, each newest first
@@ -124,7 +153,7 @@ export async function listInbox(
     `SELECT t.root_message_id, t.title, t.reply_count, t.last_reply_at, t.last_reply_at::text AS cursor_ts, m.author_id,
             (f.person_id IS NOT NULL) AS followed, (m.author_id = $2::uuid) AS mine, rs.unread_count,
             lr.id AS last_reply_id, left(lr.body_plain, 240) AS last_reply_plain, lr.author_id AS last_reply_author, lr.created_at AS last_reply_at_ts, ${CHANNEL_REF_COLUMNS}
-       FROM app.threads t
+       FROM ${source} t
        JOIN app.messages m ON m.id = t.root_message_id
        JOIN app.channels c ON c.id = t.channel_id
        LEFT JOIN LATERAL (
@@ -133,7 +162,7 @@ export async function listInbox(
        ) lr ON true
        LEFT JOIN app.thread_follows f ON f.person_id = $1 AND f.thread_root_id = t.root_message_id
        LEFT JOIN app.read_state rs ON rs.person_id = $1 AND rs.target_type = 'thread' AND rs.target_id = t.root_message_id
-      WHERE ${TAB_PREDICATE[input.tab]} AND t.reply_count > 0
+      WHERE ${tabRule} AND ${replied}
         AND ($3::uuid IS NULL OR c.team_id = $3)
         AND ($4::text IS NULL OR (t.last_reply_at, t.root_message_id) < ($4::timestamptz, $5::uuid))
         ${where.map((w) => `AND ${w}`).join('\n        ')}
