@@ -2,7 +2,8 @@ import { json, route, type PluginContext, type PluginTx } from '@manythreads/sdk
 import { GetAttentionResponse, getAttentionRoute, type AttentionProblem } from '@manythreads/shared';
 
 // The bar at the top of the screen (owner request 2026-11-24): what stopped the bots and only an admin can fix. Read from the runners' own state (a run or a check that met a
-// refused sign-in marks a runner `needs_sign_in`; a server or bridge runner that lost its sign-in waits for one) and from the newest test of each model alias (the regular key
+// refused sign-in marks a runner `needs_sign_in`; a runner that lost its sign-in waits for one: counted after five minutes, because a pod that restarts waits a moment
+// for its own sign-in check) and from the newest test of each model alias (the regular key
 // check in gateway-llm, or an admin's test): a key the provider refused (`auth`) and that nobody has changed since. Owners and admins only; anyone else gets an empty list, so
 // the shell can ask for every person without learning their role first.
 
@@ -45,7 +46,8 @@ export async function attentionFor(tx: PluginTx): Promise<AttentionProblem[]> {
   if (role !== 'owner' && role !== 'admin') return [];
   const runners = await tx.query<RunnerRow>(
     `SELECT id::text, label, kind, agent, status FROM app.bot_runners
-      WHERE enabled AND status IN ('needs_sign_in', 'waiting_for_sign_in') AND kind <> 'llm_gateway'
+      WHERE enabled AND kind <> 'llm_gateway'
+        AND (status = 'needs_sign_in' OR (status = 'waiting_for_sign_in' AND updated_at < now() - interval '5 minutes'))
       ORDER BY (status = 'needs_sign_in') DESC, label LIMIT 20`,
   );
   // the newest test of each alias, failed because the provider refused the key, and still about the alias and provider as they are now
