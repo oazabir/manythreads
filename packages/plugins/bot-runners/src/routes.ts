@@ -307,6 +307,8 @@ export function registerRoutes(ctx: PluginContext, tunnel?: TunnelRegistry): voi
         if (pods) {
           try {
             await pods.removeCredentials({ runnerName: current.name, agent: agentOfKind(current.kind) });
+            // a runner where each team signs in: every team's own sign-in volume goes too (P35-10)
+            if (current.sign_in_scope === 'per_team') await pods.removeTeamSignins({ runnerId: id });
           } catch {
             throw conflict('The cluster did not remove the sign-in file. Nothing was changed; try again in a moment.');
           }

@@ -1,7 +1,15 @@
 import {
   AdoptConnectionRequest,
   AgentLoginResponse,
+  AgentLogoutRequest,
   AgentLogoutResponse,
+  GetAgentAuthQuery,
+  ListAgentAuthTeamsResponse,
+  SetSignInScopeRequest,
+  SetSignInScopeResponse,
+  listAgentAuthTeamsRoute,
+  setSignInScopeRoute,
+  type BotRunnerSignInScope,
   AnswerAgentLoginRequest,
   CancelAgentLoginRequest,
   GetAgentAuthResponse,
@@ -112,15 +120,27 @@ export const checkClaudeSignin = (id: string) => call(checkClaudeSigninRoute, { 
 export const fetchClaudeUsage = () => call(claudeRunnerUsageRoute, { response: ClaudeRunnerUsageResponse });
 
 // The sign-in of an agent behind a gateway runner (P25-09): the bridge asks the agent's own adapter. The code or key of an answer goes up once and is kept nowhere.
-export const fetchAgentAuth = (id: string) => call(getAgentAuthRoute, { response: GetAgentAuthResponse }, undefined, { id });
+// `team` (a slug): the team's own sign-in, on a runner where each team signs in (P35-10); left out for a runner with one sign-in for all its teams.
+const teamPart = (team?: string): { team?: string } => (team !== undefined ? { team } : {});
 
-export const startAgentLogin = (id: string, methodId: string) =>
-  call(startAgentLoginRoute, { request: StartAgentLoginRequest, response: AgentLoginResponse }, { methodId }, { id });
+export const fetchAgentAuth = (id: string, team?: string) =>
+  call(getAgentAuthRoute, { request: GetAgentAuthQuery, response: GetAgentAuthResponse }, teamPart(team) as GetAgentAuthQuery, { id });
 
-export const answerAgentLogin = (id: string, body: AnswerAgentLoginRequest) =>
-  call(answerAgentLoginRoute, { request: AnswerAgentLoginRequest, response: AgentLoginResponse }, body, { id });
+export const startAgentLogin = (id: string, methodId: string, team?: string) =>
+  call(startAgentLoginRoute, { request: StartAgentLoginRequest, response: AgentLoginResponse }, { methodId, ...teamPart(team) }, { id });
 
-export const cancelAgentLogin = (id: string, attemptId?: string) =>
-  call(cancelAgentLoginRoute, { request: CancelAgentLoginRequest, response: AgentLoginResponse }, attemptId ? { attemptId } : {}, { id });
+export const answerAgentLogin = (id: string, body: AnswerAgentLoginRequest, team?: string) =>
+  call(answerAgentLoginRoute, { request: AnswerAgentLoginRequest, response: AgentLoginResponse }, { ...body, ...teamPart(team) }, { id });
 
-export const agentLogout = (id: string) => call(agentLogoutRoute, { response: AgentLogoutResponse }, undefined, { id });
+export const cancelAgentLogin = (id: string, attemptId?: string, team?: string) =>
+  call(cancelAgentLoginRoute, { request: CancelAgentLoginRequest, response: AgentLoginResponse }, { ...(attemptId ? { attemptId } : {}), ...teamPart(team) }, { id });
+
+export const agentLogout = (id: string, team?: string) =>
+  call(agentLogoutRoute, { request: AgentLogoutRequest, response: AgentLogoutResponse }, teamPart(team) as AgentLogoutRequest, { id });
+
+/** The teams of a runner where each team signs in, with each one's stored state (P35-10). */
+export const fetchAgentAuthTeams = (id: string) => call(listAgentAuthTeamsRoute, { response: ListAgentAuthTeamsResponse }, undefined, { id });
+
+/** One sign-in for all teams, or each team on its own. Switching signs every old sign-in out first. */
+export const setSignInScope = (id: string, scope: BotRunnerSignInScope) =>
+  call(setSignInScopeRoute, { request: SetSignInScopeRequest, response: SetSignInScopeResponse }, { scope }, { id });

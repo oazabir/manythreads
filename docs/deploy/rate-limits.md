@@ -90,6 +90,7 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/admin/bot-runners/:id/agent-auth/answer` | none | 10 per 60 s | 60 s | person | none: the code or key goes to the agent, which decides; the bridge ends a sign-in after 5 answers |
 | `POST /api/admin/bot-runners/:id/agent-auth/cancel` | none | 20 per 60 s | 60 s | person | none |
 | `POST /api/admin/bot-runners/:id/agent-auth/logout` | none | 10 per 60 s | 60 s | person | none |
+| `PUT /api/admin/bot-runners/:id/sign-in-scope` | none | 10 per 60 s | 60 s | person | none |
 | `PUT /api/admin/bot-runners/default` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/admin/bot-servers` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `POST /api/admin/bot-servers/:id/code` | 20 per 60 s | 20 per 60 s | 60 s | person | none |

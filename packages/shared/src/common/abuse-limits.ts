@@ -85,6 +85,8 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/admin/bot-runners/:id/agent-auth/answer', 10, 'person', 'the code or key goes to the agent, which decides; the bridge ends a sign-in after 5 answers'),
   r('POST', '/api/admin/bot-runners/:id/agent-auth/cancel', 20, 'person'),
   r('POST', '/api/admin/bot-runners/:id/agent-auth/logout', 10, 'person'),
+  // Who signs a runner in (P35-10): a switch signs every sign-in of the runner out and removes it.
+  r('PUT', '/api/admin/bot-runners/:id/sign-in-scope', 10, 'person'),
   r('PUT', '/api/admin/bot-runners/default', 30, 'person'),
   // Enrolled servers (P26-13): the admin makes a one-time code and the installer redeems it; the bridge key opens the tunnel and the installer's other calls.
   r('POST', '/api/admin/bot-servers', 20, 'person'),

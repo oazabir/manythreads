@@ -60,6 +60,8 @@ const WORDS = {
 } as const;
 export const wordsOf = (kind: PodCliKind) => WORDS[kind];
 
+const PER_TEAM_NO_FILE = 'Each team of this runner signs in on its own, so a sign-in file cannot be uploaded for it. Sign each team in on the Runners page instead.';
+
 const podsFor = (ctx: PluginContext, kind: PodCliKind): ClaudePodsProvider => {
   const p = ctx.providers.get<ClaudePodsProvider>('claude.pods');
   if (!p) throw conflict(WORDS[kind].notOn);
@@ -113,8 +115,11 @@ export function registerSigninRoutes(ctx: PluginContext): void {
       const { id } = BotRunnerPathParams.parse(req.params);
       await requireWorkspaceAdmin(tx);
       // The kind decides the file's shape, the pod's Secret and the words. It is read without the lock first, so a slow upload does not hold the runner's row.
-      const kind = (await requirePodRunner(tx, id, false)).kind;
+      const first = await requirePodRunner(tx, id, false);
+      const kind = first.kind;
       const words = WORDS[kind];
+      // a runner where each team signs in has no file for all teams: each team signs in from the Runners page (P35-10)
+      if (first.sign_in_scope === 'per_team') throw conflict(PER_TEAM_NO_FILE);
       const pods = podsFor(ctx, kind);
       if (req.headers[CREDENTIALS_TERMS_HEADER] !== '1') throw invalid(words.terms);
       if (req.headers[CREDENTIALS_SIGNINS_HEADER] !== '1') throw invalid('Confirm that the other sign-ins in the file may be stored as they are.');

@@ -245,6 +245,40 @@
         }
       ]
     },
+    "signInScope": {
+      "default": "shared",
+      "type": "string",
+      "enum": [
+        "shared",
+        "per_team"
+      ]
+    },
+    "teamsSignedIn": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "teamsServed": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "botCount": {
       "type": "integer",
       "minimum": 0,
@@ -291,6 +325,9 @@
     "statusDetail",
     "pausedUntil",
     "lastCheckedAt",
+    "signInScope",
+    "teamsSignedIn",
+    "teamsServed",
     "botCount",
     "createdAt",
     "updatedAt"

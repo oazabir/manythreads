@@ -203,3 +203,46 @@ describe('the usage table (P19-07)', () => {
     expect(Object.fromEntries(rows.map((r) => [r.priv, r.ok]))).toEqual({ SELECT: true, INSERT: false, UPDATE: false, DELETE: false, TRUNCATE: false });
   });
 });
+
+describe('the team sign-in table (P35-10a, bot-runners 0011)', () => {
+  it('is read by a workspace admin, invisible to a team lead and a member, written by the system only, and keeps a team to the runner\'s workspace', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      expect(await findPerRowPolicyCalls(admin, 'bot_runner_team_signins')).toEqual([]);
+      const plan = await admin.query('SELECT relrowsecurity AS on, relforcerowsecurity AS forced FROM pg_class WHERE oid = $1::regclass', ['app.bot_runner_team_signins']);
+      expect(plan.rows[0]).toEqual({ on: true, forced: true });
+    } finally {
+      await admin.end();
+    }
+    const podId = (await insertRunner(omar, 'each-team-pod', 'codex_cli')).rows[0]!.id;
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in')`, [podId, TEAM_IDS.Engineering]));
+    expect(await q(omar, 'SELECT state FROM app.bot_runner_team_signins')).toEqual([{ state: 'signed_in' }]);
+    expect(await q(tariq, 'SELECT state FROM app.bot_runner_team_signins')).toHaveLength(0);
+    expect(await q(nadia, 'SELECT state FROM app.bot_runner_team_signins')).toHaveLength(0);
+    // not even an admin writes it: the states come from the pods
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.bot_runner_team_signins SET state = 'signed_out'`)))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in')`, [podId, TEAM_IDS.Marketing])))).toBe('42501');
+    // only the two states
+    expect(await code(sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'maybe')`, [podId, TEAM_IDS.Marketing])))).toBe('23514');
+    const rows = (await sys((tx) => tx.query<{ priv: string; ok: boolean }>(
+      `SELECT p AS priv, has_table_privilege('manythreads_app', 'app.bot_runner_team_signins', p) AS ok FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS p`,
+    ))).rows;
+    expect(Object.fromEntries(rows.map((r) => [r.priv, r.ok]))).toEqual({ SELECT: true, INSERT: false, UPDATE: false, DELETE: false, TRUNCATE: false });
+  });
+
+  it('is cleared only through its one door, by a workspace admin of the runner\'s workspace', async () => {
+    const podId = (await insertRunner(omar, 'each-team-clear', 'codex_cli')).rows[0]!.id;
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in')`, [podId, TEAM_IDS.Engineering]));
+    expect(await code(as(tariq, (tx) => tx.query('SELECT app.bot_runner_team_signins_clear($1)', [podId])))).toBe('42501');
+    expect(await code(as(nadia, (tx) => tx.query('SELECT app.bot_runner_team_signins_clear($1)', [podId])))).toBe('42501');
+    expect((await sys((tx) => tx.query('SELECT 1 FROM app.bot_runner_team_signins WHERE runner_id = $1', [podId]))).rows).toHaveLength(1);
+    expect((await as(omar, (tx) => tx.query<{ n: number }>('SELECT app.bot_runner_team_signins_clear($1) AS n', [podId]))).rows[0]!.n).toBe(1);
+    expect((await sys((tx) => tx.query('SELECT 1 FROM app.bot_runner_team_signins WHERE runner_id = $1', [podId]))).rows).toHaveLength(0);
+  });
+
+  it('allows per_team only on a Claude Code or Codex runner', async () => {
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'per_team' WHERE id = $1`, [sharedId])))).toBe('23514');
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'everyone' WHERE id = $1`, [sharedId])))).toBe('23514');
+  });
+});

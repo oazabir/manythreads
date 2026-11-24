@@ -66,6 +66,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'bot_runner.runner.deleted': { runnerId: id(73), name: 'host', kind: 'hermes_gateway', actorId: id(13), at: AT },
   'bot_runner.runner.tested': { runnerId: id(73), name: 'host', ok: false, actorId: id(13), at: AT },
   'bot_runner.agent_auth.changed': { runnerId: id(73), name: 'host', agent: 'codex', change: 'login_started', actorId: id(13), at: AT },
+  'bot_runner.sign_in_scope.changed': { runnerId: id(73), name: 'host', from: 'shared', to: 'per_team', signedOut: 1, actorId: id(13), at: AT },
   'bot_runner.availability.changed': { runnerId: id(73), name: 'host', enabled: true, allTeams: false, teamCount: 2, actorId: id(13), at: AT },
   'bot_runner.default.changed': { runnerId: id(73), previousRunnerId: null, actorId: id(13), at: AT },
   'bot_server.server.changed': { serverId: id(74), name: 'devbox', change: 'enrolled', actorId: id(13), at: AT },

@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { IsoDateTime } from '../../common/time.ts';
+import { BotRunner, BotRunnerSignInScope, BotRunnerTeamSignInState, BotRunnerTeam } from '../../entities/bot-runner.ts';
 import { BotRunnerId } from '../../ids.ts';
+import { TeamSlug } from '../teams/common.ts';
 
 // Signing an agent runner in and out from the Runners page (P25-09, docs/plans/acp.md section 4.1). The runner is a Hermes gateway runner whose address answers as an agent
 // bridge (`claude-code` or `codex`); the server asks that bridge, which asks the agent's own adapter. The shapes here are what the server hands to the page after reading
@@ -81,11 +84,19 @@ export type AgentAuth = z.infer<typeof AgentAuth>;
 
 export const AgentAuthPathParams = z.object({ id: BotRunnerId });
 
+/**
+ * The team whose sign-in is meant, by slug (P35-10): required for a runner where each team signs in, refused for a runner with one sign-in for all its teams. A GET carries it
+ * in the query (`?team=`), the other routes in the body.
+ */
+export const AgentAuthTeam = TeamSlug;
+export const GetAgentAuthQuery = z.strictObject({ team: AgentAuthTeam.optional() });
+export type GetAgentAuthQuery = z.infer<typeof GetAgentAuthQuery>;
+
 export const GetAgentAuthResponse = z.object({ auth: AgentAuth });
 export type GetAgentAuthResponse = z.infer<typeof GetAgentAuthResponse>;
 export const getAgentAuthRoute = { method: 'GET', path: '/api/admin/bot-runners/:id/agent-auth' } as const;
 
-export const StartAgentLoginRequest = z.strictObject({ methodId: z.string().min(1).max(80) });
+export const StartAgentLoginRequest = z.strictObject({ methodId: z.string().min(1).max(80), team: AgentAuthTeam.optional() });
 export type StartAgentLoginRequest = z.infer<typeof StartAgentLoginRequest>;
 export const AgentLoginResponse = z.object({ attempt: AgentAuthAttempt });
 export type AgentLoginResponse = z.infer<typeof AgentLoginResponse>;
@@ -97,15 +108,44 @@ export const AnswerAgentLoginRequest = z
     attemptId: z.string().min(1).max(80),
     code: z.string().min(1).max(2000).optional(),
     apiKey: z.string().min(8).max(500).optional(),
+    team: AgentAuthTeam.optional(),
   })
   .refine((v) => (v.code === undefined) !== (v.apiKey === undefined), 'give the code or the key, not both');
 export type AnswerAgentLoginRequest = z.infer<typeof AnswerAgentLoginRequest>;
 export const answerAgentLoginRoute = { method: 'POST', path: '/api/admin/bot-runners/:id/agent-auth/answer' } as const;
 
-export const CancelAgentLoginRequest = z.strictObject({ attemptId: z.string().min(1).max(80).optional() });
+export const CancelAgentLoginRequest = z.strictObject({ attemptId: z.string().min(1).max(80).optional(), team: AgentAuthTeam.optional() });
 export type CancelAgentLoginRequest = z.infer<typeof CancelAgentLoginRequest>;
 export const cancelAgentLoginRoute = { method: 'POST', path: '/api/admin/bot-runners/:id/agent-auth/cancel' } as const;
 
+export const AgentLogoutRequest = z.strictObject({ team: AgentAuthTeam.optional() });
+export type AgentLogoutRequest = z.infer<typeof AgentLogoutRequest>;
 export const AgentLogoutResponse = z.object({ auth: AgentAuth });
 export type AgentLogoutResponse = z.infer<typeof AgentLogoutResponse>;
 export const agentLogoutRoute = { method: 'POST', path: '/api/admin/bot-runners/:id/agent-auth/logout' } as const;
+
+/**
+ * One team of a runner where each team signs in, for the page's list (P35-10). `state` is the stored state (the pod controller's pass, or the page's last read): null when
+ * nobody has seen this team's sign-in yet. `served`: the team has a pod on this runner (a bot of it is placed there, or it is the first team while none is), so it can sign in.
+ */
+export const AgentAuthTeamState = BotRunnerTeam.extend({
+  served: z.boolean(),
+  state: BotRunnerTeamSignInState.nullable(),
+  /** `limited` only: when the team's plan limit resets. */
+  pausedUntil: IsoDateTime.nullable().default(null),
+  checkedAt: IsoDateTime.nullable(),
+});
+export type AgentAuthTeamState = z.infer<typeof AgentAuthTeamState>;
+export const ListAgentAuthTeamsResponse = z.object({ items: z.array(AgentAuthTeamState).max(500) });
+export type ListAgentAuthTeamsResponse = z.infer<typeof ListAgentAuthTeamsResponse>;
+export const listAgentAuthTeamsRoute = { method: 'GET', path: '/api/admin/bot-runners/:id/agent-auth/teams' } as const;
+
+/**
+ * Change who signs a runner in. Switching signs out for real first and removes the old sign-in (every team's own, or the one for all teams), and every pod of the runner restarts:
+ * runs under way stop. The answer is the runner as it is afterwards.
+ */
+export const SetSignInScopeRequest = z.strictObject({ scope: BotRunnerSignInScope });
+export type SetSignInScopeRequest = z.infer<typeof SetSignInScopeRequest>;
+export const SetSignInScopeResponse = z.object({ runner: BotRunner });
+export type SetSignInScopeResponse = z.infer<typeof SetSignInScopeResponse>;
+export const setSignInScopeRoute = { method: 'PUT', path: '/api/admin/bot-runners/:id/sign-in-scope' } as const;

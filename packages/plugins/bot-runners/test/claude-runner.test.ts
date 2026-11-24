@@ -16,7 +16,8 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DEFAULT_PAUSE_MS, MAX_PAUSE_MS, pauseEnd, pauseRunner, recordUsage, resolveRunner } from '../src/resolve.ts';
+import { DEFAULT_PAUSE_MS, MAX_PAUSE_MS, pauseEnd, pauseRunner, recordUsage, reportPodState, resolveRunner } from '../src/resolve.ts';
+import { markServed, oneTeam, storeTeamSignIn, teamSignIns } from '../src/team-signins.ts';
 
 // P19-07: a shared Claude Code runner in resolveRunner (the team list is the permission, a refusal is judged before anything is started), usage per team, and the pause.
 
@@ -99,6 +100,112 @@ describe('resolveRunner for a Claude Code runner', () => {
     if (!answer.ok) expect(answer.message).toMatch(/paused until \d\d:\d\d UTC/);
     await make('c-expired', { status: 'paused', pausedUntil: new Date(Date.now() - 1000).toISOString(), teams: [TEAM_IDS.Engineering] });
     expect(await resolve('c-expired')).toMatchObject({ ok: true });
+  });
+});
+
+describe('resolveRunner for a runner where each team signs in (P35-10)', () => {
+  it("runs a team only on its own stored sign-in, refuses a team that has not signed in in the plan's sentence, and never falls back to another team's or a shared sign-in", async () => {
+    const id = await make('claude-each', { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] });
+    await sys((tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'per_team' WHERE id = $1::uuid`, [id]));
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in'), ($1, $3, 'signed_out')`, [id, TEAM_IDS.Engineering, TEAM_IDS.Marketing]));
+    expect(await resolve('claude-each', TEAM_IDS.Engineering)).toMatchObject({ ok: true, target: { kind: 'claude_cli', address: 'http://claude-claude-each-engineering.bots.svc:8650' } });
+    const refused = await resolve('claude-each', TEAM_IDS.Marketing);
+    expect(refused).toEqual({ ok: false, reason: 'not_ready', message: 'Team Marketing has not signed in to Claude Code on runner Label of claude-each yet. An admin can sign it in on the Runners page.' });
+    // no stored state at all is the same as signed out
+    await sys((tx) => tx.query('DELETE FROM app.bot_runner_team_signins WHERE runner_id = $1::uuid AND team_id = $2::uuid', [id, TEAM_IDS.Marketing]));
+    expect(await resolve('claude-each', TEAM_IDS.Marketing)).toMatchObject({ ok: false, reason: 'not_ready' });
+    // the team list is still judged first, in words that name nothing
+    expect(await resolve('claude-each', TEAM_IDS['Customer support'])).toMatchObject({ ok: false, reason: 'not_available_to_team' });
+  });
+
+  it('stores what the pod controller reports per team only for a per-team runner, and forgets a team that left the list', async () => {
+    const id = await make('claude-each-report', { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] });
+    const states = () => sys(async (tx) => (await tx.query<{ team_id: string; state: string }>('SELECT team_id, state FROM app.bot_runner_team_signins WHERE runner_id = $1::uuid ORDER BY team_id', [id])).rows);
+    const report = (teams: { teamId: string; state: 'signed_in' | 'signed_out' }[]) => reportPodState(ctx, { runnerId: id, status: 'ready', detail: null, teams });
+    // a shared runner keeps no team states, whatever a late report says
+    await report([{ teamId: TEAM_IDS.Engineering, state: 'signed_in' }]);
+    expect(await states()).toEqual([]);
+    await sys((tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'per_team' WHERE id = $1::uuid`, [id]));
+    // a placeholder id and a team of another workspace are not stored
+    await report([{ teamId: TEAM_IDS.Engineering, state: 'signed_in' }, { teamId: TEAM_IDS.Marketing, state: 'signed_out' }, { teamId: 'none', state: 'signed_in' }]);
+    expect(await states()).toEqual([{ team_id: TEAM_IDS.Engineering, state: 'signed_in' }, { team_id: TEAM_IDS.Marketing, state: 'signed_out' }].sort((a, b) => a.team_id.localeCompare(b.team_id)));
+    await sys((tx) => tx.query('DELETE FROM app.bot_runner_teams WHERE runner_id = $1::uuid AND team_id = $2::uuid', [id, TEAM_IDS.Marketing]));
+    await report([{ teamId: TEAM_IDS.Engineering, state: 'signed_out' }]);
+    expect(await states()).toEqual([{ team_id: TEAM_IDS.Engineering, state: 'signed_out' }]);
+  });
+
+  it("a team's plan limit holds only that team's runs until it resets; the other teams and the runner go on", async () => {
+    const id = await make('claude-each-limit', { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] });
+    await sys((tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'per_team' WHERE id = $1::uuid`, [id]));
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in'), ($1, $3, 'signed_in')`, [id, TEAM_IDS.Engineering, TEAM_IDS.Marketing]));
+    const until = new Date(Date.now() + 2 * 3600_000).toISOString();
+    await pauseRunner(ctx, { runner: 'claude-each-limit', teamId: TEAM_IDS.Engineering, reason: 'plan_limit', until });
+    expect((await sys((tx) => tx.query<{ status: string }>('SELECT status FROM app.bot_runners WHERE id = $1::uuid', [id]))).rows[0]!.status).toBe('ready');
+    const held = await resolve('claude-each-limit', TEAM_IDS.Engineering);
+    expect(held).toEqual({ ok: false, reason: 'not_ready', message: `Team Engineering reached the limit of its Claude plan on runner Label of claude-each-limit. Its runs wait until ${until.slice(11, 16)} UTC.` });
+    expect(await resolve('claude-each-limit', TEAM_IDS.Marketing)).toMatchObject({ ok: true });
+    // the controller's pass does not end the limit early
+    await reportPodState(ctx, { runnerId: id, status: 'ready', detail: null, teams: [{ teamId: TEAM_IDS.Engineering, state: 'signed_in' }] });
+    expect((await resolve('claude-each-limit', TEAM_IDS.Engineering)).ok).toBe(false);
+    // once the reset time has passed the team runs again
+    await sys((tx) => tx.query(`UPDATE app.bot_runner_team_signins SET paused_until = now() - interval '1 minute' WHERE runner_id = $1::uuid AND team_id = $2::uuid`, [id, TEAM_IDS.Engineering]));
+    expect(await resolve('claude-each-limit', TEAM_IDS.Engineering)).toMatchObject({ ok: true });
+  });
+
+  it("a team's refused sign-in is stored as refused: the controller's pass may not undo it, only a real sign-in does, and the other team keeps running", async () => {
+    const id = await make('claude-each-refused', { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing] });
+    await sys((tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'per_team' WHERE id = $1::uuid`, [id]));
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in'), ($1, $3, 'signed_in')`, [id, TEAM_IDS.Engineering, TEAM_IDS.Marketing]));
+    await pauseRunner(ctx, { runner: 'claude-each-refused', teamId: TEAM_IDS.Marketing, reason: 'needs_sign_in', until: null });
+    const stateOf = async (team: string) => (await sys((tx) => tx.query<{ state: string }>('SELECT state FROM app.bot_runner_team_signins WHERE runner_id = $1::uuid AND team_id = $2::uuid', [id, team]))).rows[0]?.state;
+    expect(await stateOf(TEAM_IDS.Marketing)).toBe('refused');
+    // the pod still reads its old file as signed in: the pass says so, and the refusal stays
+    await reportPodState(ctx, { runnerId: id, status: 'ready', detail: null, teams: [{ teamId: TEAM_IDS.Marketing, state: 'signed_in' }] });
+    expect(await stateOf(TEAM_IDS.Marketing)).toBe('refused');
+    expect(await resolve('claude-each-refused', TEAM_IDS.Marketing)).toMatchObject({ ok: false, reason: 'not_ready' });
+    expect(await resolve('claude-each-refused', TEAM_IDS.Engineering)).toMatchObject({ ok: true });
+    expect((await sys((tx) => tx.query<{ status: string }>('SELECT status FROM app.bot_runners WHERE id = $1::uuid', [id]))).rows[0]!.status).toBe('ready');
+    // a real sign-in on the page (force) clears it
+    await sys((tx) => storeTeamSignIn(tx, id, TEAM_IDS.Marketing, 'signed_in', { force: true }));
+    expect(await stateOf(TEAM_IDS.Marketing)).toBe('signed_in');
+  });
+
+  it("is ready while a stored team is signed in even when that team's pod did not answer this pass, and runs that team while the runner reads waiting", async () => {
+    const id = await make('claude-each-slow', { teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing], status: 'ready' });
+    await sys((tx) => tx.query(`UPDATE app.bot_runners SET sign_in_scope = 'per_team' WHERE id = $1::uuid`, [id]));
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in')`, [id, TEAM_IDS.Engineering]));
+    const status = async () => (await sys((tx) => tx.query<{ status: string }>('SELECT status FROM app.bot_runners WHERE id = $1::uuid', [id]))).rows[0]!.status;
+    // engineering's pod is restarting (no answer); marketing's pod says signed out: the controller alone would say waiting
+    await reportPodState(ctx, { runnerId: id, status: 'waiting_for_sign_in', detail: 'Waiting for a sign-in.', teams: [{ teamId: TEAM_IDS.Marketing, state: 'signed_out' }] });
+    expect(await status()).toBe('ready');
+    // with no stored sign-in at all it waits
+    await sys((tx) => tx.query(`DELETE FROM app.bot_runner_team_signins WHERE runner_id = $1::uuid AND team_id = $2::uuid`, [id, TEAM_IDS.Engineering]));
+    await reportPodState(ctx, { runnerId: id, status: 'waiting_for_sign_in', detail: 'Waiting for a sign-in.', teams: [] });
+    expect(await status()).toBe('waiting_for_sign_in');
+    // a runner-level sign-in state never refuses a team that is signed in
+    await sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_in')`, [id, TEAM_IDS.Engineering]));
+    expect(await resolve('claude-each-slow', TEAM_IDS.Engineering)).toMatchObject({ ok: true });
+    // what is about the pods themselves still is
+    await sys((tx) => tx.query(`UPDATE app.bot_runners SET status = 'moving' WHERE id = $1::uuid`, [id]));
+    expect(await resolve('claude-each-slow', TEAM_IDS.Engineering)).toMatchObject({ ok: false, reason: 'not_ready' });
+  });
+
+  it('serves the first team in code-unit order, the same rule as the pod controller, whatever the database collation says', async () => {
+    const [a, b] = await sys(async (tx) => {
+      const mk = async (slug: string) =>
+        (await tx.query<{ id: string }>(`INSERT INTO app.teams (workspace_id, slug, name) VALUES ($1, $2, $3) RETURNING id`, [omar.workspaceId, slug, `Team ${slug}`])).rows[0]!.id;
+      // byte order: "a-z" < "ab" ('-' is 0x2d); a locale that ignores punctuation reads "az" > "ab"
+      return [await mk('ab'), await mk('a-z')];
+    });
+    const id = await make('claude-each-order', { teams: [a!, b!] });
+    const teams = await sys((tx) => teamSignIns(tx, { id }));
+    expect(teams.map((t) => [t.slug, t.served])).toEqual([
+      ['a-z', true],
+      ['ab', false],
+    ]);
+    expect((await sys((tx) => oneTeam(tx, id, 'a-z')))?.served).toBe(true);
+    expect((await sys((tx) => oneTeam(tx, id, 'ab')))?.served).toBe(false);
+    expect(markServed([{ slug: 'ab', hasBot: false }, { slug: 'a-z', hasBot: false }]).map((t) => t.slug)).toEqual(['a-z', 'ab']);
   });
 });
 

@@ -77,6 +77,11 @@ export interface Names {
   base: string;
   /** The runner's one state volume: the agent's home and sign-in, mounted by every team pod of the runner. */
   state: string;
+  /**
+   * A runner where each team signs in (P35-10): this team pod's own sign-in volume, `<base>-signin`, mounted at /state instead of `state`. Never `<base>-state`: that can spell
+   * another runner's `<runnerBase>-state` (runner `a` with team `b`, and a runner called `a-b`).
+   */
+  signin: string;
   /** This pod's own work volume: the team's clones and files. */
   work: string;
   /** This pod's own bridge key. */
@@ -129,7 +134,7 @@ export function namesFor(runnerName: string, agent: PodAgent = 'claude', teamSlu
   const spec = AGENTS[agent];
   const runnerBase = `${spec.prefix}-${slugForRunner(runnerName)}`;
   const base = teamSlug === null ? runnerBase : podBaseFor(agent, runnerName, teamSlug);
-  return { agent, runnerBase, team: teamSlug, base, state: `${runnerBase}-state`, work: `${base}-work`, key: `${base}-key`, credentials: `${runnerBase}-credentials`, file: spec.file, config: `${base}-config`, keeper: `${runnerBase}-keeper` };
+  return { agent, runnerBase, team: teamSlug, base, state: `${runnerBase}-state`, signin: `${base}-signin`, work: `${base}-work`, key: `${base}-key`, credentials: `${runnerBase}-credentials`, file: spec.file, config: `${base}-config`, keeper: `${runnerBase}-keeper` };
 }
 
 /** The labels of an object a team's pod owns, on top of the runner's. */
@@ -362,6 +367,11 @@ export interface DeploymentOptions {
   deployMounts?: readonly { teamSlug: string; secret: string; key: string }[];
   /** A hash of the bridge's profiles (config.json). The bridge reads them once at start, so a changed set rolls the pod; the repository list is not part of it. */
   profilesSha?: string | null;
+  /**
+   * The claim mounted at /state: the runner's shared `state` (absent: that one), or the team's own `signin` claim on a runner where each team signs in (P35-10). A change of it
+   * changes the pod template, so the pod restarts on the new volume.
+   */
+  stateClaim?: string;
 }
 
 /** The Secret of a team's push tokens made by the Hermes pods' controller (`hermes-<team>-push`, one key per project): the same name rule as there, so the two pod kinds read one Secret. */
@@ -544,7 +554,7 @@ export function buildDeployment(cfg: ClaudePodConfig, runner: PodRunner, names: 
               : []),
           ],
           volumes: [
-            { name: 'state', persistentVolumeClaim: { claimName: names.state } },
+            { name: 'state', persistentVolumeClaim: { claimName: opts.stateClaim ?? names.state } },
             { name: 'work', persistentVolumeClaim: { claimName: names.work } },
             { name: 'tmp', emptyDir: { sizeLimit: acp ? '2Gi' : '512Mi' } },
             { name: 'config', configMap: { name: names.config } },

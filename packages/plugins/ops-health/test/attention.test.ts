@@ -51,4 +51,51 @@ describe('GET /api/admin/attention', () => {
     const after = GetAttentionResponse.parse((await w.call(omar, 'GET', '/api/admin/attention')).body).problems;
     expect(after.map((p) => p.kind)).toEqual(['runner_sign_in', 'runner_sign_in']);
   });
+
+  it('names a team of a per-team runner whose own sign-in is gone and that has a bot there, with a link to that team; not the runner as a whole', async () => {
+    const ids = await w.system(async (tx) => {
+      const ws = (await tx.query<{ id: string }>('SELECT id FROM app.workspaces ORDER BY id LIMIT 1')).rows[0]!.id;
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      const other = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'marketing'")).rows[0]!.id;
+      const runner = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bot_runners (workspace_id, name, label, kind, status, sign_in_scope, all_teams, updated_at) VALUES ($1, 'each-codex', 'Each Codex', 'codex_cli', 'waiting_for_sign_in', 'per_team', true, now() - interval '1 hour') RETURNING id`,
+          [ws],
+        )
+      ).rows[0]!.id;
+      await tx.query(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement)
+         VALUES ($1, $2, 'each-bot', 'Each bot', '', 'agent', 'hermes', 'team', repeat('e', 64), 'active', '{"runs_on":"each-codex"}'::jsonb)`,
+        [ws, team],
+      );
+      const support = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'customer-support'")).rows[0]!.id;
+      await tx.query(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement)
+         VALUES ($1, $2, 'each-bot', 'Each bot', '', 'agent', 'hermes', 'team', repeat('e', 64), 'active', '{"runs_on":"each-codex"}'::jsonb)`,
+        [ws, support],
+      );
+      // marketing is signed out too, but has no bot on the runner: nothing of it stops. Support's sign-in was refused by a run.
+      await tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) VALUES ($1, $2, 'signed_out'), ($1, $3, 'signed_out'), ($1, $4, 'refused')`, [runner, team, other, support]);
+      return { runner, team, support };
+    });
+    const { problems } = GetAttentionResponse.parse((await w.call(omar, 'GET', '/api/admin/attention')).body);
+    const mine = problems.filter((p) => p.key.startsWith(`runner:${ids.runner}`));
+    expect(mine).toEqual([
+      {
+        kind: 'runner_sign_in',
+        key: `runner:${ids.runner}:team:${ids.support}`,
+        text: 'The Codex sign-in of team “Customer support” on runner “Each Codex” has expired or was refused. Its bots on that runner cannot work until someone signs the team in again.',
+        link: `/settings/workspace/runners?signin=${ids.runner}&team=customer-support`,
+        action: 'Sign in',
+      },
+      {
+        kind: 'runner_sign_in',
+        key: `runner:${ids.runner}:team:${ids.team}`,
+        text: 'Team “Engineering” is not signed in to Codex on runner “Each Codex”. Its bots on that runner cannot work until someone signs the team in.',
+        link: `/settings/workspace/runners?signin=${ids.runner}&team=engineering`,
+        action: 'Sign in',
+      },
+    ]);
+    expect(GetAttentionResponse.parse((await w.call(nadia, 'GET', '/api/admin/attention')).body).problems).toEqual([]);
+  });
 });

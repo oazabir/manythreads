@@ -506,6 +506,15 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     // What was done, with the kind of sign-in and whether a code or a key was given: fixed words only, never the code or the key.
     reason: [words(e['change']), words(e['how']), words(e['answerKind'])].filter((x): x is string => x !== null).join(', ') || undefined,
     outcome: e['change'] === 'login_failed' || e['refused'] === true ? 'failed' : undefined,
+    // a team's own sign-in, on a runner where each team signs in
+    ...(uuid(e['teamId']) !== null ? { teamId: team(e['teamId']) } : {}),
+  }),
+  'bot_runner.sign_in_scope.changed': (e) => ({
+    action: 'bot_runner.sign_in_scope_changed',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    // fixed words only: the new scope and how many sign-ins were signed out
+    reason: `${e['to'] === 'per_team' ? 'Each team signs in' : 'One sign-in for all teams'}; ${typeof e['signedOut'] === 'number' ? e['signedOut'] : 0} signed out`,
   }),
   'bot_runner.availability.changed': (e) => ({
     action: 'bot_runner.availability_changed',

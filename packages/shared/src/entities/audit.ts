@@ -117,6 +117,7 @@ export const AUDIT_ACTIONS = {
   'bot_runner.deleted': { category: 'settings', label: 'Removed a bot runner' },
   'bot_runner.tested': { category: 'settings', label: 'Tested a bot runner' },
   'bot_runner.agent_sign_in_changed': { category: 'settings', label: "Changed an agent runner's sign-in" },
+  'bot_runner.sign_in_scope_changed': { category: 'settings', label: 'Changed who signs a runner in' },
   'bot_runner.availability_changed': { category: 'settings', label: 'Changed which teams can use a bot runner' },
   'bot_runner.default_changed': { category: 'settings', label: 'Changed the default bot runner' },
   'bot_runner.node_changed': { category: 'settings', label: 'Changed the machine a bot runner uses' },

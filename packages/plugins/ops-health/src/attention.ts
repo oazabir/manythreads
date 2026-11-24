@@ -9,6 +9,7 @@ import { GetAttentionResponse, getAttentionRoute, type AttentionProblem } from '
 
 type RunnerRow = { id: string; label: string; kind: string; agent: string | null; status: string };
 type KeyRow = { provider_id: string | null; provider: string | null; aliases: string[] };
+type TeamRow = { id: string; label: string; kind: string; agent: string | null; team_id: string; team_slug: string; team_name: string; state: string };
 
 const AGENT_WORDS: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', hermes: 'Hermes', 'hermes-acp': 'Hermes' };
 
@@ -29,6 +30,21 @@ export function runnerProblem(r: RunnerRow): AttentionProblem {
   return { kind: 'runner_sign_in', key: `runner:${r.id}`, text: text.slice(0, 300), link: `/settings/workspace/runners?signin=${r.id}`, action: 'Sign in' };
 }
 
+/** A team of a runner where each team signs in (P35-10) whose own sign-in is gone: its bots cannot work, the runner's other teams may. */
+export function teamProblem(r: TeamRow): AttentionProblem {
+  const text =
+    r.state === 'refused'
+      ? `The ${agentWords(r)} sign-in of team “${r.team_name}” on runner “${r.label}” has expired or was refused. Its bots on that runner cannot work until someone signs the team in again.`
+      : `Team “${r.team_name}” is not signed in to ${agentWords(r)} on runner “${r.label}”. Its bots on that runner cannot work until someone signs the team in.`;
+  return {
+    kind: 'runner_sign_in',
+    key: `runner:${r.id}:team:${r.team_id}`,
+    text: text.slice(0, 300),
+    link: `/settings/workspace/runners?signin=${r.id}&team=${encodeURIComponent(r.team_slug)}`.slice(0, 200),
+    action: 'Sign in',
+  };
+}
+
 export function keyProblem(k: KeyRow): AttentionProblem {
   const aliases = k.aliases.slice(0, 5).join(', ');
   const who = k.provider === null ? 'A model provider' : `The ${k.provider} provider`;
@@ -47,8 +63,19 @@ export async function attentionFor(tx: PluginTx): Promise<AttentionProblem[]> {
   const runners = await tx.query<RunnerRow>(
     `SELECT id::text, label, kind, agent, status FROM app.bot_runners
       WHERE enabled AND kind <> 'llm_gateway'
-        AND (status = 'needs_sign_in' OR (status = 'waiting_for_sign_in' AND updated_at < now() - interval '5 minutes'))
+        AND (status = 'needs_sign_in' OR (status = 'waiting_for_sign_in' AND updated_at < now() - interval '5 minutes' AND sign_in_scope = 'shared'))
       ORDER BY (status = 'needs_sign_in') DESC, label LIMIT 20`,
+  );
+  // A runner where each team signs in is named per team: a team whose pod said "signed out" (the controller stores only what a pod answered, so a pod that restarts is not named),
+  // and that has a bot placed on the runner (a team without one is not stopped by it).
+  const teams = await tx.query<TeamRow>(
+    `SELECT r.id::text, r.label, r.kind, r.agent, t.id::text AS team_id, t.slug AS team_slug, t.name AS team_name, s.state
+       FROM app.bot_runner_team_signins s
+       JOIN app.bot_runners r ON r.id = s.runner_id
+       JOIN app.teams t ON t.id = s.team_id
+      WHERE r.enabled AND r.sign_in_scope = 'per_team' AND s.state IN ('signed_out', 'refused') AND t.archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM app.bots b WHERE b.team_id = t.id AND b.status = 'active' AND b.placement ->> 'runs_on' = r.name)
+      ORDER BY (s.state = 'refused') DESC, r.label, t.name LIMIT 20`,
   );
   // the newest test of each alias, failed because the provider refused the key, and still about the alias and provider as they are now
   const keys = await tx.query<KeyRow>(
@@ -60,7 +87,7 @@ export async function attentionFor(tx: PluginTx): Promise<AttentionProblem[]> {
       GROUP BY p.id, p.name
       ORDER BY p.name LIMIT 20`,
   );
-  return [...runners.rows.map(runnerProblem), ...keys.rows.map(keyProblem)];
+  return [...runners.rows.map(runnerProblem), ...teams.rows.map(teamProblem), ...keys.rows.map(keyProblem)].slice(0, 50);
 }
 
 export function registerAttentionRoute(ctx: PluginContext): void {

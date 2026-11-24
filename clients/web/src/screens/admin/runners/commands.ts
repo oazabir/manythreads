@@ -156,7 +156,8 @@ export function describeTeams(r: Pick<BotRunner, 'allTeams' | 'teams'>): string 
 export const SHARED_SIGNIN_NOTE = "Teams on this runner share its sign-in and its plan's limits.";
 
 /** The note applies to a runner that has a sign-in of its own (an agent pod or a server's agent) and serves, or may serve, more than one team. */
-export const sharesSignin = (r: Pick<BotRunner, 'kind' | 'allTeams' | 'teams'>): boolean => (r.kind === 'claude_cli' || r.kind === 'codex_cli' || r.kind === 'server_agent') && (r.allTeams || r.teams.length > 1);
+export const sharesSignin = (r: Pick<BotRunner, 'kind' | 'allTeams' | 'teams'> & { signInScope?: BotRunner['signInScope'] }): boolean =>
+  (r.kind === 'claude_cli' || r.kind === 'codex_cli' || r.kind === 'server_agent') && r.signInScope !== 'per_team' && (r.allTeams || r.teams.length > 1);
 
 /** True when nobody can use the runner yet, so the row says so instead of looking finished. */
 export const hasNoTeams = (r: Pick<BotRunner, 'allTeams' | 'teams'>): boolean => !r.allTeams && r.teams.length === 0;
@@ -656,8 +657,8 @@ export const SERVER_SHARED_SIGNIN_WARNING =
   'Teams on this runner share its sign-in. With full access a bot of any of these teams can use or copy that account. Put teams that must not share it on runners of their own.';
 
 /** The warning applies to a Claude Code or Codex runner (a pod runner, or a server's agent) that serves, or may serve, more than one team. */
-export const warnsServerSignin = (r: Pick<BotRunner, 'kind' | 'agent' | 'allTeams' | 'teams'>): boolean =>
-  (r.kind === 'claude_cli' || r.kind === 'codex_cli' || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'))) && (r.allTeams || r.teams.length > 1);
+export const warnsServerSignin = (r: Pick<BotRunner, 'kind' | 'agent' | 'allTeams' | 'teams'> & { signInScope?: BotRunner['signInScope'] }): boolean =>
+  (r.kind === 'claude_cli' || r.kind === 'codex_cli' || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'))) && r.signInScope !== 'per_team' && (r.allTeams || r.teams.length > 1);
 
 
 /** A connected server whose bridge says no to full access: its installer was run with --no-full-access, it has no team users, or it was installed before full access became the default. */

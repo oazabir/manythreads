@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { BotRunnerName } from '../entities/bot-runner.ts';
-import { ActorId, BotRunnerId, WorkspaceId } from '../ids.ts';
+import { ActorId, BotRunnerId, TeamId, WorkspaceId } from '../ids.ts';
 
 /**
  * An admin signed an agent runner (Claude Code or Codex on an agent bridge) in or out from the Runners page (P25-09): started a sign-in, gave the code or key the page asked
@@ -23,6 +23,8 @@ export const BotRunnerAgentAuthChangedEvent = z.object({
   answerKind: z.enum(['code', 'key']).optional(),
   /** True on the line written when the bridge did not carry the request out (it was refused, or did not answer). */
   refused: z.boolean().optional(),
+  /** The team whose own sign-in it was, on a runner where each team signs in (P35-10). Absent for a runner with one sign-in for all its teams. */
+  teamId: TeamId.optional(),
   actorId: ActorId,
   at: IsoDateTime,
 });

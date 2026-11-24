@@ -74,6 +74,30 @@ export const RunnerPlacement = z.object({
 });
 export type RunnerPlacement = z.infer<typeof RunnerPlacement>;
 
+/**
+ * Who signs a Claude Code or Codex runner in (P35-10, docs/plans/per-team-sign-in.md): `shared` is one sign-in for every team of the runner (the default, and the only choice
+ * for every other kind); `per_team` is each team signing in with an account of its own. Matches the CHECK of bot-runners 0011, which also keeps `per_team` to those runners.
+ */
+export const BotRunnerSignInScope = z.enum(['shared', 'per_team']);
+export type BotRunnerSignInScope = z.infer<typeof BotRunnerSignInScope>;
+
+/**
+ * A team's sign-in on a `per_team` runner (bot-runners 0011, `bot_runner_team_signins.state`): `signed_in` / `signed_out` as last seen; `refused`, a run met a sign-in the provider
+ * refused (only a new sign-in on the Runners page clears it); `limited`, the team's plan limit was reached and its runs wait until the time it resets.
+ */
+export const BotRunnerTeamSignInState = z.enum(['signed_in', 'signed_out', 'refused', 'limited']);
+export type BotRunnerTeamSignInState = z.infer<typeof BotRunnerTeamSignInState>;
+
+/**
+ * The one order of team slugs wherever "the first team" of a runner is chosen (the pod controller's first pod, the catalog's served team): plain code-unit order, never a
+ * locale's, so the database, the controller and the page cannot disagree (a slug is ASCII, so this is also PostgreSQL's `COLLATE "C"`).
+ */
+export const compareSlugs = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** The runners that may sign in per team: a Claude Code or Codex pod runner, or a server runner of those two agents. The database says the same (bot-runners 0011). */
+export const hasSignInScopeChoice = (r: { kind: string; agent: string }): boolean =>
+  r.kind === 'claude_cli' || r.kind === 'codex_cli' || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'));
+
 /** The words on screen. */
 export const BotRunnerLabel = z.string().trim().min(1).max(80);
 
@@ -123,6 +147,11 @@ export const BotRunner = z.object({
   statusDetail: z.string().nullable(),
   pausedUntil: IsoDateTime.nullable(),
   lastCheckedAt: IsoDateTime.nullable(),
+  /** Who signs it in: one sign-in for all its teams, or each team on its own (P35-10). `shared` for every runner that has no such choice. */
+  signInScope: BotRunnerSignInScope.default('shared'),
+  /** `per_team` only: how many of the teams it serves (a team with a bot on it, or the first team while it has none) are signed in, and how many it serves. Null otherwise. */
+  teamsSignedIn: z.number().int().min(0).nullable().default(null),
+  teamsServed: z.number().int().min(0).nullable().default(null),
   /** How many bots (switched on or off, not broken ones) are placed on it by `runs_on`, or through a connection that was adopted into it. */
   botCount: z.number().int().min(0),
   createdAt: IsoDateTime,

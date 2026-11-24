@@ -195,7 +195,7 @@ test('Codex full access shows its words first, turns on for a one-team runner an
     // two teams (P26-21): each team has a pod of its own, so full access is not refused; the page says what the teams share
     const two = page.locator('[data-testid="runner-row"][data-runner="codex-two"]');
     await expect(two.getByTestId('runner-full-access-badge')).toBeVisible();
-    await expect(two.getByTestId('runner-shared-signin-note')).toHaveText("Teams on this runner share its sign-in and its plan's limits.");
+    await expect(two.getByTestId('runner-server-signin-warning')).toContainText('share its sign-in');
     await expect(row.getByTestId('runner-shared-signin-note')).toHaveCount(0);
     await two.getByTestId('runner-full-access-open').click();
     await page.getByRole('dialog', { name: 'Full access for Codex two teams' }).getByTestId('runner-full-access-confirm').click();
@@ -234,7 +234,7 @@ test('a runner shared by two teams lists both teams and both teams\' bots, says 
     const names = await stack.sql<{ name: string }>('SELECT name FROM app.teams WHERE id = ANY($1::uuid[]) ORDER BY name', [[teamId, otherTeamId]]);
     for (const n of names) await expect(row.getByTestId('runner-teams')).toContainText(n.name);
     await expect(row.getByTestId('runner-bots')).toHaveText('2 bots');
-    await expect(row.getByTestId('runner-shared-signin-note')).toHaveText("Teams on this runner share its sign-in and its plan's limits.");
+    await expect(row.getByTestId('runner-server-signin-warning')).toContainText('share its sign-in');
     await expect(row.getByTestId('runner-state')).toHaveText(/Waiting for sign-in/);
 
     // the same words in the Teams dialog, then one sign-in for the runner

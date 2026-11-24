@@ -85,6 +85,7 @@ describe('names of a Codex runner', () => {
       team: 'engineering',
       base: 'codex-team-codex-engineering',
       state: 'codex-team-codex-state',
+      signin: 'codex-team-codex-engineering-signin',
       work: 'codex-team-codex-engineering-work',
       key: 'codex-team-codex-engineering-key',
       credentials: 'codex-team-codex-credentials',

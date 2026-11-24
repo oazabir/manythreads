@@ -7,7 +7,7 @@ import { fetchLlmAliases, fetchTeams } from '../../../api/endpoints';
 import { useQuery } from '../../../app/useQuery';
 import { QueryView } from '../../../components/states';
 import { Alert, Toggle } from '../../../components/ui';
-import { fetchBotRunners, fetchOldConnections, fetchRunnerNodes, setDefaultBotRunner, testBotRunner, updateBotRunner } from './api';
+import { fetchAgentAuthTeams, fetchBotRunners, fetchOldConnections, fetchRunnerNodes, setDefaultBotRunner, testBotRunner, updateBotRunner } from './api';
 import {
   addedWords,
   boundAliases,
@@ -39,7 +39,8 @@ import {
 import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, FullAccessDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
 import { CredentialsDialog } from './CredentialsCard';
 import { AgentSignInDialog } from './AgentSignInDialog';
-import { hasAgentSignin, isPodAgent } from './agent-auth';
+import { hasAgentSignin, isPerTeam, isPodAgent, scopeLine, type TeamRef } from './agent-auth';
+import { SignInScopeDialog, TeamSignInsDialog } from './TeamSignIns';
 import { StarIcon } from '../../../shell/icons';
 
 /*
@@ -58,7 +59,9 @@ type Dialogs =
   | { kind: 'teams'; runner: BotRunner }
   | { kind: 'node'; runner: BotRunner }
   | { kind: 'signin'; runner: BotRunner }
-  | { kind: 'agent-signin'; runner: BotRunner }
+  | { kind: 'agent-signin'; runner: BotRunner; team?: TeamRef }
+  | { kind: 'team-signins'; runner: BotRunner }
+  | { kind: 'scope'; runner: BotRunner }
   | { kind: 'full-access'; runner: BotRunner }
   | { kind: 'test'; runner: BotRunner }
   | { kind: 'delete'; runner: BotRunner }
@@ -103,11 +106,27 @@ export function RunnersScreen() {
     if (signinFor === null || q.status !== 'ok') return;
     const r = q.data.runners.find((x) => x.id === signinFor);
     if (r !== undefined) {
-      if (hasAgentSignin(r) || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'))) setDialog({ kind: 'agent-signin', runner: r });
+      // a runner where each team signs in: `&team=<slug>` opens that team's sign-in (the slug is checked by the server), else the list of its teams
+      const team = params.get('team');
+      if (isPerTeam(r)) {
+        if (team === null || team === '') setDialog({ kind: 'team-signins', runner: r });
+        else {
+          // the team's name comes from the runner's own list of teams (a runner open to every team lists none on the row); a slug it does not serve opens the list instead
+          void fetchAgentAuthTeams(r.id).then(
+            (res) => {
+              const found = res.items.find((t) => t.slug === team);
+              setDialog(found ? { kind: 'agent-signin', runner: r, team: { slug: found.slug, name: found.name } } : { kind: 'team-signins', runner: r });
+            },
+            () => setDialog({ kind: 'team-signins', runner: r }),
+          );
+        }
+      }
+      else if (hasAgentSignin(r) || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'))) setDialog({ kind: 'agent-signin', runner: r });
       else if (isPodAgent(r)) setDialog({ kind: 'signin', runner: r });
     }
     const next = new URLSearchParams(params);
     next.delete('signin');
+    next.delete('team');
     setParams(next, { replace: true });
   }, [signinFor, q, params, setParams]);
   const fail = (e: unknown): void => {
@@ -208,7 +227,8 @@ export function RunnersScreen() {
                       onTeams={() => setDialog({ kind: 'teams', runner: r })}
                       onNode={() => setDialog({ kind: 'node', runner: r })}
                       onFullAccess={() => setDialog({ kind: 'full-access', runner: r })}
-                      onSignin={() => setDialog({ kind: hasAgentSignin(r) ? 'agent-signin' : 'signin', runner: r })}
+                      onSignin={() => setDialog(isPerTeam(r) ? { kind: 'team-signins', runner: r } : { kind: hasAgentSignin(r) ? 'agent-signin' : 'signin', runner: r })}
+                      onScope={() => setDialog({ kind: 'scope', runner: r })}
                       onDelete={() => setDialog({ kind: 'delete', runner: r })}
                       onSwitch={(on) => void act(r.id, async () => switchWords((await updateBotRunner(r.id, { enabled: on })).runner, on))}
                       onDefault={() =>
@@ -287,8 +307,11 @@ export function RunnersScreen() {
             {dialog?.kind === 'agent-signin' ? (
               <AgentSignInDialog
                 runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
+                {...(dialog.team ? { team: dialog.team } : {})}
                 onClose={() => {
-                  close();
+                  // a team's sign-in goes back to the list of the runner's teams
+                  if (dialog.team) setDialog({ kind: 'team-signins', runner: dialog.runner });
+                  else close();
                   q.reload(); // the runner's state moves when the page sees the agent signed in or out, which can be after the last change it was told of
                 }}
                 onChanged={(text) => {
@@ -296,6 +319,25 @@ export function RunnersScreen() {
                   q.reload();
                 }}
                 onUseFile={() => setDialog({ kind: 'signin', runner: dialog.runner })}
+              />
+            ) : null}
+            {dialog?.kind === 'team-signins' ? (
+              <TeamSignInsDialog
+                runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
+                onClose={close}
+                onTeam={(team) => setDialog({ kind: 'agent-signin', runner: dialog.runner, team })}
+                onScope={() => setDialog({ kind: 'scope', runner: dialog.runner })}
+              />
+            ) : null}
+            {dialog?.kind === 'scope' ? (
+              <SignInScopeDialog
+                runner={data.runners.find((x) => x.id === dialog.runner.id) ?? dialog.runner}
+                onClose={close}
+                onDone={(_r, text) => {
+                  close();
+                  say(text);
+                  q.reload();
+                }}
               />
             ) : null}
             {dialog?.kind === 'full-access' ? (
@@ -386,6 +428,7 @@ function RunnerRow({
   onNode,
   onFullAccess,
   onSignin,
+  onScope,
   onDelete,
   onSwitch,
   onDefault,
@@ -399,6 +442,7 @@ function RunnerRow({
   onNode: () => void;
   onFullAccess: () => void;
   onSignin: () => void;
+  onScope: () => void;
   onDelete: () => void;
   onSwitch: (on: boolean) => void;
   onDefault: () => void;
@@ -437,7 +481,12 @@ function RunnerRow({
           <span data-testid="runner-teams" className={hasNoTeams(r) ? 'rn-warn' : undefined}>{hasNoTeams(r) ? 'No team can use it yet' : `Teams: ${describeTeams(r)}`}</span>
           <span data-testid="runner-bots">{countBots(r.botCount)}</span>
         </div>
-        {sharesSignin(r) ? <div className="rn-detail faint" data-testid="runner-shared-signin-note">{SHARED_SIGNIN_NOTE}</div> : null}
+        {isPodAgent(r) ? (
+          <div className="rn-detail" data-testid="runner-signin-scope" data-scope={r.signInScope}>
+            Sign-in: {scopeLine(r)}
+          </div>
+        ) : null}
+        {sharesSignin(r) && !warnsServerSignin(r) ? <div className="rn-detail faint" data-testid="runner-shared-signin-note">{SHARED_SIGNIN_NOTE}</div> : null}
         {warnsServerSignin(r) ? <div className="rn-detail rn-warn" data-testid="runner-server-signin-warning">{SERVER_SHARED_SIGNIN_WARNING}</div> : null}
         {gateway ? <div className="rn-detail mono">{gateway}</div> : null}
         {r.kind === 'llm_gateway' ? <div className="rn-detail">Model name: <span className="mono">{r.modelAlias ?? 'none chosen'}</span></div> : null}
@@ -453,7 +502,19 @@ function RunnerRow({
         <button type="button" className="btn sm" onClick={onTest} disabled={busy} data-testid="runner-test" aria-label={`Test ${r.label}`}>Test</button>
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
         {isSigninKind(r.kind) || hasAgentSignin(r) ? (
-          <button type="button" className="btn sm" onClick={onSignin} disabled={busy} data-testid={hasAgentSignin(r) ? 'runner-agent-signin-open' : 'runner-signin-open'} aria-label={`Sign-in for ${r.label}`}>Sign-in</button>
+          <button
+            type="button"
+            className="btn sm"
+            onClick={onSignin}
+            disabled={busy}
+            data-testid={isPerTeam(r) ? 'runner-team-signins-open' : hasAgentSignin(r) ? 'runner-agent-signin-open' : 'runner-signin-open'}
+            aria-label={`Sign-in for ${r.label}`}
+          >
+            Sign-in
+          </button>
+        ) : null}
+        {isPodAgent(r) ? (
+          <button type="button" className="btn sm" onClick={onScope} disabled={busy} data-testid="runner-signin-scope-open" aria-label={`Who signs ${r.label} in`}>Who signs in</button>
         ) : null}
         {hasFullAccessChoice(r) ? (
           <button type="button" className="btn sm" onClick={onFullAccess} disabled={busy} data-testid="runner-full-access-open" aria-label={`Full access for ${r.label}`}>Full access</button>

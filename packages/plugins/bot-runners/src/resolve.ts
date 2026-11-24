@@ -2,6 +2,7 @@ import type { BotRunnersProvider, ClaudePodsProvider, PluginContext, PluginTx, P
 import { BotRunnerName, modelRunnerProblem } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 import { serverProfileRule } from './servers.ts';
+import { anyTeamSignedIn, followTeams, pruneTeamSignIns, storeTeamSignIn } from './team-signins.ts';
 import type { TunnelRegistry } from './tunnel/registry.ts';
 
 // `resolveRunner`: the one place that turns a runner's NAME into where a run goes (PLAN P19-02). A connection, a team pod and a runner all answer "where does
@@ -35,6 +36,14 @@ const UNREADY_STATES: Readonly<Record<string, string>> = {
   paused: 'paused',
 };
 
+/** The refusal of a run for a team that has not signed in on a runner where each team signs in (docs/plans/per-team-sign-in.md section 1). Names cut to keep the line short. */
+export const teamNotSignedIn = (teamName: string, kind: 'claude_cli' | 'codex_cli', runnerLabel: string): string =>
+  `Team ${teamName.slice(0, 80)} has not signed in to ${kind === 'codex_cli' ? 'Codex' : 'Claude Code'} on runner ${runnerLabel.slice(0, 80)} yet. An admin can sign it in on the Runners page.`;
+
+/** The refusal of a run for a team whose own plan limit was reached on a runner where each team signs in. */
+export const teamLimited = (teamName: string, kind: 'claude_cli' | 'codex_cli', runnerLabel: string, until: Date): string =>
+  `Team ${teamName.slice(0, 80)} reached the limit of its ${kind === 'codex_cli' ? 'ChatGPT' : 'Claude'} plan on runner ${runnerLabel.slice(0, 80)}. Its runs wait until ${until.toISOString().slice(11, 16)} UTC.`;
+
 /** Is the runner open to the team: every team, or the team is on its list. The list is the permission. */
 async function openToTeam(tx: PluginTx, runner: { id: string; all_teams: boolean }, teamId: string): Promise<boolean> {
   if (runner.all_teams) return true;
@@ -43,7 +52,7 @@ async function openToTeam(tx: PluginTx, runner: { id: string; all_teams: boolean
 
 export async function resolveRunner(ctx: PluginContext, query: { teamId: string; runner: string }, tunnel?: TunnelRegistry): Promise<RunnerResolution> {
   return ctx.db.system(async (tx) => {
-    const team = (await tx.query<{ workspace_id: string; slug: string }>('SELECT workspace_id, slug FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
+    const team = (await tx.query<{ workspace_id: string; slug: string; name: string }>('SELECT workspace_id, slug, name FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
     if (!team) return refuse('unknown', `This bot's team could not be found, so its runner ${shown(query.runner)} cannot be used.`);
     const runner = (
       await tx.query<RunnerRow>(`SELECT ${RUNNER_SELECT} WHERE r.workspace_id = $1::uuid AND r.name = $2`, [team.workspace_id, query.runner])
@@ -53,8 +62,20 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
     if (!(await openToTeam(tx, runner, query.teamId))) return refuse('not_available_to_team', 'This bot runs on a runner this team may not use. An admin can add the team to its list.');
     if (!runner.enabled) return refuse('disabled', `This bot runs on ${runner.label}, which an admin has switched off.`);
     if (!RUNNABLE_KINDS.has(runner.kind)) return refuse('not_runnable', `This bot runs on ${runner.label}, which cannot run bots yet.`);
+    // A runner where each team signs in (P35-10) runs a team's bots only on that team's own sign-in, as last stored by the pod controller or the Runners page: a team that has not
+    // signed in is refused at once, and never falls back to another team's sign-in or to a shared one.
+    // A team's plan limit holds that team's runs until it resets (a limit that has run out counts as signed in), and the runner's own sign-in states say nothing about a team that is
+    // signed in: only what concerns the pods themselves (starting, moving, a machine, a pause, off) is judged after this.
+    const perTeam = runner.sign_in_scope === 'per_team' && (runner.kind === 'claude_cli' || runner.kind === 'codex_cli');
+    if (perTeam) {
+      const podKind = runner.kind === 'codex_cli' ? 'codex_cli' : 'claude_cli';
+      const own = (await tx.query<{ state: string; paused_until: Date | null }>('SELECT state, paused_until FROM app.bot_runner_team_signins WHERE runner_id = $1::uuid AND team_id = $2::uuid', [runner.id, query.teamId])).rows[0];
+      const limitedUntil = own?.state === 'limited' && own.paused_until !== null && own.paused_until.getTime() > ctx.runtime.now().getTime() ? own.paused_until : null;
+      if (limitedUntil !== null) return refuse('not_ready', teamLimited(team.name, podKind, runner.label, limitedUntil));
+      if (own?.state !== 'signed_in' && own?.state !== 'limited') return refuse('not_ready', teamNotSignedIn(team.name, podKind, runner.label));
+    }
     const status = effectiveStatus(runner);
-    const unready = UNREADY_STATES[status];
+    const unready = perTeam && (status === 'waiting_for_sign_in' || status === 'needs_sign_in') ? undefined : UNREADY_STATES[status];
     if (unready !== undefined) {
       const until = status === 'paused' && runner.paused_until !== null ? ` until ${runner.paused_until.toISOString().slice(11, 16)} UTC` : '';
       return refuse('not_ready', `This bot runs on ${runner.label}, which is not ready: it is ${unready}${until}.`);
@@ -223,8 +244,8 @@ export async function podNodesByTeam(
 export async function podRunners(ctx: PluginContext, query: { kind: 'claude_cli' | 'codex_cli' }): Promise<PodRunnerInfo[]> {
   return ctx.db.system(async (tx) => {
     const runners = (
-      await tx.query<{ id: string; workspace_id: string; name: string; enabled: boolean; all_teams: boolean; node: string | null; max_concurrent: number | null; full_access: boolean }>(
-        'SELECT id, workspace_id, name, enabled, all_teams, node, max_concurrent, full_access FROM app.bot_runners WHERE kind = $1 ORDER BY workspace_id, name',
+      await tx.query<{ id: string; workspace_id: string; name: string; enabled: boolean; all_teams: boolean; node: string | null; max_concurrent: number | null; full_access: boolean; sign_in_scope: 'shared' | 'per_team' }>(
+        'SELECT id, workspace_id, name, enabled, all_teams, node, max_concurrent, full_access, sign_in_scope FROM app.bot_runners WHERE kind = $1 ORDER BY workspace_id, name',
         [query.kind],
       )
     ).rows;
@@ -250,24 +271,34 @@ export async function podRunners(ctx: PluginContext, query: { kind: 'claude_cli'
                 [teams.map((t) => t.id), r.name],
               )
             ).rows.map((b) => ({ teamId: b.team_id, teamSlug: b.team_slug, botSlug: b.bot_slug }));
-      out.push({ id: r.id, workspaceId: r.workspace_id, name: r.name, enabled: r.enabled, node: r.node, maxConcurrent: r.max_concurrent, fullAccess: r.full_access, teams, allTeams: r.all_teams, bots });
+      out.push({ id: r.id, workspaceId: r.workspace_id, name: r.name, enabled: r.enabled, node: r.node, maxConcurrent: r.max_concurrent, fullAccess: r.full_access, teams, allTeams: r.all_teams, bots, signInScope: r.sign_in_scope });
     }
     return out;
   });
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** States the controller may overwrite. `paused` and `needs_sign_in` are decided elsewhere (a limit, a refused sign-in) and only a new sign-in or the clock clears them. */
 const POD_OWNED_STATES = ['not_set_up', 'waiting_for_sign_in', 'starting', 'ready', 'waiting_for_node', 'moving'];
 
 export async function reportPodState(ctx: PluginContext, state: PodRunnerState): Promise<void> {
   await ctx.db.system(async (tx) => {
+    let { status, detail } = state;
+    // A runner where each team signs in: what each team pod said this pass (only for a runner that still signs in per team), and no row for a team that left it. Its readiness is
+    // the STORED states: a team whose pod did not answer this pass (restarting, slow) keeps its sign-in, so the runner does not flap to waiting while one team is signed in.
+    if (state.teams !== undefined) {
+      for (const t of state.teams) if (UUID.test(t.teamId)) await storeTeamSignIn(tx, state.runnerId, t.teamId, t.state);
+      await pruneTeamSignIns(tx, state.runnerId);
+      if (status === 'waiting_for_sign_in' && (await anyTeamSignedIn(tx, state.runnerId))) [status, detail] = ['ready', null];
+    }
     await tx.query(
       `UPDATE app.bot_runners
           SET status = $2, status_detail = $3, last_checked_at = now(), updated_at = now()
         WHERE id = $1::uuid AND kind IN ('claude_cli', 'codex_cli')
           AND (status = ANY($4::text[]) OR (status = 'paused' AND paused_until IS NOT NULL AND paused_until <= now()))
           AND (status, status_detail) IS DISTINCT FROM ($2, $3)`,
-      [state.runnerId, state.status, state.detail, POD_OWNED_STATES],
+      [state.runnerId, status, detail, POD_OWNED_STATES],
     );
   });
 }
@@ -316,10 +347,23 @@ export async function pauseRunner(ctx: PluginContext, input: { runner: string; t
     const status = input.reason === 'plan_limit' ? 'paused' : 'needs_sign_in';
     const until = input.reason === 'plan_limit' ? pauseEnd(input.until, ctx.runtime.now().getTime()) : null;
     // The detail sentence names the program, so it is chosen by the runner's kind: the kind is read here, then written with the state in one statement.
-    const kind = (
-      await tx.query<{ kind: string }>('SELECT r.kind FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $2::uuid WHERE r.name = $1', [input.runner, input.teamId])
-    ).rows[0]?.kind;
-    if (kind !== 'claude_cli' && kind !== 'codex_cli') return;
+    const found = (
+      await tx.query<{ id: string; kind: string; sign_in_scope: string }>(
+        'SELECT r.id, r.kind, r.sign_in_scope FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $2::uuid WHERE r.name = $1',
+        [input.runner, input.teamId],
+      )
+    ).rows[0];
+    const kind = found?.kind;
+    if (!found || (kind !== 'claude_cli' && kind !== 'codex_cli')) return;
+    // A runner where each team signs in (P35-10): the sign-in and the plan are the team's own. A refused sign-in marks that team `refused` (the controller's pass may not undo it:
+    // the pod may still read its old file as signed in; only a new sign-in on the page does), and a plan limit marks it `limited` until the reset. The other teams and the runner's
+    // own state are not changed, except that a runner with no team signed in any more waits for one.
+    if (found.sign_in_scope === 'per_team') {
+      if (input.reason === 'needs_sign_in') await storeTeamSignIn(tx, found.id, input.teamId, 'refused', { force: true });
+      else await storeTeamSignIn(tx, found.id, input.teamId, 'limited', { force: true, pausedUntil: pauseEnd(input.until, ctx.runtime.now().getTime()) });
+      await followTeams(tx, found.id);
+      return;
+    }
     const changed = await tx.query<{ id: string; workspace_id: string; name: string }>(
       `UPDATE app.bot_runners r
           SET status = $3, status_detail = $4, paused_until = $5::timestamptz, last_checked_at = now(), updated_at = now()

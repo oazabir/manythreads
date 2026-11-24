@@ -4,12 +4,20 @@ import {
   AgentAuth,
   AgentAuthPathParams,
   AgentLoginResponse,
+  AgentLogoutRequest,
   AgentLogoutResponse,
   AnswerAgentLoginRequest,
   CancelAgentLoginRequest,
+  GetAgentAuthQuery,
   GetAgentAuthResponse,
+  ListAgentAuthTeamsResponse,
+  SetSignInScopeRequest,
+  SetSignInScopeResponse,
   StartAgentLoginRequest,
   abuseLimit,
+  hasSignInScopeChoice,
+  listAgentAuthTeamsRoute,
+  setSignInScopeRoute,
   agentLogoutRoute,
   answerAgentLoginRoute,
   cancelAgentLoginRoute,
@@ -19,9 +27,10 @@ import {
   type AgentAuthAttempt,
 } from '@manythreads/shared';
 import { z } from 'zod';
-import { agentOfKind, isPodCli, loadRunner, requireWorkspaceAdmin } from './common.ts';
+import { agentOfKind, isPodCli, loadRunner, presentOne, requireWorkspaceAdmin } from './common.ts';
 import type { RunnerRow } from './rows.ts';
 import { setServerRunnerSignIn } from './servers.ts';
+import { followTeams, oneTeam, storeTeamSignIn, teamSignIns, toTeamState } from './team-signins.ts';
 import type { TunnelRegistry } from './tunnel/registry.ts';
 
 // Signing a bridge runner's agent in and out from the Runners page (P25-09, docs/plans/acp.md section 4.1). The server is a thin, admin-only proxy to the runner's agent bridge
@@ -62,6 +71,17 @@ const WORDS = {
   old: 'This bridge cannot sign the agent in yet. Update the agent bridge on that machine.',
   noSignIn: 'This agent has no sign-in of its own to do here.',
   serverOffline: 'The server is not connected. Check that the machine is on and the bridge is running, then try again.',
+  // a runner where each team signs in (P35-10)
+  teamNeeded: 'Each team of this runner signs in on its own. Choose the team to sign in.',
+  oneSignIn: 'This runner has one sign-in for all its teams, so no team is chosen here.',
+  teamUnknown: 'That team is not one of the teams this runner serves.',
+  teamNoPod: 'This team has no pod on this runner yet. Place one of its bots on the runner, then wait a minute for the pod to start.',
+  noScopeChoice: 'Only a Claude Code or Codex runner can have a sign-in for each team.',
+  serverScope: 'Each team signing in on its own is not available for a server yet. It works for a Claude Code or Codex runner in a pod.',
+  notPerTeam: 'This runner has one sign-in for all its teams, so there is no list of team sign-ins.',
+  changed: 'Someone changed who signs this runner in at the same time. Look at the runner again, then try again.',
+  switchOut: (who: string) => `${who} could not be signed out, so nothing was changed. Wait a minute for the pod to answer, then try again.`,
+  switchCluster: 'The cluster did not remove the old sign-in, so nothing was changed. Try again in a moment.',
 } as const;
 
 interface Target {
@@ -73,6 +93,8 @@ interface Target {
   key: string;
   /** A runner on an enrolled server is asked through the server's open connection (no address, no key, no outbound guard). */
   tunnel?: typeof fetch;
+  /** A runner where each team signs in (P35-10): the team whose own sign-in this is, and whose pod answers. */
+  team?: { id: string; slug: string; name: string };
 }
 
 const BridgeError = z.object({ error: z.object({ message: z.string().max(2000), code: z.string().max(80) }) });
@@ -81,9 +103,19 @@ const printable = (s: string): string => s.replace(/[^\x20-\x7e\u00a0-\uffff]/g,
 export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelRegistry): void {
   const now = (): string => ctx.runtime.now().toISOString();
 
-  async function target(tx: PluginTx, id: string): Promise<Target> {
-    await requireWorkspaceAdmin(tx);
+  /** The team a request names, as one of the teams the runner serves; refused when it names none, an unknown team or one the runner is not open to. */
+  async function teamOf(runner: RunnerRow, slug: string): Promise<{ teamId: string; slug: string; name: string; served: boolean }> {
+    const team = await ctx.db.system((sys) => oneTeam(sys, runner.id, slug), { workspaceId: runner.workspace_id });
+    if (!team) throw invalid(WORDS.teamUnknown);
+    return team;
+  }
+
+  /** Every caller has made the admin check already, as the first thing it does (before the body is read). */
+  async function target(tx: PluginTx, id: string, teamSlug?: string): Promise<Target> {
     const runner = await loadRunner(tx, id);
+    const perTeam = runner.sign_in_scope === 'per_team';
+    if (!perTeam && teamSlug !== undefined) throw invalid(WORDS.oneSignIn);
+    if (perTeam && !isPodCli(runner.kind)) throw conflict(WORDS.serverScope);
     if (runner.kind === 'server_agent') {
       // Hermes on a server has no sign-in of its own here: the bridge's answer for it is `not_needed`, and the page shows nothing to do.
       if (runner.server_id === null || registry === undefined) throw conflict('This runner has no server.');
@@ -96,6 +128,14 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
       const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
       if (!pods) throw conflict(WORDS.podsOff);
       const which = agentOfKind(runner.kind);
+      if (perTeam) {
+        // the team's own pod answers for the team's own sign-in, and no other pod
+        if (teamSlug === undefined) throw invalid(WORDS.teamNeeded);
+        const team = await teamOf(runner, teamSlug);
+        const found = await pods.bridge({ runnerName: runner.name, agent: which, teamSlug: team.slug }).catch(() => null);
+        if (!found) throw conflict(team.served ? WORDS.podNotUp : WORDS.teamNoPod);
+        return { runner, agent: which === 'codex' ? 'codex' : 'claude-code', baseUrl: found.address, key: found.key, pod: true, team: { id: team.teamId, slug: team.slug, name: team.name } };
+      }
       const found = await pods.bridge({ runnerName: runner.name, agent: which }).catch(() => null);
       if (!found) throw conflict(WORDS.podNotUp);
       return { runner, agent: which === 'codex' ? 'codex' : 'claude-code', baseUrl: found.address, key: found.key, pod: true };
@@ -167,7 +207,17 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
   /** One audit line in a transaction of its own, so it is kept whatever the route then answers. */
   const audit = (req: HttpRequest, t: Target, line: Line): Promise<void> =>
     ctx.db.as(req.caller, (own) =>
-      ctx.audit.emit(own, { type: 'bot_runner.agent_auth.changed', workspaceId: t.runner.workspace_id, runnerId: t.runner.id, name: t.runner.name, agent: t.agent, ...line, actorId: own.actor.id, at: now() }),
+      ctx.audit.emit(own, {
+        type: 'bot_runner.agent_auth.changed',
+        workspaceId: t.runner.workspace_id,
+        runnerId: t.runner.id,
+        name: t.runner.name,
+        agent: t.agent,
+        ...line,
+        ...(t.team ? { teamId: t.team.id } : {}),
+        actorId: own.actor.id,
+        at: now(),
+      }),
     );
 
   /** Asks the bridge after the audit line is written; when the bridge does not carry it out, a second line says so. */
@@ -183,10 +233,11 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
 
   // A sign-in that ended is audited once, when a page first sees it end (the polling does not stop being how the end is learned: nothing here runs on its own).
   const finished = new Set<string>();
-  async function noteEnd(req: HttpRequest, t: Target, attempt: AgentAuthAttempt | null): Promise<void> {
-    if (attempt === null || (attempt.state !== 'done' && attempt.state !== 'failed')) return;
-    const id = `${t.runner.id}:${attempt.id}`;
-    if (finished.has(id)) return;
+  /** Returns true when this is the first time a page sees a sign-in end well (a real sign-in on the page). */
+  async function noteEnd(req: HttpRequest, t: Target, attempt: AgentAuthAttempt | null): Promise<boolean> {
+    if (attempt === null || (attempt.state !== 'done' && attempt.state !== 'failed')) return false;
+    const id = `${t.runner.id}:${t.team?.id ?? ''}:${attempt.id}`;
+    if (finished.has(id)) return false;
     finished.add(id);
     if (finished.size > REMEMBER_FINISHED) finished.delete(finished.values().next().value as string);
     try {
@@ -194,6 +245,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     } catch {
       finished.delete(id);
     }
+    return attempt.state === 'done';
   }
 
   /** A server's runner is ready when its agent is signed in on the server, and waits for a sign-in when it is not; the page's own reads keep it true. */
@@ -206,8 +258,20 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
    * A pod runner is ready when its agent is signed in inside the pod, and waits for a sign-in when it is not. The controller finds that out on its own next pass; this lets the page
    * say it as soon as the page itself has seen the bridge say it. Only a runner in the one state the change leaves is touched.
    */
-  async function followPodSignIn(t: Target, state: string): Promise<void> {
+  async function followPodSignIn(t: Target, state: string, real = false): Promise<void> {
     if (t.pod !== true || (state !== 'signed_in' && state !== 'signed_out')) return;
+    if (t.team) {
+      // A team's own sign-in: stored for the list and the run resolver; the runner is ready while any of its teams is signed in. A plain status read (`real` false) never clears a
+      // refused sign-in or a plan limit: the pod may still read its old file as signed in. A sign-in that ended well on the page, or a sign-out, does.
+      const team = t.team;
+      await ctx.db
+        .system(async (sys) => {
+          await storeTeamSignIn(sys, t.runner.id, team.id, state, { force: real });
+          await followTeams(sys, t.runner.id);
+        }, { workspaceId: t.runner.workspace_id })
+        .catch(() => undefined);
+      return;
+    }
     const [from, to, detail] = state === 'signed_in' ? ['waiting_for_sign_in', 'ready', null] : ['ready', 'waiting_for_sign_in', 'Waiting for a sign-in. Choose Sign in on this runner.'];
     await ctx.db
       .system(async (sys) => {
@@ -229,10 +293,14 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     schema: { response: GetAgentAuthResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const t = await target(tx, id);
+      await requireWorkspaceAdmin(tx);
+      const query = GetAgentAuthQuery.safeParse(req.query ?? {});
+      if (!query.success) throw invalid(WORDS.teamUnknown);
+      const t = await target(tx, id, query.data.team);
       const out = GetAgentAuthResponse.parse(await ask(t, 'GET', '/v1/auth/status', undefined, Auth, waitOf('status')));
-      await followPodSignIn(t, out.auth.state);
-      await noteEnd(req, t, out.auth.attempt);
+      // a device-code sign-in ends while the page polls: the first read that sees it done is a real sign-in
+      const signedNow = await noteEnd(req, t, out.auth.attempt);
+      await followPodSignIn(t, out.auth.state, signedNow && out.auth.state === 'signed_in');
       await followSignIn(t, out.auth.state);
       return json(out);
     }),
@@ -245,11 +313,12 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     schema: { response: AgentLoginResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const t = await target(tx, id); // the admin check comes before the body is looked at
+      await requireWorkspaceAdmin(tx); // the admin check comes before the body is looked at
       const body = StartAgentLoginRequest.parse(req.body);
+      const t = await target(tx, id, body.team);
       const out = await asked(req, t, { change: 'login_started' }, () => ask(t, 'POST', '/v1/auth/login', { methodId: body.methodId }, Attempt, waitOf('login')));
       await noteEnd(req, t, out.attempt);
-      if (out.attempt?.state === 'done') await followPodSignIn(t, 'signed_in');
+      if (out.attempt?.state === 'done') await followPodSignIn(t, 'signed_in', true);
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -261,14 +330,15 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     schema: { response: AgentLoginResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const t = await target(tx, id);
+      await requireWorkspaceAdmin(tx);
       const body = AnswerAgentLoginRequest.parse(req.body);
+      const t = await target(tx, id, body.team);
       // The code or the key is in this one request to the bridge and in nothing else here: the audit line says only which of the two it was.
       const out = await asked(req, t, { change: 'answer_given', answerKind: body.code !== undefined ? 'code' : 'key' }, () =>
         ask(t, 'POST', '/v1/auth/login/answer', { attemptId: body.attemptId, ...(body.code !== undefined ? { code: body.code } : { apiKey: body.apiKey }) }, Attempt, waitOf('answer')),
       );
       await noteEnd(req, t, out.attempt);
-      if (out.attempt?.state === 'done') await followPodSignIn(t, 'signed_in');
+      if (out.attempt?.state === 'done') await followPodSignIn(t, 'signed_in', true);
       return json(AgentLoginResponse.parse(out));
     }),
   });
@@ -280,8 +350,9 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     schema: { response: AgentLoginResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const t = await target(tx, id);
+      await requireWorkspaceAdmin(tx);
       const body = CancelAgentLoginRequest.parse(req.body ?? {});
+      const t = await target(tx, id, body.team);
       const out = await asked(req, t, { change: 'login_cancelled' }, () => ask(t, 'POST', '/v1/auth/login/cancel', body.attemptId !== undefined ? { attemptId: body.attemptId } : {}, Attempt, waitOf('cancel')));
       return json(AgentLoginResponse.parse(out));
     }),
@@ -294,11 +365,117 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     schema: { response: AgentLogoutResponse },
     handler: route(async (req, tx) => {
       const { id } = AgentAuthPathParams.parse(req.params);
-      const t = await target(tx, id);
+      await requireWorkspaceAdmin(tx);
+      const body = AgentLogoutRequest.parse(req.body ?? {});
+      const t = await target(tx, id, body.team);
       const out = await asked(req, t, { change: 'signed_out' }, () => ask(t, 'POST', '/v1/auth/logout', {}, Auth, waitOf('logout')));
       await followSignIn(t, out.auth.state);
-      await followPodSignIn(t, out.auth.state);
+      await followPodSignIn(t, out.auth.state, true);
       return json(AgentLogoutResponse.parse(out));
+    }),
+  });
+
+  // The teams of a runner where each team signs in, each with its stored state (the pod controller's pass, or this page's last read): no team is probed here.
+  ctx.http.route({
+    method: listAgentAuthTeamsRoute.method,
+    path: listAgentAuthTeamsRoute.path,
+    rateLimit: { limit: 120, windowMs: 60_000 },
+    readOnly: true,
+    schema: { response: ListAgentAuthTeamsResponse },
+    handler: route(async (req, tx) => {
+      const { id } = AgentAuthPathParams.parse(req.params);
+      await requireWorkspaceAdmin(tx);
+      const runner = await loadRunner(tx, id);
+      if (runner.sign_in_scope !== 'per_team') throw invalid(WORDS.notPerTeam);
+      const teams = await ctx.db.system((sys) => teamSignIns(sys, runner), { workspaceId: runner.workspace_id });
+      return json(ListAgentAuthTeamsResponse.parse({ items: teams.map(toTeamState) }));
+    }),
+  });
+
+  /**
+   * Who signs a pod runner in: one sign-in for all its teams, or each team on its own (P35-10, docs/plans/per-team-sign-in.md sections 2, 3 and 7). The old sign-ins are signed out
+   * for real first (deleting a volume alone would leave a copy a full-access team may already hold valid), through each pod's bridge; only then is the column written and the old
+   * volumes deleted (the claim of the shared sign-in and its uploaded file, or every team's sign-in claim). A refusal of the cluster rolls the column back. The controller's next pass
+   * restarts every pod of the runner on its new volume, which also clears the shell homes and bridge sessions kept beside the sign-in: runs under way stop.
+   */
+  ctx.http.route({
+    method: setSignInScopeRoute.method,
+    path: setSignInScopeRoute.path,
+    rateLimit: abuseLimit(setSignInScopeRoute.method, setSignInScopeRoute.path),
+    schema: { body: SetSignInScopeRequest, response: SetSignInScopeResponse },
+    handler: route(async (req, tx) => {
+      const { id } = AgentAuthPathParams.parse(req.params);
+      await requireWorkspaceAdmin(tx);
+      const body = SetSignInScopeRequest.parse(req.body);
+      const runner = await loadRunner(tx, id);
+      if (runner.sign_in_scope === body.scope) return json(SetSignInScopeResponse.parse({ runner: await presentOne(ctx, tx, id) }));
+      if (!hasSignInScopeChoice(runner)) throw invalid(WORDS.noScopeChoice);
+      if (!isPodCli(runner.kind)) throw conflict(WORDS.serverScope);
+      const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
+      if (!pods) throw conflict(WORDS.podsOff);
+      const which = agentOfKind(runner.kind);
+      const agent: AgentAuthAgent = which === 'codex' ? 'codex' : 'claude-code';
+      const toolName = agent === 'codex' ? 'Codex' : 'Claude Code';
+
+      /** Sign one pod's sign-in out when it is signed in. A pod that does not exist has no sign-in to sign out (its volume is deleted below); one that does not answer stops the switch. */
+      const signOut = async (found: { address: string; key: string } | null, who: string): Promise<number> => {
+        if (!found) return 0;
+        const t: Target = { runner, agent, baseUrl: found.address, key: found.key, pod: true };
+        try {
+          const status = await ask(t, 'GET', '/v1/auth/status', undefined, Auth, waitOf('status'));
+          if (status.auth.state !== 'signed_in') return 0;
+          const out = await ask(t, 'POST', '/v1/auth/logout', {}, Auth, waitOf('logout'));
+          if (out.auth.state === 'signed_in') throw new Error('still signed in');
+          return 1;
+        } catch {
+          throw conflict(WORDS.switchOut(who));
+        }
+      };
+
+      let signedOut = 0;
+      if (body.scope === 'per_team') {
+        // the one sign-in for all teams: any pod of the runner answers for it
+        signedOut += await signOut(await pods.bridge({ runnerName: runner.name, agent: which }).catch(() => null), `The ${toolName} sign-in of ${runner.label}`);
+      } else {
+        // every team's own sign-in: a team that is served, or that has a stored state, is asked through its own pod
+        const teams = await ctx.db.system((sys) => teamSignIns(sys, runner), { workspaceId: runner.workspace_id });
+        for (const team of teams.filter((x) => x.served || x.state !== null)) {
+          signedOut += await signOut(await pods.bridge({ runnerName: runner.name, agent: which, teamSlug: team.slug }).catch(() => null), `Team ${team.name}`);
+        }
+      }
+
+      // the row is locked only now, after the slow sign-outs; a change made in between by someone else wins
+      const locked = await loadRunner(tx, id, true);
+      if (locked.sign_in_scope !== runner.sign_in_scope) throw conflict(WORDS.changed);
+      if (body.scope === 'per_team') {
+        // the uploaded sign-in file (if any) goes with the shared sign-in, as the remove route does
+        await tx.query(
+          `UPDATE app.bot_runners
+              SET sign_in_scope = 'per_team', owner_actor_id = NULL, plan_label = NULL, credentials_expires_at = NULL, uploaded_at = NULL, login_id = NULL, credentials_sha256 = NULL,
+                  status = 'waiting_for_sign_in', status_detail = 'No team has signed in yet. Choose Sign-in on this runner to sign a team in.', paused_until = NULL, updated_at = now()
+            WHERE id = $1::uuid`,
+          [id],
+        );
+      } else {
+        await tx.query(
+          `UPDATE app.bot_runners
+              SET sign_in_scope = 'shared', status = 'waiting_for_sign_in', status_detail = 'Waiting for a sign-in. Choose Sign in on this runner once its pod is up.', paused_until = NULL, updated_at = now()
+            WHERE id = $1::uuid`,
+          [id],
+        );
+      }
+      // The stored team states belong to the old scope: cleared in this transaction (the table's one door for an admin), so they go exactly when the switch commits. The row
+      // lock above makes a controller pass that stores a team state wait for this one, and then see the new scope.
+      await tx.query('SELECT app.bot_runner_team_signins_clear($1::uuid)', [id]);
+      await ctx.audit.emit(tx, { type: 'bot_runner.sign_in_scope.changed', workspaceId: runner.workspace_id, runnerId: id, name: runner.name, from: runner.sign_in_scope, to: body.scope, signedOut, actorId: tx.actor.id, at: now() });
+      // Written last: if the cluster refuses, the request fails and the column goes back with the rows above.
+      try {
+        if (body.scope === 'per_team') await pods.removeCredentials({ runnerName: runner.name, agent: which });
+        else await pods.removeTeamSignins({ runnerId: id });
+      } catch {
+        throw conflict(WORDS.switchCluster);
+      }
+      return json(SetSignInScopeResponse.parse({ runner: await presentOne(ctx, tx, id) }));
     }),
   });
 }

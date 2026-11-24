@@ -14,6 +14,7 @@ import {
   type ProjectRepo,
   type RepoConfig,
 } from '@manythreads/sdk/pods';
+import { compareSlugs } from '@manythreads/shared';
 import type { ClaudePodConfig } from './config.ts';
 import {
   BRIDGE_PORT,
@@ -110,6 +111,24 @@ const b64 = (s: string | undefined): string => (s ? Buffer.from(s, 'base64').toS
 /** The label that names the runner an object belongs to (its id). An object that carries another runner's id is never touched. */
 const RUNNER_ID = 'manythreads.io/runner-id';
 const TEAM_ID = 'manythreads.io/team-id';
+/** Ask a pod's bridge to sign its agent out (P35-10: before a team's sign-in volume is deleted). Best effort: false when the bridge did not do it. */
+export async function signOutBridge(doFetch: typeof fetch, address: string, key: string, profileAgent: string): Promise<boolean> {
+  try {
+    const res = await doFetch(`${address}/v1/auth/logout?agent=${profileAgent}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: '{}',
+      // the bridge's sign-out takes up to three steps of 20 s
+      signal: AbortSignal.timeout(65_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** The runner gives each team pod a sign-in volume of its own (P35-10). */
+const perTeam = (runner: PodRunner): boolean => runner.signInScope === 'per_team';
 const phaseOf = (p: K8sObject): string => String((p.status as { phase?: string } | undefined)?.phase ?? '');
 
 /**
@@ -178,14 +197,19 @@ export class Reconciler {
    * one who knows. Any failure reads as "not signed in" and is tried again on the next pass.
    */
   async signedInBridge(runner: PodRunner, names: Names, apiKey: string): Promise<boolean> {
+    return (await this.signInState(runner, names, apiKey)) === 'signed_in';
+  }
+
+  /** The same question with the answer kept apart from no answer: `null` when the bridge did not say (it is starting, restarting or refused), so a stored state is not overwritten by a guess. */
+  async signInState(runner: PodRunner, names: Names, apiKey: string): Promise<'signed_in' | 'signed_out' | null> {
     try {
       const res = await this.doFetch(`${this.bridgeUrl(names)}/v1/auth/status?agent=${AGENTS[names.agent].profileAgent}`, { headers: { authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
-      if (!res.ok) return false;
+      if (!res.ok) return null;
       const body = (await res.json()) as { auth?: { state?: unknown } };
-      return body.auth?.state === 'signed_in';
+      return body.auth?.state === 'signed_in' ? 'signed_in' : body.auth?.state === 'signed_out' ? 'signed_out' : null;
     } catch {
       this.log.info(`claude-pods: ${runner.name}: the bridge of ${names.base} did not answer the sign-in question yet; it is asked again on the next pass`);
-      return false;
+      return null;
     }
   }
 
@@ -218,8 +242,11 @@ export class Reconciler {
   private async podsOf(runner: PodRunner): Promise<TeamPod[]> {
     const byId = new Map<string, PodTeam>();
     for (const b of runner.bots) byId.set(b.teamId, { id: b.teamId, slug: b.teamSlug });
-    let teams = [...byId.values()].sort((a, b) => a.slug.localeCompare(b.slug));
-    if (teams.length === 0) teams = [[...runner.teams].sort((a, b) => a.slug.localeCompare(b.slug))[0] ?? PLACEHOLDER_TEAM];
+    // `compareSlugs` (code-unit order), the same rule bot-runners uses for which team is served: never a locale's order, which PostgreSQL and Node do not share
+    let teams = [...byId.values()].sort((a, b) => compareSlugs(a.slug, b.slug));
+    // A runner where each team signs in has no placeholder pod: a sign-in there is always a real team's own (P35-10). The first team of the list still gets a pod before any bot is placed.
+    const firstTeam = [...runner.teams].sort((a, b) => compareSlugs(a.slug, b.slug))[0];
+    if (teams.length === 0) teams = firstTeam !== undefined ? [firstTeam] : perTeam(runner) ? [] : [PLACEHOLDER_TEAM];
     const old = namesFor(runner.name, runner.agent);
     const legacyWork = await this.k8s.get('PersistentVolumeClaim', this.cfg.namespace, old.work);
     const mine = legacyWork !== null && legacyWork.metadata.labels?.[RUNNER_ID] === runner.id && !isTerminating(legacyWork);
@@ -261,7 +288,10 @@ export class Reconciler {
    */
   private async foreignObject(runner: PodRunner, pod: TeamPod): Promise<string | null> {
     const { names } = pod;
-    for (const [kind, name] of [['Deployment', names.base], ['Service', names.base], ['Secret', names.key], ['ConfigMap', names.config], ['PersistentVolumeClaim', names.work]] as const) {
+    const objects: (readonly [string, string])[] = [['Deployment', names.base], ['Service', names.base], ['Secret', names.key], ['ConfigMap', names.config], ['PersistentVolumeClaim', names.work]];
+    // a team's own sign-in volume is checked like the others: a claim whose team id is another's (a slug used again) is never mounted
+    if (perTeam(runner)) objects.push(['PersistentVolumeClaim', names.signin]);
+    for (const [kind, name] of objects) {
       const o = await this.k8s.get(kind, this.cfg.namespace, name);
       const labels = o?.metadata.labels;
       if (!o || labels === undefined) continue;
@@ -273,18 +303,24 @@ export class Reconciler {
   async reconcileRunner(runner: PodRunner): Promise<RunnerResult> {
     const { cfg, k8s } = this;
     const shared = namesFor(runner.name, runner.agent);
+    const each = perTeam(runner);
     const pods = await this.podsOf(runner);
-    const plan = await this.planNode(runner, shared, pods.map((p) => p.names.work));
+    // A runner where each team signs in (P35-10) has a sign-in claim per team pod instead of the one shared state claim; they move with the work claims all the same.
+    const plan = await this.planNode(runner, each ? pods.map((p) => p.names.signin) : [shared.state], pods.map((p) => p.names.work));
     const { moving } = plan;
-    // Every team pod mounts the runner's one state volume, which lives on one machine: with several pods and no machine chosen they are pinned to where the volumes are.
-    const node = plan.node ?? (pods.length > 1 ? plan.site : null);
+    // Every team pod mounts the runner's one state volume, which lives on one machine: with several pods and no machine chosen they are pinned to where the volumes are. Pods with a
+    // sign-in volume each of their own share no volume, so the cluster may place them apart.
+    const node = plan.node ?? (pods.length > 1 && !each ? plan.site : null);
 
-    const credentials = await k8s.get('Secret', cfg.namespace, shared.credentials);
+    // The uploaded sign-in file and its keeper belong to the one shared sign-in: a runner where each team signs in ignores them (the switch removed them; one left behind is not used).
+    const credentials = each ? null : await k8s.get('Secret', cfg.namespace, shared.credentials);
     const hasCredentials = credentials !== null;
     const uploadId = b64((credentials?.data as Record<string, string> | undefined)?.['upload-id']) || null;
     // A claim that is being deleted (a sign-in removed) is let go first: every pod stops, the claim is freed, and the next pass makes it again.
     const stateClaim = await k8s.get('PersistentVolumeClaim', cfg.namespace, shared.state);
-    const claimGoing = stateClaim !== null && isTerminating(stateClaim);
+    const claimGoing = !each && stateClaim !== null && isTerminating(stateClaim);
+    // the other scope's sign-in volumes go: no copy of a sign-in this runner no longer uses stays in the cluster
+    await this.dropOtherScope(runner, each, stateClaim, new Set(pods.map((p) => p.team.id)));
     const oldPodRuns = await this.retireOldPod(runner);
 
     const stampOf = (claim: string): string | null => (claim in plan.stamp ? (plan.stamp[claim] ?? null) : node);
@@ -293,10 +329,11 @@ export class Reconciler {
     const pending: K8sObject[] = [];
     let replicasTotal = 0;
     let anyBots = false;
+    const teamStates: { teamId: string; state: 'signed_in' | 'signed_out' }[] = [];
 
     const sharedObjects: K8sObject[] = [
       // While a move is under way the claims are left alone (a claim that is being deleted must not be applied again).
-      ...(moving || claimGoing ? [] : [buildPvc(cfg, runner, shared.state, cfg.stateSize, stampOf(shared.state))]),
+      ...(moving || claimGoing || each ? [] : [buildPvc(cfg, runner, shared.state, cfg.stateSize, stampOf(shared.state))]),
       // the keeper and its rights exist only for a runner with an uploaded sign-in file
       ...(hasCredentials ? buildKeeperRbac(cfg, runner, shared) : []),
     ];
@@ -309,6 +346,9 @@ export class Reconciler {
         this.log.warn(`claude-pods: ${runner.name}: no pod is made for team ${team.slug}: ${foreign} belongs to another runner or team`);
         continue;
       }
+      // a team's own sign-in volume (per team): one that is being deleted is let go first, as the shared one is
+      const own = each ? await k8s.get('PersistentVolumeClaim', cfg.namespace, names.signin) : null;
+      const ownGoing = own !== null && isTerminating(own);
       const prevKey = await k8s.get('Secret', cfg.namespace, names.key);
       const apiKey = b64((prevKey?.data as Record<string, string> | undefined)?.['api-key']) || this.newKey();
       const bots = pod.runner.bots;
@@ -333,10 +373,12 @@ export class Reconciler {
       const profilesSha = createHash('sha256').update(buildBridgeConfig(cfg, pod.runner, publishers, deploy, names)).digest('hex').slice(0, 16);
 
       // A runner signed in through the Runners page has its sign-in inside the pod, so the pod runs before there is a sign-in (and, with no bot yet, so that an admin can sign in first).
-      const replicas = runner.enabled && (bots.length > 0 || !hasCredentials) && !moving && !claimGoing && !oldPodRuns ? 1 : 0;
+      const replicas = runner.enabled && (bots.length > 0 || !hasCredentials) && !moving && !claimGoing && !ownGoing && !oldPodRuns ? 1 : 0;
       replicasTotal += replicas;
       const objects: K8sObject[] = [
         ...(moving ? [] : [buildPvc(cfg, runner, names.work, cfg.workSize, stampOf(names.work), teamLabels(team))]),
+        // labelled with the team's id, so a claim of a team whose slug is used again later is never taken for the new team's (foreignObject)
+        ...(each && !moving && !ownGoing ? [buildPvc(cfg, runner, names.signin, cfg.stateSize, stampOf(names.signin), teamLabels(team))] : []),
         buildKeySecret(cfg, pod.runner, names, apiKey),
         buildConfigMap(cfg, pod.runner, names, repos, publishers, deploy),
         buildService(cfg, pod.runner, names),
@@ -351,6 +393,7 @@ export class Reconciler {
           keeper: hasCredentials && names.base === keeperPod,
           signinFile: hasCredentials,
           deployMounts: deploy.mounts,
+          ...(each ? { stateClaim: names.signin } : {}),
         }),
       ];
       for (const obj of objects) await k8s.apply(obj);
@@ -364,7 +407,20 @@ export class Reconciler {
     if (moving && plan.stale.length > 0) await this.finishMove(runner, plan.stale);
 
     const phases = pending.map(phaseOf);
-    const signedIn = !hasCredentials && running.length > 0 ? await this.anySignedIn(running) : false;
+    let signedIn: boolean;
+    if (each) {
+      // each team's own sign-in, asked of its own pod; a pod that does not answer keeps the state last stored (null is not sent)
+      // asked at once (each with its own 20 s limit), so one slow pod does not hold up the others
+      const said = await Promise.all(running.map(({ pod, apiKey }) => this.signInState(pod.runner, pod.names, apiKey)));
+      running.forEach(({ pod }, i) => {
+        const state = said[i];
+        if (state !== null && state !== undefined) teamStates.push({ teamId: pod.team.id, state });
+      });
+      // what the pods said this pass; the catalog adds the stored states of teams whose pod did not answer (reportPodState), so a slow pod never makes the runner wait
+      signedIn = teamStates.some((t) => t.state === 'signed_in');
+    } else {
+      signedIn = !hasCredentials && running.length > 0 ? await this.anySignedIn(running) : false;
+    }
     const state = stateFor({
       hasCredentials,
       signedIn,
@@ -380,8 +436,49 @@ export class Reconciler {
       // a pod that is up takes the repository list now; a pod that is not up starts from the ConfigMap's copy
       for (const { pod, apiKey, repos } of running) await this.pushRepos(pod.runner, pod.names, apiKey, repos);
     }
-    await this.source.report?.({ runnerId: runner.id, status: state.status, detail: state.detail });
+    await this.source.report?.({ runnerId: runner.id, status: state.status, detail: state.detail, ...(each ? { teams: teamStates } : {}) });
     return { runner: runner.name, pod: pods[0]?.names.base ?? shared.base, pods: pods.map((p) => p.names.base), replicas: replicasTotal, node, moving, held: plan.held, state: state.status };
+  }
+
+  /**
+   * The sign-in volumes of the scope the runner does not use (P35-10). One sign-in for all teams: every team sign-in claim of the runner (`-signin`, carrying its id) is deleted. Each team
+   * signs in: the shared state claim is deleted (the switch already did; this catches one left behind), and so is the sign-in claim of a team that is no longer on the runner's list.
+   * A claim of a team that only has no bot here right now stays (its pod is stopped, its sign-in kept). Only claims that carry this runner's id are touched; a claim a pod still mounts
+   * stays until the pod lets go of it, which the Deployment's new volume makes happen.
+   */
+  private async dropOtherScope(runner: PodRunner, each: boolean, stateClaim: K8sObject | null, podTeams: ReadonlySet<string>): Promise<void> {
+    const ours = (c: K8sObject): boolean => c.metadata.labels?.[RUNNER_ID] === runner.id && !isTerminating(c);
+    if (each && stateClaim !== null && ours(stateClaim)) {
+      await this.k8s.delete('PersistentVolumeClaim', this.cfg.namespace, stateClaim.metadata.name);
+      this.log.info(`claude-pods: ${runner.name}: each team signs in now, so the shared sign-in volume is deleted`);
+    }
+    const listed = new Set([...runner.teams.map((t) => t.id), ...podTeams]);
+    const claims = (await this.k8s.list('PersistentVolumeClaim', this.cfg.namespace, `${RUNNER_ID}=${runner.id}`)).filter((c) => c.metadata.name.endsWith('-signin') && ours(c));
+    for (const c of claims) {
+      const team = c.metadata.labels?.[TEAM_ID];
+      if (each && team !== undefined && listed.has(team)) continue;
+      // a team that left the runner (or was deleted) is signed out for real first, while its pod may still run: deleting the volume alone would leave a copy a full-access bot of
+      // that team may hold valid. Best effort: a pod that is gone has nothing left to sign out.
+      if (each) await this.signOutPodOf(runner, c);
+      await this.k8s.delete('PersistentVolumeClaim', this.cfg.namespace, c.metadata.name);
+      this.log.info(`claude-pods: ${runner.name}: ${c.metadata.name} is deleted (${each ? 'its team is no longer on the runner' : 'the runner has one sign-in for all teams now'})`);
+    }
+  }
+
+  /** Sign the agent of the team pod that mounts sign-in claim `claim` out through its bridge, if that pod runs. Never throws. */
+  private async signOutPodOf(runner: PodRunner, claim: K8sObject): Promise<void> {
+    const slug = claim.metadata.labels?.['manythreads.io/team'];
+    if (slug === undefined) return;
+    const names = namesFor(runner.name, runner.agent, slug);
+    if (names.signin !== claim.metadata.name) return;
+    try {
+      const running = (await this.k8s.list('Pod', this.cfg.namespace, `manythreads.io/pod=${names.base}`)).some((p) => phaseOf(p) === 'Running');
+      const key = b64(((await this.k8s.get('Secret', this.cfg.namespace, names.key))?.data as Record<string, string> | undefined)?.['api-key']);
+      if (!running || key === '') return;
+      await signOutBridge(this.doFetch, this.bridgeUrl(names), key, AGENTS[names.agent].profileAgent);
+    } catch {
+      this.log.info(`claude-pods: ${runner.name}: ${names.base} could not be signed out before its sign-in volume is deleted`);
+    }
   }
 
   /** The sign-in is the runner's, not a pod's: the first running team pod whose bridge says signed in is enough. */
@@ -415,9 +512,9 @@ export class Reconciler {
    * confirmed and the machine is an existing, Ready node the admin may choose: stop every pod of the runner, delete all its claims (the shared state and each team's work) once no pod is left.
    * The state volume is shared by all the runner's pods, so the pods move together or not at all.
    */
-  private async planNode(runner: PodRunner, shared: Names, workClaims: readonly string[]): Promise<NodePlan> {
+  private async planNode(runner: PodRunner, signinClaims: readonly string[], workClaims: readonly string[]): Promise<NodePlan> {
     const wanted = this.pinnedNode(runner);
-    const claimNames = [shared.state, ...workClaims];
+    const claimNames = [...signinClaims, ...workClaims];
     const claims = new Map<string, K8sObject | null>();
     for (const n of claimNames) claims.set(n, await this.k8s.get('PersistentVolumeClaim', this.cfg.namespace, n));
     const existing = claimNames.filter((n) => claims.get(n) != null);
@@ -556,7 +653,7 @@ export class Reconciler {
       }
       const claims = await k8s.list('PersistentVolumeClaim', cfg.namespace, `${RUNNER_ID}=${id}`);
       // the shared state volume says where the runner's data is; an old runner without one yet falls back to a work volume
-      const claim = claims.find((c) => c.metadata.name.endsWith('-state')) ?? claims.find((c) => c.metadata.name.endsWith('-work')) ?? null;
+      const claim = claims.find((c) => c.metadata.name.endsWith('-state')) ?? claims.find((c) => c.metadata.name.endsWith('-signin')) ?? claims.find((c) => c.metadata.name.endsWith('-work')) ?? null;
       const site = claim ? volumeSite(claim, needsNodeLookup(claim) ? ((await k8s.listNodes?.().catch(() => null)) ?? null) : null) : { node: null, unknown: false };
       const phase = !anyPod ? 'absent' : pendingPod !== undefined ? 'pending' : 'running';
       const shown = live[0] ?? pendingPod;

@@ -2,6 +2,7 @@ import { forbidden, invalid, notFound, type PluginContext, type PluginTx, type P
 import { assertAllowedUrl, OutboundBlockedError } from '@manythreads/sdk/hermes-outbound';
 import type { BotRunner } from '@manythreads/shared';
 import { placementsOf, RUNNER_SELECT, teamsOf, toBotRunner, type RunnerRow } from './rows.ts';
+import { countSignedIn, teamSignInsFor } from './team-signins.ts';
 
 // What the admin routes and the adoption routes share.
 
@@ -40,8 +41,17 @@ export async function presentRunners(ctx: PluginContext, tx: PluginTx, rows: rea
   const ids = rows.map((r) => r.id);
   const teams = await teamsOf(tx, ids);
   const workspaceId = tx.actor.workspaceId;
-  const counts = await ctx.db.system((sys) => placementsOf(sys, workspaceId, ids), { workspaceId });
-  return rows.map((r) => toBotRunner(r, teams.get(r.id) ?? [], counts.get(r.id)?.count ?? 0));
+  const { counts, signIns } = await ctx.db.system(
+    async (sys) => {
+      // a runner where each team signs in says how many of its teams are signed in (P35-10): read from the stored states, never a live probe
+      const per = new Map<string, { signedIn: number; served: number }>();
+      const perTeam = rows.filter((r) => r.sign_in_scope === 'per_team').map((r) => r.id);
+      for (const [id, teams] of await teamSignInsFor(sys, perTeam)) per.set(id, countSignedIn(teams));
+      return { counts: await placementsOf(sys, workspaceId, ids), signIns: per };
+    },
+    { workspaceId },
+  );
+  return rows.map((r) => toBotRunner(r, teams.get(r.id) ?? [], counts.get(r.id)?.count ?? 0, signIns.get(r.id)));
 }
 
 export async function presentOne(ctx: PluginContext, tx: PluginTx, id: string): Promise<BotRunner> {

@@ -1,7 +1,7 @@
 import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type DeployKubeconfigProvider, type PluginContext, type PluginLogger, type PodAgent } from '@manythreads/sdk';
 import { HttpK8s, confirmMark, type K8s, type K8sObject, type ProjectRepo } from '@manythreads/sdk/pods';
 import { configFrom, type ClaudePodConfig } from './config.ts';
-import { Reconciler, type RunnerSource } from './reconcile.ts';
+import { Reconciler, signOutBridge, type RunnerSource } from './reconcile.ts';
 import { AGENTS, BRIDGE_PORT, COMPONENT, labelsFor, MANAGED_BY, namesFor, type PodRunner } from './render.ts';
 
 export { Reconciler, stateFor } from './reconcile.ts';
@@ -161,11 +161,27 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
       await k8s().delete('PersistentVolumeClaim', cfg.namespace, names.state);
       await k8s().delete('Secret', cfg.namespace, names.credentials);
     },
+    async removeTeamSignins({ runnerId, teamId }) {
+      // only claims this controller made for the runner (its id label) and, with a team, that team's (its id label): a slug used again never names another team's volume
+      const claims = (await k8s().list('PersistentVolumeClaim', cfg.namespace, `app.kubernetes.io/managed-by=${MANAGED_BY},manythreads.io/runner-id=${runnerId}`)).filter(
+        (c) => c.metadata.name.endsWith('-signin') && (teamId === undefined || c.metadata.labels?.['manythreads.io/team-id'] === teamId),
+      );
+      for (const c of claims) {
+        // signed out for real first, through the team pod's bridge while it still runs (a runner or a team going away); best effort, then the volume goes
+        const base = c.metadata.name.replace(/-signin$/, '');
+        const agent: PodAgent = base.startsWith(`${AGENTS.codex.prefix}-`) ? 'codex' : 'claude';
+        const running = (await k8s().list('Pod', cfg.namespace, `manythreads.io/pod=${base}`)).some((p) => String((p.status as { phase?: string } | undefined)?.phase) === 'Running');
+        const key = running ? await keyOf(`${base}-key`).catch(() => '') : '';
+        if (key !== '') await signOutBridge(doFetch, `http://${base}.${cfg.namespace}.svc:${BRIDGE_PORT}`, key, AGENTS[agent].profileAgent);
+        await k8s().delete('PersistentVolumeClaim', cfg.namespace, c.metadata.name);
+      }
+      return claims.length;
+    },
     bridge,
-    async checkSignin({ runnerName, agent }) {
+    async checkSignin({ runnerName, agent, teamSlug }) {
       try {
-        // the sign-in is the runner's: any running pod of it can say
-        const target = await bridge({ runnerName, ...(agent !== undefined ? { agent } : {}) });
+        // the sign-in is the runner's: any running pod of it can say; a team's own sign-in (P35-10) only that team's pod
+        const target = await bridge({ runnerName, ...(agent !== undefined ? { agent } : {}), ...(teamSlug !== undefined ? { teamSlug } : {}) });
         if (!target) return 'unreachable';
         const res = await doFetch(`${target.address}/v1/signin/check`, { method: 'POST', headers: { authorization: `Bearer ${target.key}` }, signal: AbortSignal.timeout(60_000) });
         if (!res.ok) return 'unreachable';
@@ -177,7 +193,7 @@ export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: C
     },
     async confirmMove({ runnerId, node }) {
       // all of the runner's claims: the shared state volume and every team's work volume move together
-      const claims = (await k8s().list('PersistentVolumeClaim', cfg.namespace, `app.kubernetes.io/managed-by=${MANAGED_BY},manythreads.io/runner-id=${runnerId}`)).filter((c) => /-(state|work)$/.test(c.metadata.name));
+      const claims = (await k8s().list('PersistentVolumeClaim', cfg.namespace, `app.kubernetes.io/managed-by=${MANAGED_BY},manythreads.io/runner-id=${runnerId}`)).filter((c) => /-(state|signin|work)$/.test(c.metadata.name));
       for (const c of claims) await k8s().annotate?.('PersistentVolumeClaim', cfg.namespace, c.metadata.name, { 'manythreads.io/move-confirmed': node === null ? null : confirmMark(node, now()) });
       return claims.length;
     },

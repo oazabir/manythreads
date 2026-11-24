@@ -162,6 +162,7 @@ export * from './bot_runner.runner.deleted.ts';
 export * from './connections.connection.changed.ts';
 export * from './bot_runner.runner.tested.ts';
 export * from './bot_runner.agent_auth.changed.ts';
+export * from './bot_runner.sign_in_scope.changed.ts';
 export * from './bot_runner.availability.changed.ts';
 export * from './bot_runner.default.changed.ts';
 export * from './bot_runner.node.changed.ts';

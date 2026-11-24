@@ -91,6 +91,11 @@ export interface PodRunnerInfo {
   allTeams: boolean;
   /** The bots placed on the runner, from the teams it serves. */
   bots: PodRunnerBot[];
+  /**
+   * Who signs it in (P35-10): `shared` (absent means the same) is one sign-in in the runner's one state volume, mounted by every team pod; `per_team` gives each team pod a sign-in
+   * volume of its own, and the uploaded sign-in file and its keeper are not used.
+   */
+  signInScope?: 'shared' | 'per_team';
 }
 
 /** What the controller found about a runner's pod; written to the catalog's status column. */
@@ -99,6 +104,11 @@ export interface PodRunnerState {
   status: 'waiting_for_sign_in' | 'starting' | 'ready' | 'waiting_for_node' | 'moving' | 'not_set_up';
   /** One plain sentence for the admin page, or null. Never a cluster message. */
   detail: string | null;
+  /**
+   * A `per_team` runner only: what each team pod's bridge said about the team's own sign-in this pass. Only teams whose pod answered are here (a pod that is down or restarting
+   * keeps the state last stored). The catalog stores them for the Runners page and the run resolver.
+   */
+  teams?: { teamId: string; state: 'signed_in' | 'signed_out' }[];
 }
 
 export interface BotRunnersProvider extends ProviderImpl {

@@ -1,4 +1,4 @@
-import { BotRunner, type BotRunnerAgent, type BotRunnerKind, type BotRunnerStatus, type BotRunnerTeam } from '@manythreads/shared';
+import { BotRunner, type BotRunnerAgent, type BotRunnerKind, type BotRunnerSignInScope, type BotRunnerStatus, type BotRunnerTeam } from '@manythreads/shared';
 import type { PluginTx } from '@manythreads/sdk';
 
 // The one mapper of `app.bot_runners`: a row to the shared type. Nothing else converts rows. The key is never read here, only whether there is one.
@@ -29,6 +29,7 @@ export interface RunnerRow extends Record<string, unknown> {
   max_concurrent: number | null;
   full_access: boolean;
   server_id: string | null;
+  sign_in_scope: BotRunnerSignInScope;
   status: BotRunnerStatus;
   paused_until: Date | null;
   status_detail: string | null;
@@ -40,7 +41,7 @@ export interface RunnerRow extends Record<string, unknown> {
 /** The columns, with the owner's display name. Use as `SELECT ${RUNNER_SELECT} WHERE ...`. */
 export const RUNNER_SELECT = `r.id, r.workspace_id, r.name, r.label, r.kind, r.agent, r.enabled, r.is_default, r.all_teams, r.base_url, r.secret_id, r.profile_rule,
   r.node, r.model_alias, r.owner_actor_id, pe.display_name AS owner_name, r.plan_label, r.credentials_expires_at, r.uploaded_at, r.terms_accepted_by,
-  r.terms_accepted_at, r.max_concurrent, r.full_access, r.server_id, r.status, r.paused_until, r.status_detail, r.last_checked_at, r.created_at, r.updated_at
+  r.terms_accepted_at, r.max_concurrent, r.full_access, r.server_id, r.sign_in_scope, r.status, r.paused_until, r.status_detail, r.last_checked_at, r.created_at, r.updated_at
   FROM app.bot_runners r
   LEFT JOIN app.actors ac ON ac.id = r.owner_actor_id AND ac.kind = 'person'
   LEFT JOIN app.people pe ON pe.id = ac.ref_id`;
@@ -55,7 +56,8 @@ export const effectiveStatus = (r: Pick<RunnerRow, 'enabled' | 'status'> & { pau
   return r.status;
 };
 
-export function toBotRunner(r: RunnerRow, teams: readonly BotRunnerTeam[], botCount: number): BotRunner {
+/** `signIns`: for a runner where each team signs in, how many of its served teams are signed in (absent for every other runner). */
+export function toBotRunner(r: RunnerRow, teams: readonly BotRunnerTeam[], botCount: number, signIns?: { signedIn: number; served: number }): BotRunner {
   return BotRunner.parse({
     id: r.id,
     workspaceId: r.workspace_id,
@@ -82,6 +84,9 @@ export function toBotRunner(r: RunnerRow, teams: readonly BotRunnerTeam[], botCo
     maxConcurrent: r.max_concurrent,
     fullAccess: r.full_access,
     serverId: r.server_id,
+    signInScope: r.sign_in_scope,
+    teamsSignedIn: r.sign_in_scope === 'per_team' ? (signIns?.signedIn ?? 0) : null,
+    teamsServed: r.sign_in_scope === 'per_team' ? (signIns?.served ?? 0) : null,
     status: effectiveStatus(r),
     statusDetail: r.status_detail,
     pausedUntil: iso(r.paused_until),

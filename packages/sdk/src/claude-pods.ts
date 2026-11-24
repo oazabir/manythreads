@@ -45,10 +45,15 @@ export interface ClaudePodsProvider extends ProviderImpl {
   removeCredentials(input: { runnerName: string; agent?: PodAgent }): Promise<void>;
   /**
    * Where a pod of the runner answers and the key it wants, or null when there is no such pod yet. The key never leaves the server.
-   * `teamSlug` names the team: a run goes to the pod of its own team and no other. Without it (the sign-in of the runner, which lives in the state volume all the runner's pods share) any one live pod
+   * `teamSlug` names the team: a run goes to the pod of its own team and no other, and on a runner where each team signs in (P35-10) the team's own sign-in is that pod's. Without it (the sign-in of the runner, which lives in the state volume all the runner's pods share) any one live pod
    * of the runner answers: the first by name that is running, so that the steps of one sign-in meet the same pod.
    */
   bridge(input: { runnerName: string; agent?: PodAgent; teamSlug?: string }): Promise<{ address: string; key: string } | null>;
-  /** Ask a pod's bridge whether the saved sign-in still works; `unreachable` when no pod is running. */
-  checkSignin(input: { runnerName: string; agent?: PodAgent }): Promise<'ok' | 'rejected' | 'expired' | 'no_scope' | 'limit' | 'unreachable'>;
+  /** Ask a pod's bridge whether the saved sign-in still works; `unreachable` when no pod is running. `teamSlug`: that team's pod (a runner where each team signs in). */
+  checkSignin(input: { runnerName: string; agent?: PodAgent; teamSlug?: string }): Promise<'ok' | 'rejected' | 'expired' | 'no_scope' | 'limit' | 'unreachable'>;
+  /**
+   * Delete the team sign-in volumes of a runner where each team signs in (P35-10): every claim `<team pod>-signin` that carries the runner's id, or only the one of `teamId`. The pods
+   * that mount them are restarted by the controller's next pass. Returns how many were deleted. Rejects when the cluster cannot be asked.
+   */
+  removeTeamSignins(input: { runnerId: string; teamId?: string }): Promise<number>;
 }

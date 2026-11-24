@@ -3,7 +3,7 @@ import type { AgentAuth, AgentAuthAttempt, BotRunner } from '@manythreads/shared
 import { isApiError } from '../../../api/client';
 import { Dialog } from '../../../components/Dialog';
 import { agentLogout, answerAgentLogin, cancelAgentLogin, fetchAgentAuth, startAgentLogin } from './api';
-import { AGENT_NAME, agentOf, answerBody, isPodAgent, answerProblem, attemptWords, homeWords, isLive, logoutWords, methodLabel, needsAnswer, pollDelayMs, replaceWords, signedInDoneWords, signedOutWords, statusWords } from './agent-auth';
+import { AGENT_NAME, agentOf, answerBody, isPodAgent, answerProblem, attemptWords, homeWords, isLive, logoutWords, methodLabel, needsAnswer, pollDelayMs, replaceWords, signedInDoneWords, signedOutWords, statusWords, type TeamRef } from './agent-auth';
 
 /*
  * Sign an agent runner in or out (PLAN P25-09, docs/plans/acp.md section 4.1). The bridge tells what the person must do: open a page and enter a code, open a page and
@@ -16,9 +16,11 @@ import { AGENT_NAME, agentOf, answerBody, isPodAgent, answerProblem, attemptWord
 
 const message = (e: unknown): string => (isApiError(e) ? e.message : e instanceof Error ? e.message : 'Something went wrong. Try again.');
 
-type Props = { runner: BotRunner; onClose: () => void; onChanged: (text: string) => void; onUseFile?: () => void };
+/** `team`: on a runner where each team signs in (P35-10), the team whose own sign-in this dialog shows; every request names it. */
+type Props = { runner: BotRunner; team?: TeamRef; onClose: () => void; onChanged: (text: string) => void; onUseFile?: () => void };
 
-export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Props) {
+export function AgentSignInDialog({ runner, team, onClose, onChanged, onUseFile }: Props) {
+  const slug = team?.slug;
   const [auth, setAuth] = useState<AgentAuth | null>(null);
   const [attempt, setAttempt] = useState<AgentAuthAttempt | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,20 +47,20 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
       // a sign-in that ends well is told once to the page's status line
       if (next.attempt?.state === 'done' && told.current !== next.attempt.id) {
         told.current = next.attempt.id;
-        onChanged(signedInDoneWords(runner));
+        onChanged(signedInDoneWords(runner, team));
       }
     },
-    [onChanged, runner],
+    [onChanged, runner, team],
   );
 
   const load = useCallback(async () => {
     try {
-      apply((await fetchAgentAuth(runner.id)).auth);
+      apply((await fetchAgentAuth(runner.id, slug)).auth);
       if (alive.current) setError(null);
     } catch (err) {
       if (alive.current) setError(message(err));
     }
-  }, [apply, runner.id]);
+  }, [apply, runner.id, slug]);
 
   useEffect(() => {
     void load();
@@ -96,7 +98,7 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
   const start = (methodId: string) =>
     run(async () => {
       setConfirmStart(null);
-      const res = await startAgentLogin(runner.id, methodId);
+      const res = await startAgentLogin(runner.id, methodId, slug);
       if (alive.current) setAttempt(res.attempt);
       await load();
     });
@@ -107,7 +109,7 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
       const body = answerBody(attempt, text);
       // gone from the page before the answer is even confirmed
       setText('');
-      const res = await answerAgentLogin(runner.id, body);
+      const res = await answerAgentLogin(runner.id, body, slug);
       if (alive.current) setAttempt(res.attempt);
       await load();
     });
@@ -115,23 +117,30 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
   const cancel = () =>
     run(async () => {
       setText('');
-      const res = await cancelAgentLogin(runner.id, attempt?.id);
+      const res = await cancelAgentLogin(runner.id, attempt?.id, slug);
       if (alive.current) setAttempt(res.attempt);
       await load();
     });
 
   const signOut = () =>
     run(async () => {
-      const res = await agentLogout(runner.id);
+      const res = await agentLogout(runner.id, slug);
       setConfirmOut(false);
       apply(res.auth);
-      onChanged(signedOutWords(runner));
+      onChanged(signedOutWords(runner, team));
     });
 
   return (
-    <Dialog title={`Sign-in for ${runner.label}`} onClose={onClose} wide testId="runner-agent-signin-dialog" footer={<button type="button" className="btn" onClick={onClose}>Close</button>}>
+    <Dialog
+      title={team ? `Sign-in of team ${team.name} on ${runner.label}` : `Sign-in for ${runner.label}`}
+      onClose={onClose}
+      wide
+      testId="runner-agent-signin-dialog"
+      footer={<button type="button" className="btn" onClick={onClose}>Close</button>}
+    >
       <AgentSignInView
         runner={runner}
+        {...(team ? { team } : {})}
         auth={auth}
         attempt={attempt}
         error={error}
@@ -151,7 +160,7 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
         onCancel={() => void cancel()}
         onAskSignOut={setConfirmOut}
         onSignOut={() => void signOut()}
-        {...(onUseFile ? { onUseFile } : {})}
+        {...(onUseFile && !team ? { onUseFile } : {})}
       />
     </Dialog>
   );
@@ -159,6 +168,8 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
 
 type ViewProps = {
   runner: BotRunner;
+  /** A team's own sign-in (P35-10): the words name the team instead of the runner's one sign-in. */
+  team?: TeamRef;
   auth: AgentAuth | null;
   attempt: AgentAuthAttempt | null;
   error: string | null;
@@ -179,14 +190,14 @@ type ViewProps = {
 };
 
 /** What the dialog shows for one state of the sign-in. No state of its own, so a test renders each state with props. */
-export function AgentSignInView({ runner, auth, attempt, error, busy, text, confirmOut, confirmStart, onText, onStart, onStartConfirmed, onStartDeclined, onSend, onCancel, onAskSignOut, onSignOut, onUseFile }: ViewProps) {
+export function AgentSignInView({ runner, team, auth, attempt, error, busy, text, confirmOut, confirmStart, onText, onStart, onStartConfirmed, onStartDeclined, onSend, onCancel, onAskSignOut, onSignOut, onUseFile }: ViewProps) {
   const which = agentOf(runner);
   const name = which === null ? 'The agent' : AGENT_NAME[which];
   const live = isLive(attempt);
   const asking = needsAnswer(attempt);
   const problem = answerProblem(attempt, text);
   const isKey = attempt?.action?.type === 'give_key';
-  const home = auth ? homeWords(auth, runner) : '';
+  const home = auth ? homeWords(auth, runner, team) : '';
 
   return (
     <div className="rn-form">
@@ -247,7 +258,7 @@ export function AgentSignInView({ runner, auth, attempt, error, busy, text, conf
           <h3 className="rn-sub">Sign in with</h3>
           {confirmStart !== null ? (
             <div className="rn-actions" data-testid="agent-auth-replace">
-              <span className="dlg-text" role="alert" data-testid="agent-auth-replace-words">{replaceWords(auth, runner)}</span>
+              <span className="dlg-text" role="alert" data-testid="agent-auth-replace-words">{replaceWords(auth, runner, team)}</span>
               <button type="button" className="btn sm danger" onClick={() => onStartConfirmed(confirmStart)} disabled={busy} data-testid="agent-auth-replace-yes">Replace the account</button>
               <button type="button" className="btn sm" onClick={onStartDeclined} disabled={busy} data-testid="agent-auth-replace-no">Keep the account</button>
             </div>
@@ -271,7 +282,7 @@ export function AgentSignInView({ runner, auth, attempt, error, busy, text, conf
         <div className="rn-actions">
           {confirmOut ? (
             <>
-              <span className="dlg-text" role="alert" data-testid="agent-auth-logout-words">{logoutWords(auth, runner)}</span>
+              <span className="dlg-text" role="alert" data-testid="agent-auth-logout-words">{logoutWords(auth, runner, team)}</span>
               <button type="button" className="btn sm danger" onClick={onSignOut} disabled={busy} data-testid="agent-auth-logout-yes">Sign out</button>
               <button type="button" className="btn sm" onClick={() => onAskSignOut(false)} disabled={busy}>Stay signed in</button>
             </>
