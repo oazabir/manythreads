@@ -1,19 +1,20 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import {
-  ToolBoldIcon, ToolBulletIcon, ToolChannelIcon, ToolCodeBlockIcon, ToolCodeIcon, ToolEmojiIcon, ToolFormatIcon, ToolItalicIcon, ToolLinkIcon, ToolMentionIcon,
-  ToolNumberIcon, ToolPollIcon, ToolQuoteIcon, ToolStrikeIcon,
+  ToolBoldIcon, ToolBulletIcon, ToolChannelIcon, ToolCodeBlockIcon, ToolCodeIcon, ToolEmojiIcon, ToolItalicIcon, ToolLinkIcon, ToolMentionIcon, ToolNumberIcon,
+  ToolQuoteIcon, ToolStrikeIcon,
 } from '../shell/icons';
 import { CODE_LANGUAGES } from './composerFormat';
-import { barTools, scrollEdges, toolTitle, type ToolId, type ToolLayout } from './composerTools';
+import { TOOL_ORDER, scrollEdges, toolTitle, type BarToolId } from './composerTools';
 
 /*
- * The formatting bar above the message box (PLAN P21-04). It is always there, so the list above never moves when the box gets focus; the icons are 16 px and the
- * tooltips name the shortcut. Every composer (channel, thread panel, direct message, Brain chat) draws the same tools in the same order (P34-03); a box too
- * narrow for one row wraps to a second, and on a phone one "Aa" button opens the row. The bar is one stop of the Tab key and the arrows move along it.
+ * The formatting bar above the message box (PLAN P21-04). Since P36-09 it is shown only when the person chose "Show formatting" in the Attach menu, and then
+ * stays (it never folds on focus, so the list above never moves under a press); the icons are 16 px and the tooltips name the shortcut. Every composer
+ * (channel, thread panel, direct message, Brain chat) draws the same tools in the same order (P34-03); a box too narrow for one row wraps to a second, and a
+ * phone scrolls it sideways. The bar is one stop of the Tab key and the arrows move along it.
  */
 
 type Icon = ComponentType<{ size?: number }>;
-const UI: Record<ToolId, { aria: string; title: string; Icon: Icon; mono?: boolean }> = {
+const UI: Record<BarToolId, { aria: string; title: string; Icon: Icon; mono?: boolean }> = {
   bold: { aria: 'Bold', title: 'Bold', Icon: ToolBoldIcon },
   italic: { aria: 'Italic', title: 'Italic', Icon: ToolItalicIcon },
   strike: { aria: 'Strikethrough', title: 'Strikethrough', Icon: ToolStrikeIcon },
@@ -26,23 +27,18 @@ const UI: Record<ToolId, { aria: string; title: string; Icon: Icon; mono?: boole
   mention: { aria: 'Mention a person', title: 'Mention', Icon: ToolMentionIcon },
   channel: { aria: 'Link a channel', title: 'Channel', Icon: ToolChannelIcon },
   emoji: { aria: 'Emoji', title: 'Emoji', Icon: ToolEmojiIcon },
-  poll: { aria: 'Ask a poll', title: 'Poll', Icon: ToolPollIcon },
 };
 
-export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiOpen, emojiRef }: {
-  layout: ToolLayout;
-  /** The tools this box offers, in order (no poll where polls make no sense). */
-  tools: readonly ToolId[];
+export function ComposerToolbar({ mac, onRun, onCodeBlock, emojiOpen, emojiRef }: {
   mac: boolean;
-  onRun: (id: ToolId) => void;
+  onRun: (id: BarToolId) => void;
   onCodeBlock: (lang: string) => void;
   emojiOpen: boolean;
   emojiRef: RefObject<HTMLButtonElement | null>;
 }) {
-  const [formatOpen, setFormatOpen] = useState(false);
   const [toolAt, setToolAt] = useState(0);
   const bar = useRef<HTMLDivElement>(null);
-  const shown = barTools(layout, tools, formatOpen);
+  const shown = TOOL_ORDER;
   // on a phone the bar scrolls sideways: the end with more tools beyond it fades out (channels.css `.ctools[data-more]`)
   const [more, setMore] = useState<ReturnType<typeof scrollEdges>>('none');
   const measure = useCallback((): void => {
@@ -57,7 +53,7 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
     ro.observe(el);
     return () => ro.disconnect();
   }, [measure, shown.length]);
-  const slots: string[] = [...(layout === 'aa' ? ['format'] : []), ...shown];
+  const slots: readonly string[] = shown;
   const at = Math.min(toolAt, Math.max(0, slots.length - 1));
   const tab = (key: string): { tabIndex: number; onFocus: () => void } => {
     const i = slots.indexOf(key);
@@ -76,7 +72,7 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
     list[to]?.focus();
   };
 
-  const button = (id: ToolId): ReactNode => {
+  const button = (id: BarToolId): ReactNode => {
     const ui = UI[id];
     const Glyph = ui.Icon;
     if (id === 'codeblock') {
@@ -110,7 +106,6 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
         aria-label={ui.aria}
         title={toolTitle(ui.title, id, mac)}
         {...(id === 'emoji' ? { 'aria-haspopup': 'dialog' as const, 'aria-expanded': emojiOpen } : {})}
-        {...(id === 'poll' ? { 'aria-haspopup': 'dialog' as const, 'data-testid': 'poll-tool' } : {})}
         onClick={() => onRun(id)}
         {...tab(id)}
       >
@@ -120,21 +115,7 @@ export function ComposerToolbar({ layout, tools, mac, onRun, onCodeBlock, emojiO
   };
 
   return (
-    <div className={`ctools ${layout}`} role="toolbar" aria-label="Formatting" ref={bar} onKeyDown={onKey} onScroll={measure} data-testid="composer-tools" data-layout={layout} data-more={more === 'none' ? undefined : more}>
-      {layout === 'aa' ? (
-        <button
-          type="button"
-          className="ctool"
-          aria-label="Formatting options"
-          title="Formatting options"
-          aria-pressed={formatOpen}
-          data-testid="composer-format-toggle"
-          onClick={() => setFormatOpen((o) => !o)}
-          {...tab('format')}
-        >
-          <ToolFormatIcon />
-        </button>
-      ) : null}
+    <div className="ctools" role="toolbar" aria-label="Formatting" ref={bar} onKeyDown={onKey} onScroll={measure} data-testid="composer-tools" data-more={more === 'none' ? undefined : more}>
       {shown.map(button)}
     </div>
   );

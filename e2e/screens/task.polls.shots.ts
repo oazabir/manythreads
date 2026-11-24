@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { mainComposer, chooseAttach } from '../support/composer.ts';
 
 /**
  * Polls (P14-07) on the live site, driven as real users in real browsers. Nadia (Engineering, #dev) asks a poll with the composer's Poll button and
@@ -89,7 +90,7 @@ type Ask = { question: string; options: string[]; multiple?: boolean; anonymous?
 /** Opens the composer's Poll button and fills the dialog; does not press Post. */
 async function fillDialog(page: Page, channel: string, a: Ask): Promise<Locator> {
   await boxOf(page, channel).click(); // the toolbar opens with the caret
-  await page.getByTestId('poll-tool').click();
+  await chooseAttach(mainComposer(page), 'poll-tool');
   const dlg = page.getByTestId('poll-dialog');
   await expect(dlg).toBeVisible(T);
   await dlg.getByTestId('poll-question').fill(a.question);
@@ -173,7 +174,7 @@ test('pl-01 Nadia and Rafi open #dev; Nadia asks a poll with the composer Poll b
 
   const { page } = nadia;
   await boxOf(page).click();
-  await page.getByTestId('poll-tool').click();
+  await chooseAttach(mainComposer(page), 'poll-tool');
   const dlg = page.getByTestId('poll-dialog');
   await expect(dlg).toBeVisible(T);
   await dlg.getByTestId('poll-create').click();
@@ -487,7 +488,7 @@ test('pl-08 phone 390x844: card and dialog fit, a count changing moves nothing, 
     await poll.scrollIntoViewIfNeeded();
     await shoot(page, 'pl-22-poll-card-your-vote-phone-390');
     await page.getByRole('textbox', { name: 'Message #dev' }).click();
-    await page.getByTestId('poll-tool').click();
+    await chooseAttach(mainComposer(page), 'poll-tool');
     const dlg = page.getByTestId('poll-dialog');
     await expect(dlg).toBeVisible(T);
     await dlg.getByTestId('poll-question').fill('Phone dialog check');

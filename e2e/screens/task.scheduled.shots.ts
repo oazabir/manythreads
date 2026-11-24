@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { mainComposer, chooseAttach, openAttach } from '../support/composer.ts';
 
 /**
  * Scheduled send (P14-05) on the live site, driven as real users in a real browser. Nadia (Engineering, #dev) opens the Send later menu, schedules a
@@ -130,11 +131,12 @@ test('sc-01 Nadia opens the Send later menu in #dev and schedules a test message
   expect(devId).not.toBe('');
   const before = (await mine(nadia)).filter((i) => i.channelId === devId);
   log(`Nadia has ${before.length} scheduled in #dev before the run`);
-  const later = page.getByTestId('send-later');
-  await expect(later).toBeDisabled();
+  // Send later is an item of the composer's Attach menu (P36-09)
+  await openAttach(mainComposer(page));
+  await expect(page.getByTestId('send-later')).toHaveAttribute('aria-disabled', 'true');
+  await page.keyboard.press('Escape');
   await box.fill(FIRST);
-  await expect(later).toBeEnabled();
-  await later.click();
+  await chooseAttach(mainComposer(page), 'send-later');
   const menu = page.getByTestId('send-later-menu');
   await expect(menu).toBeVisible(T);
   const items = (await menu.getByRole('menuitem').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
@@ -177,9 +179,8 @@ test('sc-02 the strip lists it with Edit and Cancel; Edit changes the text', asy
 test('sc-03 a second one is scheduled and cancelled; a past time is refused in words', async () => {
   const { page } = nadia!;
   const box = boxOf(page);
-  const later = page.getByTestId('send-later');
   await box.fill(SECOND);
-  await later.click();
+  await chooseAttach(mainComposer(page), 'send-later');
   await page.getByTestId('send-later-in60').click();
   await expect(page.getByTestId('scheduled-count')).toHaveText('2 scheduled', T);
   await shootRaw(page, 'sc-06-strip-2-scheduled-desktop');
@@ -192,7 +193,7 @@ test('sc-03 a second one is scheduled and cancelled; a past time is refused in w
 
   // past time
   await box.fill(`${MARK} past time try`);
-  await later.click();
+  await chooseAttach(mainComposer(page), 'send-later');
   await page.getByTestId('send-later-custom').click();
   await expect(page.getByTestId('schedule-dialog')).toBeVisible(T);
   await page.getByTestId('schedule-at').fill(localInput(new Date(Date.now() - 3_600_000)));
@@ -223,9 +224,7 @@ test('sc-04 a reply scheduled inside a thread shows in the channel strip tagged 
   await expect(thread).toBeVisible(T);
   const tbox = thread.getByRole('textbox', { name: /Reply/ });
   await tbox.fill(REPLY);
-  const tlater = thread.getByTestId('send-later');
-  await expect(tlater).toBeEnabled();
-  await tlater.click();
+  await chooseAttach(thread.getByTestId('composer'), 'send-later');
   await shootRaw(page, 'sc-08-thread-send-later-menu-desktop');
   await thread.getByTestId('send-later-in60').click();
   await expect(thread.getByTestId('scheduled-count')).toHaveText('1 scheduled', T);
@@ -253,7 +252,7 @@ test('sc-05 refused path set up: Omar makes a scratch channel, Nadia schedules a
   const box = page.getByRole('textbox', { name: `Message #${SCRATCH}` });
   await expect(box).toBeVisible(T);
   await box.fill(REFUSED);
-  await page.getByTestId('send-later').click();
+  await chooseAttach(mainComposer(page), 'send-later');
   await page.getByTestId('send-later-custom').click();
   await page.getByTestId('schedule-at').fill(localInput(new Date(Date.now() + 2 * 60_000)));
   await page.getByTestId('schedule-save').click();
@@ -334,7 +333,7 @@ test('sc-08 phone 390x844: the menu, the dialog, the strip and the sent message 
     expect(await noSideways(page)).toBe(true);
     await shoot(page, 'sc-13-posted-message-phone-390');
     await box.fill(`${MARK} phone note, to be cancelled`);
-    await page.getByTestId('send-later').click();
+    await chooseAttach(mainComposer(page), 'send-later');
     const menu = page.getByTestId('send-later-menu');
     await expect(menu).toBeVisible(T);
     const mb = (await menu.boundingBox())!;

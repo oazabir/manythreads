@@ -1,89 +1,10 @@
 /* Screenshot and screen recording (channels/capture). The studio is a dark stage over the page, like the call stage: the picture is what matters. */
 
-.cap-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.cap-wrap[hidden] {
-  display: none;
-}
-
-.cap-menu {
-  position: absolute;
-  inset-block-end: calc(100% + 8px);
-  inset-inline-end: -40px;
-  z-index: 30;
-  display: grid;
-  gap: 2px;
-  width: 300px;
-  padding: 6px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: 0 12px 32px var(--scrim);
-  animation: cap-pop 120ms var(--ease-out);
-}
-
-@keyframes cap-pop {
-  from {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
-  }
-}
-
-.cap-choice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--ink);
-  text-align: start;
-  cursor: pointer;
-}
-
-.cap-choice:hover {
-  background: var(--msg-hover);
-}
-
-.cap-choice:focus-visible {
-  background: var(--msg-hover);
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
-}
-
-.cap-choice-ic {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: var(--human-wash);
-  color: var(--human);
-}
-
-.cap-choice-ic.rec {
-  background: var(--alert-wash);
-  color: var(--alert);
-}
-
-.cap-choice-text {
-  display: grid;
-  gap: 2px;
-  font-size: var(--fs-small);
-}
-
-.cap-choice-text span {
-  color: var(--mute);
-  font-size: var(--fs-caption);
-}
-
 .cap-note {
   position: absolute;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   inset-block-end: calc(100% + 8px);
   inset-inline-end: 0;
   width: 260px;
@@ -94,6 +15,17 @@
   background: var(--alert-wash);
   color: var(--alert-ink);
   font-size: var(--fs-caption);
+}
+
+.cap-note > span {
+  flex: 1;
+}
+
+.cap-note-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: inherit;
 }
 
 /* the studio */
@@ -374,15 +306,10 @@
     margin: 0 8px;
   }
 
-  .cap-menu {
-    inset-inline-end: -8px;
-    width: min(300px, calc(100vw - 32px));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .cap,
-  .cap-menu,
   .cap-dot.live,
   .cap-progress span.indeterminate {
     animation: none;

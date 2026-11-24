@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { mainComposer, chooseAttach, showFormatting } from '../support/composer.ts';
 
 /**
  * Live check of composer parity (P14-02, P14-22 deploy) as real users: custom emoji, @channel/@here, drafts kept on the server, the System badge of a
@@ -95,7 +96,7 @@ let statusBefore: any = null;
 
 async function openPicker(page: Page): Promise<Locator> {
   await boxOf(page).click();
-  await page.getByRole('button', { name: 'Emoji', exact: true }).click();
+  await chooseAttach(mainComposer(page), 'attach-emoji');
   const custom = page.getByTestId('emoji-custom');
   await expect(custom).toBeVisible(T);
   return custom;
@@ -268,7 +269,7 @@ test('cp-04 @channel / @here under the limit, notification, reach call, Send lat
   log(`Omar notifications with the marker: ${JSON.stringify(n.map((i) => [i.kind, i.preview]))}`);
   // Send later
   await boxOf(page).fill(`${MARK} Later note @channel`);
-  await page.getByTestId('send-later').click();
+  await chooseAttach(mainComposer(page), 'send-later');
   await page.getByTestId('send-later-in60').click();
   await expect(page.getByTestId('broadcast-confirm')).toHaveCount(0);
   await expect(page.getByTestId('scheduled-count')).toContainText('scheduled', T);
@@ -376,12 +377,12 @@ test('cp-08 phone 390 px: picker with Custom, composer toolbar, broadcast bar', 
     const input = boxOf(page);
     await expect(input).toBeVisible(T);
     await input.click();
-    const tb = page.getByRole('toolbar', { name: 'Formatting' });
+    const tb = await showFormatting(mainComposer(page)); // shown from the Attach menu (P36-09)
     const tbb = (await tb.boundingBox())!;
     log(`phone toolbar x=${Math.round(tbb.x)} w=${Math.round(tbb.width)} scrollW=${await tb.evaluate((e) => e.scrollWidth)}; page sideways-free=${await noSideways(page)}`);
     expect(tbb.x + tbb.width).toBeLessThanOrEqual(390.5);
     await shoot(page, 'cp-14-phone-composer-toolbar');
-    await page.getByRole('button', { name: 'Emoji', exact: true }).click();
+    await chooseAttach(mainComposer(page), 'attach-emoji');
     const custom = page.getByTestId('emoji-custom');
     await expect(custom).toBeVisible(T);
     const pk = (await custom.locator('xpath=ancestor::*[contains(@class,"emp")][1]').boundingBox().catch(() => null)) ?? (await custom.boundingBox())!;

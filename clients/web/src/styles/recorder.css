@@ -2,10 +2,10 @@
    The composer row (`.cinput`, `.clip`, `.send`, `.icon-btn`, `.btn`) belongs to channels.css and shell.css and is not redefined here, only
    hidden while the recording bar takes its place. Tokens only. */
 
-/* while recording, the text box, the clip button and Send give way (a rule for `hidden` is needed: a class with `display` beats the browser's) */
+/* while recording, the text box, the Attach button and Send give way (a rule for `hidden` is needed: a class with `display` beats the browser's) */
 .cinput > textarea[hidden],
-.cinput .clip[hidden],
-.cinput .sch-split[hidden] {
+.cinput .cam-wrap[hidden],
+.cinput .send[hidden] {
   display: none;
 }
 

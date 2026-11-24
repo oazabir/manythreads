@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { mainComposer, chooseAttach, showFormatting } from '../support/composer.ts';
 
 /**
  * P14-10 (quick switcher, keyboard) and P14-02 (composer toolbar, emoji picker, Up arrow edits the last own message) on the live site.
@@ -150,6 +151,7 @@ test('quick switcher, keyboard, composer toolbar, emoji picker, edit last', asyn
     await expect(page.getByTestId('channel-view')).toBeVisible(T);
     const composer = page.getByRole('textbox', { name: /^Message #/ });
     await composer.click();
+    await showFormatting(mainComposer(page)); // the formatting bar is shown from the Attach menu (P36-09)
     await page.waitForTimeout(500);
     await shot('09-composer-toolbar-focus');
     const word = async (text: string): Promise<void> => {
@@ -182,7 +184,7 @@ test('quick switcher, keyboard, composer toolbar, emoji picker, edit last', asyn
 
     // ---- emoji picker
     await composer.click();
-    await page.getByRole('button', { name: 'Emoji' }).click();
+    await chooseAttach(mainComposer(page), 'attach-emoji');
     const picker = page.getByTestId('emoji-picker');
     await expect(picker).toBeVisible(T);
     await shot('12-emoji-picker-open');
@@ -205,7 +207,7 @@ test('quick switcher, keyboard, composer toolbar, emoji picker, edit last', asyn
     }
     await shot('15-emoji-inserted');
     console.log('composer after emoji:', JSON.stringify(await composer.inputValue()));
-    if (!(await picker.isVisible())) await page.getByRole('button', { name: 'Emoji' }).click();
+    if (!(await picker.isVisible())) await chooseAttach(mainComposer(page), 'attach-emoji');
     await expect(picker).toBeVisible(T);
     await expect(picker.getByTestId('emoji-recent')).toBeVisible(T);
     await shot('16-emoji-recents');
@@ -258,7 +260,7 @@ test('phone: composer toolbar and the header', async ({ browser }) => {
   await composer.tap();
   await page.waitForTimeout(800);
   await page.screenshot({ path: join(OUT, 'p14-10-02-21-phone-composer-toolbar.png'), animations: 'disabled' });
-  await page.getByRole('button', { name: 'Emoji' }).tap().catch(() => undefined);
+  await chooseAttach(mainComposer(page), 'attach-emoji').catch(() => undefined);
   await page.waitForTimeout(800);
   await page.screenshot({ path: join(OUT, 'p14-10-02-22-phone-emoji-picker.png'), animations: 'disabled' });
   await context.close();

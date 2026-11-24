@@ -1,37 +1,8 @@
-/* Scheduled send (PLAN P14-05): the "Send later" button beside Send and the "N scheduled" strip above the composer. Classes are prefixed `sch-`; the
+/* Scheduled send (PLAN P14-05): the "Send later" times (opened from the composer's Attach menu) and the "N scheduled" strip above the composer. Classes are prefixed `sch-`; the
    composer (`.composer`, `.cinput`, `.send`), the menu (`.menu`, `.menu-item`) and the dialog fields (`.fwd-*`) belong to other stylesheets and are
    never redefined here. */
 
-/* ---- the button beside Send ---- */
-.sch-split {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-}
-
-.sch-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.sch-more {
-  width: 26px;
-  height: 28px;
-  color: var(--mute);
-}
-
-.sch-more:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.sch-more[aria-expanded="true"] {
-  background: var(--nav-on);
-  color: var(--ink);
-}
-
-/* the menu opens upward from the button, right-aligned with it, and never wider than the screen */
+/* the times open upward from the Attach button (P36-09), right-aligned with it, and never wider than the screen */
 .menu.sch-menu {
   right: 0;
   left: auto;
@@ -222,11 +193,6 @@
   .sch-acts .btn {
     flex: 1 1 auto;
     min-height: 36px;
-  }
-
-  .sch-more {
-    width: 34px;
-    height: 34px;
   }
 
   .menu-item.sch-item {

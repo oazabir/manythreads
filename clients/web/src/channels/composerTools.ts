@@ -1,36 +1,18 @@
 /*
- * The composer's toolbar as plain data (PLAN P21-04): which tool is which, the shortcut each one names in its tooltip, which keys the box answers to, and
- * which tools a phone keeps in view. Nothing here touches the page, so tests need none of it.
+ * The composer's toolbar as plain data (PLAN P21-04): which tool is which, the shortcut each one names in its tooltip and which keys the box answers to.
+ * Nothing here touches the page, so tests need none of it.
  */
 
-export type ToolId = 'bold' | 'italic' | 'strike' | 'code' | 'codeblock' | 'quote' | 'bullet' | 'number' | 'link' | 'mention' | 'channel' | 'emoji' | 'poll';
+/** What the composer can do to the text and around it: the tools of the formatting bar, and the poll (an item of the Attach menu since P36-09). */
+export type ToolId = BarToolId | 'poll';
+export type BarToolId = 'bold' | 'italic' | 'strike' | 'code' | 'codeblock' | 'quote' | 'bullet' | 'number' | 'link' | 'mention' | 'channel' | 'emoji';
 
-/** `full`: every tool in a row, the same row in the channel, the thread panel, a direct message and Brain chat (P34-03; the bar wraps to a second
- * row in a box too narrow for it). `aa`: one "Aa" button that opens the row (a phone). */
-export type ToolLayout = 'full' | 'aa';
-
-/** The tools an `aa` layout keeps beside the "Aa" button. */
-const PHONE: ReadonlySet<ToolId> = new Set<ToolId>(['mention', 'emoji']);
-
-export const TOOL_ORDER: readonly ToolId[] = ['bold', 'italic', 'strike', 'code', 'codeblock', 'quote', 'bullet', 'number', 'link', 'mention', 'channel', 'emoji', 'poll'];
-
-/**
- * The tools a box offers, always in TOOL_ORDER (P34-03: one order in every composer). The only one that comes and goes is the poll, which needs the
- * slash commands' team (a channel, a thread, a direct message; not Brain chat).
- */
-export function composerTools(a: { polls: boolean }): ToolId[] {
-  return TOOL_ORDER.filter((t) => t !== 'poll' || a.polls);
-}
+/** The formatting bar, in the one order every composer draws it (P34-03): the same row in a channel, a thread, a direct message and Brain chat. */
+export const TOOL_ORDER: readonly BarToolId[] = ['bold', 'italic', 'strike', 'code', 'codeblock', 'quote', 'bullet', 'number', 'link', 'mention', 'channel', 'emoji'];
 
 /** Send is one size with or without text (P34-03, finding 16): only its colour changes, through `ready`. */
 export function sendButtonClass(ready: boolean): string {
   return ready ? 'btn send primary ready' : 'btn send';
-}
-
-/** Which tools sit in the bar for a layout, in order. */
-export function barTools(layout: ToolLayout, tools: readonly ToolId[], formatOpen: boolean): ToolId[] {
-  if (layout === 'full') return [...tools];
-  return formatOpen ? [...tools] : tools.filter((t) => PHONE.has(t));
 }
 
 export type Chord = { key: string; shift?: boolean };

@@ -2,6 +2,7 @@ import { expect, request, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { apiOn, channelsOf, messagesIn, type StackApi } from '../support/stack-browser.ts';
 import { FAKE_TEXT, WEBM_BYTES as WEBM, mic, openVoice, seedVoice, uploadFile as upload, voiceMeta as voice } from './voice-support.ts';
+import { mainComposer, openAttach } from '../support/composer.ts';
 
 /**
  * Voice messages and who may do what (PLAN P14-17), on a stack of its own with the dev-actor header on (for the bot). Lena is a workspace guest:
@@ -58,8 +59,9 @@ test('a guest plays a voice message but has no microphone button', async ({ brow
     await expect(row).toBeVisible();
     await expect(row.locator('.txt')).toContainText(FAKE_TEXT);
     await expect(page.getByRole('textbox', { name: /Message/ })).toBeVisible();
-    // files are on here (the clip button shows), so the missing microphone is the guest rule, not a missing feature
-    await expect(page.getByRole('button', { name: 'Attach a file' })).toBeVisible();
+    // files are on here (Attach offers a file), so the missing microphone is the guest rule, not a missing feature
+    await expect((await openAttach(mainComposer(page))).getByTestId('attach-file')).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(mic(page)).toHaveCount(0);
     // she plays it
     await row.getByTestId('voice-play').click();
