@@ -225,6 +225,8 @@ export function createHindsightClient(options: HindsightClientOptions): Hindsigh
       const body = {
         query: request.query,
         max_tokens: request.maxTokens ?? 4096,
+        // `low` explores fewer candidates per method (100, not 300): a bot's recall answers inside the client's timeout on a busy machine.
+        budget: 'low',
         ...(request.tags !== undefined && request.tags.length > 0 ? { tags: request.tags } : {}),
       };
       const res = ok(path, await withBank(bank, () => send('POST', path, body)));

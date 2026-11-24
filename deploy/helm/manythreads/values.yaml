@@ -284,6 +284,8 @@ hindsight:
     object: true
   llmModel: fast          # the LiteLLM alias its fact extraction calls
   extractionMode: concise # `chunks` calls no model
+  rerankCandidates: 100   # how many recall candidates the cross-encoder re-scores (engine default 300: too slow on a shared CPU)
+  threads: 3              # CPU threads of the engine's models (default: every core)
   # Skip the model check at start-up. True while no provider is configured behind the alias `fast`
   # (the check would fail and the pod never become ready); set "false" once a provider is configured.
   skipLlmVerification: "true"

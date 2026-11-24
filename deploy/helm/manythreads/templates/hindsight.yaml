@@ -112,6 +112,13 @@ spec:
             - { name: HINDSIGHT_API_LLM_MODEL, value: {{ .Values.hindsight.llmModel | quote }} }
             - { name: HINDSIGHT_API_RETAIN_EXTRACTION_MODE, value: {{ .Values.hindsight.extractionMode | quote }} }
             - { name: HINDSIGHT_API_SKIP_LLM_VERIFICATION, value: {{ .Values.hindsight.skipLlmVerification | quote }} }
+            # Recall re-scores its candidates with a cross-encoder on the CPU: 300 of them (the engine's default) on every recall took longer than the
+            # client's 15 s on the devbox, so every bot's memory recall timed out (2026-11-24). Fewer candidates and a few threads keep a recall quick
+            # without starving the site.
+            - { name: HINDSIGHT_API_RERANKER_MAX_CANDIDATES, value: {{ .Values.hindsight.rerankCandidates | quote }} }
+            - { name: OMP_NUM_THREADS, value: {{ .Values.hindsight.threads | quote }} }
+            - { name: MKL_NUM_THREADS, value: {{ .Values.hindsight.threads | quote }} }
+            - { name: OPENBLAS_NUM_THREADS, value: {{ .Values.hindsight.threads | quote }} }
           readinessProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 10
