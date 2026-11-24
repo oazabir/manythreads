@@ -1,3 +1,4 @@
+import { AttentionBar } from './AttentionBar';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AutoplayMini } from '../channels/voice/AutoplayMini';
 import { Link, Outlet, useLocation, useMatch } from 'react-router';
@@ -145,6 +146,7 @@ export function Shell() {
         {drawerOpen ? <button type="button" className="scrim" aria-label="Close menu" onClick={() => setOpenedAt(null)} /> : null}
         <DndLive />
         <main className="center">
+          <AttentionBar />
           {inboxOwnsHeader ? null : (
           <header className="region header chead" data-landmark="header" data-room={room} ref={setHeaderEl}>
             <button type="button" className="icon-btn menu-btn" aria-label="Open menu" aria-controls="shell-rail" aria-expanded={drawerOpen} onClick={() => setOpenedAt(loc.pathname + loc.search)}>

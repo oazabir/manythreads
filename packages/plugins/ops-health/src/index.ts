@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import { createMonitor } from './monitor.ts';
+import { registerAttentionRoute } from './attention.ts';
 import { MIN_TOKEN_LENGTH, registerRoutes } from './routes.ts';
 import { MAIL_QUEUE, TICK_QUEUE, sendAlertMail, tickHealth } from './watcher.ts';
 
@@ -20,8 +21,8 @@ export default definePlugin({
     kind: 'server',
     extends: ['event.emit', 'job.register'],
     events: { emits: ['ops.health.changed'], consumes: [] },
-    // The tables it reads: approvals (approvals), model budgets and spend (gateway-llm).
-    dependsOn: ['approvals', 'gateway-llm'],
+    // The tables it reads: approvals (approvals), model budgets, spend and alias tests (gateway-llm), runners for the attention bar (bot-runners).
+    dependsOn: ['approvals', 'gateway-llm', 'bot-runners'],
   },
   register(ctx) {
     const monitor = createMonitor(ctx, process.env);
@@ -30,6 +31,7 @@ export default definePlugin({
       console.warn(`ops-health: MANYTHREADS_METRICS_TOKEN is shorter than ${MIN_TOKEN_LENGTH} characters; /metrics stays switched off`);
     }
     registerRoutes(ctx, monitor);
+    registerAttentionRoute(ctx);
     ctx.jobs.register(
       TICK_QUEUE,
       async (_payload, tx, job) => {

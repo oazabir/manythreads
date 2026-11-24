@@ -1,3 +1,4 @@
+import { SubscriptionSignIn } from './SubscriptionSignIn';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import type { Appearance as AppearanceSetting, LlmAliasTest, TemplateSummary } from '@manythreads/shared';
@@ -577,6 +578,7 @@ export function RunnersStep({
           ))}
         </ul>
       ) : null}
+      <SubscriptionSignIn />
       {stage ? <p className="ob-hint" role="status" data-testid="ob-runner-stage">{stage}</p> : null}
       {step.done ? null : (
         <>

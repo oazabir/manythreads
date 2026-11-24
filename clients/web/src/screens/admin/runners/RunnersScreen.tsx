@@ -1,5 +1,6 @@
 import { PageHeader } from '../../../components/PageHeader';
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import type { BotRunner, OldConnection, RunnerPlacement } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
 import { fetchLlmAliases, fetchTeams } from '../../../api/endpoints';
@@ -95,6 +96,20 @@ export function RunnersScreen() {
     setError(null);
     setNote(text);
   };
+  // `?signin=<runner>` (the attention bar's "Sign in"): open that runner's sign-in once the list is in
+  const [params, setParams] = useSearchParams();
+  const signinFor = params.get('signin');
+  useEffect(() => {
+    if (signinFor === null || q.status !== 'ok') return;
+    const r = q.data.runners.find((x) => x.id === signinFor);
+    if (r !== undefined) {
+      if (hasAgentSignin(r) || (r.kind === 'server_agent' && (r.agent === 'claude-code' || r.agent === 'codex'))) setDialog({ kind: 'agent-signin', runner: r });
+      else if (isPodAgent(r)) setDialog({ kind: 'signin', runner: r });
+    }
+    const next = new URLSearchParams(params);
+    next.delete('signin');
+    setParams(next, { replace: true });
+  }, [signinFor, q, params, setParams]);
   const fail = (e: unknown): void => {
     setNote(null);
     setError(message(e));

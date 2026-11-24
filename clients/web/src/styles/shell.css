@@ -1432,3 +1432,54 @@ a.sec:hover {
 .dmc-bottom > .pill {
   flex: none;
 }
+
+/* the attention bar (owner request 2026-11-24): a sign-in or a model key that stopped the bots, for the admins who can fix it */
+.attn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: var(--fs-small);
+}
+
+.attn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.attn-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--alert);
+}
+
+.attn-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.attn-fix {
+  flex: none;
+}
+
+.attn-hide {
+  flex: none;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: var(--fs-small);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.attn-more {
+  padding-inline-start: 18px;
+}

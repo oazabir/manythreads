@@ -64,6 +64,13 @@ export function AgentSignInDialog({ runner, onClose, onChanged, onUseFile }: Pro
     void load();
   }, [load]);
 
+  // a runner made a moment ago (onboarding) has no pod or bridge answering yet: until the first answer comes, ask again every few seconds (the error says to wait)
+  useEffect(() => {
+    if (auth !== null || error === null) return undefined;
+    const timer = setTimeout(() => void load(), 5000);
+    return () => clearTimeout(timer);
+  }, [auth, error, load]);
+
   // while a sign-in is under way, ask again after a pause
   useEffect(() => {
     if (!isLive(attempt)) return undefined;

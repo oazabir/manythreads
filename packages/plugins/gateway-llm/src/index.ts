@@ -1,3 +1,4 @@
+import { registerKeyCheckJobs } from './key-check.ts';
 import { definePlugin } from '@manythreads/sdk';
 import { registerConfigJob } from './config.ts';
 import { registerBootHealJob, registerKeySubscriptions, registerReconcileJob, registerSyncKeyJob } from './keys.ts';
@@ -52,6 +53,7 @@ export default definePlugin({
     registerSyncKeyJob(ctx);
     registerReconcileJob(ctx);
     registerBootHealJob(ctx);
+    registerKeyCheckJobs(ctx);
     registerKeySubscriptions(ctx);
     const llm = registerLlmProvider(ctx);
     registerRunProxy(ctx, (tx, botId) => llm.botKey(tx, botId), (tx, botId) => llm.keyRejected(tx, botId));
