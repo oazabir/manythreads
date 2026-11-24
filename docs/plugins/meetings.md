@@ -185,13 +185,25 @@ with a growing wait, consent before the microphone); `store.ts` holds the live r
 auto gain are on. Ctrl/Cmd+Shift+Space mutes. At 760px and narrower the bar is a bottom sheet. When the server answers 409 "not set up", the bar shows "Voice rooms are not set up on this server" and
 nothing else happens. Words come from `engine.ts` (see "How words get into a transcript"); captions, the note-taker picker and the recording toggle are `Captions.tsx`, `NotetakerPicker.tsx` and `RecordingToggle.tsx` in the same folder. The meeting page is `screens/meetings` (route `/meetings/:meetingId`, `?t=<ms>` jumps to a line).
 
-Tests: `clients/web/test/meetings-model.test.ts`, `meetings-call.test.ts` (the controller against the in-memory media layer), `meetings-live.test.ts`, `meetings-engine.test.ts`, `speech-stream.test.ts`, `meetings-view.test.ts`, `meetings-view-words.test.ts`; server: `test/consent.test.ts`.
+**Video (P35-08, P17-01).** `CallStage.tsx` is the stage above the call bar while anybody has a camera or a screen on; `layout.ts` decides what it draws. **Grid** shows every tile at the same size; **Speaker** shows
+one tile large (the tile the person pinned, else another person's shared screen, else another person speaking, else one's own screen, else whoever spoke last) and the others in a strip. Both layouts are one list of tiles
+that CSS places, so a tile keeps its video (and an open floating window) when the layout or the large tile changes. Each tile has a pin button; in Grid a pin marks the tile and moves nothing. At most 16 video tiles are
+drawn; past that one "+N" tile stands for the rest. The drawn tiles keep their places: a new tile goes to the end, and a person who is not drawn takes a place only after speaking for 3 seconds, in the place of the drawn
+person silent the longest (the pinned one, a screen, one's own camera and anyone speaking are never pushed out). The layout and the picture-in-picture switch are kept with the other call choices in this browser
+(`manythreads_call_prefs`; an early build's `manythreads_call_stage` is moved in once and removed); with no choice yet a phone (760px and narrower) opens in Speaker and a wider screen in Grid. Picture-in-picture is the
+browser's small floating video window: when the tab is hidden another person's video goes into it (the large one when it is theirs, never one's own camera or screen), and it closes when the tab is back; only where the browser
+offers it, and a refusal is silent. **Audio only** (in the call settings) stops receiving other people's video and turns one's own camera off for the rest of the call; a new connection in audio only subscribes to sound
+alone from the start. When the media library reports this person's connection as poor or lost, the bar suggests it (Audio only / Not now, laid over the bar so nothing moves) and never switches by itself; "Not now", or turning
+audio only off again, ends the suggestion for the call, and a new connection is judged afresh. Simulcast (each camera sent at several qualities, so the media server gives each viewer the copy that fits their connection and
+tile) is livekit-client's default; the adapter states `simulcast: true` so a change of default cannot switch it off, and the library picks the smaller copies for the camera's shape.
+
+Tests: `clients/web/test/meetings-layout.test.ts` (the layout rules, the kept choice, picture-in-picture, the audio-only suggestion), `clients/web/test/meetings-model.test.ts`, `meetings-call.test.ts` (the controller against the in-memory media layer), `meetings-live.test.ts`, `meetings-engine.test.ts`, `speech-stream.test.ts`, `meetings-view.test.ts`, `meetings-view-words.test.ts`; server: `test/consent.test.ts`.
 
 ### Only a live server shows
 
 Real microphone capture, echo cancellation and noise suppression quality; the device picker with real devices; speaking detection from the media server; the reconnect after a real network drop; the join /
 leave / ring sounds on a real speaker; the browser's autoplay rule for remote audio; the bottom sheet on a real phone; the page's content security policy letting the page reach the media server's address
-(`connect-src`, see the deploy notes); the ring push on a phone.
+(`connect-src`, see the deploy notes); the ring push on a phone; simulcast layers and the media server's choice of layer; picture-in-picture when the tab is left (browsers may want a press on the page first, Chrome opens it by itself for a call through the media session).
 
 ## How words get into a transcript
 

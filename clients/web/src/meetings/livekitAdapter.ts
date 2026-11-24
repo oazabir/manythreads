@@ -1,11 +1,14 @@
-import { Room, RoomEvent, Track, type Participant, type RemoteTrack } from 'livekit-client';
+import { Room, RoomEvent, Track, type Participant, type RemoteTrack, type RemoteTrackPublication } from 'livekit-client';
 import type { MeetingJoin } from '@manythreads/shared';
+import type { ConnectionQuality } from './layout';
 import type { AdapterEvents, AudioOptions, DeviceInfo, DeviceLists, MediaAdapter, VideoTile } from './media';
 
 /*
  * The real media adapter: livekit-client (pinned in package.json), loaded only when a person joins a room (media.ts imports this file lazily, so the library is a
  * chunk of its own). The microphone is asked for with the browser's echo cancellation, noise suppression and level control on. A camera and a shared screen
  * (P35-08) are tiles the page draws: this file reports which there are (`videos`) and attaches one to a `<video>` when asked.
+ * Each camera is sent at several qualities at once (simulcast, the library's default, kept on explicitly: the full size and two smaller copies), so each
+ * viewer gets the one their connection and tile can carry (P17-01); "Audio only" stops receiving video altogether.
  * What this file cannot show without a LiveKit server is listed in docs/plugins/meetings.md ("Only a live server shows").
  */
 
@@ -21,6 +24,18 @@ export function createLivekitAdapter(): MediaAdapter {
   const sinks = new Map<string, HTMLMediaElement>();
   let holder: HTMLDivElement | null = null;
   let events: AdapterEvents | null = null;
+  // audio only (P17-01): other people's video is not received, including what they start later
+  let receiveVideo = true;
+  // joined in audio only: nothing is subscribed by itself, so each track is subscribed by hand (sound always, video once audio only is off)
+  let autoSubscribe = true;
+  /** Subscribes a remote track as audio only says: sound always, video only while video is received. */
+  const follow = (pub: RemoteTrackPublication): void => {
+    const want = pub.kind !== Track.Kind.Video || receiveVideo;
+    if (!autoSubscribe || !want) pub.setSubscribed(want);
+  };
+  const QUALITIES: readonly ConnectionQuality[] = ['excellent', 'good', 'poor', 'lost'];
+  const videoPubs = (): RemoteTrackPublication[] =>
+    room ? [...room.remoteParticipants.values()].flatMap((p) => [...p.trackPublications.values()].filter((pub) => pub.kind === Track.Kind.Video)) : [];
 
   const SOURCES: ReadonlyArray<[Track.Source, VideoTile['source']]> = [
     [Track.Source.Camera, 'camera'],
@@ -67,7 +82,9 @@ export function createLivekitAdapter(): MediaAdapter {
   };
 
   return {
-    async connect(join: MeetingJoin, audio: AudioOptions, ev: AdapterEvents): Promise<void> {
+    async connect(join: MeetingJoin, audio: AudioOptions, ev: AdapterEvents, video?: { receiveVideo: boolean }): Promise<void> {
+      receiveVideo = video?.receiveVideo ?? true;
+      autoSubscribe = receiveVideo;
       options = audio;
       events = ev;
       inputId = audio.inputId;
@@ -76,6 +93,9 @@ export function createLivekitAdapter(): MediaAdapter {
         // cameras and screens (P35-08): each viewer gets the size its tile shows, and a layer nobody watches is not sent
         adaptiveStream: true,
         dynacast: true,
+        // simulcast (P17-01): already the library's default (livekit-client 2.22 publishDefaults), said here so a later change of default does not switch it off.
+        // The library picks the two smaller copies for the camera's own shape (180 and 360 lines, 16:9 or 4:3); the media server sends each viewer the one that fits.
+        publishDefaults: { simulcast: true },
         audioCaptureDefaults: {
           echoCancellation: audio.echoCancellation,
           noiseSuppression: audio.noiseSuppression,
@@ -98,13 +118,21 @@ export function createLivekitAdapter(): MediaAdapter {
         detach(track, `${participant.identity}:${track.sid}`);
         if (track.kind === Track.Kind.Video) report();
       });
+      r.on(RoomEvent.TrackPublished, (pub) => follow(pub));
+      r.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+        if (participant !== r.localParticipant) return;
+        const q = String(quality) as ConnectionQuality;
+        ev.quality(QUALITIES.includes(q) ? q : 'unknown');
+      });
       r.on(RoomEvent.TrackMuted, report);
       r.on(RoomEvent.TrackUnmuted, report);
       r.on(RoomEvent.LocalTrackPublished, report);
       r.on(RoomEvent.LocalTrackUnpublished, report);
       r.on(RoomEvent.ParticipantDisconnected, report);
       r.on(RoomEvent.MediaDevicesError, (err) => ev.micFailed(err instanceof Error ? err.message : 'The microphone could not be opened.'));
-      await r.connect(join.url, join.token, { autoSubscribe: true });
+      await r.connect(join.url, join.token, { autoSubscribe });
+      // the tracks of the people already in the room when joining in audio only: their sound only
+      if (!autoSubscribe) for (const p of r.remoteParticipants.values()) for (const pub of p.trackPublications.values()) follow(pub);
       // browsers hold audio back until the person has done something on the page: joining was that
       await r.startAudio().catch(() => undefined);
       ev.connection('connected');
@@ -134,6 +162,13 @@ export function createLivekitAdapter(): MediaAdapter {
       if (!room) return;
       // the tab's sound goes with it when the browser offers it; this page itself is not offered (it would show itself, endlessly)
       await room.localParticipant.setScreenShareEnabled(on, on ? { audio: true, selfBrowserSurface: 'exclude', surfaceSwitching: 'include' } : undefined);
+      report();
+    },
+
+    setReceiveVideo(on: boolean): void {
+      receiveVideo = on;
+      // said out loud for each one: a track unsubscribed by hand does not come back by itself even when the room subscribes automatically
+      for (const pub of videoPubs()) pub.setSubscribed(on);
       report();
     },
 

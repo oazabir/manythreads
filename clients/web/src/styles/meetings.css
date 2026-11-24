@@ -1038,13 +1038,18 @@
   max-width: 260px;
 }
 
-/* P35-08: the call's stage (meetings/CallStage.tsx): the shared screen large, the cameras as tiles, above the call bar; "full size" fills the window. */
+/* P35-08, P17-01: the call's stage (meetings/CallStage.tsx), above the call bar; "full size" fills the window. */
 .call-stage {
   display: flex;
   flex-direction: column;
   gap: 6px;
   max-height: 45vh;
   min-height: 0;
+}
+
+/* Speaker needs a set height: the large tile fills it while the strip beside it scrolls */
+.call-stage[data-layout="speaker"]:not(.full) {
+  height: 45vh;
 }
 
 .call-stage.full {
@@ -1072,30 +1077,44 @@
   white-space: nowrap;
 }
 
+.stage-layouts {
+  display: inline-flex;
+  gap: 2px;
+}
+
 .stage-body {
   display: flex;
   flex: 1;
-  gap: 8px;
   min-height: 0;
 }
 
-.stage-cams {
-  display: flex;
-  gap: 8px;
-  min-height: 0;
-}
-
-.stage-cams.side {
-  flex-direction: column;
-  width: 200px;
-  overflow-y: auto;
-}
-
-.stage-cams.grid {
+/*
+ * One list of tiles in both layouts (a tile keeps its video when the layout or the large tile changes). Grid: equal columns. Speaker: the large tile sticks in
+ * the first column across every row, the others go down the second column, which scrolls.
+ */
+.stage-tiles {
+  display: grid;
   flex: 1;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  overflow-y: auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.stage-tiles.grid {
+  grid-template-columns: repeat(var(--stage-cols, 1), minmax(0, 1fr));
+  align-content: start;
+}
+
+.stage-tiles.speaker {
+  container-type: size;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  grid-auto-rows: max-content;
+  overflow-x: hidden;
+}
+
+.stage-tiles.speaker.solo {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .stage-tile {
@@ -1107,13 +1126,22 @@
   aspect-ratio: 16 / 9;
 }
 
-.stage-cams.grid .stage-tile {
-  width: min(320px, 100%);
+/* in the grid a shared screen takes two columns and two rows when there are columns to spare (a pinned tile stays one cell: pinning never moves a neighbour) */
+.stage-tiles.grid.wide .stage-tile.screen {
+  grid-column: span 2;
+  grid-row: span 2;
 }
 
-.stage-tile.big {
-  flex: 1;
-  min-width: 0;
+.stage-tiles.speaker .stage-tile {
+  grid-column: 2;
+}
+
+.stage-tiles.speaker .stage-tile.big {
+  position: sticky;
+  top: 0;
+  grid-column: 1;
+  grid-row: 1 / span var(--stage-strip, 1);
+  height: 100cqh;
   aspect-ratio: auto;
 }
 
@@ -1132,6 +1160,23 @@
   transform: scaleX(-1);
 }
 
+/* the speaking ring and the pinned mark: drawn above the video, inside the tile, so nothing around it moves */
+.stage-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.stage-tile.pinned::after {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.stage-tile.speaking::after {
+  box-shadow: inset 0 0 0 3px var(--ok);
+}
+
 .stage-tile figcaption {
   position: absolute;
   bottom: 6px;
@@ -1147,8 +1192,81 @@
   white-space: nowrap;
 }
 
+.stage-pin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--scrim);
+  color: var(--stage-ink);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.stage-pin:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.stage-pin[aria-pressed="true"],
+.stage-tile:hover .stage-pin {
+  opacity: 1;
+}
+
+/* the video tiles past the sixteen drawn: one tile with their count */
+.stage-more {
+  display: grid;
+  place-items: center;
+  color: var(--stage-ink);
+}
+
+.stage-more-n {
+  font-size: var(--fs-h1);
+  font-weight: 600;
+}
+
 .stage-show {
   align-self: flex-start;
+}
+
+/* a weak connection: the bar suggests audio only, laid over the top of the bar so nothing below it moves */
+.call-suggest {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  left: 16px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm);
+  background: var(--warn-wash);
+  box-shadow: var(--menu-shadow);
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+}
+
+.call-suggest-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.call-chip-btn {
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-caption);
+  font-weight: 600;
 }
 
 @media (width <= 760px) {
@@ -1156,18 +1274,42 @@
     max-height: 40vh;
   }
 
-  .stage-body {
-    flex-direction: column;
+  .call-stage[data-layout="speaker"]:not(.full) {
+    height: 40vh;
   }
 
-  .stage-cams.side {
-    flex-direction: row;
-    width: auto;
-    overflow-x: auto;
+  /* a phone: the large tile on top, sticking to the left edge, and a strip below it that scrolls sideways */
+  .stage-tiles.speaker {
+    grid-template-rows: minmax(0, 1fr) 79px;
+    grid-template-columns: none;
+    grid-auto-columns: 140px;
+    grid-auto-flow: column;
+    overflow: auto hidden;
+    overscroll-behavior-x: contain;
   }
 
-  .stage-cams.side .stage-tile {
-    width: 140px;
-    flex: none;
+  .stage-tiles.speaker.solo {
+    grid-template-rows: minmax(0, 1fr);
+    grid-auto-columns: 100%;
+  }
+
+  .stage-tiles.speaker .stage-tile {
+    grid-row: 2;
+    grid-column: auto;
+    aspect-ratio: auto;
+  }
+
+  .stage-tiles.speaker .stage-tile.big {
+    top: auto;
+    left: 0;
+    grid-row: 1;
+    grid-column: 1 / span var(--stage-strip, 1);
+    width: 100cqw;
+    height: auto;
+  }
+
+  /* a touch screen has no hover, so the pin stays in view */
+  .stage-pin {
+    opacity: 1;
   }
 }

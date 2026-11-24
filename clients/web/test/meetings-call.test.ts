@@ -763,6 +763,91 @@ describe('camera and screen on the call (P35-08)', () => {
   });
 });
 
+describe('audio only (P17-01)', () => {
+  it('stops receiving video and turns the camera off; off again receives video, the camera stays off', async () => {
+    const t = await connected();
+    await t.c.toggleCamera();
+    t.media().remoteVideo(NADIA, 'camera', true);
+    expect(t.c.getState().videos).toHaveLength(2);
+    await t.c.setAudioOnly(true);
+    expect(t.c.getState().audioOnly).toBe(true);
+    expect(t.media().state.receiveVideo).toBe(false);
+    expect(t.media().state.cameraOn).toBe(false);
+    expect(t.c.getState().videos).toEqual([]);
+    // the camera stays off while audio only is on
+    await t.c.toggleCamera();
+    expect(t.media().state.cameraOn).toBe(false);
+    expect(t.c.getState().notice).toMatch(/Audio only is on/);
+    await t.c.setAudioOnly(false);
+    expect(t.media().state.receiveVideo).toBe(true);
+    expect(t.c.getState().videos).toEqual([expect.objectContaining({ actorId: NADIA, source: 'camera' })]);
+    expect(t.c.getState().notice).toBeNull();
+  });
+
+  it('a weak connection suggests audio only and never switches by itself; Not now keeps it away for the call', async () => {
+    const t = await connected();
+    t.media().remoteVideo(NADIA, 'camera', true);
+    t.media().quality('poor');
+    expect(t.c.getState().audioOnlySuggested).toBe(true);
+    expect(t.c.getState().audioOnly).toBe(false);
+    expect(t.media().state.receiveVideo).toBe(true);
+    t.media().quality('good');
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+    t.media().quality('poor');
+    t.c.dismissAudioOnly();
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+    t.media().quality('lost');
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+  });
+
+  it('is not suggested when there is no video to drop, and taking it clears the suggestion', async () => {
+    const t = await connected();
+    t.media().quality('poor');
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+    t.media().remoteVideo(NADIA, 'camera', true);
+    expect(t.c.getState().audioOnlySuggested).toBe(true);
+    await t.c.setAudioOnly(true);
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+  });
+
+  it('turning audio only off again counts as an answer: the suggestion does not come back in this call', async () => {
+    const t = await connected();
+    t.media().remoteVideo(NADIA, 'camera', true);
+    await t.c.setAudioOnly(true);
+    await t.c.setAudioOnly(false);
+    t.media().quality('poor');
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+  });
+
+  it('a new connection is judged afresh: the old poor reading does not suggest audio only on it', async () => {
+    const t = await connected();
+    t.media().remoteVideo(NADIA, 'camera', true);
+    t.media().quality('poor');
+    expect(t.c.getState().audioOnlySuggested).toBe(true);
+    t.media().lose();
+    await t.clock.advance(5_000);
+    expect(t.c.getState().phase).toBe('connected');
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+    t.adapters.at(-1)!.remoteVideo(NADIA, 'camera', true);
+    expect(t.c.getState().audioOnlySuggested).toBe(false);
+    t.adapters.at(-1)!.quality('poor');
+    expect(t.c.getState().audioOnlySuggested).toBe(true);
+  });
+
+  it('a new connection keeps audio only on; a new call starts without it', async () => {
+    const t = await connected();
+    await t.c.setAudioOnly(true);
+    t.media().lose();
+    await t.clock.advance(5_000);
+    expect(t.c.getState().phase).toBe('connected');
+    // the new connection joins taking sound only, from the start (not video first and then unsubscribed)
+    expect(t.adapters.at(-1)!.state.receiveVideo).toBe(false);
+    expect(t.adapters.at(-1)!.joinedReceivingVideo).toBe(false);
+    await t.c.leave();
+    expect(t.c.getState().audioOnly).toBe(false);
+  });
+});
+
 describe('video calls (P36-02)', () => {
   it('the person who starts a video call is in it with the camera on', async () => {
     const r = rig({ room: { kind: 'video' } });

@@ -1,5 +1,6 @@
 import {
   AndroidIcon, BoardIcon as BoardIcon_, CallIcon, ChatIcon as ProChat, ClockIcon as ProClock, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, RecordIcon, ShareIcon as ProShare, SoundwaveIcon, TuneIcon, VideoIcon as ProVideo, LaptopIcon, FullScreenMaximizeIcon, FullScreenMinimizeIcon,
+  GridIcon as ProGrid, PersonIcon, PinIcon as ProPin, PinOffIcon as ProPinOff, PictureInPictureEnterIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -33,3 +34,10 @@ export const CameraIcon = proIcon(ProVideo);
 export const ScreenIcon = proIcon(LaptopIcon);
 export const MaximizeIcon = proIcon(FullScreenMaximizeIcon);
 export const MinimizeIcon = proIcon(FullScreenMinimizeIcon);
+
+/* P17-01: the stage's layouts (Grid, Speaker), pinning a tile, and the floating picture-in-picture window. */
+export const GridIcon = proIcon(ProGrid);
+export const SpeakerIcon = proIcon(PersonIcon);
+export const PinIcon = proIcon(ProPin, 14);
+export const PinOffIcon = proIcon(ProPinOff, 14);
+export const PipIcon = proIcon(PictureInPictureEnterIcon);

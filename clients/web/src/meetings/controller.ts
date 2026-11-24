@@ -4,6 +4,7 @@ import { canOfferServer, enginePlan, planConsent, micMayOpen, writtenOnServer, t
 import type { CallApi, addNotetaker, answerRecordConsent, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
 import type { StreamStatus, TranscribeEngine } from './engine';
 import { AUDIO_DEFAULTS, type AdapterEvents, type AdapterLoader, type Connection, type DeviceLists, type MediaAdapter, type VideoTile } from './media';
+import { suggestAudioOnly, type ConnectionQuality } from './layout';
 import {
   HEARTBEAT_EVERY_MS,
   LIVE_POLL_MS,
@@ -19,7 +20,7 @@ import {
   type CaptionLine,
   type RecordConsentPlan,
 } from './model';
-import type { CallPrefs, KeyValue } from './prefs';
+import type { CallPrefs, KeyValue, StageLayout } from './prefs';
 import { savePrefs } from './prefs';
 import type { Sounds } from './sounds';
 
@@ -80,6 +81,10 @@ export type CallState = {
   error: string | null;
   /** The cameras and shared screens in the room (P35-08), this person's own included. */
   videos: readonly VideoTile[];
+  /** Audio only (P17-01): other people's video is not received and this person's camera is off, for a weak connection. Lasts for this call. */
+  audioOnly: boolean;
+  /** The connection is weak: the bar offers "Audio only" (a suggestion; nothing is switched by itself). */
+  audioOnlySuggested: boolean;
 };
 
 /** Whether this person's camera or screen is on, and who else is sharing a screen (one sharer at a time). */
@@ -149,6 +154,8 @@ const IDLE = (prefs: CallPrefs): CallState => ({
   notice: null,
   error: null,
   videos: [],
+  audioOnly: false,
+  audioOnlySuggested: false,
 });
 
 const GONE_STATUSES = new Set([403, 404]);
@@ -188,6 +195,9 @@ export class CallController {
   private sentConsent = false;
   /** Counts the person's consent answers (once as one leaves, once as the server's reply comes back): a room read that spans one may not have seen it. */
   private answerEpoch = 0;
+  /** This person's connection as the media library last judged it, and whether they said "Not now" to audio only in this call (P17-01). */
+  private quality: ConnectionQuality = 'unknown';
+  private audioOnlyDismissed = false;
 
   constructor(private readonly deps: CallDeps) {
     this.state = IDLE(deps.prefs);
@@ -319,6 +329,8 @@ export class CallController {
 
   private async enter(meeting: Meeting, join: MeetingJoin, gen: number): Promise<void> {
     this.leaving = false;
+    this.quality = 'unknown';
+    this.audioOnlyDismissed = false;
     this.join = join;
     this.sentConsent = false;
     this.lastPresent = null;
@@ -327,7 +339,7 @@ export class CallController {
     try {
       adapter = await this.deps.loadAdapter(join.provider);
       if (gen !== this.generation) return;
-      await adapter.connect(join, { ...AUDIO_DEFAULTS, inputId: this.state.prefs.inputId, outputId: this.state.prefs.outputId }, this.eventsFor(gen));
+      await adapter.connect(join, { ...AUDIO_DEFAULTS, inputId: this.state.prefs.inputId, outputId: this.state.prefs.outputId }, this.eventsFor(gen), { receiveVideo: !this.state.audioOnly });
     } catch (e) {
       if (gen !== this.generation) return;
       // we told the server we joined; take that back so the room does not count a person who never got in
@@ -380,6 +392,12 @@ export class CallController {
       videos: (tiles) => {
         if (gen !== this.generation) return;
         this.set({ videos: tiles });
+        this.judgeAudioOnly();
+      },
+      quality: (q) => {
+        if (gen !== this.generation) return;
+        this.quality = q;
+        this.judgeAudioOnly();
       },
       micFailed: () => {
         if (gen !== this.generation) return;
@@ -540,9 +558,12 @@ export class CallController {
       this.micOpen = false;
       // a camera and a shared screen do not come back by themselves after a new connection: the person turns them on again
       this.set({ videos: [] });
+      // the new connection is judged afresh
+      this.quality = 'unknown';
+      if (this.state.audioOnlySuggested) this.set({ audioOnlySuggested: false });
       await old?.disconnect().catch(() => undefined);
       const adapter = await this.deps.loadAdapter(res.join.provider);
-      await adapter.connect(res.join, { ...AUDIO_DEFAULTS, inputId: this.state.prefs.inputId, outputId: this.state.prefs.outputId }, this.eventsFor(gen));
+      await adapter.connect(res.join, { ...AUDIO_DEFAULTS, inputId: this.state.prefs.inputId, outputId: this.state.prefs.outputId }, this.eventsFor(gen), { receiveVideo: !this.state.audioOnly });
       if (gen !== this.generation) {
         void adapter.disconnect();
         return;
@@ -713,6 +734,10 @@ export class CallController {
     const adapter = this.adapter;
     if (!adapter || this.state.phase !== 'connected') return;
     const { cameraOn } = videoState(this.state.videos);
+    if (!cameraOn && this.state.audioOnly) {
+      this.set({ notice: 'Audio only is on. Turn it off to use your camera.' });
+      return;
+    }
     try {
       await adapter.setCamera(!cameraOn);
     } catch {
@@ -737,6 +762,30 @@ export class CallController {
       if (e instanceof Error && (e.name === 'NotAllowedError' || e.name === 'AbortError')) return;
       this.set({ notice: 'Your screen could not be shared. Try again, or pick a single window or tab.' });
     }
+  }
+
+  // ---- audio only (P17-01) -------------------------------------------------------------------------------------------------------------------------
+  /** Audio only on: other people's video stops coming in and this person's camera goes off. Off: their video comes in again (the camera stays off until turned on). */
+  async setAudioOnly(on: boolean): Promise<void> {
+    if (this.state.audioOnly === on) return;
+    // turning it off again is an answer too: the suggestion is not offered again in this call
+    if (!on) this.audioOnlyDismissed = true;
+    this.set({ audioOnly: on, audioOnlySuggested: false, notice: !on && this.state.notice?.startsWith('Audio only is on') ? null : this.state.notice });
+    const adapter = this.adapter;
+    if (!adapter) return;
+    adapter.setReceiveVideo(!on);
+    if (on && videoState(this.state.videos).cameraOn) await adapter.setCamera(false).catch(() => undefined);
+  }
+
+  /** "Not now" on the suggestion: it is not offered again in this call. */
+  dismissAudioOnly(): void {
+    this.audioOnlyDismissed = true;
+    if (this.state.audioOnlySuggested) this.set({ audioOnlySuggested: false });
+  }
+
+  private judgeAudioOnly(): void {
+    const next = suggestAudioOnly({ quality: this.quality, audioOnly: this.state.audioOnly, dismissed: this.audioOnlyDismissed, videoCount: this.state.videos.length });
+    if (next !== this.state.audioOnlySuggested) this.set({ audioOnlySuggested: next });
   }
 
   /** Draws a camera or a screen in a `<video>`; the returned function takes it off. Nothing happens outside a room. */
@@ -829,6 +878,18 @@ export class CallController {
   }
   setSounds(on: boolean): void {
     const prefs = { ...this.state.prefs, sounds: on };
+    savePrefs(this.deps.storage, prefs);
+    this.set({ prefs });
+  }
+  /** The video layout (P17-01), kept with the other call choices. */
+  setLayout(layout: StageLayout): void {
+    const prefs = { ...this.state.prefs, layout };
+    savePrefs(this.deps.storage, prefs);
+    this.set({ prefs });
+  }
+  /** Picture-in-picture when the tab is left (P17-01). */
+  setPip(on: boolean): void {
+    const prefs = { ...this.state.prefs, pip: on };
     savePrefs(this.deps.storage, prefs);
     this.set({ prefs });
   }

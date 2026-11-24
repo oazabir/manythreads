@@ -1,4 +1,5 @@
 import type { MeetingJoin } from '@manythreads/shared';
+import type { ConnectionQuality } from './layout';
 import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter, VideoTile } from './media';
 
 /*
@@ -8,9 +9,13 @@ import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter, VideoTile 
 
 export interface FakeAdapter extends MediaAdapter {
   readonly joins: MeetingJoin[];
-  readonly state: { connected: boolean; micOn: boolean; deafened: boolean; cameraOn: boolean; screenOn: boolean; inputId: string | null; outputId: string | null; options: AudioOptions | null };
+  readonly state: { connected: boolean; micOn: boolean; deafened: boolean; cameraOn: boolean; screenOn: boolean; receiveVideo: boolean; inputId: string | null; outputId: string | null; options: AudioOptions | null };
   /** Another person turned a camera or a screen on or off (P35-08). */
   remoteVideo(actorId: string, source: VideoTile['source'], on: boolean): void;
+  /** What `connect` was told about video (P17-01): false when the call joined in audio only. */
+  readonly joinedReceivingVideo: boolean | null;
+  /** This person's connection got better or worse (P17-01). */
+  quality(q: ConnectionQuality): void;
   /** Make the next `setScreen(true)` fail like a cancelled picker (once). */
   cancelScreenPicker(): void;
   /** Tile keys a `<video>` was attached to and not detached yet. */
@@ -54,7 +59,8 @@ export function createFakeAdapter(): FakeAdapter {
   const tiles = (): VideoTile[] => [
     ...(state.cameraOn ? [{ key: `${me}:camera`, actorId: me, source: 'camera' as const, local: true }] : []),
     ...(state.screenOn ? [{ key: `${me}:screen`, actorId: me, source: 'screen' as const, local: true }] : []),
-    ...remote.values(),
+    // audio only: other people's video is not received
+    ...(state.receiveVideo ? remote.values() : []),
   ];
   const report = (): void => events?.videos(tiles());
   let devices: DeviceLists = {
@@ -69,15 +75,23 @@ export function createFakeAdapter(): FakeAdapter {
     inputId: 'mic-built-in',
     outputId: 'out-built-in',
   };
-  const state: FakeAdapter['state'] = { connected: false, micOn: false, deafened: false, cameraOn: false, screenOn: false, inputId: null, outputId: null, options: null };
+  const state: FakeAdapter['state'] = { connected: false, micOn: false, deafened: false, cameraOn: false, screenOn: false, receiveVideo: true, inputId: null, outputId: null, options: null };
   const adapter: FakeAdapter = {
     joins: [],
+    joinedReceivingVideo: null,
     state,
     attached: new Set<string>(),
     remoteVideo(actorId, source, on) {
       const key = `${actorId}:${source}`;
       if (on) remote.set(key, { key, actorId, source, local: false });
       else remote.delete(key);
+      report();
+    },
+    quality(q) {
+      events?.quality(q);
+    },
+    setReceiveVideo(on) {
+      state.receiveVideo = on;
       report();
     },
     cancelScreenPicker() {
@@ -106,7 +120,7 @@ export function createFakeAdapter(): FakeAdapter {
       devices = next;
       events?.devices();
     },
-    async connect(join, options, ev) {
+    async connect(join, options, ev, video) {
       if (failConnect !== null) {
         const message = failConnect;
         failConnect = null;
@@ -119,6 +133,8 @@ export function createFakeAdapter(): FakeAdapter {
       state.options = options;
       state.inputId = options.inputId;
       state.outputId = options.outputId;
+      state.receiveVideo = video?.receiveVideo ?? true;
+      (adapter as { joinedReceivingVideo: boolean | null }).joinedReceivingVideo = state.receiveVideo;
       ev.connection('connected');
     },
     async setMic(on) {
@@ -164,6 +180,7 @@ export function createFakeAdapter(): FakeAdapter {
       state.micOn = false;
       state.cameraOn = false;
       state.screenOn = false;
+      state.receiveVideo = true;
       remote.clear();
       events = null;
     },

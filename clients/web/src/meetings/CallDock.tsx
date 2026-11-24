@@ -4,7 +4,7 @@ import { Avatar } from '../components/ui';
 import { useDismiss } from '../shell/useDismiss';
 import { useNarrow } from '../shell/useNarrow';
 import { videoState, type CallState } from './controller';
-import { CallStage } from './CallStage';
+import { CallStage, pipSupported } from './CallStage';
 import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenOnServer } from './consent';
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
@@ -136,6 +136,18 @@ function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
         <input type="checkbox" checked={call.prefs.sounds} onChange={(e) => c.setSounds(e.target.checked)} />
         <span>Play a sound when people join or leave</span>
       </label>
+      <div className="call-sec" role="group" aria-label="Video">
+        <label className="call-check">
+          <input type="checkbox" checked={call.audioOnly} onChange={(e) => void c.setAudioOnly(e.target.checked)} data-testid="call-audio-only" />
+          <span>Audio only: no video comes in and your camera stays off (for a weak connection)</span>
+        </label>
+        {pipSupported() ? (
+          <label className="call-check">
+            <input type="checkbox" checked={call.prefs.pip} onChange={(e) => c.setPip(e.target.checked)} data-testid="call-pip-toggle" />
+            <span>When I leave this tab, keep the video in a small window on top</span>
+          </label>
+        ) : null}
+      </div>
       <p className="call-hint">Mute or unmute from anywhere with Ctrl+Shift+Space (Cmd+Shift+Space on a Mac). Echo cancellation and noise suppression are on.</p>
       {offer ? (
         <div className="call-sec">
@@ -196,6 +208,7 @@ export function CallDock() {
   const micLabel = call.deafened ? 'Unmute and listen again' : call.muted ? 'Unmute' : 'Mute';
   const video = videoState(call.videos);
   const sharerName = video.otherSharer ? (call.present.find((p) => p.actorId === video.otherSharer)?.displayName ?? 'Someone') : null;
+  const cameraLabel = video.cameraOn ? 'Turn your camera off' : call.audioOnly ? 'Audio only is on: turn it off to use your camera' : 'Turn your camera on';
   const screenLabel = video.screenOn ? 'Stop sharing your screen' : sharerName ? `${sharerName} is sharing their screen` : 'Share your screen';
 
   return (
@@ -207,6 +220,13 @@ export function CallDock() {
       {call.phase === 'connected' ? <RecordConsentPrompt call={call} /> : null}
       <EngineNotice call={call} />
       {call.notice ? <p className="call-notice" role="status" data-testid="call-notice">{call.notice}</p> : null}
+      {call.phase === 'connected' && call.audioOnlySuggested ? (
+        <div className="call-suggest" role="status" data-testid="call-audio-suggest">
+          <span className="call-suggest-text">Your connection is weak. Switch to audio only to keep the call going?</span>
+          <button type="button" className="btn primary s" onClick={() => void c.setAudioOnly(true)} data-testid="call-audio-suggest-yes">Audio only</button>
+          <button type="button" className="btn s" onClick={() => c.dismissAudioOnly()} data-testid="call-audio-suggest-no">Not now</button>
+        </div>
+      ) : null}
       {call.phase === 'connected' ? <CallStage call={call} /> : null}
       <div className="call-row">
         <div className="call-id">
@@ -231,6 +251,11 @@ export function CallDock() {
           ) : null}
         </ul>
         <RecordingChip call={call} />
+        {call.audioOnly ? (
+          <button type="button" className="call-chip wait call-chip-btn" title="Video is off for this call. Press to see video again." aria-label="Audio only is on. Turn video back on" onClick={() => void c.setAudioOnly(false)} data-testid="call-audio-only-chip">
+            Audio only
+          </button>
+        ) : null}
         {chip ? <span className={`call-chip ${chip.tone}`} title={chip.title} data-testid="call-chip">{chip.label}</span> : null}
         <div className="call-controls">
           {lost ? (
@@ -243,7 +268,7 @@ export function CallDock() {
               <button type="button" className={`call-btn ${call.deafened ? 'on' : ''}`} aria-pressed={call.deafened} aria-label={call.deafened ? 'Hear the room again' : 'Deafen: stop hearing the room'} title={call.deafened ? 'Hear the room again' : 'Deafen'} disabled={connecting} onClick={() => c.toggleDeafen()} data-testid="call-deafen">
                 <HeadphonesIcon off={call.deafened} />
               </button>
-              <button type="button" className={`call-btn ${video.cameraOn ? 'live' : ''}`} aria-pressed={video.cameraOn} aria-label={video.cameraOn ? 'Turn your camera off' : 'Turn your camera on'} title={video.cameraOn ? 'Camera off' : 'Camera on'} disabled={connecting || call.phase !== 'connected'} onClick={() => void c.toggleCamera()} data-testid="call-camera">
+              <button type="button" className={`call-btn ${video.cameraOn ? 'live' : ''}`} aria-pressed={video.cameraOn} aria-label={cameraLabel} title={video.cameraOn ? 'Camera off' : call.audioOnly ? cameraLabel : 'Camera on'} disabled={connecting || call.phase !== 'connected' || (call.audioOnly && !video.cameraOn)} onClick={() => void c.toggleCamera()} data-testid="call-camera">
                 <CameraIcon />
               </button>
               <button type="button" className={`call-btn ${video.screenOn ? 'live' : ''}`} aria-pressed={video.screenOn} aria-label={screenLabel} title={screenLabel} disabled={connecting || call.phase !== 'connected'} onClick={() => void c.toggleScreen()} data-testid="call-screen">

@@ -1,4 +1,5 @@
 import type { MeetingJoin } from '@manythreads/shared';
+import type { ConnectionQuality } from './layout';
 
 /*
  * The seam between the room and the media library (PLAN P15-04). The call controller talks to a `MediaAdapter`; which one it gets depends on the provider
@@ -22,6 +23,8 @@ export type AdapterEvents = {
   micFailed(reason: string): void;
   /** The cameras and shared screens in the room changed (P35-08): one tile per person and source, this person's own included. */
   videos(tiles: VideoTile[]): void;
+  /** How good this person's own connection to the media server is now (P17-01): a weak one gets "Audio only" suggested. */
+  quality(q: ConnectionQuality): void;
 };
 
 /** A camera or a shared screen in the room (P35-08). `key` is what `attachVideo` takes. */
@@ -40,8 +43,11 @@ export type AudioOptions = {
 export const AUDIO_DEFAULTS: AudioOptions = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, inputId: null, outputId: null };
 
 export interface MediaAdapter {
-  /** Connects to the room with the join token. The microphone stays closed until `setMic(true)`. */
-  connect(join: MeetingJoin, options: AudioOptions, events: AdapterEvents): Promise<void>;
+  /**
+   * Connects to the room with the join token. The microphone stays closed until `setMic(true)`. With `receiveVideo: false` (audio only, P17-01) the connection
+   * takes only sound from the start: no video is subscribed, not even for a moment while joining.
+   */
+  connect(join: MeetingJoin, options: AudioOptions, events: AdapterEvents, video?: { receiveVideo: boolean }): Promise<void>;
   /** Opens (true) or closes (false) the microphone. Opening may ask the person for permission and rejects if it is refused. */
   setMic(on: boolean): Promise<void>;
   /** Deafened: nothing of the room is played to the person. */
@@ -53,6 +59,8 @@ export interface MediaAdapter {
   setCamera(on: boolean): Promise<void>;
   /** Shares a screen, window or tab, with the tab's sound when the browser offers it (P35-08); off stops it. Rejects when the person cancels the picker. */
   setScreen(on: boolean): Promise<void>;
+  /** Audio only (P17-01): false stops receiving other people's cameras and screens (and any that start later); true receives them again. */
+  setReceiveVideo(on: boolean): void;
   /** Draws a tile's video in `el`; the returned function takes it off again. */
   attachVideo(key: string, el: HTMLVideoElement): () => void;
   disconnect(): Promise<void>;
