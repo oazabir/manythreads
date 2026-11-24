@@ -57,6 +57,8 @@ export const BookmarkPlace = z.object({
   name: z.string(),
   kind: ChannelKind,
   teamId: TeamId.nullable(),
+  /** A conversation with a bot: the bot's name ("Conversation with Brain"), when the caller can read the bot; null otherwise. */
+  botName: z.string().nullable(),
 });
 export type BookmarkPlace = z.infer<typeof BookmarkPlace>;
 
@@ -87,12 +89,39 @@ export const SavedMessageItem = z.object({
 });
 export type SavedMessageItem = z.infer<typeof SavedMessageItem>;
 
-export const SavedBookmarkItem = z.discriminatedUnion('kind', [SavedThreadItem, SavedMessageItem]);
+/** Where a bookmarked file lives: an attachment of a channel (or of a team), a Personal file of the person, or a file of a team's repository. */
+export const SavedFileStore = z.enum(['attachment', 'personal', 'repo']);
+export type SavedFileStore = z.infer<typeof SavedFileStore>;
+
+/** The team a bookmarked file belongs to, when it belongs to one the caller can read: enough to say "Engineering" and to open its Files. */
+export const BookmarkTeam = z.object({ id: TeamId, slug: z.string(), name: z.string() });
+export type BookmarkTeam = z.infer<typeof BookmarkTeam>;
+
+/**
+ * A bookmarked file as the caller may read it now. An attachment carries its channel (and its size); a Personal file its path in the person's space; a file
+ * of a repository its team and path. A repository file kept by its path that is no longer there (renamed, moved or deleted) stays readable with
+ * `missing: true` and no size: the team is still the caller's, and the viewer says the file is no longer there.
+ */
+export const SavedFileItem = z.object({
+  kind: z.literal('file'),
+  store: SavedFileStore,
+  name: z.string(),
+  /** A Personal file's or a repository file's path; null for an attachment (it opens by its id). */
+  path: z.string().nullable(),
+  size: z.number().int().nonnegative().nullable(),
+  mime: z.string().nullable(),
+  channel: BookmarkPlace.nullable(),
+  team: BookmarkTeam.nullable(),
+  missing: z.boolean(),
+});
+export type SavedFileItem = z.infer<typeof SavedFileItem>;
+
+export const SavedBookmarkItem = z.discriminatedUnion('kind', [SavedThreadItem, SavedMessageItem, SavedFileItem]);
 export type SavedBookmarkItem = z.infer<typeof SavedBookmarkItem>;
 
 /**
- * One bookmark. `item` is null when the caller can no longer read what it points at (it was deleted, or their access ended, or the kind is not
- * shown yet): the list then says "No longer available" and carries nothing of it.
+ * One bookmark. `item` is null when the caller can no longer read what it points at (it was deleted, or their access ended): the list then says
+ * "No longer available" and carries nothing of it.
  */
 export const SavedBookmark = z.object({
   id: BookmarkId,
@@ -139,7 +168,8 @@ export const savedBookmarkKeysRoute = { method: 'GET', path: '/api/bookmarks/key
 
 /**
  * Bookmark something. Idempotent: 201 with a new bookmark, 200 with the one already there. 403 when the caller cannot see it (an unknown id looks the
- * same), 404 when it is gone, 409 when the list is full.
+ * same; for a file, also one that was deleted), 404 when it is gone (a deleted message, a repository path with no file), 400 for a folder or a path that
+ * is not a file's, 409 when the list is full.
  */
 export const SaveBookmarkRequest = z.strictObject({ target: BookmarkTarget });
 export type SaveBookmarkRequest = z.infer<typeof SaveBookmarkRequest>;

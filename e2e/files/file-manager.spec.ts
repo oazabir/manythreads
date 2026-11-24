@@ -209,7 +209,7 @@ test('the right-click menu: a row has its actions, several rows have the group o
     const menu = page.getByTestId('context-menu');
     await rowAt(page, 'Notes/alpha.md').click({ button: 'right' });
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole('menuitem')).toHaveText(['Preview', 'Version history', 'Download', 'Rename', 'Move', 'Send to a team…', 'Delete']);
+    await expect(menu.getByRole('menuitem')).toHaveText(['Preview', 'Version history', 'Download', 'Bookmark', 'Rename', 'Move', 'Send to a team…', 'Delete']);
     // the right-clicked row is ticked, and Escape closes the menu
     await expect(rowAt(page, 'Notes/alpha.md')).toHaveAttribute('data-selected', 'true');
     await page.keyboard.press('Escape');

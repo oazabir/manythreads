@@ -542,6 +542,32 @@
   color: var(--human);
 }
 
+/* the actions of the person's own message (Edit and ask again, Bookmark) */
+.ch-person-acts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+}
+
+/* with a mouse on a wide screen the bookmark waits for the pointer or the focus (on, it stays); on a touch screen or a phone it is always there */
+@media (hover: hover) and (width > 760px) {
+  .ch-msg.person:not(:hover) .ch-person-acts .ch-act:not(.on, :focus-visible) {
+    opacity: 0;
+  }
+}
+
+/* the message a bookmark opened the chat at (`?message=`) */
+.ch-msg.hl .ch-bubble,
+.ch-msg.bot.hl .ch-body {
+  box-shadow: 0 0 0 2px var(--human);
+}
+
+.ch-msg.bot.hl .ch-body {
+  border-radius: var(--radius-sm);
+  background: var(--human-wash);
+}
+
 .ch-variants {
   display: inline-flex;
   align-items: center;

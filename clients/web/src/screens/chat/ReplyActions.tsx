@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ChatVote } from '@manythreads/shared';
 import { CHAT_FEEDBACK_REASON_MAX } from '@manythreads/shared';
 import { BackIcon, CopyTextIcon, NextIcon, RegenerateIcon, ThumbDownIcon, ThumbUpIcon } from '../../shell/icons';
 
 /**
- * What a person can do with one answer, under it: copy it, ask again, move between the answers to the same message (‹ 2 / 3 ›), and give a thumb with a line of
+ * What a person can do with one answer, under it: copy it, bookmark it, ask again, move between the answers to the same message (‹ 2 / 3 ›), and give a thumb with a line of
  * why. Sharing, saving as a page and handing to a bot belong to an Answer card and are drawn by it. Every control is a real button with a name.
  */
 export type ReplyActionsProps = {
@@ -18,6 +18,8 @@ export type ReplyActionsProps = {
   onPrevious: (() => void) | null;
   onNext: (() => void) | null;
   onVote: (vote: ChatVote | null, reason: string) => void;
+  /** The bookmark toggle of the answer (P36-08), drawn next to Copy; left out where bookmarks are not offered. */
+  bookmark?: ReactNode;
 };
 
 export function ReplyActions(p: ReplyActionsProps) {
@@ -42,6 +44,7 @@ export function ReplyActions(p: ReplyActionsProps) {
         </span>
       ) : null}
       <button type="button" className="ch-act" aria-label="Copy the answer" title="Copy" onClick={p.onCopy} data-testid="chat-copy"><CopyTextIcon /></button>
+      {p.bookmark ?? null}
       <button type="button" className="ch-act" aria-label="Ask again" title="Ask again" disabled={!p.canRegenerate} onClick={p.onRegenerate} data-testid="chat-regenerate"><RegenerateIcon /></button>
       <button type="button" className={`ch-act ${p.vote === 'up' ? 'on' : ''}`} aria-label="Good answer" aria-pressed={p.vote === 'up'} title="Good answer" onClick={() => press('up')} data-testid="chat-thumb-up"><ThumbUpIcon /></button>
       <button type="button" className={`ch-act ${p.vote === 'down' ? 'on' : ''}`} aria-label="Poor answer" aria-pressed={p.vote === 'down'} title="Poor answer" onClick={() => press('down')} data-testid="chat-thumb-down"><ThumbDownIcon /></button>

@@ -11,6 +11,8 @@ import { whenLabel } from './when';
 import { RowViewer } from './RowViewer';
 import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
+import { BookmarkToggle } from '../../bookmarks/BookmarkButton';
+import { useFileBookmarkTarget } from '../../bookmarks/useFileBookmark';
 
 /**
  * A file opened in the middle column (as the prototype's history plate shows `bots/coder/BOT.md`): its path and who last changed it, History, and the
@@ -33,6 +35,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
   const history = row.kind === 'file' && (row.store === 'git' || row.store === 'personal') && row.readOnlyReason !== 'admin_view';
   const pr = row.readOnlyReason === 'change_by_pull_request';
   const lock = lockReason(row);
+  const bookmark = useFileBookmarkTarget(row, files);
   return (
     <div className="fview" data-landmark="file-view" data-testid="file-view" data-path={row.path}>
       <div className="fvh">
@@ -42,6 +45,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
           {lock ? <WhyReadOnly reason={lock} look="link" /> : null}
           {row.kind === 'file' ? <OpenMeeting path={row.path} personal={row.store === 'personal'} teamSlug={files.slug} /> : null}
           {history ? <button type="button" className="btn s" data-testid="open-history" onClick={() => panel.push({ type: 'history', id: historyId(row) })}>{row.store === 'personal' ? 'Versions' : 'History'}</button> : null}
+          <BookmarkToggle target={bookmark} className="icon-btn" label="Bookmark file" testId="file-bookmark" />
           <RowMenu row={row} files={files} start={actions.start} />
           <button type="button" className="btn s" data-testid="close-file" onClick={onClose}>Close</button>
         </div>

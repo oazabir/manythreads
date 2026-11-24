@@ -1,4 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { Stack } from '../fixtures/stack.ts';
+import { apiOn } from '../support/stack-browser.ts';
+import { openChatScreen, sendChat, startChatStack, waitAnswered } from '../conversations/chat-support.ts';
 import { apiAs, createChannel, openAs, postMessage, uniqueName, type Api } from './support.ts';
 
 /**
@@ -7,6 +10,11 @@ import { apiAs, createChannel, openAs, postMessage, uniqueName, type Api } from 
  * Bookmarked filter lists the thread he does not follow. The Bookmarks page has Threads and Messages: a thread opens with the thread on the right, a channel
  * message opens the channel at it, a reply opens its thread on the right. A deleted message says "No longer available" and nothing of it. Removing the last
  * bookmark hides the sidebar entry. One check at 390 px. Rafi's bookmarks are emptied first: the entry depends on his count.
+ *
+ * Steps 2 and 3: a reply opened from Bookmarks is scrolled to and highlighted in its thread (`?reply=`); a file of the team's repository is bookmarked from
+ * its row menu in Files (the row shows the mark), listed on the Files tab with its place and size, and opens in Files with its toggle on; at 390 px the You
+ * sheet has Bookmarks. A chat with Brain (its own stack, with the stand-in model that answers): the answer's bookmark next to Copy, and the Bookmarks page
+ * opens that chat at the answer, highlighted.
  */
 test.use({ actionTimeout: 10_000 });
 test.describe.configure({ mode: 'serial' });
@@ -44,6 +52,17 @@ test.beforeAll(async () => {
   ids['reply'] = (await postMessage(nadia, channel.id, `${tag} the reply worth keeping`, ids['root2'])).id;
   ids['plain'] = (await postMessage(nadia, channel.id, `${tag} plain message to keep`)).id;
   ids['gone'] = (await postMessage(nadia, channel.id, `${tag} canary words soon deleted`)).id;
+  // a long thread: the reply worth keeping is the oldest, sixty newer ones put it on an older page than the thread's first
+  ids['longRoot'] = (await postMessage(nadia, channel.id, `${tag} a long thread`)).id;
+  ids['oldReply'] = (await postMessage(nadia, channel.id, `${tag} the oldest reply of the long thread`, ids['longRoot'])).id;
+  await nadia.post('/api/test/bulk-messages', { channelId: channel.id, count: 60, threadRootId: ids['longRoot'] });
+  // a page of the team's repository for the Files part
+  ids['file'] = `pages/${tag}-notes.md`;
+  const commit = await nadia.ctx.post('/api/teams/engineering/repo/commit', {
+    data: { changes: [{ op: 'put', path: ids['file'], content: `# ${tag} notes\n\nKept to find again.\n` }], message: `Add ${tag} notes` },
+    headers: await nadia.headers(),
+  });
+  expect(commit.status(), await commit.text()).toBeLessThan(300);
   await clearRafi();
 });
 test.afterAll(async () => {
@@ -140,7 +159,12 @@ test.describe('desktop', () => {
       await expect(reply).toContainText(`Thread in # ${channel.name}`);
       await reply.getByTestId('bookmark-open').click();
       await expect(page).toHaveURL(new RegExp(`message=${ids['root2']}.*panel=thread(%3A|:)${ids['root2']}`), T);
-      await expect(row(page, 'reply')).toBeVisible(T);
+      await expect(page).toHaveURL(new RegExp(`reply=${ids['reply']}`));
+      // the reply itself is scrolled to and highlighted in the thread (step 2)
+      const inThread = page.getByTestId('thread-view').locator(`[data-message-id="${ids['reply']}"]`);
+      await expect(inThread).toBeVisible(T);
+      await expect(inThread).toHaveClass(/\bhl\b/, T);
+      await expect(inThread).toBeInViewport();
 
       await page.goBack();
       const plain = page.getByTestId('bookmark-row').filter({ hasText: 'plain message to keep' });
@@ -150,6 +174,57 @@ test.describe('desktop', () => {
     } finally {
       await context.close();
     }
+  });
+
+  test('a reply on an older page of a long thread: the thread loads back to it, scrolls to it and highlights it', async ({ browser }) => {
+    await put({ kind: 'message', messageId: ids['oldReply'] });
+    const { page, context } = await openAs(browser, 'rafi', '/t/engineering/bookmarks?tab=message');
+    try {
+      const kept = page.getByTestId('bookmark-row').filter({ hasText: 'the oldest reply of the long thread' });
+      await kept.getByTestId('bookmark-open').click();
+      await expect(page).toHaveURL(new RegExp(`reply=${ids['oldReply']}`), T);
+      const inThread = page.getByTestId('thread-view').locator(`[data-message-id="${ids['oldReply']}"]`);
+      await expect(inThread).toHaveClass(/\bhl\b/, T);
+      await expect(inThread).toBeInViewport();
+      // the highlight fades, as the channel's flash does
+      await expect(inThread).not.toHaveClass(/\bhl\b/, T);
+    } finally {
+      await context.close();
+    }
+    const id = (await keys()).items.find((k) => k.key === ids['oldReply'])?.id;
+    if (id) await rafi.ctx.delete(`/api/bookmarks/${id}`, { headers: await rafi.headers() });
+  });
+
+  test('a file of the repository: Bookmark in its row menu, the mark on the row, the Files tab, and it opens in Files with its toggle on', async ({ browser }) => {
+    const { page, context } = await openAs(browser, 'rafi', '/t/engineering/files?path=pages');
+    try {
+      const fileRow = page.locator(`[data-testid="file-row"][data-path="${ids['file']}"]`);
+      await expect(fileRow).toBeVisible(T);
+      await expect(fileRow.getByTestId('file-bookmarked-mark')).toHaveCount(0);
+      await fileRow.getByTestId('row-menu').click();
+      await page.getByTestId('row-action-bookmark').click();
+      await expect(page.getByTestId('bookmark-toast')).toHaveText('File bookmarked');
+      await expect(fileRow.getByTestId('file-bookmarked-mark')).toBeVisible(T);
+      // the menu now offers to remove it
+      await fileRow.getByTestId('row-menu').click();
+      await expect(page.getByTestId('row-action-bookmark')).toHaveText('Remove bookmark');
+      await page.keyboard.press('Escape');
+
+      await page.goto('/t/engineering/bookmarks?tab=file');
+      await expect(page.getByRole('tab', { name: /Files · 1/ })).toHaveAttribute('aria-selected', 'true', T);
+      const kept = page.getByTestId('bookmark-row').filter({ hasText: `${tag}-notes.md` });
+      await expect(kept).toContainText('Engineering files');
+      await expect(kept).toContainText(/\d+ B|KB/);
+      await kept.getByTestId('bookmark-open').click();
+      await expect(page).toHaveURL(new RegExp(`/t/engineering/files\\?open=${encodeURIComponent(ids['file']!)}`), T);
+      await expect(page.getByTestId('file-view')).toHaveAttribute('data-path', ids['file']!, T);
+      const toggle = page.getByTestId('file-view').getByTestId('file-bookmark');
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true', T);
+      await expect(toggle).toHaveAccessibleName('Remove bookmark');
+    } finally {
+      await context.close();
+    }
+    expect((await keys()).items.some((k) => k.kind === 'repo_file' && k.key.endsWith(`:${ids['file']}`))).toBe(true);
   });
 
   test('a deleted message says "No longer available", nothing of it; removing every bookmark hides the sidebar entry', async ({ browser }) => {
@@ -175,7 +250,7 @@ test.describe('desktop', () => {
       await page.getByRole('button', { name: 'Undo' }).click();
       await expect(plain).toHaveCount(1, T);
       // remove them all from the page
-      for (const tab of ['Messages', 'Threads']) {
+      for (const tab of ['Files', 'Messages', 'Threads']) {
         await page.getByRole('tab', { name: new RegExp(tab) }).click();
         const rows = page.getByTestId('bookmark-row');
         await expect(rows.first()).toBeVisible(T);
@@ -193,18 +268,89 @@ test.describe('desktop', () => {
     expect((await keys()).total).toBe(0);
   });
 
-  test('390 px: one column, the tabs on one row, no sideways scroll', async ({ browser }) => {
+  test('390 px: one column, the three tabs on one row, 44 px rows and Remove, no sideways scroll; the You sheet has Bookmarks', async ({ browser }) => {
     await put({ kind: 'thread', rootMessageId: ids['root'] });
     const { page, context } = await openAs(browser, 'rafi', '/t/engineering/bookmarks', { width: 390, height: 844 }, true);
     try {
       await expect(page.getByTestId('bookmark-row').first()).toBeVisible(T);
-      const [a, b] = await Promise.all([page.getByTestId('bookmarks-tab-thread').boundingBox(), page.getByTestId('bookmarks-tab-message').boundingBox()]);
-      expect(Math.abs(a!.y - b!.y)).toBeLessThan(2);
+      const tabs = await Promise.all(['thread', 'message', 'file'].map((t) => page.getByTestId(`bookmarks-tab-${t}`).boundingBox()));
+      for (const box of tabs) expect(Math.abs(box!.y - tabs[0]!.y)).toBeLessThan(2);
       const rowBox = await page.getByTestId('bookmark-row').first().boundingBox();
       expect(rowBox!.height).toBeGreaterThanOrEqual(44);
+      const remove = await page.getByTestId('bookmark-remove').first().boundingBox();
+      expect(remove!.height).toBeGreaterThanOrEqual(44);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+      // the You sheet of the bottom bar has Bookmarks while there is one
+      await page.goto('/t/engineering/drafts');
+      await page.getByTestId('bar-you').click();
+      const entry = page.getByTestId('account-sheet').getByTestId('menu-bookmarks');
+      await expect(entry).toBeVisible(T);
+      await entry.click();
+      await expect(page).toHaveURL(/\/t\/engineering\/bookmarks/, T);
+      await expect(page.getByTestId('bookmarks-screen')).toBeVisible(T);
     } finally {
       await context.close();
+    }
+  });
+});
+
+test.describe('a chat with Brain', () => {
+  test.skip(({ isMobile }) => isMobile, 'the desktop layout');
+  let stack: Stack;
+  test.beforeAll(async () => {
+    ({ stack } = await startChatStack());
+  });
+  test.afterAll(async () => {
+    await stack?.stop();
+  });
+
+  test('the answer’s bookmark sits next to Copy; the Bookmarks page opens the chat at the answer, highlighted; the person’s own message has one too', async ({ browser, playwright }) => {
+    test.setTimeout(150_000);
+    const api = await apiOn(playwright, stack, 'rafi');
+    let root = '';
+    let answer = '';
+    try {
+      const sent = await sendChat(api, `${uniqueName('bkchat')} what is blocking the release?`);
+      root = sent.messageId;
+      const state = await waitAnswered(api, root);
+      answer = state.turns[0]!.variants.find((v) => v.chosen)!.messageId;
+    } finally {
+      await api.ctx.dispose();
+    }
+    const { page, close } = await openChatScreen(browser, playwright, stack, 'rafi', false, `/t/engineering/chat?bot=brain&c=${root}`);
+    try {
+      const answerRow = page.locator(`[data-testid="chat-message"][data-message-id="${answer}"]`);
+      const toggle = answerRow.getByTestId('chat-bookmark');
+      await expect(toggle).toBeVisible({ timeout: 45_000 });
+      await expect(toggle).toHaveAccessibleName('Bookmark the answer');
+      // next to Copy
+      const [copy, mark] = await Promise.all([answerRow.getByTestId('chat-copy').boundingBox(), toggle.boundingBox()]);
+      expect(Math.abs(copy!.y - mark!.y)).toBeLessThan(2);
+      expect(mark!.x).toBeGreaterThan(copy!.x);
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('bookmark-toast')).toHaveText('Message bookmarked');
+      // the person's own message: its bookmark shows on hover
+      const own = page.locator(`[data-testid="chat-message"][data-message-id="${root}"]`);
+      await own.hover();
+      await own.getByTestId('chat-bookmark-own').click();
+      await expect(own.getByTestId('chat-bookmark-own')).toHaveAttribute('aria-pressed', 'true');
+
+      // open it again from Bookmarks: the chat at the answer, highlighted
+      const check = await apiOn(playwright, stack, 'rafi');
+      const mine = await check.get<{ items: Array<{ id: string; kind: string; key: string }> }>('/api/bookmarks/keys').finally(() => check.ctx.dispose());
+      const answerId = mine.items.find((k) => k.kind === 'message' && k.key === answer)?.id;
+      expect(answerId).toBeTruthy();
+      await page.goto(`${stack.origin}/t/engineering/bookmarks?tab=message`);
+      await expect(page.getByTestId('bookmark-row').filter({ hasText: 'Conversation with' })).toHaveCount(2, { timeout: 15_000 });
+      const answerBookmark = page.locator(`[data-testid="bookmark-row"][data-id="${answerId}"]`);
+      await answerBookmark.getByTestId('bookmark-open').click();
+      await expect(page).toHaveURL(new RegExp(`/t/engineering/chat\\?bot=brain&c=${root}&message=${answer}`), { timeout: 15_000 });
+      const highlighted = page.locator(`[data-testid="chat-message"][data-message-id="${answer}"]`);
+      await expect(highlighted).toHaveAttribute('data-highlight', 'true', { timeout: 15_000 });
+      await expect(highlighted).toBeInViewport();
+    } finally {
+      await close();
     }
   });
 });

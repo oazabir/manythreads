@@ -76,7 +76,7 @@ describe('bookmarking a thread and a message', () => {
     expect((await put(nadia, { kind: 'thread', rootMessageId: reply })).status).toBe(400);
   });
 
-  it('refuses what the caller cannot see (403), what is gone (404), files for now (400), a bot (403) and an unknown shape (400)', async () => {
+  it('refuses what the caller cannot see (403), what is gone (404), a bot (403) and an unknown shape (400)', async () => {
     const secret = await w.system(async (tx) => {
       const ch = (await tx.query<{ id: string }>("INSERT INTO app.channels (workspace_id, team_id, name, kind, private, created_by) SELECT $1, id, 'bm-omar-only', 'channel', true, $2 FROM app.teams WHERE slug = 'engineering' RETURNING id", [omar.workspaceId, omar.actorId])).rows[0]!.id;
       return (await tx.query<{ id: string }>("INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'secret canary', 'secret canary') RETURNING id", [omar.workspaceId, ch, omar.actorId])).rows[0]!.id;
@@ -87,11 +87,36 @@ describe('bookmarking a thread and a message', () => {
     const gone = await post(rafi, dev, 'soon deleted');
     ok(await w.call(rafi, 'DELETE', `/api/channels/${dev}/messages/${gone}`));
     expect((await put(rafi, { kind: 'message', messageId: gone })).status).toBe(404);
-    expect((await put(rafi, { kind: 'file', fileId: crypto.randomUUID() })).status).toBe(400);
-    expect((await put(rafi, { kind: 'repo_file', teamId: crypto.randomUUID(), path: 'README.md' })).status).toBe(400);
+    expect((await put(rafi, { kind: 'file', fileId: crypto.randomUUID() })).status).toBe(403);
+    expect((await put(rafi, { kind: 'repo_file', teamId: crypto.randomUUID(), path: 'README.md' })).status).toBe(403);
     expect((await put(rafi, { kind: 'pin', messageId: gone })).status).toBe(400);
     const asBot = await fetch(`${w.server.url}/api/bookmarks/keys`, { headers: { 'x-manythreads-dev-actor': JSON.stringify({ kind: 'bot', id: botActor, workspaceId: omar.workspaceId }) } });
     expect(asBot.status).toBe(403);
+  });
+});
+
+describe('a message of a conversation with a bot', () => {
+  it('names the bot of the conversation, and the bot as the author of its answer', async () => {
+    const { channel, answer } = await w.system(async (tx) => {
+      const bot = (await tx.query<{ id: string }>("SELECT id FROM app.bots WHERE slug = 'bmbot'")).rows[0]!.id;
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      const ch = (
+        await tx.query<{ id: string }>(
+          "INSERT INTO app.channels (workspace_id, team_id, name, kind, private, bot_id, created_by) VALUES ($1, $2, '', 'bot_conversation', true, $3, $4) RETURNING id",
+          [rafi.workspaceId, team, bot, rafi.actorId],
+        )
+      ).rows[0]!.id;
+      await tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2)', [ch, rafi.personId]);
+      const root = (await tx.query<{ id: string }>("INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'my question', 'my question') RETURNING id", [rafi.workspaceId, ch, rafi.actorId])).rows[0]!.id;
+      const reply = (
+        await tx.query<{ id: string }>("INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id) VALUES ($1, $2, $3, 'the answer', 'the answer', $4) RETURNING id", [rafi.workspaceId, ch, botActor, root])
+      ).rows[0]!.id;
+      return { channel: ch, answer: reply };
+    });
+    const b = SavedBookmark.parse(ok(await put(rafi, { kind: 'message', messageId: answer }), 201));
+    expect(b.item).toMatchObject({ kind: 'message', authorName: 'BmBot', snippet: 'the answer' });
+    expect(b.item?.channel).toMatchObject({ id: channel, kind: 'bot_conversation', botName: 'BmBot' });
+    ok(await remove(rafi, b.id));
   });
 });
 
@@ -171,6 +196,128 @@ describe('the list', () => {
     expect(refused.status).toBe(409);
     expect(JSON.stringify(refused.body)).toContain(SAVED_BOOKMARKS_FULL);
     expect((await put(priya, { kind: 'message', messageId: id })).status).toBe(200);
+  });
+});
+
+describe('bookmarking a file (P36-08 step 3)', () => {
+  let engineering = '';
+  let lostTeam = '';
+  const fileIn = (where: { channel: string } | { person: Persona }, name: string, size = 2048): Promise<string> =>
+    w.system(async (tx) => {
+      const r =
+        'channel' in where
+          ? await tx.query<{ id: string }>(
+              `INSERT INTO app.files (workspace_id, channel_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+               SELECT c.workspace_id, c.id, '/bm/', $2, 'k' || gen_random_uuid(), $3, 'text/plain', repeat('a', 64), $4 FROM app.channels c WHERE c.id = $1 RETURNING id`,
+              [where.channel, name, size, omar.actorId],
+            )
+          : await tx.query<{ id: string }>(
+              `INSERT INTO app.files (workspace_id, owner_person_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+               VALUES ($1, $2, 'Notes/', $3, 'k' || gen_random_uuid(), $4, 'text/markdown', repeat('b', 64), $5) RETURNING id`,
+              [where.person.workspaceId, where.person.personId, name, size, where.person.actorId],
+            );
+      return r.rows[0]!.id;
+    });
+  const repoEntry = (teamId: string, path: string, size = 321): Promise<unknown> =>
+    w.system((tx) =>
+      tx.query(`INSERT INTO app.repo_entries (team_id, path, blob_sha, size, last_commit_sha) VALUES ($1, $2, repeat('c', 40), $3, repeat('d', 40))`, [teamId, path, size]),
+    );
+  const fileItem = (b: SavedBookmark) => (b.item?.kind === 'file' ? b.item : null);
+
+  beforeAll(async () => {
+    engineering = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id);
+    // a team of Nadia's alone, which she leaves below
+    lostTeam = await w.system(async (tx) => {
+      const id = (await tx.query<{ id: string }>("INSERT INTO app.teams (workspace_id, slug, name) VALUES ($1, 'bm-lost-team', 'Canary team') RETURNING id", [nadia.workspaceId])).rows[0]!.id;
+      await tx.query('INSERT INTO app.team_members (team_id, actor_id, workspace_id) VALUES ($1, $2, $3)', [id, nadia.actorId, nadia.workspaceId]);
+      return id;
+    });
+    await repoEntry(engineering, 'docs/bm-guide.md', 4321);
+    await repoEntry(lostTeam, 'canary/secret-plan.md');
+  });
+
+  it('an attachment: 201 with its name, size and channel; again a 200 with the same bookmark; on the Files tab', async () => {
+    await clearAll(rafi);
+    const id = await fileIn({ channel: dev }, 'bm-report.pdf', 52_000);
+    const b = SavedBookmark.parse(ok(await put(rafi, { kind: 'file', fileId: id }), 201));
+    expect(fileItem(b)).toMatchObject({ store: 'attachment', name: 'bm-report.pdf', path: null, size: 52_000, mime: 'text/plain', missing: false });
+    expect(fileItem(b)?.channel).toMatchObject({ id: dev, name: 'dev', kind: 'channel' });
+    const again = SavedBookmark.parse(ok(await put(rafi, { kind: 'file', fileId: id }), 200));
+    expect(again.id).toBe(b.id);
+    expect((await keys(rafi)).items).toContainEqual({ id: b.id, kind: 'file', key: id });
+    const tab = await list(rafi, '?kind=file');
+    expect(tab.items.map((x) => x.id)).toEqual([b.id]);
+    expect(tab.counts.file).toBe(1);
+  });
+
+  it('a Personal file of the person: its path in their space; nobody else may bookmark it, an admin included', async () => {
+    const id = await fileIn({ person: rafi }, 'bm-diary.md', 99);
+    const b = SavedBookmark.parse(ok(await put(rafi, { kind: 'file', fileId: id }), 201));
+    expect(fileItem(b)).toMatchObject({ store: 'personal', name: 'bm-diary.md', path: 'Notes/bm-diary.md', size: 99, channel: null, team: null });
+    expect((await put(nadia, { kind: 'file', fileId: id })).status).toBe(403);
+    expect((await put(omar, { kind: 'file', fileId: id })).status).toBe(403);
+    // a bookmark of someone else's Personal file (as an admin's look into a space could have made) shows nothing of it
+    const owner = testClient({ connectionString: w.server.db.ownerUrl });
+    await owner.connect();
+    try {
+      await owner.query("INSERT INTO app.bookmarks (workspace_id, person_id, kind, file_id) VALUES ($1, $2, 'file', $3)", [omar.workspaceId, omar.personId, id]);
+    } finally {
+      await owner.end();
+    }
+    const res = await w.call(omar, 'GET', '/api/bookmarks?kind=file');
+    const theirs = ListSavedBookmarksResponse.parse(ok(res)).items.find((x) => x.target.kind === 'file' && x.target.fileId === id);
+    expect(theirs?.item).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain('bm-diary');
+    ok(await remove(omar, theirs!.id));
+  });
+
+  it('a file of a team repository: its team and size; a path with no file in the repository (a folder too) is 404, a team the caller does not read 403', async () => {
+    const b = SavedBookmark.parse(ok(await put(rafi, { kind: 'repo_file', teamId: engineering, path: 'docs/bm-guide.md' }), 201));
+    expect(fileItem(b)).toMatchObject({ store: 'repo', name: 'bm-guide.md', path: 'docs/bm-guide.md', size: 4321, missing: false, team: { id: engineering, slug: 'engineering', name: 'Engineering' } });
+    expect((await put(rafi, { kind: 'repo_file', teamId: engineering, path: 'docs/bm-guide.md' })).status).toBe(200);
+    expect((await keys(rafi)).items).toContainEqual({ id: b.id, kind: 'repo_file', key: `${engineering}:docs/bm-guide.md` });
+    expect((await put(rafi, { kind: 'repo_file', teamId: engineering, path: 'docs/not-there.md' })).status).toBe(404);
+    expect((await put(rafi, { kind: 'repo_file', teamId: lostTeam, path: 'canary/secret-plan.md' })).status).toBe(403);
+    for (const path of ['docs', 'docs/', '/docs/bm-guide.md', 'docs/../docs/bm-guide.md', 'docs//bm-guide.md']) expect((await put(rafi, { kind: 'repo_file', teamId: engineering, path })).status).toBe(404);
+    // the schema bounds a path: too long, or with a NUL, is refused before any lookup
+    for (const path of ['x'.repeat(1025), 'docs/a\u0000.md']) expect((await put(rafi, { kind: 'repo_file', teamId: engineering, path })).status).toBe(400);
+    expect((await list(rafi, '?kind=file')).counts.file).toBe(3);
+  });
+
+  it('a repository file renamed away stays, as missing with no size, and opens to the viewer’s "no longer there"', async () => {
+    await repoEntry(engineering, 'docs/bm-moving.md', 10);
+    const b = SavedBookmark.parse(ok(await put(rafi, { kind: 'repo_file', teamId: engineering, path: 'docs/bm-moving.md' }), 201));
+    await w.system((tx) => tx.query("DELETE FROM app.repo_entries WHERE team_id = $1 AND path = 'docs/bm-moving.md'", [engineering]));
+    const now = (await list(rafi, '?kind=file')).items.find((x) => x.id === b.id);
+    expect(now?.item).toMatchObject({ kind: 'file', store: 'repo', name: 'bm-moving.md', size: null, missing: true });
+  });
+
+  it('keeps a file the caller can no longer read as item: null, with nothing of it in the answer (left the channel, deleted, hidden with its message, left the team)', async () => {
+    await clearAll(nadia);
+    const inHidden = await fileIn({ channel: hidden }, 'canary-hidden-file.txt');
+    const deleted = await fileIn({ channel: dev }, 'canary-deleted-file.txt');
+    const orphaned = await fileIn({ channel: dev }, 'canary-orphaned-file.txt');
+    // the private channel of the earlier test: Nadia is let back in for a moment
+    await w.system((tx) => tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [hidden, nadia.personId]));
+    for (const fileId of [inHidden, deleted, orphaned]) ok(await put(nadia, { kind: 'file', fileId }), 201);
+    ok(await put(nadia, { kind: 'repo_file', teamId: lostTeam, path: 'canary/secret-plan.md' }), 201);
+    await w.system(async (tx) => {
+      await tx.query('DELETE FROM app.channel_members WHERE channel_id = $1 AND person_id = $2', [hidden, nadia.personId]);
+      await tx.query('DELETE FROM app.files WHERE id = $1', [deleted]);
+      await tx.query('UPDATE app.files SET orphaned_at = now() WHERE id = $1', [orphaned]);
+      await tx.query('DELETE FROM app.team_members WHERE team_id = $1 AND actor_id = $2', [lostTeam, nadia.actorId]);
+    });
+    const res = await w.call(nadia, 'GET', '/api/bookmarks?kind=file');
+    const parsed = ListSavedBookmarksResponse.parse(ok(res));
+    expect(parsed.items).toHaveLength(4);
+    for (const b of parsed.items) expect(b.item).toBeNull();
+    expect(parsed.counts.file).toBe(4);
+    const raw = JSON.stringify(res.body);
+    for (const word of ['canary-hidden', 'canary-deleted', 'canary-orphaned', 'bm-hidden', 'Canary team', 'bm-lost-team']) expect(raw).not.toContain(word);
+    // a deleted file cannot be bookmarked again: it looks like one never seen
+    expect((await put(nadia, { kind: 'file', fileId: deleted })).status).toBe(403);
+    expect((await put(nadia, { kind: 'file', fileId: orphaned })).status).toBe(403);
+    for (const b of parsed.items) ok(await remove(nadia, b.id));
   });
 });
 

@@ -9,6 +9,7 @@ import { MEMORY_COPY, READ_ONLY_COPY, type FileRow } from './model';
 import { WhyReadOnly, lockReason } from './ReadOnlyWhy';
 import type { TeamFiles } from './store';
 import { whenLabel } from './when';
+import { FileBookmarkMark } from '../../bookmarks/BookmarkMenu';
 
 /** The "Where" cell: where an attachment came from, the rule that holds for a row of the repo, or what keeps a memory folder. */
 export function whereOf(row: FileRow): string {
@@ -103,12 +104,16 @@ function Check({ row, checked, onCheck }: { row: FileRow; checked: boolean; onCh
   );
 }
 
-function Name({ row }: { row: FileRow }) {
+function Name({ row, files }: { row: FileRow; files: TeamFiles }) {
   const lock = lockReason(row);
   return (
     <>
       <span className="fname-col">
-        <span className="fname-text" title={row.path}>{friendlyName(row.path, row.name)}</span>
+        {/* the mark sits beside the name, outside its clipped text: a long name ends in "…" and the mark stays */}
+        <span className="fname-line">
+          <span className="fname-text" title={row.path}>{friendlyName(row.path, row.name)}</span>
+          <FileBookmarkMark row={row} files={files} />
+        </span>
         <span className="fdate" data-vt-mask>{subline(row)}</span>
       </span>
       {lock ? <WhyReadOnly reason={lock} /> : null}
@@ -139,7 +144,7 @@ export function ListRow(p: ItemProps) {
     >
       <div role="cell" className="fchk"><Check row={row} checked={p.checked} onCheck={p.onCheck} /></div>
       <div role="cell"><Icon row={row} /></div>
-      <div role="cell" className="fname"><Name row={row} /></div>
+      <div role="cell" className="fname"><Name row={row} files={p.files} /></div>
       <div role="cell" className="src">{whereOf(row)}</div>
       <div role="cell" className="src" data-vt-mask><By row={row} /></div>
       <div role="cell" className="src when" data-vt-mask>{whenLabel(row.modifiedAt)}</div>
@@ -176,7 +181,7 @@ export function GridCard(p: ItemProps) {
       <div className="fthumb" aria-hidden="true">
         {isImage(row) ? <img src={row.contentUrl ?? ''} alt="" loading="lazy" decoding="async" draggable={false} /> : <Icon row={row} large />}
       </div>
-      <div className="fcard-name"><Name row={row} /></div>
+      <div className="fcard-name"><Name row={row} files={p.files} /></div>
       <span className="fcard-menu"><RowMenu row={row} files={p.files} start={p.onAction} /></span>
     </div>
   );

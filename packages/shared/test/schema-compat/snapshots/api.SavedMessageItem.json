@@ -37,13 +37,20 @@
               "type": "null"
             }
           ]
+        },
+        "botName": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "id",
         "name",
         "kind",
-        "teamId"
+        "teamId",
+        "botName"
       ]
     },
     "threadRootId": {

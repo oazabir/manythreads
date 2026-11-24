@@ -7,6 +7,7 @@ import { DeleteDialog, MoveDialog, ProposeChangeDialog, RenameDialog, ShareDialo
 import type { FileRow } from './model';
 import { personalPanelId } from './spaces';
 import type { TeamFiles } from './store';
+import { useFileBookmarkAct, useFileBookmarkTarget, type BookmarkAct } from '../../bookmarks/useFileBookmark';
 
 export type RowAction = 'rename' | 'move' | 'delete' | 'pull-request' | 'share';
 
@@ -65,7 +66,11 @@ export function canChange(row: FileRow): boolean {
 }
 
 /** What a person may do with a row, as menu entries; the dropdown, the right-click menu and the hover buttons draw the same list. */
-export function rowEntries(row: FileRow, files: TeamFiles, act: { start: (action: RowAction, row: FileRow) => void; history: () => void }): MenuEntry[] {
+export function rowEntries(
+  row: FileRow,
+  files: TeamFiles,
+  act: { start: (action: RowAction, row: FileRow) => void; history: () => void; /** The row's bookmark (P36-08), files only; null where it is not offered. */ bookmark?: BookmarkAct | null },
+): MenuEntry[] {
   const out: MenuEntry[] = [];
   const personal = row.store === 'personal';
   const git = row.store === 'git';
@@ -77,6 +82,7 @@ export function rowEntries(row: FileRow, files: TeamFiles, act: { start: (action
   // an admin's look into someone's space has no history of its own: the panel would open the admin's own file of the same path
   if ((git || personal) && row.readOnlyReason !== 'admin_view') out.push({ id: 'history', label: personal ? 'Version history' : 'History', run: act.history });
   if (row.contentUrl) out.push({ id: 'download', label: 'Download', href: withDownload(row.contentUrl), download: row.name });
+  if (act.bookmark && !act.bookmark.busy) out.push({ id: 'bookmark', label: act.bookmark.on ? 'Remove bookmark' : 'Bookmark', run: act.bookmark.toggle });
   if ((git || personal) && !row.readOnly) {
     out.push({ id: 'rename', label: 'Rename', run: () => act.start('rename', row) });
     out.push({ id: 'move', label: 'Move', run: () => act.start('move', row) });
@@ -133,7 +139,9 @@ export function RowMenu({ row, files, start, label }: { row: FileRow; files: Tea
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = usePanel();
   useDismiss(open, () => setOpen(false), box);
-  const entries = rowEntries(row, files, { start, history: () => panel.push({ type: 'history', id: historyId(row) }) });
+  // the bookmark entry listens to the client's copy: it comes when the keys load and follows a change from another tab
+  const bookmark = useFileBookmarkAct(useFileBookmarkTarget(row, files));
+  const entries = rowEntries(row, files, { start, history: () => panel.push({ type: 'history', id: historyId(row) }), bookmark });
   if (entries.length === 0) return null;
   const closeAndReturn = (): void => {
     setOpen(false);

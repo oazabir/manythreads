@@ -1,5 +1,5 @@
 /* Bookmarks (P36-08): the page (screens/bookmarks/BookmarksScreen.tsx) and the small mark by a bookmarked message's time (bookmarks/BookmarkMenu.tsx).
-   Classes are `bk-*`; the mark is `.msg-bookmarked`, beside the pinned mark. The tabs are the shared `.tabs2`. */
+   Classes are `bk-*`; the mark is `.msg-bookmarked`, beside the pinned mark, and `.f-bookmarked` by a file's name in Files. The tabs are the shared `.tabs2`. */
 .bk-screen {
   display: flex;
   flex-direction: column;
@@ -143,4 +143,33 @@
   display: inline-flex;
   align-items: center;
   color: var(--mute);
+}
+
+/* the same mark by a bookmarked file's name in Files (step 3), beside the name's clipped text */
+.f-bookmarked {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--mute);
+}
+
+/* a file whose path is no longer in its repository: its line says so */
+.bk-open[data-missing='true'] .bk-meta {
+  color: var(--faint);
+}
+
+@media (width <= 600px) {
+  /* a phone: one column, the three tabs on one row, every row and its Remove a 44 px touch target */
+  .bk-tabs {
+    overflow-x: auto;
+  }
+
+  .bk-open {
+    min-height: 44px;
+  }
+
+  .bk-remove {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

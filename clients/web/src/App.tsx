@@ -98,7 +98,8 @@ function BotChatRoute() {
   const [params] = useSearchParams();
   if (botSlug === 'brain' && params.get('view') === null && params.get('tab') === null) {
     const thread = params.get('thread');
-    return <Navigate to={`/t/${team}/chat?bot=brain${thread ? `&c=${encodeURIComponent(thread)}` : ''}`} replace />;
+    const message = thread ? params.get('message') : null;
+    return <Navigate to={`/t/${team}/chat?bot=brain${thread ? `&c=${encodeURIComponent(thread)}` : ''}${message ? `&message=${encodeURIComponent(message)}` : ''}`} replace />;
   }
   return <ConversationView />;
 }

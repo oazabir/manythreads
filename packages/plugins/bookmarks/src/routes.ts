@@ -64,6 +64,68 @@ function matchOf(target: BookmarkTarget): { where: string; params: unknown[] } {
   }
 }
 
+/**
+ * Checks that the caller may bookmark `target` now and answers the insert that adds it. A thread or a message must be one the caller can read (an unknown id
+ * and a private channel look the same, 403) and still be there (404). A file must be one the caller's file policies show and not someone else's Personal
+ * file (an admin's audited look into a space shows those): an unknown id, a hidden file and a deleted one all look the same (403). A repository file must be
+ * in a team the caller reads (403) and a file at that path in its repository now (404: the index holds files only, so a folder, a path the repository could
+ * never hold and one no longer there all answer the same; the schema already bounds the length and refuses a NUL).
+ */
+async function insertOf(tx: PluginTx, person: string, target: BookmarkTarget): Promise<{ sql: string; params: unknown[] }> {
+  if (target.kind === 'file') {
+    const file = (
+      await tx.query<{ channel_id: string | null; mine: boolean }>(
+        'SELECT f.channel_id, (f.owner_person_id IS NULL OR f.owner_person_id = app.person_id()) AS mine FROM app.files f WHERE f.id = $1::uuid',
+        [target.fileId],
+      )
+    ).rows[0];
+    if (!file?.mine) throw forbidden('You cannot see this file');
+    return {
+      sql: `INSERT INTO app.bookmarks (workspace_id, person_id, kind, file_id, channel_id) VALUES (app.workspace_id(), $1::uuid, 'file', $2::uuid, $3::uuid)
+            ON CONFLICT (person_id, file_id) WHERE kind = 'file' DO NOTHING RETURNING id`,
+      params: [person, target.fileId, file.channel_id],
+    };
+  }
+  if (target.kind === 'repo_file') {
+    const team = (
+      await tx.query<{ readable: boolean; present: boolean }>(
+        `SELECT $1::uuid = ANY (app.readable_team_ids('read')) AS readable,
+                EXISTS (SELECT 1 FROM app.repo_entries e WHERE e.team_id = $1::uuid AND e.path = $2) AS present`,
+        [target.teamId, target.path],
+      )
+    ).rows[0];
+    if (!team?.readable) throw forbidden('You cannot see this team’s files');
+    if (!team.present) throw notFound('There is no file at that path');
+    return {
+      sql: `INSERT INTO app.bookmarks (workspace_id, person_id, kind, team_id, path) VALUES (app.workspace_id(), $1::uuid, 'repo_file', $2::uuid, $3)
+            ON CONFLICT (person_id, team_id, path) WHERE kind = 'repo_file' DO NOTHING RETURNING id`,
+      params: [person, target.teamId, target.path],
+    };
+  }
+  const messageId = target.kind === 'thread' ? target.rootMessageId : target.messageId;
+  const msg = (
+    await tx.query<{ channel_id: string; thread_root_id: string | null; deleted_at: Date | null; replies: number }>(
+      `SELECT m.channel_id, m.thread_root_id, m.deleted_at, coalesce((SELECT t.reply_count FROM app.threads t WHERE t.root_message_id = m.id), 0)::int AS replies
+         FROM app.messages m WHERE m.id = $1::uuid`,
+      [messageId],
+    )
+  ).rows[0];
+  if (!msg) throw forbidden('You cannot see this message');
+  if (target.kind === 'thread' && msg.thread_root_id !== null) throw invalid('That message is a reply. Bookmark its thread or the message instead.');
+  if (msg.deleted_at && !(target.kind === 'thread' && msg.replies > 0)) throw notFound('This message is no longer there');
+  return target.kind === 'thread'
+    ? {
+        sql: `INSERT INTO app.bookmarks (workspace_id, person_id, kind, thread_root_id, channel_id) VALUES (app.workspace_id(), $1::uuid, 'thread', $2::uuid, $3::uuid)
+              ON CONFLICT (person_id, thread_root_id) WHERE kind = 'thread' DO NOTHING RETURNING id`,
+        params: [person, messageId, msg.channel_id],
+      }
+    : {
+        sql: `INSERT INTO app.bookmarks (workspace_id, person_id, kind, message_id, thread_root_id, channel_id) VALUES (app.workspace_id(), $1::uuid, 'message', $2::uuid, $3::uuid, $4::uuid)
+              ON CONFLICT (person_id, message_id) WHERE kind = 'message' DO NOTHING RETURNING id`,
+        params: [person, messageId, msg.thread_root_id, msg.channel_id],
+      };
+}
+
 const TAB_KINDS: Record<'thread' | 'message' | 'file', BookmarkTargetKind[]> = { thread: ['thread'], message: ['message'], file: ['file', 'repo_file'] };
 
 /** Tells the person's own open tabs that a bookmark came or went (delivered when `tx` commits, so never for a change that was rolled back). */
@@ -122,20 +184,7 @@ export function registerBookmarkRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { target } = SaveBookmarkRequest.parse(req.body ?? {});
       const person = await callerPerson(tx);
-      if (target.kind === 'file' || target.kind === 'repo_file') throw invalid('Files cannot be bookmarked yet.');
-
-      // The message must be one the caller can read (an unknown id and a private channel look the same), and must still be there.
-      const messageId = target.kind === 'thread' ? target.rootMessageId : target.messageId;
-      const msg = (
-        await tx.query<{ channel_id: string; thread_root_id: string | null; deleted_at: Date | null; replies: number }>(
-          `SELECT m.channel_id, m.thread_root_id, m.deleted_at, coalesce((SELECT t.reply_count FROM app.threads t WHERE t.root_message_id = m.id), 0)::int AS replies
-             FROM app.messages m WHERE m.id = $1::uuid`,
-          [messageId],
-        )
-      ).rows[0];
-      if (!msg) throw forbidden('You cannot see this message');
-      if (target.kind === 'thread' && msg.thread_root_id !== null) throw invalid('That message is a reply. Bookmark its thread or the message instead.');
-      if (msg.deleted_at && !(target.kind === 'thread' && msg.replies > 0)) throw notFound('This message is no longer there');
+      const insert = await insertOf(tx, person, target);
 
       const match = matchOf(target);
       const existing = (await tx.query<{ id: string }>(`SELECT b.id FROM app.bookmarks b WHERE b.person_id = app.person_id() AND ${match.where}`, match.params)).rows[0];
@@ -143,18 +192,7 @@ export function registerBookmarkRoutes(ctx: PluginContext): void {
       // read first, then insert: the cap trigger fires for every insert (MISTAKES P14-04), and a full list must not refuse one already there
       const total = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.bookmarks WHERE person_id = app.person_id()')).rows[0]!.n;
       if (total >= SAVED_BOOKMARKS_MAX) throw conflict(SAVED_BOOKMARKS_FULL);
-      const inserted =
-        target.kind === 'thread'
-          ? await tx.query<{ id: string }>(
-              `INSERT INTO app.bookmarks (workspace_id, person_id, kind, thread_root_id, channel_id) VALUES (app.workspace_id(), $1::uuid, 'thread', $2::uuid, $3::uuid)
-               ON CONFLICT (person_id, thread_root_id) WHERE kind = 'thread' DO NOTHING RETURNING id`,
-              [person, messageId, msg.channel_id],
-            )
-          : await tx.query<{ id: string }>(
-              `INSERT INTO app.bookmarks (workspace_id, person_id, kind, message_id, thread_root_id, channel_id) VALUES (app.workspace_id(), $1::uuid, 'message', $2::uuid, $3::uuid, $4::uuid)
-               ON CONFLICT (person_id, message_id) WHERE kind = 'message' DO NOTHING RETURNING id`,
-              [person, messageId, msg.thread_root_id, msg.channel_id],
-            );
+      const inserted = await tx.query<{ id: string }>(insert.sql, insert.params);
       const id = inserted.rows[0]?.id;
       if (id) {
         await pushChanged(ctx, tx, person, { id, kind: target.kind, key: bookmarkKey(target), on: true } as BookmarksChangedPush);

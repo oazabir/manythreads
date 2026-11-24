@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useMatch } from 'react-router';
+import { Link, useMatch, useSearchParams } from 'react-router';
 import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { channelPath } from '../shell/nav';
@@ -38,6 +38,8 @@ import { channelStore, threadKey } from './store';
 import { useCallCard } from '../meetings/callCards';
 import { startLine } from '../meetings/roomCard';
 import { atBottom, jumpAriaLabel, jumpLabel, newReplyCount } from './threadJump';
+import { useJumpHighlight } from './useJumpHighlight';
+import { REPLY_PARAM } from '../shell/messageLink';
 
 /** The right-panel entry `thread:<root message id>`. */
 export function ThreadPanel({ entry }: { entry: PanelEntry }) {
@@ -68,7 +70,7 @@ function Linked({ rootId }: { rootId: string }) {
  * A thread: the root message, whether the person follows it, the replies and a composer. In the right panel (beside the channel) and
  * in the main area of the Threads inbox. Opened from a link it needs no channel in view: the threads API says where the thread lives.
  */
-export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null, replyBlocked = null, answerTools }: {
+export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null, replyBlocked = null, answerTools, jumpParam = REPLY_PARAM }: {
   rootId: string;
   variant: 'panel' | 'main';
   /** The channel the thread lives in, when the caller knows it and the URL does not say (a bot conversation has no `/c/:channel`). */
@@ -79,6 +81,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   replyBlocked?: string | null;
   /** The reader's own conversation with a bot (P5-17): an Answer in it that was for them can be shared, saved as a page and handed on. */
   answerTools?: AnswerTools;
+  /** The address parameter naming a message of the thread to scroll to and highlight (`?reply=<id>`; a chat with a bot names it `?message=`). */
+  jumpParam?: string;
 }) {
   const { team, teamSlug } = useShell();
   const slug = team?.slug ?? teamSlug;
@@ -183,6 +187,15 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
 
   // the dock above the composer appears and folds, which resizes the list: a reader at the newest reply stays there
   const listDrawn = root !== null;
+  // opened at one reply (a bookmark): scrolled to it and highlighted for a moment, once it is drawn (older pages are loaded until it is); the thread lets go
+  // of the newest reply, and takes it back when the reader scrolls to the bottom
+  const [params] = useSearchParams();
+  const jumpTo = params.get(jumpParam);
+  const highlighted = useJumpHighlight(scroller, jumpTo, listDrawn && tl.status !== 'loading', () => setStuck(false), {
+    more: tl.cursor !== null && channelId !== null,
+    loading: tl.loadingOlder === true,
+    load: () => void (channelId && channelStore.loadOlder(threadKey(rootId), channelId, rootId)),
+  });
   useEffect(() => {
     if (!listDrawn) return;
     const el = scroller.current;
@@ -289,7 +302,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       }}
     >
       <div className="root">
-        <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
+        <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread highlight={highlighted === root.id} actions={rootActions} />
         {variant === 'panel' ? <Linked rootId={rootId} /> : null}
       </div>
       {tl.cursor ? (
@@ -301,7 +314,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       {tl.items.length === 0 && tl.pending.length === 0 && placed.live.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
       {tl.items.map((m, i) => (
         <Fragment key={m.id}>
-          <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} linksAbove={linksAbove[i] ?? ''} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+          <MessageRow message={m} continued={continuesRun(tl.items[i - 1], m)} highlight={highlighted === m.id} linksAbove={linksAbove[i] ?? ''} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
           {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
         </Fragment>
       ))}

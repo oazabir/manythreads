@@ -19,6 +19,9 @@ import { chooseVariant, giveFeedback, regenerateTurn } from './api';
 import { LookedAt } from './LookedAt';
 import { answerStatus, awaitingAnswer, buildRows, neighbourVariant, previewLive, retryOf, variantPosition, type ChatRow, type Preview } from './model';
 import { ReplyActions } from './ReplyActions';
+import { useJumpHighlight } from '../../channels/useJumpHighlight';
+import { BookmarkButton } from '../../bookmarks/BookmarkButton';
+import { useBookmarksReady } from '../../bookmarks/store';
 
 /** How long after the person's message the column says the bot is on it: a run that has not answered by then has failed, and says so in the thread. */
 const AWAIT_MS = 3 * 60_000;
@@ -32,16 +35,24 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function PersonMessage({ message, editable, onEdit }: { message: ChannelMessage; editable: boolean; onEdit: () => void }) {
+export function PersonMessage({ message, editable, onEdit, highlight }: { message: ChannelMessage; editable: boolean; onEdit: () => void; highlight: boolean }) {
   const attached = splitAttachments(message.attachments);
+  // the row of actions is drawn only when it holds one (bookmarks on this server, or the edit of the last message)
+  const canBookmark = useBookmarksReady();
   return (
-    <div className="ch-msg person" data-testid="chat-message" data-role="person" data-message-id={message.id}>
+    <div className={`ch-msg person ${highlight ? 'hl' : ''}`} data-testid="chat-message" data-role="person" data-message-id={message.id} data-highlight={highlight ? 'true' : undefined}>
       <div className="ch-bubble">
         <Markdown source={message.body} />
         <MessageImages files={attached.images} />
         {attached.files.length > 0 ? <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}
       </div>
-      {editable ? <button type="button" className="link-btn ch-edit" onClick={onEdit} data-testid="chat-edit">Edit and ask again</button> : null}
+      {/* the person's own message: its actions show on hover and focus (always on a phone) */}
+      {editable || canBookmark ? (
+        <div className="ch-person-acts" role="group" aria-label="Message actions">
+          {editable ? <button type="button" className="link-btn ch-edit" onClick={onEdit} data-testid="chat-edit">Edit and ask again</button> : null}
+          <BookmarkButton messageId={message.id} className="ch-act" label="Bookmark your message" testId="chat-bookmark-own" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -95,7 +106,7 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (body
  * One conversation: the person's messages as bubbles on the right, the bot's answers as plain text with the actions under them, the answer being written
  * (from the live frames) at the end, and the message box. The column is at most 760 px wide. Only the chosen answer of a turn is drawn.
  */
-export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, state, reloadState, patchState, preview, stopping, onStop, composer, selfActor, pendingText, onChanged, editSignal }: {
+export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, state, reloadState, patchState, preview, stopping, onStop, composer, selfActor, pendingText, onChanged, editSignal, jumpTo = null }: {
   team: string;
   bot: string;
   botName: string;
@@ -116,6 +127,8 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
   onChanged: () => void;
   /** Counts up each time the person presses Up in an empty message box: the last message of theirs opens for editing. */
   editSignal: number;
+  /** A message of the chat to scroll to and highlight once it is drawn (`?message=`, a bookmark). */
+  jumpTo?: string | null;
 }) {
   const people = usePeople();
   const tl = useTimeline(threadKey(root));
@@ -168,6 +181,18 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
     return () => clearTimeout(t);
   }, [threadState, newest, root]);
   useEffect(() => () => channelStore.releaseUnreadHold('thread', root), [root]);
+
+  // opened at one message (a bookmark): scrolled to it and highlighted for a moment once it is drawn (older pages loaded until it is); the column lets go of
+  // the newest words, and its scroll handler takes them back when the reader returns to the end
+  const highlighted = useJumpHighlight(
+    scroller,
+    jumpTo,
+    rows.length > 0,
+    () => {
+      stuck.current = false;
+    },
+    { more: tl.cursor !== null, loading: tl.loadingOlder === true, load: () => void channelStore.loadOlder(threadKey(root), channelId, root) },
+  );
 
   // stay at the newest words while the reader is at the end
   useLayoutEffect(() => {
@@ -248,7 +273,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
     const position = variantPosition(row);
     const own = m.meta.answer?.answeredFor.personId === people.me?.personId;
     return (
-      <div className="ch-msg bot" key={m.id} data-testid="chat-message" data-role="bot" data-message-id={m.id} data-stopped={row.variant?.stopped ? 'true' : undefined}>
+      <div className={`ch-msg bot ${highlighted === m.id ? 'hl' : ''}`} key={m.id} data-testid="chat-message" data-role="bot" data-message-id={m.id} data-highlight={highlighted === m.id ? 'true' : undefined} data-stopped={row.variant?.stopped ? 'true' : undefined}>
         <span className="ch-avatar"><Avatar name={botName} kind="agent" avatar={botAvatar ?? null} /></span>
         <div className="ch-body">
           {m.meta.answer ? (
@@ -276,6 +301,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               onPrevious={!waitingOnBot && neighbourVariant(row, -1) ? () => void pick(turnId, neighbourVariant(row, -1)) : null}
               onNext={!waitingOnBot && neighbourVariant(row, 1) ? () => void pick(turnId, neighbourVariant(row, 1)) : null}
               onVote={(v, reason) => void vote(m.id, v, reason)}
+              bookmark={<BookmarkButton messageId={m.id} className="ch-act" label="Bookmark the answer" testId="chat-bookmark" />}
             />
           ) : null}
           {(placed.after.get(m.id) ?? []).map((r) => <RunEnd key={r.runId} head={r} noticeShown={placed.noticed.has(r.runId)} />)}
@@ -309,7 +335,7 @@ export function ChatColumn({ team, bot, botName, botAvatar, root, channelId, sta
               editing === row.message.id ? (
                 <EditBox key={row.message.id} initial={row.message.body} onSave={(body) => saveEdit(row.message, body)} onCancel={() => setEditing(null)} />
               ) : (
-                <PersonMessage key={row.message.id} message={row.message} editable={!busy && lastPerson === row && row.message.authorId === selfActor} onEdit={() => setEditing(row.message.id)} />
+                <PersonMessage key={row.message.id} message={row.message} highlight={highlighted === row.message.id} editable={!busy && lastPerson === row && row.message.authorId === selfActor} onEdit={() => setEditing(row.message.id)} />
               )
             ) : (
               renderBot(row)

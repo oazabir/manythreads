@@ -28,6 +28,8 @@ import {
 import { NONE, all as selectAll, only, prune, range, toggle, type Selection } from './selection';
 import { personalPanelId } from './spaces';
 import type { TeamFiles } from './store';
+import { bookmarkActOf, useFilesTeamId } from '../../bookmarks/useFileBookmark';
+import { fileBookmarkTarget } from '../../bookmarks/fileTarget';
 import type { FolderState } from './useFolders';
 import { EmptyState } from '../../components/EmptyState';
 import { SkeletonRows } from '../../components/Skeleton';
@@ -149,7 +151,9 @@ export function FileList(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [present]);
 
-  const entriesOf = (row: FileRow): MenuEntry[] => rowEntries(row, files, { start: p.onAction, history: () => panel.push({ type: 'history', id: historyId(row) }) });
+  const teamId = useFilesTeamId(files);
+  const entriesOf = (row: FileRow): MenuEntry[] =>
+    rowEntries(row, files, { start: p.onAction, history: () => panel.push({ type: 'history', id: historyId(row) }), bookmark: bookmarkActOf(fileBookmarkTarget(row, teamId)) });
   const hasEntry = (row: FileRow, id: string): boolean => entriesOf(row).some((e) => e.id === id);
   const canMove = (list: FileRow[]): boolean => list.length > 0 && list.every((r) => hasEntry(r, 'move'));
   const canDelete = (list: FileRow[]): boolean => list.length > 0 && list.every((r) => hasEntry(r, 'delete'));

@@ -1,4 +1,8 @@
 import { useEffect } from 'react';
+import { bookmarkKey } from '@manythreads/shared';
+import type { FileRow } from '../screens/files/model';
+import type { TeamFiles } from '../screens/files/store';
+import { useFileBookmarkTarget } from './useFileBookmark';
 import { BookmarkMarkIcon, BookmarkToggleIcon } from '../shell/icons';
 import { toggleMessageBookmark, toggleThreadBookmark } from './actions';
 import { bookmarksStore, useBookmarkPending, useBookmarked, useBookmarksReady } from './store';
@@ -40,6 +44,23 @@ export function BookmarkedMark({ messageId }: { messageId: string }) {
   if (!on) return null;
   return (
     <span className="msg-bookmarked" data-testid="bookmarked-mark" title="Bookmarked">
+      <BookmarkMarkIcon />
+      <span className="sr-only">Bookmarked</span>
+    </span>
+  );
+}
+
+/** "Bookmarked" on a bookmarked row of the Files screen (step 3): the same small filled bookmark, by the file's name. */
+export function FileBookmarkMark({ row, files }: { row: FileRow; files: TeamFiles }) {
+  const target = useFileBookmarkTarget(row, files);
+  const on = useBookmarked(target?.kind ?? 'file', target ? bookmarkKey(target) : '');
+  const wanted = target !== null;
+  useEffect(() => {
+    if (wanted) void bookmarksStore.load();
+  }, [wanted]);
+  if (!on) return null;
+  return (
+    <span className="f-bookmarked" data-testid="file-bookmarked-mark" title="Bookmarked">
       <BookmarkMarkIcon />
       <span className="sr-only">Bookmarked</span>
     </span>

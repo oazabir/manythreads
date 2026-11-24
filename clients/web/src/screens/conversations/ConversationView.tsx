@@ -310,6 +310,8 @@ export function ConversationView() {
             channelId={selected?.channelId ?? bot?.channelId ?? null}
             awaiting={blocked ? null : botName}
             replyBlocked={blocked ? blocked.message : null}
+            // a bookmark or a search hit names one message of the conversation (`?message=`): it is scrolled to and highlighted
+            jumpParam="message"
             {...(answerTools ? { answerTools } : {})}
           />
         ) : (
@@ -467,7 +469,9 @@ export function ConversationRedirect() {
         if (!live) return;
         if (!bot) return setLost(true);
         const thread = params.get('thread');
-        void navigate({ pathname: `/t/${slug}/bots/${bot.slug}/chat`, search: thread ? `?thread=${thread}` : '' }, { replace: true });
+        // the message to scroll to and highlight goes along (a bookmark of a message in the conversation)
+        const message = thread ? params.get('message') : null;
+        void navigate({ pathname: `/t/${slug}/bots/${bot.slug}/chat`, search: thread ? `?thread=${thread}${message ? `&message=${encodeURIComponent(message)}` : ''}` : '' }, { replace: true });
       } catch {
         if (live) setLost(true);
       }

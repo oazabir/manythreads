@@ -51,7 +51,8 @@ function download(name: string, text: string): void {
 
 /**
  * Chat (PLAN P20-16), at `/t/:team/chat`: a full chat with a bot, Brain by default. On the left the history of the person's chats with that bot, in the middle
- * a column of at most 760 px with the conversation and the message box. `?bot=` names the bot and `?c=` the conversation (the first message of its thread).
+ * a column of at most 760 px with the conversation and the message box. `?bot=` names the bot and `?c=` the conversation (the first message of its thread);
+ * `?message=` a message in it to scroll to and highlight (a bookmark).
  * Sending starts a conversation when none is open. The answer is shown as it is written; Stop ends it with what was written so far.
  */
 export function ChatScreen() {
@@ -61,6 +62,8 @@ export function ChatScreen() {
   const session = useSession();
   const people = usePeople();
   const root = MessageId.safeParse(params.get('c')).data ?? null;
+  // a message of the chat to scroll to and highlight (a bookmark, a search hit): `?message=`
+  const jumpTo = root !== null ? (MessageId.safeParse(params.get('message')).data ?? null) : null;
 
   // ---- the bot ----------------------------------------------------------------------------------------------------------------
   const bots = useQuery(`chat-bots:${team}`, () => fetchBots(team));
@@ -78,6 +81,8 @@ export function ChatScreen() {
   const go = useCallback(
     (next: { bot?: string; c?: string | null }): void => {
       const q = new URLSearchParams(params);
+      // the message the chat was opened at belongs to that chat
+      q.delete('message');
       if (next.bot !== undefined) {
         q.set('bot', next.bot);
         q.delete('c');
@@ -503,6 +508,7 @@ export function ChatScreen() {
             pendingText={pending}
             onChanged={refreshRail}
             editSignal={editTick}
+            jumpTo={jumpTo}
             composer={
               <>
                 {failed ? (

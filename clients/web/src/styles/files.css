@@ -581,6 +581,14 @@
   min-width: 0;
 }
 
+/* the name and, after it, the small marks that must not be clipped with it (a bookmark) */
+.fname-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .fname-text {
   min-width: 0;
   overflow: hidden;

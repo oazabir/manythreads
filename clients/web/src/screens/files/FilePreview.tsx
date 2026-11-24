@@ -16,6 +16,8 @@ import { whenLabel } from './when';
 import { RowViewer } from './RowViewer';
 import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
+import { BookmarkToggle } from '../../bookmarks/BookmarkButton';
+import { useFileBookmarkTarget } from '../../bookmarks/useFileBookmark';
 
 /** The line under the title: where a page lives and who last changed it, or what an attachment is. */
 export function describe(row: FileRow): string {
@@ -79,6 +81,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
   const pr = row.readOnlyReason === 'change_by_pull_request';
   const canEdit = git && !row.readOnly && Boolean(save);
   const lock = lockReason(row);
+  const bookmark = useFileBookmarkTarget(row, files);
 
   return (
     <div className={`fp ${reading ? 'reading' : ''}`} data-testid="file-preview" data-store={row.store} data-path={row.path}>
@@ -89,6 +92,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
         {page && canEdit ? <button type="button" className="btn s" aria-pressed={editing} onClick={() => setEditing((e) => !e)}>{editing ? 'Done' : 'Edit'}</button> : null}
         {row.store === 'attachments' && row.where ? <Link className="btn s" to={`/t/${encodeURIComponent(files.slug)}/c/${encodeURIComponent(row.where.replace(/^#\s*/, ''))}`}>Open channel</Link> : null}
         <span className="fp-spacer" />
+        <BookmarkToggle target={bookmark} className="icon-btn" label="Bookmark file" testId="file-bookmark" />
         <RowMenu row={row} files={files} start={actions.start} />
       </div>
       {lock ? <p className="fp-why"><WhyReadOnly reason={lock} look="link" /></p> : null}

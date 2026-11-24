@@ -6,7 +6,8 @@ const PingBody = z.strictObject({ workspaceId: z.uuid(), note: z.string().min(1)
 const NoteQuery = z.object({ note: z.string().min(1) });
 const StubCreateBody = z.strictObject({ teamId: z.uuid(), name: z.string().min(1).max(100) });
 const StubParams = z.object({ id: z.string() });
-const BulkMessagesBody = z.strictObject({ channelId: z.uuid(), count: z.number().int().min(1).max(10_000) });
+// `threadRootId`: the messages are replies of that thread (a long thread for the Bookmarks spec, which lands on a reply on an older page)
+const BulkMessagesBody = z.strictObject({ channelId: z.uuid(), count: z.number().int().min(1).max(10_000), threadRootId: z.uuid().optional() });
 const ChannelGrantBody = z.strictObject({ channelId: z.uuid(), personId: z.uuid(), permission: z.enum(['read', 'post']) });
 const JobBody = z.strictObject({ note: z.string().min(1).max(200), fail: z.boolean().optional() });
 
@@ -135,9 +136,9 @@ export default definePlugin({
       handler: async (req, tx) => {
         const body = BulkMessagesBody.parse(req.body);
         const res = await tx.query(
-          `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain)
-           SELECT app.workspace_id(), $1, app.actor(), 'bulk ' || n, 'bulk ' || n FROM generate_series(1, $2::int) n`,
-          [body.channelId, body.count],
+          `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id)
+           SELECT app.workspace_id(), $1, app.actor(), 'bulk ' || n, 'bulk ' || n, $3::uuid FROM generate_series(1, $2::int) n`,
+          [body.channelId, body.count, body.threadRootId ?? null],
         ).catch((err: unknown) => {
           if ((err as { code?: string }).code === '42501') return null;
           throw err;

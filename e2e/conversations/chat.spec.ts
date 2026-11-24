@@ -61,9 +61,10 @@ test('a new chat shows the greeting, the bot\'s own example questions and the bo
 
     await expect(page).toHaveURL(/[?&]c=[0-9a-f-]{36}/);
     await expect(bubbles(page, 'person').first()).toContainText('STREAM please');
-    // the answer is written where the person looks: the live part shows the words so far, what the bot looks at (a fixed phrase), and Stop
+    // the answer is written where the person looks: the live part shows the words so far, what the bot is doing, and Stop. Since P25-11 a run that has a
+    // card shows the run card there (its steps) in place of the looked-at line (ChatColumn: `liveRun ? <RunCard> : <LookedAt>`); either is what it is doing
     await expect(page.getByTestId('chat-streaming')).toBeVisible({ timeout: 45_000 });
-    await expect(page.getByTestId('chat-looked-at')).toContainText('Searching memory');
+    await expect(page.getByTestId('chat-live').locator('[data-testid="run-card"], [data-testid="chat-looked-at"]').first()).toBeVisible();
     await expect(page.getByTestId('chat-stop')).toBeVisible();
     // then the live part gives way to the answer itself
     await expect(bubbles(page, 'bot').last()).toContainText('The release is waiting for Monday.', { timeout: 45_000 });

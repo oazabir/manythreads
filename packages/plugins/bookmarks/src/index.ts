@@ -15,8 +15,9 @@ export default definePlugin({
     kind: 'server',
     extends: ['provider.bookmarks'],
     // The messages, threads and channels a bookmark points at belong to channels; files (and the file policies the insert policy reads) to files;
-    // the teams of a repository file to teams.
-    dependsOn: ['channels', 'files', 'teams'],
+    // the teams of a repository file to teams, and the index of its repository (`repo_entries`: is the path there, how big is it) to repo-git; the name of
+    // the bot of a conversation with a bot to bots.
+    dependsOn: ['channels', 'files', 'teams', 'repo-git', 'bots'],
     migrations: 'migrations',
   },
   register(ctx) {
