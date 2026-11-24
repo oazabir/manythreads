@@ -9,6 +9,8 @@
 # leave one, a running team is given a renewal made meanwhile, and clean-codex removes a copy. Hermes (owner decision 2026-11-16: the script never installs it): the machine has none at the first install (reported as not found, no runner); a stub `hermes`
 # in /usr/local/bin is found by `--update` and started as a team user with that team's own HERMES_HOME; a stub under /root, or one the team users cannot enter, is reported as not usable
 # (one plain sentence with the fix) and left out; /opt/*/bin and `--hermes-bin` are found; and no program ever asks Hermes' download host (a recording `curl` and a dead address for it).
+# P35-10b: a team's own sign-in: .signin made as the team user (0700, no setgid), unreachable to another team, the header never on claude-login's terminal, codex-key's key on standard
+# input only (not in any environment or command line), clean-signin as the team user and never through a link, a shared and a per-team header each refusing the other's folder.
 # The host is not touched: no installer runs on it.
 #
 #   bash tools/agent-bridge/install/container-test/run.sh [--keep]
@@ -285,6 +287,46 @@ checkx "clean-codex removes a team's copy (its sessions stay), only as run <team
   ! runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme clean-codex --all </dev/null 2>/dev/null
   ! runuser -u manythreads-bridge -- sudo -n -- '"$H"' run --all clean-codex </dev/null 2>/dev/null'
 docker exec "$name" bash -c 'pkill -u mt-team-acme -x sleep; sleep 2; true'
+
+echo "--- a team's own sign-in (P35-10b)"
+# the cwd of a sign-in kind is the team's home (as the bridge sends it)
+checkx "a per-team run makes the team's .signin and .signin/claude as the team user, 0700 and no setgid (the home is 2750)" '
+  echo true | MT_SIGNIN=per_team as-team acme "" claude
+  test "$(stat -c %U:%a '"$B"'/work/acme/.signin)" = mt-team-acme:700
+  test "$(stat -c %U:%a '"$B"'/work/acme/.signin/claude)" = mt-team-acme:700
+  test "$(stat -c %a '"$B"'/work/acme)" = 2750'
+checkx "another team cannot reach acme's own sign-in folder" '
+  out="$(printf "%s\n" "ls '"$B"'/work/acme/.signin" "ls '"$B"'/work/acme/.signin/claude" | as-team beta dev claude 2>&1)"; echo "$out"
+  test "$(echo "$out" | grep -c "Permission denied")" -ge 2'
+checkx "a shared run that names the team's own folder, and a per-team run that names the shared one, are refused" '
+  ! echo true | MT_EXTRA_ENV="{\"CLAUDE_CONFIG_DIR\":\"'"$B"'/work/acme/.signin/claude\"}" as-team acme dev claude 2>/dev/null
+  ! printf "%s\n" "{\"v\":1,\"cwd\":\"'"$B"'/work/acme\",\"env\":{\"CLAUDE_CONFIG_DIR\":\"'"$B"'/auth/claude\"},\"files\":[],\"removeAtEnd\":[],\"signIn\":\"per_team\"}" | runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme claude 2>/dev/null'
+checkx "claude-login: the helper makes the terminal after it read the header, so the header never reaches it (the probe would run it as a command)" '
+  out="$(echo "echo terminal-ok" | MT_SIGNIN=per_team MT_TOKEN=marker-of-the-header as-team acme "" claude-login 2>&1)"; echo "$out"
+  echo "$out" | grep -q terminal-ok
+  ! echo "$out" | grep -q "marker-of-the-header"
+  ! echo "$out" | grep -q "\"v\":1"'
+docker exec "$name" bash -c 'printf "#!/bin/sh\n# stands in for codex login --with-api-key: keeps what it was given, then waits\ncat > \"\$CODEX_HOME/key-seen\"; sleep 5\n" > /usr/local/bin/mt-codex-cli && chmod 0755 /usr/local/bin/mt-codex-cli && jq ".agents.codex.cli = \"/usr/local/bin/mt-codex-cli\"" /etc/manythreads-bridge/team-agents.json > /tmp/t.json && install -m 0644 -o root -g root /tmp/t.json /etc/manythreads-bridge/team-agents.json'
+FAKE_KEY=fake-container-key-0123 # secret-scan:ignore a made-up fixture
+docker exec -d "$name" bash -c 'printf "%s\n" "$1" | MT_SIGNIN=per_team as-team acme "" codex-key >/tmp/acme-key.log 2>&1' _ "$FAKE_KEY"
+sleep 2
+checkx "codex-key: the key reaches the program on its standard input, and is in no environment and no command line of the run" '
+  pid="$(pgrep -u mt-team-acme -x sleep | head -1)"; test -n "$pid"
+  grep -qx '"$FAKE_KEY"' '"$B"'/work/acme/.signin/codex/key-seen
+  for p in $(pgrep -u mt-team-acme); do ! grep -qa '"$FAKE_KEY"' /proc/$p/environ /proc/$p/cmdline; done
+  ! ps -eo args | grep -v grep | grep -q '"$FAKE_KEY"''
+docker exec "$name" bash -c 'pkill -u mt-team-acme -x sleep; sleep 1; true'
+checkx "clean-signin removes the named own folder as the team user, then .signin when empty; a .signin that is a link is not acted on" '
+  echo "{\"v\":1,\"cwd\":\"'"$B"'/work/acme\",\"env\":{\"CLAUDE_CONFIG_DIR\":\"'"$B"'/work/acme/.signin/claude\"},\"files\":[],\"removeAtEnd\":[]}" | runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme clean-signin
+  ! test -e '"$B"'/work/acme/.signin/claude
+  test -e '"$B"'/work/acme/.signin/codex
+  echo "{\"v\":1,\"cwd\":\"'"$B"'/work/acme\",\"env\":{\"CODEX_HOME\":\"'"$B"'/work/acme/.signin/codex\"},\"files\":[],\"removeAtEnd\":[]}" | runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme clean-signin
+  ! test -e '"$B"'/work/acme/.signin
+  echo "mkdir -p '"$B"'/work/acme/keep/claude && echo x > '"$B"'/work/acme/keep/claude/f && ln -s '"$B"'/work/acme/keep '"$B"'/work/acme/.signin" | as-team acme dev claude
+  ! echo "{\"v\":1,\"cwd\":\"'"$B"'/work/acme\",\"env\":{\"CLAUDE_CONFIG_DIR\":\"'"$B"'/work/acme/.signin/claude\"},\"files\":[],\"removeAtEnd\":[]}" | runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme clean-signin 2>/dev/null
+  test -e '"$B"'/work/acme/keep/claude/f
+  ! echo "{\"v\":1,\"cwd\":\"'"$B"'/work/acme\",\"env\":{\"CLAUDE_CONFIG_DIR\":\"'"$B"'/auth/claude\",\"CODEX_HOME\":\"'"$B"'/work/acme/.signin/codex\"},\"files\":[],\"removeAtEnd\":[]}" | runuser -u manythreads-bridge -- sudo -n -- '"$H"' run acme clean-signin 2>/dev/null
+  echo "rm -f '"$B"'/work/acme/.signin; rm -rf '"$B"'/work/acme/keep" | as-team acme dev claude'
 checkx "a renewal made in a team's run reaches the main copy (as the bridge user's file), and the team's copy goes at the end" '
   echo "'"$FAKE"' acct-1 rt-B 2026-11-20T01:00:00Z > \$CODEX_HOME/auth.json" | as-team acme dev codex
   runuser -u manythreads-bridge -- grep -q "\"rt-B\"" '"$MAIN"'

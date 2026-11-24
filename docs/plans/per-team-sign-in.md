@@ -102,3 +102,30 @@ An independent read against the code found these; the plan is amended by them.
   per folder. The tunnel hello says whether the server has team users, so the site refuses per team on a one-user server.
 - **Honest limit:** per team protects teams from each other, not from the bridge user or root on that machine.
 - The kind/agent rule for `per_team` is a database check (MISTAKES: rules in routes drift).
+
+## 8. Built (P35-10b, 2026-11-24): enrolled servers
+Section 4 as amended by section 7, then by a second review (also 2026-11-24). What was chosen while building:
+- **Helper kinds:** `claude-login`, `claude-logout` (the adapter's own `--cli auth login --claudeai` / `--cli auth logout` under `script -q -e -f`, started by the helper as the team user after it read
+  the header from the pipe), `codex-key` (`codex login --with-api-key`, the key on the pipe after the header), `codex-logout` (`codex logout`), `clean-signin` (removes the one own `.signin/<agent>`
+  the header names, then `.signin` when empty; refused when `.signin` or the folder is a link or `.signin` is not the team user's), `signin-facts` (reads the team's own sign-in file as the team
+  user and prints only its dates and shape). **No `codex-login`:** Codex's device-code sign-in needs no terminal and goes through its adapter (kind `codex`) as the team user, as the pod does.
+  The helper table gains `agents.codex.cli` (Codex's own program), written by `bridge.sh`.
+- **The header says the mode:** `signIn: "per_team"` on a run of a per-team runner (written by the bridge). With it a run must name the team's own `.signin/<agent>` and the shared folders are
+  refused; without it a run must name the shared ones and a team's own folder is refused. So a `.signin` left behind never blocks a shared run. The sign-in kinds name only the team's own folder;
+  `clean-signin` and `signin-facts` exactly one, and a header that names a shared folder beside it is refused.
+- **The kept choice** is per agent (a server's Claude Code and Codex are two runners): `<state>/signin-scope.json` `{claude, codex, own: {claude: [team], codex: [team]}}`. It is written (new file,
+  rename) before memory changes; a write that fails refuses the switch. A missing file is one sign-in; a file that cannot be read is an error: Claude and Codex runs are refused and the hello says
+  `unreadable` until a switch writes it again. `own` lists every team a per-team call named; a switch back cleans them too, and the hello names those left while the agent has one sign-in.
+- **The switch** (`POST /v1/signin/scope?agent=… {scope, teams}`) always does its work, also for the choice the bridge already has (it cleans what an earlier switch left). Back to one sign-in it asks
+  only teams that have a user on the machine (no user is made). A team that could not be signed out or cleaned leaves the old choice and the answer lists `signedOutTeams`, `notSignedOut`,
+  `notCleaned`; the site stores those signed out as such and says which, and changes no column.
+- **The hello** carries `teamUsers`, `signInScope` per agent and `staleSignins`. The site stores them (`bot_servers.team_users`, `signin_scopes`), and a runner whose column differs from what the
+  bridge keeps (or whose bridge cannot read it) gets `needs_sign_in` with a sentence (runner row, attention bar) and runs nothing; the site never flips the column itself.
+- **The site's switch holds no lock across the bridge call:** a short transaction claims the runner (`bot_runners.scope_switch_at`, ten minutes at most), the bridge is asked outside any
+  transaction, a second short one writes the column, the server's kept choice and the audit line. Back to one sign-in it sends only teams that are served or have a stored state.
+- **The run's check** asks the bridge's last known state of that team's folder (any age; a sign-in, sign-out or switch forgets it), else one probe; `unknown` lets the run go. A signed-out team
+  ends with `reason: needs_sign_in`, so the site marks that team `refused`. **The run gate** of a team's own folder learns the file's dates from the helper (`signin-facts`, every 30 s at most and
+  after each renewing run); dates it cannot learn count as "a renewal is near", so that team's runs go one at a time and never both renew.
+- **Site:** bot-runners 0012 (`bot_servers.team_users`, `bot_servers.signin_scopes`, `bot_runners.scope_switch_at`). Any team open to a server runner may sign in (no pod is needed), and every such
+  team counts in "n of m". The connect refresh asks only teams whose stored state is unknown or older than ten minutes, three at a time.
+- Not done here: the container test's new probes are written (`install/container-test/run.sh`, section "a team's own sign-in") but were not run (the disk was at 90%).

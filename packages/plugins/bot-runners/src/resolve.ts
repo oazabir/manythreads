@@ -1,7 +1,7 @@
 import type { BotRunnersProvider, ClaudePodsProvider, PluginContext, PluginTx, PodRunnerInfo, PodRunnerState, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
-import { BotRunnerName, modelRunnerProblem } from '@manythreads/shared';
+import { BotRunnerName, hasSignInScopeChoice, modelRunnerProblem } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
-import { serverProfileRule } from './servers.ts';
+import { scopeDrift, serverProfileRule } from './servers.ts';
 import { anyTeamSignedIn, followTeams, pruneTeamSignIns, storeTeamSignIn } from './team-signins.ts';
 import type { TunnelRegistry } from './tunnel/registry.ts';
 
@@ -66,9 +66,16 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
     // signed in is refused at once, and never falls back to another team's sign-in or to a shared one.
     // A team's plan limit holds that team's runs until it resets (a limit that has run out counts as signed in), and the runner's own sign-in states say nothing about a team that is
     // signed in: only what concerns the pods themselves (starting, moving, a machine, a pause, off) is judged after this.
-    const perTeam = runner.sign_in_scope === 'per_team' && (runner.kind === 'claude_cli' || runner.kind === 'codex_cli');
+    // a server runner of Claude Code or Codex signs in per team the same way (P35-10b): its stored states come from the Runners page and the server's sign-in refresh
+    const perTeam = runner.sign_in_scope === 'per_team' && hasSignInScopeChoice(runner);
+    // a server whose bridge keeps another choice than this runner's (or could not read its own) runs nothing on it until an admin sets both again (P35-10b)
+    if (runner.kind === 'server_agent' && runner.server_id !== null && hasSignInScopeChoice(runner)) {
+      const kept = (await tx.query<{ kept: string | null }>('SELECT signin_scopes ->> $2 AS kept FROM app.bot_servers WHERE id = $1::uuid', [runner.server_id, runner.agent === 'codex' ? 'codex' : 'claude'])).rows[0]?.kept ?? null;
+      const drift = scopeDrift(runner, kept);
+      if (drift !== null) return refuse('not_ready', `This bot runs on ${runner.label}, which is not ready: ${drift}`);
+    }
     if (perTeam) {
-      const podKind = runner.kind === 'codex_cli' ? 'codex_cli' : 'claude_cli';
+      const podKind = runner.kind === 'codex_cli' || (runner.kind === 'server_agent' && runner.agent === 'codex') ? 'codex_cli' : 'claude_cli';
       const own = (await tx.query<{ state: string; paused_until: Date | null }>('SELECT state, paused_until FROM app.bot_runner_team_signins WHERE runner_id = $1::uuid AND team_id = $2::uuid', [runner.id, query.teamId])).rows[0];
       const limitedUntil = own?.state === 'limited' && own.paused_until !== null && own.paused_until.getTime() > ctx.runtime.now().getTime() ? own.paused_until : null;
       if (limitedUntil !== null) return refuse('not_ready', teamLimited(team.name, podKind, runner.label, limitedUntil));
@@ -348,13 +355,15 @@ export async function pauseRunner(ctx: PluginContext, input: { runner: string; t
     const until = input.reason === 'plan_limit' ? pauseEnd(input.until, ctx.runtime.now().getTime()) : null;
     // The detail sentence names the program, so it is chosen by the runner's kind: the kind is read here, then written with the state in one statement.
     const found = (
-      await tx.query<{ id: string; kind: string; sign_in_scope: string }>(
-        'SELECT r.id, r.kind, r.sign_in_scope FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $2::uuid WHERE r.name = $1',
+      await tx.query<{ id: string; kind: string; agent: string; sign_in_scope: string }>(
+        'SELECT r.id, r.kind, r.agent, r.sign_in_scope FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $2::uuid WHERE r.name = $1',
         [input.runner, input.teamId],
       )
     ).rows[0];
     const kind = found?.kind;
-    if (!found || (kind !== 'claude_cli' && kind !== 'codex_cli')) return;
+    // a server runner where each team signs in (P35-10b): the team's own state, as for a pod runner below; a server's shared sign-in is the bridge's own gate's business
+    const serverPerTeam = found !== undefined && kind === 'server_agent' && found.sign_in_scope === 'per_team' && hasSignInScopeChoice(found);
+    if (!found || (kind !== 'claude_cli' && kind !== 'codex_cli' && !serverPerTeam)) return;
     // A runner where each team signs in (P35-10): the sign-in and the plan are the team's own. A refused sign-in marks that team `refused` (the controller's pass may not undo it:
     // the pod may still read its old file as signed in; only a new sign-in on the page does), and a plan limit marks it `limited` until the reset. The other teams and the runner's
     // own state are not changed, except that a runner with no team signed in any more waits for one.
@@ -364,6 +373,7 @@ export async function pauseRunner(ctx: PluginContext, input: { runner: string; t
       await followTeams(tx, found.id);
       return;
     }
+    if (kind !== 'claude_cli' && kind !== 'codex_cli') return;
     const changed = await tx.query<{ id: string; workspace_id: string; name: string }>(
       `UPDATE app.bot_runners r
           SET status = $3, status_detail = $4, paused_until = $5::timestamptz, last_checked_at = now(), updated_at = now()

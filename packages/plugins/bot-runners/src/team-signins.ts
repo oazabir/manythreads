@@ -91,9 +91,9 @@ export const toTeamState = (t: TeamSignIn): AgentAuthTeamState =>
 /** A team whose own sign-in works: signed in, or at its plan limit (still signed in; its runs wait for the reset). */
 export const isSignedIn = (state: BotRunnerTeamSignInState | null): boolean => state === 'signed_in' || state === 'limited';
 
-/** How many served teams are signed in, of how many are served (the runner row's "2 of 3 teams signed in"). */
-export function countSignedIn(teams: readonly TeamSignIn[]): { signedIn: number; served: number } {
-  const served = teams.filter((t) => t.served);
+/** How many served teams are signed in, of how many are served (the runner row's "2 of 3 teams signed in"). `onServer`: every team open to the runner counts (any may sign in). */
+export function countSignedIn(teams: readonly TeamSignIn[], onServer = false): { signedIn: number; served: number } {
+  const served = onServer ? [...teams] : teams.filter((t) => t.served);
   return { signedIn: served.filter((t) => isSignedIn(t.state)).length, served: served.length };
 }
 
@@ -140,7 +140,8 @@ export async function followTeams(sys: PluginTx, runnerId: string): Promise<void
         SET status = CASE WHEN $2::boolean THEN 'ready' ELSE 'waiting_for_sign_in' END,
             status_detail = CASE WHEN $2::boolean THEN NULL ELSE 'No team has signed in yet. Choose Sign-in on this runner to sign a team in.' END,
             last_checked_at = now(), updated_at = now()
-      WHERE r.id = $1::uuid AND r.sign_in_scope = 'per_team' AND r.kind IN ('claude_cli', 'codex_cli')
+      -- the runners that may sign in per team: the same rule as CHECK bot_runners_sign_in_scope_kind (bot-runners 0011) and hasSignInScopeChoice (@manythreads/shared)
+      WHERE r.id = $1::uuid AND r.sign_in_scope = 'per_team' AND (r.kind IN ('claude_cli', 'codex_cli') OR (r.kind = 'server_agent' AND r.agent IN ('claude-code', 'codex')))
         AND (($2::boolean AND r.status = 'waiting_for_sign_in') OR (NOT $2::boolean AND r.status = 'ready'))`,
     [runnerId, signed],
   );

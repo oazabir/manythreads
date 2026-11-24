@@ -17,7 +17,7 @@ import {
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { modelRunnerNoReply, modelRunnerRefusal } from '@manythreads/shared';
-import { checkPlacement, kindOf, resolveRunner, teamRunners } from '../src/resolve.ts';
+import { checkPlacement, kindOf, pauseRunner, resolveRunner, teamNotSignedIn, teamRunners } from '../src/resolve.ts';
 
 // resolveRunner is the one place a runner's name becomes a place to run. It refuses what the admin has not allowed, and answers with the address and key only to
 // the server code that calls it. The context here is the two things it needs: the system transaction and the secret reader.
@@ -250,5 +250,47 @@ describe('a runner of an enrolled server (P26-15)', () => {
     expect((await answer('fa-box-claude')).fullAccess).toBe(false);
     await sys((tx) => tx.query("UPDATE app.bot_runners SET full_access = true WHERE name = 'fa-box-claude'"));
     expect((await answer('fa-box-claude')).fullAccess).toBe(true);
+  });
+});
+
+describe('a server runner where each team signs in (P35-10b)', () => {
+  const HASH = 'b'.repeat(64);
+  const tunnel = { reachable: () => true, fetchFor: () => fetch } as never;
+  const timed = (): PluginContext => ({ ...ctx, runtime: { now: () => new Date() } }) as unknown as PluginContext;
+  const state = (runner: string, team: string, value: string) =>
+    sys((tx) => tx.query(`INSERT INTO app.bot_runner_team_signins (runner_id, team_id, state) SELECT id, $2::uuid, $3 FROM app.bot_runners WHERE name = $1 ON CONFLICT (runner_id, team_id) DO UPDATE SET state = EXCLUDED.state`, [runner, team, value]));
+
+  it('runs a team\'s bots only on that team\'s own stored sign-in, refuses the others in the plan\'s sentence, and a refused sign-in of one team holds only that team', async () => {
+    const serverId = (
+      await sys((tx) => tx.query<{ id: string }>("INSERT INTO app.bot_servers (workspace_id, name, label, key_hash, status, team_users) VALUES ($1, 'pt-box', 'Box', $2, 'connected', true) RETURNING id", [omar.workspaceId, HASH]))
+    ).rows[0]!.id;
+    for (const [name, agent] of [['pt-box-claude', 'claude-code'], ['pt-box-codex', 'codex']] as const) {
+      await insertRunner(name, { kind: 'server_agent', agent, teams: [TEAM_IDS.Engineering, TEAM_IDS.Marketing], serverId });
+      await sys((tx) => tx.query("UPDATE app.bot_runners SET sign_in_scope = 'per_team', status = 'waiting_for_sign_in' WHERE name = $1", [name]));
+    }
+    const names = await sys(async (tx) => Object.fromEntries((await tx.query<{ id: string; name: string }>('SELECT id, name FROM app.teams WHERE id = ANY($1::uuid[])', [[TEAM_IDS.Engineering, TEAM_IDS.Marketing]])).rows.map((r) => [r.id, r.name])));
+    const go = (runner: string, team: string) => resolveRunner(timed(), { teamId: team, runner }, tunnel);
+    expect(await go('pt-box-claude', TEAM_IDS.Engineering)).toEqual({ ok: false, reason: 'not_ready', message: teamNotSignedIn(names[TEAM_IDS.Engineering]!, 'claude_cli', 'Label of pt-box-claude') });
+    expect(await go('pt-box-codex', TEAM_IDS.Engineering)).toMatchObject({ ok: false, message: expect.stringContaining('has not signed in to Codex on runner') });
+    await state('pt-box-claude', TEAM_IDS.Engineering, 'signed_in');
+    // the runner's own `waiting_for_sign_in` says nothing about a team that is signed in
+    expect(await go('pt-box-claude', TEAM_IDS.Engineering)).toMatchObject({ ok: true, target: { kind: 'server_agent', agent: 'claude-code' } });
+    expect(await go('pt-box-claude', TEAM_IDS.Marketing)).toMatchObject({ ok: false, reason: 'not_ready' });
+    // a run of Engineering met a refused sign-in (the bridge's own refusal of a signed-out team says needs_sign_in): Engineering only
+    await state('pt-box-claude', TEAM_IDS.Marketing, 'signed_in');
+    await pauseRunner(timed(), { runner: 'pt-box-claude', teamId: TEAM_IDS.Engineering, reason: 'needs_sign_in', until: null });
+    const rows = await sys(async (tx) => (await tx.query<{ team_id: string; state: string }>("SELECT s.team_id, s.state FROM app.bot_runner_team_signins s JOIN app.bot_runners r ON r.id = s.runner_id WHERE r.name = 'pt-box-claude' ORDER BY s.team_id")).rows);
+    expect(Object.fromEntries(rows.map((r) => [r.team_id, r.state]))).toEqual({ [TEAM_IDS.Engineering]: 'refused', [TEAM_IDS.Marketing]: 'signed_in' });
+    expect(await go('pt-box-claude', TEAM_IDS.Engineering)).toMatchObject({ ok: false, reason: 'not_ready' });
+    expect(await go('pt-box-claude', TEAM_IDS.Marketing)).toMatchObject({ ok: true });
+    // the server's bridge says it keeps the other choice: nothing runs on the runner until an admin sets both again
+    await sys((tx) => tx.query(`UPDATE app.bot_servers SET signin_scopes = '{"claude": "shared"}'::jsonb WHERE name = 'pt-box'`));
+    expect(await go('pt-box-claude', TEAM_IDS.Marketing)).toMatchObject({ ok: false, reason: 'not_ready', message: expect.stringContaining('The server keeps one sign-in for all teams for Claude Code') });
+    await sys((tx) => tx.query(`UPDATE app.bot_servers SET signin_scopes = '{"claude": "per_team"}'::jsonb WHERE name = 'pt-box'`));
+    expect(await go('pt-box-claude', TEAM_IDS.Marketing)).toMatchObject({ ok: true });
+    // a shared server runner is still the bridge's own gate's business: the site's row is not paused
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET sign_in_scope = 'shared', status = 'ready' WHERE name = 'pt-box-codex'"));
+    await pauseRunner(timed(), { runner: 'pt-box-codex', teamId: TEAM_IDS.Engineering, reason: 'needs_sign_in', until: null });
+    expect((await sys((tx) => tx.query<{ status: string }>("SELECT status FROM app.bot_runners WHERE name = 'pt-box-codex'"))).rows[0]!.status).toBe('ready');
   });
 });

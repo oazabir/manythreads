@@ -36,8 +36,13 @@ describe('the helper\'s arguments (after the sudoers rule matched its words)', (
     expect(parseArgv(['ensure-user', 'eng'])).toEqual({ ok: true, command: 'ensure-user', team: 'eng' });
     for (const kind of ['claude', 'codex', 'hermes', 'sync', 'clean-kube', 'clean-codex']) expect(parseArgv(['run', 'eng', kind])).toEqual({ ok: true, command: 'run', team: 'eng', kind });
   });
-  it('names every kind when it refuses one (clean-codex among them)', () => {
-    expect(parseArgv(['run', 'eng', 'bash'])).toEqual({ ok: false, error: 'the kinds are claude, codex, hermes, sync, clean-kube and clean-codex, and nothing follows them' });
+  it('names every kind when it refuses one (clean-codex and the sign-in kinds of P35-10b among them)', () => {
+    expect(parseArgv(['run', 'eng', 'bash'])).toEqual({
+      ok: false,
+      error: 'the kinds are claude, codex, hermes, sync, clean-kube, clean-codex, claude-login, claude-logout, codex-key, codex-logout, clean-signin and signin-facts, and nothing follows them',
+    });
+    expect(parseArgv(['run', 'eng', 'clean-signin'])).toMatchObject({ ok: true, kind: 'clean-signin' });
+    expect(parseArgv(['run', 'eng', 'claude-login', 'extra'])).toMatchObject({ ok: false });
   });
   it.each([
     [[]],

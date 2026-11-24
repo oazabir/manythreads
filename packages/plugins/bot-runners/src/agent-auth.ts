@@ -49,8 +49,11 @@ import type { TunnelRegistry } from './tunnel/registry.ts';
 
 const BRIDGE_AGENTS: ReadonlySet<string> = new Set(['claude-code', 'codex']);
 const MAX_REPLY_BYTES = 64 * 1024;
-/** How long the server waits for the bridge, per request. The bridge's slowest answer is three steps of 20 s (a sign-out); these are above that and under a minute and a half. */
-const WAITS = { status: 70_000, login: 70_000, answer: 45_000, cancel: 20_000, logout: 75_000 } as const;
+/**
+ * How long the server waits for the bridge, per request. The bridge's slowest answer is three steps of 20 s (a sign-out); these are above that and under a minute and a half. A server's
+ * switch of who signs in (`scope`) checks and signs out each listed team one after another, so it may take a few minutes.
+ */
+const WAITS = { status: 70_000, login: 70_000, answer: 45_000, cancel: 20_000, logout: 75_000, scope: 300_000 } as const;
 /** `MANYTHREADS_AGENT_AUTH_WAIT_SCALE` (a number above 0 and up to 1) shortens every wait: for tests of a bridge that does not answer, never set in production. */
 const waitOf = (key: keyof typeof WAITS): number => {
   const scale = Number(process.env['MANYTHREADS_AGENT_AUTH_WAIT_SCALE']);
@@ -77,7 +80,8 @@ const WORDS = {
   teamUnknown: 'That team is not one of the teams this runner serves.',
   teamNoPod: 'This team has no pod on this runner yet. Place one of its bots on the runner, then wait a minute for the pod to start.',
   noScopeChoice: 'Only a Claude Code or Codex runner can have a sign-in for each team.',
-  serverScope: 'Each team signing in on its own is not available for a server yet. It works for a Claude Code or Codex runner in a pod.',
+  serverOneUser: 'This server runs every team as one user, so a team cannot have a sign-in of its own there: one user can read every folder. Install the bridge on it again (it then makes a user per team) and try again.',
+  serverOld: 'This server cannot let each team sign in yet. Update the agent bridge on that machine.',
   notPerTeam: 'This runner has one sign-in for all its teams, so there is no list of team sign-ins.',
   changed: 'Someone changed who signs this runner in at the same time. Look at the runner again, then try again.',
   switchOut: (who: string) => `${who} could not be signed out, so nothing was changed. Wait a minute for the pod to answer, then try again.`,
@@ -115,14 +119,20 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     const runner = await loadRunner(tx, id);
     const perTeam = runner.sign_in_scope === 'per_team';
     if (!perTeam && teamSlug !== undefined) throw invalid(WORDS.oneSignIn);
-    if (perTeam && !isPodCli(runner.kind)) throw conflict(WORDS.serverScope);
+    if (perTeam && !isPodCli(runner.kind) && runner.kind !== 'server_agent') throw conflict(WORDS.noScopeChoice);
     if (runner.kind === 'server_agent') {
       // Hermes on a server has no sign-in of its own here: the bridge's answer for it is `not_needed`, and the page shows nothing to do.
       if (runner.server_id === null || registry === undefined) throw conflict('This runner has no server.');
-      const server = (await tx.query<{ name: string }>('SELECT name FROM app.bot_servers WHERE id = $1::uuid', [runner.server_id])).rows[0];
+      const server = (await tx.query<{ name: string; team_users: boolean }>('SELECT name, team_users FROM app.bot_servers WHERE id = $1::uuid', [runner.server_id])).rows[0];
       if (!server) throw conflict('This runner has no server.');
       if (runner.agent !== 'claude-code' && runner.agent !== 'codex') throw invalid(WORDS.noSignIn);
-      return { runner, agent: runner.agent as AgentAuthAgent, baseUrl: 'http://server.invalid', key: '', tunnel: registry.fetchFor(runner.server_id, server.name) };
+      const base: Target = { runner, agent: runner.agent as AgentAuthAgent, baseUrl: 'http://server.invalid', key: '', tunnel: registry.fetchFor(runner.server_id, server.name) };
+      if (!perTeam) return base;
+      // a team's own sign-in on a server (P35-10b): the bridge signs it in as the team's own user, into the team's own folder; any team open to the runner may sign in
+      if (!server.team_users) throw conflict(WORDS.serverOneUser);
+      if (teamSlug === undefined) throw invalid(WORDS.teamNeeded);
+      const team = await teamOf(runner, teamSlug);
+      return { ...base, team: { id: team.teamId, slug: team.slug, name: team.name } };
     }
     if (isPodCli(runner.kind)) {
       const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
@@ -151,7 +161,8 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
   async function ask<T extends z.ZodType>(t: Target, method: 'GET' | 'POST', path: string, body: Record<string, unknown> | undefined, schema: T, timeoutMs: number): Promise<z.infer<T>> {
     let res: Response;
     try {
-      const url = `${t.baseUrl}${path}${path.includes('?') ? '&' : '?'}agent=${encodeURIComponent(t.agent)}`;
+      // a server's bridge is told the team in the address (a pod's bridge is the team's own pod and is told nothing)
+      const url = `${t.baseUrl}${path}${path.includes('?') ? '&' : '?'}agent=${encodeURIComponent(t.agent)}${t.tunnel && t.team ? `&team=${encodeURIComponent(t.team.slug)}` : ''}`;
       const init = {
         method,
         headers: { ...(t.tunnel ? {} : { authorization: `Bearer ${t.key}` }), ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -250,7 +261,7 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
 
   /** A server's runner is ready when its agent is signed in on the server, and waits for a sign-in when it is not; the page's own reads keep it true. */
   async function followSignIn(t: Target, state: string): Promise<void> {
-    if (!t.tunnel || (state !== 'signed_in' && state !== 'signed_out' && state !== 'not_needed')) return;
+    if (!t.tunnel || t.team || (state !== 'signed_in' && state !== 'signed_out' && state !== 'not_needed')) return;
     await ctx.db.system((sys) => setServerRunnerSignIn(sys, t.runner.id, state !== 'signed_out'), { workspaceId: t.runner.workspace_id }).catch(() => undefined);
   }
 
@@ -259,7 +270,8 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
    * say it as soon as the page itself has seen the bridge say it. Only a runner in the one state the change leaves is touched.
    */
   async function followPodSignIn(t: Target, state: string, real = false): Promise<void> {
-    if (t.pod !== true || (state !== 'signed_in' && state !== 'signed_out')) return;
+    // a team's own sign-in on a server is stored the same way as a team pod's (P35-10b)
+    if ((t.pod !== true && !(t.tunnel && t.team)) || (state !== 'signed_in' && state !== 'signed_out')) return;
     if (t.team) {
       // A team's own sign-in: stored for the list and the run resolver; the runner is ready while any of its teams is signed in. A plain status read (`real` false) never clears a
       // refused sign-in or a plan limit: the pod may still read its old file as signed in. A sign-in that ended well on the page, or a sign-out, does.
@@ -392,6 +404,86 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
     }),
   });
 
+  const ScopeReply = z.object({
+    scope: z.enum(['shared', 'per_team']),
+    signedOut: z.number().int().min(0).max(10_000),
+    signedOutTeams: z.array(z.string().max(63)).max(2000).default([]),
+    notSignedOut: z.array(z.string().max(63)).max(2000).default([]),
+    notCleaned: z.array(z.string().max(63)).max(2000).default([]),
+  });
+  const list = (slugs: readonly string[]): string => (slugs.length <= 5 ? slugs.join(', ') : `${slugs.slice(0, 5).join(', ')} and ${slugs.length - 5} more`);
+
+  /**
+   * Who signs a server's Claude Code or Codex runner in (P35-10b, docs/plans/per-team-sign-in.md sections 4, 7 and 8). Only on a server whose bridge said each team runs as a user of
+   * its own. The bridge does the switch and keeps the choice (`POST /v1/signin/scope` through the server's connection): it signs the old sign-ins out for real first, removes each team's
+   * own folder as the team user, and stops the agent's runs. Choosing the value the runner already has asks the bridge all the same (it cleans what an earlier switch left, and sets a
+   * bridge that keeps another choice).
+   *
+   * No row lock is held while the bridge works (it may take minutes): a short transaction claims the runner (`scope_switch_at`, a second admin's switch is refused while it is set), the
+   * bridge is asked outside any transaction, and a second short one writes the column, the server's kept choice and the audit line and clears the claim. If that last write fails after
+   * the bridge switched, the next hello shows the difference on the runner (it is never flipped silently). A switch the bridge did only in part (a team could not be signed out or
+   * cleaned) changes no column, stores the teams it did sign out as signed out, and says which.
+   */
+  async function switchServer(req: HttpRequest, tx: PluginTx, runner: RunnerRow, scope: 'shared' | 'per_team') {
+    if (runner.server_id === null || registry === undefined) throw conflict('This runner has no server.');
+    if (runner.agent !== 'claude-code' && runner.agent !== 'codex') throw invalid(WORDS.noScopeChoice);
+    const server = (await tx.query<{ name: string; team_users: boolean }>('SELECT name, team_users FROM app.bot_servers WHERE id = $1::uuid', [runner.server_id])).rows[0];
+    if (!server) throw conflict('This runner has no server.');
+    if (scope === 'per_team' && !server.team_users) throw conflict(WORDS.serverOneUser);
+    const claimed = await ctx.db.as(req.caller, async (own) =>
+      (
+        await own.query(
+          `UPDATE app.bot_runners SET scope_switch_at = now() WHERE id = $1::uuid AND sign_in_scope = $2 AND (scope_switch_at IS NULL OR scope_switch_at < now() - interval '10 minutes') RETURNING id`,
+          [runner.id, runner.sign_in_scope],
+        )
+      ).rows.length === 1,
+    );
+    if (!claimed) throw conflict(WORDS.changed);
+    const release = (): Promise<unknown> => ctx.db.as(req.caller, (own) => own.query('UPDATE app.bot_runners SET scope_switch_at = NULL WHERE id = $1::uuid', [runner.id])).catch(() => undefined);
+    // to shared: only the teams that may hold a sign-in of their own here (one with a stored state, or one that may sign in and has one of its bots or is the first), never every
+    // open team, so the bridge makes no user for a team that never ran; it adds the teams it signed in itself
+    const teams = scope === 'shared' ? (await ctx.db.system((sys) => teamSignIns(sys, runner), { workspaceId: runner.workspace_id })).filter((t) => t.served || t.state !== null) : [];
+    const t: Target = { runner, agent: runner.agent as AgentAuthAgent, baseUrl: 'http://server.invalid', key: '', tunnel: registry.fetchFor(runner.server_id, server.name) };
+    let out: z.infer<typeof ScopeReply>;
+    try {
+      out = await ask(t, 'POST', '/v1/signin/scope', { scope, teams: teams.map((x) => x.slug) }, ScopeReply, waitOf('scope'));
+    } catch (err) {
+      await release();
+      // a bridge from before P35-10b does not know the route
+      if (err instanceof HttpError && err.message === WORDS.old) throw conflict(WORDS.serverOld);
+      throw err;
+    }
+    const key = runner.agent === 'codex' ? 'codex' : 'claude';
+    if (out.scope !== scope) {
+      // done in part: the teams the bridge signed out are stored so; the choice stays as it was
+      const byslug = new Map(teams.map((x) => [x.slug, x.teamId]));
+      await ctx.db
+        .system(async (sys) => {
+          for (const slug of out.signedOutTeams) {
+            const id = byslug.get(slug);
+            if (id !== undefined) await storeTeamSignIn(sys, runner.id, id, 'signed_out', { force: true });
+          }
+          await followTeams(sys, runner.id);
+        }, { workspaceId: runner.workspace_id })
+        .catch(() => undefined);
+      await release();
+      const parts = [
+        out.signedOutTeams.length > 0 ? `Signed out: ${list(out.signedOutTeams)}.` : 'No team was signed out.',
+        out.notSignedOut.length > 0 ? `Could not be signed out: ${list(out.notSignedOut)}.` : '',
+        out.notCleaned.length > 0 ? `The sign-in folder could not be removed for: ${list(out.notCleaned)}.` : '',
+      ].filter((p) => p !== '');
+      throw conflict(`The switch was not finished, so this runner still lets each team sign in. ${parts.join(' ')} Try again in a moment.`);
+    }
+    const detail = scope === 'per_team' ? 'No team has signed in yet. Choose Sign-in on this runner to sign a team in.' : 'Waiting for a sign-in. Choose Sign-in for this agent on its server.';
+    await ctx.db.as(req.caller, async (own) => {
+      await own.query(`UPDATE app.bot_runners SET sign_in_scope = $2, scope_switch_at = NULL, status = 'waiting_for_sign_in', status_detail = $3, paused_until = NULL, updated_at = now() WHERE id = $1::uuid`, [runner.id, scope, detail]);
+      await own.query(`UPDATE app.bot_servers SET signin_scopes = jsonb_set(signin_scopes, ARRAY[$2::text], to_jsonb($3::text)), updated_at = now() WHERE id = $1::uuid`, [runner.server_id, key, scope]);
+      await own.query('SELECT app.bot_runner_team_signins_clear($1::uuid)', [runner.id]);
+      await ctx.audit.emit(own, { type: 'bot_runner.sign_in_scope.changed', workspaceId: runner.workspace_id, runnerId: runner.id, name: runner.name, from: runner.sign_in_scope, to: scope, signedOut: out.signedOut, actorId: own.actor.id, at: now() });
+    });
+    return presentOne(ctx, tx, runner.id);
+  }
+
   /**
    * Who signs a pod runner in: one sign-in for all its teams, or each team on its own (P35-10, docs/plans/per-team-sign-in.md sections 2, 3 and 7). The old sign-ins are signed out
    * for real first (deleting a volume alone would leave a copy a full-access team may already hold valid), through each pod's bridge; only then is the column written and the old
@@ -408,9 +500,11 @@ export function registerAgentAuthRoutes(ctx: PluginContext, registry?: TunnelReg
       await requireWorkspaceAdmin(tx);
       const body = SetSignInScopeRequest.parse(req.body);
       const runner = await loadRunner(tx, id);
+      // a server runner asks its bridge even for the choice it has (see switchServer)
+      if (runner.kind === 'server_agent' && hasSignInScopeChoice(runner)) return json(SetSignInScopeResponse.parse({ runner: await switchServer(req, tx, runner, body.scope) }));
       if (runner.sign_in_scope === body.scope) return json(SetSignInScopeResponse.parse({ runner: await presentOne(ctx, tx, id) }));
       if (!hasSignInScopeChoice(runner)) throw invalid(WORDS.noScopeChoice);
-      if (!isPodCli(runner.kind)) throw conflict(WORDS.serverScope);
+      if (!isPodCli(runner.kind)) throw invalid(WORDS.noScopeChoice);
       const pods = ctx.providers.get<ClaudePodsProvider>('claude.pods');
       if (!pods) throw conflict(WORDS.podsOff);
       const which = agentOfKind(runner.kind);

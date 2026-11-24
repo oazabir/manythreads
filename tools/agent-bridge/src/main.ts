@@ -8,6 +8,7 @@ import { helloFor, keyFiles, readServerKey, serverSigninDirs, storeServerKey } f
 import { startServerRepos } from './server-repos.ts';
 import { cleanTeamCodex, cleanTeamKube, hasTeamUsers } from './server-team.ts';
 import { kubeFolder } from './server-run.ts';
+import { loadSigninScope, SIGNIN_SCOPE_FILE } from './signin-scope.ts';
 import { newInternalKey, startTunnel } from './tunnel.ts';
 
 // tsx tools/agent-bridge/src/main.ts --config <file> [--listen 127.0.0.1:8650] [--state-dir ~/.manythreads-bridge] [--key-file <file>] [--repos-file <file>]
@@ -87,7 +88,10 @@ if (config.server !== undefined) {
   const socketPath = join(stateRoot, 'bridge.sock');
   // The sign-in gates (one renewing run at a time near a renewal, and the memory of an account failure) read the machine's own sign-in folders: the server's templates name them
   // (P31-01, review correction 1: an enrolled server had neither gate).
-  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site, ...serverSigninDirs(config) });
+  // who signs each agent in (P35-10b): kept by the bridge in its state folder, read before the first run
+  const signinScopeFile = join(stateRoot, SIGNIN_SCOPE_FILE);
+  if (loadSigninScope(config, signinScopeFile) === 'unreadable') console.log(`agent-bridge: ${signinScopeFile} cannot be read: Claude Code and Codex runs are refused until an admin chooses Who signs in again on the Runners page`);
+  const bridge = await startBridge({ config, apiKey: internalKey, stateDir, socketPath, siteUrl: values.site, signinScopeFile, ...serverSigninDirs(config) });
   const cfg = config;
   const tunnel = startTunnel({
     siteUrl: values.site,

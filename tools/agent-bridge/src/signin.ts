@@ -73,6 +73,18 @@ export interface FileFacts {
 
 const NO_FILE: FileFacts = { exists: false, valid: false, scopeOk: false, expiresAt: null, refreshedAt: null, mtimeMs: null };
 
+/** Facts that could not be learned: taken as "a renewal is near", so the runs that share the file go one at a time until they can be learned. */
+export const FACTS_UNKNOWN: FileFacts = { exists: true, valid: true, scopeOk: true, expiresAt: 0, refreshedAt: null, mtimeMs: null };
+
+/**
+ * Where a gate learns its file's facts when the bridge cannot read the file itself (a team's own sign-in, the team user's alone, P35-10b): `facts` answers from what was last learned,
+ * `refresh` learns again (as the team user, through the helper); `force` after a run that renewed, so the next look is fresh.
+ */
+export interface GateFacts {
+  facts(): FileFacts;
+  refresh(force: boolean): Promise<void>;
+}
+
 /** What `<configDir>/.credentials.json` says, without keeping or returning any token. */
 export function readFileFacts(configDir: string): FileFacts {
   const path = join(configDir, '.credentials.json');
@@ -141,9 +153,11 @@ export class SigninGate {
     private readonly configDir: string,
     private readonly now: () => number = Date.now,
     readonly agent: SigninAgent = 'claude-code',
+    private readonly source?: GateFacts,
   ) {}
 
   private facts(): FileFacts {
+    if (this.source !== undefined) return this.source.facts();
     return this.agent === 'codex' ? readCodexFileFacts(this.configDir) : readFileFacts(this.configDir);
   }
 
@@ -157,7 +171,9 @@ export class SigninGate {
 
   /** Run `fn` (one run); within the refresh window, alone. */
   async run<T>(fn: () => Promise<T>): Promise<T> {
+    let woken = false;
     for (;;) {
+      await this.source?.refresh(woken).catch(() => undefined);
       if (!this.near()) return fn();
       if (!this.probing) {
         this.probing = true;
@@ -171,6 +187,7 @@ export class SigninGate {
         }
       }
       await new Promise<void>((resolve) => this.waiters.push(resolve));
+      woken = true;
     }
   }
 

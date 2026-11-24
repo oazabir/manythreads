@@ -1,4 +1,4 @@
-import type { AgentAuth, AgentAuthAttempt, AgentAuthMethod, AgentAuthTeamState, BotRunner, BotRunnerSignInScope } from '@manythreads/shared';
+import { hasSignInScopeChoice, type AgentAuth, type AgentAuthAttempt, type AgentAuthMethod, type AgentAuthTeamState, type BotRunner, type BotRunnerSignInScope } from '@manythreads/shared';
 
 /*
  * The words and rules of the agent sign-in on the Runners page (P25-09, docs/plans/acp.md section 4.1). Pure functions, so they are tested without a browser. The page
@@ -8,8 +8,9 @@ import type { AgentAuth, AgentAuthAttempt, AgentAuthMethod, AgentAuthTeamState, 
 /** A Claude Code or Codex runner in a pod (P26-09). Its agent is signed in inside the pod, from this page, unless a sign-in file was uploaded for it (the older way, kept for those runners). */
 export const isPodAgent = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'claude_cli' || r.kind === 'codex_cli';
 
-/** A pod runner where each team signs in with an account of its own (P35-10). */
-export const isPerTeam = (r: Pick<BotRunner, 'kind'> & { signInScope?: BotRunner['signInScope'] }): boolean => isPodAgent(r) && r.signInScope === 'per_team';
+/** A runner where each team signs in with an account of its own: a pod runner (P35-10) or a server runner (P35-10b). */
+export const isPerTeam = (r: Pick<BotRunner, 'kind'> & { agent?: BotRunner['agent']; signInScope?: BotRunner['signInScope'] }): boolean =>
+  hasSignInScopeChoice({ kind: r.kind, agent: r.agent ?? '' }) && r.signInScope === 'per_team';
 
 /** Whether this runner signs in from this page: a gateway whose address answers as a Claude Code or Codex bridge, or a pod runner with no uploaded sign-in file */
 export const hasAgentSignin = (r: Pick<BotRunner, 'kind' | 'agent'> & { uploadedAt?: BotRunner['uploadedAt'] }): boolean =>
@@ -142,13 +143,14 @@ export const SCOPE_HINT: Record<BotRunnerSignInScope, string> = {
 };
 
 /** The runner row's line about who signs in: "Each team signs in: 2 of 3 teams signed in". */
-export function scopeLine(r: Pick<BotRunner, 'signInScope' | 'teamsSignedIn' | 'teamsServed'>): string {
+export function scopeLine(r: Pick<BotRunner, 'signInScope' | 'teamsSignedIn' | 'teamsServed'> & { kind?: BotRunner['kind'] }): string {
   if (r.signInScope !== 'per_team') return SCOPE_LABEL.shared;
-  return `${SCOPE_LABEL.per_team}: ${teamsSignedInWords(r.teamsSignedIn ?? 0, r.teamsServed ?? 0)}`;
+  return `${SCOPE_LABEL.per_team}: ${teamsSignedInWords(r.teamsSignedIn ?? 0, r.teamsServed ?? 0, r.kind === 'server_agent')}`;
 }
 
-export function teamsSignedInWords(signedIn: number, served: number): string {
-  if (served === 0) return 'no team has a pod yet';
+/** `onServer`: a server runner, where a team signs in without a pod of its own. */
+export function teamsSignedInWords(signedIn: number, served: number, onServer = false): string {
+  if (served === 0) return onServer ? 'no team may use it yet' : 'no team has a pod yet';
   return `${signedIn} of ${served} ${served === 1 ? 'team' : 'teams'} signed in`;
 }
 
@@ -156,15 +158,25 @@ export function teamsSignedInWords(signedIn: number, served: number): string {
 export function scopeSwitchWords(r: Pick<BotRunner, 'kind' | 'agent'>, to: BotRunnerSignInScope): string {
   const which = agentOf(r);
   const name = which === null ? 'the agent' : AGENT_NAME[which];
+  if (r.kind === 'server_agent') {
+    // a server (P35-10b): no pods; each team's own sign-in lives in a folder of the team's own user there
+    const stop = `Runs of ${name} under way on that server are stopped.`;
+    return to === 'per_team'
+      ? `The one ${name} sign-in of this server is signed out and removed. Then every team must sign in with its own account before its bots work again. Each team's sign-in is kept in a folder only that team's user on the server can open; the bridge's own user and the server's administrator can still reach it. ${stop}`
+      : `Every team's own ${name} sign-in on this server is signed out and removed. Then the server needs one sign-in, used by all teams of this runner, before any bot works again. ${stop}`;
+  }
   const after = 'Every pod of this runner restarts: runs under way are stopped, and the shell homes and saved sessions next to the sign-in are cleared.';
   return to === 'per_team'
     ? `The one ${name} sign-in of this runner is signed out and removed, with any uploaded sign-in file. Then every team must sign in with its own account before its bots work again. ${after}`
     : `Every team's own ${name} sign-in on this runner is signed out and removed. Then the runner needs one sign-in, used by all its teams, before any bot works again. ${after}`;
 }
 
+/** What the server list says when its agent's runner lets each team sign in: the teams are signed in from the runner's own Sign-in (P35-10b). */
+export const PER_TEAM_SERVER_SIGNIN = (label: string): string => `Each team signs in on its own on ${label}. Use Sign-in on that runner in the list above to choose the team.`;
+
 /** A team's state in the list. */
-export function teamStateWords(t: Pick<AgentAuthTeamState, 'served' | 'state'> & { pausedUntil?: string | null }): string {
-  if (!t.served) return 'No pod yet: place a bot of this team on the runner first';
+export function teamStateWords(t: Pick<AgentAuthTeamState, 'served' | 'state'> & { pausedUntil?: string | null }, onServer = false): string {
+  if (!t.served && !onServer) return 'No pod yet: place a bot of this team on the runner first';
   if (t.state === 'signed_in') return 'Signed in';
   if (t.state === 'signed_out') return 'Signed out';
   if (t.state === 'refused') return 'Sign-in refused or expired: sign this team in again';
@@ -176,7 +188,8 @@ export function teamStateWords(t: Pick<AgentAuthTeamState, 'served' | 'state'> &
 export const teamSignedIn = (t: Pick<AgentAuthTeamState, 'state'>): boolean => t.state === 'signed_in' || t.state === 'limited';
 
 /** The list's button for a team: sign in while it is not, or sign out (and change the account) while it is. Null: nothing to do yet. */
-export function teamAction(t: Pick<AgentAuthTeamState, 'served' | 'state'>): 'Sign in' | 'Sign out' | null {
-  if (!t.served) return null;
+export function teamAction(t: Pick<AgentAuthTeamState, 'served' | 'state'>, onServer = false): 'Sign in' | 'Sign out' | null {
+  // on a server any team of the runner may sign in: it needs no pod of its own
+  if (!t.served && !onServer) return null;
   return teamSignedIn(t) ? 'Sign out' : 'Sign in';
 }

@@ -67,6 +67,10 @@
     "allowFullAccess": {
       "default": false,
       "type": "boolean"
+    },
+    "teamUsers": {
+      "default": false,
+      "type": "boolean"
     }
   },
   "required": [

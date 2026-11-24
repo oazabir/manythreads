@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { AgentAuthTeamState, BotRunner } from '@manythreads/shared';
 import { setTransport, type TransportRequest } from '../src/api/client';
 import { agentLogout, cancelAgentLogin, fetchAgentAuth, fetchAgentAuthTeams, setSignInScope, startAgentLogin } from '../src/screens/admin/runners/api';
-import { isPerTeam, logoutWords, scopeLine, scopeSwitchWords, signedInDoneWords, teamAction, teamsSignedInWords, teamStateWords } from '../src/screens/admin/runners/agent-auth';
+import { isPerTeam, logoutWords, PER_TEAM_SERVER_SIGNIN, scopeLine, scopeSwitchWords, signedInDoneWords, teamAction, teamsSignedInWords, teamStateWords } from '../src/screens/admin/runners/agent-auth';
 import { sharesSignin, warnsServerSignin } from '../src/screens/admin/runners/commands';
 import { TeamSignInsView } from '../src/screens/admin/runners/TeamSignIns';
 
@@ -125,5 +125,48 @@ describe('the calls name the team', () => {
     const put = await send(() => setSignInScope(RUNNER, 'per_team'));
     expect(put).toMatchObject({ method: 'PUT', url: `/api/admin/bot-runners/${RUNNER}/sign-in-scope` });
     expect(JSON.parse(String(put.body))).toEqual({ scope: 'per_team' });
+  });
+});
+
+describe('a server runner where each team signs in (P35-10b)', () => {
+  const server = (over: Partial<BotRunner> = {}): BotRunner => runner({ kind: 'server_agent', agent: 'claude-code', label: 'Box Claude', ...over });
+
+  it('is a per-team runner for Claude Code or Codex only, and its row says so in server words', () => {
+    expect(isPerTeam(server())).toBe(true);
+    expect(isPerTeam(server({ agent: 'codex' }))).toBe(true);
+    expect(isPerTeam(server({ agent: 'hermes-acp' }))).toBe(false);
+    expect(isPerTeam(server({ signInScope: 'shared' }))).toBe(false);
+    expect(scopeLine(server({ teamsSignedIn: 0, teamsServed: 0 }))).toBe('Each team signs in: no team may use it yet');
+    expect(teamsSignedInWords(0, 0)).toBe('no team has a pod yet');
+  });
+
+  it('the switch names the server, says runs stop, and says plainly who can still reach a team\'s sign-in; no pod words', () => {
+    const to = scopeSwitchWords(server(), 'per_team');
+    expect(to).toContain('The one Claude Code sign-in of this server is signed out and removed');
+    expect(to).toContain("only that team's user on the server can open");
+    expect(to).toContain("the bridge's own user and the server's administrator can still reach it");
+    expect(to).toContain('Runs of Claude Code under way on that server are stopped.');
+    expect(to).not.toContain('pod');
+    const back = scopeSwitchWords(server({ agent: 'codex' }), 'shared');
+    expect(back).toContain("Every team's own Codex sign-in on this server is signed out and removed");
+    expect(back).not.toContain('pod');
+  });
+
+  it('any team of the runner may sign in on a server: no pod is needed, so an unserved team has a button and no pod words', () => {
+    const t = team('marketing', { served: false, state: null });
+    expect(teamAction(t)).toBeNull();
+    expect(teamAction(t, true)).toBe('Sign in');
+    expect(teamStateWords(t, true)).toBe('Not checked yet');
+    expect(teamAction(team('marketing', { served: false, state: 'signed_in' }), true)).toBe('Sign out');
+    const html = renderToStaticMarkup(createElement(TeamSignInsView, { runner: server(), items: [team('engineering', { state: 'signed_in' }), t], error: null, onTeam: () => undefined, onScope: () => undefined }));
+    expect(html).not.toContain('No pod yet');
+    expect(html).not.toContain('data-state="no_pod"');
+    expect((html.match(/data-testid="runner-team-signin-open"/g) ?? []).length).toBe(2);
+    // every team of a server runner counts, served or not
+    expect(html).toContain('1 of 2 teams signed in');
+  });
+
+  it('the server list points to the runner\'s own Sign-in, which chooses the team', () => {
+    expect(PER_TEAM_SERVER_SIGNIN('Box Claude')).toBe('Each team signs in on its own on Box Claude. Use Sign-in on that runner in the list above to choose the team.');
   });
 });

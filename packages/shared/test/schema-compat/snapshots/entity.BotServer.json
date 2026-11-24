@@ -103,6 +103,9 @@
     "allowFullAccess": {
       "type": "boolean"
     },
+    "teamUsers": {
+      "type": "boolean"
+    },
     "enrolled": {
       "type": "boolean"
     },
@@ -151,6 +154,7 @@
     "bridgeVersion",
     "agents",
     "allowFullAccess",
+    "teamUsers",
     "enrolled",
     "codeExpiresAt",
     "lastSeenAt",

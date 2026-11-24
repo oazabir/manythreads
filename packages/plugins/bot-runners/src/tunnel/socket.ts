@@ -1,6 +1,6 @@
 import type { HttpRequest, Lockout, PluginContext, PluginSocket } from '@manythreads/sdk';
 import { BridgeToSite, TUNNEL_HEARTBEAT_SECONDS, type BotServerChange, type BotServerId, type SiteToBridge } from '@manythreads/shared';
-import { markServerRunnersOffline, syncServerRunners, helloColumns, type ServerRow } from '../servers.ts';
+import { markServerRunnersOffline, reconcileServerScopes, syncServerRunners, helloColumns, type ServerRow } from '../servers.ts';
 import { bearerBridgeKey, hashSecret } from './keys.ts';
 import type { BridgeConnection, TunnelRegistry, TunnelStream } from './registry.ts';
 
@@ -37,7 +37,7 @@ async function findByKeyHash(ctx: PluginContext, hash: string): Promise<Found | 
     const row = (
       await tx.query<ServerRow>(
         `SELECT s.id, s.workspace_id, s.name, s.label, s.status, s.enrol_code_hash, s.enrol_code_expires_at, s.key_hash, s.pending_key_hash, s.host_name, s.host_system, s.host_arch,
-                s.bridge_version, s.agents, s.allow_full_access, s.created_by, s.last_seen_at, s.created_at, s.updated_at
+                s.bridge_version, s.agents, s.allow_full_access, s.team_users, s.created_by, s.last_seen_at, s.created_at, s.updated_at
            FROM app.bot_servers s WHERE s.key_hash = $1 OR s.pending_key_hash = $1`,
         [hash],
       )
@@ -154,14 +154,15 @@ export function serveBridgeSocket(opts: BridgeSocketOptions, socket: PluginSocke
       async (tx) => {
         const was = (await tx.query<{ status: string }>('SELECT status FROM app.bot_servers WHERE id = $1::uuid FOR UPDATE', [row.id])).rows[0]?.status;
         await tx.query(
-          `UPDATE app.bot_servers SET status = 'connected', host_name = $2, host_system = $3, host_arch = $4, bridge_version = $5, agents = $6::jsonb, allow_full_access = $7,
+          `UPDATE app.bot_servers SET status = 'connected', host_name = $2, host_system = $3, host_arch = $4, bridge_version = $5, agents = $6::jsonb, allow_full_access = $7, team_users = $8, signin_scopes = $9::jsonb,
                   last_seen_at = now(), updated_at = now() WHERE id = $1::uuid`,
           (() => {
             const c = helloColumns(frame);
-            return [row.id, c.host_name, c.host_system, c.host_arch, c.bridge_version, c.agents, c.allow_full_access];
+            return [row.id, c.host_name, c.host_system, c.host_arch, c.bridge_version, c.agents, c.allow_full_access, c.team_users, c.signin_scopes];
           })(),
         );
         await syncServerRunners(tx, row, frame.agents, true);
+        await reconcileServerScopes(tx, row.id, frame);
         if (was !== 'connected') {
           await ctx.audit.emit(tx, { type: 'bot_server.server.changed', workspaceId: row.workspace_id, serverId: row.id, name: row.name, change: 'connected', actorId: null, at: ctx.runtime.now().toISOString() });
         }

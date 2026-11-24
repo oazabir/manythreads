@@ -22,6 +22,12 @@ export interface TunnelHello {
   host: { hostname: string; system: string; arch: string };
   agents: Array<{ agent: 'claude-code' | 'codex' | 'hermes-acp'; version: string | null }>;
   allowFullAccess: boolean;
+  /** Each team runs as a Unix user of its own on this machine (P26-22): only then may a team sign in on its own (P35-10b). An old bridge leaves it out (the site reads no). */
+  teamUsers?: boolean;
+  /** Who signs each agent in, as the bridge keeps it (P35-10b). `unreadable`: the kept file could not be read. */
+  signInScope?: { claude?: 'shared' | 'per_team' | 'unreadable'; codex?: 'shared' | 'per_team' | 'unreadable' };
+  /** Teams whose own sign-in folder may be left behind while the agent has one sign-in. */
+  staleSignins?: { claude?: string[]; codex?: string[] };
 }
 
 export interface TunnelOptions {
@@ -229,7 +235,7 @@ export function startTunnel(options: TunnelOptions): TunnelClient {
 
     ws.on('open', () => {
       void Promise.resolve(options.hello()).then((h) => {
-        send({ type: 'hello', protocol: 1, bridgeVersion: h.bridgeVersion, host: h.host, agents: h.agents, allowFullAccess: h.allowFullAccess });
+        send({ type: 'hello', protocol: 1, bridgeVersion: h.bridgeVersion, host: h.host, agents: h.agents, allowFullAccess: h.allowFullAccess, ...(h.teamUsers !== undefined ? { teamUsers: h.teamUsers } : {}), ...(h.signInScope !== undefined ? { signInScope: h.signInScope } : {}), ...(h.staleSignins !== undefined ? { staleSignins: h.staleSignins } : {}) });
       }).catch(() => ws.close(1011, 'no hello'));
     });
     ws.on('message', (raw) => {

@@ -263,14 +263,15 @@ main() {
   chown root:root "$HELPER.new"
   chmod 0755 "$HELPER.new"
   mv -f "$HELPER.new" "$HELPER"
-  # the table of programs the helper may start: it names a kind (claude, codex, hermes), never a program, so the table is the only place a path is
-  CFG_DATA="$DATA" CFG_CLAUDE_ACP="$([ "$want_claude" -eq 1 ] && printf %s "$claude_acp")" CFG_CODEX_ACP="$([ "$want_codex" -eq 1 ] && printf %s "$codex_acp")" CFG_HERMES_BIN="$hermes_bin" \
+  # the table of programs the helper may start: it names a kind (claude, codex, hermes), never a program, so the table is the only place a path is. Codex's own program (`cli`) is
+  # there for a team's own sign-in with an API key and its sign-out (P35-10b); Claude's sign-in program is its adapter's own (`--cli auth login`)
+  CFG_DATA="$DATA" CFG_CLAUDE_ACP="$([ "$want_claude" -eq 1 ] && printf %s "$claude_acp")" CFG_CODEX_ACP="$([ "$want_codex" -eq 1 ] && printf %s "$codex_acp")" CFG_CODEX_CLI="$([ "$want_codex" -eq 1 ] && printf %s "$codex_bin")" CFG_HERMES_BIN="$hermes_bin" \
     CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_BRIDGE_USER="$SVC_USER" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" CFG_PUBLISH_GROUP="$PUBLISH_GROUP" \
     "$node" -e '
       const e = process.env;
       const agents = {};
       if (e.CFG_CLAUDE_ACP) agents.claude = { command: e.CFG_CLAUDE_ACP };
-      if (e.CFG_CODEX_ACP) agents.codex = { command: e.CFG_CODEX_ACP };
+      if (e.CFG_CODEX_ACP) agents.codex = { command: e.CFG_CODEX_ACP, ...(e.CFG_CODEX_CLI ? { cli: e.CFG_CODEX_CLI } : {}) };
       if (e.CFG_HERMES_BIN) agents.hermes = { command: e.CFG_HERMES_BIN, args: ["acp"] };
       const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, bridgeUser: e.CFG_BRIDGE_USER, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER, publishClientsGroup: e.CFG_PUBLISH_GROUP } : {}) };
       process.stdout.write(JSON.stringify(table, null, 2) + "\n");

@@ -148,7 +148,8 @@ describe('the header the helper takes', () => {
     expect(parseHeader(line({ env: { CODEX_HOME: `${ROOT}/work/eng/.codex` } }), ctx('codex'))).toMatchObject({ ok: true });
     expect(parseHeader(line({ env: { PATH: '/usr/bin' } }), ctx('codex'))).toMatchObject({ ok: true });
     for (const bad of [`${ROOT}/auth/codex`, `${ROOT}/work/other/.codex`, `${ROOT}/work/eng/.codex/x`, `${ROOT}/work/eng`, '/root/.codex', `${ROOT}/work/eng/../other/.codex`]) {
-      expect(parseHeader(line({ env: { CODEX_HOME: bad } }), ctx('codex'))).toEqual({ ok: false, error: `CODEX_HOME must be ${ROOT}/work/eng/.codex` });
+      // P35-10b: the team's own `.signin/codex` is the one other folder it may be
+      expect(parseHeader(line({ env: { CODEX_HOME: bad } }), ctx('codex'))).toEqual({ ok: false, error: `CODEX_HOME must be ${ROOT}/work/eng/.codex or ${ROOT}/work/eng/.signin/codex` });
     }
     for (const kind of ['claude', 'hermes', 'clean-codex', 'clean-kube'] as const) {
       expect(parseHeader(line({ env: { CODEX_HOME: `${ROOT}/work/eng/.codex` } }), ctx(kind))).toEqual({ ok: false, error: 'CODEX_HOME is only for a Codex run' });

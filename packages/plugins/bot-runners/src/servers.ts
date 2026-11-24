@@ -21,6 +21,7 @@ export interface ServerRow extends Record<string, unknown> {
   bridge_version: string | null;
   agents: unknown;
   allow_full_access: boolean;
+  team_users: boolean;
   created_by: string | null;
   last_seen_at: Date | null;
   created_at: Date;
@@ -29,7 +30,7 @@ export interface ServerRow extends Record<string, unknown> {
 
 /** Use as `SELECT ${SERVER_SELECT} WHERE ...`. */
 export const SERVER_SELECT = `s.id, s.workspace_id, s.name, s.label, s.status, s.enrol_code_hash, s.enrol_code_expires_at, s.key_hash, s.pending_key_hash, s.host_name, s.host_system,
-  s.host_arch, s.bridge_version, s.agents, s.allow_full_access, s.created_by, s.last_seen_at, s.created_at, s.updated_at
+  s.host_arch, s.bridge_version, s.agents, s.allow_full_access, s.team_users, s.created_by, s.last_seen_at, s.created_at, s.updated_at
   FROM app.bot_servers s`;
 
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
@@ -49,6 +50,7 @@ export function toBotServer(r: ServerRow, connected: boolean, now: number = Date
     bridgeVersion: r.bridge_version,
     agents: agents.success ? agents.data : [],
     allowFullAccess: r.allow_full_access,
+    teamUsers: r.team_users,
     enrolled: r.key_hash !== null,
     codeExpiresAt: codeLive ? iso(r.enrol_code_expires_at) : null,
     lastSeenAt: iso(r.last_seen_at),
@@ -139,7 +141,7 @@ export async function setServerRunnerSignIn(tx: PluginTx, runnerId: string, sign
 }
 
 /** What the bridge said about itself, as columns. */
-export function helloColumns(hello: BridgeHello): { host_name: string; host_system: string; host_arch: string; bridge_version: string; agents: string; allow_full_access: boolean } {
+export function helloColumns(hello: BridgeHello): { host_name: string; host_system: string; host_arch: string; bridge_version: string; agents: string; allow_full_access: boolean; team_users: boolean; signin_scopes: string } {
   return {
     host_name: hello.host.hostname,
     host_system: hello.host.system,
@@ -147,7 +149,46 @@ export function helloColumns(hello: BridgeHello): { host_name: string; host_syst
     bridge_version: hello.bridgeVersion,
     agents: JSON.stringify(hello.agents),
     allow_full_access: hello.allowFullAccess,
+    team_users: hello.teamUsers,
+    signin_scopes: JSON.stringify({ ...(hello.signInScope ?? {}), ...(hello.staleSignins !== undefined ? { stale: hello.staleSignins } : {}) }),
   };
+}
+
+/** The sentences of a server runner whose sign-in choice and its bridge's disagree (P35-10b). */
+export const SCOPE_DRIFT = {
+  unreadable: (tool: string) => `The server could not read who signs in to ${tool}. Choose Who signs in on this runner again to set it.`,
+  differ: (tool: string, kept: 'shared' | 'per_team') =>
+    `The server keeps ${kept === 'per_team' ? 'a sign-in for each team' : 'one sign-in for all teams'} for ${tool}, but this runner says the other. Choose Who signs in on this runner again to set both.`,
+} as const;
+const DRIFT_PREFIXES = ['The server could not read who signs in to ', 'The server keeps '];
+
+/** What the bridge keeps for this runner's agent differs from the runner's column: the sentence that says so, or null (the same, or an older bridge that does not say). */
+export function scopeDrift(runner: { agent: string; sign_in_scope: string }, kept: unknown): string | null {
+  const tool = runner.agent === 'codex' ? 'Codex' : 'Claude Code';
+  if (kept === 'unreadable') return SCOPE_DRIFT.unreadable(tool);
+  if ((kept === 'shared' || kept === 'per_team') && kept !== runner.sign_in_scope) return SCOPE_DRIFT.differ(tool, kept);
+  return null;
+}
+
+/**
+ * After a hello: each Claude Code or Codex runner of the server whose choice differs from what the bridge keeps says so (needs_sign_in, with the sentence: the runner row and the
+ * attention bar show it, and the resolver refuses its runs); one whose drift is gone goes back to waiting for its sign-in check. The column is never flipped here: only an admin's switch
+ * sets both. System role.
+ */
+export async function reconcileServerScopes(tx: PluginTx, serverId: string, hello: BridgeHello): Promise<void> {
+  if (hello.signInScope === undefined) return;
+  const runners = (await tx.query<{ id: string; agent: string; sign_in_scope: string; status: string; status_detail: string | null }>(
+    "SELECT id, agent, sign_in_scope, status, status_detail FROM app.bot_runners WHERE server_id = $1::uuid AND kind = 'server_agent' AND agent IN ('claude-code', 'codex')",
+    [serverId],
+  )).rows;
+  for (const r of runners) {
+    const drift = scopeDrift(r, hello.signInScope[r.agent === 'codex' ? 'codex' : 'claude']);
+    if (drift !== null) {
+      await tx.query(`UPDATE app.bot_runners SET status = 'needs_sign_in', status_detail = $2, last_checked_at = now(), updated_at = now() WHERE id = $1::uuid AND (status, status_detail) IS DISTINCT FROM ('needs_sign_in', $2)`, [r.id, drift]);
+    } else if (r.status === 'needs_sign_in' && DRIFT_PREFIXES.some((p) => (r.status_detail ?? '').startsWith(p))) {
+      await tx.query(`UPDATE app.bot_runners SET status = 'waiting_for_sign_in', status_detail = $2, updated_at = now() WHERE id = $1::uuid`, [r.id, SIGN_IN_NEEDED]);
+    }
+  }
 }
 
 /** The server of a runner, for a run or a sign-in call. Null when the runner is not one of a server. */

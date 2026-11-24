@@ -1,9 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
 import type { ServerModeConfig, TeamUsersConfig } from './config.ts';
+import { plainChunks, type PtyHandle } from './acp/pty.ts';
 import { startChild, type ChildHandle, type SpawnOptions } from './process.ts';
-import { buildHeader, helperArgv, isSlug, isTeamUserName, teamHome, type Kind, type LaunchFile } from './team-user.ts';
+import { buildHeader, helperArgv, isSlug, isTeamUserName, teamHome, teamSigninDir, type Kind, type LaunchFile } from './team-user.ts';
 
 // The bridge's side of the per-team users of an enrolled server (PLAN P26-22, docs/plans/agents-anywhere.md section 9b): it never starts a team's program itself. It asks the root helper
 // (`team-helper.ts`) through `sudo -n`, which starts the fixed program as the team's own user. The run's environment, the files the run needs (the deployer's kubeconfig, Hermes' config) and the
@@ -29,6 +30,8 @@ export class TeamRun {
     readonly server: ServerWithTeams,
     readonly team: string,
     readonly kind: Kind,
+    /** `per_team`: the run is of a runner where each team signs in, and its tool's home is the team's own `.signin/<agent>` (the header says so; P35-10b). */
+    readonly signIn?: 'per_team',
   ) {}
 
   /** A file written as the team's user before the program starts. `mode` is octal text like `0600`. */
@@ -48,9 +51,105 @@ export class TeamRun {
     if (opts.stdin !== null) throw new Error('a team program talks over a pipe: it takes no prompt');
     const { command, args } = sudoArgv(this.server.teamUsers, this.team, this.kind);
     const child = startChild(command, args, { cwd: '/', env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, stdin: null, onLine: opts.onLine });
-    child.write(`${buildHeader({ cwd: opts.cwd, env: opts.env, files: this.files, removeAtEnd: this.removeAtEnd, kind: this.kind })}\n`);
+    child.write(`${buildHeader({ cwd: opts.cwd, env: opts.env, files: this.files, removeAtEnd: this.removeAtEnd, kind: this.kind, signIn: this.signIn })}\n`);
     return child;
   }
+
+  /**
+   * A program that needs a terminal (`claude-login`, `claude-logout`), started through the helper, which makes the terminal itself as the team user (P35-10b, plan section 7). The header
+   * goes on the plain pipe first, before any terminal exists, so no echo can show it; what the program prints comes back as plain text, and `writeLine` types a line into its terminal
+   * (the text, then Enter as a carriage return a moment later, as `startPty` does).
+   */
+  startTerminal(opts: { cwd: string; env: NodeJS.ProcessEnv; onText: (text: string) => void }): PtyHandle {
+    if (this.kind !== 'claude-login' && this.kind !== 'claude-logout') throw new Error('only a sign-in kind runs under a terminal');
+    const { command, args } = sudoArgv(this.server.teamUsers, this.team, this.kind);
+    const child = spawn(command, args, { cwd: '/', env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, detached: true, stdio: ['pipe', 'pipe', 'pipe'], shell: false });
+    child.stdin?.on('error', () => undefined);
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', plainChunks(opts.onText));
+    child.stderr?.resume();
+    child.stdin?.write(`${buildHeader({ cwd: opts.cwd, env: opts.env, kind: this.kind })}\n`);
+    let exited = false;
+    let spawnError: string | null = null;
+    const done = new Promise<{ code: number | null; signal: NodeJS.Signals | null; spawnError: string | null }>((resolve) => {
+      child.on('error', (err) => {
+        spawnError = (err as NodeJS.ErrnoException).code ?? 'error';
+      });
+      child.on('close', (code, signal) => {
+        exited = true;
+        resolve({ code, signal, spawnError });
+      });
+    });
+    return {
+      get exited() {
+        return exited;
+      },
+      writeLine: (text) => {
+        const stdin = child.stdin;
+        if (exited || !stdin || stdin.destroyed || stdin.writableEnded) return false;
+        stdin.write(text);
+        const enter = setTimeout(() => {
+          if (!exited && !stdin.destroyed && !stdin.writableEnded) stdin.write('\r');
+        }, 100);
+        enter.unref();
+        return true;
+      },
+      // sudo hands the signal to the helper, which ends the program's whole group
+      signal: (sig) => {
+        try {
+          if (child.pid !== undefined) process.kill(-child.pid, sig);
+        } catch {
+          try {
+            child.kill(sig);
+          } catch {
+            /* already gone */
+          }
+        }
+      },
+      done,
+    };
+  }
+}
+
+/** The variable that names a team's own sign-in folder of an agent, and the folder. */
+export const teamSigninEnv = (server: ServerWithTeams, team: string, agent: 'claude' | 'codex'): Record<string, string> =>
+  agent === 'claude' ? { CLAUDE_CONFIG_DIR: teamSigninDir(server.root, team, 'claude') } : { CODEX_HOME: teamSigninDir(server.root, team, 'codex') };
+
+/** Asks the helper for one start-nothing kind for one team and waits (20 s at most). Resolves with the exit code (null: killed) and the lines it printed, never rejects. */
+export function helperOnce(server: ServerWithTeams, team: string, kind: Kind, env: Record<string, string> = {}): Promise<{ code: number | null; stderrTail: string; lines: string[] }> {
+  return new Promise((resolve) => {
+    const { command, args } = sudoArgv(server.teamUsers, team, kind);
+    const lines: string[] = [];
+    const child = startChild(command, args, { cwd: '/', env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, stdin: null, onLine: (l) => void (lines.length < 20 && lines.push(l.slice(0, 2000))) });
+    child.write(`${buildHeader({ cwd: teamHome(server.root, team), env, kind })}\n`);
+    child.endInput();
+    const timer = setTimeout(() => child.signal('SIGKILL'), 20_000);
+    void child.done.then((end) => {
+      clearTimeout(timer);
+      resolve({ code: end.code, stderrTail: end.stderrTail, lines });
+    });
+  });
+}
+
+/**
+ * What a team's own sign-in file says about its dates (`signin-facts`, read by the helper as the team user; no token comes back). Null when the helper could not tell: the gate then
+ * holds the team's runs one at a time, as it would near a renewal.
+ */
+export async function teamSigninFacts(server: ServerWithTeams, team: string, agent: 'claude' | 'codex'): Promise<{ exists: boolean; valid: boolean; expiresAt: number | null; refreshedAt: number | null; mtimeMs: number | null } | null> {
+  const end = await helperOnce(server, team, 'signin-facts', teamSigninEnv(server, team, agent));
+  if (end.code !== 0) return null;
+  try {
+    const v = JSON.parse(end.lines.find((l) => l.trim().startsWith('{')) ?? '') as Record<string, unknown>;
+    const num = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+    return { exists: v['exists'] === true, valid: v['valid'] === true, expiresAt: num(v['expiresAt']), refreshedAt: num(v['refreshedAt']), mtimeMs: num(v['mtimeMs']) };
+  } catch {
+    return null;
+  }
+}
+
+/** Removes a team's own sign-in folder of one agent, as the team user (`clean-signin`). True when the helper said it was done. */
+export async function cleanTeamSignin(server: ServerWithTeams, team: string, agent: 'claude' | 'codex'): Promise<boolean> {
+  return (await helperOnce(server, team, 'clean-signin', teamSigninEnv(server, team, agent))).code === 0;
 }
 
 const made = new Map<string, Promise<void>>();
@@ -95,18 +194,8 @@ async function cleanEachTeam(server: ServerWithTeams, kind: 'clean-kube' | 'clea
     return;
   }
   for (const team of teams) {
-    await new Promise<void>((resolve) => {
-      const { command, args } = sudoArgv(server.teamUsers, team, kind);
-      const child = startChild(command, args, { cwd: '/', env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, stdin: null, onLine: () => undefined });
-      child.write(`${buildHeader({ cwd: teamHome(server.root, team), env: {}, kind })}\n`);
-      child.endInput();
-      const timer = setTimeout(() => child.signal('SIGKILL'), 20_000);
-      void child.done.then((end) => {
-        clearTimeout(timer);
-        if (end.code !== 0) log(`team ${team}: ${what}${end.stderrTail ? ` (${end.stderrTail.trim().split('\n').pop()?.slice(0, 150)})` : ''}`);
-        resolve();
-      });
-    });
+    const end = await helperOnce(server, team, kind);
+    if (end.code !== 0) log(`team ${team}: ${what}${end.stderrTail ? ` (${end.stderrTail.trim().split('\n').pop()?.slice(0, 150)})` : ''}`);
   }
 }
 

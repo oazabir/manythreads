@@ -3,8 +3,10 @@ import { mkdirSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { client as createClient, methods, RequestError } from '@agentclientprotocol/sdk';
 import { profileFor, type AgentKind, type BridgeConfig, type ProfileConfig } from '../config.ts';
-import { startChild } from '../process.ts';
+import { startChild, type ChildHandle } from '../process.ts';
 import { authHomeVariable, childEnv } from '../runs.ts';
+import { TeamRun, teamSigninEnv, type ServerWithTeams } from '../server-team.ts';
+import { teamHome } from '../team-user.ts';
 import { adapterCommand, flavorOf, type Flavor } from './adapter.ts';
 import { ptySupported, startPty, type PtyHandle } from './pty.ts';
 
@@ -22,6 +24,11 @@ import { ptySupported, startPty, type PtyHandle } from './pty.ts';
 // program or an adapter prints about a failure is handed on either: a failure is one of the fixed sentences in `AUTH_WORDS`, chosen by what the text means (`failureWords`).
 // A sign-in belongs to a tool's sign-in folder, not to a profile: the profiles of one tool share the machine's folder unless one has its own (`authHome`), so there is one attempt at
 // a time per folder, and a sign-in or sign-out acts on that folder for every user of the tool on the machine (the status says which: `home`).
+//
+// A team's own sign-in on an enrolled server (P35-10b, docs/plans/per-team-sign-in.md sections 4 and 7): the target names the team, and every program of it is started by the root
+// helper AS the team user, with the team's own `.signin/<agent>` as the tool's home: the adapter (probe, device code, sign-out) through the helper's `claude`/`codex` kinds as a run is,
+// Claude's terminal sign-in and sign-out through `claude-login`/`claude-logout` (the helper makes the terminal, so the header never reaches one), an API key through `codex-key` (the key
+// on the pipe, never in an environment), Codex's own sign-out through `codex-logout`. The bridge never makes a folder inside a team's home.
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -80,6 +87,8 @@ export class AuthRefused extends Error {
 export interface AuthServiceOptions {
   config: BridgeConfig;
   log: (line: string) => void;
+  /** Called when a sign-in ended well or a sign-out was done (the run gates forget an old refusal of that folder). */
+  onSignedChange?: (target: AuthTarget) => void;
   /** Knobs for tests; the defaults are in the comments. */
   startWaitMs?: number; // 8 s: how long a login answers before the first thing to do is ready
   pushWaitMs?: number; // 1.5 s: how long a status check waits for the adapter's own state push
@@ -157,9 +166,11 @@ async function openAdapter(
   extraEnv: NodeJS.ProcessEnv,
   stepTimeoutMs: number,
   onElicitation: (params: Record<string, unknown>) => Promise<{ action: 'accept' | 'cancel' }>,
+  team?: TeamOfTarget,
 ): Promise<Opened> {
   const cwd = resolvePath(profile.workdir);
-  mkdirSync(cwd, { recursive: true });
+  // a team's home is the team user's: the helper makes what it needs there
+  if (team === undefined) mkdirSync(cwd, { recursive: true });
   const { command, args } = adapterCommand(profile);
   let inbound!: ReadableStreamDefaultController<never>;
   const readable = new ReadableStream<never>({
@@ -177,11 +188,11 @@ async function openAdapter(
       /* already closed */
     }
   };
-  const child = startChild(command, args, {
+  const spawnOpts = {
     cwd,
     env: authEnv(config, profile, extraEnv),
     stdin: null,
-    onLine: (line) => {
+    onLine: (line: string) => {
       const t = line.trim();
       if (t === '' || t[0] !== '{' || !open) return;
       try {
@@ -190,7 +201,9 @@ async function openAdapter(
         /* a log line on stdout */
       }
     },
-  });
+  };
+  // the adapter of a team's own sign-in runs as the team user, through the helper (its environment passes the helper's allowlist: a key never does)
+  const child: ChildHandle = team !== undefined ? new TeamRun(team.server, team.slug, flavorOf(profile.agent) === 'codex' ? 'codex' : 'claude', 'per_team').start(spawnOpts) : startChild(command, args, spawnOpts);
   const writable = new WritableStream<never>({
     write(message) {
       if (!child.write(`${JSON.stringify(message)}\n`)) throw new Error('the adapter no longer reads');
@@ -274,6 +287,14 @@ function methodViews(flavor: Flavor, init: Record<string, unknown>): Array<AuthM
   return out;
 }
 
+/**
+ * The ways a team's own sign-in may be done here: the helper's kinds are fixed, so Claude's terminal sign-in is always the measured claude.ai one (`--cli auth login --claudeai`); a
+ * console sign-in the adapter may offer beside it is left out rather than shown and done the other way.
+ */
+export function teamMethods<T extends { how: HowToSignIn; args: string[] }>(flavor: Flavor, methods: readonly T[]): T[] {
+  return flavor === 'claude' ? methods.filter((m) => m.how === 'paste_code' && !m.args.includes('--console')) : [...methods];
+}
+
 const hasLogout = (init: Record<string, unknown>): boolean => {
   const caps = isRecord(init['agentCapabilities']) ? init['agentCapabilities'] : {};
   return isRecord(caps['auth']) && caps['auth']['logout'] !== undefined;
@@ -327,6 +348,8 @@ class Attempt {
   hidden = false;
   /** The sign-in folder this attempt is for (`AuthService.keyOf`). */
   key = '';
+  /** Who is told when it ends well. */
+  onDone: (() => void) | null = null;
   checkTimer: NodeJS.Timeout | undefined;
   /** Set by the flow: takes what the person typed. Returns false when the attempt is not waiting for it. */
   answer: ((value: { code?: string; apiKey?: string }) => Promise<boolean>) | null = null;
@@ -361,6 +384,7 @@ class Attempt {
     if (this.over) {
       this.finishedAt = Date.now();
       this.action = null;
+      if (state === 'done') this.onDone?.();
       void this.cleanup();
     }
     const w = this.watchers;
@@ -386,10 +410,26 @@ class Attempt {
   }
 }
 
+/** A team's own sign-in on an enrolled server with team users. */
+export interface TeamOfTarget {
+  slug: string;
+  server: ServerWithTeams;
+}
+
 /** The profile a request is for, with the name it was asked by. */
 export interface AuthTarget {
   name: string;
   profile: ProfileConfig;
+  /** A team's own sign-in (P35-10b): the profile's home is the team's `.signin/<agent>`, and every program is started as the team user. */
+  team?: TeamOfTarget;
+}
+
+/** The sign-in profile of one team: the tool's profile with the team's own folder as its home and the team's home as its working folder (no `authHome`: that is the machine's). */
+export function teamSigninProfile(profile: ProfileConfig, server: ServerWithTeams, team: string): ProfileConfig {
+  const rest: ProfileConfig = { ...profile };
+  delete rest.authHome;
+  const agent = flavorOf(profile.agent) === 'codex' ? 'codex' : 'claude';
+  return { ...rest, workdir: teamHome(server.root, team), env: { ...(profile.env ?? {}), ...teamSigninEnv(server, team, agent) } };
 }
 
 /** Whose sign-in a profile's sign-in or sign-out changes. */
@@ -424,11 +464,17 @@ export class AuthService {
       stepTimeoutMs: opts.stepTimeoutMs ?? 20_000,
       checkTimeoutMs: opts.checkTimeoutMs ?? 60_000,
       ptySupported: opts.ptySupported ?? ptySupported,
+      onSignedChange: opts.onSignedChange ?? (() => undefined),
     };
   }
 
   /** The profile a sign-in request is for: named, else the first of the asked-for tool (the `default` profile first), else the default profile. */
-  resolve(profileName: string | undefined, agent: string | undefined): AuthTarget | null {
+  resolve(profileName: string | undefined, agent: string | undefined, team?: TeamOfTarget): AuthTarget | null {
+    if (team !== undefined) {
+      const base = this.resolve(profileName, agent);
+      if (base === null || (base.profile.agent !== 'claude-code' && base.profile.agent !== 'codex')) return null;
+      return { name: base.name, profile: teamSigninProfile(base.profile, team.server, team.slug), team };
+    }
     if (profileName !== undefined) return profileFor(this.config, profileName);
     if (agent !== undefined) {
       const entries = Object.entries(this.config.profiles).filter(([, p]) => p.agent === agent);
@@ -436,6 +482,11 @@ export class AuthService {
       return chosen ? { name: chosen[0], profile: chosen[1] } : null;
     }
     return profileFor(this.config, 'default');
+  }
+
+  /** Forgets every remembered answer (a switch of who signs in removed folders: what was seen of them is no longer true). */
+  forgetAll(): void {
+    this.cache.clear();
   }
 
   close(): void {
@@ -476,11 +527,24 @@ export class AuthService {
     const key = this.keyOf(profile);
     const attempt = this.current(key);
     const active = attempt !== null && !attempt.over;
-    const base = await this.probe(key, profile, active);
+    const base = await this.probe(key, profile, active, target.team);
     return { ...base, profile: target.name, home: homeOf(profile), attempt: attempt === null || attempt.hidden ? null : attempt.view() };
   }
 
-  private async probe(key: string, profile: ProfileConfig, reuseOnly: boolean): Promise<AuthView> {
+  /**
+   * What a run asks before it starts on a team's own sign-in (P35-10b): the last answer seen for that folder, whatever its age (a sign-in or sign-out here forgets it), or a probe
+   * when there is none. `unknown` never refuses a run: the run itself finds out.
+   */
+  async knownState(target: AuthTarget): Promise<AuthState> {
+    const key = this.keyOf(target.profile);
+    const cached = this.cache.get(key);
+    if (cached !== undefined) return cached.view.state;
+    const attempt = this.current(key);
+    if (attempt !== null && !attempt.over) return 'unknown';
+    return (await this.probe(key, target.profile, false, target.team)).state;
+  }
+
+  private async probe(key: string, profile: ProfileConfig, reuseOnly: boolean, team?: TeamOfTarget): Promise<AuthView> {
     const agent = profile.agent;
     const flavor = flavorOf(agent);
     const bare = { agent, profile: '', home: null, kind: null, canLogout: false, methods: [], attempt: null };
@@ -492,18 +556,18 @@ export class AuthService {
     if (reuseOnly) return { ...bare, state: 'unknown', note: AUTH_WORDS.underWay };
     const running = this.probing.get(key);
     if (running) return running;
-    const p = this.probeNow(key, profile).finally(() => this.probing.delete(key));
+    const p = this.probeNow(key, profile, team).finally(() => this.probing.delete(key));
     this.probing.set(key, p);
     return p;
   }
 
-  private async probeNow(key: string, profile: ProfileConfig): Promise<AuthView> {
+  private async probeNow(key: string, profile: ProfileConfig, team?: TeamOfTarget): Promise<AuthView> {
     const agent = profile.agent;
     const flavor = flavorOf(agent);
     let adapter: Opened | null = null;
     let view: AuthView;
     try {
-      adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async () => ({ action: 'cancel' }));
+      adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async () => ({ action: 'cancel' }), team);
       const found = methodViews(flavor, adapter.init);
       let state: AuthState = 'unknown';
       let kind: string | null = null;
@@ -531,7 +595,7 @@ export class AuthService {
           kind = last.kind === 'none' ? null : last.kind;
         }
       }
-      view = { agent, profile: '', home: null, state, kind, canLogout: hasLogout(adapter.init) || flavor === 'claude', methods: found.map((m) => ({ id: m.id, name: m.name, description: m.description, how: m.how })), attempt: null, note: null };
+      view = { agent, profile: '', home: null, state, kind, canLogout: hasLogout(adapter.init) || flavor === 'claude' || team !== undefined, methods: (team !== undefined ? teamMethods(flavor, found) : found).map((m) => ({ id: m.id, name: m.name, description: m.description, how: m.how })), attempt: null, note: null };
     } catch (err) {
       this.log(`sign-in status failed: ${err instanceof Error ? err.name : 'error'}`);
       view = { agent, profile: '', home: null, state: 'unknown', kind: null, canLogout: false, methods: [], attempt: null, note: err instanceof AdapterEnded && err.spawnError === 'ENOENT' ? AUTH_WORDS.noAdapter : AUTH_WORDS.badAdapter };
@@ -562,10 +626,11 @@ export class AuthService {
     this.attempts.set(key, placeholder);
     let adapter: Opened | null = null;
     try {
-      if (profile.authHome !== undefined) mkdirSync(profile.authHome, { recursive: true, mode: 0o700 });
+      if (profile.authHome !== undefined && target.team === undefined) mkdirSync(profile.authHome, { recursive: true, mode: 0o700 });
       let elicit: ((p: Record<string, unknown>) => Promise<{ action: 'accept' | 'cancel' }>) | null = null;
-      adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async (p) => (elicit ? elicit(p) : { action: 'cancel' }));
-      const method = methodViews(flavor, adapter.init).find((m) => m.id === methodId);
+      adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async (p) => (elicit ? elicit(p) : { action: 'cancel' }), target.team);
+      const offered = methodViews(flavor, adapter.init);
+      const method = (target.team !== undefined ? teamMethods(flavor, offered) : offered).find((m) => m.id === methodId);
       if (method === undefined) {
         placeholder.set('cancelled');
         this.attempts.delete(key);
@@ -574,6 +639,7 @@ export class AuthService {
       }
       const attempt = new Attempt(agent, method.id, method.how);
       attempt.key = key;
+      attempt.onDone = () => this.o.onSignedChange(target);
       this.attempts.set(key, attempt);
       placeholder.set('cancelled');
       const opened = adapter;
@@ -639,11 +705,10 @@ export class AuthService {
     const { command, args } = adapterCommand(profile);
     let seen = '';
     let pty: PtyHandle;
-    try {
-      pty = startPty(command, [...args, ...methodArgs], {
+    const ptyOpts = {
         cwd: resolvePath(profile.workdir),
         env: authEnv(this.config, profile),
-        onText: (chunk) => {
+        onText: (chunk: string) => {
           seen = (seen + chunk).slice(-12_000);
           if (attempt.state !== 'starting') return;
           const page = findSignInPage(seen);
@@ -655,7 +720,10 @@ export class AuthService {
           if (page === 'unusable') return attempt.set('failed', { message: AUTH_WORDS.badUrl });
           attempt.set('needs_input', { action: { type: 'paste_code', url: page }, message: 'Open the page, sign in, and paste the code it shows below.' });
         },
-      });
+      };
+    try {
+      // a team's own sign-in: the helper starts the fixed sign-in program under a terminal of its own, as the team user (the method's own words are not passed on)
+      pty = target.team !== undefined ? new TeamRun(target.team.server, target.team.slug, 'claude-login').startTerminal(ptyOpts) : startPty(command, [...args, ...methodArgs], ptyOpts);
     } catch {
       return attempt.set('failed', { message: AUTH_WORDS.noPty });
     }
@@ -678,6 +746,8 @@ export class AuthService {
         this.cache.delete(attempt.key);
         return attempt.set('done', { message: 'Signed in.' });
       }
+      // the helper's own refusals (65 to 74) are not the program's answer: they mean the sign-in program could not be started as the team user
+      if (target.team !== undefined && end.code !== null && end.code >= 64 && end.code <= 74) return attempt.set('failed', { message: AUTH_WORDS.noAdapter });
       // What the program printed is read for its meaning only, never shown (it can repeat the typed code, an account or a token).
       attempt.set('failed', { message: failureWords(seen) });
     });
@@ -696,6 +766,10 @@ export class AuthService {
         return true;
       }
       this.checking(attempt, 'Checking the key…');
+      if (target.team !== undefined) {
+        void this.teamKey(target, target.team, attempt, apiKey, ask);
+        return true;
+      }
       void (async () => {
         let adapter: Opened | null = null;
         attempt.onCleanup(() => adapter?.close());
@@ -715,6 +789,32 @@ export class AuthService {
       })();
       return true;
     };
+  }
+
+  /**
+   * A team's own Codex sign-in with a key (P35-10b): `codex login --with-api-key` as the team user (`codex-key`), the key on the pipe after the header and then the end of input, so it is
+   * in no environment and no argument. What the program prints is read for its meaning only. A refusal leaves the sign-in waiting for another key, as the adapter's does.
+   */
+  private async teamKey(target: AuthTarget, team: TeamOfTarget, attempt: Attempt, apiKey: string, ask: string): Promise<void> {
+    let said = '';
+    const child = new TeamRun(team.server, team.slug, 'codex-key').start({ cwd: resolvePath(target.profile.workdir), env: authEnv(this.config, target.profile), stdin: null, onLine: (line) => (said = `${said}\n${line}`.slice(-4000)) });
+    attempt.onCleanup(() => child.signal('SIGTERM'));
+    child.write(`${apiKey}\n`);
+    child.endInput();
+    const timer = setTimeout(() => child.signal('SIGKILL'), this.o.stepTimeoutMs);
+    timer.unref();
+    const end = await child.done;
+    clearTimeout(timer);
+    if (attempt.state !== 'checking') return;
+    if (end.code === 0) {
+      this.cache.delete(attempt.key);
+      attempt.set('done', { message: 'Signed in.' });
+      return;
+    }
+    if (end.spawnError !== null || (end.code !== null && end.code >= 64 && end.code <= 74)) return attempt.set('failed', { message: AUTH_WORDS.noAdapter });
+    const words = failureWords(`${said}\n${end.stderrTail}`, AUTH_WORDS.refused);
+    if (attempt.answers < MAX_ANSWERS) attempt.set('needs_input', { action: { type: 'give_key' }, message: `${words} ${ask}` });
+    else attempt.set('failed', { message: AUTH_WORDS.tooManyTries });
   }
 
   /** The person's code or key. */
@@ -753,7 +853,7 @@ export class AuthService {
     let adapter: Opened | null = null;
     let signedOut = false;
     try {
-      adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async () => ({ action: 'cancel' }));
+      adapter = await openAdapter(this.config, profile, {}, this.o.stepTimeoutMs, async () => ({ action: 'cancel' }), target.team);
       let done = false;
       let refused = false;
       if (hasLogout(adapter.init)) {
@@ -765,6 +865,22 @@ export class AuthService {
           // The method is advertised but refused: the measured fallback below (Claude), else a failure.
           refused = true;
         }
+      }
+      if (!done && target.team !== undefined) {
+        // A team's own sign-in: the program's own sign-out as the team user (`claude-logout` under the helper's terminal, `codex-logout`). The adapter is closed first: it holds the folder.
+        await adapter.close();
+        adapter = null;
+        const team = target.team;
+        const env = authEnv(this.config, profile);
+        const cwd = resolvePath(profile.workdir);
+        const run = flavor === 'claude' ? new TeamRun(team.server, team.slug, 'claude-logout').startTerminal({ cwd, env, onText: () => undefined }) : new TeamRun(team.server, team.slug, 'codex-logout').start({ cwd, env, stdin: null, onLine: () => undefined });
+        if ('endInput' in run) run.endInput();
+        const timeout = setTimeout(() => run.signal('SIGTERM'), this.o.stepTimeoutMs);
+        timeout.unref();
+        const end = await run.done;
+        clearTimeout(timeout);
+        if (end.spawnError !== null || end.code !== 0) throw new AuthRefused(502, 'sign_out_failed', AUTH_WORDS.signOutFailed);
+        done = true;
       }
       if (!done) {
         // The fallback (Claude): the adapter's own program, `--cli auth logout`, which removes the same sign-in.
@@ -790,8 +906,9 @@ export class AuthService {
         else this.attempts.delete(key);
       }
     }
-    this.log(`signed out: ${agent}`);
+    this.log(`signed out: ${agent}${target.team !== undefined ? ` (team ${target.team.slug})` : ''}`);
     this.cache.delete(key);
+    this.o.onSignedChange(target);
     return this.status(target);
   }
 }

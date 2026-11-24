@@ -2,6 +2,7 @@ import { PageHeader } from '../../../components/PageHeader';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import type { BotRunner, OldConnection, RunnerPlacement } from '@manythreads/shared';
+import { hasSignInScopeChoice } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
 import { fetchLlmAliases, fetchTeams } from '../../../api/endpoints';
 import { useQuery } from '../../../app/useQuery';
@@ -481,7 +482,7 @@ function RunnerRow({
           <span data-testid="runner-teams" className={hasNoTeams(r) ? 'rn-warn' : undefined}>{hasNoTeams(r) ? 'No team can use it yet' : `Teams: ${describeTeams(r)}`}</span>
           <span data-testid="runner-bots">{countBots(r.botCount)}</span>
         </div>
-        {isPodAgent(r) ? (
+        {hasSignInScopeChoice(r) ? (
           <div className="rn-detail" data-testid="runner-signin-scope" data-scope={r.signInScope}>
             Sign-in: {scopeLine(r)}
           </div>
@@ -501,7 +502,7 @@ function RunnerRow({
         </span>
         <button type="button" className="btn sm" onClick={onTest} disabled={busy} data-testid="runner-test" aria-label={`Test ${r.label}`}>Test</button>
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
-        {isSigninKind(r.kind) || hasAgentSignin(r) ? (
+        {isSigninKind(r.kind) || hasAgentSignin(r) || isPerTeam(r) ? (
           <button
             type="button"
             className="btn sm"
@@ -513,7 +514,7 @@ function RunnerRow({
             Sign-in
           </button>
         ) : null}
-        {isPodAgent(r) ? (
+        {hasSignInScopeChoice(r) ? (
           <button type="button" className="btn sm" onClick={onScope} disabled={busy} data-testid="runner-signin-scope-open" aria-label={`Who signs ${r.label} in`}>Who signs in</button>
         ) : null}
         {hasFullAccessChoice(r) ? (

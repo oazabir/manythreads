@@ -6,6 +6,8 @@ import type { BridgeConfig } from './config.ts';
 import { BRIDGE_VERSION } from './version.ts';
 import type { TunnelHello } from './tunnel.ts';
 import { hasTeamUsers } from './server-team.ts';
+import { serverSigninScope, serverSigninUnreadable } from './config.ts';
+import { ownSigninTeams } from './signin-scope.ts';
 
 // What an enrolled server's bridge needs besides the run API (PLAN P26-15): where its key is, what it tells the site about the machine, and the agents it found.
 
@@ -77,6 +79,19 @@ export async function detectAgents(config: BridgeConfig): Promise<TunnelHello['a
   return out;
 }
 
+function signinReport(config: BridgeConfig): Pick<TunnelHello, 'signInScope' | 'staleSignins'> {
+  const agents = config.server?.agents ?? {};
+  const scope: NonNullable<TunnelHello['signInScope']> = {};
+  const stale: NonNullable<TunnelHello['staleSignins']> = {};
+  for (const key of ['claude', 'codex'] as const) {
+    if (agents[key] === undefined) continue;
+    scope[key] = serverSigninUnreadable(config) ? 'unreadable' : serverSigninScope(config, key);
+    const left = serverSigninScope(config, key) === 'shared' ? ownSigninTeams(config, key).slice(0, 50) : [];
+    if (left.length > 0) stale[key] = left;
+  }
+  return { signInScope: scope, ...(Object.keys(stale).length > 0 ? { staleSignins: stale } : {}) };
+}
+
 export async function helloFor(config: BridgeConfig): Promise<TunnelHello> {
   return {
     bridgeVersion: BRIDGE_VERSION.slice(0, 40),
@@ -84,6 +99,11 @@ export async function helloFor(config: BridgeConfig): Promise<TunnelHello> {
     agents: await detectAgents(config),
     // the machine's key for either agent; a server without team users never gets full access (P35-01), so it says no whatever its templates say
     allowFullAccess: hasTeamUsers(config.server) && (config.server.agents.codex?.fullAccess === 'allowed' || config.server.agents.claude?.fullAccess === 'allowed'),
+    // each team runs as a user of its own here: only then may a team have a sign-in of its own (P35-10b); the site refuses "each team signs in" on a one-user server
+    teamUsers: hasTeamUsers(config.server),
+    // who signs each agent in, as this bridge keeps it (the site compares it with its own column and says so when they differ), and teams whose own folder may be left while the
+    // agent has one sign-in (a switch back to one sign-in that could not clean it)
+    ...signinReport(config),
   };
 }
 

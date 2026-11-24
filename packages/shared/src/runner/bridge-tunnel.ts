@@ -43,6 +43,10 @@ export const ENROL_CODE_PATTERN = /^mte_[0-9a-f]{40}$/;
 
 const StreamId = z.string().regex(/^[A-Za-z0-9_-]{6,40}$/);
 
+/** Who signs one agent of a server in, as its bridge keeps it (P35-10b). */
+export const BridgeSigninScope = z.enum(['shared', 'per_team', 'unreadable']);
+export type BridgeSigninScope = z.infer<typeof BridgeSigninScope>;
+
 export const BridgeHello = z.strictObject({
   type: z.literal('hello'),
   protocol: z.literal(BRIDGE_TUNNEL_VERSION),
@@ -50,6 +54,12 @@ export const BridgeHello = z.strictObject({
   host: BotServerHost,
   agents: z.array(BotServerAgent).max(8),
   allowFullAccess: z.boolean(),
+  /** Each team runs as a Unix user of its own on the machine (P26-22): only then may a runner there sign in per team (P35-10b). A bridge older than that leaves it out. */
+  teamUsers: z.boolean().default(false),
+  /** Who signs each agent in, as the bridge keeps it (P35-10b); `unreadable`: its kept file could not be read. An older bridge leaves it out. */
+  signInScope: z.strictObject({ claude: BridgeSigninScope.optional(), codex: BridgeSigninScope.optional() }).optional(),
+  /** Teams whose own sign-in folder may be left on the machine while the agent has one sign-in. */
+  staleSignins: z.strictObject({ claude: z.array(z.string().max(63)).max(50).optional(), codex: z.array(z.string().max(63)).max(50).optional() }).optional(),
 });
 export type BridgeHello = z.infer<typeof BridgeHello>;
 

@@ -57,6 +57,8 @@ export const EnrolBridgeRequest = z.strictObject({
   host: BotServerHost,
   agents: z.array(BotServerAgent).max(8),
   allowFullAccess: z.boolean().default(false),
+  /** The machine runs each team as a user of its own (P35-10b; an older installer leaves it out). */
+  teamUsers: z.boolean().default(false),
 });
 export type EnrolBridgeRequest = z.infer<typeof EnrolBridgeRequest>;
 export const EnrolBridgeResponse = z.object({ serverId: BotServerId, name: BotServerName, key: z.string().regex(BRIDGE_KEY_PATTERN) });

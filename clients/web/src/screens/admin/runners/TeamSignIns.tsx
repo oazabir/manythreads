@@ -6,7 +6,7 @@ import { fetchAgentAuthTeams, setSignInScope } from './api';
 import { AGENT_NAME, agentOf, SCOPE_HINT, SCOPE_LABEL, scopeSwitchWords, teamAction, teamSignedIn, teamsSignedInWords, teamStateWords, type TeamRef } from './agent-auth';
 
 /*
- * Who signs a Claude Code or Codex pod runner in (P35-10, docs/plans/per-team-sign-in.md section 1). `SignInScopeDialog` is the choice, one sign-in for all teams (the default) or each
+ * Who signs a Claude Code or Codex pod or server runner in (P35-10, P35-10b, docs/plans/per-team-sign-in.md section 1). `SignInScopeDialog` is the choice, one sign-in for all teams (the default) or each
  * team on its own, and says what a switch does before it is done (every old sign-in is signed out and removed, runs under way stop, the shell homes are cleared). `TeamSignInsDialog`
  * lists the teams of a runner where each team signs in, each with its stored state, and opens the usual sign-in dialog for one team. The list is the server's stored states: no team is
  * asked live here, so the list opens at once.
@@ -98,7 +98,9 @@ export function TeamSignInsDialog({ runner, onClose, onTeam, onScope }: { runner
 export function TeamSignInsView({ runner, items, error, onTeam, onScope }: { runner: BotRunner; items: readonly AgentAuthTeamState[] | null; error: string | null; onTeam: (team: TeamRef) => void; onScope: () => void }) {
   const which = agentOf(runner);
   const tool = which === null ? 'the agent' : AGENT_NAME[which];
-  const served = items?.filter((t) => t.served) ?? [];
+  const onServer = runner.kind === 'server_agent';
+  // on a server any team of the runner may sign in, so every team counts; on pods only the teams with a pod
+  const served = items?.filter((t) => onServer || t.served) ?? [];
   return (
     <div className="rn-form">
       <p className="dlg-text">
@@ -108,16 +110,16 @@ export function TeamSignInsView({ runner, items, error, onTeam, onScope }: { run
       {items === null && error === null ? <p className="dlg-text faint" role="status">Loading the teams.</p> : null}
       {items !== null ? (
         <>
-          <p className="fld-hint" role="status" data-testid="runner-team-signins-count">{teamsSignedInWords(served.filter(teamSignedIn).length, served.length)}.</p>
+          <p className="fld-hint" role="status" data-testid="runner-team-signins-count">{teamsSignedInWords(served.filter(teamSignedIn).length, served.length, onServer)}.</p>
           {items.length === 0 ? (
             <p className="faint" data-testid="runner-team-signins-none">No team may use this runner yet. Add teams with Teams first.</p>
           ) : (
             <ul className="rn-auth-methods" data-testid="runner-team-signins-list">
               {items.map((t) => {
-                const action = teamAction(t);
+                const action = teamAction(t, onServer);
                 return (
-                  <li key={t.teamId} data-testid="runner-team-signin-row" data-team={t.slug} data-state={t.served ? (t.state ?? 'unknown') : 'no_pod'}>
-                    <strong>{t.name}</strong> <span className="fld-hint" data-testid="runner-team-signin-state">{teamStateWords(t)}</span>{' '}
+                  <li key={t.teamId} data-testid="runner-team-signin-row" data-team={t.slug} data-state={t.served || onServer ? (t.state ?? 'unknown') : 'no_pod'}>
+                    <strong>{t.name}</strong> <span className="fld-hint" data-testid="runner-team-signin-state">{teamStateWords(t, onServer)}</span>{' '}
                     {action !== null ? (
                       <button type="button" className="btn sm" onClick={() => onTeam({ slug: t.slug, name: t.name })} data-testid="runner-team-signin-open" aria-label={`${action}: team ${t.name}`}>
                         {action}

@@ -6,6 +6,7 @@ import { Dialog } from '../../../components/Dialog';
 import { QueryView } from '../../../components/states';
 import { Alert, Field } from '../../../components/ui';
 import { AgentSignInDialog } from './AgentSignInDialog';
+import { isPerTeam, PER_TEAM_SERVER_SIGNIN } from './agent-auth';
 import { fetchBotRunners } from './api';
 import { createBotServer, deleteBotServer, fetchBotServers, mintBotServerCode, rotateBotServerKey } from './servers-api';
 import { NO_FULL_ACCESS_WORDS } from './commands';
@@ -118,7 +119,9 @@ export function ServersSection({ onRunnersChanged }: { onRunnersChanged?: () => 
                       onRemove={() => setDialog({ kind: 'remove', server: s })}
                       onSignin={(agent) => {
                         const runner = data.runners.find((r) => r.serverId === s.id && r.agent === agent);
-                        if (runner) setDialog({ kind: 'signin', runner });
+                        // each team signs in on its own (P35-10b): that list is the runner's, above
+                        if (runner && isPerTeam(runner)) say(PER_TEAM_SERVER_SIGNIN(runner.label));
+                        else if (runner) setDialog({ kind: 'signin', runner });
                         else setError('That agent has no runner yet. It appears when the server connects.');
                       }}
                     />

@@ -2,9 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseServerProfileName, profileFor, type BridgeConfig } from './config.ts';
+import { parseServerProfileName, profileFor, serverSigninScope, serverSigninUnreadable, type BridgeConfig } from './config.ts';
 import { prepareServerRun, type ServerRunSupport } from './server-run.ts';
-import { ensureTeamUser, hasTeamUsers, TeamRun } from './server-team.ts';
+import { ensureTeamUser, hasTeamUsers, TeamRun, teamSigninFacts } from './server-team.ts';
 import { acpDriver } from './drivers/acp.ts';
 import { flavorOf } from './acp/adapter.ts';
 import { NO_TEAM_USERS_FULL_ACCESS } from './full-access.ts';
@@ -14,7 +14,8 @@ import type { Driver, DriverJob } from './drivers/types.ts';
 import { startChild, type ChildHandle } from './process.ts';
 import type { RunRequest } from './request.ts';
 import { KeyedQueue, type SessionStore } from './sessions.ts';
-import { classifyFailure, limitResetsAt, type SigninGate } from './signin.ts';
+import { classifyFailure, FACTS_UNKNOWN, limitResetsAt, SigninGate, type FileFacts } from './signin.ts';
+import { teamSigninDir } from './team-user.ts';
 
 export type RunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -90,8 +91,19 @@ export interface RunManagerOptions {
   drivers?: Record<string, Driver>;
   /** An enrolled server: the site's address, from which each run's profile is made (server-run.ts). Absent for every other bridge. */
   serverRun?: Omit<ServerRunSupport, 'log'>;
+  /**
+   * A server where each team signs in (P35-10b): the team's sign-in state as last seen (`AuthService.knownState`). A team that is signed out is refused at once with a plain sentence;
+   * `unknown` lets the run go (it finds out itself).
+   */
+  teamSignin?: (agent: 'claude' | 'codex', team: string) => Promise<'signed_in' | 'signed_out' | 'unknown' | 'not_needed'>;
+  /** Test hook: what a team's own sign-in file says about its dates (default: the helper's `signin-facts`, as the team user). Null: unknown. */
+  teamFacts?: (agent: 'claude' | 'codex', team: string) => Promise<{ exists: boolean; valid: boolean; expiresAt: number | null; refreshedAt: number | null; mtimeMs: number | null } | null>;
   log: (line: string) => void;
 }
+
+/** The refusal of a run of a team that has not signed in on a server where each team signs in (docs/plans/per-team-sign-in.md section 1; the site says the same with the team's name). */
+export const teamNotSignedInHere = (team: string, agent: 'claude' | 'codex'): string =>
+  `Team ${team} has not signed in to ${agent === 'codex' ? 'Codex' : 'Claude Code'} on this server yet. An admin can sign it in on the Runners page.`;
 
 /** What the helper starts for a server-mode agent key. */
 const AGENT_KIND = { claude: 'claude', codex: 'codex', hermes: 'hermes' } as const;
@@ -133,6 +145,14 @@ export class RunManager {
   private readonly runs = new Map<string, Run>();
   private readonly idem = new Map<string, { runId: string; bodyHash: string }>();
   private readonly queue = new KeyedQueue();
+  /** One gate per team sign-in folder (P35-10b): a refused sign-in or a plan limit of one team holds only that team's runs. */
+  private readonly teamGates = new Map<string, SigninGate>();
+  private teamSigninOf: RunManagerOptions['teamSignin'] | undefined;
+
+  /** What a run of a team that signs in on its own asks first (set by the HTTP face once its sign-in service exists). */
+  setTeamSignin(fn: NonNullable<RunManagerOptions['teamSignin']>): void {
+    this.teamSigninOf = fn;
+  }
   private readonly sweeper: NodeJS.Timeout;
 
   constructor(private readonly opts: RunManagerOptions) {
@@ -206,6 +226,52 @@ export class RunManager {
     return n;
   }
 
+  /** Stops every live run of one team on one agent (its own sign-in was signed out). Returns how many were asked to stop. */
+  stopTeamAgent(flavor: 'claude' | 'codex', team: string, reason: string): number {
+    let n = 0;
+    for (const run of this.runs.values()) {
+      if (run.status !== 'running') continue;
+      const who = parseServerProfileName(run.profile);
+      if (who === null || who.team !== team || who.agentKey !== flavor) continue;
+      this.stop(run, reason);
+      n += 1;
+    }
+    return n;
+  }
+
+  /**
+   * The gate of a team's own sign-in folder (P35-10b). The folder is the team user's (0700), so the bridge cannot read the file: the gate learns its dates from the helper
+   * (`signin-facts`, as the team user, at most every 30 s and again after a run that may have renewed). Facts it cannot learn count as "a renewal is near": that team's runs then go
+   * one at a time, so two runs of one team never both renew. `forgetTeamGate` drops its remembered refusal (after a sign-in or a sign-out of that folder).
+   */
+  teamGate(agent: 'claude-code' | 'codex', folder: string, team?: string): SigninGate {
+    const key = `${agent}|${folder}`;
+    let gate = this.teamGates.get(key);
+    if (gate !== undefined) return gate;
+    const which = agent === 'codex' ? 'codex' : 'claude';
+    const server = this.opts.config.server;
+    const ask = this.opts.teamFacts ?? (hasTeamUsers(server) ? (a: 'claude' | 'codex', t: string) => teamSigninFacts(server, t, a) : undefined);
+    let known: { at: number; facts: FileFacts } | null = null;
+    const source =
+      team === undefined || ask === undefined
+        ? undefined
+        : {
+            facts: () => known?.facts ?? FACTS_UNKNOWN,
+            refresh: async (force: boolean) => {
+              if (!force && known !== null && Date.now() - known.at < 30_000) return;
+              const f = await ask(which, team).catch(() => null);
+              known = { at: Date.now(), facts: f === null ? FACTS_UNKNOWN : { exists: f.exists, valid: f.valid, scopeOk: f.valid, expiresAt: f.expiresAt, refreshedAt: f.refreshedAt, mtimeMs: f.mtimeMs } };
+            },
+          };
+    gate = new SigninGate(folder, Date.now, agent, source);
+    this.teamGates.set(key, gate);
+    return gate;
+  }
+
+  forgetTeamGate(agent: 'claude-code' | 'codex', folder: string): void {
+    this.teamGates.delete(`${agent}|${folder}`);
+  }
+
   /** Ask a run to stop: SIGTERM to its process group, SIGKILL after the grace. The run ends as cancelled (or failed with `reason`). */
   stop(run: Run, reason: string | null = null): void {
     if (run.status !== 'running') return;
@@ -263,6 +329,9 @@ export class RunManager {
     let team: TeamRun | null = null;
     /** What the run left on this machine that must go with it (the deployer's kubeconfig). */
     const cleanups: Array<() => void> = [];
+    /** The team's own sign-in folder, on a server where each team signs in (its gate is that folder's). */
+    let ownSignin: string | null = null;
+    let ownTeam: string | undefined;
     try {
       if (run.stopRequested) {
         this.finish(run, 'cancelled', 'run.cancelled', {});
@@ -273,7 +342,26 @@ export class RunManager {
         if (who !== null && hasTeamUsers(config.server)) {
           // P26-22: this team's runs are started as the team's own user, through the root helper; its user is made now (the first run of a team), so a refusal is the run's plain failure
           await ensureTeamUser(config.server.teamUsers, who.team);
-          team = new TeamRun(config.server, who.team, AGENT_KIND[who.agentKey]);
+          if ((who.agentKey === 'claude' || who.agentKey === 'codex') && serverSigninUnreadable(config)) {
+            const error = `This server could not read who signs in to ${who.agentKey === 'codex' ? 'Codex' : 'Claude Code'}. An admin can choose Who signs in again on the Runners page.`;
+            run.error = error;
+            this.finish(run, 'failed', 'run.failed', { error });
+            return;
+          }
+          const ownScope = (who.agentKey === 'claude' || who.agentKey === 'codex') && serverSigninScope(config, who.agentKey) === 'per_team';
+          team = new TeamRun(config.server, who.team, AGENT_KIND[who.agentKey], ownScope ? 'per_team' : undefined);
+          // P35-10b: each team signs in on its own: a team that has not is refused at once, never run on another sign-in
+          if (ownScope && (who.agentKey === 'claude' || who.agentKey === 'codex')) {
+            ownSignin = teamSigninDir(config.server.root, who.team, who.agentKey);
+            ownTeam = who.team;
+            const state = (await (this.teamSigninOf ?? this.opts.teamSignin)?.(who.agentKey, who.team).catch(() => 'unknown' as const)) ?? 'unknown';
+            if (state === 'signed_out') {
+              const error = teamNotSignedInHere(who.team, who.agentKey);
+              run.error = error;
+              this.finish(run, 'failed', 'run.failed', { error, reason: 'needs_sign_in' });
+              return;
+            }
+          }
         }
         // an enrolled server: this run's copy of the profile (where-you-run text, tools, kubeconfig, Hermes home), made with the run's own token
         profile = await prepareServerRun(config, profileName, baseProfile, given, { ...this.opts.serverRun, log: (line) => this.opts.log(`run ${run.id} ${line}`), onEnd: (fn) => cleanups.push(fn), ...(team !== null ? { team } : {}) });
@@ -347,12 +435,20 @@ export class RunManager {
           };
         },
       };
-      const gate = profile.agent === 'claude-code' ? this.opts.gate : profile.agent === 'codex' ? this.opts.codexGate : undefined;
+      const gate =
+        ownSignin !== null && (profile.agent === 'claude-code' || profile.agent === 'codex')
+          ? this.teamGate(profile.agent, ownSignin, ownTeam)
+          : profile.agent === 'claude-code'
+            ? this.opts.gate
+            : profile.agent === 'codex'
+              ? this.opts.codexGate
+              : undefined;
       const standing = gate?.standing() ?? null;
       if (standing !== null) {
         // A refused sign-in or a plan limit is already known: no process is started and nothing is retried.
         const who = profile.agent === 'codex' ? { name: 'Codex', plan: 'ChatGPT plan' } : { name: 'Claude', plan: 'Claude plan' };
-        const error = standing.kind === 'needs_sign_in' ? `The ${who.name} sign-in was refused. An admin has to upload a new sign-in file.` : `The ${who.plan}'s limit was reached.`;
+        const refused = ownSignin !== null ? `This team's own ${who.name} sign-in was refused. An admin can sign the team in again on the Runners page.` : `The ${who.name} sign-in was refused. An admin has to upload a new sign-in file.`;
+        const error = standing.kind === 'needs_sign_in' ? refused : `The ${who.plan}'s limit was reached.`;
         this.finish(run, 'failed', 'run.failed', { error, reason: standing.kind, ...(standing.until !== null ? { resets_at: standing.until } : {}) });
         return;
       }

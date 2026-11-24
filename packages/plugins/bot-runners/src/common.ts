@@ -46,7 +46,9 @@ export async function presentRunners(ctx: PluginContext, tx: PluginTx, rows: rea
       // a runner where each team signs in says how many of its teams are signed in (P35-10): read from the stored states, never a live probe
       const per = new Map<string, { signedIn: number; served: number }>();
       const perTeam = rows.filter((r) => r.sign_in_scope === 'per_team').map((r) => r.id);
-      for (const [id, teams] of await teamSignInsFor(sys, perTeam)) per.set(id, countSignedIn(teams));
+      const kindOf = new Map(rows.map((r) => [r.id, r.kind]));
+      // on a server any team of the runner may sign in (no pod is needed), so every team open to it counts (P35-10b)
+      for (const [id, teams] of await teamSignInsFor(sys, perTeam)) per.set(id, countSignedIn(teams, kindOf.get(id) === 'server_agent'));
       return { counts: await placementsOf(sys, workspaceId, ids), signIns: per };
     },
     { workspaceId },

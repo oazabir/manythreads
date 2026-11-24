@@ -2,13 +2,14 @@ import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { posix } from 'node:path';
 import { acceptRenewed, accountOf, CODEX_AUTH_MAX_BYTES, codexTokenFacts, mainIsNewer, rebuildRenewed, refusalLine, type CodexTokenFacts } from './codex-token.ts';
-import { AGENTS_GROUP, isKind, isSlug, KINDS, launchEnv, MAX_HEADER_BYTES, parseHeader, teamCodexHome, teamHome, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
+import { AGENTS_GROUP, isKind, isSlug, KINDS, launchEnv, MAX_HEADER_BYTES, parseHeader, teamCodexHome, teamHome, teamSigninDir, teamSigninRoot, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
 
 // The root helper of an enrolled server (PLAN P26-22, docs/plans/agents-anywhere.md section 9b). The installer puts a copy at /opt/manythreads-bridge/helper/ (root's, 0755) and a sudoers
 // rule that lets the bridge's user run exactly two commands of it:
 //
 //   mt-team-helper ensure-user <team>        make the team's user `mt-team-<team>` and its home (idempotent)
-//   mt-team-helper run <team> <kind>         start one fixed program as that user: <kind> is claude, codex, hermes (the adapters), sync (the repository sync), clean-kube or clean-codex
+//   mt-team-helper run <team> <kind>         start one fixed program as that user: <kind> is claude, codex, hermes (the adapters), sync (the repository sync), clean-kube, clean-codex, or one
+//                                            of the kinds of a team's own sign-in (claude-login, claude-logout, codex-key, codex-logout, clean-signin; P35-10b)
 //
 // Everything the sudoers rule cannot say (it only matches words) is checked here: the slug, the kind, that there are no more arguments. The programs come from a table the installer
 // wrote as root (`/etc/manythreads-bridge/team-agents.json`): the bridge names a kind, never a program. The run's environment, the files it needs and the working folder come on the
@@ -31,6 +32,8 @@ const SYSTEM_PATH = '/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin';
 export interface AgentProgram {
   command: string;
   args: string[];
+  /** Codex only: the `codex` program itself (the adapter is `command`), for the API-key sign-in and the sign-out of a team's own sign-in (P35-10b). Absent: those two kinds are refused. */
+  cli?: string | undefined;
 }
 
 export interface HelperConfig {
@@ -65,7 +68,8 @@ export function parseHelperConfig(text: string): HelperConfig {
   for (const [k, v] of Object.entries(agentsRaw)) {
     if (k !== 'claude' && k !== 'codex' && k !== 'hermes') throw new Error(`the helper table has an unknown agent ${k.slice(0, 20)}`);
     if (!isRecord(v) || !absolute(v['command']) || (v['args'] !== undefined && (!Array.isArray(v['args']) || v['args'].some((a) => typeof a !== 'string' || a.includes('\0'))))) throw new Error(`the helper table's ${k} needs an absolute command`);
-    agents[k] = { command: v['command'], args: (v['args'] as string[] | undefined) ?? [] };
+    if (v['cli'] !== undefined && (k !== 'codex' || !absolute(v['cli']))) throw new Error(`the helper table's ${k} cli must be an absolute path (Codex only)`);
+    agents[k] = { command: v['command'], args: (v['args'] as string[] | undefined) ?? [], ...(typeof v['cli'] === 'string' ? { cli: v['cli'] } : {}) };
   }
   const sync = raw['syncScript'];
   if (sync !== undefined && !absolute(sync)) throw new Error('syncScript must be an absolute path');
@@ -97,12 +101,42 @@ export function parseArgv(argv: readonly string[]): Parsed {
   return { ok: false, error: command === 'run' ? `the kinds are ${KINDS.slice(0, -1).join(', ')} and ${KINDS[KINDS.length - 1]}, and nothing follows them` : 'nothing follows the team in ensure-user' };
 }
 
-/** The program a kind starts, from the table: the command and its arguments, and the umask it runs with. `null` for a kind that starts none (clean-kube, clean-codex). */
-export function programFor(cfg: HelperConfig, kind: Kind): { argv: string[]; umask: string } | null {
-  if (kind === 'clean-kube' || kind === 'clean-codex') return null;
+/** One argument for a POSIX shell: single quotes, and a quote inside closed and reopened (the same rule as the bridge's own terminal, acp/pty.ts). */
+const shQuote = (v: string): string => `'${v.replace(/'/g, `'\\''`)}'`;
+
+/** Where `script` (util-linux) may be. */
+export const SCRIPT_PATHS = ['/usr/bin/script', '/bin/script'];
+
+/**
+ * A program that insists on a terminal, under one `script` makes, AS the team user (P35-10b, plan section 7): the helper has already read the header from the pipe, so the header never
+ * reaches a terminal and its echo cannot show it. The command line is built only from the helper's own table (root's file) and constant words. `-e` ends `script` with the program's
+ * own exit code (measured: without it a failed sign-in looks like a good one); the terminal is 500 columns wide so a long sign-in address is printed on one line.
+ */
+export function underTerminal(script: string, argv: readonly string[]): string[] {
+  const line = `stty cols 500 rows 50 2>/dev/null; exec ${argv.map(shQuote).join(' ')}`;
+  return [script, '-q', '-e', '-f', '-c', `/bin/sh -c ${shQuote(line)}`, '/dev/null'];
+}
+
+/** The program a kind starts, from the table: the command and its arguments, and the umask it runs with. `null` for a kind that starts none (clean-kube, clean-codex, clean-signin). */
+export function programFor(cfg: HelperConfig, kind: Kind, script: string | null = null): { argv: string[]; umask: string } | null {
+  if (kind === 'clean-kube' || kind === 'clean-codex' || kind === 'clean-signin' || kind === 'signin-facts') return null;
   if (kind === 'sync') {
     if (cfg.syncScript === undefined) throw new Error('this machine has no repository sync script');
     return { argv: ['/bin/sh', cfg.syncScript], umask: '0027' };
+  }
+  if (kind === 'claude-login' || kind === 'claude-logout') {
+    const p = cfg.agents.claude;
+    if (p === undefined) throw new Error('this machine has no claude agent');
+    if (script === null) throw new Error('script is needed for a Claude sign-in (the util-linux package)');
+    // the adapter's own Claude program: the measured sign-in (`--cli auth login --claudeai`) and sign-out (`--cli auth logout`), docs/spikes/acp-measured.md
+    const words = kind === 'claude-login' ? ['--cli', 'auth', 'login', '--claudeai'] : ['--cli', 'auth', 'logout'];
+    return { argv: underTerminal(script, [p.command, ...p.args, ...words]), umask: '0077' };
+  }
+  if (kind === 'codex-key' || kind === 'codex-logout') {
+    const cli = cfg.agents.codex?.cli;
+    if (cli === undefined) throw new Error('this machine has no codex program in the helper table (run the installer again with --update)');
+    // the key is read by `codex login --with-api-key` from standard input: the rest of the pipe after the header, never an argument or a variable
+    return { argv: kind === 'codex-key' ? [cli, 'login', '--with-api-key'] : [cli, 'logout'], umask: '0077' };
   }
   const p = cfg.agents[kind];
   if (p === undefined) throw new Error(`this machine has no ${kind} agent`);
@@ -113,6 +147,8 @@ export function programFor(cfg: HelperConfig, kind: Kind): { argv: string[]; uma
 export const SH_MKDIR = 'umask "$1"; shift; mkdir -p -- "$@"';
 export const SH_PUT = 'umask 077; d=$(dirname -- "$1") && mkdir -p -- "$d" && rm -rf -- "$1.new" && cat > "$1.new" && chmod "$2" "$1.new" && mv -f -- "$1.new" "$1"';
 export const SH_RM = 'rm -rf -- "$@"';
+/** Removes a folder only when it is empty (the team's `.signin` after its last sign-in folder went). */
+export const SH_RMDIR = 'rmdir -- "$1" 2>/dev/null || true';
 export const SH_EXEC = 'umask "$1"; shift; cd -- "$1" && shift && exec "$@"';
 /** A folder only its user may enter (the team's Codex home): made with umask 077 and set to 0700; the leading 00 also clears a setgid bit (GNU chmod keeps it on a folder for 0700). */
 export const SH_PRIVATE_DIR = 'umask 077; mkdir -p -- "$1" && chmod 00700 -- "$1"';
@@ -390,10 +426,68 @@ const asUser = (plan: Plan, argv: readonly string[], input?: string): SpawnSyncR
   return run(cmd!, args, input);
 };
 
+/**
+ * The team's own sign-in folders a header names (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` set to `.signin/<agent>`; `parseHeader` allowed nothing else there), each to be made like the Codex home:
+ * by the team user, 0700, no setgid bit (a team home may be 2750). The bridge never makes a folder inside a team home.
+ */
+export function signinFoldersOf(header: LaunchHeader, root: string, team: string): string[] {
+  const own = [teamSigninDir(root, team, 'claude'), teamSigninDir(root, team, 'codex')];
+  const named = [header.env['CLAUDE_CONFIG_DIR'], header.env['CODEX_HOME']].filter((v): v is string => v !== undefined && own.includes(v));
+  return named.length === 0 ? [] : [teamSigninRoot(root, team), ...named];
+}
+
+/**
+ * Whether a team's own sign-in folder may be acted on by root's helper: `<home>/.signin` is a real folder of the team user (not a link), and the named folder is directly in it and is
+ * not a link either (a missing one is fine: there is nothing to remove). Root only looks (`lstat`, no link followed); every change is made as the team user.
+ */
+export function ownSigninFolderOk(root: string, team: string, folder: string, uid: number): boolean {
+  const signin = teamSigninRoot(root, team);
+  if (posix.dirname(folder) !== signin || (folder !== teamSigninDir(root, team, 'claude') && folder !== teamSigninDir(root, team, 'codex'))) return false;
+  let top: Stats;
+  try {
+    top = lstatSync(signin);
+  } catch {
+    return true;
+  }
+  if (top.isSymbolicLink() || !top.isDirectory() || top.uid !== uid) return false;
+  try {
+    const st = lstatSync(folder);
+    return !st.isSymbolicLink() && st.isDirectory();
+  } catch {
+    return true;
+  }
+}
+
+/** What `signin-facts` prints about a team's own sign-in file: its shape and its dates, never a token (the bridge's gate holds one renewing run of the team near a renewal). */
+export interface SigninFactsLine {
+  exists: boolean;
+  valid: boolean;
+  expiresAt: number | null;
+  refreshedAt: number | null;
+  mtimeMs: number | null;
+}
+
+/** The facts of a sign-in file's text: Claude's `.credentials.json` (its access token's expiry and scope) or Codex's `auth.json` (`codex-token.ts`). No token leaves this function. */
+export function signinFactsOf(agent: 'claude' | 'codex', text: string | null, mtimeMs: number | null): SigninFactsLine {
+  if (text === null) return { exists: false, valid: false, expiresAt: null, refreshedAt: null, mtimeMs: null };
+  if (agent === 'codex') {
+    const f = codexTokenFacts(text);
+    return { exists: true, valid: f?.chatgpt === true, expiresAt: f?.chatgpt === true ? f.accessExpiresAt : null, refreshedAt: f?.lastRefresh ?? null, mtimeMs };
+  }
+  try {
+    const oauth = (JSON.parse(text) as { claudeAiOauth?: { accessToken?: unknown; expiresAt?: unknown; scopes?: unknown } }).claudeAiOauth;
+    const valid = typeof oauth === 'object' && oauth !== null && typeof oauth.accessToken === 'string' && Array.isArray(oauth.scopes) && oauth.scopes.includes('user:inference');
+    return { exists: true, valid, expiresAt: valid && typeof oauth.expiresAt === 'number' ? oauth.expiresAt : null, refreshedAt: null, mtimeMs };
+  } catch {
+    return { exists: true, valid: false, expiresAt: null, refreshedAt: null, mtimeMs };
+  }
+}
+
 /** Files, the working folder and the temporary folder: all made by the team's user. */
-function prepare(plan: Plan, header: LaunchHeader, home: string): void {
+function prepare(plan: Plan, header: LaunchHeader, home: string, signin: readonly string[] = []): void {
   const dirs = asUser(plan, ['/bin/sh', '-c', SH_MKDIR, 'sh', '0077', posix.join(home, 'tmp')]);
   if (dirs.status !== 0) throw new Error('could not make the temporary folder');
+  for (const d of signin) if (asUser(plan, ['/bin/sh', '-c', SH_PRIVATE_DIR, 'sh', d]).status !== 0) throw new Error('could not make the team\'s own sign-in folder');
   const cwd = asUser(plan, ['/bin/sh', '-c', SH_MKDIR, 'sh', '0027', header.cwd]);
   if (cwd.status !== 0) throw new Error('could not make the working folder');
   for (const f of header.files) {
@@ -747,6 +841,40 @@ export async function main(argv: readonly string[]): Promise<number> {
     remove(plan, [posix.join(home, 'kube')]);
     return 0;
   }
+  if (parsed.kind === 'clean-signin' || parsed.kind === 'signin-facts') {
+    // the one own folder the header names (parseHeader allowed only the team's own); refused when `.signin` or the folder is a link, or `.signin` is not the team user's
+    const folder = (header.env['CLAUDE_CONFIG_DIR'] ?? header.env['CODEX_HOME']) as string;
+    if (!ownSigninFolderOk(cfg.dataRoot, parsed.team, folder, acct.uid)) {
+      say('the team\'s own sign-in folder is not a plain folder of the team user; it is not touched');
+      return 73;
+    }
+    if (parsed.kind === 'signin-facts') {
+      const agent = header.env['CODEX_HOME'] !== undefined ? 'codex' : 'claude';
+      const file = posix.join(folder, agent === 'codex' ? 'auth.json' : '.credentials.json');
+      // read as the team user, bounded (SH_READ); root only looks at the file's time (lstat, no link followed)
+      const r = asUser(plan, ['/bin/sh', '-c', SH_READ, 'sh', file]);
+      const text = r.status === 0 && typeof r.stdout === 'string' && r.stdout !== '' && Buffer.byteLength(r.stdout) <= CODEX_AUTH_MAX_BYTES ? r.stdout : null;
+      let mtimeMs: number | null = null;
+      try {
+        const st = lstatSync(file);
+        if (st.isFile()) mtimeMs = st.mtimeMs;
+      } catch {
+        mtimeMs = null;
+      }
+      if (text === null && r.status !== SH_READ_MISSING) {
+        say('the team\'s own sign-in file could not be read');
+        return 73;
+      }
+      process.stdout.write(`${JSON.stringify(signinFactsOf(agent, text, mtimeMs))}\n`);
+      return 0;
+    }
+    if (asUser(plan, ['/bin/sh', '-c', SH_RM, 'sh', folder]).status !== 0) {
+      say('could not remove the team\'s own sign-in');
+      return 73;
+    }
+    asUser(plan, ['/bin/sh', '-c', SH_RMDIR, 'sh', teamSigninRoot(cfg.dataRoot, parsed.team)]);
+    return 0;
+  }
   const flock = which(FLOCK);
   if (parsed.kind === 'clean-codex') {
     // the team's copy of the Codex sign-in goes (its sessions and state stay); the markers of runs that are gone go with it. Only the team's own lock: nothing here is another team's.
@@ -766,10 +894,10 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   let program;
   try {
-    program = programFor(cfg, parsed.kind);
+    program = programFor(cfg, parsed.kind, which(SCRIPT_PATHS));
     if (program === null) return 0;
     fixAuthFolders(cfg.dataRoot);
-    prepare(plan, header, home);
+    prepare(plan, header, home, signinFoldersOf(header, cfg.dataRoot, parsed.team));
   } catch (err) {
     say(err instanceof Error ? err.message : 'could not prepare the run');
     return 73;
@@ -777,7 +905,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   // A Codex run: its own Codex home, and in it a copy of the machine's sign-in for as long as the run lasts (P31-01). The shared lock (`codex-token.lock`) is held only around the
   // main copy; everything in the team's own folder is done under the team's own lock, before or after it.
   let codex: CodexRun | null = null;
-  if (parsed.kind === 'codex') {
+  // a team that signs in on its own (CODEX_HOME is its `.signin/codex`) has its own `auth.json` there: nothing is copied in, back or removed (P35-10b)
+  if (parsed.kind === 'codex' && header.env['CODEX_HOME'] !== teamSigninDir(cfg.dataRoot, parsed.team, 'codex')) {
     try {
       if (cfg.bridgeUser === undefined) throw new Error('the helper table names no bridgeUser (run the installer again with --update)');
       if (flock === null) throw new Error('flock is needed (the util-linux package)');

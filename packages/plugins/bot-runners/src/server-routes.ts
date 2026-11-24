@@ -332,9 +332,9 @@ export function registerServerRoutes(deps: ServerRoutesDeps): void {
           const redeemed = await tx.query(
             `UPDATE app.bot_servers
                 SET key_hash = $2, pending_key_hash = NULL, pending_key_at = NULL, enrol_code_hash = NULL, enrol_code_expires_at = NULL, status = 'offline',
-                    host_name = $3, host_system = $4, host_arch = $5, bridge_version = $6, agents = $7::jsonb, allow_full_access = $8, last_seen_at = now(), updated_at = now()
+                    host_name = $3, host_system = $4, host_arch = $5, bridge_version = $6, agents = $7::jsonb, allow_full_access = $8, team_users = $10, last_seen_at = now(), updated_at = now()
               WHERE id = $1::uuid AND enrol_code_hash = $9 AND enrol_code_expires_at > now() RETURNING id`,
-            [row.id, hashSecret(key), body.host.hostname, body.host.system, body.host.arch, body.bridgeVersion, JSON.stringify(body.agents), body.allowFullAccess, hashSecret(body.code)],
+            [row.id, hashSecret(key), body.host.hostname, body.host.system, body.host.arch, body.bridgeVersion, JSON.stringify(body.agents), body.allowFullAccess, hashSecret(body.code), body.teamUsers],
           );
           if (redeemed.rows.length !== 1) throw notFound('That code is not valid. It may have been used or may have expired: make a new one on the Runners page.');
           await syncServerRunners(tx, row, body.agents, false);

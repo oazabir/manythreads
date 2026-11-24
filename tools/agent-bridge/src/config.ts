@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { SLUG as SLUG_PATTERN, teamCodexHome, teamHermesHome } from './team-user.ts';
+import { SLUG as SLUG_PATTERN, teamCodexHome, teamHermesHome, teamSigninDir } from './team-user.ts';
 
 // The bridge's config file: which agent CLI serves which profile.
 //
@@ -339,6 +339,31 @@ export function loadConfig(path: string): BridgeConfig {
 
 const profilesMade = new WeakMap<BridgeConfig, Map<string, ProfileConfig>>();
 
+/** Who signs a server's Claude or Codex in (P35-10b): one sign-in for all teams (`shared`, the machine's `auth/<agent>`), or each team on its own (`per_team`, its `.signin/<agent>`). */
+export type SigninScope = 'shared' | 'per_team';
+export type SigninAgentKey = 'claude' | 'codex';
+const signinScopes = new WeakMap<BridgeConfig, Record<SigninAgentKey, SigninScope>>();
+
+/** The scope the bridge keeps for one agent of this machine (set by `POST /v1/signin/scope`, kept in the bridge's state folder). `shared` until it is set. */
+export function serverSigninScope(config: BridgeConfig, agent: SigninAgentKey): SigninScope {
+  return signinScopes.get(config)?.[agent] ?? 'shared';
+}
+
+const signinUnreadable = new WeakMap<BridgeConfig, boolean>();
+
+/** The kept choice could not be read at start (a file that is there and is not the bridge's): Claude and Codex runs are refused until a switch writes it again (signin-scope.ts). */
+export const serverSigninUnreadable = (config: BridgeConfig): boolean => signinUnreadable.get(config) === true;
+export function setServerSigninUnreadable(config: BridgeConfig, unreadable: boolean): void {
+  signinUnreadable.set(config, unreadable);
+}
+
+/** Sets the scope of one agent and forgets every profile made from the templates, so the next run of every bot is made with the new sign-in folder. */
+export function setServerSigninScope(config: BridgeConfig, agent: SigninAgentKey, scope: SigninScope): void {
+  const now = signinScopes.get(config) ?? { claude: 'shared', codex: 'shared' };
+  signinScopes.set(config, { ...now, [agent]: scope });
+  profilesMade.delete(config);
+}
+
 /** The parts of a server-mode profile name (`claude--team--bot`), or null when the name does not have the form. */
 export function parseServerProfileName(name: string): { agentKey: 'claude' | 'codex' | 'hermes'; team: string; bot: string } | null {
   if (!SERVER_PROFILE.test(name)) return null;
@@ -368,6 +393,10 @@ export function serverProfile(config: BridgeConfig, name: string): ProfileConfig
   // P31-01: a team's Codex runs with a Codex home of the team's own (its sessions and state, and for the run a copy of the machine's sign-in made by the helper); `env` wins over
   // `authHome`, which stays the machine's main copy (the sign-in profile's and the gate's)
   if (agentKey === 'codex' && server.teamUsers !== undefined) env['CODEX_HOME'] = teamCodexHome(server.root, team);
+  // P35-10b: a team that signs in on its own uses its own sign-in folder, never the machine's (`authHome` is left out: the gate and the sign-in profile keep the machine's)
+  const ownSignin = (agentKey === 'claude' || agentKey === 'codex') && server.teamUsers !== undefined && serverSigninScope(config, agentKey) === 'per_team';
+  if (ownSignin && agentKey === 'claude') env['CLAUDE_CONFIG_DIR'] = teamSigninDir(server.root, team, 'claude');
+  if (ownSignin && agentKey === 'codex') env['CODEX_HOME'] = teamSigninDir(server.root, team, 'codex');
   const instructions = server.instructions?.replaceAll('{team}', team).replaceAll('{bot}', bot).replaceAll('{workdir}', workdir).replaceAll('{repos}', repos);
   const profile: ProfileConfig = {
     agent: AGENT_OF_KEY[agentKey],
@@ -378,7 +407,7 @@ export function serverProfile(config: BridgeConfig, name: string): ProfileConfig
     ...(tmpl.effort !== undefined ? { effort: tmpl.effort } : {}),
     ...(Object.keys(env).length > 0 ? { env } : {}),
     ...(tmpl.passEnv !== undefined ? { passEnv: tmpl.passEnv } : {}),
-    ...(tmpl.authHome !== undefined ? { authHome: tmpl.authHome } : {}),
+    ...(tmpl.authHome !== undefined && !ownSignin ? { authHome: tmpl.authHome } : {}),
     ...(tmpl.fullAccess !== undefined ? { fullAccess: tmpl.fullAccess } : {}),
     ...(instructions !== undefined ? { instructions } : {}),
   };

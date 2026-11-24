@@ -47,12 +47,25 @@ export const teamKubeconfigFile = (root: string, team: string, bot: string, run:
 export const teamCodexHome = (root: string, team: string): string => posix.join(teamHome(root, team), '.codex');
 /** Hermes' home of one bot, inside the team's home. */
 export const teamHermesHome = (root: string, team: string, bot: string): string => posix.join(teamHome(root, team), 'hermes', bot);
+/**
+ * The folder of a team's OWN sign-ins on a runner where each team signs in (P35-10b, docs/plans/per-team-sign-in.md sections 4 and 7): `<home>/.signin`, made by the helper as the team
+ * user with mode 0700 and no setgid bit (a team home may be 2750 for the publisher, so a folder made there would otherwise take the publisher's group). Nothing is copied in or out of it.
+ */
+export const teamSigninRoot = (root: string, team: string): string => posix.join(teamHome(root, team), '.signin');
+/** The team's own Claude (`CLAUDE_CONFIG_DIR`) or Codex (`CODEX_HOME`) sign-in folder. */
+export const teamSigninDir = (root: string, team: string, agent: 'claude' | 'codex'): string => posix.join(teamSigninRoot(root, team), agent);
 
 /**
  * What the helper starts as the team's user. `claude`, `codex` and `hermes` are the adapters (the helper's own table says which program); `sync` is the repository sync; `clean-kube`
- * empties the team's kube folder; `clean-codex` removes the team's copy of the Codex sign-in (at bridge start and after a sign-out). The two `clean-*` kinds start no program.
+ * empties the team's kube folder; `clean-codex` removes the team's copy of the Codex sign-in (at bridge start and after a sign-out). The `clean-*` kinds start no program.
+ *
+ * The sign-in kinds of a team's own sign-in (P35-10b): `claude-login` and `claude-logout` start Claude's own terminal sign-in or sign-out under a terminal the HELPER makes (`script`, as
+ * the team user), so the header line is read from the pipe before any terminal exists and never shows on one; `codex-key` signs Codex in with an API key that comes on the pipe after
+ * the header (never in the environment); `codex-logout` is Codex's own sign-out; `clean-signin` removes one of the team's own sign-in folders. The programs are fixed by the helper's
+ * table and the kind: the bridge chooses no argument. Codex's device-code sign-in needs no terminal: it goes through the adapter (`codex`), as a run does. `signin-facts` reads the team's
+ * own sign-in file as the team user and prints only its dates (never a token), so the bridge can hold one renewing run of that team at a time.
  */
-export const KINDS = ['claude', 'codex', 'hermes', 'sync', 'clean-kube', 'clean-codex'] as const;
+export const KINDS = ['claude', 'codex', 'hermes', 'sync', 'clean-kube', 'clean-codex', 'claude-login', 'claude-logout', 'codex-key', 'codex-logout', 'clean-signin', 'signin-facts'] as const;
 export type Kind = (typeof KINDS)[number];
 export const isKind = (v: unknown): v is Kind => typeof v === 'string' && (KINDS as readonly string[]).includes(v);
 
@@ -89,6 +102,11 @@ export interface LaunchHeader {
   files: LaunchFile[];
   /** Paths removed as the team's user when the program ends, whatever way it ended. */
   removeAtEnd: string[];
+  /**
+   * `per_team`: this run is of a runner where each team signs in (P35-10b), so its Claude or Codex home must be the team's own `.signin/<agent>` and the machine's shared folders are refused.
+   * Absent: one sign-in for all teams, and a team's own folder is refused for a run. The bridge chooses it; a leftover `.signin` folder never decides it.
+   */
+  signIn?: 'per_team' | undefined;
 }
 
 export const MAX_HEADER_BYTES = 2 * 1024 * 1024;
@@ -123,6 +141,17 @@ export interface HeaderContext {
   kind: Kind;
 }
 
+/** The kinds that act only on the team's own sign-in folder (never on a shared one). */
+const OWN_KINDS: readonly Kind[] = ['claude-login', 'claude-logout', 'codex-key', 'codex-logout', 'clean-signin', 'signin-facts'];
+/** The kinds that may name a Codex home at all. */
+const CODEX_HOME_KINDS: readonly Kind[] = ['codex', 'codex-key', 'codex-logout', 'clean-signin', 'signin-facts'];
+
+/** Whether `p` is the team's `.signin` folder or anything inside it: no file is written there and nothing there is removed at the end of a run (only `clean-signin` removes it). */
+export const touchesSignin = (root: string, team: string, p: string): boolean => {
+  const signin = teamSigninRoot(root, team);
+  return p === signin || isInside(signin, p);
+};
+
 export type HeaderResult = { ok: true; header: LaunchHeader; dropped: string[] } | { ok: false; error: string };
 
 /**
@@ -151,15 +180,34 @@ export function parseHeader(line: string, ctx: HeaderContext): HeaderResult {
     if (!allow.test(k) || (FORCED_ENV as readonly string[]).includes(k)) dropped.push(k);
     else env[k] = v;
   }
-  // where the variables that name a folder may point: Claude's shared sign-in folder of this machine; Codex's home only for a Codex run, and only the team's own (P31-01: the machine's
-  // Codex sign-in is the bridge user's and no team reads it; the helper copies it into the team's home for the run)
+  // where the variables that name a folder may point (P31-01, P35-10b): Claude's shared sign-in folder of this machine, or the team's own `.signin/claude`; Codex's home only for a Codex
+  // kind, and only the team's own (its copy-in home, or its own `.signin/codex`). The machine's Codex sign-in is the bridge user's and no team reads it. Which of the two the header says
+  // (`signIn`) decides which folder a run may name; the sign-in kinds name the team's own folder only.
+  const signIn = raw['signIn'];
+  if (signIn !== undefined && signIn !== 'per_team') return { ok: false, error: 'signIn must be per_team or left out' };
+  const perTeam = signIn === 'per_team';
+  const own = OWN_KINDS.includes(ctx.kind);
   const claudeDir = `${ctx.root}/auth/claude`;
-  if (env['CLAUDE_CONFIG_DIR'] !== undefined && env['CLAUDE_CONFIG_DIR'] !== claudeDir) return { ok: false, error: `CLAUDE_CONFIG_DIR must be ${claudeDir}` };
-  if (env['CODEX_HOME'] !== undefined) {
-    const codexHome = teamCodexHome(ctx.root, ctx.team);
-    if (ctx.kind !== 'codex') return { ok: false, error: 'CODEX_HOME is only for a Codex run' };
-    if (env['CODEX_HOME'] !== codexHome) return { ok: false, error: `CODEX_HOME must be ${codexHome}` };
+  const ownClaude = teamSigninDir(ctx.root, ctx.team, 'claude');
+  const ownCodex = teamSigninDir(ctx.root, ctx.team, 'codex');
+  const claude = env['CLAUDE_CONFIG_DIR'];
+  const codex = env['CODEX_HOME'];
+  if (claude !== undefined) {
+    if (claude !== claudeDir && claude !== ownClaude) return { ok: false, error: `CLAUDE_CONFIG_DIR must be ${claudeDir} or ${ownClaude}` };
+    if (claude === claudeDir && (perTeam || own)) return { ok: false, error: `this team signs in to Claude on its own: CLAUDE_CONFIG_DIR must be ${ownClaude}` };
+    if (claude === ownClaude && !own && !(ctx.kind === 'claude' && perTeam)) return { ok: false, error: `this team has one Claude sign-in shared by all teams: CLAUDE_CONFIG_DIR must be ${claudeDir}` };
   }
+  if (codex !== undefined) {
+    const codexHome = teamCodexHome(ctx.root, ctx.team);
+    if (!CODEX_HOME_KINDS.includes(ctx.kind)) return { ok: false, error: 'CODEX_HOME is only for a Codex run' };
+    if (codex !== codexHome && codex !== ownCodex) return { ok: false, error: `CODEX_HOME must be ${codexHome} or ${ownCodex}` };
+    if (codex === codexHome && (perTeam || ctx.kind !== 'codex')) return { ok: false, error: `CODEX_HOME must be ${ownCodex}` };
+    if (codex === ownCodex && !own && !perTeam) return { ok: false, error: `this team has one Codex sign-in shared by all teams: CODEX_HOME must be ${codexHome}` };
+  }
+  // the sign-in kinds act on the team's own folder and on nothing else (any folder variable they carry is the team's own: checked above)
+  if ((ctx.kind === 'claude-login' || ctx.kind === 'claude-logout') && claude !== ownClaude) return { ok: false, error: `${ctx.kind} needs CLAUDE_CONFIG_DIR ${ownClaude}` };
+  if ((ctx.kind === 'codex-key' || ctx.kind === 'codex-logout') && codex !== ownCodex) return { ok: false, error: `${ctx.kind} needs CODEX_HOME ${ownCodex}` };
+  if ((ctx.kind === 'clean-signin' || ctx.kind === 'signin-facts') && (claude === undefined) === (codex === undefined)) return { ok: false, error: `${ctx.kind} names exactly one of the team's own sign-in folders` };
   for (const k of ['KUBECONFIG', 'HERMES_HOME', 'REPO_SYNC_LIST', 'REPO_SYNC_FALLBACK', 'REPO_SYNC_SCRATCH']) {
     const v = env[k];
     if (v !== undefined && !(plainPath(v) && isInside(home, v))) return { ok: false, error: `${k} must be inside the team's home` };
@@ -172,19 +220,21 @@ export function parseHeader(line: string, ctx: HeaderContext): HeaderResult {
   const files: LaunchFile[] = [];
   for (const f of filesRaw) {
     if (!isRecord(f) || !plainPath(f['path']) || !isInside(home, f['path']) || typeof f['text'] !== 'string' || typeof f['mode'] !== 'string' || !/^0[0-7]{3}$/.test(f['mode'])) return { ok: false, error: 'a file entry is not a path inside the team\'s home, text and an octal mode' };
+    if (touchesSignin(ctx.root, ctx.team, f['path'])) return { ok: false, error: 'no file is written into the team\'s own sign-in folder' };
     files.push({ path: f['path'], text: f['text'], mode: f['mode'] });
   }
   const removeRaw = raw['removeAtEnd'] ?? [];
   if (!Array.isArray(removeRaw) || removeRaw.length > MAX_FILES || removeRaw.some((p) => !plainPath(p) || !isInside(home, p))) return { ok: false, error: 'removeAtEnd must be a short list of paths inside the team\'s home' };
-  return { ok: true, header: { v: 1, cwd, env, files, removeAtEnd: removeRaw as string[] }, dropped };
+  if (removeRaw.some((p) => touchesSignin(ctx.root, ctx.team, p as string))) return { ok: false, error: 'the team\'s own sign-in folder is not removed at the end of a run' };
+  return { ok: true, header: { v: 1, cwd, env, files, removeAtEnd: removeRaw as string[], ...(perTeam ? { signIn: 'per_team' as const } : {}) }, dropped };
 }
 
 /** The header the bridge writes as the first line of the helper's standard input. The names the helper would drop are dropped here already, so the helper's list of `dropped` is empty in a healthy run. */
-export function buildHeader(input: { cwd: string; env: NodeJS.ProcessEnv; files?: LaunchFile[]; removeAtEnd?: string[]; kind: Kind }): string {
+export function buildHeader(input: { cwd: string; env: NodeJS.ProcessEnv; files?: LaunchFile[]; removeAtEnd?: string[]; kind: Kind; signIn?: 'per_team' | undefined }): string {
   const allow = input.kind === 'sync' ? SYNC_ENV : ENV_ALLOW;
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(input.env)) if (v !== undefined && allow.test(k)) env[k] = v;
-  const header: LaunchHeader = { v: 1, cwd: input.cwd, env, files: input.files ?? [], removeAtEnd: input.removeAtEnd ?? [] };
+  const header: LaunchHeader = { v: 1, cwd: input.cwd, env, files: input.files ?? [], removeAtEnd: input.removeAtEnd ?? [], ...(input.signIn !== undefined ? { signIn: input.signIn } : {}) };
   return JSON.stringify(header);
 }
 

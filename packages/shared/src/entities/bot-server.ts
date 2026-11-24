@@ -40,6 +40,8 @@ export const BotServer = z.object({
   agents: z.array(BotServerAgent),
   /** The machine allows full access for Claude Code or Codex (the installer's default from P35-01, unless `--no-full-access`; never on a server without team users): the machine's half of the rule (the site's half is the runner's switch). */
   allowFullAccess: z.boolean(),
+  /** Each team runs as a Unix user of its own on this machine (P26-22), as its bridge last said: only then may its Claude Code or Codex runner sign in per team (P35-10b). */
+  teamUsers: z.boolean(),
   enrolled: z.boolean(),
   /** A one-time code is waiting to be used, until this time. Null: none. */
   codeExpiresAt: IsoDateTime.nullable(),
