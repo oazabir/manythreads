@@ -1,7 +1,6 @@
 import { expect, test, type Locator } from '@playwright/test';
 import { WEB, authState } from '../support/env.ts';
 import { apiAs, bulkMessages, createChannel, messages, openAs, postMessage } from './support.ts';
-import { openAttach } from '../support/composer.ts';
 
 // the desktop layout (hover actions); the phone layout has its own spec (mobile-web)
 test.skip(({ isMobile }) => isMobile, 'desktop layout');
@@ -249,10 +248,7 @@ test('a thread reply has no "Also send to" tick; a reply also sent to the channe
     await expect(copy.getByTestId('also-from-thread')).toContainText('Also sent from a thread');
     // Send later is offered with nothing to drop
     await thread.getByRole('textbox').fill('a reply to send later');
-    const later = (await openAttach(thread)).getByTestId('send-later'); // in the Attach menu since P36-09
-    await expect(later).toBeVisible();
-    await expect(later).not.toHaveAttribute('aria-disabled', 'true');
-    await rafi.page.keyboard.press('Escape');
+    await expect(thread.getByRole('button', { name: 'Send later', exact: true })).toBeVisible();
     // a plain reply stays in the thread only
     await thread.getByRole('textbox').press('Enter');
     await expect(thread).toContainText('a reply to send later');

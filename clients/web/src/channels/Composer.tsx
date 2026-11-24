@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type CustomEmoji, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
@@ -8,7 +8,7 @@ import { channelPath } from '../shell/nav';
 import { createTask, fetchChannelBoards } from '../screens/boards/api';
 import { botBoardOf, branchFor } from '../screens/boards/board';
 import { Avatar } from '../components/ui';
-import { CloseIcon, SendIcon } from '../shell/icons';
+import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
 import { ShellContext } from '../shell/context';
 import { useDismiss } from '../shell/useDismiss';
 import { Recorder, RecorderNotice } from './voice/Recorder';
@@ -26,7 +26,7 @@ import { runSlashAction } from './slashRun';
 import { useSlashEnv, useSlashWho } from './useSlash';
 import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, enterKey, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
 import { ComposerToolbar } from './ComposerToolbar';
-import { composerTools, isMac, matchBroadcast, matchLocalCommands, parseLocalCommand, sendButtonClass, toolForKey, type LocalCommand, type ToolId } from './composerTools';
+import { composerTools, isMac, matchBroadcast, matchLocalCommands, parseLocalCommand, sendButtonClass, toolForKey, type LocalCommand, type ToolId, type ToolLayout } from './composerTools';
 import { CustomEmojiImg } from './EmojiGlyph';
 import { useCustomEmoji } from './customEmoji';
 import { detectEmojiTrigger, suggestEmoji } from './emojiSuggest';
@@ -37,21 +37,17 @@ import { handleFor, type People } from './hooks';
 import { groupCountText, matchGroups, useMentionGroups } from './mentionGroups';
 import { PresenceDot } from '../presence/PresenceDot';
 import { remindWhen } from '../later/times';
-import { SendLaterPicker } from './SendLater';
+import { SendLaterMenu } from './SendLater';
 import { needsBroadcastAgreement, scheduledErrorText, scheduledStore } from './scheduled';
 import { broadcastAsk, broadcastAskFromRefusal, type BroadcastAsk } from './broadcast';
 import { readDraft, useServerDraft, writeDraft } from './serverDraft';
 import { placeDraft } from './draftPlaces';
-import { captureSupported, useCapture } from './capture/useCapture';
-import { AttachMenu } from './AttachMenu';
-import { attachItems, type AttachActions } from './composerAttach';
-import { setFormatBarShown, useFormatBar } from './formatBar';
+import { CaptureButton } from './capture/CaptureButton';
 
 /*
- * The one composer of every conversation (channel, thread panel and full thread, direct message, Brain chat and a bot conversation; P34-03). The box shows
- * three buttons beside the text and nothing else (P36-09, owner 2026-11-24): Attach, the microphone (where a voice message can be sent) and Send. Attach opens
- * a menu (composerAttach.ts) with a file, a screenshot, a screen recording, a poll, emoji, Send later and the formatting bar, which is hidden until asked for;
- * the formatting shortcuts work without it. Enter sends and Shift+Enter is a new line; inside a list or a code block Enter continues it, and Ctrl or Cmd with Enter always sends
+ * The one composer of every conversation (channel, thread panel and full thread, direct message, Brain chat and a bot conversation; P34-03): the same
+ * markdown toolbar in the same order everywhere, then the box with attach, the microphone (where a voice message can be sent), Send and Send later in one
+ * row beside it. Enter sends and Shift+Enter is a new line; inside a list or a code block Enter continues it, and Ctrl or Cmd with Enter always sends
  * (composerFormat.ts `enterKey`). A draft is kept per conversation (also on the server, so another device shows it), @ and # pickers, and attachments
  * (upload with progress, paste, drag and drop, remove) when the server stores files.
  */
@@ -155,6 +151,16 @@ type PickItem = {
   emoji?: { char: string | null; custom: CustomEmoji | null };
 };
 
+/** A phone-sized box: the toolbar is one "Aa" button (and Mention, Emoji) until it is opened. */
+const PHONE_BAR = '(width <= 480px)';
+const subscribePhone = (cb: () => void): (() => void) => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined;
+  const mq = window.matchMedia(PHONE_BAR);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+};
+const phoneNow = (): boolean => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(PHONE_BAR).matches;
+
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
 /**
@@ -203,11 +209,9 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   const asking = useRef(false);
   const makingCard = useRef(false);
   const listId = useId();
-  // the formatting bar (ComposerToolbar.tsx) is shown only when the person asked for it from the Attach menu, the same in every composer (formatBar.ts)
-  const formatShown = useFormatBar();
-  // the Send later times, opened from the Attach menu
-  const [laterOpen, setLaterOpen] = useState(false);
-  const attachButton = useRef<HTMLButtonElement>(null);
+  // the toolbar (ComposerToolbar.tsx) is always there, the same in every composer; a phone shows one "Aa" button that opens it
+  const phone = useSyncExternalStore(subscribePhone, phoneNow, () => false);
+  const layout: ToolLayout = phone ? 'aa' : 'full';
   const mac = useMemo(() => isMac(), []);
   const customEmoji = useCustomEmoji();
   const emojiButton = useRef<HTMLButtonElement>(null);
@@ -477,8 +481,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
         setPollOpen(true);
     }
   };
-  // the poll is in the Attach menu, so the bar does not offer it a second time
-  const tools = useMemo<ToolId[]>(() => composerTools({ polls: false }), []);
+  const tools = useMemo<ToolId[]>(() => composerTools({ polls: slashOn }), [slashOn]);
 
   // ---- attachments --------------------------------------------------------------------------------------------
   const addFiles = (files: File[]): void => {
@@ -849,32 +852,6 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
     }
   };
 
-  // ---- the Attach menu (P36-09): what it offers here, and what each item does -------------------------------------------------
-  // a screenshot or a screen recording, made smaller and attached like any file (owner, 2026-11-23)
-  const capture = useCapture((file) => addFiles([file]));
-  const [canCapture] = useState(() => captureSupported());
-  const attachMenu = attachItems({
-    files: filesOn,
-    capture: canCapture && !guest,
-    polls: slashOn,
-    sendLater,
-    hasText: text.trim() !== '',
-    hasFiles: uploads.length > 0,
-    busy: schedulingNow,
-    formatShown,
-  });
-  const attachActions: AttachActions = {
-    pickFile: () => fileInput.current?.click(),
-    capture: (kind) => capture.start(kind),
-    poll: () => runTool('poll'),
-    emoji: () => setEmojiOpen(true),
-    sendLater: () => setLaterOpen(true),
-    toggleFormat: () => {
-      setFormatBarShown(!formatShown);
-      area.current?.focus();
-    },
-  };
-
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.nativeEvent.isComposing) return;
     // Ctrl or Cmd with Enter sends even while a list is open under the box
@@ -990,7 +967,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
     >
       {assist && !voiceActive ? assist(text) : null}
       <div className="cbox">
-        {voiceActive || !formatShown ? null : <ComposerToolbar layout="full" tools={tools} mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />}
+        {voiceActive ? null : <ComposerToolbar layout={layout} tools={tools} mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />}
         {emojiOpen ? (
           <div ref={emojiPop} className="emp-pop">
             <EmojiPicker onPick={putEmoji} onClose={() => { setEmojiOpen(false); area.current?.focus(); }} />
@@ -1085,25 +1062,22 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
             onPaste={onPaste}
             hidden={voiceActive}
           />
-          {filesOn ? <input ref={fileInput} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(e) => { addFiles(filesOf(e.target.files)); e.target.value = ''; }} /> : null}
-          <AttachMenu items={attachMenu} onChoose={(it) => it.entry.run(attachActions)} hidden={voiceActive} buttonRef={attachButton}>
-            {sendLater ? (
-              <SendLaterPicker
-                open={laterOpen}
-                onClose={(back) => {
-                  setLaterOpen(false);
-                  if (back) attachButton.current?.focus();
-                }}
-                onPick={(at) => void scheduleFor(at)}
-              />
-            ) : null}
-            {capture.view}
-          </AttachMenu>
+          {filesOn ? (
+            <>
+              <input ref={fileInput} type="file" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(e) => { addFiles(filesOf(e.target.files)); e.target.value = ''; }} />
+              <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" hidden={voiceActive} onClick={() => fileInput.current?.click()}><ClipIcon /></button>
+              {/* a screenshot or a screen recording, made smaller here and attached like any file (owner, 2026-11-23) */}
+              {!guest ? <CaptureButton hidden={voiceActive} onAttach={(file) => addFiles([file])} /> : null}
+            </>
+          ) : null}
           {voiceOn ? <Recorder rec={rec} showMic={text === '' && uploads.length === 0} onSendClip={(clip) => {
             void channelStore.sendVoice(channelId, threadRootId ?? null, clip);
             onVoiceSent?.();
           }} returnFocus={focusBox} /> : null}
-          <button type="button" className={sendButtonClass(canSend)} aria-label="Send" title={`Send (Enter, or ${mac ? '⌘Enter' : 'Ctrl+Enter'} in a list)`} hidden={voiceActive} disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
+          <span className="sch-split" hidden={voiceActive}>
+            <button type="button" className={sendButtonClass(canSend)} aria-label="Send" title={`Send (Enter, or ${mac ? '⌘Enter' : 'Ctrl+Enter'} in a list)`} disabled={!canSend || schedulingNow} onClick={send} data-testid="send"><SendIcon /></button>
+            {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}
+          </span>
         </div>
       </div>
       {pollOpen ? <PollDialog channelId={channelId} threadRootId={threadRootId} {...(pollInitial ? { initial: pollInitial } : {})} onClose={() => { setPollOpen(false); area.current?.focus(); }} onDone={() => { setPollOpen(false); area.current?.focus(); }} /> : null}

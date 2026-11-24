@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { apiAs, createChannel, openAs, postMessage, uniqueName, type Api } from './support.ts';
-import { chooseAttach, openAttach } from '../support/composer.ts';
 
 /**
- * Scheduled send (PLAN P14-05, docs/plugins/channels.md): "Send later" in the composer's Attach menu (P36-09) and the "N scheduled" strip. Rafi writes a message and
+ * Scheduled send (PLAN P14-05, docs/plugins/channels.md): the "Send later" button beside Send and the "N scheduled" strip. Rafi writes a message and
  * schedules it with a ready-made time (the button and its menu work with the keyboard alone, Escape closes the menu and gives the focus back) and with
  * a time of his own (a past time is refused in words); the strip counts it, lets him edit its text and cancel it; a reply scheduled into a thread shows
  * in the channel's strip too, marked "In a thread". Nothing is posted by the end (the minute job is tested against the database in
@@ -41,33 +40,19 @@ const localInput = (d: Date): string => {
 test.describe('desktop', () => {
   test.skip(({ isMobile }) => isMobile, 'the desktop layout; the phone has its own test below');
 
-  test('Send later: the keyboard opens it from the Attach menu, Escape closes it; a ready-made time and a custom time schedule; the strip edits and cancels', async ({ browser }) => {
+  test('Send later: the keyboard opens the menu, Escape closes it; a ready-made time and a custom time schedule; the strip edits and cancels', async ({ browser }) => {
     const { page, context } = await openAs(browser, 'rafi', `/t/engineering/c/${channel.name}`);
     try {
       const box = page.getByRole('textbox', { name: /^Message/ });
-      // Send later is an item of the Attach menu (P36-09)
-      const attach = page.getByTestId('composer-attach');
       const later = page.getByTestId('send-later');
       await expect(box).toBeVisible(T);
-      // nothing to schedule in an empty box: the item says why and does nothing
-      await openAttach(page);
-      await expect(later).toHaveAttribute('aria-disabled', 'true');
-      await expect(later).toContainText('Write a message first');
-      await later.click();
-      await expect(page.getByTestId('send-later-menu')).toHaveCount(0);
-      await page.keyboard.press('Escape');
+      // nothing to schedule in an empty box
+      await expect(later).toBeDisabled();
       await box.fill(`${tag} first note`);
+      await expect(later).toBeEnabled();
 
-      // keyboard only: Enter on Attach opens its menu on the first item, End and the arrows move to Send later, Enter opens the times on the first one,
-      // the arrows move, Escape closes them and the focus is back on Attach
-      await attach.focus();
-      await page.keyboard.press('Enter');
-      await expect(page.getByTestId('attach-file')).toBeFocused();
-      await page.keyboard.press('End');
-      await expect(page.getByTestId('composer-format-toggle')).toBeFocused();
-      await page.keyboard.press('ArrowUp');
-      await expect(later).toBeFocused();
-      await expect(later).not.toHaveAttribute('aria-disabled', 'true');
+      // keyboard only: Enter opens the menu on its first choice, the arrows move, Escape closes it and the focus is back on the button
+      await later.focus();
       await page.keyboard.press('Enter');
       const menu = page.getByTestId('send-later-menu');
       await expect(menu).toBeVisible(T);
@@ -78,11 +63,11 @@ test.describe('desktop', () => {
       await expect(page.getByTestId('send-later-custom')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(menu).toBeHidden();
-      await expect(attach).toBeFocused();
-      expect(await attach.getAttribute('aria-expanded')).toBe('false');
+      await expect(later).toBeFocused();
+      expect(await later.getAttribute('aria-expanded')).toBe('false');
 
       // a ready-made time: the box is emptied and the strip says one is scheduled
-      await chooseAttach(page, 'send-later');
+      await later.click();
       await page.getByTestId('send-later-in60').click();
       await expect(page.getByTestId('scheduled-count')).toHaveText('1 scheduled', T);
       await expect(box).toHaveValue('');
@@ -90,7 +75,7 @@ test.describe('desktop', () => {
 
       // a time of his own: a past time is refused in words and keeps the dialog open
       await box.fill(`${tag} second note`);
-      await chooseAttach(page, 'send-later');
+      await later.click();
       await page.getByTestId('send-later-custom').click();
       const dialog = page.getByTestId('schedule-dialog');
       await expect(dialog).toBeVisible(T);
@@ -142,7 +127,8 @@ test.describe('phone', () => {
     const { page, context } = await openAs(browser, 'rafi', `/t/engineering/c/${channel.name}`, { width: 390, height: 844 }, true);
     try {
       await page.getByRole('textbox', { name: /^Message/ }).fill(`${tag} phone note`);
-      await chooseAttach(page, 'send-later');
+      const later = page.getByTestId('send-later');
+      await later.click();
       const choice = page.getByTestId('send-later-in20');
       await expect(choice).toBeVisible(T);
       const at = await choice.boundingBox();

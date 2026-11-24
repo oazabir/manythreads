@@ -277,8 +277,7 @@ test('in the thread panel a long source chip wraps to two lines and nothing scro
     // the reply box: no part of it scrolls sideways
     const composer = thread.locator('.rpf');
     expect(await composer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-    // the formatting bar is not drawn until it is asked for from the Attach menu (P36-09)
-    await expect(thread.locator('.ctools')).toHaveCount(0);
+    expect(await thread.locator('.ctools').first().evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     await thread.getByRole('textbox').fill('a reply with a very long unbroken line https://example.com/runbooks/rollback/2026/09/very/long/path/that/would/overflow/the/box');
     expect(await composer.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     expect(await noSidewaysScroll(page)).toBe(true);

@@ -2,7 +2,6 @@
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { showFormatting } from '../support/composer.ts';
 
 /**
  * Live check of /remind and the built-in slash commands (P14-04, P14-06) plus regressions of the previous deploy, as real users in real browsers.
@@ -343,7 +342,6 @@ test('rv-06 regressions: Bold on first click, poll double-click, private-IP link
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(500);
   await input.click();
-  await showFormatting(page); // the formatting bar is shown from the Attach menu (P36-09)
   const bold = page.getByRole('button', { name: 'Bold' });
   await bold.waitFor({ state: 'visible', timeout: 5000 });
   const bb = (await bold.boundingBox())!;

@@ -7,11 +7,9 @@ import { CODE_LANGUAGES } from './composerFormat';
 import { barTools, scrollEdges, toolTitle, type ToolId, type ToolLayout } from './composerTools';
 
 /*
- * The formatting bar above the message box (PLAN P21-04). Since P36-09 it is shown only when the person chose "Show formatting" in the Attach menu, and then
- * stays (it never folds on focus, so the list above never moves under a press); the icons are 16 px and the tooltips name the shortcut. Every composer
- * (channel, thread panel, direct message, Brain chat) draws the same tools in the same order (P34-03); a box too narrow for one row wraps to a second, and a
- * phone scrolls it sideways. The `aa` layout (one "Aa" button that opens the row) is not used by the composer any more. The bar is one stop of the Tab key
- * and the arrows move along it.
+ * The formatting bar above the message box (PLAN P21-04). It is always there, so the list above never moves when the box gets focus; the icons are 16 px and the
+ * tooltips name the shortcut. Every composer (channel, thread panel, direct message, Brain chat) draws the same tools in the same order (P34-03); a box too
+ * narrow for one row wraps to a second, and on a phone one "Aa" button opens the row. The bar is one stop of the Tab key and the arrows move along it.
  */
 
 type Icon = ComponentType<{ size?: number }>;
