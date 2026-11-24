@@ -860,6 +860,19 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
       reason: `Invited ${plural(n, 'person', 'people')}${e['first'] === true ? ' as the call started' : ''}`,
     };
   },
+  // "Ask to share" (P17-02): a request for a turn to share a screen that was answered; ids only. A request never answered has no event. A direct-message call has no team,
+  // so it leaves no row, as for the other call events.
+  'meetings.share_request.answered': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return {
+      action: 'meeting.share_answered',
+      who: actor(e['answeredBy']),
+      teamId,
+      target: of('meeting', uuid(e['meetingId'])),
+      reason: e['answer'] === 'accept' ? 'Stopped sharing to let them share' : e['answer'] === 'other' ? 'Let someone else share first' : 'Said not now',
+    };
+  },
   'meetings.meeting.ended': (e) => {
     const teamId = team(e['teamId']);
     if (!teamId) return null;

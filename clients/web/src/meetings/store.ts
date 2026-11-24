@@ -3,9 +3,13 @@ import {
   MEETING_CAPTION_PUSH,
   MEETING_CHANGED_PUSH,
   MEETING_RINGING_PUSH,
+  MEETING_SHARE_ANSWERED_PUSH,
+  MEETING_SHARE_ASKED_PUSH,
   MeetingCaptionPush,
   MeetingChangedPush,
   MeetingRingingPush,
+  MeetingShareAnsweredPush,
+  MeetingShareAskedPush,
   SCHEDULED_MEETING_CHANGED_PUSH,
   ScheduledMeetingChangedPush,
   dndState,
@@ -14,7 +18,7 @@ import {
 import { channelStore } from '../channels/store';
 import { presenceStore } from '../presence/store';
 import type { Push, RealtimeClient } from '../realtime/socket';
-import { addNotetaker, answerRecordConsent, correctSegment, fetchLiveMeetings, fetchNotetakers, fetchRecording, fetchTranscript, realCallApi, removeNotetaker, setRecording } from './api';
+import { addNotetaker, answerRecordConsent, answerShareRequest, askToShare, correctSegment, fetchLiveMeetings, fetchNotetakers, fetchRecording, fetchTranscript, realCallApi, removeNotetaker, setRecording } from './api';
 import { CallController, type CallState, type RoomApi } from './controller';
 import { loadEngine } from './engine';
 import { loadAdapter } from './media';
@@ -50,6 +54,8 @@ export type LiveDeps = {
   onChatMessage: () => void;
   /** Live captions for a room came in; the call keeps them if it is the room the person is in. */
   onCaptions: (meetingId: string, captions: MeetingCaptionPush['captions']) => void;
+  /** Someone asked this person for a turn to share their screen, or the person they asked answered (P17-02); the call keeps it if it is the room they are in. */
+  onShareRequest?: (push: { kind: 'asked'; push: MeetingShareAskedPush } | { kind: 'answered'; push: MeetingShareAnsweredPush }) => void;
   selfActor: () => string | null;
   sounds: Pick<Sounds, 'startRing' | 'stopRing'>;
   /** A system notice for a ring when the tab is hidden. */
@@ -191,6 +197,16 @@ export class LiveRoomsStore {
       if (p.success) this.deps.onCaptions(p.data.meetingId, p.data.captions);
       return;
     }
+    if (push.type === MEETING_SHARE_ASKED_PUSH) {
+      const p = MeetingShareAskedPush.safeParse(push.payload);
+      if (p.success) this.deps.onShareRequest?.({ kind: 'asked', push: p.data });
+      return;
+    }
+    if (push.type === MEETING_SHARE_ANSWERED_PUSH) {
+      const p = MeetingShareAnsweredPush.safeParse(push.payload);
+      if (p.success) this.deps.onShareRequest?.({ kind: 'answered', push: p.data });
+      return;
+    }
     if (push.type === MEETING_RINGING_PUSH) {
       const p = MeetingRingingPush.safeParse(push.payload);
       if (p.success) this.addRing(p.data);
@@ -277,6 +293,8 @@ export const realRoomApi: RoomApi = {
   recordConsent: answerRecordConsent,
   transcript: fetchTranscript,
   correct: correctSegment,
+  askToShare,
+  answerShare: answerShareRequest,
 };
 
 export function callController(): CallController {
@@ -316,6 +334,7 @@ export function liveRooms(): LiveRoomsStore {
     },
     onChatMessage: () => callController().noteChatMessage(),
     onCaptions: (meetingId, captions) => callController().noteCaptions(meetingId, captions),
+    onShareRequest: (p) => (p.kind === 'asked' ? callController().noteShareAsked(p.push) : callController().noteShareAnswered(p.push)),
     selfActor: () => channelStore.selfActor,
     sounds: pageSounds(),
     notify: (title, tag) => {

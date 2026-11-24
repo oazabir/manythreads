@@ -21,6 +21,7 @@ const SAMPLES = {
   'meetings.notes.shared': { ...base, type: 'meetings.notes.shared', sharedBy: uuid(5), granteeKind: 'person', granteeId: uuid(8), revoked: false },
   'meetings.notes.saved': { ...base, type: 'meetings.notes.saved', savedBy: uuid(5), path: 'meetings/2026/11/03-1000-standup', toMemory: true },
   'meetings.invite.sent': { ...base, type: 'meetings.invite.sent', invitedBy: uuid(5), personIds: [uuid(8), uuid(9)], first: true },
+  'meetings.share_request.answered': { ...base, type: 'meetings.share_request.answered', requestId: uuid(10), answeredBy: uuid(6), askedBy: uuid(5), answer: 'accept' },
 } as const;
 const TYPES = Object.keys(SAMPLES) as (keyof typeof SAMPLES)[];
 
@@ -57,6 +58,13 @@ describe('voice room events', () => {
     expect(() => parseEvent({ ...SAMPLES['meetings.recording.stopped'], reason: 'bored' })).toThrow();
     expect(() => parseEvent({ ...SAMPLES['meetings.notes.shared'], granteeKind: 'bot' })).toThrow();
     expect(() => parseEvent({ ...SAMPLES['meetings.recording.started'], people: 0 })).toThrow();
+  });
+
+  it('a request to share is answered with accept or decline only, and names nobody by text', () => {
+    expect(() => parseEvent({ ...SAMPLES['meetings.share_request.answered'], answer: 'maybe' })).toThrow();
+    expect(parseEvent({ ...SAMPLES['meetings.share_request.answered'], answer: 'other' })).toMatchObject({ answer: 'other' });
+    expect(() => parseEvent({ ...SAMPLES['meetings.share_request.answered'], requestId: 'x' })).toThrow();
+    expect(parseEvent({ ...SAMPLES['meetings.share_request.answered'], askerName: 'Rafi' })).not.toHaveProperty('askerName');
   });
 
   it('a call in a direct message has no team and may have no channel yet', () => {

@@ -3,13 +3,11 @@ import { checkSendAt } from '@manythreads/shared';
 import { Dialog } from '../components/Dialog';
 import { fromLocalInput, presetTime, REMIND_PRESETS, remindWhen, toLocalInput } from '../later/times';
 import { useDismiss } from '../shell/useDismiss';
-import { ClockIcon } from '../shell/icons';
 
 /*
- * "Send later" on the composer's send button (PLAN P14-05): a small button beside Send opens a menu of times (20 minutes, 1 hour, tomorrow morning,
- * next week) and a way to pick a day and a clock time. The times are worked out here, in the person's own time zone, and sent as exact moments;
- * the presets are the same ones "Remind me" offers (later/times.ts). The same dialog edits a scheduled message (text and time). The button is a clock with
- * the tooltip "Send later: pick a time" (P34-03): a bare chevron there read as "make the box bigger".
+ * "Send later" (PLAN P14-05): a menu of times (20 minutes, 1 hour, tomorrow morning, next week) and a way to pick a day and a clock time. Since P36-09 it
+ * opens from the composer's Attach menu, not from a button beside Send. The times are worked out here, in the person's own time zone, and sent as exact moments;
+ * the presets are the same ones "Remind me" offers (later/times.ts). The same dialog edits a scheduled message (text and time).
  */
 
 /** A sentence for what is wrong with a custom send time, or null when it can be used. */
@@ -20,23 +18,25 @@ export function sendTimeError(value: string, now: Date): string | null {
   return check.ok ? null : check.reason;
 }
 
-/** The button and its menu. `disabled`: nothing to send (an empty box), so nothing to schedule. `onPick` gets the moment chosen. */
-export function SendLaterMenu({ disabled, onPick }: { disabled: boolean; onPick: (at: Date) => void }) {
-  const [open, setOpen] = useState(false);
+/**
+ * The menu of times, opened by "Send later" in the composer's Attach menu (P36-09; before, a clock button beside Send opened it). It opens with the focus on its
+ * first time; Esc closes it and `onClose(true)` gives the focus back. "Pick a date and time…" closes the menu and opens the dialog. `onPick` gets the moment
+ * chosen.
+ */
+export function SendLaterPicker({ open, onClose, onPick }: { open: boolean; onClose: (focusBack: boolean) => void; onPick: (at: Date) => void }) {
   const [custom, setCustom] = useState(false);
-  const wrap = useRef<HTMLSpanElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const menuId = useId();
-  const close = (focus = true): void => {
-    setOpen(false);
-    if (focus) button.current?.focus();
-  };
-  useDismiss(open, close, wrap);
+  useDismiss(open, () => onClose(true), wrap);
   useEffect(() => {
     if (open) wrap.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [open]);
 
   const onMenuKey = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Tab') {
+      onClose(true);
+      return;
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
     const items = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
     const at = items.indexOf(document.activeElement as HTMLElement);
@@ -49,59 +49,42 @@ export function SendLaterMenu({ disabled, onPick }: { disabled: boolean; onPick:
   const now = new Date();
   return (
     <>
-      <span className="sch-wrap" ref={wrap}>
-        <button
-          ref={button}
-          type="button"
-          className="icon-btn sch-more"
-          aria-label="Send later"
-          title="Send later: pick a time"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? menuId : undefined}
-          disabled={disabled}
-          onClick={() => setOpen((o) => !o)}
-          data-testid="send-later"
-        >
-          <ClockIcon />
-        </button>
-        {open ? (
-          <div id={menuId} className="menu menu-up sch-menu" role="menu" aria-label="Send later" onKeyDown={onMenuKey} data-testid="send-later-menu">
-            <div className="sch-menu-head" role="presentation">Send this message later</div>
-            {REMIND_PRESETS.map((p) => {
-              const at = presetTime(p.id, now);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  role="menuitem"
-                  className="menu-item sch-item"
-                  data-testid={`send-later-${p.id}`}
-                  onClick={() => {
-                    close(false);
-                    onPick(at);
-                  }}
-                >
-                  <span>{p.label}</span>
-                  <small className="sch-when" data-vt-mask>{remindWhen(at.toISOString(), now)}</small>
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              role="menuitem"
-              className="menu-item sch-item"
-              data-testid="send-later-custom"
-              onClick={() => {
-                close(false);
-                setCustom(true);
-              }}
-            >
-              Pick a date and time…
-            </button>
-          </div>
-        ) : null}
-      </span>
+      {open ? (
+        <div ref={wrap} id={menuId} className="menu menu-up sch-menu" role="menu" aria-label="Send later" onKeyDown={onMenuKey} data-testid="send-later-menu">
+          <div className="sch-menu-head" role="presentation">Send this message later</div>
+          {REMIND_PRESETS.map((p) => {
+            const at = presetTime(p.id, now);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitem"
+                className="menu-item sch-item"
+                data-testid={`send-later-${p.id}`}
+                onClick={() => {
+                  onClose(false);
+                  onPick(at);
+                }}
+              >
+                <span>{p.label}</span>
+                <small className="sch-when" data-vt-mask>{remindWhen(at.toISOString(), now)}</small>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-item sch-item"
+            data-testid="send-later-custom"
+            onClick={() => {
+              onClose(false);
+              setCustom(true);
+            }}
+          >
+            Pick a date and time…
+          </button>
+        </div>
+      ) : null}
       {custom ? (
         <ScheduleDialog
           title="Send later"
@@ -109,7 +92,7 @@ export function SendLaterMenu({ disabled, onPick }: { disabled: boolean; onPick:
           initialAt={presetTime('in60', now)}
           onClose={() => {
             setCustom(false);
-            button.current?.focus();
+            onClose(true);
           }}
           onSubmit={async ({ at }) => {
             onPick(at);

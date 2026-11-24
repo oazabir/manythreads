@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Locator } from '@playwright/test';
 import { apiAs, createChannel, messages, openAs, postMessage } from './support.ts';
+import { openAttach, showFormatting } from '../support/composer.ts';
 
 // the desktop layout (hover actions, side panel); the phone layout has its own spec (mobile-web)
 test.skip(({ isMobile }) => isMobile, 'desktop layout');
@@ -15,9 +16,10 @@ test('toolbar, @ and # pickers, and a draft that survives a reload but not a dif
   const box = page.getByRole('textbox', { name: `Message #${a.name}` });
   try {
     await expect(box).toBeVisible();
-    // toolbar: bold wraps the selection, the code button wraps a span, the list button starts a bullet
+    // toolbar (shown from the Attach menu, P36-09): bold wraps the selection, the code button wraps a span, the list button starts a bullet
     await box.fill('make this bold');
     await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 9));
+    await showFormatting(page);
     await page.getByRole('button', { name: 'Bold' }).click();
     await expect(box).toHaveValue('make **this** bold');
     await box.fill('');
@@ -113,7 +115,9 @@ test('attachments: upload with progress, a card for a file or a preview for a pi
   const rafi = await openAs(browser, 'rafi', `/t/engineering/c/${name}`);
   const { page } = rafi;
   try {
-    await expect(page.getByRole('button', { name: 'Attach a file' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Attach', exact: true })).toBeVisible();
+    await expect((await openAttach(page)).getByTestId('attach-file')).toBeVisible();
+    await page.keyboard.press('Escape');
     const pdf = Buffer.from('%PDF-1.4\n%notes from the incident review\n'.repeat(500));
     await page.locator('input[type=file]').setInputFiles([
       { name: 'report.pdf', mimeType: 'application/pdf', buffer: pdf },
@@ -228,14 +232,20 @@ test('the message box rests two lines tall and stops growing at 376 px', async (
     await expect(reply).toBeVisible();
     expect(await heightOf(reply)).toBeGreaterThanOrEqual(44);
     expect(await heightOf(reply)).toBeLessThanOrEqual(60);
-    // one composer (P34-03): the thread panel draws the channel's tools, in the same order, and the same Send and Send later beside the box
-    const toolNames = (scope: Locator): Promise<string[]> =>
-      scope.getByRole('toolbar', { name: 'Formatting' }).locator('button.ctool, select.ctool').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? ''));
+    // one composer (P34-03): the thread panel draws the channel's three buttons beside the box (P36-09), and the same Attach menu, Send later in it
+    const shown = (scope: Locator): Promise<string[]> => scope.locator('.cbox button:visible').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''));
+    const menuOf = async (scope: Locator): Promise<string[]> => {
+      const items = await (await openAttach(scope)).getByRole('menuitem').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''));
+      await page.keyboard.press('Escape');
+      return items;
+    };
     const channelBox = page.locator('[data-landmark="composer"]');
     const threadBox = page.getByTestId('thread-view').getByTestId('composer');
-    expect(await toolNames(threadBox)).toEqual(await toolNames(channelBox));
+    expect(await shown(channelBox)).toEqual(['composer-attach', 'voice-mic', 'send']);
+    expect(await shown(threadBox)).toEqual(await shown(channelBox));
+    expect(await menuOf(threadBox)).toEqual(await menuOf(channelBox));
+    expect(await menuOf(threadBox)).toContain('send-later');
     await expect(threadBox.getByTestId('composer-more')).toHaveCount(0);
-    for (const name of ['Send', 'Send later']) await expect(threadBox.getByRole('button', { name, exact: true })).toBeVisible();
     // resting size does not change on focus
     const resting = await heightOf(box);
     await box.focus();

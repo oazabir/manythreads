@@ -98,6 +98,12 @@ import {
   InviteToMeetingResponse,
   callStartOptionsRoute,
   inviteToMeetingRoute,
+  AnswerShareRequest,
+  AnswerShareResponse,
+  AskToShareRequest,
+  AskToShareResponse,
+  answerShareRoute,
+  askToShareRoute,
   endMeetingRoute,
   getMeetingRoute,
   getMeetingTranscriptRoute,
@@ -126,6 +132,12 @@ export const fetchCallOptions = (channelId: string, q = '') =>
 /** "Invite more" on a live call's card (P15-27): the people newly asked. */
 export const inviteToMeeting = (meetingId: string, personIds: readonly string[]) =>
   call(inviteToMeetingRoute, { request: InviteToMeetingRequest, response: InviteToMeetingResponse }, { personIds: [...personIds] } as InviteToMeetingRequest, { meetingId });
+/** "Ask to share" (P17-02): ask the person sharing a screen (`sharerActorId`) for a turn; one request waits per asker, for a minute. */
+export const askToShare = (meetingId: string, sharerActorId: string) =>
+  call(askToShareRoute, { request: AskToShareRequest, response: AskToShareResponse }, { sharerActorId } as AskToShareRequest, { meetingId });
+/** The person sharing answers a request: `accept` (they stop sharing) or `decline` ("Not now"). */
+export const answerShareRequest = (meetingId: string, requestId: string, answer: AnswerShareRequest['answer']) =>
+  call(answerShareRoute, { request: AnswerShareRequest, response: AnswerShareResponse }, { answer }, { meetingId, requestId });
 export const joinMeeting = (meetingId: string) => call(joinMeetingRoute, { response: JoinMeetingResponse }, undefined, { meetingId });
 export const renewMeetingToken = (meetingId: string) => call(renewMeetingTokenRoute, { response: RenewMeetingTokenResponse }, undefined, { meetingId });
 export const leaveMeeting = (meetingId: string) => call(leaveMeetingRoute, { response: LeaveMeetingResponse }, undefined, { meetingId });

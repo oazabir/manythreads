@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CallController } from '../src/meetings/controller';
 import type { EngineContext, TranscribeEngine } from '../src/meetings/engine';
-import { BOT, CHANNEL, MEETING, ME, NADIA, THREAD, apiError, id, person, rig, settle, transcription } from './meetings-fixtures';
+import { BOT, CHANNEL, MEETING, ME, NADIA, NOW, THREAD, apiError, id, person, rig, settle, transcription } from './meetings-fixtures';
 
 // P15-04 / P15-05: the whole life of a call, against the stand-in server and the in-memory media layer.
 
@@ -760,6 +760,196 @@ describe('camera and screen on the call (P35-08)', () => {
     expect(t.c.getState().videos).toEqual([]);
     await t.c.leave();
     expect(t.c.getState().videos).toEqual([]);
+  });
+});
+
+describe('ask to share (P17-02)', () => {
+  const REQ = id(900);
+  const asked = (over: Partial<{ requestId: string; askerActorId: string; askerName: string; expiresAt: string }> = {}) =>
+    ({ meetingId: MEETING, requestId: over.requestId ?? id(901), askerActorId: over.askerActorId ?? NADIA, askerName: over.askerName ?? 'Nadia', expiresAt: over.expiresAt ?? new Date(NOW + 60_000).toISOString() }) as never;
+
+  it('while Nadia shares, the asker asks once; a yes tells them they may share, and pressing Share then works', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    t.media().remoteVideo(NADIA, 'screen', true);
+    await t.c.askToShare();
+    expect(t.server.calls).toContain(`askToShare ${NADIA}`);
+    expect(t.c.getState().shareAsk).toMatchObject({ kind: 'asking', requestId: REQ, sharerActorId: NADIA, name: 'Nadia' });
+    // a second press while waiting sends nothing
+    await t.c.askToShare();
+    expect(t.server.calls.filter((x) => x.startsWith('askToShare'))).toHaveLength(1);
+    // an answer to some other request is not this one
+    t.c.noteShareAnswered({ meetingId: MEETING, requestId: id(999), sharerActorId: NADIA, answer: 'accept' } as never);
+    expect(t.c.getState().shareAsk.kind).toBe('asking');
+    t.c.noteShareAnswered({ meetingId: MEETING, requestId: REQ, sharerActorId: NADIA, answer: 'accept' } as never);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'may-share', sharerActorId: NADIA, name: 'Nadia' });
+    // another tile changing while her screen is still on its way out keeps the answer
+    t.media().remoteVideo(NADIA, 'camera', true);
+    expect(t.c.getState().shareAsk.kind).toBe('may-share');
+    // her screen goes; the person presses Share (a browser needs the press), and the request is done
+    t.media().remoteVideo(NADIA, 'screen', false);
+    await t.c.toggleScreen();
+    expect(t.media().state.screenOn).toBe(true);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'none' });
+  });
+
+  it('"Not now" is said, and a request with no answer becomes "did not answer" after a minute', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    t.media().remoteVideo(NADIA, 'screen', true);
+    await t.c.askToShare();
+    t.c.noteShareAnswered({ meetingId: MEETING, requestId: REQ, sharerActorId: NADIA, answer: 'decline' } as never);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'declined', name: 'Nadia' });
+    t.c.dismissShareAsk();
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'none' });
+
+    await t.c.askToShare();
+    await t.clock.advance(59_000);
+    expect(t.c.getState().shareAsk.kind).toBe('asking');
+    await t.clock.advance(1_500);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'timed-out', requestId: REQ, sharerActorId: NADIA, name: 'Nadia' });
+    // a yes the server took in time but that arrives late still counts
+    t.c.noteShareAnswered({ meetingId: MEETING, requestId: REQ, sharerActorId: NADIA, answer: 'accept' } as never);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'may-share', sharerActorId: NADIA, name: 'Nadia' });
+  });
+
+  it('the minute is the server\'s (expiresAt), not this page\'s clock', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    t.media().remoteVideo(NADIA, 'screen', true);
+    t.room.askToShare = async () => ({ requestId: REQ as never, expiresAt: new Date(NOW + 20_000).toISOString() });
+    await t.c.askToShare();
+    expect(t.c.getState().shareAsk).toMatchObject({ kind: 'asking', until: NOW + 20_000 });
+    await t.clock.advance(20_500);
+    expect(t.c.getState().shareAsk.kind).toBe('timed-out');
+    // the sharer's side: a request whose minute is already over on the server is not shown, and one with ten seconds left goes after ten
+    t.media().remoteVideo(NADIA, 'screen', false);
+    await t.c.toggleScreen();
+    t.c.noteShareAsked(asked({ expiresAt: new Date(t.clock.now - 1).toISOString() }));
+    expect(t.c.getState().shareAsked).toEqual([]);
+    t.c.noteShareAsked(asked({ expiresAt: new Date(t.clock.now + 10_000).toISOString() }));
+    expect(t.c.getState().shareAsked).toHaveLength(1);
+    await t.clock.advance(10_500);
+    expect(t.c.getState().shareAsked).toEqual([]);
+  });
+
+  it('"someone else first" is said when the sharer let another asker share', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    t.media().remoteVideo(NADIA, 'screen', true);
+    await t.c.askToShare();
+    t.c.noteShareAnswered({ meetingId: MEETING, requestId: REQ, sharerActorId: NADIA, answer: 'other' } as never);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'other', name: 'Nadia' });
+  });
+
+  it('when the screen passes from the person asked to a third person, the request goes and the new sharer may be asked', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia'), person(id(3), 'Rafi')] });
+    t.media().remoteVideo(NADIA, 'screen', true);
+    await t.c.askToShare();
+    expect(t.c.getState().shareAsk.kind).toBe('asking');
+    t.media().remoteVideo(id(3), 'screen', true);
+    t.media().remoteVideo(NADIA, 'screen', false);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'none' });
+    await t.c.askToShare();
+    expect(t.server.calls).toContain(`askToShare ${id(3)}`);
+    expect(t.c.getState().shareAsk).toMatchObject({ kind: 'asking', sharerActorId: id(3), name: 'Rafi' });
+  });
+
+  it('a sharer who stops on their own frees the asker at once; nobody sharing means nothing to ask', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.askToShare();
+    expect(t.server.calls.some((x) => x.startsWith('askToShare'))).toBe(false);
+    t.media().remoteVideo(NADIA, 'screen', true);
+    await t.c.askToShare();
+    t.media().remoteVideo(NADIA, 'screen', false);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'may-share', sharerActorId: NADIA, name: 'Nadia' });
+    // a third person takes the screen first: the answer is no longer true
+    t.media().remoteVideo(id(3), 'screen', true);
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'none' });
+  });
+
+  it('a refused request says why and leaves nothing waiting', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    t.media().remoteVideo(NADIA, 'screen', true);
+    t.room.failAlways('askToShare', apiError(409, 'You already asked. Wait for an answer: a request lasts a minute.', 'conflict'));
+    await t.c.askToShare();
+    expect(t.c.getState().shareAsk).toEqual({ kind: 'none' });
+    expect(t.c.getState().notice).toContain('You already asked');
+  });
+
+  it('the sharer sees a request only while sharing; yes stops their screen and tells the asker, not now only tells them', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia'), person(id(3), 'Rafi')] });
+    // not sharing: a request is moot
+    t.c.noteShareAsked(asked());
+    expect(t.c.getState().shareAsked).toEqual([]);
+    await t.c.toggleScreen();
+    t.c.noteShareAsked(asked());
+    t.c.noteShareAsked(asked({ requestId: id(902), askerActorId: id(3), askerName: 'Rafi' }));
+    expect(t.c.getState().shareAsked.map((r) => r.name)).toEqual(['Nadia', 'Rafi']);
+    await t.c.answerShare(id(902), false);
+    expect(t.server.calls).toContain(`answerShare ${id(902)} decline`);
+    expect(t.media().state.screenOn).toBe(true);
+    expect(t.c.getState().shareAsked.map((r) => r.name)).toEqual(['Nadia']);
+    t.c.noteShareAsked(asked({ requestId: id(904), askerActorId: id(3), askerName: 'Rafi' }));
+    // a yes is taken by the server first; it turns down the others there, so none is left here
+    await t.c.answerShare(id(901), true);
+    expect(t.media().state.screenOn).toBe(false);
+    expect(t.server.calls).toContain(`answerShare ${id(901)} accept`);
+    expect(t.server.calls.filter((x) => x.startsWith('answerShare'))).toHaveLength(2);
+    expect(t.c.getState().shareAsked).toEqual([]);
+  });
+
+  it('a yes the server refuses keeps the screen on and says why; the server is asked before the screen stops', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.toggleScreen();
+    t.c.noteShareAsked(asked());
+    let screenWhenAsked: boolean | null = null;
+    const real = t.room.answerShare;
+    t.room.answerShare = async (...a) => {
+      screenWhenAsked = t.media().state.screenOn;
+      return real(...a);
+    };
+    t.room.failAlways('answerShare', apiError(409, 'This request has timed out.', 'conflict'));
+    await t.c.answerShare(id(901), true);
+    expect(screenWhenAsked).toBe(true);
+    expect(t.media().state.screenOn).toBe(true);
+    expect(t.c.getState().notice).toBe('This request has timed out.');
+    expect(t.c.getState().shareAsked).toEqual([]);
+  });
+
+  it('a screen that will not stop after a yes is said plainly', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.toggleScreen();
+    t.c.noteShareAsked(asked());
+    t.media().setScreen = async () => {
+      throw new Error('stuck');
+    };
+    await t.c.answerShare(id(901), true);
+    expect(t.server.calls).toContain(`answerShare ${id(901)} accept`);
+    expect(t.c.getState().notice).toMatch(/could not be stopped, so Nadia cannot share yet/);
+  });
+
+  it('two presses of an answer send one', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.toggleScreen();
+    t.c.noteShareAsked(asked());
+    await Promise.all([t.c.answerShare(id(901), false), t.c.answerShare(id(901), false)]);
+    expect(t.server.calls.filter((x) => x.startsWith('answerShare'))).toHaveLength(1);
+  });
+
+  it('a request left alone goes after a minute, and stopping the share drops them all', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.toggleScreen();
+    t.c.noteShareAsked(asked());
+    await t.clock.advance(61_000);
+    expect(t.c.getState().shareAsked).toEqual([]);
+    t.c.noteShareAsked(asked({ requestId: id(903), expiresAt: new Date(t.clock.now + 60_000).toISOString() }));
+    expect(t.c.getState().shareAsked).toHaveLength(1);
+    await t.c.toggleScreen();
+    expect(t.c.getState().shareAsked).toEqual([]);
+  });
+
+  it('pushes of another call are ignored', async () => {
+    const t = await connected({ people: [person(ME, 'Omar'), person(NADIA, 'Nadia')] });
+    await t.c.toggleScreen();
+    t.c.noteShareAsked({ ...(asked() as object), meetingId: id(77) } as never);
+    expect(t.c.getState().shareAsked).toEqual([]);
   });
 });
 

@@ -1,7 +1,7 @@
-import type { ListMeetingNotetakersResponse, Meeting, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption, StartMeetingRequest, StartMeetingResponse } from '@manythreads/shared';
+import type { ListMeetingNotetakersResponse, Meeting, MeetingShareAnsweredPush, MeetingShareAskedPush, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption, StartMeetingRequest, StartMeetingResponse } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { canOfferServer, enginePlan, planConsent, micMayOpen, writtenOnServer, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
-import type { CallApi, addNotetaker, answerRecordConsent, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
+import type { CallApi, addNotetaker, answerRecordConsent, answerShareRequest, askToShare, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
 import type { StreamStatus, TranscribeEngine } from './engine';
 import { AUDIO_DEFAULTS, type AdapterEvents, type AdapterLoader, type Connection, type DeviceLists, type MediaAdapter, type VideoTile } from './media';
 import { suggestAudioOnly, type ConnectionQuality } from './layout';
@@ -85,7 +85,26 @@ export type CallState = {
   audioOnly: boolean;
   /** The connection is weak: the bar offers "Audio only" (a suggestion; nothing is switched by itself). */
   audioOnlySuggested: boolean;
+  /** "Ask to share" (P17-02), this person's own request for a turn while someone else shares a screen. */
+  shareAsk: ShareAsk;
+  /** Requests for a turn that came to this person while they share their screen, oldest first; each lapses after a minute. */
+  shareAsked: readonly ShareAsked[];
 };
+
+/**
+ * This person's request for a turn to share (P17-02): none; asking (waiting for `name` to answer, until `until`); `name` stopped sharing and this person may share now
+ * (they press Share: a browser shares a screen only after a press on the page); `name` said not now; `name` let someone else share first; or no answer came in
+ * time (a yes that arrives late still counts: the server took it within the minute).
+ */
+export type ShareAsk =
+  | { kind: 'none' }
+  | { kind: 'asking'; requestId: string; sharerActorId: string; name: string; until: number }
+  | { kind: 'may-share'; sharerActorId: string; name: string }
+  | { kind: 'declined'; name: string }
+  | { kind: 'other'; name: string }
+  | { kind: 'timed-out'; requestId: string; sharerActorId: string; name: string };
+/** A request for a turn that came to the person sharing: who asks, and until when it waits. */
+export type ShareAsked = { requestId: string; askerActorId: string; name: string; until: number };
 
 /** Whether this person's camera or screen is on, and who else is sharing a screen (one sharer at a time). */
 export const videoState = (videos: readonly VideoTile[]) => ({
@@ -104,6 +123,8 @@ export type RoomApi = {
   recordConsent: typeof answerRecordConsent;
   transcript: typeof fetchTranscript;
   correct: typeof correctSegment;
+  askToShare: typeof askToShare;
+  answerShare: typeof answerShareRequest;
 };
 
 export type CallDeps = {
@@ -156,6 +177,8 @@ const IDLE = (prefs: CallPrefs): CallState => ({
   videos: [],
   audioOnly: false,
   audioOnlySuggested: false,
+  shareAsk: { kind: 'none' },
+  shareAsked: [],
 });
 
 const GONE_STATUSES = new Set([403, 404]);
@@ -198,6 +221,10 @@ export class CallController {
   /** This person's connection as the media library last judged it, and whether they said "Not now" to audio only in this call (P17-01). */
   private quality: ConnectionQuality = 'unknown';
   private audioOnlyDismissed = false;
+  /** The timer that ends this person's own request for a turn, and the requests that came to them, when their minute is up. */
+  private shareTimer: unknown = null;
+  /** Requests being answered now: a second press while the server answers sends nothing. */
+  private readonly answering = new Set<string>();
 
   constructor(private readonly deps: CallDeps) {
     this.state = IDLE(deps.prefs);
@@ -393,6 +420,7 @@ export class CallController {
         if (gen !== this.generation) return;
         this.set({ videos: tiles });
         this.judgeAudioOnly();
+        this.judgeShareAsk();
       },
       quality: (q) => {
         if (gen !== this.generation) return;
@@ -418,6 +446,8 @@ export class CallController {
     for (const h of [this.heartbeat, this.poll]) if (h !== null) this.deps.clearInterval(h);
     if (this.renew !== null) this.deps.clearTimeout(this.renew);
     this.heartbeat = this.poll = this.renew = null;
+    if (this.shareTimer !== null) this.deps.clearTimeout(this.shareTimer);
+    this.shareTimer = null;
   }
 
   private scheduleRenew(gen: number): void {
@@ -751,17 +781,154 @@ export class CallController {
     if (!adapter || this.state.phase !== 'connected') return;
     const { screenOn, otherSharer } = videoState(this.state.videos);
     if (!screenOn && otherSharer) {
-      const name = this.state.present.find((p) => p.actorId === otherSharer)?.displayName ?? 'Someone';
-      this.set({ notice: `${name} is sharing their screen. Ask them to stop first: one screen is shared at a time.` });
+      const name = this.nameOf(otherSharer);
+      this.set({ notice: `${name} is sharing their screen: one screen is shared at a time. Press Ask to share to ask them for a turn.` });
       return;
     }
     try {
+      // sharing now ends a request for a turn: the screens' report does that (`judgeShareAsk`)
       await adapter.setScreen(!screenOn);
     } catch (e) {
       // the person closed the browser's picker: nothing to say
       if (e instanceof Error && (e.name === 'NotAllowedError' || e.name === 'AbortError')) return;
       this.set({ notice: 'Your screen could not be shared. Try again, or pick a single window or tab.' });
     }
+  }
+
+  // ---- ask to share (P17-02) ----------------------------------------------------------------------------------------------------------------------
+  /**
+   * "Ask to share": someone else is sharing a screen, so this person asks them for a turn (through the server, which tells only them). One request per person asked
+   * a minute; it lapses when the server's minute (`expiresAt`) is over. Nothing is shared here: when the sharer says yes, the bar says "You can share now" and the
+   * person presses Share.
+   */
+  async askToShare(): Promise<void> {
+    const m = this.state.meeting;
+    if (!m || this.state.phase !== 'connected') return;
+    const { screenOn, otherSharer } = videoState(this.state.videos);
+    if (screenOn || !otherSharer) return;
+    const ask = this.state.shareAsk;
+    if (ask.kind === 'asking' && ask.sharerActorId === otherSharer) return;
+    const name = this.nameOf(otherSharer);
+    const gen = this.generation;
+    try {
+      const res = await this.deps.room.askToShare(m.id, otherSharer);
+      if (gen !== this.generation) return;
+      this.set({ shareAsk: { kind: 'asking', requestId: res.requestId, sharerActorId: otherSharer, name, until: Date.parse(res.expiresAt) }, notice: null });
+      this.scheduleShareExpiry();
+    } catch (e) {
+      if (gen !== this.generation) return;
+      this.set({ notice: changeFailure(e, 'ask for a turn to share') });
+    }
+  }
+
+  /**
+   * The person sharing answers a request. The server is asked first: it checks the request is still waiting (not answered, replaced or timed out, the call still
+   * live) and, for a yes, turns down every other request waiting for this person. Only after a yes is taken is this person's screen stopped. A refusal keeps them
+   * sharing and says why; a screen that will not stop is said plainly (the asker's Share button waits until it is gone).
+   */
+  async answerShare(requestId: string, accept: boolean): Promise<void> {
+    const m = this.state.meeting;
+    const req = this.state.shareAsked.find((r) => r.requestId === requestId);
+    if (!m || !req || this.answering.has(requestId)) return;
+    this.answering.add(requestId);
+    const gen = this.generation;
+    try {
+      await this.deps.room.answerShare(m.id, requestId, accept ? 'accept' : 'decline');
+    } catch (e) {
+      if (gen !== this.generation) return;
+      // the request is over either way (answered, replaced, timed out, or the call ended): it goes, and the person keeps sharing
+      this.set({ shareAsked: this.state.shareAsked.filter((r) => r.requestId !== requestId), notice: changeFailure(e, 'answer') });
+      this.scheduleShareExpiry();
+      return;
+    } finally {
+      this.answering.delete(requestId);
+    }
+    if (gen !== this.generation) return;
+    // a yes answered every request on the server (the others were told someone else goes first)
+    this.set({ shareAsked: accept ? [] : this.state.shareAsked.filter((r) => r.requestId !== requestId) });
+    this.scheduleShareExpiry();
+    if (!accept || !videoState(this.state.videos).screenOn) return;
+    try {
+      await this.adapter?.setScreen(false);
+    } catch {
+      this.set({ notice: `Your screen could not be stopped, so ${req.name} cannot share yet. Press the share button to stop sharing.` });
+    }
+  }
+
+  /** The asker puts away what the bar said about their request (not now, someone else first, no answer, or "you can share now"). */
+  dismissShareAsk(): void {
+    if (this.state.shareAsk.kind === 'asking' || this.state.shareAsk.kind === 'none') return;
+    this.set({ shareAsk: { kind: 'none' } });
+    this.scheduleShareExpiry();
+  }
+
+  /**
+   * A push: someone in this call asks this person for a turn. Kept only while they share a screen, until the server's minute is over; a second request of the same
+   * person replaces the first. The oldest is shown first.
+   */
+  noteShareAsked(p: MeetingShareAskedPush): void {
+    if (this.state.meeting?.id !== p.meetingId || this.state.phase !== 'connected') return;
+    if (!videoState(this.state.videos).screenOn) return;
+    if (this.state.shareAsked.some((r) => r.requestId === p.requestId)) return;
+    const until = Date.parse(p.expiresAt);
+    if (!(until > this.deps.now())) return;
+    const name = this.nameOf(p.askerActorId, p.askerName);
+    const next = [...this.state.shareAsked.filter((r) => r.askerActorId !== p.askerActorId), { requestId: p.requestId, askerActorId: p.askerActorId, name, until }];
+    this.set({ shareAsked: next });
+    this.scheduleShareExpiry();
+  }
+
+  /** A push: the person this one asked answered. A yes that arrives after this page's minute ran out still counts: the server took it in time. */
+  noteShareAnswered(p: MeetingShareAnsweredPush): void {
+    const ask = this.state.shareAsk;
+    if (this.state.meeting?.id !== p.meetingId || (ask.kind !== 'asking' && ask.kind !== 'timed-out') || ask.requestId !== p.requestId) return;
+    const shareAsk: ShareAsk =
+      p.answer === 'accept' ? { kind: 'may-share', sharerActorId: ask.sharerActorId, name: ask.name } : p.answer === 'other' ? { kind: 'other', name: ask.name } : { kind: 'declined', name: ask.name };
+    this.set({ shareAsk });
+    this.scheduleShareExpiry();
+  }
+
+  /** A person's name as the call knows it (`fallback`, then "Someone", when they are not in the roster yet). */
+  private nameOf(actorId: string, fallback?: string): string {
+    return this.state.present.find((p) => p.actorId === actorId)?.displayName ?? (fallback || 'Someone');
+  }
+
+  /**
+   * The screens changed: requests to a person who no longer shares are moot; an asker whose sharer stopped may share now; one whose sharer handed the screen to a
+   * third person may ask that person instead; a "you may share" that a third person beat is no longer true; sharing ends this person's own request.
+   */
+  private judgeShareAsk(): void {
+    const { screenOn, otherSharer } = videoState(this.state.videos);
+    const patch: Partial<CallState> = {};
+    if (!screenOn && this.state.shareAsked.length > 0) patch.shareAsked = [];
+    const ask = this.state.shareAsk;
+    if (screenOn && ask.kind !== 'none') patch.shareAsk = { kind: 'none' };
+    else if (ask.kind === 'asking' && otherSharer === null) patch.shareAsk = { kind: 'may-share', sharerActorId: ask.sharerActorId, name: ask.name };
+    else if (ask.kind === 'asking' && otherSharer !== ask.sharerActorId) patch.shareAsk = { kind: 'none' };
+    // the person asked may still be on their way out; anyone else on the screen means the answer no longer holds
+    else if (ask.kind === 'may-share' && otherSharer !== null && otherSharer !== ask.sharerActorId) patch.shareAsk = { kind: 'none' };
+    if (Object.keys(patch).length === 0) return;
+    this.set(patch);
+    this.scheduleShareExpiry();
+  }
+
+  /** One timer for the soonest end of a minute (the server's `expiresAt`): this person's own request becomes "no answer", and requests that came to them go. */
+  private scheduleShareExpiry(): void {
+    if (this.shareTimer !== null) this.deps.clearTimeout(this.shareTimer);
+    this.shareTimer = null;
+    const ask = this.state.shareAsk;
+    const times = [...this.state.shareAsked.map((r) => r.until), ...(ask.kind === 'asking' ? [ask.until] : [])];
+    if (times.length === 0) return;
+    const next = Math.min(...times);
+    this.shareTimer = this.deps.setTimeout(() => {
+      this.shareTimer = null;
+      const now = this.deps.now();
+      const a = this.state.shareAsk;
+      const patch: Partial<CallState> = { shareAsked: this.state.shareAsked.filter((r) => r.until > now) };
+      if (a.kind === 'asking' && a.until <= now) patch.shareAsk = { kind: 'timed-out', requestId: a.requestId, sharerActorId: a.sharerActorId, name: a.name };
+      this.set(patch);
+      this.scheduleShareExpiry();
+    }, Math.max(50, next - this.deps.now()));
   }
 
   // ---- audio only (P17-01) -------------------------------------------------------------------------------------------------------------------------

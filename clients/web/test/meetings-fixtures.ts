@@ -181,6 +181,9 @@ export function fakeRoom(srv: FakeServer): FakeRoom {
       return room.recordingState;
     });
   room.transcript = (meetingId) => run('transcript', `transcript ${meetingId}`, () => ({ lines: room.lines }));
+  room.askToShare = (meetingId, sharerActorId) =>
+    run('askToShare', `askToShare ${sharerActorId}`, () => ({ requestId: id(900) as never, expiresAt: new Date(NOW + 60_000).toISOString() }));
+  room.answerShare = (meetingId, requestId, answer) => run('answerShare', `answerShare ${requestId} ${answer}`, () => ({ answer }));
   room.correct = (meetingId, segId, text) =>
     run('correct', `correct ${segId}`, () => {
       const old = room.lines.find((l) => l.segmentId === segId);

@@ -120,6 +120,38 @@ An **invitation** says who is told about a live call: an inbox item and a push f
   "may post in the channel, while live, not a direct message".
 - **Audit:** `meetings.invite.sent` becomes `meeting.invited`, "Invited 3 people as the call started" (a count, never who or the title); a direct-message call has no row.
 
+## Ask to share (P17-02)
+
+One screen is shared in a call at a time (P35-08): the page refuses a second share. While someone shares, the share button of everyone else reads **Ask to share**; pressing it asks the
+person sharing for a turn. The request goes through the server, so it is checked and recorded; the media itself is unchanged (the media server lets anyone in the call publish a screen,
+and the page keeps it to one).
+
+- **`POST /api/meetings/:meetingId/share-requests`** `{ sharerActorId }` (10 a minute, `share-requests.ts`): `app.meetings_ask_to_share` (migration `0011_share_requests.sql`, a definer
+  owned by the system role that checks the caller by `session_user` and the request's actor) takes a request only from a person in the live call, to another person in the same call
+  (403 for someone not in the call or who left; 409 "They are not in the call any more", "You are the one sharing", "This call has ended"). One request per asker and person asked a
+  minute, whatever its answer: asking the same person again sooner is 409 "You asked them less than a minute ago…"; asking someone else replaces the asker's request. Answers
+  `{ requestId, expiresAt }` (a minute, `MEETING_SHARE_ASK_SECONDS`); both pages time the request by that `expiresAt`. The push `meeting.share_asked` (the asker's id and name as the
+  call knows it, and `expiresAt`) goes to the person asked only. **No event is written when a request is asked.** The server cannot see who is sharing (the media server knows), so a
+  request may name someone who is not; only that person's page hears of it, and it ignores a request while it is not sharing. Such a request is never answered and leaves no event
+  and no audit row, so made-up requests cannot fill the audit log.
+- **`POST /api/meetings/:meetingId/share-requests/:requestId/answer`** `{ answer: 'accept' | 'decline' }` (30 a minute): only the person asked, once, before the minute is up,
+  while the call is live and they are in it (`app.meetings_answer_share`; a request that is not theirs, or of another call, is 404; answered, turned down, timed out or ended is
+  409). A yes also turns down every other request waiting for the same person (`other`), oldest first, so only one asker is let share and nobody's waiting request blocks them
+  from asking the next sharer. Each request answered is one `meetings.share_request.answered` event (`accept`, `decline` or `other`) and one push `meeting.share_answered` to its
+  asker only. A request left alone lapses: nothing is written.
+- **`app.meeting_share_requests`** (UNLOGGED: a request is worth a minute): one row per call and asker, `state` `pending`, `accepted` or `declined` (`MeetingShareRequestState`),
+  read by the asker and the person asked, written only by the two functions and the system role.
+- **The web** (`controller.ts` `askToShare`, `answerShare`, `noteShareAsked`, `noteShareAnswered`; `CallDock.tsx`). The person sharing sees the oldest request, "Rafi asks to share
+  their screen" with **Stop and let Rafi share** and **Not now** (`call-share-asked`), only while they share; it goes when the server's minute is over, and all of them go when they
+  stop sharing. A yes is sent to the server first; only when the server takes it does the page stop the screen (a refusal keeps them sharing and says why; a screen that will not
+  stop is said plainly). The asker sees "Waiting for an answer…", then "said not now", "let someone else share first", "did not answer" (a yes that arrives later still counts), or
+  "stopped sharing. You can share now" with a **Share screen** button (`call-share-ask`): a browser shares a screen only after a press on the page, so the asker presses it
+  themself; it waits while the other screen is still going. If the sharer stops on their own, the asker may share at once; if the screen passes to a third person, the request
+  goes and the asker may ask the new sharer.
+- **Recording.** A shared screen and its tab sound are never recorded: the recorder and the note-taker's listener take only each person's microphone (`SOURCE_MICROPHONE` in
+  `media-livekit/src/listener-worker.ts`), whether recording is on or off; "Ask to share" changes nothing there.
+- **Audit:** `meeting.share_answered` ("Stopped sharing to let them share", "Said not now" or "Let someone else share first"), ids only; a direct-message call (no team) has no row.
+
 ## Access loss
 
 `channel.member.removed` and `team.member.removed` are consumed: the person is dropped from every live room they can no longer read (checked with `app.channel_audience`), the media server is told to
@@ -129,14 +161,14 @@ hears a person only while they are present with consent yes, so a removed person
 ## Events
 
 Emitted here: `meetings.meeting.started`, `meetings.meeting.ended`, `meetings.participant.joined`, `meetings.participant.left`, `meetings.consent.changed`, `meetings.transcript.written`, `meetings.notes.written` (with
-`actionOwnerIds`), `meetings.notes.shared`, `meetings.notes.saved`, `meetings.notetaker.added`, `meetings.notetaker.removed`, `meetings.recording.started`, `meetings.recording.stopped`, `meetings.invite.sent` (the people asked to a call: ids, `first`); also `channel.channel.created`
+`actionOwnerIds`), `meetings.notes.shared`, `meetings.notes.saved`, `meetings.notetaker.added`, `meetings.notetaker.removed`, `meetings.recording.started`, `meetings.recording.stopped`, `meetings.invite.sent` (the people asked to a call: ids, `first`), `meetings.share_request.answered` (Ask to share: a request answered, ids and the answer); also `channel.channel.created`
 (the note-taker's first conversation with the organizer). Payloads hold ids and times, never a title or any text. Consumed: `channel.member.removed`, `team.member.removed`, `channel.message.posted` (a voice message of a client from before P32, with its own words, in a
 call thread becomes a line; a mention of the note-taker in the thread is a question), `channel.message.transcribed` (a voice message of the current client becomes a line when the server's words, or the author's own, are in it: state `server` or `edited`; `failed` and `none` add no line), `meetings.meeting.ended` (the transcript job) and `meetings.transcript.written` (the notes job). The audit plugin records
-started, ended, people invited, consent changed, note-taker added and removed, recording started and stopped, notes shared and saved (ids only).
+started, ended, people invited, consent changed, note-taker added and removed, recording started and stopped, a request to share a screen when it is answered, notes shared and saved (ids only).
 
 ## Limits
 
-Per person a minute: starting a room 10, joining 60, token renewals 60 (`docs/deploy/rate-limits.md`); the start dialog's options 60; Invite more 20; heartbeat 20; end 30; lines posted 240 (a batch holds at most 20); corrections 60; audio chunks 120. Per room a
+Per person a minute: starting a room 10, joining 60, token renewals 60 (`docs/deploy/rate-limits.md`); the start dialog's options 60; Invite more 20; Ask to share 10, answering it 30; heartbeat 20; end 30; lines posted 240 (a batch holds at most 20); corrections 60; audio chunks 120. Per room a
 minute: 1000 lines (429 after), 6 questions to the note-taker answered a minute and 20 model checks ("is this a question for it?") a minute per room, past which a line that names the note-taker is dropped. The media server's webhook: 120 a minute per address. A line is at most 4000 characters (a longer one is refused with 413); the server strips control
 and bidirectional characters before storing it; a transcript file is at most 2 MB and then says "transcript truncated". People in a room: `meeting_settings.room_cap` (25). Note-taker rooms in one server process:
 `MANYTHREADS_NOTETAKER_MAX_ROOMS` (10).

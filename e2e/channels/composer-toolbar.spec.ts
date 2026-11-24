@@ -2,11 +2,13 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { conversationStackEnv, useWorkspaceBrain } from '../conversations/support.ts';
 import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, type StackApi } from '../support/stack-browser.ts';
+import { chooseAttach, openAttach, showFormatting } from '../support/composer.ts';
 
 /*
- * PLAN P21-04, the composer of a channel: the toolbar is always drawn (a bar of buttons whose tooltips name their shortcut), Ctrl/Cmd+B, I, K and Ctrl+Shift+X
- * run the tools from inside the box, ":" and two letters offers emoji (and a time or an address does not), "@" lists People under headings (Everyone, People,
- * Bots, Groups) with Everyone left out for a guest, and on a phone the rarer tools sit behind one "Aa" button. The send control is an icon with a name.
+ * PLAN P21-04, the composer of a channel: three buttons in the box, Attach, Voice message and Send (P36-09); the formatting bar (buttons whose tooltips name
+ * their shortcut) is shown from Attach's menu, Ctrl/Cmd+B, I, K and Ctrl+Shift+X run the tools from inside the box without it, ":" and two letters offers
+ * emoji (and a time or an address does not), "@" lists People under headings (Everyone, People, Bots, Groups) with Everyone left out for a guest. The send
+ * control is an icon with a name.
  * Starts its own stack (a guest gets a post grant, a bot is added). Groups are covered by role-mention-picker.spec; the Chat screen's own box by
  * conversations/chat.spec.
  */
@@ -45,12 +47,21 @@ async function open(browser: Parameters<typeof openOn>[0], playwright: Parameter
 
 const headings = (page: Page): Locator => page.getByTestId('picker-heading');
 
-test('the toolbar is drawn before the box is touched; tooltips carry the shortcut; Send is an icon with a name', async ({ browser, playwright, isMobile }) => {
+test('the box shows Attach, Voice message and Send; the formatting bar comes from Attach and its tooltips carry the shortcut; Send is an icon with a name', async ({ browser, playwright, isMobile }) => {
   const { page, context } = await open(browser, playwright, 'nadia', 'dev', isMobile);
   try {
+    const composer = page.getByTestId('composer');
+    await expect(composer.locator('.cbox button:visible')).toHaveCount(3);
+    for (const id of ['composer-attach', 'voice-mic', 'send']) await expect(composer.getByTestId(id)).toBeVisible();
     const bar = page.getByRole('toolbar', { name: 'Formatting' });
-    await expect(bar).toBeVisible();
-    await expect(page.getByTestId('composer-tools')).toHaveAttribute('data-layout', isMobile ? 'aa' : 'full');
+    await expect(bar).toHaveCount(0);
+    // the menu: what was a button of its own before, Send later among them
+    const menu = await openAttach(page);
+    await expect(menu.getByRole('menuitem')).toHaveText([/Attach a file/, /Take a screenshot/, /Record your screen/, /Ask a poll/, /Emoji/, /Send later/, /Show formatting/]);
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await showFormatting(page);
+    await expect(page.getByTestId('composer-tools')).toHaveAttribute('data-layout', 'full');
     if (!isMobile) {
       await expect(bar.getByRole('button', { name: 'Bold' })).toHaveAttribute('title', 'Bold (Ctrl+B)');
       await expect(bar.getByRole('button', { name: 'Italic' })).toHaveAttribute('title', 'Italic (Ctrl+I)');
@@ -215,20 +226,16 @@ test('a guest cannot @channel or @here: the words are not offered and sending th
   }
 });
 
-test('on a phone the bar is "Aa", Mention and Emoji; Formatting options opens the rest and Bold works from it', async ({ browser, playwright, isMobile }) => {
+test('on a phone there is no bar at rest; Show formatting in the Attach menu draws it and Bold works from it; Hide formatting takes it away', async ({ browser, playwright, isMobile }) => {
   test.skip(!isMobile, 'a 390 px window');
   const { page, context } = await open(browser, playwright, 'priya', 'dev', true);
   try {
     const bar = page.getByRole('toolbar', { name: 'Formatting' });
-    await expect(page.getByTestId('composer-tools')).toHaveAttribute('data-layout', 'aa');
-    await expect(bar.getByRole('button', { name: 'Bold' })).toHaveCount(0);
-    await expect(bar.getByRole('button', { name: 'Mention' })).toBeVisible();
-    await expect(bar.getByRole('button', { name: 'Emoji' })).toBeVisible();
+    await expect(bar).toHaveCount(0);
     const box = boxOf(page, 'dev');
     await box.fill('make this bold');
     await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 9));
-    await page.getByRole('button', { name: 'Formatting options' }).click();
-    await expect(page.getByTestId('composer-format-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await showFormatting(page);
     const bold = bar.getByRole('button', { name: 'Bold' });
     await expect(bold).toBeVisible();
     const size = await bold.boundingBox();
@@ -237,8 +244,8 @@ test('on a phone the bar is "Aa", Mention and Emoji; Formatting options opens th
     await bold.click();
     await expect(box).toHaveValue('make **this** bold');
     expect(await noSidewaysScroll(page)).toBe(true);
-    await page.getByRole('button', { name: 'Formatting options' }).click();
-    await expect(bar.getByRole('button', { name: 'Bold' })).toHaveCount(0);
+    await chooseAttach(page, 'composer-format-toggle'); // now "Hide formatting"
+    await expect(bar).toHaveCount(0);
   } finally {
     await context.close();
   }

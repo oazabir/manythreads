@@ -179,6 +179,58 @@ function Settings({ call, canEnd }: { call: CallState; canEnd: boolean }) {
   );
 }
 
+/** "Ask to share" (P17-02), for the person sharing: the oldest request for a turn, with "Stop and let them share" and "Not now". Left alone, it goes after a minute. */
+function ShareAskPrompt({ call }: { call: CallState }) {
+  const req = call.shareAsked[0];
+  if (!req) return null;
+  const c = callController();
+  return (
+    <div className="call-suggest" role="alertdialog" aria-label={`${req.name} asks to share their screen`} data-testid="call-share-asked">
+      <span className="call-suggest-text">{req.name} asks to share their screen.</span>
+      <button type="button" className="btn primary s" onClick={() => void c.answerShare(req.requestId, true)} data-testid="call-share-asked-yes">Stop and let {req.name} share</button>
+      <button type="button" className="btn s" onClick={() => void c.answerShare(req.requestId, false)} data-testid="call-share-asked-no">Not now</button>
+    </div>
+  );
+}
+
+/**
+ * "Ask to share", for the person who asked: waiting, the answer, or no answer. When they may share, the Share button is here, since a browser shares a screen only
+ * after a press on the page; it waits while the other screen is still on its way out.
+ */
+function ShareAskStatus({ call, sharing }: { call: CallState; sharing: boolean }) {
+  const ask = call.shareAsk;
+  if (ask.kind === 'none') return null;
+  const c = callController();
+  if (ask.kind === 'asking') {
+    return (
+      <p className="call-suggest" role="status" data-testid="call-share-ask" data-state="asking">
+        <span className="call-suggest-text">You asked {ask.name} for a turn to share. Waiting for an answer…</span>
+      </p>
+    );
+  }
+  const text =
+    ask.kind === 'may-share'
+      ? sharing
+        ? `${ask.name} said yes. Their screen is stopping…`
+        : `${ask.name} stopped sharing. You can share now.`
+      : ask.kind === 'declined'
+        ? `${ask.name} said not now.`
+        : ask.kind === 'other'
+          ? `${ask.name} let someone else share first.`
+          : `${ask.name} did not answer. You can ask again.`;
+  return (
+    <div className="call-suggest" role="status" data-testid="call-share-ask" data-state={ask.kind}>
+      <span className="call-suggest-text">{text}</span>
+      {ask.kind === 'may-share' ? (
+        <button type="button" className="btn primary s" disabled={sharing} onClick={() => void c.toggleScreen()} data-testid="call-share-ask-share">
+          Share screen
+        </button>
+      ) : null}
+      <button type="button" className="btn s" onClick={() => c.dismissShareAsk()} data-testid="call-share-ask-close">{ask.kind === 'may-share' ? 'Not now' : 'OK'}</button>
+    </div>
+  );
+}
+
 export function CallDock() {
   const call = useCall();
   const people = usePeople();
@@ -209,7 +261,14 @@ export function CallDock() {
   const video = videoState(call.videos);
   const sharerName = video.otherSharer ? (call.present.find((p) => p.actorId === video.otherSharer)?.displayName ?? 'Someone') : null;
   const cameraLabel = video.cameraOn ? 'Turn your camera off' : call.audioOnly ? 'Audio only is on: turn it off to use your camera' : 'Turn your camera on';
-  const screenLabel = video.screenOn ? 'Stop sharing your screen' : sharerName ? `${sharerName} is sharing their screen` : 'Share your screen';
+  const asking = call.shareAsk.kind === 'asking';
+  const screenLabel = video.screenOn
+    ? 'Stop sharing your screen'
+    : sharerName
+      ? asking
+        ? `You asked ${sharerName} for a turn to share: waiting for an answer`
+        : `${sharerName} is sharing their screen. Ask them for a turn to share yours`
+      : 'Share your screen';
 
   return (
     <section ref={dock} className={`call-dock ${narrow ? 'sheet' : ''} ${sheetOpen ? 'open' : ''}`} aria-label="Voice room" data-testid="call-dock" data-phase={call.phase}>
@@ -227,6 +286,8 @@ export function CallDock() {
           <button type="button" className="btn s" onClick={() => c.dismissAudioOnly()} data-testid="call-audio-suggest-no">Not now</button>
         </div>
       ) : null}
+      {call.phase === 'connected' ? <ShareAskPrompt call={call} /> : null}
+      {call.phase === 'connected' ? <ShareAskStatus call={call} sharing={sharerName !== null} /> : null}
       {call.phase === 'connected' ? <CallStage call={call} /> : null}
       <div className="call-row">
         <div className="call-id">
@@ -271,9 +332,17 @@ export function CallDock() {
               <button type="button" className={`call-btn ${video.cameraOn ? 'live' : ''}`} aria-pressed={video.cameraOn} aria-label={cameraLabel} title={video.cameraOn ? 'Camera off' : call.audioOnly ? cameraLabel : 'Camera on'} disabled={connecting || call.phase !== 'connected' || (call.audioOnly && !video.cameraOn)} onClick={() => void c.toggleCamera()} data-testid="call-camera">
                 <CameraIcon />
               </button>
-              <button type="button" className={`call-btn ${video.screenOn ? 'live' : ''}`} aria-pressed={video.screenOn} aria-label={screenLabel} title={screenLabel} disabled={connecting || call.phase !== 'connected'} onClick={() => void c.toggleScreen()} data-testid="call-screen">
-                <ScreenIcon />
-              </button>
+              {sharerName && !video.screenOn ? (
+                // someone else shares: the button asks them for a turn (P17-02)
+                <button type="button" className="btn s call-ask-share" aria-label={screenLabel} title={screenLabel} disabled={connecting || call.phase !== 'connected' || asking} onClick={() => void c.askToShare()} data-testid="call-screen" data-action="ask">
+                  <ScreenIcon />
+                  <span>{asking ? 'Asked' : 'Ask to share'}</span>
+                </button>
+              ) : (
+                <button type="button" className={`call-btn ${video.screenOn ? 'live' : ''}`} aria-pressed={video.screenOn} aria-label={screenLabel} title={screenLabel} disabled={connecting || call.phase !== 'connected'} onClick={() => void c.toggleScreen()} data-testid="call-screen" data-action="share">
+                  <ScreenIcon />
+                </button>
+              )}
               {call.pushToTalk ? (
                 <button
                   type="button"

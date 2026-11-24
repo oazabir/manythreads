@@ -304,6 +304,7 @@
 }
 
 .call-chat,
+.call-ask-share,
 .call-leave {
   display: inline-flex;
   align-items: center;

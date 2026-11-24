@@ -180,6 +180,7 @@ export const AUDIT_ACTIONS = {
   'import.person_claimed': { category: 'content', label: 'Someone took over their imported messages' },
   'meeting.started': { category: 'content', label: 'Opened a voice room' },
   'meeting.invited': { category: 'content', label: 'Invited people to a call' },
+  'meeting.share_answered': { category: 'content', label: 'Answered a request to share a screen' },
   'meeting.ended': { category: 'content', label: 'A voice room ended' },
   'meeting.consent_changed': { category: 'access', label: 'Changed who is transcribed or recorded in a voice room' },
   'meeting.recording_started': { category: 'access', label: 'Started recording a voice room' },

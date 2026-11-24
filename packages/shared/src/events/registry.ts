@@ -88,6 +88,7 @@ import { MeetingsScheduledChangedEvent } from './meetings.scheduled.changed.ts';
 import { MeetingsScheduledCancelledEvent } from './meetings.scheduled.cancelled.ts';
 import { MeetingsScheduledStartingSoonEvent } from './meetings.scheduled.starting_soon.ts';
 import { MeetingsInviteSentEvent } from './meetings.invite.sent.ts';
+import { MeetingsShareRequestAnsweredEvent } from './meetings.share_request.answered.ts';
 import { KnowledgeSourceSyncedEvent } from './knowledge.source.synced.ts';
 import { WebhooksProviderEndpointChangedEvent } from './webhooks.provider_endpoint.changed.ts';
 import { WebhooksProviderEventReceivedEvent } from './webhooks.provider_event.received.ts';
@@ -441,6 +442,7 @@ export const eventRegistry = {
   'meetings.scheduled.cancelled': { 1: MeetingsScheduledCancelledEvent },
   'meetings.scheduled.starting_soon': { 1: MeetingsScheduledStartingSoonEvent },
   'meetings.invite.sent': { 1: MeetingsInviteSentEvent },
+  'meetings.share_request.answered': { 1: MeetingsShareRequestAnsweredEvent },
   'knowledge.source.synced': { 1: KnowledgeSourceSyncedEvent },
   'webhooks.provider_endpoint.changed': { 1: WebhooksProviderEndpointChangedEvent },
   'webhooks.provider_event.received': { 1: WebhooksProviderEventReceivedEvent },

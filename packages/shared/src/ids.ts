@@ -117,6 +117,9 @@ export type MeetingSegmentId = z.infer<typeof MeetingSegmentId>;
 /** One person's or channel's access to a meeting's notes, given by the organizer (P15-23). */
 export const MeetingShareId = z.uuid().brand<'MeetingShareId'>();
 export type MeetingShareId = z.infer<typeof MeetingShareId>;
+/** One person's request to share their screen while someone else shares, in a live call (P17-02). */
+export const MeetingShareRequestId = z.uuid().brand<'MeetingShareRequestId'>();
+export type MeetingShareRequestId = z.infer<typeof MeetingShareRequestId>;
 /** One person's audio file of a recorded meeting (P15-15). */
 export const MeetingRecordingId = z.uuid().brand<'MeetingRecordingId'>();
 export type MeetingRecordingId = z.infer<typeof MeetingRecordingId>;

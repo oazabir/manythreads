@@ -124,6 +124,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'workshop.terminal.closed': { teamId: id(20), botId: id(60), sessionId: id(95), adminId: id(13), reason: 'idle', durationMs: 4000, bytesIn: 10, bytesOut: 20, truncated: false, at: AT },
   'meetings.meeting.started': { teamId: id(20), channelId: id(40), meetingId: id(97), startedBy: id(13), at: AT },
   'meetings.invite.sent': { teamId: id(20), channelId: id(40), meetingId: id(97), invitedBy: id(13), personIds: [id(10), id(11), id(12)], first: true, at: AT },
+  'meetings.share_request.answered': { teamId: id(20), channelId: id(40), meetingId: id(97), requestId: id(98), answeredBy: id(14), askedBy: id(13), answer: 'accept', at: AT },
   'meetings.meeting.ended': { teamId: id(20), channelId: id(40), meetingId: id(97), endedBy: id(13), reason: 'person', durationSeconds: 600, participantCount: 3, at: AT },
   'meetings.consent.changed': { teamId: id(20), channelId: id(40), meetingId: id(97), actorId: id(13), subject: 'transcribe', value: 'yes', at: AT },
   'meetings.notetaker.added': { teamId: id(20), channelId: id(40), meetingId: id(97), botId: id(60), addedBy: id(13), at: AT },
@@ -168,6 +169,12 @@ describe('the audited event types', () => {
     expect(Object.keys(AUDIT_ACTIONS), type).toContain(mapped!.action);
     expect(JSON.stringify(mapped), type).not.toContain('CANARY');
     expect(JSON.stringify(mapped), type).not.toMatch(/203\.0\.113|@example\.com|evil\.example\/|sk-/);
+  });
+
+  it('a request to share a screen in a direct-message call (no team) leaves no row; letting someone else share first is said so', () => {
+    const answered = { answeredBy: id(14), askedBy: id(13), meetingId: id(97), requestId: id(98), channelId: id(40), answer: 'accept', at: AT };
+    expect(MAPPERS['meetings.share_request.answered']!({ ...answered, teamId: null })).toBeNull();
+    expect(MAPPERS['meetings.share_request.answered']!({ ...answered, teamId: id(20), answer: 'other' })).toMatchObject({ reason: 'Let someone else share first' });
   });
 
   it('keeps hostile text out even when a field the mapping reads is hostile', () => {

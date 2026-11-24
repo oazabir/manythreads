@@ -1,4 +1,4 @@
-import { MEETING_CAPTION_PUSH, MEETING_CHANGED_PUSH, MEETING_RINGING_PUSH } from '@manythreads/shared';
+import { MEETING_CAPTION_PUSH, MEETING_CHANGED_PUSH, MEETING_RINGING_PUSH, MEETING_SHARE_ANSWERED_PUSH, MEETING_SHARE_ASKED_PUSH } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { LiveRoomsStore, type LiveDeps } from '../src/meetings/store';
 import { CHANNEL, FakeClock, ME, MEETING, NADIA, THREAD, id, person, settle, summary } from './meetings-fixtures';
@@ -7,7 +7,7 @@ import { CHANNEL, FakeClock, ME, MEETING, NADIA, THREAD, id, person, settle, sum
 
 function build(rooms = [summary([person(ME, 'Omar')])]) {
   const clock = new FakeClock();
-  const log = { ringing: false, started: 0, notices: [] as string[], changed: [] as string[], captions: [] as Array<[string, number]>, chat: 0, fetches: 0 };
+  const log = { ringing: false, started: 0, notices: [] as string[], changed: [] as string[], captions: [] as Array<[string, number]>, shares: [] as string[], chat: 0, fetches: 0 };
   const state = { rooms, fail: false, hidden: false, quiet: false, current: null as { meetingId: string; threadRootId: string | null } | null };
   const deps: LiveDeps = {
     fetchLive: async () => {
@@ -24,6 +24,7 @@ function build(rooms = [summary([person(ME, 'Omar')])]) {
     currentRoom: () => state.current,
     onChatMessage: () => void (log.chat += 1),
     onCaptions: (m, captions) => void log.captions.push([m, captions.length]),
+    onShareRequest: (p) => void log.shares.push(`${p.kind} ${p.push.requestId}`),
     selfActor: () => ME,
     sounds: {
       startRing: () => {
@@ -187,5 +188,16 @@ describe('live captions (P15-08)', () => {
     t.store.handlePush({ type: MEETING_CAPTION_PUSH, payload: { meetingId: MEETING, captions: [] } } as never);
     t.store.handlePush({ type: MEETING_CAPTION_PUSH, payload: { nonsense: true } } as never);
     expect(t.log.captions).toEqual([]);
+  });
+});
+
+describe('ask to share (P17-02)', () => {
+  const REQ = '00000000-0000-4000-8000-000000000901';
+  it('hands a request and an answer to the call, and drops a push of the wrong shape', () => {
+    const t = build();
+    t.store.handlePush({ type: MEETING_SHARE_ASKED_PUSH, payload: { meetingId: MEETING, requestId: REQ, askerActorId: NADIA, askerName: 'Nadia', expiresAt: '2026-11-03T10:01:00.000Z' } } as never);
+    t.store.handlePush({ type: MEETING_SHARE_ANSWERED_PUSH, payload: { meetingId: MEETING, requestId: REQ, sharerActorId: NADIA, answer: 'decline' } } as never);
+    t.store.handlePush({ type: MEETING_SHARE_ANSWERED_PUSH, payload: { meetingId: MEETING, requestId: REQ, sharerActorId: NADIA, answer: 'maybe' } } as never);
+    expect(t.log.shares).toEqual([`asked ${REQ}`, `answered ${REQ}`]);
   });
 });

@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../../fixtures/stack.ts';
 import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
+import { openAttach, showFormatting } from '../../support/composer.ts';
 
 /*
- * The composer toolbar (PLAN P21-04, own baselines, class W): the bar drawn under a typed message with the send icon, the "@" list under its headings
- * (Everyone, People), and ":" + two letters with the emoji list; at 390x844 the closed bar ("Aa", Mention, Emoji) and the opened one.
+ * The composer toolbar (PLAN P21-04, own baselines, class W): the formatting bar (shown from the Attach menu, P36-09) under a typed message with the send
+ * icon, the "@" list under its headings (Everyone, People), and ":" + two letters with the emoji list; at 390x844 the box at rest (Attach, Send) and the
+ * Attach menu open.
  * composer-toolbar-1440.png, composer-mention-1440.png, composer-emoji-1440.png, composer-toolbar-390.png, composer-toolbar-390-open.png.
  * Times and counts are masked by the screen itself. No baseline is committed with this spec: the runner creates them after looking at every picture.
  */
@@ -32,7 +34,7 @@ test('composer-toolbar-1440 matches its baseline (W)', async ({ browser }) => {
   try {
     const box = await ready(page);
     await box.fill(MESSAGE);
-    await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
+    await showFormatting(page);
     await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
     await expectWireframe(page, 'composer-toolbar-1440', [['search', 'sidebar'], ['header', 'content']]);
   } finally {
@@ -71,10 +73,7 @@ for (const open of [false, true]) {
     try {
       const box = await ready(page);
       await box.fill(MESSAGE);
-      if (open) {
-        await page.getByRole('button', { name: 'Formatting options' }).click();
-        await expect(page.getByTestId('composer-format-toggle')).toHaveAttribute('aria-pressed', 'true');
-      }
+      if (open) await openAttach(page);
       await expectWireframe(page, open ? 'composer-toolbar-390-open' : 'composer-toolbar-390', [['header', 'content']]);
     } finally {
       await close();

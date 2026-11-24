@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, type StackApi } from '../support/stack-browser.ts';
+import { chooseAttach } from '../support/composer.ts';
 
 /**
  * Polls (PLAN P14-07), on a stack of its own (the spec posts messages and polls). Omar asks a poll from the composer's Poll button and from `/poll`;
@@ -50,7 +51,7 @@ test('the Poll button opens a dialog; a poll is asked with two options and shown
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
     await box(page).click(); // the toolbar opens with the caret
-    await page.getByTestId('poll-tool').click();
+    await chooseAttach(page, 'poll-tool');
     const dlg = page.getByTestId('poll-dialog');
     await expect(dlg).toBeVisible();
     // an incomplete form is explained, nothing is posted
@@ -256,8 +257,7 @@ test('at 390 px the card and the dialog fit, a count changing moves nothing, and
 
     // the dialog
     await phone.page.getByRole('textbox', { name: 'Message #dev' }).click();
-    await phone.page.getByRole('button', { name: 'Formatting options' }).click(); // on a phone the rarer tools sit behind "Aa"
-    await phone.page.getByTestId('poll-tool').click();
+    await chooseAttach(phone.page, 'poll-tool'); // the poll is an item of the Attach menu (P36-09)
     const dlg = phone.page.getByTestId('poll-dialog');
     await expect(dlg).toBeVisible();
     const dialogBox = await dlg.boundingBox();

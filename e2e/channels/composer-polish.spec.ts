@@ -40,14 +40,15 @@ const place = async (loc: Locator): Promise<{ y: number; h: number }> => {
   return { y: Math.round(b?.y ?? -1), h: Math.round(b?.height ?? -1) };
 };
 
-test('the toolbar keeps its height and its place when the box gets the cursor and a first word', async ({ browser, playwright, isMobile }) => {
+test('the box and its Attach button keep their height and place when the box gets the cursor and a first word', async ({ browser, playwright, isMobile }) => {
   const { page, context } = await open(browser, playwright, 'nadia', isMobile);
   try {
-    const bar = page.getByTestId('composer-tools');
+    // the formatting bar is hidden until asked for (P36-09); the Attach button is what sits beside the text at rest
+    const bar = page.getByTestId('composer-attach');
     const cbox = page.locator('.composer .cbox');
     await expect(bar).toBeVisible();
     // On the phone the bottom bar steps aside while a text box has the focus (the keyboard is up), so the whole composer slides down by the bar's
-    // height once; what must hold is the composer's own shape: its heights and the gap between the toolbar and the box. On a desktop nothing moves at all.
+    // height once; what must hold is the composer's own shape: its heights and the gap between the Attach button and the box. On a desktop nothing moves at all.
     const shape = async (): Promise<{ bar: { y: number; h: number }; box: { y: number; h: number }; gap: number }> => {
       const [b, x] = [await place(bar), await place(cbox)];
       return { bar: b, box: x, gap: b.y - x.y };

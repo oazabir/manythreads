@@ -26,6 +26,7 @@ import { registerMeetingJobs } from './jobs.ts';
 import { registerMeetingRoutes } from './routes.ts';
 import { registerCallCardRoutes } from './routes-cards.ts';
 import { registerInviteRoutes } from './invites.ts';
+import { registerShareRequestRoutes } from './share-requests.ts';
 import { registerMediaWebhook } from './webhook.ts';
 
 /**
@@ -58,6 +59,8 @@ export default definePlugin({
         'meetings.recording.stopped',
         // the people asked to a call (P15-27); the notifications plugin tells them
         'meetings.invite.sent',
+        // "Ask to share" (P17-02): a request for a turn to share a screen, and its answer
+        'meetings.share_request.answered',
         // Bundle D (docs/plugins/meetings.md "Bundle D contracts"): rooms planned ahead on a calendar
         'meetings.scheduled.created',
         'meetings.scheduled.changed',
@@ -88,6 +91,7 @@ export default definePlugin({
     registerAppointmentReminder(ctx);
     registerCallCardRoutes(ctx);
     registerInviteRoutes(ctx);
+    registerShareRequestRoutes(ctx);
     registerConsentRoutes(ctx);
     registerRingEndJob(ctx);
     registerMediaWebhook(ctx);

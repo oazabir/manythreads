@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { apiAs, createChannel, messages, openAs, postMessage, type Api } from './support.ts';
+import { chooseAttach } from '../support/composer.ts';
 
 /**
  * Composer parity (PLAN P14-02, docs/plugins/channels.md): custom emoji, `@here` and `@channel` with a confirmation above 20 people, drafts kept on the
@@ -51,7 +52,7 @@ test('an admin adds a custom emoji; it shows in the picker, in a message and in 
 
     // the picker lists it under Custom, and picking it writes :name: (with a space) into the box
     await box(page).click();
-    await page.getByRole('button', { name: 'Emoji', exact: true }).click();
+    await chooseAttach(page, 'attach-emoji');
     const custom = page.getByTestId('emoji-custom');
     await expect(custom).toBeVisible(T);
     await custom.getByRole('button', { name: `:${emojiName}:` }).click();
@@ -73,7 +74,7 @@ test('an admin sees the Add form in the picker, a member does not', async ({ bro
   try {
     for (const [who, wantAdd] of [[asMember, false], [asAdmin, true]] as const) {
       await box(who.page).click();
-      await who.page.getByRole('button', { name: 'Emoji', exact: true }).click();
+      await chooseAttach(who.page, 'attach-emoji');
       const custom = who.page.getByTestId('emoji-custom');
       await expect(custom).toBeVisible(T);
       await expect(custom.getByRole('button', { name: 'Add', exact: true })).toHaveCount(wantAdd ? 1 : 0);
@@ -143,7 +144,7 @@ test('@channel in "Send later" asks the same question in a big room, and the agr
     });
     await box(page).click();
     await box(page).fill('Release notes tomorrow @channel');
-    await page.getByTestId('send-later').click();
+    await chooseAttach(page, 'send-later');
     await page.getByTestId('send-later-in60').click();
     const ask = page.getByTestId('broadcast-confirm');
     await expect(ask).toContainText('@channel will notify 30 people.', T);
