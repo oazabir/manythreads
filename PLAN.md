@@ -197,6 +197,21 @@ Beside the ten, as soon as the owner's inputs arrive: the one-line install prove
 
 **Next after the ten (owner, 2026-11-20): Phase 35 in its row order** (P35-01 full access by default, P35-02 review in the thread, P35-03 tested with a test site, P35-04 issues to bots, P35-05 delivery dashboard, P35-06 knowledge, P35-07 incidents, P35-08 screen sharing, P35-09 a second team). Item 10 of the ten (P31-02, P31-03) is built with P35-01: the owner chose full access by default (2026-11-20), so P31-02 shrinks to the allow list for a runner with full access off. After Phase 35: the Hermes `/opt` proof on the devbox, real email in and out (P8-09, P8-19), the rest of video (Phase 17), the mobile client (Phase 11), the rest of Phase 18.
 
+**Next ten (owner 2026-11-24: "the Hermes gateway service is fixed; continue to build the next 10 priority features")**, picked from the unbuilt rows in the order above, leaving out what waits on the owner (the fresh VM, GHCR, a real mail provider); built in this order, each shipped live and pushed on its own:
+
+| # | Id | What |
+|---|---|---|
+| 1 | P35-10a | Per-team sign-in on pod runners (`docs/plans/per-team-sign-in.md` §3 and §7): the runner's choice, a claim per team, the per-team list on the Runners page, runs refused for a team not signed in. No live runner switched. |
+| 2 | P35-10b | Per-team sign-in on enrolled servers (§4 and §7): helper kinds as the team user, `.signin` folders, the bridge's scope route. The devbox runners switched only with the owner. |
+| 3 | Hermes host proof | After the gateway fix: host Hermes bots answer in a channel and in a DM, read and write team memory, and one does a small coding task (mode A of the Hermes goal). |
+| 4 | P17-01 | Video: grid and speaker layouts, pin a person, 16 tiles, picture-in-picture when the tab is left, audio only on a weak link, the 390 px layout. |
+| 5 | P17-02, P15-27 | "Ask to share" while someone shares; the invitation dialog and "Invite more" on the call card (the server is built). |
+| 6 | P17-04 | Guest links and a waiting room (the start dialog's switch, today disabled). |
+| 7 | P17-05 | Recurring appointments and meeting series: one folder per series, the agenda page, open action items carried to the next one. |
+| 8 | P17-06 | The meeting assistant live: an Ask panel answering from the transcript so far, Catch me up for a late joiner. |
+| 9 | P18-05 | Catch me up: a Summarise action on a channel or thread and the personal morning brief. |
+| 10 | P31-04 | A bot that runs out of memory does not kill its run: child processes are killed first, the bridge tells the thread. |
+
 **Why the added phases sit where they do (2026-10-24).** Phase 14 comes straight after 6: it needs only channels, files and bots, and the chat is the first thing a person leaving Slack or Mattermost judges. **Voice messages ship in phase 14 (P14-16, P14-17)**, so the on-device speech engine is built and proven on short clips before phase 15 streams live calls through it. Phase 15 comes after 8 because a meeting reaches memory through the team inbox and the Archivist that 8 builds, and its action items use 8's Add to board. Phase 16 follows 15 so calendars can schedule rooms and outside transcripts (Meet, Teams) land in the same `meetings/` folder. Phase 17 needs 9's surfaces for the end-of-meeting review. Phase 18 composes everything before it. Phases 10 and 11 gain the desktop and phone speech engines (P10-15, P11-09), and phase 12's journeys cover the added phases.
 
 **Why phase 21 sits after phase 19 (2026-11-04).** The chat is what a person leaving Slack or Mattermost judges first, and every later phase adds screens that should be born with the finished look. It comes after 19 so runner work already in progress is not interrupted, and it needs only 14 (the message view it polishes). From here on a new screen uses `PageHeader` and the tokens of P21-20 and passes the dark-mode contrast check.
