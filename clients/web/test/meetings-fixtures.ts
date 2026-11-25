@@ -52,7 +52,7 @@ export const person = (actor: string, name: string, over: Partial<MeetingPartici
     ...over,
   }) as MeetingParticipant;
 
-export const summary = (people: MeetingParticipant[], over: Partial<Meeting> = {}): MeetingSummary => ({ meeting: meeting(over), present: people });
+export const summary = (people: MeetingParticipant[], over: Partial<Meeting> = {}): MeetingSummary => ({ meeting: meeting(over), present: people, guests: [] });
 
 export const join = (over: Partial<MeetingJoin> = {}): MeetingJoin =>
   ({ provider: 'fake', url: 'wss://media.example', token: 'tok-1', identity: ME, roomName: MEETING, expiresAt: new Date(NOW + 600_000).toISOString(), ...over }) as MeetingJoin;
@@ -100,12 +100,12 @@ export function fakeServer(over: { people?: MeetingParticipant[]; room?: Partial
     if (always.has(name)) throw always.get(name);
     return produce();
   };
-  srv.start = (channelId, body) => run('start', body && Object.keys(body).length > 0 ? `start ${channelId} ${JSON.stringify(body)}` : `start ${channelId}`, () => ({ meeting: srv.room, created: true, join: join(over.joinOver), invited: 0 }));
+  srv.start = (channelId, body) => run('start', body && Object.keys(body).length > 0 ? `start ${channelId} ${JSON.stringify(body)}` : `start ${channelId}`, () => ({ meeting: srv.room, created: true, join: join(over.joinOver), invited: 0, guestLink: null }));
   srv.join = (meetingId) => run('join', `join ${meetingId}`, () => ({ meeting: srv.room, join: join(over.joinOver) }));
   srv.renew = (meetingId) => run('renew', `renew ${meetingId}`, () => ({ join: join({ token: `tok-${srv.calls.length}`, ...over.joinOver }) }));
   srv.leave = (meetingId) => run('leave', `leave ${meetingId}`, () => ({ meeting: srv.room }));
   srv.end = (meetingId) => run('end', `end ${meetingId}`, () => ({ meeting: { ...srv.room, state: 'ended' as const } }));
-  srv.get = (meetingId) => run('get', `get ${meetingId}`, () => ({ meeting: srv.room, present: srv.people }));
+  srv.get = (meetingId) => run('get', `get ${meetingId}`, () => ({ meeting: srv.room, present: srv.people, guests: [] }));
   srv.heartbeat = (meetingId, speaking) => run('heartbeat', `heartbeat ${meetingId} ${speaking}`, () => ({ ok: true as const, serverNow: new Date().toISOString() }));
   srv.transcription = (meetingId) => run('transcription', `transcription ${meetingId}`, () => srv.transcriptionState);
   srv.setTranscription = (meetingId, mode) =>

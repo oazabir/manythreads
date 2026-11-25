@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "displayName": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "identity",
+    "displayName"
+  ]
+}

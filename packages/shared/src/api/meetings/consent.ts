@@ -32,6 +32,8 @@ export const MeetingsSettings = z.object({
   recordingCap: MeetingRecordingCap.default('off'),
   /** Whether a team bot may be added to a room as its note-taker (it listens on the server). On by default. */
   notetakerAllowed: z.boolean().default(true),
+  /** Whether a call may let people outside the workspace join with a guest link (P17-04). On by default. */
+  guestLinksAllowed: z.boolean().default(true),
 });
 export type MeetingsSettings = z.infer<typeof MeetingsSettings>;
 /** Every field may be left out: only what is sent changes. */
@@ -40,6 +42,7 @@ export const MeetingsSettingsUpdate = z.strictObject({
   roomCap: z.number().int().min(MEETING_ROOM_CAP_MIN).max(MEETING_ROOM_CAP_MAX).optional(),
   recordingCap: MeetingRecordingCap.optional(),
   notetakerAllowed: z.boolean().optional(),
+  guestLinksAllowed: z.boolean().optional(),
 });
 export type MeetingsSettingsUpdate = z.infer<typeof MeetingsSettingsUpdate>;
 export const getMeetingsSettingsRoute = { method: 'GET', path: '/api/workspace/meetings-settings' } as const satisfies ApiRoute;

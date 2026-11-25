@@ -1,4 +1,4 @@
-import type { ListMeetingNotetakersResponse, Meeting, MeetingShareAnsweredPush, MeetingShareAskedPush, MeetingConsent, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption, StartMeetingRequest, StartMeetingResponse } from '@manythreads/shared';
+import type { ListMeetingNotetakersResponse, Meeting, MeetingShareAnsweredPush, MeetingShareAskedPush, MeetingConsent, MeetingGuest, MeetingJoin, MeetingParticipant, MeetingRecordingState, MeetingTranscriptLine, MeetingTranscriptionState, MeetingCaption, StartMeetingRequest, StartMeetingResponse } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { canOfferServer, enginePlan, planConsent, micMayOpen, writtenOnServer, type ConsentPlan, type EnginePlan, type EngineUi } from './consent';
 import type { CallApi, addNotetaker, answerRecordConsent, answerShareRequest, askToShare, correctSegment, fetchNotetakers, fetchRecording, fetchTranscript, removeNotetaker, setRecording } from './api';
@@ -49,6 +49,8 @@ export type CallState = {
   /** The channel the person asked about while there is no meeting yet (starting, not set up, failed). */
   channelId: string | null;
   present: readonly MeetingParticipant[];
+  /** The link guests let in (P17-04): their tiles and faces say "<name> (guest)". */
+  guests: readonly MeetingGuest[];
   myActorId: string | null;
   muted: boolean;
   deafened: boolean;
@@ -153,6 +155,7 @@ const IDLE = (prefs: CallPrefs): CallState => ({
   meeting: null,
   channelId: null,
   present: [],
+  guests: [],
   myActorId: null,
   muted: false,
   deafened: false,
@@ -528,6 +531,7 @@ export class CallController {
         this.set({
           meeting: sum.meeting,
           present: sum.present,
+          guests: sum.guests,
           transcription: tr ?? this.state.transcription,
           consent: planConsent(tr ?? this.state.transcription, mine, this.state.prefs.transcribeDefault, writtenOnServer(tr ?? this.state.transcription, (nts ?? this.state.notetakers)?.current != null)),
           notetakers: nts ?? this.state.notetakers,

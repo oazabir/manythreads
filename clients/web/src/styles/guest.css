@@ -1,0 +1,173 @@
+/* The guest page (P17-04, clients/web/src/guest): someone outside the workspace joins one call with a link. Classes start with `gst-`. One column on a phone:
+   a 16:9 preview, the name and Ask to join full width; in the call a stacked stage and a bar at the bottom. */
+
+.gst-form {
+  display: grid;
+  gap: 14px;
+}
+
+.gst-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.gst-wait {
+  margin-top: 8px;
+}
+
+.gst-devices {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.gst-legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.gst-preview {
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  background: var(--stage-bg);
+  color: var(--stage-ink);
+}
+
+.gst-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gst-preview video.mirror {
+  transform: scaleX(-1);
+}
+
+.gst-preview-off {
+  font-size: var(--fs-caption);
+}
+
+.gst-meter {
+  overflow: hidden;
+  height: 6px;
+  border-radius: var(--radius-xs);
+  background: var(--control-border);
+}
+
+.gst-meter-bar {
+  display: block;
+  height: 100%;
+  background: var(--ok-ink);
+  transition: width var(--dur-fast);
+}
+
+.gst-toggles {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.gst-toggle-name {
+  font-size: var(--fs-caption);
+}
+
+.gst-picker {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-caption);
+}
+
+.gst-join {
+  width: 100%;
+}
+
+/* ---- in the call ---- */
+.gst-call {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
+.gst-call-main {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.gst-call-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.gst-call-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+}
+
+.gst-call-state {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.gst-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gst-person {
+  padding: 4px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-caption);
+}
+
+.gst-person.speaking {
+  border-color: var(--ok-ink);
+}
+
+.gst-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--control-border);
+  background: var(--paper);
+}
+
+.gst-leave {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (width <= 600px) {
+  .gst-toggles {
+    grid-template-columns: auto 1fr;
+  }
+
+  .gst-call-main {
+    padding: 12px;
+  }
+}

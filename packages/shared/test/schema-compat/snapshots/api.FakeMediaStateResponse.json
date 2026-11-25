@@ -14,7 +14,8 @@
             "type": "string",
             "enum": [
               "person",
-              "bot"
+              "bot",
+              "guest"
             ]
           },
           "canPublish": {
@@ -25,6 +26,20 @@
           },
           "listenOnly": {
             "type": "boolean"
+          },
+          "sources": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

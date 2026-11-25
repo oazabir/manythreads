@@ -74,6 +74,8 @@ const KnowledgeScreen = lazy(() => import('./screens/knowledge/KnowledgeScreen')
 const MemoryScreen = lazy(() => import('./screens/memory/MemoryScreen').then((m) => ({ default: m.MemoryScreen })));
 const JoinScheduled = lazy(() => import('./screens/meetings/JoinScheduled').then((m) => ({ default: m.JoinScheduled })));
 const MeetingView = lazy(() => import('./screens/meetings/MeetingView').then((m) => ({ default: m.MeetingView })));
+// a guest link (P17-04): someone outside the workspace, so it sits outside the sign-in check and the app's frame, and loads only when opened
+const GuestJoinPage = lazy(() => import('./guest/GuestJoinPage').then((m) => ({ default: m.GuestJoinPage })));
 const DevSpeech = lazy(() => import('./pages/DevSpeech').then((m) => ({ default: m.DevSpeech })));
 const DevViewers = lazy(() => import('./pages/DevViewers').then((m) => ({ default: m.DevViewers })));
 
@@ -112,6 +114,8 @@ function AppRoutes() {
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/bootstrap/:token" element={<Bootstrap />} />
         <Route path="/invite/:token" element={<Invite />} />
+        <Route path="/join/g/:token" element={<Suspense fallback={null}><GuestJoinPage /></Suspense>} />
+        <Route path="/join/g" element={<Suspense fallback={null}><GuestJoinPage /></Suspense>} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/verify-email/:token" element={<VerifyEmail />} />
         <Route path="/expired" element={<ExpiredRoute />} />

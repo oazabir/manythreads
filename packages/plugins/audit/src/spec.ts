@@ -873,6 +873,40 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
       reason: e['answer'] === 'accept' ? 'Stopped sharing to let them share' : e['answer'] === 'other' ? 'Let someone else share first' : 'Said not now',
     };
   },
+  // Guest links (P17-04): who made or turned off links and who let a guest in, turned one away or took one out; ids only, never the name a guest typed or their
+  // address. A direct-message call has no guest links (and no team), so it leaves no row.
+  'meetings.guest_link.created': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return { action: 'meeting.guest_link_created', who: actor(e['createdBy']), teamId, target: of('meeting', uuid(e['meetingId'])) };
+  },
+  'meetings.guest_link.revoked': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    const n = Array.isArray(e['linkIds']) ? e['linkIds'].length : 0;
+    return {
+      action: 'meeting.guest_links_revoked',
+      who: actor(e['revokedBy']) ?? 'system',
+      teamId,
+      target: of('meeting', uuid(e['meetingId'])),
+      reason: `${plural(n, 'link')} turned off${e['reason'] === 'ended' ? ' as the call ended' : ''}`,
+    };
+  },
+  'meetings.guest.admitted': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return { action: 'meeting.guest_admitted', who: actor(e['decidedBy']), teamId, target: of('meeting', uuid(e['meetingId'])) };
+  },
+  'meetings.guest.denied': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return { action: 'meeting.guest_denied', who: actor(e['decidedBy']), teamId, target: of('meeting', uuid(e['meetingId'])) };
+  },
+  'meetings.guest.removed': (e) => {
+    const teamId = team(e['teamId']);
+    if (!teamId) return null;
+    return { action: 'meeting.guest_removed', who: actor(e['decidedBy']), teamId, target: of('meeting', uuid(e['meetingId'])) };
+  },
   'meetings.meeting.ended': (e) => {
     const teamId = team(e['teamId']);
     if (!teamId) return null;

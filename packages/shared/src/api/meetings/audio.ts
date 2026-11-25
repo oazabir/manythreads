@@ -51,7 +51,9 @@ export const fakeMediaSpeakRoute = { method: 'POST', path: '/api/test/media/spea
 export const FakeMediaStateQuery = z.strictObject({ meetingId: z.uuid() });
 export type FakeMediaStateQuery = z.infer<typeof FakeMediaStateQuery>;
 export const FakeMediaStateResponse = z.object({
-  tokens: z.array(z.object({ identity: z.string(), kind: z.enum(['person', 'bot']), canPublish: z.boolean(), canSubscribe: z.boolean(), listenOnly: z.boolean() })),
+  tokens: z.array(
+    z.object({ identity: z.string(), kind: z.enum(['person', 'bot', 'guest']), canPublish: z.boolean(), canSubscribe: z.boolean(), listenOnly: z.boolean(), sources: z.array(z.string()).nullable().default(null) }),
+  ),
   published: z.array(z.string()),
   listeners: z.array(z.object({ identity: z.string(), subscriptions: z.array(z.string()) })),
   kicked: z.array(z.string()),

@@ -27,6 +27,10 @@
     "notetakerAllowed": {
       "default": true,
       "type": "boolean"
+    },
+    "guestLinksAllowed": {
+      "default": true,
+      "type": "boolean"
     }
   },
   "required": [

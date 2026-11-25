@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import {
   MEETING_CAPTION_PUSH,
   MEETING_CHANGED_PUSH,
+  MEETING_LOBBY_PUSH,
   MEETING_RINGING_PUSH,
   MEETING_SHARE_ANSWERED_PUSH,
   MEETING_SHARE_ASKED_PUSH,
@@ -25,6 +26,7 @@ import { loadAdapter } from './media';
 import { LIVE_POLL_MS, activeRings, liveByChannel, type Ring } from './model';
 import { roomOfMessage } from './roomCard';
 import { callCards } from './callCards';
+import { lobbyStore } from './guestLinks';
 import { browserStorage, loadPrefs } from './prefs';
 import { browserAudioContext, createSounds, type Sounds } from './sounds';
 
@@ -61,6 +63,8 @@ export type LiveDeps = {
   /** A system notice for a ring when the tab is hidden. */
   notify: (title: string, tag: string) => void;
   hidden: () => boolean;
+  /** Someone knocked on, or was answered at, the waiting room of a call (P17-04): the lobby asks again if it is the call the person is in. */
+  onLobby?: (push: Push) => void;
   /** The socket came back after a gap: what else the page keeps about calls asks again (the call cards, P15-26). */
   onReconnected?: () => void;
   /**
@@ -207,6 +211,10 @@ export class LiveRoomsStore {
       if (p.success) this.deps.onShareRequest?.({ kind: 'answered', push: p.data });
       return;
     }
+    if (push.type === MEETING_LOBBY_PUSH) {
+      this.deps.onLobby?.(push);
+      return;
+    }
     if (push.type === MEETING_RINGING_PUSH) {
       const p = MeetingRingingPush.safeParse(push.payload);
       if (p.success) this.addRing(p.data);
@@ -346,6 +354,11 @@ export function liveRooms(): LiveRoomsStore {
     },
     hidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
     onReconnected: () => callCards().refreshAll(),
+    onLobby: (push) => {
+      const l = lobbyStore();
+      l.knock = () => pageSounds().play('knock');
+      l.handlePush(push);
+    },
     quiet: () => {
       const me = presenceStore.snapshot().me;
       return me !== null && dndState(me.dnd, me.timeZone ?? null, new Date(), false).active;

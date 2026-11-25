@@ -38,6 +38,7 @@ import './styles/conversations.css';
 import './styles/chat.css';
 import './styles/answer.css';
 import './styles/surfaces.css';
+import './styles/guest.css';
 import './styles/memory.css';
 import './styles/personal.css';
 import './styles/routines.css';

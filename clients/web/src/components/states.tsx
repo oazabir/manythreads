@@ -79,8 +79,20 @@ export function NotFoundPage() {
   );
 }
 
-/** Expired or used one-time link (bootstrap URL, invitation). */
-export function ExpiredLinkPage({ kind }: { kind: 'invitation' | 'bootstrap' | 'reset' }) {
+/** Expired or used one-time link (bootstrap URL, invitation, a guest link of a call). */
+export function ExpiredLinkPage({ kind }: { kind: 'invitation' | 'bootstrap' | 'reset' | 'guest' }) {
+  if (kind === 'guest') {
+    // someone outside the workspace (P17-04): no account, so no sign-in button; an unknown, expired, turned-off and used-up link look the same
+    return (
+      <div className="auth" data-testid="app-frame">
+        <main className="auth-card" data-landmark="content" data-testid="guest-gone">
+          <Brand />
+          <h1 className="auth-title">This guest link has expired or was turned off</h1>
+          <p className="auth-lede">Ask the person who sent it for a new link.</p>
+        </main>
+      </div>
+    );
+  }
   return (
     <div className="auth" data-testid="app-frame">
       <main className="auth-card" data-landmark="content">

@@ -1,6 +1,6 @@
 import {
   AndroidIcon, BoardIcon as BoardIcon_, CallIcon, ChatIcon as ProChat, ClockIcon as ProClock, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, RecordIcon, ShareIcon as ProShare, SoundwaveIcon, TuneIcon, VideoIcon as ProVideo, LaptopIcon, FullScreenMaximizeIcon, FullScreenMinimizeIcon,
-  GridIcon as ProGrid, PersonIcon, PinIcon as ProPin, PinOffIcon as ProPinOff, PictureInPictureEnterIcon,
+  GridIcon as ProGrid, PersonIcon, PinIcon as ProPin, PinOffIcon as ProPinOff, PictureInPictureEnterIcon, CancelIcon, LinkIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -41,3 +41,7 @@ export const SpeakerIcon = proIcon(PersonIcon);
 export const PinIcon = proIcon(ProPin, 14);
 export const PinOffIcon = proIcon(ProPinOff, 14);
 export const PipIcon = proIcon(PictureInPictureEnterIcon);
+
+/** Take a guest out of the call (P17-04); copy a guest link. */
+export const CloseIcon = proIcon(CancelIcon, 14);
+export const GuestLinkIcon = proIcon(LinkIcon, 14);

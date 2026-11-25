@@ -179,6 +179,27 @@ describe('every credential route carries its listed limit and answers 429 with r
     expect((await send(r, address)).status).not.toBe(429);
   });
 
+  // guest links (P17-04): the burst above sends secrets of the wrong shape, which are never looked up and never counted; well-shaped unknown ones are guesses
+  it('guest links: 20 refused links from one address lock it for 15 minutes; a wrong-shaped one is never counted', async () => {
+    const address = freshAddress();
+    const peek = (token: string) =>
+      fetch(`${s.url}/api/guest-links/peek`, {
+        method: 'POST',
+        headers: { 'x-forwarded-for': address, origin: 'https://manythreads.example', 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+    for (let i = 0; i < 5; i++) expect((await peek('short')).status).toBe(404);
+    for (let i = 0; i < 20; i++) expect((await peek(`${'Z'.repeat(42)}${String.fromCharCode(65 + i)}`)).status).toBe(404);
+    const locked = await peek('Z'.repeat(43));
+    expect(locked.status).toBe(429);
+    expect(Number(locked.headers.get('retry-after'))).toBeGreaterThan(10 * 60);
+    // a forged guest cookie is held back by the same lock
+    const forged = await fetch(`${s.url}/api/guest/session`, { headers: { 'x-forwarded-for': address, cookie: `mt_guest=00000000-0000-7000-8000-000000000001.${'Y'.repeat(43)}` } });
+    expect(forged.status).toBe(429);
+    clock.advance(16 * MINUTE);
+    expect((await peek('Z'.repeat(43))).status).toBe(404);
+  });
+
   it('a signed-in caller gets no second counter on a route that counts per address', async () => {
     const r = ABUSE_ROUTES.find((x) => x.path === '/api/auth/password/reset-request');
     if (!r) throw new Error('route missing from the list');

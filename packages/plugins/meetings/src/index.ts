@@ -27,6 +27,7 @@ import { registerMeetingRoutes } from './routes.ts';
 import { registerCallCardRoutes } from './routes-cards.ts';
 import { registerInviteRoutes } from './invites.ts';
 import { registerShareRequestRoutes } from './share-requests.ts';
+import { registerGuestRoutes } from './guests.ts';
 import { registerMediaWebhook } from './webhook.ts';
 
 /**
@@ -61,6 +62,14 @@ export default definePlugin({
         'meetings.invite.sent',
         // "Ask to share" (P17-02): a request for a turn to share a screen, and its answer
         'meetings.share_request.answered',
+        // guest links and the waiting room (P17-04): ids and times only, never a guest's name or address
+        'meetings.guest_link.created',
+        'meetings.guest_link.revoked',
+        'meetings.guest.asked',
+        'meetings.guest.admitted',
+        'meetings.guest.denied',
+        'meetings.guest.removed',
+        'meetings.guest.left',
         // Bundle D (docs/plugins/meetings.md "Bundle D contracts"): rooms planned ahead on a calendar
         'meetings.scheduled.created',
         'meetings.scheduled.changed',
@@ -92,6 +101,7 @@ export default definePlugin({
     registerCallCardRoutes(ctx);
     registerInviteRoutes(ctx);
     registerShareRequestRoutes(ctx);
+    registerGuestRoutes(ctx);
     registerConsentRoutes(ctx);
     registerRingEndJob(ctx);
     registerMediaWebhook(ctx);

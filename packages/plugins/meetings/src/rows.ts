@@ -1,11 +1,11 @@
-import type { Meeting, MeetingParticipant, MeetingSummary } from '@manythreads/shared';
+import type { Meeting, MeetingGuest, MeetingParticipant, MeetingSummary } from '@manythreads/shared';
 import type { PluginTx } from '@manythreads/sdk';
 
 // Rows of `meetings` and `meeting_participants` as the routes return them. Always read through the caller's own transaction, so the row-level
 // security decides who sees what; nothing here widens that.
 
 export const MEETING_COLUMNS = `m.id, m.workspace_id, m.team_id, m.channel_id, m.title, m.state, m.kind, m.started_by, m.organizer_id, m.notetaker_bot_id, m.started_at,
-  m.ended_at, m.end_reason, m.transcription, m.recording, m.transcript_path, m.transcript_file_id, m.thread_root_id`;
+  m.ended_at, m.end_reason, m.transcription, m.recording, m.transcript_path, m.transcript_file_id, m.thread_root_id, m.allow_guests`;
 
 export interface MeetingRow {
   id: string;
@@ -26,6 +26,7 @@ export interface MeetingRow {
   transcript_path: string | null;
   transcript_file_id: string | null;
   thread_root_id: string | null;
+  allow_guests: boolean;
 }
 
 export interface ParticipantRow {
@@ -61,6 +62,7 @@ export function toMeeting(r: MeetingRow): Meeting {
     transcriptPath: r.transcript_path,
     transcriptFileId: r.transcript_file_id as Meeting['transcriptFileId'],
     threadRootId: r.thread_root_id as Meeting['threadRootId'],
+    allowGuests: r.allow_guests === true,
   };
 }
 
@@ -99,6 +101,30 @@ export async function loadPresent(tx: PluginTx, meetingIds: readonly string[]): 
 }
 
 export async function summaries(tx: PluginTx, rows: readonly MeetingRow[]): Promise<MeetingSummary[]> {
-  const present = await loadPresent(tx, rows.map((r) => r.id));
-  return rows.map((r) => ({ meeting: toMeeting(r), present: present.get(r.id) ?? [] }));
+  const ids = rows.map((r) => r.id);
+  const present = await loadPresent(tx, ids);
+  const guests = await admittedGuests(tx, ids);
+  return rows.map((r) => ({ meeting: toMeeting(r), present: present.get(r.id) ?? [], guests: guests.get(r.id) ?? [] }));
 }
+
+/** A link guest's media identity (P17-04): never an actor id. */
+export const guestIdentity = (guestId: string): string => `guest:${guestId}`;
+
+/** The link guests let in and still there, by call, for the tiles (read through the caller's row policies). */
+export async function admittedGuests(tx: PluginTx, meetingIds: readonly string[]): Promise<Map<string, MeetingGuest[]>> {
+  const out = new Map<string, MeetingGuest[]>();
+  if (meetingIds.length === 0) return out;
+  const rows = (
+    await tx.query<{ id: string; meeting_id: string; display_name: string }>(
+      "SELECT id::text, meeting_id::text, display_name FROM app.meeting_guests WHERE meeting_id = ANY ($1::uuid[]) AND state = 'admitted' ORDER BY decided_at, id",
+      [meetingIds],
+    )
+  ).rows;
+  for (const r of rows) {
+    const list = out.get(r.meeting_id) ?? [];
+    list.push({ id: r.id as MeetingGuest['id'], identity: guestIdentity(r.id), displayName: r.display_name });
+    out.set(r.meeting_id, list);
+  }
+  return out;
+}
+

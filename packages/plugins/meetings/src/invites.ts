@@ -69,7 +69,17 @@ export async function inviteToCall(ctx: PluginContext, tx: PluginTx, m: MeetingR
   return added;
 }
 
-const NOT_YET_GUESTS = 'Guest links are not available yet';
+/**
+ * Whether the start dialog offers "Let people outside the workspace join with a link" (P17-04), and why not: the database asks the same questions when the link is
+ * made (`app.meetings_make_guest_link`), so this only words them for the dialog.
+ */
+export function guestLinkOffer(o: { directMessage: boolean; role: string | null; switchOn: boolean; mediaReason: string | null }): { available: boolean; reason: string | null } {
+  if (o.directMessage) return { available: false, reason: 'A call in a direct message cannot have guest links.' };
+  if (o.role === null || o.role === 'guest') return { available: false, reason: 'Workspace guests cannot make guest links.' };
+  if (!o.switchOn) return { available: false, reason: 'Guest links are switched off for this workspace. A workspace admin can allow them.' };
+  if (o.mediaReason !== null) return { available: false, reason: o.mediaReason };
+  return { available: true, reason: null };
+}
 
 /** The checks of `app.meetings_invite` that can pass or be fixed, and the sentence each answers with (matched on the start of the database's message, never forwarded). */
 const INVITE_REFUSALS: readonly (readonly [string, string])[] = [
@@ -93,12 +103,18 @@ export function registerInviteRoutes(ctx: PluginContext): void {
       const now = ctx.runtime.now();
       const channel = await channelFacts(tx, channelId);
       const directMessage = channel?.kind === 'dm';
+      const can = (
+        await tx.query<{ post: boolean | null; role: string | null; guests_on: boolean }>(
+          `SELECT app.lookup_channel_can($1::uuid, 'post') AS post, app.workspace_role() AS role,
+                  coalesce((SELECT s.guest_links_allowed FROM app.meeting_settings s WHERE s.workspace_id = app.workspace_id()), true) AS guests_on`,
+          [channelId],
+        )
+      ).rows[0];
       const base = {
         directMessage,
         defaultTitle: defaultTitle(now, channel ?? null),
-        guestLinks: { available: false as const, reason: NOT_YET_GUESTS },
+        guestLinks: guestLinkOffer({ directMessage, role: can?.role ?? null, switchOn: can?.guests_on !== false, mediaReason: null }),
       };
-      const can = (await tx.query<{ post: boolean | null; role: string | null }>("SELECT app.lookup_channel_can($1::uuid, 'post') AS post, app.workspace_role() AS role", [channelId])).rows[0];
       if (!channel || can?.post !== true) {
         const reason = !channel
           ? 'You cannot start a call in this channel'
@@ -144,6 +160,7 @@ export function registerInviteRoutes(ctx: PluginContext): void {
       return json(
         CallStartOptionsResponse.parse({
           ...base,
+          guestLinks: guestLinkOffer({ directMessage, role: can?.role ?? null, switchOn: can?.guests_on !== false, mediaReason }),
           canStart: mediaReason === null,
           reason: mediaReason,
           live: live ? { meetingId: live.id, title: live.title } : null,

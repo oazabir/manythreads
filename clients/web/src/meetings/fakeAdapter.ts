@@ -1,6 +1,5 @@
-import type { MeetingJoin } from '@manythreads/shared';
 import type { ConnectionQuality } from './layout';
-import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter, VideoTile } from './media';
+import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter, MediaJoin, VideoTile } from './media';
 
 /*
  * An in-memory room for the unit tests and the browser tests (the server's `fake` media provider hands out tokens for it). It records what the page asked of the
@@ -8,7 +7,7 @@ import type { AdapterEvents, AudioOptions, DeviceLists, MediaAdapter, VideoTile 
  */
 
 export interface FakeAdapter extends MediaAdapter {
-  readonly joins: MeetingJoin[];
+  readonly joins: MediaJoin[];
   readonly state: { connected: boolean; micOn: boolean; deafened: boolean; cameraOn: boolean; screenOn: boolean; receiveVideo: boolean; inputId: string | null; outputId: string | null; options: AudioOptions | null };
   /** Another person turned a camera or a screen on or off (P35-08). */
   remoteVideo(actorId: string, source: VideoTile['source'], on: boolean): void;

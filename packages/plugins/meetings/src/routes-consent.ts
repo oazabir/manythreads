@@ -227,13 +227,14 @@ export function registerConsentRoutes(ctx: PluginContext): void {
       const actor = (await tx.query<{ actor: string | null }>('SELECT app.actor() AS actor')).rows[0]?.actor ?? null;
       // only what was sent changes; a row made here starts from the defaults for the rest
       await tx.query(
-        `INSERT INTO app.meeting_settings (workspace_id, transcribe_cap, room_cap, recording_cap, notetaker_allowed, updated_by, updated_at)
-         VALUES (app.workspace_id(), coalesce($1, 'on_device'), coalesce($2::int, 25), coalesce($3, 'off'), coalesce($4::boolean, true), $5::uuid, now())
+        `INSERT INTO app.meeting_settings (workspace_id, transcribe_cap, room_cap, recording_cap, notetaker_allowed, guest_links_allowed, updated_by, updated_at)
+         VALUES (app.workspace_id(), coalesce($1, 'on_device'), coalesce($2::int, 25), coalesce($3, 'off'), coalesce($4::boolean, true), coalesce($6::boolean, true), $5::uuid, now())
          ON CONFLICT (workspace_id) DO UPDATE SET
            transcribe_cap = coalesce($1, app.meeting_settings.transcribe_cap), room_cap = coalesce($2::int, app.meeting_settings.room_cap),
            recording_cap = coalesce($3, app.meeting_settings.recording_cap), notetaker_allowed = coalesce($4::boolean, app.meeting_settings.notetaker_allowed),
+           guest_links_allowed = coalesce($6::boolean, app.meeting_settings.guest_links_allowed),
            updated_by = EXCLUDED.updated_by, updated_at = now()`,
-        [body.transcribeCap ?? null, body.roomCap ?? null, body.recordingCap ?? null, body.notetakerAllowed ?? null, actor],
+        [body.transcribeCap ?? null, body.roomCap ?? null, body.recordingCap ?? null, body.notetakerAllowed ?? null, actor, body.guestLinksAllowed ?? null],
       );
       return json(MeetingsSettings.parse(await loadMeetingsSettings(tx)));
     }),

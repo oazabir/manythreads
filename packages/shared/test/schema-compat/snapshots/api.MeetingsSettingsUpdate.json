@@ -24,6 +24,9 @@
     },
     "notetakerAllowed": {
       "type": "boolean"
+    },
+    "guestLinksAllowed": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false

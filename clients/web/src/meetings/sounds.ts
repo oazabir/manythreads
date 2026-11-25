@@ -4,7 +4,7 @@
  * touched the page: a sound that cannot start yet is dropped, never queued.
  */
 
-export type Sound = 'join' | 'leave' | 'ring' | 'mute' | 'unmute';
+export type Sound = 'join' | 'leave' | 'ring' | 'mute' | 'unmute' | 'knock';
 export type Tone = { hz: number; at: number; length: number; gain: number };
 
 /** Seconds from the start of the sound. */
@@ -24,6 +24,12 @@ export function toneSequence(kind: Sound): Tone[] {
       return [{ hz: 440, at: 0, length: 0.07, gain: 0.05 }];
     case 'unmute':
       return [{ hz: 660, at: 0, length: 0.07, gain: 0.05 }];
+    case 'knock':
+      // a soft double knock: someone is waiting to be let into the call (P17-04)
+      return [
+        { hz: 330, at: 0, length: 0.06, gain: 0.06 },
+        { hz: 330, at: 0.14, length: 0.06, gain: 0.06 },
+      ];
     case 'ring':
       // two short double-beeps; the page repeats the whole thing about every 2 seconds while it rings
       return [

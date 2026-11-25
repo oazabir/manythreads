@@ -190,6 +190,8 @@ export function createLivekitProvider(options: LivekitOptions = {}): MediaProvid
             canSubscribe: grants.canSubscribe,
             // the note-taker listens without appearing in the room
             hidden: listenOnly,
+            // a link guest (P17-04) sends only what its grant names (microphone and camera) and cannot rename itself: the "(guest)" in its name is the server's
+            ...(grants.sources ? { canPublishSources: [...grants.sources], canUpdateOwnMetadata: false } : {}),
           },
         },
         c.apiSecret,

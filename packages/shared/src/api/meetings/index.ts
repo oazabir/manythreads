@@ -14,6 +14,7 @@ import {
 } from '../../entities/meeting.ts';
 import { Team } from '../../entities/team.ts';
 import { BotId, ChannelId, MeetingId, PersonId } from '../../ids.ts';
+import { GuestLinkMade } from './guests.ts';
 
 export * from './consent.ts';
 export * from './segments.ts';
@@ -25,6 +26,7 @@ export * from './audio.ts';
 export * from './search.ts';
 export * from './scheduled.ts';
 export * from './share-requests.ts';
+export * from './guests.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Voice rooms (PLAN P15-03, plugin `meetings`, docs/plugins/meetings.md). One live room per channel; a DM call uses the DM's channel. Whoever may read the channel may
@@ -43,14 +45,14 @@ export type StartMeetingPathParams = z.infer<typeof StartMeetingPathParams>;
  * Start a call in a channel (P15-25). Every field is optional (an older page sends `{ title }` only). The title defaults to "Call · #dev · 14:02" ("Call · 14:02" in a
  * direct message; the time in UTC). `kind` defaults to `audio` (`video` is a video call, P36-02). `inviteeIds` are people asked to the
  * call (each must be able to read the channel, or the whole start is refused with 403; the caller is left out; ignored in a direct message, where everyone is rung).
- * `allowGuests` can only be false until guest links exist (P17-04). `notetakerBotId` adds that note-taker as the call opens; when it cannot be added the start answers 409
+ * `allowGuests: true` turns guest links on for a new call (P17-04): the starter's first link is made in the same transaction and its address returned once (`guestLink`). `notetakerBotId` adds that note-taker as the call opens; when it cannot be added the start answers 409
  * (or 403 for a switch somebody turned off) with the reason and nothing is written. Asking again while a call is live only joins it (`created: false`, nobody invited).
  */
 export const StartMeetingRequest = z.strictObject({
   title: MeetingTitle.optional(),
   kind: MeetingKind.optional(),
   inviteeIds: z.array(PersonId).max(CALL_INVITES_MAX).optional(),
-  allowGuests: z.literal(false).optional(),
+  allowGuests: z.boolean().optional(),
   notetakerBotId: BotId.nullable().optional(),
 });
 export type StartMeetingRequest = z.infer<typeof StartMeetingRequest>;
@@ -61,6 +63,8 @@ export const StartMeetingResponse = z.object({
   join: MeetingJoin,
   /** How many people this start asked to the call (0 when it joined a call that was already going). */
   invited: z.number().int().min(0).default(0),
+  /** The starter's guest link when the call opened with guest links on (P17-04): shown once, never stored in the clear. Null otherwise. */
+  guestLink: GuestLinkMade.nullable().default(null),
 });
 export type StartMeetingResponse = z.infer<typeof StartMeetingResponse>;
 export const startMeetingRoute = { method: 'POST', path: '/api/channels/:channelId/meetings' } as const satisfies ApiRoute;
@@ -96,7 +100,8 @@ export const CallStartOptionsResponse = z.object({
     available: z.boolean(),
     reason: z.string().nullable(),
   }),
-  guestLinks: z.object({ available: z.literal(false), reason: z.string() }),
+  /** Whether a call here may let people outside the workspace join with a link (P17-04); false with the reason in a direct message, when the workspace switch is off, for a workspace guest, or with no media server. */
+  guestLinks: z.object({ available: z.boolean(), reason: z.string().nullable() }),
 });
 export type CallStartOptionsResponse = z.infer<typeof CallStartOptionsResponse>;
 export const callStartOptionsRoute = { method: 'GET', path: '/api/channels/:channelId/calls/options' } as const satisfies ApiRoute;

@@ -148,6 +148,10 @@
           "type": "null"
         }
       ]
+    },
+    "allowGuests": {
+      "default": false,
+      "type": "boolean"
     }
   },
   "required": [
@@ -168,7 +172,8 @@
     "recording",
     "transcriptPath",
     "transcriptFileId",
-    "threadRootId"
+    "threadRootId",
+    "allowGuests"
   ],
   "additionalProperties": false
 }

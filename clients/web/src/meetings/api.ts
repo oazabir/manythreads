@@ -119,6 +119,16 @@ import {
   renewMeetingTokenRoute,
   setMeetingTranscriptionRoute,
   startMeetingRoute,
+  DecideGuestResponse,
+  MakeGuestLinkResponse,
+  MeetingLobbyResponse,
+  RevokeGuestLinksResponse,
+  admitGuestRoute,
+  denyGuestRoute,
+  makeGuestLinkRoute,
+  meetingLobbyRoute,
+  removeGuestRoute,
+  revokeGuestLinksRoute,
 } from '@manythreads/shared';
 import { call } from '../api/client';
 
@@ -252,3 +262,14 @@ export const updateAppointment = (id: string, body: UpdateAppointmentRequest) =>
 export const cancelAppointment = (id: string) => call(cancelAppointmentRoute, { response: AppointmentResponse }, undefined, { id });
 /** Its call in its meeting space: started with its kind, or joined when live (P36-07). */
 export const joinAppointment = (id: string) => call(joinAppointmentRoute, { response: OpenMeetingSpaceResponse }, undefined, { id });
+
+// ---- guest links and the waiting room (P17-04) -------------------------------------------------------------------------------------------------------
+/** A guest link of this person's own for a live call with guest links on; the address is shown this once. */
+export const makeGuestLink = (meetingId: string) => call(makeGuestLinkRoute, { response: MakeGuestLinkResponse }, undefined, { meetingId });
+/** Turn guest links off for the call (the starter, a lead, an admin): every link stops; guests already in stay. */
+export const revokeGuestLinks = (meetingId: string) => call(revokeGuestLinksRoute, { response: RevokeGuestLinksResponse }, undefined, { meetingId });
+/** Who is waiting to be let in (only for someone in the call). */
+export const fetchLobby = (meetingId: string) => call(meetingLobbyRoute, { response: MeetingLobbyResponse }, undefined, { meetingId });
+/** Let a guest in, turn one away, or take one out. */
+export const decideGuest = (meetingId: string, guestId: string, decision: 'admit' | 'deny' | 'remove') =>
+  call(decision === 'admit' ? admitGuestRoute : decision === 'deny' ? denyGuestRoute : removeGuestRoute, { response: DecideGuestResponse }, undefined, { meetingId, guestId });

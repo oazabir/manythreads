@@ -68,11 +68,17 @@ export async function loadWorkspaceTranscribeCap(tx: PluginTx): Promise<MeetingT
 /** The workspace switches as the settings screen shows them (defaults for what an admin never set). */
 export async function loadMeetingsSettings(tx: PluginTx): Promise<MeetingsSettings> {
   const row = (
-    await tx.query<{ transcribe_cap: MeetingTranscription; room_cap: number; recording_cap: 'off' | 'on'; notetaker_allowed: boolean }>(
-      'SELECT transcribe_cap, room_cap, recording_cap, notetaker_allowed FROM app.meeting_settings WHERE workspace_id = app.workspace_id()',
+    await tx.query<{ transcribe_cap: MeetingTranscription; room_cap: number; recording_cap: 'off' | 'on'; notetaker_allowed: boolean; guest_links_allowed: boolean }>(
+      'SELECT transcribe_cap, room_cap, recording_cap, notetaker_allowed, guest_links_allowed FROM app.meeting_settings WHERE workspace_id = app.workspace_id()',
     )
   ).rows[0];
-  return { transcribeCap: row?.transcribe_cap ?? 'on_device', roomCap: row?.room_cap ?? 25, recordingCap: row?.recording_cap ?? 'off', notetakerAllowed: row?.notetaker_allowed ?? true };
+  return {
+    transcribeCap: row?.transcribe_cap ?? 'on_device',
+    roomCap: row?.room_cap ?? 25,
+    recordingCap: row?.recording_cap ?? 'off',
+    notetakerAllowed: row?.notetaker_allowed ?? true,
+    guestLinksAllowed: row?.guest_links_allowed ?? true,
+  };
 }
 
 /** Why nothing may be turned on, in plain words, naming who closed it. */

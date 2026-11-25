@@ -8,11 +8,13 @@ import { PinnedMark } from '../channels/PinnedMark';
 import { channelStore } from '../channels/store';
 import { Avatar } from '../components/ui';
 import { isMockMode } from '../api/setup';
-import { endMeeting } from './api';
+import { endMeeting, revokeGuestLinks } from './api';
+import { copyGuestLink, forgetGuestLink } from './guestLinks';
+import { sayToast } from '../kernel/toast';
 import { callCards, useCallCard } from './callCards';
 import { EndRoomConfirm } from './EndRoomConfirm';
 import { InviteMoreDialog } from './StartCallDialog';
-import { BotIcon, EventHeadphonesIcon, WaveIcon } from './icons';
+import { BotIcon, EventHeadphonesIcon, GuestLinkIcon, WaveIcon } from './icons';
 import { callCardFacts, cardFromSummary, eventLine, runningTime, startLine } from './roomCard';
 import { callController, liveRooms, useCall, useRoomOfMessage } from './store';
 
@@ -120,6 +122,9 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+  // guest links (P17-04); a card from an older server, or made by hand, has none
+  const guests = card.guests ?? { on: false, inCall: 0, canLink: false, canTurnOff: false };
   const inCall = call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost';
   // the reader's actor id: from the roster once it has answered (the card may be drawn before), else what the store already knows
   const people = usePeople();
@@ -168,6 +173,26 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
     }
     setBusy(false);
   };
+  // guest links (P17-04): this person's own link (kept in this tab), and turning every link of the call off
+  const copyLink = async (): Promise<void> => {
+    setLinkBusy(true);
+    const said = await copyGuestLink(card.meetingId);
+    setLinkBusy(false);
+    sayToast(said.text, { testId: 'guest-link-toast', ...(said.ok ? {} : { ms: 12_000 }) });
+  };
+  const turnOffLinks = async (): Promise<void> => {
+    setLinkBusy(true);
+    try {
+      await revokeGuestLinks(card.meetingId);
+      forgetGuestLink(card.meetingId);
+      sayToast('Guest links turned off. Guests already in the call stay.', { testId: 'guest-link-toast' });
+      await callCards().refresh(card.meetingId);
+    } catch (e) {
+      sayToast(isApiError(e) && e.status !== 0 ? e.message : 'Could not turn guest links off. Try again.', { testId: 'guest-link-toast' });
+    } finally {
+      setLinkBusy(false);
+    }
+  };
   // the whole card joins: a press anywhere on it that is not one of its buttons or links, not the click a held finger or a swipe leaves behind, and not a
   // click that selected words of the card (a double click on the title)
   const justFired = useContext(RowGestureContext);
@@ -209,6 +234,9 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
         ) : null}
         <span>{facts.countText}</span>
         {facts.more > 0 ? <span className="room-card-more">{`+${facts.more}`}</span> : null}
+        {guests.inCall > 0 ? (
+          <span className="room-card-more" data-testid="room-card-guests">{`+${guests.inCall} ${guests.inCall === 1 ? 'guest' : 'guests'}`}</span>
+        ) : null}
         {facts.notetaker !== null ? (
           <span className="room-card-chip room-card-notes" data-testid="room-card-notetaker" title={`${facts.notetaker} is taking notes`}>
             <BotIcon /> Note-taker listening
@@ -230,6 +258,16 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
           {facts.canInvite ? (
             <button type="button" className="btn s room-card-invite" data-testid="room-card-invite" aria-haspopup="dialog" onClick={() => setInviting(true)}>Invite more</button>
           ) : null}
+          {guests.canLink ? (
+            <button type="button" className="btn s room-card-guestlink" disabled={linkBusy} onClick={() => void copyLink()} data-testid="room-card-guest-link">
+              <GuestLinkIcon /> Copy guest link
+            </button>
+          ) : null}
+          {guests.canTurnOff ? (
+            <button type="button" className="btn s room-card-guestoff" disabled={linkBusy} onClick={() => void turnOffLinks()} data-testid="room-card-guest-off">
+              Turn off guest links
+            </button>
+          ) : null}
           {facts.canEnd ? <button type="button" ref={endButton} className="btn s room-card-end" data-testid="room-card-end" onClick={() => setAsking(true)}>End call</button> : null}
         </div>
       )}
@@ -238,7 +276,7 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
         // the dialog is drawn on top of the page, but React passes its clicks and keys up through the card and the message row (which would join the call or
         // open the thread): they stop here
         <span className="room-card-portal" onClick={stop} onMouseDown={stop} onPointerDown={stop} onTouchStart={stop} onKeyDown={stop}>
-          <InviteMoreDialog meetingId={card.meetingId} channelId={channelId} onClose={() => setInviting(false)} />
+          <InviteMoreDialog meetingId={card.meetingId} channelId={channelId} onClose={() => setInviting(false)} guestLink={guests.canLink} />
         </span>
       ) : null}
     </div>

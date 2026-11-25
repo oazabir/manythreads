@@ -44,11 +44,12 @@ describe('the start request', () => {
     expect(StartMeetingRequest.safeParse({ title: 'x', meta: {} }).success).toBe(false);
   });
 
-  it('takes the dialog’s people, the note-taker and a guest switch that can only be off (P15-25)', () => {
+  it('takes the dialog’s people, the note-taker and the guest-link switch (P15-25, P17-04)', () => {
     const full = { title: 'Design review', kind: 'audio', inviteeIds: [uuid(10), uuid(11)], allowGuests: false, notetakerBotId: uuid(12) } as const;
     expect(StartMeetingRequest.parse(full)).toEqual(full);
     expect(StartMeetingRequest.parse({ notetakerBotId: null }).notetakerBotId).toBeNull();
-    expect(StartMeetingRequest.safeParse({ allowGuests: true }).success).toBe(false);
+    expect(StartMeetingRequest.parse({ allowGuests: true })).toEqual({ allowGuests: true });
+    expect(StartMeetingRequest.safeParse({ allowGuests: 'yes' }).success).toBe(false);
     expect(StartMeetingRequest.safeParse({ inviteeIds: ['Nadia'] }).success).toBe(false);
     expect(StartMeetingRequest.safeParse({ inviteeIds: Array.from({ length: CALL_INVITES_MAX + 1 }, (_, i) => uuid(100 + i)) }).success).toBe(false);
     expect(StartMeetingRequest.safeParse({ notetakerBotId: 'note-taker' }).success).toBe(false);
@@ -90,7 +91,8 @@ describe('inviting people', () => {
       guestLinks: { available: false, reason: 'Guest links are not available yet' },
     };
     expect(CallStartOptionsResponse.parse(options)).toEqual(options);
-    expect(CallStartOptionsResponse.safeParse({ ...options, guestLinks: { available: true, reason: '' } }).success).toBe(false);
+    expect(CallStartOptionsResponse.parse({ ...options, guestLinks: { available: true, reason: null } }).guestLinks).toEqual({ available: true, reason: null });
+    expect(CallStartOptionsResponse.safeParse({ ...options, guestLinks: { available: 'yes', reason: null } }).success).toBe(false);
     const many = Array.from({ length: CALL_OPTIONS_PEOPLE_MAX + 1 }, (_, i) => ({ personId: uuid(100 + i), displayName: `P${String(i)}`, you: i === 0 }));
     expect(CallStartOptionsResponse.safeParse({ ...options, people: many }).success).toBe(false);
     expect(CallStartOptionsQuery.parse({ q: '  ra ' })).toEqual({ q: 'ra' });

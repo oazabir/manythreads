@@ -24,8 +24,7 @@
       }
     },
     "allowGuests": {
-      "type": "boolean",
-      "const": false
+      "type": "boolean"
     },
     "notetakerBotId": {
       "anyOf": [

@@ -61,6 +61,27 @@ describe('web-static', () => {
     }
   });
 
+  it('serves a guest link (P17-04) with the app policy, no cache, no referrer and no index; nginx carries the same block', async () => {
+    for (const url of ['/join/g/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE', '/join/g/']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers['content-security-policy'], url).toBe(APP_CSP);
+      expect(res.headers['cache-control'], url).toBe('no-store');
+      expect(res.headers['referrer-policy'], url).toBe('no-referrer');
+      expect(res.headers['x-robots-tag'], url).toBe('noindex, nofollow');
+    }
+    const nginx = readFileSync(new URL('../../../deploy/docker/nginx.conf', import.meta.url), 'utf8');
+    const block = nginx.slice(nginx.indexOf('location ^~ /join/g/'), nginx.indexOf('}', nginx.indexOf('location ^~ /join/g/')));
+    expect(block).toContain('access_log off;');
+    expect(block).toContain(`add_header Content-Security-Policy "${APP_CSP}" always;`);
+    expect(block).toContain('add_header Referrer-Policy no-referrer always;');
+    expect(block).toContain('add_header Cache-Control "no-store" always;');
+    expect(block).toContain('add_header X-Robots-Tag "noindex, nofollow" always;');
+    // the guest-link API writes no access log line either (its secret is in the body; an older address must not be logged)
+    const api = nginx.slice(nginx.indexOf('location ^~ /api/guest-links/'), nginx.indexOf('}', nginx.indexOf('location ^~ /api/guest-links/')));
+    expect(api).toContain('access_log off;');
+  });
+
   it('answers HEAD without a body', async () => {
     const res = await app.inject({ method: 'HEAD', url: '/' });
     expect(res.statusCode).toBe(200);

@@ -14,11 +14,14 @@ import type { ProviderImpl } from './types.ts';
 //  * A webhook is believed only after its signature checks out; `verifyWebhook` answers null for anything else.
 //  * With no server set up the provider says so (`status().configured` is false) and `createRoom`, `token` and the other calls throw `MediaNotConfiguredError`.
 
-/** Who a token is for. `kind: 'bot'` is accepted only for a listen-only grant (see `assertTokenRequest`). */
+/**
+ * Who a token is for. `kind: 'bot'` is accepted only for a listen-only grant; `kind: 'guest'` (a link guest, P17-04) only for a grant that publishes the microphone
+ * and camera and nothing else (see `assertTokenRequest`).
+ */
 export interface MediaActor {
-  /** The actor id: also the identity the media server knows the participant by. */
+  /** The actor id: also the identity the media server knows the participant by. A link guest is `guest:<guest id>`, never an actor id. */
   id: string;
-  kind: 'person' | 'bot';
+  kind: 'person' | 'bot' | 'guest';
   /** Shown to the others in the room. */
   displayName: string;
 }
@@ -31,7 +34,16 @@ export interface MediaGrants {
   canSubscribe: boolean;
   /** The note-taker: receives audio only, never sends and never shows in the room's list of speakers. A bot's token must have this set and `canPublish` false. */
   listenOnly?: boolean;
+  /**
+   * What the holder may publish (P17-04). Left out: anything (a person's token: microphone, camera and screen). A link guest's token names exactly what it may send,
+   * and never a screen.
+   */
+  sources?: readonly MediaSource[];
 }
+
+/** What a participant may send into a room. */
+export type MediaSource = 'microphone' | 'camera' | 'screen_share' | 'screen_share_audio';
+export const MEDIA_SOURCES: readonly MediaSource[] = ['microphone', 'camera', 'screen_share', 'screen_share_audio'];
 
 export interface MediaRoom {
   /** The provider's name for the room: the meeting id. */
@@ -160,6 +172,16 @@ export function assertTokenRequest(actor: MediaActor, room: string, grants: Medi
     throw new MediaTokenRefusedError('A bot never gets a media token of its own, except a listen-only one for the note-taker.');
   }
   if (grants.listenOnly === true && grants.canPublish) throw new MediaTokenRefusedError('A listen-only token cannot publish.');
+  if (grants.sources !== undefined && grants.sources.some((src) => !MEDIA_SOURCES.includes(src))) throw new MediaTokenRefusedError('A token names an unknown source.');
+  if (actor.kind === 'guest') {
+    // a link guest (P17-04): hears and sees the room and sends a microphone and a camera, never a screen, never as a hidden listener
+    if (!/^guest:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(actor.id)) throw new MediaTokenRefusedError('A guest token needs a guest identity.');
+    if (grants.listenOnly === true || !grants.canPublish || !grants.canSubscribe) throw new MediaTokenRefusedError('A guest token is not listen-only: it sends a microphone and hears the room.');
+    if (!grants.sources || grants.sources.length === 0) throw new MediaTokenRefusedError('A guest token names what it may send.');
+    if (grants.sources.some((src) => src === 'screen_share' || src === 'screen_share_audio')) throw new MediaTokenRefusedError('A guest cannot share a screen.');
+  } else if (actor.id.startsWith('guest:')) {
+    throw new MediaTokenRefusedError('A guest identity is only for a guest token.');
+  }
 }
 
 /**
@@ -186,7 +208,7 @@ export interface FakeMediaProvider extends MediaProvider {
   /** Every room created and not closed, by name. */
   readonly rooms: Map<string, { maxParticipants: number | null }>;
   /** Every token minted, oldest first (claims only; the token string is derived from them). */
-  readonly tokens: Array<{ identity: string; room: string; grants: MediaGrants; expiresAt: Date; displayName: string; kind: 'person' | 'bot' }>;
+  readonly tokens: Array<{ identity: string; room: string; grants: MediaGrants; expiresAt: Date; displayName: string; kind: MediaActor['kind'] }>;
   readonly kicked: Array<{ room: string; identity: string }>;
   readonly closed: string[];
   /** The fake listeners that are open, by the identity they joined with (`notetaker:<room>`, `recorder:<room>`): one room may hold several, one per identity. */
@@ -200,7 +222,7 @@ export interface FakeMediaProvider extends MediaProvider {
   /** Pretend the server is not set up. */
   setConfigured(configured: boolean): void;
   /** Read the claims back out of a token made by this provider (null for anything else). */
-  decode(token: string): { identity: string; room: string; exp: number; canPublish: boolean; canSubscribe: boolean; listenOnly: boolean } | null;
+  decode(token: string): { identity: string; room: string; exp: number; canPublish: boolean; canSubscribe: boolean; listenOnly: boolean; sources: string[] | null } | null;
 }
 
 export function createFakeMediaProvider(options: { now?: () => Date } = {}): FakeMediaProvider {
@@ -245,7 +267,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
       need();
       assertTokenRequest(actor, room, grants);
       const expiresAt = new Date(now().getTime() + clampTokenTtl(opts?.ttlSeconds) * 1000);
-      tokens.push({ identity: actor.id, room, grants: { ...grants }, expiresAt, displayName: actor.displayName, kind: actor.kind });
+      tokens.push({ identity: actor.id, room, grants: { ...grants, ...(grants.sources ? { sources: [...grants.sources] } : {}) }, expiresAt, displayName: actor.displayName, kind: actor.kind });
       const token = encode({
         sub: actor.id,
         room,
@@ -253,6 +275,7 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
         pub: grants.canPublish,
         sub_: grants.canSubscribe,
         listen: grants.listenOnly === true,
+        src: grants.sources ? [...grants.sources] : null,
       });
       return { provider: 'fake', url: FAKE_MEDIA_URL, token, identity: actor.id, roomName: room, expiresAt };
     },
@@ -330,8 +353,8 @@ export function createFakeMediaProvider(options: { now?: () => Date } = {}): Fak
       if (parts.length !== 3 || parts[0] !== 'fake') return null;
       const expected = createHmac('sha256', FAKE_WEBHOOK_SECRET).update(parts[1]!).digest('base64url');
       if (parts[2] !== expected) return null;
-      const c = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as { sub: string; room: string; exp: number; pub: boolean; sub_: boolean; listen: boolean };
-      return { identity: c.sub, room: c.room, exp: c.exp, canPublish: c.pub, canSubscribe: c.sub_, listenOnly: c.listen };
+      const c = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as { sub: string; room: string; exp: number; pub: boolean; sub_: boolean; listen: boolean; src?: string[] | null };
+      return { identity: c.sub, room: c.room, exp: c.exp, canPublish: c.pub, canSubscribe: c.sub_, listenOnly: c.listen, sources: c.src ?? null };
     },
   };
 }

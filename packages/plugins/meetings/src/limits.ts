@@ -135,7 +135,15 @@ export async function roomCap(tx: PluginTx): Promise<number> {
 export async function assertRoomHasSpace(tx: PluginTx, meetingId: string): Promise<void> {
   // Joins to one room go one after the other until they commit: without this, ten people who join at the same moment all count the same few and all get in past the cap.
   await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`meetings.join:${meetingId}`]);
-  const people = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.meeting_participants WHERE meeting_id = $1::uuid AND left_at IS NULL', [meetingId])).rows[0]?.n ?? 0;
+  // the people in the call and the link guests let in (P17-04): a guest takes a place like a person
+  const people =
+    (
+      await tx.query<{ n: number }>(
+        `SELECT ((SELECT count(*) FROM app.meeting_participants WHERE meeting_id = $1::uuid AND left_at IS NULL)
+              + (SELECT count(*) FROM app.meeting_guests WHERE meeting_id = $1::uuid AND state = 'admitted'))::int AS n`,
+        [meetingId],
+      )
+    ).rows[0]?.n ?? 0;
   const cap = await roomCap(tx);
   if (people >= cap) throw conflict(`This voice room is full (${cap} people)`);
 }

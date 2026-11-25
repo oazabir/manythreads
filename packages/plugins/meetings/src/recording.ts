@@ -308,7 +308,11 @@ export async function loadPresent(tx: PluginTx, meetingId: string): Promise<Pres
       ORDER BY p.joined_at, p.actor_id`,
     [meetingId],
   );
-  return res.rows.map((r) => ({ actorId: r.actor_id, name: r.display_name, stored: r.consent_record, yes: r.yes }));
+  const people = res.rows.map((r) => ({ actorId: r.actor_id, name: r.display_name, stored: r.consent_record, yes: r.yes }));
+  // A link guest let in (P17-04) is present and never says yes: a guest is never recorded, so while one is here nobody's audio is written ("Recording paused while a
+  // guest is here"). Their id is the media identity `guest:<id>`, which no recorder session ever has.
+  const guests = await tx.query<{ id: string; display_name: string }>("SELECT id::text, display_name FROM app.meeting_guests WHERE meeting_id = $1::uuid AND state = 'admitted' ORDER BY decided_at, id", [meetingId]);
+  return [...people, ...guests.rows.map((g) => ({ actorId: `guest:${g.id}`, name: `${g.display_name} (guest)`, stored: 'no' as const, yes: false }))];
 }
 
 /**

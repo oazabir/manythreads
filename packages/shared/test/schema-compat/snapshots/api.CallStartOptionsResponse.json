@@ -147,11 +147,13 @@
       "type": "object",
       "properties": {
         "available": {
-          "type": "boolean",
-          "const": false
+          "type": "boolean"
         },
         "reason": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "waiting",
+        "admitted",
+        "denied",
+        "removed",
+        "left",
+        "expired",
+        "ended"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "audio",
+        "video"
+      ]
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "people": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "identity",
+          "displayName"
+        ]
+      }
+    }
+  },
+  "required": [
+    "state",
+    "title",
+    "kind",
+    "displayName"
+  ]
+}

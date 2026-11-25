@@ -69,6 +69,33 @@ describe('tokens', () => {
     const listen = await p.token(bot, 'r', { canPublish: false, canSubscribe: true, listenOnly: true });
     expect(claimsOf(listen.token)['video']).toMatchObject({ canPublish: false, canSubscribe: true, hidden: true, canPublishData: false });
   });
+  it('a link guest (P17-04) gets one room, microphone and camera only, no data, no renaming, ten minutes at most; a person token names no sources', async () => {
+    const guest = { id: 'guest:00000000-0000-7000-8000-0000000d0042', kind: 'guest' as const, displayName: 'Ana (guest)' };
+    const t = await p.token(guest, 'room-9', { canPublish: true, canSubscribe: true, sources: ['microphone', 'camera'] }, { ttlSeconds: 99_999 });
+    const claims = claimsOf(t.token);
+    expect(claims).toMatchObject({ sub: guest.id, name: 'Ana (guest)' });
+    expect(Number(claims['exp']) - nowSec).toBe(600);
+    expect(claims['video']).toEqual({
+      room: 'room-9',
+      roomJoin: true,
+      canPublish: true,
+      canPublishData: false,
+      canSubscribe: true,
+      hidden: false,
+      canPublishSources: ['microphone', 'camera'],
+      canUpdateOwnMetadata: false,
+    });
+    const own = claimsOf((await p.token(person, 'room-9', { canPublish: true, canSubscribe: true })).token)['video'] as Record<string, unknown>;
+    expect(own).not.toHaveProperty('canPublishSources');
+    // the refusals of assertTokenRequest, whichever provider asks
+    await expect(p.token(guest, 'r', { canPublish: true, canSubscribe: true })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+    await expect(p.token(guest, 'r', { canPublish: true, canSubscribe: true, sources: [] })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+    await expect(p.token(guest, 'r', { canPublish: true, canSubscribe: true, sources: ['microphone', 'screen_share'] })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+    await expect(p.token(guest, 'r', { canPublish: false, canSubscribe: true, listenOnly: true, sources: ['microphone'] })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+    await expect(p.token(guest, 'r', { canPublish: false, canSubscribe: true, sources: ['microphone'] })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+    await expect(p.token({ ...guest, id: person.id }, 'r', { canPublish: true, canSubscribe: true, sources: ['microphone'] })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+    await expect(p.token({ ...person, id: guest.id }, 'r', { canPublish: true, canSubscribe: true })).rejects.toBeInstanceOf(MediaTokenRefusedError);
+  });
 });
 
 describe('the server API', () => {

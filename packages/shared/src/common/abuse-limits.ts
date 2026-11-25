@@ -127,6 +127,19 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/meetings/:meetingId/token', 60, 'person'),
   r('POST', '/api/scheduled-meetings/:scheduledMeetingId/join', 60, 'person'),
   r('POST', '/api/meetings/media-webhook', 120, 'address', 'media server signature: a call without a valid signature answers 401 and changes nothing'),
+  // Guest links (P17-04): someone outside the workspace opens a link (its secret is 32 random bytes, kept as a hash), knocks, and is given a credential cookie for
+  // that one call; nobody is signed in, so the address is the counter. A member makes links and lets guests in.
+  r('POST', '/api/guest-links/peek', 30, 'address', 'guest link: 20 refused links per address in 15 minutes lock the address for 15 minutes'),
+  r('POST', '/api/guest-links/knock', 10, 'address', 'guest link: the same lock; also 20 knocks a minute per link, 10 waiting per call and 3 from one address'),
+  r('GET', '/api/guest/session', 120, 'address', 'guest cookie: 256 random bits, one call; the same lock counts a refused cookie'),
+  r('POST', '/api/guest/token', 30, 'address', 'guest cookie: the same lock; a token only while let in'),
+  r('POST', '/api/guest/leave', 60, 'address', 'guest cookie: the same lock'),
+  r('POST', '/api/guest/heartbeat', 60, 'address', 'guest cookie: the same lock'),
+  r('POST', '/api/meetings/:meetingId/guest-links', 10, 'person'),
+  r('DELETE', '/api/meetings/:meetingId/guest-links', 10, 'person'),
+  r('POST', '/api/meetings/:meetingId/guests/:guestId/admit', 60, 'person'),
+  r('POST', '/api/meetings/:meetingId/guests/:guestId/deny', 60, 'person'),
+  r('POST', '/api/meetings/:meetingId/guests/:guestId/remove', 60, 'person'),
   // A person answering a bot's screen (P9-04): one history line the bot reads later; the screen's own checks refuse anything the part did not declare.
   r('POST', '/api/channels/:channelId/surfaces/:surfaceId/events', 60, 'person'),
   // A part of a screen reading its bound data as the person looking (P9-06): one read tool call as the viewer, on a clock of at least 10 s per part.
@@ -161,6 +174,8 @@ export function abuseLimit(method: AbuseRoute['method'], path: string): { limit:
 
 /** Failures of a secret a client address may make before the temporary lock, and for how long (mailed links, setup and invitation tokens, the test sign-in). */
 export const TOKEN_FAILURE_LOCK = { max: 10, windowMs: 15 * MIN, lockMs: 15 * MIN } as const;
+/** Guest links and the guest cookie (P17-04): refused secrets per client address before a 15-minute lock. */
+export const GUEST_FAILURE_LOCK = { max: 20, windowMs: 15 * MIN, lockMs: 15 * MIN } as const;
 /** Password sign-in: failures per email + address, and per email from any address (tripped later, so one stranger cannot lock out an owner cheaply). */
 export const PASSWORD_ADDRESS_LOCK = { max: 5, windowMs: 15 * MIN, lockMs: 15 * MIN } as const;
 export const PASSWORD_ACCOUNT_LOCK = { max: 25, windowMs: 15 * MIN, lockMs: 15 * MIN } as const;

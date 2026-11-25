@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { usePeople } from '../channels/hooks';
+import { useSession } from '../app/session';
 import { Avatar } from '../components/ui';
 import { useDismiss } from '../shell/useDismiss';
 import { useNarrow } from '../shell/useNarrow';
@@ -9,11 +10,12 @@ import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenO
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
 import { EndRoomConfirm } from './EndRoomConfirm';
-import { CameraIcon, CaptionsIcon, ChatIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
+import { CameraIcon, CaptionsIcon, ChatIcon, CloseIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
 import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, notetakerBadge, rosterOf, visibleCaptions } from './model';
 import { NotetakerButton, NotetakerMenu } from './NotetakerPicker';
 import { RecordConsentPrompt, RecordingChip, RecordingToggle } from './RecordingToggle';
 import { callController, useCall } from './store';
+import { lobbyStore, useLobby } from './guestLinks';
 
 /*
  * The docked call bar (PLAN P15-04, P15-05): at the bottom of the centre column while a person is in a voice room; at 390 px a sheet that rises from the bottom
@@ -231,8 +233,50 @@ function ShareAskStatus({ call, sharing }: { call: CallState; sharing: boolean }
   );
 }
 
+/**
+ * The waiting room (P17-04): "Ana is waiting · Let in · Deny" for one guest, "3 waiting" opening the list for more. Only people in the call see it; whoever
+ * answers first wins.
+ */
+function LobbyRow({ meetingId }: { meetingId: string }) {
+  const lobby = useLobby(meetingId);
+  const [open, setOpen] = useState(false);
+  const l = lobbyStore();
+  const waiting = lobby.waiting;
+  // the row is there while someone waits; an answer's problem shows beside the list and goes with it
+  if (waiting.length === 0) return null;
+  const one = waiting.length === 1 ? waiting[0]! : null;
+  return (
+    <div className="call-suggest call-lobby" role="status" aria-live="polite" data-testid="call-lobby">
+      {one ? (
+        <>
+          <span className="call-suggest-text" data-testid="call-lobby-name">{`${one.displayName} is waiting`}</span>
+          <button type="button" className="btn primary s" onClick={() => void l.answer(one.id, 'admit')} data-testid="call-lobby-admit">Let in</button>
+          <button type="button" className="btn s" onClick={() => void l.answer(one.id, 'deny')} data-testid="call-lobby-deny">Deny</button>
+        </>
+      ) : waiting.length > 1 ? (
+        <>
+          <button type="button" className="btn s" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="call-lobby-count">{`${waiting.length} waiting`}</button>
+          {open ? (
+            <ul className="call-lobby-list" data-testid="call-lobby-list">
+              {waiting.map((w) => (
+                <li key={w.id} className="call-lobby-item">
+                  <span className="call-suggest-text">{w.displayName}</span>
+                  <button type="button" className="btn primary s" onClick={() => void l.answer(w.id, 'admit')} data-testid="call-lobby-admit">Let in</button>
+                  <button type="button" className="btn s" onClick={() => void l.answer(w.id, 'deny')} data-testid="call-lobby-deny">Deny</button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+      {lobby.error ? <span className="call-suggest-text" role="alert" data-testid="call-lobby-error">{lobby.error}</span> : null}
+    </div>
+  );
+}
+
 export function CallDock() {
   const call = useCall();
+  const session = useSession();
   const people = usePeople();
   const narrow = useNarrow();
   const [menu, setMenu] = useState<'settings' | 'notetaker' | null>(null);
@@ -249,6 +293,7 @@ export function CallDock() {
   if (!inRoom || !call.meeting) return null;
 
   const c = callController();
+  const workspaceGuest = session.role === 'guest';
   const roster = rosterOf(call.present, call.speaking, call.myActorId);
   const me = call.present.find((p) => p.actorId === call.myActorId);
   const notetaker = call.notetakers?.current ?? null;
@@ -286,9 +331,12 @@ export function CallDock() {
           <button type="button" className="btn s" onClick={() => c.dismissAudioOnly()} data-testid="call-audio-suggest-no">Not now</button>
         </div>
       ) : null}
+      {/* the waiting room first: on a phone it is the first thing in the call sheet */}
+      {/* only people who may let a guest in see who knocks (a workspace guest in the call does not, the server's rule) */}
+      {(call.phase === 'connected' || call.phase === 'reconnecting') && !workspaceGuest ? <LobbyRow meetingId={call.meeting.id} /> : null}
       {call.phase === 'connected' ? <ShareAskPrompt call={call} /> : null}
       {call.phase === 'connected' ? <ShareAskStatus call={call} sharing={sharerName !== null} /> : null}
-      {call.phase === 'connected' ? <CallStage call={call} /> : null}
+      {call.phase === 'connected' ? <CallStage call={call} media={c} /> : null}
       <div className="call-row">
         <div className="call-id">
           <span className={`call-live ${lost ? 'off' : ''}`} aria-hidden="true" />
@@ -301,6 +349,24 @@ export function CallDock() {
               <Avatar name={r.name} personId={r.personId} />
               <span className="call-face-name">{r.me ? 'You' : r.name}</span>
               {r.speaking ? <span className="sr-only">speaking</span> : null}
+            </li>
+          ))}
+          {call.guests.map((g) => (
+            <li key={g.id} className="call-face guest" data-testid="call-guest-face" title={`${g.displayName} (guest)`}>
+              <Avatar name={g.displayName} />
+              <span className="call-face-name">{`${g.displayName} (guest)`}</span>
+              {workspaceGuest ? null : (
+              <button
+                type="button"
+                className="icon-btn call-guest-remove"
+                aria-label={`Remove ${g.displayName} (guest) from the call`}
+                title="Remove from the call"
+                onClick={() => void lobbyStore().remove(g.id)}
+                data-testid="call-guest-remove"
+              >
+                <CloseIcon />
+              </button>
+              )}
             </li>
           ))}
           {notetaker ? (

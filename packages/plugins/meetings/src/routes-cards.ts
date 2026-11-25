@@ -28,6 +28,7 @@ interface RightsRow extends Record<string, unknown> {
   is_dm: boolean;
   can_notes: boolean;
   starter_name: string | null;
+  may_link: boolean;
 }
 
 async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string[]): Promise<CallCard[]> {
@@ -51,7 +52,9 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
                 coalesce(m.channel_id IS NOT NULL AND app.lookup_channel_can(m.channel_id, 'post'), false) AS can_post,
                 coalesce((SELECT c.kind = 'dm' FROM app.channels c WHERE c.id = m.channel_id), false) AS is_dm,
                 coalesce(app.meetings_can_read_notes(m.id), false) AS can_notes,
-                app.meetings_organizer_name(m.started_by) AS starter_name
+                app.meetings_organizer_name(m.started_by) AS starter_name,
+                (coalesce(app.lookup_workspace_role(), 'guest') <> 'guest'
+                 AND coalesce((SELECT s.guest_links_allowed FROM app.meeting_settings s WHERE s.workspace_id = m.workspace_id), true)) AS may_link
            FROM app.meetings m WHERE m.id = ANY ($1::uuid[])`,
         [found],
       )
@@ -68,6 +71,15 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
       [found, CALL_CARD_FACES],
     )
   ).rows;
+  // link guests let in (P17-04): a reader sees how many, never who
+  const guestCounts = new Map(
+    (
+      await tx.query<{ meeting_id: string; n: number }>(
+        "SELECT meeting_id::text, count(*)::int AS n FROM app.meeting_guests WHERE meeting_id = ANY ($1::uuid[]) AND state = 'admitted' GROUP BY meeting_id",
+        [found],
+      )
+    ).rows.map((r) => [r.meeting_id, r.n] as const),
+  );
   const notesFor = found.filter((id) => rights.get(id)?.can_notes === true);
   const teamIds = [...new Set(rows.map((r) => r.team_id).filter((t): t is string => t !== null))];
   const botIds = [...new Set(rows.map((r) => r.notetaker_bot_id).filter((b): b is string => b !== null))];
@@ -120,6 +132,12 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
         canInvite: live && right?.can_post === true && right.is_dm !== true,
       },
       notesLink: names.written.has(m.id) ? (slug !== undefined ? `/t/${slug}/meetings/${m.id}` : `/meetings/${m.id}`) : null,
+      guests: {
+        on: live && m.allow_guests,
+        inCall: live ? (guestCounts.get(m.id) ?? 0) : 0,
+        canLink: live && m.allow_guests && right?.can_post === true && right.is_dm !== true && right.may_link === true,
+        canTurnOff: live && m.allow_guests && right?.can_end === true,
+      },
     });
   });
 }

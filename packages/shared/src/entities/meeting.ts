@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, BotId, ChannelId, FileId, MeetingId, MeetingRecordingId, MeetingShareId, MessageId, PersonId, TeamId, WorkspaceId } from '../ids.ts';
+import { ActorId, BotId, ChannelId, FileId, MeetingGuestId, MeetingId, MeetingRecordingId, MeetingShareId, MessageId, PersonId, TeamId, WorkspaceId } from '../ids.ts';
 import { Avatar } from './avatar.ts';
 
 // Voice rooms (PLAN P15-01, plugin `meetings`). A meeting is one voice room opened from a channel (a DM call uses the DM's channel). Enums match the SQL CHECKs in
@@ -72,6 +72,8 @@ export const Meeting = z.object({
   transcriptFileId: FileId.nullable(),
   /** The root message of the call's chat thread, in the room's channel; null when the thread could not be made. */
   threadRootId: MessageId.nullable(),
+  /** Guest links are on for this call (P17-04): people outside the workspace may knock with a link. Set when the call starts; turning links off clears it. */
+  allowGuests: z.boolean().default(false),
 });
 export type Meeting = z.infer<typeof Meeting>;
 
@@ -119,11 +121,37 @@ export const MeetingJoin = z.object({
 });
 export type MeetingJoin = z.infer<typeof MeetingJoin>;
 
+/**
+ * Where a link guest is (P17-04, `meeting_guests.state`): knocking, let in, turned away, taken out, gone, or never answered (a knock waits at most ten minutes, and a
+ * guest silent for a minute while waiting is counted as gone).
+ */
+export const MeetingGuestState = z.enum(['waiting', 'admitted', 'denied', 'removed', 'left', 'expired']);
+export type MeetingGuestState = z.infer<typeof MeetingGuestState>;
+
+/** The media identity of a link guest: `guest:` and the guest's id. Never an actor id, so the webhook can tell a guest from a person. */
+export const MEETING_GUEST_IDENTITY = /^guest:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The most characters of a link guest's name (they type it on the guest page). */
+export const MEETING_GUEST_NAME_MAX = 60;
+
+/**
+ * A link guest in a call as the people of the call see them: no account, no avatar, no handle. `identity` is what the media server knows them by (`guest:<id>`);
+ * `displayName` is the name they typed, and the room shows it as "<name> (guest)".
+ */
+export const MeetingGuest = z.object({
+  id: MeetingGuestId,
+  identity: z.string().regex(MEETING_GUEST_IDENTITY),
+  displayName: z.string().min(1).max(MEETING_GUEST_NAME_MAX),
+});
+export type MeetingGuest = z.infer<typeof MeetingGuest>;
+
 /** A room as the list and the room page show it: the meeting and the people in it now. */
 export const MeetingSummary = z.object({
   meeting: Meeting,
   /** Who is in the room right now (left_at null), oldest first. */
   present: z.array(MeetingParticipant),
+  /** The link guests let in and still there (P17-04), for the names on their tiles; empty for an older server. */
+  guests: z.array(MeetingGuest).default([]),
 });
 export type MeetingSummary = z.infer<typeof MeetingSummary>;
 
@@ -401,6 +429,13 @@ export const CallCard = z.object({
   }),
   /** The meeting page (`/t/<team>/meetings/<id>` or `/meetings/<id>`); null unless the caller may read the notes and they are written. */
   notesLink: z.string().nullable(),
+  /**
+   * Guest links (P17-04): whether they are on for this call, how many link guests are in it now (a reader sees "+1 guest", never a name), whether the caller may copy
+   * a link (a reader who may post, not a workspace guest) and whether they may turn links off (the starter, a lead, an admin). All off for an older server.
+   */
+  guests: z
+    .object({ on: z.boolean(), inCall: z.number().int().min(0), canLink: z.boolean(), canTurnOff: z.boolean() })
+    .default({ on: false, inCall: 0, canLink: false, canTurnOff: false }),
 });
 export type CallCard = z.infer<typeof CallCard>;
 

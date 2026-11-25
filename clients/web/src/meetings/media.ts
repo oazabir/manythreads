@@ -42,12 +42,15 @@ export type AudioOptions = {
 
 export const AUDIO_DEFAULTS: AudioOptions = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, inputId: null, outputId: null };
 
+/** What the adapter connects with: a member's join (identity: their actor id) or a link guest's (identity: `guest:<id>`, P17-04). */
+export type MediaJoin = Omit<MeetingJoin, 'identity'> & { identity: string };
+
 export interface MediaAdapter {
   /**
    * Connects to the room with the join token. The microphone stays closed until `setMic(true)`. With `receiveVideo: false` (audio only, P17-01) the connection
    * takes only sound from the start: no video is subscribed, not even for a moment while joining.
    */
-  connect(join: MeetingJoin, options: AudioOptions, events: AdapterEvents, video?: { receiveVideo: boolean }): Promise<void>;
+  connect(join: MediaJoin, options: AudioOptions, events: AdapterEvents, video?: { receiveVideo: boolean }): Promise<void>;
   /** Opens (true) or closes (false) the microphone. Opening may ask the person for permission and rejects if it is refused. */
   setMic(on: boolean): Promise<void>;
   /** Deafened: nothing of the room is played to the person. */

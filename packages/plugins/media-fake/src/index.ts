@@ -61,7 +61,7 @@ export default definePlugin({
         const { meetingId } = FakeMediaStateQuery.parse(req.query);
         return json(
           FakeMediaStateResponse.parse({
-            tokens: fake.tokens.filter((t) => t.room === meetingId).map((t) => ({ identity: t.identity, kind: t.kind, canPublish: t.grants.canPublish, canSubscribe: t.grants.canSubscribe, listenOnly: t.grants.listenOnly === true })),
+            tokens: fake.tokens.filter((t) => t.room === meetingId).map((t) => ({ identity: t.identity, kind: t.kind, canPublish: t.grants.canPublish, canSubscribe: t.grants.canSubscribe, listenOnly: t.grants.listenOnly === true, sources: t.grants.sources ? [...t.grants.sources] : null })),
             published: fake.published().filter((p) => p.room === meetingId).map((p) => p.identity),
             listeners: fake.listenersIn(meetingId).map((l) => ({ identity: l.identity, subscriptions: l.subscriptions() })),
             kicked: fake.kicked.filter((k) => k.room === meetingId).map((k) => k.identity),

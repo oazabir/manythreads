@@ -2,6 +2,7 @@ import type { PluginContext, PluginLogger, PluginTx } from '@manythreads/sdk';
 import { MEETING_EMPTY_END_SECONDS, MEETING_PRESENCE_STALE_SECONDS } from '@manythreads/shared';
 import { z } from 'zod';
 import { AUTOEND_QUEUE, SWEEP_QUEUE, dropParticipants, endRoom } from './service.ts';
+import { sweepGuests } from './guests.ts';
 
 // Two jobs keep rooms honest. Both compare times in the database (`now()`), so one clock decides.
 //  * meetings.autoend  runs two minutes after the last person left and ends the room if it is still empty (somebody coming back clears `empty_since`, so it does nothing).
@@ -78,10 +79,15 @@ export function registerMeetingJobs(ctx: PluginContext): void {
       });
       // People who lost access: app.channel_audience needs the workspace in the transaction, so one short transaction per workspace with a live room.
       let kicked = 0;
+      let guests = 0;
       for (const workspaceId of first.workspaces) {
         kicked += await ctx.db.system((tx) => dropWithoutAccess(ctx, tx, job.log), { workspaceId });
+        // link guests (P17-04): a silent waiting page expires its knock, a silent guest in the call is counted as gone; the calls are told (needs the workspace)
+        guests += await ctx.db.system((tx) => sweepGuests(ctx, tx, workspaceId), { workspaceId });
       }
-      if (first.stale + first.ended + kicked > 0) job.log.info(`meetings: ${first.stale} silent person(s) dropped, ${kicked} without access dropped, ${first.ended} empty room(s) ended`);
+      if (first.stale + first.ended + kicked + guests > 0) {
+        job.log.info(`meetings: ${first.stale} silent person(s) dropped, ${kicked} without access dropped, ${guests} guest(s) gone, ${first.ended} empty room(s) ended`);
+      }
     },
     { cron: '* * * * *', maxAttempts: 1, detached: true },
   );

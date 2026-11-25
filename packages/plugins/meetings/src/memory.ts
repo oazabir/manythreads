@@ -97,15 +97,17 @@ export async function shouldFileAutomatically(ctx: PluginContext, tx: PluginTx, 
   return loadAutoMemory(ctx, tx, m.team_id);
 }
 
-/** People in the room who are neither on the team nor workspace owners or admins. */
-async function guestsIn(tx: PluginTx, m: Pick<MeetingRow, 'id' | 'team_id' | 'workspace_id'>): Promise<string[]> {
+/** People in the room who are neither on the team nor workspace owners or admins, and every link guest who was let in (P17-04). */
+export async function guestsIn(tx: PluginTx, m: Pick<MeetingRow, 'id' | 'team_id' | 'workspace_id'>): Promise<string[]> {
   if (m.team_id === null) return [];
   return (
     await tx.query<{ display_name: string }>(
       `SELECT p.display_name FROM app.meeting_participants p
         WHERE p.meeting_id = $1::uuid
           AND NOT EXISTS (SELECT 1 FROM app.team_members tm WHERE tm.team_id = $2::uuid AND tm.actor_id = p.actor_id)
-          AND NOT EXISTS (SELECT 1 FROM app.workspace_members wm WHERE wm.workspace_id = $3::uuid AND wm.person_id = p.person_id AND wm.role IN ('owner', 'admin'))`,
+          AND NOT EXISTS (SELECT 1 FROM app.workspace_members wm WHERE wm.workspace_id = $3::uuid AND wm.person_id = p.person_id AND wm.role IN ('owner', 'admin'))
+       UNION ALL
+       SELECT g.display_name || ' (guest)' FROM app.meeting_guests g WHERE g.meeting_id = $1::uuid AND g.joined_at IS NOT NULL`,
       [m.id, m.team_id, m.workspace_id],
     )
   ).rows.map((r) => r.display_name);

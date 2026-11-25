@@ -3,10 +3,12 @@ import { abuseLimit, mediaWebhookRoute } from '@manythreads/shared';
 import { z } from 'zod';
 import { bestEffort, currentMedia } from './media.ts';
 import { dropParticipants } from './service.ts';
+import { guestNotice } from './guests.ts';
 
 // The media server's signed notices. The route is public (the media server has no session): the signature is the credential, checked by the provider, and a body
 // without a valid one changes nothing. What a notice may do is narrow on purpose:
 //   participant_left / room_finished  mark the people as gone (the database wanted that state anyway)
+//   guest:<uuid>                      a link guest (P17-04): one that joins without being let in is dropped, one that leaves is marked gone.
 //   participant_joined                never adds anyone. A person who is not in the room's list (kicked, or removed from the channel) is dropped again, so an
 //                                     old token cannot be used to come back before it expires.
 
@@ -44,6 +46,11 @@ export function registerMediaWebhook(ctx: PluginContext): void {
       await ctx.db.system(async (tx) => {
         const room = (await tx.query<{ state: string }>('SELECT state FROM app.meetings WHERE id = $1::uuid', [notice.room])).rows[0];
         if (!room) return;
+        // a link guest (P17-04): never an actor; kicked if it joins without being let in, marked gone when it leaves
+        if (notice.identity && notice.identity.startsWith('guest:')) {
+          if (notice.kind === 'participant_joined' || notice.kind === 'participant_left') await guestNotice(ctx, tx, media, { kind: notice.kind, room: notice.room, identity: notice.identity });
+          return;
+        }
         if (notice.kind === 'participant_left' && notice.identity && Uuid.safeParse(notice.identity).success && room.state === 'live') {
           await dropParticipants(ctx, tx, { where: 'p.meeting_id = $1::uuid AND p.actor_id = $2::uuid', params: [notice.room, notice.identity] }, 'dropped');
         } else if (notice.kind === 'room_finished' && room.state === 'live') {

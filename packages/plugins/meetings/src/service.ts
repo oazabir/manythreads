@@ -7,6 +7,7 @@ import {
 } from '@manythreads/shared';
 import { announceRoom } from './live.ts';
 import { bestEffort, currentMedia } from './media.ts';
+import { emitGuestsEnded, guestsBeforeEnd } from './guests.ts';
 
 // What happens to a room and its people, in one place: the routes, the jobs, the media server's notices and the membership events all end up here, so a person
 // is marked as gone, the event is written and the empty-room clock is set the same way whoever caused it.
@@ -110,6 +111,8 @@ export async function endRoom(
     'SELECT p.meeting_id, p.actor_id, p.workspace_id, p.team_id, p.channel_id FROM app.meeting_participants p WHERE p.meeting_id = $1::uuid AND p.left_at IS NULL',
     [meetingId],
   );
+  // the link guests and links the end closes (P17-04): the database's trigger closes them with the call, the events are written here
+  const closing = await guestsBeforeEnd(tx, meetingId);
   const done = (await tx.query<{ ended: boolean }>('SELECT app.meetings_end($1::uuid, $2) AS ended', [meetingId, reason])).rows[0]?.ended === true;
   if (!done) return false;
   const m = (
@@ -122,6 +125,7 @@ export async function endRoom(
   ).rows[0];
   if (!m) return true;
   await emitLeft(ctx, tx, present.rows, 'ended');
+  await emitGuestsEnded(ctx, tx, { id: meetingId, workspace_id: m.workspace_id, team_id: m.team_id, channel_id: m.channel_id }, closing);
   await ctx.audit.emit(
     tx,
     MeetingsMeetingEndedEvent.parse({

@@ -1,7 +1,6 @@
 import { Room, RoomEvent, Track, type Participant, type RemoteTrack, type RemoteTrackPublication } from 'livekit-client';
-import type { MeetingJoin } from '@manythreads/shared';
 import type { ConnectionQuality } from './layout';
-import type { AdapterEvents, AudioOptions, DeviceInfo, DeviceLists, MediaAdapter, VideoTile } from './media';
+import type { AdapterEvents, AudioOptions, DeviceInfo, DeviceLists, MediaAdapter, MediaJoin, VideoTile } from './media';
 
 /*
  * The real media adapter: livekit-client (pinned in package.json), loaded only when a person joins a room (media.ts imports this file lazily, so the library is a
@@ -82,7 +81,7 @@ export function createLivekitAdapter(): MediaAdapter {
   };
 
   return {
-    async connect(join: MeetingJoin, audio: AudioOptions, ev: AdapterEvents, video?: { receiveVideo: boolean }): Promise<void> {
+    async connect(join: MediaJoin, audio: AudioOptions, ev: AdapterEvents, video?: { receiveVideo: boolean }): Promise<void> {
       receiveVideo = video?.receiveVideo ?? true;
       autoSubscribe = receiveVideo;
       options = audio;

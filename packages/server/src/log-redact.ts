@@ -18,6 +18,13 @@ const WEBHOOK_SECRET_SEGMENT = /^(\/hooks\/(?!apps\/|bridges\/)[^/?#]*\/)[^/?#]*
  * A `token=` value in the query string (a client that puts a credential there lands it in the access log) and any integration token (`mtat_...`) wherever it sits. One pass each, no
  * nested quantifier. `hub.verify_token=` is WhatsApp's check of a chat bridge address (`GET /hooks/bridges/whatsapp/<account>`): the verify word the admin chose is in that query.
  */
+/**
+ * A guest link's secret (P17-04): the page's address `/join/g/<secret>`, and, defensively, an API address of the form `/api/guest-links/<secret>` (the API takes the
+ * secret in a POST body; a client holding an older address, or a typo, must not land one in a log). The route names `peek` and `knock` are kept.
+ */
+const GUEST_PAGE_SECRET = /^(\/join\/g\/)[^/?#]+/;
+const GUEST_API_SECRET = /^(\/api\/guest-links\/)(?!(?:peek|knock)(?:[/?#]|$))[^/?#]+/;
+
 const QUERY_TOKEN = /([?&](?:hub\.verify_)?token=)[^&#]*/gi;
 const API_TOKEN_TEXT = /mtat_[A-Za-z0-9_-]+/g;
 
@@ -29,6 +36,8 @@ export const redactUrl = (url: string): string =>
   url
     .replace(APP_TOKEN_SEGMENT, '~mta.[redacted]')
     .replace(WEBHOOK_SECRET_SEGMENT, '$1[redacted]')
+    .replace(GUEST_PAGE_SECRET, '$1[redacted]')
+    .replace(GUEST_API_SECRET, '$1[redacted]')
     .replace(QUERY_TOKEN, '$1[redacted]')
     .replace(API_TOKEN_TEXT, '[redacted]')
     // Defensive: the MCP gateway no longer puts a run token in its path, but a client holding an older URL (or a typo that pastes a

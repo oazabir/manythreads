@@ -8,6 +8,9 @@ import { PeopleChecklist } from './PeopleChecklist';
 import { tooManyLine, type ChecklistPerson } from './people';
 import { CONSENT_LINE, DM_LINE, FIND_PAUSE_MS, START_TITLE_MAX, buildStartBody, searchFailure, checklistPeople, dialogFailure, isNotetakerRefusal, notetakerChoice } from './startCall';
 import { callController, useCall } from './store';
+import { copyGuestLink, keepGuestLink } from './guestLinks';
+import { copyText } from '../channels/messageActions';
+import { sayToast } from '../kernel/toast';
 
 /*
  * Starting a call (P15-25) and asking more people to one (P15-27). Both read `GET /api/channels/:id/calls/options`: the people who can read the channel, the caller
@@ -64,7 +67,8 @@ export function useCallPeople(channelId: string, o: { withCaller: boolean }) {
 }
 
 /**
- * The start dialog: a title (filled in with the server's default), the people to ask, the guest link (not built yet), the note-taker (on by default when one may
+ * The start dialog: a title (filled in with the server's default), the people to ask, the guest-link switch (P17-04: off by default; on, the starter's link is copied
+ * once the call opens), the note-taker (on by default when one may
  * come) and Start call. A refusal stays in the dialog with the server's reason; one about the note-taker turns its switch off. In a direct message nobody is listed:
  * everyone in it is rung. `onClose` runs on Cancel and Esc; `onStarted` (else `onClose`) once a call has been started or joined, so the opener can put the
  * keyboard on the call bar. At most 100 people can be asked; Start call says so instead of sending more.
@@ -87,6 +91,7 @@ export function StartCallDialog({ channelId, onClose, onStarted, kind = 'audio' 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
+  const [guestsOn, setGuestsOn] = useState(false);
   const noteId = useId();
   const guestId = useId();
 
@@ -116,6 +121,7 @@ export function StartCallDialog({ channelId, onClose, onStarted, kind = 'audio' 
   const bots = options?.notetaker.bots ?? [];
   const bot = bots.find((b) => b.botId === (botId ?? choice.defaultBotId)) ?? null;
   const dm = options?.directMessage === true;
+  const guestsOffered = options?.guestLinks.available === true;
   const lockedIds = rows.filter((p) => p.locked).map((p) => p.personId);
   const asking = dm ? 0 : picked.filter((id) => !lockedIds.includes(id)).length;
   const tooMany = asking > CALL_INVITES_MAX;
@@ -123,9 +129,15 @@ export function StartCallDialog({ channelId, onClose, onStarted, kind = 'audio' 
   const start = async (): Promise<void> => {
     setBusy(true);
     setError(null);
-    const body = buildStartBody({ title, picked, lockedIds, dm, notetakerBotId: on ? (bot?.botId ?? null) : null, kind });
+    const body = buildStartBody({ title, picked, lockedIds, dm, notetakerBotId: on ? (bot?.botId ?? null) : null, kind, allowGuests: guestsOffered && guestsOn });
     try {
       const res = await callController().startFromDialog(channelId, body);
+      if (res.guestLink) {
+        // the starter's own link, shown this once: kept in this tab for "Copy guest link" and copied now
+        keepGuestLink(res.meeting.id, res.guestLink);
+        const copied = await copyText(res.guestLink.url);
+        sayToast(copied ? 'Guest link copied' : `Copy this guest link: ${res.guestLink.url}`, { testId: 'guest-link-toast', ...(copied ? {} : { ms: 12_000 }) });
+      }
       if (!res.created) setJoined(true);
       else started();
     } catch (e) {
@@ -227,10 +239,12 @@ export function StartCallDialog({ channelId, onClose, onStarted, kind = 'audio' 
           {options ? (
             <>
               <div className="scd-switch">
-                <Toggle checked={false} onChange={() => undefined} label="Guest link" locked describedBy={guestId} testId="call-start-guests" />
+                <Toggle checked={guestsOffered && guestsOn} onChange={setGuestsOn} label="Let people outside the workspace join with a link" locked={!guestsOffered} describedBy={guestId} testId="call-start-guests" />
                 <div className="scd-switch-text">
-                  <span className="scd-switch-name">Guest link</span>
-                  <span className="dlg-hint" id={guestId}>{options.guestLinks.reason}</span>
+                  <span className="scd-switch-name">Let people outside the workspace join with a link</span>
+                  <span className="dlg-hint" id={guestId}>
+                    {guestsOffered ? 'Someone in the call lets each guest in. A guest hears and sees the call, and nothing else.' : (options.guestLinks.reason ?? 'Guest links cannot be used here.')}
+                  </span>
                 </div>
               </div>
               <div className="scd-switch">
@@ -261,12 +275,17 @@ export function StartCallDialog({ channelId, onClose, onStarted, kind = 'audio' 
  * "Invite more" on a live call's card (P15-27): the people of the channel to tick (the caller left out: they are in it), and Invite. The card asks for itself
  * again so the invited names show; people asked before are left out by the server.
  */
-export function InviteMoreDialog({ meetingId, channelId, onClose }: { meetingId: string; channelId: string; onClose: () => void }) {
+export function InviteMoreDialog({ meetingId, channelId, onClose, guestLink = false }: { meetingId: string; channelId: string; onClose: () => void; guestLink?: boolean }) {
   const { loaded, find, setFind, rows, server, searching, searchFailed } = useCallPeople(channelId, { withCaller: false });
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [none, setNone] = useState(false);
+  const [linkSaid, setLinkSaid] = useState<string | null>(null);
+  const copyLink = async (): Promise<void> => {
+    const said = await copyGuestLink(meetingId);
+    setLinkSaid(said.text);
+  };
 
   const invite = async (): Promise<void> => {
     setBusy(true);
@@ -330,6 +349,14 @@ export function InviteMoreDialog({ meetingId, channelId, onClose }: { meetingId:
           />
         ) : null}
         <p className="dlg-hint">They get a notification. Anyone who can read the channel may join, invited or not.</p>
+        {guestLink ? (
+          // P17-04: someone outside the workspace joins with this person's own link, after someone in the call lets them in
+          <div className="scd-guestrow" data-testid="call-invite-guest">
+            <span className="scd-switch-name">Guest link</span>
+            <button type="button" className="btn s" onClick={() => void copyLink()} data-testid="call-invite-guest-copy">Copy</button>
+            {linkSaid ? <span className="dlg-hint" role="status" data-testid="call-invite-guest-said">{linkSaid}</span> : null}
+          </div>
+        ) : null}
         {none ? <p className="dlg-hint" role="status" data-testid="call-invite-none">Everyone you picked was already invited.</p> : null}
         {error ? <p className="dlg-error" role="alert" data-testid="call-invite-error">{error}</p> : null}
       </div>

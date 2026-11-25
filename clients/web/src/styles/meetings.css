@@ -1314,3 +1314,48 @@
     opacity: 1;
   }
 }
+
+/* ---- guest links and the waiting room (P17-04) ----
+   the waiting room sits in the flow of the call bar (first in the phone's call sheet), not over the stage like the other prompts */
+.call-suggest.call-lobby {
+  position: static;
+  margin: 0 0 8px;
+}
+
+.call-lobby-list {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call-lobby-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.call-face.guest .call-face-name {
+  color: var(--mute);
+}
+
+.call-guest-remove {
+  width: 22px;
+  height: 22px;
+}
+
+.room-card-guestlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scd-guestrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

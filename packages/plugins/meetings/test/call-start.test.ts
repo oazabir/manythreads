@@ -170,8 +170,8 @@ describe('starting a call with people and a note-taker', () => {
     } finally {
       expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { notetakerAllowed: true })).status).toBe(200);
     }
-    // guest links cannot be asked for yet
-    expect((await start(nadia, priv, { allowGuests: true })).status).toBe(400);
+    // guest links are a boolean (P17-04, test/guest-links.test.ts has the rest)
+    expect((await start(nadia, priv, { allowGuests: 'yes' })).status).toBe(400);
     // and the same start without the wrong parts opens
     const ok = await start(nadia, priv, { inviteeIds: [rafi.personId] });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
@@ -237,12 +237,12 @@ describe('POST /api/meetings/:meetingId/invites', () => {
 });
 
 describe('GET /api/channels/:channelId/calls/options', () => {
-  it('offers a member the readers (the caller first), the note-taker, the default title, and no guest links', async () => {
+  it('offers a member the readers (the caller first), the note-taker, the default title, and guest links', async () => {
     const priv = await channel(true, [nadia, rafi, priya]);
     const res = await options(nadia, priv);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     const o = CallStartOptionsResponse.parse(res.body);
-    expect(o).toMatchObject({ canStart: true, reason: null, directMessage: false, live: null, guestLinks: { available: false } });
+    expect(o).toMatchObject({ canStart: true, reason: null, directMessage: false, live: null, guestLinks: { available: true, reason: null } });
     expect(o.defaultTitle).toMatch(/^Call · #cs-\d+ · \d\d:\d\d$/);
     expect(o.people[0]).toEqual({ personId: nadia.personId, displayName: 'Nadia', you: true });
     expect(sorted(o.people.map((p) => p.personId))).toEqual(sorted([nadia.personId, rafi.personId, priya.personId]));

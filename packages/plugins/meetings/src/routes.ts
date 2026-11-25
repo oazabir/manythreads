@@ -40,6 +40,7 @@ import {
   mediaStatusRoute,
   renewMeetingTokenRoute,
   startMeetingRoute,
+  type GuestLinkMade,
   type MeetingJoin,
 } from '@manythreads/shared';
 import { mediaFailure, mediaStatus, requireMedia, bestEffort } from './media.ts';
@@ -49,6 +50,7 @@ import { MEETING_SERVICE_SEATS, assertRoomHasSpace, roomCap } from './limits.ts'
 import { emitJoined, endRoom, scheduleAutoEnd } from './service.ts';
 import { channelFacts, inviteToCall } from './invites.ts';
 import { addNotetaker } from './notetaker.ts';
+import { makeGuestLink } from './guests.ts';
 
 // The routes of voice rooms (docs/plugins/meetings.md). Every route but the media server's webhook runs as the caller, so the row-level security of the tables
 // decides who sees a room: whoever can read the channel. Starting needs the right to post there. Nothing here hands a media token to a bot.
@@ -249,6 +251,9 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
       const { channelId } = StartMeetingPathParams.parse(req.params);
       const body = StartMeetingRequest.parse(req.body ?? {});
       const caller = await callerPerson(tx);
+      // guest links on (P17-04): the starter's first link is made as the call opens, in the same transaction, so a refusal (a direct message, the workspace switch
+      // off, a workspace guest) undoes the whole start with its reason; joining a call that was already live makes no link
+      let guestLink: GuestLinkMade | null = null;
       const { m, created, join, invited } = await startRoom(ctx, tx, {
         channelId,
         title: body.title,
@@ -256,10 +261,17 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
         ...(body.kind ? { kind: body.kind } : {}),
         ...(body.inviteeIds ? { inviteeIds: body.inviteeIds } : {}),
         ...(body.notetakerBotId ? { notetakerBotId: body.notetakerBotId } : {}),
+        ...(body.allowGuests === true
+          ? {
+              onCreated: async (room: MeetingRow) => {
+                guestLink = await makeGuestLink(ctx, tx, room, caller, true);
+              },
+            }
+          : {}),
       });
-      // the note-taker may have been added: the answer shows the call as it is now
-      const fresh = created && body.notetakerBotId ? ((await loadMeeting(tx, m.id)) ?? m) : m;
-      return json(StartMeetingResponse.parse({ meeting: toMeeting(fresh), created, join, invited }), 200);
+      // the note-taker or the guest link may have changed the call: the answer shows it as it is now
+      const fresh = created && (body.notetakerBotId || guestLink) ? ((await loadMeeting(tx, m.id)) ?? m) : m;
+      return json(StartMeetingResponse.parse({ meeting: toMeeting(fresh), created, join, invited, guestLink }), 200);
     }),
   });
 

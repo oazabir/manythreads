@@ -124,6 +124,12 @@ export type MeetingShareId = z.infer<typeof MeetingShareId>;
 /** One person's request to share their screen while someone else shares, in a live call (P17-02). */
 export const MeetingShareRequestId = z.uuid().brand<'MeetingShareRequestId'>();
 export type MeetingShareRequestId = z.infer<typeof MeetingShareRequestId>;
+/** A guest link of a call (P17-04): someone outside the workspace joins one call with it. */
+export const MeetingGuestLinkId = z.uuid().brand<'MeetingGuestLinkId'>();
+export type MeetingGuestLinkId = z.infer<typeof MeetingGuestLinkId>;
+/** A link guest of a call (P17-04): no account and no actor; the media server knows them as `guest:<id>`. */
+export const MeetingGuestId = z.uuid().brand<'MeetingGuestId'>();
+export type MeetingGuestId = z.infer<typeof MeetingGuestId>;
 /** One person's audio file of a recorded meeting (P15-15). */
 export const MeetingRecordingId = z.uuid().brand<'MeetingRecordingId'>();
 export type MeetingRecordingId = z.infer<typeof MeetingRecordingId>;

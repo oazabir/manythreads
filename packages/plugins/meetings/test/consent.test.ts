@@ -248,11 +248,11 @@ describe('the caps: the workspace switch and the team TEAM.md, the lower wins', 
     expect(MeetingsSettings.parse((await setCap('off')).body)).toMatchObject({ transcribeCap: 'off' });
     expect(MeetingsSettings.parse((await w.call(nadia, 'GET', '/api/workspace/meetings-settings')).body)).toMatchObject({ transcribeCap: 'off', roomCap: 25, recordingCap: 'off', notetakerAllowed: true });
     // the new switches move one at a time and leave the others alone
-    expect(MeetingsSettings.parse((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 40 })).body)).toEqual({ transcribeCap: 'off', roomCap: 40, recordingCap: 'off', notetakerAllowed: true });
+    expect(MeetingsSettings.parse((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 40 })).body)).toEqual({ transcribeCap: 'off', roomCap: 40, recordingCap: 'off', notetakerAllowed: true, guestLinksAllowed: true });
     expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 1 })).status).toBe(400);
     expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { roomCap: 101 })).status).toBe(400);
     expect((await w.call(omar, 'PUT', '/api/workspace/meetings-settings', { recordingCap: 'on', notetakerAllowed: false })).status).toBe(200);
-    expect(MeetingsSettings.parse((await w.call(nadia, 'GET', '/api/workspace/meetings-settings')).body)).toEqual({ transcribeCap: 'off', roomCap: 40, recordingCap: 'on', notetakerAllowed: false });
+    expect(MeetingsSettings.parse((await w.call(nadia, 'GET', '/api/workspace/meetings-settings')).body)).toEqual({ transcribeCap: 'off', roomCap: 40, recordingCap: 'on', notetakerAllowed: false, guestLinksAllowed: true });
     await w.system(async (tx) => void (await tx.query('DELETE FROM app.meeting_settings')));
     await setCap('on_device');
   });

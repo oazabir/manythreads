@@ -31,6 +31,15 @@ export const MERMAID_CSP =
   "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 const PERMISSIONS_POLICY = 'microphone=(self), camera=(self), display-capture=(self)';
 
+/** The guest page's headers (`location ^~ /join/g/` of nginx.conf): the app's policy, plus no referrer, no cache and no index. */
+export const GUEST_PAGE_HEADERS: Readonly<Record<string, string>> = {
+  'cache-control': 'no-store',
+  'content-security-policy': APP_CSP,
+  'permissions-policy': PERMISSIONS_POLICY,
+  'referrer-policy': 'no-referrer',
+  'x-robots-tag': 'noindex, nofollow',
+};
+
 /** First path segments that belong to the server, not to the app: an address under them that nothing matched is a JSON 404. */
 const SERVER_PREFIXES = new Set(['api', 'mcp', 'hooks', 'ws', 'healthz', 'readyz', 'metrics']);
 
@@ -113,6 +122,9 @@ export async function registerWebStatic(app: FastifyInstance, root: string): Pro
     // A missing file under these is a plain 404, never the app's page (a missing model must not look like a model).
     if (immutable || rest === 'sw.js') return notFoundHandler(req, reply);
     const page = (await fileAt(index)) as { size: number };
+    // A guest link (`/join/g/<secret>`, P17-04): the address carries a secret, so the page is never kept by a cache, never sends the address on as a referrer and
+    // is not indexed; the policy is the app's own (the media server is reached the way the members' page reaches it). nginx's `location ^~ /join/g/` says the same.
+    if (rest === 'join/g' || rest.startsWith('join/g/')) return send(reply, index, page.size, GUEST_PAGE_HEADERS);
     return send(reply, index, page.size, { 'cache-control': 'no-cache', 'content-security-policy': APP_CSP, 'permissions-policy': PERMISSIONS_POLICY });
   };
 

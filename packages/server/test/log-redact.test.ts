@@ -32,6 +32,18 @@ describe('log redaction (L4)', () => {
     expect(line).not.toContain('mtwh_topsecret');
   });
 
+  it('redacts a guest link\'s secret in the page address and in any API address, keeps the route names (P17-04)', () => {
+    const secret = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE';
+    expect(redactUrl(`/join/g/${secret}`)).toBe('/join/g/[redacted]');
+    expect(redactUrl(`/join/g/${secret}?x=1`)).toBe('/join/g/[redacted]?x=1');
+    expect(redactUrl('/join/g/')).toBe('/join/g/');
+    expect(redactUrl(`/api/guest-links/${secret}`)).toBe('/api/guest-links/[redacted]');
+    expect(redactUrl(`/api/guest-links/${secret}/knock`)).toBe('/api/guest-links/[redacted]/knock');
+    expect(redactUrl('/api/guest-links/peek')).toBe('/api/guest-links/peek');
+    expect(redactUrl('/api/guest-links/knock')).toBe('/api/guest-links/knock');
+    expect(redactUrl('/api/guest/session')).toBe('/api/guest/session');
+  });
+
   it('redacts a token in the query string and an integration token (mtat_) wherever it sits', () => {
     const t = `mtat_${'A'.repeat(43)}`;
     expect(redactUrl(`/api/slack/auth.test?token=${t}`)).toBe('/api/slack/auth.test?token=[redacted]');

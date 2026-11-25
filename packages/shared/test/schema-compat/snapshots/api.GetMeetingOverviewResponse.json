@@ -151,6 +151,10 @@
               "type": "null"
             }
           ]
+        },
+        "allowGuests": {
+          "default": false,
+          "type": "boolean"
         }
       },
       "required": [

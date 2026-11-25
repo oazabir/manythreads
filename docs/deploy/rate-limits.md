@@ -114,6 +114,17 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/meetings/:meetingId/token` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/scheduled-meetings/:scheduledMeetingId/join` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/media-webhook` | none | 120 per 60 s | 60 s | address | media server signature: a call without a valid signature answers `401` and changes nothing |
+| `POST /api/guest-links/peek` | none | 30 per 60 s | 60 s | address | guest link (32 random bytes, kept as a hash, sent in the body, never in the address): 20 refused links per address in 15 minutes lock the address for 15 minutes; an unknown, expired, turned-off and used-up link all answer the same `404` |
+| `POST /api/guest-links/knock` | none | 10 per 60 s | 60 s | address | the same lock; also 20 knocks a minute per link, at most 10 guests waiting per call and 3 waiting from one address (`429`) |
+| `GET /api/guest/session` | none | 120 per 60 s | 60 s | address | guest cookie (256 random bits, one call): a refused cookie counts in the same lock |
+| `POST /api/guest/token` | none | 30 per 60 s | 60 s | address | the same lock; a media token only while the guest is let in and the call is live |
+| `POST /api/guest/leave` | none | 60 per 60 s | 60 s | address | the same lock |
+| `POST /api/guest/heartbeat` | none | 60 per 60 s | 60 s | address | the same lock |
+| `POST /api/meetings/:meetingId/guest-links` | none | 10 per 60 s | 60 s | person | at most 10 links of one call work at once |
+| `DELETE /api/meetings/:meetingId/guest-links` | none | 10 per 60 s | 60 s | person | none |
+| `POST /api/meetings/:meetingId/guests/:guestId/admit` | none | 60 per 60 s | 60 s | person | none |
+| `POST /api/meetings/:meetingId/guests/:guestId/deny` | none | 60 per 60 s | 60 s | person | none |
+| `POST /api/meetings/:meetingId/guests/:guestId/remove` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/channels/:channelId/surfaces/:surfaceId/events` | none | 60 per 60 s | 60 s | person | at most 100 answers wait for the bot per screen: the 101st is `429` until the bot has redrawn or updated it |
 | `POST /api/channels/:channelId/surfaces/:surfaceId/data/:nodeId` | none | 120 per 60 s | 60 s | person | one read tool call as the person looking; at most 4 of a person's calls run at once on a server (the 5th is `429`); a part refreshes at most every 10 s, so 120 a minute carries about 20 live parts |
 | `POST /api/mcp/runs` | 60 per 60 s (wrong tokens not counted apart) | 60 per 60 s | 60 s | address | wrong pairing tokens count in the failures counter below |

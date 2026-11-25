@@ -22,6 +22,14 @@ const SAMPLES = {
   'meetings.notes.saved': { ...base, type: 'meetings.notes.saved', savedBy: uuid(5), path: 'meetings/2026/11/03-1000-standup', toMemory: true },
   'meetings.invite.sent': { ...base, type: 'meetings.invite.sent', invitedBy: uuid(5), personIds: [uuid(8), uuid(9)], first: true },
   'meetings.share_request.answered': { ...base, type: 'meetings.share_request.answered', requestId: uuid(10), answeredBy: uuid(6), askedBy: uuid(5), answer: 'accept' },
+  // guest links (P17-04): ids and times only, never a guest's name, address or the link's secret
+  'meetings.guest_link.created': { ...base, type: 'meetings.guest_link.created', linkId: uuid(11), createdBy: uuid(5), expiresAt: '2026-11-03T22:00:00.000Z' },
+  'meetings.guest_link.revoked': { ...base, type: 'meetings.guest_link.revoked', linkIds: [uuid(11)], revokedBy: uuid(5), reason: 'person' },
+  'meetings.guest.asked': { ...base, type: 'meetings.guest.asked', guestId: uuid(12), linkId: uuid(11) },
+  'meetings.guest.admitted': { ...base, type: 'meetings.guest.admitted', guestId: uuid(12), decidedBy: uuid(6) },
+  'meetings.guest.denied': { ...base, type: 'meetings.guest.denied', guestId: uuid(12), decidedBy: uuid(6) },
+  'meetings.guest.removed': { ...base, type: 'meetings.guest.removed', guestId: uuid(12), decidedBy: uuid(6) },
+  'meetings.guest.left': { ...base, type: 'meetings.guest.left', guestId: uuid(12), how: 'dropped' },
 } as const;
 const TYPES = Object.keys(SAMPLES) as (keyof typeof SAMPLES)[];
 
@@ -52,6 +60,17 @@ describe('voice room events', () => {
     expect(parseEvent(older)).toMatchObject({ actionOwnerIds: [] });
     expect(parseEvent({ ...SAMPLES['meetings.notes.written'], actionOwnerIds: [uuid(5)] })).toMatchObject({ actionOwnerIds: [uuid(5)] });
     expect(() => parseEvent({ ...SAMPLES['meetings.notes.written'], actionOwnerIds: ['x'] })).toThrow();
+  });
+
+  it('guest events carry no name or address, and only their known reasons', () => {
+    for (const type of ['meetings.guest.asked', 'meetings.guest.admitted', 'meetings.guest.left'] as const) {
+      const parsed = parseEvent({ ...SAMPLES[type], displayName: 'Ana', ip: '203.0.113.9', token: 'secret' }) as unknown as Record<string, unknown>;
+      for (const key of ['displayName', 'ip', 'token']) expect(parsed[key]).toBeUndefined();
+    }
+    expect(() => parseEvent({ ...SAMPLES['meetings.guest.left'], how: 'bored' })).toThrow();
+    expect(() => parseEvent({ ...SAMPLES['meetings.guest_link.revoked'], reason: 'tired' })).toThrow();
+    expect(parseEvent({ ...SAMPLES['meetings.guest_link.revoked'], revokedBy: null, reason: 'ended' })).toMatchObject({ revokedBy: null });
+    expect(() => parseEvent({ ...SAMPLES['meetings.guest.asked'], guestId: 'guest:1' })).toThrow();
   });
 
   it('recording stops for a known reason only; sharing names a person or a channel', () => {

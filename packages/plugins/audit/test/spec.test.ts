@@ -125,6 +125,11 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'meetings.meeting.started': { teamId: id(20), channelId: id(40), meetingId: id(97), startedBy: id(13), at: AT },
   'meetings.invite.sent': { teamId: id(20), channelId: id(40), meetingId: id(97), invitedBy: id(13), personIds: [id(10), id(11), id(12)], first: true, at: AT },
   'meetings.share_request.answered': { teamId: id(20), channelId: id(40), meetingId: id(97), requestId: id(98), answeredBy: id(14), askedBy: id(13), answer: 'accept', at: AT },
+  'meetings.guest_link.created': { teamId: id(20), channelId: id(40), meetingId: id(97), linkId: id(103), createdBy: id(13), expiresAt: AT, at: AT },
+  'meetings.guest_link.revoked': { teamId: id(20), channelId: id(40), meetingId: id(97), linkIds: [id(103)], revokedBy: id(13), reason: 'person', at: AT },
+  'meetings.guest.admitted': { teamId: id(20), channelId: id(40), meetingId: id(97), guestId: id(104), decidedBy: id(13), at: AT },
+  'meetings.guest.denied': { teamId: id(20), channelId: id(40), meetingId: id(97), guestId: id(104), decidedBy: id(13), at: AT },
+  'meetings.guest.removed': { teamId: id(20), channelId: id(40), meetingId: id(97), guestId: id(104), decidedBy: id(13), at: AT },
   'meetings.meeting.ended': { teamId: id(20), channelId: id(40), meetingId: id(97), endedBy: id(13), reason: 'person', durationSeconds: 600, participantCount: 3, at: AT },
   'meetings.consent.changed': { teamId: id(20), channelId: id(40), meetingId: id(97), actorId: id(13), subject: 'transcribe', value: 'yes', at: AT },
   'meetings.notetaker.added': { teamId: id(20), channelId: id(40), meetingId: id(97), botId: id(60), addedBy: id(13), at: AT },
@@ -175,6 +180,14 @@ describe('the audited event types', () => {
     const answered = { answeredBy: id(14), askedBy: id(13), meetingId: id(97), requestId: id(98), channelId: id(40), answer: 'accept', at: AT };
     expect(MAPPERS['meetings.share_request.answered']!({ ...answered, teamId: null })).toBeNull();
     expect(MAPPERS['meetings.share_request.answered']!({ ...answered, teamId: id(20), answer: 'other' })).toMatchObject({ reason: 'Let someone else share first' });
+  });
+
+  it('guest links: the end of a call turns them off as the system; nothing a guest typed reaches a row', () => {
+    const revoked = { teamId: id(20), channelId: id(40), meetingId: id(97), linkIds: [id(103), id(105)], revokedBy: null, reason: 'ended', at: AT };
+    expect(MAPPERS['meetings.guest_link.revoked']!(revoked)).toMatchObject({ who: 'system', reason: '2 links turned off as the call ended' });
+    expect(MAPPERS['meetings.guest.admitted']!({ guestId: id(104), decidedBy: id(13), meetingId: id(97), teamId: null, at: AT })).toBeNull();
+    const admitted = MAPPERS['meetings.guest.admitted']!({ guestId: id(104), decidedBy: id(13), meetingId: id(97), teamId: id(20), displayName: 'CANARY Ana', at: AT });
+    expect(JSON.stringify(admitted)).not.toContain('CANARY');
   });
 
   it('keeps hostile text out even when a field the mapping reads is hostile', () => {

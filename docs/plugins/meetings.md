@@ -152,6 +152,58 @@ and the page keeps it to one).
   `media-livekit/src/listener-worker.ts`), whether recording is on or off; "Ask to share" changes nothing there.
 - **Audit:** `meeting.share_answered` ("Stopped sharing to let them share", "Said not now" or "Let someone else share first"), ids only; a direct-message call (no team) has no row.
 
+## Guest links and the waiting room (P17-04, step 1)
+
+A **link guest** is someone outside the workspace with no account (not a workspace guest, whose role is `guest`). A link guest gets one call and never a channel. Plan:
+`docs/plans/guest-links.md` (its "Decisions taken" hold). Code: `src/guests.ts` (routes, the sweep's part, the webhook's part), migration `0012_guest_links.sql`, shared
+`api/meetings/guests.ts`, web `clients/web/src/guest/` (the guest page) and `meetings/guestLinks.ts` (Copy guest link, the waiting room).
+
+- **Links.** A secret of 32 random bytes in the address `/join/g/<43 characters>`; only its sha-256 is kept (`meeting_guest_links.token_hash`, which the app role may not
+  select), and it is found by an equality lookup on the hash. A link cannot be shown again, so each member makes their own: the start dialog's switch "Let people outside the
+  workspace join with a link" (off by default; `allowGuests: true`) makes the starter's first link in the same transaction and returns it once (`guestLink`), and the dialog
+  copies it ("Guest link copied"). On the call card, **Copy guest link** (a reader who may post, not a workspace guest) copies this person's link, kept in the tab's
+  `sessionStorage` per call, or a new one (`POST /api/meetings/:id/guest-links`); Invite more has a "Guest link · Copy" row. **Turn off guest links** (the starter, a lead or an
+  admin; `DELETE /api/meetings/:id/guest-links`) stops every link of the call and turns the call's switch off; guests already in stay. A link works while the call is live, for 12
+  hours at most and 50 knocks; at most 10 links of a call work at once; ending the call stops them all. Unknown, expired, turned-off and used-up links answer the same 404
+  ("This guest link has expired or was turned off"). The workspace switch is `meeting_settings.guest_links_allowed` (`guestLinksAllowed`, on by default). Not in a direct
+  message.
+- **The guest's side** (public, no session; each route counts per address, `docs/deploy/rate-limits.md`): `POST /api/guest-links/peek {token}` (the call's title, the
+  workspace's name, its kind, whether it is transcribed or a note-taker listens: never the channel or who is in it; a title the server wrote, "Call · #dev · 14:02", is shown as
+  "Call · 14:02"), `POST /api/guest-links/knock {token, displayName}` (1 to 60 characters, cleaned of control and direction characters), then `GET /api/guest/session`, `POST /api/guest/token`, `/leave`, `/heartbeat`. The knock sets `mt_guest=<guest id>.<secret>` (HttpOnly,
+  SameSite=Strict, `Path=/api/guest`, Secure on an https site, as long as the link lasts); only the secret's sha-256 is kept (`meeting_guests.credential_hash`). No session route
+  reads that cookie. Every state-changing guest route also checks that `Origin` is the site's public address. 20 refused secrets (well-shaped links or cookies) from one address
+  in 15 minutes lock it for 15 minutes; a secret of the wrong shape is never looked up and never counted. The secret travels in a POST body, never in an API address; the
+  server's log redacts `/join/g/<secret>` (and any `/api/guest-links/<secret>`), and nginx writes no access log line for either location.
+- **The waiting room.** A knock pushes `meeting.lobby` to the people in the call who may let a guest in (not a workspace guest, the rule of
+  `app.meetings_decide_guest`); the call bar shows "Ana is waiting · Let in · Deny" with a soft knock, or "3
+  waiting" opening the list (`GET /api/meetings/:id/lobby`, someone in the call who is not a workspace guest). `POST /api/meetings/:id/guests/:guestId/admit|deny|remove`: anyone in the call who is not a
+  workspace guest; whoever answers first wins (a later answer is 409 "Someone already answered"); letting in counts the room like a join (409 "The call is full"). At most 10
+  wait per call (429), 3 waiting from one address per call (counted from the knocks still waiting; a knock the database refused uses up nothing), 20 knocks a minute per
+  link. A knock nobody answers lapses after ten minutes (by the database's clock); a page silent for three minutes, waiting or in the call, is counted as gone by the sweep,
+  which tells the call (a browser slows a hidden tab's timers, so the page also says it is there when it is shown again). The page's poll (every 2 s waiting, 10 s in the
+  call) is its sign of life.
+- **In the call.** `POST /api/guest/token` only while let in and live: `media.token({ id: 'guest:<id>', kind: 'guest', displayName: '<name> (guest)' }, meetingId,
+  { canPublish, canSubscribe, sources: ['microphone', 'camera'] })`, ten minutes at most; LiveKit gets `canPublishSources`, `canPublishData: false` and
+  `canUpdateOwnMetadata: false`. `assertTokenRequest` refuses a guest token that is listen-only, names no sources or a screen, or has a person's identity (and a person's token with
+  a guest identity). The guest sees the names in the call (no avatar, handle or address); the members see "Ana (guest)" (`MeetingSummary.guests`) and readers of the card "+1
+  guest" (`CallCard.guests`). **Remove** kicks `guest:<id>` from the media room; the cookie is dead from then on. The media webhook kicks a `guest:<uuid>` that joins without
+  being let in (or after the end); a guest let in whose media connection drops (a reload, a lost network) stays let in, and the page joins again with a new token and a
+  growing pause ("Reconnecting…"). A guest leaves by Leave, by Remove, by the call's end or by the sweep. A guest is never an actor: participants, transcript lines and presence stay people-only, and a guest does not keep a call
+  alive.
+- **Never transcribed or recorded (step 1).** The note-taker's listener and the transcript take only people who said yes; the recording rule counts an admitted guest as present
+  with "no", so nothing is recorded while one is in. A call with an admitted guest is held for a lead before it reaches the team's memory (`hold: 'external'`).
+- **Events and audit:** `meetings.guest_link.created`, `meetings.guest_link.revoked` (`person` or `ended`), `meetings.guest.asked`, `.admitted`, `.denied`, `.removed`, `.left`
+  (`left`, `dropped`, `ended`, `expired`): ids and times only, never a name, an address or a secret. Audit rows for links made and turned off, and guests let in, turned away and
+  taken out.
+- **The page** (`/join/g/:token`, outside the sign-in check and the app's frame, loaded only when opened): the title and workspace, the transcription line, the name, a device
+  check (microphone meter, camera preview, microphone picker, microphone and camera on or off), Ask to join; then "Waiting for the host to let you in…" with Cancel; the call
+  (tiles with names, mute, camera, leave), or "The host did not let you in.", "The call has ended.", "You were removed from the call.", "Nobody answered. Try again.". After the
+  knock the address becomes `/join/g/` (the secret leaves the address bar). nginx (`location ^~ /join/g/`) and the server's own static serving send the app's policy plus
+  `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex` and write no access log line. The policy is not widened: members reach the media server at
+  `wss://<site>/livekit` (`media.ingressPath`), which `connect-src 'self'` already covers, and so do guests. An install whose media server has a name of its own needs that name
+  in `connect-src` for members and guests alike.
+- **Step 2 (not built):** the consent prompt and on-device transcription for guests, "Guest links (n)" with a revoke per link, journeys and baselines.
+
 ## Access loss
 
 `channel.member.removed` and `team.member.removed` are consumed: the person is dropped from every live room they can no longer read (checked with `app.channel_audience`), the media server is told to

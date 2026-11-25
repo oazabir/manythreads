@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import type { MeetingParticipant } from '@manythreads/shared';
 import { useNarrow } from '../shell/useNarrow';
-import { callController } from './store';
 import type { CallState } from './controller';
 import type { VideoTile } from './media';
 import type { StageLayout } from './prefs';
@@ -34,8 +32,24 @@ const exitPip = (): void => {
   }
 };
 
-const nameOf = (present: readonly MeetingParticipant[], tile: VideoTile): string =>
-  tile.local ? 'You' : (present.find((p) => p.actorId === tile.actorId)?.displayName ?? 'Someone');
+/**
+ * What the stage needs of the call: the call controller on a member's page (CallDock), the guest page's own small controller there (P17-04). The stage never
+ * reaches for the page's call store itself, so the guest page can draw it without a session.
+ */
+export type StageMedia = { attachVideo(key: string, el: HTMLVideoElement): () => void; setLayout(layout: StageLayout): void };
+const NO_MEDIA: StageMedia = { attachVideo: () => () => undefined, setLayout: () => undefined };
+
+/** What the stage draws from: the tiles, who speaks, the layout prefs, and the names (the people in the call; link guests by their media identity). */
+export type StageCall = Pick<CallState, 'videos' | 'speaking' | 'prefs' | 'present'> & { guests?: CallState['guests'] };
+
+/** A tile's name: "You", a person in the call, a link guest let in ("Ana (guest)", P17-04), else "Someone". */
+export const nameOf = (call: Pick<StageCall, 'present' | 'guests'>, tile: Pick<VideoTile, 'local' | 'actorId'>): string => {
+  if (tile.local) return 'You';
+  const person = call.present.find((p) => p.actorId === tile.actorId);
+  if (person) return person.displayName;
+  const guest = call.guests?.find((g) => g.identity === tile.actorId);
+  return guest ? `${guest.displayName} (guest)` : 'Someone';
+};
 
 type TileProps = {
   tile: VideoTile;
@@ -47,13 +61,13 @@ type TileProps = {
   onVideo: (key: string, el: HTMLVideoElement | null) => void;
 };
 
-function Tile({ tile, label, big, speaking, pinned, onPin, onVideo }: TileProps) {
+function Tile({ tile, label, big, speaking, pinned, onPin, onVideo, media }: TileProps & { media: StageMedia }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     onVideo(tile.key, el);
-    const off = callController().attachVideo(tile.key, el);
+    const off = media.attachVideo(tile.key, el);
     return () => {
       onVideo(tile.key, null);
       off();
@@ -91,7 +105,7 @@ function Overflow({ names }: { names: string[] }) {
   );
 }
 
-export function CallStage({ call }: { call: CallState }) {
+export function CallStage({ call, media = NO_MEDIA }: { call: StageCall; media?: StageMedia }) {
   const narrow = useNarrow();
   const prefs = call.prefs;
   const layout = layoutFor(prefs, narrow);
@@ -220,8 +234,8 @@ export function CallStage({ call }: { call: CallState }) {
     if (el) els.current.set(key, el);
     else els.current.delete(key);
   };
-  const overflowNames = arranged.overflow.map((t) => nameOf(call.present, t));
-  const pick = (l: StageLayout): void => callController().setLayout(l);
+  const overflowNames = arranged.overflow.map((t) => nameOf(call, t));
+  const pick = (l: StageLayout): void => media.setLayout(l);
   const manualPip = pipNow(true);
   const strip = arranged.tiles.length - (arranged.main ? 1 : 0) + (overflowNames.length > 0 ? 1 : 0);
   const cols = gridColumns(arranged.tiles.length + (overflowNames.length > 0 ? 1 : 0), narrow);
@@ -230,7 +244,7 @@ export function CallStage({ call }: { call: CallState }) {
   return (
     <section className={`call-stage ${full ? 'full' : ''} ${screen ? 'has-screen' : ''}`} aria-label="Video" data-testid="call-stage" data-layout={layout}>
       <header className="stage-bar">
-        <span className="stage-title">{screen ? `${nameOf(call.present, screen)} ${screen.local ? 'are' : 'is'} sharing a screen` : 'Cameras'}</span>
+        <span className="stage-title">{screen ? `${nameOf(call, screen)} ${screen.local ? 'are' : 'is'} sharing a screen` : 'Cameras'}</span>
         <div className="stage-layouts" role="group" aria-label="Layout">
           <button type="button" className="icon-btn" aria-pressed={layout === 'grid'} aria-label="Grid: everyone the same size" title="Grid" onClick={() => pick('grid')} data-testid="stage-layout-grid">
             <GridIcon />
@@ -258,12 +272,13 @@ export function CallStage({ call }: { call: CallState }) {
             <Tile
               key={t.key}
               tile={t}
-              label={nameOf(call.present, t)}
+              label={nameOf(call, t)}
               big={t === arranged.main}
               speaking={t.source === 'camera' && call.speaking.has(t.actorId)}
               pinned={pinned === t.key}
               onPin={() => setPinned((p) => (p === t.key ? null : t.key))}
               onVideo={onVideo}
+              media={media}
             />
           ))}
           <Overflow names={overflowNames} />

@@ -170,6 +170,10 @@ describe('the start dialog rules', () => {
     expect(buildStartBody({ title: ' Design review ', picked: [OMAR, NADIA], lockedIds: [OMAR], dm: false, notetakerBotId: BOT })).toEqual({ title: 'Design review', inviteeIds: [NADIA], notetakerBotId: BOT });
     expect(buildStartBody({ title: 'x', picked: [NADIA], lockedIds: [], dm: true, notetakerBotId: null })).toEqual({ title: 'x' });
     expect(buildStartBody({ title: 'a'.repeat(200), picked: [], lockedIds: [], dm: false, notetakerBotId: null }).title).toHaveLength(120);
+    // the guest-link switch (P17-04): sent only when on, never in a direct message
+    expect(buildStartBody({ title: '', picked: [], lockedIds: [], dm: false, notetakerBotId: null, allowGuests: true })).toEqual({ allowGuests: true });
+    expect(buildStartBody({ title: '', picked: [], lockedIds: [], dm: false, notetakerBotId: null, allowGuests: false })).toEqual({});
+    expect(buildStartBody({ title: '', picked: [], lockedIds: [], dm: true, notetakerBotId: null, allowGuests: true })).toEqual({});
   });
 
   it('offers the note-taker only when one may come, with the server\'s reason otherwise', () => {
@@ -469,6 +473,7 @@ describe('Invite more on a live call card', () => {
     notetaker: null,
     you: { joined: false, canEnd: false, canInvite: true },
     notesLink: null,
+    guests: { on: false, inCall: 0, canLink: false, canTurnOff: false },
   } as unknown as CallCard;
   const draw = (card: CallCard): void =>
     act(() => root.render(createElement(MemoryRouter, null, createElement(CallCardBody, { card, channelId: CHANNEL, freshen: () => Promise.resolve(), endedHere: () => undefined }))));
