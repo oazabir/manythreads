@@ -1326,8 +1326,8 @@
   background: var(--human-wash);
 }
 
-/* the bar is shown when the person asks for it in the Attach menu (P36-09) and then stays: it never folds on focus, so the list above never moves under a
-   press (P21-04). Every composer draws the same tools (P34-03); a box narrower than the row (the thread panel) wraps it to a second row instead of hiding tools */
+/* the bar is drawn while the person is in the composer or the box has text, or always when pinned from the Attach menu (P37-01); it stays mounted while focus
+   moves onto its own buttons, so a press on it never folds it and the list above never moves under that press (P21-04). Every composer draws the same tools (P34-03); a box narrower than the row (the thread panel) wraps it to a second row instead of hiding tools */
 .ctools {
   display: flex;
   flex-wrap: wrap;

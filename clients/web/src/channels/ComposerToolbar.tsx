@@ -7,8 +7,8 @@ import { CODE_LANGUAGES } from './composerFormat';
 import { TOOL_ORDER, scrollEdges, toolTitle, type BarToolId } from './composerTools';
 
 /*
- * The formatting bar above the message box (PLAN P21-04). Since P36-09 it is shown only when the person chose "Show formatting" in the Attach menu, and then
- * stays (it never folds on focus, so the list above never moves under a press); the icons are 16 px and the tooltips name the shortcut. Every composer
+ * The formatting bar above the message box (PLAN P21-04). Since P37-01 it is shown while the person is in the composer (focus anywhere in it, this bar and the emoji picker included) or the
+ * box has text, and always when "Show formatting" is chosen in the Attach menu; focus moving onto the bar does not fold it (Composer.tsx keeps it mounted); the icons are 16 px and the tooltips name the shortcut. Every composer
  * (channel, thread panel, direct message, Brain chat) draws the same tools in the same order (P34-03); a box too narrow for one row wraps to a second, and a
  * phone scrolls it sideways. The bar is one stop of the Tab key and the arrows move along it.
  */

@@ -217,15 +217,16 @@ test('on a phone the box shows Attach, the mic and Send; Attach is a sheet above
     await expect(box).toBeVisible();
     const composer = page.getByTestId('composer');
     const bar = page.getByRole('toolbar', { name: 'Formatting' });
-    // no formatting bar until it is asked for (P36-09), and nothing moves when the box gets the focus
+    // no formatting bar until the person is in the box (P37-01: it then shows by itself)
     await expect(bar).toHaveCount(0);
     const before = await composer.boundingBox();
     await box.click();
+    await expect(bar).toBeVisible();
     const noSideScroll = (): Promise<boolean> => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(await noSideScroll()).toBe(true);
 
     // three buttons, each a 44 px target, in a box no taller than 120 px (P34-03)
-    const shown = composer.locator('.cbox button:visible');
+    const shown = composer.locator('.cbox button:visible:not(.ctool)'); // the bar's own tools are counted below
     await expect(shown).toHaveCount(3);
     await expect(composer.getByTestId('composer-attach')).toBeVisible();
     await expect(composer.getByTestId('voice-mic')).toBeVisible();

@@ -24,7 +24,7 @@ export type AttachEnv = {
   hasFiles: boolean;
   /** A message is being scheduled right now. */
   busy: boolean;
-  /** The formatting bar is shown above the box. */
+  /** The formatting bar is kept always shown above the box (it otherwise shows while the person is in the composer). */
   formatShown: boolean;
   /** The Send later times are open, and the id of their menu (the Send later item points at it). */
   laterOpen?: boolean;
@@ -139,7 +139,7 @@ export const ATTACH_ENTRIES: readonly AttachEntry[] = [
   {
     id: 'format',
     label: (e) => (e.formatShown ? 'Hide formatting' : 'Show formatting'),
-    hint: 'Bold, lists, code and links. Their shortcuts work without the bar',
+    hint: 'The bar shows while you write. This keeps it always shown',
     testId: 'composer-format-toggle',
     short: 'formatting',
     Icon: ToolFormatIcon,

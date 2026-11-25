@@ -45,7 +45,7 @@ import { placeDraft } from './draftPlaces';
 import { captureSupported, useCapture } from './capture/useCapture';
 import { AttachMenu } from './AttachMenu';
 import { attachItems, type AttachActions } from './composerAttach';
-import { setFormatBarShown, useFormatBar } from './formatBar';
+import { formatBarVisible, setFormatBarShown, useComposerFocus, useFormatBar } from './formatBar';
 
 /*
  * The one composer of every conversation (channel, thread panel and full thread, direct message, Brain chat and a bot conversation; P34-03). The box shows
@@ -203,7 +203,8 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   const asking = useRef(false);
   const makingCard = useRef(false);
   const listId = useId();
-  // the formatting bar (ComposerToolbar.tsx) is shown only when the person asked for it from the Attach menu, the same in every composer (formatBar.ts)
+  // the formatting bar (ComposerToolbar.tsx) shows while the person is in the composer or the box has text; "Show formatting" in the Attach menu keeps it
+  // always shown (formatBar.ts), the same in every composer
   const formatShown = useFormatBar();
   // the Send later times, opened from the Attach menu
   const [laterOpen, setLaterOpen] = useState(false);
@@ -220,6 +221,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
   );
   const area = useRef<HTMLTextAreaElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  const inComposer = useComposerFocus(root);
   const fileInput = useRef<HTMLInputElement>(null);
   const nextId = useRef(1);
   const selection = useRef<[number, number] | null>(null);
@@ -986,6 +988,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
       className={`composer ${drag ? 'dragging' : ''}`}
       data-testid="composer"
       data-landmark={threadRootId ? 'reply-composer' : 'composer'}
+      {...inComposer.props}
       onDragOver={(e) => {
         if (filesOn && e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -997,7 +1000,7 @@ function ComposerBody({ draftKey, placeholder, label, channelId, threadRootId, p
     >
       {assist && !voiceActive ? assist(text) : null}
       <div className="cbox">
-        {voiceActive || !formatShown ? null : <ComposerToolbar mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />}
+        {voiceActive || !formatBarVisible({ pinned: formatShown, focusInside: inComposer.inside, hasText: text !== '', emojiOpen }) ? null : <ComposerToolbar mac={mac} onRun={runTool} onCodeBlock={block} emojiOpen={emojiOpen} emojiRef={emojiButton} />}
         {emojiOpen ? (
           <div ref={emojiPop} className="emp-pop">
             <EmojiPicker onPick={putEmoji} onClose={() => { setEmojiOpen(false); area.current?.focus(); }} />

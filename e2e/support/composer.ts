@@ -25,7 +25,7 @@ export async function chooseAttach(composer: Locator, testId: string): Promise<v
   await menu.getByTestId(testId).click();
 }
 
-/** Shows the formatting bar of `composer` (it is hidden until asked for, and the choice is kept in the browser) and returns it. */
+/** Shows the formatting bar of `composer` (it shows by itself while the person is in the box; this pins it from the Attach menu, kept in the browser) and returns it. */
 export async function showFormatting(composer: Locator): Promise<Locator> {
   const bar = composer.getByRole('toolbar', { name: 'Formatting' });
   if (await bar.isVisible()) return bar;

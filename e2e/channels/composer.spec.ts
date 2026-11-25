@@ -233,7 +233,7 @@ test('the message box rests two lines tall and stops growing at 376 px', async (
     expect(await heightOf(reply)).toBeGreaterThanOrEqual(44);
     expect(await heightOf(reply)).toBeLessThanOrEqual(60);
     // one composer (P34-03): the thread panel draws the channel's three buttons beside the box (P36-09), and the same Attach menu, Send later in it
-    const shown = (scope: Locator): Promise<string[]> => scope.locator('.cbox button:visible').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''));
+    const shown = (scope: Locator): Promise<string[]> => scope.locator('.cbox button:visible:not(.ctool)').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''));
     const menuOf = async (scope: Locator): Promise<string[]> => {
       const items = await (await openAttach(scope)).getByRole('menuitem').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid') ?? ''));
       await page.keyboard.press('Escape');

@@ -6,7 +6,7 @@ import { mainComposer, chooseAttach, openAttach, showFormatting } from '../suppo
 
 /*
  * PLAN P21-04, the composer of a channel: three buttons in the box, Attach, Voice message and Send (P36-09); the formatting bar (buttons whose tooltips name
- * their shortcut) is shown from Attach's menu, Ctrl/Cmd+B, I, K and Ctrl+Shift+X run the tools from inside the box without it, ":" and two letters offers
+ * their shortcut) shows while the person is in the box (P37-01) and always when pinned from Attach's menu, Ctrl/Cmd+B, I, K and Ctrl+Shift+X run the tools from inside the box without it, ":" and two letters offers
  * emoji (and a time or an address does not), "@" lists People under headings (Everyone, People, Bots, Groups) with Everyone left out for a guest. The send
  * control is an icon with a name.
  * Starts its own stack (a guest gets a post grant, a bot is added). Groups are covered by role-mention-picker.spec; the Chat screen's own box by
@@ -44,6 +44,30 @@ async function open(browser: Parameters<typeof openOn>[0], playwright: Parameter
   await expect(boxOf(page, channel)).toBeVisible();
   return { page, context };
 }
+
+test('P37-01: the formatting bar shows while you are in the box, stays through a press on it, and folds when you leave an empty box', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await open(browser, playwright, 'nadia', 'dev', isMobile);
+  try {
+    const bar = page.getByRole('toolbar', { name: 'Formatting' });
+    const box = boxOf(page, 'dev');
+    await expect(bar).toHaveCount(0);
+    await box.click();
+    await expect(bar).toBeVisible();
+    // a press on a tool does not fold the bar (focus is on the bar for a moment) and the box keeps what it wrote
+    await bar.getByRole('button', { name: 'Bold' }).click();
+    await expect(bar).toBeVisible();
+    await expect(box).toHaveValue(/\*\*/);
+    // a box with text keeps the bar after focus has gone
+    await box.blur();
+    await expect(bar).toBeVisible();
+    // an empty box folds it away once focus has left
+    await box.fill('');
+    await box.blur();
+    await expect(bar).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
 
 const headings = (page: Page): Locator => page.getByTestId('picker-heading');
 
@@ -226,7 +250,7 @@ test('a guest cannot @channel or @here: the words are not offered and sending th
   }
 });
 
-test('on a phone there is no bar at rest; Show formatting in the Attach menu draws it and Bold works from it; Hide formatting takes it away', async ({ browser, playwright, isMobile }) => {
+test('on a phone there is no bar at rest; Show formatting in the Attach menu pins it and Bold works from it; Hide formatting lets it fold again', async ({ browser, playwright, isMobile }) => {
   test.skip(!isMobile, 'a 390 px window');
   const { page, context } = await open(browser, playwright, 'priya', 'dev', true);
   try {
@@ -244,7 +268,9 @@ test('on a phone there is no bar at rest; Show formatting in the Attach menu dra
     await bold.click();
     await expect(box).toHaveValue('make **this** bold');
     expect(await noSidewaysScroll(page)).toBe(true);
-    await chooseAttach(mainComposer(page), 'composer-format-toggle'); // now "Hide formatting"
+    await chooseAttach(mainComposer(page), 'composer-format-toggle'); // now "Hide formatting": it no longer keeps the bar, which then folds with an empty box out of focus
+    await box.fill('');
+    await box.blur();
     await expect(bar).toHaveCount(0);
   } finally {
     await context.close();

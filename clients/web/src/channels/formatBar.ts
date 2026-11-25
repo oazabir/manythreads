@@ -1,9 +1,65 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEvent, type RefObject } from 'react';
 
 /*
- * Whether the formatting bar is shown above the message box (P36-09). It is hidden unless the person asks for it with "Show formatting" in the Attach menu;
- * the choice is the same in every composer and every tab, and kept in this browser (a convenience: when storage is blocked the bar starts hidden).
+ * Whether the formatting bar is shown above the message box. Since P37-01 it shows whenever the person is in the composer (focus anywhere inside it, the bar's
+ * own buttons and the emoji picker included) or the box has text, and folds away when focus has left and the box is empty. "Show formatting" in the Attach menu
+ * (P36-09) now means "keep it always shown": that choice is the same in every composer and every tab, and kept in this browser (a convenience: when storage is
+ * blocked the bar is not pinned).
  */
+
+/** The bar is drawn: pinned from the Attach menu, or the person is in the composer, or the box has text, or the emoji picker is open. */
+export function formatBarVisible(w: { pinned: boolean; focusInside: boolean; hasText: boolean; emojiOpen?: boolean }): boolean {
+  return w.pinned || w.focusInside || w.hasText || w.emojiOpen === true;
+}
+
+/**
+ * Focus is leaving an element of the composer for `next`: does it stay "in the composer"? Yes when `next` is inside it. A press on a bar button in a browser
+ * that does not focus buttons on a press (Safari) sends focus to nowhere (`next` is null) while the pointer is down inside the composer: that is not leaving.
+ */
+export function focusStaysInside(next: EventTarget | null, root: Element | null, pressing: boolean): boolean {
+  if (next === null) return pressing;
+  return next instanceof Node && root !== null && root.contains(next);
+}
+
+/** After a press inside the composer ended, is the person still in it (focus is in it)? A press that left focus on nothing means they have left. */
+export function stillInside(active: Element | null, root: Element | null): boolean {
+  return active !== null && root !== null && root.contains(active);
+}
+
+/** Whether focus is inside the composer element `root`, kept across focus moving between its parts (see focusStaysInside). Spread `props` on the element. */
+export function useComposerFocus(root: RefObject<HTMLElement | null>): {
+  inside: boolean;
+  props: { onFocus: () => void; onBlur: (e: FocusEvent) => void; onPointerDown: () => void };
+} {
+  const [inside, setInside] = useState(false);
+  const pressing = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const onFocus = useCallback(() => setInside(true), []);
+  const onBlur = useCallback(
+    (e: FocusEvent) => {
+      if (!focusStaysInside(e.relatedTarget, root.current, pressing.current)) setInside(false);
+    },
+    [root],
+  );
+  const onPointerDown = useCallback(() => {
+    pressing.current = true;
+    const end = (): void => {
+      window.removeEventListener('pointerup', end, true);
+      window.removeEventListener('pointercancel', end, true);
+      // let the press's own click run first (it usually puts focus back in the box), then look where focus is
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        pressing.current = false;
+        if (!stillInside(document.activeElement, root.current)) setInside(false);
+      }, 100);
+    };
+    window.addEventListener('pointerup', end, true);
+    window.addEventListener('pointercancel', end, true);
+  }, [root]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return { inside, props: { onFocus, onBlur, onPointerDown } };
+}
+
 
 const KEY = 'manythreads.composer.formatBar';
 const listeners = new Set<() => void>();

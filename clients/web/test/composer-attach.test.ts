@@ -196,24 +196,53 @@ describe('Composer: three buttons in every box', () => {
     [...host.querySelectorAll<HTMLElement>('.cbox button')].filter((b) => !b.closest('[hidden]')).map((b) => b.getAttribute('data-testid') ?? b.getAttribute('aria-label') ?? '?');
 
   for (const [kind, props] of Object.entries(kinds)) {
-    it(`${kind}: ${'voice' in props ? 'Attach and Send' : 'Attach, Voice message and Send'}, and no formatting bar until it is asked for`, () => {
+    it(`${kind}: ${'voice' in props ? 'Attach and Send' : 'Attach, Voice message and Send'}, and no formatting bar until the person is in the composer`, () => {
       draw(props);
       expect(visibleButtons()).toEqual('voice' in props ? ['composer-attach', 'send'] : ['composer-attach', 'voice-mic', 'send']);
       expect(q('composer-tools')).toBeNull();
     });
   }
 
-  it('Show formatting draws the bar (without the poll, which is in the menu) and Hide formatting takes it away', () => {
+  it('Show formatting pins the bar (without the poll, which is in the menu): it stays after focus leaves; Hide formatting lets it fold again', () => {
     draw(kinds.channel);
     click(must('composer-attach'));
     click(must('composer-format-toggle'));
     const bar = must('composer-tools');
     expect(bar.querySelector('[aria-label="Bold"]')).not.toBeNull();
     expect(bar.querySelector('[aria-label="Ask a poll"]')).toBeNull();
+    const box = host.querySelector('textarea') as HTMLTextAreaElement;
+    act(() => box.blur());
+    expect(q('composer-tools')).not.toBeNull();
     click(must('composer-attach'));
     expect(must('composer-format-toggle').textContent).toContain('Hide formatting');
     click(must('composer-format-toggle'));
+    act(() => (host.querySelector('textarea') as HTMLTextAreaElement).blur());
     expect(q('composer-tools')).toBeNull();
+  });
+
+  it('the bar shows when the box is focused, stays while focus is on one of its buttons, and folds when focus leaves an empty box', () => {
+    draw(kinds.channel);
+    const box = host.querySelector('textarea') as HTMLTextAreaElement;
+    expect(q('composer-tools')).toBeNull();
+    act(() => box.focus());
+    const bold = must('composer-tools').querySelector('[aria-label="Bold"]') as HTMLElement;
+    act(() => bold.focus());
+    expect(q('composer-tools')).not.toBeNull();
+    act(() => bold.blur());
+    expect(q('composer-tools')).toBeNull();
+  });
+
+  it('a box with text keeps the bar after focus leaves', () => {
+    draw(kinds.channel);
+    const box = host.querySelector('textarea') as HTMLTextAreaElement;
+    act(() => {
+      box.focus();
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+      set?.call(box, 'hello');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => box.blur());
+    expect(q('composer-tools')).not.toBeNull();
   });
 
   it('Send later in the menu opens the times for the draft; Esc closes them and the focus goes back to Attach', () => {
