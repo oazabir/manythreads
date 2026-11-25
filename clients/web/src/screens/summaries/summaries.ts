@@ -2,6 +2,7 @@ import type { ActionItemView, Appointment, Approval, DirectMessageSummary, Meeti
 import { approvalLine } from '../approvals/sentence';
 import { dueLabel } from '../files/actionItems/actionItemsWords';
 import { addDays, joinable, sameDay, startOfDay } from '../schedule/calendar';
+import { messageLocation } from '../../shell/messageLink';
 import { channelLabel } from '../threadCard';
 import { MAX_RECENT_THREADS, type RecentThread } from '../../app/recentThreads';
 
@@ -278,9 +279,15 @@ export function recentThreadRows(visited: readonly RecentThread[], slug: string,
         kind: 'thread',
         title: clip(i?.title || v.title || 'Untitled thread', 140),
         meta: [placeOf({ kind: v.channelKind, name: v.channelName }), last, count, openedWords(v.at, now)].filter(Boolean).join(' · '),
-        to: `/t/${encodeURIComponent(slug)}/threads?thread=${encodeURIComponent(v.rootId)}`,
+        to: threadLocation(slug, v),
       };
     });
+}
+
+/** Where a visited thread opens: in its own place (a channel, a direct message, a chat with a bot, a meeting chat) with the thread beside it. */
+function threadLocation(slug: string, v: RecentThread): string {
+  const l = messageLocation(encodeURIComponent(slug), { channelId: v.channelId, channelKind: v.channelKind, channelName: v.channelName, messageId: v.rootId, threadRootId: v.rootId });
+  return `${l.pathname}${l.search}`;
 }
 
 // ---- 3. recent activity ---------------------------------------------------------------------------------------------------------

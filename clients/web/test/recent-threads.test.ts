@@ -95,7 +95,11 @@ describe('recentThreadRows', () => {
     const rows = recentThreadRows(visited, 'eng', base);
     expect(rows).toHaveLength(10);
     expect(rows[0]?.key).toBe('visited:t0');
-    expect(rows[0]?.to).toBe('/t/eng/threads?thread=t0');
+    expect(rows[0]?.to).toMatch(/^\/t\/eng\/c\/dev\?.*t0/);
+    // a thread of a chat with a bot or of a meeting chat opens in its own place, not in the Threads inbox
+    const own = recentThreadRows([visit('b1', 1, { channelId: 'cb', channelKind: 'bot_conversation', channelName: '' }), visit('m1', 2, { channelId: 'cm', channelKind: 'meeting', channelName: '' })], 'eng', base);
+    expect(own[0]?.to).toBe('/t/eng/chat/cb?thread=b1');
+    expect(own[1]?.to).toMatch(/^\/t\/eng\/chat\?meeting=cm/);
     expect(new Set(rows.map((r) => r.key)).size).toBe(10);
     expect(rows[0]?.meta).toBe('#dev · Opened 1 minute ago');
   });

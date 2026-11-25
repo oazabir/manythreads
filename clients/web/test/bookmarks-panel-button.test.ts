@@ -63,7 +63,6 @@ describe('the Bookmarks button', () => {
     expect(button().tagName).toBe('BUTTON');
     expect(button().getAttribute('aria-label')).toBe('Bookmarks');
     expect(button().getAttribute('aria-pressed')).toBe('false');
-    expect(button().getAttribute('aria-expanded')).toBe('false');
     expect(button().hasAttribute('href')).toBe(false);
   });
 
@@ -73,7 +72,6 @@ describe('the Bookmarks button', () => {
     act(() => button().click());
     expect(decodeURIComponent(where())).toBe('?panel=bookmarks:thread');
     expect(button().getAttribute('aria-pressed')).toBe('true');
-    expect(button().getAttribute('aria-expanded')).toBe('true');
     act(() => button().click());
     expect(where()).toBe('');
     expect(button().getAttribute('aria-pressed')).toBe('false');

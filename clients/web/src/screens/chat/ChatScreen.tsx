@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { MessageId, type ChatSendRequest, type ConversationListItem } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
@@ -404,7 +404,7 @@ export function ChatScreen() {
       } else if (e.key === 'Escape' && !e.shiftKey && !mod && (live || stopping) && !document.querySelector('[role="dialog"], [role="menu"]')) {
         e.preventDefault();
         void stop();
-      } else if (!mod && !e.altKey && !isEditable(e.target) && (k === 'j' || k === 'k') && flat.length > 0) {
+      } else if (meeting === null && !mod && !e.altKey && !isEditable(e.target) && (k === 'j' || k === 'k') && flat.length > 0) {
         e.preventDefault();
         const at = root === null ? -1 : flat.indexOf(root);
         const next = k === 'j' ? Math.min(flat.length - 1, at + 1) : Math.max(0, at <= 0 ? 0 : at - 1);
@@ -426,21 +426,22 @@ export function ChatScreen() {
       window.removeEventListener('keydown', early, true);
       window.removeEventListener('keydown', onKey);
     };
-  }, [newChat, live, stopping, stop, flat, root, go]);
+  }, [newChat, live, stopping, stop, flat, root, go, meeting]);
 
   // ---- drawing ----------------------------------------------------------------------------------------------------------------------------
+  // no bot to talk to, or the chat did not open: said in the main pane, with the list (and the meetings in it) kept beside it, so a team without a bot still reaches its meeting chats
+  let unavailable: ReactNode = null;
   if (meeting === null && bots.status === 'ok' && talkable.length === 0 && known === undefined) {
-    return (
+    unavailable = (
       <div className="view-empty" data-testid="chat-no-bot" role="status">
         <p className="view-empty-title">There is no bot to chat with yet.</p>
         <p className="view-empty-body">Ask a team lead to turn one on.</p>
         <Link className="btn" to={`/t/${team}/bots`}>See the bots</Link>
       </div>
     );
-  }
-  if (meeting === null && opened.status === 'error' && blocked === null) {
+  } else if (meeting === null && opened.status === 'error' && blocked === null) {
     const status = isApiError(opened.error) ? opened.error.status : 0;
-    return (
+    unavailable = (
       <div className="view-empty" role="alert" data-testid="chat-unavailable-bot">
         <p className="view-empty-title">{status === 403 ? 'You cannot chat with this bot.' : status === 404 ? 'There is no such bot.' : 'The chat did not open.'}</p>
         <p className="view-empty-body">{status === 403 ? 'Only people on the bot’s team can talk to it.' : opened.error.message}</p>
@@ -494,6 +495,11 @@ export function ChatScreen() {
             </button>
           ) : null}
           <MeetingSpaceThread key={meeting} id={meeting} slug={team} />
+        </section>
+      ) : unavailable !== null ? (
+        <section className="ch-main" data-testid="chat-unavailable" data-landmark="chat-main" aria-label="Chat">
+          {narrow ? <button type="button" className="icon-btn ch-rail-toggle" aria-label="Show your chats" aria-expanded={railOpen} onClick={() => setRailOpen(true)} data-testid="chat-rail-toggle"><RailIcon /></button> : null}
+          {unavailable}
         </section>
       ) : (
       <section className="ch-main" data-testid="chat-main" data-landmark="chat-main" aria-label={`Chat with ${botName}`}>

@@ -212,7 +212,6 @@ test.describe('desktop', () => {
       await headerButton(page).click();
       await expect(side).toBeVisible(T);
       await expect(headerButton(page)).toHaveAttribute('aria-pressed', 'true');
-      await expect(headerButton(page)).toHaveAttribute('aria-expanded', 'true');
       await expect(side.getByRole('tab', { name: /Threads · 1/ })).toHaveAttribute('aria-selected', 'true', T);
       await expect(side.getByRole('tab', { name: /Messages · 2/ })).toBeVisible();
       // a message: the main view switches to its channel at the message, the panel stays

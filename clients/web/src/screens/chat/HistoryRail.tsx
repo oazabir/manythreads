@@ -181,10 +181,10 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
             </ul>
           </section>
         ))}
+        {below}
         {more ? (
           <button type="button" className="btn s ch-more" disabled={loadingMore} aria-busy={loadingMore} onClick={onMore} data-testid="chat-older">{loadingMore ? 'Loading…' : 'Show older'}</button>
         ) : null}
-        {below}
       </div>
     </aside>
   );
