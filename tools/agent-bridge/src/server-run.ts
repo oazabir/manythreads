@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { GIT_TOOLS, PUBLISH_TOOL, RECORD_TOOLS, whereYouRun } from '@manythreads/shared';
+// the one file the bridge needs, not the package index: through the index every shared file was part of the bundle, so any change in shared rebuilt the 5 GB pod image (2026-11-25)
+import { GIT_TOOLS, PUBLISH_TOOL, RECORD_TOOLS, whereYouRun } from '@manythreads/shared/runners/where-you-run';
 import { parseServerProfileName, type BridgeConfig, type ProfileConfig } from './config.ts';
 import type { RunRequest } from './request.ts';
 import { teamHermesHome, teamKubeconfigFile } from './team-user.ts';

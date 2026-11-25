@@ -155,8 +155,18 @@ main() {
   fi
   # the two commands a bot runs, written at every run so they name this machine's Node (and the release's own files, never the caller's PATH or NODE_OPTIONS)
   write_shims "$release/tools" "$node"
+  local previous
+  previous="$(readlink -f "$PREFIX/current" 2>/dev/null || true)"
   ln -sfn "$release" "$PREFIX/current.new"
   mv -T "$PREFIX/current.new" "$PREFIX/current"
+  # only this release and the one before it are kept (the service may still run the one before until it restarts): every update left 1.2 GB behind and an
+  # enrolled server's disk filled with them (2026-11-25, 5 releases, 6 GB)
+  local old
+  for old in "$PREFIX"/releases/*; do
+    [ -d "$old" ] || continue
+    case "$(readlink -f "$old")" in "$(readlink -f "$release")" | "$previous") continue ;; esac
+    rm -rf -- "${old:?}"
+  done
 
   # ---- the users, the group and the folders ------------------------------------------------------------------------------------------------------------------
   if ! id "$SVC_USER" >/dev/null 2>&1; then

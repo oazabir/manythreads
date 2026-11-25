@@ -53,6 +53,26 @@ describe('bridge.sh', () => {
     expect(script.match(/^OOMPolicy=/gm)).toHaveLength(1);
   });
 
+  it('keeps only the new release and the one before it at an --update (every update used to leave 1.2 GB behind)', () => {
+    const start = script.indexOf('  local previous');
+    const end = script.indexOf('rm -rf -- "${old:?}"', start);
+    expect(start).toBeGreaterThan(0);
+    const block = script.slice(start, script.indexOf('done', end) + 4);
+    const root = mkdtempSync(join(tmpdir(), 'bridge-releases-'));
+    try {
+      for (const r of ['aaa', 'bbb', 'ccc', 'ddd']) execFileSync('mkdir', ['-p', join(root, 'releases', r)]);
+      execFileSync('ln', ['-s', join(root, 'releases', 'ccc'), join(root, 'current')]);
+      const file = join(root, 'run.sh');
+      writeFileSync(file, `set -e\nPREFIX=${JSON.stringify(root)}\nrelease="$PREFIX/releases/ddd"\nrun() {\n${block}\n}\nrun\n`);
+      const res = spawnSync('bash', [file], { encoding: 'utf8', timeout: 20_000 });
+      expect(res.status, res.stderr).toBe(0);
+      expect(['aaa', 'bbb', 'ccc', 'ddd'].filter((r) => existsSync(join(root, 'releases', r)))).toEqual(['ccc', 'ddd']);
+      expect(execFileSync('readlink', [join(root, 'current')], { encoding: 'utf8' }).trim()).toBe(join(root, 'releases', 'ddd'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps Codex\'s sign-in folder the bridge user\'s alone (P31-01): no group, no setgid at any --update, and the helper\'s table names the bridge user', () => {
     expect(script).not.toMatch(/chown -hR "\$SVC_USER:\$AGENTS_GROUP"[^\n]*auth\/codex/);
     expect(script).not.toMatch(/find [^\n]*auth\/codex[^\n]*2770/);
