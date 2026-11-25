@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { stripHostileText } from './limits.ts';
 import { fileMeetingIntoMemory, loadTranscript, shouldFileAutomatically, type PersonFacts } from './memory.ts';
 import { loadMeeting, type MeetingRow } from './rows.ts';
+import { enqueueReview } from './review.ts';
 import { clock } from './writer.ts';
 
 // Work package S2 (P15-10, P15-12, decisions C7, C8, C9): after a room's transcript is written, the team's Scribe reads it and answers the notes as JSON; the platform checks
@@ -150,10 +151,17 @@ export interface NotesFile {
   items: readonly MeetingNoteItem[];
 }
 
+const lineAtLink = (ms: number): string => `[${clock(ms)}](transcript.md)`;
+
+/** One action item as a line of `notes.md`: `- [ ] Send the draft — owner: Priya, due 2026-11-30 ([00:12:03](transcript.md))`. */
+export function actionItemLine(i: Pick<MeetingNoteItem, 'text' | 'ownerName' | 'due' | 'atMs'>): string {
+  return `- [ ] ${escapeMarkdown(i.text)} — ${i.ownerName === null ? 'no owner' : `owner: ${escapeMarkdown(i.ownerName)}`}${i.due ? `, due ${i.due}` : ''} (${lineAtLink(i.atMs)})`;
+}
+
 /** `notes.md`, deterministic: the same draft and transcript always make the same file. Every time points at a line of the transcript file beside it. */
 export function renderNotesMarkdown(file: NotesFile): string {
   const q = (s: string): string => JSON.stringify(s);
-  const at = (ms: number): string => `[${clock(ms)}](transcript.md)`;
+  const at = lineAtLink;
   const of = (kind: MeetingNoteItem['kind']): MeetingNoteItem[] => file.items.filter((i) => i.kind === kind);
   const section = (heading: string, rows: string[], empty: string): string[] => ['', `## ${heading}`, '', ...(rows.length > 0 ? rows : [empty])];
   const out = [
@@ -173,7 +181,7 @@ export function renderNotesMarkdown(file: NotesFile): string {
     ...section('Decisions', of('decision').map((i) => `- ${escapeMarkdown(i.text)} (${at(i.atMs)})`), '*None.*'),
     ...section(
       'Action items',
-      of('action').map((i) => `- [ ] ${escapeMarkdown(i.text)} — ${i.ownerName === null ? 'no owner' : `owner: ${escapeMarkdown(i.ownerName)}`}${i.due ? `, due ${i.due}` : ''} (${at(i.atMs)})`),
+      of('action').map(actionItemLine),
       '*None.*',
     ),
     ...section('Open questions', of('question').map((i) => `- ${escapeMarkdown(i.text)} (${at(i.atMs)})`), '*None.*'),
@@ -310,6 +318,8 @@ async function recordFailure(ctx: PluginContext, job: JobInfo, facts: Facts, why
   await job
     .transaction(async (tx) => {
       await tx.query(`UPDATE app.meeting_notes SET status = 'failed', failure = $2, updated_at = now() WHERE meeting_id = $1::uuid AND status <> 'written'`, [m.id, why.slice(0, 500)]);
+      // no notes will come: the end-of-call review of the marks need not wait for them (P17-06)
+      await enqueueReview(ctx, tx, m.id, m.workspace_id, 'notes-failed');
     })
     .catch((err: unknown) => job.log.warn(`meetings: the failure of the notes of ${m.id} could not be recorded: ${err instanceof Error ? err.message.slice(0, 200) : 'unknown'}`));
   await postToThread(ctx, job, m, `The notes could not be written. ${why} The transcript is saved at \`${facts.transcriptPath}\`; open it from [the meeting](/meetings/${m.id}).`, facts.scribe?.actor_id ?? null);

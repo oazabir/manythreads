@@ -147,6 +147,13 @@ import {
   getMeetingAssistantRoute,
   meetingAskRoute,
   meetingCatchUpRoute,
+  ConfirmMeetingReviewRequest,
+  ConfirmMeetingReviewResponse,
+  GetMeetingReviewResponse,
+  MarkMeetingActionResponse,
+  confirmMeetingReviewRoute,
+  getMeetingReviewRoute,
+  markMeetingActionRoute,
 } from '@manythreads/shared';
 import { call } from '../api/client';
 
@@ -309,3 +316,12 @@ export const askAssistant = (meetingId: string, question: string) =>
   call(meetingAskRoute, { request: MeetingAskRequest, response: MeetingAskResponse }, { question }, { meetingId });
 /** Ask for a summary of what was said before this person joined; it comes as a `meeting.catchup` push to them only. */
 export const requestCatchUp = (meetingId: string) => call(meetingCatchUpRoute, { response: MeetingCatchUpResponse }, undefined, { meetingId });
+
+// ---- Mark action item and the end-of-call review (P17-06 step 2) ----
+/** Keep what was said in the last 30 seconds as an action item for the review at the end of the call. */
+export const markActionItem = (meetingId: string) => call(markMeetingActionRoute, { response: MarkMeetingActionResponse }, undefined, { meetingId });
+/** The end-of-call review of a call's action items, or null when there is none for this person. */
+export const fetchMeetingReview = (meetingId: string) => call(getMeetingReviewRoute, { response: GetMeetingReviewResponse }, undefined, { meetingId });
+/** Confirm the review with the items kept, each with its words and owner. */
+export const confirmMeetingReview = (meetingId: string, body: ConfirmMeetingReviewRequest) =>
+  call(confirmMeetingReviewRoute, { request: ConfirmMeetingReviewRequest, response: ConfirmMeetingReviewResponse }, body, { meetingId });

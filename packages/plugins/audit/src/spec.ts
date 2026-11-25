@@ -990,6 +990,14 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     teamId: team(e['teamId']),
     target: of('meeting_series', uuid(e['seriesId'])),
   }),
+  // The end-of-call review (P17-06 step 2): who confirmed a call's action items, and how many were kept and removed; never an item's words or an owner's name.
+  'meetings.action_items.confirmed': (e) => ({
+    action: 'meeting.action_items_confirmed',
+    who: actor(e['confirmedBy']),
+    teamId: team(e['teamId']),
+    target: of('meeting', uuid(e['meetingId'])),
+    reason: `${plural(num(e['itemCount']), 'action item')} kept, ${num(e['removedCount'])} removed`,
+  }),
   // A connected app read into a knowledge base (Bundle D, P16-08): counts only, and only a pass that moved or left something out; an idle pass is routine.
   'knowledge.source.synced': (e) => {
     const moved = num(e['added']) + num(e['updated']) + num(e['removed']);

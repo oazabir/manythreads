@@ -1562,3 +1562,21 @@
     justify-self: end;
   }
 }
+
+/* ---- Mark action item (P17-06 step 2): what the mark kept, for a few seconds above the bar ---- */
+.call-mark-note {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--radius-sm);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+.call-mark-note.failed {
+  border-color: var(--rule);
+  background: var(--surface);
+  color: var(--alert-ink);
+}

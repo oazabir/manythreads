@@ -200,6 +200,7 @@ export const AUDIT_ACTIONS = {
   'meeting.series_created': { category: 'content', label: 'Made a meeting series' },
   'meeting.series_changed': { category: 'content', label: 'Changed a meeting series' },
   'meeting.series_stopped': { category: 'content', label: 'Stopped a meeting series' },
+  'meeting.action_items_confirmed': { category: 'content', label: "Confirmed a meeting's action items" },
   'knowledge.source_synced': { category: 'content', label: 'Read a connected app into a knowledge base' },
   'webhook.provider_endpoint_changed': { category: 'access', label: 'Changed an address a work app calls' },
   'webhook.provider_event_refused': { category: 'access', label: 'Turned away a work app call' },

@@ -9,7 +9,7 @@ import {
   type MeetingAssistantStatus,
 } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { askAssistant, fetchAssistantStatus, requestCatchUp } from './api';
+import { askAssistant, fetchAssistantStatus, markActionItem, requestCatchUp } from './api';
 
 /*
  * The meeting assistant on a person's page (P17-06, docs/plans/meeting-assistant.md): the Ask panel's questions and Catch me up.
@@ -34,6 +34,13 @@ export type CatchUpState =
   | { kind: 'writing'; requestId: string | null; minutesBefore: number }
   | { kind: 'ready' | 'empty' | 'failed'; minutesBefore: number; text: string };
 
+/** "Mark action item" in the call bar (P17-06 step 2): the last press and how it went. */
+export type MarkState =
+  | { kind: 'idle' }
+  | { kind: 'marking' }
+  | { kind: 'marked'; text: string; count: number }
+  | { kind: 'failed'; text: string };
+
 export type AssistantSnapshot = {
   meetingId: string | null;
   status: MeetingAssistantStatus | null;
@@ -43,6 +50,7 @@ export type AssistantSnapshot = {
   catchUp: CatchUpState;
   /** A refusal of the last Ask or Catch me up press, in plain words. */
   error: string | null;
+  mark: MarkState;
 };
 
 /** How long a question waits for its push before the panel stops waiting. */
@@ -54,12 +62,16 @@ const ASKS_KEPT = 20;
 /** A push for an id not known yet is kept this long, for the POST that has not answered yet. */
 const EARLY_MS = 60_000;
 
-const EMPTY: AssistantSnapshot = { meetingId: null, status: null, open: false, asks: [], catchUp: { kind: 'idle' }, error: null };
+/** How long the bar shows what a mark kept (or why not). */
+export const MARK_SHOWN_MS = 6_000;
+
+const EMPTY: AssistantSnapshot = { meetingId: null, status: null, open: false, asks: [], catchUp: { kind: 'idle' }, error: null, mark: { kind: 'idle' } };
 
 type Deps = {
   status: typeof fetchAssistantStatus;
   ask: typeof askAssistant;
   catchUp: typeof requestCatchUp;
+  mark: typeof markActionItem;
   now: () => number;
   setTimeout: (fn: () => void, ms: number) => unknown;
 };
@@ -192,6 +204,25 @@ export class AssistantStore {
     }
   }
 
+  /** "Mark action item": the server keeps what was said in the last 30 seconds for the review at the end; the bar says what it kept, for a few seconds. */
+  async markActionItem(): Promise<void> {
+    const id = this.snap.meetingId;
+    if (!id || this.snap.mark.kind === 'marking') return;
+    this.publish({ mark: { kind: 'marking' } });
+    let next: MarkState;
+    try {
+      const res = await this.deps.mark(id);
+      next = { kind: 'marked', text: res.mark.text, count: res.count };
+    } catch (e) {
+      next = { kind: 'failed', text: refusal(e, 'The action item could not be marked. Try again.') };
+    }
+    if (id !== this.snap.meetingId) return;
+    this.publish({ mark: next });
+    this.deps.setTimeout(() => {
+      if (this.snap.mark === next) this.publish({ mark: { kind: 'idle' } });
+    }, MARK_SHOWN_MS);
+  }
+
   /** Starts Catch me up again after a summary was shown (Close, then ask again later). */
   dismissCatchUp(): void {
     if (this.snap.catchUp.kind !== 'writing') this.publish({ catchUp: { kind: 'idle' } });
@@ -258,6 +289,7 @@ export function assistantStore(): AssistantStore {
     status: fetchAssistantStatus,
     ask: askAssistant,
     catchUp: requestCatchUp,
+    mark: markActionItem,
     now: () => Date.now(),
     setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
   });

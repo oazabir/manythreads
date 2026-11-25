@@ -32,6 +32,8 @@ export * from './channel.standup.digested.ts';
 export * from './meetings.appointment.changed.ts';
 export * from './meetings.appointment.starting_soon.ts';
 export * from './meetings.series.changed.ts';
+export * from './meetings.action_items.confirmed.ts';
+export * from './meetings.review.opened.ts';
 export * from './project.project.updated.ts';
 export * from './project.project.deleted.ts';
 export * from './identity.provider.changed.ts';

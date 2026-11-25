@@ -24,7 +24,7 @@ export default definePlugin({
     extends: ['event.emit', 'event.subscribe', 'job.register'],
     events: {
       emits: ['notifications.notification.created', 'notifications.digest.sent', 'notifications.digest.unsubscribed'],
-      consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due', 'connections.sign_in.expired', 'scheduled_jobs.scheduled_job.stopped', 'meetings.notes.written', 'meetings.scheduled.starting_soon', 'meetings.invite.sent', 'meetings.appointment.changed', 'meetings.appointment.starting_soon'],
+      consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due', 'connections.sign_in.expired', 'scheduled_jobs.scheduled_job.stopped', 'meetings.notes.written', 'meetings.review.opened', 'meetings.scheduled.starting_soon', 'meetings.invite.sent', 'meetings.appointment.changed', 'meetings.appointment.starting_soon'],
     },
     // meetings: the notes of a finished room (`meetings`, `meeting_notes`) that action items are counted from. presence: the Do not disturb settings a message is held by (`dnd_settings`, `person_status.time_zone`), and who has been away (the presence provider).
     dependsOn: ['channels', 'presence', 'meetings'],

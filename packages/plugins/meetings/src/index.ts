@@ -13,6 +13,7 @@ import { registerNotesRoutes } from './routes-notes.ts';
 import { registerNotetaker } from './notetaker.ts';
 import { registerQuestions } from './questions.ts';
 import { registerAssistant } from './assistant.ts';
+import { registerReview } from './review.ts';
 import { registerRecording } from './recording.ts';
 import { registerScheduled } from './scheduled.ts';
 import { registerScheduledJobs } from './scheduled-jobs.ts';
@@ -49,6 +50,9 @@ export default definePlugin({
         'meetings.appointment.starting_soon',
         // meeting series (P17-05): made, changed or stopped; ids only
         'meetings.series.changed',
+        // the end-of-call review (P17-06): opened for the people who were in the call (the notifications plugin tells them), and its confirmed action items; ids and counts only
+        'meetings.review.opened',
+        'meetings.action_items.confirmed',
         'meetings.meeting.started',
         'meetings.meeting.ended',
         'meetings.participant.joined',
@@ -86,8 +90,9 @@ export default definePlugin({
       ],
       // channel.message.posted and channel.message.transcribed: a voice message in a call thread becomes a line (P15-14; one of the current client when the server has written its
       // words, P32), and a mention of the note-taker in it is a question (P15-24).
-      // meetings.meeting.ended and meetings.transcript.written: the transcript writer and the Scribe start from them (P15-09, P15-10).
-      consumes: ['channel.channel.archived', 'channel.member.removed', 'team.member.removed', 'channel.message.posted', 'channel.message.transcribed', 'meetings.meeting.ended', 'meetings.transcript.written'],
+      // meetings.meeting.ended and meetings.transcript.written: the transcript writer and the Scribe start from them (P15-09, P15-10); meetings.notes.written: the end-of-call
+      // review takes the notes' action items (P17-06).
+      consumes: ['channel.channel.archived', 'channel.member.removed', 'team.member.removed', 'channel.message.posted', 'channel.message.transcribed', 'meetings.meeting.ended', 'meetings.transcript.written', 'meetings.notes.written'],
     },
     // The Scribe's and the note-taker's tools (P15-10, P15-24) and the search over what was said (P15-13). A bot gets them by listing them in its BOT.md.
     capabilities: [
@@ -129,8 +134,9 @@ export default definePlugin({
     registerNotetaker(ctx);
     registerListener(ctx);
     registerQuestions(ctx);
-    // the meeting assistant (P17-06): Ask and Catch me up
+    // the meeting assistant (P17-06): Ask and Catch me up; Mark action item and the end-of-call review
     registerAssistant(ctx);
+    registerReview(ctx);
     registerRecording(ctx);
     registerSearch(ctx);
     // Bundle D: one call per module, each a stub until its work package fills it in.

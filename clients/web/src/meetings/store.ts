@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import {
   MEETING_ASK_PUSH,
   MEETING_CATCHUP_PUSH,
+  MEETING_REVIEW_PUSH,
   MEETING_CAPTION_PUSH,
   MEETING_CHANGED_PUSH,
   MEETING_LOBBY_PUSH,
@@ -30,6 +31,7 @@ import { roomOfMessage } from './roomCard';
 import { callCards } from './callCards';
 import { lobbyStore } from './guestLinks';
 import { assistantStore } from './assistant';
+import { handleReviewPush } from './review';
 import { browserStorage, loadPrefs } from './prefs';
 import { browserAudioContext, createSounds, type Sounds } from './sounds';
 
@@ -70,6 +72,8 @@ export type LiveDeps = {
   onLobby?: (push: Push) => void;
   /** The answer to this person's question in a call, or their Catch me up summary (P17-06): the assistant panel takes it. */
   onAssistant?: (push: Push) => void;
+  /** The end-of-call review of a call this person was in opened, changed or was confirmed (P17-06 step 2): the meeting page asks again. */
+  onReview?: (push: Push) => void;
   /** The socket came back after a gap: what else the page keeps about calls asks again (the call cards, P15-26). */
   onReconnected?: () => void;
   /**
@@ -224,6 +228,10 @@ export class LiveRoomsStore {
       this.deps.onAssistant?.(push);
       return;
     }
+    if (push.type === MEETING_REVIEW_PUSH) {
+      this.deps.onReview?.(push);
+      return;
+    }
     if (push.type === MEETING_RINGING_PUSH) {
       const p = MeetingRingingPush.safeParse(push.payload);
       if (p.success) this.addRing(p.data);
@@ -369,6 +377,7 @@ export function liveRooms(): LiveRoomsStore {
       l.handlePush(push);
     },
     onAssistant: (push) => assistantStore().handlePush(push),
+    onReview: (push) => handleReviewPush(push),
     quiet: () => {
       const me = presenceStore.snapshot().me;
       return me !== null && dndState(me.dnd, me.timeZone ?? null, new Date(), false).active;

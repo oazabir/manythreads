@@ -263,8 +263,35 @@ store) and `AssistantPanel.tsx` (the Ask button in the call bar opens it; a pers
   person per call.
 - **Routes**: `GET /api/meetings/:id/assistant` (what may be offered, with reasons), `POST /api/meetings/:id/ask` `{question}` (202 `{askId, answerer}`), `POST
   /api/meetings/:id/catch-up` (202 `{requestId, minutesBefore}`). Pushes to the asker only: `meeting.ask`, `meeting.catchup`. Schemas: `packages/shared/src/api/meetings/assistant.ts`.
-- **No new table or event**: an answer is a thread message, a run is a run, a summary is a read.
-- **Step 2 (not built)**: Mark action item (the last 30 seconds) and the end-of-call review where the people confirm action items and owners before they are sent.
+- **No new table or event** for Ask and Catch me up: an answer is a thread message, a run is a run, a summary is a read.
+
+## Mark action item and the end-of-call review (P17-06, step 2)
+
+A person in a live call presses **Mark action item** (the flag button in the call bar): the final transcript lines that ended in the last 30 seconds are kept as a **mark**
+(only the words of people who said yes to "Transcribe my voice", read as the person who pressed it). The bar says what it kept for a few seconds ("Marked for the review at the
+end: Nadia: I will send the draft."), or why not ("Nothing was written down in the last 30 seconds…", "Turn on transcription…"). When the call has ended, a **review** opens
+for the people who were in it: the notes' action items (the Scribe's notes; a note-taker's notes are the organizer's own copy and stay out) and the marks, the same words
+once. Each person gets a notification ("Review 3 action items from Sprint review") that opens the meeting page, where the review sits above the notes: change an item's words
+or owner (anyone who was in the call, or a team member the notes named), remove it, then **Confirm before sending: 3 action items**. One person confirms for everyone; only the
+confirmed items go into the notes' list (`meeting_notes.items` and the "Action items" section of `notes.md`, the rest of the file as it was) and on to the follow-ups (P17-07).
+Code: `src/review.ts`; web `clients/web/src/meetings/review.ts`, `screens/meetings/ReviewPanel.tsx`, the mark in `meetings/assistant.ts` and `CallDock.tsx`.
+
+- **When it opens** (job `meetings.review`): at once for a call with a note-taker; otherwise when the Scribe's notes are written (`meetings.notes.written`) or fail, and ten
+  minutes after the end at the latest (then with the marks only). Notes that come after it opened are added to it; after it was confirmed they open it again with the
+  confirmed items and the new ones (no second notification), so nothing reaches the notes unconfirmed. A call with nothing marked or found has no review.
+- **Who**: a mark is written by a person in the live call, as themself, at most 30 each, and read by the readers of the call's channel (they could read the lines it took). A
+  review is read by the people who were in the call while they can still read its channel; another reader of the channel sees none. Confirm checks how many items the person saw
+  (a changed review is a 409), that every item is one of the review, and that an owner was in the call (or named by the notes); a second Confirm is a 409 naming who confirmed.
+- **Tables** (`0015_meeting_marks.sql`): `meeting_marks` (forced row-level security; the insert trigger copies the call's place, refuses an ended call, someone not in it and a 31st
+  mark) and `meeting_reviews` (one row per call; made only by the platform; the guard trigger lets a person change only the status to confirmed, as themself, with items of the
+  review).
+- **Routes**: `POST /api/meetings/:id/marks` (201 `{mark, count}`; 20 a minute), `GET /api/meetings/:id/review` (`{review}`, null when there is none for the caller),
+  `POST /api/meetings/:id/review/confirm` `{items: [{id, text, ownerId}], seen}` (20 a minute). Push `meeting.review` `{meetingId, status}` to the people of the review. Schemas:
+  `packages/shared/src/api/meetings/review.ts`.
+- **Events**: `meetings.review.opened` (the people, the count; the notifications plugin writes one `meeting_actions` row per person, the same reference as an owner's row, so a
+  person who is both gets one) and `meetings.action_items.confirmed` (who confirmed, items kept and removed, the owners' ids; audited as "Confirmed a meeting's action items").
+  Ids and counts only, never an item's words.
+- **Not yet**: the notes' owners are still told by `meetings.notes.written` when the notes are written, before the review; the follow-ups (P17-07) start from the confirmed event.
 
 ## Access loss
 
@@ -305,7 +332,7 @@ left out takes its default; a key that is present but not valid takes the closed
 
 Server, `packages/plugins/meetings/test`: `meetings-api.test.ts` (routes, authorisation, rate limit, auto-end, kick, webhook), `not-configured.test.ts`, `consent.test.ts`, `segments.test.ts`, `captions.test.ts`,
 `limits.test.ts`, `hostile-text.test.ts`, `writer.test.ts`, `audio-chunks.test.ts`, `notes.test.ts`, `notes-unit.test.ts`, `notetaker.test.ts`, `listener.test.ts`, `questions.test.ts`, `shares.test.ts`, `save.test.ts`,
-`recording.test.ts`, and under `rls/`: `meetings-rls.test.ts`, `meetings-bundle-c-rls.test.ts`, `meetings-search-rls.test.ts` (`pnpm test:rls`). The events: `packages/shared/test/events/phase15-meetings-contracts.test.ts`.
+`recording.test.ts`, `review.test.ts` and `review-unit.test.ts` (Mark action item and the end-of-call review), and under `rls/`: `meetings-rls.test.ts`, `meetings-bundle-c-rls.test.ts`, `meetings-search-rls.test.ts`, `meetings-review-rls.test.ts` (`pnpm test:rls`). The events: `packages/shared/test/events/phase15-meetings-contracts.test.ts`.
 The tests use the `media-fake` test-only plugin (a deterministic provider that records every room, token, kick and listener). The end-to-end specs are `e2e/meetings`, `e2e/api/meetings` and `e2e/visual/meetings`; the
 live check is `e2e/screens/task.verify-bundle-c.shots.ts`.
 
@@ -498,7 +525,7 @@ Providers: `meeting.runs` (registered by `runtime-hermes`; methods `notes`, `ans
 
 `meetings/0003_transcripts_notes.sql` (late-line window, `client_seg_id`, `edited_at`, BRIN and trigram indexes, `app.meetings_correct_segment`, the tables `meeting_notes`, `meeting_shares`, `meeting_recordings`,
 `app.meetings_set_notetaker`, `app.meetings_set_recording`, `app.meetings_can_read_notes`, settings columns `room_cap`, `recording_cap`, `notetaker_allowed`) · `meetings/0004_organizer_leaves.sql` (the organizer's right to the team's copy ends with their right to the place) · `bots/0030_meeting_triggers.sql` · `memory-inbox/0005_meeting_origin.sql` ·
-`notifications/0006_meeting_actions.sql` · `search/0007_meetings.sql` · `answer/0009_meeting_citations.sql` · `retention/0002_meeting_audio.sql`.
+`notifications/0006_meeting_actions.sql` · `search/0007_meetings.sql` · `answer/0009_meeting_citations.sql` · `retention/0002_meeting_audio.sql`. · `meetings/0015_meeting_marks.sql` (P17-06 step 2: `meeting_marks`, `meeting_reviews`).
 
 ## Recording (`recording.ts`, P15-15)
 

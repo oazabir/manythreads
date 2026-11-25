@@ -13,6 +13,7 @@ import { PhoneIcon } from '../../meetings/icons';
 import { useOpenMessage } from '../../shell/messageLink';
 import { searchStamp } from '../../search/stamp';
 import { NotesCard } from './NotesCard';
+import { ReviewPanel } from './ReviewPanel';
 import { ShareDialog } from './ShareDialog';
 import { TranscriptView } from './TranscriptView';
 import { isMissing, lengthWords, meetingHomePath, parseJump, peopleWords, readFailure, readsOrganizerCopy, tabFor } from './words';
@@ -129,6 +130,7 @@ function Loaded({ overview }: { overview: MeetingOverview }) {
         <span className="mv-link-recording"><b>Recording</b> <Recording overview={overview} /></span>
         {overview.notetaker ? <span className="mv-quiet" data-testid="meeting-notetaker">{`Note-taker: ${overview.notetaker.name}`}</span> : null}
       </div>
+      <ReviewPanel meetingId={meetingId} ended={!live} />
       <div className="mv-tabs" role="tablist" aria-label="Meeting">
         <button type="button" role="tab" id="mv-tab-notes" aria-selected={tab === 'notes'} aria-controls="mv-panel-notes" className={`mv-tab ${tab === 'notes' ? 'on' : ''}`} onClick={() => setTab('notes')} data-testid="meeting-tab-notes">Notes</button>
         <button type="button" role="tab" id="mv-tab-transcript" aria-selected={tab === 'transcript'} aria-controls="mv-panel-transcript" className={`mv-tab ${tab === 'transcript' ? 'on' : ''}`} onClick={() => setTab('transcript')} data-testid="meeting-tab-transcript">Transcript</button>

@@ -54,6 +54,23 @@ before they came), and later **Mark action item** and the **end-of-call review**
 ## Data
 No new table in step 1: asks and summaries are not kept (the answers are thread messages; a summary is a push to one person). A shared table arrives with step 2 (marked items).
 
+## Step 2: Mark action item and the end-of-call review (built)
+- **Mark** (`POST /api/meetings/:id/marks`, the flag button in the call bar): a person in the live call keeps the final lines that ended in the last 30 seconds (read as them,
+  only people who said yes; refused with a plain reason when nothing was written down or transcription is off). Table `meeting_marks` (meetings 0015): read by the readers of
+  the call's channel, written by a person in the live call as themself, at most 30 each, never changed.
+- **Review** (`meeting_reviews`, one row per call, made by the platform in job `meetings.review`): opens when the call has ended, at once with a note-taker (its notes are
+  the organizer's own copy and stay out), else when the Scribe's notes are written or fail, ten minutes after the end at the latest. Items: the notes' action items, then the
+  marks, the same words once (at most 50). Read by the people who were in the call while they can read its channel. Event `meetings.review.opened` (ids, the count): the
+  notifications plugin writes one `meeting_actions` notification per person ("Review 3 action items from …") that opens the meeting page, where the panel is.
+- **Confirm** (`POST /api/meetings/:id/review/confirm` `{items, seen}`): one person for everyone, as themself; edited words and owners (people who were in the call, or a
+  member the notes named); removed items left out. Event `meetings.action_items.confirmed` (ids and counts, audited). Job `meetings.review.apply` writes the confirmed items
+  into `meeting_notes.items` and the "Action items" section of `notes.md` (the rest of the file untouched). Notes that arrive after a confirmation open the review again.
+- **Web**: the mark in the call bar (`meetings/assistant.ts`, `CallDock.tsx`), `screens/meetings/ReviewPanel.tsx` on the meeting page, push `meeting.review`.
+- **Decisions taken**: the review lives on the meeting page (a notification leads there), not in the call bar, because a call's notes come minutes after it ends; Confirm is
+  once for everyone (first wins, the others see who confirmed); the owners named by the notes are still notified when the notes are written (unchanged), the follow-ups of
+  P17-07 will start from the confirmed event; the notification reuses the kind `meeting_actions` (no notifications migration), so a person who is both an owner and a
+  reviewer gets one row for the meeting.
+
 ## API (shared Zod in `packages/shared/src/api/meetings/assistant.ts`; schema-compat snapshots updated by name only)
 - `GET /api/meetings/:meetingId/assistant` → `MeetingAssistantStatus` `{ ask: { available, answerer: { kind: 'brain'|'notetaker', name } | null, reason },
   catchUp: { available, minutesBefore, reason } }`.
@@ -89,7 +106,8 @@ characters before the join. Brain's runs go through the same pre-call check and 
 2. **Mark action item and the end-of-call review**: `meeting_marks` (RLS: readers of the call's channel; written by people present), "Mark action item" takes the final lines of
    the last 30 seconds (people who said yes only); at the end the notes' action items plus the marks open a review for the people present: edit text and owner, remove, Confirm
    ("Confirm before sending: 3 action items"); only confirmed items go into the notes' list and the follow-ups of P17-07. In-app panel and a notification, not a P9-08 surface.
-   Then the e2e spec, the W baselines `meetings/ask-panel` and `meetings/review`, the live check.
+   Then the e2e spec, the W baselines `meetings/ask-panel` and `meetings/review`, the live check. Built (see "Step 2" above); the e2e spec covers the mark refusal and
+   the review panel; the baselines and the live check are still to do on the live site.
 
 ## Decisions taken (recommended defaults; the owner may change them)
 1. Brain answers through the meeting-run door (with the room's channel check), not a thread `@brain`, so it can see the transcript and cannot leak another channel into the call.

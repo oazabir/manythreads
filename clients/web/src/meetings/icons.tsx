@@ -1,7 +1,7 @@
 import {
   AndroidIcon, BoardIcon as BoardIcon_, CallIcon, ChatIcon as ProChat, ClockIcon as ProClock, ClosedCaptionsIcon, ArrowExportIcon, HeadphonesIcon as ProHeadphones, HeadphonesOffIcon, MicrophoneIcon, MicrophoneOffIcon, RecordIcon, ShareIcon as ProShare, SoundwaveIcon, TuneIcon, VideoIcon as ProVideo, LaptopIcon, FullScreenMaximizeIcon, FullScreenMinimizeIcon,
   GridIcon as ProGrid, PersonIcon, PinIcon as ProPin, PinOffIcon as ProPinOff, PictureInPictureEnterIcon, CancelIcon, LinkIcon,
-  ChatQuestionIcon, HistoryIcon,
+  ChatQuestionIcon, HistoryIcon, FlagIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -50,3 +50,6 @@ export const GuestLinkIcon = proIcon(LinkIcon, 14);
 /* P17-06: the meeting assistant (Ask, and Catch me up). */
 export const AskIcon = proIcon(ChatQuestionIcon);
 export const CatchUpIcon = proIcon(HistoryIcon);
+
+/* P17-06 step 2: Mark action item (the last 30 seconds kept for the end-of-call review). */
+export const MarkIcon = proIcon(FlagIcon);

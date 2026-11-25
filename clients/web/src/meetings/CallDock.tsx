@@ -10,7 +10,7 @@ import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenO
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
 import { EndRoomConfirm } from './EndRoomConfirm';
-import { AskIcon, CameraIcon, CaptionsIcon, ChatIcon, CloseIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
+import { AskIcon, MarkIcon, CameraIcon, CaptionsIcon, ChatIcon, CloseIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
 import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, notetakerBadge, rosterOf, visibleCaptions } from './model';
 import { NotetakerButton, NotetakerMenu } from './NotetakerPicker';
 import { RecordConsentPrompt, RecordingChip, RecordingToggle } from './RecordingToggle';
@@ -343,6 +343,12 @@ export function CallDock() {
       {call.phase === 'connected' ? <ShareAskStatus call={call} sharing={sharerName !== null} /> : null}
       {call.phase === 'connected' ? <CallStage call={call} media={c} /> : null}
       {call.phase === 'connected' ? <CatchUpOffer snap={assistant} /> : null}
+      {assistant.mark.kind === 'marked' || assistant.mark.kind === 'failed' ? (
+        <p className={`call-mark-note ${assistant.mark.kind}`} role="status" data-testid="call-mark-note" data-state={assistant.mark.kind}>
+          {assistant.mark.kind === 'marked' ? <b>Marked for the review at the end: </b> : null}
+          <span>{assistant.mark.text}</span>
+        </p>
+      ) : null}
       {assistant.open && (call.phase === 'connected' || call.phase === 'reconnecting') ? (
         <AssistantPanel snap={assistant} canOpenThread={call.meeting.threadRootId !== null} onOpenThread={() => c.openChat()} />
       ) : null}
@@ -450,6 +456,17 @@ export function CallDock() {
             </button>
             {menu === 'settings' ? <Settings call={call} canEnd={canEnd} /> : null}
           </div>
+          <button
+            type="button"
+            className="call-btn"
+            aria-label="Mark action item: keep what was said in the last 30 seconds for the review at the end"
+            title="Mark action item"
+            disabled={call.phase !== 'connected' || assistant.mark.kind === 'marking'}
+            onClick={() => void assistantStore().markActionItem()}
+            data-testid="call-mark"
+          >
+            <MarkIcon />
+          </button>
           <button
             type="button"
             className={`call-btn ${assistant.open ? 'on' : ''}`}

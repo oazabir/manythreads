@@ -26,6 +26,7 @@ function harness(over: Partial<ConstructorParameters<typeof AssistantStore>[0]> 
     status: async () => STATUS,
     ask: () => new Promise((resolve) => (askAnswer = () => resolve({ askId: ASK as never, answerer: { kind: 'brain', name: 'Brain' } }))),
     catchUp: async () => ({ requestId: REQ, minutesBefore: 12 }),
+    mark: async () => ({ mark: { id: REQ, meetingId: ROOM as never, markedBy: ROOM as never, atMs: 0, text: 'Nadia: I will send it.', createdAt: '2026-11-25T10:00:00.000Z' }, count: 1 }),
     now: () => 1_000,
     setTimeout: (fn, ms) => timers.push({ fn, ms }),
     ...over,

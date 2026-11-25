@@ -559,3 +559,83 @@
     flex: 1 1 auto;
   }
 }
+
+/* ---- the end-of-call review (P17-06 step 2): the action items to confirm, then the confirmed ones ---- */
+.mv-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mv-review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+  overflow-wrap: anywhere;
+}
+
+.mv-review-item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.mv-review-item.removed {
+  color: var(--mute);
+}
+
+.mv-review-source {
+  font-size: var(--fs-caption);
+}
+
+.mv-review-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mv-review-text {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+}
+
+.mv-review-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mv-review-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mv-review-owner select {
+  max-width: 220px;
+}
+
+.mv-review-gone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.mv-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
