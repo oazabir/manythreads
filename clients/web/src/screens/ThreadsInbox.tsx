@@ -13,7 +13,7 @@ import { useUnread } from '../channels/hooks';
 import { channelStore, threadKey } from '../channels/store';
 import { useShell } from '../shell/context';
 import { useNarrow } from '../shell/useNarrow';
-import { Bell } from '../notifications/Bell';
+import { HeaderIcons } from '../shell/HeaderIcons';
 import { BackIcon, ReplyIcon } from '../shell/icons';
 import { WelcomeCard } from '../welcome/WelcomeCard';
 import { PageHeader } from '../components/PageHeader';
@@ -368,7 +368,7 @@ export function ThreadsInbox() {
   // the tabs, shared by the thread tabs and Later; Later's badge counts the reminders that are due
   const header = (
     <header className="inh" data-landmark={narrow ? undefined : 'header'}>
-      {narrow ? null : <PageHeader compact title="Threads" actions={grid && !selected ? <Bell /> : undefined} />}
+      {narrow ? null : <PageHeader compact title="Threads" actions={grid && !selected ? <HeaderIcons /> : undefined} />}
       <div className="tabs2" role="tablist" aria-label="Threads">
         {TABS.filter((t) => t.id !== 'later' || later.supported).map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
@@ -397,7 +397,7 @@ export function ThreadsInbox() {
           }}
           selected={selected}
           onSelect={(id) => open(id)}
-          bell={narrow ? null : <div className="inr-bell"><Bell /></div>}
+          bell={narrow ? null : <div className="inr-bell"><HeaderIcons /></div>}
           backLabel="Threads"
         />
       </div>
@@ -492,7 +492,7 @@ export function ThreadsInbox() {
               <span>Threads</span>
             </button>
           ) : null}
-          {narrow ? null : <div className="inr-bell"><Bell /></div>}
+          {narrow ? null : <div className="inr-bell"><HeaderIcons /></div>}
           {emptyBand}
           {selected ? (
             <ThreadBody key={selected} rootId={selected} variant="main" />

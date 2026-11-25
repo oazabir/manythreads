@@ -2258,10 +2258,14 @@
   top: 11px;
   right: 20px;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
+/* room for the Bookmarks button and the bell */
 .inr .thread-head {
-  padding-right: 60px;
+  padding-right: 92px;
 }
 
 .back-to-list {

@@ -7,13 +7,13 @@ const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Chat, Schedule, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Bookmarks, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
+  it('is exactly Chat, Schedule, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
       [5, 'Chat'], [8, 'Schedule'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [27, 'Deliveries'], [30, 'Threads'], [32, 'Drafts'],
-      [33, 'Bookmarks'], [35, 'Approvals'], [40, 'Channels'], [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
+      [35, 'Approvals'], [40, 'Channels'], [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
     ]);
-    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(11).fill('item'), 'group-list', 'header', 'header', 'header']);
+    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(10).fill('item'), 'group-list', 'header', 'header', 'header']);
   });
 
   it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
@@ -53,8 +53,9 @@ describe('sidebar contract', () => {
 
   it('the guest shell keeps only the channel groups', () => {
     expect(visibleNav(CORE_NAV, { guest: true }).map((i) => i.id)).toEqual(['channels']);
-    // every entry but Bookmarks, which shows only while the person has one (P36-08)
-    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(CORE_NAV.length - 1);
+    // Bookmarks has a button at the top right, not an entry here, so every entry shows
+    expect(visibleNav(CORE_NAV, { guest: false })).toHaveLength(CORE_NAV.length);
+    expect(CORE_NAV.some((i) => i.id === 'bookmarks')).toBe(false);
   });
 });
 

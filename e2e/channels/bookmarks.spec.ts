@@ -6,10 +6,10 @@ import { apiAs, createChannel, openAs, postMessage, uniqueName, type Api } from 
 
 /**
  * Bookmarks, step 1 (P36-08, docs/plans/bookmarks.md): Rafi bookmarks a thread from the bookmark at the top right of the thread pane, and a message from its
- * More menu (the row then shows a small mark). The sidebar shows Bookmarks only while he has one, in a second tab too (the push). The Threads view's
+ * More menu (the row then shows a small mark). The Bookmarks button at the top right of the header, left of the bell, is always there (with none too), and the sidebar has no Bookmarks entry. The Threads view's
  * Bookmarked filter lists the thread he does not follow. The Bookmarks page has Threads and Messages: a thread opens with the thread on the right, a channel
  * message opens the channel at it, a reply opens its thread on the right. A deleted message says "No longer available" and nothing of it. Removing the last
- * bookmark hides the sidebar entry. One check at 390 px. Rafi's bookmarks are emptied first: the entry depends on his count.
+ * bookmark leaves the button where it is. One check at 390 px. Rafi's bookmarks are emptied first.
  *
  * Steps 2 and 3: a reply opened from Bookmarks is scrolled to and highlighted in its thread (`?reply=`); a file of the team's repository is bookmarked from
  * its row menu in Files (the row shows the mark), listed on the Files tab with its place and size, and opens in Files with its toggle on; at 390 px the You
@@ -36,6 +36,7 @@ const put = async (target: Record<string, unknown>): Promise<void> => {
   expect(res.status(), await res.text()).toBeLessThan(300);
 };
 const sidebarEntry = (page: Page) => page.getByRole('navigation', { name: 'Sidebar' }).getByRole('link', { name: 'Bookmarks' });
+const headerButton = (page: Page) => page.getByTestId('header-bookmarks');
 const row = (page: Page, key: string) => page.locator(`[data-message-id="${ids[key]}"]`).first();
 
 test.beforeAll(async () => {
@@ -73,12 +74,18 @@ test.afterAll(async () => {
 test.describe('desktop', () => {
   test.skip(({ isMobile }) => isMobile, 'the desktop layout; one 390 px check at the end');
 
-  test('the bookmark at the top right of the thread pane; the sidebar entry appears, in a second tab too', async ({ browser }) => {
+  test('the bookmark at the top right of the thread pane; the header button is always there and the sidebar has no entry', async ({ browser }) => {
     const other = await openAs(browser, 'rafi', '/t/engineering/drafts');
     const { page, context } = await openAs(browser, 'rafi', `/t/engineering/c/${channel.name}?panel=thread:${ids['root']}`);
     try {
       await expect(other.page.getByTestId('drafts')).toBeVisible(T);
-      await expect(sidebarEntry(other.page)).toHaveCount(0);
+      // the header button is there with no bookmark, left of the bell, and is the link to the page; the sidebar has no Bookmarks entry
+      await expect(headerButton(other.page)).toBeVisible(T);
+      await expect(headerButton(page)).toHaveAttribute('href', '/t/engineering/bookmarks');
+      await expect(headerButton(page)).toHaveAccessibleName('Bookmarks');
+      const hb = await headerButton(page).boundingBox();
+      const bell = await page.getByTestId('bell').boundingBox();
+      expect(hb!.x + hb!.width).toBeLessThanOrEqual(bell!.x + 1);
       await expect(sidebarEntry(page)).toHaveCount(0);
       const toggle = page.getByTestId('thread-bookmark');
       await expect(toggle).toBeVisible(T);
@@ -91,9 +98,11 @@ test.describe('desktop', () => {
       await toggle.click();
       await expect(toggle).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('bookmark-toast')).toHaveText('Thread bookmarked');
-      await expect(sidebarEntry(page)).toBeVisible(T);
-      // the other tab hears it from the server
-      await expect(sidebarEntry(other.page)).toBeVisible(T);
+      await expect(sidebarEntry(page)).toHaveCount(0);
+      // the button opens the Bookmarks page, and reads as the current page there
+      await headerButton(page).click();
+      await expect(page).toHaveURL(/\/t\/engineering\/bookmarks/, T);
+      await expect(headerButton(page)).toHaveAttribute('aria-current', 'page');
     } finally {
       await context.close();
       await other.context.close();
@@ -261,7 +270,7 @@ test.describe('desktop', () => {
         }
       }
       await expect(page.getByTestId('bookmarks-empty')).toContainText('No bookmarked threads');
-      await expect(sidebarEntry(page)).toHaveCount(0, T);
+      await expect(headerButton(page)).toBeVisible(T);
     } finally {
       await context.close();
     }
@@ -280,6 +289,11 @@ test.describe('desktop', () => {
       const remove = await page.getByTestId('bookmark-remove').first().boundingBox();
       expect(remove!.height).toBeGreaterThanOrEqual(44);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+      // the header holds the Bookmarks button and the bell side by side, both whole on the screen
+      const hb = await headerButton(page).boundingBox();
+      const bell = await page.getByTestId('bell').boundingBox();
+      expect(hb!.x + hb!.width).toBeLessThanOrEqual(bell!.x + 1);
+      expect(bell!.x + bell!.width).toBeLessThanOrEqual(390);
       // the You sheet of the bottom bar has Bookmarks while there is one
       await page.goto('/t/engineering/drafts');
       await page.getByTestId('bar-you').click();

@@ -82,3 +82,5 @@ the entry; lost access; 390 px).
 
 A git file renamed or moved keeps its bookmark on the old path (the viewer says it is no longer there); re-keying on rename is left out. `is:bookmarked` in search
 is a later step.
+
+**Changed by P37-05 (owner, 2026-11-25):** the conditional sidebar entry is gone. A Bookmarks button sits at the top right of the header, immediately left of the bell, always shown (also with no bookmark and for a guest), and opens `/t/<team>/bookmarks`.

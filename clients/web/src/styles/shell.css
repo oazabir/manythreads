@@ -44,7 +44,8 @@
 
 .icon-btn:hover,
 .icon-btn[aria-expanded="true"],
-.icon-btn[aria-pressed="true"] {
+.icon-btn[aria-pressed="true"],
+.icon-btn[aria-current="page"] {
   background: var(--nav-on);
   color: var(--ink);
 }

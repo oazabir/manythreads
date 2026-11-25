@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AutoplayMini } from '../channels/voice/AutoplayMini';
 import { Link, Outlet, useLocation, useMatch } from 'react-router';
 import { dmLabel, useDms } from '../dms/store';
-import { Bell } from '../notifications/Bell';
+import { HeaderIcons } from './HeaderIcons';
 import { InboxNotices } from '../screens/memory/InboxNotices';
 import { MeetingHost } from '../meetings/MeetingHost';
 import { PushBridge } from '../notifications/OpenLink';
@@ -171,7 +171,7 @@ export function Shell() {
             )}
             <div className="right chead-tools">
               <div className="chead-actions" ref={setActionsSlot} />
-              <Bell />
+              <HeaderIcons />
             </div>
           </header>
           )}

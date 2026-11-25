@@ -168,27 +168,18 @@ describe('the client copy of the bookmarks', () => {
   });
 });
 
-describe('the sidebar entry', () => {
-  it('Bookmarks is drawn only while the person has at least one, with no badge', () => {
-    const entry = CORE_NAV.find((i) => i.id === 'bookmarks');
-    expect(entry).toMatchObject({ label: 'Bookmarks', path: '/bookmarks', icon: 'bookmarks', showWhen: 'bookmarks.total' });
-    expect(entry?.badge).toBeUndefined();
-    expect(visibleNav(CORE_NAV, { guest: false }).some((i) => i.id === 'bookmarks')).toBe(false);
-    expect(visibleNav(CORE_NAV, { guest: false }, { 'bookmarks.total': 0 }).some((i) => i.id === 'bookmarks')).toBe(false);
-    const shown = visibleNav(CORE_NAV, { guest: false }, { 'bookmarks.total': 3 }).map((i) => i.id);
-    expect(shown).toContain('bookmarks');
-    // in the order of the contract: after Threads and Drafts, before Approvals
-    expect(shown.indexOf('bookmarks')).toBeGreaterThan(shown.indexOf('drafts'));
-    expect(shown.indexOf('bookmarks')).toBeLessThan(shown.indexOf('approvals'));
+describe('the sidebar entry and the contract of a showWhen entry', () => {
+  it('Bookmarks is not a sidebar entry: its button sits at the top right, next to the bell (P37-05)', () => {
+    expect(CORE_NAV.some((i) => i.id === 'bookmarks')).toBe(false);
+    expect(visibleNav(CORE_NAV, { guest: false }, { 'bookmarks.total': 3 }).some((i) => i.id === 'bookmarks')).toBe(false);
   });
 
   it('showWhen works for any entry, and a guest still sees only what allows guests', () => {
     const items = [NavContribution.parse({ id: 'a', order: 1, label: 'a', kind: 'item', showWhen: 'x.count' }), NavContribution.parse({ id: 'b', order: 2, label: 'b', kind: 'item' })];
     expect(visibleNav(items, { guest: false }).map((i) => i.id)).toEqual(['b']);
     expect(visibleNav(items, { guest: false }, { 'x.count': 1 }).map((i) => i.id)).toEqual(['a', 'b']);
-    // a guest keeps the channel groups, and Bookmarks while they have one (they bookmark messages of the channels shared with them)
+    // a guest keeps the channel groups
     expect(visibleNav(CORE_NAV, { guest: true }).map((i) => i.id)).toEqual(['channels']);
-    expect(visibleNav(CORE_NAV, { guest: true }, { 'bookmarks.total': 3 }).map((i) => i.id)).toEqual(['bookmarks', 'channels']);
     expect(visibleNav(items, { guest: true }, { 'x.count': 1 })).toEqual([]);
     expect(NavContribution.safeParse({ id: 'a', order: 1, label: 'a', kind: 'item', showWhen: 'Bad Source' }).success).toBe(false);
   });

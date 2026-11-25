@@ -18,9 +18,7 @@ export const CORE_NAV: NavContribution[] = [
   // the messages not sent yet, from every box (owner, 2026-11-23)
   { id: 'drafts', order: 32, label: 'Drafts', kind: 'item', path: '/drafts', icon: 'drafts' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
-  // the person's own bookmarks (P36-08): drawn only while there is at least one, with no badge. A guest bookmarks messages of the channels shared with them
-  // (the More menu offers it to everyone, as it offers Later), so a guest gets the entry too, and `/t/shared/bookmarks` is a page a guest can open.
-  { id: 'bookmarks', order: 33, label: 'Bookmarks', kind: 'item', path: '/bookmarks', icon: 'bookmarks', showWhen: 'bookmarks.total', guests: true },
+  // Bookmarks is not a sidebar entry: its button sits at the top right, next to the bell (owner, 2026-11-25; bookmarks/BookmarksLink.tsx)
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
   { id: 'direct-messages', order: 45, label: 'Direct messages', kind: 'header', emptyState: 'No conversations yet' },
@@ -30,7 +28,7 @@ export const CORE_NAV: NavContribution[] = [
 
 /**
  * What the sidebar shows this person: sorted by order; a guest keeps only the entries that allow guests; an entry with `showWhen` only while that count is
- * above 0 (Bookmarks while the person has one).
+ * above 0 (no core entry uses it now; a plugin's may).
  */
 export function visibleNav(items: readonly NavContribution[], who: { guest: boolean }, counts: Readonly<Record<string, number>> = {}): NavContribution[] {
   return sortNav(items).filter((i) => (!who.guest || i.guests === true) && (i.showWhen === undefined || (counts[i.showWhen] ?? 0) > 0));
