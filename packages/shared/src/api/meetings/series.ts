@@ -48,14 +48,34 @@ export const CreateMeetingSeriesRequest = z.strictObject({
 });
 export type CreateMeetingSeriesRequest = z.input<typeof CreateMeetingSeriesRequest>;
 
-export const UpdateMeetingSeriesRequest = z.strictObject({
-  title: z.string().trim().min(1).max(APPOINTMENT_TITLE_MAX).optional(),
-  inviteeIds: z.array(PersonId).max(CALL_INVITES_MAX).optional(),
-});
+/**
+ * A change of a series: its title and people (for the meetings to come), or its rule (step 2). Any of `frequency`, `untilDate`, `timeZone`, `startsAt`/`endsAt`
+ * changes the rule: the meetings to come from `fromAppointmentId` on (the next one when absent) are made again from it, with the first of them at `startsAt`
+ * (that meeting's own time when absent). Meetings changed or cancelled one at a time among them are made again too.
+ */
+export const UpdateMeetingSeriesRequest = z
+  .strictObject({
+    title: z.string().trim().min(1).max(APPOINTMENT_TITLE_MAX).optional(),
+    inviteeIds: z.array(PersonId).max(CALL_INVITES_MAX).optional(),
+    frequency: MeetingSeriesFrequency.optional(),
+    /** The last day a meeting may fall on; null: it goes on. */
+    untilDate: z.iso.date().nullable().optional(),
+    timeZone: SeriesTimeZone.optional(),
+    /** The new time of the first meeting the change applies to. Both or neither. */
+    startsAt: z.iso.datetime().optional(),
+    endsAt: z.iso.datetime().optional(),
+    /** The meeting the new rule starts with; absent: the next one to come. */
+    fromAppointmentId: z.uuid().optional(),
+  })
+  .refine((b) => (b.startsAt === undefined) === (b.endsAt === undefined), { message: 'Send the start and the end together', path: ['endsAt'] });
 export type UpdateMeetingSeriesRequest = z.infer<typeof UpdateMeetingSeriesRequest>;
 
 export const MeetingSeriesParams = z.object({ id: z.uuid() });
-export const MeetingSeriesResponse = z.object({ series: MeetingSeries });
+export const MeetingSeriesResponse = z.object({
+  series: MeetingSeries,
+  /** After a change of the rule or the time: the first meeting made from it (null otherwise). */
+  appointment: Appointment.nullable().default(null),
+});
 export type MeetingSeriesResponse = z.infer<typeof MeetingSeriesResponse>;
 /** The series and its first meeting. */
 export const CreateMeetingSeriesResponse = z.object({ series: MeetingSeries, appointment: Appointment });

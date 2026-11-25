@@ -108,13 +108,39 @@ series made / changed / stopped". Contract test in the events suite.
 ## Order of work
 1. Shared (paths, schemas, event), migration, routes, jobs, the writer, live socket and tree exceptions; tests.
 2. Web: the form's Repeats, the panel's series line, agenda and Stop, the agenda dialog; e2e.
-3. Step 2 (not in this row's first cut): change a series' rule or time, an occurrence moved by a later rule change, notes written after the next agenda are added to it,
-   the agenda readable by invited people of other teams, reminders that link the agenda.
+3. Step 2 (built, `0016_series_changes.sql`): change a series' rule or time, an occurrence moved by a later rule change, notes written after the next agenda are added
+   to it, the agenda readable by invited people of other teams, reminders that link the agenda. See "Step 2" below.
+
+## Step 2
+- **A new rule or time**: `PATCH /api/meeting-series/:id` takes `frequency`, `untilDate`, `timeZone`, `startsAt` and `endsAt` (together), `fromAppointmentId`. The meetings
+  still to come from that meeting on (the next one when absent) are deleted and planned again from the new rule with the series' people, the first at `startsAt` (that
+  meeting's own time when absent). A meeting moved or cancelled one at a time among them is made again: the new rule wins. A meeting that has begun stays. The numbers
+  of the new meetings follow the last one kept, and `meeting_series.rule_from` names the rule's first, so the planner's formula is `first_starts_at` plus
+  (k − rule_from) steps (`app.meeting_series_start`, shared by `app.meeting_series_plan` and `app.meeting_series_change_rule`). An agenda already written for a deleted
+  meeting moves to the first new one (its file keeps its name). The definer checks the caller itself (maker, lead, admin) with `app.meeting_series_can_edit`.
+- **The form**: Edit of a meeting of a series: "This meeting" (as in step 1) or "This and the following meetings" (Repeats without "Does not repeat", Until; Call and
+  Agenda line hidden, they are one meeting's): "This meeting and the ones after it are made again from the new time and repeat. A meeting changed or cancelled on its own
+  among them is made again too. Agendas already written stay."
+- **Notes after the next agenda**: `meetings.notes.written` for a series' space enqueues the agenda job; the planner's pass also does when the last call before the next
+  written agenda has notes it did not take in. The job adds the items not on the page (ticked or not, same folding as carry-over) under "Open action items from the last
+  meeting" (or a new such section at the end), commits with the blob it read as base, and records the call (`appointments.agenda_notes_meeting_id`, kept the platform's by
+  the guard trigger): once per call, so an item a person deleted stays deleted. It waits while the page has a live cursor (`page_awareness`) or unsaved live edits
+  (`page_updates` after `page_docs.last_update_id`). The live editor starts from the file, not its saved session, when the two differ.
+- **The agenda for the invited of other teams**: `Appointment.hasAgenda`; `GET /api/appointments/:id/agenda` → `{ path, markdown, truncated, editable }` for anyone who
+  sees the meeting (row-level security on appointments), read from the team repo by the platform; 404 for anyone else and before a page is written. The panel offers
+  **Read the agenda** (a read-only view) where the team gets **Open the agenda**. The form's line now says the people invited can read it.
+- **Reminders**: the five-minute reminder of a meeting with its agenda written says "<title> starts in 5 minutes. The agenda is ready."; opening it (app or push) goes to
+  `/schedule?appointment=<id>`: the meeting's panel, with Join and the agenda. `GET /api/appointments/:id` serves that.
+- Tests: `series-changes.test.ts` (routes), `meetings-series-rls.test.ts` (the definer and the new column), `series-agenda.test.ts` (adding items), pages `live.test.ts`
+  (a page changed outside), notifications `webpush.test.ts` (the push link), web `schedule-series.test.ts`.
+- Not built: telling people that a series' time changed; changing a series' call kind or agenda line for all its meetings.
 
 ## Decisions taken (recommended defaults; the owner may change them)
 1. A series is a recurring appointment of the team schedule; one meeting space for the whole series (one chat, one Files folder for its transcripts).
 2. Rules: every week, every 2 weeks, every month (same day of the month, the last day when shorter); an optional end date; meetings are planned 92 days ahead.
-3. The agenda lives in the team repo under `meetings/series/<slug>/`, readable and editable by everyone on the team; people invited from other teams do not see it.
+3. The agenda lives in the team repo under `meetings/series/<slug>/`, readable and editable by everyone on the team; people invited from other teams read it through
+   the meeting (step 2), and do not edit it.
 4. Open action items are the unticked boxes of the last agenda plus the action items of the last call's written notes; Personal notes are never copied.
 5. People edit an agenda that exists; only the platform creates agendas, and nobody deletes or renames them.
 6. Editing one meeting of a series changes that meeting only; people and title are changed for the whole series; stopping cancels the meetings still to come.
+7. (Step 2) A new rule re-makes the meetings to come from a chosen meeting, including ones changed one at a time; the invited are not notified of the new times.

@@ -76,8 +76,13 @@ export function NotificationList({ mode, onOpened }: { mode: 'panel' | 'page'; o
       void navigate(`/meetings/${n.refId}`);
       return;
     }
-    // an appointment (P36-06, P36-07) opens its meeting space, where its call is
-    if (n.kind === 'appointment_invite' || n.kind === 'appointment_soon') {
+    // a meeting about to start opens on the Schedule (P17-05 step 2): Join and, for a meeting of a series, its agenda
+    if (n.kind === 'appointment_soon') {
+      void navigate(`/schedule?${new URLSearchParams({ appointment: String(n.refId) }).toString()}`);
+      return;
+    }
+    // an invitation to an appointment (P36-06) opens its meeting space, where its call is
+    if (n.kind === 'appointment_invite') {
       void openMessage({ channelId: n.channelId, channelKind: n.channelKind, channelName: n.channelName, messageId: '', threadRootId: null, channelOnly: true });
       return;
     }

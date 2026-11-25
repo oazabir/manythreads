@@ -56,6 +56,8 @@ export const Appointment = z.object({
   series: AppointmentSeries.nullable().default(null),
   /** Its agenda page in the team's files (`meetings/series/<slug>/<date>-agenda.md`), once the platform wrote it; null before, and for a person not on the team. */
   agendaPath: z.string().nullable().default(null),
+  /** An agenda page is written for it (P17-05 step 2): its team edits it at `agendaPath`; the people invited from other teams read it (`appointmentAgendaRoute`). */
+  hasAgenda: z.boolean().default(false),
 });
 export type Appointment = z.infer<typeof Appointment>;
 
@@ -91,3 +93,21 @@ export const cancelAppointmentRoute = { method: 'POST', path: '/api/appointments
 export const AppointmentParams = z.object({ id: z.uuid() });
 /** Join an appointment (P36-07): its call in its meeting space, started with its kind, or joined when it is live. The answer is the open-meeting answer. */
 export const joinAppointmentRoute = { method: 'POST', path: '/api/appointments/:id/join' } as const;
+/** One appointment the person may see (P17-05 step 2: a reminder opens it on the Schedule). */
+export const getAppointmentRoute = { method: 'GET', path: '/api/appointments/:id' } as const;
+
+/** The largest agenda page the read-only view is given; a longer one is cut there. */
+export const APPOINTMENT_AGENDA_PAGE_MAX = 200_000;
+/**
+ * The agenda page of a meeting of a series, for everyone who may see the meeting (P17-05 step 2): the people invited from other teams read it here, while its
+ * team edits it live in its files. `editable` is true for a person who may post in the team (they open the live editor at `path` instead).
+ */
+export const AppointmentAgendaResponse = z.object({
+  path: z.string(),
+  markdown: z.string().max(APPOINTMENT_AGENDA_PAGE_MAX),
+  /** The page was longer than `APPOINTMENT_AGENDA_PAGE_MAX` and was cut. */
+  truncated: z.boolean(),
+  editable: z.boolean(),
+});
+export type AppointmentAgendaResponse = z.infer<typeof AppointmentAgendaResponse>;
+export const appointmentAgendaRoute = { method: 'GET', path: '/api/appointments/:id/agenda' } as const;

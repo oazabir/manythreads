@@ -278,6 +278,21 @@ describe('a page edited live (PLAN P6-09)', () => {
     }
   }, 20_000);
 
+  it('starts from the file, not the last session, when the page was changed outside the live editor (P17-05 step 2)', async () => {
+    const path = 'pages/live/idle.md';
+    // the idle test left a session snapshot; once its room is gone (the short grace after the last editor left), the file is changed outside the editor
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const changed = await api(personas.omar, 'POST', '/api/teams/engineering/repo/commit', { changes: [{ op: 'put', path, content: 'changed outside\n' }], message: 'Outside the editor' });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(201);
+    const editor = new Editor(personas.nadia, path);
+    await waitFor('the page to load from the file', () => editor.text === 'changed outside\n');
+    editor.type(0, 'and live\n');
+    editor.close();
+    await editor.closed;
+    await waitFor('the session commit', async () => /^Edit .+ live/.test((await lastCommit(path))?.message ?? ''), 8000);
+    expect(await fileText(path)).toBe('and live\nchanged outside\n');
+  }, 20_000);
+
   it('refuses a page that is not there, a path outside pages/, and a request with no session', async () => {
     const missing = new Editor(personas.nadia, 'pages/live/missing.md');
     expect(await missing.closed).toBe(4404);

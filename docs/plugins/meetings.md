@@ -218,11 +218,11 @@ A **link guest** is someone outside the workspace with no account (not a workspa
   in `connect-src` for members and guests alike.
 - **Still to do:** visual baselines of the guest's question and of the links list.
 
-## Meeting series (P17-05, step 1)
+## Meeting series (P17-05, steps 1 and 2)
 
 A **series** is a meeting of a team's schedule that repeats: every week, every 2 weeks or every month (same day of the month, the last day of a shorter month), from its
 first meeting, until an optional last day. Plan: `docs/plans/meeting-series.md`. Code: `src/series.ts` (routes and jobs), `src/series-agenda.ts` (the page), migration
-`0013_meeting_series.sql`; web `clients/web/src/screens/schedule` (Repeats in the form, the series line, the agenda and Stop in the panel).
+`0013_meeting_series.sql` and `0016_series_changes.sql`; web `clients/web/src/screens/schedule` (Repeats in the form, the series line, the agenda and Stop in the panel).
 
 - **Meetings**: each is an appointment (P36-04) with `series_id` and its number `occurrence`, computed in the series' time zone (10:00 stays 10:00 when the clocks change). They
   are planned 92 days ahead; `meetings.series-plan` (every 10 minutes, as the platform) adds the next ones with the people of the latest. All of them share **one meeting space**
@@ -237,12 +237,26 @@ first meeting, until an optional last day. Plan: `docs/plans/meeting-series.md`.
   (never a note-taker's Personal copy), each once, at most 50. The team repo is read by the whole team, so the form says so before a series is made.
 - **Who edits**: a person who may post in the team changes an agenda page that exists, live (`/api/teams/:slug/pages/live` takes `LivePagePath`) or by a commit; making,
   removing or renaming one, and every other file under `meetings/`, stays the platform's (repo writer, `isSeriesAgendaPath`). Bots never write there. People invited from other
-  teams do not see the agenda.
+  teams read the agenda (not edit it) through the meeting: `GET /api/appointments/:id/agenda` checks they may see the meeting (row-level security, the database rule
+  that shows each person only their rows) and the platform then reads the page from the team's files; `Appointment.hasAgenda` says a page is there.
 - **Data**: `app.meeting_series` (RLS forced: the team and the people of its space read it; a member makes one for a space they opened; a guard trigger lets a person change
   only its title, agenda line and status, and a stopped series stays stopped). `app.appointments` gains `series_id`, `occurrence`, `agenda_path`, `agenda_written_at`; a guard
   trigger keeps those, the space and the team for the platform, and `app.appointment_place_ok` keeps a space to one appointment or one series.
 - **Event**: `meetings.series.changed` v1 (`created`, `changed`, `stopped`; ids only), audited as made, changed, stopped.
-- **Step 2 (not built)**: changing the rule or the time of a series, notes written after the next agenda added to it, the agenda for people of other teams.
+- **A new rule or time (step 2)**: `PATCH /api/meeting-series/:id` with `frequency`, `untilDate`, `timeZone`, `startsAt`/`endsAt` (together) and `fromAppointmentId` (the
+  next meeting when absent). The meetings to come from that one on are deleted and planned again from the new rule (`app.meeting_series_change_rule`, a definer that checks
+  the caller is the maker, a lead or an admin), with the series' people; one moved or cancelled on its own among them is made again too. Their numbers go on after the
+  last one kept (`meeting_series.rule_from`). An agenda already written for one of them moves to the first new meeting. One formula for the planner and the change:
+  `app.meeting_series_start`, `app.meeting_series_plan`. The answer carries the first new meeting. On the web: Edit of a meeting of a series offers "This meeting" or
+  "This and the following meetings" (Repeats and Until then show; Call and Agenda line are for one meeting only).
+- **Notes after the agenda (step 2)**: when a call's notes are written after the next agenda (`meetings.notes.written`, and the planner's pass as a backstop), their
+  action items not yet on the page are added under "Open action items from the last meeting", once per call (`appointments.agenda_notes_meeting_id`, the platform's):
+  an item a person took out is not put back. Not while someone has the page open in the live editor or has unsaved edits there; the next pass tries again. The live
+  editor starts from the file when the file changed since its last session (`pages` `loadDocument`).
+- **Reminders (step 2)**: the five-minute reminder of a meeting whose agenda is written says "… starts in 5 minutes. The agenda is ready."; opening the reminder (in the
+  app or from a browser push) goes to `/schedule?appointment=<id>`, the meeting's panel with Join and its agenda (`GET /api/appointments/:id` reads one meeting).
+- **Not built**: telling the invited that the time of a series changed (the calendar shows it; nobody is notified); a series' call kind or agenda line changed for all
+  meetings.
 
 ## The meeting assistant (P17-06, step 1)
 

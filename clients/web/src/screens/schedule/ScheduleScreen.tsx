@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { cronRunsBetween, type Appointment } from '@manythreads/shared';
+import { useNavigate, useSearchParams } from 'react-router';
+import { cronRunsBetween, type Appointment, type AppointmentAgendaResponse } from '@manythreads/shared';
 import { fetchScheduledJobs } from '../boards/api';
 import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
 import { PageHeader } from '../../components/PageHeader';
-import { cancelAppointment, fetchAppointments, joinAppointment, stopMeetingSeries } from '../../meetings/api';
+import { cancelAppointment, fetchAppointment, fetchAppointmentAgenda, fetchAppointments, joinAppointment, stopMeetingSeries } from '../../meetings/api';
+import { Markdown } from '../../channels/MessageMarkdown';
 import { callController } from '../../meetings/store';
 import { useShell } from '../../shell/context';
 import { SeriesIcon } from '../../shell/icons';
@@ -21,7 +22,8 @@ import { addDays, joinable, onDay, placeInDay, sameDay, step, timeRange, viewDay
  * calendar: Day, Week and Month, today marked and a line at the current time; each team in its own colour with a chip to show or hide it. Opening one shows
  * who is invited and Join (from ten minutes before until it ends); its maker, a lead of its team or an admin can change or cancel it. On a phone the week is a
  * list of days.
- * A meeting of a series (P17-05) says how it repeats and opens its agenda page, edited live by the team; whoever may change the series can stop it.
+ * A meeting of a series (P17-05) says how it repeats and opens its agenda page, edited live by the team; whoever may change the series can stop it. The people
+ * invited from other teams read the agenda (step 2). `?appointment=<id>` (a reminder) opens that meeting's panel.
  */
 
 const HOUR_PX = 48;
@@ -48,6 +50,9 @@ export function ScheduleScreen() {
   const [problem, setProblem] = useState<string | null>(null);
   const [agenda, setAgenda] = useState<{ path: string; teamSlug: string; title: string } | null>(null);
   const [stopAsk, setStopAsk] = useState(false);
+  // the agenda as text, for a person invited from another team (they cannot open the team's files)
+  const [reading, setReading] = useState<{ title: string; page: AppointmentAgendaResponse | null; error: string | null } | null>(null);
+  const [params, setParams] = useSearchParams();
   const now = useNow();
   const shownView: CalendarView = narrow && view === 'week' ? 'day' : view;
   const days = useMemo(() => viewDays(shownView, anchor), [shownView, anchor]);
@@ -89,6 +94,31 @@ export function ScheduleScreen() {
   );
   const items = all.filter((a) => !hidden.has(a.team.id));
   const grid = useRef<HTMLDivElement>(null);
+
+  // a reminder opens one meeting: its panel, on its day
+  const linked = params.get('appointment');
+  useEffect(() => {
+    if (!linked) return;
+    // the link is taken off the address at once (a reload does not open it again), so the answer is not tied to this effect's life
+    fetchAppointment(linked).then(
+      (r) => {
+        setAnchor(new Date(r.appointment.startsAt));
+        setOpen(r.appointment);
+      },
+      // a meeting since made again or no longer shared: the calendar alone
+      () => undefined,
+    );
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('appointment'); return n; }, { replace: true });
+  }, [linked, setParams]);
+
+  const readAgenda = (a: Appointment): void => {
+    setReading({ title: a.title, page: null, error: null });
+    setOpen(null);
+    fetchAppointmentAgenda(a.id).then(
+      (page) => setReading({ title: a.title, page, error: null }),
+      (e: unknown) => setReading({ title: a.title, page: null, error: e instanceof Error && e.message ? e.message : 'The agenda could not be loaded. Try again.' }),
+    );
+  };
 
   // the day starts in view at 08:00
   useEffect(() => {
@@ -311,8 +341,10 @@ export function ScheduleScreen() {
                     >
                       Open the agenda
                     </button>
-                  ) : !open.team.slug ? (
-                    "The agenda is kept in the team's files."
+                  ) : open.hasAgenda ? (
+                    <button type="button" className="btn s" onClick={() => readAgenda(open)} data-testid="appointment-agenda-read">
+                      Read the agenda
+                    </button>
                   ) : open.status === 'cancelled' ? (
                     'This meeting is cancelled.'
                   ) : (
@@ -337,6 +369,21 @@ export function ScheduleScreen() {
           <div className="sc-agenda">
             <LivePageEditor path={agenda.path} teamSlug={agenda.teamSlug} onExit={() => setAgenda(null)} />
           </div>
+        </Dialog>
+      ) : null}
+      {reading ? (
+        <Dialog title={`${reading.title} · ${reading.page ? (agendaDay(reading.page.path) ?? 'Agenda') : 'Agenda'}`} onClose={() => setReading(null)} testId="agenda-read-dialog" wide sheet={narrow}>
+          {reading.error ? (
+            <p className="dlg-error" role="alert">{reading.error}</p>
+          ) : reading.page ? (
+            <div className="sc-agenda-read">
+              <p className="sc-note">Kept in the files of the team whose meeting this is. Its people edit it; you can read it.</p>
+              <Markdown source={reading.page.markdown} />
+              {reading.page.truncated ? <p className="sc-note">The page is longer; the rest is not shown here.</p> : null}
+            </div>
+          ) : (
+            <p className="sc-note" role="status">Loading the agenda…</p>
+          )}
         </Dialog>
       ) : null}
       {form ? (

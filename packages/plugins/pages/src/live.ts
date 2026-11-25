@@ -142,7 +142,17 @@ async function loadDocument(
   const snapshot = (
     await tx.query<{ snapshot: Buffer; last_update_id: string }>('SELECT snapshot, last_update_id FROM app.page_docs WHERE team_id = $1 AND path = $2', [teamId, path])
   ).rows[0];
-  if (snapshot && snapshot.snapshot.length > 0) {
+  // The snapshot is the page as its last session committed it. When the file says something else, it was changed outside the live editor since (the platform
+  // adding a meeting's notes to an agenda, P17-05 step 2; a commit from Files): git is the truth, so the session starts from the file.
+  const fromSnapshot = (() => {
+    if (!snapshot || snapshot.snapshot.length === 0) return false;
+    const probe = new Y.Doc();
+    Y.applyUpdate(probe, new Uint8Array(snapshot.snapshot), 'server');
+    const same = probe.getText('body').toString() === body;
+    probe.destroy();
+    return same;
+  })();
+  if (snapshot && fromSnapshot) {
     Y.applyUpdate(doc, new Uint8Array(snapshot.snapshot), 'server');
     const tail = (
       await tx.query<{ update: Buffer }>('SELECT update FROM app.page_updates WHERE team_id = $1 AND path = $2 AND id > $3 ORDER BY id', [

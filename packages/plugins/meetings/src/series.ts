@@ -1,4 +1,4 @@
-import { conflict, forbidden, invalid, json, notFound, route, type PluginContext, type PluginTx, type RepoProvider, type RepoWriteChange } from '@manythreads/sdk';
+import { conflict, forbidden, invalid, json, notFound, route, type PluginContext, type PluginEvent, type PluginTx, type RepoProvider, type RepoWriteChange } from '@manythreads/sdk';
 import {
   CreateMeetingSeriesRequest,
   CreateMeetingSeriesResponse,
@@ -6,6 +6,7 @@ import {
   MeetingSeriesParams,
   MeetingSeriesResponse,
   MeetingsAppointmentChangedEvent,
+  MeetingsNotesWrittenEvent,
   MeetingsSeriesChangedEvent,
   SERIES_DIR,
   SERIES_PLAN_DAYS,
@@ -21,7 +22,7 @@ import {
 import { z } from 'zod';
 import { asPeople, loadAppointment, span } from './routes-appointments.ts';
 import { callerPerson } from './routes.ts';
-import { agendaDue, mergeCarried, noteActionItems, openActionItems, renderAgenda, renderReadme } from './series-agenda.ts';
+import { addCarriedItems, agendaDue, mergeCarried, noteActionItems, openActionItems, renderAgenda, renderReadme } from './series-agenda.ts';
 import { slugOf } from './writer.ts';
 
 /*
@@ -73,30 +74,13 @@ async function loadSeries(tx: PluginTx, id: string): Promise<SeriesRow> {
 }
 
 /**
- * Adds the meetings of a series up to `horizon` (always the first one), from the one after its last: each at the first meeting's local time in the series' time zone
- * plus k weeks, 2k weeks or k months (a month counted from the first date, so the 31st is the last day of a shorter month), until its last day. The new meetings get
+ * Adds the meetings of a series up to `horizon` (always the first one of its rule), from the one after its last: each at the rule's first meeting's local time in the
+ * series' time zone plus k weeks, 2k weeks or k months (a month counted from the first date, so the 31st is the last day of a shorter month), until its last day. The new meetings get
  * the people of the series' latest meeting. Returns the ids added. As the caller: the maker while making it, the platform later.
  */
 export async function planOccurrences(tx: PluginTx, seriesId: string, horizon: Date): Promise<string[]> {
-  const added = (
-    await tx.query<{ id: string }>(
-      `INSERT INTO app.appointments (workspace_id, team_id, space_channel_id, title, agenda, kind, starts_at, ends_at, created_by, created_by_person_id, series_id, occurrence)
-       SELECT s.workspace_id, s.team_id, s.space_channel_id, s.title, s.agenda, s.kind, o.starts_at, o.starts_at + make_interval(mins => s.duration_minutes),
-              s.created_by, s.created_by_person_id, s.id, o.k
-         FROM app.meeting_series s
-         CROSS JOIN LATERAL (
-           SELECT k, ((s.first_starts_at AT TIME ZONE s.time_zone)
-                      + k * CASE s.frequency WHEN 'weekly' THEN interval '7 days' WHEN 'biweekly' THEN interval '14 days' ELSE interval '1 month' END) AT TIME ZONE s.time_zone AS starts_at
-             FROM generate_series(coalesce((SELECT max(a.occurrence) + 1 FROM app.appointments a WHERE a.series_id = s.id), 0), 10000) AS k
-            LIMIT 60
-         ) o
-        WHERE s.id = $1 AND s.status = 'active' AND (o.k = 0 OR o.starts_at <= $2::timestamptz)
-          AND (s.until_date IS NULL OR (o.starts_at AT TIME ZONE s.time_zone)::date <= s.until_date)
-       ON CONFLICT DO NOTHING
-       RETURNING id`,
-      [seriesId, horizon.toISOString()],
-    )
-  ).rows.map((r) => r.id);
+  // the formula is the database's (app.meeting_series_plan, migration 0016): the rule change uses the same one
+  const added = (await tx.query<{ id: string }>('SELECT id FROM app.meeting_series_plan($1, $2::timestamptz) AS id', [seriesId, horizon.toISOString()])).rows.map((r) => r.id);
   if (added.length === 0) return added;
   // the people of the latest meeting before these (none for a new series: the route adds them)
   await tx.query(
@@ -134,6 +118,59 @@ async function assertInvitable(tx: PluginTx, people: readonly string[]): Promise
     )
   ).rows[0]!.n;
   if (Number(ok) !== people.length) throw invalid('You can only invite active members of this workspace');
+}
+
+/** A change that touches the rule or the time (step 2), not only the title and the people. */
+export const isRuleChange = (body: UpdateMeetingSeriesRequest): boolean =>
+  body.frequency !== undefined || body.untilDate !== undefined || body.timeZone !== undefined || body.startsAt !== undefined || body.fromAppointmentId !== undefined;
+
+/** A refusal of `app.meeting_series_change_rule` in the words of the form. */
+const asRuleError = (err: unknown): never => {
+  const code = (err as { code?: string }).code;
+  const message = err instanceof Error ? err.message : '';
+  if (code === '42501') throw forbidden('Only its maker, a team lead or an admin can change this series');
+  if (code === '55000') throw conflict('This series has stopped');
+  if (code === 'P0002') throw notFound('No such meeting series');
+  if (code === '22023') throw invalid(message.includes('time zone') ? 'This time zone is not known. Reload the page and try again.' : message.charAt(0).toUpperCase() + message.slice(1));
+  throw err;
+};
+
+/**
+ * A new rule or time for a series, from one of its meetings to come (the next one when none is named): those meetings are deleted and planned again from the
+ * new rule, with the series' people; an agenda already written for one of them moves to the first new meeting. Returns the first new meeting.
+ */
+async function changeRule(tx: PluginTx, id: string, s: SeriesRow, body: UpdateMeetingSeriesRequest, horizon: Date): Promise<string | null> {
+  const rule = (
+    await tx.query<{ duration_minutes: number }>('SELECT duration_minutes FROM app.meeting_series WHERE id = $1', [id])
+  ).rows[0]!;
+  type From = { occurrence: number; starts_at: Date; ends_at: Date };
+  const from = body.fromAppointmentId
+    ? (await tx.query<From>('SELECT occurrence, starts_at, ends_at FROM app.appointments WHERE id = $1 AND series_id = $2', [body.fromAppointmentId, id])).rows[0]
+    : (await tx.query<From>('SELECT occurrence, starts_at, ends_at FROM app.appointments WHERE series_id = $1 AND starts_at > now() ORDER BY starts_at, id LIMIT 1', [id])).rows[0];
+  if (body.fromAppointmentId && !from) throw notFound('No such meeting in this series');
+  if (from && from.starts_at.getTime() <= Date.now()) throw conflict('This meeting has begun. Change the series from a meeting still to come.');
+  if (!from && body.startsAt === undefined) throw conflict('This series has no meetings to come. Say when the next one is.');
+  const startsAt = body.startsAt ?? from!.starts_at.toISOString();
+  const endsAt = body.endsAt ?? (body.startsAt === undefined ? from!.ends_at.toISOString() : new Date(Date.parse(startsAt) + rule.duration_minutes * 60_000).toISOString());
+  span(startsAt, endsAt);
+  const untilDate = body.untilDate === undefined ? s.until_date : body.untilDate;
+  if (untilDate !== null && Date.parse(untilDate) - Date.parse(startsAt) > 3 * 366 * 86_400_000) throw invalid('A series can be planned at most three years ahead');
+  const minutes = Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000);
+  const first = (
+    await tx
+      .query<{ id: string | null }>('SELECT app.meeting_series_change_rule($1, $2, $3, $4::timestamptz, $5, $6::date, $7, $8::timestamptz) AS id', [
+        id,
+        body.fromAppointmentId ? from!.occurrence : null,
+        body.frequency ?? s.frequency,
+        startsAt,
+        minutes,
+        untilDate,
+        body.timeZone ?? s.time_zone,
+        horizon.toISOString(),
+      ])
+      .catch(asRuleError)
+  ).rows[0]!.id;
+  return first;
 }
 
 export function registerSeriesRoutes(ctx: PluginContext): void {
@@ -238,14 +275,18 @@ export function registerSeriesRoutes(ctx: PluginContext): void {
       await tx.query('SELECT 1 FROM app.meeting_series WHERE id = $1 FOR UPDATE', [id]);
       const s = await loadSeries(tx, id);
       if (s.status === 'stopped') throw conflict('This series has stopped');
-      const future = (
-        await tx.query<{ id: string }>("SELECT id FROM app.appointments WHERE series_id = $1 AND status = 'scheduled' AND starts_at > now() ORDER BY starts_at, id", [id])
-      ).rows.map((r) => r.id);
+      const futureIds = async (): Promise<string[]> =>
+        (await tx.query<{ id: string }>("SELECT id FROM app.appointments WHERE series_id = $1 AND status = 'scheduled' AND starts_at > now() ORDER BY starts_at, id", [id])).rows.map((r) => r.id);
       if (body.title !== undefined && body.title !== s.title) {
+        const toCome = await futureIds();
         await tx.query('UPDATE app.meeting_series SET title = $2, updated_at = now() WHERE id = $1', [id, body.title]);
-        if (future.length > 0) await tx.query('UPDATE app.appointments SET title = $2, updated_at = now() WHERE id = ANY ($1::uuid[])', [future, body.title]);
+        if (toCome.length > 0) await tx.query('UPDATE app.appointments SET title = $2, updated_at = now() WHERE id = ANY ($1::uuid[])', [toCome, body.title]);
         await tx.query("UPDATE app.channels SET purpose = left($2, 250), updated_at = now() WHERE id = $1 AND kind = 'meeting'", [s.space_channel_id, body.title]).catch(() => undefined);
       }
+      // the rule or the time (step 2): the meetings to come are made again from the new rule
+      let firstOfRule: string | null = null;
+      if (isRuleChange(body)) firstOfRule = await changeRule(tx, id, s, body, new Date(ctx.runtime.now().getTime() + SERIES_PLAN_DAYS * 86_400_000));
+      const future = await futureIds();
       let added: string[] = [];
       if (body.inviteeIds !== undefined) {
         if (future.length === 0) throw conflict('This series has no meetings left to invite people to');
@@ -268,7 +309,8 @@ export function registerSeriesRoutes(ctx: PluginContext): void {
       }
       await changed(tx, id, s.team_id, 'changed');
       if (added.length > 0) await invited(tx, future[0]!, s.team_id, 'changed', added);
-      return json(MeetingSeriesResponse.parse({ series: toSeries(await loadSeries(tx, id)) }));
+      if (firstOfRule !== null) await agendaSoon(tx, id);
+      return json(MeetingSeriesResponse.parse({ series: toSeries(await loadSeries(tx, id)), appointment: firstOfRule ? await loadAppointment(tx, firstOfRule) : null }));
     }),
   });
 
@@ -299,9 +341,26 @@ const OCCURRENCE_SELECT = `SELECT a.id, a.occurrence, a.starts_at, a.ends_at, a.
   to_char(a.starts_at AT TIME ZONE s.time_zone, 'YYYY-MM-DD') AS day, to_char(a.starts_at AT TIME ZONE s.time_zone, 'FMDay FMDD FMMonth YYYY') AS day_label
   FROM app.appointments a JOIN app.meeting_series s ON s.id = a.series_id`;
 
+/** The action items of the written notes (never a Personal copy) of the last call held in the space from `since` (less half an hour) and before `before`. */
+async function lastNotes(tx: PluginTx, spaceId: string, since: Date, before: Date | null): Promise<{ meetingId: string; items: string[] } | null> {
+  const notes = (
+    await tx.query<{ meeting_id: string; items: unknown }>(
+      `SELECT m.id AS meeting_id, n.items FROM app.meetings m JOIN app.meeting_notes n ON n.meeting_id = m.id
+        WHERE m.channel_id = $1 AND m.state = 'ended' AND m.started_at >= $2::timestamptz - interval '30 minutes'
+          AND ($3::timestamptz IS NULL OR m.started_at < $3::timestamptz - interval '30 minutes')
+          AND n.status = 'written' AND n.location <> 'personal'
+        ORDER BY m.started_at DESC LIMIT 1`,
+      [spaceId, since.toISOString(), before ? before.toISOString() : null],
+    )
+  ).rows[0];
+  if (!notes) return null;
+  const items = z.array(MeetingNoteItem).safeParse(notes.items ?? []);
+  return { meetingId: notes.meeting_id, items: items.success ? noteActionItems(items.data) : [] };
+}
+
 /** The open action items to carry into the next agenda: the last agenda's unticked boxes and the last call's written notes (never a Personal copy). */
-async function carriedItems(ctx: PluginContext, tx: PluginTx, teamId: string, spaceId: string, previous: Occurrence | undefined): Promise<string[]> {
-  if (!previous) return [];
+async function carriedItems(ctx: PluginContext, tx: PluginTx, teamId: string, spaceId: string, previous: Occurrence | undefined): Promise<{ items: string[]; notesMeetingId: string | null }> {
+  if (!previous) return { items: [], notesMeetingId: null };
   let fromAgenda: string[] = [];
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (repo && previous.agenda_path && isSeriesAgendaPath(previous.agenda_path)) {
@@ -311,17 +370,57 @@ async function carriedItems(ctx: PluginContext, tx: PluginTx, teamId: string, sp
     });
     if (blob) fromAgenda = openActionItems(Buffer.from(blob.content).toString('utf8'));
   }
-  const notes = (
-    await tx.query<{ items: unknown }>(
-      `SELECT n.items FROM app.meetings m JOIN app.meeting_notes n ON n.meeting_id = m.id
-        WHERE m.channel_id = $1 AND m.state = 'ended' AND m.started_at >= $2::timestamptz - interval '30 minutes'
-          AND n.status = 'written' AND n.location <> 'personal'
-        ORDER BY m.started_at DESC LIMIT 1`,
-      [spaceId, previous.starts_at.toISOString()],
+  const notes = await lastNotes(tx, spaceId, previous.starts_at, null);
+  return { items: mergeCarried(fromAgenda, notes?.items ?? []), notesMeetingId: notes?.meetingId ?? null };
+}
+
+/**
+ * Notes written after the next agenda (step 2): when the last call before the next meeting has written notes that agenda did not take in, their action items
+ * not yet on the page are added to it, once (`agenda_notes_meeting_id`). Not while someone has the page open in the live editor or has edits it has not saved:
+ * the live session would not see the change; the planner's pass tries again. Returns the path written, or null.
+ */
+export async function addLateNotes(ctx: PluginContext, tx: PluginTx, seriesId: string): Promise<string | null> {
+  const s = (
+    await tx.query<{ team_id: string; title: string; space_channel_id: string; status: string }>('SELECT team_id, title, space_channel_id, status FROM app.meeting_series WHERE id = $1', [seriesId])
+  ).rows[0];
+  if (!s || s.status !== 'active') return null;
+  const next = (
+    await tx.query<Occurrence & { agenda_notes_meeting_id: string | null }>(
+      `${OCCURRENCE_SELECT.replace('a.agenda_path,', 'a.agenda_path, a.agenda_notes_meeting_id,')}
+        WHERE a.series_id = $1 AND a.status = 'scheduled' AND a.agenda_path IS NOT NULL AND a.ends_at > now() ORDER BY a.starts_at, a.id LIMIT 1`,
+      [seriesId],
     )
   ).rows[0];
-  const items = z.array(MeetingNoteItem).safeParse(notes?.items ?? []);
-  return mergeCarried(fromAgenda, items.success ? noteActionItems(items.data) : []);
+  if (!next || !next.agenda_path || !isSeriesAgendaPath(next.agenda_path)) return null;
+  const before = (
+    await tx.query<Occurrence>(`${OCCURRENCE_SELECT} WHERE a.series_id = $1 AND a.status = 'scheduled' AND a.starts_at < $2 ORDER BY a.starts_at DESC, a.id DESC LIMIT 1`, [seriesId, next.starts_at])
+  ).rows[0];
+  if (!before) return null;
+  const notes = await lastNotes(tx, s.space_channel_id, before.starts_at, next.starts_at);
+  if (!notes || notes.meetingId === next.agenda_notes_meeting_id) return null;
+  const busy = (
+    await tx.query(
+      `SELECT 1 FROM app.page_awareness w WHERE w.team_id = $1 AND w.path = $2 AND w.expires_at > now()
+       UNION ALL
+       SELECT 1 FROM app.page_updates u WHERE u.team_id = $1 AND u.path = $2
+          AND u.id > coalesce((SELECT d.last_update_id FROM app.page_docs d WHERE d.team_id = $1 AND d.path = $2), 0)
+       LIMIT 1`,
+      [s.team_id, next.agenda_path],
+    )
+  ).rows.length > 0;
+  if (busy) return null;
+  const repo = ctx.providers.get<RepoProvider>('repo');
+  if (!repo) throw new Error('The team repo is not available');
+  const blob = await repo.blob(tx, s.team_id, next.agenda_path, 'main').catch((err: unknown) => {
+    if ((err as { status?: number }).status === 404) return null;
+    throw err;
+  });
+  const page = blob ? addCarriedItems(Buffer.from(blob.content).toString('utf8'), notes.items) : null;
+  if (blob && page !== null) {
+    await repo.write(tx, s.team_id, { id: tx.actor.id, kind: 'system' }, [{ path: next.agenda_path, op: 'put', content: page, baseBlobSha: blob.sha }], `Agenda: ${s.title.slice(0, 100)} · ${next.day} · items from the notes`);
+  }
+  await tx.query('UPDATE app.appointments SET agenda_notes_meeting_id = $2 WHERE id = $1', [next.id, notes.meetingId]);
+  return page !== null ? next.agenda_path : null;
 }
 
 /**
@@ -365,7 +464,7 @@ export async function writeDueAgenda(ctx: PluginContext, tx: PluginTx, seriesId:
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) throw new Error('The team repo is not available');
   const carried = await carriedItems(ctx, tx, s.team_id, s.space_channel_id, lastAgenda);
-  const changes: RepoWriteChange[] = [{ path, op: 'put', content: renderAgenda({ title: s.title, dateLabel: target.day_label, carried, agendaLine: s.agenda }) }];
+  const changes: RepoWriteChange[] = [{ path, op: 'put', content: renderAgenda({ title: s.title, dateLabel: target.day_label, carried: carried.items, agendaLine: s.agenda }) }];
   if (used.size === 0) {
     const readme = `${folder}/README.md`;
     const exists = await repo.blob(tx, s.team_id, readme, 'main').then(
@@ -375,9 +474,22 @@ export async function writeDueAgenda(ctx: PluginContext, tx: PluginTx, seriesId:
     if (!exists) changes.push({ path: readme, op: 'put', content: renderReadme({ title: s.title, teamName: s.team_name, frequency: s.frequency, untilDate: s.until_date }) });
   }
   await repo.write(tx, s.team_id, { id: tx.actor.id, kind: 'system' }, changes, `Agenda: ${s.title.slice(0, 100)} · ${target.day}`);
-  await tx.query('UPDATE app.appointments SET agenda_path = $2, agenda_written_at = now() WHERE id = $1', [target.id, path]);
+  await tx.query('UPDATE app.appointments SET agenda_path = $2, agenda_written_at = now(), agenda_notes_meeting_id = $3 WHERE id = $1', [target.id, path, carried.notesMeetingId]);
   return path;
 }
+
+/** Whether the last call before a series' next written agenda has notes that agenda did not take in (the same bounds as `addLateNotes`). */
+const LATE_NOTES_PENDING = `
+  WITH next AS (SELECT a.starts_at, a.agenda_notes_meeting_id FROM app.appointments a
+                 WHERE a.series_id = $1 AND a.status = 'scheduled' AND a.agenda_path IS NOT NULL AND a.ends_at > now() ORDER BY a.starts_at, a.id LIMIT 1),
+       prev AS (SELECT b.starts_at FROM app.appointments b, next WHERE b.series_id = $1 AND b.status = 'scheduled' AND b.starts_at < next.starts_at
+                 ORDER BY b.starts_at DESC LIMIT 1),
+       last AS (SELECT m.id FROM app.meetings m JOIN app.meeting_notes n ON n.meeting_id = m.id, next, prev
+                 WHERE m.channel_id = (SELECT x.space_channel_id FROM app.meeting_series x WHERE x.id = $1) AND m.state = 'ended'
+                   AND n.status = 'written' AND n.location <> 'personal'
+                   AND m.started_at >= prev.starts_at - interval '30 minutes' AND m.started_at < next.starts_at - interval '30 minutes'
+                 ORDER BY m.started_at DESC LIMIT 1)
+  SELECT 1 FROM last, next WHERE last.id IS DISTINCT FROM next.agenda_notes_meeting_id`;
 
 /** One pass of the planner: every active series gets its meetings for the next 92 days, and the agenda job for each series whose next agenda is due. */
 export async function seriesPlanPass(ctx: PluginContext, tx: PluginTx): Promise<{ added: number; agendas: number }> {
@@ -401,7 +513,9 @@ export async function seriesPlanPass(ctx: PluginContext, tx: PluginTx): Promise<
         [s.id],
       )
     ).rows.length;
-    if (due > 0) {
+    // notes written after the next agenda that it did not take in yet (the job adds them; the consumer of meetings.notes.written usually got there first)
+    const late = due > 0 ? 0 : (await tx.query(LATE_NOTES_PENDING, [s.id])).rows.length;
+    if (due > 0 || late > 0) {
       await ctx.jobs.enqueue(tx, SERIES_AGENDA_QUEUE, { seriesId: s.id, workspaceId: s.workspace_id }, { dedupeKey: `series-agenda:${s.id}` });
       agendas += 1;
     }
@@ -410,6 +524,14 @@ export async function seriesPlanPass(ctx: PluginContext, tx: PluginTx): Promise<
 }
 
 export function registerSeriesJobs(ctx: PluginContext): void {
+  // notes of a call in a series' space were written: the agenda job adds their action items to the next agenda when it was written before them
+  ctx.events.subscribe('meetings.notes.written', async (raw: PluginEvent, tx: PluginTx) => {
+    const event = MeetingsNotesWrittenEvent.parse(raw);
+    if (!event.channelId) return;
+    const series = (await tx.query<{ id: string }>("SELECT id FROM app.meeting_series WHERE space_channel_id = $1 AND status = 'active'", [event.channelId])).rows[0];
+    if (!series) return;
+    await ctx.jobs.enqueue(tx, SERIES_AGENDA_QUEUE, { seriesId: series.id, workspaceId: event.workspaceId }, { dedupeKey: `series-agenda:${series.id}` });
+  });
   ctx.jobs.register(
     SERIES_PLAN_QUEUE,
     async (_payload, tx) => {
@@ -421,6 +543,7 @@ export function registerSeriesJobs(ctx: PluginContext): void {
     SERIES_AGENDA_QUEUE,
     async (payload, tx) => {
       const p = AgendaPayload.parse(payload);
+      await addLateNotes(ctx, tx, p.seriesId);
       await writeDueAgenda(ctx, tx, p.seriesId);
     },
     { serialKey: 'seriesId', maxAttempts: 5 },

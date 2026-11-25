@@ -405,6 +405,12 @@
   min-height: min(60vh, 560px);
 }
 
+/* the agenda as text, for a person invited from another team (P17-05 step 2) */
+.sc-agenda-read {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 @media (width <= 760px) {
   .sc-teams,
   .sc-week,

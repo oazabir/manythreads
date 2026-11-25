@@ -91,7 +91,7 @@ export default definePlugin({
       // channel.message.posted and channel.message.transcribed: a voice message in a call thread becomes a line (P15-14; one of the current client when the server has written its
       // words, P32), and a mention of the note-taker in it is a question (P15-24).
       // meetings.meeting.ended and meetings.transcript.written: the transcript writer and the Scribe start from them (P15-09, P15-10); meetings.notes.written: the end-of-call
-      // review takes the notes' action items (P17-06).
+      // review takes the notes' action items (P17-06), and notes of a call in a series' space written after the next agenda are added to it (P17-05 step 2).
       consumes: ['channel.channel.archived', 'channel.member.removed', 'team.member.removed', 'channel.message.posted', 'channel.message.transcribed', 'meetings.meeting.ended', 'meetings.transcript.written', 'meetings.notes.written'],
     },
     // The Scribe's and the note-taker's tools (P15-10, P15-24) and the search over what was said (P15-13). A bot gets them by listing them in its BOT.md.

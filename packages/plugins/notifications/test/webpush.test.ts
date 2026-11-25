@@ -199,4 +199,10 @@ describe('what a push says', () => {
     expect(long.body.length).toBeLessThanOrEqual(200);
     expect(long.title.length).toBeLessThanOrEqual(200);
   });
+  it('a meeting about to start opens on the Schedule, where its agenda is (P17-05 step 2); an invitation still opens its space', () => {
+    const soon = buildPushPayload({ ...base, kind: 'appointment_soon', channelKind: 'meeting', channelPrivate: true, messageId: '0198f000-0000-7000-8000-0000000000dd' });
+    expect(soon.url).toBe('/schedule?appointment=0198f000-0000-7000-8000-0000000000dd');
+    expect(soon.body).toBe(PRIVATE_BODY);
+    expect(buildPushPayload({ ...base, kind: 'appointment_invite', channelKind: 'meeting', channelPrivate: true }).url).toBe(`/open?channel=${base.channelId}`);
+  });
 });

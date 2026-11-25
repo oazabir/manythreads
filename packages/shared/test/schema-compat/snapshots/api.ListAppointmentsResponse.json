@@ -182,6 +182,10 @@
               "string",
               "null"
             ]
+          },
+          "hasAgenda": {
+            "default": false,
+            "type": "boolean"
           }
         },
         "required": [

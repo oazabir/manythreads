@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "markdown": {
+      "type": "string",
+      "maxLength": 200000
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "editable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "path",
+    "markdown",
+    "truncated",
+    "editable"
+  ]
+}

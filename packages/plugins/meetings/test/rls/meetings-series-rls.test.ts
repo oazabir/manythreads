@@ -176,3 +176,52 @@ describe('the meetings of a series', () => {
     expect(await read(lena)).toBe(0);
   });
 });
+
+// Step 2 (meetings 0016): a rule change goes through app.meeting_series_change_rule, a definer that checks the caller itself; the column that records which call's
+// notes an agenda took in is the platform's, like the agenda path.
+describe('a rule change and late notes (0016)', () => {
+  const change = (p: Persona, series: string, first = '2030-02-05T14:00:00Z') =>
+    as(p, (tx) => tx.query<{ id: string }>("SELECT app.meeting_series_change_rule($1, NULL, 'biweekly', $2::timestamptz, 45, NULL, 'UTC', '2030-04-01T00:00:00Z'::timestamptz) AS id", [series, first]));
+
+  it("is for its maker, a lead or an admin only; it re-makes the meetings to come with the series' people, numbered after the last", async () => {
+    const space = await openSpace(nadia, [sameera]);
+    const series = await makeSeries(nadia, space);
+    const planned = await as(nadia, async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.meeting_series_plan($1, '2030-02-20T00:00:00Z') AS id", [series])).rows.map((r) => r.id));
+    expect(planned.length).toBe(6);
+    for (const id of planned) await as(nadia, (tx) => tx.query('INSERT INTO app.appointment_invitees (appointment_id, person_id) VALUES ($1, $2)', [id, sameera.personId]));
+    for (const p of [rafi, tariq, lena, sameera]) expect(await code(change(p, series)), p.personId).toBe('42501');
+    // the new rule starts with a meeting to come
+    expect(await code(change(nadia, series, '2020-01-01T10:00:00Z'))).toBe('22023');
+    const first = (await change(omar, series)).rows[0]!.id;
+    const rows = await sys(async (tx) => (await tx.query<{ id: string; occurrence: number; starts_at: Date }>('SELECT id, occurrence, starts_at FROM app.appointments WHERE series_id = $1 ORDER BY occurrence', [series])).rows);
+    expect(rows.every((r) => !planned.includes(r.id))).toBe(true);
+    expect(rows[0]).toMatchObject({ id: first, occurrence: 0 });
+    expect(rows.map((r) => r.starts_at.toISOString().slice(0, 10))).toEqual(['2030-02-05', '2030-02-19', '2030-03-05', '2030-03-19']);
+    const invited = await sys(async (tx) => (await tx.query<{ n: string }>('SELECT count(*)::text AS n FROM app.appointment_invitees WHERE appointment_id = ANY ($1::uuid[]) AND person_id = $2', [rows.map((r) => r.id), sameera.personId])).rows[0]!.n);
+    expect(Number(invited)).toBe(rows.length);
+    // the rule's columns stay the platform's outside the function
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.meeting_series SET rule_from = 9 WHERE id = $1', [series])))).toBe('23514');
+    // a stopped series takes no new rule
+    await as(nadia, (tx) => tx.query("UPDATE app.meeting_series SET status = 'stopped', stopped_at = now() WHERE id = $1", [series]));
+    expect(await code(change(nadia, series))).toBe('55000');
+  });
+
+  it("nobody but the platform says which call's notes an agenda took in", async () => {
+    const space = await openSpace(nadia);
+    const series = await makeSeries(nadia, space);
+    const m = await addMeeting(nadia, space, series, 0);
+    const someMeeting = '0190a000-0000-7000-8000-00000000abcd';
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.appointments SET agenda_notes_meeting_id = $2 WHERE id = $1', [m, someMeeting])))).toBe('23514');
+    expect(
+      await code(
+        as(nadia, (tx) =>
+          tx.query(
+            `INSERT INTO app.appointments (workspace_id, team_id, space_channel_id, title, starts_at, ends_at, created_by, created_by_person_id, series_id, occurrence, agenda_notes_meeting_id)
+             VALUES (app.workspace_id(), $1, $2, 'Weekly sync', '2030-01-22T10:00:00Z', '2030-01-22T10:30:00Z', app.actor(), app.person_id(), $3, 1, $4)`,
+            [TEAM_IDS.Engineering, space, series, someMeeting],
+          ),
+        ),
+      ),
+    ).toBe('42501');
+  });
+});

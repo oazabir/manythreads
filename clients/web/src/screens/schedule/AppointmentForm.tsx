@@ -3,13 +3,14 @@ import { APPOINTMENT_AGENDA_MAX, APPOINTMENT_TITLE_MAX, type Appointment, type M
 import { Dialog } from '../../components/Dialog';
 import { createAppointment, createMeetingSeries, fetchMeetingPeople, updateAppointment, updateMeetingSeries } from '../../meetings/api';
 import { useShell } from '../../shell/context';
-import { REPEAT_OPTIONS, agendaNotice, browserTimeZone, buildSeriesBody, type Repeat } from './series';
+import { REPEAT_OPTIONS, agendaNotice, browserTimeZone, buildRuleChange, buildSeriesBody, scopeNotice, type EditScope, type Repeat } from './series';
 
 /*
  * New appointment and Edit (P36-06): the team whose schedule it goes on (one of the person's teams; fixed once made), a title, the day and the time, audio or
  * video, an agenda line, and the people to invite from any team (searched by name). Saving tells the people newly invited.
  * A new one can repeat (P17-05): every week, every 2 weeks or every month, until a day or not; each of its meetings then gets an agenda page. Editing one meeting
- * of a series changes that meeting only, and its people for the whole series.
+ * of a series changes that meeting only, and its people for the whole series; or (step 2) "This and the following meetings" gives the series a new time and
+ * repeat from that meeting on.
  */
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -39,9 +40,13 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
   const [picked, setPicked] = useState<Map<string, string>>(new Map((appointment?.invited ?? []).map((p) => [p.personId as string, p.name])));
   const [find, setFind] = useState('');
   const [found, setFound] = useState<MeetingPerson[]>([]);
-  const [repeat, setRepeat] = useState<Repeat>('none');
-  const [until, setUntil] = useState('');
   const series = appointment?.series ?? null;
+  const [repeat, setRepeat] = useState<Repeat>(series?.frequency ?? 'none');
+  const [until, setUntil] = useState(series?.untilDate ?? '');
+  // a meeting of a series: this one only, or the series from this one on (its maker, a lead or an admin, while the series goes on)
+  const [scope, setScope] = useState<EditScope>('one');
+  const canChangeSeries = editing && series !== null && series.status === 'active' && appointment.canEdit && appointment.status === 'scheduled';
+  const following = canChangeSeries && scope === 'following';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,11 +82,18 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
     try {
       const inviteeIds = [...picked.keys()];
       const body = { title: title.trim(), startsAt, endsAt, kind, agenda, inviteeIds: inviteeIds as never };
-      if (editing && series) {
+      const had = new Set((appointment?.invited ?? []).map((p) => p.personId as string));
+      const peopleChanged = had.size !== picked.size || inviteeIds.some((p) => !had.has(p));
+      if (editing && series && following && repeat !== 'none') {
+        const res = await updateMeetingSeries(
+          series.id,
+          buildRuleChange({ appointmentId: appointment.id, title, startsAt, endsAt, repeat, until, timeZone: browserTimeZone(), ...(peopleChanged ? { inviteeIds } : {}) }),
+        );
+        onSaved(res.appointment ?? appointment);
+      } else if (editing && series) {
         // this meeting only; the people are the series' and change for all its meetings to come
         const res = await updateAppointment(appointment.id, { title: body.title, startsAt, endsAt, kind, agenda });
-        const had = new Set(appointment.invited.map((p) => p.personId as string));
-        if (had.size !== picked.size || inviteeIds.some((p) => !had.has(p))) await updateMeetingSeries(series.id, { inviteeIds: inviteeIds as never });
+        if (peopleChanged) await updateMeetingSeries(series.id, { inviteeIds: inviteeIds as never });
         onSaved(res.appointment);
       } else if (!editing && repeat !== 'none') {
         const res = await createMeetingSeries(teamSlug, buildSeriesBody({ title, startsAt, endsAt, kind, agenda, inviteeIds, repeat, until, timeZone: browserTimeZone() }));
@@ -135,12 +147,18 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
             <input id="ap-to" type="time" className="dlg-input" value={to} onChange={(ev) => setTo(ev.target.value)} data-testid="appointment-to" />
           </span>
         </div>
-        {!editing ? (
+        {canChangeSeries ? (
+          <div className="sc-kind" role="radiogroup" aria-label="Change">
+            <label className={`sc-pill ${scope === 'one' ? 'on' : ''}`}><input type="radio" name="ap-scope" checked={scope === 'one'} onChange={() => setScope('one')} data-testid="appointment-scope-one" /> This meeting</label>
+            <label className={`sc-pill ${scope === 'following' ? 'on' : ''}`}><input type="radio" name="ap-scope" checked={scope === 'following'} onChange={() => setScope('following')} data-testid="appointment-scope-following" /> This and the following meetings</label>
+          </div>
+        ) : null}
+        {!editing || following ? (
           <div className="sc-repeat">
             <span className="sc-field">
               <label className="dlg-label" htmlFor="ap-repeat">Repeats</label>
               <select id="ap-repeat" className="dlg-input" value={repeat} onChange={(ev) => setRepeat(ev.target.value as Repeat)} data-testid="appointment-repeat">
-                {REPEAT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {REPEAT_OPTIONS.filter((o) => !following || o.value !== 'none').map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </span>
             {repeat !== 'none' ? (
@@ -155,8 +173,10 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
           <p className="sc-note" data-testid="appointment-series-note">{agendaNotice(teams.find((t) => t.slug === teamSlug)?.name ?? 'the team')}</p>
         ) : null}
         {editing && series ? (
-          <p className="sc-note" data-testid="appointment-series-note">Changes here are for this meeting only. The people are changed for the whole series.</p>
+          <p className="sc-note" data-testid="appointment-series-note">{scopeNotice(following ? 'following' : 'one')}</p>
         ) : null}
+        {following ? null : (
+          <>
         <span className="dlg-label">Call</span>
         <div className="sc-kind" role="radiogroup" aria-label="Call">
           <label className={`sc-pill ${kind === 'video' ? 'on' : ''}`}><input type="radio" name="ap-kind" checked={kind === 'video'} onChange={() => setKind('video')} data-testid="appointment-video" /> Video</label>
@@ -164,6 +184,8 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
         </div>
         <label className="dlg-label" htmlFor="ap-agenda">Agenda</label>
         <textarea id="ap-agenda" className="dlg-input" rows={2} maxLength={APPOINTMENT_AGENDA_MAX} value={agenda} onChange={(ev) => setAgenda(ev.target.value)} placeholder="What it is for" data-testid="appointment-agenda" />
+          </>
+        )}
         <label className="dlg-label" htmlFor="ap-find">Invite people from any team{picked.size > 0 ? ` · ${picked.size} invited` : ''}</label>
         <input id="ap-find" type="search" className="dlg-input" value={find} onChange={(ev) => setFind(ev.target.value)} placeholder="Search by name" data-testid="appointment-find" />
         <ul className="nm-people" aria-label="People">

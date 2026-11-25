@@ -1,6 +1,6 @@
-import { CreateMeetingSeriesRequest } from '@manythreads/shared';
+import { CreateMeetingSeriesRequest, UpdateMeetingSeriesRequest } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { agendaDay, agendaNotice, buildSeriesBody, repeatLabel } from '../src/screens/schedule/series';
+import { agendaDay, agendaNotice, buildRuleChange, buildSeriesBody, repeatLabel, scopeNotice } from '../src/screens/schedule/series';
 
 // P17-05: the words the Schedule uses for a meeting series, and the request its form sends.
 
@@ -31,9 +31,27 @@ describe('a meeting series on the Schedule', () => {
 
   it('says who reads the agenda before a series is made, and names the agenda\'s day', () => {
     expect(agendaNotice('Engineering')).toBe(
-      "Each meeting gets an agenda page in Engineering's files that everyone on Engineering can read and edit. Open action items from the last meeting are copied into the next agenda.",
+      "Each meeting gets an agenda page in Engineering's files that everyone on Engineering can edit and the people invited can read. Open action items from the last meeting are copied into the next agenda.",
     );
     expect(agendaDay('meetings/series/weekly-sync/2026-12-01-agenda.md')).toMatch(/1/);
     expect(agendaDay('meetings/series/weekly-sync/README.md')).toBeNull();
+  });
+
+  it('sends a new rule from one meeting on (step 2), with the people only when they changed, and says what each choice does', () => {
+    const base = { appointmentId: '0190a000-0000-7000-8000-0000000000aa', title: ' Weekly sync ', startsAt: '2026-12-08T13:00:00.000Z', endsAt: '2026-12-08T13:45:00.000Z', repeat: 'biweekly', until: '', timeZone: 'Europe/Berlin' } as const;
+    const body = buildRuleChange(base);
+    expect(UpdateMeetingSeriesRequest.parse(body)).toEqual({
+      title: 'Weekly sync',
+      fromAppointmentId: base.appointmentId,
+      startsAt: base.startsAt,
+      endsAt: base.endsAt,
+      frequency: 'biweekly',
+      untilDate: null,
+      timeZone: 'Europe/Berlin',
+    });
+    expect(buildRuleChange({ ...base, until: '2027-06-30', inviteeIds: ['0190a000-0000-7000-8000-000000000001'] })).toMatchObject({ untilDate: '2027-06-30', inviteeIds: ['0190a000-0000-7000-8000-000000000001'] });
+    expect(UpdateMeetingSeriesRequest.safeParse({ startsAt: base.startsAt }).success).toBe(false);
+    expect(scopeNotice('one')).toMatch(/this meeting only/);
+    expect(scopeNotice('following')).toMatch(/made again/);
   });
 });

@@ -1,5 +1,7 @@
-import { conflict, forbidden, invalid, json, notFound, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { conflict, forbidden, invalid, json, notFound, route, type PluginContext, type PluginTx, type RepoProvider } from '@manythreads/sdk';
 import {
+  APPOINTMENT_AGENDA_PAGE_MAX,
+  AppointmentAgendaResponse,
   AppointmentParams,
   AppointmentResponse,
   CreateAppointmentRequest,
@@ -14,6 +16,9 @@ import {
   createAppointmentRoute,
   listAppointmentsRoute,
   updateAppointmentRoute,
+  appointmentAgendaRoute,
+  getAppointmentRoute,
+  isSeriesAgendaPath,
   type Appointment,
 } from '@manythreads/shared';
 import { callerPerson, startRoom } from './routes.ts';
@@ -88,6 +93,8 @@ async function shape(tx: PluginTx, rows: Row[]): Promise<Appointment[]> {
         : null,
     // the agenda is a page of the team's files: a person of another team (who does not see the team) is not given its path
     agendaPath: r.team_slug ? r.agenda_path : null,
+    // everyone who sees the meeting may read its agenda (step 2): the team in its files, the people invited from other teams through the agenda route
+    hasAgenda: r.agenda_path !== null,
   }));
 }
 
@@ -135,6 +142,46 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
       if (Date.parse(to) - Date.parse(from) > 62 * 24 * 3600_000) throw invalid('Ask for at most two months at a time');
       const rows = (await tx.query<Row>(`${SELECT} WHERE a.starts_at < $2::timestamptz AND a.ends_at > $1::timestamptz ORDER BY a.starts_at, a.id LIMIT 500`, [from, to])).rows;
       return json(ListAppointmentsResponse.parse({ appointments: await shape(tx, rows) }));
+    }),
+  });
+
+  ctx.http.route({
+    ...getAppointmentRoute,
+    schema: { response: AppointmentResponse },
+    handler: route(async (req, tx) => {
+      const { id } = AppointmentParams.parse(req.params);
+      return json(AppointmentResponse.parse({ appointment: await loadAppointment(tx, id) }));
+    }),
+  });
+
+  // The agenda page of a meeting of a series (P17-05 step 2), for everyone who sees the meeting: row level security decides who that is (its team, and the people
+  // invited to it); the page is then read from the team's files by the platform, because a person of another team cannot read that team's files.
+  ctx.http.route({
+    ...appointmentAgendaRoute,
+    schema: { response: AppointmentAgendaResponse },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const { id } = AppointmentParams.parse(req.params);
+      const row = (
+        await tx.query<{ team_id: string; agenda_path: string | null; editable: boolean }>(
+          `SELECT a.team_id, a.agenda_path, coalesce(a.team_id = ANY ((SELECT app.readable_team_ids('post'))::uuid[]), false) AS editable FROM app.appointments a WHERE a.id = $1`,
+          [id],
+        )
+      ).rows[0];
+      if (!row) throw notFound('No such appointment');
+      const path = row.agenda_path;
+      if (path === null || !isSeriesAgendaPath(path)) throw notFound('This meeting has no agenda page yet');
+      const repo = ctx.providers.get<RepoProvider>('repo');
+      if (!repo) throw conflict('The team files are not available');
+      const blob = await ctx.db
+        .system((sys) => repo.blob(sys, row.team_id, path, 'main'), { workspaceId: tx.actor.workspaceId })
+        .catch((err: unknown) => {
+          if ((err as { status?: number }).status === 404) throw notFound('The agenda page is no longer in the team files');
+          throw err;
+        });
+      const text = Buffer.from(blob.content).toString('utf8');
+      const truncated = text.length > APPOINTMENT_AGENDA_PAGE_MAX;
+      return json(AppointmentAgendaResponse.parse({ path, markdown: truncated ? text.slice(0, APPOINTMENT_AGENDA_PAGE_MAX) : text, truncated, editable: row.editable }));
     }),
   });
 

@@ -68,7 +68,15 @@ export function buildPushPayload(f: PushFacts): PushPayload {
     body: open ? clip(f.preview, BODY_MAX) || PRIVATE_BODY : PRIVATE_BODY,
     tag: `n-${f.notificationId}`,
     // For action items from a meeting `messageId` is the meeting's id: it opens the meeting page. For `meeting_soon` it is the planned meeting's id: it opens the join page.
-    url: f.kind === 'meeting_actions' ? `/meetings/${f.messageId}` : f.kind === 'meeting_soon' ? `/join/${f.messageId}` : `/open?${params.toString()}`,
+    // A meeting about to start (`appointment_soon`, `messageId` is the appointment's id) opens on the Schedule, with Join and its agenda (P17-05 step 2).
+    url:
+      f.kind === 'meeting_actions'
+        ? `/meetings/${f.messageId}`
+        : f.kind === 'meeting_soon'
+          ? `/join/${f.messageId}`
+          : f.kind === 'appointment_soon'
+            ? `/schedule?${new URLSearchParams({ appointment: f.messageId }).toString()}`
+            : `/open?${params.toString()}`,
     notificationId: f.notificationId,
   });
 }

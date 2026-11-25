@@ -155,3 +155,78 @@ export function agendaDue(input: { previousEndsAt: Date | null; startsAt: Date; 
   if (input.startsAt.getTime() - input.now.getTime() <= 3600_000) return true;
   return !input.callLive && input.previousEndsAt.getTime() + 3600_000 <= input.now.getTime();
 }
+
+/** Every task line of a page, ticked or not, by its key: what a page already holds. Code fences skipped. */
+function taskKeys(lines: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  let fence: string | null = null;
+  for (const raw of lines) {
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+    const trimmed = line.trimStart();
+    if (fence !== null) {
+      if (trimmed.startsWith(fence)) fence = null;
+      continue;
+    }
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      fence = trimmed.slice(0, 3);
+      continue;
+    }
+    const task = taskOf(line);
+    if (task) keys.add(itemKey(task.text.replace(/\\/g, '')));
+  }
+  return keys;
+}
+
+/**
+ * Notes written after the next agenda (P17-05 step 2): the items not yet on the page, ticked or not, are added at the end of its "Open action items from the
+ * last meeting" section (in place of "Nothing was left open."), or in a new section of that name at the end when a person took the heading out. Null when every
+ * item is already there. One pass over the lines; at most `CARRY_MAX` items added.
+ */
+export function addCarriedItems(markdown: string, items: readonly string[]): string | null {
+  const lines = markdown.split('\n');
+  const have = taskKeys(lines);
+  const fresh: string[] = [];
+  for (const t of items) {
+    const key = itemKey(t.replace(/\\/g, ''));
+    if (key === '' || have.has(key)) continue;
+    have.add(key);
+    fresh.push(`- [ ] ${t}`);
+    if (fresh.length >= CARRY_MAX) break;
+  }
+  if (fresh.length === 0) return null;
+  // the carried section: from its heading to the next heading (outside a code fence)
+  let start = -1;
+  let end = lines.length;
+  let fence: string | null = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i]!;
+    const trimmed = (raw.endsWith('\r') ? raw.slice(0, -1) : raw).trimStart();
+    if (fence !== null) {
+      if (trimmed.startsWith(fence)) fence = null;
+      continue;
+    }
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      fence = trimmed.slice(0, 3);
+      continue;
+    }
+    const heading = headingOf(trimmed);
+    if (heading === null) continue;
+    if (start === -1) {
+      if (heading.startsWith(CARRIED_HEADING.toLowerCase())) start = i;
+    } else {
+      end = i;
+      break;
+    }
+  }
+  if (start === -1) {
+    const body = markdown.endsWith('\n') ? markdown : `${markdown}\n`;
+    return `${body}\n## ${CARRIED_HEADING}\n${fresh.join('\n')}\n`;
+  }
+  const section = lines.slice(start + 1, end).filter((l) => l.trim() !== '*Nothing was left open.*');
+  // the new items go after the section's last line that is not blank, so the blank line before the next heading stays
+  let last = section.length;
+  while (last > 0 && section[last - 1]!.trim() === '') last -= 1;
+  const tail = section.slice(last);
+  if (tail.length === 0 && end < lines.length) tail.push('');
+  return [...lines.slice(0, start + 1), ...section.slice(0, last), ...fresh, ...tail, ...lines.slice(end)].join('\n');
+}

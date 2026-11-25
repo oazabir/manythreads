@@ -15,6 +15,9 @@ import {
   UpdateMeetingSeriesRequest,
   MeetingSeriesResponse,
   stopMeetingSeriesRoute,
+  getAppointmentRoute,
+  appointmentAgendaRoute,
+  AppointmentAgendaResponse,
   openMeetingSpaceRoute,
   OpenMeetingSpaceRequest,
   OpenMeetingSpaceResponse,
@@ -291,6 +294,9 @@ export const createMeetingSeries = (teamSlug: string, body: CreateMeetingSeriesR
   call(createMeetingSeriesRoute, { request: CreateMeetingSeriesRequest, response: CreateMeetingSeriesResponse }, body, { slug: teamSlug });
 export const updateMeetingSeries = (id: string, body: UpdateMeetingSeriesRequest) => call(updateMeetingSeriesRoute, { request: UpdateMeetingSeriesRequest, response: MeetingSeriesResponse }, body, { id });
 export const stopMeetingSeries = (id: string) => call(stopMeetingSeriesRoute, { response: MeetingSeriesResponse }, undefined, { id });
+/** One appointment (a reminder opens it on the Schedule), and its agenda page as text for everyone invited (P17-05 step 2). */
+export const fetchAppointment = (id: string) => call(getAppointmentRoute, { response: AppointmentResponse }, undefined, { id });
+export const fetchAppointmentAgenda = (id: string) => call(appointmentAgendaRoute, { response: AppointmentAgendaResponse }, undefined, { id });
 export const joinAppointment = (id: string) => call(joinAppointmentRoute, { response: OpenMeetingSpaceResponse }, undefined, { id });
 
 // ---- guest links and the waiting room (P17-04) -------------------------------------------------------------------------------------------------------

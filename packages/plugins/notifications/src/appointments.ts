@@ -7,7 +7,8 @@ import { normalizePrefs } from './prefs.ts';
 /*
  * The team schedule (P36-06, P36-07; docs/plans/team-schedule.md). An invitation: each person newly invited to an appointment gets one `appointment_invite`
  * ("Nadia invited you to Escalation review · Tue 15 Jan 14:00"). A reminder: when an appointment starts in about five minutes its maker and its invited get one
- * `appointment_soon` ("Escalation review starts in 5 minutes"; a moved appointment raises the same row again). Both belong to the appointment's meeting space
+ * `appointment_soon` ("Escalation review starts in 5 minutes"; a moved appointment raises the same row again; a meeting of a series with its agenda page
+ * written says "The agenda is ready.", P17-05 step 2). Both belong to the appointment's meeting space
  * (only its members get them) and open it. Do not disturb holds them; the browser push is sent like the other kinds.
  */
 
@@ -22,14 +23,16 @@ const whenText = (at: Date): string =>
   `${at.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })} ${at.toISOString().slice(11, 16)} UTC`;
 
 export const appointmentInvitePreview = (inviter: string, title: string, at: Date): string => clip(`${inviter} invited you to ${title} · ${whenText(at)}`, PREVIEW_MAX);
-export const appointmentSoonPreview = (title: string): string => `${clip(title, PREVIEW_MAX - 20)} starts in 5 minutes`;
+/** "Weekly sync starts in 5 minutes", and for a meeting of a series whose agenda page is written, "… The agenda is ready." (opening it shows the agenda). */
+export const appointmentSoonPreview = (title: string, hasAgenda = false): string =>
+  hasAgenda ? `${clip(title, PREVIEW_MAX - 45)} starts in 5 minutes. The agenda is ready.` : `${clip(title, PREVIEW_MAX - 20)} starts in 5 minutes`;
 
-type Facts = { title: string; starts_at: Date; space: string; maker_actor: string | null; maker_name: string | null; status: string };
+type Facts = { title: string; starts_at: Date; space: string; maker_actor: string | null; maker_name: string | null; status: string; has_agenda: boolean };
 
 async function factsOf(tx: PluginTx, appointmentId: string): Promise<Facts | undefined> {
   return (
     await tx.query<Facts>(
-      `SELECT a.title, a.starts_at, a.space_channel_id AS space, a.created_by AS maker_actor, a.status,
+      `SELECT a.title, a.starts_at, a.space_channel_id AS space, a.created_by AS maker_actor, a.status, a.agenda_path IS NOT NULL AS has_agenda,
               (SELECT p.display_name FROM app.people p WHERE p.id = a.created_by_person_id) AS maker_name
          FROM app.appointments a WHERE a.id = $1::uuid`,
       [appointmentId],
@@ -96,7 +99,7 @@ export function registerAppointmentNotifications(ctx: PluginContext): void {
       refType: 'appointment',
       appointmentId: event.appointmentId,
       facts,
-      preview: appointmentSoonPreview(facts.title),
+      preview: appointmentSoonPreview(facts.title, facts.has_agenda),
       at: event.at,
     });
   });

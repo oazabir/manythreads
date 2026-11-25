@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CARRY_MAX, CARRY_TEXT_MAX, agendaDue, mergeCarried, noteActionItems, openActionItems, renderAgenda, renderReadme, ruleLabel } from '../src/series-agenda.ts';
+import { CARRY_MAX, CARRY_TEXT_MAX, addCarriedItems, agendaDue,mergeCarried, noteActionItems, openActionItems, renderAgenda, renderReadme, ruleLabel } from '../src/series-agenda.ts';
 
 // P17-05: the agenda page of a meeting series, without a database. What is carried into the next agenda is exactly the boxes left unticked under the two
 // action-item headings, each once; the page the platform writes reads back to the same items; the parse stays linear on hostile input.
@@ -85,5 +85,35 @@ describe('the rest of the page', () => {
     expect(agendaDue({ previousEndsAt: at(-1), startsAt: at(24 * 7), now, callLive: false })).toBe(true);
     expect(agendaDue({ previousEndsAt: at(-3), startsAt: at(24 * 7), now, callLive: true })).toBe(false);
     expect(agendaDue({ previousEndsAt: at(-0.1), startsAt: at(0.5), now, callLive: true })).toBe(true);
+  });
+});
+
+describe('notes written after the next agenda (step 2)', () => {
+  const page = renderAgenda({ title: 'Weekly sync', dateLabel: 'Tuesday 8 December 2026', carried: [], agendaLine: '' });
+
+  it('adds the new items in place of "Nothing was left open", keeping the next heading apart', () => {
+    const out = addCarriedItems(page, ['Write the release notes — Rafi'])!;
+    const section = out.split('## Open action items from the last meeting\n')[1]!.split('## Action items')[0]!;
+    expect(section).toBe('- [ ] Write the release notes — Rafi\n\n');
+    expect(openActionItems(out)).toEqual(['Write the release notes — Rafi']);
+  });
+
+  it('adds after what is there, skips items the page has (ticked or not, case and full stop folded), and says null when nothing is new', () => {
+    const withItems = renderAgenda({ title: 'Weekly sync', dateLabel: 'Tuesday 8 December 2026', carried: ['Send the draft — Priya'], agendaLine: '' }).replace('- [ ] \n', '- [x] Book the room\n');
+    expect(addCarriedItems(withItems, ['send the draft — priya.', 'Book the room'])).toBeNull();
+    const out = addCarriedItems(withItems, ['Send the draft — Priya', 'Check the numbers — Omar'])!;
+    expect(out.split('## Open action items from the last meeting\n')[1]!.split('\n\n')[0]).toBe('- [ ] Send the draft — Priya\n- [ ] Check the numbers — Omar');
+  });
+
+  it('puts the section back at the end when a person took the heading out; a box inside a code fence does not count', () => {
+    const out = addCarriedItems('# Notes only\n```\n- [ ] Write the release notes — Rafi\n```', ['Write the release notes — Rafi'])!;
+    expect(out).toBe('# Notes only\n```\n- [ ] Write the release notes — Rafi\n```\n\n## Open action items from the last meeting\n- [ ] Write the release notes — Rafi\n');
+  });
+
+  it('stays linear on a hostile page', () => {
+    const hostile = `## Open action items from the last meeting\n- [ ] ${'['.repeat(40_000)}\n${'```\n'.repeat(5_000)}${'- [ ] x\n'.repeat(20_000)}`;
+    const t = performance.now();
+    addCarriedItems(hostile, Array.from({ length: CARRY_MAX }, (_, i) => `Item ${i}`));
+    expect(performance.now() - t).toBeLessThan(200);
   });
 });
