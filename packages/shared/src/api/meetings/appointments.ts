@@ -31,6 +31,10 @@ export const AppointmentSeries = z.object({
 });
 export type AppointmentSeries = z.infer<typeof AppointmentSeries>;
 
+/** An appointment stays on the schedule until it is cancelled (the CHECK of `appointments.status`). */
+export const AppointmentStatus = z.enum(['scheduled', 'cancelled']);
+export type AppointmentStatus = z.infer<typeof AppointmentStatus>;
+
 export const Appointment = z.object({
   id: z.uuid(),
   team: z.object({ id: z.string(), slug: z.string(), name: z.string() }),
@@ -39,7 +43,7 @@ export const Appointment = z.object({
   kind: MeetingKind,
   startsAt: z.string(),
   endsAt: z.string(),
-  status: z.enum(['scheduled', 'cancelled']),
+  status: AppointmentStatus,
   /** Its meeting space: where its call, chat and notes are. */
   channelId: ChannelId,
   createdBy: AppointmentPerson.nullable(),

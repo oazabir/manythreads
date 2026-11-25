@@ -1,4 +1,6 @@
 import {
+  AppointmentStatus,
+  IncidentStatus,
   AvatarPhotoType,
   AclPermission,
   BridgeCodePurpose,
@@ -355,6 +357,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'run_decisions.outcome': RunDecisionOutcome,
   'bot_reassessments.reason': ReassessmentReason,
   'bot_reassessments.status': ReassessmentStatus,
+  'appointments.kind': MeetingKind,
+  'appointments.status': AppointmentStatus,
+  'incidents.status': IncidentStatus,
 };
 
 /**
@@ -369,6 +374,8 @@ const NOT_SHARED_ENUMS: Record<string, string> = {
   'memory_personal_inbox_items.hold_reason': 'a subset of InboxHoldReason (foreign_bundle, dlp, oversize; no team rules); the API shape uses InboxHoldReason',
   'memory_personal_inbox_items.failed_stage': 'a subset of InboxFailureStage (extract, commit); the API shape never carries it',
   'bots.scope': 'no client shape carries it yet; the workspace Brain (P20-07) adds the shared enum with the field',
+  'standup_asks.skipped': 'why a stand-up question was not sent (out of office, do not disturb); it stays in the channels plugin and only its plain words reach the summary',
+  'test_site_slots.state': 'the lease bookkeeping of a team\'s test sites; it never leaves the tasks plugin (a lease answers with the slot\'s address, not its state)',
 };
 
 let db: TestDatabase;

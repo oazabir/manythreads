@@ -7,13 +7,13 @@ const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Chat, Files, Boards, Org chart, Jobs, Threads, Approvals, channel groups, Direct messages, Projects, Bots in orders 5 10 20 23 26 30 35 40 45 48 50', () => {
+  it('is exactly Chat, Schedule, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Bookmarks, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
-      [5, 'Chat'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [30, 'Threads'], [35, 'Approvals'], [40, 'Channels'],
-      [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
+      [5, 'Chat'], [8, 'Schedule'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [27, 'Deliveries'], [30, 'Threads'], [32, 'Drafts'],
+      [33, 'Bookmarks'], [35, 'Approvals'], [40, 'Channels'], [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
     ]);
-    expect(sorted.map((i) => i.kind)).toEqual(['item', 'item', 'item', 'item', 'item', 'item', 'item', 'group-list', 'header', 'header', 'header']);
+    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(11).fill('item'), 'group-list', 'header', 'header', 'header']);
   });
 
   it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
@@ -26,8 +26,8 @@ describe('sidebar contract', () => {
 
   it('sorts a plugin contribution into place by order and keeps ties in the order given', () => {
     const plugin = contribution({ id: 'wiki', order: 25 });
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(1, 5)).toEqual(['files', 'boards', 'org', 'wiki']);
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(5, 7)).toEqual(['jobs', 'threads']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(1, 6)).toEqual(['schedule', 'files', 'boards', 'org', 'wiki']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(6, 8)).toEqual(['jobs', 'deliveries']);
     const a = contribution({ id: 'a', order: 5 });
     const b = contribution({ id: 'b', order: 5 });
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);

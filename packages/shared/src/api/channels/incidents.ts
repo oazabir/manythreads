@@ -13,12 +13,16 @@ export const OpenIncidentRequest = z.strictObject({
   fromChannelId: ChannelId.optional(),
 });
 export type OpenIncidentRequest = z.infer<typeof OpenIncidentRequest>;
+/** An incident is open until someone resolves it (the CHECK of `incidents.status`). */
+export const IncidentStatus = z.enum(['open', 'resolved']);
+export type IncidentStatus = z.infer<typeof IncidentStatus>;
+
 export const Incident = z.object({
   id: z.uuid(),
   channelId: ChannelId,
   channelName: z.string(),
   title: z.string(),
-  status: z.enum(['open', 'resolved']),
+  status: IncidentStatus,
   openedAt: z.string(),
   resolvedAt: z.string().nullable(),
   postmortemPath: z.string().nullable(),

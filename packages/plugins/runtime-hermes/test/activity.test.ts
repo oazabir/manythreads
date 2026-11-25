@@ -256,7 +256,8 @@ describe('through a gateway run', () => {
         await e.answer('once');
       }
     }
-    expect(seen).toMatchObject({ command: 'Edit a.ts', choices: ['once', 'session', 'deny'] });
+    // Hermes 0.22.6 offers four choices, in its own order (P24-02; the fake gateway sends that shape)
+    expect(seen).toMatchObject({ command: 'Edit a.ts', choices: ['once', 'deny', 'session', 'always'] });
     // the fake gateway sends no structured fields: none are invented
     expect(seen).not.toHaveProperty('kind');
     expect(seen).not.toHaveProperty('canNote');

@@ -65,7 +65,8 @@ test('the bell and the Activity page list the same items, with the sender\'s pic
     // the Activity page lists the same items (All tab) and reads from the same store
     await page.goto('/t/engineering/activity');
     const screen = page.getByTestId('activity-screen');
-    await expect(screen.getByRole('heading', { level: 1, name: 'Activity' })).toBeVisible();
+    // the page's one h1 is drawn in the shell's band (P34-06), outside the screen's own box
+    await expect(page.getByRole('heading', { level: 1, name: 'Activity' })).toBeVisible();
     await screen.getByRole('button', { name: 'All', exact: true }).click();
     const items = screen.getByTestId('notification');
     await expect(items).toHaveCount(2);
