@@ -194,3 +194,48 @@ describe('the end-of-call review', () => {
     expect(notes.notes_md).not.toContain('Send the release draft');
   });
 });
+
+describe('a no to being transcribed takes the words out of the marks', () => {
+  const marksOf = (meetingId: string) =>
+    w.system(async (tx) => (await tx.query<{ text: string; speaker_ids: string[] }>('SELECT text, speaker_ids::text[] AS speaker_ids FROM app.meeting_marks WHERE meeting_id = $1 ORDER BY created_at', [meetingId])).rows);
+
+  beforeAll(async () => {
+    const started = StartMeetingResponse.parse(ok(await w.call(nadia, 'POST', `/api/channels/${general}/meetings`, { title: 'Second planning' })));
+    room = started.meeting.id;
+    startedAt = Date.parse(started.meeting.startedAt);
+    ok(await w.call(rafi, 'POST', `/api/meetings/${room}/join`));
+    ok(await w.call(priya, 'POST', `/api/meetings/${room}/join`));
+    ok(await w.call(nadia, 'PUT', `/api/meetings/${room}/transcription`, { mode: 'on_device' }));
+    for (const p of [nadia, rafi, priya]) ok(await w.call(p, 'POST', `/api/meetings/${room}/consent`, { transcribe: 'yes' }));
+  }, 120_000);
+
+  it('a mark names whose words it holds; a no from one of them removes it, the others stay', async () => {
+    await say(nadia, 'NADIA-SECRET-PLAN for the launch.');
+    await say(rafi, 'Sounds right.');
+    const first = MarkMeetingActionResponse.parse(ok(await w.call(rafi, 'POST', `/api/meetings/${room}/marks`), 201));
+    expect(first.mark.text).toContain('NADIA-SECRET-PLAN');
+    expect((await marksOf(room))[0]!.speaker_ids.sort()).toEqual([nadia.actorId, rafi.actorId].sort());
+
+    ok(await w.call(nadia, 'POST', `/api/meetings/${room}/consent`, { transcribe: 'no' }));
+    expect(JSON.stringify(await marksOf(room))).not.toContain('NADIA-SECRET-PLAN');
+    expect(await marksOf(room)).toEqual([]);
+  });
+
+  it('a mark whose speaker said no since is left out of the review; the others are reviewed', async () => {
+    await say(priya, 'PRIYA-LATE-NO words.');
+    const hers = MarkMeetingActionResponse.parse(ok(await w.call(priya, 'POST', `/api/meetings/${room}/marks`), 201));
+    expect(hers.mark.text).toContain('PRIYA-LATE-NO');
+    // and a mark of Rafi's words alone (written as the platform: the 30-second window still holds Priya's line)
+    await w.system((tx) =>
+      tx.query("INSERT INTO app.meeting_marks (meeting_id, marked_by, at_ms, text, speaker_ids) VALUES ($1, $2, 0, 'Rafi: I will book the room.', ARRAY[$2]::uuid[])", [room, rafi.actorId]),
+    );
+    // her answer turns to no without the consent route (a mark that slipped past it): the review job leaves her mark out and removes it
+    await w.system((tx) => tx.query("UPDATE app.meeting_participants SET consent_transcribe = 'no' WHERE meeting_id = $1 AND actor_id = $2", [room, priya.actorId]));
+    ok(await w.call(nadia, 'POST', `/api/meetings/${room}/end`));
+    await enqueueReview();
+    const review = await eventually(async () => (await reviewOf(rafi)) ?? undefined, 30_000, 'the review');
+    expect(review.items.map((i) => i.text)).toEqual(['Rafi: I will book the room.']);
+    expect(JSON.stringify(review)).not.toContain('PRIYA-LATE-NO');
+    expect((await marksOf(room)).map((k) => k.text)).toEqual(['Rafi: I will book the room.']);
+  });
+});

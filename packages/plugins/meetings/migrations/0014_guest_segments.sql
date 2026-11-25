@@ -56,7 +56,8 @@ BEGIN
     IF session_user <> 'manythreads_system' OR NEW.speaker_id IS NOT NULL OR NEW.source <> 'device' THEN
       RAISE EXCEPTION 'only the guest routes write a guest''s line' USING ERRCODE = 'insufficient_privilege';
     END IF;
-    SELECT x.meeting_id, x.state, x.consent_transcribe INTO g FROM app.meeting_guests x WHERE x.id = NEW.guest_id;
+    -- FOR SHARE: a no that commits meanwhile either comes first (the words are blanked here) or waits for this line (and then blanks it)
+    SELECT x.meeting_id, x.state, x.consent_transcribe INTO g FROM app.meeting_guests x WHERE x.id = NEW.guest_id FOR SHARE;
     IF NOT FOUND OR g.meeting_id <> NEW.meeting_id THEN
       RAISE EXCEPTION 'no such guest' USING ERRCODE = 'foreign_key_violation';
     END IF;
@@ -78,7 +79,8 @@ BEGIN
     RAISE EXCEPTION 'transcription is not on in this voice room' USING ERRCODE = 'check_violation';
   END IF;
   IF session_user <> 'manythreads_system' OR NEW.source = 'server' THEN
-    SELECT consent_transcribe INTO v_consent FROM app.meeting_participants WHERE meeting_id = NEW.meeting_id AND actor_id = NEW.speaker_id;
+    -- FOR SHARE, as for a guest: a concurrent no either comes first or waits for this line
+    SELECT consent_transcribe INTO v_consent FROM app.meeting_participants WHERE meeting_id = NEW.meeting_id AND actor_id = NEW.speaker_id FOR SHARE;
     -- whoever has not said yes leaves only the times of their speaking, never the words
     IF v_consent IS DISTINCT FROM 'yes' THEN
       NEW.text := '';

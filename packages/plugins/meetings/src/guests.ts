@@ -661,7 +661,11 @@ export function registerGuestRoutes(ctx: PluginContext): void {
         const moved = await sys.query("UPDATE app.meeting_guests SET consent_transcribe = $2 WHERE id = $1::uuid AND state = 'admitted' RETURNING id", [g.id, transcribe]);
         if (moved.rows.length === 0) throw forbidden('You are not in this call.');
         // a no throws away the words already stored for the guest (the line keeps its times: "Ana (guest) spoke (not transcribed)")
-        if (transcribe === 'no') await sys.query("UPDATE app.meeting_segments SET text = '' WHERE meeting_id = $1::uuid AND guest_id = $2::uuid AND text <> ''", [g.meeting_id, g.id]);
+        // and the marks that hold the guest's words (Mark action item) go with them
+        if (transcribe === 'no') {
+          await sys.query("UPDATE app.meeting_segments SET text = '' WHERE meeting_id = $1::uuid AND guest_id = $2::uuid AND text <> ''", [g.meeting_id, g.id]);
+          await sys.query('DELETE FROM app.meeting_marks WHERE meeting_id = $1::uuid AND $2::uuid = ANY (guest_ids)', [g.meeting_id, g.id]);
+        }
         await ctx.audit.emit(
           sys,
           MeetingsGuestAnsweredEvent.parse({

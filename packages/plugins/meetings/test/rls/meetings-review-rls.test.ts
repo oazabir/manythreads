@@ -122,6 +122,38 @@ describe('meeting_marks', () => {
   });
 });
 
+describe('meeting_marks name whose words they hold', () => {
+  let r3 = '';
+  const markOf = (p: Persona, speakers: Persona[], text: string) =>
+    as(p, (tx) => tx.query('INSERT INTO app.meeting_marks (meeting_id, marked_by, at_ms, text, speaker_ids) VALUES ($1, $2, 1000, $3, $4::uuid[])', [r3, p.actorId, text, speakers.map((x) => x.actorId)]));
+  const texts = () => sys(async (tx) => (await tx.query<{ text: string }>('SELECT text FROM app.meeting_marks WHERE meeting_id = $1 ORDER BY text', [r3])).rows.map((r) => r.text));
+  beforeAll(async () => {
+    r3 = await startRoom(nadia, await newChannel('r-consent', true, [nadia, rafi]));
+    await join(nadia, r3);
+    await join(rafi, r3);
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_transcription($1, 'on_device')", [r3]));
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_consent($1, 'yes')", [r3]));
+  });
+  afterAll(async () => {
+    await sys((tx) => tx.query("SELECT app.meetings_end($1, 'person')", [r3]));
+  });
+
+  it('refuses a mark that names someone who has not said yes', async () => {
+    expect(await code(markOf(nadia, [nadia, rafi], 'Nadia: x. Rafi: y.'))).toBe('23514');
+    expect(await code(markOf(nadia, [omar], 'Omar: x.'))).toBe('23514');
+    expect(await texts()).toEqual([]);
+  });
+  it("a no removes the marks that hold the person's words, and leaves the others", async () => {
+    await as(rafi, (tx) => tx.query("SELECT app.meetings_set_consent($1, 'yes')", [r3]));
+    expect(await code(markOf(nadia, [nadia, rafi], 'Nadia: send it. Rafi: RAFI-WORDS.'))).toBeUndefined();
+    expect(await code(markOf(rafi, [nadia], 'Nadia: only mine.'))).toBeUndefined();
+    await as(rafi, (tx) => tx.query("SELECT app.meetings_set_consent($1, 'no')", [r3]));
+    expect(await texts()).toEqual(['Nadia: only mine.']);
+    // and no new mark may name him now
+    expect(await code(markOf(nadia, [rafi], 'Rafi: again.'))).toBe('23514');
+  });
+});
+
 describe('meeting_reviews', () => {
   beforeAll(async () => {
     await sys((tx) => tx.query("SELECT app.meetings_end($1, 'person')", [room]));

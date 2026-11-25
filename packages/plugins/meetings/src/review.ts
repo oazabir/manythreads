@@ -38,7 +38,8 @@ import { loadMeeting, type MeetingRow } from './rows.ts';
 //    security) and only of people who said yes to being transcribed, become one mark (`app.meeting_marks`). Nothing said, or transcription off, is a plain 409.
 //  * REVIEW. A job (`meetings.review`) opens it once the call has ended: at once for a call with a note-taker (its notes are the organizer's own copy and stay out of the
 //    review), else when the Scribe's notes are written or failed, or ten minutes after the end at the latest. Its items are the notes' action items, then the marks, the
-//    same words once. The people who were in the call and can still read its channel are told (`meetings.review.opened`, a notification) and their pages asked again.
+//    same words once (a mark holding the words of someone who said no since is removed first). The people who were in the call and can still read its channel are
+//    told (`meetings.review.opened`, a notification) and their pages asked again.
 //    Notes that arrive after the review opened are added to it; after it was confirmed, they open it again with the confirmed items and the new ones.
 //  * CONFIRM (`POST /api/meetings/:id/review/confirm`), by one of those people, as themself (the row policy and the guard trigger decide): the kept items with their words and
 //    owners. `meetings.action_items.confirmed` (ids and counts) is the follow-ups' start (P17-07); a job (`meetings.review.apply`) writes the confirmed items into the notes'
@@ -82,6 +83,18 @@ export function markText(lines: readonly Pick<MeetingTranscriptLine, 'speakerNam
   const cut = text.slice(0, MEETING_REVIEW_TEXT_MAX - 1);
   const space = cut.lastIndexOf(' ');
   return `${space > MEETING_REVIEW_TEXT_MAX / 2 ? cut.slice(0, space) : cut}…`;
+}
+
+/** The people (actor ids) and link guests whose words a mark holds, each once. Only lines with words count: a blanked line leaves nothing in the text. */
+export function markSpeakers(lines: readonly Pick<MeetingTranscriptLine, 'speakerId' | 'guestId' | 'text'>[]): { speakerIds: string[]; guestIds: string[] } {
+  const speakerIds = new Set<string>();
+  const guestIds = new Set<string>();
+  for (const l of lines) {
+    if (stripHostileText(l.text) === '') continue;
+    if (l.guestId !== undefined) guestIds.add(l.guestId);
+    else speakerIds.add(l.speakerId);
+  }
+  return { speakerIds: [...speakerIds], guestIds: [...guestIds] };
 }
 
 /** Items in order, each once (the same words compared without case and punctuation), at most the review's size. The first copy wins. */
@@ -212,6 +225,13 @@ export async function openReview(ctx: PluginContext, tx: PluginTx, payload: { me
   const existing = (await tx.query<ReviewRow>(`SELECT ${REVIEW_COLUMNS} FROM app.meeting_reviews WHERE meeting_id = $1::uuid FOR UPDATE`, [m.id])).rows[0];
 
   if (!existing) {
+    // a mark that holds the words of someone who has since said no is removed, not reviewed (the no removes it too; this catches one that slipped past)
+    await tx.query(
+      `DELETE FROM app.meeting_marks k WHERE k.meeting_id = $1::uuid
+          AND (EXISTS (SELECT 1 FROM app.meeting_participants p WHERE p.meeting_id = k.meeting_id AND p.actor_id = ANY (k.speaker_ids) AND p.consent_transcribe = 'no')
+               OR EXISTS (SELECT 1 FROM app.meeting_guests g WHERE g.meeting_id = k.meeting_id AND g.id = ANY (k.guest_ids) AND g.consent_transcribe = 'no'))`,
+      [m.id],
+    );
     const marks = (
       await tx.query<{ id: string; at_ms: number; text: string }>('SELECT id::text AS id, at_ms, text FROM app.meeting_marks WHERE meeting_id = $1::uuid ORDER BY created_at, id', [m.id])
     ).rows.map((k) => MeetingReviewItem.parse({ id: k.id, source: 'mark', text: k.text, ownerId: null, ownerName: null, due: null, atMs: k.at_ms }));
@@ -325,10 +345,13 @@ export function registerReview(ctx: PluginContext): void {
       const taken = linesForMark(lines ?? [], nowMs);
       const text = markText(taken);
       if (text === '') throw conflict('Nothing was written down in the last 30 seconds. Say the action item, then mark it.');
+      // whose words these are: a no from any of them removes the mark (app.meetings_set_consent, the guest's consent route), and the insert checks they all said yes
+      const { speakerIds, guestIds } = markSpeakers(taken);
       const row = (
         await tx.query<{ id: string; at_ms: number; text: string; created_at: Date }>(
-          'INSERT INTO app.meeting_marks (meeting_id, marked_by, at_ms, text) VALUES ($1::uuid, $2::uuid, $3, $4) RETURNING id::text AS id, at_ms, text, created_at',
-          [m.id, who.actorId, taken[0]!.startMs, text],
+          `INSERT INTO app.meeting_marks (meeting_id, marked_by, at_ms, text, speaker_ids, guest_ids) VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid[], $6::uuid[])
+           RETURNING id::text AS id, at_ms, text, created_at`,
+          [m.id, who.actorId, taken[0]!.startMs, text, speakerIds, guestIds],
         )
       ).rows[0]!;
       const count = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.meeting_marks WHERE meeting_id = $1::uuid', [m.id])).rows[0]?.n ?? 1;

@@ -602,6 +602,26 @@ describe('a guest says yes or no to "Transcribe my voice?"', () => {
     await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
   });
 
+  it('no: a mark that holds the guest\'s words goes too; a mark is refused for a guest who said no', async () => {
+    const { meetingId, cookie, guestId } = await admittedGuest('Ana');
+    await transcribeRoom(nadia, meetingId, 'on_device');
+    expect((await w.call(rafi, 'POST', `/api/meetings/${meetingId}/consent`, { transcribe: 'yes' })).status).toBe(200);
+    await consent(cookie, 'yes');
+    // a mark reads the call clock of the server (this file's moved clock), so the line is said just before it
+    const started = await w.system(async (tx) => (await tx.query<{ started_at: Date }>('SELECT started_at FROM app.meetings WHERE id = $1', [meetingId])).rows[0]!.started_at.getTime());
+    expect((await say(cookie, [line('m1', 'ANA-MARKED-WORDS for Friday', Math.max(0, clock.t - started - 2000))])).status).toBe(200);
+    const marked = await w.call(rafi, 'POST', `/api/meetings/${meetingId}/marks`);
+    expect(marked.status, JSON.stringify(marked.body)).toBe(201);
+    expect(JSON.stringify(marked.body)).toContain('ANA-MARKED-WORDS');
+    const marks = () => w.system(async (tx) => (await tx.query<{ text: string; guest_ids: string[] }>('SELECT text, guest_ids::text[] AS guest_ids FROM app.meeting_marks WHERE meeting_id = $1', [meetingId])).rows);
+    expect((await marks()).map((k) => k.guest_ids)).toEqual([[guestId]]);
+    expect((await consent(cookie, 'no')).body).toEqual({ consent: 'no' });
+    expect(await marks()).toEqual([]);
+    // her words are blanked, so a new mark has nothing to keep
+    expect((await w.call(rafi, 'POST', `/api/meetings/${meetingId}/marks`)).status).toBe(409);
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+
   it('turning transcription on again asks the guest again; recording still counts a guest as no; a guest taken out is refused', async () => {
     const { meetingId, cookie, guestId } = await admittedGuest('Ana');
     await transcribeRoom(nadia, meetingId, 'on_device');

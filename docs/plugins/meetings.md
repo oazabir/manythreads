@@ -296,6 +296,9 @@ Code: `src/review.ts`; web `clients/web/src/meetings/review.ts`, `screens/meetin
 - **Who**: a mark is written by a person in the live call, as themself, at most 30 each, and read by the readers of the call's channel (they could read the lines it took). A
   review is read by the people who were in the call while they can still read its channel; another reader of the channel sees none. Confirm checks how many items the person saw
   (a changed review is a 409), that every item is one of the review, and that an owner was in the call (or named by the notes); a second Confirm is a 409 naming who confirmed.
+- **A no takes the words out**: a mark names whose words it holds (`speaker_ids`, `guest_ids`); the insert trigger refuses one that names anybody who has not said yes (their
+  rows locked first, so a concurrent no comes first or waits), a person's no (`app.meetings_set_consent`) and a link guest's no (`POST /api/guest/consent`) remove every mark
+  that holds their words as their lines are blanked, and the review job removes any mark whose speaker has said no before it builds the review.
 - **Tables** (`0015_meeting_marks.sql`): `meeting_marks` (forced row-level security; the insert trigger copies the call's place, refuses an ended call, someone not in it and a 31st
   mark) and `meeting_reviews` (one row per call; made only by the platform; the guard trigger lets a person change only the status to confirmed, as themself, with items of the
   review).

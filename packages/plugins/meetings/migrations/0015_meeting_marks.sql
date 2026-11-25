@@ -5,10 +5,12 @@
 -- an item's words or owner, remove one, and one of them confirms. Only confirmed items go into the notes' list of action items.
 --
 --   meeting_marks     read by the readers of the call's channel (the same people who could read the lines it took); written by a person in the live call, as
---                     themself, at most 30 per person and call. Never changed; removed with the call.
+--                     themself, at most 30 per person and call. Never changed; removed with the call, and removed when one of the people (or link guests) whose
+--                     words it holds says no to being transcribed (app.meetings_set_consent and the guest's consent route), as their lines are blanked.
 --   meeting_reviews   one row per call, made by the platform. Read by the people who were in the call while they can still read its channel; confirmed once by one of
 --                     them (the guard keeps everything else, and checks that every confirmed item is an item of the review). The platform may open it again when the
 --                     notes arrive after it was confirmed.
+--   app.meetings_set_consent   (replaced from 0002) a no also removes the marks that hold the caller's words.
 
 -- Marks ----------------------------------------------------------------------------------------------------------------------------------------------------------
 CREATE TABLE app.meeting_marks (
@@ -21,12 +23,34 @@ CREATE TABLE app.meeting_marks (
   marked_by    uuid NOT NULL REFERENCES app.actors (id) ON DELETE CASCADE,
   at_ms        integer NOT NULL CHECK (at_ms >= 0),
   text         text NOT NULL CHECK (char_length(text) BETWEEN 1 AND 1000),
+  -- whose words the text holds: the people (actor ids) and the link guests (meeting_guests ids); a no from any of them removes the mark
+  speaker_ids  uuid[] NOT NULL DEFAULT '{}' CHECK (cardinality(speaker_ids) <= 100),
+  guest_ids    uuid[] NOT NULL DEFAULT '{}' CHECK (cardinality(guest_ids) <= 100),
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX meeting_marks_meeting ON app.meeting_marks (meeting_id, created_at);
 CREATE INDEX meeting_marks_marked_by ON app.meeting_marks (marked_by);
 CREATE INDEX meeting_marks_workspace ON app.meeting_marks (workspace_id);
+CREATE INDEX meeting_marks_speakers ON app.meeting_marks USING gin (speaker_ids);
+CREATE INDEX meeting_marks_guests ON app.meeting_marks USING gin (guest_ids);
 COMMENT ON TABLE app.meeting_marks IS 'rls: team — C: "Mark action item" in a live call (P17-06): the final lines of the last 30 seconds, kept for the end-of-call review; read by the readers of the call''s channel, written by a person in the live call as themself (at most 30 each), never changed.';
+
+-- Every speaker a mark names said yes, now: their rows are locked (FOR SHARE) first, so a "no" that commits while the mark is written either comes first (the mark
+-- is refused) or waits for it (and then removes it). Definer, owned by the system role (the rows of other people and of guests are read).
+CREATE FUNCTION app.meeting_marks_speakers_said_yes(p_meeting_id uuid, p_speaker_ids uuid[], p_guest_ids uuid[]) RETURNS boolean
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
+AS $$
+BEGIN
+  PERFORM 1 FROM app.meeting_participants p WHERE p.meeting_id = p_meeting_id AND p.actor_id = ANY (p_speaker_ids) ORDER BY p.actor_id FOR SHARE;
+  PERFORM 1 FROM app.meeting_guests g WHERE g.meeting_id = p_meeting_id AND g.id = ANY (p_guest_ids) ORDER BY g.id FOR SHARE;
+  RETURN (SELECT count(*) FROM app.meeting_participants p WHERE p.meeting_id = p_meeting_id AND p.actor_id = ANY (p_speaker_ids) AND p.consent_transcribe = 'yes')
+           = cardinality(ARRAY(SELECT DISTINCT unnest(p_speaker_ids)))
+     AND (SELECT count(*) FROM app.meeting_guests g WHERE g.meeting_id = p_meeting_id AND g.id = ANY (p_guest_ids) AND g.consent_transcribe = 'yes')
+           = cardinality(ARRAY(SELECT DISTINCT unnest(p_guest_ids)));
+END
+$$;
+REVOKE ALL ON FUNCTION app.meeting_marks_speakers_said_yes(uuid, uuid[], uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.meeting_marks_speakers_said_yes(uuid, uuid[], uuid[]) TO manythreads_app, manythreads_system;
 
 -- The call decides the place of a mark; a person marks only in a live call they are in now, as themself. Runs as the caller, so app.is_system() is the real role.
 CREATE FUNCTION app.meeting_marks_before_insert() RETURNS trigger
@@ -53,6 +77,9 @@ BEGIN
     IF (SELECT count(*) FROM app.meeting_marks k WHERE k.meeting_id = NEW.meeting_id AND k.marked_by = NEW.marked_by) >= 30 THEN
       RAISE EXCEPTION 'You marked 30 action items in this call already' USING ERRCODE = 'check_violation';
     END IF;
+    IF NOT app.meeting_marks_speakers_said_yes(NEW.meeting_id, NEW.speaker_ids, NEW.guest_ids) THEN
+      RAISE EXCEPTION 'Someone in those lines said no to being transcribed. Mark the action item again.' USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END
@@ -71,7 +98,7 @@ CREATE POLICY meeting_marks_insert ON app.meeting_marks FOR INSERT WITH CHECK (
 CREATE POLICY meeting_marks_update ON app.meeting_marks FOR UPDATE USING ((SELECT app.is_system())) WITH CHECK ((SELECT app.is_system()));
 CREATE POLICY meeting_marks_delete ON app.meeting_marks FOR DELETE USING ((SELECT app.is_system()));
 GRANT SELECT ON app.meeting_marks TO manythreads_app;
-GRANT INSERT (meeting_id, marked_by, at_ms, text) ON app.meeting_marks TO manythreads_app;
+GRANT INSERT (meeting_id, marked_by, at_ms, text, speaker_ids, guest_ids) ON app.meeting_marks TO manythreads_app;
 
 -- Reviews --------------------------------------------------------------------------------------------------------------------------------------------------------
 -- `items` are the items to confirm, `confirmed_items` the ones confirmed: each `{ id, source, text, ownerId, ownerName, due, atMs }` (MeetingReviewItem in packages/shared).
@@ -141,3 +168,44 @@ CREATE POLICY meeting_reviews_update ON app.meeting_reviews FOR UPDATE
 CREATE POLICY meeting_reviews_delete ON app.meeting_reviews FOR DELETE USING ((SELECT app.is_system()));
 GRANT SELECT ON app.meeting_reviews TO manythreads_app;
 GRANT UPDATE (status, confirmed_items, confirmed_at, confirmed_by, updated_at) ON app.meeting_reviews TO manythreads_app;
+
+-- A person's no removes their marks too ---------------------------------------------------------------------------------------------------------------------
+-- 0002's function as it was, and a no also removes every mark of the call that holds the caller's words (the lines it took are blanked above).
+CREATE OR REPLACE FUNCTION app.meetings_set_consent(p_meeting_id uuid, p_answer text) RETURNS text
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
+AS $$
+DECLARE
+  m app.meetings;
+  v_actor uuid := app.actor();
+BEGIN
+  IF p_answer NOT IN ('yes', 'no') THEN
+    RAISE EXCEPTION 'answer yes or no' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT * INTO m FROM app.meetings WHERE id = p_meeting_id FOR SHARE;
+  IF NOT FOUND OR m.workspace_id <> app.workspace_id() THEN
+    RAISE EXCEPTION 'no such voice room' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF v_actor IS NULL OR app.person_id() IS NULL THEN
+    RAISE EXCEPTION 'only a person answers for themself' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF m.state <> 'live' THEN
+    RAISE EXCEPTION 'This voice room has ended' USING ERRCODE = 'check_violation';
+  END IF;
+  UPDATE app.meeting_participants SET consent_transcribe = p_answer
+   WHERE meeting_id = m.id AND actor_id = v_actor AND left_at IS NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'join the voice room first' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF p_answer = 'no' THEN
+    UPDATE app.meeting_segments SET text = '' WHERE meeting_id = m.id AND speaker_id = v_actor AND text <> '';
+    DELETE FROM app.meeting_marks WHERE meeting_id = m.id AND v_actor = ANY (speaker_ids);
+  END IF;
+  RETURN p_answer;
+END
+$$;
+
+-- Owners -----------------------------------------------------------------------------------------------------------------------------------------------------
+GRANT CREATE ON SCHEMA app TO manythreads_system;
+ALTER FUNCTION app.meeting_marks_speakers_said_yes(uuid, uuid[], uuid[]) OWNER TO manythreads_system;
+ALTER FUNCTION app.meetings_set_consent(uuid, text) OWNER TO manythreads_system;
+REVOKE CREATE ON SCHEMA app FROM manythreads_system;

@@ -1,6 +1,6 @@
 import type { MeetingReviewItem, MeetingTranscriptLine } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { linesForMark, markText, mergeItems, noteItemsForReview, replaceActionItems } from '../src/review.ts';
+import { linesForMark, markSpeakers, markText, mergeItems, noteItemsForReview, replaceActionItems } from '../src/review.ts';
 
 // The pure parts of Mark action item and the end-of-call review (P17-06 step 2): which lines a mark takes, its words, the merge of the notes' items and the marks, and the
 // rewrite of the notes' "Action items" section that keeps everything else of the file.
@@ -12,6 +12,17 @@ const item = (text: string, source: 'notes' | 'mark' = 'mark'): MeetingReviewIte
   ({ id: `00000000-0000-4000-8000-${String((n += 1)).padStart(12, '0')}`, source, text, ownerId: null, ownerName: null, due: null, atMs: 0 }) as MeetingReviewItem;
 
 describe('a mark', () => {
+  it('names whose words it holds, people and link guests apart, each once; a line without words names nobody', () => {
+    const a = '00000000-0000-4000-8000-0000000000a1';
+    const g = '00000000-0000-4000-8000-0000000000b1';
+    const lines = [
+      { speakerId: a, text: 'I will send it' },
+      { speakerId: g, guestId: g, text: 'by Friday' },
+      { speakerId: a, text: 'and the notes' },
+      { speakerId: '00000000-0000-4000-8000-0000000000c1', text: '  ' },
+    ] as MeetingTranscriptLine[];
+    expect(markSpeakers(lines)).toEqual({ speakerIds: [a], guestIds: [g] });
+  });
   it('takes the lines that ended in the last 30 seconds, oldest first, never a line that was not transcribed', () => {
     const now = 100_000;
     const taken = linesForMark(
