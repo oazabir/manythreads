@@ -2263,9 +2263,21 @@
   gap: 2px;
 }
 
-/* room for the Bookmarks button and the bell */
+/* room for the Bookmarks button and the bell; in a narrow main pane (a side panel is open beside it) the thread's tools drop to a second row under the title instead of running below those buttons */
 .inr .thread-head {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 50px;
   padding-right: 92px;
+  row-gap: 2px;
+}
+
+.inr .thread-head .thread-tools {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .back-to-list {
