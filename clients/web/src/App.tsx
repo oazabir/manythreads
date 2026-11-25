@@ -36,7 +36,7 @@ import { LlmSettings } from './screens/admin/llm/LlmSettings';
 import { MemorySharing } from './screens/admin/memory/MemorySharing';
 import { RunnersPage } from './screens/admin/runners/RunnersPage';
 import { BrainSettings } from './screens/admin/brain/BrainSettings';
-import { DirectMessageView, HomeView, MeetingSpaceView, RequireTeam, TeamHome } from './shell/views';
+import { DirectMessageView, HomeView, OldMeetingSpaceAddress, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
 import { BotHome } from './screens/bots/BotHome';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
@@ -59,6 +59,7 @@ import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
 import { ActivityScreen } from './screens/phone/ActivityScreen';
 import { MessagesScreen } from './screens/phone/MessagesScreen';
+import { MeetingsInbox } from './screens/meetings/MeetingsInbox';
 import { SearchScreen } from './screens/search/SearchScreen';
 import { Teams } from './screens/Teams';
 import { Onboarding } from './screens/onboarding/Onboarding';
@@ -139,6 +140,7 @@ function AppRoutes() {
             </Route>
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
+            <Route path="/t/:team/meetings" element={<RequireTeam><MeetingsInbox /></RequireTeam>} />
             <Route path="/t/:team/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
             <Route path="/join/:scheduledId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><JoinScheduled /></Suspense>} />
             <Route path="/memory" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense>} />
@@ -170,7 +172,8 @@ function AppRoutes() {
             <Route path="/t/:team/chat/:channelId" element={<RequireTeam><ConversationRedirect /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
-            <Route path="/t/:team/meeting/:id" element={<RequireTeam><MeetingSpaceView /></RequireTeam>} />
+            <Route path="/t/:team/meeting/:id" element={<RequireTeam><OldMeetingSpaceAddress /></RequireTeam>} />
+            <Route path="/t/:team/meetings/space/:id" element={<RequireTeam><MeetingsInbox /></RequireTeam>} />
           </Route>
           <Route path="/settings/connections" element={<PersonConnections />} />
           <Route element={<AdminOnly />}>

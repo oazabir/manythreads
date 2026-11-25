@@ -1580,3 +1580,25 @@
   background: var(--surface);
   color: var(--alert-ink);
 }
+
+/* ---- the Meetings page (P37-04): the list is the Threads inbox's, its rows are links ---- */
+.mi-list a.trow {
+  text-decoration: none;
+}
+
+.mi-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* the chat of the selected meeting fills what is left of the pane, under the way back on a phone */
+.inr > .chview {
+  flex: 1;
+  height: auto;
+}
+
+.inr > .view-empty {
+  flex: 1;
+}

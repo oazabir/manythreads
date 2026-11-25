@@ -16,7 +16,6 @@ import { Pill } from './Pill';
 import { useFold } from './sectionFold';
 import { PresenceDot } from '../presence/PresenceDot';
 import { LiveBadge } from '../meetings/LiveBadge';
-import { MeetingSpaces } from './MeetingSpaces';
 
 const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
 
@@ -148,7 +147,6 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
       <DmRows slug={slug} folded={folded} />
       {feed.status === 'ok' && feed.items.length === 0 ? <p className="side-note dm-empty">{item.emptyState ?? 'No conversations yet'}</p> : null}
       <NewMessageButton slug={slug} />
-      <MeetingSpaces slug={slug} />
     </>
   );
 }

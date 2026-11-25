@@ -3,6 +3,7 @@ import type { NavContribution } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
 import { BotsSection } from './BotsSection';
 import { ChannelGroups } from './ChannelGroups';
+import { MeetingsNavBadge } from '../meetings/NavLiveBadge';
 import { useShell } from './context';
 import { DirectMessages } from './DirectMessages';
 import { NAV_ICONS } from './icons';
@@ -27,7 +28,7 @@ function NavItem({ item, slug }: { item: NavContribution; slug: string }) {
     <>
       <span className="ic">{Icon ? <Icon /> : null}</span>
       <span className="it-label">{item.label}</span>
-      {threads ? <ThreadsBadges {...threads} /> : count !== null ? <Pill n={count} tone={tone} {...(tone === 'attention' ? { note: 'some have waited over a day' } : {})} /> : item.emptyState ? <span className="hint">{item.emptyState}</span> : null}
+      {item.id === 'meetings' ? <MeetingsNavBadge /> : threads ? <ThreadsBadges {...threads} /> : count !== null ? <Pill n={count} tone={tone} {...(tone === 'attention' ? { note: 'some have waited over a day' } : {})} /> : item.emptyState ? <span className="hint">{item.emptyState}</span> : null}
     </>
   );
   return href ? (

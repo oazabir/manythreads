@@ -52,10 +52,12 @@ export const BackIcon = proIcon(ChevronLeftIcon, 14);
 export const GearIcon = proIcon(SettingsIcon);
 export const LockIcon = proIcon(ProLock, 12);
 
-/** Bookmarks in the sidebar (P36-08). */
+/** Bookmarks in the header, next to the bell (P36-08). */
 export const BookmarksNavIcon = proIcon(ProBookmark);
+/** Meetings in the sidebar (P37-04). */
+export const MeetingsNavIcon = proIcon(VideoClipIcon);
 
-export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon, drafts: DraftsIcon, schedule: ScheduleNavIcon, bookmarks: BookmarksNavIcon } as const;
+export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon, drafts: DraftsIcon, schedule: ScheduleNavIcon, bookmarks: BookmarksNavIcon, meetings: MeetingsNavIcon } as const;
 
 export const ReplyIcon = proIcon(ArrowReplyIcon, 14);
 export const SmileIcon = proIcon(EmojiIcon, 14);

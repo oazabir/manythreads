@@ -1,10 +1,8 @@
-import { Link, Navigate, useParams } from 'react-router';
-import { fetchChannel } from '../api/endpoints';
-import { useQuery } from '../app/useQuery';
+import { Link, Navigate, useLocation, useParams } from 'react-router';
 import { dmHeaderTitle, useDms } from '../dms/store';
 import { ChannelBody, NoChannelAccess } from '../screens/ChannelView';
 import { useChannelFeed } from './channelFeed';
-import { GUEST_SLUG } from './messageLink';
+import { GUEST_SLUG, meetingPath } from './messageLink';
 import { channelPath } from './nav';
 import { isAdmin, useSession } from '../app/session';
 import { ForbiddenBody } from '../components/states';
@@ -76,13 +74,9 @@ export function DirectMessageView() {
   return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: head.name, personId: head.kind === 'person' ? head.personId : undefined }} />;
 }
 
-/** `/t/:team/meeting/:id`: a meeting space (P36-03), a team-less conversation of the people invited, drawn as a conversation with the meeting's title. */
-export function MeetingSpaceView() {
-  const { id = '' } = useParams();
-  const { team, teamSlug } = useShell();
-  const slug = team?.slug ?? teamSlug ?? '';
-  const info = useQuery(`channel:${id}`, () => fetchChannel(id));
-  if (info.status === 'loading') return <div className="view-empty" aria-busy="true" />;
-  if (info.status === 'error' || info.data.channel.kind !== 'meeting') return <NoChannelAccess />;
-  return <ChannelBody key={id} channelId={id} name="" teamSlug={slug} dm={{ label: info.data.channel.purpose || 'Meeting', personId: undefined }} />;
+/** `/t/:team/meeting/:id`, where a meeting space was before the Meetings page (P37-04): a link saved or sent then opens the space there. */
+export function OldMeetingSpaceAddress() {
+  const { team: slug = '', id = '' } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: meetingPath(slug, id), search }} replace />;
 }

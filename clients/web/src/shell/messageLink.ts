@@ -30,8 +30,10 @@ export const REPLY_PARAM = 'reply';
 export type LandOptions = { land?: boolean };
 
 export const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
-/** A meeting space (P36-03): a conversation of its own, under the team in sight. */
-export const meetingPath = (slug: string, channelId: string): string => `/t/${slug}/meeting/${channelId}`;
+/** The Meetings page (P37-04): the list of the person's meeting spaces, the selected one beside it. */
+export const meetingsPath = (slug: string): string => `/t/${slug}/meetings`;
+/** A meeting space (P36-03): a conversation of its own, opened in the Meetings page, under the team in sight. (`/t/<team>/meetings/<id>` is a call's notes page, so a space has `space/` in it.) */
+export const meetingPath = (slug: string, channelId: string): string => `/t/${slug}/meetings/space/${channelId}`;
 
 /**
  * The location of a message: its channel with `?message=<id>` (the channel view scrolls to it and flashes it), or for a reply its

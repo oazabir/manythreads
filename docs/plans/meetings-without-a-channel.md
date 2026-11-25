@@ -54,3 +54,5 @@ Treated **as a DM** unless said: no team (so no bots, no team repo, no mention g
 RLS: a member reads it, a person not invited and a guest do not, a bot does not. Routes: open with people from two teams; at most 100; a guest cannot be
 invited; the call starts in it with the invitations. Web: the New meeting dialog (title, team, kind, people from any team), the sidebar group. Browser: Nadia
 opens a meeting with Priya (another team), Priya sees it under Meetings and joins.
+
+**Changed by P37-04 (owner, 2026-11-25):** the sidebar group is gone. Meetings is one plain sidebar entry that opens `/t/<team>/meetings`: the list of spaces on the left (newest first, live dot, people), "New meeting" at its top, and the selected space's chat on the right (`/t/<team>/meetings/space/<channel>`; on a phone the list is the page and a space opens full screen with a way back). `/t/<team>/meeting/<channel>` still works and redirects.

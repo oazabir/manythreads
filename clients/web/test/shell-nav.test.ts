@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { NavContribution, sortNav } from '@manythreads/shared';
 import { headerBackFor } from '../src/shell/headerBack';
+import { meetingPath, meetingsPath } from '../src/shell/messageLink';
 import { CORE_NAV, channelPath, navCount, navHref, teamSwitchPath, viewTitle, visibleNav } from '../src/shell/nav';
 
 const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id' | 'order'>): NavContribution =>
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Chat, Schedule, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
+  it('is exactly Chat, Schedule, Meetings, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
-      [5, 'Chat'], [8, 'Schedule'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [27, 'Deliveries'], [30, 'Threads'], [32, 'Drafts'],
+      [5, 'Chat'], [8, 'Schedule'], [9, 'Meetings'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [27, 'Deliveries'], [30, 'Threads'], [32, 'Drafts'],
       [35, 'Approvals'], [40, 'Channels'], [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
     ]);
-    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(10).fill('item'), 'group-list', 'header', 'header', 'header']);
+    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(11).fill('item'), 'group-list', 'header', 'header', 'header']);
+  });
+
+  it('has Meetings as one plain entry that opens the Meetings page, and none for a guest', () => {
+    const meetings = CORE_NAV.find((i) => i.id === 'meetings')!;
+    expect(meetings.kind).toBe('item');
+    expect(meetings.icon).toBe('meetings');
+    expect(navHref(meetings, 'engineering')).toBe('/t/engineering/meetings');
+    expect(visibleNav(CORE_NAV, { guest: true }).some((i) => i.id === 'meetings')).toBe(false);
   });
 
   it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
@@ -26,8 +35,8 @@ describe('sidebar contract', () => {
 
   it('sorts a plugin contribution into place by order and keeps ties in the order given', () => {
     const plugin = contribution({ id: 'wiki', order: 25 });
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(1, 6)).toEqual(['schedule', 'files', 'boards', 'org', 'wiki']);
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(6, 8)).toEqual(['jobs', 'deliveries']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(1, 7)).toEqual(['schedule', 'meetings', 'files', 'boards', 'org', 'wiki']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(7, 9)).toEqual(['jobs', 'deliveries']);
     const a = contribution({ id: 'a', order: 5 });
     const b = contribution({ id: 'b', order: 5 });
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);
@@ -78,6 +87,13 @@ describe('sidebar links and counts', () => {
   });
 });
 
+describe('meeting links', () => {
+  it('a meeting space opens in the Meetings page; the page itself is the list', () => {
+    expect(meetingsPath('eng')).toBe('/t/eng/meetings');
+    expect(meetingPath('eng', 'abc')).toBe('/t/eng/meetings/space/abc');
+  });
+});
+
 describe('team switching and titles', () => {
   it('keeps the section when switching teams and falls back to Threads for a channel or DM', () => {
     expect(teamSwitchPath('/t/engineering/files', 'support')).toBe('/t/support/files');
@@ -87,6 +103,8 @@ describe('team switching and titles', () => {
     expect(teamSwitchPath('/t/engineering/dms', 'support')).toBe('/t/support/dms');
     expect(teamSwitchPath('/t/engineering/activity', 'support')).toBe('/t/support/activity');
     expect(teamSwitchPath('/t/engineering/org', 'support')).toBe('/t/support/org');
+    // a meeting space is one team's own, so switching lands on the list of meetings
+    expect(teamSwitchPath('/t/engineering/meetings/space/abc', 'support')).toBe('/t/support/meetings');
     expect(teamSwitchPath('/t/engineering/c/dev', 'support')).toBe('/t/support/threads');
     expect(teamSwitchPath('/t/engineering/dm/abc', 'support')).toBe('/t/support/threads');
     expect(teamSwitchPath('/', 'support')).toBe('/t/support/threads');
@@ -103,6 +121,8 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/org')).toBe('Org chart');
     expect(viewTitle('/t/engineering/jobs')).toBe('Jobs');
     expect(viewTitle('/t/engineering/dms')).toBe('Messages');
+    expect(viewTitle('/t/engineering/meetings')).toBe('Meetings');
+    expect(viewTitle('/t/engineering/meetings/space/abc')).toBe('Meetings');
     expect(viewTitle('/t/engineering/activity')).toBe('Activity');
     expect(viewTitle('/')).toBe('Home');
     expect(viewTitle('/t/engineering/memory')).toBe('Memory');
@@ -120,5 +140,8 @@ describe('team switching and titles', () => {
   it('the phone pages are top-level: their band is the title with no trail (P34-06)', () => {
     expect(headerBackFor('/t/eng/dms')).toBeNull();
     expect(headerBackFor('/t/eng/activity')).toBeNull();
+    // the Meetings page and an open meeting space have no trail: the page has its own way back on a phone
+    expect(headerBackFor('/t/eng/meetings')).toBeNull();
+    expect(headerBackFor(meetingPath('eng', 'abc'))).toBeNull();
   });
 });
