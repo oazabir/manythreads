@@ -327,6 +327,18 @@ A star on a channel the person can no longer read, or that was archived, is not 
 
 Tests: `packages/plugins/channels/test/sidebar-prefs.test.ts` (routes), the `stars and sidebar preferences` block in `test/rls/channels-plugin.test.ts` (row level security), `clients/web/test/sidebar-layout.test.ts` and `sidebar-prefs-store.test.ts`.
 
+## Summarise and Catch me up (P18-05)
+
+A person asks Brain, the workspace's answering bot, for a short summary of a channel, a direct message or one thread, and only that person sees it. Plan and decisions: [docs/plans/catch-me-up.md](../plans/catch-me-up.md).
+
+- **Route.** `POST /api/channels/:channelId/summary` (`SummariseRequest`: `threadRootId`, `range` `new` | `day` | `week` | `all`, optional `afterMessageId`). A channel takes `new`, `day` and `week`; a thread takes `all` and `new`. "What did I miss" is `new`: everything after the read position the screen opened with (the screen sends it, because opening the channel marks it read at once), or the stored one. Code: `src/summary.ts`.
+- **Who and what.** A person who is a workspace member (not a guest, not a bot), in a channel or a direct message they can read (a meeting space or a bot conversation is 409). The messages are read in the person's own request transaction, so row-level security alone decides what is read; deleted messages are left out. Nothing is posted and nothing is stored.
+- **The model call.** One call through the gateway's `evalComplete` door on the workspace Brain (alias `fast`, then `smart` when `fast` is not bound; at most 700 tokens out, 45 s), session `person:<personId>`, purpose `summary` on the spend ledger. The gateway's pre-call check runs first: the workspace's egress rule, the data-loss guard and Brain's budgets. Brain off or missing is 409 with a plain sentence.
+- **Size.** The newest 400 messages, each cut to 800 characters, at most 60,000 characters in all; the response counts what was left out (`leftOut`, counted up to 5,000). Each line is numbered; the model cites `[n]`, a number not in the list is taken out, and `sources` maps each cited number to its message.
+- **Limits** (process memory, per replica): 6 a minute and 40 an hour per person (an empty range gives its place back), one at a time per person (409), 4 at once per server process (429).
+- **Web.** The channel's name menu has **Summarise**; a channel that opened with unread messages shows **Catch me up**; a thread's tool row has a Summarise icon. Each opens the right panel `summary:<channelId>[.<rootId>]` (`clients/web/src/channels/SummaryPanel.tsx`, rules in `summaryModel.ts`, styles `styles/summary.css`, classes `csm`): the ranges, the summary with numbered links to the messages, Copy, Save to my files (folder `Summaries` of the person's Personal files) and Again.
+- **Tests.** `test/summary.test.ts` (the route through the real server with the model door stood in: what reaches the prompt, privacy, ranges, size caps, Brain off, the model's refusals, one at a time, the pieces); `clients/web/test/summary-model.test.ts`, `summary-panel.test.ts`.
+
 ## Scheduled send (P14-05)
 
 A person can write a message now and have it posted later, as themself. "Send later" in the composer's Attach menu (P36-09; before, a small clock button beside Send) opens the times "Remind me" offers (20 minutes, 1 hour, tomorrow morning, next week) and "Pick a date and time...". Above the box, a strip says "2 scheduled" with each message, its time, **Edit** and **Cancel**; it is drawn only while there is something to show. It works in the channel box and in a thread's reply box (the strip of a thread shows that thread's messages).

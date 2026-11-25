@@ -24,7 +24,9 @@ import { ChannelSearch } from '../search/ChannelSearch';
 import { ChannelDetails } from '../shell/ChannelDetails';
 import { MembersButton } from '../shell/MembersButton';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
-import { ArrowDownIcon, ArrowUpIcon, BoardsIcon } from '../shell/icons';
+import { ArrowDownIcon, ArrowUpIcon, BoardsIcon, SummariseIcon } from '../shell/icons';
+import { SUMMARY_PANEL, rememberReadStart, rememberUnread } from '../channels/summaryModel';
+import { isMockMode } from '../api/setup';
 import { useHeaderActionsSlot, useHeaderTitle, useHeaderTopic } from '../shell/topic';
 import { VoiceButton } from '../meetings/VoiceButton';
 import { ScheduledChip } from '../meetings/schedule/ScheduledChip';
@@ -193,6 +195,14 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   useEffect(() => {
     if (atBottom && newest) setSeenUpTo(newest);
   }, [atBottom, newest]);
+  // "What did I miss" (P18-05): the Summary panel starts where the reader was when the channel opened, not where the screen has since marked it read
+  useEffect(() => {
+    if (hadUnread === null || !readAtOpen.known) return;
+    rememberReadStart({ channelId, threadRootId: null }, readAtOpen.lastReadId);
+    rememberUnread({ channelId, threadRootId: null }, hadUnread);
+  }, [channelId, hadUnread, readAtOpen]);
+  const [caughtUp, setCaughtUp] = useState(false);
+  useEffect(() => setCaughtUp(false), [channelId]);
 
   // Open on the first unread message when there are more of them than a screen holds; otherwise on the newest.
   useEffect(() => {
@@ -395,6 +405,21 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           >
             <ArrowUpIcon />
             <span>Jump to first unread</span>
+          </button>
+        ) : null}
+        {hadUnread && !caughtUp && !guest && !isMockMode() && tl.status === 'ready' ? (
+          // Brain's summary of what came in since the reader last read the channel, in the right panel; under "Jump to first unread" while that one shows
+          <button
+            type="button"
+            className={`jump csm-catchup${unreadShown && !unreadSeen && scrolls ? ' csm-catchup-low' : ''}`}
+            data-testid="catch-me-up"
+            onClick={() => {
+              setCaughtUp(true);
+              panel.push({ type: SUMMARY_PANEL, id: channelId });
+            }}
+          >
+            <SummariseIcon />
+            <span>Catch me up</span>
           </button>
         ) : null}
         {!atBottom && tl.status === 'ready' && tl.items.length > 0 ? (

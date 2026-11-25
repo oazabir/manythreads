@@ -6,7 +6,9 @@ import { useQuery } from '../app/useQuery';
 import { channelPath } from '../shell/nav';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { useShell } from '../shell/context';
-import type { PanelEntry } from '../kernel/panel';
+import { usePanel, type PanelEntry } from '../kernel/panel';
+import { isMockMode } from '../api/setup';
+import { SUMMARY_PANEL, rememberReadStart, rememberUnread, summaryPanelId } from './summaryModel';
 import { usePanelSub, usePanelTools } from '../kernel/panel/sub';
 import { ThreadApprovals, useThreadApprovals } from '../screens/approvals/ThreadApprovals';
 import { ReviewLine } from '../taskview/ReviewLine';
@@ -84,7 +86,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   /** The address parameter naming a message of the thread to scroll to and highlight (`?reply=<id>`; a chat with a bot names it `?message=`). */
   jumpParam?: string;
 }) {
-  const { team, teamSlug } = useShell();
+  const { team, teamSlug, guest } = useShell();
+  const panel = usePanel();
   const slug = team?.slug ?? teamSlug;
   const people = usePeople();
   const tl = useTimeline(threadKey(rootId));
@@ -168,6 +171,14 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
 
   // Mark the replies read while the thread is open and on screen.
   const threadState = tl.thread;
+  // where the reader was when the thread opened, for "Since I last read" in its summary (P18-05): marking it read moves the stored position at once
+  const readAtOpen = useRef<{ lastReadId: string | null; unread: boolean } | null>(null);
+  useEffect(() => {
+    readAtOpen.current = null;
+  }, [rootId]);
+  useEffect(() => {
+    if (threadState && readAtOpen.current === null) readAtOpen.current = { lastReadId: threadState.lastReadId, unread: threadState.unreadCount > 0 };
+  }, [threadState]);
   useEffect(() => {
     if (!threadState || !newestReply || document.visibilityState !== 'visible') return;
     if (threadState.lastReadId !== null && threadState.lastReadId >= newestReply) return;
@@ -268,9 +279,21 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const teamForLink = slug ?? '';
   // the thread's own controls, one row of icon buttons in its header (P34-06): in the panel before Expand and Close, on the Threads page with Overview
   const channelHref = channelName && teamForLink ? `${channelPath(teamForLink, channelName)}?message=${rootId}` : null;
+  // Brain's private summary of this thread (P18-05): a member's tool, in a channel or a direct message; it opens above the thread in the panel
+  const canSummarise = !guest && !isMockMode() && info.status === 'ok' && info.data !== null && (info.data.channel.kind === 'channel' || info.data.channel.kind === 'dm');
+  const summariseThread = (): void => {
+    const place = { channelId, threadRootId: rootId };
+    const atOpen = readAtOpen.current;
+    if (atOpen) {
+      rememberReadStart(place, atOpen.lastReadId);
+      rememberUnread(place, atOpen.unread);
+    }
+    panel.push({ type: SUMMARY_PANEL, id: summaryPanelId(place) });
+  };
   const tools = (
     <ThreadTools
-      tools={threadTools({ variant, canFollow: threadState !== null, channelLink: channelHref !== null, channelInView: channelOnScreen !== null && channelOnScreen === channelId, canBookmark: bookmarksReady })}
+      tools={threadTools({ variant, canFollow: threadState !== null, channelLink: channelHref !== null, channelInView: channelOnScreen !== null && channelOnScreen === channelId, canBookmark: bookmarksReady, canSummarise })}
+      onSummarise={summariseThread}
       bookmarked={threadBookmarked}
       bookmarkBusy={bookmarkBusy}
       onBookmark={() => void toggleThreadBookmark(rootId)}

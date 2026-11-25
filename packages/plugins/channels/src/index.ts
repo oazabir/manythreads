@@ -7,6 +7,7 @@ import { registerEmojiRoutes } from './routes-emoji.ts';
 import { registerBookmarkRoutes } from './routes-bookmarks.ts';
 import { registerPinRoutes } from './routes-pins.ts';
 import { registerIncidents } from './incidents.ts';
+import { registerSummaryRoutes } from './summary.ts';
 import { registerStandups } from './standups.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
@@ -71,6 +72,7 @@ export default definePlugin({
     registerChannelRoutes(deps);
     registerIncidents(deps);
     registerStandups(deps);
+    registerSummaryRoutes(deps);
     registerMessageRoutes(deps);
     registerMentionRoutes(deps);
     registerBookmarkRoutes(deps);

@@ -5,7 +5,7 @@ import {
   LinkIcon, LockIcon as ProLock, MenuIcon as ProMenu, MoonIcon as ProMoon, MoreIcon as ProMore, SearchIcon as ProSearch, SendIcon as ProSend, SettingsIcon,
   StarIcon as ProStar, ArrowSyncIcon, TuneIcon, CheckmarkIcon, AddIcon as ProAdd, SubtractIcon as ProSubtract, PencilIcon as ProPencil, MailIcon as ProMail, HashIcon as ProHash, MentionIcon as ProMention,
   WindowMultipleIcon, MailOpenIcon, SparkleIcon, AndroidIcon, ArrowLeftIcon, ArrowRightIcon, DeleteIcon, ArrowLeftRightIcon,
-  MicrophoneIcon, PauseIcon as PauseIcon_, PlayIcon as PlayIcon_, SquareIcon,
+  MicrophoneIcon, PauseIcon as PauseIcon_, PlayIcon as PlayIcon_, SquareIcon, TextDescriptionIcon,
 } from '@proicons/react';
 import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon } from '@proicons/react';
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
@@ -237,3 +237,6 @@ export const ItemBlockedIcon = proIcon(FlagIcon, 16);
 export const PinMessageIcon = proIcon(PinIcon, 14);
 export const UnpinMessageIcon = proIcon(PinOffIcon, 14);
 export const PinMarkIcon = proIcon(PinIcon, 12);
+
+/* Summarise a channel or a thread (PLAN P18-05): the menu item, the Catch me up button and the thread's tool. */
+export const SummariseIcon = proIcon(TextDescriptionIcon, 14);

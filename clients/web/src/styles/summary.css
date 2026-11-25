@@ -1,0 +1,134 @@
+/* Summary (P18-05): Brain's private summary of a channel or a thread, in the right panel (`channels/SummaryPanel.tsx`), and the channel's Catch me up button.
+   Classes are prefixed `csm`. */
+
+.csm {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+
+.csm-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.csm-range {
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--mute);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.csm-range[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.csm-range:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.csm-note,
+.csm-cover p {
+  margin: 0;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.csm-cover {
+  display: grid;
+  gap: 2px;
+}
+
+.csm-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.csm-problem {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: var(--fs-small);
+}
+
+.csm-problem p {
+  margin: 0;
+}
+
+.csm-body {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.csm-ref {
+  padding: 0 1px;
+  border: 0;
+  background: none;
+  color: var(--human);
+  font: inherit;
+  cursor: pointer;
+}
+
+.csm-ref:hover {
+  text-decoration: underline;
+}
+
+.csm-ref:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.csm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csm-saved {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+/* Catch me up, at the top right of the channel; below "Jump to first unread" while that one shows there */
+.jump.csm-catchup {
+  inset: 40px 24px auto auto;
+  transform: none;
+}
+
+.jump.csm-catchup.csm-catchup-low {
+  inset: 76px 24px auto auto;
+}
+
+/* a phone: the buttons are full width under the text */
+@media (width <= 760px) {
+  .csm-actions {
+    display: grid;
+  }
+
+  .csm-actions .btn {
+    justify-content: center;
+    width: 100%;
+  }
+}

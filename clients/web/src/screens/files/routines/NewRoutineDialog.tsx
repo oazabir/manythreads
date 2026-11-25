@@ -4,13 +4,17 @@ import {
   PersonalRoutinePath,
   ROUTINE_SOURCES,
   personalRecipeById,
+  recipeSentence,
   recipeToDraft,
   type PersonalRoutine,
+  type PersonalRoutineRecipe,
+  type RecipeWorkday,
   type PersonalRoutineDraft,
   type RoutineOutputMode,
   type RoutineSource,
 } from '@manythreads/shared';
 import { Dialog } from '../../../components/Dialog';
+import { usePresence } from '../../../presence/hooks';
 import { message } from '../../memory/inboxWords';
 import { createRoutine, draftRoutine } from './routinesApi';
 import { OUTPUT_MODES, outputModeLabel, outputPlaceWords, sourceLabel, timeZoneProblem } from './routinesWords';
@@ -25,10 +29,12 @@ type Proposal = { draft: PersonalRoutineDraft; words: string; notes: string[]; b
 
 export function NewRoutineDialog({ timeZone, startWith, onClose, onCreated }: { timeZone: string; startWith: string | null; onClose: () => void; onCreated: (r: PersonalRoutine) => void }) {
   const recipe = startWith ? personalRecipeById(startWith) : undefined;
-  const [sentence, setSentence] = useState(recipe?.sentence ?? '');
-  const [proposal, setProposal] = useState<Proposal | null>(
-    recipe ? { draft: recipeToDraft(recipe, timeZone), words: recipe.sentence, notes: [], by: 'recipe', recipeId: recipe.id } : null,
-  );
+  // the morning brief starts when the person's work starts (P18-05): their working hours, read in this time zone only when theirs is the same (or not set)
+  const { me } = usePresence();
+  const workday: RecipeWorkday | null = me?.workingHours && (me.timeZone === null || me.timeZone === timeZone) ? me.workingHours : null;
+  const fromRecipe = (r: PersonalRoutineRecipe): Proposal => ({ draft: recipeToDraft(r, timeZone, new Date(), workday), words: recipeSentence(r, workday), notes: [], by: 'recipe', recipeId: r.id });
+  const [sentence, setSentence] = useState(recipe ? recipeSentence(recipe, workday) : '');
+  const [proposal, setProposal] = useState<Proposal | null>(recipe ? fromRecipe(recipe) : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,7 +109,7 @@ export function NewRoutineDialog({ timeZone, startWith, onClose, onCreated }: { 
             <button
               type="button"
               className="rt-pick"
-              onClick={() => setProposal({ draft: recipeToDraft(r, timeZone), words: r.sentence, notes: [], by: 'recipe', recipeId: r.id })}
+              onClick={() => setProposal(fromRecipe(r))}
               data-testid="routine-pick"
               data-recipe={r.id}
             >

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
-import { BookmarkToggleIcon, FollowIcon, OpenChannelIcon, SidePanelIcon } from '../shell/icons';
+import { BookmarkToggleIcon, FollowIcon, OpenChannelIcon, SidePanelIcon, SummariseIcon } from '../shell/icons';
 
 /*
  * A thread's own controls (P34-06): one row of icon buttons in the thread's header, in the same style as the channel's header tools (`icon-btn`, a label
@@ -8,21 +8,22 @@ import { BookmarkToggleIcon, FollowIcon, OpenChannelIcon, SidePanelIcon } from '
  * the Overview toggle joins them.
  */
 
-export type ThreadToolKey = 'follow' | 'open-channel' | 'overview' | 'bookmark';
+export type ThreadToolKey = 'follow' | 'open-channel' | 'overview' | 'summarise' | 'bookmark';
 
 /** The order of the row, left to right; the bookmark is last, at the top right (P36-08). The panel's Expand and Close come after it. */
-export const THREAD_TOOL_ORDER: readonly ThreadToolKey[] = ['follow', 'open-channel', 'overview', 'bookmark'];
+export const THREAD_TOOL_ORDER: readonly ThreadToolKey[] = ['follow', 'open-channel', 'overview', 'summarise', 'bookmark'];
 
 /**
  * Which of the thread's tools are drawn. Follow needs the thread's state; Open channel needs a channel to open (a thread in a direct message has
- * none) and is left out where that channel is already on screen beside the panel; Overview is the side rail of the Threads page only; Bookmark needs a
- * server with bookmarks (P36-08).
+ * none) and is left out where that channel is already on screen beside the panel; Overview is the side rail of the Threads page only; Summarise is for a member
+ * in a channel or a direct message (P18-05); Bookmark needs a server with bookmarks (P36-08).
  */
-export function threadTools(o: { variant: 'panel' | 'main'; canFollow: boolean; channelLink: boolean; channelInView: boolean; canBookmark?: boolean }): ThreadToolKey[] {
+export function threadTools(o: { variant: 'panel' | 'main'; canFollow: boolean; channelLink: boolean; channelInView: boolean; canBookmark?: boolean; canSummarise?: boolean }): ThreadToolKey[] {
   const out: ThreadToolKey[] = [];
   if (o.canFollow) out.push('follow');
   if (o.channelLink && !(o.variant === 'panel' && o.channelInView)) out.push('open-channel');
   if (o.variant === 'main') out.push('overview');
+  if (o.canSummarise) out.push('summarise');
   if (o.canBookmark) out.push('bookmark');
   return out;
 }
@@ -30,7 +31,7 @@ export function threadTools(o: { variant: 'panel' | 'main'; canFollow: boolean; 
 export const followTip = (followed: boolean): string =>
   followed ? 'Following: you are notified of replies. Press to stop.' : 'Follow: be notified of replies';
 
-export function ThreadTools({ tools, followed, busy, onFollow, channelHref, channelName, railOpen, railId, onRail, extra, bookmarked = false, bookmarkBusy = false, onBookmark }: {
+export function ThreadTools({ tools, followed, busy, onFollow, channelHref, channelName, railOpen, railId, onRail, extra, bookmarked = false, bookmarkBusy = false, onBookmark, onSummarise }: {
   tools: readonly ThreadToolKey[];
   followed: boolean;
   busy: boolean;
@@ -47,6 +48,8 @@ export function ThreadTools({ tools, followed, busy, onFollow, channelHref, chan
   /** A write of the bookmark is still on its way: the button waits. */
   bookmarkBusy?: boolean;
   onBookmark?: () => void;
+  /** Opens Brain's private summary of the thread (P18-05). */
+  onSummarise?: () => void;
 }) {
   return (
     <>
@@ -63,6 +66,13 @@ export function ThreadTools({ tools, followed, busy, onFollow, channelHref, chan
           return (
             <button key={t} type="button" className="icon-btn thread-bookmark" aria-pressed={bookmarked} aria-label="Bookmark thread" title={bookmarked ? 'Bookmarked: find it under Bookmarks. Press to remove.' : 'Bookmark thread'} disabled={bookmarkBusy} onClick={onBookmark} data-testid="thread-bookmark">
               <BookmarkToggleIcon filled={bookmarked} />
+            </button>
+          );
+        }
+        if (t === 'summarise') {
+          return (
+            <button key={t} type="button" className="icon-btn thread-summarise" aria-label="Summarise thread" title="Summarise this thread: only you see it" onClick={onSummarise} data-testid="thread-summarise">
+              <SummariseIcon />
             </button>
           );
         }

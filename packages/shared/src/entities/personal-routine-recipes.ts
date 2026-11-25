@@ -25,6 +25,14 @@ export interface PersonalRoutineRecipe {
   outputMode: RoutineOutputMode;
   /** The bot: the workspace Brain unless a recipe says otherwise. */
   botSlug: 'brain';
+  /** Runs at the start of the person's working day, on their working days, when they have set working hours (P18-05); `time` and `days` are the fallback. */
+  atWorkStart?: true;
+}
+
+/** A person's working hours as far as a recipe needs them: the start (`09:30`) and the weekdays (0 = Sunday … 6 = Saturday). */
+export interface RecipeWorkday {
+  start: string;
+  days: readonly number[];
 }
 
 const ASK_FIRST =
@@ -104,6 +112,7 @@ export const PERSONAL_ROUTINE_RECIPES: readonly PersonalRoutineRecipe[] = [
     outputPath: 'Routines/catch-me-up/output.md',
     outputMode: 'replace',
     botSlug: 'brain',
+    atWorkStart: true,
   },
   {
     id: 'follow-ups',
@@ -124,9 +133,44 @@ export const personalRecipeById = (id: string): PersonalRoutineRecipe | undefine
 
 const DAYS: Record<RecipeDays, readonly number[] | null> = { weekdays: [1, 2, 3, 4, 5], every_day: null, friday: [5], monday: [1] };
 
-/** A recipe as the proposal the New routine form shows, in the person's own time zone. The stored schedule is UTC. */
-export function recipeToDraft(recipe: PersonalRoutineRecipe, timeZone: string, at: Date = new Date()): PersonalRoutineDraft {
-  const local: LocalSchedule = { hour: Number(recipe.time.slice(0, 2)), minute: Number(recipe.time.slice(3, 5)), dow: DAYS[recipe.days] };
+const ownSchedule = (recipe: PersonalRoutineRecipe): LocalSchedule => ({ hour: Number(recipe.time.slice(0, 2)), minute: Number(recipe.time.slice(3, 5)), dow: DAYS[recipe.days] });
+
+const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * When a recipe runs for this person: a recipe marked `atWorkStart` runs at the start of their working day on their working days, when `workday` is given and makes sense
+ * (a clock time and at least one weekday); otherwise at the recipe's own time and days.
+ */
+export function recipeSchedule(recipe: PersonalRoutineRecipe, workday: RecipeWorkday | null = null): LocalSchedule {
+  const days = workday ? [...new Set(workday.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b) : [];
+  const clock = workday ? CLOCK.exec(workday.start) : null;
+  if (recipe.atWorkStart && clock && days.length > 0) return { hour: Number(clock[1]), minute: Number(clock[2]), dow: days.length === 7 ? null : days };
+  return ownSchedule(recipe);
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+
+/**
+ * The sentence shown for a recipe. One that runs when the person's work starts says so, with the days and the time in words the sentence parser reads back the same
+ * (`wordsToSchedule`), so going back to the words and asking again keeps the schedule.
+ */
+export function recipeSentence(recipe: PersonalRoutineRecipe, workday: RecipeWorkday | null = null): string {
+  const s = recipeSchedule(recipe, workday);
+  const own = ownSchedule(recipe);
+  if (!recipe.atWorkStart || (s.hour === own.hour && s.minute === own.minute && JSON.stringify(s.dow) === JSON.stringify(own.dow))) return recipe.sentence;
+  const dow = s.dow;
+  const names = dow === null ? [] : dow.map((d) => DAY_NAMES[d] as string);
+  const days =
+    dow === null ? 'Every day' : dow.join() === '1,2,3,4,5' ? 'Every weekday' : `Every ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`}`;
+  return `${days} at ${s.hour}:${String(s.minute).padStart(2, '0')}, when my work starts, catch me up on what needs me today`;
+}
+
+/**
+ * A recipe as the proposal the New routine form shows, in the person's own time zone. The stored schedule is UTC. `workday` is the person's working hours, read in the
+ * same time zone: the caller passes them only when the person's presence time zone is this one (or unset).
+ */
+export function recipeToDraft(recipe: PersonalRoutineRecipe, timeZone: string, at: Date = new Date(), workday: RecipeWorkday | null = null): PersonalRoutineDraft {
+  const local: LocalSchedule = recipeSchedule(recipe, workday);
   const schedule = localScheduleToCron(local, timeZone, at);
   return {
     name: recipe.name,

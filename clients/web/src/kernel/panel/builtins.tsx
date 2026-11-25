@@ -10,6 +10,8 @@ import { SearchPanel } from '../../search/SearchPanel';
 import { MembersPanel } from '../../shell/MembersPanel';
 import { PinsPanel } from '../../channels/PinsPanel';
 import { PINS_PANEL } from '../../channels/pinsModel';
+import { SummaryPanel } from '../../channels/SummaryPanel';
+import { SUMMARY_PANEL } from '../../channels/summaryModel';
 import { registerPanelType } from './registry';
 import type { PanelEntry } from './stack';
 
@@ -66,3 +68,4 @@ registerPanelType({ type: 'history', label: 'History', Component: ({ entry }) =>
 registerPanelType({ type: 'member', label: 'Member', Component: MemberPanel });
 registerPanelType({ type: 'members', label: 'Members', Component: MembersPanel });
 registerPanelType({ type: PINS_PANEL, label: 'Pinned messages', Component: PinsPanel });
+registerPanelType({ type: SUMMARY_PANEL, label: 'Summary', Component: SummaryPanel });

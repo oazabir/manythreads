@@ -159,6 +159,8 @@ describe('the thread pane controls', () => {
     expect(threadTools({ variant: 'main', canFollow: true, channelLink: true, channelInView: false, canBookmark: true })).toEqual(['follow', 'open-channel', 'overview', 'bookmark']);
     expect(threadTools({ variant: 'panel', canFollow: true, channelLink: true, channelInView: true, canBookmark: true })).toEqual(['follow', 'bookmark']);
     expect(threadTools({ variant: 'main', canFollow: false, channelLink: true, channelInView: true })).toEqual(['open-channel', 'overview']);
+    // Summarise (P18-05) sits before the bookmark, which stays last
+    expect(threadTools({ variant: 'panel', canFollow: true, channelLink: false, channelInView: false, canBookmark: true, canSummarise: true })).toEqual(['follow', 'summarise', 'bookmark']);
   });
 
   it('every control is an icon button with a label and a tooltip, in one order, never a bordered text button', () => {
@@ -173,7 +175,7 @@ describe('the thread pane controls', () => {
       ),
     );
     const controls = [...host.querySelectorAll<HTMLElement>('button, a')];
-    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Follow thread', 'Open channel', 'Show overview', 'Bookmark thread']);
+    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Follow thread', 'Open channel', 'Show overview', 'Summarise thread', 'Bookmark thread']);
     for (const c of controls) {
       expect(c.classList.contains('icon-btn'), c.outerHTML).toBe(true);
       expect(c.classList.contains('btn'), c.outerHTML).toBe(false);
@@ -184,8 +186,8 @@ describe('the thread pane controls', () => {
     expect(controls[0]?.getAttribute('aria-pressed')).toBe('true');
     expect(controls[2]?.getAttribute('aria-expanded')).toBe('false');
     expect(controls[2]?.getAttribute('data-testid')).toBe('rail-toggle');
-    expect(controls[3]?.getAttribute('aria-pressed')).toBe('true');
-    expect(controls[3]?.getAttribute('data-testid')).toBe('thread-bookmark');
+    expect(controls[4]?.getAttribute('aria-pressed')).toBe('true');
+    expect(controls[4]?.getAttribute('data-testid')).toBe('thread-bookmark');
   });
 });
 

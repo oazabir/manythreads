@@ -16,8 +16,9 @@ import { MEMBERS_PANEL } from './membersModel';
 import { useShell } from './context';
 import { FULL_STARS_TEXT, isStarred, starPatch } from './sidebarLayout';
 import { sidebarPrefsStore, useSidebarPrefs } from './sidebarPrefsStore';
-import { BoardsIcon, CaretIcon, MembersIcon, PinMessageIcon, ScheduleCalendarIcon, SearchIcon, StarIcon, ToolLinkIcon } from './icons';
+import { BoardsIcon, CaretIcon, MembersIcon, PinMessageIcon, ScheduleCalendarIcon, SearchIcon, StarIcon, SummariseIcon, ToolLinkIcon } from './icons';
 import { PINS_PANEL } from '../channels/pinsModel';
+import { SUMMARY_PANEL } from '../channels/summaryModel';
 import { useDismiss } from './useDismiss';
 
 const TOOL_ICON: Record<HeaderToolKey, (dm: boolean) => ReactNode> = {
@@ -149,6 +150,10 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
               ) : null}
               {/* the channel's pinned messages (P31-07), in the right panel; the same item on a phone, where this menu also holds the header's tools (P34-05) */}
               <button type="button" role="menuitem" className="menu-item" data-testid="details-pins" onClick={() => { close(); panel.push({ type: PINS_PANEL, id: channelId }); }}><PinMessageIcon /> Pinned messages</button>
+              {/* Brain's private summary of the channel (P18-05), in the right panel; a member's tool, never a guest's */}
+              {!guest && !isMockMode() ? (
+                <button type="button" role="menuitem" className="menu-item" data-testid="details-summarise" onClick={() => { close(); panel.push({ type: SUMMARY_PANEL, id: channelId }); }}><SummariseIcon /> Summarise</button>
+              ) : null}
               {/* on a phone the Members tool above opens the panel, so this list view (which links to the same panel) steps aside */}
               {!dm ? <button type="button" role="menuitem" className={`menu-item${hasMembersTool ? ' chd-head-twin' : ''}`} data-testid="details-members" onClick={() => setView('members')}>Members</button> : null}
               {!dm && botBoard ? (

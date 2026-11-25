@@ -496,6 +496,9 @@ import {
   getStandupRoute,
   saveStandupRoute,
   StandupResponse,
+  summariseRoute,
+  SummariseRequest,
+  SummariseResponse,
   SaveStandupRequest,
   OpenIncidentRequest,
   IncidentResponse,
@@ -720,6 +723,8 @@ export const saveChannelHelp = (channelId: string, help: boolean) =>
 export const fetchStandup = (channelId: string) => call(getStandupRoute, { response: StandupResponse }, undefined, { channelId });
 /** Turns a channel's stand-up on, changes it, or turns it off (a team lead or workspace admin). */
 export const saveStandup = (channelId: string, standup: SaveStandupRequest) => call(saveStandupRoute, { request: SaveStandupRequest, response: StandupResponse }, standup, { channelId });
+/** Brain's private summary of a channel or a thread for the caller (P18-05): only what they may read; nothing is posted or stored. */
+export const summarise = (channelId: string, request: SummariseRequest) => call(summariseRoute, { request: SummariseRequest, response: SummariseResponse }, request, { channelId });
 /** Opens an incident (P35-07): its channel, the opening message that pages @on-call, the triage bot. */
 export const openIncident = (teamSlug: string, title: string, fromChannelId: string) =>
   call(openIncidentRoute, { request: OpenIncidentRequest, response: IncidentResponse }, { title, fromChannelId: fromChannelId as NonNullable<OpenIncidentRequest['fromChannelId']> }, { slug: teamSlug });

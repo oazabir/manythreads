@@ -71,6 +71,7 @@ import './styles/meetings.css';
 import './styles/meetings-view.css';
 import './styles/schedule.css';
 import './styles/recipes.css';
+import './styles/summary.css';
 import './styles/states.css';
 import './styles/theme-picker.css';
 import './styles/appearance-menu.css';
