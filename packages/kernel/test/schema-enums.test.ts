@@ -275,6 +275,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'meeting_recordings.stop_reason': MeetingRecordingStopReason,
   'meeting_share_requests.state': MeetingShareRequestState,
   'meeting_guests.state': MeetingGuestState,
+  'meeting_guests.consent_transcribe': MeetingConsent,
   'meeting_series.kind': MeetingKind,
   'meeting_series.frequency': MeetingSeriesFrequency,
   'meeting_series.status': MeetingSeriesStatus,

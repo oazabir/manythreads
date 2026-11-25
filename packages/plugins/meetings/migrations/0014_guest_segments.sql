@@ -11,7 +11,7 @@
 --   app.meetings_revoke_guest_link      the starter, a lead or an admin turns off one link of a live call; the others keep working.
 
 -- 1. the guest's answer -------------------------------------------------------------------------------------------------------------------------------------
-ALTER TABLE app.meeting_guests ADD COLUMN consent_transcribe text NOT NULL DEFAULT 'unasked' CHECK (consent_transcribe IN ('unasked', 'yes', 'no'));
+ALTER TABLE app.meeting_guests ADD COLUMN consent_transcribe text NOT NULL DEFAULT 'unasked' CHECK (consent_transcribe IN ('yes', 'no', 'unasked'));
 GRANT SELECT (consent_transcribe) ON app.meeting_guests TO manythreads_app;
 
 -- Turning transcription on asks everybody in the call again (0002 does it for people): the guests let in answer again too. A definer owned by the system role, as
