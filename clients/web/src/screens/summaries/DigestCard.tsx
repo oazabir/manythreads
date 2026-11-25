@@ -66,6 +66,7 @@ export function DigestCard({
   children,
   wide = false,
   problem,
+  testId = 'summaries-card',
 }: {
   /** Names the card for the tests and the screen reader: `attention`, `waiting`, `activity`, `next`, `keep-going`. */
   id: string;
@@ -86,10 +87,12 @@ export function DigestCard({
   wide?: boolean;
   /** A line above the rows: one part of the card could not be read, or a Join failed. */
   problem?: { text: string; onRetry?: () => void } | null;
+  /** The test id of the card; the five cards share `summaries-card`, the section at the foot has its own. */
+  testId?: string;
 }) {
   const headingId = `sm-${id}-title`;
   return (
-    <section className={`sm-card ${wide ? 'wide' : ''}`} aria-labelledby={headingId} data-testid="summaries-card" data-card={id}>
+    <section className={`sm-card ${wide ? 'wide' : ''}`} aria-labelledby={headingId} data-testid={testId} data-card={id}>
       <header className="sm-card-head">
         <div className="sm-card-titles">
           <h2 className="sm-card-title" id={headingId}>{title}</h2>

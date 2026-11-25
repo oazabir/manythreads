@@ -3,6 +3,7 @@ import { approvalLine } from '../approvals/sentence';
 import { dueLabel } from '../files/actionItems/actionItemsWords';
 import { addDays, joinable, sameDay, startOfDay } from '../schedule/calendar';
 import { channelLabel } from '../threadCard';
+import { MAX_RECENT_THREADS, type RecentThread } from '../../app/recentThreads';
 
 /*
  * The rules of the Summaries page (P37-06, docs/plans/summaries.md): which rows each card shows, in which order, and the words around them ("2 hours ago", "In 25 min").
@@ -112,7 +113,7 @@ const clip = (text: string, max: number): string => {
 };
 
 /** A thread's place, as a person says it: "#dev", "Direct message". */
-const placeOf = (channel: ThreadInboxItem['channel']): string => {
+const placeOf = (channel: Pick<ThreadInboxItem['channel'], 'kind' | 'name'>): string => {
   const label = channelLabel(channel);
   return channel.kind === 'dm' || channel.kind === 'bot_conversation' || label === '' ? label || 'Conversation' : `#${label}`;
 };
@@ -246,6 +247,40 @@ export function waitingThreads(items: readonly ThreadInboxItem[], slug: string, 
     };
   });
   return trim(rows);
+}
+
+// ---- 6. threads you were in lately -------------------------------------------------------------------------------------------------
+
+/** "Opened 20 minutes ago": the time words of a visited thread; a time from the future reads "just now". */
+export const openedWords = (iso: string, now: Date): string => {
+  const w = agoWords(iso, now);
+  return w === '' ? '' : w === 'just now' ? 'Opened just now' : w === 'yesterday' ? 'Opened yesterday' : `Opened ${w}`;
+};
+
+/**
+ * The foot of the page: the last ten threads the person opened, newest first, one row each (a thread opened twice has one row, the later time). `inbox` is the Threads list
+ * the page already read; a thread found there adds who wrote last and the reply count, and one that is not simply shows without. Nothing is fetched for a row: a thread
+ * that is gone still has its row, and its link shows the normal "not available" page. Not counted by the five-rows rule of the cards above.
+ */
+export function recentThreadRows(visited: readonly RecentThread[], slug: string, now: Date, inbox: readonly ThreadInboxItem[] = []): DigestRow[] {
+  const known = new Map<string, ThreadInboxItem>(inbox.map((i) => [i.rootMessageId, i]));
+  const seen = new Set<string>();
+  return [...visited]
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .filter((v) => (seen.has(v.rootId) ? false : (seen.add(v.rootId), true)))
+    .slice(0, MAX_RECENT_THREADS)
+    .map((v): DigestRow => {
+      const i = known.get(v.rootId);
+      const last = i?.lastReply?.authorName ? `${i.lastReply.authorName} wrote last` : '';
+      const count = i ? (i.replyCount === 0 ? 'No replies' : i.replyCount === 1 ? '1 reply' : `${i.replyCount} replies`) : '';
+      return {
+        key: `visited:${v.rootId}`,
+        kind: 'thread',
+        title: clip(i?.title || v.title || 'Untitled thread', 140),
+        meta: [placeOf({ kind: v.channelKind, name: v.channelName }), last, count, openedWords(v.at, now)].filter(Boolean).join(' · '),
+        to: `/t/${encodeURIComponent(slug)}/threads?thread=${encodeURIComponent(v.rootId)}`,
+      };
+    });
 }
 
 // ---- 3. recent activity ---------------------------------------------------------------------------------------------------------

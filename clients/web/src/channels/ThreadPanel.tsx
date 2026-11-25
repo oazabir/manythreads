@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Link, useMatch, useSearchParams } from 'react-router';
 import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
+import { recordRecentThread, titleLine } from '../app/recentThreads';
+import { useSession } from '../app/session';
 import { channelPath } from '../shell/nav';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { useShell } from '../shell/context';
@@ -138,6 +140,16 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const channelId = root?.channelId ?? tl.channel?.id ?? hint;
   const channelRow = channelId ? feed.groups.flatMap((g) => g.channels).find((c) => c.id === channelId) : undefined;
   const channelName = (tl.channel?.name ?? channelRow?.name ?? '').replace(/^#/, '');
+  // "Threads you were in lately" on the Summaries page: a thread that has loaded is noted in this browser, once per opening (P37-09)
+  const personId = useSession().person.id;
+  const recorded = useRef<string | null>(null);
+  const recordTitle = tl.thread?.title ?? (root ? titleLine(root.bodyPlain) : '');
+  const recordKind = tl.channel?.kind ?? null;
+  useEffect(() => {
+    if (guest || !slug || !root || channelId === null || recordKind === null || recorded.current === root.id) return;
+    recorded.current = root.id;
+    recordRecentThread(personId, slug, { rootId: root.id, channelId, channelKind: recordKind, channelName, title: recordTitle, at: new Date().toISOString() });
+  }, [guest, slug, root, channelId, recordKind, channelName, recordTitle, personId]);
   const self = people.me?.actorId ?? null;
   const info = useQuery(`thread-channel:${channelId ?? ''}`, () => (channelId ? fetchChannel(channelId) : Promise.resolve(null)));
   const canReply = info.status === 'ok' && info.data !== null && info.data.canPost && info.data.channel.archivedAt === null;

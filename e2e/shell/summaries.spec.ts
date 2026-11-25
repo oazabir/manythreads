@@ -5,7 +5,7 @@ import { openOn, PHONE } from '../support/stack-browser.ts';
 /*
  * The Summaries page (P37-06, docs/plans/summaries.md): the first sidebar entry opens the daily digest at /t/<team>/summaries. It has the page title and today's date,
  * a Refresh button, and five cards (needs your attention, waiting on your reply, recent activity, up next, keep going), each with a count or a friendly empty line and a
- * link to the screen that owns it. A phone shows one column with no sideways scroll. A guest has no Summaries.
+ * link to the screen that owns it. At the foot, a sixth section (P37-09) lists the last ten threads the person opened, newest first, each row a link to the thread. A phone shows one column with no sideways scroll. A guest has no Summaries.
  */
 test.use({ actionTimeout: 10_000 });
 
@@ -95,6 +95,46 @@ test('on a phone the cards stack in one column with no sideways scroll', async (
     expect(first && second && Math.abs(first.x - second.x) < 2 && second.y > first.y).toBe(true);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the foot lists the threads the person opened: empty at first, then a row that opens the thread', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/t\/[^/]+\//);
+    const team = new URL(page.url()).pathname.split('/')[2] ?? '';
+    await page.goto(`/t/${team}/summaries`);
+    const foot = page.getByTestId('summaries-recent-threads');
+    // it is a section of its own, below the five cards, and not one of them
+    await expect(foot).toBeVisible();
+    await expect(foot.getByRole('heading', { name: 'Threads you were in lately' })).toBeVisible();
+    await expect(foot.getByText('Threads you open will show up here.')).toBeVisible();
+    await expect(page.locator('[data-testid="summaries-card"]')).toHaveCount(5);
+    const keep = await page.locator('[data-testid="summaries-card"][data-card="keep-going"]').boundingBox();
+    const footBox = await foot.boundingBox();
+    expect(keep && footBox && footBox.y > keep.y).toBe(true);
+
+    // opening a thread (here the first one on the Threads page) puts it at the top of the list
+    await page.goto(`/t/${team}/threads`);
+    const first = page.getByTestId('thread-row').first();
+    await expect(first).toBeVisible();
+    const rootId = await first.getAttribute('data-root-id');
+    await first.click();
+    await expect(page.getByTestId('thread-view').first()).toBeVisible();
+    await page.goto(`/t/${team}/summaries`);
+    const row = foot.getByTestId('summaries-row').first();
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(/Opened (just now|\d+ minutes? ago)/);
+    await expect(row.locator('a.sm-row-link')).toHaveAttribute('href', new RegExp(`/threads\\?thread=${rootId}$`));
+    expect(await foot.getByTestId('summaries-row').count()).toBeLessThanOrEqual(10);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+    await row.locator('a.sm-row-link').click();
+    await expect(page).toHaveURL(new RegExp(`/threads\\?thread=${rootId}`));
+    await expect(page.getByTestId('thread-view').first()).toBeVisible();
   } finally {
     await context.close();
   }

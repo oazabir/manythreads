@@ -7,6 +7,7 @@ import { RegenerateIcon } from '../../shell/icons';
 import { ActivityCard } from './ActivityCard';
 import { AttentionCard } from './AttentionCard';
 import { KeepGoingCard } from './KeepGoingCard';
+import { RecentThreadsCard } from './RecentThreadsCard';
 import { UpNextCard } from './UpNextCard';
 import { WaitingCard } from './WaitingCard';
 import { attention, dateLine, dayGreeting, leadLine, meetingsLeftToday, waitingRoots } from './summaries';
@@ -97,6 +98,7 @@ function SummariesBody() {
           <ActivityCard slug={slug} now={now} data={data} />
           <UpNextCard slug={slug} now={now} data={data} />
           <KeepGoingCard slug={slug} now={now} data={data} />
+          <RecentThreadsCard slug={slug} now={now} data={data} />
         </div>
       </div>
     </div>

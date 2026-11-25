@@ -3,6 +3,7 @@ import type { ActionItemView, Appointment, Approval, Notification, ThreadInboxIt
 import { isApiError } from '../../api/client';
 import { fetchThreadInbox } from '../../api/endpoints';
 import { readRecent } from '../../app/recentPlaces';
+import { readRecentThreads, type RecentThread } from '../../app/recentThreads';
 import { useSession } from '../../app/session';
 import { useQuery, type QueryState } from '../../app/useQuery';
 import { useUnread } from '../../channels/hooks';
@@ -50,6 +51,8 @@ export interface SummariesData {
   appointments: Source<{ appointments: readonly Appointment[] }>;
   live: ReturnType<typeof useLive>;
   keepGoing: { ready: boolean; places: readonly Place[]; recent: readonly string[]; quiet: (p: Place) => boolean; drafts: number; roomPath: (channelId: string) => string | null };
+  /** The threads this person opened lately in this browser, newest first (read again on Refresh). */
+  recentThreads: readonly RecentThread[];
   /** Reads everything again (the Refresh button). */
   reloadAll: () => void;
 }
@@ -115,11 +118,14 @@ export function useSummaries(slug: string, now: Date): SummariesData {
     };
   }, [feed, dms, slug, unread, selfId, levels, drafts, spaces]);
 
+  // kept in this browser, so it is read again on Refresh (`tick`)
+  const recentThreads = useMemo(() => (tick >= 0 ? readRecentThreads(selfId, slug) : []), [selfId, slug, tick]);
+
   const reloadAll = useCallback(() => {
     setTick((t) => t + 1);
     void notificationStore.loadItems();
     void liveRooms().refresh();
   }, []);
 
-  return { actionItems, approvals, threads, notifications, appointments, live, keepGoing: keepGoingData, reloadAll } as SummariesData;
+  return { actionItems, approvals, threads, notifications, appointments, live, keepGoing: keepGoingData, recentThreads, reloadAll } as SummariesData;
 }
