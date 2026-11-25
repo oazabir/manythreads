@@ -1,6 +1,9 @@
 import type { RunActivityItem, RunCounts, RunHead, RunNow } from '@manythreads/shared';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { placeRuns } from '../src/channels/run-card/place';
+import { RowView } from '../src/channels/run-card/StepList';
 import { buildRows, foldRows, helpersToHide, type Row, type StepRow } from '../src/channels/run-card/steps';
 import { forgetShownQuestions, leaveHandoff, setShownQuestions, shownNow, takeHandoff } from '../src/channels/run-card/shownQuestions';
 import { commandOf, elapsedText, endLine, nowLine, planLine, previewLines, runElapsedMs, showsEndLine, stateWord, toolPhrase, workParts } from '../src/channels/run-card/words';
@@ -136,6 +139,24 @@ describe('steps of a run', () => {
       { seq: 2, at: '2026-11-14T10:00:05.000Z', payload: { kind: 'approval', outcome: 'approved', stepId: 'q1', title: 'Run the tests' } } as RunActivityItem,
     ]);
     expect(rows).toMatchObject([{ type: 'thinking', seconds: 12 }, { type: 'question', outcome: 'approved', text: 'Run the tests' }]);
+  });
+
+  it('says "out of memory" on a command that was stopped for memory (P31-04), and only on a failed step', () => {
+    const rows = buildRows([
+      tool(0, 'a', 'execute', { title: 'pnpm typecheck' }),
+      result(1, 'a', false, { reason: 'out_of_memory' }),
+      tool(2, 'b', 'execute', { title: 'pnpm test' }),
+      result(3, 'b', false),
+      tool(4, 'c', 'execute', { title: 'ls' }),
+      result(5, 'c', true, { reason: 'out_of_memory' }),
+    ]) as StepRow[];
+    expect(rows.map((r) => [r.status, r.outOfMemory])).toEqual([['failed', true], ['failed', undefined], ['done', undefined]]);
+    expect(rows[0]).toMatchObject({ text: 'Ran', code: 'pnpm typecheck' });
+    // the card says it on the step's own line, where "Failed" would be
+    const draw = (row: StepRow): string => renderToStaticMarkup(createElement(RowView, { row, defaultOpen: false }));
+    expect(draw(rows[0]!)).toContain('<span>Out of memory</span>');
+    expect(draw(rows[0]!)).not.toContain('<span>Failed</span>');
+    expect(draw(rows[1]!)).toContain('<span>Failed</span>');
   });
 
   it('foldRows leaves a short run of steps alone', () => {

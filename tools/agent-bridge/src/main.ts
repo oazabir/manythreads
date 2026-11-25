@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig } from './config.ts';
+import { startMemoryGuard } from './memory-guard.ts';
 import { startBridge } from './server.ts';
 import { helloFor, keyFiles, readServerKey, serverSigninDirs, storeServerKey } from './server-mode.ts';
 import { startServerRepos } from './server-repos.ts';
@@ -61,6 +62,10 @@ try {
   config = loadConfig(values.config);
 } catch (err) {
   fatal(err instanceof Error ? err.message : String(err));
+}
+if (values['print-hello'] !== true) {
+  // P31-04: in a run pod one out-of-memory kill ends every process of the container; the guard stops the biggest command of a run first (a log line only where there is no limit)
+  startMemoryGuard({ bins: [config.bin.claude, config.bin.codex], log: (line) => console.log(line) });
 }
 if (values['print-hello'] === true) {
   // what the installer sends the site when it enrols: the machine, the bridge's version and the agents it found (no secret in it)

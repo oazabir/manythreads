@@ -138,8 +138,8 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
   const cwd = resolvePath(job.profile.workdir);
   const mode = desiredMode(job);
   const { command, args } = adapterCommand(job.profile);
-  // The bridge's own control group tells a command the kernel killed for memory (P31-04); none on macOS, Windows or cgroup v1.
-  const frames = new Frames({ cwd, secrets, emit: (event, fields) => job.emit(event, fields), memory: cgroupMemoryWatch() });
+  // The run's own scope (a server that gives each run one) or the bridge's own control group tells a command the kernel killed for memory (P31-04); none on macOS, Windows or cgroup v1.
+  const frames = new Frames({ cwd, secrets, emit: (event, fields) => job.emit(event, fields), memory: job.memoryWatch !== undefined ? job.memoryWatch() : cgroupMemoryWatch() });
 
   // The adapter's stdio as an ACP stream: lines in, lines out. The adapter is started like any bridge child (its own process group, killed with the run).
   let inbound!: ReadableStreamDefaultController<never>;

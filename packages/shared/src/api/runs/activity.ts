@@ -133,6 +133,8 @@ export const RunToolResultLine = z.object({
   paths: z.array(z.string().max(300)).max(5).optional(),
   seconds: z.number().nonnegative().optional(),
   diff: RunDiff.optional(),
+  /** Why a failed step failed, when the runner knows: `out_of_memory`, the command was stopped for using more memory than the run may (P31-04). */
+  reason: z.enum(['out_of_memory']).optional(),
 });
 export const RunAgentLine = z.object({
   kind: z.literal('agent'),

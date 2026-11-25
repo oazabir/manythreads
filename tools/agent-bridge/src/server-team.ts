@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
 import type { ServerModeConfig, TeamUsersConfig } from './config.ts';
 import { plainChunks, type PtyHandle } from './acp/pty.ts';
+import { randomBytes } from 'node:crypto';
+import { cgroupMemoryWatch, scopeMemoryWatch, type MemoryWatch } from './memory-watch.ts';
 import { startChild, type ChildHandle, type SpawnOptions } from './process.ts';
-import { buildHeader, helperArgv, isSlug, isTeamUserName, teamHome, teamSigninDir, type Kind, type LaunchFile } from './team-user.ts';
+import { buildHeader, helperArgv, isSlug, isTeamUserName, runScopeCgroupDir, teamHome, teamSigninDir, type Kind, type LaunchFile } from './team-user.ts';
 
 // The bridge's side of the per-team users of an enrolled server (PLAN P26-22, docs/plans/agents-anywhere.md section 9b): it never starts a team's program itself. It asks the root helper
 // (`team-helper.ts`) through `sudo -n`, which starts the fixed program as the team's own user. The run's environment, the files the run needs (the deployer's kubeconfig, Hermes' config) and the
@@ -25,6 +27,8 @@ export function sudoArgv(t: TeamUsersConfig, team: string, kind: Kind): { comman
 export class TeamRun {
   readonly files: LaunchFile[] = [];
   readonly removeAtEnd: string[] = [];
+  /** The run's tag (P31-04): the helper names the run's scope after it (`mt-run-<team user>-<tag>.scope`), so the bridge knows where to read the run's memory. */
+  readonly runTag: string = randomBytes(8).toString('hex');
 
   constructor(
     readonly server: ServerWithTeams,
@@ -46,12 +50,17 @@ export class TeamRun {
     if (!this.removeAtEnd.includes(path)) this.removeAtEnd.push(path);
   }
 
+  /** What tells a command of this run that was stopped for memory: its scope, where the helper made one, else the bridge's own group (memory-watch.ts). */
+  memoryWatch(): MemoryWatch | null {
+    return scopeMemoryWatch(runScopeCgroupDir(this.team, this.runTag), cgroupMemoryWatch());
+  }
+
   /** Starts the program through the helper. The first line written is the header; what the caller writes after it reaches the program. */
   start(opts: SpawnOptions): ChildHandle {
     if (opts.stdin !== null) throw new Error('a team program talks over a pipe: it takes no prompt');
     const { command, args } = sudoArgv(this.server.teamUsers, this.team, this.kind);
     const child = startChild(command, args, { cwd: '/', env: { PATH: '/usr/local/bin:/usr/bin:/bin' }, stdin: null, onLine: opts.onLine });
-    child.write(`${buildHeader({ cwd: opts.cwd, env: opts.env, files: this.files, removeAtEnd: this.removeAtEnd, kind: this.kind, signIn: this.signIn })}\n`);
+    child.write(`${buildHeader({ cwd: opts.cwd, env: opts.env, files: this.files, removeAtEnd: this.removeAtEnd, kind: this.kind, signIn: this.signIn, runTag: this.runTag })}\n`);
     return child;
   }
 

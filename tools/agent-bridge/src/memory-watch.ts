@@ -98,6 +98,38 @@ export function cgroupMemoryWatch(files: CgroupFiles = sysFiles, platform: NodeJ
   return { oomKills: () => read('memory.events', oomKillsOf), limitBytes: () => read('memory.max', limitOf) };
 }
 
+/**
+ * The watch of one run's own scope on a server (P31-04, `mtruns.slice/mt-run-<user>-<tag>.scope`): its `oom_kill` count and its `MemoryMax`. While the scope's files cannot be read
+ * (a server whose helper starts no scopes, or a scope not made yet) it answers from `fallback`, the bridge's own group; a step's two reads always come from the same one, since the
+ * scope is there for the whole life of the run's adapter.
+ */
+export function scopeMemoryWatch(dir: string, fallback: MemoryWatch | null, files: CgroupFiles = sysFiles): MemoryWatch | null {
+  const read = <T>(name: string, parse: (text: string) => T | null): T | null => {
+    try {
+      return parse(files.read(posix.join(dir, name)));
+    } catch {
+      return null;
+    }
+  };
+  const inScope = (): boolean => read('memory.events', oomKillsOf) !== null;
+  return {
+    oomKills: () => read('memory.events', oomKillsOf) ?? fallback?.oomKills() ?? null,
+    limitBytes: () => (inScope() ? read('memory.max', limitOf) : (fallback?.limitBytes() ?? null)),
+  };
+}
+
+/** A watch that also counts the programs the bridge's own memory guard stopped (memory-guard.ts): to the frames they are killed for memory, like the kernel's. */
+export function withGuardKills(watch: MemoryWatch | null, guardKills: () => number): MemoryWatch | null {
+  if (watch === null) return null;
+  return {
+    oomKills: () => {
+      const k = watch.oomKills();
+      return k === null ? null : k + guardKills();
+    },
+    limitBytes: () => watch.limitBytes(),
+  };
+}
+
 /** How a command step ended, as far as the adapter says: an exit code and a signal name, each null when not said. */
 export interface ExitSign {
   code: number | null;

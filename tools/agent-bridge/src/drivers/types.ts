@@ -1,4 +1,5 @@
 import type { BridgeConfig, ProfileConfig } from '../config.ts';
+import type { MemoryWatch } from '../memory-watch.ts';
 import type { ChildHandle, SpawnOptions } from '../process.ts';
 import type { RunRequest } from '../request.ts';
 import type { SessionStore } from '../sessions.ts';
@@ -30,6 +31,11 @@ export interface DriverJob {
   log(line: string): void;
   /** Start a process that the bridge can stop (it is killed with its whole group on stop or budget). */
   start(bin: string, args: string[], opts: SpawnOptions): ChildHandle;
+  /**
+   * What tells a command the kernel (or the bridge's memory guard) stopped for memory (P31-04): the run's own scope on a server that gives each run one, else the bridge's own
+   * group. Absent (a test's job): the driver reads the bridge's own group.
+   */
+  memoryWatch?(): MemoryWatch | null;
   /** True once a stop, a budget kill or a turn limit was requested. */
   stopped(): boolean;
   /** Ask for the run to be killed and failed with this reason. */

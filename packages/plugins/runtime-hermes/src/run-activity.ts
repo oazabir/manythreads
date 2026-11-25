@@ -33,7 +33,7 @@ const MIN_THOUGHT_LINE_SECONDS = 1;
 
 export type SlimEvent =
   | { t: 'tool'; name: string; stepId?: string; parentStepId?: string; kind: BotStepKind; title?: string; paths?: string[] }
-  | { t: 'result'; name: string; stepId?: string; ok: boolean; diff?: BotStepDiff; seconds?: number }
+  | { t: 'result'; name: string; stepId?: string; ok: boolean; diff?: BotStepDiff; seconds?: number; outOfMemory?: true }
   | { t: 'step'; stepId: string; title?: string; paths?: string[] }
   | { t: 'agent'; agentId: string; name: string; status: 'working' | 'done' | 'failed'; steps: number; parentStepId?: string }
   | { t: 'plan'; entries: BotPlanEntry[] }
@@ -98,6 +98,8 @@ export function slimOf(event: BotRuntimeEvent): SlimEvent | null {
         ok: event.ok,
         ...(added !== undefined && removed !== undefined ? { diff: { added: Math.floor(added), removed: Math.floor(removed) } } : {}),
         ...(seconds !== undefined ? { seconds: Math.round(seconds * 10) / 10 } : {}),
+        // the one reason a step line keeps (P31-04): the activity card says "Out of memory" on the step instead of "Failed"
+        ...(!event.ok && event.reason === 'out of memory' ? { outOfMemory: true as const } : {}),
       };
     }
     case 'step': {
@@ -336,6 +338,7 @@ export class ActivityFold {
           ...(pathsChanged && step.paths !== undefined ? { paths: step.paths } : {}),
           ...(ev.seconds !== undefined ? { seconds: ev.seconds } : {}),
           ...(ev.diff !== undefined ? { diff: ev.diff } : {}),
+          ...(!ev.ok && ev.outOfMemory === true ? { reason: 'out_of_memory' as const } : {}),
         });
       }
       case 'approval': {

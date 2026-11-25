@@ -28,9 +28,10 @@ function Kind({ kind }: { kind: string }) {
 }
 
 /** The end of a step's line: working, ticked or failed, in an icon and in words for a screen reader. */
-function Status({ status }: { status: StepRow['status'] }) {
+function Status({ status, outOfMemory }: { status: StepRow['status']; outOfMemory?: boolean | undefined }) {
   if (status === 'working') return <span className="rcSt rcStWorking" role="img" aria-label="Working"><span className="rcPulse" /></span>;
-  if (status === 'failed') return <span className="rcSt rcStFailed"><StepFailedIcon /><span>Failed</span></span>;
+  // a command stopped for using more memory than the run may (P31-04): the run went on, the step says why it ended
+  if (status === 'failed') return <span className="rcSt rcStFailed"><StepFailedIcon /><span>{outOfMemory === true ? 'Out of memory' : 'Failed'}</span></span>;
   return <span className="rcSt rcStDone" role="img" aria-label="Done"><CheckIcon size={12} /></span>;
 }
 
@@ -53,7 +54,7 @@ function Step({ row }: { row: StepRow }) {
           {meta.join(' · ')}
         </span>
       ) : null}
-      <Status status={row.status} />
+      <Status status={row.status} outOfMemory={row.outOfMemory} />
     </li>
   );
 }

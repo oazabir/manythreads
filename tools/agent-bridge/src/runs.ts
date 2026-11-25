@@ -11,7 +11,8 @@ import { NO_TEAM_USERS_FULL_ACCESS } from './full-access.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
 import type { Driver, DriverJob } from './drivers/types.ts';
-import { RUN_OOM_SCORE } from './memory-watch.ts';
+import { memoryGuard } from './memory-guard.ts';
+import { cgroupMemoryWatch, RUN_OOM_SCORE, withGuardKills } from './memory-watch.ts';
 import { startChild, type ChildHandle } from './process.ts';
 import type { RunRequest } from './request.ts';
 import { KeyedQueue, type SessionStore } from './sessions.ts';
@@ -398,8 +399,12 @@ export class RunManager {
           // A team's run on a server is weighted by the root helper, which the team cannot undo (team-helper.ts `raiseForChild`); any other run's agent is weighted here.
           const child = team !== null ? team.start(o) : startChild(bin, args, { ...o, oomScore: RUN_OOM_SCORE });
           run.children.add(child);
+          // the bridge's memory guard (a pod) may stop a command below a program the bridge started itself; a team's program is another user's, and its scope has its own limit
+          const guard = team === null ? memoryGuard() : null;
+          guard?.adapterStarted(child.pid);
           // Whatever a tool left running in the run's process group (a background server, a watcher) ends with the run.
           void child.done.then(() => {
+            guard?.adapterEnded(child.pid);
             run.children.delete(child);
             child.signal('SIGKILL');
           });
@@ -409,6 +414,7 @@ export class RunManager {
           }
           return child;
         },
+        memoryWatch: () => (team !== null ? team.memoryWatch() : withGuardKills(cgroupMemoryWatch(), () => memoryGuard()?.kills() ?? 0)),
         stopped: () => run.stopRequested,
         abort: (reason) => this.stop(run, reason),
         baseEnv: () => childEnv(profile),

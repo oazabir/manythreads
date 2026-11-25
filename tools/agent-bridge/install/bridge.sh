@@ -35,6 +35,9 @@
 #   --codex-model NAME  the model every Codex run on this machine uses (default gpt-6.2-sol, owner 2026-11-20, P35-11); an empty NAME leaves it to Codex's own default
 #   --codex-effort LEVEL  the reasoning effort of every Codex run: low (the default, "light"), medium, high, xhigh or max; it wins over a bot's own effort; empty leaves it to the bot.
 #                       Like the other options, give them again on every --update (the config is written from this run's options)
+#   --run-memory SIZE   the most memory one run may use (default 4G, the most a run pod may have; it can only be lowered, to 256M at the least). With systemd 253 or later each run
+#                       is started in a scope of its own (mtruns.slice) with that limit: a command that needs more is stopped by the kernel and the run goes on (P31-04)
+#   --runs-memory SIZE  the most memory all runs together may use (the slice mtruns.slice; default 40 % of this machine's memory, can only be lowered). SIZE: 3G, 2048M or bytes
 #   --no-hermes --no-claude --no-codex --no-browser --no-publisher   leave one out (without the publisher no bot on this machine can publish)
 #
 # The hash of this script is shown on the Runners page. It is checked against the same site, so it guards against a broken download, not against a site that was taken over.
@@ -49,11 +52,11 @@ main() {
   local PLAYWRIGHT_VERSION='1.56.1'
 
   local PREFIX=/opt/manythreads-bridge ETC=/etc/manythreads-bridge DATA=/var/lib/manythreads-bridge SVC_USER=manythreads-bridge UNIT=manythreads-bridge.service
-  local UNIT_FILE=/etc/systemd/system/manythreads-bridge.service
+  local UNIT_FILE=/etc/systemd/system/manythreads-bridge.service RUNS_SLICE_FILE=/etc/systemd/system/mtruns.slice
   local HELPER_DIR="$PREFIX/helper" HELPER="$PREFIX/helper/mt-team-helper" SUDOERS=/etc/sudoers.d/manythreads-bridge AGENTS_GROUP=mt-agents TEAM_TABLE="$ETC/team-agents.json"
   local PUB_USER=manythreads-publisher PUB_UNIT=manythreads-publisher.service PUB_UNIT_FILE=/etc/systemd/system/manythreads-publisher.service PUB_SOCKET=/run/manythreads-publisher/publisher.sock PUBLISH_GROUP=mt-publish
 
-  local mode='' code='' code_file='' allow_full=1 no_full=0 old_full_flag=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha='' codex_model='gpt-6.2-sol' codex_effort='low'
+  local mode='' code='' code_file='' allow_full=1 no_full=0 old_full_flag=0 hermes_arg='' want_hermes=1 want_claude=1 want_codex=1 want_browser=1 want_publisher=1 purge=0 insecure=0 ca_sha='' codex_model='gpt-6.2-sol' codex_effort='low' run_memory='' runs_memory=''
   while [ $# -gt 0 ]; do
     case "$1" in
       --enrol) mode=enrol; shift; [ $# -gt 0 ] || die "--enrol needs a code, or - to type it"; code="$1" ;;
@@ -66,6 +69,8 @@ main() {
       --hermes-bin) shift; [ $# -gt 0 ] || die "--hermes-bin needs the path of the hermes program"; hermes_arg="$1" ;;
       --codex-model) shift; [ $# -gt 0 ] || die "--codex-model needs a model name (or '' for Codex's own default)"; codex_model="$1" ;;
       --codex-effort) shift; [ $# -gt 0 ] || die "--codex-effort needs low, medium, high, xhigh or max (or '' to leave it to the bot)"; codex_effort="$1" ;;
+      --run-memory) shift; [ $# -gt 0 ] || die "--run-memory needs a size (for example 3G)"; run_memory="$1" ;;
+      --runs-memory) shift; [ $# -gt 0 ] || die "--runs-memory needs a size (for example 6G)"; runs_memory="$1" ;;
       --no-hermes) want_hermes=0 ;;
       --no-claude) want_claude=0 ;;
       --no-codex) want_codex=0 ;;
@@ -82,6 +87,18 @@ main() {
   case "$codex_model" in '') ;; *[!A-Za-z0-9._:-]*) die "--codex-model: letters, digits and . _ : - only" ;; esac
   [ "${#codex_model}" -le 64 ] || die "--codex-model: at most 64 characters"
   case "$codex_effort" in ''|low|medium|high|xhigh|max) ;; *) die "--codex-effort must be low, medium, high, xhigh or max" ;; esac
+  # the memory of one run and of all runs (P31-04): a limit may only be lowered, never raised above the most a run pod may have (4 GiB)
+  local run_mem_bytes=4294967296 runs_mem_bytes='' b
+  if [ -n "$run_memory" ]; then
+    b="$(size_bytes "$run_memory")" || die "--run-memory: a size like 3G, 2048M or a number of bytes"
+    [ "$b" -le 4294967296 ] || die "--run-memory can only lower the limit of a run (at most 4G)"
+    [ "$b" -ge 268435456 ] || die "--run-memory: at least 256M"
+    run_mem_bytes="$b"
+  fi
+  if [ -n "$runs_memory" ]; then
+    runs_mem_bytes="$(size_bytes "$runs_memory")" || die "--runs-memory: a size like 6G, 4096M or a number of bytes"
+    [ "$runs_mem_bytes" -ge 268435456 ] || die "--runs-memory: at least 256M"
+  fi
   # the key and the code go to this address: plain http only for the tests (checked first, before anything else on the machine is looked at)
   case "$SITE" in https://*) ;; http://*) [ "$insecure" -eq 1 ] || die "the site address is not https: $SITE (the key and the code would travel in the clear)" ;; *) die "this copy of the script has no site address; download it from the Runners page" ;; esac
 
@@ -273,9 +290,36 @@ main() {
   chown root:root "$HELPER.new"
   chmod 0755 "$HELPER.new"
   mv -f "$HELPER.new" "$HELPER"
+  # a scope per run (P31-04): only where systemd-run is and systemd is 253 or later (a scope takes OOMPolicy= only from 253 on; Debian 12 has 252, Ubuntu 22.04 249). The slice
+  # mtruns.slice holds every run's scope; its MemoryMax (40 % of this machine, or --runs-memory if lower) keeps all runs together from taking the live site's memory.
+  local scope_run='' sd_version mem_kb slice_max
+  sd_version="$(systemctl --version 2>/dev/null | awk 'NR==1 { print $2 }' | tr -cd '0-9')"
+  if command -v systemd-run >/dev/null 2>&1 && [ -n "$sd_version" ] && [ "$sd_version" -ge 253 ]; then
+    scope_run="$(command -v systemd-run)"
+    mem_kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
+    slice_max=$((mem_kb * 1024 * 40 / 100))
+    if [ -n "$runs_mem_bytes" ]; then
+      [ "$runs_mem_bytes" -le "$slice_max" ] || die "--runs-memory can only lower the share of all runs (at most $((slice_max / 1048576))M on this machine)"
+      slice_max="$runs_mem_bytes"
+    fi
+    cat >"$RUNS_SLICE_FILE" <<EOF
+[Unit]
+Description=manythreads bot runs (one scope per run, each with its own memory limit)
+
+[Slice]
+MemoryAccounting=yes
+MemoryMax=$slice_max
+MemorySwapMax=0
+EOF
+    say "memory: each run may use $((run_mem_bytes / 1048576)) MiB and all runs together $((slice_max / 1048576)) MiB; a command that needs more is stopped and the run goes on"
+  else
+    rm -f "$RUNS_SLICE_FILE"
+    say "memory: no scope per run here (it needs systemd-run and systemd 253 or later); a command that runs out of memory is still the first the kernel stops"
+  fi
   # the table of programs the helper may start: it names a kind (claude, codex, hermes), never a program, so the table is the only place a path is. Codex's own program (`cli`) is
   # there for a team's own sign-in with an API key and its sign-out (P35-10b); Claude's sign-in program is its adapter's own (`--cli auth login`)
   CFG_DATA="$DATA" CFG_CLAUDE_ACP="$([ "$want_claude" -eq 1 ] && printf %s "$claude_acp")" CFG_CODEX_ACP="$([ "$want_codex" -eq 1 ] && printf %s "$codex_acp")" CFG_CODEX_CLI="$([ "$want_codex" -eq 1 ] && printf %s "$codex_bin")" CFG_HERMES_BIN="$hermes_bin" \
+    CFG_SCOPE_RUN="$scope_run" CFG_SCOPE_BYTES="$run_mem_bytes" CFG_SCOPE_UNIT="$UNIT" \
     CFG_SYNC="$PREFIX/current/tools/repo-sync.sh" CFG_BRIDGE_USER="$SVC_USER" CFG_PUBLISHER="$([ "$want_publisher" -eq 1 ] && printf %s "$PUB_USER")" CFG_PUBLISH_GROUP="$PUBLISH_GROUP" \
     "$node" -e '
       const e = process.env;
@@ -283,7 +327,8 @@ main() {
       if (e.CFG_CLAUDE_ACP) agents.claude = { command: e.CFG_CLAUDE_ACP };
       if (e.CFG_CODEX_ACP) agents.codex = { command: e.CFG_CODEX_ACP, ...(e.CFG_CODEX_CLI ? { cli: e.CFG_CODEX_CLI } : {}) };
       if (e.CFG_HERMES_BIN) agents.hermes = { command: e.CFG_HERMES_BIN, args: ["acp"] };
-      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, bridgeUser: e.CFG_BRIDGE_USER, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER, publishClientsGroup: e.CFG_PUBLISH_GROUP } : {}) };
+      const runScope = e.CFG_SCOPE_RUN ? { runScope: { systemdRun: e.CFG_SCOPE_RUN, memoryMaxBytes: Number(e.CFG_SCOPE_BYTES), bindsTo: e.CFG_SCOPE_UNIT } } : {};
+      const table = { dataRoot: e.CFG_DATA, agents, syncScript: e.CFG_SYNC, bridgeUser: e.CFG_BRIDGE_USER, ...(e.CFG_PUBLISHER ? { publisherGroup: e.CFG_PUBLISHER, publishClientsGroup: e.CFG_PUBLISH_GROUP } : {}), ...runScope };
       process.stdout.write(JSON.stringify(table, null, 2) + "\n");
     ' >"$TEAM_TABLE.new" || die "could not write the helper's table"
   chown root:root "$TEAM_TABLE.new"
@@ -534,6 +579,25 @@ move_codex_main_copy() {
 }
 
 say() { printf '%s\n' "$*"; }
+# A size in bytes: a number, or a number with K, M, G (powers of 1024; a trailing B or iB is fine). Prints nothing and fails on anything else.
+size_bytes() {
+  local v="${1%[bB]}" n unit
+  v="${v%i}"
+  case "$v" in
+    ''|*[!0-9KMGkmg]*) return 1 ;;
+  esac
+  n="${v%[KMGkmg]}"
+  unit="${v#"$n"}"
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${#n}" -le 13 ] || return 1
+  case "$unit" in
+    '') printf '%s\n' "$n" ;;
+    K|k) printf '%s\n' "$((n * 1024))" ;;
+    M|m) printf '%s\n' "$((n * 1048576))" ;;
+    G|g) printf '%s\n' "$((n * 1073741824))" ;;
+    *) return 1 ;;
+  esac
+}
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
@@ -746,7 +810,7 @@ uninstall_all() {
       || warn "the site could not be told; remove the server on the Runners page"
   fi
   systemctl disable --now manythreads-bridge.service manythreads-publisher.service >/dev/null 2>&1 || true
-  rm -f /etc/systemd/system/manythreads-bridge.service /etc/systemd/system/manythreads-publisher.service
+  rm -f /etc/systemd/system/manythreads-bridge.service /etc/systemd/system/manythreads-publisher.service /etc/systemd/system/mtruns.slice
   rm -rf /etc/systemd/system/manythreads-publisher.service.d
   systemctl daemon-reload || true
   # the sudo rule and the helper go first and always: nothing may be able to start a program as a team's user once the bridge is gone

@@ -1,9 +1,10 @@
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { posix } from 'node:path';
 import { RUN_OOM_SCORE } from './memory-watch.ts';
 import { acceptRenewed, accountOf, CODEX_AUTH_MAX_BYTES, codexTokenFacts, mainIsNewer, rebuildRenewed, refusalLine, type CodexTokenFacts } from './codex-token.ts';
-import { AGENTS_GROUP, isKind, isSlug, KINDS, launchEnv, MAX_HEADER_BYTES, parseHeader, teamCodexHome, teamHome, teamSigninDir, teamSigninRoot, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
+import { AGENTS_GROUP, isKind, isRunTag, isSlug, KINDS, launchEnv, MAX_HEADER_BYTES, parseHeader, RUNS_SLICE, runScopeUnit, teamCodexHome, teamHome, teamSigninDir, teamSigninRoot, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
 
 // The root helper of an enrolled server (PLAN P26-22, docs/plans/agents-anywhere.md section 9b). The installer puts a copy at /opt/manythreads-bridge/helper/ (root's, 0755) and a sudoers
 // rule that lets the bridge's user run exactly two commands of it:
@@ -49,7 +50,26 @@ export interface HelperConfig {
   publishClientsGroup?: string | undefined;
   /** The bridge's own user, who owns the machine's Codex sign-in (`<root>/auth/codex`): the helper reads and writes that copy as this user, never as root (P31-01). Absent: no Codex run starts. */
   bridgeUser?: string | undefined;
+  /**
+   * A systemd scope per run (P31-04, docs/plans/codex-teams-and-oom.md section 3): written by the installer only on a machine with `systemd-run` and systemd 253 or later (`OOMPolicy=`
+   * on a scope). Absent: runs start as before, weighted by `oom_score_adj` only.
+   */
+  runScope?: RunScope | undefined;
 }
+
+export interface RunScope {
+  /** The absolute path of `systemd-run`. */
+  systemdRun: string;
+  /** The most memory one run may use, in bytes (`MemoryMax` of its scope): the installer's `--run-memory`, at most 4 GiB (the Helm maximum of a run pod). */
+  memoryMaxBytes: number;
+  /** The bridge's own unit: the scope is bound to it (`BindsTo=`), so a stopped bridge stops every run it started. Absent: not bound. */
+  bindsTo?: string | undefined;
+}
+
+/** A run may never be given more than this (the Helm maximum of a run pod's container, plan section 3 (4)). */
+export const RUN_MEMORY_MAX_BYTES = 4 * 1024 ** 3;
+/** Nor less than this: a limit that small is a typing mistake, and every run would fail. */
+export const RUN_MEMORY_MIN_BYTES = 256 * 1024 ** 2;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const absolute = (v: unknown): v is string => typeof v === 'string' && posix.isAbsolute(v) && posix.normalize(v) === v && !v.includes('\0') && !v.endsWith('/') && v.length > 1;
@@ -80,9 +100,20 @@ export function parseHelperConfig(text: string): HelperConfig {
   if (clients !== undefined && (typeof clients !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(clients))) throw new Error('publishClientsGroup must be a group name');
   const bridgeUser = raw['bridgeUser'];
   if (bridgeUser !== undefined && (typeof bridgeUser !== 'string' || !/^[a-z_][a-z0-9_-]{0,31}$/.test(bridgeUser) || bridgeUser === 'root')) throw new Error('bridgeUser must be a user name other than root');
+  const scopeRaw = raw['runScope'];
+  let runScope: RunScope | undefined;
+  if (scopeRaw !== undefined) {
+    if (!isRecord(scopeRaw) || !absolute(scopeRaw['systemdRun'])) throw new Error('runScope needs the absolute path of systemd-run');
+    const max = scopeRaw['memoryMaxBytes'];
+    if (typeof max !== 'number' || !Number.isSafeInteger(max) || max < RUN_MEMORY_MIN_BYTES || max > RUN_MEMORY_MAX_BYTES) throw new Error('runScope.memoryMaxBytes must be a whole number of bytes from 256 MiB to 4 GiB');
+    const binds = scopeRaw['bindsTo'];
+    if (binds !== undefined && (typeof binds !== 'string' || !/^[a-zA-Z0-9@_.-]{1,200}\.service$/.test(binds))) throw new Error('runScope.bindsTo must be a service name');
+    runScope = { systemdRun: scopeRaw['systemdRun'], memoryMaxBytes: max, ...(typeof binds === 'string' ? { bindsTo: binds } : {}) };
+  }
   return {
     dataRoot: raw['dataRoot'],
     agents,
+    ...(runScope !== undefined ? { runScope } : {}),
     ...(typeof sync === 'string' ? { syncScript: sync } : {}),
     ...(typeof pub === 'string' ? { publisherGroup: pub } : {}),
     ...(typeof clients === 'string' ? { publishClientsGroup: clients } : {}),
@@ -230,6 +261,48 @@ export function raiseForChild(file: OomScoreFile = procOomScore): { raised: bool
 /** The words that start `argv` as the user: numeric ids, the user's other groups, and the parent-death signal so the program dies when its launcher does. */
 export function setprivArgv(setpriv: string, uid: number, gid: number, argv: readonly string[]): string[] {
   return [setpriv, '--reuid', String(uid), '--regid', String(gid), '--init-groups', '--pdeathsig', 'SIGKILL', '--', ...argv];
+}
+
+/** The kinds that are a bot's run (an adapter) and get a scope of their own; the repository sync and the sign-in kinds do not. */
+export const SCOPED_KINDS: readonly Kind[] = ['claude', 'codex', 'hermes'];
+
+/**
+ * The words that start `argv` in a scope of its own (P31-04): `systemd-run --scope` runs the program in place (the same pid, process group and signals; the helper's watch is
+ * unchanged) after systemd has moved it into `mtruns.slice/<unit>`. `MemoryMax` is the run's limit, `MemorySwapMax=0` so it is not pushed to swap first, and `OOMPolicy=continue`
+ * keeps `memory.oom.group` 0: the kernel stops the one biggest program of the run (a typecheck, a test worker), not the whole run. No `MemoryHigh` (it slows a run, never stops it).
+ * Pure: the helper builds it from its own table and a checked tag, nothing else.
+ */
+export function scopeArgv(scope: RunScope, unit: string, argv: readonly string[]): string[] {
+  if (!/^mt-run-[a-z0-9-]{1,80}\.scope$/.test(unit)) throw new Error('not a run scope unit');
+  if (!Number.isSafeInteger(scope.memoryMaxBytes) || scope.memoryMaxBytes < RUN_MEMORY_MIN_BYTES || scope.memoryMaxBytes > RUN_MEMORY_MAX_BYTES) throw new Error('the run memory limit is out of range');
+  return [
+    scope.systemdRun,
+    '--scope',
+    '--quiet',
+    '--collect',
+    `--slice=${RUNS_SLICE}`,
+    `--unit=${unit}`,
+    '-p', `MemoryMax=${scope.memoryMaxBytes}`,
+    '-p', 'MemorySwapMax=0',
+    '-p', 'OOMPolicy=continue',
+    ...(scope.bindsTo !== undefined ? ['-p', `BindsTo=${scope.bindsTo}`, '-p', `After=${scope.bindsTo}`] : []),
+    '--',
+    ...argv,
+  ];
+}
+
+/** A tag for a run whose header names none: 16 lower case hex digits. */
+export const newRunTag = (): string => randomBytes(8).toString('hex');
+
+/**
+ * Whether this run gets a scope, and its unit name: a scoped kind, a table that allows scopes, `systemd-run` present and systemd running the machine (`/run/systemd/system`, the
+ * check `sd_booted` makes). Anything else: null, and the run starts as before (weighted by `oom_score_adj` only). Pure apart from `exists`.
+ */
+export function scopeFor(cfg: HelperConfig, kind: Kind, team: string, tag: string | undefined, exists: (path: string) => boolean): { scope: RunScope; unit: string } | null {
+  const scope = cfg.runScope;
+  if (scope === undefined || !SCOPED_KINDS.includes(kind)) return null;
+  if (!exists(scope.systemdRun) || !exists('/run/systemd/system')) return null;
+  return { scope, unit: runScopeUnit(team, tag !== undefined && isRunTag(tag) ? tag : newRunTag()) };
 }
 
 const which = (candidates: readonly string[]): string | null => candidates.find((c) => existsSync(c)) ?? null;
@@ -930,7 +1003,18 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
   const shell = which(['/bin/bash', '/bin/sh']) ?? '/bin/sh';
   const env = launchEnv(header, acct.name, home, shell);
-  const [launcher, ...launcherArgs] = setprivArgv(plan.setpriv, acct.uid, acct.gid, ['/bin/sh', '-c', SH_EXEC, 'sh', program.umask, header.cwd, ...program.argv]);
+  const asTeam = setprivArgv(plan.setpriv, acct.uid, acct.gid, ['/bin/sh', '-c', SH_EXEC, 'sh', program.umask, header.cwd, ...program.argv]);
+  // P31-04: a bot's run in a scope of its own with its own memory limit, when this machine allows it and a first empty scope of the same kind starts (a machine whose systemd refuses
+  // one of the settings runs as before, weighted by oom_score_adj only)
+  let scoped = scopeFor(cfg, parsed.kind, parsed.team, header.runTag, existsSync);
+  if (scoped !== null) {
+    const probe = run(scoped.scope.systemdRun, scopeArgv(scoped.scope, scoped.unit.replace(/\.scope$/, '-probe.scope'), ['/bin/true']).slice(1), undefined, 15_000);
+    if (probe.status !== 0) {
+      say('this machine could not start a run scope; the run starts without its own memory limit');
+      scoped = null;
+    }
+  }
+  const [launcher, ...launcherArgs] = scoped !== null ? scopeArgv(scoped.scope, scoped.unit, asTeam) : asTeam;
   // the program and all it starts go first when the machine runs out of memory; the helper keeps its own value (raised just for the spawn, put back right after it)
   const oom = raiseForChild();
   if (!oom.raised) say('could not raise the run\'s out-of-memory score; it runs with the helper\'s');
@@ -986,6 +1070,8 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (codexWatch !== null) clearInterval(codexWatch);
   // whatever the program left running in its group goes with it (before the last look at the Codex copy: nothing of the run can write it after that)
   kill('SIGKILL');
+  // and whatever left the group but stayed in the run's scope (a program that started its own session): the scope is stopped, which ends everything in it
+  if (scoped !== null) run('systemctl', ['stop', '--no-block', '--', scoped.unit], undefined, 15_000);
   fixAuthFolders(cfg.dataRoot);
   if (codex !== null) {
     const c = codex;

@@ -18,6 +18,8 @@ export interface SpawnOptions {
 }
 
 export interface ChildHandle {
+  /** The process id (the guard of a pod watches what runs below it, memory-guard.ts); absent when it could not be started. */
+  readonly pid?: number | undefined;
   /** Send a signal to the whole process group. */
   signal(sig: NodeJS.Signals): void;
   /** Write to the process's stdin (only for a child started with `stdin: null`). False when it can no longer be read. */
@@ -75,6 +77,7 @@ export function startChild(bin: string, args: string[], opts: SpawnOptions): Chi
   });
 
   return {
+    pid: child.pid,
     write: (text) => {
       const stdin = child.stdin;
       if (!stdin || stdin.destroyed || stdin.writableEnded) return false;

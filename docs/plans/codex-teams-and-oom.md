@@ -218,3 +218,19 @@ already live (c1946d6b); the Coder's "run the whole suite" was already gone (P31
 - **Not built (still section 3):** a scope per run with `MemoryMax` (`systemd-run`), `mtruns.slice`, the pod guard (a container OOM still ends the pod:
   `memory.oom.group=1`), the steering line to the agent, the activity card's "out of memory" word (clients/web), the live proofs of section 7.
 
+## P31-04 step 2 as built (2026-11-25; overrides "Not built" above)
+- **A scope per run on a server:** the helper's table gains `runScope {systemdRun, memoryMaxBytes, bindsTo}`, written by the installer only with `systemd-run` and systemd ≥ 253.
+  For a bot's run (claude, codex, hermes) the helper starts `systemd-run --scope --quiet --collect --slice=mtruns.slice --unit=mt-run-<team user>-<tag>.scope -p MemoryMax=<n>
+  -p MemorySwapMax=0 -p OOMPolicy=continue -p BindsTo=<bridge unit> -p After=<bridge unit> -- <setpriv …>` (pure `scopeArgv`, `scopeFor`). It first starts an empty probe scope
+  (`/bin/true`) with the same settings: a machine whose systemd refuses one of them runs as before, weighted by `oom_score_adj` only. At the end the helper stops the scope.
+  `<tag>` is the header's new `runTag` (`^[a-z0-9]{8,32}$`, sent by `TeamRun`), so the bridge reads `/sys/fs/cgroup/mtruns.slice/<unit>/memory.events` and `memory.max`
+  (`scopeMemoryWatch`, falling back to its own group). Installer: `--run-memory` (default 4G, lower only, at least 256M), `--runs-memory` (default 40 % of MemTotal, lower only),
+  `/etc/systemd/system/mtruns.slice` with `MemoryMax`, removed at uninstall.
+- **The pod guard** (`src/memory-guard.ts`): every 500 ms the bridge reads its own group's `memory.max` and anonymous memory (`memory.stat` `anon`, else `current − inactive_file`);
+  at `≥ max − max(512 MiB, 10 %)` (3.5 GiB of 4) it SIGKILLs the largest-RSS descendant of a run's adapter, never pid 1, the bridge, an adapter, or an adapter's direct child whose
+  first words name an agent (`claude`, `codex`, `hermes`, the configured bins); 2 s between kills. Its kills count as out-of-memory kills for the frames (`withGuardKills`). With
+  limit "max" it only logs when MemAvailable < 10 %. Team runs on a server are not watched by it (another user's programs; their scope has its own limit).
+- **The card:** a `tool_result` line keeps `reason: 'out_of_memory'`; the run card's step says "Out of memory" where it would say "Failed".
+- **Still to measure live:** that `systemd-run` from the helper (started by sudo inside the bridge's sandboxed unit) creates the scope and that `BindsTo=` is accepted (the probe
+  falls back if not); the process tree of a Claude and a Codex run in a pod (is a Codex command a direct child of `codex-acp`?); the container OOM test of section 7.
+

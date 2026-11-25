@@ -27,6 +27,8 @@ export interface StepRow {
   diff: RunDiff | null;
   /** The step waited for a person's yes or no: its answer, said on the step's own line (one line per step, not a second row). */
   answer?: QuestionRow['outcome'];
+  /** A failed command that was stopped for using more memory than the run may (P31-04): the line says "Out of memory" instead of "Failed". */
+  outOfMemory?: true;
 }
 
 export interface GroupRow {
@@ -108,6 +110,7 @@ interface Draft {
   seconds: number | null;
   diff: RunDiff | null;
   answer?: QuestionRow['outcome'];
+  outOfMemory?: true;
 }
 
 interface Agent {
@@ -117,18 +120,21 @@ interface Agent {
   steps: number;
 }
 
+/** "Out of memory" is said only on a step that failed. */
+const oom = (d: Draft): { outOfMemory?: true } => (d.status === 'failed' && d.outOfMemory === true ? { outOfMemory: true } : {});
+
 function toRow(d: Draft): StepRow {
   // a call to a tool by its raw name ("mcp__manythreads__tasks_claim"; Codex marks it a command) says what it did, in plain words
   const tool = toolPhrase(d.title, d.status === 'working' ? 'now' : 'past');
   if (tool !== null) {
     const kind: RunStepKind = d.kind === 'execute' ? 'other' : d.kind;
-    return { type: 'step', id: d.id, kind, text: tool, code: null, files: [], status: d.status, seconds: d.seconds, diff: d.diff, ...(d.answer !== undefined ? { answer: d.answer } : {}) };
+    return { type: 'step', id: d.id, kind, text: tool, code: null, files: [], status: d.status, seconds: d.seconds, diff: d.diff, ...(d.answer !== undefined ? { answer: d.answer } : {}), ...oom(d) };
   }
   // a command reads "Ran pnpm" (or "Running pnpm" while it runs): the program in mono, said once
   const code = d.kind === 'execute' ? commandOf(d.title) : null;
   const text = d.kind === 'execute' ? (d.status === 'working' ? (code !== null ? 'Running' : 'Running a command') : code !== null ? 'Ran' : 'Ran a command') : sentence(d.kind, d.title, d.paths);
   const files = d.paths.map(baseName).filter((f, i, all) => f !== '' && all.indexOf(f) === i && !text.includes(f)).slice(0, 3);
-  return { type: 'step', id: d.id, kind: d.kind, text, code, files, status: d.status, seconds: d.seconds, diff: d.diff, ...(d.answer !== undefined ? { answer: d.answer } : {}) };
+  return { type: 'step', id: d.id, kind: d.kind, text, code, files, status: d.status, seconds: d.seconds, diff: d.diff, ...(d.answer !== undefined ? { answer: d.answer } : {}), ...oom(d) };
 }
 
 /** What a question asked to do: "Run" and the program, or its title as a phrase. */
@@ -195,6 +201,7 @@ export function buildRows(items: readonly RunActivityItem[]): Row[] {
         const d = steps.get(p.stepId);
         if (!d) return;
         d.status = p.ok ? 'done' : 'failed';
+        if (!p.ok && p.reason === 'out_of_memory') d.outOfMemory = true;
         if (p.title !== undefined) d.title = p.title;
         if (p.paths !== undefined) d.paths = [...p.paths];
         if (p.seconds !== undefined) d.seconds = p.seconds;

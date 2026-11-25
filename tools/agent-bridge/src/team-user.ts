@@ -107,7 +107,26 @@ export interface LaunchHeader {
    * Absent: one sign-in for all teams, and a team's own folder is refused for a run. The bridge chooses it; a leftover `.signin` folder never decides it.
    */
   signIn?: 'per_team' | undefined;
+  /**
+   * The run's own short name (P31-04): on a server where the helper starts each run in a systemd scope of its own, the scope is `mt-run-<team user>-<runTag>.scope` in
+   * `mtruns.slice`, so the bridge knows where the run's memory and its out-of-memory count are. Lower case letters and digits, 8 to 32. Absent: the helper picks one.
+   */
+  runTag?: string | undefined;
 }
+
+/** A run's tag as the header may carry it: lower case letters and digits, 8 to 32 (it becomes part of a systemd unit name). */
+export const RUN_TAG = /^[a-z0-9]{8,32}$/;
+export const isRunTag = (v: unknown): v is string => typeof v === 'string' && RUN_TAG.test(v);
+
+/** The slice every run's scope sits in (P31-04): its own `MemoryMax` (a share of the machine) keeps all runs together from taking the live site's memory. */
+export const RUNS_SLICE = 'mtruns.slice';
+/** The systemd unit of one run's scope: `mt-run-<team user>-<tag>.scope`. Built from the slug and the tag only, both checked here. */
+export function runScopeUnit(team: string, tag: string): string {
+  if (!isRunTag(tag)) throw new Error('not a run tag');
+  return `mt-run-${teamUserName(team)}-${tag}.scope`;
+}
+/** The cgroup v2 folder of a run's scope, where the bridge reads `memory.events` (its `oom_kill`) and `memory.max`. */
+export const runScopeCgroupDir = (team: string, tag: string): string => posix.join('/sys/fs/cgroup', RUNS_SLICE, runScopeUnit(team, tag));
 
 export const MAX_HEADER_BYTES = 2 * 1024 * 1024;
 const MAX_FILES = 16;
@@ -226,15 +245,17 @@ export function parseHeader(line: string, ctx: HeaderContext): HeaderResult {
   const removeRaw = raw['removeAtEnd'] ?? [];
   if (!Array.isArray(removeRaw) || removeRaw.length > MAX_FILES || removeRaw.some((p) => !plainPath(p) || !isInside(home, p))) return { ok: false, error: 'removeAtEnd must be a short list of paths inside the team\'s home' };
   if (removeRaw.some((p) => touchesSignin(ctx.root, ctx.team, p as string))) return { ok: false, error: 'the team\'s own sign-in folder is not removed at the end of a run' };
-  return { ok: true, header: { v: 1, cwd, env, files, removeAtEnd: removeRaw as string[], ...(perTeam ? { signIn: 'per_team' as const } : {}) }, dropped };
+  const runTag = raw['runTag'];
+  if (runTag !== undefined && !isRunTag(runTag)) return { ok: false, error: 'runTag must be 8 to 32 lower case letters and digits' };
+  return { ok: true, header: { v: 1, cwd, env, files, removeAtEnd: removeRaw as string[], ...(perTeam ? { signIn: 'per_team' as const } : {}), ...(runTag !== undefined ? { runTag } : {}) }, dropped };
 }
 
 /** The header the bridge writes as the first line of the helper's standard input. The names the helper would drop are dropped here already, so the helper's list of `dropped` is empty in a healthy run. */
-export function buildHeader(input: { cwd: string; env: NodeJS.ProcessEnv; files?: LaunchFile[]; removeAtEnd?: string[]; kind: Kind; signIn?: 'per_team' | undefined }): string {
+export function buildHeader(input: { cwd: string; env: NodeJS.ProcessEnv; files?: LaunchFile[]; removeAtEnd?: string[]; kind: Kind; signIn?: 'per_team' | undefined; runTag?: string | undefined }): string {
   const allow = input.kind === 'sync' ? SYNC_ENV : ENV_ALLOW;
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(input.env)) if (v !== undefined && allow.test(k)) env[k] = v;
-  const header: LaunchHeader = { v: 1, cwd: input.cwd, env, files: input.files ?? [], removeAtEnd: input.removeAtEnd ?? [], ...(input.signIn !== undefined ? { signIn: input.signIn } : {}) };
+  const header: LaunchHeader = { v: 1, cwd: input.cwd, env, files: input.files ?? [], removeAtEnd: input.removeAtEnd ?? [], ...(input.signIn !== undefined ? { signIn: input.signIn } : {}), ...(input.runTag !== undefined ? { runTag: input.runTag } : {}) };
   return JSON.stringify(header);
 }
 

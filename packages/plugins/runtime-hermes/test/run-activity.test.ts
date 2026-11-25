@@ -76,6 +76,23 @@ describe('ActivityFold: lines', () => {
     expect(fold.counts()).toMatchObject({ steps: 2, failed: 1, commands: 1 });
   });
 
+  it('keeps "out of memory" on the closing line of a command stopped for memory (P31-04), and no other reason', () => {
+    const fold = new ActivityFold();
+    const rows = feed(
+      fold,
+      tool('s1', 'execute', 'pnpm typecheck'),
+      done('s1', false, { reason: 'out of memory' }),
+      tool('s2', 'execute', 'pnpm test'),
+      done('s2', false, { reason: 'the tool reported an error' }),
+      tool('s3', 'execute', 'ls'),
+      done('s3', true, { reason: 'out of memory' }),
+    );
+    expect(rows[1]!.payload).toEqual({ kind: 'tool_result', stepId: 's1', ok: false, reason: 'out_of_memory' });
+    expect(rows[3]!.payload).not.toHaveProperty('reason');
+    expect(rows[5]!.payload).not.toHaveProperty('reason');
+    for (const r of rows) expect(RunActivityPayload.safeParse(r.payload).success, JSON.stringify(r.payload)).toBe(true);
+  });
+
   it('a title that changed after the first line is repeated on the closing line; one that did not is not', () => {
     const fold = new ActivityFold();
     const rows = feed(fold, tool('s1', 'read', 'Read'), { type: 'step', stepId: 's1', title: 'Read src/a.ts', paths: ['src/a.ts'] }, done('s1'));
