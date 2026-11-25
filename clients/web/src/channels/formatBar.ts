@@ -35,12 +35,39 @@ export function useComposerFocus(root: RefObject<HTMLElement | null>): {
   const pressing = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onFocus = useCallback(() => setInside(true), []);
+  // a press outside the box (a message's Reply button) moves focus away on its mousedown; folding the bar then would move the list under the press, so the fold waits for the release
+  const pointerDown = useRef(false);
+  const foldAfterPress = useRef(false);
   const onBlur = useCallback(
     (e: FocusEvent) => {
-      if (!focusStaysInside(e.relatedTarget, root.current, pressing.current)) setInside(false);
+      if (focusStaysInside(e.relatedTarget, root.current, pressing.current)) return;
+      if (pointerDown.current) foldAfterPress.current = true;
+      else setInside(false);
     },
     [root],
   );
+  useEffect(() => {
+    const down = (): void => {
+      pointerDown.current = true;
+    };
+    const up = (): void => {
+      pointerDown.current = false;
+      if (!foldAfterPress.current) return;
+      foldAfterPress.current = false;
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        if (!stillInside(document.activeElement, root.current)) setInside(false);
+      }, 0);
+    };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+  }, [root]);
   const onPointerDown = useCallback(() => {
     pressing.current = true;
     const end = (): void => {

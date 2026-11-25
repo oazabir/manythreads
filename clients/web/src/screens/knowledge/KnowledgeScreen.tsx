@@ -37,7 +37,7 @@ export function KnowledgeScreen() {
         description={personal ? 'Files and notes only you can search. Brain reads them when you ask it in a private conversation.' : 'The documents a team’s bots can search.'}
         actions={space}
       />
-      <FilesShortcuts teams={teams} />
+      {personal ? null : <FilesShortcuts teams={teams} />}
       {personal ? <PersonalKnowledge /> : <TeamKnowledge slug={team} />}
     </section>
   );

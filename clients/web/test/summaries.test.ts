@@ -274,6 +274,11 @@ describe('upNext', () => {
     expect(rows.shown[0]?.meta).not.toContain('Sam');
   });
 
+  it('keeps a call that runs past its planned end, with Join', () => {
+    const rows = upNext({ ...base, appointments: [appt({ id: 'long', liveMeetingId: 'm9', startsAt: at(-45), endsAt: at(-15) })] });
+    expect(rows.shown.map((r) => [r.appointmentId, r.joinable, r.tag?.text])).toEqual([['long', true, 'Live now']]);
+  });
+
   it('names the team only when there are several', () => {
     const one = upNext({ ...base, appointments: [appt({})] }).shown[0]?.meta;
     const many = upNext({ ...base, manyTeams: true, appointments: [appt({})] }).shown[0]?.meta;

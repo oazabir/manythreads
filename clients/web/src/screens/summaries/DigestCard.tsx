@@ -95,12 +95,12 @@ export function DigestCard({
           <h2 className="sm-card-title" id={headingId}>{title}</h2>
           {note && state === 'ready' ? <p className="sm-card-note" data-vt-mask>{note}</p> : null}
         </div>
-        {count !== null && state === 'ready' ? <span className="sm-count" data-testid="summaries-count" aria-label={`${count} in all`}>{count}</span> : null}
+        {count !== null && state === 'ready' ? <span className="sm-count" data-testid="summaries-count"><span aria-hidden="true">{count}</span><span className="sr-only">{`${count} in all`}</span></span> : null}
       </header>
       {state === 'loading' ? (
         <SkeletonRows rows={3} label={`Loading ${title.toLowerCase()}`} />
       ) : state === 'error' ? (
-        <div className="sm-problem" role="alert" data-testid="summaries-error">
+        <div className="sm-problem" role="status" data-testid="summaries-error">
           <p>This could not be loaded just now.</p>
           <button type="button" className="btn s" onClick={onRetry}>Try again</button>
         </div>

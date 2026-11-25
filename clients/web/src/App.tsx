@@ -87,6 +87,12 @@ function ExpiredRoute() {
   return <ExpiredLinkPage kind={kind === 'bootstrap' ? 'bootstrap' : kind === 'reset' ? 'reset' : 'invitation'} />;
 }
 
+/** `/t/<team>/meetings/space` without a space is the list of meetings. */
+function MeetingsListRedirect() {
+  const { team = '' } = useParams();
+  return <Navigate to={`/t/${team}/meetings`} replace />;
+}
+
 /** The Jobs page used to live at `/t/<team>/rhythms`; bookmarks and old links still arrive there. */
 function OldJobsAddress() {
   const { team = '' } = useParams();
@@ -142,6 +148,7 @@ function AppRoutes() {
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
             <Route path="/t/:team/meetings" element={<RequireTeam><MeetingsInbox /></RequireTeam>} />
+            <Route path="/t/:team/meetings/space" element={<MeetingsListRedirect />} />
             <Route path="/t/:team/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
             <Route path="/join/:scheduledId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><JoinScheduled /></Suspense>} />
             <Route path="/memory" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense>} />

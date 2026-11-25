@@ -15,7 +15,8 @@ import { levelOf } from '../../notifications/settingsModel';
 import { notificationStore } from '../../notifications/store';
 import { useNotifications } from '../../notifications/useNotifications';
 import { useChannelFeed } from '../../shell/channelFeed';
-import { dmPath } from '../../shell/messageLink';
+import { useMeetingSpaces } from '../../meetings/spaces';
+import { dmPath, meetingPath } from '../../shell/messageLink';
 import { channelPath } from '../../shell/nav';
 import { fetchActionItems } from '../files/actionItems/actionItemsApi';
 import { fetchApprovals } from '../approvals/api';
@@ -93,6 +94,7 @@ export function useSummaries(slug: string, now: Date): SummariesData {
     void levelsStore.load();
   }, []);
   const drafts = useDraftPlaces().length;
+  const spaces = useMeetingSpaces();
   const selfId = session.person.id;
   const keepGoingData = useMemo(() => {
     const groups = feed.status === 'ok' ? feed.groups : [];
@@ -101,6 +103,7 @@ export function useSummaries(slug: string, now: Date): SummariesData {
     const where = new Map<string, string>([
       ...groups.flatMap((g) => g.channels.map((c): [string, string] => [c.id, channelPath(slug, c.name)])),
       ...dmItems.map((d): [string, string] => [d.channel.id, dmPath(slug, d.channel.id)]),
+      ...(spaces.status === 'ok' ? spaces.data.spaces.map((s): [string, string] => [s.channelId, meetingPath(slug, s.channelId)]) : []),
     ]);
     return {
       ready: feed.status !== 'loading' && dms.status !== 'loading',
@@ -110,7 +113,7 @@ export function useSummaries(slug: string, now: Date): SummariesData {
       drafts,
       roomPath: (channelId: string): string | null => where.get(channelId) ?? null,
     };
-  }, [feed, dms, slug, unread, selfId, levels, drafts]);
+  }, [feed, dms, slug, unread, selfId, levels, drafts, spaces]);
 
   const reloadAll = useCallback(() => {
     setTick((t) => t + 1);

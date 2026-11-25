@@ -12,7 +12,7 @@ A page at `/t/<team>/summaries`, the first entry of the sidebar (order 2, ahead 
 | Waiting on your reply | threads where someone asked for the person by name (the longest wait first), then threads with new replies | Threads |
 | Recent activity | unread mentions, replies, direct messages and invitations, newest first, without the threads already in the card above | Activity |
 | Up next | calls going now (with Join), then the meetings of the next seven days (Join from ten minutes before) | Schedule |
-| Keep going | chips for the channels and conversations with something new, opened lately or active in the last three days; unsent drafts | Chat |
+| Keep going | chips for the channels and conversations with something new, opened lately or active in the last three days; unsent drafts | (none: the chips are the way in) |
 
 Each card shows its count large, at most five rows (the footer says how many more), a friendly line when it is empty, grey rows while it loads, and a plain "could not be loaded, Try again" that stays inside its own card. A row is one whole link (hover and focus show it); there are no underlined links in the rows.
 

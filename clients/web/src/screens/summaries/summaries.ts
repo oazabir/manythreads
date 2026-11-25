@@ -61,7 +61,7 @@ export function agoWords(iso: string, now: Date): string {
   if (ms < MS.minute) return 'just now';
   if (ms < MS.hour) return `${plural(Math.floor(ms / MS.minute), 'minute')} ago`;
   if (ms < MS.day) return `${plural(Math.floor(ms / MS.hour), 'hour')} ago`;
-  const days = Math.floor((startOfDay(now).getTime() - startOfDay(new Date(t)).getTime()) / MS.day);
+  const days = Math.round((startOfDay(now).getTime() - startOfDay(new Date(t)).getTime()) / MS.day);
   if (days <= 1) return 'yesterday';
   if (days < 14) return `${plural(days, 'day')} ago`;
   if (days < 60) return `${plural(Math.floor(days / 7), 'week')} ago`;
@@ -349,7 +349,7 @@ export function upNext(input: UpNextInput): Trimmed<UpNextRow> {
       }),
     );
   const meetings = input.appointments
-    .filter((a) => a.status === 'scheduled' && Date.parse(a.endsAt) > t && Date.parse(a.startsAt) < horizon)
+    .filter((a) => a.status === 'scheduled' && (Date.parse(a.endsAt) > t || a.liveMeetingId) && Date.parse(a.startsAt) < horizon)
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
     .map((a): UpNextRow => {
       const tag = a.liveMeetingId ? ({ text: 'Live now', tone: 'live' } as const) : startsIn(a.startsAt, a.endsAt, now);
@@ -361,7 +361,7 @@ export function upNext(input: UpNextInput): Trimmed<UpNextRow> {
         to: `/t/${encodeURIComponent(slug)}/schedule?appointment=${encodeURIComponent(a.id)}`,
         ...(tag ? { tag } : {}),
         appointmentId: a.id,
-        joinable: joinable(a, t),
+        joinable: a.liveMeetingId ? true : joinable(a, t),
       };
     });
   // a meeting whose call is going stays among the live ones at the top
