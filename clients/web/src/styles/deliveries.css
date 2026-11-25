@@ -13,6 +13,124 @@
   padding: 12px 24px 32px;
 }
 
+/* the deliveries are cards: the title is the one link (plain ink, underlined on hover), the facts are muted, and a pill appears only for a failed run or a pull request */
+.dl-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.dl-head {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dl-title {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.dl-title:hover {
+  text-decoration: underline;
+}
+
+.dl-title:focus-visible,
+a.dl-pill:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.dl-sub {
+  display: block;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+.dl-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dl-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.dl-pill:hover {
+  border-color: var(--mute);
+  color: var(--ink);
+}
+
+.dl-pill[data-state="merged"] {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.dl-pill[data-state="closed"],
+.dl-pill[data-tone="bad"] {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.dl-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.dl-fact {
+  min-width: 0;
+}
+
+.dl-fact dt {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.dl-fact dd {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.dl-tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
 .dl-table {
   width: 100%;
   border-collapse: collapse;
@@ -21,31 +139,21 @@
 
 .dl-table th,
 .dl-table td {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--rule);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
   text-align: left;
   vertical-align: top;
+  white-space: nowrap;
+}
+
+.dl-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .dl-table th {
   color: var(--mute);
   font-size: var(--fs-caption);
   font-weight: 600;
-}
-
-.dl-title a {
-  font-weight: 600;
-}
-
-.dl-sub {
-  display: block;
-  color: var(--faint);
-  font-size: var(--fs-caption);
-}
-
-.dl-pr {
-  display: block;
-  white-space: nowrap;
 }
 
 .dl-bad {
@@ -70,5 +178,13 @@
   .dl-body {
     padding: 8px 12px 24px;
     overflow-x: auto;
+  }
+
+  .dl-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dl-title {
+    padding-block: 6px;
   }
 }
