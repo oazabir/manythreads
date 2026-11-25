@@ -1,5 +1,5 @@
 import type { MeetingRunsProvider, PluginContext, PluginEvent, PluginTx, ProviderImpl } from '@manythreads/sdk';
-import { ChannelMessagePostedEvent, MEETING_QUESTIONS_PER_MINUTE, MEETING_SEGMENT_TEXT_MAX } from '@manythreads/shared';
+import { ChannelMessagePostedEvent, MEETING_ASK_PUSH, MEETING_ASK_QUESTION_MAX, MEETING_QUESTIONS_PER_MINUTE, MEETING_SEGMENT_TEXT_MAX, MeetingAskPush } from '@manythreads/shared';
 import { z } from 'zod';
 import { pushCaption } from './captions.ts';
 import { WindowCounter, stripHostileText } from './limits.ts';
@@ -17,6 +17,9 @@ import { botActorOf, postAsBot } from './notes-access.ts';
 //
 // Rules held in every step: a question is never taken from, or answered for, a person who did not say yes to being transcribed (the scan sees only the words of those who
 // did, and the job asks again); one question at a time per room (`serialKey`); six a minute per room; a stale question (older than two minutes) is dropped, not answered late.
+//
+// A question typed into the call's Ask panel (P17-06, `source: 'panel'`) takes the same job after step 1, as a thread mention does: it was addressed on purpose, so no model
+// checks it. The asker is told how it went on their own tabs (`meeting.ask`), whatever the outcome, so the panel never waits for nothing.
 
 export const QUESTION_QUEUE = 'meetings.question';
 
@@ -112,11 +115,14 @@ const Payload = z.object({
   botId: z.uuid(),
   /** When the line was taken (ISO 8601). */
   askedAt: z.iso.datetime(),
-  source: z.enum(['speech', 'thread']),
+  source: z.enum(['speech', 'thread', 'panel']),
   /** For speech: where in the call the line ended, so the check can read the minute before it. */
   lineEndMs: z.number().int().min(0).default(0),
   /** For a thread mention: the message. */
   messageId: z.uuid().nullable().default(null),
+  /** For the Ask panel (P17-06): the question as typed, and the id the panel waits on. */
+  question: z.string().max(MEETING_ASK_QUESTION_MAX).nullable().default(null),
+  askId: z.uuid().nullable().default(null),
 });
 type Payload = z.infer<typeof Payload>;
 
@@ -152,6 +158,8 @@ export async function noteQuestions(
       source: 'speech',
       lineEndMs: hit.endMs,
       messageId: null,
+      question: null,
+      askId: null,
     };
     await ctx.jobs.enqueue(tx, QUESTION_QUEUE, payload, { dedupeKey: `question:${room.id}:${hit.clientSegId}` });
     await tx.query('RELEASE SAVEPOINT meeting_question');
@@ -255,7 +263,10 @@ async function readAsked(tx: PluginTx, p: Payload): Promise<Asked | null> {
 
   let lines: string[] = [];
   let mentionText: string | null = null;
-  if (p.source === 'thread') {
+  if (p.source === 'panel') {
+    mentionText = stripHostileText(p.question ?? '').slice(0, MEETING_ASK_QUESTION_MAX);
+    if (mentionText === '') return null;
+  } else if (p.source === 'thread') {
     const msg = (await tx.query<{ body_plain: string; author_id: string }>('SELECT left(body_plain, 2000) AS body_plain, author_id FROM app.messages WHERE id = $1::uuid AND deleted_at IS NULL', [p.messageId])).rows[0];
     if (!msg || msg.author_id !== p.askerActorId) return null;
     mentionText = stripHostileText(msg.body_plain).slice(0, 1500);
@@ -290,6 +301,37 @@ async function readAsked(tx: PluginTx, p: Payload): Promise<Asked | null> {
 
 export type QuestionOutcome = 'answered' | 'dropped' | 'not_a_question' | 'limited' | 'refused' | 'failed';
 
+/** What a panel question that was not answered tells its asker, by outcome (the other outcomes say their own sentence). */
+const PANEL_DROPPED = 'The note-taker could not take your question: the call moved on, or you left it. Ask again.';
+
+/**
+ * Tells the person who typed a question in the Ask panel how it went (P17-06), on their own tabs only. Never throws: the answer is in the thread whatever happens here.
+ * The person is looked up from the actor, so a question dropped before anything else was read is still answered.
+ */
+export async function tellAsker(
+  ctx: PluginContext,
+  job: { transaction: <T>(fn: (tx: PluginTx) => Promise<T>) => Promise<T> },
+  ask: { meetingId: string; askId: string; askerActorId: string; answererName: string },
+  state: 'asking' | 'answered' | 'failed',
+  text: string,
+  question = '',
+): Promise<void> {
+  try {
+    await job.transaction(async (inner) => {
+      const person = (await inner.query<{ ref_id: string }>(`SELECT ref_id::text AS ref_id FROM app.actors WHERE id = $1::uuid AND kind = 'person'`, [ask.askerActorId])).rows[0];
+      if (!person) return;
+      await ctx.realtime.pushToPerson(
+        inner,
+        person.ref_id,
+        MEETING_ASK_PUSH,
+        MeetingAskPush.parse({ meetingId: ask.meetingId, askId: ask.askId, state, answererName: ask.answererName.slice(0, 200), text: text.slice(0, 4000), question: question.slice(0, MEETING_ASK_QUESTION_MAX) }),
+      );
+    });
+  } catch {
+    // a push is a courtesy: the panel also stops waiting after a while
+  }
+}
+
 /** The job's body, exported for the tests. */
 export async function answerQuestion(
   ctx: PluginContext,
@@ -298,11 +340,36 @@ export async function answerQuestion(
   raw: unknown,
 ): Promise<QuestionOutcome> {
   const p = Payload.parse(raw);
+  let outcome: QuestionOutcome;
+  try {
+    outcome = await answerQuestionInner(ctx, tx, job, p);
+  } catch (err) {
+    // a question typed in the panel always hears back, whatever broke (P17-06)
+    job.log.warn(`meetings: the question job for ${p.meetingId} threw: ${err instanceof Error ? err.message.slice(0, 200) : 'unknown'}`);
+    if (p.askId !== null) await tellAsker(ctx, job, { meetingId: p.meetingId, askId: p.askId, askerActorId: p.askerActorId, answererName: 'The note-taker' }, 'failed', 'The note-taker could not answer. Ask again.');
+    return 'failed';
+  }
+  if (p.askId !== null && (outcome === 'dropped' || outcome === 'not_a_question')) {
+    await tellAsker(ctx, job, { meetingId: p.meetingId, askId: p.askId, askerActorId: p.askerActorId, answererName: 'The note-taker' }, 'failed', PANEL_DROPPED);
+  }
+  return outcome;
+}
+
+async function answerQuestionInner(
+  ctx: PluginContext,
+  tx: PluginTx,
+  job: { transaction: <T>(fn: (tx: PluginTx) => Promise<T>) => Promise<T>; log: { info(msg: string): void; warn(msg: string): void } },
+  p: Payload,
+): Promise<QuestionOutcome> {
   const now = ctx.runtime.now();
   if (now.getTime() - Date.parse(p.askedAt) > QUESTION_STALE_MS) return 'dropped';
   const asked = await job.transaction((inner) => readAsked(inner, p));
   if (asked === null) return 'dropped';
 
+  /** The panel's asker hears the outcome on their own tabs too (P17-06). */
+  const tell = async (state: 'answered' | 'failed', text: string): Promise<void> => {
+    if (p.askId !== null) await tellAsker(ctx, job, { meetingId: p.meetingId, askId: p.askId, askerActorId: p.askerActorId, answererName: asked.botName }, state, text);
+  };
   const say = async (text: string): Promise<void> => {
     const botActor = await job.transaction((inner) => botActorOf(inner, p.botId));
     await pushCaption(
@@ -325,7 +392,7 @@ export async function answerQuestion(
 
   // 2. the check: a line that only mentions the note-taker is not a question for it. A thread @mention is addressed on purpose, so it is taken as written.
   let question: string;
-  if (p.source === 'thread') {
+  if (p.source === 'thread' || p.source === 'panel') {
     question = asked.mentionText!;
   } else {
     const llm = ctx.providers.get<CheckDoor>('llm');
@@ -360,13 +427,16 @@ export async function answerQuestion(
   // 3. six a minute per room, counted only for real questions
   const wait = questionLimiter.take(p.meetingId, 1, MEETING_QUESTIONS_PER_MINUTE, now.getTime());
   if (wait !== null) {
-    await say(`${asked.botName} can answer ${MEETING_QUESTIONS_PER_MINUTE} questions a minute in a call. Ask again in ${wait} seconds.`);
+    const text = `${asked.botName} can answer ${MEETING_QUESTIONS_PER_MINUTE} questions a minute in a call. Ask again in ${wait} seconds.`;
+    await say(text);
+    await tell('failed', text);
     return 'limited';
   }
 
   const runs = ctx.providers.get<MeetingRunsProvider>('meeting.runs');
   if (!runs || asked.botTeamId === null) {
     await say(`${asked.botName} cannot answer questions in this workspace yet.`);
+    await tell('failed', `${asked.botName} cannot answer questions in this workspace yet.`);
     return 'failed';
   }
   // the channels everyone in the call may read, each taken as that person; checked again now (people come and go while the check runs)
@@ -383,6 +453,10 @@ export async function answerQuestion(
       askerId: p.askerActorId,
       channelIds,
       transaction: job.transaction,
+      // a question typed in the Ask panel (P17-06) is not one said out loud; the prompt says so
+      typed: p.source === 'panel',
+      // the run's searches are held to the call's own channel, before they read (gateway-mcp meeting-runs.ts)
+      roomChannelId: asked.channelId,
     });
   } catch (err) {
     job.log.warn(`meetings: the answer run for ${p.meetingId} threw: ${err instanceof Error ? err.message.slice(0, 200) : 'unknown'}`);
@@ -390,11 +464,13 @@ export async function answerQuestion(
   }
   if (result.outcome !== 'answered') {
     await say(result.message.slice(0, 500));
+    await tell('failed', result.message.slice(0, 500));
     return result.outcome === 'failed' && /everyone in the call may read/.test(result.message) ? 'refused' : 'failed';
   }
 
   // the people in the call see the answer on their screens; the thread keeps it
   await say(result.body);
+  await tell('answered', result.body);
   if (asked.channelId !== null) {
     const botActor = await job.transaction((inner) => botActorOf(inner, p.botId));
     if (botActor !== null) {
@@ -455,6 +531,8 @@ export function registerQuestions(ctx: PluginContext): void {
       source: 'thread',
       lineEndMs: 0,
       messageId: e.messageId,
+      question: null,
+      askId: null,
     };
     await ctx.jobs.enqueue(tx, QUESTION_QUEUE, payload, { dedupeKey: `question:${room.id}:msg:${e.messageId}` });
   });

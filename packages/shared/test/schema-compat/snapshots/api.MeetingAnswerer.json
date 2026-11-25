@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "brain",
+        "notetaker"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "kind",
+    "name"
+  ]
+}

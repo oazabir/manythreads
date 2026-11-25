@@ -237,3 +237,4 @@ export type MeetingPeopleResponse = z.infer<typeof MeetingPeopleResponse>;
 export const meetingPeopleRoute = { method: 'GET', path: '/api/meetings/people' } as const;
 export * from './appointments.ts';
 export * from './series.ts';
+export * from './assistant.ts';

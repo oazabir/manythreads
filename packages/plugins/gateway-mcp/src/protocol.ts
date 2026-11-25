@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { askForApproval } from './approval.ts';
 import { authorizeContext, definitionOf, interceptTarget, type ToolDefinition } from './catalog.ts';
 import { confineRunWrite, spacesFor, withRunSpaces } from './spaces.ts';
+import { ROOM_SCOPED_READS, isMeetingAnswerRun, keepRoomHits, meetingBudgetSentence, meetingRunRefusal, meetingToolBudgetUsed, roomChannelOf, widenForRoom } from './meeting-runs.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
 import { forcePersonalNotes, hiddenToolSentence, personalRoutineHidesTool, personalRoutineHoldsWrite, toolBudgetSentence, toolBudgetUsed } from './personal-routine.ts';
@@ -111,6 +112,8 @@ export async function offeredTools(ctx: PluginContext, run: BotRunHandle): Promi
     if (owner && !fromSources.get(owner.source.id)?.has(tool.name)) continue;
     // a personal routine's reply is its output file: the reply tool of a conversation is not offered (personal-routine.ts)
     if (personalRoutineHidesTool(run, tool.name)) continue;
+    // a run that answers in a call is offered only the tools that can answer inside the room (meeting-runs.ts)
+    if (meetingRunRefusal(run, tool.name) !== null) continue;
     // the run's token was resolved (it is `running`) a moment ago, in this request: no liveness read per capability
     const decision = await ctx.runs.may(run, tool.name, {}, { alreadyLive: true });
     if (!decision.allowed) continue;
@@ -185,6 +188,10 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   if (personalRoutineHidesTool(run, params.name)) return refusal(run, params.name, { ok: false, code: 'not_available', message: hiddenToolSentence(params.name) });
   // a personal routine has a budget of tool calls (personal-routine.ts)
   if (await toolBudgetUsed(ctx, run)) return refusal(run, params.name, { ok: false, code: 'forbidden', message: toolBudgetSentence() });
+  // a run that answers in a live call: only the tools that can answer inside the room, and a bounded number of them (meeting-runs.ts, P17-06)
+  const notInCall = meetingRunRefusal(run, params.name);
+  if (notInCall) return refusal(run, params.name, { ok: false, ...notInCall });
+  if (await meetingToolBudgetUsed(ctx, run)) return refusal(run, params.name, { ok: false, code: 'forbidden', message: meetingBudgetSentence() });
   // The one place a secret is handed from one bot to the next on purpose (P26-03): the sealed field of a call is not read by the data-loss check on its way in, and the
   // answer of its reading tool is not read on its way out. Both would otherwise turn a password into a redaction marker (or refuse the call), and the next bot would be
   // given nothing it can use. The field is kept out of everything that is stored or shown on the way (the decision line, an approval card, a rehearsal) and put
@@ -292,8 +299,11 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   if (definition.kind === 'read') {
     let answer: unknown;
     try {
+      // a search of a run in a call answers only hits of the call's own channel, before the model or the source log sees anything (meeting-runs.ts)
+      const room = isMeetingAnswerRun(run) && ROOM_SCOPED_READS.has(params.name) ? { channel: await roomChannelOf(ctx, run), ...widenForRoom(params.name, input) } : null;
       answer = await ctx.runs.asReader(run, async (tx) => {
-        const result = await ctx.runs.invoke(tx, params.name, withSealed(input));
+        const raw = await ctx.runs.invoke(tx, params.name, withSealed(room ? room.input : input));
+        const result = room ? keepRoomHits(raw, room.channel, room.keep) : raw;
         // The source log is what "Sources reached" and the retention rule stand on: one line per hit the call answered with.
         for (const source of definition.sourcesFrom?.(result) ?? []) await ctx.runs.logSource(tx, source);
         // A read of a tool source always leaves a line, whatever `sourcesFrom` answered (a source may name no hit, or none at all): the retention rule ("a run keeps

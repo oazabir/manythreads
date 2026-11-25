@@ -230,6 +230,28 @@ first meeting, until an optional last day. Plan: `docs/plans/meeting-series.md`.
 - **Event**: `meetings.series.changed` v1 (`created`, `changed`, `stopped`; ids only), audited as made, changed, stopped.
 - **Step 2 (not built)**: changing the rule or the time of a series, notes written after the next agenda added to it, the agenda for people of other teams.
 
+## The meeting assistant (P17-06, step 1)
+
+The **assistant** is the help a person in a live call can ask for: **Ask** (a question about the call) and **Catch me up** (what was said before they joined). Plan:
+`docs/plans/meeting-assistant.md`. Code: `src/assistant.ts` (routes and the two jobs), the panel path of `src/questions.ts`; web `clients/web/src/meetings/assistant.ts` (the
+store) and `AssistantPanel.tsx` (the Ask button in the call bar opens it; a person who came 2 or more minutes late is offered Catch me up in the bar).
+
+- **Who answers**: the room's note-taker when there is one, through its own path and rules (P15-24: the asker must have said yes to "Transcribe my voice"; six a minute; one
+  at a time; a typed question skips the model's "is this a question" check). Otherwise the workspace Brain, through the meeting-run door (`MeetingRunsProvider.answer`): one run
+  as the asker, the call's last 30 minutes in its prompt (only people who said yes, read as the asker, only while the call is live), its reads held to the channels every person
+  present may read (the team's memory and knowledge too, when everyone present is on the team), and the answer posted into the call's thread by Brain inside its run.
+  Before it reads, the run is held to the room (gateway-mcp `meeting-runs.ts`, the note-taker's answers too): it is offered only message, file and meeting searches,
+  memory and knowledge; its searches answer only the call's own channel (`bot_runs.channel_id`); at most 8 tool calls; stopped after 90 s ("took too long"). The asker's
+  tabs get `asking` at once and then the answer or one plain failure. Brain answers in calls
+  of a team's public channels and only people of that team; elsewhere the panel says to add a note-taker.
+- **Catch me up**: the lines before the person's `joined_at`, read as that person, only of people who said yes and only while the call is live; one `fast` model call
+  (`llm.evalComplete`, ledger purpose `meeting_catchup`, charged to Brain or the note-taker); the summary is pushed to that person only and kept nowhere. Three in ten minutes per
+  person per call.
+- **Routes**: `GET /api/meetings/:id/assistant` (what may be offered, with reasons), `POST /api/meetings/:id/ask` `{question}` (202 `{askId, answerer}`), `POST
+  /api/meetings/:id/catch-up` (202 `{requestId, minutesBefore}`). Pushes to the asker only: `meeting.ask`, `meeting.catchup`. Schemas: `packages/shared/src/api/meetings/assistant.ts`.
+- **No new table or event**: an answer is a thread message, a run is a run, a summary is a read.
+- **Step 2 (not built)**: Mark action item (the last 30 seconds) and the end-of-call review where the people confirm action items and owners before they are sent.
+
 ## Access loss
 
 `channel.member.removed` and `team.member.removed` are consumed: the person is dropped from every live room they can no longer read (checked with `app.channel_audience`), the media server is told to

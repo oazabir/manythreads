@@ -10,12 +10,14 @@ import { canTurnOn, consentChip, consentWord, modeToTurnOn, promptCopy, writtenO
 import { engineAvailable } from './engine';
 import { Captions, EngineNotice } from './Captions';
 import { EndRoomConfirm } from './EndRoomConfirm';
-import { CameraIcon, CaptionsIcon, ChatIcon, CloseIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
+import { AskIcon, CameraIcon, CaptionsIcon, ChatIcon, CloseIcon, HeadphonesIcon, LeaveIcon, MicIcon, ScreenIcon, SlidersIcon } from './icons';
 import { NOT_SET_UP_HELP, NOT_SET_UP_TITLE, callClock, notetakerBadge, rosterOf, visibleCaptions } from './model';
 import { NotetakerButton, NotetakerMenu } from './NotetakerPicker';
 import { RecordConsentPrompt, RecordingChip, RecordingToggle } from './RecordingToggle';
 import { callController, useCall } from './store';
 import { lobbyStore, useLobby } from './guestLinks';
+import { assistantStore, useAssistant } from './assistant';
+import { AssistantPanel, CatchUpOffer } from './AssistantPanel';
 
 /*
  * The docked call bar (PLAN P15-04, P15-05): at the bottom of the centre column while a person is in a voice room; at 390 px a sheet that rises from the bottom
@@ -289,6 +291,9 @@ export function CallDock() {
   }, dock);
   const inRoom = call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost';
   const now = useNow(call.phase === 'connected');
+  // the meeting assistant (P17-06): asked again when what it may offer changes (a note-taker came or went, the person answered "Transcribe my voice", the call connected)
+  const mine = call.present.find((p) => p.actorId === call.myActorId);
+  const assistant = useAssistant(inRoom ? (call.meeting?.id ?? null) : null, `${call.phase}|${call.notetakers?.current?.bot.botId ?? ''}|${mine?.consentTranscribe ?? ''}`);
   if (call.phase === 'not-set-up' || call.phase === 'failed') return <StatusCard call={call} />;
   if (!inRoom || !call.meeting) return null;
 
@@ -337,6 +342,10 @@ export function CallDock() {
       {call.phase === 'connected' ? <ShareAskPrompt call={call} /> : null}
       {call.phase === 'connected' ? <ShareAskStatus call={call} sharing={sharerName !== null} /> : null}
       {call.phase === 'connected' ? <CallStage call={call} media={c} /> : null}
+      {call.phase === 'connected' ? <CatchUpOffer snap={assistant} /> : null}
+      {assistant.open && (call.phase === 'connected' || call.phase === 'reconnecting') ? (
+        <AssistantPanel snap={assistant} canOpenThread={call.meeting.threadRootId !== null} onOpenThread={() => c.openChat()} />
+      ) : null}
       <div className="call-row">
         <div className="call-id">
           <span className={`call-live ${lost ? 'off' : ''}`} aria-hidden="true" />
@@ -441,6 +450,18 @@ export function CallDock() {
             </button>
             {menu === 'settings' ? <Settings call={call} canEnd={canEnd} /> : null}
           </div>
+          <button
+            type="button"
+            className={`call-btn ${assistant.open ? 'on' : ''}`}
+            aria-pressed={assistant.open}
+            aria-label="Ask about this call, or catch up"
+            title="Ask about this call"
+            disabled={call.phase !== 'connected'}
+            onClick={() => assistantStore().setOpen(!assistant.open)}
+            data-testid="call-assistant"
+          >
+            <AskIcon />
+          </button>
           <button type="button" className="btn s call-chat" onClick={() => c.openChat()} disabled={!call.meeting.threadRootId} data-testid="call-chat">
             <ChatIcon />
             <span>Chat</span>

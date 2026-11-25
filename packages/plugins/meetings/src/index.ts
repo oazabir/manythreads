@@ -12,6 +12,7 @@ import { registerNotes } from './notes.ts';
 import { registerNotesRoutes } from './routes-notes.ts';
 import { registerNotetaker } from './notetaker.ts';
 import { registerQuestions } from './questions.ts';
+import { registerAssistant } from './assistant.ts';
 import { registerRecording } from './recording.ts';
 import { registerScheduled } from './scheduled.ts';
 import { registerScheduledJobs } from './scheduled-jobs.ts';
@@ -126,6 +127,8 @@ export default definePlugin({
     registerNotetaker(ctx);
     registerListener(ctx);
     registerQuestions(ctx);
+    // the meeting assistant (P17-06): Ask and Catch me up
+    registerAssistant(ctx);
     registerRecording(ctx);
     registerSearch(ctx);
     // Bundle D: one call per module, each a stub until its work package fills it in.

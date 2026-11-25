@@ -1359,3 +1359,171 @@
   align-items: center;
   gap: 8px;
 }
+
+/* ---- the meeting assistant (P17-06): Ask and Catch me up ---- */
+.call-asst {
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.call-asst-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.call-asst-title {
+  color: var(--ink);
+}
+
+.call-asst-sub {
+  color: var(--ink);
+  font-size: var(--fs-caption);
+}
+
+.call-asst-catchup {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--agent-wash);
+  color: var(--ink);
+  font-size: var(--fs-caption);
+}
+
+.call-asst-catchup .btn {
+  justify-self: start;
+}
+
+.call-asst-catchup-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+}
+
+.call-asst-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.call-asst-box {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.call-asst-box:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.call-asst-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-caption);
+}
+
+.call-asst-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call-asst-item {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+}
+
+.call-asst-q {
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.call-asst-wait {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.call-asst-text {
+  margin: 0;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.call-asst-text.failed {
+  color: var(--mute);
+}
+
+.call-asst-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+/* a late joiner's offer: a plain row in the bar (not over the stage) */
+.call-asst-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--agent-wash);
+  color: var(--ink);
+  font-size: var(--fs-caption);
+}
+
+.call-asst-offer-text {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+@media (width <= 760px) {
+  /* a phone: the panel is a block in the call sheet, full width */
+  .call-dock.sheet .call-asst {
+    position: static;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    box-shadow: none;
+  }
+
+  .call-asst-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .call-asst-form .btn {
+    justify-self: end;
+  }
+}

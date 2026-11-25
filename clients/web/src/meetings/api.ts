@@ -136,6 +136,13 @@ import {
   meetingLobbyRoute,
   removeGuestRoute,
   revokeGuestLinksRoute,
+  MeetingAskRequest,
+  MeetingAskResponse,
+  MeetingAssistantStatus,
+  MeetingCatchUpResponse,
+  getMeetingAssistantRoute,
+  meetingAskRoute,
+  meetingCatchUpRoute,
 } from '@manythreads/shared';
 import { call } from '../api/client';
 
@@ -285,3 +292,12 @@ export const fetchLobby = (meetingId: string) => call(meetingLobbyRoute, { respo
 /** Let a guest in, turn one away, or take one out. */
 export const decideGuest = (meetingId: string, guestId: string, decision: 'admit' | 'deny' | 'remove') =>
   call(decision === 'admit' ? admitGuestRoute : decision === 'deny' ? denyGuestRoute : removeGuestRoute, { response: DecideGuestResponse }, undefined, { meetingId, guestId });
+
+// ---- the meeting assistant (P17-06) ----
+/** What the Ask panel may offer in this call now: who answers, and Catch me up, each with the reason when not. */
+export const fetchAssistantStatus = (meetingId: string) => call(getMeetingAssistantRoute, { response: MeetingAssistantStatus }, undefined, { meetingId });
+/** Ask a question about the call; the answer comes as a `meeting.ask` push (and in the call's thread). */
+export const askAssistant = (meetingId: string, question: string) =>
+  call(meetingAskRoute, { request: MeetingAskRequest, response: MeetingAskResponse }, { question }, { meetingId });
+/** Ask for a summary of what was said before this person joined; it comes as a `meeting.catchup` push to them only. */
+export const requestCatchUp = (meetingId: string) => call(meetingCatchUpRoute, { response: MeetingCatchUpResponse }, undefined, { meetingId });
