@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IsoDateTime } from '../../common/time.ts';
 import {
   CustomStatus,
   CustomStatusInput,
@@ -26,6 +27,11 @@ export const MyPresence = z.object({
   timeZone: z.string().nullable(),
   workingHours: WorkingHours.nullable(),
   outOfOffice: OutOfOffice.nullable(),
+  /**
+   * The person's last out-of-office period while it is on or for two weeks after they came back (`recentAway`): when it started and whether they are back. The
+   * Summary panel offers "Since I was away" from it (P18-05). Null otherwise; optional on the wire for an older server.
+   */
+  away: z.object({ since: IsoDateTime, back: z.boolean() }).nullable().default(null),
   dnd: DndSettings,
   dndState: DndState,
 });

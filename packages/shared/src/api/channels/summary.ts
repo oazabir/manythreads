@@ -5,14 +5,18 @@ import { ChannelId, MessageId } from '../../ids.ts';
 /*
  * Summarise a channel or a thread (P18-05, docs/plans/catch-me-up.md): Brain reads only the messages the asker may read (the route reads them in the asker's own
  * transaction) and writes a short summary that only the asker sees. Nothing is posted or stored. "What did I miss" is the range `new`: everything after the
- * position the screen opened with, or the stored read position.
+ * position the screen opened with, or the stored read position. "Since I was away" is the range `away`: everything since the person's last out-of-office period
+ * began (switched on), while they are away or for two weeks after they came back, and at most 30 days back (`recentAway`).
  */
 
-export const SummaryRange = z.enum(['new', 'day', 'week', 'all']);
+export const SummaryRange = z.enum(['new', 'day', 'week', 'all', 'away']);
 export type SummaryRange = z.infer<typeof SummaryRange>;
 
-/** The ranges a channel offers (`all` is a thread's only) and a thread offers (a whole thread, or since the last read). */
-export const CHANNEL_SUMMARY_RANGES = ['new', 'day', 'week'] as const satisfies readonly SummaryRange[];
+/**
+ * The ranges a channel offers (`all` is a thread's only; `away` only to a person who is or was just out of office) and a thread offers (a whole thread, or since the
+ * last read: a thread is short enough that "since I was away" adds nothing).
+ */
+export const CHANNEL_SUMMARY_RANGES = ['new', 'day', 'week', 'away'] as const satisfies readonly SummaryRange[];
 export const THREAD_SUMMARY_RANGES = ['all', 'new'] as const satisfies readonly SummaryRange[];
 
 /** How much one summary reads: the newest messages win, the rest are counted and said. */

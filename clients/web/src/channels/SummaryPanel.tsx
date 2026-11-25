@@ -5,6 +5,7 @@ import { useQuery } from '../app/useQuery';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelTitle } from '../kernel/panel/sub';
 import { uploadPersonalFile } from '../screens/files/personalApi';
+import { usePresence } from '../presence/hooks';
 import { useShell } from '../shell/context';
 import { CopyTextIcon, RegenerateIcon, SavePageIcon, SummariseIcon } from '../shell/icons';
 import { messageLocation, useOpenMessage } from '../shell/messageLink';
@@ -80,6 +81,8 @@ function SummaryBody({ place, entry }: { place: SummaryPlace; entry: PanelEntry 
   usePanelTitle(place.threadRootId ? 'Summary of this thread' : channel ? `Summary of ${placeName}` : 'Summary');
 
   const [range, setRange] = useState<SummaryRange>(() => defaultRange(place));
+  // "Since I was away" is offered while the person is out of office and for two weeks after (the server says when it began)
+  const away = usePresence().me?.away != null;
   const [round, setRound] = useState(0);
   const [shown, setShown] = useState<Shown>({ status: 'loading' });
   const [note, setNote] = useState<string | null>(null);
@@ -160,7 +163,7 @@ function SummaryBody({ place, entry }: { place: SummaryPlace; entry: PanelEntry 
   return (
     <div className="csm" data-testid="summary-panel">
       <div className="csm-ranges" role="group" aria-label="What to summarise">
-        {rangesOf(place).map((r) => (
+        {rangesOf(place, away || range === 'away').map((r) => (
           <button key={r} type="button" className="csm-range" aria-pressed={r === range} data-testid={`summary-range-${r}`} onClick={() => setRange(r)}>
             {RANGE_LABEL[r]}
           </button>

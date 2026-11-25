@@ -83,7 +83,24 @@ recipe's time and days come from them ("At the start of my working day").
 1. Shared schema, the route, the prompt, limits, tests.
 2. Web: endpoint, panel, menu item, Catch me up button, thread tool; phone layout.
 3. The recipe's working-day start.
-4. Later (not now): a "since I was away" range that starts at the out-of-office start date; a summary of several channels at once ("my day"); streaming the answer.
+4. Step 2 (done): a "since I was away" range (`away`) that starts when the person switched out of office on, and the e2e spec `e2e/channels/catch-me-up.spec.ts`.
+   Later (not now): a summary of several channels at once ("my day"); streaming the answer.
+
+## Step 2: "Since I was away"
+- **Data.** Out of office only said whether it is on now. Presence migration 0003 adds `person_status.ooo_since` and `ooo_ended_at`, set by a trigger from the change
+  of `ooo_active` (switched on: `since` now, `ended` cleared; switched off: `ended` now). A person's own update cannot set them, so nobody moves the start of their
+  absence; the system role may (repairs, tests). A note switched on before the migration takes its row's last change as its start.
+- **Rule** (`recentAway`, `packages/shared/src/entities/presence-time.ts`, used by the server and the presence route): the period counts while it is on and for 14
+  days after the person came back (switched off, or their first day back came in their time zone); it reads at most 30 days back. `GET /api/presence/me` answers
+  `away: { since, back }` or null.
+- **Route.** `range: 'away'` for a channel or a direct message (a thread is short: whole or since last read). The start is read from the person's own row in their
+  own request transaction. **No period: 409** "You have not been out of office in the last two weeks. Choose "Since I last read" or a day or week instead." (the
+  request is well formed, the person's state does not allow it). The usual 400-message cap and "left out" count apply.
+- **Panel.** "Since I was away" shows as a fourth choice only while `away` is set. It is never the default: "Since I last read" already covers the days away for a
+  place not read since, and the Catch me up button keeps it. Empty: "Nothing was written in #dev while you were away."
+- **Tests.** `packages/shared/test/summary-away.test.ts`, the route case in `channels/test/summary.test.ts`, `clients/web/test/summary-model.test.ts`, and the e2e
+  spec (the summary answered in the browser with `page.route`). The spec found the `[n]` markers 0 px high (`.an-ref` has line-height 0 and the button took it
+  through `font: inherit`): `.csm-ref` now sets its own line-height after `font`.
 
 ## Decisions taken (recommended defaults; the owner may change them)
 1. The summary is a platform call metered on Brain, not a Brain run: faster, cheaper, and nothing waits on a runtime. 2. It lives in the `channels` plugin, not a new

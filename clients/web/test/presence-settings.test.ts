@@ -252,6 +252,7 @@ const mine = (patch: Partial<MyPresence> = {}): MyPresence => ({
   timeZone: 'UTC',
   workingHours: null,
   outOfOffice: null,
+  away: null,
   dnd: { enabled: false, pausedUntil: null, schedule: { enabled: false, windows: [] } },
   dndState: { active: false, reason: null, until: null },
   ...patch,

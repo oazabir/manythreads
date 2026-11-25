@@ -34,7 +34,12 @@ export const readStartOf = (p: SummaryPlace): string | null | undefined => (star
 const unreadAtOpen = new Set<string>();
 export const rememberUnread = (p: SummaryPlace, unread: boolean): void => void (unread ? unreadAtOpen.add(summaryPanelId(p)) : unreadAtOpen.delete(summaryPanelId(p)));
 
-export const rangesOf = (p: SummaryPlace): readonly SummaryRange[] => (p.threadRootId ? THREAD_SUMMARY_RANGES : CHANNEL_SUMMARY_RANGES);
+/**
+ * The choices the panel shows. "Since I was away" is a channel's, and only for a person who is out of office or came back in the last two weeks (`MyPresence.away`);
+ * the default stays "Since I last read", which already covers the days away for a place not read since.
+ */
+export const rangesOf = (p: SummaryPlace, away = false): readonly SummaryRange[] =>
+  p.threadRootId ? THREAD_SUMMARY_RANGES : CHANNEL_SUMMARY_RANGES.filter((r) => r !== 'away' || away);
 
 /** The range the panel starts with: since the last read when there was something unread, else the last day (a thread: all of it). */
 export function defaultRange(p: SummaryPlace): SummaryRange {
@@ -42,12 +47,13 @@ export function defaultRange(p: SummaryPlace): SummaryRange {
   return p.threadRootId ? 'all' : 'day';
 }
 
-export const RANGE_LABEL: Record<SummaryRange, string> = { new: 'Since I last read', day: 'Last 24 hours', week: 'Last 7 days', all: 'Whole thread' };
+export const RANGE_LABEL: Record<SummaryRange, string> = { new: 'Since I last read', day: 'Last 24 hours', week: 'Last 7 days', all: 'Whole thread', away: 'Since I was away' };
 
 /** "Nothing new since you last read #dev." and the like. */
 export function emptyText(range: SummaryRange, placeName: string): string {
   if (range === 'new') return `Nothing new since you last read ${placeName}.`;
   if (range === 'all') return 'This thread has no replies yet.';
+  if (range === 'away') return `Nothing was written in ${placeName} while you were away.`;
   return `Nothing was written in ${placeName} in the ${range === 'day' ? 'last 24 hours' : 'last 7 days'}.`;
 }
 

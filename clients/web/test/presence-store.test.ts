@@ -22,7 +22,7 @@ const B = '019a0000-0000-7000-8000-000000000002';
 const card = (id: string, presence: PresenceCard['presence'] = 'online'): PresenceCard =>
   ({ personId: id, presence, seenAt: null, status: null, timeZone: null, workingHours: null, outOfOffice: null }) as PresenceCard;
 const mine = (): MyPresence =>
-  ({ status: null, timeZone: null, workingHours: null, outOfOffice: null, dnd: { enabled: false, pausedUntil: null, schedule: { enabled: false, windows: [] } }, dndState: { active: false, reason: null, until: null } }) as MyPresence;
+  ({ status: null, timeZone: null, workingHours: null, outOfOffice: null, away: null, dnd: { enabled: false, pausedUntil: null, schedule: { enabled: false, windows: [] } }, dndState: { active: false, reason: null, until: null } }) as MyPresence;
 const httpError = (status: number): ApiError => new ApiError({ status, code: status === 404 ? 'not_found' : 'internal', message: 'x' });
 const deferred = <T>() => {
   let resolve: (v: T) => void = () => undefined;

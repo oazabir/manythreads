@@ -81,12 +81,16 @@
   overflow-wrap: anywhere;
 }
 
+/* the marker sits in `.an-ref`, whose line-height is 0: the button keeps a line of its own, or it is 0 px high (a finger misses it, and so does a test) */
 .csm-ref {
-  padding: 0 1px;
+  padding: 0 2px;
   border: 0;
   background: none;
   color: var(--human);
   font: inherit;
+
+  /* after `font`, which would bring the 0 back */
+  line-height: 1;
   cursor: pointer;
 }
 

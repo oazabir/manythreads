@@ -143,6 +143,41 @@ describe('Summarise a channel', () => {
     expect((await summarise(nadia, dev, { threadRootId: null, range: 'day', extra: true })).status).toBe(400);
   });
 
+  it('"Since I was away" starts when the person went out of office, and is refused to someone who was not away lately', async () => {
+    const releases = await w.channelId('engineering', 'releases');
+    const presence = (body: Record<string, unknown>) => w.call(rafi, 'PATCH', '/api/presence/me', body);
+    // not away: refused plainly, and a thread never has this range
+    expect((await summarise(rafi, releases, { threadRootId: null, range: 'away' })).status).toBe(409);
+    await post(omar, releases, 'Written before Rafi left');
+    expect((await presence({ outOfOffice: { active: true, returnsOn: null, delegatePersonId: null, message: 'Back soon' } })).status).toBe(200);
+    // the trigger keeps when it was switched on; place it an hour ago so the message above is before it
+    await w.system((tx) => tx.query("UPDATE app.person_status SET ooo_since = now() - interval '1 hour' WHERE person_id = $1", [rafi.personId]));
+    const before = (await w.system((tx) => tx.query<{ ooo_since: Date }>('SELECT ooo_since FROM app.person_status WHERE person_id = $1', [rafi.personId]))).rows[0]!.ooo_since;
+    expect(before.getTime()).toBeLessThan(Date.now() - 50 * 60_000);
+    await w.system((tx) => tx.query("UPDATE app.messages SET created_at = now() - interval '2 hours' WHERE channel_id = $1 AND body_plain LIKE 'Written before Rafi left%'", [releases]));
+    const one = await post(omar, releases, 'Release 4.2 went out while Rafi was away');
+    const me = (await w.call<{ away: { since: string; back: boolean } | null }>(rafi, 'GET', '/api/presence/me')).body;
+    expect(me.away).toEqual({ since: before.toISOString(), back: false });
+    const res = await summarise(rafi, releases, { threadRootId: null, range: 'away' });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({ state: 'ready', range: 'away', messageCount: 1 });
+    expect(res.body['sources']).toEqual([{ n: 1, messageId: one, threadRootId: null }]);
+    expect(calls[0]!.user).toContain('since they went out of office');
+    expect(calls[0]!.user).not.toContain('Written before Rafi left');
+    // back again: still offered, from the same start; a person cannot move the start by hand (the trigger keeps it)
+    expect((await presence({ outOfOffice: null })).status).toBe(200);
+    await w.call(rafi, 'PATCH', '/api/presence/me', { timeZone: 'Europe/Berlin' });
+    const back = (await w.call<{ away: { since: string; back: boolean } | null }>(rafi, 'GET', '/api/presence/me')).body.away;
+    expect(back).toEqual({ since: before.toISOString(), back: true });
+    expect((await summarise(rafi, releases, { threadRootId: null, range: 'away' })).status).toBe(200);
+    const root = await post(omar, releases, 'A thread');
+    expect((await summarise(rafi, releases, { threadRootId: root, range: 'away' })).status).toBe(400);
+    // came back more than two weeks ago: no longer offered
+    await w.system((tx) => tx.query("UPDATE app.person_status SET ooo_ended_at = now() - interval '15 days' WHERE person_id = $1", [rafi.personId]));
+    expect((await summarise(rafi, releases, { threadRootId: null, range: 'away' })).status).toBe(409);
+    expect((await w.call<{ away: unknown }>(rafi, 'GET', '/api/presence/me')).body.away).toBeNull();
+  });
+
   it('reads the newest messages of a very long channel and counts the ones it left out', async () => {
     const standup = await w.channelId('engineering', 'standup');
     const start = await post(omar, standup, 'start');

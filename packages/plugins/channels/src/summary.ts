@@ -6,6 +6,7 @@ import {
   SummariseResponse,
   SummaryParams,
   THREAD_SUMMARY_RANGES,
+  recentAway,
   summariseRoute,
   type SummaryRange,
 } from '@manythreads/shared';
@@ -148,7 +149,16 @@ export function summaryUser(place: string, range: SummaryRange, lines: readonly 
     numbers.set(i + 1, l);
     numberOf.set(l.id, i + 1);
   });
-  const what = range === 'new' ? 'the messages since they last read it' : range === 'day' ? 'the last 24 hours' : range === 'week' ? 'the last 7 days' : 'the whole thread';
+  const what =
+    range === 'new'
+      ? 'the messages since they last read it'
+      : range === 'day'
+        ? 'the last 24 hours'
+        : range === 'week'
+          ? 'the last 7 days'
+          : range === 'away'
+            ? 'the messages since they went out of office'
+            : 'the whole thread';
   const head = [`Place: ${place}. Range: ${what}.`];
   if (leftOut > 0) head.push(`${leftOut} older messages in the range are not shown: say once, at the end, that the summary covers only the newest messages.`);
   const body = lines.map((l, i) => {
@@ -226,7 +236,7 @@ export function registerSummaryRoutes({ ctx }: Deps): void {
       if (channel.kind !== 'channel' && channel.kind !== 'dm') throw conflict('Only a channel or a direct message can be summarised here.');
       const thread = body.threadRootId ?? null;
       const ranges: readonly SummaryRange[] = thread ? THREAD_SUMMARY_RANGES : CHANNEL_SUMMARY_RANGES;
-      if (!ranges.includes(body.range)) throw invalid(thread ? 'A thread is summarised whole or since you last read it.' : 'A channel is summarised since you last read it, or over the last day or week.');
+      if (!ranges.includes(body.range)) throw invalid(thread ? 'A thread is summarised whole or since you last read it.' : 'A channel is summarised since you last read it, since you were away, or over the last day or week.');
       if (thread) {
         const root = (await tx.query<{ thread_root_id: string | null }>('SELECT thread_root_id FROM app.messages WHERE id = $1 AND channel_id = $2', [thread, channelId])).rows[0];
         if (!root || root.thread_root_id !== null) throw notFound('No such thread in this channel.');
@@ -251,6 +261,17 @@ export function registerSummaryRoutes({ ctx }: Deps): void {
           const [state] = await ctx.readState.get(tx, personId, [thread ? { targetType: 'thread', targetId: thread } : { targetType: 'channel', targetId: channelId }]);
           after = state?.lastReadId ?? null;
         }
+      } else if (body.range === 'away') {
+        // "Since I was away": the person's own out-of-office row, read in their own transaction (presence 0003 keeps when it was switched on and off)
+        const row = (
+          await tx.query<{ ooo_active: boolean; returns_on: string | null; ooo_since: Date | null; ooo_ended_at: Date | null; time_zone: string | null }>(
+            `SELECT ooo_active, to_char(ooo_returns_on, 'YYYY-MM-DD') AS returns_on, ooo_since, ooo_ended_at, time_zone FROM app.person_status WHERE person_id = $1`,
+            [personId],
+          )
+        ).rows[0];
+        const away = row ? recentAway({ since: row.ooo_since, endedAt: row.ooo_ended_at, active: row.ooo_active, returnsOn: row.returns_on, timeZone: row.time_zone }, now) : null;
+        if (!away) throw conflict('You have not been out of office in the last two weeks. Choose "Since I last read" or a day or week instead.');
+        since = away.since;
       } else if (body.range === 'day') since = new Date(now.getTime() - DAY_MS);
       else if (body.range === 'week') since = new Date(now.getTime() - 7 * DAY_MS);
 

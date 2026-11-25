@@ -6,6 +6,7 @@ import {
   PresenceCard,
   WorkingHours,
   liveOutOfOffice,
+  recentAway,
   liveStatus,
 } from '@manythreads/shared';
 
@@ -21,11 +22,14 @@ export interface PersonStatusRow extends Record<string, unknown> {
   ooo_returns_on: string | null;
   ooo_delegate_id: string | null;
   ooo_message: string;
+  /** When out of office was switched on and off (presence 0003; set by a trigger). */
+  ooo_since: Date | null;
+  ooo_ended_at: Date | null;
 }
 
 export const PERSON_STATUS_COLUMNS =
   `s.person_id, s.status_emoji, s.status_text, s.status_clears_at, s.time_zone, s.working_hours, s.ooo_active,
-   to_char(s.ooo_returns_on, 'YYYY-MM-DD') AS ooo_returns_on, s.ooo_delegate_id, s.ooo_message`;
+   to_char(s.ooo_returns_on, 'YYYY-MM-DD') AS ooo_returns_on, s.ooo_delegate_id, s.ooo_message, s.ooo_since, s.ooo_ended_at`;
 
 /** The status of a row, or null when it has none or its clear time has passed. */
 export function statusOf(r: PersonStatusRow, now: Date): CustomStatus | null {
@@ -50,6 +54,12 @@ export function outOfOfficeOf(r: PersonStatusRow, now: Date): OutOfOffice | null
     r.time_zone,
     now,
   );
+}
+
+/** The last out-of-office period as "Since I was away" uses it (P18-05), or null. */
+export function awayOf(r: PersonStatusRow, now: Date): { since: string; back: boolean } | null {
+  const away = recentAway({ since: r.ooo_since, endedAt: r.ooo_ended_at, active: r.ooo_active, returnsOn: r.ooo_returns_on, timeZone: r.time_zone }, now);
+  return away ? { since: away.since.toISOString(), back: away.back } : null;
 }
 
 /** The one place a `person_status` row (with the heartbeat, if there is a fresh one) becomes the shared `PresenceCard`. */

@@ -51,6 +51,9 @@ describe('the Summary panel', () => {
     const thread = { channelId: C, threadRootId: R };
     expect(rangesOf(channel).map((r) => RANGE_LABEL[r])).toEqual(['Since I last read', 'Last 24 hours', 'Last 7 days']);
     expect(rangesOf(thread).map((r) => RANGE_LABEL[r])).toEqual(['Whole thread', 'Since I last read']);
+    // "Since I was away" only for a person who is or just was out of office, and never for a thread; it is never the default
+    expect(rangesOf(channel, true).map((r) => RANGE_LABEL[r])).toEqual(['Since I last read', 'Last 24 hours', 'Last 7 days', 'Since I was away']);
+    expect(rangesOf(thread, true).map((r) => RANGE_LABEL[r])).toEqual(['Whole thread', 'Since I last read']);
     expect(defaultRange(channel)).toBe('day');
     expect(defaultRange(thread)).toBe('all');
     rememberUnread(channel, true);
@@ -77,6 +80,7 @@ describe('the Summary panel', () => {
     expect(emptyText('new', '#dev')).toBe('Nothing new since you last read #dev.');
     expect(emptyText('week', '#dev')).toBe('Nothing was written in #dev in the last 7 days.');
     expect(emptyText('all', 'this thread')).toBe('This thread has no replies yet.');
+    expect(emptyText('away', '#dev')).toBe('Nothing was written in #dev while you were away.');
   });
 
   it('saves a file with a safe name, the summary, where it came from and a link for each number', () => {

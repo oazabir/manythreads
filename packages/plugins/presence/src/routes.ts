@@ -16,7 +16,7 @@ import {
 } from '@manythreads/shared';
 import { callerPerson } from './heartbeat.ts';
 import { invalid, json, route } from './http.ts';
-import { PERSON_STATUS_COLUMNS, outOfOfficeOf, statusOf, toDndSettings, toPresenceCard, workingHoursOf, type PersonStatusRow } from './rows.ts';
+import { PERSON_STATUS_COLUMNS, awayOf, outOfOfficeOf, statusOf, toDndSettings, toPresenceCard, workingHoursOf, type PersonStatusRow } from './rows.ts';
 
 interface DndRow extends Record<string, unknown> {
   enabled: boolean;
@@ -43,6 +43,7 @@ async function myPresence(tx: PluginTx, personId: string, now: Date): Promise<My
     timeZone: row?.time_zone ?? null,
     workingHours: row ? workingHoursOf(row) : null,
     outOfOffice: row ? outOfOfficeOf(row, now) : null,
+    away: row ? awayOf(row, now) : null,
     dnd,
     dndState: dndState(dnd, row?.time_zone ?? null, now),
   });

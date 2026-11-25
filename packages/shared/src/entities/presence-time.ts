@@ -110,3 +110,28 @@ export function liveOutOfOffice(note: OutOfOffice | null, zone: string | null, a
   if (note.returnsOn !== null && localDate(at, zone ?? 'UTC') >= note.returnsOn) return null;
   return note;
 }
+
+/** "Since I was away" (P18-05) is offered for this many days after the person came back. */
+export const AWAY_RECENT_DAYS = 14;
+/** A summary of an absence reads at most this far back, however long the person was away. */
+export const AWAY_MAX_DAYS = 30;
+
+/**
+ * The person's last out-of-office period, as "Since I was away" uses it: when it started (the moment it was switched on, at most `AWAY_MAX_DAYS` back) and whether
+ * they are back. Null when there is none, or when they came back more than `AWAY_RECENT_DAYS` ago. Back means switched off (`endedAt`) or their first day back (in
+ * their time zone) has come.
+ */
+export function recentAway(
+  p: { since: Date | null; endedAt: Date | null; active: boolean; returnsOn: string | null; timeZone: string | null },
+  now: Date,
+): { since: Date; back: boolean } | null {
+  if (p.since === null || p.since.getTime() > now.getTime()) return null;
+  let backAt: number | null = null;
+  if (!p.active) backAt = p.endedAt ? p.endedAt.getTime() : null;
+  else if (p.returnsOn !== null && localDate(now, p.timeZone ?? 'UTC') >= p.returnsOn) backAt = Date.parse(`${p.returnsOn}T00:00:00Z`);
+  // switched off with no end recorded: not a period we can place
+  if (!p.active && backAt === null) return null;
+  if (backAt !== null && now.getTime() - backAt > AWAY_RECENT_DAYS * 86_400_000) return null;
+  const floor = now.getTime() - AWAY_MAX_DAYS * 86_400_000;
+  return { since: new Date(Math.max(p.since.getTime(), floor)), back: backAt !== null };
+}
