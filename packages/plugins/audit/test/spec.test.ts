@@ -138,6 +138,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'meetings.recording.stopped': { teamId: id(20), channelId: id(40), meetingId: id(97), reason: 'turned_off', stoppedBy: id(13), at: AT },
   'meetings.notes.shared': { teamId: id(20), channelId: id(40), meetingId: id(97), sharedBy: id(13), granteeKind: 'person', granteeId: id(10), revoked: false, at: AT },
   'meetings.notes.saved': { teamId: id(20), channelId: id(40), meetingId: id(97), savedBy: id(13), path: 'meetings/2026/11/08-1402-review/notes.md', toMemory: true, at: AT },
+  'meetings.series.changed': { teamId: id(20), seriesId: id(99), change: 'stopped', changedBy: id(13), at: AT },
   'meetings.scheduled.created': { teamId: id(20), channelId: id(40), scheduledMeetingId: id(98), organizerId: id(13), provider: 'google', startsAt: AT, attendeeCount: 3, outsideCount: 1, at: AT },
   'meetings.scheduled.changed': { teamId: id(20), channelId: id(40), scheduledMeetingId: id(98), changedBy: id(13), fields: ['time'], startsAt: AT, at: AT },
   'meetings.scheduled.cancelled': { teamId: id(20), channelId: id(40), scheduledMeetingId: id(98), cancelledBy: null, reason: 'calendar_deleted', at: AT },

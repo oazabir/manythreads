@@ -290,6 +290,31 @@ describe('a page edited live (PLAN P6-09)', () => {
     expect(await refused).toBe(401);
   }, 15_000);
 
+  it('opens a meeting series\' agenda page (P17-05): the one file under meetings/ the team edits live, committed as the person; another file there is refused', async () => {
+    const start = new Date(Date.now() + 3 * 3600_000);
+    const made = await api(personas.nadia, 'POST', '/api/teams/engineering/meeting-series', {
+      title: 'Live agenda',
+      startsAt: start.toISOString(),
+      endsAt: new Date(start.getTime() + 1800_000).toISOString(),
+      frequency: 'weekly',
+      timeZone: 'UTC',
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const path = `meetings/series/live-agenda/${start.toISOString().slice(0, 10)}-agenda.md`;
+    await waitFor('the platform to write the agenda', async () => (await api(personas.omar, 'GET', `/api/teams/engineering/repo/blob?path=${encodeURIComponent(path)}`)).status === 200, 20_000);
+    const before = await fileText(path);
+    const editor = new Editor(personas.rafi, path);
+    await waitFor('the agenda to load', () => editor.text === before);
+    editor.type(editor.text.indexOf('## Notes'), '- [ ] Order the cake — Rafi\n\n');
+    editor.close();
+    await editor.closed;
+    await waitFor('the session commit', async () => /^Edit .+ live/.test((await lastCommit(path))?.message ?? ''), 8000);
+    expect(await fileText(path)).toContain('- [ ] Order the cake — Rafi');
+    expect((await lastCommit(path))?.author_id).toBe(personas.rafi.actorId);
+    const readme = new Editor(personas.rafi, 'meetings/series/live-agenda/README.md');
+    expect(await readme.closed).toBe(1008);
+  }, 40_000);
+
   it('keeps the update ledger and the snapshot for the session it committed', async () => {
     const rows = await ownerSql<{ n: number }>(
       server.db.ownerUrl,

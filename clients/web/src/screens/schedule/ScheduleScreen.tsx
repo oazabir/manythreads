@@ -5,12 +5,15 @@ import { fetchScheduledJobs } from '../boards/api';
 import { useQuery } from '../../app/useQuery';
 import { Dialog } from '../../components/Dialog';
 import { PageHeader } from '../../components/PageHeader';
-import { cancelAppointment, fetchAppointments, joinAppointment } from '../../meetings/api';
+import { cancelAppointment, fetchAppointments, joinAppointment, stopMeetingSeries } from '../../meetings/api';
 import { callController } from '../../meetings/store';
 import { useShell } from '../../shell/context';
+import { SeriesIcon } from '../../shell/icons';
 import { meetingPath } from '../../shell/messageLink';
 import { useNarrow } from '../../shell/useNarrow';
+import { LivePageEditor } from '../../viewers/markdown/LivePageEditor';
 import { AppointmentForm } from './AppointmentForm';
+import { agendaDay, repeatLabel } from './series';
 import { addDays, joinable, onDay, placeInDay, sameDay, step, timeRange, viewDays, viewLabel, type CalendarView } from './calendar';
 
 /*
@@ -18,6 +21,7 @@ import { addDays, joinable, onDay, placeInDay, sameDay, step, timeRange, viewDay
  * calendar: Day, Week and Month, today marked and a line at the current time; each team in its own colour with a chip to show or hide it. Opening one shows
  * who is invited and Join (from ten minutes before until it ends); its maker, a lead of its team or an admin can change or cancel it. On a phone the week is a
  * list of days.
+ * A meeting of a series (P17-05) says how it repeats and opens its agenda page, edited live by the team; whoever may change the series can stop it.
  */
 
 const HOUR_PX = 48;
@@ -42,6 +46,8 @@ export function ScheduleScreen() {
   const [open, setOpen] = useState<Appointment | null>(null);
   const [form, setForm] = useState<{ appointment?: Appointment; start?: Date } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [agenda, setAgenda] = useState<{ path: string; teamSlug: string; title: string } | null>(null);
+  const [stopAsk, setStopAsk] = useState(false);
   const now = useNow();
   const shownView: CalendarView = narrow && view === 'week' ? 'day' : view;
   const days = useMemo(() => viewDays(shownView, anchor), [shownView, anchor]);
@@ -111,6 +117,24 @@ export function ScheduleScreen() {
     }
   };
 
+  const stop = async (a: Appointment): Promise<void> => {
+    if (!a.series) return;
+    setProblem(null);
+    try {
+      await stopMeetingSeries(a.series.id);
+      setStopAsk(false);
+      setOpen(null);
+      q.reload();
+    } catch (e) {
+      setProblem(e instanceof Error && e.message ? e.message : 'The series could not be stopped. Try again.');
+    }
+  };
+  const closePanel = (): void => {
+    setOpen(null);
+    setStopAsk(false);
+    setProblem(null);
+  };
+
   const block = (a: Appointment, style?: React.CSSProperties, compact = false) => (
     <button
       key={a.id}
@@ -122,7 +146,7 @@ export function ScheduleScreen() {
       data-id={a.id}
       title={`${a.title} · ${timeRange(a.startsAt, a.endsAt)} · ${a.team.name}`}
     >
-      <span className="sc-appt-title">{a.kind === 'video' ? '▶ ' : ''}{a.title}</span>
+      <span className="sc-appt-title">{a.series ? <span className="sc-series-mark" aria-label="Repeats" data-testid="schedule-series-mark"><SeriesIcon /></span> : null}{a.kind === 'video' ? '▶ ' : ''}{a.title}</span>
       <span className="sc-appt-time">{compact ? timeRange(a.startsAt, a.endsAt).split(' – ')[0] : timeRange(a.startsAt, a.endsAt)}</span>
     </button>
   );
@@ -230,10 +254,19 @@ export function ScheduleScreen() {
       {open ? (
         <Dialog
           title={open.title}
-          onClose={() => setOpen(null)}
+          onClose={closePanel}
           testId="appointment-panel"
           footer={
+            stopAsk && open.series ? (
+              <>
+                <button type="button" className="btn" onClick={() => setStopAsk(false)}>Keep it</button>
+                <button type="button" className="btn danger" onClick={() => void stop(open)} data-testid="series-stop-yes">Stop the series</button>
+              </>
+            ) : (
             <>
+              {open.series && open.series.status === 'active' && open.canEdit ? (
+                <button type="button" className="btn" onClick={() => setStopAsk(true)} data-testid="series-stop">Stop the series</button>
+              ) : null}
               {open.canEdit && open.status === 'scheduled' ? (
                 <>
                   <button type="button" className="btn danger" onClick={() => void cancel(open)} data-testid="appointment-cancel">Cancel it</button>
@@ -244,6 +277,7 @@ export function ScheduleScreen() {
                 {open.liveMeetingId ? 'Join the call' : 'Join'}
               </button>
             </>
+            )
           }
         >
           <dl className="sc-facts">
@@ -259,10 +293,50 @@ export function ScheduleScreen() {
                 <dd>{open.agenda}</dd>
               </>
             ) : null}
+            {open.series ? (
+              <>
+                <dt>Repeats</dt>
+                <dd data-testid="appointment-repeats">{repeatLabel(open.series)}</dd>
+                <dt>Agenda page</dt>
+                <dd data-testid="appointment-agenda-page">
+                  {open.agendaPath ? (
+                    <button
+                      type="button"
+                      className="btn s"
+                      onClick={() => {
+                        setAgenda({ path: open.agendaPath!, teamSlug: open.team.slug, title: open.title });
+                        setOpen(null);
+                      }}
+                      data-testid="appointment-agenda-open"
+                    >
+                      Open the agenda
+                    </button>
+                  ) : !open.team.slug ? (
+                    "The agenda is kept in the team's files."
+                  ) : open.status === 'cancelled' ? (
+                    'This meeting is cancelled.'
+                  ) : (
+                    'The agenda opens after the meeting before it.'
+                  )}
+                </dd>
+              </>
+            ) : null}
             <dt>People</dt>
             <dd data-testid="appointment-people">{[open.createdBy?.name, ...open.invited.map((p) => p.name)].filter(Boolean).join(', ')}</dd>
           </dl>
+          {stopAsk && open.series ? (
+            <p className="sc-note" role="alert" data-testid="series-stop-ask">
+              Stop {open.series.title}? The meetings still to come are cancelled. Agendas already written stay.
+            </p>
+          ) : null}
           {problem ? <p className="dlg-error" role="alert">{problem}</p> : null}
+        </Dialog>
+      ) : null}
+      {agenda ? (
+        <Dialog title={`${agenda.title} · ${agendaDay(agenda.path) ?? 'Agenda'}`} onClose={() => setAgenda(null)} testId="agenda-dialog" wide sheet={narrow}>
+          <div className="sc-agenda">
+            <LivePageEditor path={agenda.path} teamSlug={agenda.teamSlug} onExit={() => setAgenda(null)} />
+          </div>
         </Dialog>
       ) : null}
       {form ? (

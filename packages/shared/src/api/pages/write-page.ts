@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GitSha } from '../../entities/repo.ts';
 import { RepoFilePath } from '../repo/repo.ts';
 import { ActorId } from '../../ids.ts';
+import { isSeriesAgendaPath } from '../../entities/repo-paths.ts';
 
 // `pages.write` (SPEC section 6.4, PLAN P4-07): plain file write plus commit for durable pages (reports, saved answers, routine outputs). A page is a text
 // file under `pages/` in the team repo; every write is one commit with the caller as author. (Concurrent live editing with Yjs arrives in phase 6.)
@@ -16,6 +17,11 @@ export const MAX_PAGE_BYTES = 1_048_576;
 /** A path inside `pages/` (strict, same rules as every repo path): what a client checks before it sends. */
 export const PagePath = RepoFilePath.refine((p) => p.startsWith(`${PAGES_DIR}/`) && p.length > PAGES_DIR.length + 1, {
   message: 'a page lives under pages/ (for example pages/reports/week-37.md)',
+});
+
+/** What the live editor opens (P6-09, P17-05): a page under `pages/`, or a meeting series' agenda page under `meetings/series/`. */
+export const LivePagePath = RepoFilePath.refine((p) => (p.startsWith(`${PAGES_DIR}/`) && p.length > PAGES_DIR.length + 1) || isSeriesAgendaPath(p), {
+  message: 'a live page lives under pages/ (or is a meeting agenda)',
 });
 
 export const WritePagePathParams = z.object({ slug: z.string().min(1).max(63) });

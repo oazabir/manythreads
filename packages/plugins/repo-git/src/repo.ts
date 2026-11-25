@@ -25,6 +25,7 @@ import {
   isConceptPath,
   isGuardedRepoPath,
   isMeetingsPath,
+  isSeriesAgendaPath,
   isInboxPath,
   isMemoryPath,
   memoryIndexFiles,
@@ -436,8 +437,25 @@ export function createRepoService(deps: RepoServiceDeps) {
     // P7-01: the four guarded places change only through a proposal. The proposals plugin applies one as the approver and says so with
     // `options.proposalId`; a person's direct write (the HTTP commit route, a restore) is refused whoever they are. The rules below still apply to
     // the approver, so the writer, not the proposals plugin, is what keeps "a lead edits a bot, an admin adds or removes one".
-    if (prepared.some((c) => isMeetingsPath(c.path))) throw repoForbidden('meetings/ holds the transcripts and notes of voice rooms: the call writes them, and nobody changes or removes them by hand');
-    if (options.proposalId === undefined && prepared.some((c) => isGuardedRepoPath(c.path))) {
+    // P17-05: the one exception is a meeting series' agenda page (`meetings/series/<slug>/<day>-agenda.md`), which the team edits: a person who may post changes one
+    // that the platform already made. Making one, removing or renaming it stays the platform's, like the rest of `meetings/`.
+    const meetingPaths = prepared.filter((c) => isMeetingsPath(c.path));
+    if (meetingPaths.length > 0) {
+      const agendas = meetingPaths.filter((c) => c.op === 'put' && isSeriesAgendaPath(c.path));
+      const existing =
+        agendas.length === 0
+          ? new Set<string>()
+          : new Set(
+              (await tx.query<{ path: string }>('SELECT path FROM app.repo_entries WHERE team_id = $1 AND path = ANY($2::text[])', [t.id, agendas.map((c) => c.path)])).rows.map(
+                (r) => r.path,
+              ),
+            );
+      if (meetingPaths.some((c) => !(c.op === 'put' && isSeriesAgendaPath(c.path) && existing.has(c.path)))) {
+        throw repoForbidden('meetings/ holds the transcripts and notes of voice rooms: the call writes them, and nobody changes or removes them by hand');
+      }
+    }
+    // (a path under meetings/ that reached this line is an agenda page the check above let through)
+    if (options.proposalId === undefined && prepared.some((c) => isGuardedRepoPath(c.path) && !isMeetingsPath(c.path))) {
       throw repoForbidden('Propose the change: bots/, TEAM.md, skills/ and routines/ change through a proposal that a team lead or workspace admin applies');
     }
     // `bots/` is its own rule (SPEC section 3 as this workspace set it): a member does not change a bot at all, a team lead edits a bot
@@ -458,7 +476,7 @@ export function createRepoService(deps: RepoServiceDeps) {
         }
       }
     }
-    if (row.manage !== true && prepared.some((c) => isGuardedRepoPath(c.path))) {
+    if (row.manage !== true && prepared.some((c) => isGuardedRepoPath(c.path) && !isMeetingsPath(c.path))) {
       throw repoForbidden('Only a team lead or a workspace admin can apply a change to TEAM.md, skills/ or routines/');
     }
   }

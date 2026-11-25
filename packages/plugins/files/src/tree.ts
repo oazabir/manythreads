@@ -11,6 +11,7 @@ import {
   getFilesTreeRoute,
   isGuardedRepoPath,
   isMeetingsPath,
+  isSeriesAgendaPath,
   repoMimeOf,
   type FilesReadOnlyReason,
 } from '@manythreads/shared';
@@ -68,7 +69,8 @@ export function registerTreeRoute(ctx: PluginContext): void {
       // offers them read-only with the reason the screen answers with a "Propose a change" button. Who may then apply it is the proposals plugin's rule.
       const repoReason = (path: string): Reason => {
         // `meetings/` (voice-room transcripts and notes) is written by the platform only: no proposal changes it, so no "Propose a change" button.
-        if (isMeetingsPath(path)) return 'no_write_access';
+        // The one exception (P17-05): a meeting series' agenda page, which the team edits (the repo writer lets a person who may post change one that exists).
+        if (isMeetingsPath(path)) return isSeriesAgendaPath(path) && team.can_post ? null : 'no_write_access';
         if (isGuardedRepoPath(path)) return team.can_post ? 'change_by_pull_request' : 'no_write_access';
         return team.can_post ? null : 'no_write_access';
       };

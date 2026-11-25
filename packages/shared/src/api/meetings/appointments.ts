@@ -14,6 +14,23 @@ export const APPOINTMENT_AGENDA_MAX = 2000;
 export const AppointmentPerson = z.object({ personId: PersonId, name: z.string() });
 export type AppointmentPerson = z.infer<typeof AppointmentPerson>;
 
+/** How a meeting series repeats (P17-05): every week, every two weeks, or every month on the same day (the last day of a shorter month). */
+export const MeetingSeriesFrequency = z.enum(['weekly', 'biweekly', 'monthly']);
+export type MeetingSeriesFrequency = z.infer<typeof MeetingSeriesFrequency>;
+export const MeetingSeriesStatus = z.enum(['active', 'stopped']);
+export type MeetingSeriesStatus = z.infer<typeof MeetingSeriesStatus>;
+
+/** The series a meeting of the schedule belongs to, as its panel shows it. */
+export const AppointmentSeries = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  frequency: MeetingSeriesFrequency,
+  /** The last day a meeting may fall on (in the series' time zone), or null when it goes on. */
+  untilDate: z.iso.date().nullable(),
+  status: MeetingSeriesStatus,
+});
+export type AppointmentSeries = z.infer<typeof AppointmentSeries>;
+
 export const Appointment = z.object({
   id: z.uuid(),
   team: z.object({ id: z.string(), slug: z.string(), name: z.string() }),
@@ -31,6 +48,10 @@ export const Appointment = z.object({
   liveMeetingId: MeetingId.nullable(),
   /** The caller may change or cancel it (its maker, a lead of its team, a workspace admin). */
   canEdit: z.boolean(),
+  /** The series it is a meeting of (P17-05), or null for a meeting on its own. */
+  series: AppointmentSeries.nullable().default(null),
+  /** Its agenda page in the team's files (`meetings/series/<slug>/<date>-agenda.md`), once the platform wrote it; null before, and for a person not on the team. */
+  agendaPath: z.string().nullable().default(null),
 });
 export type Appointment = z.infer<typeof Appointment>;
 

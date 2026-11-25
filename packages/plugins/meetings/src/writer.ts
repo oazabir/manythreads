@@ -33,7 +33,7 @@ export interface RenderedTranscript {
 }
 
 /** Characters that mean something in markdown, escaped so what somebody said cannot become a heading, a link, a tag or a table. */
-function escapeMarkdown(text: string): string {
+export function escapeMarkdown(text: string): string {
   let out = text.startsWith('#') ? '\\#' : '';
   for (const ch of out === '' ? text : text.slice(1)) out += '\\`*_[]<>~|'.includes(ch) ? `\\${ch}` : ch;
   return out;

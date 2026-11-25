@@ -8,6 +8,13 @@ import {
   UpdateAppointmentRequest,
   cancelAppointmentRoute,
   joinAppointmentRoute,
+  createMeetingSeriesRoute,
+  CreateMeetingSeriesRequest,
+  CreateMeetingSeriesResponse,
+  updateMeetingSeriesRoute,
+  UpdateMeetingSeriesRequest,
+  MeetingSeriesResponse,
+  stopMeetingSeriesRoute,
   openMeetingSpaceRoute,
   OpenMeetingSpaceRequest,
   OpenMeetingSpaceResponse,
@@ -261,6 +268,11 @@ export const createAppointment = (teamSlug: string, body: CreateAppointmentReque
 export const updateAppointment = (id: string, body: UpdateAppointmentRequest) => call(updateAppointmentRoute, { request: UpdateAppointmentRequest, response: AppointmentResponse }, body, { id });
 export const cancelAppointment = (id: string) => call(cancelAppointmentRoute, { response: AppointmentResponse }, undefined, { id });
 /** Its call in its meeting space: started with its kind, or joined when live (P36-07). */
+/** Meeting series (P17-05): make one (its first meeting comes back), change its title or people, stop it. */
+export const createMeetingSeries = (teamSlug: string, body: CreateMeetingSeriesRequest) =>
+  call(createMeetingSeriesRoute, { request: CreateMeetingSeriesRequest, response: CreateMeetingSeriesResponse }, body, { slug: teamSlug });
+export const updateMeetingSeries = (id: string, body: UpdateMeetingSeriesRequest) => call(updateMeetingSeriesRoute, { request: UpdateMeetingSeriesRequest, response: MeetingSeriesResponse }, body, { id });
+export const stopMeetingSeries = (id: string) => call(stopMeetingSeriesRoute, { response: MeetingSeriesResponse }, undefined, { id });
 export const joinAppointment = (id: string) => call(joinAppointmentRoute, { response: OpenMeetingSpaceResponse }, undefined, { id });
 
 // ---- guest links and the waiting room (P17-04) -------------------------------------------------------------------------------------------------------

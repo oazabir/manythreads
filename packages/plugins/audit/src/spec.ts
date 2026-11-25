@@ -983,6 +983,13 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('scheduled_meeting', uuid(e['scheduledMeetingId'])),
     reason: SCHEDULED_CANCEL_REASON[String(e['reason'])] ?? 'Cancelled',
   }),
+  // Meeting series (P17-05): who made, changed or stopped one, never its title, its agenda or its people.
+  'meetings.series.changed': (e) => ({
+    action: e['change'] === 'created' ? 'meeting.series_created' : e['change'] === 'stopped' ? 'meeting.series_stopped' : 'meeting.series_changed',
+    who: actor(e['changedBy']),
+    teamId: team(e['teamId']),
+    target: of('meeting_series', uuid(e['seriesId'])),
+  }),
   // A connected app read into a knowledge base (Bundle D, P16-08): counts only, and only a pass that moved or left something out; an idle pass is routine.
   'knowledge.source.synced': (e) => {
     const moved = num(e['added']) + num(e['updated']) + num(e['removed']);

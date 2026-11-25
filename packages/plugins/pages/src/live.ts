@@ -1,5 +1,5 @@
 import type { HttpCaller, HttpRequest, PluginContext, PluginSocket, PluginTx, RepoProvider, RepoWriteResult } from '@manythreads/sdk';
-import { PagePath, isGuardedRepoPath } from '@manythreads/shared';
+import { LivePagePath, isGuardedRepoPath, isSeriesAgendaPath } from '@manythreads/shared';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness';
@@ -402,13 +402,14 @@ async function serveSocket(ctx: PluginContext, socket: PluginSocket, request: Ht
     return;
   }
   const slug = request.params['slug'] ?? '';
-  const parsed = PagePath.safeParse(request.query['path'] ?? '');
+  // a page under pages/, or a meeting series' agenda page (P17-05: the one file under the platform's meetings/ that the team edits; the repo writer says who)
+  const parsed = LivePagePath.safeParse(request.query['path'] ?? '');
   if (!parsed.success) {
     socket.close(1008, 'a live page is a path under pages/');
     return;
   }
   const path = parsed.data;
-  if (isGuardedRepoPath(path)) {
+  if (isGuardedRepoPath(path) && !isSeriesAgendaPath(path)) {
     socket.close(1008, 'change configuration by pull request');
     return;
   }

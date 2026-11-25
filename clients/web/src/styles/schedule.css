@@ -378,6 +378,33 @@
   color: var(--human);
 }
 
+/* a meeting series (P17-05): Repeats and Until side by side, the note under them, the repeat mark on a block, the agenda dialog's editor */
+.sc-repeat {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sc-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-small);
+}
+
+.sc-series-mark {
+  display: inline-flex;
+  margin-inline-end: 3px;
+  vertical-align: -1px;
+}
+
+.sc-agenda {
+  min-width: 0;
+}
+
+.sc-agenda .live-area {
+  min-height: min(60vh, 560px);
+}
+
 @media (width <= 760px) {
   .sc-teams,
   .sc-week,
@@ -400,6 +427,14 @@
 
   .sc-when .sc-field:first-child {
     grid-column: 1 / -1;
+  }
+
+  .sc-repeat {
+    grid-template-columns: 1fr;
+  }
+
+  .sc-agenda .live-area {
+    min-height: 55vh;
   }
 }
 

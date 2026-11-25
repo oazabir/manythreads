@@ -204,6 +204,32 @@ A **link guest** is someone outside the workspace with no account (not a workspa
   in `connect-src` for members and guests alike.
 - **Step 2 (not built):** the consent prompt and on-device transcription for guests, "Guest links (n)" with a revoke per link, journeys and baselines.
 
+## Meeting series (P17-05, step 1)
+
+A **series** is a meeting of a team's schedule that repeats: every week, every 2 weeks or every month (same day of the month, the last day of a shorter month), from its
+first meeting, until an optional last day. Plan: `docs/plans/meeting-series.md`. Code: `src/series.ts` (routes and jobs), `src/series-agenda.ts` (the page), migration
+`0013_meeting_series.sql`; web `clients/web/src/screens/schedule` (Repeats in the form, the series line, the agenda and Stop in the panel).
+
+- **Meetings**: each is an appointment (P36-04) with `series_id` and its number `occurrence`, computed in the series' time zone (10:00 stays 10:00 when the clocks change). They
+  are planned 92 days ahead; `meetings.series-plan` (every 10 minutes, as the platform) adds the next ones with the people of the latest. All of them share **one meeting space**
+  (one chat, one Files folder for the transcripts). Editing one meeting changes that meeting only; its people are the series' (`PATCH …/appointments/:id` with people is 409).
+- **Routes**: `POST /api/teams/:slug/meeting-series` (the appointment fields + `frequency`, `untilDate`, `timeZone`; 201 with the series and its first meeting; the people are
+  told once), `PATCH /api/meeting-series/:id` (`title`, `inviteeIds`: the meetings to come and the space follow), `POST /api/meeting-series/:id/stop` (the meetings to come are
+  cancelled). The maker, a lead of the team or a workspace admin may change or stop one. `Appointment` carries `series` and `agendaPath`.
+- **The folder**: `meetings/series/<slug>/` of the team repo, a `README.md` and one `<yyyy-mm-dd>-agenda.md` per meeting, written by the platform (`meetings.series-agenda`):
+  the first at once, each later one an hour after the meeting before it ended with its call over, and in any case an hour before it starts. A page has Agenda, Open action
+  items from the last meeting, Action items and Notes.
+- **Carry-over**: the boxes not ticked under the two action-item headings of the last agenda, and the action items of the written notes of the last call in the space
+  (never a note-taker's Personal copy), each once, at most 50. The team repo is read by the whole team, so the form says so before a series is made.
+- **Who edits**: a person who may post in the team changes an agenda page that exists, live (`/api/teams/:slug/pages/live` takes `LivePagePath`) or by a commit; making,
+  removing or renaming one, and every other file under `meetings/`, stays the platform's (repo writer, `isSeriesAgendaPath`). Bots never write there. People invited from other
+  teams do not see the agenda.
+- **Data**: `app.meeting_series` (RLS forced: the team and the people of its space read it; a member makes one for a space they opened; a guard trigger lets a person change
+  only its title, agenda line and status, and a stopped series stays stopped). `app.appointments` gains `series_id`, `occurrence`, `agenda_path`, `agenda_written_at`; a guard
+  trigger keeps those, the space and the team for the platform, and `app.appointment_place_ok` keeps a space to one appointment or one series.
+- **Event**: `meetings.series.changed` v1 (`created`, `changed`, `stopped`; ids only), audited as made, changed, stopped.
+- **Step 2 (not built)**: changing the rule or the time of a series, notes written after the next agenda added to it, the agenda for people of other teams.
+
 ## Access loss
 
 `channel.member.removed` and `team.member.removed` are consumed: the person is dropped from every live room they can no longer read (checked with `app.channel_audience`), the media server is told to

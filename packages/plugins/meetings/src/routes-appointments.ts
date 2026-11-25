@@ -41,13 +41,22 @@ type Row = {
   maker_name: string | null;
   live: string | null;
   can_edit: boolean;
+  series_id: string | null;
+  series_title: string | null;
+  frequency: 'weekly' | 'biweekly' | 'monthly' | null;
+  until_date: string | null;
+  series_status: 'active' | 'stopped' | null;
+  agenda_path: string | null;
 };
 
 const SELECT = `SELECT a.id, a.team_id, t.slug AS team_slug, t.name AS team_name, a.title, a.agenda, a.kind, a.starts_at, a.ends_at, a.status, a.space_channel_id,
   a.created_by_person_id, (SELECT p.display_name FROM app.people p WHERE p.id = a.created_by_person_id) AS maker_name,
-  (SELECT m.id FROM app.meetings m WHERE m.channel_id = a.space_channel_id AND m.state = 'live' LIMIT 1) AS live,
-  app.appointment_can_edit(a.id) AS can_edit
-  FROM app.appointments a LEFT JOIN app.teams t ON t.id = a.team_id`;
+  -- the meetings of a series share one space: its live call belongs to the meeting whose time it is
+  CASE WHEN a.series_id IS NULL OR now() BETWEEN a.starts_at - interval '30 minutes' AND a.ends_at + interval '2 hours'
+       THEN (SELECT m.id FROM app.meetings m WHERE m.channel_id = a.space_channel_id AND m.state = 'live' LIMIT 1) END AS live,
+  app.appointment_can_edit(a.id) AS can_edit,
+  a.series_id, s.title AS series_title, s.frequency, to_char(s.until_date, 'YYYY-MM-DD') AS until_date, s.status AS series_status, a.agenda_path
+  FROM app.appointments a LEFT JOIN app.teams t ON t.id = a.team_id LEFT JOIN app.meeting_series s ON s.id = a.series_id`;
 
 async function shape(tx: PluginTx, rows: Row[]): Promise<Appointment[]> {
   if (rows.length === 0) return [];
@@ -73,23 +82,29 @@ async function shape(tx: PluginTx, rows: Row[]): Promise<Appointment[]> {
     invited: invited.filter((i) => i.appointment_id === r.id).map((i) => ({ personId: i.person_id as Appointment['invited'][number]['personId'], name: i.name })),
     liveMeetingId: (r.live as Appointment['liveMeetingId']) ?? null,
     canEdit: r.can_edit,
+    series:
+      r.series_id && r.frequency && r.series_status
+        ? { id: r.series_id, title: r.series_title ?? r.title, frequency: r.frequency, untilDate: r.until_date, status: r.series_status }
+        : null,
+    // the agenda is a page of the team's files: a person of another team (who does not see the team) is not given its path
+    agendaPath: r.team_slug ? r.agenda_path : null,
   }));
 }
 
-async function loadOne(tx: PluginTx, id: string): Promise<Appointment> {
+export async function loadAppointment(tx: PluginTx, id: string): Promise<Appointment> {
   const row = (await tx.query<Row>(`${SELECT} WHERE a.id = $1`, [id])).rows[0];
   if (!row) throw notFound('No such appointment');
   return (await shape(tx, [row]))[0]!;
 }
 
-const span = (startsAt: string, endsAt: string): void => {
+export const span = (startsAt: string, endsAt: string): void => {
   const start = Date.parse(startsAt);
   const end = Date.parse(endsAt);
   if (!(end > start)) throw invalid('An appointment ends after it starts');
   if (end - start > 24 * 3600_000) throw invalid('An appointment lasts at most 24 hours');
 };
 
-const asPeople = (err: unknown): never => {
+export const asPeople = (err: unknown): never => {
   const code = (err as { code?: string }).code;
   const message = err instanceof Error ? err.message : '';
   if (code === '42501') throw forbidden(message.includes('team') ? 'Make an appointment for a team you are on' : 'You cannot make an appointment here');
@@ -146,7 +161,7 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
       ).rows[0]!.id;
       for (const p of invitees) await tx.query('INSERT INTO app.appointment_invitees (appointment_id, person_id) VALUES ($1, $2)', [id, p]);
       await changed(tx, id, team.id, 'created', invitees);
-      return json(AppointmentResponse.parse({ appointment: await loadOne(tx, id) }), 201);
+      return json(AppointmentResponse.parse({ appointment: await loadAppointment(tx, id) }), 201);
     }),
   });
 
@@ -157,12 +172,14 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { id } = AppointmentParams.parse(req.params);
       const body = UpdateAppointmentRequest.parse(req.body);
-      const seen = await loadOne(tx, id);
+      const seen = await loadAppointment(tx, id);
       if (!seen.canEdit) throw forbidden('Only its maker, a team lead or an admin can change this appointment');
       // two saves at once: the second waits here for the first to commit, then works out its changes from what the first left (issue #28: a removed invitee came back)
       await tx.query('SELECT 1 FROM app.appointments WHERE id = $1 FOR UPDATE', [id]);
-      const before = await loadOne(tx, id);
+      const before = await loadAppointment(tx, id);
       if (before.status === 'cancelled') throw conflict('This appointment is cancelled');
+      // a meeting of a series has the series' people: they are changed for the whole series (PATCH /api/meeting-series/:id)
+      if (before.series && body.inviteeIds) throw conflict('Change the people for the whole series');
       span(body.startsAt ?? before.startsAt, body.endsAt ?? before.endsAt);
       const moved = (body.startsAt !== undefined && body.startsAt !== before.startsAt) || (body.endsAt !== undefined && body.endsAt !== before.endsAt);
       await tx.query(
@@ -193,9 +210,9 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
         if (removed.length > 0) await tx.query('DELETE FROM app.appointment_invitees WHERE appointment_id = $1 AND person_id = ANY ($2::uuid[])', [id, removed]);
         await tx.query('SELECT app.appointment_sync_space($1)', [id]);
       }
-      if (body.title) await tx.query("UPDATE app.channels SET purpose = left($2, 250), updated_at = now() WHERE id = $1 AND kind = 'meeting'", [before.channelId, body.title]).catch(() => undefined);
+      if (body.title && !before.series) await tx.query("UPDATE app.channels SET purpose = left($2, 250), updated_at = now() WHERE id = $1 AND kind = 'meeting'", [before.channelId, body.title]).catch(() => undefined);
       await changed(tx, id, before.team.id, 'changed', added);
-      return json(AppointmentResponse.parse({ appointment: await loadOne(tx, id) }));
+      return json(AppointmentResponse.parse({ appointment: await loadAppointment(tx, id) }));
     }),
   });
 
@@ -205,7 +222,7 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
     rateLimit: { limit: 30, windowMs: 60_000 },
     handler: route(async (req, tx) => {
       const { id } = AppointmentParams.parse(req.params);
-      const a = await loadOne(tx, id);
+      const a = await loadAppointment(tx, id);
       if (a.status === 'cancelled') throw conflict('This appointment is cancelled');
       const caller = await callerPerson(tx);
       // only the people of its space (the maker and the invited) can be in its call; a member of the team who is not invited sees it but is not in it
@@ -223,12 +240,12 @@ export function registerAppointmentRoutes(ctx: PluginContext): void {
     rateLimit: { limit: 30, windowMs: 60_000 },
     handler: route(async (req, tx) => {
       const { id } = AppointmentParams.parse(req.params);
-      const before = await loadOne(tx, id);
+      const before = await loadAppointment(tx, id);
       if (!before.canEdit) throw forbidden('Only its maker, a team lead or an admin can cancel this appointment');
       if (before.status === 'cancelled') throw conflict('This appointment is already cancelled');
       await tx.query("UPDATE app.appointments SET status = 'cancelled', updated_at = now() WHERE id = $1", [id]);
       await changed(tx, id, before.team.id, 'cancelled', []);
-      return json(AppointmentResponse.parse({ appointment: await loadOne(tx, id) }));
+      return json(AppointmentResponse.parse({ appointment: await loadAppointment(tx, id) }));
     }),
   });
 }

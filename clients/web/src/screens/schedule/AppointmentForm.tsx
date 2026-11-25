@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { APPOINTMENT_AGENDA_MAX, APPOINTMENT_TITLE_MAX, type Appointment, type MeetingPerson } from '@manythreads/shared';
 import { Dialog } from '../../components/Dialog';
-import { createAppointment, fetchMeetingPeople, updateAppointment } from '../../meetings/api';
+import { createAppointment, createMeetingSeries, fetchMeetingPeople, updateAppointment, updateMeetingSeries } from '../../meetings/api';
 import { useShell } from '../../shell/context';
+import { REPEAT_OPTIONS, agendaNotice, browserTimeZone, buildSeriesBody, type Repeat } from './series';
 
 /*
  * New appointment and Edit (P36-06): the team whose schedule it goes on (one of the person's teams; fixed once made), a title, the day and the time, audio or
  * video, an agenda line, and the people to invite from any team (searched by name). Saving tells the people newly invited.
+ * A new one can repeat (P17-05): every week, every 2 weeks or every month, until a day or not; each of its meetings then gets an agenda page. Editing one meeting
+ * of a series changes that meeting only, and its people for the whole series.
  */
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -36,6 +39,9 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
   const [picked, setPicked] = useState<Map<string, string>>(new Map((appointment?.invited ?? []).map((p) => [p.personId as string, p.name])));
   const [find, setFind] = useState('');
   const [found, setFound] = useState<MeetingPerson[]>([]);
+  const [repeat, setRepeat] = useState<Repeat>('none');
+  const [until, setUntil] = useState('');
+  const series = appointment?.series ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,9 +75,21 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
     setBusy(true);
     setError(null);
     try {
-      const body = { title: title.trim(), startsAt, endsAt, kind, agenda, inviteeIds: [...picked.keys()] as never };
-      const res = editing ? await updateAppointment(appointment.id, body) : await createAppointment(teamSlug, body);
-      onSaved(res.appointment);
+      const inviteeIds = [...picked.keys()];
+      const body = { title: title.trim(), startsAt, endsAt, kind, agenda, inviteeIds: inviteeIds as never };
+      if (editing && series) {
+        // this meeting only; the people are the series' and change for all its meetings to come
+        const res = await updateAppointment(appointment.id, { title: body.title, startsAt, endsAt, kind, agenda });
+        const had = new Set(appointment.invited.map((p) => p.personId as string));
+        if (had.size !== picked.size || inviteeIds.some((p) => !had.has(p))) await updateMeetingSeries(series.id, { inviteeIds: inviteeIds as never });
+        onSaved(res.appointment);
+      } else if (!editing && repeat !== 'none') {
+        const res = await createMeetingSeries(teamSlug, buildSeriesBody({ title, startsAt, endsAt, kind, agenda, inviteeIds, repeat, until, timeZone: browserTimeZone() }));
+        onSaved(res.appointment);
+      } else {
+        const res = editing ? await updateAppointment(appointment.id, body) : await createAppointment(teamSlug, body);
+        onSaved(res.appointment);
+      }
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'It could not be saved. Try again.');
     } finally {
@@ -117,6 +135,28 @@ export function AppointmentForm({ appointment, start, onClose, onSaved }: { appo
             <input id="ap-to" type="time" className="dlg-input" value={to} onChange={(ev) => setTo(ev.target.value)} data-testid="appointment-to" />
           </span>
         </div>
+        {!editing ? (
+          <div className="sc-repeat">
+            <span className="sc-field">
+              <label className="dlg-label" htmlFor="ap-repeat">Repeats</label>
+              <select id="ap-repeat" className="dlg-input" value={repeat} onChange={(ev) => setRepeat(ev.target.value as Repeat)} data-testid="appointment-repeat">
+                {REPEAT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </span>
+            {repeat !== 'none' ? (
+              <span className="sc-field">
+                <label className="dlg-label" htmlFor="ap-until">Until (optional)</label>
+                <input id="ap-until" type="date" className="dlg-input" value={until} min={day} onChange={(ev) => setUntil(ev.target.value)} data-testid="appointment-until" />
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {!editing && repeat !== 'none' ? (
+          <p className="sc-note" data-testid="appointment-series-note">{agendaNotice(teams.find((t) => t.slug === teamSlug)?.name ?? 'the team')}</p>
+        ) : null}
+        {editing && series ? (
+          <p className="sc-note" data-testid="appointment-series-note">Changes here are for this meeting only. The people are changed for the whole series.</p>
+        ) : null}
         <span className="dlg-label">Call</span>
         <div className="sc-kind" role="radiogroup" aria-label="Call">
           <label className={`sc-pill ${kind === 'video' ? 'on' : ''}`}><input type="radio" name="ap-kind" checked={kind === 'video'} onChange={() => setKind('video')} data-testid="appointment-video" /> Video</label>

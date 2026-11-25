@@ -32,6 +32,27 @@ export function isMeetingsPath(normalized: string): boolean {
   return fold(normalized.split('/')[0] ?? '') === MEETINGS_DIR;
 }
 
+/** The folder of a meeting series (P17-05): `meetings/series/<slug>/`, its README and one agenda page per meeting of the series. */
+export const SERIES_DIR = `${MEETINGS_DIR}/series`;
+export const SERIES_SLUG_MAX = 48;
+
+/** A series' folder name: lower-case letters and digits in words joined by single hyphens, at most 48 characters. Checked without a regex quantifier inside another. */
+export function isSeriesSlug(slug: string): boolean {
+  if (slug.length < 1 || slug.length > SERIES_SLUG_MAX || !/^[a-z0-9-]+$/.test(slug)) return false;
+  return !slug.startsWith('-') && !slug.endsWith('-') && !slug.includes('--');
+}
+
+/**
+ * True for one meeting's agenda page of a series, `meetings/series/<slug>/<yyyy-mm-dd>-agenda.md` (or `-agenda-2.md` when two meetings fall on one day): the one kind
+ * of file under `meetings/` a person may change (one that already exists; only the platform makes them). Exact and lower case: any other spelling stays the
+ * platform's, as the rest of `meetings/`.
+ */
+export function isSeriesAgendaPath(path: string): boolean {
+  const parts = path.split('/');
+  if (parts.length !== 4 || parts[0] !== MEETINGS_DIR || parts[1] !== 'series') return false;
+  return isSeriesSlug(parts[2] ?? '') && /^\d{4}-\d{2}-\d{2}-agenda(-\d{1,2})?\.md$/.test(parts[3] ?? '');
+}
+
 /**
  * The folder of one meeting: `meetings/2026/11/08-1402-sprint-review` (the date and time are UTC; `slug` is lowercase letters, digits and hyphens). The same folder
  * name is used under `channels/<name>/meetings/` in Files storage for a private channel or a direct message, and under the organizer's Personal `Meetings/` space.

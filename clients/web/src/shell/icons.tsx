@@ -24,6 +24,8 @@ export const FolderIcon = proIcon(ProFolder, 14);
 export const BoardsIcon = proIcon(BoardIcon);
 export const OrgIcon = proIcon(BuildingMultipleIcon);
 export const ScheduledJobsIcon = proIcon(ArrowSyncIcon);
+/** A meeting that repeats (P17-05), on its block of the Schedule. */
+export const SeriesIcon = proIcon(ArrowSyncIcon, 12);
 export const ThreadsIcon = proIcon(CommentMultipleIcon);
 export const ApprovalsIcon = proIcon(CheckmarkCircleIcon);
 export const DeliveriesIcon = proIcon(BarChartIcon);
