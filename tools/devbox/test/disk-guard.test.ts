@@ -164,6 +164,21 @@ describe('disk-guard.sh check', () => {
     expect(res.out).toMatch(/removing unused k3s image docker\.io\/manythreads\/server:OLD/);
   });
 
+  it('never removes an untagged entry that shares its id with a kept image (crictl rmi by id would take the kept one too)', () => {
+    images();
+    const env = k3s(
+      ['sha256:srv'],
+      [
+        { id: 'sha256:srv', tags: ['docker.io/manythreads/server:LIVE'] },
+        { id: 'sha256:pod', tags: ['docker.io/manythreads/claude-pod:abcdef1234'] },
+        { id: 'sha256:pod' },
+        { id: 'sha256:none' },
+      ],
+    );
+    const res = run(['check', '--keep', 'manythreads/claude-pod:abcdef1234'], { FAKE_DF_SEQ: '77,58', ...env });
+    expect(res.code).toBe(0);
+    expect(calls().filter((l) => l.startsWith('k3s crictl rmi'))).toEqual(['k3s crictl rmi sha256:none']);
+  });
   it('skips the k3s prune when it cannot read what runs', () => {
     images();
     const res = run(['check'], { FAKE_DF_SEQ: '77,58', FAKE_CRICTL_FAIL: '1', ...k3s([], [{ id: 'sha256:x', tags: ['a:b'] }]) });

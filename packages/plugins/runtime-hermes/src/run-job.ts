@@ -34,6 +34,7 @@ import {
 import { z } from 'zod';
 import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { settleAgentApproval } from './agent-approval.ts';
+import { outOfMemoryNotice } from './activity.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, deniedNotice, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
 import { applyChatAlias, recordRunFacts, recordStopped, streamsLive } from './chat-run.ts';
@@ -985,6 +986,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let viaPod: { runner: string } | undefined;
         let viaClaude: Extract<BotRuntimeEvent, { type: 'result' }>['viaClaude'];
         let tokens: { input: number; output: number; total: number } | null | undefined;
+        let memoryNoticed = false;
         for await (const event of handle.events) {
           recorder.event(event);
           if (event.type === 'text') frames?.text(event.text);
@@ -1002,6 +1004,12 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             recorder.settle(told);
           }
           if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
+          // A command the kernel stopped for memory (P31-04): the thread hears it once while the run goes on. A notice carries no run id, so it never counts as the run's reply.
+          if (event.type === 'notice' && event.kind === 'out_of_memory' && !memoryNoticed && !liveEntry.stopped) {
+            memoryNoticed = true;
+            job.log.warn(`runtime-hermes: run ${run.runId}: a command ran out of memory${event.limitMiB !== undefined ? ` (limit ${event.limitMiB} MiB)` : ''}`);
+            await postNotice(ctx, run, payload, outOfMemoryNotice(event), (line) => job.log.warn(line));
+          }
           if (event.type !== 'result') continue;
           reply = event.text;
           ok = event.ok;

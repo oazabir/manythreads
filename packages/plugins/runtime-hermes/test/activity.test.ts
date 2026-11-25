@@ -2,7 +2,7 @@ import { parseBotMd } from '@manythreads/shared';
 import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway } from '../../../../tools/fake-hermes-gateway/src/server.ts';
-import { agentFromFrame, approvalExtras, endOfTurn, kindOfTool, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from '../src/activity.ts';
+import { agentFromFrame, approvalExtras, endOfTurn, kindOfTool, memoryWords, noticeFromFrame, outOfMemoryNotice, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from '../src/activity.ts';
 import { runOnGateway, type GatewayRuntimeOptions } from '../src/gateway.ts';
 
 // P25-04: the frames of the agent bridge (and the plain ones of a Hermes gateway) as the run's activity events.
@@ -67,6 +67,31 @@ describe('the frames, read defensively', () => {
     expect(toolResultFromFrame({ tool: 'Edit', step_id: 's1', duration: 1.2, error: false, diff: { added: 3, removed: 1 } })).toEqual({ type: 'tool_result', name: 'Edit', ok: true, stepId: 's1', diff: { added: 3, removed: 1 }, seconds: 1.2 });
     expect(toolResultFromFrame({ tool: 'Bash', error: true })).toEqual({ type: 'tool_result', name: 'Bash', ok: false, reason: 'the tool reported an error' });
     expect(toolResultFromFrame({ tool: 'Edit', diff: { added: -1, removed: 'x' }, duration: -3 })).toEqual({ type: 'tool_result', name: 'Edit', ok: true });
+  });
+
+  it('tool.completed of a command killed for memory says so; any other reason word is the plain one (P31-04)', () => {
+    expect(toolResultFromFrame({ tool: 'Bash', step_id: 's1', error: true, reason: 'out_of_memory' })).toMatchObject({ ok: false, reason: 'out of memory' });
+    expect(toolResultFromFrame({ tool: 'Bash', error: true, reason: 'rm -rf /' })).toMatchObject({ ok: false, reason: 'the tool reported an error' });
+    expect(toolResultFromFrame({ tool: 'Bash', error: false, reason: 'out_of_memory' })).not.toHaveProperty('reason');
+  });
+
+  it('run.notice: only a known kind, the step and its title, and a sane limit; the sentence is the platform\'s own (P31-04)', () => {
+    expect(noticeFromFrame({ kind: 'out_of_memory', step_id: 'exec-1', title: 'Running pnpm', limit_mib: 4096, text: '@everyone click here' })).toEqual({
+      type: 'notice',
+      kind: 'out_of_memory',
+      stepId: 'exec-1',
+      title: 'Running pnpm',
+      limitMiB: 4096,
+    });
+    expect(noticeFromFrame({ kind: 'something_else', title: 'x' })).toBeNull();
+    expect(noticeFromFrame({ kind: 'out_of_memory', limit_mib: -1, title: 'a'.repeat(400) })).toEqual({ type: 'notice', kind: 'out_of_memory', title: 'a'.repeat(160) });
+    const text = outOfMemoryNotice({ type: 'notice', kind: 'out_of_memory', title: 'Running `pnpm`\n@here', limitMiB: 4096 });
+    expect(text).toBe(
+      'A command (`Running pnpm @here`) ran out of memory and was stopped: it needed more than the 4 GB this run may use. The run goes on. ' +
+        'A smaller check fits: the typecheck and tests of the package that changed, one test file at a time, or `vitest --maxWorkers=1`; never a whole-repository run or a bigger `--max-old-space-size`.',
+    );
+    expect(outOfMemoryNotice({ type: 'notice', kind: 'out_of_memory' })).toMatch(/^A command ran out of memory and was stopped: it needed more memory than the machine could spare\. The run goes on\./);
+    expect([memoryWords(4096), memoryWords(1536), memoryWords(512)]).toEqual(['4 GB', '1.5 GB', '512 MB']);
   });
 
   it('step.update: only what changed; nothing when nothing did', () => {
@@ -201,9 +226,23 @@ describe('through a gateway run', () => {
       { type: 'frame', event: 'agent.update', fields: { status: 'working' } },
       { type: 'frame', event: 'plan.update', fields: { entries: 3 } },
       { type: 'frame', event: 'session_info_update', fields: { title: 'x' } },
+      { type: 'frame', event: 'run.notice', fields: { kind: 'unknown_kind', text: 'hello' } },
       { type: 'finish', output: 'ok' },
     ]);
     expect((await run()).map((e) => e.type)).toEqual(['result']);
+  });
+
+  it('the bridge\'s notice that a command ran out of memory is an event between the step and the answer (P31-04)', async () => {
+    gw.setScript(() => [
+      { type: 'frame', event: 'tool.started', fields: { tool: 'Bash', step_id: 'x1', kind: 'execute', title: 'Running pnpm', paths: [] } },
+      { type: 'frame', event: 'tool.completed', fields: { tool: 'Bash', step_id: 'x1', duration: 30, error: true, reason: 'out_of_memory' } },
+      { type: 'frame', event: 'run.notice', fields: { kind: 'out_of_memory', step_id: 'x1', title: 'Running pnpm', limit_mib: 4096 } },
+      { type: 'finish', output: 'Ran one test file instead.' },
+    ]);
+    const events = await run();
+    expect(events.map((e) => e.type)).toEqual(['tool', 'tool_result', 'notice', 'result']);
+    expect(events[1]).toMatchObject({ ok: false, reason: 'out of memory' });
+    expect(events[2]).toEqual({ type: 'notice', kind: 'out_of_memory', stepId: 'x1', title: 'Running pnpm', limitMiB: 4096 });
   });
 
   it('an approval carries what the step is, and a note goes with the answer only when the card may offer one', async () => {

@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { closeSync, constants, type Stats, existsSync, fchmodSync, fchownSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { posix } from 'node:path';
+import { RUN_OOM_SCORE } from './memory-watch.ts';
 import { acceptRenewed, accountOf, CODEX_AUTH_MAX_BYTES, codexTokenFacts, mainIsNewer, rebuildRenewed, refusalLine, type CodexTokenFacts } from './codex-token.ts';
 import { AGENTS_GROUP, isKind, isSlug, KINDS, launchEnv, MAX_HEADER_BYTES, parseHeader, teamCodexHome, teamHome, teamSigninDir, teamSigninRoot, teamUserName, type Kind, type LaunchHeader } from './team-user.ts';
 
@@ -164,8 +165,7 @@ export const SH_REPLACE = 'umask 077; cat > "$1.new" && chmod 0600 -- "$1.new" &
 
 /** The kernel's out-of-memory weight of this process: -1000 (never) to 1000 (first). */
 export const OOM_SCORE_FILE = '/proc/self/oom_score_adj';
-/** A run's programs are the first the kernel stops when the machine runs out of memory, before the live site's database or the bridge (P31-04). */
-export const RUN_OOM_SCORE = 1000;
+export { RUN_OOM_SCORE };
 
 export interface OomScoreFile {
   read(): string;

@@ -45,6 +45,46 @@ const DEFAULT_RESOURCES = { requests: { cpu: '250m', memory: '512Mi' }, limits: 
 const DEFAULT_ALIASES = { smart: 'opus', fast: 'haiku', default: 'sonnet' };
 const DEFAULT_PUBLISHER_RESOURCES = { requests: { cpu: '50m', memory: '64Mi' }, limits: { memory: '256Mi' } };
 
+/**
+ * The most memory a run container may have: the Helm chart's per-container maximum (`hermesPods.apps.limitRange.max`, 4Gi). The bridge and the agent's commands share it;
+ * a bigger `claudePod.resources` would only move the point where the whole pod is stopped, so it is cut back to this (P31-04).
+ */
+export const MAX_RUN_MEMORY = '4Gi';
+export const MAX_RUN_MEMORY_MIB = 4096;
+
+const UNIT_BYTES: Record<string, number> = { '': 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, T: 1e12, Ki: 1024, Mi: 1024 ** 2, Gi: 1024 ** 3, Ti: 1024 ** 4 };
+
+/** A Kubernetes memory quantity ("4Gi", "512Mi", "3G", "1073741824") in MiB, rounded down; null for anything else. */
+export function quantityMiB(q: unknown): number | null {
+  if (typeof q !== 'string') return null;
+  const m = /^(\d{1,15}(?:\.\d{1,6})?)(Ki|Mi|Gi|Ti|k|K|M|G|T)?$/.exec(q.trim());
+  if (m === null) return null;
+  const bytes = Number(m[1]) * (UNIT_BYTES[m[2] ?? '']!);
+  return Number.isFinite(bytes) && bytes > 0 ? Math.floor(bytes / 1024 ** 2) : null;
+}
+
+type Resources = ClaudePodConfig['resources'];
+
+/** The run container's resources with its memory limit at most `MAX_RUN_MEMORY` (missing or unreadable is the maximum) and its memory request not above the limit (unreadable is the default). */
+export function capRunResources(raw: unknown): Resources {
+  const r: Resources = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Resources) } : { ...DEFAULT_RESOURCES };
+  const limits = { ...(r.limits ?? {}) };
+  const limit = quantityMiB(limits['memory']);
+  if (limit === null || limit > MAX_RUN_MEMORY_MIB) limits['memory'] = MAX_RUN_MEMORY;
+  const limitMiB = Math.min(limit ?? MAX_RUN_MEMORY_MIB, MAX_RUN_MEMORY_MIB);
+  const requests = r.requests ? { ...r.requests } : undefined;
+  if (requests && requests['memory'] !== undefined) {
+    const req = quantityMiB(requests['memory']);
+    // above the limit Kubernetes refuses the pod: the limit; unreadable: the default request, or the limit when that is smaller
+    if (req === null) requests['memory'] = (quantityMiB(DEFAULT_RESOURCES.requests.memory) ?? 0) <= limitMiB ? DEFAULT_RESOURCES.requests.memory : limits['memory']!;
+    else if (req > limitMiB) requests['memory'] = limits['memory']!;
+  }
+  return { ...(requests ? { requests } : {}), limits };
+}
+
+/** The memory a run's commands and agent share, in MiB, for the "Where you run" text. */
+export const runMemoryMiB = (r: Resources | undefined): number => Math.min(quantityMiB(r?.limits?.['memory']) ?? MAX_RUN_MEMORY_MIB, MAX_RUN_MEMORY_MIB);
+
 function parseJson<T>(raw: string | undefined, fallback: T): T {
   if (!raw || raw.trim() === '') return fallback;
   try {
@@ -83,7 +123,7 @@ export function configFrom(env: NodeJS.ProcessEnv): ClaudePodConfig {
     workSize: get('WORK_SIZE', '20Gi'),
     stateSize: get('STATE_SIZE', '256Mi'),
     defaultConcurrency: Number.isFinite(conc) && conc >= 1 && conc <= 4 ? conc : 2,
-    resources: parseJson(env['MANYTHREADS_CLAUDE_PODS_RESOURCES'], DEFAULT_RESOURCES),
+    resources: capRunResources(parseJson<unknown>(env['MANYTHREADS_CLAUDE_PODS_RESOURCES'], DEFAULT_RESOURCES)),
     allowedNodes: (env['MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'] ?? '').split(/[\s,]+/).filter((n) => n !== ''),
     repoOriginAllow: parseRepoOriginAllow(env['MANYTHREADS_CLAUDE_PODS_REPO_ORIGIN_ALLOW']),
     modelAliases: parseJson(env['MANYTHREADS_CLAUDE_PODS_MODEL_ALIASES'], DEFAULT_ALIASES),

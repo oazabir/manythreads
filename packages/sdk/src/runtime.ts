@@ -208,6 +208,11 @@ export type BotRuntimeEvent =
   /** The agent was reasoning for `seconds`. The text of the reasoning never leaves the runner. */
   | { type: 'thinking'; seconds: number }
   /**
+   * Something the runner saw that the thread should hear while the run goes on (P31-04). `out_of_memory`: the kernel stopped one of the agent's commands for using too much memory;
+   * `title` is that step's short title ("Running pnpm"), `limitMiB` the run's memory limit when the runner knows it. The runtime writes the sentence itself; nothing here is the runner's prose.
+   */
+  | { type: 'notice'; kind: 'out_of_memory'; stepId?: string | undefined; title?: string | undefined; limitMiB?: number | undefined }
+  /**
    * The bot's own program stopped inside the run to ask a person (P24): its shell wants to run a command it thinks is risky. The run is paused until `answer` is
    * called; the stream carries on only after that. `choices` are the answers the program accepts (`once`, `session`, `always`, `deny`). `answer` resolves false when the
    * program no longer waits (the run ended, or the question was already answered).

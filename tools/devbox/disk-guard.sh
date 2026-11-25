@@ -76,8 +76,13 @@ for c in containers:
 keep_refs = set()
 for k in keep:
     keep_refs.update({k, "docker.io/" + k})
+# `crictl rmi <id>` removes every name of that id: an untagged entry that shares its id with a kept image would take the kept one with it (2026-11-25, a
+# hand-imported pod image went this way), so a kept image's id is never removed
+keep_ids = {i.get("id") for i in images if any(n in keep_refs for n in (i.get("repoTags") or []) + (i.get("repoDigests") or []))}
 for i in images:
     names = (i.get("repoTags") or []) + (i.get("repoDigests") or [])
+    if i.get("id") in keep_ids:
+        continue
     # the pods' sandbox (pause) image: no container names it, and without it no pod starts (k3s does not always mark it pinned)
     if i.get("pinned") or any(n == sandbox or n == "docker.io/" + sandbox or "/pause:" in n or "pause@" in n for n in names):
         continue

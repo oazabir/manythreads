@@ -78,6 +78,8 @@ export interface WhereYouRun {
   browser?: boolean | undefined;
   /** A server only: the bridge's root folder when it is not the installer's (`/var/lib/manythreads-bridge`). */
   serverRoot?: string | undefined;
+  /** The memory the agent and its commands share, in MiB, when the place knows it (an agent pod's limit). */
+  memoryMiB?: number | undefined;
 }
 
 /** Where a bot's own folder lies. */
@@ -126,6 +128,22 @@ const CODEX_NOTES: readonly string[] = [
   'Do not leave a process running in the background when you finish; a build or a server you started ends with your turn.',
 ];
 
+/**
+ * What a command that runs out of memory looks like, and what to run instead (P31-04): every place stops such a command, not the run, and the bot must not try the same
+ * command again or make it bigger.
+ */
+export function memoryNote(memoryMiB?: number): string {
+  const share =
+    memoryMiB !== undefined && Number.isInteger(memoryMiB) && memoryMiB > 0
+      ? `Your commands and the agent share ${memoryMiB % 1024 === 0 ? `${memoryMiB / 1024} GB` : `${memoryMiB} MB`} of memory. `
+      : '';
+  return (
+    `${share}A command that runs out of memory is stopped (exit code 137, "Killed") and your run goes on: do not run it again as it was. ` +
+    'Run focused checks: the typecheck and tests of the package you changed, one test file at a time, `vitest --maxWorkers=1`; never a whole-repository typecheck, lint or test run, ' +
+    'and never a bigger `--max-old-space-size` or `NODE_OPTIONS`.'
+  );
+}
+
 /** What every agent needs, whatever the place: a long command is polled to its end (Hermes shells block, the others must be told). */
 const POLL_NOTE = 'A command that takes a long time is waited for in the same turn: poll it until it has ended before you answer.';
 
@@ -156,6 +174,7 @@ export function whereYouRun(w: WhereYouRun): string {
     lines.push(`A build in the cluster takes 10 to 25 minutes: wait for it in the same turn (\`kubectl wait --timeout=40m\`), and your run may last at least ${DEPLOYER_MIN_RUN_MINUTES} minutes.`);
   }
   if (w.browser === true) lines.push('A browser (Chromium) is installed for Playwright checks; run it headless, there is no display.');
+  lines.push(memoryNote(w.memoryMiB));
   lines.push(w.agent === 'codex' ? CODEX_NOTES.join('\n') : POLL_NOTE);
   return lines.join('\n');
 }

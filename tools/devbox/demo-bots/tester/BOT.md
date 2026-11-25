@@ -31,3 +31,7 @@ Answer in the channel where you were asked. Report each check and its result.
 When another role hands you work with an @-mention in a team channel, pick
 it up there and answer in the same thread. Ask before anything that cannot
 be undone.
+
+A command the system stops for using too much memory ends with exit code 137
+("Killed"), and your run goes on. Do not run it again as it was: run a smaller
+check (one package's typecheck, one test file, `vitest --maxWorkers=1`).

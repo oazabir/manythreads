@@ -1,4 +1,5 @@
 import { posix } from 'node:path';
+import { exitSignOf, ranOutOfMemory, type ExitSign, type MemoryWatch } from '../memory-watch.ts';
 import { redact } from '../process.ts';
 
 // What an ACP adapter says (P25-03), turned into the frames the bridge sends the server (docs/plans/acp.md §3.1).
@@ -7,7 +8,8 @@ import { redact } from '../process.ts';
 // several places (`rawInput`, `rawOutput`, `_meta.claudeCode.toolResponse`, `_meta.terminal_output_delta`, `_meta.terminal_exit`, `content` text);
 // none of them is read here, so none can be forwarded. The fields read are (docs/spikes/acp-measured.md): `toolCallId`, `title`, `kind`, `status`,
 // `locations[].path`, the `diff` blocks of `content` (as counts only), `_meta.claudeCode.{toolName, parentToolUseId}` and `_meta.is_mcp_tool_call`.
-// `rawInput` is opened in two places only: Hermes' `todo_list` step, whose items ARE the agent's plan (`rawInput.todos`, measured on Hermes 0.21.5), and
+// A command step's exit is read as two short values only (`_meta.terminal_exit.{exit_code,signal}`, `rawOutput.exit_code`, or the number of a `rawOutput` text that starts
+// "Exit code <n>"), to tell a command the kernel killed for memory (memory-watch.ts); nothing of it is forwarded. `rawInput` is opened in two places only: Hermes' `todo_list` step, whose items ARE the agent's plan (`rawInput.todos`, measured on Hermes 0.21.5), and
 // `approvalOf`, for the one request a person is asked to approve (the command, or the plan to implement, so the card shows what will run). Both are clipped
 // and redacted. A step's own title carries no command line: an `execute` step is "Running <program>", a link has no user, password or query, and a path outside
 // the run's folder is not named. Reasoning text is counted in time and dropped.
@@ -287,6 +289,10 @@ interface Step {
   helperName: string;
   diff: { added: number; removed: number } | null;
   done: boolean;
+  /** For a command step: how many processes the kernel had killed for memory when it started (null: not known). */
+  oomBefore: number | null;
+  /** The last exit the adapter said for this step (an update may carry it before the one that ends the step). */
+  exit: ExitSign | null;
 }
 
 interface Helper {
@@ -306,7 +312,12 @@ const planStatus = (v: unknown): PlanEntry['status'] => (v === 'in_progress' ? '
 export interface FramesOptions extends ViewContext {
   emit: Sink;
   now?: () => number;
+  /** The bridge's own control group, to tell a command the kernel killed for memory (P31-04). Absent or null: no step is ever marked so. */
+  memory?: MemoryWatch | null;
 }
+
+/** At most this many "ran out of memory" notices per run: the site posts the first, the rest only mark their steps. */
+const MAX_OOM_NOTICES = 3;
 
 /**
  * Folds one run's `session/update` notifications into frames. One instance per run (per prompt): it keeps the open steps, the helpers, the last plan, the
@@ -339,6 +350,7 @@ export class Frames {
   /** A step started since the last text: the next text starts a new paragraph. */
   private afterStep = false;
   private inText = false;
+  private oomNotices = 0;
 
   constructor(private readonly o: FramesOptions) {
     this.now = o.now ?? Date.now;
@@ -539,7 +551,10 @@ export class Frames {
         helperName: '',
         diff: view.diff,
         done: false,
+        oomBefore: null,
+        exit: exitSignOf(raw),
       };
+      if (step.kind === 'execute') step.oomBefore = this.oomKills();
       this.steps.set(view.id, step);
       if (mcpTool !== null) this.mcpTools.add(mcpTool);
       if (step.todo) {
@@ -559,6 +574,7 @@ export class Frames {
       return;
     }
     // An update: only what changed is looked at.
+    existing.exit = exitSignOf(raw) ?? existing.exit;
     if (existing.hidden && existing.helper === null) {
       if (existing.todo) this.onHermesTodos(raw);
       this.applyStatus(existing, view.status);
@@ -581,7 +597,10 @@ export class Frames {
       existing.paths = view.paths;
       changed['paths'] = view.paths;
     }
-    if (view.kind !== null && view.kind !== existing.kind) existing.kind = view.kind;
+    if (view.kind !== null && view.kind !== existing.kind) {
+      existing.kind = view.kind;
+      if (view.kind === 'execute' && existing.oomBefore === null && !existing.done) existing.oomBefore = this.oomKills();
+    }
     if (view.diff !== null) existing.diff = view.diff;
     if (existing.helper !== null) {
       this.renameHelper(existing, view);
@@ -606,6 +625,14 @@ export class Frames {
     };
   }
 
+  private oomKills(): number | null {
+    try {
+      return this.o.memory?.oomKills() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private applyStatus(step: Step, status: string | null): void {
     if (status !== null) step.status = status;
     if (step.done || (status !== 'completed' && status !== 'failed')) return;
@@ -616,13 +643,27 @@ export class Frames {
       return;
     }
     if (step.hidden) return;
+    // Read after the end: the kernel counts a kill before the process is gone, and the adapter learns of the end only after that.
+    const outOfMemory = step.kind === 'execute' && step.oomBefore !== null && ranOutOfMemory(step.oomBefore, this.oomKills(), failed, step.exit);
     this.send('tool.completed', {
       tool: step.tool,
       step_id: step.id,
       duration: Math.round(((this.now() - step.startedAt) / 1000) * 10) / 10,
-      error: failed,
+      error: failed || outOfMemory,
+      ...(outOfMemory ? { reason: 'out_of_memory' } : {}),
       ...(step.diff !== null ? { diff: step.diff } : {}),
     });
+    if (outOfMemory && this.oomNotices < MAX_OOM_NOTICES) {
+      this.oomNotices += 1;
+      let limit: number | null = null;
+      try {
+        limit = this.o.memory?.limitBytes() ?? null;
+      } catch {
+        limit = null;
+      }
+      // Only the step's own title (already cut and cleaned) and the limit: the site writes the sentence itself.
+      this.send('run.notice', { kind: 'out_of_memory', step_id: step.id, title: step.title, ...(limit !== null ? { limit_mib: Math.floor(limit / (1024 * 1024)) } : {}) });
+    }
   }
 
   // ---- helpers (subagents) --------------------------------------------------------------------------------------------------------------

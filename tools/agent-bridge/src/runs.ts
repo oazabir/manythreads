@@ -11,6 +11,7 @@ import { NO_TEAM_USERS_FULL_ACCESS } from './full-access.ts';
 import { claudeCodeDriver } from './drivers/claude-code.ts';
 import { codexDriver } from './drivers/codex.ts';
 import type { Driver, DriverJob } from './drivers/types.ts';
+import { RUN_OOM_SCORE } from './memory-watch.ts';
 import { startChild, type ChildHandle } from './process.ts';
 import type { RunRequest } from './request.ts';
 import { KeyedQueue, type SessionStore } from './sessions.ts';
@@ -394,7 +395,8 @@ export class RunManager {
         },
         log: (line) => this.opts.log(`run ${run.id} ${line}`),
         start: (bin, args, o) => {
-          const child = team !== null ? team.start(o) : startChild(bin, args, o);
+          // A team's run on a server is weighted by the root helper, which the team cannot undo (team-helper.ts `raiseForChild`); any other run's agent is weighted here.
+          const child = team !== null ? team.start(o) : startChild(bin, args, { ...o, oomScore: RUN_OOM_SCORE });
           run.children.add(child);
           // Whatever a tool left running in the run's process group (a background server, a watcher) ends with the run.
           void child.done.then(() => {

@@ -92,7 +92,7 @@ export function toolResultFromFrame(f: Record<string, unknown>): Extract<BotRunt
     type: 'tool_result',
     name: String(f['tool'] ?? 'tool'),
     ok: !failed,
-    ...(failed ? { reason: 'the tool reported an error' } : {}),
+    ...(failed ? { reason: f['reason'] === 'out_of_memory' ? 'out of memory' : 'the tool reported an error' } : {}),
     ...(stepId !== undefined ? { stepId } : {}),
     ...(diff !== undefined ? { diff } : {}),
     ...(seconds !== undefined ? { seconds } : {}),
@@ -130,6 +130,39 @@ export function planFromFrame(f: Record<string, unknown>): Extract<BotRuntimeEve
     entries.push({ content, status: PLAN_STATUS.find((s) => s === e['status']) ?? 'pending' });
   }
   return { type: 'plan', entries };
+}
+
+/** `run.notice` (P31-04): only a kind from the fixed list, the step's id and title, and the run's memory limit; any text the gateway sends with it is not read. */
+export function noticeFromFrame(f: Record<string, unknown>): Extract<BotRuntimeEvent, { type: 'notice' }> | null {
+  if (f['kind'] !== 'out_of_memory') return null;
+  const stepId = text(f['step_id'], MAX_ID);
+  const title = text(f['title'], MAX_TITLE);
+  const limit = count(f['limit_mib']);
+  return {
+    type: 'notice',
+    kind: 'out_of_memory',
+    ...(stepId !== undefined ? { stepId } : {}),
+    ...(title !== undefined ? { title } : {}),
+    ...(limit !== undefined && limit > 0 && limit <= 16 * 1024 * 1024 ? { limitMiB: limit } : {}),
+  };
+}
+
+/** `4096` MiB is "4 GB", `1536` is "1.5 GB", below 1 GB in MB. */
+export function memoryWords(mib: number): string {
+  if (mib < 1024) return `${mib} MB`;
+  const gb = Math.round((mib / 1024) * 10) / 10;
+  return `${Number.isInteger(gb) ? gb.toFixed(0) : gb.toFixed(1)} GB`;
+}
+
+/** The sentence the thread gets when a command ran out of memory: what happened, that the run goes on, and what to run instead. */
+export function outOfMemoryNotice(n: Extract<BotRuntimeEvent, { type: 'notice' }>): string {
+  const title = (n.title ?? '').replace(/[`\s]+/g, ' ').trim();
+  const what = title === '' ? 'A command' : `A command (\`${title}\`)`;
+  const limit = n.limitMiB !== undefined ? `it needed more than the ${memoryWords(n.limitMiB)} this run may use` : 'it needed more memory than the machine could spare';
+  return (
+    `${what} ran out of memory and was stopped: ${limit}. The run goes on. ` +
+    'A smaller check fits: the typecheck and tests of the package that changed, one test file at a time, or `vitest --maxWorkers=1`; never a whole-repository run or a bigger `--max-old-space-size`.'
+  );
 }
 
 /** `thinking`: how long, never what. */

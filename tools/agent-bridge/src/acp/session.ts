@@ -3,6 +3,7 @@ import { resolve as resolvePath } from 'node:path';
 import { client as createClient, methods, RequestError } from '@agentclientprotocol/sdk';
 import type { DriverJob, DriverResult, Usage } from '../drivers/types.ts';
 import { MCP_SERVER_NAME } from '../drivers/claude-code.ts';
+import { cgroupMemoryWatch } from '../memory-watch.ts';
 import { lastLine } from '../process.ts';
 import { CLAUDE_FULL_ACCESS_MODE, FULL_ACCESS_NOT_OFFERED } from '../full-access.ts';
 import { adapterCommand, adapterEnv, desiredMode, flavorOf, hermesGrantProblem, mcpServers, OPENCODE_REFUSAL, optionFor, sessionMeta, sessionOption, wantedOptions, type PermissionOption } from './adapter.ts';
@@ -137,7 +138,8 @@ export async function runAcp(job: DriverJob): Promise<DriverResult> {
   const cwd = resolvePath(job.profile.workdir);
   const mode = desiredMode(job);
   const { command, args } = adapterCommand(job.profile);
-  const frames = new Frames({ cwd, secrets, emit: (event, fields) => job.emit(event, fields) });
+  // The bridge's own control group tells a command the kernel killed for memory (P31-04); none on macOS, Windows or cgroup v1.
+  const frames = new Frames({ cwd, secrets, emit: (event, fields) => job.emit(event, fields), memory: cgroupMemoryWatch() });
 
   // The adapter's stdio as an ACP stream: lines in, lines out. The adapter is started like any bridge child (its own process group, killed with the run).
   let inbound!: ReadableStreamDefaultController<never>;

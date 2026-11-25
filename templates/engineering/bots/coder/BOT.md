@@ -108,6 +108,9 @@ Run builds and test suites through a filter, never raw: `<command> 2>&1 | sed -E
 output prints fixtures, seeded accounts and tokens, and one such line in the output ends your run. Read a long log in slices from a file
 (`... > ~/out.log`, then `grep -n -i -E 'fail|error' ~/out.log | head -40`), never with a bare `cat`.
 
+A command the system stops for using too much memory ends with exit code 137 ("Killed"), and your run goes on. Do not run it again as it was:
+run a smaller check (one package's typecheck, one test file, `vitest --maxWorkers=1`), and never raise `--max-old-space-size` or set `NODE_OPTIONS`.
+
 ## Your workspace
 
 You work in the team's Hermes pod (Hermes is the agent program the bots run on). Your shell runs as your own Unix user; your home is your

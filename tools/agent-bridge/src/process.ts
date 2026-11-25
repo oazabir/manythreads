@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { raiseOomScore } from './memory-watch.ts';
 
 // Starting an agent CLI: argv only (never a shell), its own process group so a stop reaches the children it started,
 // the prompt on stdin, and bounded buffers for what it prints.
@@ -9,6 +10,11 @@ export interface SpawnOptions {
   /** The text the process reads, then end of input. `null` keeps the pipe open for the caller to write lines (an ACP adapter talks over it). */
   stdin: string | null;
   onLine: (line: string) => void;
+  /**
+   * The kernel's out-of-memory weight for the program and every child it starts (Linux; ignored elsewhere): a run's agent gets 1000, so a command that runs out of
+   * memory is stopped before the bridge (P31-04). Unset: the program keeps the bridge's weight (a sign-in helper, a repo sync).
+   */
+  oomScore?: number;
 }
 
 export interface ChildHandle {
@@ -27,6 +33,8 @@ const STDERR_TAIL_BYTES = 4096;
 
 export function startChild(bin: string, args: string[], opts: SpawnOptions): ChildHandle {
   const child: ChildProcess = spawn(bin, args, { cwd: opts.cwd, env: opts.env, detached: true, stdio: ['pipe', 'pipe', 'pipe'], shell: false });
+  // Same tick as the spawn: the program has only just been exec'd, so it has no child yet that would keep the old weight.
+  if (opts.oomScore !== undefined && child.pid !== undefined) raiseOomScore(child.pid, opts.oomScore);
   let stderrTail = '';
   let spawnError: string | null = null;
   let buf = '';

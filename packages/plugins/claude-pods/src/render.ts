@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { PodAgent, PodRunnerInfo } from '@manythreads/sdk';
 import { GIT_TOOLS, GIT_WRAPPER, PUBLISH_TOOL, RECORD_TOOLS, whereYouRun } from '@manythreads/shared';
 import { HOSTNAME_LABEL, isNodeLabelValue, MOVE_HELD_ANNOTATION, MOVING_ANNOTATION, NODE_ANNOTATION, type K8sObject } from '@manythreads/sdk/pods';
-import type { ClaudePodConfig } from './config.ts';
+import { runMemoryMiB, type ClaudePodConfig } from './config.ts';
 
 // Pure builders: the Kubernetes objects of one Claude Code runner, from plain values. No network, no clock, no randomness (the one generated secret, the bridge's key,
 // is drawn by the caller and passed in), so every object can be asserted in a test. One runner is one pod PER TEAM (P26-21, agents-anywhere §9b): the runner is the sign-in (one `state` volume, one
@@ -187,6 +187,8 @@ export interface InstructionOptions {
   kubeconfig?: string | null;
   /** The agent (Claude Code or Codex) runs commands without asking in this pod (the runner's full-access switch, P35-01). */
   fullAccess?: boolean;
+  /** The run container's memory limit in MiB (capped at the chart's maximum), said in the "Where you run" text. */
+  memoryMiB?: number;
 }
 
 export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = false, agent: PodAgent = 'claude', extra: InstructionOptions = {}): string {
@@ -199,6 +201,7 @@ export function instructionsFor(teamSlug: string, botSlug: string, mayPublish = 
     mayPublish,
     kubeconfig: typeof extra.kubeconfig === 'string' ? extra.kubeconfig : null,
     browser: extra.acp === true,
+    ...(extra.memoryMiB !== undefined ? { memoryMiB: extra.memoryMiB } : {}),
   });
   return [
     `Your runner is ${AGENTS[agent].title}.`,
@@ -267,7 +270,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             ...(mayPublish && acp ? { publish: true } : {}),
             // No `extraAllowedTools`: that list is Claude Code's. Codex runs with its own sandbox and approval policy, set by the bridge's driver.
             env: { CODEX_HOME: CODEX_HOME_DIR, HOME: homeDirFor(names.team), ...tools, ...kube },
-            instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'codex', { acp, kubeconfig, fullAccess }),
+            instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'codex', { acp, kubeconfig, fullAccess, memoryMiB: runMemoryMiB(cfg.resources) }),
           }
         : {
             agent: 'claude-code',
@@ -279,7 +282,7 @@ export function buildBridgeConfig(cfg: ClaudePodConfig, runner: PodRunner, publi
             ...(fullAccess ? { fullAccess: true } : {}),
             ...(mayPublish && acp ? { publish: true } : {}),
             env: { CLAUDE_CONFIG_DIR, HOME: homeDirFor(names.team), DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ...tools, ...kube },
-            instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'claude', { acp, kubeconfig, fullAccess }),
+            instructions: instructionsFor(b.teamSlug, b.botSlug, mayPublish, 'claude', { acp, kubeconfig, fullAccess, memoryMiB: runMemoryMiB(cfg.resources) }),
           };
   }
   return JSON.stringify({ profiles, maxConcurrentRuns: runner.maxConcurrent ?? cfg.defaultConcurrency }, null, 2);

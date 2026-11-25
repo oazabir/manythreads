@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEPLOYER_MIN_RUN_SECONDS, RECORD_ROOTS, repositoryLine, whereYouRun, workFolder, type RunPlace } from '../src/runners/where-you-run.ts';
+import { DEPLOYER_MIN_RUN_SECONDS, memoryNote, RECORD_ROOTS, repositoryLine, whereYouRun, workFolder, type RunPlace } from '../src/runners/where-you-run.ts';
 
 // The one "Where you run" text (P26-05): the same bot text must be true in the Hermes pod, an agent pod and on a server.
 
@@ -80,6 +80,19 @@ describe('where you run', () => {
     expect(whereYouRun({ place: 'agent_pod', agent: 'codex', ...base })).not.toContain('Chromium');
     const all = places.map((place) => whereYouRun({ place, agent: 'codex', ...base, project: 'app', mayPublish: true, kubeconfig: '/k', browser: true })).join('\n');
     expect(all).not.toMatch(/https?:\/\//);
+  });
+
+  it('says in every place what a command killed for memory looks like and names focused checks; the size only where it is known (P31-04)', () => {
+    for (const place of places) {
+      const text = whereYouRun({ place, agent: 'claude', ...base });
+      expect(text).toContain('exit code 137');
+      expect(text).toContain('`vitest --maxWorkers=1`');
+      expect(text).toContain('never a bigger `--max-old-space-size` or `NODE_OPTIONS`');
+      expect(text).not.toContain('GB of memory');
+    }
+    expect(whereYouRun({ place: 'agent_pod', agent: 'codex', ...base, memoryMiB: 4096 })).toContain('Your commands and the agent share 4 GB of memory.');
+    expect(memoryNote(1536)).toMatch(/^Your commands and the agent share 1536 MB of memory\. /);
+    expect(memoryNote(0)).toMatch(/^A command that runs out of memory is stopped/);
   });
 
   it('refuses a name that is not a plain name, so a folder can never be steered by a slug', () => {

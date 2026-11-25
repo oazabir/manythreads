@@ -2,7 +2,7 @@
 import type { PluginLogger, PodRunnerInfo } from '@manythreads/sdk';
 import type { K8s, K8sObject } from '@manythreads/sdk/pods';
 import { describe, expect, it } from 'vitest';
-import { configFrom, type ClaudePodConfig } from '../src/config.ts';
+import { capRunResources, configFrom, MAX_RUN_MEMORY, quantityMiB, runMemoryMiB, type ClaudePodConfig } from '../src/config.ts';
 import { Reconciler, type RunnerSource } from '../src/reconcile.ts';
 import { buildBridgeConfig, buildDeployment, kubeconfigPath, namesFor, publisherKey, runnerForTeam, type DeployPlan, type PodRunner } from '../src/render.ts';
 
@@ -69,6 +69,12 @@ describe('the bridge profiles of an agent pod', () => {
     expect(x).toMatchObject({ agent: 'codex', driver: 'acp', acp: { command: 'codex-acp' }, authHome: '/state/codex' });
     // what a bot needs to test and check a page: a pnpm store in the work volume, and the browsers the image carries
     expect(c.env).toMatchObject({ npm_config_store_dir: '/work/.pnpm-store', PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright' });
+  });
+
+  it('say how much memory the agent and its commands share, from the run container\'s limit (P31-04)', () => {
+    const c = profilesOf(runner('c', 'claude'))['engineering--engineer'];
+    expect(c.instructions).toContain('Your commands and the agent share 4 GB of memory.');
+    expect(c.instructions).toContain('exit code 137');
   });
 
   it('are the older command-line shape when the stand-in image is used (no adapter, no sign-in folder)', () => {
@@ -273,5 +279,30 @@ describe('the controller for an agent pod', () => {
     const missing = make([runner('m', 'claude', { bots: [ENG, DEP] })], offline, { deployerKubeconfig: async () => null });
     await missing.r.reconcileAll();
     expect(JSON.stringify(missing.k8s.store.get(`Deployment/bots/${namesFor('m', 'claude', 'engineering').base}`))).not.toContain('/etc/deployer');
+  });
+});
+
+describe('the run container\'s memory stays under the chart\'s maximum (P31-04)', () => {
+  it('reads Kubernetes quantities in MiB', () => {
+    expect(quantityMiB('4Gi')).toBe(4096);
+    expect(quantityMiB('512Mi')).toBe(512);
+    expect(quantityMiB('3G')).toBe(2861);
+    expect(quantityMiB('1073741824')).toBe(1024);
+    expect(quantityMiB('lots')).toBeNull();
+    expect(quantityMiB(4)).toBeNull();
+  });
+
+  it('keeps a limit at or below 4Gi, cuts a bigger or unreadable one back to it, and keeps the request under the limit', () => {
+    expect(capRunResources({ requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '3Gi' } })).toEqual({ requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '3Gi' } });
+    expect(capRunResources({ requests: { memory: '12Gi' }, limits: { memory: '16Gi' } })).toEqual({ requests: { memory: MAX_RUN_MEMORY }, limits: { memory: MAX_RUN_MEMORY } });
+    expect(capRunResources({ limits: { memory: 'a lot' } }).limits).toEqual({ memory: MAX_RUN_MEMORY });
+    expect(capRunResources({ requests: { memory: 'some' }, limits: { memory: '2Gi' } }).requests).toEqual({ memory: '512Mi' });
+    expect(capRunResources({ requests: { memory: 'some' }, limits: { memory: '256Mi' } }).requests).toEqual({ memory: '256Mi' });
+    expect(capRunResources({ limits: { cpu: '2' } }).limits).toEqual({ cpu: '2', memory: MAX_RUN_MEMORY });
+    expect(capRunResources([1, 2]).limits?.['memory']).toBe('4Gi');
+    expect(configFrom({ MANYTHREADS_CLAUDE_PODS_RESOURCES: JSON.stringify({ limits: { memory: '8Gi' } }) }).resources.limits).toEqual({ memory: MAX_RUN_MEMORY });
+    expect(configFrom({}).resources).toEqual({ requests: { cpu: '250m', memory: '512Mi' }, limits: { memory: '4Gi' } });
+    expect(runMemoryMiB({ limits: { memory: '2Gi' } })).toBe(2048);
+    expect(runMemoryMiB({})).toBe(4096);
   });
 });

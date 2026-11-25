@@ -309,6 +309,28 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
     await until(async () => (await runsOf(bot.botId)).length === before + 1 && (await closedRun(bot.botId)).status === 'done', 15_000, 'the run to be done');
   });
 
+  it('a command that ran out of memory: the thread hears it once while the run goes on, and the reply is still posted (P31-04)', async () => {
+    gw.setScript(() => [
+      { type: 'frame', event: 'tool.started', fields: { tool: 'Bash', step_id: 'x1', kind: 'execute', title: 'Running pnpm', paths: [] } },
+      { type: 'frame', event: 'tool.completed', fields: { tool: 'Bash', step_id: 'x1', duration: 30, error: true, reason: 'out_of_memory' } },
+      { type: 'frame', event: 'run.notice', fields: { kind: 'out_of_memory', step_id: 'x1', title: 'Running pnpm', limit_mib: 4096 } },
+      { type: 'frame', event: 'run.notice', fields: { kind: 'out_of_memory', step_id: 'x2', title: 'Running pnpm', limit_mib: 4096 } },
+      { type: 'finish', output: 'Ran one test file instead: it passes.' },
+    ]);
+    const before = (await runsOf(bot.botId)).length;
+    const rootId = await post('@ext-bot run the checks');
+    await until(async () => (await runsOf(bot.botId)).length === before + 1 && (await closedRun(bot.botId)).status === 'done', 30_000, 'the run to be done');
+    const posted = await until(async () => {
+      const m = await messagesBy(rootId, bot.actorId);
+      return m.length >= 2 ? m : null;
+    }, 15_000, 'the notice and the reply');
+    // one notice for the two the bridge sent, and the reply (newest first)
+    expect(posted.map((m) => m.body)).toEqual([
+      'Ran one test file instead: it passes.',
+      expect.stringMatching(/^A command \(`Running pnpm`\) ran out of memory and was stopped: it needed more than the 4 GB this run may use\. The run goes on\. A smaller check fits: /),
+    ]);
+  });
+
   describe('a command the bot\'s program asks about (P24-02)', () => {
     const ask = (answered: Array<{ choice: string; steered: string[] }>): FakeRunStep[] => [
       { type: 'tool', name: 'terminal' },

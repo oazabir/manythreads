@@ -152,7 +152,7 @@ changes its folder between versions (only `auth.json` is copied; re-check at eac
 (`ProtectSystem=strict`, `ProtectHome=true`, `bridge.sh:369-374`) must be measured before step 5 (fallback: `oom_score_adj` only). R5 the kernel kills the
 largest process in a scope (a vitest worker): the command fails, the run goes on. R6 a fast allocation beats the pod guard (follow-up: read `OOMKilled` from the
 pod status). R7 the keeper's lock test (`keeper.mjs:46`) with a permanent `auth.lock` may never copy a renewed token back in a pod — measure. R8 old Codex
-sessions start anew. R9 Claude and pods keep shared folders (P35-01 must say so). R10 devbox memory during tests.
+sessions start anew. R9 Claude and pods keep shared folders (P35-01 must say so). R10 devbox memory during tests. R11 runs of one bridge share its cgroup's kill count.
 
 ## 7. Done
 On the enrolled devbox server, no hand fix: two teams run Codex at once; each `.codex` is its own user's, 0700; each team is refused the other's `.codex` and the
@@ -199,4 +199,22 @@ sessions loses thread context (they could be sorted per team by `cwd` instead).
 Asked about R1 (with full access, a team on a shared server holds a working copy of the one Claude/Codex sign-in): **accept for now.** Only Engineering uses
 the devbox server today. Build the per-team Codex folders as planned; the Runners page warns that teams sharing a server share its sign-in; per-team sign-ins
 become a later Phase 35 row.
+
+## P31-04 as built (2026-11-25; overrides section 3 where they differ)
+Checked against the code first: P31-04a (`OOMPolicy=continue`, the helper's root-written `oom_score_adj` 1000 with its floor, `NODE_OPTIONS`/`NODE_PATH` reserved) was
+already live (c1946d6b); the Coder's "run the whole suite" was already gone (P31-02/03). Built in this step:
+- **Weight off the helper path:** a run the bridge starts itself (pod, host, a server without team users) gets `oom_score_adj` 1000 written on the agent right after
+  `spawn` (`process.ts` `oomScore`, `memory-watch.ts` `raiseOomScore`); children inherit it; the bridge's own value is never touched; no-op off Linux.
+- **Detection without polling or scopes:** `Frames` reads the bridge's own cgroup v2 `memory.events` `oom_kill` when a command step starts and again when it ends
+  (the kernel counts a kill before the victim is gone, the adapter reports the end after). A rise plus exit 137/SIGKILL (Codex `_meta.terminal_exit` or
+  `rawOutput.exit_code`; Claude's "Exit code 137" text, the number only), or a failed step with no exit said, marks `tool.completed {reason:'out_of_memory'}` and
+  sends `run.notice {kind, step_id, title, limit_mib?}` (at most 3 a run). No cgroup v2 (macOS, Windows, v1): nothing marked. Two runs of one bridge can blame
+  each other's kill only when the other step also ended killed or failed with no exit (R11).
+- **Site:** `notice` is a `BotRuntimeEvent`; the gateway reads only the fixed kind, the step and title, a sane limit; the run job posts the platform's own sentence
+  once a run through `postNotice` (no `runId` in meta, so the reply and failure notice are unchanged). The tool result reads "out of memory".
+- **Words:** "Where you run" says the exit-137 sign and the focused checks in every place, the size where known (pods: the run container's limit); Coder, Tester,
+  Code reviewer, Deployer, Web smoke tester and the demo Coder/Tester say the same. Live team copies need P31-03's sync.
+- **Memory under the Helm maximum:** the pod controller cuts `claudePod.resources` memory to 4Gi (`MAX_RUN_MEMORY`) and the request to the limit.
+- **Not built (still section 3):** a scope per run with `MemoryMax` (`systemd-run`), `mtruns.slice`, the pod guard (a container OOM still ends the pod:
+  `memory.oom.group=1`), the steering line to the agent, the activity card's "out of memory" word (clients/web), the live proofs of section 7.
 

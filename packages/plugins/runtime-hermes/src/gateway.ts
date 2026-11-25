@@ -1,6 +1,6 @@
 import { traceHeaders, traceSpan, type BotRuntimeEvent, type BotRuntimeHandle, type BotRuntimeInput, type BotRuntimeScope } from '@manythreads/sdk';
 import { AGENT_BRIDGE_RUN_KEY, modelAliasesOfDefinition, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
-import { agentFromFrame, approvalExtras, bridgeFailureOf, endOfTurn, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from './activity.ts';
+import { agentFromFrame, approvalExtras, bridgeFailureOf, endOfTurn, noticeFromFrame, planFromFrame, stepFromFrame, thinkingFromFrame, toolFromFrame, toolResultFromFrame } from './activity.ts';
 import { guardedFetch } from './outbound.ts';
 import { withOutputStyle } from './output-style.ts';
 import { refusedRun, runnerRefusedRun } from './refused.ts';
@@ -583,6 +583,9 @@ export async function runOnGateway(
           if (plan !== null) yield plan;
         } else if (name === 'thinking') {
           yield thinkingFromFrame(event);
+        } else if (name === 'run.notice') {
+          const notice = noticeFromFrame(event);
+          if (notice !== null) yield notice;
         } else if (name === 'approval.request') {
           // Hermes is waiting inside the run for a person. The run's clock stops while a person decides (the run job re-arms it by answering).
           const pausedAt = Date.now();
