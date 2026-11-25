@@ -57,6 +57,8 @@ interface Room {
   /** Who edited since the last commit, by actor id, for the co-author trailers. */
   editors: Map<string, LiveEditor>;
   dirty: boolean;
+  /** Live edits that were never committed could not be replayed onto a file changed outside the editor: the people who open the page are told. */
+  discarded: boolean;
   idleTimer?: ReturnType<typeof setTimeout>;
   leaveTimer?: ReturnType<typeof setTimeout>;
   awarenessTimer?: ReturnType<typeof setTimeout>;
@@ -125,13 +127,56 @@ async function identityOf(tx: PluginTx, caller: HttpCaller): Promise<{ name: str
   return { name: row?.name ?? 'Someone', personId: row?.person_id ?? null };
 }
 
+/** What a load found: the document, and what the session must do about live edits that were never committed. */
+interface Loaded {
+  doc: Y.Doc;
+  frontmatter: string;
+  blobSha: string | null;
+  /** The page as the file holds it (the base of the session's first commit). */
+  text: string;
+  /**
+   * The file changed outside the live editor while live edits after the last commit were still in `page_updates`:
+   *  * `merged`: they were replayed onto the file's text; the session is dirty and commits them as the people who made them (`tailEditors`);
+   *  * `discarded`: they could not be replayed, the session starts from the file, and the people who open it are told.
+   * Either way the ledger is folded (`page_docs.last_update_id` moves past them: by the session's commit, or at once when discarded), so the tail is not left
+   * pending for ever.
+   */
+  tail: 'none' | 'merged' | 'discarded';
+  tailEditors: LiveEditor[];
+}
+
+/** A Yjs edit that turns `from` into `to` (the common start and end kept), so concurrent edits elsewhere in the text survive it. Linear in the texts. */
+function rewriteText(text: Y.Text, from: string, to: string): void {
+  let start = 0;
+  while (start < from.length && start < to.length && from[start] === to[start]) start += 1;
+  let end = 0;
+  while (end < from.length - start && end < to.length - start && from[from.length - 1 - end] === to[to.length - 1 - end]) end += 1;
+  const removed = from.length - start - end;
+  if (removed > 0) text.delete(start, removed);
+  const added = to.slice(start, to.length - end);
+  if (added !== '') text.insert(start, added);
+}
+
+/** The people who made the updates of a tail, as editors (a person no longer on the team simply fails the commit, like any other editor). */
+async function editorsOf(tx: PluginTx, actorIds: readonly string[]): Promise<LiveEditor[]> {
+  if (actorIds.length === 0) return [];
+  const rows = (
+    await tx.query<{ id: string; workspace_id: string; name: string | null; person_id: string | null }>(
+      `SELECT a.id::text AS id, a.workspace_id::text AS workspace_id, p.display_name AS name, p.id::text AS person_id
+         FROM app.actors a LEFT JOIN app.people p ON p.id = a.ref_id
+        WHERE a.id = ANY ($1::uuid[]) AND a.kind = 'person'`,
+      [actorIds],
+    )
+  ).rows;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return actorIds.flatMap((id) => {
+    const r = byId.get(id);
+    return r ? [{ actorId: r.id, personId: r.person_id, kind: 'person' as const, workspaceId: r.workspace_id, name: r.name ?? 'Someone' }] : [];
+  });
+}
+
 /** Load the document for (team, path): the snapshot plus the updates it does not hold yet, or the repository's file. */
-async function loadDocument(
-  ctx: PluginContext,
-  tx: PluginTx,
-  teamId: string,
-  path: string,
-): Promise<{ doc: Y.Doc; frontmatter: string; blobSha: string | null; text: string }> {
+async function loadDocument(ctx: PluginContext, tx: PluginTx, teamId: string, path: string): Promise<Loaded> {
   const repo = ctx.providers.get<RepoProvider>('repo');
   if (!repo) throw new Error('the team repository is not available');
   const blob = await repo.blob(tx, teamId, path, 'main');
@@ -142,34 +187,47 @@ async function loadDocument(
   const snapshot = (
     await tx.query<{ snapshot: Buffer; last_update_id: string }>('SELECT snapshot, last_update_id FROM app.page_docs WHERE team_id = $1 AND path = $2', [teamId, path])
   ).rows[0];
-  // The snapshot is the page as its last session committed it. When the file says something else, it was changed outside the live editor since (the platform
-  // adding a meeting's notes to an agenda, P17-05 step 2; a commit from Files): git is the truth, so the session starts from the file.
-  const fromSnapshot = (() => {
-    if (!snapshot || snapshot.snapshot.length === 0) return false;
-    const probe = new Y.Doc();
-    Y.applyUpdate(probe, new Uint8Array(snapshot.snapshot), 'server');
-    const same = probe.getText('body').toString() === body;
-    probe.destroy();
-    return same;
-  })();
-  if (snapshot && fromSnapshot) {
-    Y.applyUpdate(doc, new Uint8Array(snapshot.snapshot), 'server');
-    const tail = (
-      await tx.query<{ update: Buffer }>('SELECT update FROM app.page_updates WHERE team_id = $1 AND path = $2 AND id > $3 ORDER BY id', [
-        teamId,
-        path,
-        Number(snapshot.last_update_id),
-      ])
-    ).rows;
+  const tail = (
+    await tx.query<{ update: Buffer; actor_id: string }>('SELECT update, actor_id::text AS actor_id FROM app.page_updates WHERE team_id = $1 AND path = $2 AND id > $3 ORDER BY id', [
+      teamId,
+      path,
+      Number(snapshot?.last_update_id ?? 0),
+    ])
+  ).rows;
+  const loaded = (t: Loaded['tail'], tailEditors: LiveEditor[] = []): Loaded => ({ doc, frontmatter, blobSha: blob.sha, text: body, tail: t, tailEditors });
+  const hasSnapshot = snapshot !== undefined && snapshot.snapshot.length > 0;
+  if (hasSnapshot) Y.applyUpdate(doc, new Uint8Array(snapshot.snapshot), 'server');
+  const snapshotText = text.toString();
+  // The snapshot is the page as its last session committed it. When the file says the same, the session goes on from it and the updates after it (a server that
+  // stopped mid-session loses nothing).
+  if (hasSnapshot && snapshotText === body) {
     for (const row of tail) Y.applyUpdate(doc, new Uint8Array(row.update), 'server');
-  } else {
-    text.insert(0, body, 'server');
+    return { ...loaded('none'), text: snapshotText };
   }
-  return { doc, frontmatter, blobSha: blob.sha, text: text.toString() };
+  // The file says something else: it was changed outside the live editor since (the platform adding a meeting's notes to an agenda, P17-05 step 2; a commit from
+  // Files). Git is the truth, so the session starts from the file. Live edits made after the last commit (a commit that failed, a restart) are replayed onto it:
+  // the outside change is applied as an edit of the snapshot's text, and the live updates merge with it as concurrent edits do.
+  if (hasSnapshot && tail.length > 0) {
+    doc.transact(() => rewriteText(text, snapshotText, body), 'server');
+    for (const row of tail) Y.applyUpdate(doc, new Uint8Array(row.update), 'server');
+    // an update whose base the snapshot does not hold waits for it for ever: that tail cannot be replayed
+    if (doc.store.pendingStructs === null && doc.store.pendingDs === null) {
+      // read as the system: a person reads only their own actors row (the ids come from the ledger rows the caller may read)
+      return loaded('merged', await ctx.db.system((sys) => editorsOf(sys, [...new Set(tail.map((r) => r.actor_id))])));
+    }
+  }
+  const fresh = new Y.Doc();
+  fresh.getText('body').insert(0, body, 'server');
+  doc.destroy();
+  return { doc: fresh, frontmatter, blobSha: blob.sha, text: body, tail: tail.length > 0 ? 'discarded' : 'none', tailEditors: [] };
 }
 
 function broadcast(room: Room, frame: Uint8Array, except?: PluginSocket): void {
   for (const socket of room.sockets.keys()) if (socket !== except) socket.send(frame);
+}
+
+function broadcastText(room: Room, notice: string): void {
+  for (const socket of room.sockets.keys()) socket.send(notice);
 }
 
 function broadcastAwareness(room: Room, clients: number[], except?: PluginSocket): void {
@@ -254,7 +312,8 @@ export function commitRoom(ctx: PluginContext, room: Room): Promise<RepoWriteRes
       room.editors.clear();
       room.dirty = false;
       await remember(ctx, room, written.noop ? null : written.sha);
-      if (!written.noop) broadcast(room, new TextEncoder().encode(JSON.stringify({ type: 'committed', path: room.path, sha: written.sha, editors: editors.length })));
+      // a text frame: the binary ones are the Yjs protocol's (the browser reads a notice from a text frame only)
+      if (!written.noop) broadcastText(room, JSON.stringify({ type: 'committed', path: room.path, sha: written.sha, editors: editors.length }));
       return written;
     } catch (err) {
       // A conflict is the page moving under the session; anything else is a real failure. Both leave the room dirty for the next attempt.
@@ -300,7 +359,7 @@ function scheduleAwareness(ctx: PluginContext, room: Room): void {
   room.awarenessTimer.unref?.();
 }
 
-function roomFor(teamId: string, slug: string, path: string, loaded: { doc: Y.Doc; frontmatter: string; blobSha: string | null; text: string }): Room {
+function roomFor(teamId: string, slug: string, path: string, loaded: Loaded): Room {
   const room: Room = {
     key: `${teamId}:${path}`,
     teamId,
@@ -311,11 +370,13 @@ function roomFor(teamId: string, slug: string, path: string, loaded: { doc: Y.Do
     awareness: new Awareness(loaded.doc),
     frontmatter: loaded.frontmatter,
     blobSha: loaded.blobSha,
-    committedText: loaded.text,
+    committedText: loaded.frontmatter + loaded.text,
     lastCommitSha: null,
     sockets: new Map(),
-    editors: new Map(),
-    dirty: false,
+    // replayed live edits are the session's own: they commit with it, as the people who made them
+    editors: new Map(loaded.tailEditors.map((e) => [e.actorId, e])),
+    dirty: loaded.tail === 'merged',
+    discarded: loaded.tail === 'discarded',
     committing: null,
   };
   room.awareness.setLocalStateField('server', true);
@@ -349,6 +410,13 @@ function openRoom(ctx: PluginContext, caller: HttpCaller, slug: string, path: st
       scheduleAwareness(ctx, room);
     });
     rooms.set(room.key, room);
+    // Replayed live edits commit with the session (soon: the idle window, or the grace after the last editor leaves), and that commit folds the ledger; until
+    // then the tail stays, so a commit that fails replays it again next time. A tail that was thrown away is folded at once, so nothing waits on it for ever
+    // (the series' late notes look for updates after `last_update_id`).
+    if (loaded.tail === 'merged') scheduleIdle(ctx, room);
+    if (loaded.tail === 'discarded') {
+      await remember(ctx, room, null).catch((err: unknown) => process.stderr.write(`pages: the ledger of ${path} was not folded: ${err instanceof Error ? err.message : String(err)}\n`));
+    }
     return room;
   }).finally(() => loading.delete(pendingKey));
   loading.set(pendingKey, load);
@@ -471,6 +539,7 @@ async function serveSocket(ctx: PluginContext, socket: PluginSocket, request: Ht
     encoding.writeVarUint8Array(awareness, encodeAwarenessUpdate(room.awareness, clients));
     socket.send(encoding.toUint8Array(awareness));
   }
+  if (room.discarded) socket.send(JSON.stringify({ type: 'discarded', path: room.path }));
   ready = true;
   for (const buffered of early.splice(0)) handle(buffered);
   function handle(data: Uint8Array): void {

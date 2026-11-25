@@ -99,6 +99,8 @@ export interface LiveDocumentOptions {
   socketFactory?: (url: string) => LiveSocket;
   onStatus?: (status: LiveStatus) => void;
   onCommit?: (notice: { sha: string; editors: number }) => void;
+  /** The server could not keep live edits that were never saved (the page was changed outside the editor meanwhile): it started from the file. */
+  onDiscarded?: () => void;
 }
 
 export class LiveDocument {
@@ -187,6 +189,7 @@ export class LiveDocument {
       try {
         const notice = JSON.parse(raw) as { type?: string; sha?: string; editors?: number };
         if (notice.type === 'committed' && typeof notice.sha === 'string') this.options.onCommit?.({ sha: notice.sha, editors: notice.editors ?? 0 });
+        else if (notice.type === 'discarded') this.options.onDiscarded?.();
       } catch {
         /* not a notice */
       }

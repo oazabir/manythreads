@@ -42,8 +42,8 @@ In the Markdown viewer (a page under `pages/`, or any `.md` file the person may 
 ## Live editing (P6-09)
 
 `GET /api/teams/:slug/pages/live?path=pages/…` upgrades to a WebSocket (a plugin socket route; the kernel's `HttpRouteDefinition.ws`). Frames are binary and speak the
-standard Yjs protocol: type `0` is sync (step1/step2/update, `y-protocols/sync`) and type `1` is awareness (`y-protocols/awareness`); the server also sends one text frame,
-`{ type: 'committed', path, sha, editors }`, when a session commits. Authentication and CSRF are the platform's ordinary hooks on the upgrade; only a **person on the team**
+standard Yjs protocol: type `0` is sync (step1/step2/update, `y-protocols/sync`) and type `1` is awareness (`y-protocols/awareness`); the server also sends text frames:
+`{ type: 'committed', path, sha, editors }` when a session commits, and `{ type: 'discarded', path }` (below). Authentication and CSRF are the platform's ordinary hooks on the upgrade; only a **person on the team**
 may open a page, the path must be under `pages/`, and the four guarded paths are refused. A socket has no transaction of its own: the plugin opens one with `ctx.db.as(caller, …)`
 (a door added with this phase) for the read, the update ledger and the commit.
 
@@ -56,6 +56,12 @@ may open a page, the path must be under `pages/`, and the four guarded paths are
 **The document's text is the markdown source.** Frontmatter is split off on load and re-attached on commit, so the live editor and the committed file hold the same bytes and rich
 rendering still works on the file. Loading applies the snapshot then every update after `last_update_id`; a process that died mid-session therefore loses nothing that reached
 the ledger.
+When the file no longer matches the snapshot (it was changed outside the live editor: a commit from Files, the platform adding a meeting's notes to a series agenda), the
+session starts from the file. Updates after `last_update_id` (live edits never committed: a failed commit, a restart) are replayed onto it: the outside change is applied
+as an edit of the snapshot's text and the updates merge with it; the session is then dirty, its editors are the people who made those updates, and its commit folds the
+ledger. A tail that cannot be integrated (its base is in no snapshot) is discarded: the ledger is folded at once (so the series' late-notes check, which looks for updates
+after `last_update_id`, is not held for ever) and each person who opens the page gets the text frame `{ type: 'discarded', path }` ("live edits that were never saved could
+not be kept").
 
 **One commit per session.** When the last socket closes there is a 2 s grace for a reload, then the session commits (`MANYTHREADS_PAGE_LEAVE_MS`); with editors still present, a
 commit happens after 60 s without an update (`MANYTHREADS_PAGE_IDLE_MS`). The commit's author is the first person who edited (else the first editor) and **every other editor

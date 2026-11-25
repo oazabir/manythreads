@@ -293,6 +293,88 @@ describe('a page edited live (PLAN P6-09)', () => {
     expect(await fileText(path)).toBe('and live\nchanged outside\n');
   }, 20_000);
 
+  // A session whose live edits were never committed (a commit that failed, a restart): the ledger holds updates after the snapshot. Written here the way the room
+  // writes them, from the snapshot the last session left.
+  async function sessionWithUnsavedTail(path: string, start: string, edit: (text: Y.Text) => void): Promise<void> {
+    expect((await api(personas.omar, 'POST', '/api/teams/engineering/pages/write', { mode: 'create', path, content: start })).status).toBe(201);
+    const first = new Editor(personas.nadia, path);
+    await waitFor('the page', () => first.text === start);
+    first.type(start.length, 'committed line\n');
+    first.close();
+    await first.closed;
+    await waitFor('the first session commit', async () => /^Edit .+ live/.test((await lastCommit(path))?.message ?? ''), 8000);
+    // the room is gone after the grace (and its snapshot remembered)
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const row = (await ownerSql<{ snapshot: Buffer }>(server.db.ownerUrl, 'SELECT snapshot FROM app.page_docs WHERE team_id = $1 AND path = $2', [TEAM_IDS.Engineering, path]))[0]!;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, new Uint8Array(row.snapshot));
+    const before = Y.encodeStateVector(doc);
+    edit(doc.getText('body'));
+    const update = Y.encodeStateAsUpdate(doc, before);
+    doc.destroy();
+    await ownerSql(server.db.ownerUrl, 'INSERT INTO app.page_updates (team_id, path, actor_id, update) VALUES ($1, $2, $3, $4)', [TEAM_IDS.Engineering, path, personas.rafi.actorId, Buffer.from(update)]);
+  }
+  /** The series' late-notes check (meetings series.ts addLateNotes): updates after the snapshot mean someone's live edits are pending. */
+  const tailPending = async (path: string): Promise<boolean> =>
+    (
+      await ownerSql(
+        server.db.ownerUrl,
+        `SELECT 1 FROM app.page_updates u WHERE u.team_id = $1 AND u.path = $2
+            AND u.id > coalesce((SELECT d.last_update_id FROM app.page_docs d WHERE d.team_id = $1 AND d.path = $2), 0)`,
+        [TEAM_IDS.Engineering, path],
+      )
+    ).length > 0;
+
+  it('replays unsaved live edits onto a file changed outside the editor, commits them as their author, and folds the ledger (P17-05 step 2)', async () => {
+    const path = 'pages/live/tail-merge.md';
+    await sessionWithUnsavedTail(path, 'top\n', (t) => t.insert(0, 'UNSAVED-LIVE\n'));
+    expect(await tailPending(path)).toBe(true);
+    const outside = await api(personas.omar, 'POST', '/api/teams/engineering/repo/commit', {
+      changes: [{ op: 'put', path, content: 'top\ncommitted line\nadded outside\n' }],
+      message: 'Outside the editor',
+    });
+    expect(outside.status, JSON.stringify(outside.body)).toBe(201);
+    const editor = new Editor(personas.nadia, path);
+    await waitFor('the merged page', () => editor.text === 'UNSAVED-LIVE\ntop\ncommitted line\nadded outside\n');
+    expect(editor.notice).toBeNull();
+    // nobody types: the replayed edits still commit when the last editor leaves
+    editor.close();
+    await editor.closed;
+    await waitFor('the replayed edits to commit', async () => (await fileText(path)) === 'UNSAVED-LIVE\ntop\ncommitted line\nadded outside\n', 8000);
+    expect((await lastCommit(path))?.author_id).toBe(personas.rafi.actorId);
+    await waitFor('the ledger to fold', async () => !(await tailPending(path)), 4000);
+  }, 30_000);
+
+  it('a tail that cannot be replayed: the session keeps the file, says the unsaved edits were discarded, and folds the ledger', async () => {
+    const path = 'pages/live/tail-discard.md';
+    await sessionWithUnsavedTail(path, 'base\n', (t) => t.insert(0, 'x'));
+    // an update whose base is in no snapshot (made from a document the server never saw) can never be integrated
+    const orphan = new Y.Doc();
+    orphan.getText('body').insert(0, 'a document the server never had');
+    const lost = new Y.Doc();
+    Y.applyUpdate(lost, Y.encodeStateAsUpdate(orphan));
+    const sv = Y.encodeStateVector(lost);
+    lost.getText('body').insert(3, 'LOST-WORDS');
+    await ownerSql(server.db.ownerUrl, 'INSERT INTO app.page_updates (team_id, path, actor_id, update) VALUES ($1, $2, $3, $4)', [
+      TEAM_IDS.Engineering,
+      path,
+      personas.rafi.actorId,
+      Buffer.from(Y.encodeStateAsUpdate(lost, sv)),
+    ]);
+    orphan.destroy();
+    lost.destroy();
+    const outside = await api(personas.omar, 'POST', '/api/teams/engineering/repo/commit', { changes: [{ op: 'put', path, content: 'from the file\n' }], message: 'Outside the editor' });
+    expect(outside.status, JSON.stringify(outside.body)).toBe(201);
+    const editor = new Editor(personas.nadia, path);
+    await waitFor('the page from the file', () => editor.text === 'from the file\n');
+    await waitFor('the notice', () => editor.notice?.type === 'discarded');
+    expect(await tailPending(path)).toBe(false);
+    editor.close();
+    await editor.closed;
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(await fileText(path)).toBe('from the file\n');
+  }, 30_000);
+
   it('refuses a page that is not there, a path outside pages/, and a request with no session', async () => {
     const missing = new Editor(personas.nadia, 'pages/live/missing.md');
     expect(await missing.closed).toBe(4404);

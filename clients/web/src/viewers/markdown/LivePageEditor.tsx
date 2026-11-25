@@ -15,6 +15,7 @@ export function LivePageEditor({ path, teamSlug, onExit }: { path: string; teamS
   const [peers, setPeers] = useState<LivePeer[]>([]);
   const [status, setStatus] = useState<LiveStatus>('connecting');
   const [saved, setSaved] = useState<{ sha: string; editors: number } | null>(null);
+  const [discarded, setDiscarded] = useState(false);
   const [scroll, setScroll] = useState(0);
   const area = useRef<HTMLTextAreaElement>(null);
 
@@ -25,6 +26,7 @@ export function LivePageEditor({ path, teamSlug, onExit }: { path: string; teamS
       url: liveUrl(window.location, teamSlug, path),
       onStatus: setStatus,
       onCommit: (notice) => setSaved(notice),
+      onDiscarded: () => setDiscarded(true),
     });
     const refresh = (): void => {
       setText(opened.text.toString());
@@ -86,6 +88,11 @@ export function LivePageEditor({ path, teamSlug, onExit }: { path: string; teamS
       {saved ? (
         <p className="live-saved" role="status" data-testid="live-saved">
           Saved to history · commit {saved.sha.slice(0, 7)} · {saved.editors} editor{saved.editors === 1 ? '' : 's'}
+        </p>
+      ) : null}
+      {discarded ? (
+        <p className="live-saved" role="status" data-testid="live-discarded">
+          The page was changed outside the live editor, and live edits that were never saved could not be kept. You are editing the page as it is now.
         </p>
       ) : null}
       {status === 'offline' && text === '' ? <p className="vw-error" role="alert">The page could not be opened for live editing.</p> : null}
