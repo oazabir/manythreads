@@ -46,7 +46,8 @@ function hookDoor(): Pick<SummaryDoor, 'evalComplete'> | undefined {
 }
 
 const DAY_MS = 24 * 60 * 60_000;
-const MAX_TOKENS = 700;
+/** 250 words with a [n] after each claim and Markdown run past 700 tokens: the live #dev summary of 2026-11-25 stopped mid-line. */
+const MAX_TOKENS = 1500;
 const TIMEOUT_MS = 45_000;
 /** One person: this many summaries an hour (the route itself allows 6 a minute). */
 export const SUMMARIES_PER_HOUR = 40;

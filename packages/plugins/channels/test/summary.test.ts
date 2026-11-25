@@ -85,7 +85,7 @@ describe('Summarise a channel', () => {
     ]);
     expect(calls).toHaveLength(1);
     const c = calls[0]!;
-    expect(c).toMatchObject({ botId: brainId, alias: 'fast', purpose: 'summary', runId: `person:${nadia.personId}`, maxTokens: 700 });
+    expect(c).toMatchObject({ botId: brainId, alias: 'fast', purpose: 'summary', runId: `person:${nadia.personId}`, maxTokens: 1500 });
     expect(c.user).not.toContain('An old message');
     expect(c.user).toContain('[1]');
     expect(c.user).toMatch(/\[2\][^\n]*\(mentions you\)[^\n]*release notes/);
