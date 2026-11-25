@@ -25,6 +25,9 @@ import { ApiError } from '../src/api/client';
 import { BookmarksStore } from '../src/bookmarks/store';
 import { openTargetOf, placeOf, repliesText, shownBookmarks, shownCount, tabFrom } from '../src/bookmarks/model';
 import { bookmarkToastText } from '../src/bookmarks/actions';
+import { BOOKMARKS_PANEL, bookmarksEntry, bookmarksOpen, bookmarksPress, bookmarksTabOf, withPanel } from '../src/bookmarks/panelEntry';
+import { createPanelController } from '../src/kernel/panel/controller';
+import { readPanel, type PanelHistory, type PanelLocation } from '../src/kernel/panel/stack';
 import { messageLocation } from '../src/shell/messageLink';
 import { CORE_NAV, visibleNav } from '../src/shell/nav';
 import { HEADER_TOOL_ORDER } from '../src/shell/headerMenu';
@@ -269,6 +272,93 @@ describe('the Bookmarks page list and its counts', () => {
     expect(bookmarkToastText('thread', true)).toBe('Thread bookmarked');
     expect(bookmarkToastText('message', true)).toBe('Message bookmarked');
     expect(bookmarkToastText('message', false)).toBe('Bookmark removed');
+  });
+});
+
+// P37-08: the header button toggles a right-hand Bookmarks panel, an ordinary entry of the panel's stack
+describe('the Bookmarks panel and its button', () => {
+  const thread = { type: 'thread', id: ROOT };
+  const history = (search = ''): PanelHistory & { at(): PanelLocation } => {
+    const entries: PanelLocation[] = [{ search, state: null }];
+    let i = 0;
+    return {
+      read: () => entries[i]!,
+      push: (n) => void entries.splice(++i, entries.length, n),
+      replace: (n) => void (entries[i] = n),
+      back: () => void (i = Math.max(0, i - 1)),
+      at: () => entries[i]!,
+    };
+  };
+  /** One press of the button, as BookmarksLink does it. */
+  const press = (c: ReturnType<typeof createPanelController>): void => {
+    const what = bookmarksPress(c.stack());
+    if (what === 'open') c.push(bookmarksEntry());
+    else if (what === 'back') c.back();
+    else c.close();
+  };
+
+  it('the entry is bookmarks:<tab>, the tab is read back, and an unknown id is the first tab', () => {
+    expect(BOOKMARKS_PANEL).toBe('bookmarks');
+    expect(bookmarksEntry('file')).toEqual({ type: 'bookmarks', id: 'file' });
+    expect(bookmarksTabOf(bookmarksEntry('message'))).toBe('message');
+    expect(bookmarksTabOf({ type: 'bookmarks', id: 'x' })).toBe('thread');
+    expect(readPanel({ search: '?panel=bookmarks:file', state: null }).stack).toEqual([bookmarksEntry('file')]);
+  });
+
+  it('the button is pressed only while the list is the panel on screen', () => {
+    expect(bookmarksOpen([])).toBe(false);
+    expect(bookmarksOpen([bookmarksEntry()])).toBe(true);
+    expect(bookmarksOpen([thread, bookmarksEntry()])).toBe(true);
+    // a thread opened from a bookmark sits on top of the list: the list is not on screen
+    expect(bookmarksOpen([bookmarksEntry(), thread])).toBe(false);
+  });
+
+  it('a press shows the panel; the next press hides it', () => {
+    const c = createPanelController(history());
+    press(c);
+    expect(c.stack()).toEqual([bookmarksEntry()]);
+    press(c);
+    expect(c.stack()).toEqual([]);
+  });
+
+  it('over a thread, a press shows the list on top and the next press gives the thread back', () => {
+    const c = createPanelController(history(`?panel=thread:${ROOT}`));
+    expect(bookmarksPress(c.stack())).toBe('open');
+    press(c);
+    expect(c.stack()).toEqual([thread, bookmarksEntry()]);
+    expect(bookmarksPress(c.stack())).toBe('back');
+    press(c);
+    expect(c.stack()).toEqual([thread]);
+  });
+
+  it('a thread opened from the list comes on top, and Back returns to the list', () => {
+    const c = createPanelController(history());
+    press(c);
+    c.push(thread);
+    expect(c.top()).toEqual(thread);
+    c.back();
+    expect(c.top()).toEqual(bookmarksEntry());
+  });
+
+  it('changing the tab swaps the entry without a history step', () => {
+    const h = history();
+    const c = createPanelController(h);
+    press(c);
+    c.replace(bookmarksEntry('message'));
+    expect(c.stack()).toEqual([bookmarksEntry('message')]);
+  });
+
+  it('a click that opens a message keeps the list in the panel; the repository file address keeps it too', () => {
+    const plain = messageLocation('eng', { channelId: CH, channelKind: 'channel', channelName: 'dev', messageId: MSG, threadRootId: null }, [bookmarksEntry('message')], { land: true });
+    expect(plain.pathname).toBe('/t/eng/c/dev');
+    expect(readPanel({ search: plain.search, state: plain.state }).stack).toEqual([bookmarksEntry('message')]);
+    const reply = messageLocation('eng', { channelId: CH, channelKind: 'channel', channelName: 'dev', messageId: MSG, threadRootId: ROOT }, [bookmarksEntry()], { land: true });
+    expect(readPanel({ search: reply.search, state: reply.state }).stack).toEqual([bookmarksEntry(), thread]);
+    const file = withPanel('/t/eng/files?open=docs%2Fa.md', [bookmarksEntry('file')]);
+    expect(file.pathname).toBe('/t/eng/files');
+    expect(new URLSearchParams(file.search).get('open')).toBe('docs/a.md');
+    expect(readPanel({ search: file.search, state: file.state }).stack).toEqual([bookmarksEntry('file')]);
+    expect(withPanel('/files', [bookmarksEntry()])).toMatchObject({ pathname: '/files', search: '?panel=bookmarks%3Athread' });
   });
 });
 

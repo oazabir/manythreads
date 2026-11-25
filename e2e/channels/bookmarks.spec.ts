@@ -79,9 +79,10 @@ test.describe('desktop', () => {
     const { page, context } = await openAs(browser, 'rafi', `/t/engineering/c/${channel.name}?panel=thread:${ids['root']}`);
     try {
       await expect(other.page.getByTestId('drafts')).toBeVisible(T);
-      // the header button is there with no bookmark, left of the bell, and is the link to the page; the sidebar has no Bookmarks entry
+      // the header button is there with no bookmark, left of the bell, and is a toggle (P37-08), not a link; the sidebar has no Bookmarks entry
       await expect(headerButton(other.page)).toBeVisible(T);
-      await expect(headerButton(page)).toHaveAttribute('href', '/t/engineering/bookmarks');
+      await expect(headerButton(page)).not.toHaveAttribute('href', /.*/);
+      await expect(headerButton(page)).toHaveAttribute('aria-pressed', 'false');
       await expect(headerButton(page)).toHaveAccessibleName('Bookmarks');
       const hb = await headerButton(page).boundingBox();
       const bell = await page.getByTestId('bell').boundingBox();
@@ -99,10 +100,29 @@ test.describe('desktop', () => {
       await expect(toggle).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('bookmark-toast')).toHaveText('Thread bookmarked');
       await expect(sidebarEntry(page)).toHaveCount(0);
-      // the button opens the Bookmarks page, and reads as the current page there
+      // the button shows the Bookmarks panel on the right (over the thread, Back returns to it) and reads as pressed; the page stays where it was
       await headerButton(page).click();
-      await expect(page).toHaveURL(/\/t\/engineering\/bookmarks/, T);
-      await expect(headerButton(page)).toHaveAttribute('aria-current', 'page');
+      const side = page.getByTestId('bookmarks-panel');
+      await expect(side).toBeVisible(T);
+      await expect(page).toHaveURL(/panel=bookmarks/, T);
+      await expect(page).toHaveURL(/\/t\/engineering\/c\//);
+      await expect(headerButton(page)).toHaveAttribute('aria-pressed', 'true');
+      await expect(side.getByTestId('bookmark-row')).toHaveCount(1, T);
+      // focus went into the panel
+      await expect(side.getByRole('tab', { selected: true })).toBeFocused();
+      // a second press hides it and shows the thread again; the button gets the focus back
+      await headerButton(page).click();
+      await expect(side).toHaveCount(0, T);
+      await expect(page.getByTestId('thread-bookmark')).toBeVisible(T);
+      await expect(headerButton(page)).toHaveAttribute('aria-pressed', 'false');
+      // Esc hides it too, the panel's own Close as well; the full page is still there
+      await headerButton(page).click();
+      await expect(side).toBeVisible(T);
+      await page.keyboard.press('Escape');
+      await expect(side).toHaveCount(0, T);
+      await expect(headerButton(page)).toBeFocused();
+      await page.goto('/t/engineering/bookmarks');
+      await expect(page.getByTestId('bookmarks-screen')).toBeVisible(T);
     } finally {
       await context.close();
       await other.context.close();
@@ -180,6 +200,46 @@ test.describe('desktop', () => {
       await plain.getByTestId('bookmark-open').click();
       await expect(page).toHaveURL(new RegExp(`/c/${channel.name}\\?message=${ids['plain']}`), T);
       await expect(row(page, 'plain')).toBeVisible(T);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('the Bookmarks panel (P37-08): the button toggles it; a click switches the main view and the panel stays; a thread opens over it with Back; Open as a page', async ({ browser }) => {
+    const { page, context } = await openAs(browser, 'rafi', '/t/engineering/drafts');
+    try {
+      const side = page.getByTestId('bookmarks-panel');
+      await headerButton(page).click();
+      await expect(side).toBeVisible(T);
+      await expect(headerButton(page)).toHaveAttribute('aria-pressed', 'true');
+      await expect(headerButton(page)).toHaveAttribute('aria-expanded', 'true');
+      await expect(side.getByRole('tab', { name: /Threads · 1/ })).toHaveAttribute('aria-selected', 'true', T);
+      await expect(side.getByRole('tab', { name: /Messages · 2/ })).toBeVisible();
+      // a message: the main view switches to its channel at the message, the panel stays
+      await side.getByRole('tab', { name: /Messages/ }).click();
+      await side.getByTestId('bookmark-row').filter({ hasText: 'plain message to keep' }).getByTestId('bookmark-open').click();
+      await expect(page).toHaveURL(new RegExp(`/c/${channel.name}\\?message=${ids['plain']}.*panel=bookmarks`), T);
+      await expect(row(page, 'plain')).toBeVisible(T);
+      await expect(side).toBeVisible();
+      // a thread opens in the right panel, over the list; Back brings the list again
+      await side.getByRole('tab', { name: /Threads/ }).click();
+      await side.getByTestId('bookmark-row').filter({ hasText: `${tag} release plan thread` }).getByTestId('bookmark-open').click();
+      await expect(page.getByTestId('thread-view')).toBeVisible(T);
+      await expect(side).toHaveCount(0);
+      await expect(headerButton(page)).toHaveAttribute('aria-pressed', 'false');
+      await page.getByRole('button', { name: 'Back', exact: true }).click();
+      await expect(side).toBeVisible(T);
+      // remove from the panel
+      await side.getByRole('tab', { name: /Messages/ }).click();
+      const plainRow = side.getByTestId('bookmark-row').filter({ hasText: 'plain message to keep' });
+      await plainRow.getByTestId('bookmark-remove').click();
+      await expect(plainRow).toHaveCount(0, T);
+      await put({ kind: 'message', messageId: ids['plain'] });
+      // the full page is one click away, and the panel is gone from it
+      await side.getByTestId('bookmarks-open-page').click();
+      await expect(page).toHaveURL(/\/t\/engineering\/bookmarks/, T);
+      await expect(page.getByTestId('bookmarks-screen')).toBeVisible(T);
+      await expect(page.getByTestId('bookmarks-panel')).toHaveCount(0);
     } finally {
       await context.close();
     }
@@ -302,6 +362,17 @@ test.describe('desktop', () => {
       await entry.click();
       await expect(page).toHaveURL(/\/t\/engineering\/bookmarks/, T);
       await expect(page.getByTestId('bookmarks-screen')).toBeVisible(T);
+      // the header button opens the panel as a full sheet without sideways scroll; choosing an item closes it
+      await page.goto('/t/engineering/drafts');
+      await headerButton(page).click();
+      const side = page.getByTestId('bookmarks-panel');
+      await expect(side).toBeVisible(T);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+      const sideRow = side.getByTestId('bookmark-row').first();
+      expect((await sideRow.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      await sideRow.getByTestId('bookmark-open').click();
+      await expect(side).toHaveCount(0, T);
+      await expect(page).not.toHaveURL(/panel=bookmarks/);
     } finally {
       await context.close();
     }

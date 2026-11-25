@@ -138,6 +138,67 @@
   }
 }
 
+/* The Bookmarks panel on the right (P37-08, bookmarks/BookmarksPanel.tsx): the page's list in a narrow column. The panel body scrolls, so the list does not;
+   the tabs share the width and the rows give their room to the text. */
+.bkp {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bkp .bk-tabs {
+  margin: 0;
+}
+
+.bkp .tabs2 {
+  margin-left: 0;
+}
+
+.bkp .tabs2 button {
+  flex: 1;
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+
+.bkp .bk-open {
+  padding: 8px;
+}
+
+.bkp .bk-remove {
+  padding-inline: 8px;
+}
+
+.bkp .bk-note,
+.bkp .bk-empty {
+  padding: 16px 8px;
+}
+
+.bkp-page {
+  justify-self: start;
+  padding: 8px;
+  color: var(--mute);
+  font-size: var(--fs-small);
+  text-decoration: underline;
+}
+
+.bkp-page:hover,
+.bkp-page:focus-visible {
+  color: var(--ink);
+}
+
+@media (width <= 600px) {
+  .bkp-page {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .bkp .tabs2 button {
+    min-height: 44px;
+  }
+}
+
 /* the mark by a bookmarked message's time: a small filled bookmark, the word for screen readers only */
 .who .msg-bookmarked {
   display: inline-flex;
