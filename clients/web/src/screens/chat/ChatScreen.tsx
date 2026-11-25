@@ -11,7 +11,7 @@ import { Alert, Avatar } from '../../components/ui';
 import { Dialog } from '../../components/Dialog';
 import { PageHeader } from '../../components/PageHeader';
 import { sayToast } from '../../kernel/toast';
-import { RailIcon } from '../../shell/icons';
+import { BackIcon, RailIcon } from '../../shell/icons';
 import { useCrumbTail } from '../../shell/topic';
 import { useNarrow } from '../../shell/useNarrow';
 import { fetchBots } from '../bots/api';
@@ -22,6 +22,7 @@ import { deleteChat, fetchChatModels, fetchChatState, listChats, patchChat, rest
 import { ChatColumn } from './ChatColumn';
 import { EmptyChat } from './EmptyChat';
 import { HistoryRail, type RailActions } from './HistoryRail';
+import { MeetingRows, MeetingSpaceThread } from './MeetingRows';
 import { exportFileName, exportMarkdown, buildRows, railGroups, railTitle, shortTitle, previewLive } from './model';
 import { PopMenu } from './PopMenu';
 import type { LocalCommand } from '../../channels/composerTools';
@@ -52,7 +53,8 @@ function download(name: string, text: string): void {
 /**
  * Chat (PLAN P20-16), at `/t/:team/chat`: a full chat with a bot, Brain by default. On the left the history of the person's chats with that bot, in the middle
  * a column of at most 760 px with the conversation and the message box. `?bot=` names the bot and `?c=` the conversation (the first message of its thread);
- * `?message=` a message in it to scroll to and highlight (a bookmark).
+ * `?message=` a message in it to scroll to and highlight (a bookmark). The list also holds the person's meeting chats under a "Meetings" heading (P37-07):
+ * `?meeting=<channel>` opens one of them in place of the conversation, with the list kept beside it.
  * Sending starts a conversation when none is open. The answer is shown as it is written; Stop ends it with what was written so far.
  */
 export function ChatScreen() {
@@ -62,6 +64,8 @@ export function ChatScreen() {
   const session = useSession();
   const people = usePeople();
   const root = MessageId.safeParse(params.get('c')).data ?? null;
+  // a meeting chat opened from the list (`?meeting=`): it takes the place of the conversation with the bot
+  const meeting = params.get('meeting') || null;
   // a message of the chat to scroll to and highlight (a bookmark, a search hit): `?message=`
   const jumpTo = root !== null ? (MessageId.safeParse(params.get('message')).data ?? null) : null;
 
@@ -76,13 +80,14 @@ export function ChatScreen() {
   const bot = opened.status === 'ok' ? opened.data : null;
   const botName = bot?.botName ?? known?.name ?? botSlug;
   const channelId = bot?.channelId ?? null;
-  useCrumbTail(bot || known ? botName : null);
+  useCrumbTail(meeting === null && (bot || known) ? botName : null);
 
   const go = useCallback(
-    (next: { bot?: string; c?: string | null }): void => {
+    (next: { bot?: string; c?: string | null; meeting?: null }): void => {
       const q = new URLSearchParams(params);
-      // the message the chat was opened at belongs to that chat
+      // the message the chat was opened at belongs to that chat, and opening a chat with a bot leaves the meeting chat
       q.delete('message');
+      q.delete('meeting');
       if (next.bot !== undefined) {
         q.set('bot', next.bot);
         q.delete('c');
@@ -144,6 +149,10 @@ export function ChatScreen() {
   const selectedItem = items.find((i) => i.threadRootId === root);
   const railStatus: 'loading' | 'ok' | 'error' = rest.status === 'error' || pinned.status === 'error' ? 'error' : rest.status === 'loading' || pinned.status === 'loading' ? 'loading' : 'ok';
   const [railOpen, setRailOpen] = useState(false);
+  // a meeting opened (from the list, a link, or the New meeting dialog) shuts the phone's drawer
+  useEffect(() => {
+    if (meeting !== null) setRailOpen(false);
+  }, [meeting]);
   // a drawer that closes takes the focus with it (it is inert when shut): give it back to the button that opened it
   const wasOpen = useRef(false);
   useEffect(() => {
@@ -420,7 +429,7 @@ export function ChatScreen() {
   }, [newChat, live, stopping, stop, flat, root, go]);
 
   // ---- drawing ----------------------------------------------------------------------------------------------------------------------------
-  if (bots.status === 'ok' && talkable.length === 0 && known === undefined) {
+  if (meeting === null && bots.status === 'ok' && talkable.length === 0 && known === undefined) {
     return (
       <div className="view-empty" data-testid="chat-no-bot" role="status">
         <p className="view-empty-title">There is no bot to chat with yet.</p>
@@ -429,7 +438,7 @@ export function ChatScreen() {
       </div>
     );
   }
-  if (opened.status === 'error' && blocked === null) {
+  if (meeting === null && opened.status === 'error' && blocked === null) {
     const status = isApiError(opened.error) ? opened.error.status : 0;
     return (
       <div className="view-empty" role="alert" data-testid="chat-unavailable-bot">
@@ -460,7 +469,7 @@ export function ChatScreen() {
     <div className={`ch ${narrow ? 'narrow' : ''}`} data-testid="chat-screen" data-bot={botSlug} data-landmark="chat">
       <HistoryRail
         groups={groups}
-        selected={root}
+        selected={meeting === null ? root : null}
         query={typed}
         onQuery={setTyped}
         status={railStatus}
@@ -473,8 +482,20 @@ export function ChatScreen() {
         onClose={() => setRailOpen(false)}
         searchRef={searchRef}
         actions={actions}
+        below={<MeetingRows slug={team} selected={meeting} query={q} onOpen={() => setRailOpen(false)} />}
       />
       {narrow && railOpen ? <button type="button" className="ch-scrim" aria-label="Close the history" onClick={() => setRailOpen(false)} /> : null}
+      {meeting !== null ? (
+        <section className="ch-main ch-meeting" data-testid="chat-meeting" data-landmark="meeting-view" aria-label="Meeting chat">
+          {narrow ? (
+            <button type="button" className="btn s back-to-list" data-testid="meetings-back" onClick={() => { go({ meeting: null }); setRailOpen(true); }}>
+              <BackIcon />
+              <span>Chats</span>
+            </button>
+          ) : null}
+          <MeetingSpaceThread key={meeting} id={meeting} slug={team} />
+        </section>
+      ) : (
       <section className="ch-main" data-testid="chat-main" data-landmark="chat-main" aria-label={`Chat with ${botName}`}>
         <PageHeader
           compact
@@ -549,6 +570,7 @@ export function ChatScreen() {
           </EmptyChat>
         )}
       </section>
+      )}
       {help ? (
         <Dialog title="Keyboard shortcuts" onClose={() => setHelp(false)} testId="chat-shortcuts-dialog">
           <dl className="ch-keys">

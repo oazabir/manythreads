@@ -1,8 +1,8 @@
 import { useMeetingSpaces } from './spaces';
 import { useLive } from './store';
 
-/** In the sidebar, on the Meetings entry: a live dot while a call is going in any of the person's meeting spaces, with how many when more than one. Nothing otherwise. */
-export function MeetingsNavBadge() {
+/** In the sidebar, on the Chat entry (the meeting chats are listed there, P37-07): a live dot while a call is going in any of the person's meeting spaces, with how many when more than one. Nothing otherwise. */
+export function ChatLiveBadge() {
   const spaces = useMeetingSpaces();
   const live = useLive();
   const n = spaces.status === 'ok' ? spaces.data.spaces.filter((s) => live.byChannel.has(s.channelId)).length : 0;

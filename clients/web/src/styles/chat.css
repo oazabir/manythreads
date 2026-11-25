@@ -249,6 +249,85 @@
   margin-top: 10px;
 }
 
+/* ---- the meeting chats under the chats with bots (P37-07) ---- */
+.ch-meet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ch-meet-head .ch-group-title {
+  margin-bottom: 0;
+}
+
+.ch-meet-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ch-meet-none {
+  margin: 4px 8px;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.ch-meet-row {
+  border-radius: var(--radius-sm);
+}
+
+.ch-meet-row:hover,
+.ch-meet-row:focus-within,
+.ch-meet-row.on {
+  background: var(--nav-on);
+}
+
+.ch-meet-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  text-decoration: none;
+}
+
+.ch-meet-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ch-meet-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* the chat of the open meeting fills what is left beside the list, under the way back on a phone */
+.ch-meeting > .chview {
+  flex: 1;
+  height: auto;
+}
+
+.ch-meeting > .view-empty {
+  flex: 1;
+}
+
+/* room for the Bookmarks button and the bell */
+.ch-meeting .thread-head {
+  padding-right: 92px;
+}
+
+.ch-meeting .back-to-list {
+  flex: none;
+}
+
 /* ---- the main area ---- */
 .ch-main {
   display: flex;
@@ -812,6 +891,7 @@
   .ch .icon-btn,
   .ch .ch-act,
   .ch .ch-row-main,
+  .ch .ch-meet-main,
   .ch .ch-row-more,
   .ch .ch-pop-btn,
   .ch .ch-chip,

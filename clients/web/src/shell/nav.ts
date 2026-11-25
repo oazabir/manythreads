@@ -1,7 +1,7 @@
 import { NavContribution, sortNav } from '@manythreads/shared';
 
 /*
- * The sidebar contract (SPEC section 3): Summaries (2) · Chat (5) · Meetings (9) · Files (10) · Boards (20) · Org chart (23) · Jobs (26) · Threads (30) · Approvals (35) ·
+ * The sidebar contract (SPEC section 3): Summaries (2) · Chat (5) · Files (10) · Boards (20) · Org chart (23) · Jobs (26) · Threads (30) · Approvals (35) ·
  * channel groups (40) · Direct messages (45) · Projects (48) · Bots (50). The entries are a declarative `surface.nav` contribution list sorted by `order`;
  * a plugin adds its own entry the same way. Entries whose plugin is not loaded yet show their empty state.
  */
@@ -11,8 +11,6 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'chat', order: 5, label: 'Chat', kind: 'item', path: '/chat', icon: 'chat', badge: { source: 'chat.unread', tone: 'unread' } },
   // the team schedule (P36-05): every team's appointments in one calendar
   { id: 'schedule', order: 8, label: 'Schedule', kind: 'item', path: '/schedule', icon: 'schedule' },
-  // the meeting spaces of the person: a page with the list on the left and the chat of the selected one on the right (owner, 2026-11-25)
-  { id: 'meetings', order: 9, label: 'Meetings', kind: 'item', path: '/meetings', icon: 'meetings' },
   { id: 'files', order: 10, label: 'Files', kind: 'item', path: '/files', icon: 'files' },
   { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards' },
   { id: 'org', order: 23, label: 'Org chart', kind: 'item', path: '/org', icon: 'org' },
@@ -60,7 +58,9 @@ export function navTone(item: NavContribution, counts: Readonly<Record<string, n
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['summaries', 'chat', 'threads', 'dms', 'activity', 'files', 'boards', 'org', 'jobs', 'approvals', 'projects', 'bots', 'recipes', 'memory', 'knowledge', 'meetings'] as const;
+const SECTIONS = ['summaries', 'chat', 'threads', 'dms', 'activity', 'files', 'boards', 'org', 'jobs', 'approvals', 'projects', 'bots', 'recipes', 'memory', 'knowledge'] as const;
+
+/* The person's meeting chats are listed in Chat (P37-07); `/t/<team>/meetings` redirects there, so it has no section or title of its own. */
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {
@@ -69,7 +69,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { summaries: 'Summaries', chat: 'Chat', threads: 'Threads', drafts: 'Drafts', bookmarks: 'Bookmarks', schedule: 'Schedule', meetings: 'Meetings', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
+const TITLES: Record<string, string> = { summaries: 'Summaries', chat: 'Chat', threads: 'Threads', drafts: 'Drafts', bookmarks: 'Bookmarks', schedule: 'Schedule', files: 'Files', boards: 'Boards', org: 'Org chart', jobs: 'Jobs', deliveries: 'Deliveries', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory', knowledge: 'Knowledge', agents: 'Agents', projects: 'Projects', proposals: 'Proposals', search: 'Search', dms: 'Messages', activity: 'Activity' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

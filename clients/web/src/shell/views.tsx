@@ -74,9 +74,9 @@ export function DirectMessageView() {
   return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: head.name, personId: head.kind === 'person' ? head.personId : undefined }} />;
 }
 
-/** `/t/:team/meeting/:id`, where a meeting space was before the Meetings page (P37-04): a link saved or sent then opens the space there. */
+/** `/t/:team/meeting/:id` and `/t/:team/meetings/space/:id`, where a meeting space was before it moved into Chat (P37-07): a link saved or sent then opens the space there. */
 export function OldMeetingSpaceAddress() {
   const { team: slug = '', id = '' } = useParams();
   const { search } = useLocation();
-  return <Navigate to={{ pathname: meetingPath(slug, id), search }} replace />;
+  return <Navigate to={meetingPath(slug, id) + (search.length > 1 ? `&${search.slice(1)}` : '')} replace />;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { CHAT_TITLE_MAX, type ConversationListItem } from '@manythreads/shared';
 import { ago } from '../../channels/format';
 import { useMenuKeys } from '../../shell/RowMenu';
@@ -92,7 +92,7 @@ function RailRow({ item, on, renaming, setRenaming, actions }: { item: Conversat
  * The history of the person's chats with this bot, grouped by day with the pinned ones first. A search box above it (Ctrl or Cmd+K), a New chat button
  * (Ctrl or Cmd+Shift+O). On a phone it is a drawer that slides over the chat and closes when a chat is picked.
  */
-export function HistoryRail({ groups, selected, query, onQuery, status, onRetry, more, loadingMore, onMore, onNew, drawer, onClose, searchRef, actions }: {
+export function HistoryRail({ groups, selected, query, onQuery, status, onRetry, more, loadingMore, onMore, onNew, drawer, onClose, searchRef, actions, below }: {
   groups: readonly RailGroup[];
   selected: string | null;
   query: string;
@@ -108,6 +108,8 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
   onClose: () => void;
   searchRef: RefObject<HTMLInputElement | null>;
   actions: RailActions;
+  /** What the list ends with, under the chats: the person's meeting chats (P37-07). */
+  below?: ReactNode;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const newButton = useRef<HTMLButtonElement>(null);
@@ -182,6 +184,7 @@ export function HistoryRail({ groups, selected, query, onQuery, status, onRetry,
         {more ? (
           <button type="button" className="btn s ch-more" disabled={loadingMore} aria-busy={loadingMore} onClick={onMore} data-testid="chat-older">{loadingMore ? 'Loading…' : 'Show older'}</button>
         ) : null}
+        {below}
       </div>
     </aside>
   );

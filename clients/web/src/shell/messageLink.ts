@@ -30,10 +30,15 @@ export const REPLY_PARAM = 'reply';
 export type LandOptions = { land?: boolean };
 
 export const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
-/** The Meetings page (P37-04): the list of the person's meeting spaces, the selected one beside it. */
-export const meetingsPath = (slug: string): string => `/t/${slug}/meetings`;
-/** A meeting space (P36-03): a conversation of its own, opened in the Meetings page, under the team in sight. (`/t/<team>/meetings/<id>` is a call's notes page, so a space has `space/` in it.) */
-export const meetingPath = (slug: string, channelId: string): string => `/t/${slug}/meetings/space/${channelId}`;
+/** Where the person's meeting chats are listed (P37-07): the Chat page, under the chats with bots. (The Meetings page of P37-04 is gone; its old address lands here.) */
+export const meetingsPath = (slug: string): string => `/t/${slug}/chat`;
+/** A meeting space (P36-03): a conversation of its own, opened in the Chat page beside the list of chats, under the team in sight. (`/t/<team>/meetings/<id>` is a call's notes page.) */
+export const meetingPath = (slug: string, channelId: string): string => `/t/${slug}/chat?meeting=${channelId}`;
+/** The same address as a location, for a caller that adds its own search (a message to scroll to, a panel). */
+const meetingLocation = (slug: string, channelId: string, search = ''): { pathname: string; search: string } => ({
+  pathname: meetingsPath(slug),
+  search: `?meeting=${channelId}${search.startsWith('?') && search.length > 1 ? `&${search.slice(1)}` : ''}`,
+});
 
 /**
  * The location of a message: its channel with `?message=<id>` (the channel view scrolls to it and flashes it), or for a reply its
@@ -43,7 +48,7 @@ export function messageLocation(slug: string, t: MessageTarget, under: readonly 
   const target = t.threadRootId ?? t.messageId;
   if (t.channelOnly) {
     if (t.channelKind === 'bot_conversation') return { pathname: `/t/${slug}/chat/${t.channelId}`, search: '', state: null };
-    if (t.channelKind === 'meeting') return { pathname: meetingPath(slug, t.channelId), search: '', state: null };
+    if (t.channelKind === 'meeting') return { ...meetingLocation(slug, t.channelId), state: null };
     return { pathname: t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName), search: '', state: null };
   }
   // landing exactly (`land`, the Bookmarks page): a reply (not the thread's own first message) is scrolled to and highlighted in the thread (`?reply=`,
@@ -54,9 +59,11 @@ export function messageLocation(slug: string, t: MessageTarget, under: readonly 
     const message = opts.land === true && t.threadRootId === null ? t.messageId : reply;
     return { pathname: `/t/${slug}/chat/${t.channelId}`, search: `?thread=${target}${message ? `&message=${message}` : ''}`, state: null };
   }
-  const pathname = t.channelKind === 'meeting' ? meetingPath(slug, t.channelId) : t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);
+  const pathname = t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);
   const stack = t.threadRootId ? [...under, { type: 'thread', id: t.threadRootId }] : [...under];
   const next = writePanel({ search: `?message=${target}${reply ? `&${REPLY_PARAM}=${reply}` : ''}`, state: null }, stack, false);
+  // a meeting chat opens in the Chat page, with `?meeting=` ahead of the message and the panel
+  if (t.channelKind === 'meeting') return { ...meetingLocation(slug, t.channelId, next.search), state: next.state };
   return { pathname, search: next.search, state: next.state };
 }
 

@@ -60,7 +60,6 @@ import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
 import { ActivityScreen } from './screens/phone/ActivityScreen';
 import { MessagesScreen } from './screens/phone/MessagesScreen';
-import { MeetingsInbox } from './screens/meetings/MeetingsInbox';
 import { SearchScreen } from './screens/search/SearchScreen';
 import { Teams } from './screens/Teams';
 import { Onboarding } from './screens/onboarding/Onboarding';
@@ -87,10 +86,10 @@ function ExpiredRoute() {
   return <ExpiredLinkPage kind={kind === 'bootstrap' ? 'bootstrap' : kind === 'reset' ? 'reset' : 'invitation'} />;
 }
 
-/** `/t/<team>/meetings/space` without a space is the list of meetings. */
+/** `/t/<team>/meetings` and `/t/<team>/meetings/space` (the Meetings page of P37-04): the meetings are listed in Chat now. */
 function MeetingsListRedirect() {
   const { team = '' } = useParams();
-  return <Navigate to={`/t/${team}/meetings`} replace />;
+  return <Navigate to={`/t/${team}/chat`} replace />;
 }
 
 /** The Jobs page used to live at `/t/<team>/rhythms`; bookmarks and old links still arrive there. */
@@ -147,7 +146,7 @@ function AppRoutes() {
             </Route>
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
-            <Route path="/t/:team/meetings" element={<RequireTeam><MeetingsInbox /></RequireTeam>} />
+            <Route path="/t/:team/meetings" element={<MeetingsListRedirect />} />
             <Route path="/t/:team/meetings/space" element={<MeetingsListRedirect />} />
             <Route path="/t/:team/meetings/:meetingId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><MeetingView /></Suspense>} />
             <Route path="/join/:scheduledId" element={<Suspense fallback={<div className="view-empty" aria-busy="true" />}><JoinScheduled /></Suspense>} />
@@ -182,7 +181,7 @@ function AppRoutes() {
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
             <Route path="/t/:team/meeting/:id" element={<RequireTeam><OldMeetingSpaceAddress /></RequireTeam>} />
-            <Route path="/t/:team/meetings/space/:id" element={<RequireTeam><MeetingsInbox /></RequireTeam>} />
+            <Route path="/t/:team/meetings/space/:id" element={<RequireTeam><OldMeetingSpaceAddress /></RequireTeam>} />
           </Route>
           <Route path="/settings/connections" element={<PersonConnections />} />
           <Route element={<AdminOnly />}>
