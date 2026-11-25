@@ -753,6 +753,11 @@
   font-weight: 400;
 }
 
+.b-kb-choices {
+  margin: 0;
+  padding-left: 18px;
+}
+
 .b-kb-sources {
   display: grid;
   gap: 6px;

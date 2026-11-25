@@ -16,7 +16,7 @@ import {
   uploadKnowledgeDocument,
 } from './api';
 import { Mono } from './parts';
-import { countLine } from '../knowledge/words';
+import { SOURCES_INTRO, SOURCE_CHOICES, countLine, knowledgeFilesHref } from '../knowledge/words';
 import { ConnectorSourceForm, ConnectorSourceLine } from '../knowledge/ConnectorSourceForm';
 import { firstReadPending, useFirstReadRefresh } from '../knowledge/useFirstRead';
 
@@ -62,6 +62,16 @@ function SourcesList({ team, base, sources, writer, busy, run }: { team: string;
   return (
     <section className="b-kb-sources" aria-label="Sources" data-testid="knowledge-sources">
       <div className="b-kb-name">Sources</div>
+      <p className="b-kb-sub" data-testid="knowledge-sources-intro">{SOURCES_INTRO}</p>
+      {writer ? (
+        <ul className="b-kb-sub b-kb-choices" aria-label="What each choice does" data-testid="knowledge-source-choices">
+          {SOURCE_CHOICES.map((c) => <li key={c.id}>{c.text}</li>)}
+        </ul>
+      ) : null}
+      <p className="b-kb-sub">
+        <Link to={knowledgeFilesHref(team, base)} data-testid="knowledge-open-folder">Open this base’s folder in Files</Link>
+        {writer ? ' to add, edit or delete its Markdown and text files, then press Read again.' : ' to see its files.'}
+      </p>
       <ul className="b-kb-docs">
         {sources.map((s) => (
           <li key={s.id} className="b-kb-doc" data-testid="knowledge-source" data-kind={s.kind} data-error={s.error ? 'true' : undefined}>

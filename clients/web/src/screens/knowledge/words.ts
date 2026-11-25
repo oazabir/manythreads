@@ -1,4 +1,5 @@
 import type { KnowledgeBaseState, KnowledgeDocument, KnowledgeSearchMode } from '@manythreads/shared';
+import { spaceHref } from '../files/spaces';
 
 /*
  * The plain words and small rules of the Knowledge screen, kept apart from the components so a test can read them. Nothing here touches the network.
@@ -58,3 +59,24 @@ export function uploadSentence(outcome: 'added' | 'updated' | 'unchanged' | 'fai
 }
 
 export const countLine = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
+
+/**
+ * Where a team's knowledge lives in Files: every base is a folder `knowledge/<base>` in the team's files (the converted text of each document, and the Markdown or
+ * text files people put there to be read in). The Files screen opens a folder by `?path=`, so these are plain links; a person uploads, renames and deletes there.
+ * A Personal base has no folder in Files: its documents are kept by the knowledge plugin alone.
+ */
+export const knowledgeFolder = (base?: string): string => (base ? `knowledge/${base}` : 'knowledge');
+export const knowledgeFilesHref = (team: string, base?: string): string => spaceHref(team, { folder: knowledgeFolder(base) });
+export const knowledgeFilesLabel = (teamName: string): string => `Open ${teamName} knowledge folder in Files`;
+
+/** What a source is, in one line each: shown above the Sources of a base and on the Knowledge screen. */
+export const SOURCES_INTRO = 'Sources are where Brain and the bots read from. Each base is filled by one or more of them, and they search only what has been read in.';
+export const SOURCE_CHOICES: ReadonlyArray<{ id: string; text: string }> = [
+  { id: 'upload', text: 'Upload a file: a Markdown, text, CSV or PDF file is turned into text and added to the base.' },
+  { id: 'folder', text: 'The base’s folder in Files: Markdown and text files kept there are read in, so you can add, edit and delete them in Files and then press Read again.' },
+  { id: 'url', text: 'A web page: one address, read again on the schedule you choose.' },
+  { id: 'app', text: 'A connected app: a folder from Drive, Notion and the like, read with your own sign-in and kept up to date.' },
+];
+
+/** The Personal side: a base has only the first and last choice, and its documents are kept here, not in Files. */
+export const PERSONAL_SOURCES_INTRO = 'Sources are where Brain reads from. Upload a file to this base, or add a folder from a connected app. Both are kept here, not in Files, and only you can search them.';

@@ -7,7 +7,7 @@ import { KnowledgeBasePanel } from '../bots/knowledge';
 import { SpaceSwitch } from '../memory/SpaceSwitch';
 import { fetchTeamBases } from './api';
 import { PersonalKnowledge } from './PersonalKnowledge';
-import { countLine } from './words';
+import { countLine, knowledgeFilesHref, knowledgeFilesLabel } from './words';
 
 /**
  * The Knowledge screen has two sides, chosen by the switch at the top. Personal (`/knowledge`) is your own knowledge bases: files only you can search, and Brain
@@ -37,8 +37,29 @@ export function KnowledgeScreen() {
         description={personal ? 'Files and notes only you can search. Brain reads them when you ask it in a private conversation.' : 'The documents a team’s bots can search.'}
         actions={space}
       />
+      <FilesShortcuts teams={teams} />
       {personal ? <PersonalKnowledge /> : <TeamKnowledge slug={team} />}
     </section>
+  );
+}
+
+/**
+ * Shortcuts to the folders where a team's knowledge files are kept, in Files. Files already uploads, renames and deletes files, so this screen does not do it twice
+ * for those folders; what it keeps is what Files cannot do (turn a PDF into text, read a web page or a connected app on a schedule, show what is searchable).
+ */
+function FilesShortcuts({ teams }: { teams: ReadonlyArray<{ slug: string; name: string }> }) {
+  if (teams.length === 0) return null;
+  return (
+    <nav className="kn-shortcuts" aria-label="Knowledge folders in Files" data-testid="knowledge-shortcuts">
+      <p className="faint kn-note">Each team keeps its knowledge as folders in Files. Open one to add, edit or delete its files.</p>
+      <ul className="kn-shortcut-list">
+        {teams.map((t) => (
+          <li key={t.slug}>
+            <Link className="btn s" to={knowledgeFilesHref(t.slug)} data-testid="knowledge-shortcut" data-team={t.slug}>{knowledgeFilesLabel(t.name)}</Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 

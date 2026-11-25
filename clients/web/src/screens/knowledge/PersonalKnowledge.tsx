@@ -8,7 +8,7 @@ import { message } from '../memory/inboxWords';
 import { ConnectorSourceForm, ConnectorSourceLine } from './ConnectorSourceForm';
 import { firstReadPending, useFirstReadRefresh } from './useFirstRead';
 import { createPersonalBase, deletePersonalBase, deletePersonalDocument, deletePersonalSource, fetchPersonalBase, fetchPersonalBases, searchPersonalBase, uploadPersonalDocument } from './api';
-import { ACCEPTED_FILES, KIND_LABEL, countLine, searchModeSentence, sizeLabel, fallbackSlug, slugFromName, stateSentence, uploadSentence } from './words';
+import { ACCEPTED_FILES, KIND_LABEL, PERSONAL_SOURCES_INTRO, countLine, searchModeSentence, sizeLabel, fallbackSlug, slugFromName, stateSentence, uploadSentence } from './words';
 
 type Notice = { tone: 'ok' | 'bad'; text: string } | null;
 
@@ -228,6 +228,8 @@ function BasePanel({ summary, onChanged, onRemoved }: { summary: PersonalKnowled
       {notice ? <p className={`kn-note ${notice.tone}`} role={notice.tone === 'bad' ? 'alert' : 'status'} data-testid="personal-base-notice">{notice.text}</p> : null}
 
       <div className="kn-sources" data-testid="personal-base-sources">
+        <h3 className="kn-sources-title">Sources</h3>
+        <p className="faint kn-note" data-testid="personal-base-sources-intro">{PERSONAL_SOURCES_INTRO}</p>
         {connectorSources.length > 0 ? (
           <ul className="kn-source-list" aria-label={`Connected apps read into ${info.name}`}>
             {connectorSources.map((src) => (

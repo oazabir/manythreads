@@ -38,6 +38,9 @@ test.describe('desktop', () => {
       await page.getByRole('button', { name: 'Create it' }).click();
       await expect(page.getByTestId('knowledge-empty')).toBeVisible();
       await expect(page.getByTestId('knowledge-state')).toContainText('Empty');
+      // the Sources say what they are and link to the base's folder in Files (P37-03)
+      await expect(page.getByTestId('knowledge-sources-intro')).toContainText('where Brain and the bots read from');
+      await expect(page.getByTestId('knowledge-open-folder')).toHaveAttribute('href', /\/files\?path=knowledge%2Frunbooks$/);
 
       await page.getByTestId('knowledge-file').setInputFiles({ name: 'Release runbook.md', mimeType: 'text/markdown', buffer: Buffer.from(RUNBOOK_V1) });
       const doc = page.getByTestId('knowledge-doc');

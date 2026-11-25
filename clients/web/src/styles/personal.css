@@ -426,6 +426,34 @@ a.sp-opt:hover {
   color: var(--alert-ink);
 }
 
+/* Shortcuts to the knowledge folders in Files, and the heading of a Personal base's Sources. */
+.kn-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kn-shortcut-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kn-shortcut-list .btn {
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+.kn-sources-title {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
 /* Account: which bots may read your Personal space. */
 .bc-list {
   margin: 0;
@@ -502,6 +530,7 @@ a.sp-opt:hover {
   .mp-history .btn,
   .mp-version-row .btn,
   .kn-actions .btn,
+  .kn-shortcut-list .btn,
   .kn-doc .btn,
   .kn-ask .btn,
   .kn-new .btn,

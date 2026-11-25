@@ -35,6 +35,8 @@ test('a member creates a base, uploads a file, finds a passage in it and then re
     await expect(row).toHaveCount(1);
     await expect(page.getByTestId('personal-base-title')).toHaveText('Office notes');
     await expect(page.getByTestId('personal-base-empty')).toBeVisible();
+    // the Sources of a personal base say what they are and that nothing here lives in Files (P37-03)
+    await expect(page.getByTestId('personal-base-sources-intro')).toContainText('not in Files');
 
     await page.getByTestId('personal-base-file').setInputFiles({ name: 'coffee-corner.md', mimeType: 'text/markdown', buffer: Buffer.from(RUNBOOK) });
     const doc = page.getByTestId('personal-base-doc');
@@ -146,6 +148,13 @@ test('the team page at /t/engineering/knowledge lists the team’s bases and lin
     // the seeded team may or may not have a base: the list or the empty sentence, never neither
     await expect(page.getByTestId('team-knowledge-list').or(page.getByTestId('team-knowledge-empty'))).toBeVisible();
     await expect(page.getByTestId('space-switch')).toHaveAttribute('data-space', 'teams');
+    // one shortcut per team goes straight to that team's knowledge folder in Files, where people upload and delete files (P37-03)
+    const shortcut = page.locator('[data-testid="knowledge-shortcut"][data-team="engineering"]');
+    await expect(shortcut).toHaveAttribute('href', '/t/engineering/files?path=knowledge');
+    await shortcut.click();
+    await expect(page).toHaveURL(/\/t\/engineering\/files\?path=knowledge$/);
+    await page.goBack();
+    await expect(page.getByTestId('knowledge-screen')).toBeVisible();
     await page.getByTestId('space-personal').click();
     await expect(page).toHaveURL(/\/knowledge$/);
     await expect(page.getByTestId('personal-knowledge')).toBeVisible();
