@@ -5,12 +5,14 @@ import { AuthFrame } from '../components/frames';
 import { ExpiredLinkPage, FullPageMessage } from '../components/states';
 import { Alert, Field, Toggle } from '../components/ui';
 import { CallStage } from '../meetings/CallStage';
+import { engineLine } from '../meetings/consent';
+import { MeetingClock, guestEngine } from '../meetings/engine';
 import { CameraIcon, LeaveIcon, MicIcon } from '../meetings/icons';
 import { loadAdapter } from '../meetings/media';
 import { DEFAULT_PREFS } from '../meetings/prefs';
 import { useDocumentTitle } from '../shell/usePageTitle';
 import { realGuestApi } from './api';
-import { GUEST_WORDS, GuestController, type GuestState } from './guestController';
+import { GUEST_WORDS, GuestController, mustAsk, type GuestState } from './guestController';
 
 /*
  * The page a guest link opens (P17-04): `/join/g/<token>`, outside the sign-in check and the app's frame, loaded only when opened. Someone outside the workspace
@@ -34,6 +36,7 @@ export function GuestJoinPage() {
         clearInterval: (h) => globalThis.clearInterval(h as number),
         setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
         clearTimeout: (h) => globalThis.clearTimeout(h as number),
+        engine: { load: guestEngine, clock: (startedAt) => new MeetingClock(startedAt) },
         forgetAddress: () => {
           try {
             window.history.replaceState(null, '', GUEST_PAGE_PREFIX);
@@ -215,6 +218,37 @@ function JoinForm({ controller, state }: { controller: GuestController; state: G
 
 // ---- in the call -------------------------------------------------------------------------------------------------------------------------------------
 
+/**
+ * "Transcribe my voice?" (step 2), while the call is transcribed: the question until the guest answers, then one line saying what was chosen, with a button to change
+ * it. Nothing at all while the call is not transcribed.
+ */
+function GuestTranscription({ controller, state }: { controller: GuestController; state: GuestState }) {
+  if (state.phase.kind !== 'in-call' || state.transcription === 'off') return null;
+  if (mustAsk(state)) {
+    return (
+      <section className="gst-consent" aria-labelledby="gst-consent-title" data-testid="guest-consent">
+        <h2 id="gst-consent-title" className="gst-consent-title">{GUEST_WORDS.promptTitle}</h2>
+        <p className="gst-consent-body">{GUEST_WORDS.promptBody(state.turnedOnBy)}</p>
+        <div className="gst-consent-actions">
+          <button type="button" className="btn primary s" disabled={state.answering} onClick={() => void controller.answer('yes')} data-testid="guest-consent-yes">{GUEST_WORDS.yes}</button>
+          <button type="button" className="btn s" disabled={state.answering} onClick={() => void controller.answer('no')} data-testid="guest-consent-no">{GUEST_WORDS.no}</button>
+        </div>
+      </section>
+    );
+  }
+  const yes = state.consent === 'yes';
+  const line = yes ? engineLine(state.engine) : null;
+  return (
+    <p className="gst-transcribe" role="status" data-testid="guest-transcribe-state" data-consent={state.consent}>
+      <span>{yes ? 'Your voice is being transcribed on this device.' : 'Your voice is not transcribed.'}</span>
+      {line ? <span className="gst-transcribe-note">{line}</span> : null}
+      <button type="button" className="btn s" disabled={state.answering} onClick={() => void controller.answer(yes ? 'no' : 'yes')} data-testid="guest-transcribe-change">
+        {yes ? 'Stop transcribing me' : 'Transcribe my voice'}
+      </button>
+    </p>
+  );
+}
+
 function GuestCall({ controller, state }: { controller: GuestController; state: GuestState }) {
   const title = state.phase.kind === 'in-call' || state.phase.kind === 'joining' ? state.phase.title : '';
   useDocumentTitle(title || 'Call');
@@ -228,6 +262,7 @@ function GuestCall({ controller, state }: { controller: GuestController; state: 
           <h1 className="gst-call-title">{title}</h1>
           <span className="gst-call-state" role="status">{joining ? 'Joining…' : state.reconnecting ? 'Reconnecting…' : 'In the call'}</span>
         </header>
+        <GuestTranscription controller={controller} state={state} />
         <CallStage call={{ videos: state.videos, speaking: state.speaking, prefs: DEFAULT_PREFS, present }} media={controller} />
         <ul className="gst-people" aria-label="People in the call" data-testid="guest-people">
           {state.people.map((p) => (

@@ -431,11 +431,12 @@ export const CallCard = z.object({
   notesLink: z.string().nullable(),
   /**
    * Guest links (P17-04): whether they are on for this call, how many link guests are in it now (a reader sees "+1 guest", never a name), whether the caller may copy
-   * a link (a reader who may post, not a workspace guest) and whether they may turn links off (the starter, a lead, an admin). All off for an older server.
+   * a link (a reader who may post, not a workspace guest) and whether they may turn links off (the starter, a lead, an admin). `links` is how many links of the call
+   * still work, for the people who may turn them off (0 for everyone else). All off for an older server.
    */
   guests: z
-    .object({ on: z.boolean(), inCall: z.number().int().min(0), canLink: z.boolean(), canTurnOff: z.boolean() })
-    .default({ on: false, inCall: 0, canLink: false, canTurnOff: false }),
+    .object({ on: z.boolean(), inCall: z.number().int().min(0), canLink: z.boolean(), canTurnOff: z.boolean(), links: z.number().int().min(0).default(0) })
+    .default({ on: false, inCall: 0, canLink: false, canTurnOff: false, links: 0 }),
 });
 export type CallCard = z.infer<typeof CallCard>;
 

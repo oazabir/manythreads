@@ -85,7 +85,7 @@ export function cardFromSummary(room: MeetingSummary, starterName: string): Call
     notetaker: null,
     you: { joined: false, canEnd: true, canInvite: false },
     notesLink: null,
-    guests: { on: false, inCall: 0, canLink: false, canTurnOff: false },
+    guests: { on: false, inCall: 0, canLink: false, canTurnOff: false, links: 0 },
   };
 }
 

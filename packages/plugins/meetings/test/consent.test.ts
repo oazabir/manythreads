@@ -67,6 +67,15 @@ describe('the transcript a reader may see', () => {
     ]);
     expect(JSON.stringify(lines)).not.toContain('secret');
   });
+  it('a link guest\'s line (P17-04) reads "Ana (guest)" and carries the guest\'s id; a guest who is not a yes shows only that they spoke', () => {
+    const G = '00000000-0000-7000-8000-0000000000c1';
+    const who = (c: SpeakerFacts['consent']) => new Map<string, SpeakerFacts>([...speakers('yes', 'no'), [G, { displayName: 'Ana (guest)', consent: c, guest: true }]]);
+    const yes = renderTranscript([seg(A, 0, 900, 'hi'), seg(G, 1000, 2000, 'thanks for having me')], who('yes'));
+    expect(yes[1]).toMatchObject({ speakerName: 'Ana (guest)', speakerId: G, guestId: G, text: 'thanks for having me', transcribed: true, editable: false });
+    expect(yes[0]!.guestId).toBeUndefined();
+    const no = renderTranscript([seg(G, 1000, 2000, 'thanks for having me')], who('unasked'));
+    expect(no).toEqual([expect.objectContaining({ guestId: G, text: notTranscribedText('Ana (guest)'), transcribed: false })]);
+  });
   it('judges by the answer NOW: words stored before a no are not shown, and an unanswered person is hidden too', () => {
     const stored = [seg(A, 0, 1000, 'said before answering'), seg(B, 1000, 2000, 'also stored')];
     expect(renderTranscript(stored, speakers('no', 'unasked')).every((l) => !l.transcribed)).toBe(true);

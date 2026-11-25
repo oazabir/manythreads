@@ -1,14 +1,14 @@
 import { expect, test, type BrowserContext } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
 import { DESKTOP, PHONE } from '../support/stack-browser.ts';
-import { closePerson, dock, enterRoom, meetingsStack, openAs, type Person } from './support.ts';
+import { closePerson, dock, enterRoom, meetingsStack, openAs, statusOf, type Person } from './support.ts';
 
 /**
  * Guest links and the waiting room (PLAN P17-04, docs/plans/guest-links.md) between browsers, on the fake media server: Nadia starts a call in #dev with "Let people
  * outside the workspace join with a link" on (her link is copied); Rafi joins and copies a link of his own from the card. A context with no session opens Nadia's
  * link, sees the call's title and the workspace, types a name, asks to join and waits (the address loses its secret); Nadia sees "Ana is waiting" and lets her
  * in; the guest is in the call and sees the names; the members see "Ana (guest)" and "+1 guest". The guest's browser gets 401 from a channel route. A second guest
- * at 390 px is turned away. Nadia takes Ana out ("You were removed from the call."), turns guest links off (the link is then the expired page) and ends the call.
+ * at 390 px is turned away. Step 2: transcription on, the guest says yes and her words read "Ana (guest)"; "Guest links (2)" turns Rafi's link off. Nadia takes Ana out ("You were removed from the call."), turns guest links off (the link is then the expired page) and ends the call.
  */
 test.use({ actionTimeout: 10_000 });
 test.skip(({ isMobile }) => isMobile, 'one spec drives both widths: the guest at 390 px is a context of its own');
@@ -101,6 +101,43 @@ test('a guest with no session knocks, waits, is let in, and is in the call; the 
   const channelId = (await stack.sql<{ id: string }>("SELECT c.id FROM app.channels c JOIN app.teams t ON t.id = c.team_id WHERE t.slug = 'engineering' AND c.name = 'dev'"))[0]!.id;
   expect((await g.request.get(`/api/channels/${channelId}/messages`)).status()).toBe(401);
   expect((await g.request.get(`/api/meetings/${meetingId}`)).status()).toBe(401);
+});
+
+test('step 2: the guest is asked "Transcribe my voice?", her yes writes her words as "Ana (guest)"; the starter sees the links and turns one off', async () => {
+  const g = guests[0]!.pages()[0]!;
+  // nothing to ask while the call is not transcribed
+  await expect(g.getByTestId('guest-consent')).toHaveCount(0);
+  expect(await statusOf(nadia!.api, 'PUT', `/api/meetings/${meetingId}/transcription`, { mode: 'on_device' })).toBe(200);
+  // the members answer for themselves (their own question is another spec's), so nothing of theirs covers the card
+  for (const p of [nadia!, rafi!]) expect(await statusOf(p.api, 'POST', `/api/meetings/${meetingId}/consent`, { transcribe: 'no' })).toBe(200);
+  const ask = g.getByTestId('guest-consent');
+  await expect(ask).toContainText('Transcribe my voice?', { timeout: 15_000 });
+  // not answered: the guest's device writes nothing
+  expect(await g.evaluate(() => (window as unknown as { __manythreadsSay?: (t: string) => boolean }).__manythreadsSay?.('too early') ?? false)).toBe(false);
+  await ask.getByTestId('guest-consent-yes').click();
+  await expect(g.getByTestId('guest-transcribe-state')).toHaveAttribute('data-consent', 'yes');
+  await expect
+    .poll(() => g.evaluate(() => (window as unknown as { __manythreadsSay?: (t: string) => boolean }).__manythreadsSay?.('Thanks for having me') ?? false), { timeout: 15_000 })
+    .toBe(true);
+  await expect
+    .poll(async () => {
+      const res = await nadia!.api.ctx.fetch(`/api/meetings/${meetingId}/transcript`, { headers: await nadia!.api.headers() });
+      return JSON.stringify(await res.json());
+    }, { timeout: 15_000 })
+    .toContain('Ana (guest)');
+
+  // "Guest links (2)": Nadia's and Rafi's; Rafi's is turned off and the count follows
+  const links = nadia!.page.getByTestId('room-card-guest-links').first();
+  await expect(links).toHaveText('Guest links (2)', { timeout: 15_000 });
+  await links.click();
+  const rows = nadia!.page.getByTestId('room-card-link');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: 'Made by Rafi' })).toHaveCount(1);
+  await rows.filter({ hasText: 'Made by Rafi' }).getByTestId('room-card-link-off').click();
+  await expect(rows).toHaveCount(1);
+  await expect(links).toHaveText('Guest links (1)', { timeout: 15_000 });
+  // Nadia's own link still works
+  expect((await g.request.post('/api/guest-links/peek', { data: { token: link.slice(link.lastIndexOf('/') + 1) }, headers: { origin: stack.origin } })).status()).toBe(200);
 });
 
 test('a second guest on a phone (390 px) is turned away', async ({ browser }) => {

@@ -26,6 +26,8 @@ export interface RenderOptions {
 export interface SpeakerFacts {
   displayName: string;
   consent: MeetingConsent;
+  /** A link guest (P17-04): the key is the guest's id, the name already reads "Ana (guest)", and the line says `guestId`. */
+  guest?: boolean;
 }
 
 /** Stretches of a silent speaker closer together than this are one "spoke (not transcribed)" line. */
@@ -48,6 +50,7 @@ export function renderTranscript(segments: readonly SegmentFacts[], speakers: Re
         segmentId: (s.id ?? null) as MeetingTranscriptLine['segmentId'],
         speakerId: s.speakerId as MeetingTranscriptLine['speakerId'],
         speakerName: name,
+        ...(who.guest ? { guestId: s.speakerId as NonNullable<MeetingTranscriptLine['guestId']> } : {}),
         startMs: s.startMs,
         endMs: Math.max(s.endMs, s.startMs),
         text,
@@ -65,6 +68,7 @@ export function renderTranscript(segments: readonly SegmentFacts[], speakers: Re
       segmentId: null,
       speakerId: s.speakerId as MeetingTranscriptLine['speakerId'],
       speakerName: name,
+      ...(who?.guest ? { guestId: s.speakerId as NonNullable<MeetingTranscriptLine['guestId']> } : {}),
       startMs: s.startMs,
       endMs: Math.max(s.endMs, s.startMs),
       text: notTranscribedText(name),

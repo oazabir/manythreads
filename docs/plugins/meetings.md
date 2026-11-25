@@ -152,10 +152,10 @@ and the page keeps it to one).
   `media-livekit/src/listener-worker.ts`), whether recording is on or off; "Ask to share" changes nothing there.
 - **Audit:** `meeting.share_answered` ("Stopped sharing to let them share", "Said not now" or "Let someone else share first"), ids only; a direct-message call (no team) has no row.
 
-## Guest links and the waiting room (P17-04, step 1)
+## Guest links and the waiting room (P17-04, steps 1 and 2)
 
 A **link guest** is someone outside the workspace with no account (not a workspace guest, whose role is `guest`). A link guest gets one call and never a channel. Plan:
-`docs/plans/guest-links.md` (its "Decisions taken" hold). Code: `src/guests.ts` (routes, the sweep's part, the webhook's part), migration `0012_guest_links.sql`, shared
+`docs/plans/guest-links.md` (its "Decisions taken" hold). Code: `src/guests.ts` (routes, the sweep's part, the webhook's part), migrations `0012_guest_links.sql` and `0014_guest_segments.sql` (step 2), shared
 `api/meetings/guests.ts`, web `clients/web/src/guest/` (the guest page) and `meetings/guestLinks.ts` (Copy guest link, the waiting room).
 
 - **Links.** A secret of 32 random bytes in the address `/join/g/<43 characters>`; only its sha-256 is kept (`meeting_guest_links.token_hash`, which the app role may not
@@ -188,10 +188,24 @@ A **link guest** is someone outside the workspace with no account (not a workspa
   a guest identity). The guest sees the names in the call (no avatar, handle or address); the members see "Ana (guest)" (`MeetingSummary.guests`) and readers of the card "+1
   guest" (`CallCard.guests`). **Remove** kicks `guest:<id>` from the media room; the cookie is dead from then on. The media webhook kicks a `guest:<uuid>` that joins without
   being let in (or after the end); a guest let in whose media connection drops (a reload, a lost network) stays let in, and the page joins again with a new token and a
-  growing pause ("Reconnecting…"). A guest leaves by Leave, by Remove, by the call's end or by the sweep. A guest is never an actor: participants, transcript lines and presence stay people-only, and a guest does not keep a call
-  alive.
-- **Never transcribed or recorded (step 1).** The note-taker's listener and the transcript take only people who said yes; the recording rule counts an admitted guest as present
-  with "no", so nothing is recorded while one is in. A call with an admitted guest is held for a lead before it reaches the team's memory (`hold: 'external'`).
+  growing pause ("Reconnecting…"). A guest leaves by Leave, by Remove, by the call's end or by the sweep. A guest is never an actor: participants and presence stay people-only,
+  a guest's transcript lines carry `guest_id` instead of a speaker (step 2), and a guest does not keep a call alive.
+- **Transcription (step 2).** While the call is transcribed, the guest's page asks "Transcribe my voice?" (the members' question, P15-05) under the call's title. Only a yes
+  (`POST /api/guest/consent {transcribe}`, kept in `meeting_guests.consent_transcribe`) starts the on-device engine in the guest's browser; it sends only words, to
+  `POST /api/guest/segments` (the members' body; 409 until a yes, while transcription is off, or after the end). The lines are stored with `meeting_segments.guest_id`
+  (`speaker_id` null; exactly one of the two is set) and read "Ana (guest)" in the transcript, the captions and the transcript file (`MeetingTranscriptLine.guestId`). The
+  server never transcribes a guest's sound and the note-taker never listens to a guest, whatever the room's mode. A no stops the engine first (what it heard and had not sent
+  is thrown away) and blanks the guest's stored words ("Ana (guest) spoke (not transcribed)"); a guest who does not answer is never written down, and their microphone stays
+  as they set it. Turning transcription on again asks the guest again. The insert trigger is the second guard: only the system role writes a guest's line, as a device line,
+  of a live, transcribed call, and with words only for a guest let in who said yes. Nobody can correct a guest's line. A guest's lines are not in meeting search (it joins
+  people only). Event `meetings.guest.answered` (`yes` or `no`; ids only, not audited, like `asked` and `left`).
+- **Never recorded.** The recording rule counts an admitted guest as present with "no" (a yes to transcription is not a yes to recording), so nothing is recorded while one
+  is in. A call with an admitted guest is held for a lead before it reaches the team's memory (`hold: 'external'`).
+- **Guest links (n) (step 2).** On the call card, the starter, a lead or an admin gets **Guest links (n)** beside Turn off guest links (`CallCard.guests.links`, the links
+  that still work, 0 for anyone else). It opens the list (`GET /api/meetings/:id/guest-links`, 403 for anyone else): "Made by Omar at 14:02 · 2 of 50 used · works until
+  02:02" (never the address: only its hash is kept), each with **Turn off** (`DELETE /api/meetings/:id/guest-links/:linkId`, definer `app.meetings_revoke_guest_link`;
+  `{revoked: false}` for a link that had already stopped). Only that link stops; the call's other links and its switch stay on, and guests already in stay. Event
+  `meetings.guest_link.revoked` (`reason: person`, the one link).
 - **Events and audit:** `meetings.guest_link.created`, `meetings.guest_link.revoked` (`person` or `ended`), `meetings.guest.asked`, `.admitted`, `.denied`, `.removed`, `.left`
   (`left`, `dropped`, `ended`, `expired`): ids and times only, never a name, an address or a secret. Audit rows for links made and turned off, and guests let in, turned away and
   taken out.
@@ -202,7 +216,7 @@ A **link guest** is someone outside the workspace with no account (not a workspa
   `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex` and write no access log line. The policy is not widened: members reach the media server at
   `wss://<site>/livekit` (`media.ingressPath`), which `connect-src 'self'` already covers, and so do guests. An install whose media server has a name of its own needs that name
   in `connect-src` for members and guests alike.
-- **Step 2 (not built):** the consent prompt and on-device transcription for guests, "Guest links (n)" with a revoke per link, journeys and baselines.
+- **Still to do:** visual baselines of the guest's question and of the links list.
 
 ## Meeting series (P17-05, step 1)
 

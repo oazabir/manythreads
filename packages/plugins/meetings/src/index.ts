@@ -74,6 +74,8 @@ export default definePlugin({
         'meetings.guest.denied',
         'meetings.guest.removed',
         'meetings.guest.left',
+        // a guest's answer to "Transcribe my voice?" (P17-04 step 2)
+        'meetings.guest.answered',
         // Bundle D (docs/plugins/meetings.md "Bundle D contracts"): rooms planned ahead on a calendar
         'meetings.scheduled.created',
         'meetings.scheduled.changed',

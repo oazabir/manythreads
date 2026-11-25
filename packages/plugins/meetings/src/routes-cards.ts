@@ -80,6 +80,18 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
       )
     ).rows.map((r) => [r.meeting_id, r.n] as const),
   );
+  // the guest links that still work (P17-04 step 2), counted for the people who may turn them off: "Guest links (2)"
+  const linkFor = found.filter((id) => rights.get(id)?.can_end === true);
+  const linkCounts = new Map(
+    linkFor.length === 0
+      ? []
+      : (
+          await tx.query<{ meeting_id: string; n: number }>(
+            'SELECT meeting_id::text, count(*)::int AS n FROM app.meeting_guest_links WHERE meeting_id = ANY ($1::uuid[]) AND revoked_at IS NULL AND expires_at > now() AND uses < max_uses GROUP BY meeting_id',
+            [linkFor],
+          )
+        ).rows.map((r) => [r.meeting_id, r.n] as const),
+  );
   const notesFor = found.filter((id) => rights.get(id)?.can_notes === true);
   const teamIds = [...new Set(rows.map((r) => r.team_id).filter((t): t is string => t !== null))];
   const botIds = [...new Set(rows.map((r) => r.notetaker_bot_id).filter((b): b is string => b !== null))];
@@ -137,6 +149,7 @@ async function buildCards(ctx: PluginContext, tx: PluginTx, ids: readonly string
         inCall: live ? (guestCounts.get(m.id) ?? 0) : 0,
         canLink: live && m.allow_guests && right?.can_post === true && right.is_dm !== true && right.may_link === true,
         canTurnOff: live && m.allow_guests && right?.can_end === true,
+        links: live && m.allow_guests && right?.can_end === true ? (linkCounts.get(m.id) ?? 0) : 0,
       },
     });
   });

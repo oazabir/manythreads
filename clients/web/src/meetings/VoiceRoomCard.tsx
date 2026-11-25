@@ -13,6 +13,7 @@ import { copyGuestLink, forgetGuestLink } from './guestLinks';
 import { sayToast } from '../kernel/toast';
 import { callCards, useCallCard } from './callCards';
 import { EndRoomConfirm } from './EndRoomConfirm';
+import { GuestLinksList } from './GuestLinksList';
 import { InviteMoreDialog } from './StartCallDialog';
 import { BotIcon, EventHeadphonesIcon, GuestLinkIcon, WaveIcon } from './icons';
 import { callCardFacts, cardFromSummary, eventLine, runningTime, startLine } from './roomCard';
@@ -123,8 +124,10 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
   const [problem, setProblem] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
+  // "Guest links (n)" opened (step 2): the links that still work, each with Turn off
+  const [showLinks, setShowLinks] = useState(false);
   // guest links (P17-04); a card from an older server, or made by hand, has none
-  const guests = card.guests ?? { on: false, inCall: 0, canLink: false, canTurnOff: false };
+  const guests = card.guests ?? { on: false, inCall: 0, canLink: false, canTurnOff: false, links: 0 };
   const inCall = call.phase === 'connected' || call.phase === 'reconnecting' || call.phase === 'connecting' || call.phase === 'lost';
   // the reader's actor id: from the roster once it has answered (the card may be drawn before), else what the store already knows
   const people = usePeople();
@@ -185,6 +188,7 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
     try {
       await revokeGuestLinks(card.meetingId);
       forgetGuestLink(card.meetingId);
+      setShowLinks(false);
       sayToast('Guest links turned off. Guests already in the call stay.', { testId: 'guest-link-toast' });
       await callCards().refresh(card.meetingId);
     } catch (e) {
@@ -264,6 +268,17 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
             </button>
           ) : null}
           {guests.canTurnOff ? (
+            <button
+              type="button"
+              className="btn s room-card-guestlinks"
+              aria-expanded={showLinks}
+              onClick={() => setShowLinks((v) => !v)}
+              data-testid="room-card-guest-links"
+            >
+              {`Guest links (${guests.links ?? 0})`}
+            </button>
+          ) : null}
+          {guests.canTurnOff ? (
             <button type="button" className="btn s room-card-guestoff" disabled={linkBusy} onClick={() => void turnOffLinks()} data-testid="room-card-guest-off">
               Turn off guest links
             </button>
@@ -271,6 +286,16 @@ export function CallCardBody({ card, channelId, freshen, endedHere, pinned }: { 
           {facts.canEnd ? <button type="button" ref={endButton} className="btn s room-card-end" data-testid="room-card-end" onClick={() => setAsking(true)}>End call</button> : null}
         </div>
       )}
+      {showLinks && guests.canTurnOff && !asking ? (
+        <GuestLinksList
+          meetingId={card.meetingId}
+          onChanged={() => {
+            // the link this tab kept may be the one turned off: the next Copy asks for a new one
+            forgetGuestLink(card.meetingId);
+            void callCards().refresh(card.meetingId);
+          }}
+        />
+      ) : null}
       {problem ? <p className="dlg-error" role="alert">{problem}</p> : null}
       {inviting ? (
         // the dialog is drawn on top of the page, but React passes its clicks and keys up through the card and the message row (which would join the call or

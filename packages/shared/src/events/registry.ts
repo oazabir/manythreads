@@ -96,6 +96,7 @@ import { MeetingsGuestAdmittedEvent } from './meetings.guest.admitted.ts';
 import { MeetingsGuestDeniedEvent } from './meetings.guest.denied.ts';
 import { MeetingsGuestRemovedEvent } from './meetings.guest.removed.ts';
 import { MeetingsGuestLeftEvent } from './meetings.guest.left.ts';
+import { MeetingsGuestAnsweredEvent } from './meetings.guest.answered.ts';
 import { KnowledgeSourceSyncedEvent } from './knowledge.source.synced.ts';
 import { WebhooksProviderEndpointChangedEvent } from './webhooks.provider_endpoint.changed.ts';
 import { WebhooksProviderEventReceivedEvent } from './webhooks.provider_event.received.ts';
@@ -459,6 +460,7 @@ export const eventRegistry = {
   'meetings.guest.denied': { 1: MeetingsGuestDeniedEvent },
   'meetings.guest.removed': { 1: MeetingsGuestRemovedEvent },
   'meetings.guest.left': { 1: MeetingsGuestLeftEvent },
+  'meetings.guest.answered': { 1: MeetingsGuestAnsweredEvent },
   'knowledge.source.synced': { 1: KnowledgeSourceSyncedEvent },
   'webhooks.provider_endpoint.changed': { 1: WebhooksProviderEndpointChangedEvent },
   'webhooks.provider_event.received': { 1: WebhooksProviderEventReceivedEvent },

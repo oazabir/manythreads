@@ -526,3 +526,14 @@ export async function loadEngine(mode: EngineMode = 'on_device'): Promise<Transc
   if (!engineAvailable()) return null;
   return createLiveEngine();
 }
+
+/**
+ * The on-device engine of a link guest's page (P17-04): the same engine, its lines posted through `post` (the guest's own route) instead of a member's. The page always
+ * hands it a clock (`EngineContext.clock`), so it never asks the members' room routes for the time. Null when this browser cannot write down speech.
+ */
+export function guestEngine(post: (body: PostMeetingSegmentsRequest) => Promise<unknown>): TranscribeEngine | null {
+  const deps: EngineDeps = { ...defaultEngineDeps(), postSegments: (_meetingId, body) => post(body) };
+  if (fakeAsrEnabled()) return createFakeLiveEngine(deps);
+  if (!engineAvailable()) return null;
+  return createLiveEngine(deps);
+}

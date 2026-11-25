@@ -120,8 +120,11 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/guest/token` | none | 30 per 60 s | 60 s | address | the same lock; a media token only while the guest is let in and the call is live |
 | `POST /api/guest/leave` | none | 60 per 60 s | 60 s | address | the same lock |
 | `POST /api/guest/heartbeat` | none | 60 per 60 s | 60 s | address | the same lock |
+| `POST /api/guest/consent` | none | 30 per 60 s | 60 s | address | the same lock; only while the guest is let in and the call is transcribed |
+| `POST /api/guest/segments` | none | 240 per 60 s | 60 s | address | the same lock; lines only from a guest let in who said yes, at most 20 a request |
 | `POST /api/meetings/:meetingId/guest-links` | none | 10 per 60 s | 60 s | person | at most 10 links of one call work at once |
 | `DELETE /api/meetings/:meetingId/guest-links` | none | 10 per 60 s | 60 s | person | none |
+| `DELETE /api/meetings/:meetingId/guest-links/:linkId` | none | 30 per 60 s | 60 s | person | turns off one link; the starter, a lead or an admin |
 | `POST /api/meetings/:meetingId/guests/:guestId/admit` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/:meetingId/guests/:guestId/deny` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/:meetingId/guests/:guestId/remove` | none | 60 per 60 s | 60 s | person | none |

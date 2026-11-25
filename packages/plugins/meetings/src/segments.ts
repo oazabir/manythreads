@@ -144,6 +144,62 @@ export async function takeSegments(
   return result;
 }
 
+// ---- a link guest's own lines (P17-04 step 2) -----------------------------------------------------------------------------------------------
+
+export interface SegmentGuest {
+  guestId: string;
+  /** Already "Ana (guest)". */
+  displayName: string;
+  consent: MeetingConsent;
+}
+
+/**
+ * Takes a batch of lines a link guest's own device wrote, through the system transaction of the guest's routes (the guest is no actor): the same cleaning as a person's,
+ * a partial line only a caption, a final line stored once by its `clientSegId`, with `guest_id` in place of the speaker. Only a guest who said yes is ever given to this
+ * (the route refuses the others); the database blanks the words of anyone else as a second guard. A guest's words are never a question for the note-taker.
+ */
+export async function takeGuestSegments(ctx: PluginContext, sys: PluginTx, room: SegmentRoom, guest: SegmentGuest, lines: readonly MeetingSegmentInput[]): Promise<TakeResult> {
+  const yes = guest.consent === 'yes';
+  const result: TakeResult = { stored: 0, duplicates: 0, captioned: 0, blanked: !yes };
+  if (!yes) return result;
+  for (const l of lines) {
+    if (l.startMs > INT_MAX || l.endMs > INT_MAX) throw invalid('A line is longer than a voice room can be');
+  }
+  const caption = (l: MeetingSegmentInput, text: string, final: boolean) =>
+    pushCaption(
+      ctx,
+      room.id,
+      { kind: 'speech', speakerId: guest.guestId as never, speakerName: guest.displayName, startMs: l.startMs, endMs: l.endMs, text, final, catchingUp: false, askerName: null },
+      room.workspaceId,
+    );
+  const finals: { input: MeetingSegmentInput; text: string }[] = [];
+  for (const l of lines) {
+    const text = stripHostileText(l.text).slice(0, MEETING_SEGMENT_TEXT_MAX);
+    if (text === '') continue;
+    if (!l.final) {
+      await caption(l, text, false);
+      result.captioned += 1;
+      continue;
+    }
+    finals.push({ input: l, text });
+  }
+  if (finals.length === 0) return result;
+  const inserted = await sys.query<{ client_seg_id: string; text: string }>(
+    `INSERT INTO app.meeting_segments (meeting_id, guest_id, start_ms, end_ms, text, final, source, lang, client_seg_id)
+     SELECT $1::uuid, $2::uuid, t.start_ms, t.end_ms, t.text, true, 'device', t.lang, t.client_seg_id
+       FROM unnest($3::int[], $4::int[], $5::text[], $6::text[], $7::text[]) AS t(start_ms, end_ms, text, lang, client_seg_id)
+     ON CONFLICT (meeting_id, guest_id, client_seg_id) WHERE guest_id IS NOT NULL DO NOTHING
+     RETURNING client_seg_id, text`,
+    [room.id, guest.guestId, finals.map((f) => f.input.startMs), finals.map((f) => f.input.endMs), finals.map((f) => f.text), finals.map((f) => f.input.lang ?? null), finals.map((f) => f.input.clientSegId)],
+  );
+  // a line the database blanked (the guest is no longer let in, or their answer changed meanwhile) is no caption
+  const taken = new Map(inserted.rows.map((r) => [r.client_seg_id, r.text] as const));
+  result.stored = taken.size;
+  result.duplicates = finals.length - taken.size;
+  for (const f of finals) if (taken.get(f.input.clientSegId)) await caption(f.input, f.text, true);
+  return result;
+}
+
 // ---- a voice message in the call's thread becomes a line (P15-14) -----------------------------------------------------------------------------
 
 interface VoiceRoomRow extends Record<string, unknown> {

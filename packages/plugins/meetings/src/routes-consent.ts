@@ -19,7 +19,7 @@ import {
 } from '@manythreads/shared';
 import { loadMeetingsSettings, transcribeLimits } from './config.ts';
 import { announceRoom } from './live.ts';
-import { PARTICIPANT_COLUMNS, loadMeeting, toParticipant, type MeetingRow, type ParticipantRow } from './rows.ts';
+import { PARTICIPANT_COLUMNS, SEGMENT_SPEAKER, loadMeeting, toParticipant, withGuestSpeakers, type MeetingRow, type ParticipantRow } from './rows.ts';
 import { renderTranscript, type SpeakerFacts } from './transcript.ts';
 
 // Consent and the transcription switch (PLAN P15-05, docs/plugins/meetings.md): who turned transcription on, each person's answer, the transcript as a reader may
@@ -153,9 +153,9 @@ export function registerConsentRoutes(ctx: PluginContext): void {
               'SELECT actor_id, display_name, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1::uuid',
               [meetingId],
             );
-            const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
+            const speakers = await withGuestSpeakers(sys, meetingId, new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }])));
             const segs = await sys.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
-              'SELECT id, speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+              `SELECT id, ${SEGMENT_SPEAKER}, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000`,
               [meetingId],
             );
             return renderTranscript(
@@ -193,9 +193,9 @@ export function registerConsentRoutes(ctx: PluginContext): void {
         'SELECT actor_id, display_name, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1::uuid',
         [m.id],
       );
-      const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
+      const speakers = await withGuestSpeakers(tx, m.id, new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }])));
       const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean; created_at: Date }>(
-        'SELECT id, speaker_id, start_ms, end_ms, text, final, created_at FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+        `SELECT id, ${SEGMENT_SPEAKER}, start_ms, end_ms, text, final, created_at FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000`,
         [m.id],
       );
       const lines = renderTranscript(

@@ -528,3 +528,142 @@ describe('a guest reaches one call and nothing else', () => {
     await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
   });
 });
+
+// ---- step 2: a guest's own transcription, and the list of links with Turn off for each ------------------------------------------------------------------------
+describe('a guest says yes or no to "Transcribe my voice?"', () => {
+  const consent = (cookie: string, transcribe: 'yes' | 'no', origin?: string | null) => raw('POST', '/api/guest/consent', { cookie, body: { transcribe }, ...(origin !== undefined ? { origin } : {}) });
+  const say = (cookie: string, segments: Array<{ clientSegId: string; startMs: number; endMs: number; text: string; final: boolean }>) => raw('POST', '/api/guest/segments', { cookie, body: { segments } });
+  const line = (id: string, text: string, startMs = 1000, final = true) => ({ clientSegId: id, startMs, endMs: startMs + 900, text, final });
+  const transcribeRoom = (who: Who, meetingId: string, mode: 'on_device' | 'off') => w.call(who, 'PUT', `/api/meetings/${meetingId}/transcription`, { mode });
+  async function admittedGuest(name = 'Ana'): Promise<{ meetingId: string; cookie: string; guestId: string }> {
+    const { meetingId, token: t } = await guestCall(nadia, [rafi]);
+    const k = await knock(t, name);
+    expect((await decide(rafi, meetingId, k.guestId, 'admit')).status).toBe(200);
+    return { meetingId, cookie: k.cookie, guestId: k.guestId };
+  }
+
+  it('the session tells a guest let in about transcription and the call clock; a waiting guest is told nothing', async () => {
+    const { meetingId, token: t } = await guestCall(nadia, [rafi]);
+    const k = await knock(t, 'Ana');
+    expect(GuestSessionResponse.parse((await session(k.cookie)).body)).toMatchObject({ state: 'waiting', transcription: 'off', consent: 'unasked', startedAt: null, serverNow: null });
+    expect((await transcribeRoom(nadia, meetingId, 'on_device')).status).toBe(200);
+    expect(GuestSessionResponse.parse((await session(k.cookie)).body).transcription).toBe('off');
+    await decide(rafi, meetingId, k.guestId, 'admit');
+    const s = GuestSessionResponse.parse((await session(k.cookie)).body);
+    expect(s).toMatchObject({ state: 'admitted', transcription: 'on_device', turnedOnBy: 'Nadia', consent: 'unasked' });
+    expect(s.startedAt).not.toBeNull();
+    expect(s.serverNow).not.toBeNull();
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+
+  it('yes: the device\'s lines are stored with the guest and read "Ana (guest)"; a line sent twice is stored once; captions name the guest', async () => {
+    const { meetingId, cookie, guestId } = await admittedGuest('Ana');
+    // not transcribed yet: no answer is taken, no line
+    expect((await consent(cookie, 'yes')).status).toBe(409);
+    expect((await say(cookie, [line('a1', 'hello')])).status).toBe(409);
+    expect((await transcribeRoom(nadia, meetingId, 'on_device')).status).toBe(200);
+    // asked, not answered: no line
+    expect((await say(cookie, [line('a1', 'hello')])).status).toBe(409);
+    // the Origin check holds here too
+    expect((await consent(cookie, 'yes', null)).status).toBe(403);
+    const yes = await consent(cookie, 'yes');
+    expect(yes.status, JSON.stringify(yes.body)).toBe(200);
+    expect(yes.body).toEqual({ consent: 'yes' });
+    const before = pushed.length;
+    const sent = await say(cookie, [line('a1', 'Shipping on Friday works for us'), line('a2', 'still typ', 2500, false)]);
+    expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+    expect(sent.body).toMatchObject({ stored: 1, captioned: 1, blanked: false });
+    expect((await say(cookie, [line('a1', 'Shipping on Friday works for us')])).body).toMatchObject({ stored: 0, duplicates: 1 });
+    const rows = await w.system(
+      async (tx) => (await tx.query<{ speaker_id: string | null; guest_id: string; text: string; source: string }>('SELECT speaker_id, guest_id, text, source FROM app.meeting_segments WHERE meeting_id = $1', [meetingId])).rows,
+    );
+    expect(rows).toEqual([{ speaker_id: null, guest_id: guestId, text: 'Shipping on Friday works for us', source: 'device' }]);
+    const tr = (await w.call(priya, 'GET', `/api/meetings/${meetingId}/transcript`)).body as { lines: Array<Record<string, unknown>> };
+    expect(tr.lines).toEqual([expect.objectContaining({ speakerName: 'Ana (guest)', guestId, text: 'Shipping on Friday works for us', transcribed: true, editable: false })]);
+    await eventually(async () => pushed.slice(before).some((p) => p.type === 'meeting.caption' && JSON.stringify(p.payload).includes('Ana (guest)')), 10_000, 'a caption that names the guest');
+    const answered = await eventsFor('meetings.guest.answered', meetingId);
+    expect(answered.map((e) => e['value'])).toEqual(['yes']);
+    expect(JSON.stringify(answered)).not.toContain('Ana');
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+
+  it('no: the stored words go, the line says "Ana (guest) spoke (not transcribed)", and nothing more is taken', async () => {
+    const { meetingId, cookie, guestId } = await admittedGuest('Ana');
+    await transcribeRoom(nadia, meetingId, 'on_device');
+    await consent(cookie, 'yes');
+    await say(cookie, [line('b1', 'a secret plan')]);
+    expect((await consent(cookie, 'no')).body).toEqual({ consent: 'no' });
+    expect((await say(cookie, [line('b2', 'more words')])).status).toBe(409);
+    const texts = await w.system(async (tx) => (await tx.query<{ text: string }>('SELECT text FROM app.meeting_segments WHERE guest_id = $1', [guestId])).rows.map((r) => r.text));
+    expect(texts).toEqual(['']);
+    const tr = (await w.call(nadia, 'GET', `/api/meetings/${meetingId}/transcript`)).body as { lines: Array<Record<string, unknown>> };
+    expect(tr.lines).toEqual([expect.objectContaining({ speakerName: 'Ana (guest)', text: 'Ana (guest) spoke (not transcribed)', transcribed: false })]);
+    expect(JSON.stringify(tr)).not.toContain('secret plan');
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+
+  it('turning transcription on again asks the guest again; recording still counts a guest as no; a guest taken out is refused', async () => {
+    const { meetingId, cookie, guestId } = await admittedGuest('Ana');
+    await transcribeRoom(nadia, meetingId, 'on_device');
+    await consent(cookie, 'yes');
+    expect((await transcribeRoom(nadia, meetingId, 'off')).status).toBe(200);
+    expect((await say(cookie, [line('c1', 'off now')])).status).toBe(409);
+    await transcribeRoom(nadia, meetingId, 'on_device');
+    expect(GuestSessionResponse.parse((await session(cookie)).body).consent).toBe('unasked');
+    await consent(cookie, 'yes');
+    const people = await w.system((tx) => loadPresent(tx, meetingId));
+    expect(people.find((p) => p.actorId === `guest:${guestId}`)).toMatchObject({ stored: 'no', yes: false });
+    expect((await decide(rafi, meetingId, guestId, 'remove')).status).toBe(200);
+    expect((await consent(cookie, 'yes')).status).toBe(403);
+    expect((await say(cookie, [line('c2', 'gone')])).status).toBe(403);
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+
+  it('the database blanks the words of a guest who has not said yes, and a line names exactly one speaker', async () => {
+    const { meetingId, guestId } = await admittedGuest('Ana');
+    await transcribeRoom(nadia, meetingId, 'on_device');
+    await w.system((tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, guest_id, start_ms, end_ms, text, source) VALUES ($1, $2, 0, 10, 'unasked words', 'device')", [meetingId, guestId]));
+    expect(await w.system(async (tx) => (await tx.query<{ text: string }>('SELECT text FROM app.meeting_segments WHERE guest_id = $1', [guestId])).rows)).toEqual([{ text: '' }]);
+    await expect(
+      w.system((tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, speaker_id, guest_id, start_ms, end_ms, text, source) VALUES ($1, $2, $3, 0, 10, 'x', 'device')", [meetingId, nadia.actorId, guestId])),
+    ).rejects.toThrow();
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+});
+
+describe('"Guest links (n)": the links that still work, and turning off one', () => {
+  it('the starter sees the links with who made them, the card counts them; turning one off leaves the others and the switch on', async () => {
+    const { meetingId, token: first } = await guestCall(nadia, [rafi]);
+    const second = MakeGuestLinkResponse.parse((await w.call(rafi, 'POST', `/api/meetings/${meetingId}/guest-links`)).body);
+    const secondToken = second.url.slice(second.url.lastIndexOf('/') + 1);
+    // a reader who is not the starter, a lead or an admin sees no list and turns nothing off
+    expect((await w.call(rafi, 'GET', `/api/meetings/${meetingId}/guest-links`)).status).toBe(403);
+    const list = await w.call(nadia, 'GET', `/api/meetings/${meetingId}/guest-links`);
+    expect(list.status, JSON.stringify(list.body)).toBe(200);
+    const links = (list.body as { links: Array<{ id: string; createdByName: string; uses: number; maxUses: number }> }).links;
+    expect(links.map((l) => [l.createdByName, l.uses, l.maxUses])).toEqual([
+      ['Nadia', 0, 50],
+      ['Rafi', 0, 50],
+    ]);
+    expect(JSON.stringify(list.body)).not.toContain(first);
+    const cardOf = async (who: Who) => ListCallCardsResponse.parse((await w.call(who, 'GET', `/api/meetings/cards?ids=${meetingId}`)).body).cards[0]!.guests;
+    expect((await cardOf(nadia)).links).toBe(2);
+    expect((await cardOf(rafi)).links).toBe(0);
+    const rafiLink = links.find((l) => l.createdByName === 'Rafi')!.id;
+    expect((await w.call(rafi, 'DELETE', `/api/meetings/${meetingId}/guest-links/${rafiLink}`)).status).toBe(403);
+    const off = await w.call(nadia, 'DELETE', `/api/meetings/${meetingId}/guest-links/${rafiLink}`);
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    expect(off.body).toEqual({ revoked: true });
+    // once more: it had already stopped
+    expect((await w.call(nadia, 'DELETE', `/api/meetings/${meetingId}/guest-links/${rafiLink}`)).body).toEqual({ revoked: false });
+    expect((await peek(secondToken)).status).toBe(404);
+    expect((await peek(first)).status).toBe(200);
+    expect((await cardOf(nadia)).links).toBe(1);
+    expect((await eventsFor('meetings.guest_link.revoked', meetingId)).filter((e) => e['reason'] === 'person')).toEqual([expect.objectContaining({ linkIds: [rafiLink], revokedBy: nadia.actorId })]);
+    // a link of another call is not found there
+    const other = await guestCall(nadia);
+    expect((await w.call(nadia, 'DELETE', `/api/meetings/${other.meetingId}/guest-links/${rafiLink}`)).status).toBe(404);
+    await w.call(nadia, 'POST', `/api/meetings/${other.meetingId}/end`);
+    await w.call(nadia, 'POST', `/api/meetings/${meetingId}/end`);
+  });
+});

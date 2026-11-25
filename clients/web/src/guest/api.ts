@@ -1,17 +1,22 @@
 import type { z } from 'zod';
 import {
   ErrorEnvelope,
+  GuestConsentResponse,
   GuestKnockResponse,
   GuestLinkPeekResponse,
   GuestOkResponse,
   GuestSessionResponse,
   GuestTokenResponse,
+  PostMeetingSegmentsResponse,
+  guestConsentRoute,
   guestHeartbeatRoute,
   guestKnockRoute,
   guestLeaveRoute,
   guestLinkPeekRoute,
+  guestSegmentsRoute,
   guestSessionRoute,
   guestTokenRoute,
+  type PostMeetingSegmentsRequest,
 } from '@manythreads/shared';
 import { ApiError } from '../api/client';
 import { trackRequest } from '../api/ready';
@@ -29,6 +34,10 @@ export interface GuestApi {
   token(): Promise<GuestTokenResponse>;
   leave(): Promise<GuestOkResponse>;
   heartbeat(): Promise<GuestOkResponse>;
+  /** The guest's answer to "Transcribe my voice?" (only while let in and the call is transcribed). */
+  consent(transcribe: 'yes' | 'no'): Promise<GuestConsentResponse>;
+  /** Lines the guest's own device wrote down (only after a yes). */
+  segments(body: PostMeetingSegmentsRequest): Promise<PostMeetingSegmentsResponse>;
 }
 
 async function send<T>(method: string, path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
@@ -74,4 +83,6 @@ export const realGuestApi: GuestApi = {
   token: () => send('POST', guestTokenRoute.path, GuestTokenResponse),
   leave: () => send('POST', guestLeaveRoute.path, GuestOkResponse),
   heartbeat: () => send('POST', guestHeartbeatRoute.path, GuestOkResponse),
+  consent: (transcribe) => send('POST', guestConsentRoute.path, GuestConsentResponse, { transcribe }),
+  segments: (body) => send('POST', guestSegmentsRoute.path, PostMeetingSegmentsResponse, body),
 };

@@ -1,13 +1,15 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
-import { MEETING_GUEST_IDENTITY, MEETING_GUEST_NAME_MAX, MeetingGuestState, MeetingKind } from '../../entities/meeting.ts';
-import { MeetingGuestId, MeetingGuestLinkId, MeetingId } from '../../ids.ts';
+import { MEETING_GUEST_IDENTITY, MEETING_GUEST_NAME_MAX, MeetingConsent, MeetingGuestState, MeetingKind, MeetingTranscription } from '../../entities/meeting.ts';
+import { ActorId, MeetingGuestId, MeetingGuestLinkId, MeetingId } from '../../ids.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Guest links and the waiting room (PLAN P17-04, docs/plans/guest-links.md, docs/plugins/meetings.md "Guest links"). A link guest is someone outside the workspace,
 // with no account: not a workspace guest (role `guest`). A member of the call's channel makes a link of their own (the server keeps only a hash of it, so each member
 // gets theirs, shown once); whoever opens it types a name and knocks; anyone in the call lets them in or turns them away. A guest gets the one call: they hear and see
-// the people in it and send their microphone and camera, and nothing else (no screen, no chat, no channel, no transcript). A guest is never transcribed or recorded.
+// the people in it and send their microphone and camera, and nothing else (no screen, no chat, no channel, no transcript). A guest is never recorded. While the call
+// is transcribed a guest is asked "Transcribe my voice?" (step 2): one who says yes is written down by their own device only, never by the server or the note-taker,
+// and their lines read "Ana (guest)"; one who says no, or does not answer, is never written down.
 //
 // The guest's side is public (no session). Its credential is a cookie, `mt_guest`, made at the knock: HttpOnly, SameSite=Strict, limited to `/api/guest` and to
 // that one call. No session route reads it.
@@ -94,8 +96,23 @@ export type GuestSessionState = z.infer<typeof GuestSessionState>;
 /** A name in the call as a guest sees it: the media identity and the name, nothing else (no avatar, no handle, no e-mail address). */
 export const GuestRoomPerson = z.object({ identity: z.string().min(1).max(200), displayName: z.string() });
 export type GuestRoomPerson = z.infer<typeof GuestRoomPerson>;
-/** `people` is filled only while the guest is let in: the names on the tiles. */
-export const GuestSessionResponse = z.object({ state: GuestSessionState, title: z.string(), kind: MeetingKind, displayName: z.string(), people: z.array(GuestRoomPerson).default([]) });
+/**
+ * `people` is filled only while the guest is let in: the names on the tiles. Also only then (step 2): the call's transcription (`transcription`, and the name of who
+ * turned it on), the guest's own answer to "Transcribe my voice?" (`consent`), and the call clock for the lines of the guest's device (`startedAt`, and `serverNow`,
+ * the server's time as it answered). An older server sends none of these: transcription off.
+ */
+export const GuestSessionResponse = z.object({
+  state: GuestSessionState,
+  title: z.string(),
+  kind: MeetingKind,
+  displayName: z.string(),
+  people: z.array(GuestRoomPerson).default([]),
+  transcription: MeetingTranscription.default('off'),
+  turnedOnBy: z.string().nullable().default(null),
+  consent: MeetingConsent.default('unasked'),
+  startedAt: IsoDateTime.nullable().default(null),
+  serverNow: IsoDateTime.nullable().default(null),
+});
 export type GuestSessionResponse = z.infer<typeof GuestSessionResponse>;
 export const guestSessionRoute = { method: 'GET', path: '/api/guest/session' } as const satisfies ApiRoute;
 
@@ -120,6 +137,15 @@ export const guestTokenRoute = { method: 'POST', path: '/api/guest/token' } as c
 export const GuestOkResponse = z.object({ ok: z.literal(true) });
 export type GuestOkResponse = z.infer<typeof GuestOkResponse>;
 export const guestLeaveRoute = { method: 'POST', path: '/api/guest/leave' } as const satisfies ApiRoute;
+
+/** The guest's answer to "Transcribe my voice?", while let in and the call is transcribed. A no throws away the words stored for them. */
+export const GuestConsentRequest = z.strictObject({ transcribe: z.enum(['yes', 'no']) });
+export type GuestConsentRequest = z.infer<typeof GuestConsentRequest>;
+export const GuestConsentResponse = z.object({ consent: MeetingConsent });
+export type GuestConsentResponse = z.infer<typeof GuestConsentResponse>;
+export const guestConsentRoute = { method: 'POST', path: '/api/guest/consent' } as const satisfies ApiRoute;
+/** Lines the guest's own device wrote down (the body of `POST /api/meetings/:id/segments`): taken only from a guest let in who said yes, while the call is transcribed. */
+export const guestSegmentsRoute = { method: 'POST', path: '/api/guest/segments' } as const satisfies ApiRoute;
 export const guestHeartbeatRoute = { method: 'POST', path: '/api/guest/heartbeat' } as const satisfies ApiRoute;
 
 // ---- the members' side ----------------------------------------------------------------------------------------------------------------------------------
@@ -132,6 +158,30 @@ export const makeGuestLinkRoute = { method: 'POST', path: '/api/meetings/:meetin
 export const RevokeGuestLinksResponse = z.object({ revoked: z.number().int().min(0) });
 export type RevokeGuestLinksResponse = z.infer<typeof RevokeGuestLinksResponse>;
 export const revokeGuestLinksRoute = { method: 'DELETE', path: '/api/meetings/:meetingId/guest-links' } as const satisfies ApiRoute;
+
+/**
+ * One guest link of the call that still works, as the starter, a lead or an admin sees it (step 2): who made it and when, until when it works, and how many of its
+ * knocks are used. Never the address (only its hash is kept).
+ */
+export const GuestLinkRow = z.object({
+  id: MeetingGuestLinkId,
+  createdBy: ActorId,
+  createdByName: z.string(),
+  createdAt: IsoDateTime,
+  expiresAt: IsoDateTime,
+  uses: z.number().int().min(0),
+  maxUses: z.number().int().min(1),
+});
+export type GuestLinkRow = z.infer<typeof GuestLinkRow>;
+export const ListGuestLinksResponse = z.object({ links: z.array(GuestLinkRow) });
+export type ListGuestLinksResponse = z.infer<typeof ListGuestLinksResponse>;
+export const listGuestLinksRoute = { method: 'GET', path: '/api/meetings/:meetingId/guest-links' } as const satisfies ApiRoute;
+export const MeetingGuestLinkPathParams = z.object({ meetingId: MeetingId, linkId: MeetingGuestLinkId });
+export type MeetingGuestLinkPathParams = z.infer<typeof MeetingGuestLinkPathParams>;
+/** Turn off one link (the starter, a lead or an admin); guest links stay on for the call. `revoked` is false when it had already stopped working. */
+export const RevokeGuestLinkResponse = z.object({ revoked: z.boolean() });
+export type RevokeGuestLinkResponse = z.infer<typeof RevokeGuestLinkResponse>;
+export const revokeGuestLinkRoute = { method: 'DELETE', path: '/api/meetings/:meetingId/guest-links/:linkId' } as const satisfies ApiRoute;
 
 /** One guest knocking, as the people in the call see them. */
 export const LobbyGuest = z.object({ id: MeetingGuestId, displayName: z.string(), askedAt: IsoDateTime });

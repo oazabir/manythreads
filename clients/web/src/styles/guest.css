@@ -162,7 +162,52 @@
   gap: 6px;
 }
 
+/* ---- "Transcribe my voice?" in the call (step 2) ---- */
+.gst-consent {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.gst-consent-title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.gst-consent-body {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.gst-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gst-transcribe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.gst-transcribe-note {
+  color: var(--mute);
+}
+
 @media (width <= 600px) {
+  .gst-consent-actions .btn {
+    flex: 1 1 100%;
+  }
+
   .gst-toggles {
     grid-template-columns: auto 1fr;
   }

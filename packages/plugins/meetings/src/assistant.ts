@@ -24,7 +24,7 @@ import { pushCaption } from './captions.ts';
 import { WindowCounter, stripHostileText } from './limits.ts';
 import { botActorOf, callerPerson } from './notes-access.ts';
 import { QUESTION_QUEUE, commonChannels, tellAsker } from './questions.ts';
-import { loadMeeting, type MeetingRow } from './rows.ts';
+import { SEGMENT_SPEAKER, loadMeeting, withGuestSpeakers, type MeetingRow } from './rows.ts';
 import { renderTranscript, type SpeakerFacts } from './transcript.ts';
 import { clock } from './writer.ts';
 
@@ -80,9 +80,9 @@ export async function readLiveTranscriptLines(tx: PluginTx, meetingId: string, r
     'SELECT actor_id, display_name, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1::uuid',
     [meetingId],
   );
-  const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
+  const speakers = await withGuestSpeakers(tx, meetingId, new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }])));
   const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
-    `SELECT id, speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments
+    `SELECT id, ${SEGMENT_SPEAKER}, start_ms, end_ms, text, final FROM app.meeting_segments
       WHERE meeting_id = $1::uuid AND final AND text <> '' AND start_ms >= $2::int AND ($3::int IS NULL OR start_ms < $3::int)
       ORDER BY start_ms DESC, id DESC LIMIT 5000`,
     [meetingId, Math.max(0, Math.floor(range.fromMs ?? 0)), range.beforeMs === undefined ? null : Math.max(0, Math.floor(range.beforeMs))],

@@ -3,11 +3,13 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GuestKnockResponse, GuestLinkPeekResponse, GuestSessionResponse, GuestTokenResponse } from '@manythreads/shared';
+import type { GuestKnockResponse, GuestLinkPeekResponse, GuestSessionResponse, GuestTokenResponse, PostMeetingSegmentsRequest } from '@manythreads/shared';
 import { ApiError } from '../src/api/client';
 import type { GuestApi } from '../src/guest/api';
-import { GUEST_WORDS, GuestController, checkName, endingOf } from '../src/guest/guestController';
+import { GUEST_WORDS, GuestController, checkName, endingOf, mustAsk, type GuestEngineDeps } from '../src/guest/guestController';
+import { MeetingClock, type EngineContext, type TranscribeEngine } from '../src/meetings/engine';
 import { createFakeAdapter, type FakeAdapter } from '../src/meetings/fakeAdapter';
+import { guestLinkLine } from '../src/meetings/GuestLinksList';
 
 // The guest page (P17-04): its controller against a scripted server and the in-memory media adapter (open the link, a name, knock, wait, let in, the call; turned
 // away, the call ended, taken out, nobody answered in ten minutes; a dead link), and the page itself drawn for its states.
@@ -29,10 +31,22 @@ const TOKEN_ANSWER: GuestTokenResponse = {
 function scripted() {
   let state: GuestSessionResponse['state'] = 'waiting';
   const calls: string[] = [];
-  const api: GuestApi & { setState(s: GuestSessionResponse['state']): void; calls: string[]; peekFails: ApiError | null; knockFails: ApiError | null } = {
+  const sent: PostMeetingSegmentsRequest[] = [];
+  const api: GuestApi & {
+    setState(s: GuestSessionResponse['state']): void;
+    calls: string[];
+    sent: PostMeetingSegmentsRequest[];
+    peekFails: ApiError | null;
+    knockFails: ApiError | null;
+    transcription: GuestSessionResponse['transcription'];
+    consentNow: GuestSessionResponse['consent'];
+  } = {
     calls,
+    sent,
     peekFails: null,
     knockFails: null,
+    transcription: 'off',
+    consentNow: 'unasked',
     setState(s) {
       state = s;
     },
@@ -48,7 +62,28 @@ function scripted() {
     },
     async session() {
       calls.push('session');
-      return { state, title: PEEK.title, kind: 'audio', displayName: 'Ana', people: state === 'admitted' ? TOKEN_ANSWER.people : [] };
+      const admitted = state === 'admitted';
+      return {
+        state,
+        title: PEEK.title,
+        kind: 'audio',
+        displayName: 'Ana',
+        people: admitted ? TOKEN_ANSWER.people : [],
+        transcription: admitted ? api.transcription : 'off',
+        turnedOnBy: admitted && api.transcription !== 'off' ? 'Nadia' : null,
+        consent: admitted ? api.consentNow : 'unasked',
+        startedAt: admitted ? new Date(900_000).toISOString() : null,
+        serverNow: admitted ? new Date(1_000_000).toISOString() : null,
+      };
+    },
+    async consent(t) {
+      calls.push(`consent ${t}`);
+      api.consentNow = t;
+      return { consent: t };
+    },
+    async segments(body) {
+      sent.push(body);
+      return { stored: body.segments.length, duplicates: 0, captioned: 0, blanked: false };
     },
     async token() {
       calls.push('token');
@@ -67,7 +102,30 @@ function scripted() {
   return api;
 }
 
-function harness() {
+/** An engine that records how it was started and stopped; `say` hands it a line as the device would. */
+function fakeEngines(available = true) {
+  const runs: Array<{ ctx: EngineContext; stopped: { discard: boolean } | null; muted: boolean; post: (b: PostMeetingSegmentsRequest) => Promise<unknown> }> = [];
+  const deps: GuestEngineDeps = {
+    load: (post) => {
+      if (!available) return null;
+      const run = { ctx: null as unknown as EngineContext, stopped: null as { discard: boolean } | null, muted: false, post };
+      const engine: TranscribeEngine = {
+        start: (ctx) => {
+          run.ctx = ctx!;
+          runs.push(run);
+          ctx?.onStatus?.({ kind: 'listening' });
+        },
+        stop: (o) => void (run.stopped = { discard: o?.discard === true }),
+        setMuted: (m) => void (run.muted = m),
+      };
+      return engine;
+    },
+    clock: (startedAt) => new MeetingClock(startedAt, () => 1_000_000),
+  };
+  return { deps, runs };
+}
+
+function harness(engine?: GuestEngineDeps) {
   const api = scripted();
   let now = 1_000_000;
   const intervals: Array<{ fn: () => void; ms: number; live: boolean }> = [];
@@ -100,6 +158,7 @@ function harness() {
       (h as { live: boolean }).live = false;
     },
     forgetAddress: () => void (forgot += 1),
+    ...(engine ? { engine } : {}),
   });
   const tick = async (ms: number): Promise<void> => {
     now += ms;
@@ -260,6 +319,75 @@ describe('the guest controller', () => {
     expect(h.c.getState().phase.kind).toBe('waiting');
   });
 
+  it('transcription: asks a guest let in, starts the device engine only after a yes, posts its lines to the guest route, and a no stops it throwing away what it heard', async () => {
+    const e = fakeEngines();
+    const h = harness(e.deps);
+    await h.c.open(TOKEN);
+    h.c.setName('Ana');
+    await h.c.knock();
+    h.api.setState('admitted');
+    await h.tick(2_000);
+    expect(h.c.getState().phase.kind).toBe('in-call');
+    // not transcribed: nothing to ask
+    expect(mustAsk(h.c.getState())).toBe(false);
+    h.api.transcription = 'on_device';
+    await h.tick(10_000);
+    expect(h.c.getState()).toMatchObject({ transcription: 'on_device', turnedOnBy: 'Nadia', consent: 'unasked' });
+    expect(mustAsk(h.c.getState())).toBe(true);
+    // not answered: never transcribed
+    expect(e.runs).toHaveLength(0);
+    await h.c.answer('yes');
+    expect(h.api.calls).toContain('consent yes');
+    expect(e.runs).toHaveLength(1);
+    expect(e.runs[0]!.ctx.clock).toBeInstanceOf(MeetingClock);
+    expect(h.c.getState().engine).toEqual({ kind: 'listening' });
+    await e.runs[0]!.post({ segments: [{ clientSegId: 'x-1', startMs: 0, endMs: 900, text: 'hello', final: true }] });
+    expect(h.api.sent).toHaveLength(1);
+    // muting reaches the engine
+    h.c.setMicOn(false);
+    expect(e.runs[0]!.muted).toBe(true);
+    await h.c.answer('no');
+    expect(e.runs[0]!.stopped).toEqual({ discard: true });
+    expect(h.c.getState()).toMatchObject({ consent: 'no', engine: { kind: 'off' } });
+    expect(mustAsk(h.c.getState())).toBe(false);
+    // a yes again, then the call ends: the engine goes with it (what it heard is sent, not thrown away)
+    await h.c.answer('yes');
+    expect(e.runs).toHaveLength(2);
+    h.api.setState('ended');
+    await h.tick(10_000);
+    expect(h.c.getState().phase.kind).toBe('ended');
+    expect(e.runs[1]!.stopped).toEqual({ discard: false });
+  });
+
+  it('transcription turned off stops the engine; a browser with no engine says so once and never transcribes', async () => {
+    const e = fakeEngines();
+    const h = harness(e.deps);
+    await h.c.open(TOKEN);
+    h.c.setName('Ana');
+    await h.c.knock();
+    h.api.setState('admitted');
+    h.api.transcription = 'on_device';
+    await h.tick(2_000);
+    await h.c.answer('yes');
+    expect(e.runs).toHaveLength(1);
+    h.api.transcription = 'off';
+    await h.tick(10_000);
+    expect(e.runs[0]!.stopped).not.toBeNull();
+
+    const none = fakeEngines(false);
+    const g = harness(none.deps);
+    await g.c.open(TOKEN);
+    g.c.setName('Ana');
+    await g.c.knock();
+    g.api.setState('admitted');
+    g.api.transcription = 'on_device';
+    await g.tick(2_000);
+    await g.c.answer('yes');
+    expect(g.c.getState().engine).toEqual({ kind: 'failed', message: GUEST_WORDS.noEngine });
+    await g.tick(10_000);
+    expect(g.c.getState().engine).toEqual({ kind: 'failed', message: GUEST_WORDS.noEngine });
+  });
+
   it('checks names and maps the server\'s states', () => {
     expect(checkName('   ')).toEqual({ ok: false, message: 'Write your name' });
     expect(checkName('x'.repeat(61)).ok).toBe(false);
@@ -335,5 +463,12 @@ describe('the guest page', () => {
     await draw('/join/g');
     expect(host.querySelector('[data-testid="guest-waiting"]')?.textContent).toBe(GUEST_WORDS.waiting);
     expect(host.querySelector('[data-testid="guest-cancel"]')).not.toBeNull();
+  });
+});
+
+describe('"Guest links (n)" on the call card', () => {
+  it('says who made a link, how many of its knocks are used and until when it works, never the address', () => {
+    const line = guestLinkLine({ createdByName: 'Omar', createdAt: '2026-11-25T14:02:00.000Z', expiresAt: '2026-11-26T02:02:00.000Z', uses: 2, maxUses: 50 }, (iso) => iso.slice(11, 16));
+    expect(line).toBe('Made by Omar at 14:02 · 2 of 50 used · works until 02:02');
   });
 });

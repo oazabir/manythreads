@@ -207,6 +207,7 @@ export * from './meetings.guest.admitted.ts';
 export * from './meetings.guest.denied.ts';
 export * from './meetings.guest.removed.ts';
 export * from './meetings.guest.left.ts';
+export * from './meetings.guest.answered.ts';
 export * from './meetings.meeting.ended.ts';
 export * from './meetings.participant.joined.ts';
 export * from './meetings.participant.left.ts';

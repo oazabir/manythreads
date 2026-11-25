@@ -1,5 +1,6 @@
 import type { Meeting, MeetingGuest, MeetingParticipant, MeetingSummary } from '@manythreads/shared';
 import type { PluginTx } from '@manythreads/sdk';
+import type { SpeakerFacts } from './transcript.ts';
 
 // Rows of `meetings` and `meeting_participants` as the routes return them. Always read through the caller's own transaction, so the row-level
 // security decides who sees what; nothing here widens that.
@@ -128,3 +129,27 @@ export async function admittedGuests(tx: PluginTx, meetingIds: readonly string[]
   return out;
 }
 
+
+/**
+ * The speaker of a stored line, for `renderTranscript`: the person's actor id, or for a link guest's line (P17-04, `guest_id`, no speaker) the guest's id, which
+ * `withGuestSpeakers` puts in the speakers' map.
+ */
+export const SEGMENT_SPEAKER = 'coalesce(speaker_id, guest_id) AS speaker_id';
+
+/**
+ * Adds the link guests of a call to a map of its speakers (read through `tx`, so the row policies decide): each by their id, named "Ana (guest)", with their own
+ * answer to "Transcribe my voice?". A guest who never answered yes is shown only as "spoke (not transcribed)", like a person.
+ */
+export async function withGuestSpeakers(tx: PluginTx, meetingId: string, speakers: Map<string, SpeakerFacts>): Promise<Map<string, SpeakerFacts>> {
+  const rows = (
+    await tx.query<{ id: string; display_name: string; consent_transcribe: SpeakerFacts['consent'] }>(
+      'SELECT id::text, display_name, consent_transcribe FROM app.meeting_guests WHERE meeting_id = $1::uuid',
+      [meetingId],
+    )
+  ).rows;
+  for (const g of rows) speakers.set(g.id, { displayName: guestSpeakerName(g.display_name), consent: g.consent_transcribe, guest: true });
+  return speakers;
+}
+
+/** How a link guest is named in the transcript and the captions. */
+export const guestSpeakerName = (name: string): string => `${name} (guest)`;

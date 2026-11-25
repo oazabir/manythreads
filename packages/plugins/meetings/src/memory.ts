@@ -10,7 +10,7 @@ import {
 } from '@manythreads/shared';
 import { parse as parseYaml } from 'yaml';
 import { stripHostileText } from './limits.ts';
-import { loadMeeting, type MeetingRow } from './rows.ts';
+import { SEGMENT_SPEAKER, loadMeeting, withGuestSpeakers, type MeetingRow } from './rows.ts';
 import { renderTranscript, type SegmentFacts, type SpeakerFacts } from './transcript.ts';
 import { clock } from './writer.ts';
 
@@ -41,9 +41,9 @@ export async function loadTranscript(tx: PluginTx, meetingId: string): Promise<L
       [meetingId],
     )
   ).rows.map((r) => ({ actorId: r.actor_id, displayName: r.display_name, consent: r.consent_transcribe }));
-  const speakers = new Map<string, SpeakerFacts>(people.map((p) => [p.actorId, { displayName: p.displayName, consent: p.consent }]));
+  const speakers = await withGuestSpeakers(tx, meetingId, new Map<string, SpeakerFacts>(people.map((p) => [p.actorId, { displayName: p.displayName, consent: p.consent }])));
   const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean }>(
-    'SELECT id, speaker_id, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+    `SELECT id, ${SEGMENT_SPEAKER}, start_ms, end_ms, text, final FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000`,
     [meetingId],
   );
   const facts: SegmentFacts[] = segs.rows.map((s) => ({ id: s.id, speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final }));

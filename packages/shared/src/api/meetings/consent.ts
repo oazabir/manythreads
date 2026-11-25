@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { MEETING_KEEP_AUDIO_DAYS_DEFAULT, MEETING_ROOM_CAP_MAX, MEETING_ROOM_CAP_MIN, MeetingConsent, MeetingParticipant, MeetingRecordingCap, MeetingState, MeetingTranscription } from '../../entities/meeting.ts';
-import { ActorId, ChannelId, MeetingId, MeetingSegmentId } from '../../ids.ts';
+import { ActorId, ChannelId, MeetingGuestId, MeetingId, MeetingSegmentId } from '../../ids.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Consent and the transcription switch of a voice room (PLAN P15-05, docs/plugins/meetings.md). Anyone in the room may turn transcription on; everyone in the room
@@ -87,8 +87,11 @@ export const meetingConsentRoute = { method: 'POST', path: '/api/meetings/:meeti
 export const MeetingTranscriptLine = z.object({
   /** The stored line, for a correction; null for a stand-in line of someone who is not a "yes". */
   segmentId: MeetingSegmentId.nullable().default(null),
+  /** The speaker's actor id; for a link guest's line (P17-04) the guest's id, which is never an actor's (`guestId` says so). */
   speakerId: ActorId,
   speakerName: z.string(),
+  /** Set only when a link guest spoke the line: `speakerName` then reads "Ana (guest)". */
+  guestId: MeetingGuestId.optional(),
   startMs: z.number().int().min(0),
   endMs: z.number().int().min(0),
   text: z.string(),

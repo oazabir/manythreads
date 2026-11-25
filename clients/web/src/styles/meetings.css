@@ -1353,6 +1353,41 @@
   gap: 6px;
 }
 
+/* "Guest links (n)" on the call card (P17-04 step 2) */
+.room-card-links {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.room-card-links-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.room-card-links-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-card-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-caption);
+}
+
+.room-card-link-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .scd-guestrow {
   display: flex;
   flex-wrap: wrap;

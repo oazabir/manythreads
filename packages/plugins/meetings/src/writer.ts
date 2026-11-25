@@ -13,7 +13,7 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { stripHostileText } from './limits.ts';
-import { loadMeeting, type MeetingRow } from './rows.ts';
+import { SEGMENT_SPEAKER, loadMeeting, withGuestSpeakers, type MeetingRow } from './rows.ts';
 import { renderTranscript, type SegmentFacts, type SpeakerFacts } from './transcript.ts';
 
 // Work package S1 (P15-09, decisions C4, C5, C6): the transcript file. Two minutes ten seconds after a room ended (the speakers' devices have had two minutes to send what they
@@ -169,9 +169,9 @@ export async function writeTranscript(ctx: PluginContext, tx: PluginTx, meetingI
     'SELECT actor_id, display_name, consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1::uuid ORDER BY joined_at',
     [m.id],
   );
-  const speakers = new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }]));
+  const speakers = await withGuestSpeakers(tx, m.id, new Map<string, SpeakerFacts>(people.rows.map((r) => [r.actor_id, { displayName: r.display_name, consent: r.consent_transcribe }])));
   const segs = await tx.query<{ id: string; speaker_id: string; start_ms: number; end_ms: number; text: string; final: boolean; source: 'device' | 'server'; lang: string | null }>(
-    'SELECT id, speaker_id, start_ms, end_ms, text, final, source, lang FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000',
+    `SELECT id, ${SEGMENT_SPEAKER}, start_ms, end_ms, text, final, source, lang FROM app.meeting_segments WHERE meeting_id = $1::uuid ORDER BY start_ms, id LIMIT 20000`,
     [m.id],
   );
   const facts: SegmentFacts[] = segs.rows.map((s) => ({ id: s.id, speakerId: s.speaker_id, startMs: s.start_ms, endMs: s.end_ms, text: s.text, final: s.final }));
@@ -193,7 +193,8 @@ export async function writeTranscript(ctx: PluginContext, tx: PluginTx, meetingI
     startedAt: m.started_at,
     endedAt: m.ended_at,
     channelLabel: channel ? (channel.kind === 'channel' ? `#${channel.name}` : 'direct message') : '',
-    participants: people.rows.map((r) => r.display_name),
+    // the link guests who spoke are named too (P17-04): "Ana (guest)"
+    participants: [...people.rows.map((r) => r.display_name), ...[...speakers.entries()].filter(([id, s]) => s.guest && segs.rows.some((x) => x.speaker_id === id)).map(([, s]) => s.displayName)],
     language,
     source: sources.size > 1 ? 'mixed' : sources.has('server') ? 'server' : 'on-device',
   };

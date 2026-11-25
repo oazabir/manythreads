@@ -215,3 +215,105 @@ describe('guest links and guests', () => {
     expect(await code(knockAs(h, 'Late'))).toBe('54000');
   });
 });
+
+// meetings 0014 (P17-04 step 2): a guest's own lines are the system role's to write (the guest's routes), with words only for a guest let in who said yes; the guest's
+// answer is read with the rest of the guest row; one link is turned off by the people who may turn them all off.
+describe('guest lines and turning off one link', () => {
+  const revokeOne = (p: Persona, meeting: string, link: string) =>
+    as(p, async (tx) => (await tx.query<{ revoked: boolean }>('SELECT app.meetings_revoke_guest_link($1::uuid, $2::uuid) AS revoked', [meeting, link])).rows[0]!.revoked);
+  async function admitted(): Promise<{ meeting: string; guest: string; link: string; h: Buffer }> {
+    const { meeting } = await callWith([nadia, rafi]);
+    const h = hash();
+    const link = await makeLink(nadia, meeting, true, h);
+    const guest = await knockAs(h);
+    expect(await decideAs(rafi, meeting, guest, 'admit')).toBe('admitted');
+    return { meeting, guest, link, h };
+  }
+
+  it('the new definers are owned by the system role with a fixed search_path, and no PUBLIC execute', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      expect(await explainRlsViolations(admin)).toEqual([]);
+      const fns = (
+        await admin.query<{ name: string; owner: string; definer: boolean; config: string[] | null; public_exec: boolean; app_exec: boolean }>(
+          `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer, p.proconfig AS config,
+                  has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec, has_function_privilege('manythreads_app', p.oid, 'EXECUTE') AS app_exec
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'app' AND p.proname IN ('meetings_revoke_guest_link', 'meetings_guests_on_transcription', 'meeting_segments_before_insert', 'meetings_correct_segment')
+            ORDER BY p.proname`,
+        )
+      ).rows;
+      expect(fns.map((f) => f.name)).toEqual(['meeting_segments_before_insert', 'meetings_correct_segment', 'meetings_guests_on_transcription', 'meetings_revoke_guest_link']);
+      for (const f of fns) {
+        expect(f.owner, f.name).toBe('manythreads_system');
+        expect(f.definer, f.name).toBe(true);
+        expect(f.config?.some((c) => c.startsWith('search_path=')), f.name).toBe(true);
+      }
+      expect(fns.find((f) => f.name === 'meetings_revoke_guest_link')).toMatchObject({ public_exec: false, app_exec: true });
+      expect(fns.find((f) => f.name === 'meetings_guests_on_transcription')).toMatchObject({ public_exec: false });
+      const forced = (await admin.query<{ forced: boolean }>("SELECT relforcerowsecurity AS forced FROM pg_class WHERE relname = 'meeting_segments'")).rows[0];
+      expect(forced).toEqual({ forced: true });
+      const rights = (
+        await admin.query<{ consent: boolean; guest_col: boolean }>(
+          `SELECT has_column_privilege('manythreads_app', 'app.meeting_guests', 'consent_transcribe', 'SELECT') AS consent,
+                  has_column_privilege('manythreads_app', 'app.meeting_segments', 'guest_id', 'SELECT') AS guest_col`,
+        )
+      ).rows[0];
+      expect(rights).toEqual({ consent: true, guest_col: true });
+    } finally {
+      await admin.end();
+    }
+  });
+
+  it('a person cannot write a guest\'s line; the system role\'s line keeps words only after a yes; readers see it, others do not', async () => {
+    const { meeting, guest } = await admitted();
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_transcription($1::uuid, 'on_device')", [meeting]));
+    const insert = (text: string, seg: string) =>
+      sys((tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, guest_id, start_ms, end_ms, text, source, client_seg_id) VALUES ($1, $2, 0, 10, $3, 'device', $4)", [meeting, guest, text, seg]));
+    // a person, even one in the call, naming the guest
+    expect(await code(as(nadia, (tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, guest_id, start_ms, end_ms, text, source) VALUES ($1, $2, 0, 10, 'forged', 'device')", [meeting, guest])))).toBeDefined();
+    // the server's own fallback never writes a guest
+    expect(await code(sys((tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, guest_id, start_ms, end_ms, text, source) VALUES ($1, $2, 0, 10, 'x', 'server')", [meeting, guest])))).toBe('42501');
+    await insert('before a yes', 's1');
+    await sys((tx) => tx.query("UPDATE app.meeting_guests SET consent_transcribe = 'yes' WHERE id = $1", [guest]));
+    await insert('after a yes', 's2');
+    // stored once per client id
+    expect(await code(insert('again', 's2'))).toBe('23505');
+    const read = (p: Persona) => as(p, async (tx) => (await tx.query<{ text: string; guest_id: string | null }>('SELECT text, guest_id FROM app.meeting_segments WHERE meeting_id = $1 ORDER BY client_seg_id', [meeting])).rows);
+    expect(await read(rafi)).toEqual([
+      { text: '', guest_id: guest },
+      { text: 'after a yes', guest_id: guest },
+    ]);
+    expect(await read(sameera)).toEqual([]);
+    expect(await read(lena)).toEqual([]);
+    // the answer is read by the channel's readers with the guest row
+    expect(await as(rafi, async (tx) => (await tx.query<{ c: string }>('SELECT consent_transcribe AS c FROM app.meeting_guests WHERE id = $1', [guest])).rows)).toEqual([{ c: 'yes' }]);
+    // nobody corrects a guest's line
+    const segId = await sys(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.meeting_segments WHERE client_seg_id = 's2' AND meeting_id = $1", [meeting])).rows[0]!.id);
+    expect(await as(nadia, async (tx) => (await tx.query<{ ok: boolean }>("SELECT app.meetings_correct_segment($1::uuid, 'changed') AS ok", [segId])).rows[0]!.ok)).toBe(false);
+    // turning transcription off and on asks the guest again; while it is off nothing is taken
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_transcription($1::uuid, 'off')", [meeting]));
+    expect(await code(insert('while off', 's3'))).toBe('23514');
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_transcription($1::uuid, 'on_device')", [meeting]));
+    expect(await sys(async (tx) => (await tx.query<{ c: string }>('SELECT consent_transcribe AS c FROM app.meeting_guests WHERE id = $1', [guest])).rows[0]!.c)).toBe('unasked');
+    // after the end, nothing is taken for a guest
+    await sys((tx) => tx.query('SELECT app.meetings_end($1::uuid, $2)', [meeting, 'empty']));
+    expect(await code(insert('late', 's4'))).toBe('23514');
+  });
+
+  it('one link is turned off by the starter or a lead; a member, a workspace guest and a link of another call are refused', async () => {
+    const { meeting, link } = await admitted();
+    const second = await makeLink(rafi, meeting, false);
+    expect(await code(revokeOne(rafi, meeting, link))).toBe('42501');
+    expect(await code(revokeOne(lena, meeting, link))).toBe('P0002');
+    const other = await callWith([nadia]);
+    expect(await code(revokeOne(nadia, other.meeting, link))).toBe('P0002');
+    expect(await revokeOne(nadia, meeting, link)).toBe(true);
+    expect(await revokeOne(nadia, meeting, link)).toBe(false);
+    expect(await revokeOne(omar, meeting, second)).toBe(true);
+    // the call's switch stays on: a new link can still be made
+    expect(await sys(async (tx) => (await tx.query<{ on: boolean }>('SELECT allow_guests AS on FROM app.meetings WHERE id = $1', [meeting])).rows[0]!.on)).toBe(true);
+    await makeLink(rafi, meeting, false);
+  });
+});

@@ -29,6 +29,8 @@ import {
   GuestLinkPeekRequest,
   GuestLinkToken,
   GuestLinkPeekResponse,
+  GuestConsentRequest,
+  GuestConsentResponse,
   GuestOkResponse,
   GuestSessionResponse,
   GuestTokenResponse,
@@ -36,31 +38,41 @@ import {
   MEETING_GUEST_NAME_MAX,
   MEETING_LOBBY_PUSH,
   MakeGuestLinkResponse,
+  ListGuestLinksResponse,
+  MeetingGuestLinkPathParams,
   MeetingGuestPathParams,
   MeetingLobbyPush,
   MeetingLobbyResponse,
   MeetingPathParams,
   MeetingsGuestAdmittedEvent,
+  MeetingsGuestAnsweredEvent,
   MeetingsGuestAskedEvent,
   MeetingsGuestDeniedEvent,
   MeetingsGuestLeftEvent,
   MeetingsGuestLinkCreatedEvent,
   MeetingsGuestLinkRevokedEvent,
   MeetingsGuestRemovedEvent,
+  PostMeetingSegmentsRequest,
+  PostMeetingSegmentsResponse,
+  RevokeGuestLinkResponse,
   RevokeGuestLinksResponse,
   abuseLimit,
   addressKey,
   admitGuestRoute,
   denyGuestRoute,
+  guestConsentRoute,
   guestHeartbeatRoute,
   guestKnockRoute,
   guestLeaveRoute,
   guestLinkPeekRoute,
+  guestSegmentsRoute,
   guestSessionRoute,
   guestTokenRoute,
+  listGuestLinksRoute,
   makeGuestLinkRoute,
   meetingLobbyRoute,
   removeGuestRoute,
+  revokeGuestLinkRoute,
   revokeGuestLinksRoute,
   type GuestLinkMade,
   type GuestSessionState,
@@ -69,7 +81,8 @@ import { announceRoom } from './live.ts';
 import { WindowCounter, stripHostileText } from './limits.ts';
 import { bestEffort, currentMedia, mediaFailure, requireMedia } from './media.ts';
 import { callerPerson, type Caller } from './routes.ts';
-import { guestIdentity, loadMeeting, type MeetingRow } from './rows.ts';
+import { guestIdentity, guestSpeakerName, loadMeeting, type MeetingRow } from './rows.ts';
+import { takeGuestSegments } from './segments.ts';
 
 // Guest links and the waiting room (PLAN P17-04, docs/plans/guest-links.md, docs/plugins/meetings.md "Guest links"). Two halves:
 //
@@ -79,6 +92,10 @@ import { guestIdentity, loadMeeting, type MeetingRow } from './rows.ts';
 //  * The guest's routes are public: nobody is signed in. They run as the system role and scope every statement themselves, by the hash of the link's secret or of
 //    the guest's cookie secret, so a guest reaches exactly one call and nothing else: no session route reads the guest's cookie (it is sent only to `/api/guest`),
 //    and a guest's media token names the one room, microphone and camera only, for ten minutes at most.
+//
+// Transcription (step 2): while the call is transcribed, a guest let in is asked "Transcribe my voice?" on their page (`POST /api/guest/consent`). A guest who says yes is
+// written down by their own device, which sends its lines to `POST /api/guest/segments`; they are stored with `guest_id` and read "Ana (guest)". The server never
+// writes a guest down itself and the note-taker never listens to one. A no throws away what was stored; a guest who did not answer is never written down.
 //
 // Secrets: a link is 32 random bytes in the address (`/join/g/<43 characters>`), the cookie is `<guest id>.<32 random bytes>`; only the sha-256 of each is stored
 // and they are found by that hash (an equality lookup, so the time it takes says nothing about how close a guess was). Neither is logged, put in an event or an
@@ -95,7 +112,7 @@ const SECRET_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 const GUEST_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** The name a guest is shown by in the room, set by the server. */
-export const guestLabel = (name: string): string => `${name} (guest)`;
+export const guestLabel = guestSpeakerName;
 
 // ---- the cookie ---------------------------------------------------------------------------------------------------------------------------------------
 
@@ -324,6 +341,11 @@ interface GuestRow extends Record<string, unknown> {
   title: string;
   kind: 'audio' | 'video';
   channel_name: string | null;
+  consent_transcribe: 'unasked' | 'yes' | 'no';
+  transcription: 'off' | 'on_device' | 'server';
+  turned_on_by: string | null;
+  started_at: Date;
+  server_now: Date;
 }
 
 /** The guest the cookie belongs to, found by the hash of its secret and checked against the id beside it; undefined when there is none. */
@@ -331,7 +353,9 @@ async function guestByCookie(sys: PluginTx, cookie: { guestId: string; secret: s
   const row = (
     await sys.query<GuestRow>(
       `SELECT g.id::text, g.meeting_id::text, g.workspace_id::text, g.team_id::text, g.channel_id::text, g.display_name, g.state, g.asked_at,
-              (g.state = 'waiting' AND g.asked_at <= now() - make_interval(secs => $2::int)) AS lapsed, m.state AS meeting_state, m.title, m.kind, c.name AS channel_name
+              (g.state = 'waiting' AND g.asked_at <= now() - make_interval(secs => $2::int)) AS lapsed, m.state AS meeting_state, m.title, m.kind, c.name AS channel_name,
+              g.consent_transcribe, m.transcription, m.started_at, clock_timestamp() AS server_now,
+              (SELECT p.display_name FROM app.meeting_participants p WHERE p.meeting_id = m.id AND p.actor_id = m.transcription_by) AS turned_on_by
          FROM app.meeting_guests g JOIN app.meetings m ON m.id = g.meeting_id LEFT JOIN app.channels c ON c.id = m.channel_id
         WHERE g.credential_hash = $1::bytea`,
       [sha256(cookie.secret), GUEST_WAIT_SECONDS],
@@ -553,8 +577,30 @@ export function registerGuestRoutes(ctx: PluginContext): void {
           // the page's poll is its sign of life, in the waiting room and in the call
           await touch(sys, g);
         }
-        const people = state === 'admitted' ? await roomPeople(sys, g.meeting_id) : [];
-        return withHeaders(json(GuestSessionResponse.parse({ state, title: guestTitle(g.title, g.channel_name), kind: g.kind, displayName: g.display_name, people })), noStore);
+        const admitted = state === 'admitted';
+        const people = admitted ? await roomPeople(sys, g.meeting_id) : [];
+        return withHeaders(
+          json(
+            GuestSessionResponse.parse({
+              state,
+              title: guestTitle(g.title, g.channel_name),
+              kind: g.kind,
+              displayName: g.display_name,
+              people,
+              // only for a guest let in: whether the call is transcribed (and who turned it on), their own answer, and the call clock for their device's lines
+              ...(admitted
+                ? {
+                    transcription: g.transcription,
+                    turnedOnBy: g.transcription === 'off' ? null : g.turned_on_by,
+                    consent: g.consent_transcribe,
+                    startedAt: g.started_at.toISOString(),
+                    serverNow: g.server_now.toISOString(),
+                  }
+                : {}),
+            }),
+          ),
+          noStore,
+        );
       }),
   });
 
@@ -589,6 +635,66 @@ export function registerGuestRoutes(ctx: PluginContext): void {
           ),
           noStore,
         );
+      });
+    },
+  });
+
+  // ---- "Transcribe my voice?" and the lines of the guest's own device (step 2) --------------------------------------------------------------------------------
+  /** The guest must be let in to a live call that is being transcribed. */
+  const requireTranscribed = (g: GuestRow): void => {
+    const state = stateOf(g);
+    if (state === 'ended') throw conflict('The call has ended.');
+    if (state !== 'admitted') throw forbidden('You are not in this call.');
+    if (g.transcription === 'off') throw conflict('This call is not being transcribed.');
+  };
+
+  ctx.http.route({
+    ...guestConsentRoute,
+    ...publicRoute,
+    schema: { body: GuestConsentRequest, response: GuestConsentResponse },
+    rateLimit: abuseLimit('POST', guestConsentRoute.path),
+    handler: async (req) => {
+      requireOrigin(req);
+      const { transcribe } = GuestConsentRequest.parse(req.body);
+      return asGuest(req, async (sys, g) => {
+        requireTranscribed(g);
+        const moved = await sys.query("UPDATE app.meeting_guests SET consent_transcribe = $2 WHERE id = $1::uuid AND state = 'admitted' RETURNING id", [g.id, transcribe]);
+        if (moved.rows.length === 0) throw forbidden('You are not in this call.');
+        // a no throws away the words already stored for the guest (the line keeps its times: "Ana (guest) spoke (not transcribed)")
+        if (transcribe === 'no') await sys.query("UPDATE app.meeting_segments SET text = '' WHERE meeting_id = $1::uuid AND guest_id = $2::uuid AND text <> ''", [g.meeting_id, g.id]);
+        await ctx.audit.emit(
+          sys,
+          MeetingsGuestAnsweredEvent.parse({
+            type: 'meetings.guest.answered',
+            schemaVersion: 1,
+            workspaceId: g.workspace_id,
+            teamId: g.team_id,
+            channelId: g.channel_id,
+            meetingId: g.meeting_id,
+            guestId: g.id,
+            value: transcribe,
+            at: ctx.runtime.now().toISOString(),
+          }),
+        );
+        await touch(sys, g);
+        return withHeaders(json(GuestConsentResponse.parse({ consent: transcribe })), noStore);
+      });
+    },
+  });
+
+  ctx.http.route({
+    ...guestSegmentsRoute,
+    ...publicRoute,
+    schema: { body: PostMeetingSegmentsRequest, response: PostMeetingSegmentsResponse },
+    rateLimit: abuseLimit('POST', guestSegmentsRoute.path),
+    handler: async (req) => {
+      requireOrigin(req);
+      const { segments } = PostMeetingSegmentsRequest.parse(req.body);
+      return asGuest(req, async (sys, g) => {
+        requireTranscribed(g);
+        if (g.consent_transcribe !== 'yes') throw conflict('You have not said yes to being transcribed.');
+        const done = await takeGuestSegments(ctx, sys, { id: g.meeting_id, workspaceId: g.workspace_id }, { guestId: g.id, displayName: guestLabel(g.display_name), consent: g.consent_transcribe }, segments);
+        return withHeaders(json(PostMeetingSegmentsResponse.parse(done)), noStore);
       });
     },
   });
@@ -710,6 +816,101 @@ export function registerGuestRoutes(ctx: PluginContext): void {
       );
       await announceRoom(ctx, tx, m);
       return json(RevokeGuestLinksResponse.parse({ revoked: ids.length }));
+    }),
+  });
+
+  // ---- "Guest links (n)": the links of the call that still work, and turning off one of them (step 2) ------------------------------------------------------------
+  ctx.http.route({
+    ...listGuestLinksRoute,
+    schema: { response: ListGuestLinksResponse },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    readOnly: true,
+    handler: route(async (req, tx) => {
+      const { meetingId } = MeetingPathParams.parse(req.params);
+      await callerPerson(tx);
+      const m = await loadMeeting(tx, meetingId);
+      if (!m || !m.channel_id) throw notFound('That call is not available');
+      // the people who may turn links off (app.meetings_revoke_guest_link's rule): the starter, a lead of the channel's team, an admin
+      const may = (await tx.query<{ ok: boolean }>("SELECT ($2::uuid = app.actor() OR coalesce(app.lookup_channel_can($1::uuid, 'manage'), false)) AS ok", [m.channel_id, m.started_by])).rows[0]?.ok;
+      if (!may) throw forbidden('Only the person who started the call, a team lead or an admin sees its guest links.');
+      if (m.state !== 'live') return withHeaders(json(ListGuestLinksResponse.parse({ links: [] })), noStore);
+      const links = (
+        await tx.query<{ id: string; created_by: string; created_at: Date; expires_at: Date; uses: number; max_uses: number }>(
+          `SELECT id::text, created_by::text, created_at, expires_at, uses, max_uses FROM app.meeting_guest_links
+            WHERE meeting_id = $1::uuid AND revoked_at IS NULL AND expires_at > now() AND uses < max_uses ORDER BY created_at, id`,
+          [m.id],
+        )
+      ).rows;
+      // who made each link, a person of the workspace: the actors table shows a caller only their own row, so the names are read as the system, for these ids only
+      const makers = [...new Set(links.map((l) => l.created_by))];
+      const names = new Map(
+        makers.length === 0
+          ? []
+          : await ctx.db.system(
+              async (sys) =>
+                (
+                  await sys.query<{ id: string; display_name: string }>(
+                    "SELECT a.id::text, p.display_name FROM app.actors a JOIN app.people p ON p.id = a.ref_id WHERE a.id = ANY ($1::uuid[]) AND a.kind = 'person'",
+                    [makers],
+                  )
+                ).rows.map((r) => [r.id, r.display_name] as const),
+              { workspaceId: m.workspace_id },
+            ),
+      );
+      return withHeaders(
+        json(
+          ListGuestLinksResponse.parse({
+            links: links.map((l) => ({
+              id: l.id,
+              createdBy: l.created_by,
+              createdByName: names.get(l.created_by) ?? 'Someone',
+              createdAt: l.created_at.toISOString(),
+              expiresAt: l.expires_at.toISOString(),
+              uses: l.uses,
+              maxUses: l.max_uses,
+            })),
+          }),
+        ),
+        noStore,
+      );
+    }),
+  });
+
+  ctx.http.route({
+    ...revokeGuestLinkRoute,
+    schema: { response: RevokeGuestLinkResponse },
+    rateLimit: abuseLimit('DELETE', revokeGuestLinkRoute.path),
+    handler: route(async (req, tx) => {
+      const { meetingId, linkId } = MeetingGuestLinkPathParams.parse(req.params);
+      const caller = await callerPerson(tx);
+      const m = await loadMeeting(tx, meetingId);
+      if (!m) throw notFound('That call is not available');
+      let revoked = false;
+      try {
+        revoked = (await tx.query<{ revoked: boolean }>('SELECT app.meetings_revoke_guest_link($1::uuid, $2::uuid) AS revoked', [m.id, linkId])).rows[0]?.revoked === true;
+      } catch (err) {
+        refusal(err, 'That guest link is not there any more', 'Only the person who started the call, a team lead or an admin can turn guest links off.');
+      }
+      // only a link that still worked is news: one that had expired or was used up stopped already
+      if (revoked) {
+        await ctx.audit.emit(
+          tx,
+          MeetingsGuestLinkRevokedEvent.parse({
+            type: 'meetings.guest_link.revoked',
+            schemaVersion: 1,
+            workspaceId: m.workspace_id,
+            teamId: m.team_id,
+            channelId: m.channel_id,
+            meetingId: m.id,
+            linkIds: [linkId],
+            revokedBy: caller.actorId,
+            reason: 'person',
+            at: ctx.runtime.now().toISOString(),
+          }),
+        );
+        await announceRoom(ctx, tx, m);
+      }
+      return json(RevokeGuestLinkResponse.parse({ revoked }));
     }),
   });
 

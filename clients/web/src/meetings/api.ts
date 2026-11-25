@@ -129,12 +129,16 @@ import {
   DecideGuestResponse,
   MakeGuestLinkResponse,
   MeetingLobbyResponse,
+  ListGuestLinksResponse,
+  RevokeGuestLinkResponse,
   RevokeGuestLinksResponse,
   admitGuestRoute,
   denyGuestRoute,
   makeGuestLinkRoute,
   meetingLobbyRoute,
   removeGuestRoute,
+  listGuestLinksRoute,
+  revokeGuestLinkRoute,
   revokeGuestLinksRoute,
   MeetingAskRequest,
   MeetingAskResponse,
@@ -287,6 +291,10 @@ export const joinAppointment = (id: string) => call(joinAppointmentRoute, { resp
 export const makeGuestLink = (meetingId: string) => call(makeGuestLinkRoute, { response: MakeGuestLinkResponse }, undefined, { meetingId });
 /** Turn guest links off for the call (the starter, a lead, an admin): every link stops; guests already in stay. */
 export const revokeGuestLinks = (meetingId: string) => call(revokeGuestLinksRoute, { response: RevokeGuestLinksResponse }, undefined, { meetingId });
+/** The links of the call that still work, for the starter, a lead or an admin ("Guest links (n)"). */
+export const listGuestLinks = (meetingId: string) => call(listGuestLinksRoute, { response: ListGuestLinksResponse }, undefined, { meetingId });
+/** Turn off one link; guest links stay on for the call. */
+export const revokeGuestLink = (meetingId: string, linkId: string) => call(revokeGuestLinkRoute, { response: RevokeGuestLinkResponse }, undefined, { meetingId, linkId });
 /** Who is waiting to be let in (only for someone in the call). */
 export const fetchLobby = (meetingId: string) => call(meetingLobbyRoute, { response: MeetingLobbyResponse }, undefined, { meetingId });
 /** Let a guest in, turn one away, or take one out. */

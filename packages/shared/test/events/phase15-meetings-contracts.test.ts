@@ -30,6 +30,7 @@ const SAMPLES = {
   'meetings.guest.denied': { ...base, type: 'meetings.guest.denied', guestId: uuid(12), decidedBy: uuid(6) },
   'meetings.guest.removed': { ...base, type: 'meetings.guest.removed', guestId: uuid(12), decidedBy: uuid(6) },
   'meetings.guest.left': { ...base, type: 'meetings.guest.left', guestId: uuid(12), how: 'dropped' },
+  'meetings.guest.answered': { ...base, type: 'meetings.guest.answered', guestId: uuid(12), value: 'yes' },
 } as const;
 const TYPES = Object.keys(SAMPLES) as (keyof typeof SAMPLES)[];
 
