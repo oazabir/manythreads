@@ -1,0 +1,384 @@
+/* The Summaries page (screens/summaries/*, P37-06). Classes are `sm-*`. A single column on a phone, two columns of cards on a wide screen. */
+.sm-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+
+.sm-body {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 16px 24px 40px;
+}
+
+.sm-hello {
+  display: grid;
+  gap: 4px;
+}
+
+.sm-greeting {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-title);
+}
+
+.sm-lead {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-body);
+}
+
+.sm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.sm-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 12px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.sm-card.wide {
+  grid-column: 1 / -1;
+}
+
+.sm-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.sm-card-titles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sm-card-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-title);
+}
+
+.sm-card-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+}
+
+.sm-count {
+  color: var(--ink);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-title);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* rows: a whole row is the link; the hover and the focus ring show it */
+.sm-rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+}
+
+.sm-row:hover,
+.sm-row:focus-within {
+  background: var(--msg-hover);
+}
+
+.sm-row-link {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.sm-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--hairline);
+  color: var(--mute);
+}
+
+.sm-mark.face {
+  background: none;
+}
+
+.sm-mark.k-action,
+.sm-mark.k-meeting {
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.sm-mark.k-approval {
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.sm-mark.k-live {
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.sm-row-text {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sm-row-title {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sm-row-meta {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sm-tag {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  white-space: nowrap;
+}
+
+.sm-tag.urgent {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.sm-tag.soon {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.sm-tag.live {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.sm-join {
+  flex: none;
+  min-width: 56px;
+  min-height: 32px;
+  margin-right: 8px;
+}
+
+/* the footer of a card */
+.sm-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.sm-more {
+  flex: 1;
+  color: var(--faint);
+  font-size: var(--fs-caption);
+}
+
+.sm-see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sm-see-all:hover {
+  background: var(--msg-hover);
+  color: var(--human);
+}
+
+/* states inside a card */
+.sm-empty .empty.es {
+  padding: 20px 12px;
+}
+
+.sm-problem {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin: 0 8px 8px;
+  padding: 12px;
+  border: 1px solid var(--alert-border);
+  border-radius: var(--radius-sm);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: var(--fs-small);
+}
+
+.sm-problem p {
+  margin: 0;
+}
+
+.sm-problem-line {
+  margin: 0 8px;
+  color: var(--warn-ink);
+  font-size: var(--fs-caption);
+}
+
+/* quick access: compact chips */
+.sm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 8px 8px;
+  list-style: none;
+}
+
+.sm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  text-decoration: none;
+}
+
+.sm-chip:hover {
+  border-color: var(--ink);
+  background: var(--msg-hover);
+}
+
+.sm-chip[data-unread='true'] {
+  font-weight: 600;
+}
+
+.sm-chip-mark {
+  display: inline-grid;
+  place-items: center;
+  color: var(--mute);
+}
+
+.sm-chip-label {
+  overflow: hidden;
+  max-width: 24ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the refresh arrow turns once while it reloads */
+.sm-refresh-icon {
+  display: inline-grid;
+  vertical-align: middle;
+}
+
+.sm-refresh-icon.spin {
+  animation: sm-turn 0.7s linear;
+}
+
+@keyframes sm-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-refresh-icon.spin {
+    animation: none;
+  }
+}
+
+/* a phone: one column, less padding, finger-sized buttons */
+@media (width <= 760px) {
+  .sm-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (width <= 480px) {
+  .sm-body {
+    padding: 12px 16px 32px;
+  }
+
+  .sm-card {
+    padding: 14px 8px 4px;
+  }
+
+  .sm-join,
+  .sm-see-all,
+  .sm-chip {
+    min-height: 44px;
+  }
+
+  .sm-join {
+    min-width: 64px;
+  }
+
+  .sm-chip-label {
+    max-width: 18ch;
+  }
+
+  .sm-screen .btn.s {
+    min-height: 44px;
+  }
+}

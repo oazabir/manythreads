@@ -8,13 +8,13 @@ const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Chat, Schedule, Meetings, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
+  it('is exactly Summaries, Chat, Schedule, Meetings, Files, Boards, Org chart, Jobs, Deliveries, Threads, Drafts, Approvals, channel groups, Direct messages, Projects, Bots, in that order', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
-      [5, 'Chat'], [8, 'Schedule'], [9, 'Meetings'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [27, 'Deliveries'], [30, 'Threads'], [32, 'Drafts'],
+      [2, 'Summaries'], [5, 'Chat'], [8, 'Schedule'], [9, 'Meetings'], [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [27, 'Deliveries'], [30, 'Threads'], [32, 'Drafts'],
       [35, 'Approvals'], [40, 'Channels'], [45, 'Direct messages'], [48, 'Projects'], [50, 'Bots'],
     ]);
-    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(11).fill('item'), 'group-list', 'header', 'header', 'header']);
+    expect(sorted.map((i) => i.kind)).toEqual([...Array<string>(12).fill('item'), 'group-list', 'header', 'header', 'header']);
   });
 
   it('has Meetings as one plain entry that opens the Meetings page, and none for a guest', () => {
@@ -35,8 +35,8 @@ describe('sidebar contract', () => {
 
   it('sorts a plugin contribution into place by order and keeps ties in the order given', () => {
     const plugin = contribution({ id: 'wiki', order: 25 });
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(1, 7)).toEqual(['schedule', 'meetings', 'files', 'boards', 'org', 'wiki']);
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(7, 9)).toEqual(['jobs', 'deliveries']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(2, 8)).toEqual(['schedule', 'meetings', 'files', 'boards', 'org', 'wiki']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(8, 10)).toEqual(['jobs', 'deliveries']);
     const a = contribution({ id: 'a', order: 5 });
     const b = contribution({ id: 'b', order: 5 });
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);
@@ -105,6 +105,7 @@ describe('team switching and titles', () => {
     expect(teamSwitchPath('/t/engineering/org', 'support')).toBe('/t/support/org');
     // a meeting space is one team's own, so switching lands on the list of meetings
     expect(teamSwitchPath('/t/engineering/meetings/space/abc', 'support')).toBe('/t/support/meetings');
+    expect(teamSwitchPath('/t/engineering/summaries', 'support')).toBe('/t/support/summaries');
     expect(teamSwitchPath('/t/engineering/c/dev', 'support')).toBe('/t/support/threads');
     expect(teamSwitchPath('/t/engineering/dm/abc', 'support')).toBe('/t/support/threads');
     expect(teamSwitchPath('/', 'support')).toBe('/t/support/threads');
@@ -119,6 +120,7 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/bots/brain/chat')).toBe('Conversation');
     expect(viewTitle('/t/engineering/bots/brain')).toBe('Bots');
     expect(viewTitle('/t/engineering/org')).toBe('Org chart');
+    expect(viewTitle('/t/engineering/summaries')).toBe('Summaries');
     expect(viewTitle('/t/engineering/jobs')).toBe('Jobs');
     expect(viewTitle('/t/engineering/dms')).toBe('Messages');
     expect(viewTitle('/t/engineering/meetings')).toBe('Meetings');

@@ -8,7 +8,7 @@ import {
   MicrophoneIcon, PauseIcon as PauseIcon_, PlayIcon as PlayIcon_, SquareIcon, TextDescriptionIcon,
 } from '@proicons/react';
 import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon } from '@proicons/react';
-import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
+import { CalendarIcon, CheckboxListIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
 import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
 import { EyeIcon, EyeOffIcon, OpenIcon, RecordStopIcon } from '@proicons/react';
 import { BarChartIcon, CodeSquareIcon, QuoteIcon, TextBoldIcon, TextBulletListIcon, TextFontIcon, TextItalicIcon, TextNumberListIcon, TextStrikethroughIcon } from '@proicons/react';
@@ -57,7 +57,13 @@ export const BookmarksNavIcon = proIcon(ProBookmark);
 /** Meetings in the sidebar (P37-04). */
 export const MeetingsNavIcon = proIcon(VideoClipIcon);
 
-export const NAV_ICONS = { chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon, drafts: DraftsIcon, schedule: ScheduleNavIcon, bookmarks: BookmarksNavIcon, meetings: MeetingsNavIcon } as const;
+/** Summaries in the sidebar (P37-06), and the small marks on the rows of that page. */
+export const SummariesNavIcon = proIcon(CheckboxListIcon);
+export const ActionItemIcon = proIcon(TaskListIcon, 18);
+export const MeetingNotesIcon = proIcon(ClipboardIcon, 18);
+export const LiveCallIcon = proIcon(VideoClipIcon, 18);
+
+export const NAV_ICONS = { summaries: SummariesNavIcon, chat: ChatNavIcon, files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon, deliveries: DeliveriesIcon, drafts: DraftsIcon, schedule: ScheduleNavIcon, bookmarks: BookmarksNavIcon, meetings: MeetingsNavIcon } as const;
 
 export const ReplyIcon = proIcon(ArrowReplyIcon, 14);
 export const SmileIcon = proIcon(EmojiIcon, 14);
