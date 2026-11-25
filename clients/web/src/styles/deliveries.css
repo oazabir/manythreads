@@ -26,6 +26,7 @@
 .dl-card {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   min-width: 0;
   padding: 12px 14px;

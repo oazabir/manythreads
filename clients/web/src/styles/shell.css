@@ -968,6 +968,11 @@ a.sec:hover {
   white-space: nowrap;
 }
 
+/* a percentage max-width of the title is a share of .chead-place, which is as wide as its title: on a phone "Summaries" and "Meetings" collapsed to "Sum…" and "Meeti…" (P37) */
+.chead .chead-place > .chead-title {
+  max-width: none;
+}
+
 .chead-back {
   display: inline-flex;
   flex: none;
