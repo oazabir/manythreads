@@ -326,6 +326,8 @@ export class RunManager {
       budgetTimer = setTimeout(() => this.stop(run, 'budget exceeded'), ms);
       budgetTimer.unref();
     };
+    /** The programs the bridge's memory guard stopped below this run's own adapters (another run's kills are not this run's out of memory). */
+    let guardKills = 0;
     let runDir: string | null = null;
     /** Set when this run is a team's on a server with team users: its programs are started through the helper. */
     let team: TeamRun | null = null;
@@ -401,7 +403,9 @@ export class RunManager {
           run.children.add(child);
           // the bridge's memory guard (a pod) may stop a command below a program the bridge started itself; a team's program is another user's, and its scope has its own limit
           const guard = team === null ? memoryGuard() : null;
-          guard?.adapterStarted(child.pid);
+          guard?.adapterStarted(child.pid, () => {
+            guardKills += 1;
+          });
           // Whatever a tool left running in the run's process group (a background server, a watcher) ends with the run.
           void child.done.then(() => {
             guard?.adapterEnded(child.pid);
@@ -414,7 +418,7 @@ export class RunManager {
           }
           return child;
         },
-        memoryWatch: () => (team !== null ? team.memoryWatch() : withGuardKills(cgroupMemoryWatch(), () => memoryGuard()?.kills() ?? 0)),
+        memoryWatch: () => (team !== null ? team.memoryWatch() : withGuardKills(cgroupMemoryWatch(), () => guardKills)),
         stopped: () => run.stopRequested,
         abort: (reason) => this.stop(run, reason),
         baseEnv: () => childEnv(profile),

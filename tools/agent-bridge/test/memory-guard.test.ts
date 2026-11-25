@@ -4,12 +4,14 @@ import {
   guardDecision,
   guardThreshold,
   isAgentCmdline,
+  isAgentProcess,
   MemoryGuard,
   memInfoOf,
   pickVictim,
   procGuardReader,
   statusOf,
   usedOf,
+  victimFloor,
   type GuardInput,
   type GuardProcess,
   type GuardReader,
@@ -51,10 +53,41 @@ const input = (over: Partial<GuardInput>): GuardInput => ({
 });
 
 describe('when the guard acts', () => {
-  it('at the limit less 10 % or 512 MiB, whichever is more (3.5 GiB of 4 GiB; 1.5 GiB of 2 GiB)', () => {
+  it('at the limit less 10 % or 512 MiB, whichever is more, but never less than three quarters of the limit', () => {
     expect(guardThreshold(4 * GIB)).toBe(3.5 * GIB);
     expect(guardThreshold(2 * GIB)).toBe(1.5 * GIB);
     expect(guardThreshold(8 * GIB)).toBe(8 * GIB - Math.floor((8 * GIB) / 10));
+    expect(guardThreshold(1.5 * GIB)).toBe(1152 * MIB); // a quarter (384 MiB), not 512
+    expect(guardThreshold(512 * MIB)).toBe(384 * MIB); // never 0
+    expect(guardThreshold(768 * MIB)).toBe(576 * MIB);
+  });
+
+  it('under a 1.5 GiB limit it stops nothing, it only says so', () => {
+    for (const limit of [512 * MIB, 768 * MIB, 1024 * MIB]) {
+      let walked = false;
+      const d = guardDecision(input({ limitBytes: limit, usedBytes: limit - MIB, processes: () => ((walked = true), tree) }));
+      expect(d).toEqual({ action: 'watch-only', usedBytes: limit - MIB, limitBytes: limit });
+      expect(walked).toBe(false);
+    }
+    expect(guardDecision(input({ limitBytes: 1024 * MIB, usedBytes: 100 * MIB }))).toEqual({ action: 'none' });
+    expect(guardDecision(input({ limitBytes: 1.5 * GIB, usedBytes: 1.4 * GIB }))).toMatchObject({ action: 'kill', pid: 31 });
+  });
+
+  it('stops only a program big enough to matter: 64 MiB, or a quarter of what is over the threshold', () => {
+    expect(victimFloor(3.5 * GIB + 10 * MIB, 3.5 * GIB)).toBe(64 * MIB);
+    expect(victimFloor(4 * GIB, 3.5 * GIB)).toBe(128 * MIB);
+    // the memory is the agent's own: the small commands below it are left alone
+    const small: GuardProcess[] = [
+      { pid: 20, ppid: 10, rssBytes: 200 * MIB, name: 'node', agent: false },
+      { pid: 21, ppid: 20, rssBytes: 3300 * MIB, name: 'claude', agent: true },
+      { pid: 30, ppid: 21, rssBytes: 4 * MIB, name: 'bash', agent: false },
+      { pid: 31, ppid: 30, rssBytes: 40 * MIB, name: 'git', agent: false },
+      { pid: 32, ppid: 30, rssBytes: 100 * MIB, name: 'node', agent: false },
+    ];
+    expect(guardDecision(input({ usedBytes: 3.6 * GIB, processes: () => small, adapters: new Set([20]) }))).toMatchObject({ action: 'kill', pid: 32 });
+    // near the limit a 100 MiB command is less than a quarter of the 500 MiB over: not worth it
+    expect(guardDecision(input({ usedBytes: 4 * GIB - 12 * MIB, processes: () => small, adapters: new Set([20]) }))).toMatchObject({ action: 'nothing-to-stop' });
+    expect(guardDecision(input({ usedBytes: 3.6 * GIB, processes: () => small.filter((p) => p.pid !== 32), adapters: new Set([20]) }))).toMatchObject({ action: 'nothing-to-stop' });
   });
 
   it('does nothing under the threshold, and does not even walk the processes', () => {
@@ -84,6 +117,30 @@ describe('when the guard acts', () => {
     expect(pickVictim(procs, new Set([40]), 10)?.pid).toBe(44);
   });
 
+  it('keeps the whole chain from the adapter down to Codex: codex-acp -> node codex.js -> codex -> bash -> the command', () => {
+    const names = agentNames([]);
+    const procs: GuardProcess[] = [
+      { pid: 40, ppid: 10, rssBytes: 100 * MIB, name: 'codex-acp', agent: false },
+      { pid: 41, ppid: 40, rssBytes: 1800 * MIB, name: 'node', agent: isAgentProcess('node', 'node\0/usr/lib/node_modules/@openai/codex/bin/codex.js\0app-server\0', names) },
+      { pid: 42, ppid: 41, rssBytes: 1600 * MIB, name: 'codex', agent: isAgentProcess('codex', '/usr/lib/node_modules/@openai/codex/vendor/x86_64/codex/codex\0app-server\0', names) },
+      { pid: 43, ppid: 42, rssBytes: 4 * MIB, name: 'bash', agent: false },
+      { pid: 44, ppid: 43, rssBytes: 600 * MIB, name: 'node', agent: false },
+    ];
+    expect(procs[1]!.agent).toBe(true);
+    expect(procs[2]!.agent).toBe(true);
+    const d = guardDecision(input({ processes: () => procs, adapters: new Set([40]) }));
+    expect(d).toMatchObject({ action: 'kill', pid: 44, adapter: 40 });
+    // with the command gone, nothing above it is ever chosen, though node codex.js and codex are the biggest
+    expect(guardDecision(input({ processes: () => procs.filter((p) => p.pid !== 44), adapters: new Set([40]) }))).toMatchObject({ action: 'nothing-to-stop' });
+    // a program between the adapter and an agent that is not an agent itself (a wrapper shell) stays too
+    const wrapped: GuardProcess[] = [
+      { pid: 40, ppid: 10, rssBytes: 100 * MIB, name: 'codex-acp', agent: false },
+      { pid: 46, ppid: 40, rssBytes: 900 * MIB, name: 'sh', agent: false },
+      { pid: 47, ppid: 46, rssBytes: 800 * MIB, name: 'codex', agent: true },
+    ];
+    expect(pickVictim(wrapped, new Set([40]), 10)).toBeNull();
+  });
+
   it('never chooses pid 1, the bridge or another adapter, even when one sits below an adapter', () => {
     const procs: GuardProcess[] = [
       { pid: 20, ppid: 10, rssBytes: 100 * MIB, name: 'node', agent: false },
@@ -104,6 +161,8 @@ describe('when the guard acts', () => {
 describe('what the guard reads', () => {
   it('anonymous memory from memory.stat, not the page cache; else current minus inactive_file', () => {
     expect(usedOf('anon 3221225472\nfile 900000000\ninactive_file 800000000\n', '4000000000\n')).toBe(3221225472);
+    // the memory-backed /dev/shm of an ACP pod is charged as shmem: it counts
+    expect(usedOf('anon 3000000000\nfile 900000000\nshmem 500000000\ninactive_file 100000000\n', '4000000000\n')).toBe(3500000000);
     expect(usedOf('file 900\ninactive_file 800\n', '4000\n')).toBe(3200);
     expect(usedOf('file 900\n', null)).toBeNull();
     expect(usedOf('', 'max\n')).toBeNull();
@@ -127,6 +186,11 @@ describe('what the guard reads', () => {
     expect(isAgentCmdline('node\0/work/node_modules/.bin/vitest\0run\0', names)).toBe(false);
     expect(isAgentCmdline('bash\0-c\0claude --version\0', names)).toBe(false);
     expect(isAgentCmdline('', names)).toBe(false);
+    expect(isAgentCmdline('node\0/usr/lib/node_modules/@openai/codex/bin/codex.js\0app-server\0', names)).toBe(true);
+    expect(isAgentCmdline('node\0--enable-source-maps\0/x/bin/codex.js\0', names)).toBe(true);
+    // the native Codex by its status name, whatever its path
+    expect(isAgentProcess('codex', '/opt/vendor/codex-x86_64\0app-server\0', names)).toBe(true);
+    expect(isAgentProcess('node', 'node\0/work/node_modules/.bin/vitest\0', names)).toBe(false);
   });
 
   it('reads its own cgroup and /proc through the files it is given; none without cgroup v2', () => {
@@ -178,6 +242,36 @@ describe('the guard of one bridge', () => {
     now += 2000;
     guard.tick();
     expect(killed).toHaveLength(2);
+  });
+
+  it('counts each kill for the run whose adapter the program was below, not for every run', () => {
+    let now = 1000;
+    const counts = { claudeRun: 0, codexRun: 0 };
+    const guard = new MemoryGuard({ reader: fakeReader(), log: () => undefined, kill: () => undefined, now: () => now, bridgePid: 10 });
+    guard.adapterStarted(20, () => (counts.claudeRun += 1));
+    guard.adapterStarted(40, () => (counts.codexRun += 1));
+    expect(guard.tick()).toMatchObject({ action: 'kill', pid: 31, adapter: 20 });
+    expect(counts).toEqual({ claudeRun: 1, codexRun: 0 });
+    // tsc is gone: the vitest worker below Codex's adapter is next
+    const rest = tree.filter((p) => p.pid !== 31);
+    const second = new MemoryGuard({ reader: fakeReader({ processes: () => rest }), log: () => undefined, kill: () => undefined, now: () => now, bridgePid: 10 });
+    second.adapterStarted(20, () => (counts.claudeRun += 1));
+    second.adapterStarted(40, () => (counts.codexRun += 1));
+    now += 5000;
+    expect(second.tick()).toMatchObject({ action: 'kill', pid: 43, adapter: 40 });
+    expect(counts).toEqual({ claudeRun: 1, codexRun: 1 });
+    expect(guard.kills() + second.kills()).toBe(2);
+  });
+
+  it('a small limit is said once, and nothing is stopped', () => {
+    const lines: string[] = [];
+    const killed: number[] = [];
+    const guard = new MemoryGuard({ reader: fakeReader({ limitBytes: () => 768 * MIB, usedBytes: () => 700 * MIB }), log: (l) => lines.push(l), kill: (pid) => killed.push(pid), bridgePid: 10 });
+    guard.adapterStarted(20);
+    expect(guard.tick()).toMatchObject({ action: 'watch-only' });
+    guard.tick();
+    expect(killed).toEqual([]);
+    expect(lines).toEqual(['memory guard: 700 of 768 MiB in use; under a 1536 MiB limit the guard stops no command']);
   });
 
   it('an adapter that ended is no longer watched; a process already gone is not counted', () => {

@@ -226,9 +226,11 @@ already live (c1946d6b); the Coder's "run the whole suite" was already gone (P31
   `<tag>` is the header's new `runTag` (`^[a-z0-9]{8,32}$`, sent by `TeamRun`), so the bridge reads `/sys/fs/cgroup/mtruns.slice/<unit>/memory.events` and `memory.max`
   (`scopeMemoryWatch`, falling back to its own group). Installer: `--run-memory` (default 4G, lower only, at least 256M), `--runs-memory` (default 40 % of MemTotal, lower only),
   `/etc/systemd/system/mtruns.slice` with `MemoryMax`, removed at uninstall.
-- **The pod guard** (`src/memory-guard.ts`): every 500 ms the bridge reads its own group's `memory.max` and anonymous memory (`memory.stat` `anon`, else `current − inactive_file`);
-  at `≥ max − max(512 MiB, 10 %)` (3.5 GiB of 4) it SIGKILLs the largest-RSS descendant of a run's adapter, never pid 1, the bridge, an adapter, or an adapter's direct child whose
-  first words name an agent (`claude`, `codex`, `hermes`, the configured bins); 2 s between kills. Its kills count as out-of-memory kills for the frames (`withGuardKills`). With
+- **The pod guard** (`src/memory-guard.ts`): every 500 ms the bridge reads its own group's `memory.max` and the programs' memory (`memory.stat` `anon` + `shmem`, since an ACP
+  pod's /dev/shm is memory-backed; else `current − inactive_file`); at `≥ max − min(max(512 MiB, 10 %), 25 %)` (3.5 GiB of 4) it SIGKILLs the largest-RSS descendant of a run's
+  adapter of at least max(64 MiB, a quarter of what is over), never pid 1, the bridge, an adapter, an agent at any depth (status name or first words `claude`, `codex`, `codex.js`,
+  `hermes`, the configured bins) or a program between the adapter and an agent (codex-acp → `node codex.js` → `codex`); under a 1.5 GiB limit it only logs; 2 s between kills.
+  Its kills count as out-of-memory kills for the frames (`withGuardKills`), each for the run whose adapter the program was below. With
   limit "max" it only logs when MemAvailable < 10 %. Team runs on a server are not watched by it (another user's programs; their scope has its own limit).
 - **The card:** a `tool_result` line keeps `reason: 'out_of_memory'`; the run card's step says "Out of memory" where it would say "Failed".
 - **Still to measure live:** that `systemd-run` from the helper (started by sudo inside the bridge's sandboxed unit) creates the scope and that `BindsTo=` is accepted (the probe

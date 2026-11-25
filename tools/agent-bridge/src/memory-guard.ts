@@ -6,24 +6,38 @@ import { limitOf, ownCgroupDir, type CgroupFiles } from './memory-watch.ts';
 //
 // In a run pod the container's control group has `memory.oom.group=1`: when the kernel's out-of-memory killer acts there, it kills EVERY process of the container, the bridge
 // included, so `oom_score_adj` cannot save the run. So the bridge watches its own group itself, every 500 ms: when the memory the programs hold (anonymous memory, not the page cache a
-// build leaves near the limit) comes within max(512 MiB, 10 %) of the limit, it stops the biggest program below a run's adapter with SIGKILL, before the kernel stops everything. It
-// never stops the bridge, `tini` (pid 1), an adapter, or the agent program an adapter started (Claude Code, Codex). The command then ends killed (exit 137) and the frames mark the
-// step "out of memory" like a kill of the kernel (memory-watch.ts `withGuardKills`).
+// build leaves near the limit, plus the memory-backed /dev/shm of an ACP pod) comes within a margin of the limit (`guardThreshold`), it stops the biggest program below a run's adapter
+// with SIGKILL, before the kernel stops everything. It never stops the bridge, `tini` (pid 1), an adapter, an agent program (Claude Code, Codex, Hermes) at any depth below an
+// adapter, or a program between an adapter and an agent (codex-acp -> `node codex.js` -> the native `codex`). It stops only a program big enough to matter (`victimFloor`): killing
+// small commands one after another while the memory is the agent's own helps no one. Under a 1.5 GiB limit it only writes a log line (the margin would leave no room to work). The
+// command then ends killed (exit 137) and the frames mark the step "out of memory" like a kill of the kernel (memory-watch.ts `withGuardKills`), counted for the run whose adapter the
+// program was below.
 //
 // With no limit (`memory.max` is "max": a host, or a server whose runs have scopes of their own) it only writes a log line when the machine itself runs short (MemAvailable under 10 %).
 // A very fast allocation can still beat a 500 ms look (plan R6).
 
 const MIB = 1024 * 1024;
-/** How close to the limit the guard acts: within this much, or 10 % of the limit when that is more. */
+/** How close to the limit the guard acts: within this much, or 10 % of the limit when that is more, but never more than a quarter of the limit. */
 export const GUARD_MARGIN_BYTES = 512 * MIB;
+/** Under this limit the guard never stops a program, it only writes a log line: the margin would take most of the room a command has. */
+export const GUARD_MIN_LIMIT_BYTES = 1536 * MIB;
+/** A program smaller than this is never stopped: it would not give back enough to matter. */
+export const GUARD_MIN_VICTIM_BYTES = 64 * MIB;
 /** After a kill the memory takes a moment to be given back: no second kill this soon. */
 export const GUARD_COOLDOWN_MS = 2000;
 export const GUARD_INTERVAL_MS = 500;
 
-/** The memory at which the guard acts, for a limit: `limit - max(512 MiB, 10 %)`. At 4 GiB that is 3.5 GiB (512 MiB is more than 10 %). */
-export const guardThreshold = (limitBytes: number): number => limitBytes - Math.max(GUARD_MARGIN_BYTES, Math.floor(limitBytes / 10));
+/**
+ * The memory at which the guard acts, for a limit: `limit - min(max(512 MiB, 10 %), 25 %)`. At 4 GiB that is 3.5 GiB (512 MiB is more than 10 %); at 1.5 GiB it is 1.125 GiB (a
+ * quarter); at 8 GiB the limit less 10 %.
+ */
+export const guardThreshold = (limitBytes: number): number =>
+  limitBytes - Math.min(Math.max(GUARD_MARGIN_BYTES, Math.floor(limitBytes / 10)), Math.floor(limitBytes / 4));
 
-/** One process as the guard sees it: its parent, its resident memory, and whether it is an agent program (its first words name Claude Code, Codex or Hermes). */
+/** The smallest program worth stopping when the group holds `usedBytes` over `thresholdBytes`: 64 MiB, or a quarter of what is over when that is more. */
+export const victimFloor = (usedBytes: number, thresholdBytes: number): number => Math.max(GUARD_MIN_VICTIM_BYTES, Math.floor((usedBytes - thresholdBytes) / 4));
+
+/** One process as the guard sees it: its parent, its resident memory, and whether it is an agent program (its name or its first words name Claude Code, Codex or Hermes). */
 export interface GuardProcess {
   pid: number;
   ppid: number;
@@ -35,7 +49,7 @@ export interface GuardProcess {
 export interface GuardInput {
   /** `memory.max` of the bridge's own group; null for "max". */
   limitBytes: number | null;
-  /** The anonymous memory of the group; null when it cannot be read. */
+  /** The anonymous and shared (tmpfs, /dev/shm) memory of the group; null when it cannot be read. */
   usedBytes: number | null;
   /** The machine's `MemAvailable` and `MemTotal` (`/proc/meminfo`), for a group with no limit. */
   memAvailableBytes: number | null;
@@ -50,31 +64,51 @@ export interface GuardInput {
 
 export type GuardDecision =
   | { action: 'none' }
-  | { action: 'kill'; pid: number; name: string; rssBytes: number; usedBytes: number; limitBytes: number }
-  /** Over the threshold, but no program below an adapter to stop (the memory is the agent's own, or another program's). */
+  /** `adapter`: the adapter the program was below (its run counts the kill). */
+  | { action: 'kill'; pid: number; name: string; rssBytes: number; usedBytes: number; limitBytes: number; adapter: number }
+  /** Over the threshold, but no program below an adapter big enough to stop (the memory is the agent's own, or another program's). */
   | { action: 'nothing-to-stop'; usedBytes: number; limitBytes: number }
+  /** Over the threshold of a limit under 1.5 GiB: the guard does not stop programs there, a log line only. */
+  | { action: 'watch-only'; usedBytes: number; limitBytes: number }
   /** No limit, and the machine is short of memory: a log line only. */
   | { action: 'low-machine'; availableBytes: number; totalBytes: number };
 
+/** A program the guard may stop, and the adapter it is below. */
+export interface GuardVictim extends GuardProcess {
+  adapter: number;
+}
+
 /**
- * The biggest program below a run's adapter that may be stopped: a descendant of an adapter, never pid 1, the bridge, an adapter itself, or an agent program the adapter started
- * directly (a direct child whose words name an agent). A program with no resident memory is never chosen. Ties go to the newer (higher) pid.
+ * The biggest program below a run's adapter that may be stopped: a descendant of an adapter, never pid 1, the bridge, an adapter itself, an agent program at any depth, or a
+ * program on the way from the adapter down to an agent (codex-acp starts `node codex.js`, which starts the native `codex`: all three stay). A program with less resident memory
+ * than `minRssBytes` (and never one with none) is not chosen. Ties go to the newer (higher) pid.
  */
-export function pickVictim(processes: readonly GuardProcess[], adapters: ReadonlySet<number>, bridgePid: number): GuardProcess | null {
+export function pickVictim(processes: readonly GuardProcess[], adapters: ReadonlySet<number>, bridgePid: number, minRssBytes = 1): GuardVictim | null {
   const children = new Map<number, GuardProcess[]>();
   for (const p of processes) children.set(p.ppid, [...(children.get(p.ppid) ?? []), p]);
-  let best: GuardProcess | null = null;
+  let best: GuardVictim | null = null;
   const seen = new Set<number>();
   for (const adapter of adapters) {
-    const queue: Array<{ p: GuardProcess; depth: number }> = (children.get(adapter) ?? []).map((p) => ({ p, depth: 1 }));
+    // the adapter's tree, each program with the one above it
+    const below: Array<{ p: GuardProcess; parent: number }> = [];
+    const queue: Array<{ p: GuardProcess; parent: number }> = (children.get(adapter) ?? []).map((p) => ({ p, parent: adapter }));
     while (queue.length > 0) {
-      const { p, depth } = queue.shift()!;
-      if (seen.has(p.pid)) continue;
-      seen.add(p.pid);
-      for (const c of children.get(p.pid) ?? []) queue.push({ p: c, depth: depth + 1 });
-      const protectedOne = p.pid <= 1 || p.pid === bridgePid || adapters.has(p.pid) || (depth === 1 && p.agent);
-      if (protectedOne || p.rssBytes <= 0) continue;
-      if (best === null || p.rssBytes > best.rssBytes || (p.rssBytes === best.rssBytes && p.pid > best.pid)) best = p;
+      const item = queue.shift()!;
+      if (seen.has(item.p.pid) || adapters.has(item.p.pid)) continue; // another adapter's tree is its own
+      seen.add(item.p.pid);
+      below.push(item);
+      for (const c of children.get(item.p.pid) ?? []) queue.push({ p: c, parent: item.p.pid });
+    }
+    // an agent and everything above it up to the adapter
+    const parentOf = new Map(below.map(({ p, parent }) => [p.pid, parent]));
+    const kept = new Set<number>();
+    for (const { p } of below) {
+      if (!p.agent) continue;
+      for (let pid: number | undefined = p.pid; pid !== undefined && pid !== adapter && !kept.has(pid); pid = parentOf.get(pid)) kept.add(pid);
+    }
+    for (const { p } of below) {
+      if (p.pid <= 1 || p.pid === bridgePid || kept.has(p.pid) || p.rssBytes <= 0 || p.rssBytes < minRssBytes) continue;
+      if (best === null || p.rssBytes > best.rssBytes || (p.rssBytes === best.rssBytes && p.pid > best.pid)) best = { ...p, adapter };
     }
   }
   return best;
@@ -89,18 +123,24 @@ export function guardDecision(input: GuardInput): GuardDecision {
     if (avail !== null && total !== null && total > 0 && avail < total / 10) return { action: 'low-machine', availableBytes: avail, totalBytes: total };
     return { action: 'none' };
   }
-  if (usedBytes === null || usedBytes < guardThreshold(limitBytes)) return { action: 'none' };
-  const victim = pickVictim(input.processes(), input.adapters, input.bridgePid);
+  const threshold = guardThreshold(limitBytes);
+  if (usedBytes === null || usedBytes < threshold) return { action: 'none' };
+  if (limitBytes < GUARD_MIN_LIMIT_BYTES) return { action: 'watch-only', usedBytes, limitBytes };
+  const victim = pickVictim(input.processes(), input.adapters, input.bridgePid, victimFloor(usedBytes, threshold));
   if (victim === null) return { action: 'nothing-to-stop', usedBytes, limitBytes };
-  return { action: 'kill', pid: victim.pid, name: victim.name, rssBytes: victim.rssBytes, usedBytes, limitBytes };
+  return { action: 'kill', pid: victim.pid, name: victim.name, rssBytes: victim.rssBytes, usedBytes, limitBytes, adapter: victim.adapter };
 }
 
 // ---- the readers: small parsers (tested) and the thin part that opens the files ---------------------------------------------------------
 
-/** The anonymous memory of a `memory.stat` file (`anon <bytes>`); with no such line, `memory.current` minus `inactive_file` when both are given. */
+/**
+ * The memory the programs hold, from a `memory.stat` file: `anon` plus `shmem` (an ACP pod's /dev/shm is memory-backed and charged to the group as shmem); with no `anon` line,
+ * `memory.current` minus `inactive_file` when both are given.
+ */
 export function usedOf(memoryStat: string, memoryCurrent: string | null): number | null {
   const anon = /^anon (\d{1,20})$/m.exec(memoryStat);
-  if (anon !== null) return Number(anon[1]);
+  const shmem = /^shmem (\d{1,20})$/m.exec(memoryStat);
+  if (anon !== null) return Number(anon[1]) + (shmem === null ? 0 : Number(shmem[1]));
   const inactive = /^inactive_file (\d{1,20})$/m.exec(memoryStat);
   const current = memoryCurrent === null ? null : limitOf(memoryCurrent);
   if (current === null) return null;
@@ -125,14 +165,25 @@ export function statusOf(text: string): { name: string; ppid: number; rssBytes: 
   return { name: name[1]!, ppid: Number(ppid[1]), rssBytes: Number(rss[1]) * 1024 };
 }
 
-/** The base names an agent program goes by: Claude Code, Codex and Hermes, and the names of the programs this bridge's config points the adapters at. */
-export const agentNames = (bins: readonly string[]): Set<string> => new Set(['claude', 'codex', 'hermes', ...bins.map((b) => posix.basename(b)).filter((b) => b !== '' && b !== 'node')]);
+/**
+ * The base names an agent program goes by: Claude Code, Codex (the native `codex` and the `codex.js` that `node` runs) and Hermes, and the names of the programs this bridge's config
+ * points the adapters at.
+ */
+export const agentNames = (bins: readonly string[]): Set<string> =>
+  new Set(['claude', 'codex', 'codex.js', 'hermes', ...bins.map((b) => posix.basename(b)).filter((b) => b !== '' && b !== 'node')]);
 
-/** Whether a `/proc/<pid>/cmdline` (words split by NUL) is an agent program: its program, or the script a runtime runs (`node …/claude`), has one of the names. */
+/**
+ * Whether a `/proc/<pid>/cmdline` (words split by NUL) is an agent program: its program, or the script a runtime runs (`node …/claude`, `node --flag …/codex.js`: the first word
+ * after the program that is not an option), has one of the names.
+ */
 export function isAgentCmdline(cmdline: string, names: ReadonlySet<string>): boolean {
-  const words = cmdline.split('\0').filter((w) => w !== '').slice(0, 2);
-  return words.some((w) => names.has(posix.basename(w)));
+  const words = cmdline.split('\0').filter((w) => w !== '');
+  const script = words.slice(1).find((w) => !w.startsWith('-'));
+  return [words[0], script].some((w) => w !== undefined && names.has(posix.basename(w)));
 }
+
+/** Whether a process is an agent program, by its `/proc/<pid>/status` name (the kernel's short name: the native `codex`, a `claude` that set its title) or its cmdline. */
+export const isAgentProcess = (name: string, cmdline: string, names: ReadonlySet<string>): boolean => names.has(name) || isAgentCmdline(cmdline, names);
 
 export interface GuardReader {
   limitBytes(): number | null;
@@ -176,7 +227,7 @@ export function procGuardReader(names: ReadonlySet<string>, files: CgroupFiles =
         const status = read(`/proc/${entry}/status`);
         const s = status === null ? null : statusOf(status);
         if (s === null) continue;
-        out.push({ pid: Number(entry), ppid: s.ppid, rssBytes: s.rssBytes, name: s.name, agent: isAgentCmdline(read(`/proc/${entry}/cmdline`) ?? '', names) });
+        out.push({ pid: Number(entry), ppid: s.ppid, rssBytes: s.rssBytes, name: s.name, agent: isAgentProcess(s.name, read(`/proc/${entry}/cmdline`) ?? '', names) });
       }
       return out;
     },
@@ -193,23 +244,26 @@ export interface MemoryGuardOptions {
 
 /** The guard of one bridge: the runs register their adapters, a timer calls `tick`. */
 export class MemoryGuard {
-  private readonly adapters = new Set<number>();
+  /** Each adapter and what to tell its run when a program below it is stopped. */
+  private readonly adapters = new Map<number, (() => void) | undefined>();
   private killed = 0;
   private lastKillAt = -Infinity;
   private lowSaid = false;
   private stuckSaid = false;
+  private smallSaid = false;
 
   constructor(private readonly o: MemoryGuardOptions) {}
 
-  adapterStarted(pid: number | undefined): void {
-    if (pid !== undefined && Number.isInteger(pid) && pid > 1) this.adapters.add(pid);
+  /** `onKill` is called once for every program the guard stops below this adapter: the run counts its own kills, not another run's. */
+  adapterStarted(pid: number | undefined, onKill?: () => void): void {
+    if (pid !== undefined && Number.isInteger(pid) && pid > 1) this.adapters.set(pid, onKill);
   }
 
   adapterEnded(pid: number | undefined): void {
     if (pid !== undefined) this.adapters.delete(pid);
   }
 
-  /** How many programs the guard has stopped so far. */
+  /** How many programs the guard has stopped so far, for every run. */
   kills(): number {
     return this.killed;
   }
@@ -227,7 +281,7 @@ export class MemoryGuard {
         memAvailableBytes: info.availableBytes,
         memTotalBytes: info.totalBytes,
         processes: () => this.o.reader.processes(),
-        adapters: this.adapters,
+        adapters: new Set(this.adapters.keys()),
         bridgePid: this.o.bridgePid ?? process.pid,
       });
     } catch {
@@ -243,16 +297,25 @@ export class MemoryGuard {
       this.killed += 1;
       this.lastKillAt = now;
       this.stuckSaid = false;
+      try {
+        this.adapters.get(decision.adapter)?.();
+      } catch {
+        // a run's counter never ends the guard
+      }
       this.o.log(`memory guard: stopped ${decision.name} (pid ${decision.pid}, ${mib(decision.rssBytes)} MiB): the run's programs held ${mib(decision.usedBytes)} of ${mib(decision.limitBytes)} MiB`);
     } else if (decision.action === 'nothing-to-stop') {
       if (!this.stuckSaid) this.o.log(`memory guard: ${mib(decision.usedBytes)} of ${mib(decision.limitBytes)} MiB in use and no command of a run to stop`);
       this.stuckSaid = true;
+    } else if (decision.action === 'watch-only') {
+      if (!this.smallSaid) this.o.log(`memory guard: ${mib(decision.usedBytes)} of ${mib(decision.limitBytes)} MiB in use; under a ${mib(GUARD_MIN_LIMIT_BYTES)} MiB limit the guard stops no command`);
+      this.smallSaid = true;
     } else if (decision.action === 'low-machine') {
       if (!this.lowSaid) this.o.log(`memory guard: this machine has ${mib(decision.availableBytes)} of ${mib(decision.totalBytes)} MiB available`);
       this.lowSaid = true;
     } else {
       this.lowSaid = false;
       this.stuckSaid = false;
+      this.smallSaid = false;
     }
     return decision;
   }
